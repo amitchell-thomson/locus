@@ -25,4 +25,6 @@ rerank_top_k         = 8          # survivors after cross-encoder rerank
 context_token_budget = 100000     # cap on assembled context to the Claude API call
 
 [generation]
-model         = "claude-sonnet-4-6"   # RAG generation model; tune as needed
+# RAG generation model (§1: answer quality is the priority). Use a 4.6+ model (adaptive
+# thinking). claude-sonnet-4-6 is a cheaper, very capable alternative for high query volume.
+model         = "claude-opus-4-8"

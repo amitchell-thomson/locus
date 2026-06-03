@@ -138,6 +138,27 @@ def cmd_inspect(args) -> None:
     conn.close()
 
 
+def cmd_query(args) -> None:
+    from locus.config import Config
+    from locus.query import QUERY_MODES, answer
+
+    try:
+        Config.anthropic_api_key()  # fail early with a clear message if the key is missing
+    except RuntimeError as exc:
+        print(exc)
+        sys.exit(1)
+    if args.mode not in QUERY_MODES:
+        print(f"unknown mode {args.mode!r}; choose from {sorted(QUERY_MODES)}")
+        sys.exit(1)
+
+    result = answer(args.query, mode=args.mode)
+    print(result.answer)
+    if result.citations:
+        print("\n--- sources ---")
+        for c in result.citations:
+            print(f"  * {c}")
+
+
 def cmd_retrieve(args) -> None:
     from locus.retrieve import retrieve
 
@@ -211,6 +232,14 @@ def main(argv=None) -> None:
     pn.add_argument("--source", action="store_true", help="also show source text (from chunks)")
     pn.add_argument("--max-source", type=int, default=1200, help="max source chars to show")
     pn.set_defaults(func=cmd_inspect)
+
+    pq = sub.add_parser("query", help="ask the vault a question (retrieve + Claude); needs ANTHROPIC_API_KEY")
+    pq.add_argument("query", help="the question")
+    pq.add_argument(
+        "--mode", default="standard",
+        help="standard | gap | synthesis | code | framing | project",
+    )
+    pq.set_defaults(func=cmd_query)
 
     pr = sub.add_parser("retrieve", help="run the retrieval pipeline and show what it returns")
     pr.add_argument("query", help="the query text")

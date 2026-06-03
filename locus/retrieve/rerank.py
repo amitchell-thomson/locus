@@ -9,15 +9,39 @@ Requires the `rerank` extra (sentence-transformers + torch): `uv sync --extra re
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
+from pathlib import Path
 
 from locus.retrieve.search import Candidate
 
 _MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
+# Quiet the HuggingFace/transformers startup chatter (progress bars + warnings) so the CLI
+# output stays clean. Must be set before sentence-transformers / huggingface_hub are imported.
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
+
+def _model_cached() -> bool:
+    base = Path(os.environ.get("HF_HOME") or (Path.home() / ".cache" / "huggingface"))
+    return (base / "hub" / ("models--" + _MODEL.replace("/", "--"))).exists()
+
+
+# Once the reranker is cached (the normal case) stay offline: this skips the Hub ping and its
+# native "unauthenticated requests" warning. The first run (no cache) downloads online, then
+# every run after is offline + silent.
+if _model_cached():
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+
 
 @lru_cache(maxsize=1)
 def _cross_encoder():
+    import logging
+
+    for name in ("transformers", "huggingface_hub", "sentence_transformers"):
+        logging.getLogger(name).setLevel(logging.ERROR)
     try:
         from sentence_transformers import CrossEncoder
     except ImportError as exc:  # pragma: no cover

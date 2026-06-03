@@ -17,6 +17,26 @@ from pydantic import BaseModel, Field
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
+def _load_dotenv() -> None:
+    """Populate os.environ from a project-root .env (KEY=VALUE lines), if present.
+
+    Real environment variables take precedence (we never overwrite an already-set key), so
+    the .env is a convenience for local secrets like ANTHROPIC_API_KEY, not an override.
+    """
+    env_path = PROJECT_ROOT / ".env"
+    if not env_path.exists():
+        return
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip().strip("'\""))
+
+
+_load_dotenv()
+
+
 class OllamaConfig(BaseModel):
     host: str
     embed_model: str

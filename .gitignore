@@ -6,6 +6,9 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
+# Secrets: API keys live here, loaded into the env at runtime. NEVER commit.
+.env
+
 # Local config (may contain machine-specific paths; secrets come from env, never here)
 config.toml
 

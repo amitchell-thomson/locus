@@ -29,9 +29,14 @@ from pydantic import BaseModel
 # PyMuPDF span flag bit for bold text.
 _FLAG_BOLD = 1 << 4
 
-# Sections longer than this (characters) are split into page-aligned windows, so the L2
-# summary/proposition passes never receive an unmanageably large blob. ~12k chars ≈ 3k tokens.
+# Section size band. Both bounds are structural guarantees on the *output* of detection,
+# independent of how noisy heading detection is on a given PDF:
+#   - sections longer than MAX are split into page-aligned windows (no unsummarisable blob),
+#   - sections shorter than MIN are merged into their neighbours (no heading-only fragments).
+# ~12k chars ≈ 3k tokens; 400 chars cleanly separates real sections (measured 600-8000c) from
+# heading/label fragments (<200c).
 MAX_SECTION_CHARS = 12_000
+MIN_SECTION_CHARS = 400
 
 # Heuristic math indicators (LaTeX commands, common math unicode, inline $...$).
 _MATH = re.compile(
@@ -176,6 +181,10 @@ def _headings_from_fonts(doc, page_offsets, full_text) -> list[tuple[str | None,
     for pno, size, bold, text in lines:
         if len(text) > 120:
             continue
+        # Skip alpha-less candidates (page numbers, "1", "1.1", equation labels): they are not
+        # section titles. Merge would absorb their fragments anyway, but this keeps titles clean.
+        if not any(c.isalpha() for c in text):
+            continue
         is_heading = size >= body_size * 1.15 or (bold_is_rare and bold and len(text) <= 100)
         if is_heading:
             off = _find_heading_offset(full_text, text, page_offsets[pno])
@@ -214,16 +223,22 @@ def _build_sections(
 ) -> list[ExtractedSection]:
     """Slice full_text at heading offsets into page-anchored sections.
 
-    Any section longer than MAX_SECTION_CHARS is split into page-aligned windows so the L2
-    summary pass never receives an unmanageably large blob — this is what saves heading-poor
-    or noisy documents (which fall through to a single whole-doc span) from becoming one
-    giant, unusable section.
+    Sections are forced into the [MIN, MAX] size band, independent of detection noise:
+      - tiny/heading-only spans are merged into neighbours (no empty, fragment sections),
+      - oversized spans are split into page-aligned windows (no giant, unsummarisable blob).
+    This is what saves both over-segmented (noisy heading) and heading-poor documents.
     """
-    spans: list[tuple[str | None, int, int]] = []
+    # Raw spans between consecutive heading offsets (drop empties).
+    raw: list[tuple[str | None, int, int]] = []
     for i, (title, start) in enumerate(headings):
         end = headings[i + 1][1] if i + 1 < len(headings) else len(full_text)
-        if not full_text[start:end].strip():
-            continue
+        if full_text[start:end].strip():
+            raw.append((title, start, end))
+
+    merged = _merge_small(raw, full_text, MIN_SECTION_CHARS)
+
+    spans: list[tuple[str | None, int, int]] = []
+    for title, start, end in merged:
         if end - start <= MAX_SECTION_CHARS:
             spans.append((title, start, end))
         else:
@@ -254,6 +269,42 @@ def _build_sections(
             )
         )
     return sections
+
+
+def _merge_small(
+    spans: list[tuple[str | None, int, int]], full_text: str, min_chars: int
+) -> list[tuple[str | None, int, int]]:
+    """Merge consecutive spans until each has >= min_chars of body text.
+
+    Collapses heading-only / fragment sections (the over-segmentation failure mode) into real,
+    summarisable sections. A merged section keeps the first non-empty heading as its title, so a
+    bare heading is absorbed into the content that follows it. Real sections already exceed
+    min_chars and are emitted unchanged. A trailing under-sized span is folded into the previous
+    section (or kept alone if it is the only one).
+    """
+    merged: list[tuple[str | None, int, int]] = []
+    cur_title: str | None = None
+    cur_start: int | None = None
+    cur_end: int | None = None
+
+    for title, start, end in spans:
+        if cur_start is None:
+            cur_title, cur_start, cur_end = title, start, end
+        else:
+            cur_end = end
+            if cur_title is None:
+                cur_title = title
+        if len(full_text[cur_start:cur_end].strip()) >= min_chars:
+            merged.append((cur_title, cur_start, cur_end))
+            cur_title, cur_start, cur_end = None, None, None
+
+    if cur_start is not None:  # trailing under-sized bucket
+        if merged and len(full_text[cur_start:cur_end].strip()) < min_chars:
+            pt, ps, _ = merged[-1]
+            merged[-1] = (pt, ps, cur_end)
+        else:
+            merged.append((cur_title, cur_start, cur_end))
+    return merged
 
 
 def _paginate_span(

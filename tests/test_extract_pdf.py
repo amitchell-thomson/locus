@@ -17,6 +17,11 @@ BODY = 11.0
 HEAD = 20.0
 
 
+def _body(tag: str, n: int = 12) -> list[tuple[str, float]]:
+    """Body lines totalling > MIN_SECTION_CHARS so a section survives the small-merge."""
+    return [(f"{tag}: sentence {i} contains several descriptive words about the topic.", BODY) for i in range(n)]
+
+
 def _make_pdf(path: Path, pages: list[list[tuple[str, float]]], *, toc=None, title=None) -> Path:
     """Build a PDF. `pages` is a list of pages; each page is a list of (text, fontsize)."""
     doc = pymupdf.open()
@@ -39,8 +44,8 @@ def test_outline_strategy(tmp_path: Path):
     pdf = _make_pdf(
         tmp_path / "outlined.pdf",
         pages=[
-            [("Introduction", BODY), ("This is the intro body text.", BODY)],
-            [("Methods", BODY), ("This describes the methods used.", BODY)],
+            [("Introduction", BODY), *_body("intro")],
+            [("Methods", BODY), ("This describes the methods used in detail.", BODY), *_body("methods")],
         ],
         toc=[[1, "Introduction", 1], [1, "Methods", 2]],
     )
@@ -56,14 +61,7 @@ def test_outline_strategy(tmp_path: Path):
 def test_headings_strategy_by_font_size(tmp_path: Path):
     pdf = _make_pdf(
         tmp_path / "headings.pdf",
-        pages=[
-            [
-                ("Section One", HEAD),
-                ("Body text under section one.", BODY),
-                ("Section Two", HEAD),
-                ("Body text under section two.", BODY),
-            ]
-        ],
+        pages=[[("Section One", HEAD), *_body("one"), ("Section Two", HEAD), *_body("two")]],
     )
     doc = extract_pdf(pdf)
     assert doc.section_strategy == "headings"
@@ -179,6 +177,34 @@ def test_title_strips_word_export_prefix(tmp_path: Path):
         title="Microsoft Word - My Real Title.docx",
     )
     assert extract_pdf(pdf).title == "My Real Title"
+
+
+def test_tiny_heading_fragments_are_merged(tmp_path: Path):
+    """Over-segmentation guard: many tiny heading fragments collapse into real sections."""
+    from locus.extract.pdf import MIN_SECTION_CHARS
+
+    # 12 big-font "headings" each with only a short body line -> 12 tiny raw sections.
+    pages = []
+    for i in range(12):
+        pages_line = [(f"Heading {i}", HEAD), (f"short body {i}.", BODY)]
+        pages.append(pages_line)
+    pdf = _make_pdf(tmp_path / "fragments.pdf", pages=pages)
+    doc = extract_pdf(pdf)
+
+    assert len(doc.sections) < 12  # merged, not one section per heading
+    # No tiny fragment survives (all but possibly the trailing one meet the floor).
+    assert all(len(s.text) >= 200 for s in doc.sections[:-1])
+    assert MIN_SECTION_CHARS == 400
+
+
+def test_alpha_less_headings_are_ignored(tmp_path: Path):
+    # A bare number on its own line must not become a section title.
+    pdf = _make_pdf(
+        tmp_path / "numbered.pdf",
+        pages=[[("1", HEAD), ("Real Heading", HEAD), ("Body content for the real heading.", BODY)]],
+    )
+    titles = [s.title for s in extract_pdf(pdf).sections]
+    assert "1" not in titles
 
 
 def test_missing_file_raises(tmp_path: Path):

@@ -42,7 +42,7 @@ def _resolve_doc(conn, ident: str):
 
 
 def cmd_ingest(args) -> None:
-    for r in ingest_paths(args.paths):
+    for r in ingest_paths(args.paths, reingest=args.reingest):
         if r.status == "ingested":
             print(
                 f"[ingested]  {r.path}  doc_id={r.doc_id} sections={r.sections} "
@@ -179,6 +179,10 @@ def main(argv=None) -> None:
 
     pi = sub.add_parser("ingest", help="ingest files into the vault")
     pi.add_argument("paths", nargs="+", help="files to ingest")
+    pi.add_argument(
+        "--reingest", action="store_true",
+        help="rebuild documents already present (delete + re-ingest) instead of skipping",
+    )
     pi.set_defaults(func=cmd_ingest)
 
     pl = sub.add_parser("list", help="list ingested documents")

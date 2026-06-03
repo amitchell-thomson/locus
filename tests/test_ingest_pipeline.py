@@ -15,21 +15,20 @@ from locus.ingest import embed, entities, gaps, propositions, summarize, synthes
 from locus.ingest.entities import Entity
 from locus.ingest.llm import IngestExtractionError
 from locus.ingest.synthesis import DocSynthesis
-from locus.ingest_pipeline import ingest_file
+from locus.ingest_pipeline import delete_document, ingest_file
 
 
 def _make_pdf(path: Path) -> Path:
     doc = pymupdf.open()
     page = doc.new_page()
     y = 72.0
-    for text, size in [
-        ("Section A", 20.0),
-        ("Body sentence one. Body sentence two about systems.", 11.0),
-        ("Section B", 20.0),
-        ("More body content describing methods and results.", 11.0),
-    ]:
+    lines = [("Section A", 20.0)]
+    lines += [(f"Section A body sentence {i} with several descriptive words.", 11.0) for i in range(10)]
+    lines += [("Section B", 20.0)]
+    lines += [(f"Section B body sentence {i} describing methods and results.", 11.0) for i in range(10)]
+    for text, size in lines:
         page.insert_text((72, y), text, fontsize=size)
-        y += size + 10
+        y += size + 6
     doc.save(str(path))
     doc.close()
     return path
@@ -123,3 +122,30 @@ def test_unsupported_type_is_reported(tmp_path, conn):
 def test_missing_file_is_quarantined(tmp_path, conn):
     result = ingest_file(tmp_path / "nope.pdf", conn)
     assert result.status == "quarantined"
+
+
+def test_delete_document_clears_vectors_too(tmp_path, conn, fake_passes):
+    ingest_file(_make_pdf(tmp_path / "doc.pdf"), conn)
+    assert _count(conn, "chunk_vectors") > 0
+
+    doc_id = conn.execute("SELECT id FROM documents").fetchone()["id"]
+    delete_document(conn, doc_id)
+
+    # Both the FK-cascaded tables and the vec0 tables (no FK) must be empty.
+    for t in ("documents", "sections", "chunks", "propositions", "entities",
+              "section_vectors", "chunk_vectors", "proposition_vectors"):
+        assert _count(conn, t) == 0, f"{t} not cleared"
+
+
+def test_reingest_rebuilds_without_orphan_vectors(tmp_path, conn, fake_passes):
+    pdf = _make_pdf(tmp_path / "doc.pdf")
+    ingest_file(pdf, conn)
+    first_chunks = _count(conn, "chunks")
+
+    again = ingest_file(pdf, conn, reingest=True)
+    assert again.status == "ingested"  # rebuilt, not skipped
+    assert _count(conn, "documents") == 1
+    # vectors stay exactly in step with their parents (no orphans accumulated).
+    assert _count(conn, "chunk_vectors") == _count(conn, "chunks") == first_chunks
+    assert _count(conn, "proposition_vectors") == _count(conn, "propositions")
+    assert _count(conn, "section_vectors") == _count(conn, "sections")

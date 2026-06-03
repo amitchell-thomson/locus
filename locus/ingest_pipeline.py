@@ -214,8 +214,29 @@ def _write(conn, path: Path, content_hash: str, source_type: str, raw_name: str,
 # --- public entry points -----------------------------------------------------------------
 
 
-def ingest_file(path: str | Path, conn) -> IngestResult:
-    """Ingest one file into the given DB connection. Never raises: failures are quarantined."""
+def delete_document(conn, doc_id: int) -> None:
+    """Delete a document and all of its rows.
+
+    The L1/L2/L3 + entity tables cascade via ON DELETE CASCADE, but the sqlite-vec `vec0`
+    vector tables are virtual and carry NO foreign key, so their rows must be removed
+    explicitly — otherwise vectors orphan and a reused row id later collides on insert.
+    """
+    with conn:
+        sids = [r["id"] for r in conn.execute("SELECT id FROM sections WHERE doc_id=?", (doc_id,))]
+        cids = [r["id"] for r in conn.execute("SELECT id FROM chunks WHERE doc_id=?", (doc_id,))]
+        pids = [r["id"] for r in conn.execute("SELECT id FROM propositions WHERE doc_id=?", (doc_id,))]
+        conn.executemany("DELETE FROM section_vectors WHERE section_id=?", [(i,) for i in sids])
+        conn.executemany("DELETE FROM chunk_vectors WHERE chunk_id=?", [(i,) for i in cids])
+        conn.executemany("DELETE FROM proposition_vectors WHERE proposition_id=?", [(i,) for i in pids])
+        conn.execute("DELETE FROM documents WHERE id=?", (doc_id,))
+
+
+def ingest_file(path: str | Path, conn, *, reingest: bool = False) -> IngestResult:
+    """Ingest one file into the given DB connection. Never raises: failures are quarantined.
+
+    If `reingest` is True, an already-present document (same content hash) is deleted and
+    rebuilt instead of skipped — used to re-run an updated pipeline over existing files.
+    """
     path = Path(path)
     if not path.exists():
         return IngestResult(str(path), "quarantined", error="file not found")
@@ -228,7 +249,9 @@ def ingest_file(path: str | Path, conn) -> IngestResult:
             "SELECT id FROM documents WHERE content_hash=?", (content_hash,)
         ).fetchone()
         if existing:
-            return IngestResult(str(path), "skipped", doc_id=existing["id"])
+            if not reingest:
+                return IngestResult(str(path), "skipped", doc_id=existing["id"])
+            delete_document(conn, existing["id"])
 
         raw_name = _copy_to_raw(path, content_hash)
         prep = _prepare(path)
@@ -238,13 +261,13 @@ def ingest_file(path: str | Path, conn) -> IngestResult:
         return IngestResult(str(path), "quarantined", error=str(exc))
 
 
-def ingest_paths(paths: list[str | Path], conn=None) -> list[IngestResult]:
+def ingest_paths(paths: list[str | Path], conn=None, *, reingest: bool = False) -> list[IngestResult]:
     """Ingest several files into the configured DB (or a provided connection)."""
     own = conn is None
     if own:
         conn = get_connection(load().paths.db)
     try:
-        return [ingest_file(p, conn) for p in paths]
+        return [ingest_file(p, conn, reingest=reingest) for p in paths]
     finally:
         if own:
             conn.close()

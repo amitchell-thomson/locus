@@ -1,0 +1,19 @@
+# Locus outbox config — copy to ~/.config/locus-outbox/outbox.conf on the Mac and edit.
+# This file holds machine-specific values and is NOT committed.
+
+# SSH destination. Recommended: define a Host alias in ~/.ssh/config (see README) and
+# reference it here, so host/user/key live in the standard SSH config.
+REMOTE="locus-server"
+
+# Absolute path to Locus's incoming dir on the server.
+REMOTE_DIR="/home/alec/server-projects/locus/vault/incoming"
+
+# Local drop folder on this Mac. Drop files here; they upload automatically.
+DROP_DIR="$HOME/LocusDrop"
+
+# Optional overrides:
+# On macOS 14.4+ the system `rsync` is openrsync; if --remove-source-files misbehaves,
+# install the real one (`brew install rsync`) and point at it:
+# RSYNC="/opt/homebrew/bin/rsync"
+#
+# SSH_OPTS="ssh -o ConnectTimeout=10 -o BatchMode=yes"

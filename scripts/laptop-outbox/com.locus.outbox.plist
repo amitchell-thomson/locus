@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd agent template for the Locus outbox.
+  __HOME__ is substituted with your home dir during install (see README).
+  Runs locus-outbox.sh once at load and then every StartInterval seconds.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.locus.outbox</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>__HOME__/.local/bin/locus-outbox.sh</string>
+    </array>
+
+    <!-- Flush every 60s. Increase if you prefer fewer wakeups; latency is irrelevant
+         to Locus (ingest is unbounded-time). -->
+    <key>StartInterval</key>
+    <integer>60</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>LowPriorityIO</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>__HOME__/Library/Logs/locus-outbox.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Library/Logs/locus-outbox.log</string>
+</dict>
+</plist>

@@ -594,6 +594,48 @@ The §1 reframe (entire personal KB — projects, achievements, history — to q
 - **Math-aware extraction + figures (15.1).** Still needed for the *technical subset*; slightly
   lower priority than format coverage, which touches the whole KB.
 
+---
+
+## 16. Near-term development plan (current — supersedes the §10 slice list)
+
+Critical path (ingest → query) is done on PDFs. This is the ordered plan to reach a usable,
+broad-corpus system, weighted per the owner's direction: **MCP server is a primary deliverable;
+temporal metadata is high; math + figures are medium but kept (most of the corpus is PDF), done
+before the bulk pour. Target formats: PDF (done), DOCX, slides (PPTX), code repos; later YouTube /
+podcast transcripts.**
+
+**Ordering principle:** lock *re-ingest-bound* work before the bulk ingest (changing it later
+forces re-ingesting the whole corpus); deliver daily utility early (MCP); broaden formats;
+validate; then pour. Each block is roughly a work-day; `[re-ingest-bound]` = must precede bulk.
+
+1. **Temporal + category metadata** `[re-ingest-bound]`. Migration: `documents.source_date` +
+   `category`. Extraction: PDF metadata creation date → file mtime fallback; category by
+   drop-folder convention / heuristic. Retrieval facets (`--since`/`--until`/`--category`);
+   `audit` shows the date/category distribution. *Lock the schema first.*
+2. **MCP server.** Expose `retrieve` / `query` (+ `list` / `inspect`) as MCP tools (`mcp` SDK) so
+   the vault is callable from Claude Code, the desktop app, and the API. Immediate daily utility
+   over the current corpus; not re-ingest-bound.
+3. **DOCX + Markdown/text extractors.** `python-docx` (heading styles → sections) and `.md`/`.txt`
+   (headings → sections). Route in `_source_type` + watcher. Unblocks notes / write-ups / docx.
+4. **Slides (PPTX) extractor.** `python-pptx`: per-slide text + speaker notes → sections; slide
+   images feed the figures pipeline (block 6).
+5. **Code-repo ingest.** `extract/code.py` via `python-ast` (functions, call graph, per-file
+   sections; `source_type='code'`); a repo-directory entry point (ingest a repo, not one file).
+   Provenance (`file_path:line`) is already in the schema and retrieval.
+6. **Figures** `[re-ingest-bound]` (PDF/slides quality, medium). `figures` + `figure_vectors`
+   schema; extract/store images + captions; optional local VLM (moondream / minicpm-v) →
+   retrievable; multimodal Claude at generation (query.py passes the figure image). See §15.1.
+7. **Math-aware extraction** `[re-ingest-bound]` (PDF quality, medium). Route `has_math` regions
+   through Nougat / a math-OCR or vision pass to recover LaTeX. See §15.1.
+8. **Entity-alias resolution + Retrieval eval (Layer 3) → BULK INGEST.** Canonicalise entity
+   names (the *link* substrate); run the heterogeneous-corpus retrieval eval; then pour the corpus.
+
+**After the pour (not re-ingest-bound):** ANN-index warning (§11.D), Obsidian projection (§14),
+YouTube/podcast transcript ingest, broader retrieval tests.
+
+New dependencies introduced along the way: `mcp`, `python-docx`, `python-pptx`, and (for math) a
+Nougat / math-OCR model. Keep heavy/optional ones (VLM, Nougat) behind extras like `[rerank]`.
+
 
 
 

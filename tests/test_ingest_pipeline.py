@@ -15,6 +15,7 @@ from locus.ingest import embed, entities, gaps, propositions, summarize, synthes
 from locus.ingest.entities import Entity
 from locus.ingest.llm import IngestExtractionError
 from locus.ingest.synthesis import DocSynthesis
+from locus import ingest_pipeline
 from locus.ingest_pipeline import delete_document, ingest_file
 
 
@@ -60,6 +61,10 @@ def fake_passes(monkeypatch):
     monkeypatch.setattr(gaps, "flag_gaps", lambda title, context, **k: ["gap one"])
     monkeypatch.setattr(embed, "embed_text", lambda text: [0.1] * 768)
     monkeypatch.setattr(embed, "embed_texts", lambda texts: [[0.1] * 768 for _ in texts])
+    # Do NOT write synthetic test PDFs into the real vault/raw store (test isolation).
+    monkeypatch.setattr(
+        ingest_pipeline, "_copy_to_raw", lambda path, content_hash: f"{content_hash}{Path(path).suffix}"
+    )
 
 
 def test_ingest_populates_all_levels(tmp_path, conn, fake_passes):

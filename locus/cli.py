@@ -138,6 +138,18 @@ def cmd_inspect(args) -> None:
     conn.close()
 
 
+def cmd_watch(args) -> None:
+    import logging
+
+    from locus.watcher import watch
+
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    try:
+        watch(interval=args.interval, once=args.once)
+    except KeyboardInterrupt:
+        print("\nstopped.")
+
+
 def cmd_query(args) -> None:
     from locus.config import Config
     from locus.query import QUERY_MODES, answer
@@ -232,6 +244,11 @@ def main(argv=None) -> None:
     pn.add_argument("--source", action="store_true", help="also show source text (from chunks)")
     pn.add_argument("--max-source", type=int, default=1200, help="max source chars to show")
     pn.set_defaults(func=cmd_inspect)
+
+    pw = sub.add_parser("watch", help="auto-ingest files dropped into vault/incoming/")
+    pw.add_argument("--interval", type=float, default=5.0, help="poll interval seconds")
+    pw.add_argument("--once", action="store_true", help="process the backlog once and exit")
+    pw.set_defaults(func=cmd_watch)
 
     pq = sub.add_parser("query", help="ask the vault a question (retrieve + Claude); needs ANTHROPIC_API_KEY")
     pq.add_argument("query", help="the question")

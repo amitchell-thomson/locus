@@ -358,6 +358,10 @@ source type before adding breadth. Defer UI entirely.
 Slices 1→2 are the critical path: a single PDF ingested correctly and a query answered
 end-to-end is the first milestone. Everything else is breadth on a proven spine.
 
+**Hardening (see §15):** after the Stage 6/7 retrieval spine is proven and *before* the
+multi-year bulk ingest, do **Stage 5.1** (math-aware extraction, figures, scanned-PDF OCR,
+entity resolution — all re-ingest-bound). Hybrid lexical retrieval folds into Stage 6.
+
 **Initial corpus focus:** quant-finance papers, control-systems / signal-processing notes,
 seminar notes, code repositories.
 
@@ -479,6 +483,76 @@ matrix) with no custom code.
   regenerates only its own subtrees (e.g. `docs/`, `entities/`) and **must never touch
   `.obsidian/`** (Obsidian's own plugin/graph config) — regenerate per-owned-subtree, never
   blanket-wipe the folder.
+
+---
+
+## 15. Planned hardening & future work (Stage 5.1 + retrieval), with sequencing
+
+This records the spec for hardening identified while validating ingest quality on a real
+corpus. Do not lose it.
+
+### 15.0 The governing principle — what Claude can and cannot recover
+This is RAG: **Claude only ever sees what retrieval surfaces.** Recoverability of poor ingest
+depends on *where* quality was lost:
+- **Generation-time noise** (coarse/slightly-wrong summary, proposition, entity; redundant
+  context) → **recoverable**, *because retrieval assembles raw chunks + section summaries + doc
+  synthesis, not just the LLM-derived units*, so Claude grounds on source text. Keep this
+  property: always retrieve and assemble the raw chunk alongside derived units.
+- **Extraction loss** (garbled/lost equations, scanned-no-text, ignored figures) → **not
+  recoverable** — the information never entered the system.
+- **Retrieval miss** (right content exists but isn't surfaced) → **not recoverable** — Claude
+  never sees it.
+Prioritise the two Claude *cannot* fix: clean content **in** (math/figures), right content **out**
+(hybrid retrieval).
+
+### 15.1 Stage 5.1 — ingest hardening (RE-INGEST-BOUND; settle before scaling the corpus)
+These change stored/embedded data, so adding them later forces a full re-ingest. Do them
+**after** the retrieval spine (Stage 6/7) is proven but **before** the multi-year bulk ingest.
+
+- **Math-aware extraction.** The text layer garbles or drops equations; the corpus is
+  math-dense (quant/control/signal-processing). Route `has_math` regions (already flagged in
+  `extract/pdf.py`) through a math model — Nougat or GROBID for papers, or a vision/OCR pass —
+  to recover LaTeX. **Not Claude-recoverable; highest-value gap.**
+- **Figures / diagrams** (PDFs often contain block diagrams, plots, schematics). Three tiers:
+  1. *Preserve* — detect figure regions, extract + store the image in the raw store with its
+     caption + in-text references; filter decorative/logo images by area. Cheap, do always.
+  2. *Make findable* — generate a text description per figure via a local VLM that fits 8 GB
+     (e.g. `moondream` ~2 GB or `minicpm-v` 8B Q4 ~5.5 GB), loaded sequentially with the text
+     model at ingest (unbounded-time, §2.4). Store as a **first-class retrievable unit**:
+     `figures` table + `figure_vectors` vec0 (mirrors propositions, decision A).
+  3. *Make interpretable* — at generation (Stage 7), include the **actual figure image** in the
+     Claude call when a retrieved unit references it; Claude is multimodal, so the precise
+     interpretation happens there for ~free (the local VLM only has to make it *findable*).
+  **Schema decision (settle before bulk ingest, like decision A):** add the `figures` +
+  `figure_vectors` tables.
+- **Scanned / image-only PDFs.** Detect low text-density pages → OCR fallback (else the doc
+  ingests as near-empty and is invisible to queries).
+- **Entity resolution / alias-canonicalization.** Collapse `name+type` near-duplicates
+  (`LTI model` vs `Linear, Time-invariant (LTI) models`). Mainly unlocks the cross-domain
+  Obsidian graph (§14) — duplicates fragment the "linked ideas" connections; invisible to
+  direct Q&A. Coordinate with §14's deferred alias decision.
+- **Content-hash normalization** (§11.F) — normalize whitespace/formatting before hashing so a
+  re-exported PDF does not duplicate.
+- **(Measure first)** Per §11.B, route the proposition/synthesis passes to the Claude API only
+  if the eval (`locus eval`) shows local quality insufficient — the raw-chunk fallback above
+  makes local "good enough" in many cases.
+
+### 15.2 Stage 6 — retrieval hardening (NOT re-ingest-bound; build into Stage 6)
+These operate over existing data, so they can be added/changed anytime without re-ingest.
+- **Hybrid lexical + dense retrieval.** Add SQLite **FTS5/BM25** over chunk text beside the
+  vector search. Dense embeddings (general-purpose nomic) blur exact symbols, tickers, and
+  specific method names; lexical catches them. A retrieval miss is **not Claude-recoverable**,
+  so this is the highest-ROI retrieval fix — fold it into the Stage 6 build.
+- **Cross-domain retrieval mode / multi-query expansion.** The killer use case (engineering ↔
+  quant synthesis) needs non-obvious cross-domain links surfaced; pure relevance reranking may
+  miss them. Claude can synthesise the bridge *only if both sides are retrieved*.
+- **ANN index** when the brute-force KNN count-warning fires (§11.D).
+
+### 15.3 Sequencing
+1. Prove the **Stage 6 + 7** spine on the current corpus (fold in 15.2 hybrid lexical).
+2. Then **Stage 5.1** (15.1) before the multi-year bulk ingest — re-ingest-bound work must be
+   locked in before the expensive pour. Figures span 5.1 (store + describe) and 7 (multimodal
+   generation).
 
 
 

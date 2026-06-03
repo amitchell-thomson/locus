@@ -138,6 +138,23 @@ def cmd_inspect(args) -> None:
     conn.close()
 
 
+def cmd_retrieve(args) -> None:
+    from locus.retrieve import retrieve
+
+    r = retrieve(args.query)
+    print(f"query: {r.query}\n")
+    print("=== reranked survivors ===")
+    for c in r.survivors:
+        rr = f"{c.rerank_score:+.2f}" if c.rerank_score is not None else "n/a"
+        print(f"  {c.kind:<11} doc{c.doc_id} rr={rr} src={sorted(c.sources)} | {c.text[:72]!r}")
+    print("\n=== citations ===")
+    for cit in r.citations:
+        print("  *", cit)
+    if args.context:
+        print("\n=== assembled context ===")
+        print(r.context)
+
+
 def cmd_audit(args) -> None:
     from locus.eval.metrics import corpus_metrics, doc_metrics, format_metrics
 
@@ -194,6 +211,11 @@ def main(argv=None) -> None:
     pn.add_argument("--source", action="store_true", help="also show source text (from chunks)")
     pn.add_argument("--max-source", type=int, default=1200, help="max source chars to show")
     pn.set_defaults(func=cmd_inspect)
+
+    pr = sub.add_parser("retrieve", help="run the retrieval pipeline and show what it returns")
+    pr.add_argument("query", help="the query text")
+    pr.add_argument("--context", action="store_true", help="also print the assembled context")
+    pr.set_defaults(func=cmd_retrieve)
 
     pa = sub.add_parser("audit", help="structural ingest-quality metrics (no API)")
     pa.add_argument("--doc", default=None, help="restrict to one document id")

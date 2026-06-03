@@ -7,7 +7,7 @@ def test_config_loads_and_validates():
     cfg = load()
     assert cfg.embed.dim == 768  # locked to nomic-embed-text
     assert cfg.ollama.embed_model == "nomic-embed-text"
-    assert cfg.ollama.ingest_model == "qwen2.5:7b"  # Stage-4 build target
+    assert "qwen2.5" in cfg.ollama.ingest_model  # qwen2.5 family (quant tag may vary)
     assert cfg.retrieve.proposition_top_k == 10  # propositions are first-class (decision A)
 
 

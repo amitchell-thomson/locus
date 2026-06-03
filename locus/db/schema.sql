@@ -5,7 +5,9 @@
 -- in db/migrations/versions/, applied via `alembic upgrade head` (or locus.db.migrate.migrate).
 -- When you add a migration, update this snapshot to match the resulting state.
 --
--- Current state == migrations applied through revision: 0001 (initial schema)
+-- Current state == migrations applied through revision: 0002
+--   0001 initial schema
+--   0002 chunks_fts (FTS5 lexical index over chunk text + sync triggers) for hybrid retrieval
 --
 -- Version tracking is owned by Alembic's `alembic_version` table.
 --

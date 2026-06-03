@@ -59,7 +59,8 @@ def generate_structured(
 ) -> T:
     """Generate JSON matching `schema`, repairing on validation failure up to `retries` times."""
     client = client or _client()
-    model = model or load().ollama.ingest_model
+    ollama_cfg = load().ollama
+    model = model or ollama_cfg.ingest_model
     json_schema = schema.model_json_schema()
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
@@ -68,7 +69,7 @@ def generate_structured(
         try:
             resp = client.chat(
                 model=model, messages=messages, format=json_schema,
-                options={"temperature": temperature},
+                options={"temperature": temperature, "num_ctx": ollama_cfg.num_ctx},
             )
         except Exception as exc:  # network / server / model errors
             raise IngestExtractionError(f"Ollama chat failed (model={model}): {exc}") from exc

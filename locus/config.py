@@ -21,6 +21,11 @@ class OllamaConfig(BaseModel):
     host: str
     embed_model: str
     ingest_model: str
+    # Ollama defaults to 4096. The ingest passes (summary/propositions/entities) feed full
+    # section text, and num_ctx bounds prompt + generated output together: proposition-dense
+    # sections cross 4096 once output is counted, sliding the section text out of the window
+    # mid-generation. 8192 clears every measured section with margin (~0.47 GB extra VRAM).
+    num_ctx: int = Field(8192, description="Ollama context window for ingest passes.")
 
 
 class PathsConfig(BaseModel):

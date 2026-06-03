@@ -20,11 +20,14 @@ def extract_propositions(title: str | None, text: str, **kw) -> list[str]:
     user = (
         f"Section title: {title or '(untitled)'}\n\n"
         f"Section text:\n{text}\n\n"
-        "Extract the atomic propositions asserted in this section. Each proposition must be:\n"
-        "- a single, self-contained factual claim (resolve pronouns and references so it "
-        "stands alone, with no dependence on surrounding context),\n"
-        "- faithful to the text (do not infer beyond what is stated),\n"
-        "- one concise sentence.\n"
-        "Return an empty list if the section asserts no substantive claims."
+        "Extract the propositions asserted in this section. Each proposition must be:\n"
+        "- a single, self-contained factual claim stating one idea (resolve pronouns and "
+        "references so it stands alone, with no dependence on surrounding context),\n"
+        "- faithful to the text (do not infer beyond what is stated).\n"
+        "Do NOT split an enumerated list into one proposition per item: when the text lists "
+        "several items under a shared statement (a topic that 'covers A, B and C', a set of "
+        "subtopics, a list of learning outcomes), capture that enumeration as a SINGLE "
+        "proposition. But keep genuinely distinct claims as separate propositions — do not merge "
+        "unrelated statements. Return an empty list if the section asserts no substantive claims."
     )
     return generate_structured(Propositions, user, **kw).propositions

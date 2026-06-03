@@ -138,6 +138,41 @@ def cmd_inspect(args) -> None:
     conn.close()
 
 
+def cmd_audit(args) -> None:
+    from locus.eval.metrics import corpus_metrics, doc_metrics, format_metrics
+
+    conn = _open()
+    docs = [doc_metrics(conn, int(args.doc))] if args.doc else corpus_metrics(conn)
+    conn.close()
+    print(format_metrics(docs))
+
+
+def cmd_eval(args) -> None:
+    from locus.config import Config
+    from locus.eval.harness import evaluate
+
+    try:
+        Config.anthropic_api_key()  # fail early with a clear message if the key is missing
+    except RuntimeError as exc:
+        print(exc)
+        sys.exit(1)
+
+    models = args.models.split(",") if args.models else [None]
+    conn = _open()
+    try:
+        for model in models:
+            label = model or "existing (DB / qwen ingest)"
+            print(f"\n=== Evaluating: {label}  (sample={args.sample}, seed={args.seed}) ===")
+            judged, agg = evaluate(
+                conn, sample=args.sample, seed=args.seed, doc_id=args.doc,
+                model=model, judge_model=args.judge_model,
+            )
+            for k, v in agg.items():
+                print(f"  {k:<32} {v:.2f}")
+    finally:
+        conn.close()
+
+
 def main(argv=None) -> None:
     parser = argparse.ArgumentParser(prog="locus", description="Locus — query-driven knowledge vault")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -155,6 +190,22 @@ def main(argv=None) -> None:
     pn.add_argument("--source", action="store_true", help="also show source text (from chunks)")
     pn.add_argument("--max-source", type=int, default=1200, help="max source chars to show")
     pn.set_defaults(func=cmd_inspect)
+
+    pa = sub.add_parser("audit", help="structural ingest-quality metrics (no API)")
+    pa.add_argument("--doc", default=None, help="restrict to one document id")
+    pa.set_defaults(func=cmd_audit)
+
+    pe = sub.add_parser("eval", help="LLM-as-judge ingest-quality eval (needs ANTHROPIC_API_KEY)")
+    pe.add_argument("--sample", type=int, default=8, help="number of sections to sample")
+    pe.add_argument("--seed", type=int, default=0, help="sampling seed (reproducible)")
+    pe.add_argument("--doc", type=int, default=None, help="restrict to one document id")
+    pe.add_argument(
+        "--models", default=None,
+        help="comma-separated models to regenerate+compare (e.g. qwen2.5:7b,llama3.1:8b); "
+        "omit to judge the existing DB outputs",
+    )
+    pe.add_argument("--judge-model", default=None, help="override the Claude judge model")
+    pe.set_defaults(func=cmd_eval)
 
     args = parser.parse_args(argv)
     args.func(args)

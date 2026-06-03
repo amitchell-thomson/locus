@@ -15,30 +15,6 @@ and retries automatically when you reconnect — drops made while offline simply
 
 All commands below run **on the Mac**.
 
-## 0. Prerequisite — passwordless SSH to the server
-
-The agent runs unattended, so SSH must not prompt. Add a host alias to `~/.ssh/config`:
-
-```sshconfig
-Host locus-server
-    HostName <server-hostname-or-ip>
-    User alec
-    IdentityFile ~/.ssh/id_ed25519
-```
-
-Confirm it connects with no password/passphrase prompt:
-
-```bash
-ssh locus-server 'echo ok'
-```
-
-If your key has a passphrase, store it in the keychain so launchd can use it unattended:
-
-```bash
-ssh-add --apple-use-keychain ~/.ssh/id_ed25519
-# and in ~/.ssh/config under the host: add  "UseKeychain yes" and "AddKeysToKeychain yes"
-```
-
 ## 1. Copy the scripts from the server
 
 ```bash

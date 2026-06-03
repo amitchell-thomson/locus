@@ -1,0 +1,35 @@
+[project]
+name = "locus"
+version = "0.1.0"
+description = "Self-hosted, AI-queryable personal knowledge vault (CLI, query-driven RAG)."
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.6",
+    "sqlite-vec>=0.1.6",
+    "alembic>=1.13",
+    "pymupdf>=1.24",
+    "ollama>=0.3",
+    "anthropic>=0.40",
+    "tiktoken>=0.7",
+]
+
+[project.optional-dependencies]
+# Heavy: pulls torch. Installed only when the reranker (Stage 6) is built.
+rerank = ["sentence-transformers>=3.0"]
+
+[project.scripts]
+locus = "locus.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["locus"]

@@ -1,0 +1,12 @@
+-- Locus schema — HUMAN-REFERENCE SNAPSHOT of the current DB state.
+--
+-- This file is authoritative for *documentation* of the schema.
+-- It is NOT applied directly. The operational source of truth is the Alembic migration set
+-- in db/migrations/versions/, applied via `alembic upgrade head` (or locus.db.migrate.migrate).
+-- When you add a migration, update this snapshot to match the resulting state.
+--
+-- Current state == migrations applied through revision: 0001 (initial schema)
+--
+-- Version tracking is owned by Alembic's `alembic_version` table.
+--
+-- For the full table DDL, see db/migrations/versions/0001_init.py.

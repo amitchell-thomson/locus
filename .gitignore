@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Local config (may contain machine-specific paths; secrets come from env, never here)
+config.toml
+
+# Vault: local data, never committed
+vault/raw/*
+vault/incoming/*
+vault/notes/*
+vault/locus.db
+vault/locus.db-*
+
+# Generated Obsidian projection (derived from the DB, §14) — never committed.
+# Carve-out: keep your own Obsidian layout/plugin config if you want it tracked.
+vault/obsidian/*
+!vault/obsidian/.obsidian/
+
+# Keep empty vault dirs in the tree
+!vault/raw/.gitkeep
+!vault/incoming/.gitkeep
+!vault/notes/.gitkeep

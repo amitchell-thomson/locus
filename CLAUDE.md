@@ -598,6 +598,9 @@ The §1 reframe (entire personal KB — projects, achievements, history — to q
 
 ## 16. Near-term development plan (current — supersedes the §10 slice list)
 
+> Human-readable version with checkboxes + the MCP architecture note: **`PLAN.md`** (repo root).
+> Keep the two in sync.
+
 Critical path (ingest → query) is done on PDFs. This is the ordered plan to reach a usable,
 broad-corpus system, weighted per the owner's direction: **MCP server is a primary deliverable;
 temporal metadata is high; math + figures are medium but kept (most of the corpus is PDF), done
@@ -614,7 +617,12 @@ validate; then pour. Each block is roughly a work-day; `[re-ingest-bound]` = mus
    `audit` shows the date/category distribution. *Lock the schema first.*
 2. **MCP server.** Expose `retrieve` / `query` (+ `list` / `inspect`) as MCP tools (`mcp` SDK) so
    the vault is callable from Claude Code, the desktop app, and the API. Immediate daily utility
-   over the current corpus; not re-ingest-bound.
+   over the current corpus; not re-ingest-bound. **Architecture (local Claude ↔ server corpus):**
+   the MCP *server* runs server-side (needs DB + sqlite-vec + Ollama + reranker); the local Claude
+   is the client. Use **stdio over SSH** — Claude spawns `ssh locus-server "… uv run locus mcp"`,
+   tunnelling stdio over the existing SSH (no open ports/auth). Expose `retrieve` as the core tool
+   so the local Claude pulls the KB as context and generates itself (needs no server-side Claude
+   key). See `PLAN.md`.
 3. **DOCX + Markdown/text extractors.** `python-docx` (heading styles → sections) and `.md`/`.txt`
    (headings → sections). Route in `_source_type` + watcher. Unblocks notes / write-ups / docx.
 4. **Slides (PPTX) extractor.** `python-pptx`: per-slide text + speaker notes → sections; slide

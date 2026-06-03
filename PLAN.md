@@ -1,0 +1,74 @@
+# Locus — Development Plan
+
+> Human-readable roadmap. The authoritative goal/architecture is in `CLAUDE.md` (§1, §15, §16);
+> this file is the working plan and is kept in sync with `CLAUDE.md §16`.
+
+## Goal (CLAUDE.md §1)
+
+A self-hosted system to **query, link, and serve as Claude's context** over the owner's entire
+personal knowledge base — technical reading *and* projects, achievements, history, general info.
+Three equal uses: **query** (grounded cited answers), **link** (connections across the corpus),
+**feed Claude** (the KB as on-demand context inside Claude).
+
+## Status — critical path complete
+
+Ingest → hybrid retrieval → grounded answer works end-to-end on the current corpus (8 docs).
+
+- **Done:** scaffolding/config/`.env`; Alembic + sqlite-vec + FTS5 DB; PDF extraction (robust
+  sectioning); chunk + embed (nomic, 768-dim); local-LLM passes (qwen2.5:7b-instruct-q5);
+  ingest orchestration (idempotent, transactional, `--reingest`); eval harness (structural audit
+  + Claude LLM-judge); hybrid retrieval (dense + FTS5/BM25 + entity → cross-encoder rerank →
+  expand → assemble); query (single Claude call, modes); folder watcher; laptop→server outbox.
+- **CLI:** `ingest · watch · list · inspect · audit · eval · retrieve · query`.
+
+---
+
+## MCP architecture — local Claude ↔ server-side corpus
+
+**Yes, it works.** The MCP *server* runs **on the server** (it needs the SQLite DB, sqlite-vec,
+Ollama for query embedding, and the cross-encoder reranker). Your local Claude (Claude Code CLI /
+desktop app) is the *client*. The transport bridges them:
+
+- **stdio over SSH (recommended).** Configure the MCP server as a local command that is really an
+  SSH into the server, e.g.
+  `ssh locus-server "cd /home/alec/server-projects/locus && uv run locus mcp"`.
+  Claude spawns `ssh` locally; the Locus MCP server runs remotely; stdio is tunneled over the SSH
+  connection you already use for the outbox. **No open ports, no extra auth, no new infra.** The
+  server process stays alive for the session, so the embedder + reranker load once and stay warm.
+- **HTTP (Streamable HTTP / SSE).** Run the MCP server as a network service and reach it via an
+  SSH tunnel (`ssh -L`), Tailscale, or a port-forward; point Claude at the URL. More setup
+  (networking + auth); use only if you want a persistent shared service.
+
+**Tool design:** expose **`retrieve`** (returns assembled context + citations) as the core tool —
+your local Claude pulls your KB as context and does the generation itself. This is the natural MCP
+pattern and needs only the DB + Ollama + reranker (no server-side Claude key). Optionally also
+expose `query` (server-side generation), `list`, and `inspect`.
+
+---
+
+## Ordered plan
+
+`[RB]` = re-ingest-bound: changing it later forces re-ingesting the whole corpus, so it must be
+done **before** the bulk ingest. Each item ≈ one work-block.
+
+- [ ] **1. Temporal + category metadata** `[RB]` — `documents.source_date` + `category`
+  (PDF metadata date → file mtime; category by drop-folder/heuristic); retrieval facets
+  (`--since`/`--until`/`--category`); `audit` shows the distribution. *Schema lock — first.*
+- [ ] **2. MCP server** — `retrieve`/`query`/`list`/`inspect` as MCP tools (stdio over SSH).
+  Daily utility over the current corpus; not `[RB]`. **Primary deliverable.**
+- [ ] **3. DOCX + Markdown/text extractors** — `python-docx` + `.md`/`.txt`; route in watcher.
+- [ ] **4. Slides (PPTX)** — `python-pptx`: per-slide text + speaker notes; images feed figures.
+- [ ] **5. Code-repo ingest** — `python-ast` (functions, call graph, per-file sections);
+  repo-directory entry point; `file:line` provenance already wired.
+- [ ] **6. Figures** `[RB]` (medium) — `figures` + `figure_vectors`; extract/store/caption +
+  optional local VLM description; multimodal Claude at generation.
+- [ ] **7. Math-aware extraction** `[RB]` (medium) — recover LaTeX from `has_math` regions
+  (Nougat / math-OCR / vision). Lifts the dominant PDF content.
+- [ ] **8. Entity-alias resolution + Retrieval eval (Layer 3) → BULK INGEST** — canonicalise
+  entity names (the *link* substrate); validate on a heterogeneous sample; then pour the corpus.
+
+**After the pour (not `[RB]`):** ANN-index warning (§11.D), Obsidian projection (§14),
+YouTube / podcast transcript ingest, broader retrieval tests.
+
+**New dependencies:** `mcp`, `python-docx`, `python-pptx`, a Nougat/math-OCR model. Keep heavy
+optional ones (VLM, Nougat) behind extras like `[rerank]`.

@@ -7,14 +7,26 @@
 
 ## 1. What Locus is
 
-Locus is a **self-hosted, AI-queryable personal knowledge vault**. It ingests everything
-the owner reads, studies, and builds (papers, code, lecture/seminar notes, technical
-videos), and supports intelligent retrieval over that corpus via a CLI.
+Locus is a **self-hosted system for querying, linking, and serving as Claude's context over
+the owner's entire personal knowledge base** — not just technical reading, but the full record
+of what the owner has learned, built, and achieved: papers, code, lecture/seminar notes,
+videos, **and personal/professional material — projects, achievements, write-ups, historical
+records, and general information.** It ingests that heterogeneous corpus and supports intelligent
+retrieval over it via a CLI.
 
-**Workflow is query-driven, not browse-driven.** There is no UI in phase 1. The system
-exists to answer questions and surface cross-domain connections over a multi-year corpus —
-specifically engineering ↔ quantitative-finance synthesis, gap analysis, and professional
-project framing.
+**Three primary uses (all equal):**
+1. **Query** — ask questions and get grounded, cited answers over the whole corpus.
+2. **Link** — surface connections *across* the corpus (cross-domain, cross-project, cross-time),
+   tying disparate material together.
+3. **Give Claude context** — act as a retrieval/memory backend that feeds the owner's own
+   knowledge into Claude on demand (today via the CLI/`query`; a context-provider surface —
+   e.g. an MCP server or retrieval API — is a natural future surface, see §15).
+
+Engineering ↔ quantitative-finance synthesis, gap analysis, and professional framing are
+*important use cases within this*, not the whole scope. The corpus is broad and personal.
+
+**Workflow is query-driven, not browse-driven.** There is no bespoke UI in phase 1 (an Obsidian
+projection, §14, is an optional visual layer *on top of* the data, never the primary surface).
 
 **Design objective, stated precisely:** maximise *retrieval answer quality* per query.
 Ingest cost (time, compute) is treated as effectively unbounded; **retrieval latency and
@@ -362,8 +374,11 @@ end-to-end is the first milestone. Everything else is breadth on a proven spine.
 multi-year bulk ingest, do **Stage 5.1** (math-aware extraction, figures, scanned-PDF OCR,
 entity resolution — all re-ingest-bound). Hybrid lexical retrieval folds into Stage 6.
 
-**Initial corpus focus:** quant-finance papers, control-systems / signal-processing notes,
-seminar notes, code repositories.
+**Corpus scope (broad, personal — see §1):** technical reading (quant-finance papers,
+control-systems / signal-processing notes, seminar notes, code) **plus** personal/professional
+material — project write-ups, achievements, CV/portfolio material, historical records, and
+general notes. This heterogeneity (many formats, not just PDF; content with its own dates and
+categories) drives several pre-bulk-ingest decisions — see §15.
 
 ---
 
@@ -549,10 +564,35 @@ These operate over existing data, so they can be added/changed anytime without r
 - **ANN index** when the brute-force KNN count-warning fires (§11.D).
 
 ### 15.3 Sequencing
-1. Prove the **Stage 6 + 7** spine on the current corpus (fold in 15.2 hybrid lexical).
-2. Then **Stage 5.1** (15.1) before the multi-year bulk ingest — re-ingest-bound work must be
-   locked in before the expensive pour. Figures span 5.1 (store + describe) and 7 (multimodal
+1. Prove the **Stage 6 + 7** spine on the current corpus (fold in 15.2 hybrid lexical). ✅ done.
+2. Then **Stage 5.1** (15.1 + 15.4) before the multi-year bulk ingest — re-ingest-bound work must
+   be locked in before the expensive pour. Figures span 5.1 (store + describe) and 7 (multimodal
    generation).
+
+### 15.4 Re-prioritised for the broad personal-KB goal (§1)
+The §1 reframe (entire personal KB — projects, achievements, history — to query, **link**, and
+**feed Claude**) shifts what matters most before bulk ingest. Priority order:
+
+- **Format coverage (do first).** The KB is heterogeneous; only PDF ingests today. Add a
+  text/markdown extractor (`.md`/`.txt` — cheap, deterministic, and `vault/notes/` already
+  expects it), then `.docx`. You cannot bulk-ingest a personal KB that is mostly notes and
+  write-ups if the pipeline only reads PDFs. *Ingest-capability gate — before the pour.*
+- **Temporal + category metadata (re-ingest-bound schema decision).** Personal/historical
+  content has meaningful *dates* (when an achievement happened, when a project ran) and *kinds*
+  (paper / project / achievement / note / cv). Add `source_date` + `category` to `documents`
+  (+ retrieval facets) so "what did I work on in 2023" and "show my projects" work. Settle the
+  schema before bulk — backfilling dates across a multi-year ingest is the expensive redo.
+- **Entity-alias resolution (elevated).** "Link" is now a primary use, and cross-document entity
+  co-occurrence is the linking substrate — duplicate/variant entity names fragment exactly the
+  connections this goal is about. Promote from §14's deferred view-layer note to a real pass.
+- **The Claude-context surface (primary use #3, not re-ingest-bound).** Decide the interface for
+  feeding the KB into Claude — an **MCP server** exposing `retrieve`/`query` is the natural fit,
+  or a thin retrieval API. Plan it now (shapes utility); build after the spine, independent of the
+  bulk ingest.
+- **Retrieval eval (Layer 3).** Now spans heterogeneous content — the definitive check that
+  query+link quality holds across the broad corpus. Run before trusting bulk results.
+- **Math-aware extraction + figures (15.1).** Still needed for the *technical subset*; slightly
+  lower priority than format coverage, which touches the whole KB.
 
 
 

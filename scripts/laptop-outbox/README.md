@@ -34,11 +34,20 @@ cp outbox.conf.example ~/.config/locus-outbox/outbox.conf
 #   ${EDITOR:-nano} ~/.config/locus-outbox/outbox.conf
 ```
 
-## 3. Create the drop folder
+## 3. Create the drop folder — with the category taxonomy
+
+First-level folders inside the drop folder ARE the document categories: rsync carries the
+folder through to `vault/incoming/<folder>/`, and ingest derives `documents.category` from
+it (known kind names singularize, `papers` → `paper`; anything else is taken verbatim).
+First-level folders persist across flushes — only deeper emptied subfolders are tidied.
+Files dropped loose at the root ingest as `uncategorized`.
 
 ```bash
-mkdir -p ~/LocusDrop
+mkdir -p ~/LocusDrop/{papers,notes,projects,achievements,cv}
 ```
+
+Sorting a document into your knowledge base is now one drag: pick the folder, the agent
+ships it within a minute, category included.
 
 ## 4. Install and start the launchd agent
 

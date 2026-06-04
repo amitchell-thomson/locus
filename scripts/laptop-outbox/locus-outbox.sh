@@ -55,8 +55,10 @@ echo "[$(ts)] flushing $DROP_DIR -> $REMOTE:$REMOTE_DIR"
   -e "$SSH_OPTS" \
   "$DROP_DIR"/ "$REMOTE:$REMOTE_DIR/"
 
-# Tidy now-empty subdirectories left behind (e.g. after dropping a folder of files),
-# but never remove the drop folder itself.
-find "$DROP_DIR" -mindepth 1 -type d -empty -delete
+# Tidy now-empty subdirectories left behind by dropped folders-of-files — but only at
+# depth 2+: the FIRST-level folders are the owner's permanent category taxonomy
+# (papers/, notes/, ...), which the server derives `documents.category` from, and they
+# must survive being emptied by a flush. Never remove the drop folder itself either.
+find "$DROP_DIR" -mindepth 2 -type d -empty -delete
 
 echo "[$(ts)] done"

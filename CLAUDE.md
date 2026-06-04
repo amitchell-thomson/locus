@@ -651,10 +651,14 @@ math-stripped text). Details per step in `PLAN.md`.
    filters on font-heuristic candidates; sanity cap `max(8, 1.5×pages)` post-filter.
    `MIN_SECTION_CHARS` deliberately stays 400 — measurement showed fragmentation came from
    bogus headings, not the size band (PDE doc: 109→37 sections, median 745→2540 chars).
-5. **Pass hygiene** `[re-ingest-bound]` (eval phase C). Anti-meta proposition prompt +
-   deterministic post-filter (meta regexes, title near-dupes, dropped-formula signatures);
-   *semantic* synthesis validation (all-empty = failure → repair → quarantine); entity surface
-   normalization + equation-label/bare-symbol filters; QC section in `audit`.
+5. **Pass hygiene** `[re-ingest-bound]` (eval phase C) — **done** (effective on the step-7
+   re-ingest). Anti-meta proposition prompt + deterministic post-filter in `propositions.py`
+   (fragment/too-short/meta/dropped-formula/title-echo; one bounded retry when everything is
+   rejected); *semantic* synthesis validation (blank fields fail pydantic validation → repair
+   loop → quarantine); entity surface normalization + equation-label/bare-symbol filters +
+   evidence-based plural merge in `entities.py`; `audit` re-applies the same predicates to
+   stored rows (QC line). Verified on the live corpus: finds doc 19's empty synthesis,
+   123 suspect propositions, 209 noise entities.
 6. **Math-faithful extraction** `[re-ingest-bound]` (eval phase D; promoted from late-plan).
    Corruption detector first (ligature-loss signatures + math-font evidence from span fonts —
    also fixes `has_math`); route corrupted/math-dense pages to an OCR-to-markup model chosen

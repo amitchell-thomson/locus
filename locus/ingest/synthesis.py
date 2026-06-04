@@ -2,11 +2,18 @@
 
 Operates over the section summaries (coarse, fits context) rather than raw text, so it sees
 the whole document at a manageable size.
+
+Validation is semantic, not just structural (2026-06-04 evaluation; PLAN.md step 5): an
+all-empty synthesis is schema-valid JSON, and one shipped silently — the doc header then
+leads every assembled context with four blank fields. Field validators reject blank values,
+which routes the failure through llm.py's bounded repair loop; if the model still cannot
+produce a non-empty synthesis, IngestExtractionError quarantines the document loudly
+instead of ingesting it with an empty L1.
 """
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from locus.ingest.llm import generate_structured
 
@@ -16,6 +23,18 @@ class DocSynthesis(BaseModel):
     method: str
     result: str
     limitations: str
+
+    @field_validator("thesis", "method", "result", "limitations")
+    @classmethod
+    def _non_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError(
+                "synthesis fields must be non-empty; write a brief best-effort "
+                "characterisation (e.g. 'Not stated in the document') rather than leaving "
+                "a field blank"
+            )
+        return v
 
 
 def synthesize_document(title: str | None, section_summaries: list[str], **kw) -> DocSynthesis:
@@ -29,6 +48,8 @@ def synthesize_document(title: str | None, section_summaries: list[str], **kw) -
         "- method: the approach, techniques, or structure used,\n"
         "- result: the key findings or content,\n"
         "- limitations: what it does not cover, caveats, or open ends.\n"
-        "Be faithful to the summaries and concise."
+        "Be faithful to the summaries and concise. Every field must be non-empty: if the "
+        "document does not state one, give a brief best-effort characterisation instead of "
+        "leaving it blank."
     )
     return generate_structured(DocSynthesis, user, **kw)

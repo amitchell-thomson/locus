@@ -157,6 +157,9 @@ def _prepare(path: Path) -> _Prepared:
         summaries.append(summary)
         log.info("section %s/%s done (%s)", sec.position + 1, len(doc.sections), sec.title)
 
+    # Doc-level entity hygiene: collapse plural/singular surface variants (evidence-based).
+    entities.merge_plural_variants([p.entities for p in prepared])
+
     syn = synthesis.synthesize_document(doc.title, summaries)
     context = (
         f"Thesis: {syn.thesis}\nMethod: {syn.method}\n"

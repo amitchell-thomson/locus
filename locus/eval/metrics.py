@@ -7,6 +7,11 @@ These catch the common 8B-model failure modes without judging correctness:
   - redundant entities  : near-duplicate entity names within a section (name+type churn)
   - empty coverage      : sections that yielded no propositions
 
+QC (2026-06-04 evaluation; PLAN.md step 5): the audit also re-applies the ingest-time hygiene
+predicates to *stored* rows — suspect propositions (meta/title-echo/fragment/dropped-formula),
+noise entities, and an empty document synthesis. Non-zero counts on documents ingested before
+the hygiene pass quantify exactly what the step-7 re-ingest will clean.
+
 They are a fast first pass; the LLM-as-judge (judge.py) assesses actual faithfulness.
 """
 
@@ -15,6 +20,9 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import dataclass, field
+
+from locus.ingest.entities import is_noise
+from locus.ingest.propositions import rejection_reason
 
 # A proposition opening with one of these is almost certainly not self-contained.
 _PRONOUN_STARTS = {
@@ -42,6 +50,10 @@ class DocMetrics:
     non_self_contained_props: int
     ungrounded_entities: int
     redundant_entity_pairs: int
+    # QC against the ingest-time hygiene predicates (re-applied to stored rows).
+    suspect_props: dict[str, int] = field(default_factory=dict)  # reason -> count
+    noise_entities: int = 0
+    empty_synthesis: bool = False
     entity_type_counts: dict[str, int] = field(default_factory=dict)
 
     @property
@@ -87,17 +99,21 @@ def _redundant_pairs(names: list[str]) -> int:
 
 def doc_metrics(conn, doc_id: int) -> DocMetrics:
     doc = conn.execute(
-        "SELECT title, source_date, category FROM documents WHERE id=?", (doc_id,)
+        "SELECT title, source_date, category, thesis, method, result, limitations "
+        "FROM documents WHERE id=?",
+        (doc_id,),
     ).fetchone()
     title = doc["title"]
     sections = conn.execute(
-        "SELECT id FROM sections WHERE doc_id=? ORDER BY position", (doc_id,)
+        "SELECT id, title FROM sections WHERE doc_id=? ORDER BY position", (doc_id,)
     ).fetchall()
 
     prop_counts: list[int] = []
     non_self_contained = 0
     ungrounded = 0
     redundant = 0
+    suspect: Counter[str] = Counter()
+    noise_ents = 0
     type_counts: Counter[str] = Counter()
     total_entities = 0
 
@@ -110,6 +126,10 @@ def doc_metrics(conn, doc_id: int) -> DocMetrics:
         )]
         prop_counts.append(len(props))
         non_self_contained += sum(1 for p in props if not _is_self_contained(p))
+        for p in props:
+            reason = rejection_reason(p, s["title"])
+            if reason is not None:
+                suspect[reason] += 1
 
         ents = conn.execute(
             "SELECT name, type FROM entities WHERE section_id=?", (sid,)
@@ -119,6 +139,8 @@ def doc_metrics(conn, doc_id: int) -> DocMetrics:
             type_counts[e["type"]] += 1
             if not _is_grounded(e["name"], source):
                 ungrounded += 1
+            if is_noise(e["name"]):
+                noise_ents += 1
         redundant += _redundant_pairs([e["name"] for e in ents])
 
     total_props = sum(prop_counts)
@@ -137,6 +159,11 @@ def doc_metrics(conn, doc_id: int) -> DocMetrics:
         non_self_contained_props=non_self_contained,
         ungrounded_entities=ungrounded,
         redundant_entity_pairs=redundant,
+        suspect_props=dict(suspect.most_common()),
+        noise_entities=noise_ents,
+        empty_synthesis=not any(
+            (doc[f] or "").strip() for f in ("thesis", "method", "result", "limitations")
+        ),
         entity_type_counts=dict(type_counts.most_common()),
     )
 
@@ -164,6 +191,12 @@ def format_metrics(docs: list[DocMetrics]) -> str:
             f"non-self-contained props {d.non_self_contained_props} ({d.non_self_contained_pct:.1f}%) | "
             f"ungrounded entities {d.ungrounded_entities} ({d.ungrounded_pct:.1f}%) | "
             f"redundant entity pairs {d.redundant_entity_pairs}"
+        )
+        suspect = ", ".join(f"{r}:{n}" for r, n in d.suspect_props.items()) or "none"
+        lines.append(
+            f"    QC: suspect props {sum(d.suspect_props.values())} ({suspect}) | "
+            f"noise entities {d.noise_entities} | "
+            f"empty synthesis {'YES' if d.empty_synthesis else 'no'}"
         )
         top_types = ", ".join(f"{t}:{n}" for t, n in list(d.entity_type_counts.items())[:6])
         lines.append(f"    entity types: {top_types}")

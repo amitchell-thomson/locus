@@ -58,6 +58,26 @@ def test_doc_metrics_counts_and_flags(conn):
     assert m.ungrounded_entities == 1       # "Fourier transform" not in source
     assert m.redundant_entity_pairs == 1    # "Kalman" inside "Kalman filter"
     assert m.entity_type_counts.get("method") == 2
+    # QC: the seeded doc has no synthesis columns and clean props/entities.
+    assert m.empty_synthesis is True
+    assert m.suspect_props == {}
+    assert m.noise_entities == 0
+
+
+def test_doc_metrics_qc_flags_suspect_rows(conn):
+    conn.execute(
+        "INSERT INTO propositions (id, section_id, doc_id, position, text, embed_model)"
+        " VALUES (3,1,1,2,'Kalman filtering is discussed','nomic')"
+    )
+    conn.execute(
+        "INSERT INTO propositions (id, section_id, doc_id, position, text, embed_model)"
+        " VALUES (4,1,1,3,'The state estimate is given by .','nomic')"
+    )
+    conn.execute("INSERT INTO entities (doc_id, section_id, name, type) VALUES (1,1,'equation 1.36','other')")
+    conn.commit()
+    m = doc_metrics(conn, 1)
+    assert m.suspect_props == {"meta": 1, "dropped-formula": 1}
+    assert m.noise_entities == 1
 
 
 # --- judge parsing -----------------------------------------------------------------------

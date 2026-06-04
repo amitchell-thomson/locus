@@ -114,12 +114,20 @@ done **before** the bulk ingest. Each item ≈ one work-block.
   are real titled subsections (PDE doc: 109→37 sections, median 745→2540 chars; all 8 docs
   clean per `scripts/measure_sectioning.py`; Optimization doc recovered real headings). Sanity
   cap tightened to `max(8, 1.5×pages)` post-filter. Effective only on re-ingest (step 7).
-- [ ] **5. Pass hygiene** `[RB]` (eval phase C) — proposition prompt forbids meta-statements +
+- [x] **5. Pass hygiene** `[RB]` (eval phase C) — proposition prompt forbids meta-statements +
   deterministic post-filter (meta regexes, near-dupe-of-title, dropped-formula signatures), one
   bounded retry; *semantic* synthesis validation (all-empty = failure → repair → quarantine, not
   silent ship); entity surface normalization at write (case/plural/punctuation) + filters for
   equation labels and bare symbols (full cross-doc alias resolution stays in step 12); `audit`
   gains a QC section (filtered-proposition counts, empty syntheses, corruption rate).
+  Done: `rejection_reason`/`filter_propositions` (fragment / too-short / meta / dropped-formula /
+  title-echo) + retry-once-if-all-rejected in `propositions.py`; `DocSynthesis` field validators
+  reject blank fields → llm.py repair loop → quarantine; `normalize_name`/`is_noise`/
+  evidence-based `merge_plural_variants` in `entities.py` (plural collapses only onto an attested
+  singular — "Fourier series" is never mangled); audit re-applies the same predicates to stored
+  rows. Verified on the live (pre-re-ingest) corpus: QC finds doc 19's empty synthesis, 123
+  suspect props (incl. the Colab "given by ." pair), 209 noise entities — the step-7 re-ingest's
+  cleanup, quantified. Effective on re-ingest.
 - [ ] **6. Math-faithful extraction** `[RB]` (eval phase D; was step 7, promoted) — corruption
   detector first (ligature-loss signatures, math-font evidence from span fonts → also fixes
   `has_math`); route corrupted/math-dense pages to an OCR-to-markup model chosen *empirically*

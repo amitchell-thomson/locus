@@ -40,6 +40,47 @@ def ingest_model() -> str:
     return load().ollama.ingest_model
 
 
+def unload(model: str | None = None) -> bool:
+    """Best-effort evict `model` (default: the ingest model) from Ollama if it is resident.
+
+    Used to choreograph the 8 GB card between Ollama and the math-OCR engine: evict before
+    the OCR engine takes the GPU (else its allocation OOMs against a resident 6 GB LLM and
+    every page silently falls back un-OCR'd), and evict a CPU/GPU-split residue afterwards
+    (see unload_if_split). Returns True if an unload was issued. Never raises — this is
+    VRAM choreography, not a correctness requirement.
+    """
+    try:
+        client = _client()
+        model = model or ingest_model()
+        if any(m.model == model for m in client.ps().models or []):
+            # keep_alive=0 with an empty prompt unloads without generating.
+            client.generate(model=model, prompt="", keep_alive=0)
+            return True
+    except Exception:  # pragma: no cover - best-effort; ingest must not care
+        pass
+    return False
+
+
+def unload_if_split(model: str | None = None) -> bool:
+    """Unload `model` only if it is resident but split CPU/GPU.
+
+    Ollama plans a model's CPU/GPU split at load time and KEEPS it for as long as the model
+    stays resident — a model loaded while the math-OCR engine held VRAM stays half-on-CPU
+    even after that VRAM is freed, and generation runs several-fold slower (observed live).
+    Called between a document's OCR phase and its LLM passes (no request in flight), so the
+    next pass reloads it fully on the GPU. Returns True if an unload was issued.
+    """
+    try:
+        client = _client()
+        model = model or ingest_model()
+        for m in client.ps().models or []:
+            if m.model == model and (m.size_vram or 0) < (m.size or 0):
+                return unload(model)
+    except Exception:  # pragma: no cover - best-effort; ingest must not care
+        pass
+    return False
+
+
 def _message_content(resp) -> str:
     msg = getattr(resp, "message", None)
     if msg is not None:

@@ -186,6 +186,13 @@ def ocr_pages(doc, page_texts: list[str], flagged: list[int]) -> tuple[list[str]
     outcome = OcrOutcome()
     if cfg.engine == "off" or not flagged:
         return page_texts, outcome
+    if cfg.engine == "got":
+        # Evict the (6 GB) Ollama ingest model BEFORE GOT takes the card: against a resident
+        # LLM, GOT's allocation OOMs and every page silently falls back un-OCR'd. The LLM
+        # passes reload it after release_gpu() below frees the card again.
+        from locus.ingest.llm import unload as _unload_llm
+
+        _unload_llm()
     engine = _ENGINES[cfg.engine]
     out = list(page_texts)
     try:

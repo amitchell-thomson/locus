@@ -145,6 +145,9 @@ def _prepare(path: Path) -> _Prepared:
     # mathocr=True: the pipeline (unlike ad-hoc extraction) runs the math-OCR pass on pages
     # the damage/math detector flags, per config [mathocr] (engine='off' disables).
     doc = pdf_extract.extract_pdf(path, mathocr=True)
+    # If the OCR engine's VRAM forced Ollama to load the ingest model split across CPU/GPU,
+    # evict it now (no request in flight) so the passes below run it fully on the GPU.
+    llm.unload_if_split()
     prepared: list[_PreparedSection] = []
     summaries: list[str] = []
 

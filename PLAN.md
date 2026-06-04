@@ -58,8 +58,14 @@ done **before** the bulk ingest. Each item ≈ one work-block.
   applies the mtime fallback + derives category from the drop folder; `Facets` filter in
   `retrieve/search.py`, wired through `retrieve`/`query` CLI. Existing pre-0003 docs read NULL
   (excluded by date facets) until a `--reingest` repopulates them.
-- [ ] **2. MCP server** — `retrieve`/`query`/`list`/`inspect` as MCP tools (stdio over SSH).
-  Daily utility over the current corpus; not `[RB]`. **Primary deliverable.**
+- [x] **2. MCP server** — `retrieve`/`query`/`list_documents`/`inspect_document` as MCP tools
+  (stdio over SSH). Daily utility over the current corpus; not `[RB]`. **Primary deliverable.**
+  Done: `locus/mcp_server.py` (FastMCP); `locus mcp` runs it over stdio. Tools accept the
+  `since`/`until`/`category` facets. `retrieve` needs no Claude key (client generates); `query`
+  generates server-side and is **opt-in** (config `[mcp].enable_query` / `--enable-query`, default
+  off) so the billable tool isn't advertised unless asked. Verified end-to-end over a real stdio
+  client handshake. Client config:
+  `{"command":"ssh","args":["locus-server","cd /…/locus && uv run locus mcp"]}`.
 - [ ] **3. DOCX + Markdown/text extractors** — `python-docx` + `.md`/`.txt`; route in watcher.
 - [ ] **4. Slides (PPTX)** — `python-pptx`: per-slide text + speaker notes; images feed figures.
 - [ ] **5. Code-repo ingest** — `python-ast` (functions, call graph, per-file sections);

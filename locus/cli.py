@@ -220,6 +220,20 @@ def cmd_retrieve(args) -> None:
         print(r.context)
 
 
+def cmd_mcp(args) -> None:
+    from locus.db.migrate import migrate
+
+    cfg = load()
+    migrate(cfg.paths.db)  # ensure the schema is current before serving
+    try:
+        from locus.mcp_server import run
+    except ImportError:
+        print("The MCP server needs the 'mcp' package. Install it with: uv add mcp")
+        sys.exit(1)
+    # The billable `query` tool is exposed only if config or the flag opts in (default off).
+    run(enable_query=args.enable_query or cfg.mcp.enable_query)
+
+
 def cmd_audit(args) -> None:
     from locus.eval.metrics import corpus_metrics, doc_metrics, format_metrics
 
@@ -296,6 +310,13 @@ def main(argv=None) -> None:
     pr.add_argument("--context", action="store_true", help="also print the assembled context")
     _add_facet_args(pr)
     pr.set_defaults(func=cmd_retrieve)
+
+    pm = sub.add_parser("mcp", help="run the MCP server over stdio (for stdio-over-SSH clients)")
+    pm.add_argument(
+        "--enable-query", action="store_true",
+        help="also expose the server-side `query` tool (makes billed Claude API calls)",
+    )
+    pm.set_defaults(func=cmd_mcp)
 
     pa = sub.add_parser("audit", help="structural ingest-quality metrics (no API)")
     pa.add_argument("--doc", default=None, help="restrict to one document id")

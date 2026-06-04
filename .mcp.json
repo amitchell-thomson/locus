@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "locus": {
+      "command": "/home/alec/server-projects/locus/.venv/bin/locus",
+      "args": ["mcp"]
+    }
+  }
+}

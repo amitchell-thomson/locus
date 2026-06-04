@@ -73,12 +73,23 @@ class GenerationConfig(BaseModel):
     model: str
 
 
+class MCPConfig(BaseModel):
+    # The MCP `query` tool makes a billed Claude API call server-side; `retrieve` and the read
+    # tools are local-only (free). Default OFF so the server never exposes a billable tool unless
+    # the owner opts in — the client model cannot trigger spend on a tool that isn't advertised.
+    enable_query: bool = Field(
+        False, description="Expose the server-side-generating `query` MCP tool (costs API spend)."
+    )
+
+
 class Config(BaseModel):
     ollama: OllamaConfig
     paths: PathsConfig
     embed: EmbedConfig
     retrieve: RetrieveConfig
     generation: GenerationConfig
+    # Optional: absent [mcp] in config.toml falls back to defaults (query disabled).
+    mcp: MCPConfig = Field(default_factory=MCPConfig)
 
     def resolve_paths(self) -> "Config":
         """Make all configured paths absolute, relative to the project root."""

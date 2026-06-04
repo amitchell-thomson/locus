@@ -28,3 +28,9 @@ context_token_budget = 100000     # cap on assembled context to the Claude API c
 # RAG generation model (§1: answer quality is the priority). Use a 4.6+ model (adaptive
 # thinking). claude-sonnet-4-6 is a cheaper, very capable alternative for high query volume.
 model         = "claude-opus-4-8"
+
+[mcp]
+# The MCP `query` tool generates server-side -> billed Claude API calls. `retrieve` and the read
+# tools are local-only (free). Keep false so the server never advertises a billable tool unless
+# you opt in (or pass `locus mcp --enable-query`).
+enable_query  = false

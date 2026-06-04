@@ -30,6 +30,8 @@ _WORD = re.compile(r"[A-Za-z0-9']+")
 class DocMetrics:
     doc_id: int
     title: str
+    source_date: str | None
+    category: str | None
     sections: int
     propositions: int
     entities: int
@@ -84,7 +86,10 @@ def _redundant_pairs(names: list[str]) -> int:
 
 
 def doc_metrics(conn, doc_id: int) -> DocMetrics:
-    title = conn.execute("SELECT title FROM documents WHERE id=?", (doc_id,)).fetchone()["title"]
+    doc = conn.execute(
+        "SELECT title, source_date, category FROM documents WHERE id=?", (doc_id,)
+    ).fetchone()
+    title = doc["title"]
     sections = conn.execute(
         "SELECT id FROM sections WHERE doc_id=? ORDER BY position", (doc_id,)
     ).fetchall()
@@ -120,6 +125,8 @@ def doc_metrics(conn, doc_id: int) -> DocMetrics:
     return DocMetrics(
         doc_id=doc_id,
         title=title,
+        source_date=doc["source_date"],
+        category=doc["category"],
         sections=len(sections),
         propositions=total_props,
         entities=total_entities,
@@ -145,6 +152,7 @@ def format_metrics(docs: list[DocMetrics]) -> str:
     lines = []
     for d in docs:
         lines.append(f"[{d.doc_id}] {d.title}")
+        lines.append(f"    date {d.source_date or '—'} | category {d.category or '—'}")
         lines.append(
             f"    sections {d.sections} | propositions {d.propositions} "
             f"(mean {d.props_per_section_mean:.1f}/sec, max {d.props_per_section_max}) | "
@@ -159,4 +167,16 @@ def format_metrics(docs: list[DocMetrics]) -> str:
         )
         top_types = ", ".join(f"{t}:{n}" for t, n in list(d.entity_type_counts.items())[:6])
         lines.append(f"    entity types: {top_types}")
+    if len(docs) > 1:
+        lines.append("")
+        lines.append(_distribution(docs))
     return "\n".join(lines)
+
+
+def _distribution(docs: list[DocMetrics]) -> str:
+    """Corpus-level category and year distribution (the temporal/category facet overview)."""
+    categories = Counter((d.category or "uncategorized") for d in docs)
+    years = Counter((d.source_date[:4] if d.source_date else "unknown") for d in docs)
+    cat_line = ", ".join(f"{c}:{n}" for c, n in categories.most_common())
+    year_line = ", ".join(f"{y}:{n}" for y, n in sorted(years.items()))
+    return f"DISTRIBUTION ({len(docs)} docs)\n    by category: {cat_line}\n    by year: {year_line}"

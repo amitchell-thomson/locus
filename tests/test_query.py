@@ -44,7 +44,7 @@ def test_answer_assembles_prompt_and_parses_text(monkeypatch):
     monkeypatch.setattr(
         query_mod,
         "retrieve",
-        lambda q, conn=None: RetrievalResult(query=q, context="CTX-BLOCK", citations=["DocA, §S1, pp 1-2"]),
+        lambda q, conn=None, facets=None: RetrievalResult(query=q, context="CTX-BLOCK", citations=["DocA, §S1, pp 1-2"]),
     )
     client = _FakeClient()
     res = answer("What determines stability?", mode="standard", client=client, model="claude-test")
@@ -66,7 +66,7 @@ def test_answer_assembles_prompt_and_parses_text(monkeypatch):
 def test_empty_context_still_answers(monkeypatch):
     monkeypatch.setattr(
         query_mod, "retrieve",
-        lambda q, conn=None: RetrievalResult(query=q, context="", citations=[]),
+        lambda q, conn=None, facets=None: RetrievalResult(query=q, context="", citations=[]),
     )
     client = _FakeClient()
     res = answer("anything", client=client, model="m")

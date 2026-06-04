@@ -32,8 +32,45 @@ class Candidate:
     rerank_score: float | None = None
 
 
+@dataclass
+class Facets:
+    """Document-level retrieval filters (CLAUDE.md §16). All optional; unset = no restriction.
+
+    `since`/`until` are inclusive ISO 'YYYY-MM-DD' bounds on documents.source_date (string
+    comparison is correct for zero-padded ISO dates). `category` is an exact match. A document
+    with a NULL source_date is excluded by any date bound — the correct semantics for an
+    unknown date.
+    """
+
+    since: str | None = None
+    until: str | None = None
+    category: str | None = None
+
+    def active(self) -> bool:
+        return bool(self.since or self.until or self.category)
+
+
 def _vec_blob(vec: list[float]) -> bytes:
     return struct.pack(f"{len(vec)}f", *vec)
+
+
+def _eligible_docs(conn, facets: Facets | None) -> set[int] | None:
+    """Doc ids matching the facets, or None when no facet is set (meaning: no restriction)."""
+    if facets is None or not facets.active():
+        return None
+    clauses: list[str] = []
+    params: list[str] = []
+    if facets.since:
+        clauses.append("source_date >= ?")
+        params.append(facets.since)
+    if facets.until:
+        clauses.append("source_date <= ?")
+        params.append(facets.until)
+    if facets.category:
+        clauses.append("category = ?")
+        params.append(facets.category)
+    sql = "SELECT id FROM documents WHERE " + " AND ".join(clauses)
+    return {r["id"] for r in conn.execute(sql, params)}
 
 
 def _fts_query(query: str) -> str | None:
@@ -42,12 +79,15 @@ def _fts_query(query: str) -> str | None:
     return " OR ".join(tokens) if tokens else None
 
 
-def search(conn, query: str) -> list[Candidate]:
+def search(conn, query: str, facets: Facets | None = None) -> list[Candidate]:
     cfg = load().retrieve
     qvec = _vec_blob(embed_text(query))
+    eligible = _eligible_docs(conn, facets)  # None => unrestricted
     out: dict[tuple[str, int], Candidate] = {}
 
     def add(kind, id_, doc_id, section_id, text, score, source):
+        if eligible is not None and doc_id not in eligible:
+            return  # outside the active date/category facets
         key = (kind, id_)
         if key in out:
             out[key].sources.add(source)

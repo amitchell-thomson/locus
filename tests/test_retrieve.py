@@ -27,8 +27,8 @@ def _vec(head):
 def _seed(conn):
     conn.execute(
         "INSERT INTO documents (id, content_hash, source_type, source_uri, raw_path, title,"
-        " ingest_model, thesis, method, result, limitations, section_map) VALUES "
-        "(1,'h','pdf','u','p','Control Notes','m','THESIS','METHOD','RESULT','LIMITS',"
+        " ingest_model, source_date, category, thesis, method, result, limitations, section_map) VALUES "
+        "(1,'h','pdf','u','p','Control Notes','m','2023-06-01','paper','THESIS','METHOD','RESULT','LIMITS',"
         " '[{\"position\":0,\"title\":\"Stability\",\"page_start\":5,\"page_end\":7}]')"
     )
     conn.execute("INSERT INTO sections (id, doc_id, position, title, summary) VALUES (1,1,0,'Stability','poles determine stability')")
@@ -60,6 +60,19 @@ def test_search_returns_all_arms(conn):
     # The chunk is found by BOTH dense and lexical (hybrid merge).
     chunk = next(c for c in cands if c.kind == "chunk" and c.id == 1)
     assert {"dense", "lexical"} <= chunk.sources
+
+
+def test_facets_filter_by_date_and_category(conn):
+    from locus.retrieve.search import Facets
+
+    # Within the doc's date range + matching category: candidates survive.
+    assert search(conn, "stability poles", Facets(since="2023-01-01", category="paper"))
+    # Date window excludes the doc (dated 2023-06-01): no candidates.
+    assert search(conn, "stability poles", Facets(until="2022-12-31")) == []
+    # Wrong category: no candidates.
+    assert search(conn, "stability poles", Facets(category="project")) == []
+    # No facets: unrestricted, same as before.
+    assert search(conn, "stability poles", None)
 
 
 def test_lexical_arm_matches_text_terms(conn):

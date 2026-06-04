@@ -5,5 +5,6 @@ ready to hand to a single Claude generation call (Stage 7).
 """
 
 from locus.retrieve.pipeline import RetrievalResult, retrieve
+from locus.retrieve.search import Facets
 
-__all__ = ["retrieve", "RetrievalResult"]
+__all__ = ["retrieve", "RetrievalResult", "Facets"]

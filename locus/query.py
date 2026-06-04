@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from locus.config import Config, load
-from locus.retrieve import retrieve
+from locus.retrieve import Facets, retrieve
 
 DEFAULT_MODE = "standard"
 
@@ -78,12 +78,16 @@ def answer(
     client=None,
     model: str | None = None,
     max_tokens: int = 16000,
+    facets: Facets | None = None,
 ) -> QueryResult:
-    """Retrieve context and answer the question with a single Claude call."""
+    """Retrieve context and answer the question with a single Claude call.
+
+    `facets` optionally restricts retrieval to a date range / category (CLAUDE.md §16).
+    """
     if mode not in QUERY_MODES:
         raise ValueError(f"unknown mode {mode!r}; choose from {sorted(QUERY_MODES)}")
 
-    retrieved = retrieve(question, conn=conn)
+    retrieved = retrieve(question, conn=conn, facets=facets)
     model = model or load().generation.model
     if client is None:
         import anthropic

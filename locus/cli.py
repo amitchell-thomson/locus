@@ -23,6 +23,38 @@ def _open():
     return get_connection(load().paths.db)
 
 
+def _facets(args):
+    """Build a retrieval Facets from --since/--until/--category, validating date format.
+
+    Returns None when no facet is set (the common case) so retrieval stays unrestricted.
+    """
+    from datetime import date
+
+    from locus.retrieve import Facets
+
+    for field in ("since", "until"):
+        value = getattr(args, field, None)
+        if value is not None:
+            try:
+                date.fromisoformat(value)
+            except ValueError:
+                print(f"--{field} must be an ISO date (YYYY-MM-DD); got {value!r}")
+                sys.exit(1)
+    facets = Facets(
+        since=getattr(args, "since", None),
+        until=getattr(args, "until", None),
+        category=getattr(args, "category", None),
+    )
+    return facets if facets.active() else None
+
+
+def _add_facet_args(parser) -> None:
+    """Attach the shared --since/--until/--category retrieval facets to a subparser."""
+    parser.add_argument("--since", default=None, help="only documents dated on/after this ISO date (YYYY-MM-DD)")
+    parser.add_argument("--until", default=None, help="only documents dated on/before this ISO date (YYYY-MM-DD)")
+    parser.add_argument("--category", default=None, help="only documents in this category (e.g. paper, project, note)")
+
+
 def _resolve_doc(conn, ident: str):
     """Resolve a document by numeric id, or by a substring of its title / source path."""
     if ident.isdigit():
@@ -163,7 +195,7 @@ def cmd_query(args) -> None:
         print(f"unknown mode {args.mode!r}; choose from {sorted(QUERY_MODES)}")
         sys.exit(1)
 
-    result = answer(args.query, mode=args.mode)
+    result = answer(args.query, mode=args.mode, facets=_facets(args))
     print(result.answer)
     if result.citations:
         print("\n--- sources ---")
@@ -174,7 +206,7 @@ def cmd_query(args) -> None:
 def cmd_retrieve(args) -> None:
     from locus.retrieve import retrieve
 
-    r = retrieve(args.query)
+    r = retrieve(args.query, facets=_facets(args))
     print(f"query: {r.query}\n")
     print("=== reranked survivors ===")
     for c in r.survivors:
@@ -256,11 +288,13 @@ def main(argv=None) -> None:
         "--mode", default="standard",
         help="standard | gap | synthesis | code | framing | project",
     )
+    _add_facet_args(pq)
     pq.set_defaults(func=cmd_query)
 
     pr = sub.add_parser("retrieve", help="run the retrieval pipeline and show what it returns")
     pr.add_argument("query", help="the query text")
     pr.add_argument("--context", action="store_true", help="also print the assembled context")
+    _add_facet_args(pr)
     pr.set_defaults(func=cmd_retrieve)
 
     pa = sub.add_parser("audit", help="structural ingest-quality metrics (no API)")

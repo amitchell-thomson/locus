@@ -21,6 +21,7 @@ from __future__ import annotations
 import bisect
 import re
 from collections import Counter
+from datetime import date
 from pathlib import Path
 
 import pymupdf
@@ -60,6 +61,7 @@ class ExtractedDoc(BaseModel):
     section_strategy: str  # "outline" | "headings" | "single"
     sections: list[ExtractedSection]
     source_path: str
+    source_date: str | None = None  # ISO 'YYYY-MM-DD' from PDF metadata; None if absent/invalid
 
 
 def extract_pdf(path: str | Path) -> ExtractedDoc:
@@ -90,6 +92,7 @@ def extract_pdf(path: str | Path) -> ExtractedDoc:
             section_strategy=strategy,
             sections=sections,
             source_path=str(path),
+            source_date=_resolve_source_date(doc),
         )
     finally:
         doc.close()
@@ -371,3 +374,31 @@ def _resolve_title(doc, path: Path) -> str | None:
 def _has_math(text: str) -> bool:
     """Heuristic: True if the text shows several math indicators. A hint, not a guarantee."""
     return len(_MATH.findall(text)) >= 3
+
+
+# PDF dates are 'D:YYYYMMDDHHmmSS...' (PDF spec); month/day/time are optional after the year.
+_PDF_DATE = re.compile(r"D:(\d{4})(\d{2})?(\d{2})?")
+
+
+def _parse_pdf_date(raw: str | None) -> str | None:
+    """Parse a PDF date string into an ISO 'YYYY-MM-DD'. None if absent or not a real date.
+
+    Missing month/day default to 01. The date is validated (via datetime.date) so a garbled
+    value (e.g. month 13) yields None rather than an impossible date.
+    """
+    if not raw:
+        return None
+    m = _PDF_DATE.match(raw.strip())
+    if not m:
+        return None
+    year, month, day = int(m.group(1)), int(m.group(2) or 1), int(m.group(3) or 1)
+    try:
+        return date(year, month, day).isoformat()
+    except ValueError:
+        return None
+
+
+def _resolve_source_date(doc) -> str | None:
+    """PDF creation date if present and valid, else modification date, else None."""
+    meta = doc.metadata or {}
+    return _parse_pdf_date(meta.get("creationDate")) or _parse_pdf_date(meta.get("modDate"))

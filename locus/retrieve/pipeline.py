@@ -9,7 +9,7 @@ from locus.db.connection import get_connection
 from locus.retrieve.assemble import assemble
 from locus.retrieve.expand import expand
 from locus.retrieve.rerank import rerank
-from locus.retrieve.search import Candidate, search
+from locus.retrieve.search import Candidate, Facets, search
 
 
 @dataclass
@@ -20,14 +20,18 @@ class RetrievalResult:
     survivors: list[Candidate] = field(default_factory=list)
 
 
-def retrieve(query: str, conn=None) -> RetrievalResult:
-    """Run the full retrieval pipeline and return assembled context + provenance."""
+def retrieve(query: str, conn=None, facets: Facets | None = None) -> RetrievalResult:
+    """Run the full retrieval pipeline and return assembled context + provenance.
+
+    `facets` optionally restricts retrieval to documents within a date range / category
+    (CLAUDE.md §16); None retrieves over the whole corpus.
+    """
     own = conn is None
     if own:
         conn = get_connection(load().paths.db)
     try:
         cfg = load().retrieve
-        candidates = search(conn, query)
+        candidates = search(conn, query, facets)
         survivors = rerank(query, candidates, cfg.rerank_top_k)
         assembled = assemble(expand(conn, survivors))
         return RetrievalResult(

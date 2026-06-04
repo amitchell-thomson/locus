@@ -24,6 +24,7 @@ import logging
 import shutil
 import struct
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 from locus.config import load
@@ -59,6 +60,29 @@ def _hash_file(path: Path) -> str:
 
 def _source_type(path: Path) -> str | None:
     return "pdf" if path.suffix.lower() == ".pdf" else None  # code/video added later
+
+
+# Known document categories (CLAUDE.md §15.4/§16): the kinds of personal-KB material.
+CATEGORIES = {"paper", "project", "achievement", "note", "cv", "code", "video"}
+
+
+def _category(path: Path) -> str:
+    """Derive a category from the drop-folder convention: the first ancestor directory whose
+    name (singular or plural) is a known category. Falls back to 'uncategorized'.
+
+    Lets the owner sort material by where they drop it (vault/incoming/papers/, projects/, ...)
+    without a per-file flag; a doc with no category folder is simply 'uncategorized'.
+    """
+    for part in path.parts:
+        norm = part.lower().rstrip("s")  # papers -> paper, notes -> note, achievements -> achievement
+        if norm in CATEGORIES:
+            return norm
+    return "uncategorized"
+
+
+def _mtime_date(path: Path) -> str:
+    """File modification time as an ISO date — the fallback when no embedded date exists."""
+    return datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).date().isoformat()
 
 
 def _vec_blob(vec: list[float]) -> bytes:
@@ -98,6 +122,7 @@ class _PreparedSection:
 @dataclass
 class _Prepared:
     title: str | None
+    source_date: str | None  # ISO 'YYYY-MM-DD' from the source's metadata; None if absent
     synthesis: synthesis.DocSynthesis
     gaps: list[str]
     sections: list[_PreparedSection]
@@ -138,7 +163,7 @@ def _prepare(path: Path) -> _Prepared:
         f"Result: {syn.result}\nLimitations: {syn.limitations}"
     )
     gap_list = gaps.flag_gaps(doc.title, context)
-    return _Prepared(doc.title, syn, gap_list, prepared, embed.embedding_model())
+    return _Prepared(doc.title, doc.source_date, syn, gap_list, prepared, embed.embedding_model())
 
 
 # --- transactional write -----------------------------------------------------------------
@@ -149,15 +174,19 @@ def _write(conn, path: Path, content_hash: str, source_type: str, raw_name: str,
         {"position": s.position, "title": s.title, "page_start": s.page_start, "page_end": s.page_end}
         for s in prep.sections
     ]
+    # Embedded source date if the extractor found one, else the file's mtime (always non-null).
+    source_date = prep.source_date or _mtime_date(path)
+    category = _category(path)
     n_chunks = n_props = n_ents = 0
 
     with conn:  # one transaction: commit on success, rollback on any error
         cur = conn.execute(
             "INSERT INTO documents (content_hash, source_type, source_uri, raw_path, title, "
-            "ingest_model, thesis, method, result, limitations, section_map, gap_flags) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "ingest_model, source_date, category, thesis, method, result, limitations, "
+            "section_map, gap_flags) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 content_hash, source_type, str(path), raw_name, prep.title, llm.ingest_model(),
+                source_date, category,
                 prep.synthesis.thesis, prep.synthesis.method, prep.synthesis.result,
                 prep.synthesis.limitations, json.dumps(section_map), json.dumps(prep.gaps),
             ),

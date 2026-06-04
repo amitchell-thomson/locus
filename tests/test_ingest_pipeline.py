@@ -90,6 +90,34 @@ def test_ingest_populates_all_levels(tmp_path, conn, fake_passes):
     assert _count(conn, "entities") == result.entities >= 1
 
 
+def test_source_date_from_pdf_metadata_and_category_from_folder(tmp_path, conn, fake_passes):
+    # A PDF carrying a creation date, dropped under a 'papers' folder.
+    papers = tmp_path / "papers"
+    papers.mkdir()
+    pdf = _make_pdf(papers / "doc.pdf")
+    doc = pymupdf.open(str(pdf))
+    doc.set_metadata({"creationDate": "D:20230115120000+00'00'"})
+    doc.saveIncr()
+    doc.close()
+
+    ingest_file(pdf, conn)
+    row = conn.execute("SELECT source_date, category FROM documents").fetchone()
+    assert row["source_date"] == "2023-01-15"  # parsed from PDF metadata
+    assert row["category"] == "paper"          # papers/ -> paper (drop-folder convention)
+
+
+def test_source_date_falls_back_to_mtime(tmp_path, conn, fake_passes):
+    # No embedded date and no category folder: mtime fallback, 'uncategorized'.
+    from datetime import datetime, timezone
+
+    pdf = _make_pdf(tmp_path / "doc.pdf")
+    ingest_file(pdf, conn)
+    row = conn.execute("SELECT source_date, category FROM documents").fetchone()
+    expected = datetime.fromtimestamp(pdf.stat().st_mtime, tz=timezone.utc).date().isoformat()
+    assert row["source_date"] == expected
+    assert row["category"] == "uncategorized"
+
+
 def test_reingest_is_a_noop(tmp_path, conn, fake_passes):
     pdf = _make_pdf(tmp_path / "doc.pdf")
     first = ingest_file(pdf, conn)

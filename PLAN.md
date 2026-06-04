@@ -51,9 +51,13 @@ expose `query` (server-side generation), `list`, and `inspect`.
 `[RB]` = re-ingest-bound: changing it later forces re-ingesting the whole corpus, so it must be
 done **before** the bulk ingest. Each item ≈ one work-block.
 
-- [ ] **1. Temporal + category metadata** `[RB]` — `documents.source_date` + `category`
+- [x] **1. Temporal + category metadata** `[RB]` — `documents.source_date` + `category`
   (PDF metadata date → file mtime; category by drop-folder/heuristic); retrieval facets
   (`--since`/`--until`/`--category`); `audit` shows the distribution. *Schema lock — first.*
+  Done: migration 0003; `extract/pdf.py` parses the PDF creation/mod date; `ingest_pipeline`
+  applies the mtime fallback + derives category from the drop folder; `Facets` filter in
+  `retrieve/search.py`, wired through `retrieve`/`query` CLI. Existing pre-0003 docs read NULL
+  (excluded by date facets) until a `--reingest` repopulates them.
 - [ ] **2. MCP server** — `retrieve`/`query`/`list`/`inspect` as MCP tools (stdio over SSH).
   Daily utility over the current corpus; not `[RB]`. **Primary deliverable.**
 - [ ] **3. DOCX + Markdown/text extractors** — `python-docx` + `.md`/`.txt`; route in watcher.

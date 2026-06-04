@@ -93,17 +93,27 @@ done **before** the bulk ingest. Each item ≈ one work-block.
   off) so the billable tool isn't advertised unless asked. Verified end-to-end over a real stdio
   client handshake. Client config:
   `{"command":"ssh","args":["locus-server","cd /…/locus && uv run locus mcp"]}`.
-- [ ] **3. Retrieval selection (eval phase A)** — *not RB; do first.* In `retrieve/rerank.py`:
+- [x] **3. Retrieval selection (eval phase A)** — *not RB; do first.* In `retrieve/rerank.py`:
   after cross-encoder scoring, cap units per `(section_id, kind)` at 1 and demote
   section-summary candidates already represented by a child (expansion re-attaches the summary
   anyway); per-doc diversity cap (≤3 of top-8, config `per_doc_cap`) with fallback fill so the
   top-k stays full — fixes single-doc collapse on synthesis queries. Dedupe citations in
   `assemble.py`. Verify on the Biot (no dup sections) + Fourier-bridge (≥2 docs) queries.
-- [ ] **4. Sectioning + front-matter** `[RB]` (eval phase B) — in `extract/pdf.py`, deterministic:
+  Done: `select()` in rerank.py (soft caps, refill, rank order restored); verified live —
+  Biot citations unique, Fourier bridge surfaces 3 documents (was 1).
+- [x] **4. Sectioning + front-matter** `[RB]` (eval phase B) — in `extract/pdf.py`, deterministic:
   detect ToC/front-matter (dotted-leader density, pre-first-heading position) and exclude it from
   passes + embedding; title-shape filters on heading candidates (reject mid-sentence/full-sentence
   lines); raise `MIN_SECTION_CHARS` ~1.5–2k (measure the distribution across the 8 docs first);
   tighten the section-count sanity cap (~`max(8, pages/2)`). Unit-test against the 8 raw PDFs.
+  Done, with two measured deviations: (i) printed-ToC pages are *excised at extraction*
+  (page blanked, `ExtractedDoc.toc_pages` audit trail) instead of an `is_frontmatter` tag —
+  stronger, no schema change; (ii) `MIN_SECTION_CHARS` stays 400 — after `_plausible_heading`
+  shape filters (lowercase/punct start, >8 words, multi-sentence, equation glyphs, unbalanced
+  parens, control chars, no real word) the fragmentation vanished and remaining small sections
+  are real titled subsections (PDE doc: 109→37 sections, median 745→2540 chars; all 8 docs
+  clean per `scripts/measure_sectioning.py`; Optimization doc recovered real headings). Sanity
+  cap tightened to `max(8, 1.5×pages)` post-filter. Effective only on re-ingest (step 7).
 - [ ] **5. Pass hygiene** `[RB]` (eval phase C) — proposition prompt forbids meta-statements +
   deterministic post-filter (meta regexes, near-dupe-of-title, dropped-formula signatures), one
   bounded retry; *semantic* synthesis validation (all-empty = failure → repair → quarantine, not

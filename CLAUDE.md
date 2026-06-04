@@ -638,15 +638,19 @@ math-stripped text). Details per step in `PLAN.md`.
    tunnelling stdio over the existing SSH (no open ports/auth). Expose `retrieve` as the core tool
    so the local Claude pulls the KB as context and generates itself (needs no server-side Claude
    key). See `PLAN.md`.
-3. **Retrieval selection** (eval phase A; *not* re-ingest-bound — do first). In
-   `retrieve/rerank.py`: cap units per `(section_id, kind)` at 1 after scoring; demote
-   section-summary candidates already represented by a child (expansion re-attaches the summary);
-   per-doc diversity cap (config `per_doc_cap`) with fallback fill so top-k stays full — fixes
-   single-doc collapse on cross-domain synthesis queries. Dedupe citations in `assemble.py`.
-4. **Sectioning + front-matter** `[re-ingest-bound]` (eval phase B). Deterministic, in
-   `extract/pdf.py`: detect + exclude ToC/front-matter (dotted-leader density); title-shape
-   filters rejecting sentence-shaped heading candidates; raise `MIN_SECTION_CHARS` (measure
-   first); tighter section-count sanity cap. Unit-test against the real corpus PDFs.
+3. **Retrieval selection** (eval phase A; *not* re-ingest-bound) — **done.** In
+   `retrieve/rerank.py`, `select()`: cap units per `(section_id, kind)` at 1 after scoring;
+   demote section-summary candidates already represented by a child (expansion re-attaches the
+   summary); per-doc diversity cap (config `per_doc_cap`) — all soft, with fallback refill so
+   top-k stays full. Citations deduped in `assemble.py`. Verified live: the Fourier
+   signal-processing↔PDE bridge query surfaces 3 documents (was 1).
+4. **Sectioning + front-matter** `[re-ingest-bound]` (eval phase B) — **done** (effective on
+   the step-7 re-ingest). Deterministic, in `extract/pdf.py`: printed-ToC pages excised at
+   extraction (dotted-leader density; `ExtractedDoc.toc_pages` audit trail — excision chosen
+   over an `is_frontmatter` tag: stronger, no schema change); `_plausible_heading` shape
+   filters on font-heuristic candidates; sanity cap `max(8, 1.5×pages)` post-filter.
+   `MIN_SECTION_CHARS` deliberately stays 400 — measurement showed fragmentation came from
+   bogus headings, not the size band (PDE doc: 109→37 sections, median 745→2540 chars).
 5. **Pass hygiene** `[re-ingest-bound]` (eval phase C). Anti-meta proposition prompt +
    deterministic post-filter (meta regexes, title near-dupes, dropped-formula signatures);
    *semantic* synthesis validation (all-empty = failure → repair → quarantine); entity surface

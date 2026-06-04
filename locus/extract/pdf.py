@@ -8,7 +8,11 @@ come from, in order of preference:
   3. a single whole-document section ("single").
 
 Text is preserved verbatim from the PDF's text layer (no lossy normalisation), so whatever
-math survives in the text layer is kept intact.
+math survives in the text layer is kept intact. One deliberate exception: printed
+table-of-contents pages (dense dotted-leader lines) are excised before sectioning — they are
+navigation noise that otherwise ingests as content, competes for retrieval slots, and seeds
+bogus headings (2026-06-04 evaluation; PLAN.md step 4). The structure they describe is
+captured properly in the section map.
 
 LIMITATION (documented, not a bug): PyMuPDF reads the *text layer*. It does not reconstruct
 LaTeX from rendered equation images, and a scanned PDF with no text layer yields empty text
@@ -45,6 +49,14 @@ _MATH = re.compile(
     r"infty|begin\{)|[∑∫∏√≤≥≈≠∂∇∞±×÷πθλμσΣΩ]|\$[^$\n]{1,80}\$"
 )
 
+# A table-of-contents leader line: 4+ dots (consecutive or spaced — both occur in the wild),
+# usually trailing into a page number on the same or next text-layer line.
+_DOTTED_LEADER = re.compile(r"(?:\.[ \t]*){4,}")
+# A page is treated as printed ToC when it has at least this many leader lines...
+_TOC_MIN_LEADER_LINES = 5
+# ...or when leader lines make up at least this fraction of its non-empty lines.
+_TOC_LEADER_FRACTION = 0.3
+
 
 class ExtractedSection(BaseModel):
     position: int  # 0-based order within the document
@@ -62,6 +74,7 @@ class ExtractedDoc(BaseModel):
     sections: list[ExtractedSection]
     source_path: str
     source_date: str | None = None  # ISO 'YYYY-MM-DD' from PDF metadata; None if absent/invalid
+    toc_pages: list[int] = []  # 1-based pages excised as printed ToC (audit trail)
 
 
 def extract_pdf(path: str | Path) -> ExtractedDoc:
@@ -70,13 +83,17 @@ def extract_pdf(path: str | Path) -> ExtractedDoc:
     doc = pymupdf.open(path)
     try:
         page_texts = [page.get_text("text") for page in doc]
+        # Excise printed-ToC pages before sectioning: blanking (rather than removing) keeps
+        # page numbering and offsets intact for everything downstream.
+        toc_idxs = {i for i, t in enumerate(page_texts) if _is_toc_page(t)}
+        page_texts = ["" if i in toc_idxs else t for i, t in enumerate(page_texts)]
         full_text, page_offsets = _full_text_and_offsets(page_texts)
         title = _resolve_title(doc, path)
 
         headings = _headings_from_outline(doc, page_offsets, full_text)
         strategy = "outline"
         if headings is None:
-            headings = _headings_from_fonts(doc, page_offsets, full_text)
+            headings = _headings_from_fonts(doc, page_offsets, full_text, skip_pages=toc_idxs)
             strategy = "headings"
         if not headings:
             headings = [(None, 0)]
@@ -93,9 +110,23 @@ def extract_pdf(path: str | Path) -> ExtractedDoc:
             sections=sections,
             source_path=str(path),
             source_date=_resolve_source_date(doc),
+            toc_pages=sorted(i + 1 for i in toc_idxs),
         )
     finally:
         doc.close()
+
+
+def _is_toc_page(text: str) -> bool:
+    """True when a page reads as a printed table of contents (dense dotted-leader lines)."""
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        return False
+    leaders = sum(1 for ln in lines if _DOTTED_LEADER.search(ln))
+    # The fraction rule needs a floor of 3 leader lines so a stray "...." on a near-empty
+    # page cannot blank real content.
+    return leaders >= _TOC_MIN_LEADER_LINES or (
+        leaders >= 3 and leaders / len(lines) >= _TOC_LEADER_FRACTION
+    )
 
 
 # --- text assembly -----------------------------------------------------------------------
@@ -148,11 +179,53 @@ def _headings_from_outline(doc, page_offsets, full_text) -> list[tuple[str | Non
     return _finalize_headings(headings)
 
 
-def _headings_from_fonts(doc, page_offsets, full_text) -> list[tuple[str | None, int]] | None:
-    """Strategy 2: heuristic headings from font size (vs. body size) and numbered markers."""
+# Prose/equation shapes that disqualify a heading candidate. The font heuristic alone accepts
+# paragraph leads and display math set in a larger font, which explodes a document into
+# mid-sentence "sections" (2026-06-04 evaluation). Real headings start with a letter or digit,
+# stay short (longest legitimate heading measured in the corpus: 8 words), balance their
+# parentheses, and contain neither sentence breaks nor equation glyphs. A rejected real
+# heading is a benign failure (its text merges into the previous section); an accepted
+# sentence fragment mis-titles a section, so the filter errs strict.
+_MAX_HEADING_WORDS = 8
+_MULTI_SENTENCE = re.compile(r"[a-z][.!?][ \t]+[A-Z]")
+_EQUATION_GLYPHS = set("=∇∂∑∫∏√≤≥≈≠±·")
+
+
+def _plausible_heading(text: str) -> bool:
+    if not text[:1].isalnum() or text[:1].islower():
+        return False
+    if any(ord(c) < 32 for c in text):  # control chars: mangled math in the text layer
+        return False
+    # Demand one real word (3+ ASCII letters): rejects math fragments like 'ˆi' whose
+    # modifier letters count as alphanumeric to str.isalnum().
+    if not re.search(r"[A-Za-z]{3,}", text):
+        return False
+    if len(text.split()) > _MAX_HEADING_WORDS:
+        return False
+    if text.rstrip().endswith((",", ";", "-", "–")):
+        return False
+    if _MULTI_SENTENCE.search(text):
+        return False
+    if _EQUATION_GLYPHS & set(text):
+        return False
+    if text.count("(") != text.count(")"):
+        return False
+    return True
+
+
+def _headings_from_fonts(
+    doc, page_offsets, full_text, skip_pages: set[int] = frozenset()
+) -> list[tuple[str | None, int]] | None:
+    """Strategy 2: heuristic headings from font size (vs. body size) and numbered markers.
+
+    `skip_pages` (0-based) are excised ToC pages: their lines must not seed headings — the
+    text was blanked, so offsets could not be located and the titles would be ToC entries.
+    """
     lines: list[tuple[int, float, bool, str]] = []  # (page_idx, max_size, bold, text)
     size_weight: Counter[int] = Counter()
     for pno, page in enumerate(doc):
+        if pno in skip_pages:
+            continue
         for block in page.get_text("dict")["blocks"]:
             for line in block.get("lines", []):
                 text = "".join(s["text"] for s in line["spans"]).strip()
@@ -188,6 +261,8 @@ def _headings_from_fonts(doc, page_offsets, full_text) -> list[tuple[str | None,
         # section titles. Merge would absorb their fragments anyway, but this keeps titles clean.
         if not any(c.isalpha() for c in text):
             continue
+        if not _plausible_heading(text):
+            continue
         is_heading = size >= body_size * 1.15 or (bold_is_rare and bold and len(text) <= 100)
         if is_heading:
             off = _find_heading_offset(full_text, text, page_offsets[pno])
@@ -195,9 +270,10 @@ def _headings_from_fonts(doc, page_offsets, full_text) -> list[tuple[str | None,
     if not headings:
         return None
 
-    # Sanity guard: if the heuristic still fires implausibly often (heading-poor document,
-    # noisy font data), treat it as unreliable and let the caller fall back to a single section.
-    if len(headings) > 4 * max(1, len(page_offsets)):
+    # Sanity guard: if the heuristic still fires implausibly often AFTER the shape filter
+    # (heading-poor document, noisy font data), treat it as unreliable and let the caller fall
+    # back to a single/paginated section. ~1.5 headings per page is already implausibly dense.
+    if len(headings) > max(8, round(1.5 * len(page_offsets))):
         return None
 
     headings.sort(key=lambda h: h[1])

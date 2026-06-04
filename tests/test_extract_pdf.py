@@ -210,3 +210,57 @@ def test_alpha_less_headings_are_ignored(tmp_path: Path):
 def test_missing_file_raises(tmp_path: Path):
     with pytest.raises(Exception):
         extract_pdf(tmp_path / "does-not-exist.pdf")
+
+
+# --- ToC excision + heading-shape filter (plan step 4, eval phase B) ----------------------
+
+
+def test_toc_pages_are_excised(tmp_path: Path):
+    """A printed-ToC page (dense dotted-leader lines) must not ingest as content."""
+    toc_lines = [(f"Chapter {i} heading text . . . . . . . . . . . {i * 7}", BODY) for i in range(1, 8)]
+    pdf = _make_pdf(
+        tmp_path / "with_toc.pdf",
+        pages=[
+            [("Contents", HEAD), *toc_lines],
+            [("Real Heading", HEAD), *_body("content")],
+        ],
+    )
+    doc = extract_pdf(pdf)
+    assert doc.toc_pages == [1]
+    joined = " ".join(s.text for s in doc.sections)
+    assert ". . . . ." not in joined  # leader lines gone
+    assert "content: sentence 1" in joined  # real content intact
+    assert not any("Chapter 3" in (s.title or "") for s in doc.sections)  # no ToC-seeded titles
+
+
+def test_sentence_lead_in_large_font_is_not_a_heading(tmp_path: Path):
+    """Regression (PDE doc): paragraph leads set in a larger font are not section titles."""
+    lead = "Applying boundary conditions specifies particular values of the dependent variable"
+    pdf = _make_pdf(
+        tmp_path / "lead.pdf",
+        pages=[[("Real Heading", HEAD), *_body("alpha"), (lead, HEAD), *_body("beta")]],
+    )
+    doc = extract_pdf(pdf)
+    titles = [s.title for s in doc.sections]
+    assert "Real Heading" in titles
+    assert lead not in titles
+
+
+def test_plausible_heading_shapes():
+    from locus.extract.pdf import _plausible_heading
+
+    # Real headings survive.
+    assert _plausible_heading("Introduction to Partial Differential Equations")
+    assert _plausible_heading("First-order systems.")
+    assert _plausible_heading("Laplace transforms of partial derivatives")
+    # Prose / fragment / equation shapes are rejected (all observed in the corpus).
+    assert not _plausible_heading("nary differential equation takes the form")  # lower start
+    assert not _plausible_heading("(The kernel is defined as the")  # punct start, unbalanced
+    assert not _plausible_heading("The Fourier coefficients (also")  # unbalanced parens
+    assert not _plausible_heading("∇p = ˆi∂p")  # equation glyphs
+    assert not _plausible_heading("ˆi")  # no real word
+    assert not _plausible_heading("The inverse Laplace transformation operation, L \x08")  # ctrl char
+    assert not _plausible_heading(
+        "Next define a linear operator, which we will call the one-dimensional"
+    )  # too many words
+    assert not _plausible_heading("Waves are introduced. A wave equation is derived")  # 2 sentences

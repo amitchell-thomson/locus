@@ -108,8 +108,9 @@ def _ocr_got(page) -> str:
     import pymupdf
     from PIL import Image
 
+    import torch
+
     if "model" not in _GOT_CACHE:
-        import torch
         from transformers import (
             AutoTokenizer,
             GotOcr2ForConditionalGeneration,
@@ -130,6 +131,9 @@ def _ocr_got(page) -> str:
             .eval()
         )
     proc, model = _GOT_CACHE["processor"], _GOT_CACHE["model"]
+    # Re-promote to GPU if a previous release_gpu() parked the model on the CPU.
+    if torch.cuda.is_available() and model.device.type == "cpu":
+        model = _GOT_CACHE["model"] = model.to("cuda")
     png = page.get_pixmap(matrix=pymupdf.Matrix(_RENDER_ZOOM, _RENDER_ZOOM))
     image = Image.open(io.BytesIO(png.tobytes("png"))).convert("RGB")
     inputs = proc(image, return_tensors="pt", format=True).to(model.device)
@@ -144,6 +148,21 @@ def _ocr_got(page) -> str:
 
 
 _ENGINES = {"qwen": _ocr_qwen, "got": _ocr_got}
+
+
+def release_gpu() -> None:
+    """Park the cached GOT model on the CPU and free its VRAM.
+
+    Called after a document's OCR pass: the LLM passes that follow need the 8 GB card for
+    Ollama — with GOT's ~3.5 GB still resident, qwen gets split across CPU/GPU and generation
+    slows several-fold (observed live). The hop back to GPU on the next document costs ~1 s.
+    """
+    model = _GOT_CACHE.get("model")
+    if model is not None and model.device.type == "cuda":
+        import torch
+
+        _GOT_CACHE["model"] = model.to("cpu")
+        torch.cuda.empty_cache()
 
 
 # --- the pass ------------------------------------------------------------------------------
@@ -169,21 +188,24 @@ def ocr_pages(doc, page_texts: list[str], flagged: list[int]) -> tuple[list[str]
         return page_texts, outcome
     engine = _ENGINES[cfg.engine]
     out = list(page_texts)
-    for i in flagged:
-        try:
-            ocr_text = engine(doc[i])
-        except Exception as exc:  # engine/server error: keep original, keep going
-            log.warning("math-OCR failed on page %d: %s", i + 1, exc)
-            outcome.fallbacks.append((i + 1, f"engine-error: {exc}"))
-            continue
-        ocr_text = _strip_fences(ocr_text)
-        reason = qc_reject_reason(ocr_text, page_texts[i])
-        if reason is None:
-            out[i] = ocr_text
-            outcome.replaced.append(i + 1)
-        else:
-            log.info("math-OCR QC fallback on page %d (%s)", i + 1, reason)
-            outcome.fallbacks.append((i + 1, reason))
+    try:
+        for i in flagged:
+            try:
+                ocr_text = engine(doc[i])
+            except Exception as exc:  # engine/server error: keep original, keep going
+                log.warning("math-OCR failed on page %d: %s", i + 1, exc)
+                outcome.fallbacks.append((i + 1, f"engine-error: {exc}"))
+                continue
+            ocr_text = _strip_fences(ocr_text)
+            reason = qc_reject_reason(ocr_text, page_texts[i])
+            if reason is None:
+                out[i] = ocr_text
+                outcome.replaced.append(i + 1)
+            else:
+                log.info("math-OCR QC fallback on page %d (%s)", i + 1, reason)
+                outcome.fallbacks.append((i + 1, reason))
+    finally:
+        release_gpu()  # the LLM passes that follow need the whole card for Ollama
     return out, outcome
 
 

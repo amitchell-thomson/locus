@@ -35,6 +35,13 @@ def get_connection(db_path: Path | str) -> sqlite3.Connection:
 
     # Enforce referential integrity + ON DELETE CASCADE (off by default in SQLite).
     conn.execute("PRAGMA foreign_keys = ON")
+    # WAL: readers (MCP sessions, CLI queries) and the single writer (ingest) never block
+    # each other — the rollback-journal default serializes them, and a per-document ingest
+    # transaction can hold the write lock for minutes once the OCR pass is in play.
+    # journal_mode persists in the DB file; setting it per-connection is belt-and-braces
+    # (and makes a freshly created DB correct from its first connection).
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 10000")
     return conn
 
 

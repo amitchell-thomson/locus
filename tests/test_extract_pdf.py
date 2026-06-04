@@ -246,6 +246,39 @@ def test_sentence_lead_in_large_font_is_not_a_heading(tmp_path: Path):
     assert lead not in titles
 
 
+# --- page damage/math signals (plan step 6, eval phase D) ---------------------------------
+
+
+def test_page_flags_properties():
+    from locus.extract.pdf import PageFlags
+
+    assert PageFlags(page=1, ligature_hits=2).corrupted
+    assert PageFlags(page=1, symbol_garbage=2).corrupted
+    assert not PageFlags(page=1, ligature_hits=1).corrupted  # threshold guards one-offs
+    assert PageFlags(page=1, mathfont_chars=30).math_dense
+    assert PageFlags(page=1, mathuni_chars=20).math_dense
+    assert PageFlags(page=1, small_images=3).image_math
+    assert PageFlags(page=1, drawings=3, gap_hits=2).image_math
+    assert not PageFlags(page=1, drawings=16).image_math  # drawings alone: could be a plot
+    assert not PageFlags(page=1).needs_ocr
+
+
+def test_damage_signal_regexes():
+    from locus.extract.pdf import _BROKEN_LIGATURES, _INLINE_GAP, _SYMBOL_GARBAGE, _mathuni_count
+
+    # Broken ligatures: word-boundary only — 'first-order' must NOT match.
+    assert len(_BROKEN_LIGATURES.findall("The rst step denes a xed eld.")) == 4
+    assert _BROKEN_LIGATURES.findall("first-order systems are defined here") == []
+    # Mis-mapped symbols: 'H(!)' and 'ei!t' (ω->!) match; prose '!' does not.
+    assert len(_SYMBOL_GARBAGE.findall("the response H(!) equals ei!t here")) == 2
+    assert _SYMBOL_GARBAGE.findall("this is surprising (usually!) but fine") == []
+    # Inline formula gap: space on both sides of the newline (Colab exports).
+    assert len(_INLINE_GAP.findall("combination of \n in a vector space")) == 1
+    assert _INLINE_GAP.findall("an ordinary wrapped\nline of text") == []
+    # Math-unicode density (doc-24-style mathematical alphanumeric symbols).
+    assert _mathuni_count("min 𝑐(𝑤) over 𝑤 ∈ ℝ with ∇𝑐") >= 5
+
+
 def test_plausible_heading_shapes():
     from locus.extract.pdf import _plausible_heading
 

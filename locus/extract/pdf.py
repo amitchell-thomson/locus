@@ -49,6 +49,103 @@ _MATH = re.compile(
     r"infty|begin\{)|[∑∫∏√≤≥≈≠∂∇∞±×÷πθλμσΣΩ]|\$[^$\n]{1,80}\$"
 )
 
+# --- page-level extraction-damage / math-evidence signals (PLAN.md step 6, eval phase D) ---
+# Each signal below was verified against the corpus before being coded; none is speculative.
+#
+# Broken-ligature words: a font with a damaged/absent toUnicode CMap *drops* fi/fl/ffi
+# ligature glyphs, leaving e.g. 'first'->'rst'. Word-boundary matches only — substring
+# matching would false-positive on 'first-order' containing 'rst-order'.
+_BROKEN_LIGATURES = re.compile(
+    r"\b(?:rst|nite|nal|eld|dened|denition|xed|innite|dierent|dierence|coecients?|"
+    r"signicant|signicance|eective|eciency|ecient|specic|sucient|diculty|dicult|"
+    r"aects?|oset|exible|exibility|denes?|identied|simplied|specied|modied)\b",
+    re.IGNORECASE,
+)
+# Mis-mapped symbol glyphs: in the corrupted docs ω extracts as '!' ('H(ω)'->'H(!)',
+# 'e^{iωt}'->'ei!t'). A '!' between letters, or '(!)', is impossible in real prose.
+_SYMBOL_GARBAGE = re.compile(r"\(!\)|(?<=[A-Za-z])!(?=[A-Za-z])")
+# TeX math fonts (Computer Modern math italic/symbols/extension, AMS symbol fonts): their
+# *presence* is hard evidence of typeset math regardless of what survived in the text layer.
+_MATHFONT = re.compile(r"CMMI|CMSY|CMEX|MSAM|MSBM|Math|Symbol", re.IGNORECASE)
+# Inline formula gap: exports that render formulas as vector drawings (Colab/MathJax) leave
+# 'a vector  is a linear combination of \n in a vector space' — a mid-sentence gap where the
+# formula was, with a stray space on BOTH sides of the newline. Ordinary line wraps have a
+# space on neither side, so this strict shape has zero false positives on the prose corpus
+# (measured: 0 firings across 271 pages of clean docs; 8/9 on the Colab export).
+_INLINE_GAP = re.compile(r"[a-z,] \n [a-z]")
+
+# Mathematical Alphanumeric Symbols plane (𝑐, 𝑤, ℝ-style letters) + common operators: some
+# exports set math in these codepoints with no math *font* names (verified: doc 24).
+def _mathuni_count(text: str) -> int:
+    return sum(1 for c in text if 0x1D400 <= ord(c) <= 0x1D7FF or c in "∂∇∑∫∞≤≥≈≠±ℝℕℤℂ")
+
+
+# Thresholds (measured on the corpus; see PLAN.md step 6).
+_MATH_DENSE_CHARS = 30  # chars set in math fonts on a page
+_MATHUNI_CHARS = 20  # math-unicode chars in the text layer on a page
+_SMALL_IMAGE_MIN = 3  # small raster images (formula-sized) on a page
+_SMALL_IMAGE_MAX_W, _SMALL_IMAGE_MAX_H = 400.0, 60.0
+
+
+class PageFlags(BaseModel):
+    """Per-page extraction-damage and math-evidence signals (1-based page number)."""
+
+    page: int
+    ligature_hits: int = 0  # broken-ligature words in the text layer
+    symbol_garbage: int = 0  # mis-mapped symbol glyphs ('H(!)', 'ei!t')
+    mathfont_chars: int = 0  # characters set in TeX math fonts
+    mathuni_chars: int = 0  # math-unicode chars in the text layer (𝑐, ℝ, ∂ ...)
+    small_images: int = 0  # formula-sized raster images
+    drawings: int = 0  # vector drawing groups (Colab formulas render as these)
+    gap_hits: int = 0  # mid-sentence inline formula gaps
+
+    @property
+    def corrupted(self) -> bool:
+        """Text layer is provably damaged (content already lost)."""
+        return self.ligature_hits >= 2 or self.symbol_garbage >= 2
+
+    @property
+    def math_dense(self) -> bool:
+        """Typeset math present, by font evidence or math-unicode density (the text-layer
+        rendering of math is unreliable in both cases)."""
+        return self.mathfont_chars >= _MATH_DENSE_CHARS or self.mathuni_chars >= _MATHUNI_CHARS
+
+    @property
+    def image_math(self) -> bool:
+        """Formulas rendered as images/vector drawings — absent from the text layer."""
+        return self.small_images >= _SMALL_IMAGE_MIN or (
+            self.drawings >= 3 and self.gap_hits >= 2
+        )
+
+    @property
+    def needs_ocr(self) -> bool:
+        return self.corrupted or self.math_dense or self.image_math
+
+
+def _page_flags(page, pno: int, text: str) -> PageFlags:
+    """Compute PageFlags for one pymupdf page (`text` is its already-extracted text)."""
+    mathfont_chars = 0
+    for block in page.get_text("dict")["blocks"]:
+        for line in block.get("lines", []):
+            for span in line["spans"]:
+                if _MATHFONT.search(span.get("font") or ""):
+                    mathfont_chars += len(span["text"])
+    small = 0
+    for info in page.get_image_info():
+        x0, y0, x1, y1 = info["bbox"]
+        if (x1 - x0) <= _SMALL_IMAGE_MAX_W and (y1 - y0) <= _SMALL_IMAGE_MAX_H:
+            small += 1
+    return PageFlags(
+        page=pno + 1,
+        ligature_hits=len(_BROKEN_LIGATURES.findall(text)),
+        symbol_garbage=len(_SYMBOL_GARBAGE.findall(text)),
+        mathfont_chars=mathfont_chars,
+        mathuni_chars=_mathuni_count(text),
+        small_images=small,
+        drawings=len(page.get_drawings()),
+        gap_hits=len(_INLINE_GAP.findall(text)),
+    )
+
 # A table-of-contents leader line: 4+ dots (consecutive or spaced — both occur in the wild),
 # usually trailing into a page number on the same or next text-layer line.
 _DOTTED_LEADER = re.compile(r"(?:\.[ \t]*){4,}")
@@ -75,6 +172,7 @@ class ExtractedDoc(BaseModel):
     source_path: str
     source_date: str | None = None  # ISO 'YYYY-MM-DD' from PDF metadata; None if absent/invalid
     toc_pages: list[int] = []  # 1-based pages excised as printed ToC (audit trail)
+    page_flags: list[PageFlags] = []  # per-page damage/math signals (drives the OCR routing)
 
 
 def extract_pdf(path: str | Path) -> ExtractedDoc:
@@ -87,6 +185,8 @@ def extract_pdf(path: str | Path) -> ExtractedDoc:
         # page numbering and offsets intact for everything downstream.
         toc_idxs = {i for i, t in enumerate(page_texts) if _is_toc_page(t)}
         page_texts = ["" if i in toc_idxs else t for i, t in enumerate(page_texts)]
+        # Damage/math signals per page (post-blanking, so excised ToC pages read clean).
+        flags = [_page_flags(doc[i], i, t) for i, t in enumerate(page_texts)]
         full_text, page_offsets = _full_text_and_offsets(page_texts)
         title = _resolve_title(doc, path)
 
@@ -99,7 +199,7 @@ def extract_pdf(path: str | Path) -> ExtractedDoc:
             headings = [(None, 0)]
             strategy = "single"
 
-        sections = _build_sections(headings, full_text, page_offsets, len(page_texts))
+        sections = _build_sections(headings, full_text, page_offsets, len(page_texts), flags)
         # A heading-poor doc that had to be windowed by page is "paginated", not "single".
         if strategy == "single" and len(sections) > 1:
             strategy = "paginated"
@@ -111,6 +211,7 @@ def extract_pdf(path: str | Path) -> ExtractedDoc:
             source_path=str(path),
             source_date=_resolve_source_date(doc),
             toc_pages=sorted(i + 1 for i in toc_idxs),
+            page_flags=flags,
         )
     finally:
         doc.close()
@@ -299,6 +400,7 @@ def _build_sections(
     full_text: str,
     page_offsets: list[int],
     page_count: int,
+    page_flags: list[PageFlags] | None = None,
 ) -> list[ExtractedSection]:
     """Slice full_text at heading offsets into page-anchored sections.
 
@@ -323,19 +425,31 @@ def _build_sections(
         else:
             spans.extend(_paginate_span(title, start, end, page_offsets))
 
+    def section_has_math(text: str, page_start: int, page_end: int) -> bool:
+        """Text-layer regex OR per-page font/image evidence. The latter matters because a
+        damaged text layer destroys exactly the glyphs the regex looks for (eval phase D)."""
+        if _has_math(text):
+            return True
+        for f in page_flags or []:
+            if page_start <= f.page <= page_end and (f.math_dense or f.image_math):
+                return True
+        return False
+
     sections: list[ExtractedSection] = []
     for title, start, end in spans:
         text = full_text[start:end].strip()
         if not text:
             continue
+        page_start = _page_of_offset(start, page_offsets)
+        page_end = _page_of_offset(max(start, end - 1), page_offsets)
         sections.append(
             ExtractedSection(
                 position=len(sections),
                 title=title,
                 text=text,
-                page_start=_page_of_offset(start, page_offsets),
-                page_end=_page_of_offset(max(start, end - 1), page_offsets),
-                has_math=_has_math(text),
+                page_start=page_start,
+                page_end=page_end,
+                has_math=section_has_math(text, page_start, page_end),
             )
         )
     if not sections:
@@ -344,7 +458,8 @@ def _build_sections(
         sections.append(
             ExtractedSection(
                 position=0, title=None, text=whole, page_start=1,
-                page_end=max(1, page_count), has_math=_has_math(whole),
+                page_end=max(1, page_count),
+                has_math=section_has_math(whole, 1, max(1, page_count)),
             )
         )
     return sections

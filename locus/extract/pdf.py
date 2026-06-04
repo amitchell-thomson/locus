@@ -175,8 +175,16 @@ class ExtractedDoc(BaseModel):
     page_flags: list[PageFlags] = []  # per-page damage/math signals (drives the OCR routing)
 
 
-def extract_pdf(path: str | Path) -> ExtractedDoc:
-    """Extract a structured ExtractedDoc from the PDF at `path`."""
+def extract_pdf(path: str | Path, *, mathocr: bool = False) -> ExtractedDoc:
+    """Extract a structured ExtractedDoc from the PDF at `path`.
+
+    `mathocr=True` (the ingest pipeline's setting) routes pages flagged by the damage/math
+    detector through the OCR-to-markup pass (extract/mathocr.py), replacing their text-layer
+    text with recovered markdown+LaTeX (QC-guarded; config `[mathocr]`). On OCR'd pages,
+    heading offsets may not be locatable in the replaced text, so section boundaries there
+    degrade gracefully to page boundaries — the recovered structure stays in the text itself.
+    Default False so ad-hoc extraction (tests, scripts, audits) never invokes a model.
+    """
     path = Path(path)
     doc = pymupdf.open(path)
     try:
@@ -187,6 +195,11 @@ def extract_pdf(path: str | Path) -> ExtractedDoc:
         page_texts = ["" if i in toc_idxs else t for i, t in enumerate(page_texts)]
         # Damage/math signals per page (post-blanking, so excised ToC pages read clean).
         flags = [_page_flags(doc[i], i, t) for i, t in enumerate(page_texts)]
+        if mathocr:
+            from locus.extract import mathocr as mathocr_mod  # lazy: avoids circular import
+
+            flagged = [f.page - 1 for f in flags if f.needs_ocr]
+            page_texts, _outcome = mathocr_mod.ocr_pages(doc, page_texts, flagged)
         full_text, page_offsets = _full_text_and_offsets(page_texts)
         title = _resolve_title(doc, path)
 

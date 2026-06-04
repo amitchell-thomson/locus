@@ -128,12 +128,28 @@ done **before** the bulk ingest. Each item ≈ one work-block.
   rows. Verified on the live (pre-re-ingest) corpus: QC finds doc 19's empty synthesis, 123
   suspect props (incl. the Colab "given by ." pair), 209 noise entities — the step-7 re-ingest's
   cleanup, quantified. Effective on re-ingest.
-- [ ] **6. Math-faithful extraction** `[RB]` (eval phase D; was step 7, promoted) — corruption
+- [x] **6. Math-faithful extraction** `[RB]` (eval phase D; was step 7, promoted) — corruption
   detector first (ligature-loss signatures, math-font evidence from span fonts → also fixes
   `has_math`); route corrupted/math-dense pages to an OCR-to-markup model chosen *empirically*
   on ~10 flagged corpus pages (Nougat-small / texify / Marker / GOT class — don't pick by
   reputation); native `.ipynb` extractor (`nbconvert` → md, preserves `$...$` + code cells) and
   prefer source formats over PDF exports. Then (and only then) run the §11.C model benchmark.
+  Done (`.ipynb` deferred to step 8 by owner decision): **(a) detector** — per-page `PageFlags`
+  in `extract/pdf.py`, four corpus-verified signals (word-boundary broken-ligature words;
+  `ω→'!'` symbol garbage; TeX-math-font / math-unicode density; image/vector-drawing formulas
+  with a zero-false-positive inline-gap shape); `has_math` now uses font/image evidence; 238/436
+  corpus pages flagged. **(b) benchmark** — `scripts/benchmark_mathocr.py` raced qwen2.5-vl:7b
+  (Ollama), GOT-OCR-2.0 and Nougat-small on 10 flagged pages; `scripts/judge_mathocr.py` +
+  `locus/eval/math_fidelity.py` (Claude multimodal judge, doubles as the step-7 gate metric)
+  scored them against the text-layer baseline: text-layer **0.73**, GOT **0.93** (0 halluc,
+  0 failures, prose 4.9/5, ~10s/pp), Nougat 0.97 *but 4/10 engine failures*, qwen 0.97 *but 1
+  invented equation*. **GOT-OCR-2.0 chosen on risk asymmetry** (degrades, never invents) —
+  report: `eval-artifacts/mathocr/report.md`. **(c) routing** — `extract/mathocr.py`: flagged
+  pages re-read by the engine, whole-page replace guarded by deterministic QC (empty/too-short/
+  repetition-loop/residual-corruption → keep original + audit trail); `extract_pdf(mathocr=True)`
+  used by the pipeline only; config `[mathocr]` (`engine = "got" | "qwen" | "off"`); deps behind
+  the `mathocr` extra. Verified live on doc 24 (mangled `𝑐(𝑤)` → `\\(c(w): \\mathbb{R}^d \\to
+  \\mathbb{R}\\)`). §11.C ingest-model benchmark is now unblocked. Effective on re-ingest.
 - [ ] **7. Validate → re-ingest → re-evaluate** (eval phase E) — extend `locus eval` with:
   math-fidelity (fraction of math-bearing sections whose formulas survive — the gate metric),
   proposition-entailment sampling (LLM judge), labelled recall@k/MRR incl. ≥2 cross-domain

@@ -78,6 +78,14 @@ class GenerationConfig(BaseModel):
     model: str
 
 
+class MathOCRConfig(BaseModel):
+    """Math-aware page OCR (extract/mathocr.py): recovers LaTeX from pages whose text layer
+    is damaged or math-dense. Engine chosen by benchmark (eval-artifacts/mathocr/report.md)."""
+
+    engine: str = Field("got", description="'got' (transformers) | 'qwen' (Ollama VLM) | 'off'")
+    model: str = Field("qwen2.5vl:7b", description="Ollama model for the 'qwen' engine.")
+
+
 class MCPConfig(BaseModel):
     # The MCP `query` tool makes a billed Claude API call server-side; `retrieve` and the read
     # tools are local-only (free). Default OFF so the server never exposes a billable tool unless
@@ -95,6 +103,8 @@ class Config(BaseModel):
     generation: GenerationConfig
     # Optional: absent [mcp] in config.toml falls back to defaults (query disabled).
     mcp: MCPConfig = Field(default_factory=MCPConfig)
+    # Optional: absent [mathocr] falls back to defaults (qwen engine via Ollama).
+    mathocr: MathOCRConfig = Field(default_factory=MathOCRConfig)
 
     def resolve_paths(self) -> "Config":
         """Make all configured paths absolute, relative to the project root."""

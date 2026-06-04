@@ -17,6 +17,10 @@ dependencies = [
 [project.optional-dependencies]
 # Heavy: pulls torch. Installed only when the reranker (Stage 6) is built.
 rerank = ["sentence-transformers>=3.0"]
+# Math-OCR pass (plan step 6): GOT-OCR2.0 via transformers — chosen by benchmark
+# (eval-artifacts/mathocr/report.md: 0 hallucinations / 0 engine failures, vs qwen-VL's
+# 0.97-with-an-invention and Nougat's 4/10 failures). torch itself comes via `rerank`.
+mathocr = ["transformers>=4.48", "torchvision", "pillow"]
 
 [project.scripts]
 locus = "locus.cli:main"

@@ -28,3 +28,5 @@ vault/obsidian/*
 !vault/raw/.gitkeep
 !vault/incoming/.gitkeep
 !vault/notes/.gitkeep
+eval-artifacts/
+.claude/scheduled_tasks.lock

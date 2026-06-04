@@ -659,11 +659,18 @@ math-stripped text). Details per step in `PLAN.md`.
    evidence-based plural merge in `entities.py`; `audit` re-applies the same predicates to
    stored rows (QC line). Verified on the live corpus: finds doc 19's empty synthesis,
    123 suspect propositions, 209 noise entities.
-6. **Math-faithful extraction** `[re-ingest-bound]` (eval phase D; promoted from late-plan).
-   Corruption detector first (ligature-loss signatures + math-font evidence from span fonts —
-   also fixes `has_math`); route corrupted/math-dense pages to an OCR-to-markup model chosen
-   empirically on flagged corpus pages (Nougat-small / texify / Marker / GOT class); native
-   `.ipynb` extractor (`nbconvert` → md); prefer source formats over PDF exports. See §15.1.
+6. **Math-faithful extraction** `[re-ingest-bound]` (eval phase D; promoted from late-plan) —
+   **done** (effective on the step-7 re-ingest; `.ipynb` extractor deferred to step 8).
+   Per-page damage/math detector (`PageFlags` in `extract/pdf.py`: broken-ligature words,
+   ω→'!' symbol garbage, math-font/math-unicode density, image/vector-drawing formulas) also
+   fixes `has_math` via font evidence. Engine chosen by benchmark on 10 flagged corpus pages,
+   Claude-judged against the page image (`locus/eval/math_fidelity.py` — reusable as the
+   step-7 gate metric): text-layer 0.73 → **GOT-OCR-2.0 0.93 with 0 hallucinations / 0 engine
+   failures** (Nougat 0.97 but 4/10 failures; qwen2.5-vl 0.97 but 1 invented equation —
+   GOT picked on risk asymmetry: it degrades, never invents). Routing in `extract/mathocr.py`:
+   whole-page replace guarded by deterministic QC (length / repetition-loop / residual
+   corruption → fall back + audit), pipeline-only (`extract_pdf(mathocr=True)`), config
+   `[mathocr]`, deps behind the `mathocr` extra. See §15.1.
 7. **Validate → re-ingest → re-evaluate** (eval phase E). Extend `locus eval`: math-fidelity
    (gate metric), proposition-entailment sampling, labelled recall@k incl. cross-domain queries.
    `--reingest` the corpus (activates `source_date`/`category`); re-run the evaluation against

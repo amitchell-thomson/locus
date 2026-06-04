@@ -25,6 +25,15 @@ rerank_top_k         = 8          # survivors after cross-encoder rerank
 per_doc_cap          = 3          # max units per document among survivors (diversity; relaxed if underfull)
 context_token_budget = 100000     # cap on assembled context to the Claude API call
 
+[mathocr]
+# Math-aware page OCR: pages whose text layer is damaged or math-dense are re-read by an
+# OCR-to-markup engine; recovered markdown+LaTeX replaces the page text (QC-guarded).
+# Engine picked by benchmark on flagged corpus pages (eval-artifacts/mathocr/report.md):
+# GOT-OCR2.0 won on risk asymmetry — 0 hallucinations / 0 engine failures (fidelity 0.93,
+# prose 4.9/5) vs qwen-VL 0.97 with one invented equation and Nougat with 4/10 failures.
+engine        = "got"             # "got" (transformers, mathocr extra) | "qwen" (Ollama VLM) | "off"
+model         = "qwen2.5vl:7b"    # Ollama model used by the "qwen" engine
+
 [generation]
 # RAG generation model (§1: answer quality is the priority). Use a 4.6+ model (adaptive
 # thinking). claude-sonnet-4-6 is a cheaper, very capable alternative for high query volume.

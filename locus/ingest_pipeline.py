@@ -130,7 +130,9 @@ class _Prepared:
 
 
 def _prepare(path: Path) -> _Prepared:
-    doc = pdf_extract.extract_pdf(path)
+    # mathocr=True: the pipeline (unlike ad-hoc extraction) runs the math-OCR pass on pages
+    # the damage/math detector flags, per config [mathocr] (engine='off' disables).
+    doc = pdf_extract.extract_pdf(path, mathocr=True)
     prepared: list[_PreparedSection] = []
     summaries: list[str] = []
 

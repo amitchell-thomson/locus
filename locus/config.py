@@ -66,6 +66,11 @@ class RetrieveConfig(BaseModel):
     fine_top_k: int = 20
     section_top_k: int = 5
     rerank_top_k: int = 8
+    # Diversity cap on rerank survivors: at most this many units per document in the top-k,
+    # relaxed (fallback fill) only when honouring it would leave the top-k underfull. Stops a
+    # single best-matching document from monopolising every slot, which breaks cross-domain
+    # synthesis queries (the 2026-06-04 evaluation, PLAN.md step 3).
+    per_doc_cap: int = 3
     context_token_budget: int = 100_000
 
 

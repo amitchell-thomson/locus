@@ -66,6 +66,13 @@ def assemble(expanded: list[Expanded], budget: int | None = None) -> AssembledCo
     tokens = 0
     included = dropped = 0
 
+    def cite(e: Expanded) -> None:
+        # A proposition and a chunk from the same section share one provenance string;
+        # list it once (order-preserving) instead of repeating it per included unit.
+        p = _provenance(e)
+        if p not in citations:
+            citations.append(p)
+
     def fits(text: str) -> bool:
         nonlocal tokens
         t = count_tokens(text)
@@ -100,7 +107,7 @@ def assemble(expanded: list[Expanded], budget: int | None = None) -> AssembledCo
                     if fits(block):
                         lines.append(block)
                         included += 1
-                        citations.append(_provenance(pe))
+                        cite(pe)
                     else:
                         dropped += 1
 
@@ -109,7 +116,7 @@ def assemble(expanded: list[Expanded], budget: int | None = None) -> AssembledCo
                 if fits(block):
                     lines.append(block)
                     included += 1
-                    citations.append(_provenance(ce))
+                    cite(ce)
                 else:
                     dropped += 1
 

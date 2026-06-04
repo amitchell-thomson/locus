@@ -32,7 +32,7 @@ def retrieve(query: str, conn=None, facets: Facets | None = None) -> RetrievalRe
     try:
         cfg = load().retrieve
         candidates = search(conn, query, facets)
-        survivors = rerank(query, candidates, cfg.rerank_top_k)
+        survivors = rerank(query, candidates, cfg.rerank_top_k, cfg.per_doc_cap)
         assembled = assemble(expand(conn, survivors))
         return RetrievalResult(
             query=query, context=assembled.text,

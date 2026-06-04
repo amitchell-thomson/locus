@@ -15,6 +15,7 @@ from locus.db.migrate import migrate
 from locus.retrieve import search as search_mod
 from locus.retrieve.assemble import assemble
 from locus.retrieve.expand import Expanded, expand
+from locus.retrieve.rerank import select  # pure selection logic; does not load the model
 from locus.retrieve.search import Candidate, search
 
 DIM = 768
@@ -118,6 +119,61 @@ def test_assemble_includes_provenance():
     out = assemble([_expanded("chunk", "excerpt text")], budget=10_000)
     assert out.citations
     assert any("Doc" in c for c in out.citations)
+
+
+def test_assemble_dedupes_citations():
+    # A proposition and a chunk from the same section share one provenance string:
+    # it must appear once, not once per included unit.
+    items = [_expanded("proposition", "a claim"), _expanded("chunk", "an excerpt")]
+    out = assemble(items, budget=10_000)
+    assert out.included == 2
+    assert len(out.citations) == 1
+
+
+# --- diversity-aware selection (rerank.select) -------------------------------------------
+
+
+def _cand(kind, id_, doc_id, section_id):
+    return Candidate(kind=kind, id=id_, doc_id=doc_id, section_id=section_id,
+                     text="t", score=0.0)
+
+
+def test_select_caps_units_per_section_and_kind():
+    # Two chunks of the same section: only the better-ranked one survives while a
+    # different section's chunk is available.
+    ranked = [_cand("chunk", 1, 1, 1), _cand("chunk", 2, 1, 1), _cand("chunk", 3, 1, 2)]
+    out = select(ranked, top_k=2, per_doc_cap=10)
+    assert [c.id for c in out] == [1, 3]
+
+
+def test_select_drops_section_summary_when_child_in_pool():
+    # The section-summary candidate is redundant: expansion re-attaches the summary
+    # to the surviving chunk anyway.
+    ranked = [_cand("section", 1, 1, 1), _cand("chunk", 10, 1, 1), _cand("chunk", 11, 1, 2)]
+    out = select(ranked, top_k=2, per_doc_cap=10)
+    assert [(c.kind, c.id) for c in out] == [("chunk", 10), ("chunk", 11)]
+
+
+def test_select_keeps_section_summary_without_child():
+    ranked = [_cand("section", 1, 1, 1), _cand("chunk", 10, 1, 2)]
+    out = select(ranked, top_k=2, per_doc_cap=10)
+    assert [(c.kind, c.id) for c in out] == [("section", 1), ("chunk", 10)]
+
+
+def test_select_per_doc_cap_promotes_second_document():
+    # Doc 1 outranks everywhere, but the cap forces doc 2 into the top-k
+    # (the cross-domain synthesis fix).
+    ranked = [_cand("chunk", i, 1, i) for i in range(1, 6)] + [_cand("chunk", 99, 2, 99)]
+    out = select(ranked, top_k=4, per_doc_cap=3)
+    assert [c.id for c in out] == [1, 2, 3, 99]
+
+
+def test_select_refills_rather_than_underfilling():
+    # Caps would leave the top-k underfull -> the best skipped candidates come back,
+    # and rank order is preserved in the output.
+    ranked = [_cand("chunk", i, 1, i) for i in range(1, 5)]
+    out = select(ranked, top_k=4, per_doc_cap=2)
+    assert [c.id for c in out] == [1, 2, 3, 4]
 
 
 # --- guarded end-to-end ---

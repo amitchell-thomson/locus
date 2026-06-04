@@ -17,10 +17,16 @@ from locus.config import PROJECT_ROOT
 from locus.db.connection import get_connection
 
 ALEMBIC_INI = PROJECT_ROOT / "alembic.ini"
+# Absolute migrations path. alembic.ini's `script_location` is relative and would resolve
+# against the current working directory, which breaks when the CLI is launched from elsewhere
+# (e.g. `locus mcp` spawned over SSH lands in the user's home dir). Pin it to PROJECT_ROOT so
+# migrate()/head_revision() work regardless of cwd.
+MIGRATIONS_DIR = PROJECT_ROOT / "locus" / "db" / "migrations"
 
 
 def _config(db_path: Path | str) -> AlembicConfig:
     cfg = AlembicConfig(str(ALEMBIC_INI))
+    cfg.set_main_option("script_location", str(MIGRATIONS_DIR))
     cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
     return cfg
 

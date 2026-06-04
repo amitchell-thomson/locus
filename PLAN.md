@@ -46,6 +46,33 @@ expose `query` (server-side generation), `list`, and `inspect`.
 
 ---
 
+## 2026-06-04 corpus evaluation — what it found, what it changes
+
+A full external evaluation (Claude over the MCP server, probing ingest artefacts + live
+retrieval on the 8-doc corpus) surfaced defects that re-order the plan. Verified against the
+code (not just the eval's claims):
+
+- **Math destroyed at extraction** (live): broken font CMaps *drop* ligatures (`rst-order`,
+  `dened`) — unrecoverable post-hoc, no character map can restore them; Colab-export PDFs lose
+  formulas entirely. Corruption also defeats the `has_math` regex (52/109 sections flagged in a
+  PDE doc), so the planned math-OCR pass would miss its targets. → phase **6** below.
+- **Sectioning over-fragments** (live, current extractor reproduces it): the font heuristic
+  accepts full-sentence outline lines as headings → 109 sections / 78 pp, mid-sentence titles;
+  ToC/dotted-leader pages ingest as content and pollute top-k. → phase **4**.
+- **Pass hygiene**: all-empty doc synthesis is schema-valid so it ships; tautological/meta
+  propositions; entity noise (equation labels, bare symbols, surface-form variants). → phase **5**.
+- **Retrieval selection**: candidates dedupe by (kind, id) only, so one section occupies up to
+  three rerank slots (proposition+chunk+section); pure-relevance top-8 collapses onto one
+  document, which breaks cross-domain synthesis — the headline capability. → phase **3**.
+- **Date/category facets dead on the current corpus**: *already fixed in code* (migration 0003
+  post-dates the ingest); a `--reingest` activates them. → phase **7**.
+
+**Sequencing consequence:** retrieval selection first (cheap, not RB, improves daily MCP use);
+then all re-ingest-bound fixes (sectioning, pass hygiene, math) **before** the one re-ingest of
+the small corpus; then re-evaluate against the 2026-06-04 baseline; then resume breadth.
+The §11.C model benchmark (llama vs qwen) stays deferred until extraction is fixed — both
+models currently summarise math-stripped text, so it would measure nothing.
+
 ## Ordered plan
 
 `[RB]` = re-ingest-bound: changing it later forces re-ingesting the whole corpus, so it must be
@@ -66,19 +93,47 @@ done **before** the bulk ingest. Each item ≈ one work-block.
   off) so the billable tool isn't advertised unless asked. Verified end-to-end over a real stdio
   client handshake. Client config:
   `{"command":"ssh","args":["locus-server","cd /…/locus && uv run locus mcp"]}`.
-- [ ] **3. DOCX + Markdown/text extractors** — `python-docx` + `.md`/`.txt`; route in watcher.
-- [ ] **4. Slides (PPTX)** — `python-pptx`: per-slide text + speaker notes; images feed figures.
-- [ ] **5. Code-repo ingest** — `python-ast` (functions, call graph, per-file sections);
+- [ ] **3. Retrieval selection (eval phase A)** — *not RB; do first.* In `retrieve/rerank.py`:
+  after cross-encoder scoring, cap units per `(section_id, kind)` at 1 and demote
+  section-summary candidates already represented by a child (expansion re-attaches the summary
+  anyway); per-doc diversity cap (≤3 of top-8, config `per_doc_cap`) with fallback fill so the
+  top-k stays full — fixes single-doc collapse on synthesis queries. Dedupe citations in
+  `assemble.py`. Verify on the Biot (no dup sections) + Fourier-bridge (≥2 docs) queries.
+- [ ] **4. Sectioning + front-matter** `[RB]` (eval phase B) — in `extract/pdf.py`, deterministic:
+  detect ToC/front-matter (dotted-leader density, pre-first-heading position) and exclude it from
+  passes + embedding; title-shape filters on heading candidates (reject mid-sentence/full-sentence
+  lines); raise `MIN_SECTION_CHARS` ~1.5–2k (measure the distribution across the 8 docs first);
+  tighten the section-count sanity cap (~`max(8, pages/2)`). Unit-test against the 8 raw PDFs.
+- [ ] **5. Pass hygiene** `[RB]` (eval phase C) — proposition prompt forbids meta-statements +
+  deterministic post-filter (meta regexes, near-dupe-of-title, dropped-formula signatures), one
+  bounded retry; *semantic* synthesis validation (all-empty = failure → repair → quarantine, not
+  silent ship); entity surface normalization at write (case/plural/punctuation) + filters for
+  equation labels and bare symbols (full cross-doc alias resolution stays in step 12); `audit`
+  gains a QC section (filtered-proposition counts, empty syntheses, corruption rate).
+- [ ] **6. Math-faithful extraction** `[RB]` (eval phase D; was step 7, promoted) — corruption
+  detector first (ligature-loss signatures, math-font evidence from span fonts → also fixes
+  `has_math`); route corrupted/math-dense pages to an OCR-to-markup model chosen *empirically*
+  on ~10 flagged corpus pages (Nougat-small / texify / Marker / GOT class — don't pick by
+  reputation); native `.ipynb` extractor (`nbconvert` → md, preserves `$...$` + code cells) and
+  prefer source formats over PDF exports. Then (and only then) run the §11.C model benchmark.
+- [ ] **7. Validate → re-ingest → re-evaluate** (eval phase E) — extend `locus eval` with:
+  math-fidelity (fraction of math-bearing sections whose formulas survive — the gate metric),
+  proposition-entailment sampling (LLM judge), labelled recall@k/MRR incl. ≥2 cross-domain
+  queries; `--reingest` the 8 docs (activates `source_date`/`category`; category backfill via
+  re-drop or mapping); re-run the full evaluation against the 2026-06-04 baseline.
+- [ ] **8. DOCX + Markdown/text extractors** — `python-docx` + `.md`/`.txt`; route in watcher.
+- [ ] **9. Slides (PPTX)** — `python-pptx`: per-slide text + speaker notes; images feed figures.
+- [ ] **10. Code-repo ingest** — `python-ast` (functions, call graph, per-file sections);
   repo-directory entry point; `file:line` provenance already wired.
-- [ ] **6. Figures** `[RB]` (medium) — `figures` + `figure_vectors`; extract/store/caption +
+- [ ] **11. Figures** `[RB]` (medium) — `figures` + `figure_vectors`; extract/store/caption +
   optional local VLM description; multimodal Claude at generation.
-- [ ] **7. Math-aware extraction** `[RB]` (medium) — recover LaTeX from `has_math` regions
-  (Nougat / math-OCR / vision). Lifts the dominant PDF content.
-- [ ] **8. Entity-alias resolution + Retrieval eval (Layer 3) → BULK INGEST** — canonicalise
-  entity names (the *link* substrate); validate on a heterogeneous sample; then pour the corpus.
+- [ ] **12. Entity-alias resolution + Retrieval eval (Layer 3) → BULK INGEST** — canonicalise
+  entity names cross-document (the *link* substrate); validate on a heterogeneous sample
+  including quant-finance papers + ≥1 code repo (the second domain the synthesis modes need);
+  then pour the corpus.
 
 **After the pour (not `[RB]`):** ANN-index warning (§11.D), Obsidian projection (§14),
 YouTube / podcast transcript ingest, broader retrieval tests.
 
-**New dependencies:** `mcp`, `python-docx`, `python-pptx`, a Nougat/math-OCR model. Keep heavy
-optional ones (VLM, Nougat) behind extras like `[rerank]`.
+**New dependencies:** `mcp`, `python-docx`, `python-pptx`, `nbconvert`, an OCR-to-markup model
+(benchmarked, step 6). Keep heavy optional ones (VLM, math-OCR) behind extras like `[rerank]`.

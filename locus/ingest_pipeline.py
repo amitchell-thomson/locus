@@ -62,19 +62,31 @@ def _source_type(path: Path) -> str | None:
     return "pdf" if path.suffix.lower() == ".pdf" else None  # code/video added later
 
 
-# Known document categories (CLAUDE.md §15.4/§16): the kinds of personal-KB material.
+# Canonical kind names (CLAUDE.md §15.4/§16): folder names matching one of these (singular
+# or plural) are normalized to it, so the core vocabulary stays stable across drops.
 CATEGORIES = {"paper", "project", "achievement", "note", "cv", "code", "video"}
 
 
 def _category(path: Path) -> str:
-    """Derive a category from the drop-folder convention: the first ancestor directory whose
-    name (singular or plural) is a known category. Falls back to 'uncategorized'.
+    """Derive a category from the drop location. The owner's folder taxonomy is authoritative.
 
-    Lets the owner sort material by where they drop it (vault/incoming/papers/, projects/, ...)
-    without a per-file flag; a doc with no category folder is simply 'uncategorized'.
+    Primary rule: the first folder under vault/incoming/ IS the category, free-form —
+    `incoming/engineering/x.pdf` → 'engineering', `incoming/papers/y.pdf` → 'paper' (known
+    kinds are singularized so the §15.4 vocabulary stays canonical). The laptop outbox rsyncs
+    subfolders verbatim, so sorting once in the local drop folder carries all the way through.
+    Files ingested from outside incoming/ fall back to scanning path parts for a known kind;
+    anything else is 'uncategorized'.
     """
+    try:
+        rel = path.resolve().relative_to(load().paths.incoming)
+        if len(rel.parts) > 1:  # at least one folder between incoming/ and the file
+            top = rel.parts[0].lower()
+            norm = top.rstrip("s")  # papers -> paper, notes -> note
+            return norm if norm in CATEGORIES else top
+    except ValueError:
+        pass  # not under incoming/ — use the known-kind scan below
     for part in path.parts:
-        norm = part.lower().rstrip("s")  # papers -> paper, notes -> note, achievements -> achievement
+        norm = part.lower().rstrip("s")
         if norm in CATEGORIES:
             return norm
     return "uncategorized"

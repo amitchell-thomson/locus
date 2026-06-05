@@ -7,7 +7,8 @@ avoids grabbing a file mid-transfer.
 
 Disposition per file (incoming is a disposable drop zone; the raw copy is kept in vault/raw):
   ingested / skipped   -> removed from incoming
-  unsupported / quarantined -> moved to incoming/.quarantine/ so it is not retried forever
+  unsupported / quarantined -> moved to incoming/.quarantine/<drop subpath> so it is not
+                               retried forever (subpath preserved for category provenance)
 """
 
 from __future__ import annotations
@@ -28,14 +29,20 @@ QUARANTINE_DIRNAME = ".quarantine"
 
 
 def _candidates(incoming: Path, settle: float) -> list[Path]:
-    """Files ready to ingest: real files, not dotfiles/.gitkeep, and stable for `settle` seconds."""
+    """Files ready to ingest: real files anywhere under incoming, stable for `settle` seconds.
+
+    Recurses into subfolders — the drop-folder category convention (ingest_pipeline._category:
+    `incoming/papers/x.pdf` -> category 'paper') means the laptop outbox rsyncs *subfolders*,
+    so a flat scan would never see categorized drops. Dotfiles and anything inside a dotted
+    directory (.quarantine) are skipped.
+    """
     now = time.time()
     out: list[Path] = []
-    for p in sorted(incoming.iterdir()):
-        if p.name == ".gitkeep" or p.name.startswith("."):
-            continue
+    for p in sorted(incoming.rglob("*")):
         if not p.is_file():
             continue
+        if any(part.startswith(".") for part in p.relative_to(incoming).parts):
+            continue  # dotfiles (.gitkeep) and dotted subtrees (.quarantine)
         try:
             if now - p.stat().st_mtime < settle:
                 continue  # still being written / just landed — wait for it to settle
@@ -53,12 +60,16 @@ def process_once(conn, *, incoming: Path | None = None, settle: float = 3.0) -> 
     for path in _candidates(incoming, settle):
         result = ingest_file(path, conn)
         results.append(result)
+        rel = path.relative_to(incoming)
         if result.status in ("ingested", "skipped"):
             path.unlink(missing_ok=True)  # canonical copy is already in vault/raw
         else:  # unsupported / quarantined — set aside so it is not retried every tick
-            quarantine.mkdir(exist_ok=True)
-            shutil.move(str(path), str(quarantine / path.name))
-        log.info("watch: %s -> %s", path.name, result.status)
+            # Preserve the drop subpath: keeps category provenance visible and avoids
+            # same-name collisions across category folders.
+            dest = quarantine / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(path), str(dest))
+        log.info("watch: %s -> %s", rel, result.status)
     return results
 
 

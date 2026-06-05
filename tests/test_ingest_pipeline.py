@@ -216,10 +216,41 @@ def test_synthesis_title_overrides_extractor_title(tmp_path, conn, fake_passes, 
 
 
 def test_unsupported_type_is_reported(tmp_path, conn):
-    txt = tmp_path / "notes.txt"
-    txt.write_text("not a pdf")
-    result = ingest_file(txt, conn)
+    # .txt became a supported type in step 8; .bin remains genuinely unsupported.
+    blob = tmp_path / "firmware.bin"
+    blob.write_text("not an ingestible format")
+    result = ingest_file(blob, conn)
     assert result.status == "unsupported"
+
+
+def test_source_type_routing_by_suffix():
+    from locus.ingest_pipeline import _source_type
+
+    cases = {
+        "a.pdf": "pdf", "b.docx": "docx", "c.md": "markdown", "d.markdown": "markdown",
+        "e.txt": "text", "f.ipynb": "notebook", "G.MD": "markdown", "h.bin": None,
+    }
+    for name, expected in cases.items():
+        assert _source_type(Path(name)) == expected, name
+
+
+def test_markdown_ingests_end_to_end(tmp_path, conn, fake_passes):
+    body = " ".join(f"Sentence {i} contains several descriptive words about the topic." for i in range(12))
+    md = tmp_path / "note.md"
+    md.write_text(
+        f"---\ntitle: Control Systems Field Notes\ndate: 2023-07-21\n---\n\n"
+        f"# Overview\n\n{body}\n\n# Details\n\n{body}\n",
+        encoding="utf-8",
+    )
+    result = ingest_file(md, conn)
+    assert result.status == "ingested"
+    assert result.sections == 2
+    row = conn.execute(
+        "SELECT source_type, title, source_date FROM documents"
+    ).fetchone()
+    assert row["source_type"] == "markdown"
+    assert row["title"] == "Control Systems Field Notes"  # trusted frontmatter title kept
+    assert row["source_date"] == "2023-07-21"  # frontmatter date beats mtime fallback
 
 
 def test_missing_file_is_quarantined(tmp_path, conn):

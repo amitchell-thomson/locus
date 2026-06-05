@@ -72,6 +72,41 @@ def test_gitkeep_and_quarantine_dir_ignored(incoming, monkeypatch):
     assert calls == []  # only .gitkeep + the hidden quarantine dir present
 
 
+def test_subfolder_drops_are_seen(incoming, monkeypatch):
+    """Category subfolders (incoming/notes/x.md) are the laptop-outbox convention — the
+    watcher must recurse, or categorized drops sit forever (step-8 verification finding)."""
+    seen = []
+    monkeypatch.setattr(
+        watcher_mod, "ingest_file",
+        lambda p, c: seen.append(Path(p)) or IngestResult(str(p), "ingested"),
+    )
+    (incoming / "notes").mkdir()
+    f = _drop(incoming / "notes", "note.md")
+    process_once(object(), incoming=incoming)
+    assert seen == [f]
+    assert not f.exists()
+
+
+def test_subfolder_quarantine_preserves_subpath(incoming, monkeypatch):
+    monkeypatch.setattr(watcher_mod, "ingest_file", _fake_ingest("unsupported"))
+    (incoming / "projects").mkdir()
+    _drop(incoming / "projects", "blob.bin")
+    process_once(object(), incoming=incoming)
+    assert (incoming / QUARANTINE_DIRNAME / "projects" / "blob.bin").exists()
+
+
+def test_quarantine_subtree_is_not_rescanned(incoming, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        watcher_mod, "ingest_file",
+        lambda p, c: calls.append(p) or IngestResult(str(p), "ingested"),
+    )
+    (incoming / QUARANTINE_DIRNAME / "papers").mkdir(parents=True)
+    _drop(incoming / QUARANTINE_DIRNAME / "papers", "old.bin")
+    process_once(object(), incoming=incoming)
+    assert calls == []  # quarantined files stay quarantined
+
+
 def test_unsettled_file_is_skipped(incoming, monkeypatch):
     monkeypatch.setattr(watcher_mod, "ingest_file", _fake_ingest("ingested"))
     fresh = incoming / "arriving.pdf"

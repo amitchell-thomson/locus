@@ -33,7 +33,7 @@ def test_extension_loads(db: Path):
 def test_migration_records_head_and_is_idempotent(db: Path):
     # After migrate, the DB is at the head revision Alembic knows about.
     head = head_revision(db)
-    assert current_revision(db) == head == "0003"
+    assert current_revision(db) == head == "0004"
     # Re-running is a no-op and leaves the revision unchanged.
     migrate(db)
     assert current_revision(db) == head
@@ -65,6 +65,58 @@ def test_knn_orders_by_distance(db: Path):
         (q,),
     ).fetchall()
     assert [r["chunk_id"] for r in rows] == [1, 2]
+    conn.close()
+
+
+def test_source_type_check_widened(db: Path):
+    """0004: the new step-8 formats are legal source_type values; junk is still rejected."""
+    conn = get_connection(db)
+    for i, st in enumerate(("docx", "markdown", "text", "notebook"), start=10):
+        conn.execute(
+            "INSERT INTO documents(id, content_hash, source_type, source_uri, raw_path, ingest_model)"
+            f" VALUES ({i}, 'h{i}', ?, 'u', 'p', 'qwen2.5:7b')",
+            (st,),
+        )
+    conn.commit()
+    import sqlite3
+
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO documents(id, content_hash, source_type, source_uri, raw_path, ingest_model)"
+            " VALUES (99, 'h99', 'bogus', 'u', 'p', 'qwen2.5:7b')"
+        )
+    conn.close()
+
+
+def test_0004_rebuild_preserves_existing_rows(tmp_path: Path):
+    """A pre-0004 document survives the table rebuild with its id and children intact."""
+    from alembic import command
+
+    from locus.db.migrate import _config
+
+    path = tmp_path / "old.db"
+    command.upgrade(_config(path), "0003")  # build a pre-rebuild DB
+    conn = get_connection(path)
+    conn.execute(
+        "INSERT INTO documents(id, content_hash, source_type, source_uri, raw_path,"
+        " ingest_model, title, source_date, category)"
+        " VALUES (7, 'h7', 'pdf', 'u', 'p', 'qwen2.5:7b', 'Old Doc', '2024-01-02', 'paper')"
+    )
+    conn.execute("INSERT INTO sections(id, doc_id, position) VALUES (3, 7, 0)")
+    conn.commit()
+    conn.close()
+
+    migrate(path)  # 0003 -> 0004 rebuild
+    conn = get_connection(path)
+    row = conn.execute("SELECT * FROM documents WHERE id = 7").fetchone()
+    assert row["title"] == "Old Doc"
+    assert row["source_date"] == "2024-01-02"
+    assert row["category"] == "paper"
+    # Child still attached and the FK cascade still works on the rebuilt table.
+    assert conn.execute("SELECT doc_id FROM sections WHERE id = 3").fetchone()["doc_id"] == 7
+    conn.execute("DELETE FROM documents WHERE id = 7")
+    conn.commit()
+    assert conn.execute("SELECT COUNT(*) AS c FROM sections").fetchone()["c"] == 0
     conn.close()
 
 

@@ -221,7 +221,24 @@ done **before** the bulk ingest. Each item ≈ one work-block.
   steps: facet-aware scoring → §15.2 multi-query expansion; entity aliasing + cross-doc
   edges → step 12; numeric-faithfulness on propositions → §11.B/C model measurement (the
   one observed inversion is contradicted by 13 sibling props + the co-retrieved raw chunk).
-- [ ] **8. DOCX + Markdown/text extractors** — `python-docx` + `.md`/`.txt`; route in watcher.
+- [x] **8. DOCX + Markdown/text + notebook extractors** — done (2026-06-05). Four formats:
+  `.docx` (`python-docx`: heading-style sections, tables flattened pipe-joined, core-props
+  title/created-date), `.md`/`.markdown` (fence-aware ATX sectioning; minimal stdlib YAML
+  frontmatter → title/`source_date`; tags parsed-but-deferred), `.txt` (single section,
+  char-windowed ≥12k), `.ipynb` (deferred here from step 6 — stdlib JSON, not nbconvert:
+  markdown cells verbatim preserving `$...$`, code cells fenced, outputs dropped). Shared
+  models + size-band machinery moved to `extract/base.py` (pdf.py re-imports; zero behavior
+  change, suite-verified). Migration **0004** rebuilds `documents` to widen the source_type
+  CHECK (`docx`/`markdown`/`text`/`notebook`; SQLite can't ALTER a CHECK) — applied to the
+  live DB, 24 docs + children intact. Routing via `_SUFFIX_TYPE` + `_extract()` dispatch;
+  pipeline downstream untouched (§2.6). **Watcher bug found & fixed during verification:**
+  `_candidates` never recursed, so category-subfolder drops (`incoming/papers/…` — the
+  laptop-outbox convention) sat unprocessed forever; now `rglob` with dotted-subtree
+  exclusion, quarantine preserves the drop subpath. Verified live end-to-end: all four
+  formats ingested + retrieved with citations (dense+lexical), frontmatter/core-props dates
+  land in `source_date`, title arbitration fixed the `.txt` slug, drop-folder `category`
+  derived via watcher (`notes/` → 'note'), audit QC clean; test docs then removed (corpus
+  back to 24). 184 tests green (was 158).
 - [ ] **9. Slides (PPTX)** — `python-pptx`: per-slide text + speaker notes; images feed figures.
 - [ ] **10. Code-repo ingest** — `python-ast` (functions, call graph, per-file sections);
   repo-directory entry point; `file:line` provenance already wired.
@@ -235,5 +252,7 @@ done **before** the bulk ingest. Each item ≈ one work-block.
 **After the pour (not `[RB]`):** ANN-index warning (§11.D), Obsidian projection (§14),
 YouTube / podcast transcript ingest, broader retrieval tests.
 
-**New dependencies:** `mcp`, `python-docx`, `python-pptx`, `nbconvert`, an OCR-to-markup model
-(benchmarked, step 6). Keep heavy optional ones (VLM, math-OCR) behind extras like `[rerank]`.
+**New dependencies:** `mcp`, `python-docx` (landed, step 8), `python-pptx`, an OCR-to-markup
+model (benchmarked, step 6). `nbconvert` turned out unneeded — the `.ipynb` extractor reads the
+notebook JSON with the stdlib (§3 build-vs-buy). Keep heavy optional ones (VLM, math-OCR)
+behind extras like `[rerank]`.

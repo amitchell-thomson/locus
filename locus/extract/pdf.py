@@ -29,25 +29,20 @@ from datetime import date
 from pathlib import Path
 
 import pymupdf
-from pydantic import BaseModel
+
+# Shared extraction types + the section size band live in extract/base.py so every
+# extractor (docx, markdown/text/notebook, ...) produces the same shape (§2.6).
+from locus.extract.base import (
+    MAX_SECTION_CHARS,
+    MIN_SECTION_CHARS,
+    _MATH,
+    ExtractedDoc,
+    ExtractedSection,
+    PageFlags,
+)
 
 # PyMuPDF span flag bit for bold text.
 _FLAG_BOLD = 1 << 4
-
-# Section size band. Both bounds are structural guarantees on the *output* of detection,
-# independent of how noisy heading detection is on a given PDF:
-#   - sections longer than MAX are split into page-aligned windows (no unsummarisable blob),
-#   - sections shorter than MIN are merged into their neighbours (no heading-only fragments).
-# ~12k chars ≈ 3k tokens; 400 chars cleanly separates real sections (measured 600-8000c) from
-# heading/label fragments (<200c).
-MAX_SECTION_CHARS = 12_000
-MIN_SECTION_CHARS = 400
-
-# Heuristic math indicators (LaTeX commands, common math unicode, inline $...$).
-_MATH = re.compile(
-    r"\\(?:frac|sum|int|prod|sqrt|partial|nabla|alpha|beta|gamma|theta|sigma|lambda|mu|"
-    r"infty|begin\{)|[∑∫∏√≤≥≈≠∂∇∞±×÷πθλμσΣΩ]|\$[^$\n]{1,80}\$"
-)
 
 # --- page-level extraction-damage / math-evidence signals (PLAN.md step 6, eval phase D) ---
 # Each signal below was verified against the corpus before being coded; none is speculative.
@@ -80,46 +75,8 @@ def _mathuni_count(text: str) -> int:
     return sum(1 for c in text if 0x1D400 <= ord(c) <= 0x1D7FF or c in "∂∇∑∫∞≤≥≈≠±ℝℕℤℂ")
 
 
-# Thresholds (measured on the corpus; see PLAN.md step 6).
-_MATH_DENSE_CHARS = 30  # chars set in math fonts on a page
-_MATHUNI_CHARS = 20  # math-unicode chars in the text layer on a page
-_SMALL_IMAGE_MIN = 3  # small raster images (formula-sized) on a page
+# Size box for formula-sized raster images (the count threshold lives with PageFlags in base).
 _SMALL_IMAGE_MAX_W, _SMALL_IMAGE_MAX_H = 400.0, 60.0
-
-
-class PageFlags(BaseModel):
-    """Per-page extraction-damage and math-evidence signals (1-based page number)."""
-
-    page: int
-    ligature_hits: int = 0  # broken-ligature words in the text layer
-    symbol_garbage: int = 0  # mis-mapped symbol glyphs ('H(!)', 'ei!t')
-    mathfont_chars: int = 0  # characters set in TeX math fonts
-    mathuni_chars: int = 0  # math-unicode chars in the text layer (𝑐, ℝ, ∂ ...)
-    small_images: int = 0  # formula-sized raster images
-    drawings: int = 0  # vector drawing groups (Colab formulas render as these)
-    gap_hits: int = 0  # mid-sentence inline formula gaps
-
-    @property
-    def corrupted(self) -> bool:
-        """Text layer is provably damaged (content already lost)."""
-        return self.ligature_hits >= 2 or self.symbol_garbage >= 2
-
-    @property
-    def math_dense(self) -> bool:
-        """Typeset math present, by font evidence or math-unicode density (the text-layer
-        rendering of math is unreliable in both cases)."""
-        return self.mathfont_chars >= _MATH_DENSE_CHARS or self.mathuni_chars >= _MATHUNI_CHARS
-
-    @property
-    def image_math(self) -> bool:
-        """Formulas rendered as images/vector drawings — absent from the text layer."""
-        return self.small_images >= _SMALL_IMAGE_MIN or (
-            self.drawings >= 3 and self.gap_hits >= 2
-        )
-
-    @property
-    def needs_ocr(self) -> bool:
-        return self.corrupted or self.math_dense or self.image_math
 
 
 def _page_flags(page, pno: int, text: str) -> PageFlags:
@@ -153,28 +110,6 @@ _DOTTED_LEADER = re.compile(r"(?:\.[ \t]*){4,}")
 _TOC_MIN_LEADER_LINES = 5
 # ...or when leader lines make up at least this fraction of its non-empty lines.
 _TOC_LEADER_FRACTION = 0.3
-
-
-class ExtractedSection(BaseModel):
-    position: int  # 0-based order within the document
-    title: str | None  # section heading, or None for front matter / unknown
-    text: str  # verbatim text of this section
-    page_start: int  # 1-based page where the section begins
-    page_end: int  # 1-based page where the section ends
-    has_math: bool  # heuristic: section likely contains mathematical content
-
-
-class ExtractedDoc(BaseModel):
-    title: str | None
-    page_count: int
-    section_strategy: str  # "outline" | "headings" | "single"
-    sections: list[ExtractedSection]
-    source_path: str
-    source_date: str | None = None  # ISO 'YYYY-MM-DD' from PDF metadata; None if absent/invalid
-    toc_pages: list[int] = []  # 1-based pages excised as printed ToC (audit trail)
-    page_flags: list[PageFlags] = []  # per-page damage/math signals (drives the OCR routing)
-    ocr_replaced: list[int] = []  # 1-based pages whose text the math-OCR pass replaced
-    ocr_fallbacks: list[str] = []  # "page: reason" entries where QC kept the original text
 
 
 def extract_pdf(path: str | Path, *, mathocr: bool = False) -> ExtractedDoc:

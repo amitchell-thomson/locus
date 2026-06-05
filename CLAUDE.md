@@ -709,8 +709,19 @@ math-stripped text). Details per step in `PLAN.md`.
    de-hyphenation (joins only doc-vocab-attested words) `[re-ingest-bound]`. Residuals map
    to planned steps: facet scoring → §15.2; aliasing/edges → step 12; numeric faithfulness
    → §11.B/C. Corpus declared **ready for format breadth (steps 8–10)**.
-8. **DOCX + Markdown/text extractors.** `python-docx` (heading styles → sections) and `.md`/`.txt`
-   (headings → sections). Route in `_source_type` + watcher. Unblocks notes / write-ups / docx.
+8. **DOCX + Markdown/text + notebook extractors** — **done** (2026-06-05). Four formats:
+   `.docx` (`python-docx`: heading-style sections, tables flattened, core-props title/date),
+   `.md` (fence-aware ATX sectioning; stdlib YAML frontmatter → title/`source_date`), `.txt`
+   (single section, char-windowed), `.ipynb` (deferred here from step 6; stdlib JSON — not
+   nbconvert — markdown cells verbatim preserving `$...$`, code cells fenced, outputs
+   dropped). Shared models + size-band machinery extracted to `extract/base.py` (pdf.py
+   re-imports). Migration 0004 widens the `source_type` CHECK by table rebuild
+   (`docx`/`markdown`/`text`/`notebook`). Routing: `_SUFFIX_TYPE` + `_extract()` dispatch;
+   downstream pipeline untouched (§2.6) — title arbitration, mtime date fallback, category
+   convention all inherited. **Watcher fixed during verification:** it never recursed into
+   category subfolders, so laptop-outbox drops (`incoming/papers/…`) sat unprocessed; now
+   recursive, quarantine preserves the drop subpath. Verified live: all four formats ingest
+   + retrieve with citations, audit QC clean, drop-folder category derived via watcher.
 9. **Slides (PPTX) extractor.** `python-pptx`: per-slide text + speaker notes → sections; slide
    images feed the figures pipeline (block 11).
 10. **Code-repo ingest.** `extract/code.py` via `python-ast` (functions, call graph, per-file
@@ -726,9 +737,10 @@ math-stripped text). Details per step in `PLAN.md`.
 **After the pour (not re-ingest-bound):** ANN-index warning (§11.D), Obsidian projection (§14),
 YouTube/podcast transcript ingest, broader retrieval tests.
 
-New dependencies introduced along the way: `mcp`, `python-docx`, `python-pptx`, `nbconvert`, and
-(for math) an OCR-to-markup model (benchmarked, step 6). Keep heavy/optional ones (VLM, math-OCR)
-behind extras like `[rerank]`.
+New dependencies introduced along the way: `mcp`, `python-docx` (landed, step 8),
+`python-pptx`, and (for math) an OCR-to-markup model (benchmarked, step 6). `nbconvert`
+turned out unneeded — the `.ipynb` extractor reads notebook JSON with the stdlib (§3).
+Keep heavy/optional ones (VLM, math-OCR) behind extras like `[rerank]`.
 
 
 

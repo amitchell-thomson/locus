@@ -1,9 +1,9 @@
-"""Ingest orchestration: one PDF -> a fully populated 3-level DB (CLAUDE.md §6).
+"""Ingest orchestration: one source file -> a fully populated 3-level DB (CLAUDE.md §6).
 
-Per file:
+Per file (pdf / docx / markdown / text / notebook, routed by suffix):
   hash -> skip if the content_hash already exists (idempotent)
        -> copy the raw file into the flat raw store
-       -> extract (pymupdf) -> ordered sections
+       -> extract (per-format, extract/) -> ordered sections
        -> per section: summary + propositions + entities + chunks  (local LLM + embeddings)
        -> doc: synthesis (thesis/method/result/limitations) + gap flags
        -> write L1 + L2 + L3 + entities in ONE transaction (atomic; rolls back on error)
@@ -30,7 +30,9 @@ from pathlib import Path
 
 from locus.config import load
 from locus.db.connection import get_connection
+from locus.extract import docx as docx_extract
 from locus.extract import pdf as pdf_extract
+from locus.extract import textdoc
 from locus.ingest import chunk, embed, entities, gaps, llm, propositions, summarize, synthesis
 
 log = logging.getLogger(__name__)
@@ -59,8 +61,20 @@ def _hash_file(path: Path) -> str:
     return h.hexdigest()
 
 
+# Suffix -> documents.source_type (the FORMAT axis, §15.4). code/video are routed by
+# different entry points (a repo directory, a URL), not by file suffix here.
+_SUFFIX_TYPE = {
+    ".pdf": "pdf",
+    ".docx": "docx",
+    ".md": "markdown",
+    ".markdown": "markdown",
+    ".txt": "text",
+    ".ipynb": "notebook",
+}
+
+
 def _source_type(path: Path) -> str | None:
-    return "pdf" if path.suffix.lower() == ".pdf" else None  # code/video added later
+    return _SUFFIX_TYPE.get(path.suffix.lower())
 
 
 # Canonical kind names (CLAUDE.md §15.4/§16): folder names matching one of these (singular
@@ -156,12 +170,28 @@ class _Prepared:
     embed_model: str
 
 
-def _prepare(path: Path) -> _Prepared:
-    # mathocr=True: the pipeline (unlike ad-hoc extraction) runs the math-OCR pass on pages
-    # the damage/math detector flags, per config [mathocr] (engine='off' disables).
-    doc = pdf_extract.extract_pdf(path, mathocr=True)
+def _extract(path: Path, source_type: str) -> pdf_extract.ExtractedDoc:
+    """Dispatch to the per-format extractor. Everything downstream is format-agnostic (§2.6)."""
+    if source_type == "pdf":
+        # mathocr=True: the pipeline (unlike ad-hoc extraction) runs the math-OCR pass on pages
+        # the damage/math detector flags, per config [mathocr] (engine='off' disables).
+        return pdf_extract.extract_pdf(path, mathocr=True)
+    if source_type == "docx":
+        return docx_extract.extract_docx(path)
+    if source_type == "markdown":
+        return textdoc.extract_markdown(path)
+    if source_type == "text":
+        return textdoc.extract_text(path)
+    if source_type == "notebook":
+        return textdoc.extract_notebook(path)
+    raise ValueError(f"no extractor for source_type {source_type!r}")
+
+
+def _prepare(path: Path, source_type: str) -> _Prepared:
+    doc = _extract(path, source_type)
     # If the OCR engine's VRAM forced Ollama to load the ingest model split across CPU/GPU,
     # evict it now (no request in flight) so the passes below run it fully on the GPU.
+    # Safe no-op when no OCR ran (non-PDF formats, clean PDFs).
     llm.unload_if_split()
     prepared: list[_PreparedSection] = []
     summaries: list[str] = []
@@ -363,7 +393,7 @@ def ingest_file(path: str | Path, conn, *, reingest: bool = False) -> IngestResu
             delete_document(conn, existing["id"])
 
         raw_name = _copy_to_raw(path, content_hash)
-        prep = _prepare(path)
+        prep = _prepare(path, source_type)
         return _write(conn, path, content_hash, source_type, raw_name, prep)
     except Exception as exc:  # quarantine this doc, keep the batch alive (§6)
         log.warning("Quarantined %s: %s", path, exc)

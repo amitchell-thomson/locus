@@ -65,7 +65,11 @@ def _source_type(path: Path) -> str | None:
 
 # Canonical kind names (CLAUDE.md §15.4/§16): folder names matching one of these (singular
 # or plural) are normalized to it, so the core vocabulary stays stable across drops.
-CATEGORIES = {"paper", "project", "achievement", "note", "cv", "code", "video"}
+# One axis only — categories are KINDS of content; FORMAT lives in documents.source_type
+# (so no 'code'/'slides' category: a repo under projects/ is category='project',
+# source_type='code'). Authorship splits notes (owner-written) from coursework (handed to
+# the owner by a course); career absorbs CV/applications/achievements (2026-06-05 taxonomy).
+CATEGORIES = {"paper", "coursework", "project", "career", "note", "video"}
 
 
 def _category(path: Path) -> str:

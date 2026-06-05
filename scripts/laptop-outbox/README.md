@@ -42,8 +42,13 @@ it (known kind names singularize, `papers` → `paper`; anything else is taken v
 First-level folders persist across flushes — only deeper emptied subfolders are tidied.
 Files dropped loose at the root ingest as `uncategorized`.
 
+The taxonomy (settled 2026-06-05) is one axis — the KIND of content (format is detected
+separately): `papers` (third-party research/reading), `coursework` (material a course handed
+you), `projects` (things you built — write-ups and code repos), `career` (CV, cover letters,
+applications, achievements), `notes` (anything you wrote that isn't a project/career artifact).
+
 ```bash
-mkdir -p ~/LocusDrop/{papers,notes,projects,achievements,cv}
+mkdir -p ~/LocusDrop/{papers,coursework,projects,career,notes}
 ```
 
 Sorting a document into your knowledge base is now one drag: pick the folder, the agent

@@ -579,7 +579,10 @@ The §1 reframe (entire personal KB — projects, achievements, history — to q
   write-ups if the pipeline only reads PDFs. *Ingest-capability gate — before the pour.*
 - **Temporal + category metadata (re-ingest-bound schema decision).** Personal/historical
   content has meaningful *dates* (when an achievement happened, when a project ran) and *kinds*
-  (paper / project / achievement / note / cv). Add `source_date` + `category` to `documents`
+  (settled 2026-06-05: paper / coursework / project / career / note — one axis, KIND of
+  content; format lives in `source_type`, so no code/slides category; notes = owner-written,
+  coursework = handed to the owner; career absorbs CV/applications/achievements).
+  Add `source_date` + `category` to `documents`
   (+ retrieval facets) so "what did I work on in 2023" and "show my projects" work. Settle the
   schema before bulk — backfilling dates across a multi-year ingest is the expensive redo.
 - **Entity-alias resolution (elevated).** "Link" is now a primary use, and cross-document entity

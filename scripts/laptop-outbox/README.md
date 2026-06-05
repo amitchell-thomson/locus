@@ -18,7 +18,7 @@ All commands below run **on the Mac**.
 ## 1. Copy the scripts from the server
 
 ```bash
-scp -r locus-server:/home/alec/server-projects/locus/scripts/laptop-outbox ~/locus-outbox-setup
+scp -r compute-node:/home/alec/server-projects/locus/scripts/laptop-outbox ~/locus-outbox-setup
 cd ~/locus-outbox-setup
 ```
 
@@ -67,7 +67,7 @@ launchctl enable gui/$(id -u)/com.locus.outbox
 echo "hello locus $(date)" > ~/LocusDrop/test.txt
 # wait up to ~60s, then check the log and the server:
 tail -n 20 ~/Library/Logs/locus-outbox.log
-ssh locus-server 'ls -l /home/alec/server-projects/locus/vault/incoming/'
+ssh compute-node 'ls -l /home/alec/server-projects/locus/vault/incoming/'
 ```
 
 You should see `test.txt` arrive on the server and disappear from `~/LocusDrop/`.

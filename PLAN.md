@@ -31,7 +31,7 @@ desktop app) is the *client*. The transport bridges them:
 
 - **stdio over SSH (recommended).** Configure the MCP server as a local command that is really an
   SSH into the server, e.g.
-  `ssh locus-server "cd /home/alec/server-projects/locus && uv run locus mcp"`.
+  `ssh compute-node "cd /home/alec/server-projects/locus && /home/alec/.local/bin/uv run locus mcp"`.
   Claude spawns `ssh` locally; the Locus MCP server runs remotely; stdio is tunneled over the SSH
   connection you already use for the outbox. **No open ports, no extra auth, no new infra.** The
   server process stays alive for the session, so the embedder + reranker load once and stay warm.
@@ -92,7 +92,7 @@ done **before** the bulk ingest. Each item ≈ one work-block.
   generates server-side and is **opt-in** (config `[mcp].enable_query` / `--enable-query`, default
   off) so the billable tool isn't advertised unless asked. Verified end-to-end over a real stdio
   client handshake. Client config:
-  `{"command":"ssh","args":["locus-server","cd /…/locus && uv run locus mcp"]}`.
+  `{"command":"ssh","args":["compute-node","cd /…/locus && /home/alec/.local/bin/uv run locus mcp"]}`.
 - [x] **3. Retrieval selection (eval phase A)** — *not RB; do first.* In `retrieve/rerank.py`:
   after cross-encoder scoring, cap units per `(section_id, kind)` at 1 and demote
   section-summary candidates already represented by a child (expansion re-attaches the summary

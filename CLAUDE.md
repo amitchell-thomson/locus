@@ -634,7 +634,7 @@ math-stripped text). Details per step in `PLAN.md`.
    the vault is callable from Claude Code, the desktop app, and the API. Immediate daily utility
    over the current corpus; not re-ingest-bound. **Architecture (local Claude ↔ server corpus):**
    the MCP *server* runs server-side (needs DB + sqlite-vec + Ollama + reranker); the local Claude
-   is the client. Use **stdio over SSH** — Claude spawns `ssh locus-server "… uv run locus mcp"`,
+   is the client. Use **stdio over SSH** — Claude spawns `ssh compute-node "… /home/alec/.local/bin/uv run locus mcp"` (absolute path: non-interactive SSH shells do not source .zshrc, so `uv` is not on PATH),
    tunnelling stdio over the existing SSH (no open ports/auth). Expose `retrieve` as the core tool
    so the local Claude pulls the KB as context and generates itself (needs no server-side Claude
    key). See `PLAN.md`.

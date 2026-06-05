@@ -3,7 +3,7 @@
 
 # SSH destination. Recommended: define a Host alias in ~/.ssh/config (see README) and
 # reference it here, so host/user/key live in the standard SSH config.
-REMOTE="locus-server"
+REMOTE="compute-node"
 
 # Absolute path to Locus's incoming dir on the server.
 REMOTE_DIR="/home/alec/server-projects/locus/vault/incoming"

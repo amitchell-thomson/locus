@@ -28,15 +28,29 @@ class SectionEvalInput:
     entities: list[tuple[str, str]]
 
 
-def sample_section_ids(conn, n: int, seed: int = 0, doc_id: int | None = None) -> list[int]:
-    """Deterministically sample up to n section ids (optionally within one doc)."""
-    sql = "SELECT id FROM sections"
+def sample_section_ids(
+    conn, n: int, seed: int = 0, doc_id: int | None = None, prose_only: bool = True
+) -> list[int]:
+    """Deterministically sample up to n section ids (optionally within one doc).
+
+    `prose_only` (default) restricts to documents whose pass profile actually runs the
+    prose passes being judged — since step 10, ~a third of all sections are code files,
+    where propositions are skipped by design and entities come from the AST; regenerating
+    prose passes over raw source would benchmark a path production never takes.
+    """
+    from locus.ingest_pipeline import pass_profile
+
+    sql = "SELECT s.id, d.source_type FROM sections s JOIN documents d ON d.id = s.doc_id"
     params: tuple = ()
     if doc_id is not None:
-        sql += " WHERE doc_id=?"
+        sql += " WHERE s.doc_id=?"
         params = (doc_id,)
-    sql += " ORDER BY id"
-    ids = [r["id"] for r in conn.execute(sql, params)]
+    sql += " ORDER BY s.id"
+    rows = conn.execute(sql, params).fetchall()
+    ids = [
+        r["id"] for r in rows
+        if not prose_only or pass_profile(r["source_type"]).propositions
+    ]
     if n >= len(ids):
         return ids
     return sorted(random.Random(seed).sample(ids, n))
@@ -107,13 +121,33 @@ def evaluate(
     model: str | None = None,
     judge_model: str | None = None,
 ) -> tuple[list[JudgedSection], dict[str, float]]:
-    """Judge a fixed sample. If `model` is given, regenerate with it first; else score the DB."""
+    """Judge a fixed sample. If `model` is given, regenerate with it first; else score the DB.
+
+    A section where the model cannot produce schema-valid output even after llm.py's
+    repair loop counts as an extraction failure (reported in the aggregate) instead of
+    aborting the run — for a model BENCHMARK, failing validation is itself a result.
+    """
+    import logging
+
+    from locus.ingest.llm import IngestExtractionError
+
     ids = sample_section_ids(conn, sample, seed, doc_id)
     judged: list[JudgedSection] = []
+    failures = 0
     for sid in ids:
-        ev = regenerate(conn, sid, model) if model else load_existing(conn, sid)
+        try:
+            ev = regenerate(conn, sid, model) if model else load_existing(conn, sid)
+        except IngestExtractionError as exc:
+            failures += 1
+            logging.getLogger(__name__).warning(
+                "section %s: extraction failed under model %s: %s", sid, model, exc
+            )
+            continue
         scores = judge_section(
             ev.source, ev.summary, ev.propositions, ev.entities, model=judge_model
         )
         judged.append(JudgedSection(section_id=sid, doc_id=ev.doc_id, scores=scores))
-    return judged, _aggregate(judged)
+    agg = _aggregate(judged)
+    agg["sections_judged"] = float(len(judged))
+    agg["extraction_failures"] = float(failures)
+    return judged, agg

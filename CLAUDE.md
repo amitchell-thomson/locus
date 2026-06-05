@@ -83,7 +83,7 @@ hardware changes.
 | Code parsing | `python-ast` | per-file functions + call graph |
 | Video transcripts | `youtube-transcript-api` | timestamps retained for `?t=` deep links |
 | Embeddings | `nomic-embed-text` via Ollama | **768-dim** — fixed across the vector tables |
-| Local LLM (ingest) | `llama3.1:8b` **or** `qwen2.5:7b` via Ollama | benchmark both; see §11 |
+| Local LLM (ingest) | `qwen2.5:7b-instruct-q5_K_M` via Ollama | **settled by benchmark** (§11.C, 2026-06-05) |
 | Vector store | `sqlite-vec` | brute-force KNN; acceptable at personal-corpus scale (see §11) |
 | Metadata + schema | SQLite | single DB file |
 | Reranker | `ms-marco-MiniLM` cross-encoder | runs on **CPU** |
@@ -329,7 +329,7 @@ locus/
 [ollama]
 host          = "http://localhost:11434"
 embed_model   = "nomic-embed-text"
-ingest_model  = "llama3.1:8b"     # or "qwen2.5:7b" — benchmark decides
+ingest_model  = "qwen2.5:7b-instruct-q5_K_M"  # settled by the §11.C benchmark (2026-06-05)
 
 [paths]
 db            = "vault/locus.db"
@@ -396,10 +396,13 @@ generation-quality work on an 8B quantised model; quality will be inconsistent. 
 measure proposition quality from the 8B model on a sample before committing to local-only.
 The "local for ingest" principle should not pre-empt that measurement.
 
-**C. Local-model benchmark unresolved.** `llama3.1:8b` vs `qwen2.5:7b` for ingest quality —
-decide empirically on a fixed sample (proposition discreteness/faithfulness, entity recall,
-synthesis accuracy), not by reputation. Build a tiny eval harness; this is cheap insurance
-given ingest is the expensive, hard-to-redo step.
+**C. Local-model benchmark — RESOLVED (2026-06-05): qwen2.5:7b-instruct-q5_K_M.**
+Head-to-head on a fixed 12-section prose sample (seed 0), same q5_K_M quant for both,
+passes regenerated per model and Claude-judged (`locus eval --suite judge --models a,b`):
+qwen overall **3.96** vs llama3.1:8b 3.65. llama edged propositions slightly
+(atomicity 4.17 vs 3.83 — within noise at n=12) but collapsed on **summary faithfulness
+2.75 vs 4.50** — the L2 retrieval unit and the synthesis input, the dimension that matters
+most. Both models: zero schema-validation failures. The incumbent stays; no re-ingest.
 
 **D. sqlite-vec does brute-force KNN (no ANN index).** Fine at personal-corpus scale (linear
 scan over even ~10⁵ vectors is sub-second). Add a candidate-count check that warns if the

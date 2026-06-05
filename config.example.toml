@@ -4,7 +4,7 @@
 [ollama]
 host          = "http://localhost:11434"
 embed_model   = "nomic-embed-text"
-ingest_model  = "qwen2.5:7b-instruct-q5_K_M"  # Q5 quant (quality bump for prop/synthesis pass, §11.B); llama-vs-qwen eval (§11.C) decides final family
+ingest_model  = "qwen2.5:7b-instruct-q5_K_M"  # settled by the §11.C benchmark (2026-06-05): beats llama3.1:8b-q5_K_M 3.96 vs 3.65 overall
 num_ctx       = 8192              # ingest context window; >Ollama default 4096 so prop-dense sections don't slide out mid-generation
 
 [paths]

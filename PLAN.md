@@ -72,6 +72,11 @@ then all re-ingest-bound fixes (sectioning, pass hygiene, math) **before** the o
 the small corpus; then re-evaluate against the 2026-06-04 baseline; then resume breadth.
 The §11.C model benchmark (llama vs qwen) stays deferred until extraction is fixed — both
 models currently summarise math-stripped text, so it would measure nothing.
+*(Resolved 2026-06-05, post-step-10: qwen2.5:7b-instruct-q5_K_M wins — overall 3.96 vs
+llama3.1:8b-q5_K_M 3.65 on the 12-section prose sample, seed 0; llama collapsed on summary
+faithfulness 2.75 vs 4.50, the L2 unit. Zero schema failures for both. Incumbent stays —
+no re-ingest. Harness gained prose-only sampling — code sections skip the prose passes by
+design — and per-section failure tolerance counted in the aggregate.)*
 
 ## Ordered plan
 

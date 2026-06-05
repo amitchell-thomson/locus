@@ -223,3 +223,34 @@ def test_evaluate_uses_existing_outputs_and_aggregates(conn, monkeypatch):
     assert len(judged) == 1  # only one section seeded
     assert agg["overall_mean"] == 4.0
     assert agg["entity_recall"] == 4.0
+    assert agg["sections_judged"] == 1.0
+    assert agg["extraction_failures"] == 0.0
+
+
+def test_sample_excludes_code_sections_by_default(conn):
+    # A code doc (props skipped by design) must not enter the prose-pass benchmark sample.
+    conn.execute(
+        "INSERT INTO documents (id, content_hash, source_type, source_uri, raw_path, ingest_model)"
+        " VALUES (9, 'h9', 'code', 'u9', 'p9', 'test')"
+    )
+    conn.execute("INSERT INTO sections (id, doc_id, position, title) VALUES (9, 9, 0, 'a.py')")
+    conn.commit()
+    assert 9 not in harness.sample_section_ids(conn, 100, seed=0)
+    assert 9 in harness.sample_section_ids(conn, 100, seed=0, prose_only=False)
+
+
+def test_evaluate_counts_extraction_failures_instead_of_crashing(conn, monkeypatch):
+    from locus.ingest.llm import IngestExtractionError
+
+    def boom(conn_, sid, model):
+        raise IngestExtractionError("no schema-valid output")
+    monkeypatch.setattr(harness, "regenerate", boom)
+    monkeypatch.setattr(
+        harness, "judge_section",
+        lambda *a, **k: pytest.fail("nothing to judge when extraction fails"),
+    )
+
+    judged, agg = harness.evaluate(conn, sample=5, seed=0, model="some-model")
+    assert judged == []
+    assert agg["extraction_failures"] == 1.0
+    assert agg["sections_judged"] == 0.0

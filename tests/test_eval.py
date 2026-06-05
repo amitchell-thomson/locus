@@ -64,6 +64,26 @@ def test_doc_metrics_counts_and_flags(conn):
     assert m.noise_entities == 0
 
 
+def test_retrieval_scoring_is_pure_and_correct():
+    from locus.eval.retrieval_eval import LabelledQuery, aggregate, score_query
+
+    q = LabelledQuery("bridge query", ["Control Theory", "Regime Shift"], cross_domain=True)
+    r = score_query(q, [
+        "Macro-aware forecasting", "A2 Introduction to Control Theory: Lectures 5-8",
+        "Enhancing Regime Shift Detection", "A2 Introduction to Control Theory: Lectures 5-8",
+    ])
+    assert r.recall == 1.0
+    assert r.first_rank == 2  # best-ranked expected doc (titles dedupe first)
+    assert r.reciprocal_rank == 0.5
+
+    miss = score_query(LabelledQuery("q", ["Nonexistent Doc"]), ["Some Doc"])
+    assert miss.recall == 0.0 and miss.reciprocal_rank == 0.0
+
+    agg = aggregate([r, miss])
+    assert agg["recall_at_k"] == 0.5
+    assert agg["cross_domain_recall"] == 1.0  # only the cross-domain query counts
+
+
 def test_doc_metrics_qc_flags_suspect_rows(conn):
     conn.execute(
         "INSERT INTO propositions (id, section_id, doc_id, position, text, embed_model)"

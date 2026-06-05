@@ -245,26 +245,44 @@ def cmd_audit(args) -> None:
 
 def cmd_eval(args) -> None:
     from locus.config import Config
-    from locus.eval.harness import evaluate
 
-    try:
-        Config.anthropic_api_key()  # fail early with a clear message if the key is missing
-    except RuntimeError as exc:
-        print(exc)
-        sys.exit(1)
+    suites = ["judge", "math", "retrieval"] if args.suite == "full" else [args.suite]
+    if suites != ["retrieval"]:  # retrieval is local-only; the judged suites need the API
+        try:
+            Config.anthropic_api_key()  # fail early with a clear message if the key is missing
+        except RuntimeError as exc:
+            print(exc)
+            sys.exit(1)
 
-    models = args.models.split(",") if args.models else [None]
     conn = _open()
     try:
-        for model in models:
-            label = model or "existing (DB / qwen ingest)"
-            print(f"\n=== Evaluating: {label}  (sample={args.sample}, seed={args.seed}) ===")
-            judged, agg = evaluate(
-                conn, sample=args.sample, seed=args.seed, doc_id=args.doc,
-                model=model, judge_model=args.judge_model,
+        if "judge" in suites:
+            from locus.eval.harness import evaluate
+
+            models = args.models.split(",") if args.models else [None]
+            for model in models:
+                label = model or "existing (DB / qwen ingest)"
+                print(f"\n=== Ingest-quality judge: {label}  (sample={args.sample}, seed={args.seed}) ===")
+                judged, agg = evaluate(
+                    conn, sample=args.sample, seed=args.seed, doc_id=args.doc,
+                    model=model, judge_model=args.judge_model,
+                )
+                for k, v in agg.items():
+                    print(f"  {k:<32} {v:.2f}")
+        if "math" in suites:
+            from locus.eval import math_eval
+
+            print(f"\n=== Math fidelity (gate metric)  (sample={args.sample}, seed={args.seed}) ===")
+            results, agg = math_eval.evaluate_math_fidelity(
+                conn, sample=args.sample, seed=args.seed, judge_model=args.judge_model
             )
-            for k, v in agg.items():
-                print(f"  {k:<32} {v:.2f}")
+            print(math_eval.format_results(results, agg))
+        if "retrieval" in suites:
+            from locus.eval import retrieval_eval
+
+            print("\n=== Labelled retrieval (recall@k / MRR) ===")
+            results, agg = retrieval_eval.evaluate_retrieval(conn)
+            print(retrieval_eval.format_results(results, agg))
     finally:
         conn.close()
 
@@ -322,8 +340,13 @@ def main(argv=None) -> None:
     pa.add_argument("--doc", default=None, help="restrict to one document id")
     pa.set_defaults(func=cmd_audit)
 
-    pe = sub.add_parser("eval", help="LLM-as-judge ingest-quality eval (needs ANTHROPIC_API_KEY)")
-    pe.add_argument("--sample", type=int, default=8, help="number of sections to sample")
+    pe = sub.add_parser("eval", help="quality evals: judge / math fidelity / labelled retrieval")
+    pe.add_argument(
+        "--suite", choices=["judge", "math", "retrieval", "full"], default="judge",
+        help="judge = ingest-quality LLM judge; math = page-image math-fidelity gate; "
+        "retrieval = labelled recall@k/MRR (local-only); full = all three",
+    )
+    pe.add_argument("--sample", type=int, default=8, help="number of sections/pages to sample")
     pe.add_argument("--seed", type=int, default=0, help="sampling seed (reproducible)")
     pe.add_argument("--doc", type=int, default=None, help="restrict to one document id")
     pe.add_argument(

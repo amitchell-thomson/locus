@@ -725,8 +725,26 @@ math-stripped text). Details per step in `PLAN.md`.
    category subfolders, so laptop-outbox drops (`incoming/papers/…`) sat unprocessed; now
    recursive, quarantine preserves the drop subpath. Verified live: all four formats ingest
    + retrieve with citations, audit QC clean, drop-folder category derived via watcher.
-9. **Slides (PPTX) extractor.** `python-pptx`: per-slide text + speaker notes → sections; slide
-   images feed the figures pipeline (block 11).
+9. **Slides (PPTX) extractor** — **done** (2026-06-05). `extract/pptx.py` (`python-pptx`),
+   `source_type='slides'` (semantic name per §15.4). One span per slide: title placeholder
+   + all text-bearing shapes in XML order, tables pipe-joined in-flow, speaker notes under
+   a `Notes:` marker (`notes_text_frame` only — the notes-shapes walk would pull the
+   slide-number placeholder). Slide chrome filtered two ways: slide-number/footer/date
+   *placeholders*, and plain text boxes whose entire text equals the slide's own number
+   (Google-Slides-style exports render page numbers as literal TEXT_BOXes — found on the
+   first real deck, where placeholders alone caught nothing). Sections carry **real slide-number ranges** in
+   `page_start`/`page_end` via a private paged banding (`_build_slide_sections` reuses
+   base MIN/MAX + `window_by_chars`; `base.build_sections` stays unpaginated by contract),
+   so citations point at slides ("pp 1–2" = slides 1–2). Title/date from core properties
+   (docx chain). Migration 0006 widens the source_type CHECK (0004 rebuild pattern).
+   Default pass profile. Documented limitations: XML shape order (no geometric sort),
+   hidden slides included, images/charts contribute no text — slide images feed the
+   figures pipeline (step 11). Deferred polish: source-type-aware citation label
+   ("slides 3–5") needs `source_type` plumbed through `retrieve/expand.py` →
+   `assemble.py` → `mcp_server.py`. Verified live on a real 20-slide deck: 14 sections
+   with honest merge ranges (pp 9–10, pp 15–20), speaker notes captured 1/1, retrieval
+   cites the right slides, audit QC zero; the deck's chart-heavy slides confirmed the
+   step-11 figures gap (chart content is invisible to the text layer).
 10. **Code-repo ingest + continuous repo sync** — **done** (2026-06-05, deliberately ahead
     of step 9). Two channels, one extractor (`extract/code.py`, stdlib ast): *tracked
     repos* (config `[repos]`, all 5 server repos; commit-triggered — `locus watch` checks
@@ -752,7 +770,7 @@ math-stripped text). Details per step in `PLAN.md`.
 YouTube/podcast transcript ingest, broader retrieval tests.
 
 New dependencies introduced along the way: `mcp`, `python-docx` (landed, step 8),
-`python-pptx`, and (for math) an OCR-to-markup model (benchmarked, step 6). `nbconvert`
+`python-pptx` (landed, step 9), and (for math) an OCR-to-markup model (benchmarked, step 6). `nbconvert`
 turned out unneeded — the `.ipynb` extractor reads notebook JSON with the stdlib (§3).
 Keep heavy/optional ones (VLM, math-OCR) behind extras like `[rerank]`.
 

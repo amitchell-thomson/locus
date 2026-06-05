@@ -1,6 +1,6 @@
 """Ingest orchestration: one source file -> a fully populated 3-level DB (CLAUDE.md §6).
 
-Per file (pdf / docx / markdown / text / notebook, routed by suffix):
+Per file (pdf / docx / markdown / text / notebook / slides, routed by suffix):
   hash -> skip if the content_hash already exists (idempotent)
        -> copy the raw file into the flat raw store
        -> extract (per-format, extract/) -> ordered sections
@@ -33,6 +33,7 @@ from locus.db.connection import get_connection
 from locus.extract import code as code_extract
 from locus.extract import docx as docx_extract
 from locus.extract import pdf as pdf_extract
+from locus.extract import pptx as pptx_extract
 from locus.extract import textdoc
 from locus.extract.base import ExtractedDoc, ExtractedSection, PreChunk
 from locus.ingest import chunk, embed, entities, gaps, llm, propositions, summarize, synthesis
@@ -72,6 +73,7 @@ _SUFFIX_TYPE = {
     ".markdown": "markdown",
     ".txt": "text",
     ".ipynb": "notebook",
+    ".pptx": "slides",
 }
 
 
@@ -216,6 +218,8 @@ def _extract(path: Path, source_type: str) -> pdf_extract.ExtractedDoc:
         return textdoc.extract_text(path)
     if source_type == "notebook":
         return textdoc.extract_notebook(path)
+    if source_type == "slides":
+        return pptx_extract.extract_pptx(path)
     raise ValueError(f"no extractor for source_type {source_type!r}")
 
 

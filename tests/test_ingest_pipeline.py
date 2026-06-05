@@ -228,7 +228,8 @@ def test_source_type_routing_by_suffix():
 
     cases = {
         "a.pdf": "pdf", "b.docx": "docx", "c.md": "markdown", "d.markdown": "markdown",
-        "e.txt": "text", "f.ipynb": "notebook", "G.MD": "markdown", "h.bin": None,
+        "e.txt": "text", "f.ipynb": "notebook", "g.pptx": "slides",
+        "H.MD": "markdown", "i.bin": None,
     }
     for name, expected in cases.items():
         assert _source_type(Path(name)) == expected, name
@@ -251,6 +252,34 @@ def test_markdown_ingests_end_to_end(tmp_path, conn, fake_passes):
     assert row["source_type"] == "markdown"
     assert row["title"] == "Control Systems Field Notes"  # trusted frontmatter title kept
     assert row["source_date"] == "2023-07-21"  # frontmatter date beats mtime fallback
+
+
+def test_slides_ingest_end_to_end(tmp_path, conn, fake_passes):
+    from pptx import Presentation
+    from pptx.util import Inches
+
+    body = " ".join(f"Sentence {i} contains several descriptive words about the topic." for i in range(12))
+    prs = Presentation()
+    for name in ("Background", "Results"):
+        slide = prs.slides.add_slide(prs.slide_layouts[5])  # Title Only
+        slide.shapes.title.text = name
+        box = slide.shapes.add_textbox(Inches(1), Inches(2), Inches(8), Inches(4))
+        box.text_frame.text = body
+    deck = tmp_path / "deck.pptx"
+    prs.save(str(deck))
+
+    result = ingest_file(deck, conn)
+    assert result.status == "ingested"
+    assert result.sections == 2
+    # Default pass profile (unlike code): propositions ran for every section.
+    assert result.propositions == result.sections * 2
+
+    import json
+    row = conn.execute("SELECT source_type, section_map FROM documents").fetchone()
+    assert row["source_type"] == "slides"
+    # section_map carries REAL slide-number ranges, not the unpaginated 1/1.
+    section_map = json.loads(row["section_map"])
+    assert [(s["page_start"], s["page_end"]) for s in section_map] == [(1, 1), (2, 2)]
 
 
 def test_missing_file_is_quarantined(tmp_path, conn):

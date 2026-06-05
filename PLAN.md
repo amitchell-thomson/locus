@@ -244,7 +244,36 @@ done **before** the bulk ingest. Each item ≈ one work-block.
   land in `source_date`, title arbitration fixed the `.txt` slug, drop-folder `category`
   derived via watcher (`notes/` → 'note'), audit QC clean; test docs then removed (corpus
   back to 24). 184 tests green (was 158).
-- [ ] **9. Slides (PPTX)** — `python-pptx`: per-slide text + speaker notes; images feed figures.
+- [x] **9. Slides (PPTX)** — done (2026-06-05). `extract/pptx.py` (`python-pptx`,
+  `source_type='slides'` — semantic name per §15.4, owner decision): one span per slide
+  (title placeholder + every text-bearing shape in XML order, tables pipe-joined in-flow,
+  speaker notes appended under a `Notes:` marker via `notes_text_frame` — never the notes
+  shapes walk, which would pull the slide-number placeholder). **Slide chrome filtered two
+  ways**: slide-number/footer/date *placeholders*, and plain text boxes whose entire text
+  equals the slide's own number — the first real deck (Google-Slides-style export) had NO
+  placeholders at all; its page numbers were literal TEXT_BOXes, which the placeholder
+  filter alone caught nothing of (found + fixed during live validation). **Sections carry REAL
+  slide-number ranges in `page_start`/`page_end`** (a slide IS a page) via a private paged
+  banding `_build_slide_sections` — `base.build_sections` stays unpaginated by contract;
+  the banding reuses MIN/MAX + `window_by_chars` + `has_math` and threads slide ranges
+  through merge (first..last absorbed slide) and windowing (parts inherit the range).
+  Title/date from core properties (docx chain: core-props title >3 chars → first slide
+  title → stem; created → modified → mtime). Migration **0006** widens the source_type
+  CHECK (0004 rebuild pattern) — applied live, 29 docs intact. Default pass profile
+  (propositions + LLM entities on). Documented limitations: shapes in XML order (no
+  geometric sort — placeholder top/left inherit from layout), hidden slides included,
+  images/charts contribute no text (figures = step 11). Verified live end-to-end on a
+  REAL 20-slide deck (Citadel monetary-policy recommendation, dropped via LocusDrop
+  `incoming/projects/`): 14 sections with honest merge ranges (pp 9–10, pp 15–20),
+  speaker notes captured 1/1 (verified against the source), core-props date + drop-folder
+  category landed, retrieval cites the right slides (dense+lexical), audit QC zero
+  (0 suspect props / 0 noise entities / 0 corruption); chrome filter re-verified on
+  re-ingest (13 bare-number chunk artifacts → 0). The deck's chart-heavy slides are the
+  concrete case for step-11 figures: the empirical-model evidence lives in images the
+  text layer never sees. **Deferred polish:** source-type-aware citation label ("slides 3–5" instead of
+  "pp 3–5") needs `source_type` threaded through `retrieve/expand.py` → `assemble.py` →
+  `mcp_server.py`; bundle with the figures/source-aware-citation work. 226 tests green
+  (was 214).
 - [x] **10. Code-repo ingest + continuous repo sync** — done (2026-06-05, deliberately
   ahead of step 9 by owner decision). **Two channels, one extractor** (`extract/code.py`,
   stdlib ast): (a) *tracked server repos* — config `[repos]` (all 5 under
@@ -282,7 +311,8 @@ done **before** the bulk ingest. Each item ≈ one work-block.
 **After the pour (not `[RB]`):** ANN-index warning (§11.D), Obsidian projection (§14),
 YouTube / podcast transcript ingest, broader retrieval tests.
 
-**New dependencies:** `mcp`, `python-docx` (landed, step 8), `python-pptx`, an OCR-to-markup
+**New dependencies:** `mcp`, `python-docx` (landed, step 8), `python-pptx` (landed, step 9),
+an OCR-to-markup
 model (benchmarked, step 6). `nbconvert` turned out unneeded — the `.ipynb` extractor reads the
 notebook JSON with the stdlib (§3 build-vs-buy). Keep heavy optional ones (VLM, math-OCR)
 behind extras like `[rerank]`.

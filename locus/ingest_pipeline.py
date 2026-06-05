@@ -155,12 +155,12 @@ def _copy_to_raw(path: Path, content_hash: str) -> str:
 class _PassProfile:
     propositions: bool = True
     llm_entities: bool = True
-    code_summary: bool = False  # use summarize's source-file prompt variant
+    code_prompts: bool = False  # source-file summary + repository synthesis prompt variants
 
 
 _DEFAULT_PROFILE = _PassProfile()
 _PASS_PROFILE: dict[str, _PassProfile] = {
-    "code": _PassProfile(propositions=False, llm_entities=False, code_summary=True),
+    "code": _PassProfile(propositions=False, llm_entities=False, code_prompts=True),
 }
 
 
@@ -299,7 +299,7 @@ def _prepare_doc(
         sec_summary = summary_cache.get(sec) if summary_cache else None
         if sec_summary is None:
             sec_summary = summarize.summarize_section(
-                sec.title, sec.text, code=profile.code_summary
+                sec.title, sec.text, code=profile.code_prompts
             )
             if summary_cache:
                 summary_cache.stage(sec, sec_summary)
@@ -357,7 +357,7 @@ def _prepare_doc(
     if profile.llm_entities:
         entities.merge_plural_variants([p.entities for p in prepared])
 
-    syn = synthesis.synthesize_document(doc.title, summaries)
+    syn = synthesis.synthesize_document(doc.title, summaries, code=profile.code_prompts)
     context = (
         f"Thesis: {syn.thesis}\nMethod: {syn.method}\n"
         f"Result: {syn.result}\nLimitations: {syn.limitations}"

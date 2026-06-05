@@ -82,15 +82,14 @@ def fake_passes(monkeypatch):
         calls["llm_entities"] += 1
         return []
 
+    def _synth(title, summaries, **k):
+        calls["synthesis_kwargs"] = k
+        return DocSynthesis(thesis="T", method="M", result="R", limitations="L", title="Repo Title")
+
     monkeypatch.setattr(summarize, "summarize_section", _summary)
     monkeypatch.setattr(propositions, "extract_propositions", _props)
     monkeypatch.setattr(entities, "extract_entities", _ents)
-    monkeypatch.setattr(
-        synthesis, "synthesize_document",
-        lambda title, summaries, **k: DocSynthesis(
-            thesis="T", method="M", result="R", limitations="L", title="Repo Title"
-        ),
-    )
+    monkeypatch.setattr(synthesis, "synthesize_document", _synth)
     monkeypatch.setattr(gaps, "flag_gaps", lambda title, context, **k: [])
     monkeypatch.setattr(embed, "embed_text", lambda text: [0.1] * 768)
     monkeypatch.setattr(embed, "embed_texts", lambda texts: [[0.1] * 768 for _ in texts])
@@ -112,6 +111,9 @@ def test_repo_ingests_with_full_provenance(tmp_path, conn, fake_passes):
     assert result.propositions == 0  # pass skipped for code
     assert fake_passes["props"] == 0  # the LLM propositions pass never ran
     assert fake_passes["llm_entities"] == 0  # entities came from the AST, not the LLM
+    # Repository synthesis variant: titles the project itself, not its docs/plan files
+    # (which sort first and biased the generic prompt — observed live 2026-06-05).
+    assert fake_passes["synthesis_kwargs"].get("code") is True
 
     doc = conn.execute("SELECT * FROM documents").fetchone()
     assert doc["source_type"] == "code"

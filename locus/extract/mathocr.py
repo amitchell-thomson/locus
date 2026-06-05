@@ -47,13 +47,15 @@ _MIN_LENGTH_RATIO = 0.35  # OCR may legitimately compress layout noise, but not 
 _LOOP_NGRAM = 12  # words per shingle for the repetition detector
 _LOOP_MAX_REPEAT = 4  # a 12-gram appearing 5+ times is a degeneration loop
 
-# Char-level degeneration: a short unit (2-16 chars) repeated 10+ times consecutively, e.g.
+# Char-level degeneration: a short unit (2-16 chars) repeated 30+ times consecutively, e.g.
 # GOT emitting '|c|c|c|c...' (a runaway LaTeX tabular spec) or '[C@@H]3[C@@H]3...' for a
 # chemical figure. Word-shingles miss these — the loop is one giant space-free "word"
 # (observed live: a tabular loop swallowed the tail of a page, Biot definition included,
-# and passed QC). The unit must contain >=2 distinct characters: runs of a single char
-# ('0000...' binary listings, aligned whitespace, dotted rules) are legitimate content.
-_CHAR_LOOP = re.compile(r"(\S{2,16})(?:\1){9,}")
+# and passed QC). Two guards against false positives, both corpus-verified: the unit must
+# contain >=2 distinct characters (runs of '0' in binary listings and aligned whitespace are
+# legitimate), and 30+ repeats (a real 12-column '|c|c|...' tabular spec is legitimate;
+# degeneration runs to hundreds).
+_CHAR_LOOP = re.compile(r"(\S{2,16})(?:\1){29,}")
 
 
 def _has_repetition_loop(text: str) -> bool:

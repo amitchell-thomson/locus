@@ -41,6 +41,8 @@ def test_char_level_loops_are_rejected():
     # Single-char runs are legitimate content, not loops:
     assert not _has_repetition_loop("set $t0 to 0000000000001000 0000000000000000")  # binary
     assert not _has_repetition_loop("2019-2024" + " " * 40 + "A-Levels: Maths (A*)")  # padding
+    # A real (wide) LaTeX table spec is legitimate — only hundreds-long runs are loops:
+    assert not _has_repetition_loop(prose + r"\begin{tabular}{" + "|c" * 12 + "|}")
     # A short dotted rule is fine; a LONG one trips the word-shingle rule, which is
     # acceptable — pages dominated by dotted leaders are ToC noise, and a QC reject
     # only means the original text is kept.

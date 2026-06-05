@@ -183,6 +183,13 @@ def _prepare(path: Path) -> _Prepared:
         f"Result: {syn.result}\nLimitations: {syn.limitations}"
     )
     gap_list = gaps.flag_gaps(doc.title, context)
+    # Persist the math-OCR audit trail (extract/mathocr.py): pages where QC kept the original
+    # text are extraction gaps in the §15.0 sense — content quality was knowingly degraded
+    # there, and that must be queryable, not just logged.
+    gap_list += [f"math-OCR kept original text on {f}" for f in doc.ocr_fallbacks]
+    if doc.ocr_replaced:
+        log.info("math-OCR replaced %d page(s); %d fallback(s)",
+                 len(doc.ocr_replaced), len(doc.ocr_fallbacks))
     return _Prepared(doc.title, doc.source_date, syn, gap_list, prepared, embed.embedding_model())
 
 

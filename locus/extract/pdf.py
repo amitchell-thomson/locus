@@ -173,6 +173,8 @@ class ExtractedDoc(BaseModel):
     source_date: str | None = None  # ISO 'YYYY-MM-DD' from PDF metadata; None if absent/invalid
     toc_pages: list[int] = []  # 1-based pages excised as printed ToC (audit trail)
     page_flags: list[PageFlags] = []  # per-page damage/math signals (drives the OCR routing)
+    ocr_replaced: list[int] = []  # 1-based pages whose text the math-OCR pass replaced
+    ocr_fallbacks: list[str] = []  # "page: reason" entries where QC kept the original text
 
 
 def extract_pdf(path: str | Path, *, mathocr: bool = False) -> ExtractedDoc:
@@ -195,11 +197,15 @@ def extract_pdf(path: str | Path, *, mathocr: bool = False) -> ExtractedDoc:
         page_texts = ["" if i in toc_idxs else t for i, t in enumerate(page_texts)]
         # Damage/math signals per page (post-blanking, so excised ToC pages read clean).
         flags = [_page_flags(doc[i], i, t) for i, t in enumerate(page_texts)]
+        ocr_replaced: list[int] = []
+        ocr_fallbacks: list[str] = []
         if mathocr:
             from locus.extract import mathocr as mathocr_mod  # lazy: avoids circular import
 
             flagged = [f.page - 1 for f in flags if f.needs_ocr]
-            page_texts, _outcome = mathocr_mod.ocr_pages(doc, page_texts, flagged)
+            page_texts, outcome = mathocr_mod.ocr_pages(doc, page_texts, flagged)
+            ocr_replaced = outcome.replaced
+            ocr_fallbacks = [f"p{page}: {reason}" for page, reason in outcome.fallbacks]
         full_text, page_offsets = _full_text_and_offsets(page_texts)
         title = _resolve_title(doc, path)
 
@@ -225,6 +231,8 @@ def extract_pdf(path: str | Path, *, mathocr: bool = False) -> ExtractedDoc:
             source_date=_resolve_source_date(doc),
             toc_pages=sorted(i + 1 for i in toc_idxs),
             page_flags=flags,
+            ocr_replaced=ocr_replaced,
+            ocr_fallbacks=ocr_fallbacks,
         )
     finally:
         doc.close()

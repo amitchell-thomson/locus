@@ -30,3 +30,4 @@ vault/obsidian/*
 !vault/notes/.gitkeep
 eval-artifacts/
 .claude/scheduled_tasks.lock
+ingest-*.log

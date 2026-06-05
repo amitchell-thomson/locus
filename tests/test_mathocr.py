@@ -32,6 +32,21 @@ def test_repetition_loop_is_rejected():
     assert not _has_repetition_loop(GOOD)
 
 
+def test_char_level_loops_are_rejected():
+    """Regression (live re-ingest): space-free degeneration loops escaped the word-shingle
+    detector — a runaway tabular spec swallowed a page tail (Biot definition included)."""
+    prose = "The temperature distribution depends on boundary conditions. "
+    assert _has_repetition_loop(prose + "|c" * 200)  # GOT tabular loop
+    assert _has_repetition_loop(prose + "[C@@H]3" * 40)  # SMILES-string loop
+    # Single-char runs are legitimate content, not loops:
+    assert not _has_repetition_loop("set $t0 to 0000000000001000 0000000000000000")  # binary
+    assert not _has_repetition_loop("2019-2024" + " " * 40 + "A-Levels: Maths (A*)")  # padding
+    # A short dotted rule is fine; a LONG one trips the word-shingle rule, which is
+    # acceptable — pages dominated by dotted leaders are ToC noise, and a QC reject
+    # only means the original text is kept.
+    assert not _has_repetition_loop("General balance principle " + ". " * 8)
+
+
 def test_residual_corruption_is_rejected():
     # OCR that still contains the damage signatures failed at its one job. (Padded past the
     # length floor so the specific reason, not 'too-short', is what fires.)

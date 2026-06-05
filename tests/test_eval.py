@@ -254,3 +254,29 @@ def test_evaluate_counts_extraction_failures_instead_of_crashing(conn, monkeypat
     assert judged == []
     assert agg["extraction_failures"] == 1.0
     assert agg["sections_judged"] == 0.0
+
+
+def test_retrieval_scoring_file_paths_and_banner():
+    from locus.eval.retrieval_eval import LabelledQuery, aggregate, score_query
+
+    # File-level targets: doc title alone is not enough — the source file must surface.
+    q = LabelledQuery(
+        "show me the HMM detector class", ["Regime-Conditioned"],
+        expected_paths=["regimes/hmm.py"],
+    )
+    half = score_query(q, ["Regime-Conditioned Equity ML"], ["docs/design.md"])
+    assert half.recall == 0.5 and half.matched_paths == []
+    full = score_query(
+        q, ["Regime-Conditioned Equity ML"], ["src/regime_ml/regimes/hmm.py"]
+    )
+    assert full.recall == 1.0 and full.matched_paths == ["regimes/hmm.py"]
+
+    # Cross-domain banner misfire: right docs retrieved, user warned anyway.
+    xq = LabelledQuery("bridge", ["A", "B"], cross_domain=True)
+    fired = score_query(xq, ["A doc", "B doc"], confidence_band="ambiguous")
+    clean = score_query(xq, ["A doc", "B doc"], confidence_band=None)
+    assert fired.banner_misfire and not clean.banner_misfire
+
+    agg = aggregate([half, full, fired, clean])
+    assert agg["file_recall"] == 0.5
+    assert agg["cross_domain_banner_rate"] == 0.5

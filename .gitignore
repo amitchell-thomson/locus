@@ -31,3 +31,7 @@ vault/obsidian/*
 eval-artifacts/
 .claude/scheduled_tasks.lock
 ingest-*.log
+
+# Transient run logs (re-ingest / eval output; results live in PLAN.md)
+reingest-*.log
+eval-*.log

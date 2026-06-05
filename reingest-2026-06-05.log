@@ -1,34 +1,0 @@
-Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
-Loading weights:   0%|          | 0/471 [00:00<?, ?it/s]Loading weights:  57%|█████▋    | 268/471 [00:00<00:00, 2670.71it/s]Loading weights: 100%|██████████| 471/471 [00:00<00:00, 3319.88it/s]
-[transformers] Ignoring clean_up_tokenization_spaces=True for BPE tokenizer TokenizersBackend. The clean_up_tokenization post-processing step is designed for WordPiece tokenizers and is destructive for BPE (it strips spaces before punctuation). Set clean_up_tokenization_spaces=False to suppress this warning, or set clean_up_tokenization_spaces_for_bpe_even_though_it_will_corrupt_output=True to force cleanup anyway.
-Quarantined vault/incoming/engineering/2A2A Control Theory (I) Notes.pdf: SectionSummary: no schema-valid output from qwen2.5:7b-instruct-q5_K_M after 3 attempts: 1 validation error for SectionSummary
-  Invalid JSON: EOF while parsing a string at line 2 column 6917 [type=json_invalid, input_value='{\n  "summary": "The mag...w \\\\\\n\\\\rightarrow', input_type=str]
-    For further information visit https://errors.pydantic.dev/2.13/v/json_invalid
-propositions: section 'Section (pp 22–24)' is proposition-free after retry
-propositions: section 'Section (pp 29–32)' is proposition-free after retry
-[ingested]  vault/incoming/coursework_modules/ML-maths.pdf  doc_id=50 sections=2 chunks=12 props=31 entities=30
-[ingested]  vault/incoming/coursework_modules/optimisation.pdf  doc_id=51 sections=4 chunks=4 props=19 entities=20
-[ingested]  vault/incoming/cv/Alec_Mitchell-Thomson_CV_2026.pdf  doc_id=52 sections=6 chunks=6 props=53 entities=57
-[quarantined]  vault/incoming/engineering/2A2A Control Theory (I) Notes.pdf  -- SectionSummary: no schema-valid output from qwen2.5:7b-instruct-q5_K_M after 3 attempts: 1 validation error for SectionSummary
-  Invalid JSON: EOF while parsing a string at line 2 column 6917 [type=json_invalid, input_value='{\n  "summary": "The mag...w \\\\\\n\\\\rightarrow', input_type=str]
-    For further information visit https://errors.pydantic.dev/2.13/v/json_invalid
-[ingested]  vault/incoming/engineering/2A2B Control Theory (II) Notes.pdf  doc_id=53 sections=34 chunks=108 props=246 entities=290
-[ingested]  vault/incoming/engineering/2A2C ControlTheory (III) Notes.pdf  doc_id=54 sections=41 chunks=91 props=231 entities=294
-[ingested]  vault/incoming/engineering/2nd Year Syllabus 2025-2026 Final.pdf  doc_id=55 sections=12 chunks=41 props=160 entities=230
-[ingested]  vault/incoming/engineering/A2D_HT26_Lecture_Notes.pdf  doc_id=56 sections=40 chunks=70 props=279 entities=273
-[ingested]  vault/incoming/engineering/A2E_HT26_Lecture_Notes.pdf  doc_id=57 sections=23 chunks=61 props=128 entities=140
-[ingested]  vault/incoming/engineering/A2 Sensors signals and comms 260126.pdf  doc_id=58 sections=13 chunks=115 props=190 entities=156
-[ingested]  vault/incoming/engineering/N123_1.pdf  doc_id=59 sections=26 chunks=79 props=129 entities=155
-[ingested]  vault/incoming/papers/2603.16035v1.pdf  doc_id=60 sections=15 chunks=48 props=136 entities=158
-[ingested]  vault/incoming/papers/2605.22492v1.pdf  doc_id=61 sections=8 chunks=16 props=59 entities=89
-[ingested]  vault/incoming/papers/2605.26890v1.pdf  doc_id=62 sections=13 chunks=68 props=105 entities=273
-[ingested]  vault/incoming/papers/2605.30363v1.pdf  doc_id=63 sections=12 chunks=31 props=143 entities=170
-[ingested]  vault/incoming/papers/2605.30950v1.pdf  doc_id=64 sections=10 chunks=42 props=124 entities=109
-[ingested]  vault/incoming/papers/2606.00624v1.pdf  doc_id=65 sections=19 chunks=55 props=207 entities=283
-[ingested]  vault/incoming/papers/2606.03457v1.pdf  doc_id=66 sections=34 chunks=38 props=204 entities=360
-[ingested]  vault/incoming/papers/2606.04397v1.pdf  doc_id=67 sections=14 chunks=22 props=109 entities=160
-[ingested]  vault/incoming/papers/2606.04603v1.pdf  doc_id=68 sections=11 chunks=27 props=110 entities=117
-[ingested]  vault/incoming/papers/2606.04739v1.pdf  doc_id=69 sections=5 chunks=30 props=49 entities=100
-[ingested]  vault/incoming/engineering/A1_PDEs_notes.pdf  doc_id=70 sections=39 chunks=120 props=250 entities=256
-[ingested]  vault/incoming/engineering/N456_1.pdf  doc_id=71 sections=36 chunks=81 props=189 entities=187
-[ingested]  vault/incoming/papers/2511.08404v1.pdf  doc_id=72 sections=29 chunks=58 props=251 entities=238

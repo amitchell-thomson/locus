@@ -58,6 +58,10 @@ class DocMetrics:
     # LLM-generated fields (synthesis/summaries/propositions) carrying the JSON-escape LaTeX
     # corruption signature (has_corruption_signature). Must be 0 on a post-sanitizer ingest.
     corrupted_fields: int = 0
+    # Numbers in summaries/propositions that the section source does not attest
+    # (unattested_numbers; round-3 numeric-faithfulness carryover). Non-zero entries
+    # almost always trace to a degraded math page (check the math-OCR gap flags).
+    unattested_numbers: int = 0
     # Gap flags that are real knowledge gaps (audit-trail entries — math-OCR fallbacks,
     # degraded passes — excluded). Liveness signal: the 2026-06-05 evaluation found the gap
     # pass inert, and corpus-wide zero must be loud, not silent.
@@ -95,12 +99,78 @@ def has_corruption_signature(text: str | None) -> bool:
 
 # Audit-trail gap_flags written by the pipeline itself (not knowledge gaps): math-OCR
 # fallback notes and degraded-pass markers (ingest_pipeline._prepare).
-_AUDIT_GAP = re.compile(r"^(math-OCR kept original text on |\w+ pass failed for section )")
+_AUDIT_GAP = re.compile(
+    r"^(math-OCR kept original text on |\w+ pass failed for section "
+    r"|summary failed grounding for section )"
+)
 
 
 def semantic_gaps(flags: list[str]) -> list[str]:
     """The gap_flags entries that are actual knowledge gaps, not pipeline audit lines."""
     return [g for g in flags if not _AUDIT_GAP.match(g)]
+
+
+# --- numeric attestation (round-3 audit carryover: numeric faithfulness) -------------------
+# A number stated in a DERIVED field (summary/proposition) that appears nowhere in the
+# section source is either model arithmetic or inherited text-layer damage (the verified
+# corpus instance: a degraded math page reading "K\n6 . 77" became "equals K/(6.77)" — true
+# value K/6). Full numeric faithfulness is §11.B/C model-measurement scope; this predicate
+# makes the failure mode COUNTABLE in audit QC so it never needs a manual re-check again.
+
+# Trailing guard: no word char and no ".<digit>" continuation — but a sentence-final
+# period ("...is 0.42.") must not block the match.
+_NUMBER = re.compile(r"(?<![\w.])(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)(?!\w)(?!\.\d)")
+_VULGAR = {"¼": ".25", "½": ".5", "¾": ".75", "⅓": ".33", "⅔": ".67", "⅕": ".2", "⅛": ".125"}
+# "Nov-25" style month-abbreviated two-digit years, which summaries expand to "2025".
+# Case-insensitive: doc_metrics feeds lowercased section source.
+_YY = re.compile(
+    r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[-' ](\d{2})\b", re.IGNORECASE
+)
+# "11k" / "2.5k" shorthand, which summaries expand to the full number.
+_K_SUFFIX = re.compile(r"\b(\d+(?:\.\d+)?)k\b", re.IGNORECASE)
+_TRIVIAL = {0.0, 1.0, 2.0, 3.0}  # ordinals / list counts: attestation proves nothing
+
+
+def _norm_number(n: str) -> str:
+    n = n.replace(",", "")  # 24,000 == 24000
+    return n.rstrip("0").rstrip(".") if "." in n else n
+
+
+def _normalized_source(source: str) -> str:
+    for glyph, dec in _VULGAR.items():
+        source = source.replace(glyph, dec)  # "4¾" -> "4.75"
+    # Strip thousands-grouping commas, but only inside a properly-bounded grouped number:
+    # a bare "(?<=\d),(?=\d{3})" strip would merge digit LISTS ("{10,50,100,250,500}" ->
+    # "50100250500"), destroying attestation for every middle member (live corpus case).
+    source = re.sub(
+        r"(?<![\d,])\d{1,3}(?:,\d{3})+(?![\d,])", lambda m: m.group(0).replace(",", ""), source
+    )  # 24,000 -> 24000
+    extra = {f"20{m}" for m in _YY.findall(source)}  # "Nov-25" attests 2025
+    extra |= {_norm_number(str(float(m) * 1000)) for m in _K_SUFFIX.findall(source)}  # 11k
+    # European decimal comma ("2,5 years" attests 2.5) — single trailing digit only, so
+    # thousands groups and digit lists never match.
+    extra |= {f"{a}.{b}" for a, b in re.findall(r"(?<!\d)(\d+),(\d)(?!\d)", source)}
+    return source + ("\n" + " ".join(sorted(extra)) if extra else "")
+
+
+def unattested_numbers(derived: str | None, source: str) -> list[str]:
+    """Numbers in a derived field that the section source does not attest (see above).
+
+    Attestation is a digit-boundary SUBSTRING search, deliberately lenient: source numbers
+    embedded in formula runs ("9ω4", "4.5a") don't tokenize cleanly, and a QC predicate
+    that cries wolf on every math-dense section is worse than one that under-counts.
+    Trailing source zeros are tolerated ("95.2" attests against "95.20")."""
+    if not derived:
+        return []
+    src = _normalized_source(source)
+    out: list[str] = []
+    for n in _NUMBER.findall(derived):
+        norm = _norm_number(n)
+        if float(norm) in _TRIVIAL:
+            continue
+        if not re.search(rf"(?<!\d){re.escape(norm)}0*(?!\d)", src):
+            out.append(n)
+    return out
 
 
 def _normalize(name: str) -> str:
@@ -161,10 +231,12 @@ def doc_metrics(conn, doc_id: int) -> DocMetrics:
         if has_corruption_signature(doc[f])
     )
 
+    unattested_nums = 0
     for s in sections:
         sid = s["id"]
         source = _section_source(conn, sid)
         corrupted += has_corruption_signature(s["summary"])
+        unattested_nums += len(unattested_numbers(s["summary"], source))
 
         props = [r["text"] for r in conn.execute(
             "SELECT text FROM propositions WHERE section_id=?", (sid,)
@@ -174,6 +246,7 @@ def doc_metrics(conn, doc_id: int) -> DocMetrics:
             empty_prop_titles.append(s["title"] or "(untitled)")
         non_self_contained += sum(1 for p in props if not _is_self_contained(p))
         corrupted += sum(1 for p in props if has_corruption_signature(p))
+        unattested_nums += sum(len(unattested_numbers(p, source)) for p in props)
         for p in props:
             reason = rejection_reason(p, s["title"])
             if reason is not None:
@@ -213,6 +286,7 @@ def doc_metrics(conn, doc_id: int) -> DocMetrics:
         suspect_props=dict(suspect.most_common()),
         noise_entities=noise_ents,
         corrupted_fields=corrupted,
+        unattested_numbers=unattested_nums,
         semantic_gaps=len(semantic_gaps(json.loads(doc["gap_flags"] or "[]"))),
         empty_prop_section_titles=empty_prop_titles,
         empty_synthesis=not any(
@@ -252,6 +326,7 @@ def format_metrics(docs: list[DocMetrics]) -> str:
             f"noise entities {d.noise_entities} | "
             f"empty synthesis {'YES' if d.empty_synthesis else 'no'} | "
             f"corrupted fields {d.corrupted_fields} | "
+            f"unattested numbers {d.unattested_numbers} | "
             f"semantic gaps {d.semantic_gaps}"
         )
         top_types = ", ".join(f"{t}:{n}" for t, n in list(d.entity_type_counts.items())[:6])

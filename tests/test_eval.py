@@ -280,3 +280,47 @@ def test_retrieval_scoring_file_paths_and_banner():
     agg = aggregate([half, full, fired, clean])
     assert agg["file_recall"] == 0.5
     assert agg["cross_domain_banner_rate"] == 0.5
+
+
+def test_unattested_numbers_predicate():
+    from locus.eval.metrics import unattested_numbers
+
+    # The verified corpus instance: a degraded math page reading "K\n6 . 77" produced
+    # "equals K/(6.77)" (true value K/6) — the number must flag.
+    src = "the magnitude |L(jwG)| =\nK\n6 . 77\nThe gain margin is then GM = 6/K"
+    assert unattested_numbers("The magnitude equals K / (6.77).", src) == ["6.77"]
+
+    # Faithful conversions must NOT flag (the two false positives the first sweep hit):
+    assert unattested_numbers(
+        "NAIRU is estimated around 4.75%.", "UE at 4.9%, NAIRU estimated ~4¾%"
+    ) == []
+    assert unattested_numbers(
+        "Expectations anchored at 3.7% since November 2025.",
+        "BoE/Ipsos 5y expectations stuck at 3.7% since Nov-25",
+    ) == []
+
+    # Plainly attested numbers, formatting variants, and trivial ordinals pass.
+    assert unattested_numbers("Accuracy reached 95.20% over 24,000 samples in step 2.",
+                              "accuracy of 95.2 percent on 24000 samples") == []
+    # A genuinely invented number flags.
+    assert unattested_numbers("The threshold is 0.42.", "no numbers here at all") == ["0.42"]
+    assert unattested_numbers(None, "anything") == []
+
+
+def test_unattested_numbers_handles_k_suffix_lists_and_years():
+    from locus.eval.metrics import unattested_numbers
+
+    # k-suffix shorthand attests the expanded number (live corpus: "payrolled -11k").
+    assert unattested_numbers("Employment decreased by 11,000 in March.",
+                              "payrolled -11k in march") == []
+    assert unattested_numbers("Roughly 13,000 images for training.",
+                              "approximately 13k images") == []
+    # Digit LISTS must not be comma-merged: every member attests (live corpus: K-set).
+    assert unattested_numbers(
+        "Metrics for K in {10, 50, 100, 250, 500, 1000}.",
+        r"coverage@k for \(k \in\) \(\{10,50,100,250,500,1000\}\)",
+    ) == []
+    # Month-year shorthand attests case-insensitively (doc_metrics lowercases source).
+    assert unattested_numbers("Anchored since November 2025.", "stuck at 3.7% since nov-25") == []
+    # Real thousands-grouping still normalizes.
+    assert unattested_numbers("Sample of 24,000 rows.", "a sample of 24000 rows") == []

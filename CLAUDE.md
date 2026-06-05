@@ -759,6 +759,24 @@ math-stripped text). Details per step in `PLAN.md`.
     changed files. Re-ingest ordering fixed pipeline-wide (prepare first, delete+write in
     one transaction — a failed re-ingest no longer destroys the prior doc). Ingest flock
     turns the one-ingest-at-a-time rule into a guardrail. Audit is profile-aware.
+10.5. **Remediation pass 3 (2026-06-05 round-3 external audit)** — **done** (2026-06-05).
+    Headline finding: the local model silently hallucinated code-file summaries (`hmm.py` →
+    "electrical circuits", `evaluation.py` → "image recognition"; 6 more found in a DB sweep),
+    unguarded because code carries 0 propositions. Fixes: **summary grounding guard** in
+    `summarize.py` (distinctive-stem overlap with the unit's own source; retry → deterministic
+    signature/leading-text fallback + gap flag; PROMPT_VERSION 2 invalidates cached bad
+    summaries — calibrated against all 766 stored sections); **facet-aware confidence**
+    (`pipeline.py` `split_facets` + per-facet rescoring via `rerank.score_pairs`; banner
+    suppressed when every facet of a bridge query is covered at facet floor = floor − 2.0;
+    fixes the two-rounds-standing cross-domain misfire, verified live, negative controls
+    still flag); **floor enforcement** (sub-deep-floor units pruned whenever full-query or
+    facet signal exists); **code retrievability/noise** (`prefer_code` guarantees a source
+    unit for implementation-intent queries; trivial `__init__.py` skipped; `test_*` defs emit
+    no entities); **eval refresh** (30-doc queries incl. file-level `expected_paths` on the
+    previously-hallucinated files + `cross_domain_banner_rate` must-be-zero metric). The
+    audit's unpruned-noise claim under a strong top hit did NOT reproduce (stale MCP server
+    process suspected — it also quoted pre-step-7.5 banner wording). Figures (step 11) must
+    route its caption/description pass through the same grounding guard.
 11. **Figures** `[re-ingest-bound]` (PDF/slides quality, medium). `figures` + `figure_vectors`
     schema; extract/store images + captions; optional local VLM (moondream / minicpm-v) →
     retrievable; multimodal Claude at generation (query.py passes the figure image). See §15.1.

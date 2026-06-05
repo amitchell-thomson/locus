@@ -301,8 +301,40 @@ done **before** the bulk ingest. Each item ≈ one work-block.
   locus repo resolved to the ENCLOSING repo's HEAD → `repo_head` now requires
   toplevel == repo (regression-tested). Audit metrics mirror the pass profile via
   `pass_profile()`.
+- [x] **10.5 Remediation pass 3 (2026-06-05 round-3 external audit)** — the audit's headline:
+  the local model **silently hallucinates code-file summaries** (`hmm.py` → "electrical
+  circuits", `evaluation.py` → "image recognition"; DB sweep found 6 more incl. `viz/tui.py` →
+  "energy consumption in buildings"), with no propositions on code to catch the drift. Fixes:
+  (1) **summary grounding guard** (`summarize.py`): every generated summary must share
+  distinctive stemmed vocabulary with its own source (calibrated on all 766 stored sections:
+  catches all hallucinations + boilerplate, 1 honest false-reject); fail → one sterner retry →
+  deterministic fallback (code: docstring + def/class signature; prose: leading text), flagged
+  `grounded=False` + doc gap flag; PROMPT_VERSION 2 invalidates the cached bad summaries.
+  *Do this before step 11: figures route MORE non-prose through the same summarizer.*
+  (2) **Facet-aware confidence** (two-rounds-standing misfire, `pipeline.py`): a bridge query
+  whose units each cover one side scores below the floor on the FULL query even when both
+  sides are covered — survivors are now rescored per facet (deterministic bridge-phrase split,
+  `score_pairs`), and the banner is suppressed when every facet is covered (facet floor =
+  floor − 2.0; fragments score systematically lower than the calibrated full questions —
+  measured gap: covering units −1.0..+0.9 vs non-covering −3.9..−11.4). Verified live: the
+  spectral↔regime query is now confident; negative controls still flag `absent`.
+  (3) **Floor enforcement**: sub-deep-floor units are pruned whenever signal exists (full-query
+  OR facet), instead of printing as co-equal results; `absent`-band keeps flag-never-filter.
+  (4) **Code retrievability/noise**: implementation-intent queries guarantee a source-file
+  unit in the cut (`prefer_code` in `select()`, ≥ floor only); trivial `__init__.py`
+  (docstring/imports/`__all__`) skipped at extraction; `test_*` defs emit no entities (631
+  of 6288 entity rows were test methods). (5) **Eval refresh** (the audit found it stale at
+  24 docs and structurally blind): code+slides labelled queries incl. file-level
+  `expected_paths` targeting `regimes/hmm.py`/`evaluation.py` (a summary-hallucination
+  recurrence now fails the eval), and `cross_domain_banner_rate` (must be 0 — recall@k alone
+  scored the misfire rounds as passing). Data: "Moentary" title typo fixed in DB; tracked
+  repos force-re-ingested to regenerate summaries/entities under the guard. NOT reproduced
+  from the audit: unpruned −8..−10 tails under a +5.35 top hit (current code prunes them;
+  the audit also quotes the pre-7.5 single-band banner wording — stale MCP server process
+  suspected). Deferred: per-slide sections (step 9 polish note stands).
 - [ ] **11. Figures** `[RB]` (medium) — `figures` + `figure_vectors`; extract/store/caption +
-  optional local VLM description; multimodal Claude at generation.
+  optional local VLM description; multimodal Claude at generation. **Per 10.5: the figure
+  text/caption pass MUST go through the summary grounding guard.**
 - [ ] **12. Entity-alias resolution + Retrieval eval (Layer 3) → BULK INGEST** — canonicalise
   entity names cross-document (the *link* substrate); validate on a heterogeneous sample
   including quant-finance papers + ≥1 code repo (the second domain the synthesis modes need);

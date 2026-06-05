@@ -132,10 +132,16 @@ def _redundant_pairs(names: list[str]) -> int:
 
 def doc_metrics(conn, doc_id: int) -> DocMetrics:
     doc = conn.execute(
-        "SELECT title, source_date, category, thesis, method, result, limitations, gap_flags "
-        "FROM documents WHERE id=?",
+        "SELECT title, source_type, source_date, category, thesis, method, result, "
+        "limitations, gap_flags FROM documents WHERE id=?",
         (doc_id,),
     ).fetchone()
+    # Mirror the ingest pass profile: code docs skip propositions by design and carry
+    # exact AST entities (function names differing by a trailing 's' are distinct
+    # functions, not redundant variants) — those predicates would cry wolf on every repo.
+    from locus.ingest_pipeline import pass_profile
+
+    profile = pass_profile(doc["source_type"])
     title = doc["title"]
     sections = conn.execute(
         "SELECT id, title, summary FROM sections WHERE doc_id=? ORDER BY position", (doc_id,)
@@ -164,7 +170,7 @@ def doc_metrics(conn, doc_id: int) -> DocMetrics:
             "SELECT text FROM propositions WHERE section_id=?", (sid,)
         )]
         prop_counts.append(len(props))
-        if not props:
+        if not props and profile.propositions:
             empty_prop_titles.append(s["title"] or "(untitled)")
         non_self_contained += sum(1 for p in props if not _is_self_contained(p))
         corrupted += sum(1 for p in props if has_corruption_signature(p))
@@ -183,7 +189,8 @@ def doc_metrics(conn, doc_id: int) -> DocMetrics:
                 ungrounded += 1
             if is_noise(e["name"]):
                 noise_ents += 1
-        redundant += _redundant_pairs([e["name"] for e in ents])
+        if profile.llm_entities:
+            redundant += _redundant_pairs([e["name"] for e in ents])
 
     total_props = sum(prop_counts)
     return DocMetrics(
@@ -196,7 +203,9 @@ def doc_metrics(conn, doc_id: int) -> DocMetrics:
         entities=total_entities,
         props_per_section_mean=total_props / len(sections) if sections else 0.0,
         props_per_section_max=max(prop_counts) if prop_counts else 0,
-        empty_prop_sections=sum(1 for c in prop_counts if c == 0),
+        empty_prop_sections=(
+            sum(1 for c in prop_counts if c == 0) if profile.propositions else 0
+        ),
         over_fragmented_sections=sum(1 for c in prop_counts if c > OVER_FRAGMENTED),
         non_self_contained_props=non_self_contained,
         ungrounded_entities=ungrounded,

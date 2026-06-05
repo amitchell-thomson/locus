@@ -240,8 +240,33 @@ done **before** the bulk ingest. Each item ≈ one work-block.
   derived via watcher (`notes/` → 'note'), audit QC clean; test docs then removed (corpus
   back to 24). 184 tests green (was 158).
 - [ ] **9. Slides (PPTX)** — `python-pptx`: per-slide text + speaker notes; images feed figures.
-- [ ] **10. Code-repo ingest** — `python-ast` (functions, call graph, per-file sections);
-  repo-directory entry point; `file:line` provenance already wired.
+- [x] **10. Code-repo ingest + continuous repo sync** — done (2026-06-05, deliberately
+  ahead of step 9 by owner decision). **Two channels, one extractor** (`extract/code.py`,
+  stdlib ast): (a) *tracked server repos* — config `[repos]` (all 5 under
+  ~/server-projects), commit-triggered: `locus watch` checks `git rev-parse HEAD` hourly
+  (`check_interval`; all-skip pass measured 0.4 s) and re-ingests only on new commits;
+  manual `locus sync [--force]`; raw store = manifest JSON (git is the raw store);
+  (b) *LocusDrop snapshot drops* — a directory under `incoming/projects/<name>/` ingests
+  as one repo unit (ctime-settled — rsync -t preserves mtimes; tarball to vault/raw;
+  stable `locusdrop:<name>` source_uri so a re-drop replaces). Doc = repo, sections =
+  files, **PreChunks at def granularity with real `file_path:line` spans** (the already-
+  wired §7 provenance path now lights up: live citation `analyse.py:64-102`), per-file
+  `call_graph` JSON, deterministic AST entities (functions→method, classes→concept).
+  **Pass profile per source_type**: code skips propositions (§11.B weakest task; chunks +
+  summaries carry it, §15.0) + LLM entities; code-variant summary prompt; repo synthesis
+  arbitrates titles ('digest' → 'Digest: Daily Executive News Briefing Tool'). **Pass
+  cache** (migration 0005, content-keyed sha256(blob:pass:model:PROMPT_VERSION)) makes a
+  commit re-ingest proportional to changed files only. **Ordering fix**: re-ingest now
+  prepares first, deletes+writes in ONE transaction (previously a failed re-ingest
+  destroyed the prior doc — latent `ingest_file` bug, fixed + regression-tested).
+  **Ingest flock** (`vault/.ingest.lock`): manual CLI fails fast, watch skips the tick —
+  the one-ingest-at-a-time rule is now a guardrail (verified live). **Live**: all 5 repos
+  poured (254 sections, ~2.3k function chunks, 1.6k AST entities), audit QC clean
+  (profile-aware: zero-prop code sections are by-design, not flags), retrieval cites
+  file:line. Found+fixed live: `git rev-parse` walks up, so a non-git drop nested in the
+  locus repo resolved to the ENCLOSING repo's HEAD → `repo_head` now requires
+  toplevel == repo (regression-tested). Audit metrics mirror the pass profile via
+  `pass_profile()`.
 - [ ] **11. Figures** `[RB]` (medium) — `figures` + `figure_vectors`; extract/store/caption +
   optional local VLM description; multimodal Claude at generation.
 - [ ] **12. Entity-alias resolution + Retrieval eval (Layer 3) → BULK INGEST** — canonicalise

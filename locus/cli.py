@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 
 from locus.config import load
 from locus.db.connection import get_connection
@@ -73,8 +74,8 @@ def _resolve_doc(conn, ident: str):
     return None
 
 
-def cmd_ingest(args) -> None:
-    for r in ingest_paths(args.paths, reingest=args.reingest):
+def _print_results(results) -> None:
+    for r in results:
         if r.status == "ingested":
             print(
                 f"[ingested]  {r.path}  doc_id={r.doc_id} sections={r.sections} "
@@ -84,6 +85,37 @@ def cmd_ingest(args) -> None:
             print(f"[skipped]   {r.path}  (already ingested, doc_id={r.doc_id})")
         else:
             print(f"[{r.status}]  {r.path}  -- {r.error}")
+
+
+def cmd_ingest(args) -> None:
+    from locus.ingest_lock import IngestLockHeld, ingest_lock
+
+    try:
+        with ingest_lock():
+            _print_results(ingest_paths(args.paths, reingest=args.reingest))
+    except IngestLockHeld as exc:
+        print(exc)
+        sys.exit(1)
+
+
+def cmd_sync(args) -> None:
+    """Sync tracked code repos: re-ingest those whose git HEAD moved (or all with --force)."""
+    import logging
+
+    from locus.ingest_lock import IngestLockHeld, ingest_lock
+    from locus.sync import sync_repos
+
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    repos = [Path(p) for p in args.paths] if args.paths else None  # None -> config [repos]
+    conn = _open()
+    try:
+        with ingest_lock():
+            _print_results(sync_repos(conn, repos=repos, force=args.force))
+    except IngestLockHeld as exc:
+        print(exc)
+        sys.exit(1)
+    finally:
+        conn.close()
 
 
 def cmd_list(args) -> None:
@@ -319,6 +351,11 @@ def main(argv=None) -> None:
     pw.add_argument("--interval", type=float, default=5.0, help="poll interval seconds")
     pw.add_argument("--once", action="store_true", help="process the backlog once and exit")
     pw.set_defaults(func=cmd_watch)
+
+    ps = sub.add_parser("sync", help="re-ingest tracked code repos whose git HEAD moved")
+    ps.add_argument("paths", nargs="*", help="repo paths (default: config [repos].paths)")
+    ps.add_argument("--force", action="store_true", help="re-ingest even if HEAD is unchanged")
+    ps.set_defaults(func=cmd_sync)
 
     pq = sub.add_parser("query", help="ask the vault a question (retrieve + Claude); needs ANTHROPIC_API_KEY")
     pq.add_argument("query", help="the question")

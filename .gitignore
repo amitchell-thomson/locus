@@ -35,3 +35,4 @@ ingest-*.log
 # Transient run logs (re-ingest / eval output; results live in PLAN.md)
 reingest-*.log
 eval-*.log
+vault/.ingest.lock

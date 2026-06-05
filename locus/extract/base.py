@@ -81,6 +81,31 @@ class PageFlags(BaseModel):
         return self.corrupted or self.math_dense or self.image_math
 
 
+class PreChunk(BaseModel):
+    """An extractor-supplied chunk with provenance, bypassing the generic token splitter.
+
+    Code uses these for function-granular chunks with real line spans; the future video
+    extractor can carry `video_timestamp` the same way. All provenance fields optional.
+    """
+
+    text: str
+    file_path: str | None = None
+    line_start: int | None = None
+    line_end: int | None = None
+    video_timestamp: int | None = None  # seconds, for ?t= deep links
+
+
+class PreEntity(BaseModel):
+    """An extractor-supplied entity (deterministic, e.g. from a code AST — no LLM).
+
+    `type` is a plain string here to keep extract/ independent of ingest/; the pipeline
+    validates it against the closed EntityType vocabulary when converting.
+    """
+
+    name: str
+    type: str
+
+
 class ExtractedSection(BaseModel):
     position: int  # 0-based order within the document
     title: str | None  # section heading, or None for front matter / unknown
@@ -88,6 +113,11 @@ class ExtractedSection(BaseModel):
     page_start: int  # 1-based page where the section begins (1 for unpaginated formats)
     page_end: int  # 1-based page where the section ends (1 for unpaginated formats)
     has_math: bool  # heuristic: section likely contains mathematical content
+    # code provenance (None for prose formats)
+    file_path: str | None = None  # repo-relative file path
+    call_graph: dict | None = None  # {qualified_def: [callee_names]} for code files
+    chunks: list[PreChunk] | None = None  # extractor-supplied chunks; None => chunk_text
+    entities: list[PreEntity] | None = None  # extractor-supplied entities; None => LLM pass
 
 
 class ExtractedDoc(BaseModel):

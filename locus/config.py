@@ -92,6 +92,15 @@ class MathOCRConfig(BaseModel):
     model: str = Field("qwen2.5vl:7b", description="Ollama model for the 'qwen' engine.")
 
 
+class ReposConfig(BaseModel):
+    """Tracked code repositories (PLAN.md step 10). `locus watch` checks each repo's git
+    HEAD every `check_interval` seconds and re-ingests only when new commits landed —
+    the check itself is ~free (git rev-parse). Manual runs: `locus sync [--force]`."""
+
+    paths: list[str] = Field(default_factory=list, description="Absolute repo paths to track.")
+    check_interval: float = Field(3600.0, description="Seconds between HEAD checks in `locus watch`.")
+
+
 class MCPConfig(BaseModel):
     # The MCP `query` tool makes a billed Claude API call server-side; `retrieve` and the read
     # tools are local-only (free). Default OFF so the server never exposes a billable tool unless
@@ -111,6 +120,8 @@ class Config(BaseModel):
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     # Optional: absent [mathocr] falls back to defaults (qwen engine via Ollama).
     mathocr: MathOCRConfig = Field(default_factory=MathOCRConfig)
+    # Optional: absent [repos] means no tracked repos (sync is a no-op).
+    repos: ReposConfig = Field(default_factory=ReposConfig)
 
     def resolve_paths(self) -> "Config":
         """Make all configured paths absolute, relative to the project root."""

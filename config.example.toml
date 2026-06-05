@@ -50,3 +50,17 @@ model         = "claude-opus-4-8"
 # tools are local-only (free). Keep false so the server never advertises a billable tool unless
 # you opt in (or pass `locus mcp --enable-query`).
 enable_query  = false
+
+[repos]
+# Tracked code repositories (step 10). `locus watch` checks each repo's git HEAD every
+# check_interval seconds and re-ingests only when new commits landed (the check is ~free);
+# `locus sync [--force]` runs the same pass manually. Smaller/ad-hoc repos can instead be
+# dropped as a folder into LocusDrop/projects/<name>/ — ingested once as a snapshot.
+paths = [
+  "/home/alec/server-projects/digest",
+  "/home/alec/server-projects/locus",
+  "/home/alec/server-projects/quant-data",
+  "/home/alec/server-projects/regime-conditioned-equity-ml",
+  "/home/alec/server-projects/tanker-flow",
+]
+check_interval = 3600   # seconds between HEAD checks inside `locus watch`

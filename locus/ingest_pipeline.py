@@ -30,9 +30,11 @@ from pathlib import Path
 
 from locus.config import load
 from locus.db.connection import get_connection
+from locus.extract import code as code_extract
 from locus.extract import docx as docx_extract
 from locus.extract import pdf as pdf_extract
 from locus.extract import textdoc
+from locus.extract.base import ExtractedDoc, ExtractedSection, PreChunk
 from locus.ingest import chunk, embed, entities, gaps, llm, propositions, summarize, synthesis
 
 log = logging.getLogger(__name__)
@@ -142,7 +144,33 @@ def _copy_to_raw(path: Path, content_hash: str) -> str:
     return name
 
 
-# --- the heavy, no-DB work: extract -> LLM passes -> embeddings ---------------------------
+# --- per-source-type pass profile ----------------------------------------------------------
+# Which LLM passes run for a source type (§2.6 keeps RETRIEVAL unified; ingest passes may
+# vary, like video's transcript pre-pass). Code skips propositions (claims-from-raw-code is
+# the weakest 8B task, §11.B — raw chunks + file summaries carry retrieval, §15.0) and the
+# LLM entity pass (the extractor supplies exact AST entities for free).
+
+
+@dataclass(frozen=True)
+class _PassProfile:
+    propositions: bool = True
+    llm_entities: bool = True
+    code_summary: bool = False  # use summarize's source-file prompt variant
+
+
+_DEFAULT_PROFILE = _PassProfile()
+_PASS_PROFILE: dict[str, _PassProfile] = {
+    "code": _PassProfile(propositions=False, llm_entities=False, code_summary=True),
+}
+
+
+def pass_profile(source_type: str) -> _PassProfile:
+    """The ingest pass profile for a source type. Public so eval/audit can mirror reality:
+    a zero-prop code section is BY DESIGN, not a quality flag."""
+    return _PASS_PROFILE.get(source_type, _DEFAULT_PROFILE)
+
+
+# --- the heavy, no-DB-write work: extract -> LLM passes -> embeddings ----------------------
 
 
 @dataclass
@@ -158,6 +186,10 @@ class _PreparedSection:
     propositions: list[str]
     proposition_vecs: list[list[float]]
     entities: list  # list[entities.Entity]
+    # code provenance (None for prose formats)
+    file_path: str | None = None
+    call_graph: dict | None = None
+    chunk_provenance: list[PreChunk] | None = None  # parallel to `chunks` when present
 
 
 @dataclass
@@ -187,12 +219,63 @@ def _extract(path: Path, source_type: str) -> pdf_extract.ExtractedDoc:
     raise ValueError(f"no extractor for source_type {source_type!r}")
 
 
+class _SummaryCache:
+    """Content-keyed cache over the summary pass (pass_cache table, migration 0005).
+
+    Keyed by sha256(file_blob_sha : summary : ingest_model : PROMPT_VERSION) — so a repo
+    re-ingest only re-runs summaries for files whose bytes changed, and a model or prompt
+    change invalidates naturally. Reads happen during prepare (read-only, WAL-safe);
+    staged writes are flushed AFTER the document transaction succeeds (the cache is an
+    optimization, not corpus data — it must never bloat or roll back the doc write).
+    """
+
+    def __init__(self, conn, blob_shas: dict[str, str]):
+        self._conn = conn
+        self._blob_shas = blob_shas
+        self._puts: list[tuple[str, str]] = []
+
+    def _key(self, sec: ExtractedSection) -> str | None:
+        blob = self._blob_shas.get(sec.file_path or "")
+        if not blob:
+            return None
+        raw = f"{blob}:summary:{llm.ingest_model()}:{summarize.PROMPT_VERSION}"
+        return hashlib.sha256(raw.encode()).hexdigest()
+
+    def get(self, sec: ExtractedSection) -> summarize.SectionSummary | None:
+        key = self._key(sec)
+        if key is None:
+            return None
+        row = self._conn.execute("SELECT payload FROM pass_cache WHERE key=?", (key,)).fetchone()
+        return summarize.SectionSummary.model_validate_json(row["payload"]) if row else None
+
+    def stage(self, sec: ExtractedSection, summary: summarize.SectionSummary) -> None:
+        key = self._key(sec)
+        if key is not None:
+            self._puts.append((key, summary.model_dump_json()))
+
+    def flush(self) -> None:
+        """Persist staged entries (own transaction; call after the doc write commits)."""
+        if self._puts:
+            with self._conn:
+                self._conn.executemany(
+                    "INSERT OR REPLACE INTO pass_cache (key, payload) VALUES (?,?)", self._puts
+                )
+            self._puts = []
+
+
 def _prepare(path: Path, source_type: str) -> _Prepared:
     doc = _extract(path, source_type)
     # If the OCR engine's VRAM forced Ollama to load the ingest model split across CPU/GPU,
     # evict it now (no request in flight) so the passes below run it fully on the GPU.
     # Safe no-op when no OCR ran (non-PDF formats, clean PDFs).
     llm.unload_if_split()
+    return _prepare_doc(doc, source_type)
+
+
+def _prepare_doc(
+    doc: ExtractedDoc, source_type: str, summary_cache: _SummaryCache | None = None
+) -> _Prepared:
+    profile = _PASS_PROFILE.get(source_type, _DEFAULT_PROFILE)
     prepared: list[_PreparedSection] = []
     summaries: list[str] = []
 
@@ -213,19 +296,40 @@ def _prepare(path: Path, source_type: str) -> _Prepared:
             return empty
 
     for sec in doc.sections:
-        sec_summary = summarize.summarize_section(sec.title, sec.text)
+        sec_summary = summary_cache.get(sec) if summary_cache else None
+        if sec_summary is None:
+            sec_summary = summarize.summarize_section(
+                sec.title, sec.text, code=profile.code_summary
+            )
+            if summary_cache:
+                summary_cache.stage(sec, sec_summary)
         summary = sec_summary.summary
         # Pagination pseudo-titles get the summary pass's semantic title instead.
         title = sec.title
         if _needs_semantic_title(title) and sec_summary.title and sec_summary.title.strip():
             title = sec_summary.title.strip()
-        props = _optional_pass(
-            # has_math routes the math-dense prompt variant (claims-in-words for formulas).
-            lambda t, x, _m=sec.has_math: propositions.extract_propositions(t, x, math_heavy=_m),
-            sec, "propositions", [],
-        )
-        ents = _optional_pass(entities.extract_entities, sec, "entities", [])
-        chunks = chunk.chunk_text(sec.text)
+        if profile.propositions:
+            props = _optional_pass(
+                # has_math routes the math-dense prompt variant (claims-in-words for formulas).
+                lambda t, x, _m=sec.has_math: propositions.extract_propositions(t, x, math_heavy=_m),
+                sec, "propositions", [],
+            )
+        else:
+            props = []
+        if sec.entities is not None:
+            # Extractor-supplied (deterministic, e.g. code AST) — validated into the closed
+            # EntityType vocabulary; never sent through the LLM pass.
+            ents = [entities.Entity(name=e.name, type=e.type) for e in sec.entities]
+        elif profile.llm_entities:
+            ents = _optional_pass(entities.extract_entities, sec, "entities", [])
+        else:
+            ents = []
+        if sec.chunks is not None:
+            chunks = [pc.text for pc in sec.chunks]
+            chunk_provenance = sec.chunks
+        else:
+            chunks = chunk.chunk_text(sec.text)
+            chunk_provenance = None
         prepared.append(
             _PreparedSection(
                 position=sec.position,
@@ -239,13 +343,19 @@ def _prepare(path: Path, source_type: str) -> _Prepared:
                 propositions=props,
                 proposition_vecs=embed.embed_texts(props),
                 entities=ents,
+                file_path=sec.file_path,
+                call_graph=sec.call_graph,
+                chunk_provenance=chunk_provenance,
             )
         )
         summaries.append(summary)
         log.info("section %s/%s done (%s)", sec.position + 1, len(doc.sections), sec.title)
 
     # Doc-level entity hygiene: collapse plural/singular surface variants (evidence-based).
-    entities.merge_plural_variants([p.entities for p in prepared])
+    # Only for LLM-extracted entities — AST names are exact, and two functions legitimately
+    # differing by a trailing 's' (chunk/chunks) must never merge.
+    if profile.llm_entities:
+        entities.merge_plural_variants([p.entities for p in prepared])
 
     syn = synthesis.synthesize_document(doc.title, summaries)
     context = (
@@ -279,24 +389,36 @@ def _prepare(path: Path, source_type: str) -> _Prepared:
 # --- transactional write -----------------------------------------------------------------
 
 
-def _write(conn, path: Path, content_hash: str, source_type: str, raw_name: str, prep: _Prepared) -> IngestResult:
+def _write(
+    conn, path: Path, content_hash: str, source_type: str, raw_name: str, prep: _Prepared,
+    *, category: str | None = None, source_uri: str | None = None,
+    replace_doc_id: int | None = None,
+) -> IngestResult:
+    """Write the prepared document in ONE transaction.
+
+    `replace_doc_id` deletes the prior document inside the same transaction — so a
+    re-ingest is atomic: the old doc survives unless the new one commits. (All expensive
+    LLM work happened in prepare, before this opens.)
+    """
     section_map = [
         {"position": s.position, "title": s.title, "page_start": s.page_start, "page_end": s.page_end}
         for s in prep.sections
     ]
     # Embedded source date if the extractor found one, else the file's mtime (always non-null).
     source_date = prep.source_date or _mtime_date(path)
-    category = _category(path)
+    category = category or _category(path)
     n_chunks = n_props = n_ents = 0
 
     with conn:  # one transaction: commit on success, rollback on any error
+        if replace_doc_id is not None:
+            _delete_document_rows(conn, replace_doc_id)
         cur = conn.execute(
             "INSERT INTO documents (content_hash, source_type, source_uri, raw_path, title, "
             "ingest_model, source_date, category, thesis, method, result, limitations, "
             "section_map, gap_flags) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
-                content_hash, source_type, str(path), raw_name, prep.title, llm.ingest_model(),
-                source_date, category,
+                content_hash, source_type, source_uri or str(path), raw_name, prep.title,
+                llm.ingest_model(), source_date, category,
                 prep.synthesis.thesis, prep.synthesis.method, prep.synthesis.result,
                 prep.synthesis.limitations, json.dumps(section_map), json.dumps(prep.gaps),
             ),
@@ -307,7 +429,8 @@ def _write(conn, path: Path, content_hash: str, source_type: str, raw_name: str,
             cur = conn.execute(
                 "INSERT INTO sections (doc_id, position, title, summary, cross_section_deps, "
                 "file_path, call_graph) VALUES (?,?,?,?,?,?,?)",
-                (doc_id, s.position, s.title, s.summary, None, None, None),
+                (doc_id, s.position, s.title, s.summary, None, s.file_path,
+                 json.dumps(s.call_graph) if s.call_graph else None),
             )
             section_id = cur.lastrowid
             conn.execute(
@@ -315,10 +438,16 @@ def _write(conn, path: Path, content_hash: str, source_type: str, raw_name: str,
                 (section_id, _vec_blob(s.summary_vec)),
             )
             for i, (text, vec) in enumerate(zip(s.chunks, s.chunk_vecs)):
+                prov = s.chunk_provenance[i] if s.chunk_provenance else None
                 cur = conn.execute(
-                    "INSERT INTO chunks (section_id, doc_id, position, raw_text, embed_model) "
-                    "VALUES (?,?,?,?,?)",
-                    (section_id, doc_id, i, text, prep.embed_model),
+                    "INSERT INTO chunks (section_id, doc_id, position, raw_text, embed_model, "
+                    "file_path, line_start, line_end, video_timestamp) "
+                    "VALUES (?,?,?,?,?,?,?,?,?)",
+                    (section_id, doc_id, i, text, prep.embed_model,
+                     prov.file_path if prov else None,
+                     prov.line_start if prov else None,
+                     prov.line_end if prov else None,
+                     prov.video_timestamp if prov else None),
                 )
                 conn.execute(
                     "INSERT INTO chunk_vectors (chunk_id, embedding) VALUES (?,?)",
@@ -353,28 +482,35 @@ def _write(conn, path: Path, content_hash: str, source_type: str, raw_name: str,
 # --- public entry points -----------------------------------------------------------------
 
 
-def delete_document(conn, doc_id: int) -> None:
-    """Delete a document and all of its rows.
+def _delete_document_rows(conn, doc_id: int) -> None:
+    """Delete a document's rows WITHOUT a transaction wrapper (caller owns the transaction).
 
     The L1/L2/L3 + entity tables cascade via ON DELETE CASCADE, but the sqlite-vec `vec0`
     vector tables are virtual and carry NO foreign key, so their rows must be removed
     explicitly — otherwise vectors orphan and a reused row id later collides on insert.
     """
+    sids = [r["id"] for r in conn.execute("SELECT id FROM sections WHERE doc_id=?", (doc_id,))]
+    cids = [r["id"] for r in conn.execute("SELECT id FROM chunks WHERE doc_id=?", (doc_id,))]
+    pids = [r["id"] for r in conn.execute("SELECT id FROM propositions WHERE doc_id=?", (doc_id,))]
+    conn.executemany("DELETE FROM section_vectors WHERE section_id=?", [(i,) for i in sids])
+    conn.executemany("DELETE FROM chunk_vectors WHERE chunk_id=?", [(i,) for i in cids])
+    conn.executemany("DELETE FROM proposition_vectors WHERE proposition_id=?", [(i,) for i in pids])
+    conn.execute("DELETE FROM documents WHERE id=?", (doc_id,))
+
+
+def delete_document(conn, doc_id: int) -> None:
+    """Delete a document and all of its rows (own transaction)."""
     with conn:
-        sids = [r["id"] for r in conn.execute("SELECT id FROM sections WHERE doc_id=?", (doc_id,))]
-        cids = [r["id"] for r in conn.execute("SELECT id FROM chunks WHERE doc_id=?", (doc_id,))]
-        pids = [r["id"] for r in conn.execute("SELECT id FROM propositions WHERE doc_id=?", (doc_id,))]
-        conn.executemany("DELETE FROM section_vectors WHERE section_id=?", [(i,) for i in sids])
-        conn.executemany("DELETE FROM chunk_vectors WHERE chunk_id=?", [(i,) for i in cids])
-        conn.executemany("DELETE FROM proposition_vectors WHERE proposition_id=?", [(i,) for i in pids])
-        conn.execute("DELETE FROM documents WHERE id=?", (doc_id,))
+        _delete_document_rows(conn, doc_id)
 
 
 def ingest_file(path: str | Path, conn, *, reingest: bool = False) -> IngestResult:
     """Ingest one file into the given DB connection. Never raises: failures are quarantined.
 
-    If `reingest` is True, an already-present document (same content hash) is deleted and
-    rebuilt instead of skipped — used to re-run an updated pipeline over existing files.
+    If `reingest` is True, an already-present document (same content hash) is replaced —
+    the old document is deleted inside the SAME transaction that writes the new one, so a
+    failed prepare leaves the prior document untouched (prepare-first ordering; previously
+    the delete ran before prepare and a failure destroyed the old doc).
     """
     path = Path(path)
     if not path.exists():
@@ -387,17 +523,84 @@ def ingest_file(path: str | Path, conn, *, reingest: bool = False) -> IngestResu
         existing = conn.execute(
             "SELECT id FROM documents WHERE content_hash=?", (content_hash,)
         ).fetchone()
-        if existing:
-            if not reingest:
-                return IngestResult(str(path), "skipped", doc_id=existing["id"])
-            delete_document(conn, existing["id"])
+        if existing and not reingest:
+            return IngestResult(str(path), "skipped", doc_id=existing["id"])
 
         raw_name = _copy_to_raw(path, content_hash)
-        prep = _prepare(path, source_type)
-        return _write(conn, path, content_hash, source_type, raw_name, prep)
+        prep = _prepare(path, source_type)  # all expensive work BEFORE any delete
+        return _write(
+            conn, path, content_hash, source_type, raw_name, prep,
+            replace_doc_id=existing["id"] if existing else None,
+        )
     except Exception as exc:  # quarantine this doc, keep the batch alive (§6)
         log.warning("Quarantined %s: %s", path, exc)
         return IngestResult(str(path), "quarantined", error=str(exc))
+
+
+def _write_repo_manifest(snap: code_extract.RepoSnapshot, repo: Path) -> str:
+    """Raw-store entry for a tracked repo: a manifest JSON, not a copy.
+
+    Deliberate exception to §6's copy-the-raw-file rule: a git repo IS its own durable raw
+    store (every commit recoverable by sha), so Locus stores a pointer — repo path, HEAD,
+    and the eligible-file blob list (which doubles as the pass-cache key material).
+    LocusDrop snapshot drops, whose source tree is deleted after ingest, get a real
+    tarball instead (see watcher.py).
+    """
+    raw_store = load().paths.raw_store
+    raw_store.mkdir(parents=True, exist_ok=True)
+    name = f"{snap.content_hash}.manifest.json"
+    payload = {
+        "source_type": "code",
+        "repo_path": str(repo),
+        "head": snap.head,
+        "ingested_at": datetime.now(timezone.utc).isoformat(),
+        "files": [{"path": rel, "blob_sha": snap.blob_shas[rel]} for rel in snap.files],
+    }
+    (raw_store / name).write_text(json.dumps(payload, indent=1))
+    return name
+
+
+def ingest_repo(
+    repo_path: str | Path, conn, *, force: bool = False,
+    source_uri: str | None = None, raw_name: str | None = None,
+) -> IngestResult:
+    """Ingest a code repository as ONE document (sections = files). Never raises.
+
+    Idempotent by content: `content_hash` is the git HEAD sha (or a manifest hash for
+    non-git trees), and the prior document is found by `source_uri` (stable across
+    commits) — same content and not `force` is a skip; otherwise the old document is
+    replaced atomically (prepare-first, delete+write in one transaction).
+
+    `source_uri` defaults to the resolved repo path; LocusDrop snapshot drops pass a
+    stable `locusdrop:<name>` key (their incoming path is transient) plus a tarball
+    `raw_name` (their source tree is deleted after ingest).
+    """
+    repo = Path(repo_path).resolve()
+    uri = source_uri or str(repo)
+    try:
+        snap = code_extract.collect_repo(repo)
+        existing = conn.execute(
+            "SELECT id, content_hash FROM documents WHERE source_uri=? AND source_type='code'",
+            (uri,),
+        ).fetchone()
+        if existing and existing["content_hash"] == snap.content_hash and not force:
+            return IngestResult(str(repo), "skipped", doc_id=existing["id"])
+
+        if raw_name is None:
+            raw_name = _write_repo_manifest(snap, repo)
+        cache = _SummaryCache(conn, snap.blob_shas)
+        doc = code_extract.extract_repo(repo, snap)
+        prep = _prepare_doc(doc, "code", summary_cache=cache)  # expensive work, no DB writes
+        result = _write(
+            conn, repo, snap.content_hash, "code", raw_name, prep,
+            category="project", source_uri=uri,
+            replace_doc_id=existing["id"] if existing else None,
+        )
+        cache.flush()  # only after the document committed
+        return result
+    except Exception as exc:  # quarantine this repo, keep the batch alive (§6)
+        log.warning("Quarantined repo %s: %s", repo, exc)
+        return IngestResult(str(repo), "quarantined", error=str(exc))
 
 
 def ingest_paths(paths: list[str | Path], conn=None, *, reingest: bool = False) -> list[IngestResult]:

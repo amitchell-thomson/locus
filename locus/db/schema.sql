@@ -5,7 +5,7 @@
 -- in db/migrations/versions/, applied via `alembic upgrade head` (or locus.db.migrate.migrate).
 -- When you add a migration, update this snapshot to match the resulting state.
 --
--- Current state == migrations applied through revision: 0004
+-- Current state == migrations applied through revision: 0005
 --   0001 initial schema
 --   0002 chunks_fts (FTS5 lexical index over chunk text + sync triggers) for hybrid retrieval
 --   0003 temporal + category metadata: documents.source_date (ISO 'YYYY-MM-DD') + category,
@@ -13,6 +13,8 @@
 --   0004 widened documents.source_type CHECK to
 --        ('pdf','code','video','docx','markdown','text','notebook') for step-8 format
 --        breadth (table rebuild — SQLite cannot ALTER a CHECK)
+--   0005 pass_cache(key PK, payload, created_at): content-keyed LLM pass-output cache so
+--        commit-triggered repo re-ingests only re-run passes on changed files (step 10)
 --
 -- Version tracking is owned by Alembic's `alembic_version` table.
 --

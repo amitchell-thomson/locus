@@ -724,9 +724,20 @@ math-stripped text). Details per step in `PLAN.md`.
    + retrieve with citations, audit QC clean, drop-folder category derived via watcher.
 9. **Slides (PPTX) extractor.** `python-pptx`: per-slide text + speaker notes → sections; slide
    images feed the figures pipeline (block 11).
-10. **Code-repo ingest.** `extract/code.py` via `python-ast` (functions, call graph, per-file
-    sections; `source_type='code'`); a repo-directory entry point (ingest a repo, not one file).
-    Provenance (`file_path:line`) is already in the schema and retrieval.
+10. **Code-repo ingest + continuous repo sync** — **done** (2026-06-05, deliberately ahead
+    of step 9). Two channels, one extractor (`extract/code.py`, stdlib ast): *tracked
+    repos* (config `[repos]`, all 5 server repos; commit-triggered — `locus watch` checks
+    HEAD hourly, re-ingests only on new commits; `locus sync [--force]` manual; manifest
+    JSON as the raw-store entry — git is the raw store) and *LocusDrop snapshots* (a
+    directory under `incoming/projects/<name>/` = one repo unit; ctime-settled; tarball
+    to raw; `locusdrop:<name>` source_uri so re-drops replace). Doc = repo, sections =
+    files, def-granular PreChunks with real `file_path:line` provenance (§7's path now
+    live), per-file `call_graph`, deterministic AST entities. Per-source-type pass
+    profile (`pass_profile()`): code skips propositions + LLM entities, code-variant
+    summary. Content-keyed pass cache (migration 0005) makes re-ingests proportional to
+    changed files. Re-ingest ordering fixed pipeline-wide (prepare first, delete+write in
+    one transaction — a failed re-ingest no longer destroys the prior doc). Ingest flock
+    turns the one-ingest-at-a-time rule into a guardrail. Audit is profile-aware.
 11. **Figures** `[re-ingest-bound]` (PDF/slides quality, medium). `figures` + `figure_vectors`
     schema; extract/store images + captions; optional local VLM (moondream / minicpm-v) →
     retrievable; multimodal Claude at generation (query.py passes the figure image). See §15.1.

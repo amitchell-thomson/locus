@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from locus.config import load
 from locus.db.connection import get_connection
 from locus.retrieve.assemble import Citation, assemble
 from locus.retrieve.expand import expand
-from locus.retrieve.rerank import rerank
+from locus.retrieve.rerank import rerank, score_pairs
 from locus.retrieve.search import Candidate, Facets, search
 
 
@@ -19,6 +20,47 @@ from locus.retrieve.search import Candidate, Facets, search
 # separates the two so the low-confidence banner doesn't overclaim on the headline
 # co-retrieve-and-bridge use case (2026-06-05 second evaluation, finding #1).
 DEEP_FLOOR_MARGIN = 4.0
+
+# The facet check below rescores survivors against query *fragments* ("regime detection
+# in my quant work"), and the cross-encoder scores fragments systematically lower than
+# the full natural-language questions `min_rerank_score` was calibrated on. Allowance
+# measured on the live corpus (2026-06-05 round-3 fix): units genuinely covering their
+# facet score -1.0..+0.9 against it, units not covering it -3.9..-11.4 — a wide gap, so
+# a 2-point allowance separates them with plenty of slack on both sides.
+FACET_FLOOR_MARGIN = 2.0
+
+# Bridge phrasings that mark a multi-part (cross-domain) query whose halves should be
+# judged separately. Deliberately explicit connectives only — a bare "and" splits ordinary
+# compound noun phrases, which would mis-fire the facet check on single-topic queries.
+_BRIDGE = re.compile(
+    r"\b(?:relate[sd]?\s+to|relate\b|connect(?:s|ed)?\s+(?:to|with)|"
+    r"compare[sd]?\s+(?:to|with|against)|versus|vs\.?|intersect(?:s|ed)?\s+with|"
+    r"link(?:s|ed)?\s+to|combined?\s+with|map(?:s|ped)?\s+onto|inform(?:s|ed)?\b)\b",
+    re.IGNORECASE,
+)
+_BETWEEN = re.compile(r"\bbetween\b(.+?)\band\b(.+)", re.IGNORECASE | re.DOTALL)
+
+# Implementation-intent markers: the consumer wants the function body, not prose about it
+# (§7: "code recall -> function body + file:line"). Routed to rerank's prefer_code rule.
+_IMPL_INTENT = re.compile(
+    r"\b(?:implement(?:ed|ation|s)?|function|method|class|source\s+code|the\s+code\b|"
+    r"defined?\s+in|wrote|written|codebase)\b",
+    re.IGNORECASE,
+)
+
+
+def split_facets(query: str) -> list[str]:
+    """Deterministically split a bridge query into its facets ([] when not bridge-shaped).
+
+    'How does X relate to Y?' -> ['How does X', 'Y?'] -> the substance of each side. Only
+    facets with >= 2 words count: the cross-encoder needs enough content per side to score
+    meaningfully, and a degenerate split must not unlock the facet path on a simple query.
+    """
+    m = _BETWEEN.search(query)
+    parts = [m.group(1), m.group(2)] if m else _BRIDGE.split(query)
+    facets = [p.strip(" \t?.,;:!") for p in parts if p and p.strip()]
+    facets = [f for f in facets if len(f.split()) >= 2]
+    return facets if len(facets) >= 2 else []
 
 
 @dataclass
@@ -31,10 +73,11 @@ class RetrievalResult:
     # True when min_rerank_score is configured and even the best survivor falls below it —
     # a signal for the consumer, never a filter of the best material.
     low_confidence: bool = False
-    # Which low-confidence story the scores tell: None (confident), "ambiguous" (best score
-    # within DEEP_FLOOR_MARGIN of the floor — weak coverage OR a multi-part query whose
-    # facets are covered separately), "absent" (best score below even the deep floor — the
-    # corpus very likely does not cover this).
+    # Which low-confidence story the scores tell: None (confident — including a multi-part
+    # query each of whose facets clears the floor separately; see the facet check below),
+    # "ambiguous" (best score within DEEP_FLOOR_MARGIN of the floor — weak coverage),
+    # "absent" (best score below even the deep floor — the corpus very likely does not
+    # cover this).
     confidence_band: str | None = None
 
 
@@ -76,24 +119,46 @@ def retrieve(query: str, conn=None, facets: Facets | None = None) -> RetrievalRe
         survivors = rerank(
             query, candidates, cfg.rerank_top_k, cfg.per_doc_cap,
             min_score=cfg.min_rerank_score,
+            prefer_code=bool(_IMPL_INTENT.search(query)),
         )
         band: str | None = None
         floor = cfg.min_rerank_score
         scores = [c.rerank_score for c in survivors if c.rerank_score is not None]
+        facet_best: dict[int, float] = {}  # id(candidate) -> best per-facet score
         if floor is not None and scores:
             deep = floor - DEEP_FLOOR_MARGIN
             best = max(scores)
-            if best < deep:
-                band = "absent"
-            elif best < floor:
-                band = "ambiguous"
-            else:
-                # Signal exists: drop only the definitely-irrelevant tail (below the deep
-                # floor). Moderate-negative units survive — on multi-part queries they are
-                # the complementary facets the synthesis use case needs.
+            if best < floor:
+                # Facet-aware check (round-3 evaluation, two-rounds-standing finding): a
+                # bridge query's units each cover ONE side, so every full-query score sits
+                # below the floor even when the corpus covers both sides well. Rescore the
+                # survivors against each facet separately; if every facet is cleared by
+                # some unit, the retrieval is confident — the banner must not stamp "weak
+                # coverage" on exactly the co-retrieved set the synthesis use case needs.
+                qfacets = split_facets(query)
+                facet_floor = floor - FACET_FLOOR_MARGIN
+                per_facet_best: list[float] = []
+                for f in qfacets:
+                    fs = score_pairs(f, [c.text for c in survivors])
+                    per_facet_best.append(max(fs, default=float("-inf")))
+                    for c, s in zip(survivors, fs):
+                        facet_best[id(c)] = max(facet_best.get(id(c), float("-inf")), s)
+                if qfacets and all(b >= facet_floor for b in per_facet_best):
+                    band = None  # every part separately covered: confident
+                elif best < deep:
+                    band = "absent"
+                else:
+                    band = "ambiguous"
+            if band is None:
+                # Signal exists (full-query or per-facet): enforce the floor we computed —
+                # drop the definitely-irrelevant tail instead of printing it as co-equal
+                # results (round-3 evaluation, recommendation #3). A unit survives on its
+                # full-query score (>= deep floor) or by covering a facet (>= facet floor).
+                facet_floor = floor - FACET_FLOOR_MARGIN
                 survivors = [
                     c for c in survivors
                     if c.rerank_score is None or c.rerank_score >= deep
+                    or facet_best.get(id(c), float("-inf")) >= facet_floor
                 ]
         assembled = assemble(expand(conn, survivors))
         return RetrievalResult(

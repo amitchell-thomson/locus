@@ -225,7 +225,7 @@ def _pipeline_fakes(monkeypatch, floor, scores):
     rcfg = types.SimpleNamespace(rerank_top_k=8, per_doc_cap=3, min_rerank_score=floor)
     monkeypatch.setattr(pl, "load", lambda: types.SimpleNamespace(retrieve=rcfg))
 
-    def _rr(query, candidates, top_k, per_doc_cap, min_score=None):
+    def _rr(query, candidates, top_k, per_doc_cap, min_score=None, prefer_code=False):
         for c, s in zip(candidates, scores):
             c.rerank_score = s
         return candidates[: len(scores)][:top_k]
@@ -299,3 +299,133 @@ def test_retrieve_end_to_end(conn, monkeypatch):
     r = retrieve("stability poles", conn=conn)
     assert r.survivors
     assert isinstance(r.context, str)
+
+
+# --- facet-aware confidence + floor enforcement (round-3 evaluation) ----------------------
+
+
+def test_split_facets_on_bridge_queries():
+    from locus.retrieve.pipeline import split_facets
+
+    f = split_facets(
+        "How do my signal-processing notes on spectral analysis relate to regime "
+        "detection in my quant work?"
+    )
+    assert len(f) == 2
+    assert "spectral analysis" in f[0] and "regime detection" in f[1]
+
+    f = split_facets("What is the connection between Fourier analysis and solving PDEs numerically?")
+    assert len(f) == 2
+
+    # Single-topic queries must NOT unlock the facet path.
+    assert split_facets("What is the Biot number?") == []
+    assert split_facets("gradient descent learning rate") == []
+
+
+def _facet_fakes(monkeypatch, floor, scores, facet_scores):
+    """Pipeline fakes where score_pairs returns the next row of facet_scores per facet."""
+    import types
+
+    from locus.retrieve import pipeline as pl
+
+    rcfg = types.SimpleNamespace(rerank_top_k=8, per_doc_cap=3, min_rerank_score=floor)
+    monkeypatch.setattr(pl, "load", lambda: types.SimpleNamespace(retrieve=rcfg))
+
+    def _rr(query, candidates, top_k, per_doc_cap, min_score=None, prefer_code=False):
+        for c, s in zip(candidates, scores):
+            c.rerank_score = s
+        return candidates[: len(scores)][:top_k]
+
+    monkeypatch.setattr(pl, "rerank", _rr)
+    rows = iter(facet_scores)
+    monkeypatch.setattr(pl, "score_pairs", lambda f, texts: list(next(rows))[: len(texts)])
+    return pl
+
+
+BRIDGE_Q = "How does spectral analysis from my notes relate to regime detection in finance?"
+
+
+def test_facet_covered_bridge_query_is_confident(conn, monkeypatch):
+    # Full-query scores all below the floor (each unit covers ONE side) — the old
+    # behaviour banner-flagged exactly the co-retrieved set the synthesis use case needs.
+    # Each facet is cleared by some unit -> confident, no banner.
+    pl = _facet_fakes(
+        monkeypatch, floor=0.0,
+        scores=[-2.0, -3.0, -9.0],
+        facet_scores=[[5.0, -8.0, -9.0], [-8.0, 4.0, -9.0]],
+    )
+    # Seed three candidates: monkeypatched rerank just scores whatever search returns;
+    # the seeded DB yields >=3 candidates (prop + chunk + section).
+    r = pl.retrieve(BRIDGE_Q, conn=conn)
+    assert r.confidence_band is None and r.low_confidence is False
+    # Floor enforcement: the unit clearing neither the deep floor nor any facet floor
+    # (-9 on everything) is pruned; the facet-covering units survive.
+    kept = [c.rerank_score for c in r.survivors]
+    assert -2.0 in kept and -3.0 in kept and -9.0 not in kept
+
+
+def test_facet_uncovered_bridge_query_stays_flagged(conn, monkeypatch):
+    # One facet is never cleared -> the low-confidence story is real; nothing is pruned
+    # (flag, never filter: weak matches are all the consumer gets).
+    pl = _facet_fakes(
+        monkeypatch, floor=0.0,
+        scores=[-2.0, -3.0],
+        facet_scores=[[5.0, -8.0], [-8.0, -7.0]],
+    )
+    r = pl.retrieve(BRIDGE_Q, conn=conn)
+    assert r.confidence_band == "ambiguous"
+    assert sorted(c.rerank_score for c in r.survivors) == [-3.0, -2.0]
+
+
+def test_non_bridge_weak_query_skips_facet_check(conn, monkeypatch):
+    # No bridge phrasing: split_facets yields nothing, bands behave as before.
+    pl = _facet_fakes(monkeypatch, floor=0.0, scores=[-2.0], facet_scores=[])
+    r = pl.retrieve("stability poles", conn=conn)
+    assert r.confidence_band == "ambiguous"
+
+
+# --- implementation-intent source preference (round-3: prose-about-code outranks code) -----
+
+
+def _src(id_, score, path=None):
+    c = Candidate(kind="chunk", id=id_, doc_id=1, section_id=id_, text="t", score=0.0,
+                  file_path=path)
+    c.rerank_score = score
+    return c
+
+
+def test_prefer_code_promotes_a_source_unit():
+    ranked = [
+        _src(1, 5.0, "docs/design.md"),
+        _src(2, 4.0, "docs/phase2.md"),
+        _src(3, 2.0, "src/hmm.py"),
+    ]
+    out = select(ranked, top_k=2, per_doc_cap=10, min_score=0.0, prefer_code=True)
+    # The source unit replaces the lowest-ranked prose unit; the cut stays full.
+    assert [(c.id, c.file_path) for c in out] == [(1, "docs/design.md"), (3, "src/hmm.py")]
+
+
+def test_prefer_code_respects_the_floor():
+    ranked = [
+        _src(1, 5.0, "docs/design.md"),
+        _src(2, 4.0, "docs/phase2.md"),
+        _src(3, -3.0, "src/hmm.py"),  # judged irrelevant: must NOT be promoted
+    ]
+    out = select(ranked, top_k=2, per_doc_cap=10, min_score=0.0, prefer_code=True)
+    assert [c.id for c in out] == [1, 2]
+
+
+def test_prefer_code_noop_when_source_already_selected():
+    ranked = [_src(1, 5.0, "src/hmm.py"), _src(2, 4.0, "docs/design.md")]
+    out = select(ranked, top_k=2, per_doc_cap=10, min_score=0.0, prefer_code=True)
+    assert [c.id for c in out] == [1, 2]
+
+
+def test_prefer_code_off_by_default():
+    ranked = [
+        _src(1, 5.0, "docs/design.md"),
+        _src(2, 4.0, "docs/phase2.md"),
+        _src(3, 2.0, "src/hmm.py"),
+    ]
+    out = select(ranked, top_k=2, per_doc_cap=10, min_score=0.0)
+    assert [c.id for c in out] == [1, 2]

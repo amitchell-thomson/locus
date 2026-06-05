@@ -30,6 +30,7 @@ class Candidate:
     score: float  # arm-specific (vec distance or bm25); not cross-arm comparable
     sources: set[str] = field(default_factory=set)  # 'dense' | 'lexical' | 'entity'
     rerank_score: float | None = None
+    file_path: str | None = None  # code provenance; lets selection prefer source units
 
 
 @dataclass
@@ -85,7 +86,7 @@ def search(conn, query: str, facets: Facets | None = None) -> list[Candidate]:
     eligible = _eligible_docs(conn, facets)  # None => unrestricted
     out: dict[tuple[str, int], Candidate] = {}
 
-    def add(kind, id_, doc_id, section_id, text, score, source):
+    def add(kind, id_, doc_id, section_id, text, score, source, file_path=None):
         if eligible is not None and doc_id not in eligible:
             return  # outside the active date/category facets
         key = (kind, id_)
@@ -93,7 +94,10 @@ def search(conn, query: str, facets: Facets | None = None) -> list[Candidate]:
             out[key].sources.add(source)
             out[key].score = min(out[key].score, score)  # keep best (smaller is better)
         else:
-            out[key] = Candidate(kind, id_, doc_id, section_id, text or "", score, {source})
+            out[key] = Candidate(
+                kind, id_, doc_id, section_id, text or "", score, {source},
+                file_path=file_path,
+            )
 
     # --- dense KNN (vec0 KNN in a subquery, then join — the sqlite-vec join pattern) ---
     for r in conn.execute(
@@ -106,46 +110,50 @@ def search(conn, query: str, facets: Facets | None = None) -> list[Candidate]:
         add("proposition", r["id"], r["doc_id"], r["section_id"], r["text"], r["distance"], "dense")
 
     for r in conn.execute(
-        "SELECT c.id, c.doc_id, c.section_id, c.raw_text, k.distance FROM "
+        "SELECT c.id, c.doc_id, c.section_id, c.raw_text, c.file_path, k.distance FROM "
         "(SELECT chunk_id, distance FROM chunk_vectors "
         " WHERE embedding MATCH ? ORDER BY distance LIMIT ?) k "
         "JOIN chunks c ON c.id = k.chunk_id",
         (qvec, cfg.fine_top_k),
     ):
-        add("chunk", r["id"], r["doc_id"], r["section_id"], r["raw_text"], r["distance"], "dense")
+        add("chunk", r["id"], r["doc_id"], r["section_id"], r["raw_text"], r["distance"],
+            "dense", file_path=r["file_path"])
 
     for r in conn.execute(
-        "SELECT s.id, s.doc_id, s.summary, k.distance FROM "
+        "SELECT s.id, s.doc_id, s.summary, s.file_path, k.distance FROM "
         "(SELECT section_id, distance FROM section_vectors "
         " WHERE embedding MATCH ? ORDER BY distance LIMIT ?) k "
         "JOIN sections s ON s.id = k.section_id",
         (qvec, cfg.section_top_k),
     ):
-        add("section", r["id"], r["doc_id"], r["id"], r["summary"], r["distance"], "dense")
+        add("section", r["id"], r["doc_id"], r["id"], r["summary"], r["distance"], "dense",
+            file_path=r["file_path"])
 
     # --- lexical (FTS5 / BM25) over chunk text ---
     fq = _fts_query(query)
     if fq:
         for r in conn.execute(
-            "SELECT c.id, c.doc_id, c.section_id, c.raw_text, bm25(chunks_fts) AS s "
+            "SELECT c.id, c.doc_id, c.section_id, c.raw_text, c.file_path, bm25(chunks_fts) AS s "
             "FROM chunks_fts JOIN chunks c ON c.id = chunks_fts.rowid "
             "WHERE chunks_fts MATCH ? ORDER BY s LIMIT ?",
             (fq, cfg.fine_top_k),
         ):
-            add("chunk", r["id"], r["doc_id"], r["section_id"], r["raw_text"], r["s"], "lexical")
+            add("chunk", r["id"], r["doc_id"], r["section_id"], r["raw_text"], r["s"],
+                "lexical", file_path=r["file_path"])
 
     # --- entity-anchored: sections naming an entity that appears in the query ---
     q_lower = query.lower()
     added = 0
     for r in conn.execute(
-        "SELECT DISTINCT e.name, e.section_id, e.doc_id, s.summary "
+        "SELECT DISTINCT e.name, e.section_id, e.doc_id, s.summary, s.file_path "
         "FROM entities e JOIN sections s ON s.id = e.section_id"
     ):
         if added >= _MAX_ENTITY_CANDIDATES:
             break
         name = r["name"] or ""
         if len(name) >= _MIN_ENTITY_LEN and name.lower() in q_lower:
-            add("section", r["section_id"], r["doc_id"], r["section_id"], r["summary"], 0.0, "entity")
+            add("section", r["section_id"], r["doc_id"], r["section_id"], r["summary"], 0.0,
+                "entity", file_path=r["file_path"])
             added += 1
 
     return list(out.values())

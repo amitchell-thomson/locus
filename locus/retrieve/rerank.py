@@ -58,12 +58,25 @@ def _cross_encoder():
     return CrossEncoder(_MODEL, device="cpu")  # force CPU; GPU is for Ollama
 
 
+def score_pairs(query: str, texts: list[str]) -> list[float]:
+    """Cross-encoder scores for (query, text) pairs.
+
+    Used by the facet-aware confidence check (retrieve/pipeline.py): a multi-part query's
+    survivors are rescored against each facet separately, so per-facet coverage is judged
+    by the same model that set the floor the full-query scores fell below.
+    """
+    if not texts:
+        return []
+    return [float(s) for s in _cross_encoder().predict([(query, t) for t in texts])]
+
+
 def rerank(
     query: str,
     candidates: list[Candidate],
     top_k: int,
     per_doc_cap: int,
     min_score: float | None = None,
+    prefer_code: bool = False,
 ) -> list[Candidate]:
     """Score candidates with the cross-encoder, then take a diversity-aware top_k cut."""
     if not candidates:
@@ -72,11 +85,16 @@ def rerank(
     for c, s in zip(candidates, scores):
         c.rerank_score = float(s)
     candidates.sort(key=lambda c: c.rerank_score, reverse=True)
-    return select(candidates, top_k, per_doc_cap, min_score=min_score)
+    return select(candidates, top_k, per_doc_cap, min_score=min_score, prefer_code=prefer_code)
+
+
+def _is_source_unit(c: Candidate) -> bool:
+    return bool(c.file_path) and c.file_path.endswith(".py")
 
 
 def select(
-    ranked: list[Candidate], top_k: int, per_doc_cap: int, min_score: float | None = None
+    ranked: list[Candidate], top_k: int, per_doc_cap: int, min_score: float | None = None,
+    prefer_code: bool = False,
 ) -> list[Candidate]:
     """Diversity-aware cut of a rank-ordered candidate list (best first).
 
@@ -97,6 +115,13 @@ def select(
     (the 2026-06-05 evaluation: negative-control queries padded the top-k with noise). The
     primary pass is NOT score-filtered — weak-but-best results still surface, and the pipeline
     flags low confidence instead of hiding them (flag, never filter).
+
+    `prefer_code` (set by the pipeline for implementation-intent queries): natural-language-
+    poor source chunks embed and rerank below the prose *about* them (round-3 evaluation:
+    "how did I implement X" returned design docs, never the function), so when the cut holds
+    no source-file unit but a decent one exists (>= min_score), it replaces the lowest-ranked
+    selected unit — the §7 "code recall -> function body" contract needs the source present,
+    not just described.
     """
     sections_with_units = {
         c.section_id for c in ranked if c.kind in ("proposition", "chunk")
@@ -128,5 +153,19 @@ def select(
         selected.append(c)
 
     rank = {id(c): i for i, c in enumerate(ranked)}
+
+    if prefer_code and selected and not any(_is_source_unit(c) for c in selected):
+        chosen = {id(c) for c in selected}
+        promo = next(
+            (c for c in ranked if id(c) not in chosen and _is_source_unit(c)
+             and not (min_score is not None
+                      and (c.rerank_score is None or c.rerank_score < min_score))),
+            None,
+        )
+        if promo is not None:
+            if len(selected) >= top_k:  # swap out the lowest-ranked unit, keep the cut full
+                selected.remove(max(selected, key=lambda c: rank[id(c)]))
+            selected.append(promo)
+
     selected.sort(key=lambda c: rank[id(c)])  # restore rank order after refill
     return selected

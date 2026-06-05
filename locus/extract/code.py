@@ -10,7 +10,9 @@ repo-relative path, text = full verbatim source, §15.0), with:
   - **`call_graph`** per file: {qualified_def: [callee_names]} — name-level `ast.Call`
     collection (Name.id / dotted Attribute), no type inference. The LINK substrate (§1).
   - **Deterministic entities** (no LLM): top-level functions → type 'method', classes →
-    'concept', class methods qualified as `Class.method` → 'method'.
+    'concept', class methods qualified as `Class.method` → 'method'. Pytest-style
+    `test_*` defs are excluded (entity-table noise), and trivial `__init__.py` files
+    (docstring/imports/`__all__` only) are skipped entirely.
   - `.md` files become plain-text sections (no ATX splitting — one section per file keeps
     `file_path` provenance clean; chunked by the generic token splitter downstream).
   - A file that fails `ast.parse` (SyntaxError) degrades to a plain-text section — logged,
@@ -165,8 +167,14 @@ def extract_repo(repo: str | Path, snapshot: RepoSnapshot | None = None) -> Extr
     repo = Path(repo).resolve()
     snap = snapshot or collect_repo(repo)
     sections: list[ExtractedSection] = []
-    for position, rel in enumerate(snap.files):
+    for rel in snap.files:
         source = (repo / rel).read_text(encoding="utf-8", errors="replace")
+        if _is_trivial_init(rel, source):
+            # Boilerplate `__init__.py` (docstring/imports/__all__ only) would become a
+            # full section with an LLM summary saying nothing — entity-table and section
+            # noise, never a useful retrieval target (2026-06-05 round-3 evaluation).
+            continue
+        position = len(sections)
         if Path(rel).suffix.lower() == ".py":
             sections.append(_py_section(position, rel, source))
         else:
@@ -176,6 +184,8 @@ def extract_repo(repo: str | Path, snapshot: RepoSnapshot | None = None) -> Extr
                     has_math=has_math(source), file_path=rel,
                 )
             )
+    if not sections:
+        raise ValueError(f"no non-trivial source files in {repo}")
     return ExtractedDoc(
         # Repo dir name: spaceless => title_is_suspect => the repo synthesis pass's
         # arbitrated title replaces it downstream with a semantic one.
@@ -189,6 +199,39 @@ def extract_repo(repo: str | Path, snapshot: RepoSnapshot | None = None) -> Extr
 
 
 # --- per-file AST extraction ---------------------------------------------------------------
+
+
+def _is_trivial_init(rel: str, source: str) -> bool:
+    """True for an `__init__.py` carrying no content of its own.
+
+    Trivial = only a docstring, imports/re-exports, and dunder assignments (`__all__`,
+    `__version__`). An `__init__.py` that defines real functions/classes or module logic
+    is NOT trivial and ingests like any other module.
+    """
+    if Path(rel).name != "__init__.py":
+        return False
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False  # let _py_section handle (and log) the broken file
+    for node in tree.body:
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            continue
+        if (
+            isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+        ):
+            continue  # docstring
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            if all(
+                isinstance(t, ast.Name) and t.id.startswith("__") and t.id.endswith("__")
+                for t in targets
+            ):
+                continue  # __all__ / __version__ / similar dunder metadata
+        return False
+    return True
 
 
 def _py_section(position: int, rel: str, source: str) -> ExtractedSection:
@@ -340,15 +383,27 @@ def _iter_defs(tree: ast.Module):
                     yield f"{node.name}.{item.name}", item
 
 
+def _is_test_def(name: str) -> bool:
+    """Pytest-convention test methods: never useful entity targets, and a test file emits
+    dozens of them (36 in one file, 2026-06-05 round-3 evaluation), drowning the entity
+    table. They stay retrievable through their chunks (lexical + dense); they just don't
+    get entity rows."""
+    return name.split(".")[-1].startswith("test_")
+
+
 def _ast_entities(tree: ast.Module) -> list[PreEntity] | None:
-    """Deterministic entities: functions -> 'method', classes -> 'concept'."""
+    """Deterministic entities: functions -> 'method', classes -> 'concept'.
+
+    Test methods (`test_*`) are excluded — see _is_test_def."""
     out: list[PreEntity] = []
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            out.append(PreEntity(name=node.name, type="method"))
+            if not _is_test_def(node.name):
+                out.append(PreEntity(name=node.name, type="method"))
         elif isinstance(node, ast.ClassDef):
             out.append(PreEntity(name=node.name, type="concept"))
             for item in node.body:
                 if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    out.append(PreEntity(name=f"{node.name}.{item.name}", type="method"))
+                    if not _is_test_def(item.name):
+                        out.append(PreEntity(name=f"{node.name}.{item.name}", type="method"))
     return out or None

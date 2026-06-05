@@ -187,3 +187,84 @@ def test_repo_title_is_dir_name(tmp_path: Path):
     repo = _make_tree(tmp_path / "myproject")
     doc = extract_repo(repo)
     assert doc.title == "myproject"  # suspect (no spaces) -> synthesis arbitrates downstream
+
+
+# --- round-3 evaluation: code-ingest noise filters -----------------------------------------
+
+
+TRIVIAL_INIT = '''\
+"""Package docstring."""
+
+from .engine import Engine
+from . import helpers
+
+__all__ = ["Engine"]
+__version__ = "1.0"
+'''
+
+REAL_INIT = '''\
+"""Package with real logic in its __init__."""
+
+
+def configure(level="INFO"):
+    return {"level": level}
+'''
+
+TEST_FILE = '''\
+import pytest
+
+
+def helper_fixture():
+    return 3
+
+
+class TestMargin:
+    def test_margin_warning_is_bool(self):
+        assert True
+
+    def test_k_equals_2(self):
+        assert 2 == 2
+
+
+def test_top_level_case():
+    assert True
+'''
+
+
+def test_trivial_init_is_skipped(tmp_path: Path):
+    root = tmp_path / "repo"
+    _make_tree(root)
+    pkg = root / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text(TRIVIAL_INIT)
+    doc = extract_repo(root)
+    paths = [s.file_path for s in doc.sections]
+    assert "pkg/__init__.py" not in paths
+    assert "main.py" in paths  # the rest of the repo is untouched
+    # positions stay contiguous despite the skip
+    assert [s.position for s in doc.sections] == list(range(len(doc.sections)))
+
+
+def test_real_init_is_kept(tmp_path: Path):
+    root = tmp_path / "repo"
+    _make_tree(root)
+    pkg = root / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text(REAL_INIT)
+    doc = extract_repo(root)
+    assert "pkg/__init__.py" in [s.file_path for s in doc.sections]
+
+
+def test_test_methods_emit_no_entities(tmp_path: Path):
+    root = tmp_path / "repo"
+    _make_tree(root)
+    (root / "test_margin.py").write_text(TEST_FILE)
+    doc = extract_repo(root)
+    sec = next(s for s in doc.sections if s.file_path == "test_margin.py")
+    names = [e.name for e in (sec.entities or [])]
+    # test_* defs (top-level and methods) are excluded; everything else stays.
+    assert "helper_fixture" in names
+    assert "TestMargin" in names  # the class itself is kept (one row, not 36)
+    assert not any(n.split(".")[-1].startswith("test_") for n in names)
+    # The test bodies remain retrievable as chunks.
+    assert any("test_k_equals_2" in c.text for c in (sec.chunks or []))

@@ -18,9 +18,11 @@ class FakeClient:
     def __init__(self, responses):
         self._responses = list(responses)
         self.calls = 0
+        self.temperatures: list[float] = []
 
-    def chat(self, **_kwargs):
+    def chat(self, **kwargs):
         self.calls += 1
+        self.temperatures.append(kwargs.get("options", {}).get("temperature"))
         item = self._responses.pop(0)
         if isinstance(item, Exception):
             raise item
@@ -46,6 +48,15 @@ def test_raises_after_exhausting_retries():
     with pytest.raises(IngestExtractionError):
         generate_structured(Foo, "u", client=client, retries=2)
     assert client.calls == 3  # initial + 2 repairs
+
+
+def test_retries_escalate_temperature():
+    """Repair attempts add entropy: a temperature-0 degeneration loop reproduces identically
+    on every retry, so retrying at the same temperature cannot escape it (observed live)."""
+    client = FakeClient(["bad", "still bad", '{"n": 3}'])
+    result = generate_structured(Foo, "u", client=client, retries=2)
+    assert result.n == 3
+    assert client.temperatures == [0.0, 0.3, 0.6]
 
 
 def test_transport_error_becomes_extraction_error():

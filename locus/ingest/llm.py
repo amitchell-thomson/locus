@@ -31,6 +31,16 @@ class IngestExtractionError(RuntimeError):
     """Raised when a pass cannot produce schema-valid output within the retry budget."""
 
 
+# Repair attempts run at increasing temperature. At temperature 0 a model that degenerates
+# (observed live: a runaway LaTeX echo loop inside a JSON string, on a math-heavy section)
+# reproduces the SAME degeneration on every retry — the repair loop needs entropy to escape
+# the attractor, not just the error message.
+_RETRY_TEMPERATURES = (0.3, 0.6)
+# Cap generated tokens: no ingest pass legitimately needs more, and a runaway generation
+# otherwise burns the whole context window before failing validation.
+_NUM_PREDICT = 2048
+
+
 @lru_cache(maxsize=1)
 def _client() -> Client:
     return Client(host=load().ollama.host)
@@ -106,11 +116,20 @@ def generate_structured(
     messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
     last_error: Exception | None = None
-    for _attempt in range(retries + 1):
+    for attempt in range(retries + 1):
+        temp = (
+            temperature
+            if attempt == 0
+            else _RETRY_TEMPERATURES[min(attempt - 1, len(_RETRY_TEMPERATURES) - 1)]
+        )
         try:
             resp = client.chat(
                 model=model, messages=messages, format=json_schema,
-                options={"temperature": temperature, "num_ctx": ollama_cfg.num_ctx},
+                options={
+                    "temperature": temp,
+                    "num_ctx": ollama_cfg.num_ctx,
+                    "num_predict": _NUM_PREDICT,
+                },
             )
         except Exception as exc:  # network / server / model errors
             raise IngestExtractionError(f"Ollama chat failed (model={model}): {exc}") from exc

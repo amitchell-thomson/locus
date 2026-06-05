@@ -698,8 +698,14 @@ math-stripped text). Details per step in `PLAN.md`.
    (step 11 scope). Follow-up: doc-title arbitration — synthesis pass emits a title, applied
    only when `pdf.title_is_suspect(candidate)` (banners/fragments/slugs/tab-titles; trusted
    titles never rewritten); stored titles backfilled without re-ingest
-   (`scripts/backfill_titles.py`, 5/24 retitled). Corpus declared **ready for format
-   breadth (steps 8–10)**.
+   (`scripts/backfill_titles.py`, 5/24 retitled). A **round-2 external audit** verified the
+   fixes and surfaced 3 residuals, all fixed: two-tier confidence band (`ambiguous` vs
+   `absent`, `DEEP_FLOOR_MARGIN=4`) so cross-domain queries aren't mislabelled absent +
+   deep-noise pruning only when signal exists; gap-pass precision filter (`filter_gaps`:
+   hint-backed or majority-unattested only) + `scripts/backfill_gaps.py`; attestation-based
+   de-hyphenation (joins only doc-vocab-attested words) `[re-ingest-bound]`. Residuals map
+   to planned steps: facet scoring → §15.2; aliasing/edges → step 12; numeric faithfulness
+   → §11.B/C. Corpus declared **ready for format breadth (steps 8–10)**.
 8. **DOCX + Markdown/text extractors.** `python-docx` (heading styles → sections) and `.md`/`.txt`
    (headings → sections). Route in `_source_type` + watcher. Unblocks notes / write-ups / docx.
 9. **Slides (PPTX) extractor.** `python-pptx`: per-slide text + speaker notes → sections; slide

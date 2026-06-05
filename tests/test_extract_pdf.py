@@ -299,20 +299,30 @@ def test_plausible_heading_shapes():
     assert not _plausible_heading("Waves are introduced. A wave equation is derived")  # 2 sentences
 
 
-def test_dehyphenate_joins_line_wrapped_words():
+def test_dehyphenate_joins_only_attested_words():
     from locus.extract.pdf import _dehyphenate
 
-    assert _dehyphenate("convec-\ntion is a transport process") == (
+    vocab = {"convection", "distribution", "implicit", "futures", "the"}
+    # Attested fusions join.
+    assert _dehyphenate("convec-\ntion is a transport process", vocab) == (
         "convection is a transport process"
     )
-    assert _dehyphenate("the distribu-\ntion of returns") == "the distribution of returns"
-    # Capitalized compounds and non-wrap hyphens are untouched.
-    assert _dehyphenate("the Navier-\nStokes equations") == "the Navier-\nStokes equations"
-    assert _dehyphenate("a well-known result") == "a well-known result"
-    assert _dehyphenate("range 3-\n4 metres") == "range 3-\n4 metres"  # digits: not a wrap
-    # Soft hyphens are typographic artifacts: removed, joining the word.
-    assert _dehyphenate("convec­\ntion") == "convection"
-    assert _dehyphenate("im­plicit") == "implicit"
+    assert _dehyphenate("the distribu-\ntion of returns", vocab) == (
+        "the distribution of returns"
+    )
+    # Unattested fusions keep the hyphen — genuine compounds split at a line break must not
+    # weld ('sameday', 'panelmismatch': 2026-06-05 second evaluation).
+    assert _dehyphenate("a same-\nday detection latency", vocab) == "a same-day detection latency"
+    assert _dehyphenate("no panel-\nmismatch confound", vocab) == "no panel-mismatch confound"
+    # Capitalized compounds and digit ranges are untouched.
+    assert _dehyphenate("the Navier-\nStokes equations", vocab) == "the Navier-\nStokes equations"
+    assert _dehyphenate("a well-known result", vocab) == "a well-known result"
+    assert _dehyphenate("range 3-\n4 metres", vocab) == "range 3-\n4 metres"
+    # Soft hyphen at a line break: fuse if attested, else a SPACE (the 'the\xadfutures' lie).
+    assert _dehyphenate("convec­\ntion", {"convection"}) == "convection"
+    assert _dehyphenate("use the­\nfutures curve", {"the", "futures"}) == "use the futures curve"
+    # Mid-word soft hyphen: typographic, always removed.
+    assert _dehyphenate("im­plicit", set()) == "implicit"
 
 
 def test_extraction_dehyphenates_page_text(tmp_path: Path):
@@ -323,14 +333,18 @@ def test_extraction_dehyphenates_page_text(tmp_path: Path):
                 ("Introduction", HEAD),
                 ("The process of convec-", BODY),
                 ("tion moves heat through the fluid in a continuous manner.", BODY),
+                ("Indeed convection dominates conduction here, with no same-", BODY),
+                ("day variation observed in the measurements at any point.", BODY),
                 *_body("intro"),
             ],
         ],
     )
     doc = extract_pdf(pdf)
     text = "".join(s.text for s in doc.sections)
-    assert "convection" in text
-    assert "convec-" not in text
+    # 'convection' is attested elsewhere in the doc -> the wrap fuses.
+    assert "convection" in text and "convec-" not in text
+    # 'sameday' is attested nowhere -> the compound keeps its hyphen, not welded.
+    assert "same-day" in text and "sameday" not in text
     # Page mapping is intact after the joins shorten the text.
     assert all(s.page_start == 1 and s.page_end == 1 for s in doc.sections)
 

@@ -61,21 +61,22 @@ class QueryResult:
     citations: list[str] = field(default_factory=list)
     citation_details: list = field(default_factory=list)  # assemble.Citation, with rerank scores
     low_confidence: bool = False  # retrieval's coverage signal, passed through (see retrieve)
+    confidence_band: str | None = None  # None | 'ambiguous' | 'absent' (see retrieve)
 
 
 def _system_prompt(mode: str) -> str:
     return f"{_PREAMBLE}\n\n{QUERY_MODES[mode]}\n\n{_GROUNDING}"
 
 
-def _user_prompt(context: str, question: str, low_confidence: bool = False) -> str:
+def _user_prompt(context: str, question: str, band: str | None = None) -> str:
+    from locus.retrieve.pipeline import confidence_banner
+
     body = context or "(no relevant material was retrieved)"
-    if low_confidence:
+    banner = confidence_banner(band)
+    if banner:
         # The generation step must see the coverage signal, not just the (weak) material.
-        body = (
-            "NOTE: retrieval confidence is LOW — every retrieved unit scored below the "
-            "relevance floor, so the corpus may not cover this question. Prefer saying so "
-            "over stretching weak material.\n\n" + body
-        )
+        # Band-aware: 'ambiguous' invites facet-bridging; 'absent' invites saying so.
+        body = f"NOTE: {banner}\n\n{body}"
     return f"<retrieved_context>\n{body}\n</retrieved_context>\n\nQuestion: {question}"
 
 
@@ -112,7 +113,7 @@ def answer(
         messages=[
             {
                 "role": "user",
-                "content": _user_prompt(retrieved.context, question, retrieved.low_confidence),
+                "content": _user_prompt(retrieved.context, question, retrieved.confidence_band),
             }
         ],
     )
@@ -120,5 +121,5 @@ def answer(
     return QueryResult(
         question=question, mode=mode, answer=text, model=model,
         citations=retrieved.citations, citation_details=retrieved.citation_details,
-        low_confidence=retrieved.low_confidence,
+        low_confidence=retrieved.low_confidence, confidence_band=retrieved.confidence_band,
     )

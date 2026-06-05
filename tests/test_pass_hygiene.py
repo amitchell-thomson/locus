@@ -244,6 +244,34 @@ def test_flag_gaps_prompt_carries_summaries_and_hints(monkeypatch):
     assert "CONFIRMED gap" in user
 
 
+def test_filter_gaps_drops_summarisation_artifacts():
+    from locus.ingest.gaps import filter_gaps
+
+    doc_text = (
+        "We tune the confidence threshold θC=0.8 in the Stage C ablation studies. "
+        "Preprocessing of the 14-variable panel applies 252-day z-scoring and a residual "
+        "bootstrap for the likelihood-ratio tests over a 90-day window. "
+        "Root locus design is not covered in this course."
+    )
+    hints = ["Root locus design is not covered in this course."]
+    gaps = [
+        # False absences (verbatim class from the 2026-06-05 second evaluation): the doc
+        # discusses these at length — summarisation artifacts, must be dropped.
+        "The study does not detail the exact confidence threshold used in ablation studies.",
+        "The document does not explain the preprocessing steps applied to the panel data.",
+        "No information is provided on how the likelihood-ratio tests are conducted.",
+        # Hint-backed mentioned-but-not-covered: kept.
+        "Root locus design rules are mentioned but not covered.",
+        # Genuinely absent topic: kept.
+        "The document does not cover option pricing or hedging strategies.",
+    ]
+    kept = filter_gaps(gaps, hints, doc_text)
+    assert kept == [
+        "Root locus design rules are mentioned but not covered.",
+        "The document does not cover option pricing or hedging strategies.",
+    ]
+
+
 def test_flag_gaps_without_sections_still_works(monkeypatch):
     from locus.ingest import gaps as gaps_mod
 

@@ -101,7 +101,7 @@ def test_inspect_document_unknown_is_reported(seeded_db):
     assert "No unique document matches" in out
 
 
-def _stub_result(low_confidence: bool):
+def _stub_result(band: str | None = None):
     from locus.retrieve.assemble import Citation
 
     cite = '"Control Notes", §Stability, pp 5–7'
@@ -110,13 +110,14 @@ def _stub_result(low_confidence: bool):
         citations=[cite],
         citation_details=[Citation(text=cite, doc_id=1, rerank_score=4.21)],
         survivors=[],
-        low_confidence=low_confidence,
+        low_confidence=band is not None,
+        confidence_band=band,
     )
 
 
 def test_retrieve_tool_annotates_category_and_score(seeded_db, monkeypatch):
     monkeypatch.setattr(
-        mcp_server, "run_retrieval", lambda q, facets=None: _stub_result(low_confidence=False)
+        mcp_server, "run_retrieval", lambda q, facets=None: _stub_result(band=None)
     )
     out = _text(asyncio.run(mcp_server._build().call_tool("retrieve", {"query": "q"})))
     assert "rerank +4.21" in out
@@ -124,13 +125,21 @@ def test_retrieve_tool_annotates_category_and_score(seeded_db, monkeypatch):
     assert "LOW CONFIDENCE" not in out
 
 
-def test_retrieve_tool_flags_low_confidence(seeded_db, monkeypatch):
+def test_retrieve_tool_flags_low_confidence_by_band(seeded_db, monkeypatch):
+    # 'absent': strong wording. 'ambiguous': must NOT claim the corpus lacks the topic
+    # (the cross-domain mislabel from the 2026-06-05 second evaluation).
     monkeypatch.setattr(
-        mcp_server, "run_retrieval", lambda q, facets=None: _stub_result(low_confidence=True)
+        mcp_server, "run_retrieval", lambda q, facets=None: _stub_result(band="absent")
     )
     out = _text(asyncio.run(mcp_server._build().call_tool("retrieve", {"query": "q"})))
-    assert out.startswith("LOW CONFIDENCE")
-    assert "corpus may not cover" in out
+    assert out.startswith("LOW CONFIDENCE") and "very likely does not cover" in out
+
+    monkeypatch.setattr(
+        mcp_server, "run_retrieval", lambda q, facets=None: _stub_result(band="ambiguous")
+    )
+    out = _text(asyncio.run(mcp_server._build().call_tool("retrieve", {"query": "q"})))
+    assert out.startswith("LOW CONFIDENCE") and "covers the parts separately" in out
+    assert "does not cover" not in out
 
 
 def test_sources_fall_back_to_plain_citations():

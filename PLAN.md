@@ -204,6 +204,23 @@ done **before** the bulk ingest. Each item ≈ one work-block.
   to confirm a long correct title shortens it; trusted/metadata titles are never rewritten).
   Backfilled in place (`scripts/backfill_titles.py` — titles aren't embedded, no re-ingest):
   5/24 retitled, eval label synced ("mathreview" → "Probability Fundamentals"), recall held.
+  **Round-2 external audit (same methodology) verified the fixes** (4 clean, LaTeX+props+
+  titles+entities) and surfaced 3 actionable residuals, all fixed: **(a)** the LOW CONFIDENCE
+  banner overclaimed absence on cross-domain queries → two-tier `confidence_band`
+  (`ambiguous` within `DEEP_FLOOR_MARGIN=4` of the floor: "parts covered separately";
+  `absent` below it) + payload pruning of sub-deep-floor noise ONLY when signal clears the
+  floor (complementary facets survive; recall re-verified 1.000); **(b)** gap pass emitted
+  false absences (summarisation artifacts: "does not detail θC" while text states θC=0.8) →
+  hardened prompt + `filter_gaps` (keep only deferral-hint-backed or majority-unattested
+  claims; hint window widened one sentence to capture pronoun-referenced topics) +
+  `scripts/backfill_gaps.py` (audit lines preserved): 24-doc corpus now 13 high-precision
+  gaps incl. doc 54's "root locus … for pole placement" — the exact gap eval #1 demanded;
+  **(c)** de-hyphenation welded compounds ("same-\nday"→"sameday") → joins now attested
+  against the doc's own vocabulary, else hyphen kept (soft-hyphen lie → space)
+  `[re-ingest-bound; rides the pre-pour re-ingest]`. Remaining audit items map to existing
+  steps: facet-aware scoring → §15.2 multi-query expansion; entity aliasing + cross-doc
+  edges → step 12; numeric-faithfulness on propositions → §11.B/C model measurement (the
+  one observed inversion is contradicted by 13 sibling props + the co-retrieved raw chunk).
 - [ ] **8. DOCX + Markdown/text extractors** — `python-docx` + `.md`/`.txt`; route in watcher.
 - [ ] **9. Slides (PPTX)** — `python-pptx`: per-slide text + speaker notes; images feed figures.
 - [ ] **10. Code-repo ingest** — `python-ast` (functions, call graph, per-file sections);

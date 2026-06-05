@@ -216,36 +216,68 @@ def test_assemble_citation_details_carry_best_rerank_score():
     assert d.text == out.citations[0]
 
 
-def test_retrieve_low_confidence_flag(conn, monkeypatch):
+def _pipeline_fakes(monkeypatch, floor, scores):
+    """Patch pipeline load+rerank: each candidate gets the next score from `scores`."""
     import types
 
     from locus.retrieve import pipeline as pl
 
-    def fake_load(score):
-        rcfg = types.SimpleNamespace(rerank_top_k=8, per_doc_cap=3, min_rerank_score=score)
-        return lambda: types.SimpleNamespace(retrieve=rcfg)
+    rcfg = types.SimpleNamespace(rerank_top_k=8, per_doc_cap=3, min_rerank_score=floor)
+    monkeypatch.setattr(pl, "load", lambda: types.SimpleNamespace(retrieve=rcfg))
 
-    def fake_rerank(value):
-        def _rr(query, candidates, top_k, per_doc_cap, min_score=None):
-            for c in candidates:
-                c.rerank_score = value
-            return candidates[:top_k]
-        return _rr
+    def _rr(query, candidates, top_k, per_doc_cap, min_score=None):
+        for c, s in zip(candidates, scores):
+            c.rerank_score = s
+        return candidates[: len(scores)][:top_k]
 
-    # Best survivor below the floor -> flagged (signal, not filter: survivors still returned).
-    monkeypatch.setattr(pl, "load", fake_load(0.0))
-    monkeypatch.setattr(pl, "rerank", fake_rerank(-2.0))
+    monkeypatch.setattr(pl, "rerank", _rr)
+    return pl
+
+
+def test_retrieve_confidence_bands(conn, monkeypatch):
+    # Ambiguous: best within DEEP_FLOOR_MARGIN below the floor (multi-part-query story).
+    pl = _pipeline_fakes(monkeypatch, floor=0.0, scores=[-2.0])
     r = pl.retrieve("stability poles", conn=conn)
-    assert r.low_confidence and r.survivors and r.citation_details
+    assert r.low_confidence and r.confidence_band == "ambiguous"
+    assert r.survivors and r.citation_details  # flag, never filter
 
-    # Above the floor -> not flagged.
-    monkeypatch.setattr(pl, "rerank", fake_rerank(6.0))
-    assert pl.retrieve("stability poles", conn=conn).low_confidence is False
+    # Absent: best below even the deep floor.
+    pl = _pipeline_fakes(monkeypatch, floor=0.0, scores=[-7.0])
+    r = pl.retrieve("stability poles", conn=conn)
+    assert r.low_confidence and r.confidence_band == "absent"
+
+    # Above the floor -> confident.
+    pl = _pipeline_fakes(monkeypatch, floor=0.0, scores=[6.0])
+    r = pl.retrieve("stability poles", conn=conn)
+    assert r.low_confidence is False and r.confidence_band is None
 
     # No floor configured -> never flagged.
-    monkeypatch.setattr(pl, "load", fake_load(None))
-    monkeypatch.setattr(pl, "rerank", fake_rerank(-9.0))
+    pl = _pipeline_fakes(monkeypatch, floor=None, scores=[-9.0])
     assert pl.retrieve("stability poles", conn=conn).low_confidence is False
+
+
+def test_retrieve_prunes_deep_noise_only_when_signal_exists(conn, monkeypatch):
+    # Signal (+6) present: the deep-noise unit (-7) is pruned, but the moderate-negative
+    # complementary-facet unit (-2) survives (cross-domain co-retrieval must keep it).
+    pl = _pipeline_fakes(monkeypatch, floor=0.0, scores=[6.0, -2.0, -7.0])
+    r = pl.retrieve("stability poles", conn=conn)
+    kept = [c.rerank_score for c in r.survivors]
+    assert 6.0 in kept and -2.0 in kept and -7.0 not in kept
+
+    # No signal: nothing is pruned — weak matches are all the consumer gets.
+    pl = _pipeline_fakes(monkeypatch, floor=0.0, scores=[-2.0, -7.0])
+    r = pl.retrieve("stability poles", conn=conn)
+    assert sorted(c.rerank_score for c in r.survivors) == [-7.0, -2.0]
+
+
+def test_confidence_banner_wording():
+    from locus.retrieve.pipeline import confidence_banner
+
+    assert confidence_banner(None) == ""
+    assert "covers the parts separately" in confidence_banner("ambiguous")
+    assert "very likely does not cover" in confidence_banner("absent")
+    # The ambiguous wording must NOT claim the corpus lacks the topic.
+    assert "does not cover" not in confidence_banner("ambiguous")
 
 
 # --- guarded end-to-end ---

@@ -191,8 +191,11 @@ def extract_pdf(path: str | Path, *, mathocr: bool = False) -> ExtractedDoc:
     doc = pymupdf.open(path)
     try:
         # De-hyphenate per page before anything reads or offsets the text (chunks, embeddings,
-        # heading location, and assembly all see the joined words).
-        page_texts = [_dehyphenate(page.get_text("text")) for page in doc]
+        # heading location, and assembly all see the joined words). Joins are attested against
+        # the whole document's vocabulary, built from the raw text first.
+        raw_pages = [page.get_text("text") for page in doc]
+        vocab = _doc_vocab(raw_pages)
+        page_texts = [_dehyphenate(t, vocab) for t in raw_pages]
         # Excise printed-ToC pages before sectioning: blanking (rather than removing) keeps
         # page numbering and offsets intact for everything downstream.
         toc_idxs = {i for i, t in enumerate(page_texts) if _is_toc_page(t)}
@@ -241,21 +244,38 @@ def extract_pdf(path: str | Path, *, mathocr: bool = False) -> ExtractedDoc:
 
 
 _SOFT_HYPHEN = "­"
-_LINE_WRAP_HYPHEN = re.compile(r"([a-z])-\n([a-z])")
+# A word ending lowercase, a (soft) hyphen, a line break, then a lowercase word start.
+_LINE_WRAP_HYPHEN = re.compile(r"([A-Za-z]*[a-z])-\n([a-z][A-Za-z]*)")
+_SOFT_WRAP = re.compile(rf"([A-Za-z]*[a-z]){_SOFT_HYPHEN}\n([a-z][A-Za-z]*)")
 
 
-def _dehyphenate(text: str) -> str:
+def _dehyphenate(text: str, vocab: set[str]) -> str:
     """Join words split by line-wrap hyphenation ('convec-\\ntion' -> 'convection').
 
     Line-wrapped words otherwise flow into chunks, embeddings, and the assembled context as
-    two non-words (2026-06-05 evaluation). Lowercase-only on both sides of the break, so
-    capitalized compounds ('Navier-\\nStokes') and headings are untouched; the rare genuine
-    compound ('well-\\nknown' -> 'wellknown') is a low-harm trade against systematically
-    split vocabulary. Soft hyphens (U+00AD) are typographic artifacts: removed outright.
-    Applied per page, BEFORE offsets are computed, so page offsets stay consistent.
+    two non-words. Joins are ATTESTED against the document's own vocabulary (2026-06-05
+    second evaluation: unconditional joining welded genuine compounds — 'same-\\nday' ->
+    'sameday'): the fragments fuse only when the fused word occurs elsewhere in the document;
+    otherwise the hyphen is kept ('same-day') — an explicit hyphen at least tokenizes into
+    its parts for lexical search, where the welded form matches nothing. Soft hyphens
+    (U+00AD): at a line break, fuse if attested else a space (the source's soft hyphen is
+    sometimes a lie — observed 'the\\xad\\nfutures'); mid-word, removed outright (typographic).
+    Lowercase-only on both sides of the break, so capitalized compounds ('Navier-\\nStokes')
+    are untouched. Applied per page, BEFORE offsets are computed, so offsets stay consistent.
     """
-    text = text.replace(_SOFT_HYPHEN + "\n", "").replace(_SOFT_HYPHEN, "")
-    return _LINE_WRAP_HYPHEN.sub(r"\1\2", text)
+
+    def join(m: re.Match, unattested_sep: str) -> str:
+        a, b = m.group(1), m.group(2)
+        return a + b if (a + b).lower() in vocab else f"{a}{unattested_sep}{b}"
+
+    text = _SOFT_WRAP.sub(lambda m: join(m, " "), text)
+    text = text.replace(_SOFT_HYPHEN, "")  # remaining mid-word soft hyphens
+    return _LINE_WRAP_HYPHEN.sub(lambda m: join(m, "-"), text)
+
+
+def _doc_vocab(page_texts: list[str]) -> set[str]:
+    """Lowercase word-forms attested anywhere in the document (for de-hyphenation joins)."""
+    return set(re.findall(r"[a-z]+", " ".join(page_texts).lower()))
 
 
 def _is_toc_page(text: str) -> bool:

@@ -212,13 +212,13 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
 
 def _confidence_banner(result) -> str:
     """The coverage warning the 2026-06-05 evaluation found missing: weak matches must not
-    arrive looking like strong ones. Empty when retrieval is confident."""
-    if not getattr(result, "low_confidence", False):
-        return ""
-    return (
-        "LOW CONFIDENCE — every retrieved unit scored below the relevance floor; "
-        "the corpus may not cover this query. Treat the material below as weak matches.\n\n"
-    )
+    arrive looking like strong ones. Empty when retrieval is confident. Wording is shared
+    (retrieve.confidence_banner) and band-aware, so cross-domain queries aren't mislabelled
+    as absent topics."""
+    from locus.retrieve.pipeline import confidence_banner
+
+    text = confidence_banner(getattr(result, "confidence_band", None))
+    return f"{text}\n\n" if text else ""
 
 
 def _sources(result) -> str:

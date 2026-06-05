@@ -232,7 +232,14 @@ def _prepare(path: Path) -> _Prepared:
     if doc.ocr_replaced:
         log.info("math-OCR replaced %d page(s); %d fallback(s)",
                  len(doc.ocr_replaced), len(doc.ocr_fallbacks))
-    return _Prepared(doc.title, doc.source_date, syn, gap_list, prepared, embed.embedding_model())
+    # Title arbitration (see DocSynthesis.title + pdf.title_is_suspect): the synthesis pass's
+    # title is used ONLY when the extractor's candidate looks like a heuristic accident —
+    # a trusted title (publisher metadata, real heading) is never rewritten by the model.
+    title = doc.title
+    if pdf_extract.title_is_suspect(title) and (syn.title or "").strip():
+        title = syn.title.strip()
+        log.info("title corrected: %r -> %r", doc.title, title)
+    return _Prepared(title, doc.source_date, syn, gap_list, prepared, embed.embedding_model())
 
 
 # --- transactional write -----------------------------------------------------------------

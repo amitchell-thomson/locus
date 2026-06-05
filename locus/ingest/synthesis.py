@@ -23,6 +23,11 @@ class DocSynthesis(BaseModel):
     method: str
     result: str
     limitations: str
+    # Title arbitration: the extractor's title heuristic (metadata -> page-1 font -> filename)
+    # picks banners ("ENGINEERING SCIENCE" for a syllabus), tab titles ("... - Colab"), and
+    # truncations. The synthesis pass sees every section summary — the right context to
+    # confirm the candidate verbatim or correct it. Optional: None keeps the extractor title.
+    title: str | None = None
 
     @field_validator("thesis", "method", "result", "limitations")
     @classmethod
@@ -41,13 +46,17 @@ def synthesize_document(title: str | None, section_summaries: list[str], **kw) -
     """Synthesise the document from its section summaries into the four L1 synthesis fields."""
     joined = "\n".join(f"- {s}" for s in section_summaries) or "(no section summaries)"
     user = (
-        f"Document title: {title or '(untitled)'}\n\n"
+        f"Extracted title candidate: {title or '(none)'}\n\n"
         f"Section summaries:\n{joined}\n\n"
         "Synthesise the whole document into:\n"
         "- thesis: its central claim or purpose,\n"
         "- method: the approach, techniques, or structure used,\n"
         "- result: the key findings or content,\n"
         "- limitations: what it does not cover, caveats, or open ends.\n"
+        "- title: the document's title. The candidate above was extracted heuristically and "
+        "may be a page banner, a browser-tab suffix, a fragment, or a filename. If it is the "
+        "document's actual title, return it VERBATIM; otherwise give the true title, or a "
+        "faithful descriptive one (at most 12 words) based on the summaries.\n"
         "Be faithful to the summaries and concise. Every field must be non-empty: if the "
         "document does not state one, give a brief best-effort characterisation instead of "
         "leaving it blank."

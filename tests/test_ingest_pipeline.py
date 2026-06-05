@@ -199,6 +199,22 @@ def test_semantic_title_flows_into_written_section(tmp_path, conn, fake_passes, 
     assert all(t == "Semantic Title" for t in titles)  # from the fake summarize pass
 
 
+def test_synthesis_title_overrides_extractor_title(tmp_path, conn, fake_passes, monkeypatch):
+    # The synthesis pass arbitrates the doc title: a corrected title replaces the extractor's
+    # heuristic pick ("ENGINEERING SCIENCE" banner-grab class of failure).
+    monkeypatch.setattr(
+        synthesis, "synthesize_document",
+        lambda title, summaries, **k: DocSynthesis(
+            thesis="T", method="M", result="R", limitations="L",
+            title="2nd Year Syllabus 2025-2026",
+        ),
+    )
+    result = ingest_file(_make_pdf(tmp_path / "doc.pdf"), conn)
+    assert result.status == "ingested"
+    row = conn.execute("SELECT title FROM documents").fetchone()
+    assert row["title"] == "2nd Year Syllabus 2025-2026"
+
+
 def test_unsupported_type_is_reported(tmp_path, conn):
     txt = tmp_path / "notes.txt"
     txt.write_text("not a pdf")

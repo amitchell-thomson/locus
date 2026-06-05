@@ -51,7 +51,9 @@ LABELLED_QUERIES: list[LabelledQuery] = [
     ),
     LabelledQuery(
         "How does maximum likelihood estimation differ from Bayesian inference?",
-        ["mathreview"],
+        # Doc 50's junk extractor title ('mathreview.ipynb - Colab') was arbitrated to
+        # 'Linear Algebra and Probability Fundamentals' (title backfill, 2026-06-05).
+        ["Probability Fundamentals"],
     ),
     LabelledQuery(
         "What is gradient descent and what role does the learning rate play?",

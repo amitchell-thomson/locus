@@ -595,6 +595,33 @@ def _clean_title(t: str) -> str:
     return _TITLE_EXT.sub("", _TITLE_PREFIX.sub("", t.strip())).strip()
 
 
+def title_is_suspect(title: str | None) -> bool:
+    """True when an extracted title looks like a heuristic accident, not a real title.
+
+    The resolution chain (metadata -> page-1 largest font -> filename stem) produces four
+    recognisable failure shapes (observed across the 24-doc corpus): ALL-CAPS page banners
+    ("ENGINEERING SCIENCE"), truncated fragments ending in punctuation ("... Control
+    Theory:"), spaceless slugs/stems ("a2e-intro-to-comp-eng-2-lecture-notes"), and tool
+    artifacts ("mathreview.ipynb - Colab"). Only a suspect title may be replaced by the
+    synthesis pass's arbitrated title — a trusted (e.g. publisher-metadata) title is never
+    rewritten, because an LLM asked to 'confirm' a long correct title tends to shorten it.
+    """
+    if not title or not title.strip():
+        return True
+    t = title.strip()
+    if t.endswith((":", "-", "–", ",")):
+        return True  # truncated fragment
+    if t.isupper():
+        return True  # page banner
+    if " " not in t:
+        return True  # filename stem / slug
+    if re.search(r"\.(ipynb|pdf|docx?|pptx?|txt)\b", t, re.IGNORECASE) or " - Colab" in t:
+        return True  # tool artifact
+    if len(t.split()) <= 2 and len(t) < 20:
+        return True  # 'Topic 4'-class header grab
+    return False
+
+
 def _resolve_title(doc, path: Path) -> str | None:
     """Document metadata title, else the largest text on page 1, else the filename stem."""
     meta = _clean_title((doc.metadata or {}).get("title") or "")

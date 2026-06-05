@@ -695,7 +695,11 @@ math-stripped text). Details per step in `PLAN.md`.
    0.958/0.75) with the floor active, negative controls flag LOW CONFIDENCE, audit QC +
    corruption zero corpus-wide, quarantines 0. Math fidelity 0.922 (n=20) vs 0.952 (n=8) —
    verified sample composition, not regression; weak pages are picture-embedded formulas
-   (step 11 scope). Corpus declared **ready for format breadth (steps 8–10)**.
+   (step 11 scope). Follow-up: doc-title arbitration — synthesis pass emits a title, applied
+   only when `pdf.title_is_suspect(candidate)` (banners/fragments/slugs/tab-titles; trusted
+   titles never rewritten); stored titles backfilled without re-ingest
+   (`scripts/backfill_titles.py`, 5/24 retitled). Corpus declared **ready for format
+   breadth (steps 8–10)**.
 8. **DOCX + Markdown/text extractors.** `python-docx` (heading styles → sections) and `.md`/`.txt`
    (headings → sections). Route in `_source_type` + watcher. Unblocks notes / write-ups / docx.
 9. **Slides (PPTX) extractor.** `python-pptx`: per-slide text + speaker notes → sections; slide

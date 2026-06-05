@@ -198,6 +198,12 @@ done **before** the bulk ingest. Each item ≈ one work-block.
   Math fidelity measured **0.922** (n=20; 90% pages ≥0.8) vs 0.952 (n=8 baseline) — verified
   not a regression (de-hyphenation byte-inert on the weak pages; OCR routing code-identical;
   different sample pages), weak pages are picture-embedded formulas → step 11 scope.
+  Follow-up: **doc-title arbitration** — the extractor's title heuristic stored banners
+  ("ENGINEERING SCIENCE"), tab titles, slugs, fragments. The synthesis pass now also emits a
+  title, used ONLY when `pdf.title_is_suspect(candidate)` (deterministic guard — an LLM asked
+  to confirm a long correct title shortens it; trusted/metadata titles are never rewritten).
+  Backfilled in place (`scripts/backfill_titles.py` — titles aren't embedded, no re-ingest):
+  5/24 retitled, eval label synced ("mathreview" → "Probability Fundamentals"), recall held.
 - [ ] **8. DOCX + Markdown/text extractors** — `python-docx` + `.md`/`.txt`; route in watcher.
 - [ ] **9. Slides (PPTX)** — `python-pptx`: per-slide text + speaker notes; images feed figures.
 - [ ] **10. Code-repo ingest** — `python-ast` (functions, call graph, per-file sections);

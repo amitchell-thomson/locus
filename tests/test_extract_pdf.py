@@ -335,6 +335,30 @@ def test_extraction_dehyphenates_page_text(tmp_path: Path):
     assert all(s.page_start == 1 and s.page_end == 1 for s in doc.sections)
 
 
+def test_title_is_suspect_separates_accidents_from_real_titles():
+    from locus.extract.pdf import title_is_suspect
+
+    # The four observed failure shapes (all stored in the live corpus at some point).
+    for bad in (
+        None, "", "ENGINEERING SCIENCE",                      # banner
+        "A2 Introduction to Control Theory:",                 # truncated fragment
+        "a2e-intro-to-comp-eng-2-lecture-notes",              # slug / filename stem
+        "mathreview.ipynb - Colab",                           # tool artifact
+        "Topic 4",                                            # header grab
+    ):
+        assert title_is_suspect(bad), bad
+    # Trusted titles — including long arXiv metadata — must never be flagged.
+    for good in (
+        "Partial Differential Equations",
+        "Mathematical Optimization",
+        "Alec Mitchell-Thomson",
+        "A2 Introduction to Control Theory: Lectures 5-8",
+        "Distributional Approximate Nearest Neighbour Search for Uncertainty-Aware Retrieval",
+        "Coordination without communication: beyond optimisation and geometric Brownian motion",
+    ):
+        assert not title_is_suspect(good), good
+
+
 def test_artefact_labels_are_not_headings():
     from locus.extract.pdf import _plausible_heading
 

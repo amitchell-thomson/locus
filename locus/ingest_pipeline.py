@@ -151,10 +151,26 @@ def _prepare(path: Path) -> _Prepared:
     prepared: list[_PreparedSection] = []
     summaries: list[str] = []
 
+    pass_gaps: list[str] = []
+
+    def _optional_pass(fn, sec, what: str, empty):
+        """Run a non-critical pass; on persistent LLM failure degrade to empty + gap flag.
+
+        Propositions/entities are enhancements on top of the raw chunks + summary (§15.0:
+        retrieval assembles raw text regardless) — one stubborn section must not quarantine
+        a whole document. The summary pass stays fatal: it is the L2 retrieval unit itself.
+        """
+        try:
+            return fn(sec.title, sec.text)
+        except llm.IngestExtractionError as exc:
+            log.warning("%s pass failed for section %r: %s", what, sec.title, exc)
+            pass_gaps.append(f"{what} pass failed for section {sec.position} ({sec.title})")
+            return empty
+
     for sec in doc.sections:
         summary = summarize.summarize_section(sec.title, sec.text)
-        props = propositions.extract_propositions(sec.title, sec.text)
-        ents = entities.extract_entities(sec.title, sec.text)
+        props = _optional_pass(propositions.extract_propositions, sec, "propositions", [])
+        ents = _optional_pass(entities.extract_entities, sec, "entities", [])
         chunks = chunk.chunk_text(sec.text)
         prepared.append(
             _PreparedSection(
@@ -187,6 +203,7 @@ def _prepare(path: Path) -> _Prepared:
     # text are extraction gaps in the §15.0 sense — content quality was knowingly degraded
     # there, and that must be queryable, not just logged.
     gap_list += [f"math-OCR kept original text on {f}" for f in doc.ocr_fallbacks]
+    gap_list += pass_gaps  # sections whose optional passes degraded to empty
     if doc.ocr_replaced:
         log.info("math-OCR replaced %d page(s); %d fallback(s)",
                  len(doc.ocr_replaced), len(doc.ocr_fallbacks))

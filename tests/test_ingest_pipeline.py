@@ -67,6 +67,22 @@ def fake_passes(monkeypatch):
     )
 
 
+def test_failed_optional_pass_degrades_not_quarantines(tmp_path, conn, fake_passes, monkeypatch):
+    """A section whose propositions pass persistently fails must not quarantine the doc:
+    raw chunks + summary still carry the value (§15.0); the failure lands in gap_flags."""
+    def boom(title, text, **k):
+        raise IngestExtractionError("Propositions: no schema-valid output")
+    monkeypatch.setattr(propositions, "extract_propositions", boom)
+
+    result = ingest_file(_make_pdf(tmp_path / "doc.pdf"), conn)
+    assert result.status == "ingested"  # not quarantined
+    assert result.propositions == 0
+    assert result.sections >= 2 and result.chunks >= 1  # everything else intact
+    import json
+    flags = json.loads(conn.execute("SELECT gap_flags FROM documents").fetchone()["gap_flags"])
+    assert any("propositions pass failed" in f for f in flags)
+
+
 def test_ingest_populates_all_levels(tmp_path, conn, fake_passes):
     result = ingest_file(_make_pdf(tmp_path / "doc.pdf"), conn)
 

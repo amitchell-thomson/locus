@@ -139,7 +139,12 @@ def generate_structured(
             return schema.model_validate_json(content)
         except ValidationError as exc:
             last_error = exc
-            messages.append({"role": "assistant", "content": content})
+            # Echo at most 1500 chars of the failed output back. A degenerated output
+            # (runaway repetition loop) echoed in full PRIMES the model to continue the
+            # same loop on the repair attempt — the repair needs the error, not 8k chars
+            # of the attractor it must escape.
+            echo = content[:1500] + (" …[truncated]" if len(content) > 1500 else "")
+            messages.append({"role": "assistant", "content": echo})
             messages.append(
                 {
                     "role": "user",

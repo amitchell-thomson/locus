@@ -113,18 +113,35 @@ def score_query(q: LabelledQuery, survivor_titles: list[str]) -> QueryResult:
 
 
 def evaluate_retrieval(conn, queries: list[LabelledQuery] | None = None) -> tuple[list[QueryResult], dict[str, float]]:
-    """Run the full retrieval pipeline per labelled query and score recall@k / MRR."""
+    """Run the full retrieval pipeline per labelled query and score recall@k / MRR.
+
+    Answer-key guard: since step 10 the locus repo itself is in the corpus — including
+    THIS file, whose chunks contain every labelled query verbatim. A survivor whose text
+    contains the full query string is the eval's own answer key: it (correctly) wins the
+    live ranking but invalidates the measurement, so it is excluded from scoring (and
+    counted, so contamination stays visible rather than silently absorbed).
+    """
     from locus.retrieve import retrieve
 
     queries = queries or LABELLED_QUERIES
     results: list[QueryResult] = []
+    excluded = 0
     for q in queries:
         r = retrieve(q.query, conn=conn)
         titles = []
         for c in r.survivors:
+            if q.query.lower() in (c.text or "").lower():
+                excluded += 1
+                continue  # answer-key leakage, not retrieval quality
             row = conn.execute("SELECT title FROM documents WHERE id=?", (c.doc_id,)).fetchone()
             titles.append(row["title"] if row else f"doc {c.doc_id}")
         results.append(score_query(q, titles))
+    if excluded:
+        import logging
+
+        logging.getLogger(__name__).info(
+            "retrieval eval: %d answer-key survivor(s) excluded from scoring", excluded
+        )
     return results, aggregate(results)
 
 

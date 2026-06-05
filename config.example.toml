@@ -24,11 +24,12 @@ section_top_k        = 5          # L2 section summaries
 rerank_top_k         = 8          # survivors after cross-encoder rerank
 per_doc_cap          = 3          # max units per document among survivors (diversity; relaxed if underfull)
 context_token_budget = 100000     # cap on assembled context to the Claude API call
-# min_rerank_score   = 0.0        # confidence floor on cross-encoder logits (~-11..+11). Unset =
+# min_rerank_score   = 0.22       # confidence floor on cross-encoder logits (~-11..+11). Unset =
                                   # disabled. When set: rerank refill never pads the top-k with
                                   # below-floor candidates, and a best-survivor below the floor flags
-                                  # the result LOW CONFIDENCE (signal, not filter). Calibrate against
-                                  # the live corpus + negative-control queries (remediation phase 4).
+                                  # the result LOW CONFIDENCE (signal, not filter). Calibrate with
+                                  # scripts/calibrate_rerank_threshold.py (0.22 = the 2026-06-05
+                                  # calibration on the 24-doc corpus); recalibrate after bulk ingest.
 
 [mathocr]
 # Math-aware page OCR: pages whose text layer is damaged or math-dense are re-read by an

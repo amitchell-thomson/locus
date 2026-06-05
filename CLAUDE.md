@@ -679,6 +679,23 @@ math-stripped text). Details per step in `PLAN.md`.
    choreography, char-level OCR-loop QC + persisted audit trail, temperature-escalating repair,
    per-section graceful degradation. Operational rule: one ingest process at a time. The §11.C
    local-model benchmark is now unblocked.
+7.5. **Remediation pass 2 (2026-06-05 external evaluation)** — **done** (2026-06-05). A
+   desktop-Claude audit over the MCP server found 8 issues; all fixed in one batch + ONE
+   re-ingest, re-gated against the step-7 baseline. Fixes: JSON-escape LaTeX corruption in
+   LLM fields (sanitizer in `llm.py` + `has_corruption_signature` audit predicate); retrieval
+   confidence (per-citation rerank scores + category in MCP/CLI, `min_rerank_score` floor —
+   **calibrated 0.22** via `scripts/calibrate_rerank_threshold.py` — LOW CONFIDENCE banner,
+   flag-never-filter, threshold-safe refill); evidence-grounded gap pass (deferral-phrase
+   hints; liveness 24/24 docs, was 0); entity hygiene 2 (unbalanced brackets, ingest-time
+   grounding, `organization` type); caption-label heading filter + semantic titles for
+   pagination pseudo-titles; zero-raw proposition retry + math-dense prompt variant +
+   named zero-prop sections in audit; per-page de-hyphenation; length-truncation-aware
+   repair (`done_reason: length` ⇒ demand shorter). Cross-doc edges deferred to step 12.
+   Re-gate: judge **4.08** (was 3.77), recall@8 **1.000** / cross-domain **1.000** (was
+   0.958/0.75) with the floor active, negative controls flag LOW CONFIDENCE, audit QC +
+   corruption zero corpus-wide, quarantines 0. Math fidelity 0.922 (n=20) vs 0.952 (n=8) —
+   verified sample composition, not regression; weak pages are picture-embedded formulas
+   (step 11 scope). Corpus declared **ready for format breadth (steps 8–10)**.
 8. **DOCX + Markdown/text extractors.** `python-docx` (heading styles → sections) and `.md`/`.txt`
    (headings → sections). Route in `_source_type` + watcher. Unblocks notes / write-ups / docx.
 9. **Slides (PPTX) extractor.** `python-pptx`: per-slide text + speaker notes → sections; slide

@@ -1,0 +1,26 @@
+
+=== Math fidelity (gate metric)  (sample=20, seed=1) ===
+  1.00  doc 53 p10   (eq 9+0p/9)  A2 Introduction to Control Theory: Lectures 
+  0.83  doc 53 p28   (eq 5+0p/6)  A2 Introduction to Control Theory: Lectures 
+  1.00  doc 53 p44   (eq 6+0p/6)  A2 Introduction to Control Theory: Lectures 
+  0.92  doc 53 p58   (eq 5+1p/6)  A2 Introduction to Control Theory: Lectures 
+  0.88  doc 53 p70   (eq 7+0p/8)  A2 Introduction to Control Theory: Lectures 
+  1.00  doc 54 p36   (eq 8+0p/8)  A2 Introduction to Control Theory:
+  1.00  doc 54 p62   (eq 8+0p/8)  A2 Introduction to Control Theory:
+  1.00  doc 58 p96   (eq 6+0p/6)  A2 Sensors signals and comms 260126
+  1.00  doc 59 p19   (eq 3+0p/3)  A1 Time Frequency Analysis
+  0.58  doc 59 p32   (eq 2+3p/6)  A1 Time Frequency Analysis
+  0.80  doc 59 p45   (eq 8+0p/10)  A1 Time Frequency Analysis
+  1.00  doc 59 p50   (eq 5+0p/5)  A1 Time Frequency Analysis
+  0.94  doc 65 p11   (eq 8+1p/9)  Macro-aware time series forecasting via hier
+  0.90  doc 70 p46   (eq 9+0p/10)  Partial Differential Equations
+  0.96  doc 71 p43   (eq 12+1p/13)  Topic 4
+  1.00  doc 71 p45   (eq 6+0p/6)  Topic 4
+  0.78  doc 72 p34   (eq 6+2p/9)  Multistart Large Neighborhood Search for the
+  1.00  doc 73 p11   (eq 14+0p/14)  A2 Introduction to Control Theory: Lectures 
+  1.00  doc 73 p46   (eq 7+0p/7)  A2 Introduction to Control Theory: Lectures 
+  0.86  doc 73 p75   (eq 6+0p/7)  A2 Introduction to Control Theory: Lectures 
+
+  math_fidelity_mean       0.922
+  pages_above_0.8          0.900
+  pages_judged             20.000

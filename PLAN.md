@@ -168,6 +168,36 @@ done **before** the bulk ingest. Each item ≈ one work-block.
   repair with capped echo; per-section graceful degradation (one stubborn section costs its
   propositions, not the document). Operational rule: ONE ingest process at a time (Ollama
   contention produces spurious quarantines).
+- [x] **7.5. Remediation pass 2 (2026-06-05 external evaluation)** — a desktop-Claude audit over
+  the MCP server surfaced 8 issues; all fixed, one re-ingest, re-gated. **(1) LaTeX/JSON escape
+  corruption** (the headline): the model wrote unescaped LaTeX into JSON strings; the parser
+  turned `\tau`→TAB+`au` silently and rejected `\mu` outright → string-literal-aware sanitizer
+  in `llm.py` before validation; audit predicate `has_corruption_signature` keeps it visible
+  forever. **(2) Retrieval confidence**: per-citation rerank scores + doc category through
+  MCP/CLI; `min_rerank_score` floor — refill never pads with below-floor candidates; best
+  survivor below floor ⇒ LOW CONFIDENCE banner (flag, never filter), passed into generation.
+  Calibrated on the final corpus (`scripts/calibrate_rerank_threshold.py`): weakest expected-doc
+  +0.92 vs strongest negative −0.48 ⇒ **floor 0.22**; negative controls (Black-Scholes etc.)
+  now flag, in-corpus queries don't. **(3) Gap-flagging inert** → evidence-grounded pass
+  (section summaries + deterministic deferral-phrase hints); liveness in audit: **24/24 docs
+  with ≥1 semantic gap** (was 0). **(4) Entity hygiene 2**: unbalanced-bracket reject ("SVD ("),
+  ingest-time grounding (kills cross-doc bleed), `organization` type + typing few-shots.
+  **(5) Sectioning**: "Figure 22:"-style caption labels rejected as headings; summary pass
+  emits a semantic title replacing pagination pseudo-titles only. **(6) Propositions**:
+  zero-raw output retries + logs; math-dense prompt variant (`has_math`); audit names zero-prop
+  sections. **(7) De-hyphenation** at extraction (per-page, before offsets). **(8) Cross-doc
+  edges** deferred to step 12 (entity-alias substrate); MCP tool docstring marks cross-domain
+  bridges as the consumer's inference. Pour hardening en route: `done_reason: length` detection
+  in the repair loop (demand SHORTER, not "corrected" — fixed a deterministic summary-pass
+  quarantine on an OCR'd math-dense section); summaries forbid transcribing LaTeX.
+  **Re-gate (24 docs, 2026-06-05)**: judge **4.08**/5 (was 3.77); recall@8 **1.000** /
+  MRR 0.958 / cross-domain **1.000** (was 0.958/1.000/0.75; the MRR dip is one query whose
+  expected doc is outranked by a second genuinely-relevant paper) — holds with the floor
+  active; audit QC all zero + **corrupted fields 0** corpus-wide; 2 zero-prop sections
+  (named, table-dense) vs the eval's method-section example now at 9 props; quarantines 0.
+  Math fidelity measured **0.922** (n=20; 90% pages ≥0.8) vs 0.952 (n=8 baseline) — verified
+  not a regression (de-hyphenation byte-inert on the weak pages; OCR routing code-identical;
+  different sample pages), weak pages are picture-embedded formulas → step 11 scope.
 - [ ] **8. DOCX + Markdown/text extractors** — `python-docx` + `.md`/`.txt`; route in watcher.
 - [ ] **9. Slides (PPTX)** — `python-pptx`: per-slide text + speaker notes; images feed figures.
 - [ ] **10. Code-repo ingest** — `python-ast` (functions, call graph, per-file sections);

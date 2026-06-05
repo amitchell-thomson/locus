@@ -150,11 +150,24 @@ done **before** the bulk ingest. Each item ≈ one work-block.
   used by the pipeline only; config `[mathocr]` (`engine = "got" | "qwen" | "off"`); deps behind
   the `mathocr` extra. Verified live on doc 24 (mangled `𝑐(𝑤)` → `\\(c(w): \\mathbb{R}^d \\to
   \\mathbb{R}\\)`). §11.C ingest-model benchmark is now unblocked. Effective on re-ingest.
-- [ ] **7. Validate → re-ingest → re-evaluate** (eval phase E) — extend `locus eval` with:
+- [x] **7. Validate → re-ingest → re-evaluate** (eval phase E) — extend `locus eval` with:
   math-fidelity (fraction of math-bearing sections whose formulas survive — the gate metric),
   proposition-entailment sampling (LLM judge), labelled recall@k/MRR incl. ≥2 cross-domain
   queries; `--reingest` the 8 docs (activates `source_date`/`category`; category backfill via
   re-drop or mapping); re-run the full evaluation against the 2026-06-04 baseline.
+  Done: corpus poured at 24 docs (8 rebuilds + 16 new incl. 11 quant/CS papers + CV — the
+  second domain). `locus eval --suite judge|math|retrieval|full` (2026-06-05 results):
+  **math fidelity 0.952** (gate PASS; text-layer baseline measured 0.73; 9/10 pages ≥0.8 —
+  the one 0.75 page is a QC-fallback page by design), **retrieval recall@8 0.958 / MRR 1.000**
+  (11/12 full recall; cross-domain 0.75 — the regime↔state-space query bridged domains but
+  surfaced sibling quant papers over the labelled one), judge overall 3.77/5 (entity
+  recall/precision weakest at 3.4/3.5 → step 12's alias resolution). Audit QC: 0 suspect
+  props / 0 noise entities / 0 empty syntheses corpus-wide (was 123/209/1). The pour also
+  hardened the pipeline: WAL; two-way GPU choreography (Ollama split-residency + GOT OOM);
+  char-level OCR loop QC + persisted OCR audit trail in gap_flags; temperature-escalating
+  repair with capped echo; per-section graceful degradation (one stubborn section costs its
+  propositions, not the document). Operational rule: ONE ingest process at a time (Ollama
+  contention produces spurious quarantines).
 - [ ] **8. DOCX + Markdown/text extractors** — `python-docx` + `.md`/`.txt`; route in watcher.
 - [ ] **9. Slides (PPTX)** — `python-pptx`: per-slide text + speaker notes; images feed figures.
 - [ ] **10. Code-repo ingest** — `python-ast` (functions, call graph, per-file sections);

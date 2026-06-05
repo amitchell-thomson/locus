@@ -671,10 +671,14 @@ math-stripped text). Details per step in `PLAN.md`.
    whole-page replace guarded by deterministic QC (length / repetition-loop / residual
    corruption → fall back + audit), pipeline-only (`extract_pdf(mathocr=True)`), config
    `[mathocr]`, deps behind the `mathocr` extra. See §15.1.
-7. **Validate → re-ingest → re-evaluate** (eval phase E). Extend `locus eval`: math-fidelity
-   (gate metric), proposition-entailment sampling, labelled recall@k incl. cross-domain queries.
-   `--reingest` the corpus (activates `source_date`/`category`); re-run the evaluation against
-   the 2026-06-04 baseline. Only then run the §11.C local-model benchmark.
+7. **Validate → re-ingest → re-evaluate** (eval phase E) — **done** (2026-06-05). Corpus
+   poured at 24 docs (engineering + 11 quant/CS papers + CV). `locus eval --suite
+   judge|math|retrieval|full`: **math fidelity 0.952 (gate PASS**, text-layer baseline 0.73),
+   retrieval recall@8 0.958 / MRR 1.000 (cross-domain 0.75), judge 3.77/5 (entities weakest →
+   step 12). Audit QC zero corpus-wide. Pour-hardening landed alongside: WAL, two-way GPU
+   choreography, char-level OCR-loop QC + persisted audit trail, temperature-escalating repair,
+   per-section graceful degradation. Operational rule: one ingest process at a time. The §11.C
+   local-model benchmark is now unblocked.
 8. **DOCX + Markdown/text extractors.** `python-docx` (heading styles → sections) and `.md`/`.txt`
    (headings → sections). Route in `_source_type` + watcher. Unblocks notes / write-ups / docx.
 9. **Slides (PPTX) extractor.** `python-pptx`: per-slide text + speaker notes → sections; slide

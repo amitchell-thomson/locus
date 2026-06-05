@@ -23,13 +23,18 @@ class FakeClient:
         self._responses = list(responses)
         self.calls = 0
         self.temperatures: list[float] = []
+        self.messages_seen: list[list[dict]] = []
 
     def chat(self, **kwargs):
         self.calls += 1
         self.temperatures.append(kwargs.get("options", {}).get("temperature"))
+        self.messages_seen.append([dict(m) for m in kwargs.get("messages", [])])
         item = self._responses.pop(0)
         if isinstance(item, Exception):
             raise item
+        if isinstance(item, tuple):  # (content, done_reason)
+            content, reason = item
+            return {"message": {"content": content}, "done_reason": reason}
         return {"message": {"content": item}}
 
 
@@ -61,6 +66,19 @@ def test_retries_escalate_temperature():
     result = generate_structured(Foo, "u", client=client, retries=2)
     assert result.n == 3
     assert client.temperatures == [0.0, 0.3, 0.6]
+
+
+def test_length_truncated_output_gets_a_shorter_repair_demand():
+    # An unterminated string (output cut at num_predict) must produce a "be shorter" repair
+    # instruction, not a generic validation echo — the 2A2A quarantine: the model rebuilt the
+    # same overlong summary on every attempt because nothing told it length was the problem.
+    truncated = ('{"n": "the summary goes on and on \\\\rightarrow', "length")
+    client = FakeClient([truncated, '{"n": 7}'])
+    result = generate_structured(Foo, "u", client=client, retries=2)
+    assert result.n == 7
+    repair_turn = client.messages_seen[1][-1]["content"]
+    assert "length limit" in repair_turn and "shorter" in repair_turn
+    assert "failed validation" not in repair_turn
 
 
 def test_transport_error_becomes_extraction_error():

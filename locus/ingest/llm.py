@@ -98,6 +98,20 @@ def _message_content(resp) -> str:
     return resp["message"]["content"]
 
 
+def _hit_length_cap(resp) -> bool:
+    """True when generation stopped at num_predict (Ollama done_reason 'length').
+
+    A length-capped response is truncated mid-JSON; the repair must demand a SHORTER
+    answer, not a 'corrected' one — the model otherwise rebuilds the same overlong output
+    and truncates at the same place every attempt (observed live: a math-dense section
+    whose summary transcribed equations until the cap, identically across runs).
+    """
+    reason = getattr(resp, "done_reason", None)
+    if reason is None and isinstance(resp, dict):
+        reason = resp.get("done_reason")
+    return reason == "length"
+
+
 def _sanitize_latex_escapes(raw: str) -> str:
     """Repair unescaped LaTeX backslashes inside JSON string values before parsing.
 
@@ -202,16 +216,20 @@ def generate_structured(
             # of the attractor it must escape.
             echo = content[:1500] + (" …[truncated]" if len(content) > 1500 else "")
             messages.append({"role": "assistant", "content": echo})
-            messages.append(
-                {
-                    "role": "user",
-                    "content": (
-                        "Your previous output failed validation with these errors:\n"
-                        f"{exc}\n"
-                        "Return ONLY a corrected JSON object satisfying the schema. No prose."
-                    ),
-                }
-            )
+            if _hit_length_cap(resp):
+                complaint = (
+                    "Your previous output hit the generation length limit and was cut off "
+                    "mid-JSON. Return a COMPLETE JSON object that is much shorter: keep every "
+                    "string field concise, summarize instead of transcribing, and never copy "
+                    "equations or LaTeX runs into string values."
+                )
+            else:
+                complaint = (
+                    "Your previous output failed validation with these errors:\n"
+                    f"{exc}\n"
+                    "Return ONLY a corrected JSON object satisfying the schema. No prose."
+                )
+            messages.append({"role": "user", "content": complaint})
 
     raise IngestExtractionError(
         f"{schema.__name__}: no schema-valid output from {model} after {retries + 1} attempts: "

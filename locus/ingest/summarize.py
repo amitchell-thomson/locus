@@ -24,8 +24,9 @@ def summarize_section(title: str | None, text: str, **kw) -> SectionSummary:
         f"Section title: {title or '(untitled)'}\n\n"
         f"Section text:\n{text}\n\n"
         "Write a concise, faithful summary (3-5 sentences) capturing the section's key "
-        "points, methods, and results. Also give a short descriptive title (3-8 words) "
-        "naming what the section is actually about. Do not add information not present "
-        "in the text."
+        "points, methods, and results. Write plain prose: name what equations express, but "
+        "never transcribe equations or LaTeX into the summary. Also give a short descriptive "
+        "title (3-8 words) naming what the section is actually about. Do not add information "
+        "not present in the text."
     )
     return generate_structured(SectionSummary, user, **kw)

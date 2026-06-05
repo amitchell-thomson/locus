@@ -429,3 +429,65 @@ def test_prefer_code_off_by_default():
     ]
     out = select(ranked, top_k=2, per_doc_cap=10, min_score=0.0)
     assert [c.id for c in out] == [1, 2]
+
+
+# --- path arm + query-named exemption (round-3 residual: source under-retrieval) -----------
+
+
+def test_path_arm_surfaces_query_named_file(conn):
+    conn.execute(
+        "INSERT INTO sections (id, doc_id, position, title, summary, file_path) VALUES "
+        "(7,1,1,'retrieve/rerank.py','cross-encoder reranking module','locus/retrieve/rerank.py')"
+    )
+    conn.execute("INSERT INTO section_vectors(section_id, embedding) VALUES (7, ?)",
+                 (_vec([0.0, 1.0, 0.0]),))  # far from the query embedding: dense won't find it
+    conn.commit()
+    cands = search(conn, "how does the rerank step order candidates?")
+    hit = next((c for c in cands if c.file_path == "locus/retrieve/rerank.py"), None)
+    assert hit is not None and "path" in hit.sources
+    # Generic stems never fire: a file named test.py/config.py is a convention, not a target.
+    assert all("path" not in c.sources for c in search(conn, "how do I config the test run?"))
+
+
+def _pathc(id_, doc_id, section_id, score, sources=("dense",), kind="chunk", path=None):
+    c = Candidate(kind=kind, id=id_, doc_id=doc_id, section_id=section_id, text="t",
+                  score=0.0, sources=set(sources), file_path=path)
+    c.rerank_score = score
+    return c
+
+
+def test_query_named_candidate_bypasses_per_doc_cap():
+    # One repo-doc fills its cap with prose-about-code; the query-named file's section
+    # (path arm) must still be selectable — the cap's breadth rationale does not apply
+    # to a file the query asked for by name.
+    ranked = [
+        _pathc(1, 1, 1, 6.0),
+        _pathc(2, 1, 2, 5.0),
+        _pathc(3, 1, 3, 4.0),
+        _pathc(4, 1, 4, 3.5, sources=("path",), kind="section", path="src/rerank.py"),
+        _pathc(5, 2, 5, 1.0),
+    ]
+    out = select(ranked, top_k=5, per_doc_cap=3)
+    assert any(c.id == 4 for c in out)
+
+
+def test_query_named_section_survives_child_redundancy():
+    # The named file's own chunk sits deep in the pool (will never be selected): it must
+    # not demote the path-arm section, or the file vanishes entirely.
+    ranked = [
+        _pathc(1, 1, 1, 6.0),
+        _pathc(2, 1, 9, 3.5, sources=("path",), kind="section", path="src/eval.py"),
+        _pathc(3, 1, 9, -5.0),  # the low-ranked child chunk of the same section
+    ]
+    out = select(ranked, top_k=2, per_doc_cap=3)
+    assert [(c.id, c.kind) for c in out] == [(1, "chunk"), (2, "section")]
+
+
+def test_unnamed_section_redundancy_rule_unchanged():
+    ranked = [
+        _pathc(1, 1, 9, 6.0, kind="section"),  # plain dense section, child in pool
+        _pathc(2, 1, 9, 5.0),
+        _pathc(3, 1, 8, 4.0),
+    ]
+    out = select(ranked, top_k=2, per_doc_cap=3)
+    assert [(c.id, c.kind) for c in out] == [(2, "chunk"), (3, "chunk")]

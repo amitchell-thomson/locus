@@ -19,6 +19,15 @@ from locus.ingest.embed import embed_text
 _MIN_ENTITY_LEN = 4
 _MAX_ENTITY_CANDIDATES = 10
 
+# Path-arm bounds (round-3 evaluation: source files under-retrieve against the prose about
+# them — "the evaluation module" must surface regimes/evaluation.py). File stems too generic
+# to identify a file are skipped: they name a *convention*, not the file the query means.
+_MAX_PATH_CANDIDATES = 8
+_PATH_STEM_STOP = frozenset(
+    "main app cli run test tests base init core docs util utils common config "
+    "setup types data index readme claude plan license makefile".split()
+)
+
 
 @dataclass
 class Candidate:
@@ -28,7 +37,7 @@ class Candidate:
     section_id: int | None
     text: str
     score: float  # arm-specific (vec distance or bm25); not cross-arm comparable
-    sources: set[str] = field(default_factory=set)  # 'dense' | 'lexical' | 'entity'
+    sources: set[str] = field(default_factory=set)  # 'dense' | 'lexical' | 'entity' | 'path'
     rerank_score: float | None = None
     file_path: str | None = None  # code provenance; lets selection prefer source units
 
@@ -141,8 +150,32 @@ def search(conn, query: str, facets: Facets | None = None) -> list[Candidate]:
             add("chunk", r["id"], r["doc_id"], r["section_id"], r["raw_text"], r["s"],
                 "lexical", file_path=r["file_path"])
 
-    # --- entity-anchored: sections naming an entity that appears in the query ---
+    # --- path-anchored: code sections whose file stem is named in the query ---
+    # NL-poor source chunks rank below the prose ABOUT them in both dense and lexical arms
+    # (2026-06-05 round-3 evaluation), so a query that names a module ("the evaluation
+    # module", "how does locus rerank...") may never get the file into the pool at all —
+    # and selection cannot prefer what search never surfaced. The candidate text is the
+    # section summary (grounded signature summaries since round 3), which the
+    # cross-encoder can score honestly against the query.
     q_lower = query.lower()
+    q_words = set(re.findall(r"[a-z0-9_]+", q_lower))
+    path_added = 0
+    for r in conn.execute(
+        "SELECT id, doc_id, summary, file_path FROM sections "
+        "WHERE file_path IS NOT NULL ORDER BY length(file_path) DESC"
+    ):
+        if path_added >= _MAX_PATH_CANDIDATES:
+            break
+        name = r["file_path"].rsplit("/", 1)[-1]
+        stem = name.rsplit(".", 1)[0].lower()
+        if len(stem) < 3 or stem in _PATH_STEM_STOP:
+            continue
+        if stem in q_words or (("_" in stem) and stem.replace("_", " ") in q_lower):
+            add("section", r["id"], r["doc_id"], r["id"], r["summary"], 0.0, "path",
+                file_path=r["file_path"])
+            path_added += 1
+
+    # --- entity-anchored: sections naming an entity that appears in the query ---
     added = 0
     for r in conn.execute(
         "SELECT DISTINCT e.name, e.section_id, e.doc_id, s.summary, s.file_path "

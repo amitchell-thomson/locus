@@ -122,6 +122,14 @@ def select(
     no source-file unit but a decent one exists (>= min_score), it replaces the lowest-ranked
     selected unit — the §7 "code recall -> function body" contract needs the source present,
     not just described.
+
+    Query-named exemption: a candidate from the 'path' arm exists because the query names
+    its file ("how does Locus *rerank*..." -> retrieve/rerank.py). Two rules built for
+    breadth misfire on it (round-3 residual): the per-doc cap treats a whole REPO as one
+    document, so a repo's prose-about-code fills all its slots before the named file; and
+    the section-redundancy demotion fires on the named file's own low-ranked chunks deep in
+    the pool, which will never be selected and so re-attach nothing. Path-sourced candidates
+    are exempt from both — they still earn their slot on cross-encoder score alone.
     """
     sections_with_units = {
         c.section_id for c in ranked if c.kind in ("proposition", "chunk")
@@ -134,11 +142,16 @@ def select(
     for c in ranked:
         if len(selected) >= top_k:
             break
+        query_named = "path" in c.sources
         redundant = (
             (c.section_id, c.kind) in kind_taken
-            or (c.kind == "section" and c.section_id in sections_with_units)
+            or (
+                c.kind == "section"
+                and c.section_id in sections_with_units
+                and not query_named
+            )
         )
-        if redundant or doc_counts[c.doc_id] >= per_doc_cap:
+        if redundant or (doc_counts[c.doc_id] >= per_doc_cap and not query_named):
             skipped.append(c)
             continue
         selected.append(c)

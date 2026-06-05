@@ -104,11 +104,19 @@ def confidence_banner(band: str | None) -> str:
     return ""
 
 
-def retrieve(query: str, conn=None, facets: Facets | None = None) -> RetrievalResult:
+def retrieve(
+    query: str, conn=None, facets: Facets | None = None, exclude=None
+) -> RetrievalResult:
     """Run the full retrieval pipeline and return assembled context + provenance.
 
     `facets` optionally restricts retrieval to documents within a date range / category
     (CLAUDE.md §16); None retrieves over the whole corpus.
+
+    `exclude` is an optional Candidate predicate dropped BEFORE rerank. Eval-only (the
+    answer-key guard): since the locus repo self-ingested, chunks of the eval file contain
+    the labelled queries verbatim and (correctly) win the live ranking — post-hoc scoring
+    exclusion left them consuming top-k slots and crowding out the real targets, so the
+    measurement needs them gone from the candidate pool. Never set in production paths.
     """
     own = conn is None
     if own:
@@ -116,6 +124,8 @@ def retrieve(query: str, conn=None, facets: Facets | None = None) -> RetrievalRe
     try:
         cfg = load().retrieve
         candidates = search(conn, query, facets)
+        if exclude is not None:
+            candidates = [c for c in candidates if not exclude(c)]
         survivors = rerank(
             query, candidates, cfg.rerank_top_k, cfg.per_doc_cap,
             min_score=cfg.min_rerank_score,

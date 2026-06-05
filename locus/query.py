@@ -59,14 +59,23 @@ class QueryResult:
     answer: str
     model: str
     citations: list[str] = field(default_factory=list)
+    citation_details: list = field(default_factory=list)  # assemble.Citation, with rerank scores
+    low_confidence: bool = False  # retrieval's coverage signal, passed through (see retrieve)
 
 
 def _system_prompt(mode: str) -> str:
     return f"{_PREAMBLE}\n\n{QUERY_MODES[mode]}\n\n{_GROUNDING}"
 
 
-def _user_prompt(context: str, question: str) -> str:
+def _user_prompt(context: str, question: str, low_confidence: bool = False) -> str:
     body = context or "(no relevant material was retrieved)"
+    if low_confidence:
+        # The generation step must see the coverage signal, not just the (weak) material.
+        body = (
+            "NOTE: retrieval confidence is LOW — every retrieved unit scored below the "
+            "relevance floor, so the corpus may not cover this question. Prefer saying so "
+            "over stretching weak material.\n\n" + body
+        )
     return f"<retrieved_context>\n{body}\n</retrieved_context>\n\nQuestion: {question}"
 
 
@@ -100,9 +109,16 @@ def answer(
         # Stable system prompt cached; per-query context goes in the (uncached) user turn.
         system=[{"type": "text", "text": _system_prompt(mode), "cache_control": {"type": "ephemeral"}}],
         thinking={"type": "adaptive"},  # let Claude decide reasoning depth (synthesis is non-trivial)
-        messages=[{"role": "user", "content": _user_prompt(retrieved.context, question)}],
+        messages=[
+            {
+                "role": "user",
+                "content": _user_prompt(retrieved.context, question, retrieved.low_confidence),
+            }
+        ],
     )
     text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
     return QueryResult(
-        question=question, mode=mode, answer=text, model=model, citations=retrieved.citations
+        question=question, mode=mode, answer=text, model=model,
+        citations=retrieved.citations, citation_details=retrieved.citation_details,
+        low_confidence=retrieved.low_confidence,
     )

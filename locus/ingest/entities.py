@@ -23,7 +23,8 @@ from pydantic import BaseModel
 from locus.ingest.llm import generate_structured
 
 EntityType = Literal[
-    "method", "dataset", "author", "concept", "ticker", "tool", "theorem", "metric", "other"
+    "method", "dataset", "author", "concept", "ticker", "tool", "theorem", "metric",
+    "organization", "other"
 ]
 
 
@@ -58,15 +59,38 @@ def normalize_name(name: str) -> str:
 
 
 def is_noise(name: str) -> bool:
-    """True for names that are not entities: numbered labels and bare symbols.
+    """True for names that are not entities: numbered labels, bare symbols, and structurally
+    malformed extractions.
 
     A real name has an alphabetic word of 3+ letters or is an all-caps acronym ('ML', 'LTI');
-    'β', 'f(t,x,y,z)' and 'equation 1.36' have neither. Shared with the audit metrics so
-    `locus audit` reports how many *stored* entities would fail today's filter.
+    'β', 'f(t,x,y,z)' and 'equation 1.36' have neither. Unbalanced brackets anywhere mark a
+    truncated extraction ('SVD (', 'MAP (' — 2026-06-05 evaluation); normalize_name only
+    strips string *ends*, so these must be rejected, not repaired. Shared with the audit
+    metrics so `locus audit` reports how many *stored* entities would fail today's filter.
     """
     if not name or _LABEL.match(name):
         return True
+    if any(name.count(o) != name.count(c) for o, c in ("()", "[]", "{}")):
+        return True
     return not (_WORD3.search(name) or _ACRONYM.fullmatch(name))
+
+
+def is_grounded(name: str, source: str) -> bool:
+    """True when the name is attested in the section text it was extracted from.
+
+    Any 3+ letter token of the name appearing in the source counts (loose on purpose: minor
+    surface variation must not over-reject); names with no such token (acronyms like 'LTI')
+    pass — the acronym arm of `is_noise` already vetted their shape. Applied at ingest to stop
+    cross-document bleed and hallucinated entities (2026-06-05 evaluation: control-theory
+    entities stored on an econometrics section); shared with the audit metrics.
+    """
+    tokens = [
+        t for t in re.sub(r"[^a-z0-9 ]", " ", name.lower()).split() if len(t) >= 3
+    ]
+    if not tokens:
+        return True
+    source_lower = source.lower()
+    return any(t in source_lower for t in tokens)
 
 
 def merge_plural_variants(section_entities: list[list[Entity]]) -> None:
@@ -94,19 +118,23 @@ def extract_entities(title: str | None, text: str, **kw) -> list[Entity]:
         f"Section text:\n{text}\n\n"
         "List the salient entities in this section. These are not only proper nouns: include "
         "technical concepts and models (e.g. 'LTI system', 'transfer function'), methods and "
-        "algorithms, theorems, datasets, tools/software, metrics, people (authors), and stock "
-        "tickers. For each give its name and the most specific type from: method, dataset, "
-        "author, concept, ticker, tool, theorem, metric, other. Include only entities actually "
-        "mentioned in the text; do not invent any. Do NOT list numbered references (equation/"
-        "figure/table numbers) or bare mathematical symbols — they are not entities. Return an "
-        "empty list only if there are none."
+        "algorithms, theorems, datasets, tools/software, metrics, people (authors), "
+        "organizations, and stock tickers. For each give its name and the most specific type "
+        "from: method, dataset, author, concept, ticker, tool, theorem, metric, organization, "
+        "other. Typing rules with examples: 'author' is a PERSON who wrote something (Rudolf "
+        "Kalman, Zhang) — an institution (FOMC, IMF, the Federal Reserve, MIT) is "
+        "'organization', never 'author'. 'ticker' is an exchange symbol (AAPL, SPY) — a policy "
+        "or programme (QE3, Basel III) is 'concept', not 'ticker'. Include only entities "
+        "actually mentioned in the text; do not invent any. Do NOT list numbered references "
+        "(equation/figure/table numbers) or bare mathematical symbols — they are not entities. "
+        "Return an empty list only if there are none."
     )
     raw = generate_structured(_Entities, user, **kw).entities
     out: list[Entity] = []
     seen: set[tuple[str, str]] = set()
     for e in raw:
         name = normalize_name(e.name)
-        if is_noise(name):
+        if is_noise(name) or not is_grounded(name, text):
             continue
         key = (name, str(e.type))
         if key in seen:

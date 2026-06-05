@@ -59,7 +59,11 @@ def _cross_encoder():
 
 
 def rerank(
-    query: str, candidates: list[Candidate], top_k: int, per_doc_cap: int
+    query: str,
+    candidates: list[Candidate],
+    top_k: int,
+    per_doc_cap: int,
+    min_score: float | None = None,
 ) -> list[Candidate]:
     """Score candidates with the cross-encoder, then take a diversity-aware top_k cut."""
     if not candidates:
@@ -68,10 +72,12 @@ def rerank(
     for c, s in zip(candidates, scores):
         c.rerank_score = float(s)
     candidates.sort(key=lambda c: c.rerank_score, reverse=True)
-    return select(candidates, top_k, per_doc_cap)
+    return select(candidates, top_k, per_doc_cap, min_score=min_score)
 
 
-def select(ranked: list[Candidate], top_k: int, per_doc_cap: int) -> list[Candidate]:
+def select(
+    ranked: list[Candidate], top_k: int, per_doc_cap: int, min_score: float | None = None
+) -> list[Candidate]:
     """Diversity-aware cut of a rank-ordered candidate list (best first).
 
     Rules, each motivated by what the assembled context actually gains per slot:
@@ -85,6 +91,12 @@ def select(ranked: list[Candidate], top_k: int, per_doc_cap: int) -> list[Candid
     The rules are soft: if they leave fewer than top_k selected, remaining slots are refilled
     with the best skipped candidates, so this never returns fewer results than a plain top-k
     would. Output is in rank (score) order.
+
+    `min_score` bounds the *refill only*: relaxing a diversity cap to keep the top-k full is
+    justified for a decent candidate, not for one the cross-encoder already judged irrelevant
+    (the 2026-06-05 evaluation: negative-control queries padded the top-k with noise). The
+    primary pass is NOT score-filtered — weak-but-best results still surface, and the pipeline
+    flags low confidence instead of hiding them (flag, never filter).
     """
     sections_with_units = {
         c.section_id for c in ranked if c.kind in ("proposition", "chunk")
@@ -111,6 +123,8 @@ def select(ranked: list[Candidate], top_k: int, per_doc_cap: int) -> list[Candid
     for c in skipped:  # relax the caps rather than return an underfull top-k
         if len(selected) >= top_k:
             break
+        if min_score is not None and (c.rerank_score is None or c.rerank_score < min_score):
+            continue  # an underfull top-k beats padding it with judged-irrelevant candidates
         selected.append(c)
 
     rank = {id(c): i for i, c in enumerate(ranked)}

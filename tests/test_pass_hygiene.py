@@ -99,6 +99,160 @@ def test_noise_entities_are_detected():
         assert not is_noise(good), good
 
 
+def test_unbalanced_brackets_are_noise():
+    # Truncated extractions from the 2026-06-05 evaluation ("SVD (", "MAP (").
+    for bad in ("SVD (", "MAP (", "foo (bar", "matrix [A", "set {x"):
+        assert is_noise(bad), bad
+    # Balanced parentheticals are legitimate names.
+    for good in ("LTI (linear time-invariant) system", "MAP (maximum a posteriori)"):
+        assert not is_noise(good), good
+
+
+def test_grounding_rejects_unattested_names():
+    from locus.ingest.entities import is_grounded
+
+    source = "The Kalman filter estimates the hidden state of an LTI system."
+    assert is_grounded("Kalman filter", source)
+    assert is_grounded("kalman", source)            # case-insensitive
+    assert is_grounded("LTI", source)               # acronym: no 3+ letter token -> passes
+    assert is_grounded("Kalman filtering bank", source)  # any-token match (loose on purpose)
+    # Cross-document bleed: control-theory entities on an econometrics section.
+    assert not is_grounded("transfer function", source.replace("LTI system", "VAR model"))
+    assert not is_grounded("Fourier transform", source)
+
+
+def test_extract_entities_filters_ungrounded_and_malformed(monkeypatch):
+    from locus.ingest import entities as ent_mod
+
+    raw = ent_mod._Entities(
+        entities=[
+            ent_mod.Entity(name="Kalman filter", type="method"),
+            ent_mod.Entity(name="SVD (", type="method"),               # malformed -> dropped
+            ent_mod.Entity(name="transfer function", type="concept"),  # unattested -> dropped
+        ]
+    )
+    monkeypatch.setattr(ent_mod, "generate_structured", lambda *a, **kw: raw)
+    out = ent_mod.extract_entities(
+        "Sec", "The Kalman filter estimates the hidden state from noisy measurements."
+    )
+    assert [(e.name, e.type) for e in out] == [("Kalman filter", "method")]
+
+
+# --- proposition extraction control flow (2026-06-05 evaluation) ----------------------------
+
+
+def test_zero_raw_propositions_trigger_the_retry(monkeypatch, caplog):
+    import logging
+
+    from locus.ingest import propositions as props_mod
+
+    calls = []
+
+    def fake_generate(schema, user, **kw):
+        calls.append(user)
+        # First call: model returns nothing. Retry: it produces a real claim.
+        if len(calls) == 1:
+            return schema(propositions=[])
+        return schema(propositions=["The Kalman filter is optimal for linear-Gaussian systems."])
+
+    monkeypatch.setattr(props_mod, "generate_structured", fake_generate)
+    with caplog.at_level(logging.WARNING):
+        out = props_mod.extract_propositions("Methods", "some text")
+    assert out == ["The Kalman filter is optimal for linear-Gaussian systems."]
+    assert len(calls) == 2
+    assert "returned no propositions" in calls[1]  # the zero-raw complaint, not the filter one
+    assert any("zero propositions" in r.message for r in caplog.records)
+
+
+def test_proposition_free_after_retry_is_logged(monkeypatch, caplog):
+    import logging
+
+    from locus.ingest import propositions as props_mod
+
+    monkeypatch.setattr(
+        props_mod, "generate_structured", lambda schema, user, **kw: schema(propositions=[])
+    )
+    with caplog.at_level(logging.WARNING):
+        assert props_mod.extract_propositions("Methods", "some text") == []
+    assert any("proposition-free after retry" in r.message for r in caplog.records)
+
+
+def test_math_heavy_prompt_variant(monkeypatch):
+    from locus.ingest import propositions as props_mod
+
+    captured = {}
+
+    def fake_generate(schema, user, **kw):
+        captured.setdefault("user", user)
+        return schema(propositions=["The Biot number is defined as Bi = hL/k."])
+
+    monkeypatch.setattr(props_mod, "generate_structured", fake_generate)
+    props_mod.extract_propositions("Methods", "x", math_heavy=True)
+    assert "math-dense" in captured["user"]
+    captured.clear()
+    props_mod.extract_propositions("Methods", "x", math_heavy=False)
+    assert "math-dense" not in captured["user"]
+
+
+# --- gap flagging (2026-06-05 evaluation: the pass was inert) -------------------------------
+
+
+def test_deferral_hints_extracts_explicit_phrases():
+    from locus.ingest.gaps import deferral_hints
+
+    texts = [
+        "Root locus design is powerful. This method is not covered in this course. "
+        "Bode plots are treated next.",
+        "A full stability proof is beyond the scope of these notes. Basic familiarity with "
+        "Laplace transforms is assumed familiar to the reader.",
+        "Nothing deferred here at all.",
+    ]
+    hints = deferral_hints(texts)
+    assert any("not covered in this course" in h for h in hints)
+    assert any("beyond the scope" in h for h in hints)
+    assert any("assumed familiar" in h.lower() for h in hints)
+    assert len(hints) == len(set(hints))  # deduplicated
+
+
+def test_flag_gaps_prompt_carries_summaries_and_hints(monkeypatch):
+    from locus.ingest import gaps as gaps_mod
+
+    captured = {}
+
+    def fake_generate(schema, user, **kw):
+        captured["user"] = user
+        return schema(gaps=["Root locus rules are mentioned but not covered."])
+
+    monkeypatch.setattr(gaps_mod, "generate_structured", fake_generate)
+    out = gaps_mod.flag_gaps(
+        "Control Notes",
+        "Thesis: t\nMethod: m\nResult: r\nLimitations: l",
+        sections=[
+            ("Stability", "Poles determine stability.", "Stable iff poles are in the LHP."),
+            (
+                "Design",
+                "Compensator design overview.",
+                "Root locus design is not covered in this course.",
+            ),
+        ],
+    )
+    assert out == ["Root locus rules are mentioned but not covered."]
+    user = captured["user"]
+    assert "Section-by-section coverage:" in user
+    assert "Poles determine stability." in user            # summaries ground the coverage map
+    assert "not covered in this course" in user            # deferral hint fed back
+    assert "CONFIRMED gap" in user
+
+
+def test_flag_gaps_without_sections_still_works(monkeypatch):
+    from locus.ingest import gaps as gaps_mod
+
+    monkeypatch.setattr(
+        gaps_mod, "generate_structured", lambda schema, user, **kw: schema(gaps=[])
+    )
+    assert gaps_mod.flag_gaps("T", "overview") == []
+
+
 def test_merge_plural_variants_is_evidence_based():
     sections = [
         [Entity(name="Laplace transforms", type="method")],

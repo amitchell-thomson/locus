@@ -297,3 +297,51 @@ def test_plausible_heading_shapes():
         "Next define a linear operator, which we will call the one-dimensional"
     )  # too many words
     assert not _plausible_heading("Waves are introduced. A wave equation is derived")  # 2 sentences
+
+
+def test_dehyphenate_joins_line_wrapped_words():
+    from locus.extract.pdf import _dehyphenate
+
+    assert _dehyphenate("convec-\ntion is a transport process") == (
+        "convection is a transport process"
+    )
+    assert _dehyphenate("the distribu-\ntion of returns") == "the distribution of returns"
+    # Capitalized compounds and non-wrap hyphens are untouched.
+    assert _dehyphenate("the Navier-\nStokes equations") == "the Navier-\nStokes equations"
+    assert _dehyphenate("a well-known result") == "a well-known result"
+    assert _dehyphenate("range 3-\n4 metres") == "range 3-\n4 metres"  # digits: not a wrap
+    # Soft hyphens are typographic artifacts: removed, joining the word.
+    assert _dehyphenate("convec­\ntion") == "convection"
+    assert _dehyphenate("im­plicit") == "implicit"
+
+
+def test_extraction_dehyphenates_page_text(tmp_path: Path):
+    pdf = _make_pdf(
+        tmp_path / "wrapped.pdf",
+        pages=[
+            [
+                ("Introduction", HEAD),
+                ("The process of convec-", BODY),
+                ("tion moves heat through the fluid in a continuous manner.", BODY),
+                *_body("intro"),
+            ],
+        ],
+    )
+    doc = extract_pdf(pdf)
+    text = "".join(s.text for s in doc.sections)
+    assert "convection" in text
+    assert "convec-" not in text
+    # Page mapping is intact after the joins shorten the text.
+    assert all(s.page_start == 1 and s.page_end == 1 for s in doc.sections)
+
+
+def test_artefact_labels_are_not_headings():
+    from locus.extract.pdf import _plausible_heading
+
+    # Bold/large captions mis-titled sections (2026-06-05 evaluation: "Figure 22:").
+    for label in ("Figure 22: Results", "Figure 22:", "Fig. 3 overview", "Table 2",
+                  "Equation 4", "Algorithm 1: training loop", "Eq. 7"):
+        assert not _plausible_heading(label), label
+    # Words that merely start with a label-word stay legitimate headings.
+    for ok in ("Figure of merit", "Tables and joins in SQL", "3 Methods", "Figures"):
+        assert _plausible_heading(ok), ok

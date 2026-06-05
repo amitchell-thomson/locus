@@ -72,7 +72,7 @@ def regenerate(conn, section_id: int, model: str) -> SectionEvalInput:
     s = conn.execute("SELECT id, doc_id, title FROM sections WHERE id=?", (section_id,)).fetchone()
     source = _section_source(conn, section_id)
     title = s["title"]
-    summary = summarize_pass.summarize_section(title, source, model=model)
+    summary = summarize_pass.summarize_section(title, source, model=model).summary
     props = propositions_pass.extract_propositions(title, source, model=model)
     ents = entities_pass.extract_entities(title, source, model=model)
     return SectionEvalInput(

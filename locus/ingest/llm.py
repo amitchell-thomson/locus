@@ -98,6 +98,61 @@ def _message_content(resp) -> str:
     return resp["message"]["content"]
 
 
+def _sanitize_latex_escapes(raw: str) -> str:
+    """Repair unescaped LaTeX backslashes inside JSON string values before parsing.
+
+    The local model writes LaTeX commands into JSON strings without doubling the backslash
+    (the 2026-06-05 evaluation's headline corruption). The JSON parser then either silently
+    corrupts the value — `\\t \\n \\f \\r \\b` are valid escapes, so `\\tau` becomes TAB+`au`,
+    `\\frac` becomes FF+`rac` — or rejects it (`\\mu`, `\\sigma` are invalid escapes), which the
+    repair loop cannot fix because the model keeps emitting the same bytes.
+
+    Single left-to-right scan, only inside string literals:
+      - `\\\\`           : already-escaped backslash — copy as a unit (protects correct LaTeX,
+                         Windows paths, and stops the scanner re-reading the second `\\`);
+      - `\\u`, `\\"`, `\\/`: valid, unambiguous JSON escapes — copy verbatim;
+      - `\\t \\n \\f \\r \\b` followed by an ASCII letter: LaTeX command prefix (`\\tau`, `\\nu`,
+                         `\\frac`, `\\rho`, `\\beta`) — double the backslash. A *genuine* control
+                         escape mid-word ("col1\\tcol2") would be mis-rewritten, but generated
+                         summaries/propositions never legitimately contain that; the corrupted
+                         alternative is strictly worse. Followed by a non-letter: genuine —
+                         copy verbatim;
+      - any other escape letter: invalid JSON (every other LaTeX command) — double it.
+
+    Never deletes a byte; worst case is a stray literal backslash in the parsed text.
+    """
+    out: list[str] = []
+    in_string = False
+    i, n = 0, len(raw)
+    while i < n:
+        ch = raw[i]
+        if ch != "\\" or not in_string:
+            if ch == '"':
+                in_string = not in_string
+            out.append(ch)
+            i += 1
+            continue
+        nxt = raw[i + 1] if i + 1 < n else ""
+        if nxt == "\\":
+            out.append("\\\\")
+            i += 2
+        elif nxt == "u":
+            out.append(raw[i : i + 6])  # \uXXXX (truncation, if any, fails validation later)
+            i += 6
+        elif nxt in '"/':
+            out.append("\\" + nxt)
+            i += 2
+        elif nxt in "tnfrb":
+            after = raw[i + 2] if i + 2 < n else ""
+            latex = after.isascii() and after.isalpha()
+            out.append(("\\\\" if latex else "\\") + nxt)
+            i += 2
+        else:  # invalid JSON escape — can only be a bare LaTeX/literal backslash
+            out.append("\\\\")
+            i += 1
+    return "".join(out)
+
+
 def generate_structured(
     schema: type[T],
     user: str,
@@ -136,7 +191,9 @@ def generate_structured(
 
         content = _message_content(resp)
         try:
-            return schema.model_validate_json(content)
+            # Sanitize unescaped LaTeX backslashes first (see _sanitize_latex_escapes) —
+            # inside the loop, so repair attempts get the same protection.
+            return schema.model_validate_json(_sanitize_latex_escapes(content))
         except ValidationError as exc:
             last_error = exc
             # Echo at most 1500 chars of the failed output back. A degenerated output

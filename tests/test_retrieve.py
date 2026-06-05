@@ -176,6 +176,78 @@ def test_select_refills_rather_than_underfilling():
     assert [c.id for c in out] == [1, 2, 3, 4]
 
 
+def _scored(kind, id_, doc_id, section_id, score):
+    c = _cand(kind, id_, doc_id, section_id)
+    c.rerank_score = score
+    return c
+
+
+def test_select_refill_respects_min_score():
+    # Doc cap skips ids 3 and 4; the refill may only restore the one above the floor.
+    # An underfull top-k beats padding it with judged-irrelevant candidates.
+    ranked = [
+        _scored("chunk", 1, 1, 1, 5.0),
+        _scored("chunk", 2, 1, 2, 4.0),
+        _scored("chunk", 3, 1, 3, 1.0),   # skipped by cap, above floor -> refilled
+        _scored("chunk", 4, 1, 4, -3.0),  # skipped by cap, below floor -> stays out
+    ]
+    out = select(ranked, top_k=4, per_doc_cap=2, min_score=0.0)
+    assert [c.id for c in out] == [1, 2, 3]
+
+
+def test_select_refill_unbounded_without_min_score():
+    ranked = [
+        _scored("chunk", 1, 1, 1, 5.0),
+        _scored("chunk", 2, 1, 2, 4.0),
+        _scored("chunk", 3, 1, 3, -3.0),
+    ]
+    out = select(ranked, top_k=3, per_doc_cap=2)  # min_score=None: old behaviour
+    assert [c.id for c in out] == [1, 2, 3]
+
+
+def test_assemble_citation_details_carry_best_rerank_score():
+    a = _expanded("proposition", "a claim")
+    b = _expanded("chunk", "an excerpt")
+    a.candidate.rerank_score, b.candidate.rerank_score = 2.5, 4.0
+    out = assemble([a, b], budget=10_000)
+    assert len(out.citation_details) == 1  # shared provenance -> one detail
+    d = out.citation_details[0]
+    assert d.doc_id == 1 and d.rerank_score == 4.0
+    assert d.text == out.citations[0]
+
+
+def test_retrieve_low_confidence_flag(conn, monkeypatch):
+    import types
+
+    from locus.retrieve import pipeline as pl
+
+    def fake_load(score):
+        rcfg = types.SimpleNamespace(rerank_top_k=8, per_doc_cap=3, min_rerank_score=score)
+        return lambda: types.SimpleNamespace(retrieve=rcfg)
+
+    def fake_rerank(value):
+        def _rr(query, candidates, top_k, per_doc_cap, min_score=None):
+            for c in candidates:
+                c.rerank_score = value
+            return candidates[:top_k]
+        return _rr
+
+    # Best survivor below the floor -> flagged (signal, not filter: survivors still returned).
+    monkeypatch.setattr(pl, "load", fake_load(0.0))
+    monkeypatch.setattr(pl, "rerank", fake_rerank(-2.0))
+    r = pl.retrieve("stability poles", conn=conn)
+    assert r.low_confidence and r.survivors and r.citation_details
+
+    # Above the floor -> not flagged.
+    monkeypatch.setattr(pl, "rerank", fake_rerank(6.0))
+    assert pl.retrieve("stability poles", conn=conn).low_confidence is False
+
+    # No floor configured -> never flagged.
+    monkeypatch.setattr(pl, "load", fake_load(None))
+    monkeypatch.setattr(pl, "rerank", fake_rerank(-9.0))
+    assert pl.retrieve("stability poles", conn=conn).low_confidence is False
+
+
 # --- guarded end-to-end ---
 
 def _stack_ready():

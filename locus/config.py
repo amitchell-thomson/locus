@@ -72,6 +72,12 @@ class RetrieveConfig(BaseModel):
     # synthesis queries (the 2026-06-04 evaluation, PLAN.md step 3).
     per_doc_cap: int = 3
     context_token_budget: int = 100_000
+    # Confidence floor on cross-encoder (ms-marco-MiniLM) scores — raw logits, roughly -11..+11.
+    # None disables it (ship default until calibrated against the live corpus + negative-control
+    # queries; the 2026-06-05 evaluation, PLAN.md). When set: the rerank refill never pads the
+    # top-k with below-floor candidates, and a retrieval whose best survivor falls below the
+    # floor is flagged low-confidence ("the corpus may not cover this") — flagged, not filtered.
+    min_rerank_score: float | None = None
 
 
 class GenerationConfig(BaseModel):

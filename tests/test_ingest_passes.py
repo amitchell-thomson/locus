@@ -34,9 +34,10 @@ def _ollama_ready() -> bool:
 pytestmark = pytest.mark.skipif(not _ollama_ready(), reason="Ollama / qwen2.5 unavailable")
 
 
-def test_summarize_returns_text():
-    summary = summarize_section("Kalman Filter", TEXT)
-    assert isinstance(summary, str) and len(summary) > 0
+def test_summarize_returns_text_and_title():
+    result = summarize_section("Kalman Filter", TEXT)
+    assert isinstance(result.summary, str) and len(result.summary) > 0
+    assert result.title is None or isinstance(result.title, str)
 
 
 def test_propositions_are_a_list_of_strings():

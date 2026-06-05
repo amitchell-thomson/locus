@@ -51,7 +51,12 @@ def conn(tmp_path: Path):
 @pytest.fixture()
 def fake_passes(monkeypatch):
     """Replace the LLM passes + embeddings with deterministic stand-ins."""
-    monkeypatch.setattr(summarize, "summarize_section", lambda title, text, **k: f"summary::{title}")
+    monkeypatch.setattr(
+        summarize, "summarize_section",
+        lambda title, text, **k: summarize.SectionSummary(
+            summary=f"summary::{title}", title="Semantic Title"
+        ),
+    )
     monkeypatch.setattr(propositions, "extract_propositions", lambda title, text, **k: ["claim A", "claim B"])
     monkeypatch.setattr(entities, "extract_entities", lambda title, text, **k: [Entity(name="Kalman filter", type="method")])
     monkeypatch.setattr(
@@ -159,6 +164,39 @@ def test_failure_is_quarantined_with_no_partial_write(tmp_path, conn, monkeypatc
     assert "garbage" in (result.error or "")
     assert _count(conn, "documents") == 0
     assert _count(conn, "chunks") == 0
+
+
+def test_pseudo_titles_get_semantic_replacement():
+    from locus.ingest_pipeline import _needs_semantic_title
+
+    # Pagination fallbacks and missing titles are replaced (2026-06-05 evaluation).
+    assert _needs_semantic_title(None)
+    assert _needs_semantic_title("Section (pp 6–9)")
+    assert _needs_semantic_title("Section (pp 10-15)")  # ASCII hyphen variant
+    # Real extractor headings — including split ones carrying a page suffix — are kept.
+    assert not _needs_semantic_title("Boundary conditions")
+    assert not _needs_semantic_title("Stability (pp 6–9)")
+    assert not _needs_semantic_title("3 Methods")
+
+
+def test_semantic_title_flows_into_written_section(tmp_path, conn, fake_passes, monkeypatch):
+    # Force the extractor to produce an untitled (single/paginated) doc, then check the
+    # summary pass's title lands in the sections table.
+    import locus.extract.pdf as pdf_extract
+
+    real_extract = pdf_extract.extract_pdf
+
+    def no_headings(path, **kw):
+        doc = real_extract(path, **kw)
+        for s in doc.sections:
+            s.title = None
+        return doc
+
+    monkeypatch.setattr(ingest_pipeline.pdf_extract, "extract_pdf", no_headings)
+    result = ingest_file(_make_pdf(tmp_path / "doc.pdf"), conn)
+    assert result.status == "ingested"
+    titles = [r["title"] for r in conn.execute("SELECT title FROM sections")]
+    assert all(t == "Semantic Title" for t in titles)  # from the fake summarize pass
 
 
 def test_unsupported_type_is_reported(tmp_path, conn):

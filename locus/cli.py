@@ -196,6 +196,9 @@ def cmd_query(args) -> None:
         sys.exit(1)
 
     result = answer(args.query, mode=args.mode, facets=_facets(args))
+    if result.low_confidence:
+        print("LOW CONFIDENCE — best rerank score is below the configured floor; "
+              "the corpus may not cover this query.\n")
     print(result.answer)
     if result.citations:
         print("\n--- sources ---")
@@ -208,6 +211,9 @@ def cmd_retrieve(args) -> None:
 
     r = retrieve(args.query, facets=_facets(args))
     print(f"query: {r.query}\n")
+    if r.low_confidence:
+        print("LOW CONFIDENCE — best rerank score is below the configured floor; "
+              "the corpus may not cover this query.\n")
     print("=== reranked survivors ===")
     for c in r.survivors:
         rr = f"{c.rerank_score:+.2f}" if c.rerank_score is not None else "n/a"

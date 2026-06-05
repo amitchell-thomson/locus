@@ -190,7 +190,9 @@ def extract_pdf(path: str | Path, *, mathocr: bool = False) -> ExtractedDoc:
     path = Path(path)
     doc = pymupdf.open(path)
     try:
-        page_texts = [page.get_text("text") for page in doc]
+        # De-hyphenate per page before anything reads or offsets the text (chunks, embeddings,
+        # heading location, and assembly all see the joined words).
+        page_texts = [_dehyphenate(page.get_text("text")) for page in doc]
         # Excise printed-ToC pages before sectioning: blanking (rather than removing) keeps
         # page numbering and offsets intact for everything downstream.
         toc_idxs = {i for i, t in enumerate(page_texts) if _is_toc_page(t)}
@@ -236,6 +238,24 @@ def extract_pdf(path: str | Path, *, mathocr: bool = False) -> ExtractedDoc:
         )
     finally:
         doc.close()
+
+
+_SOFT_HYPHEN = "­"
+_LINE_WRAP_HYPHEN = re.compile(r"([a-z])-\n([a-z])")
+
+
+def _dehyphenate(text: str) -> str:
+    """Join words split by line-wrap hyphenation ('convec-\\ntion' -> 'convection').
+
+    Line-wrapped words otherwise flow into chunks, embeddings, and the assembled context as
+    two non-words (2026-06-05 evaluation). Lowercase-only on both sides of the break, so
+    capitalized compounds ('Navier-\\nStokes') and headings are untouched; the rare genuine
+    compound ('well-\\nknown' -> 'wellknown') is a low-harm trade against systematically
+    split vocabulary. Soft hyphens (U+00AD) are typographic artifacts: removed outright.
+    Applied per page, BEFORE offsets are computed, so page offsets stay consistent.
+    """
+    text = text.replace(_SOFT_HYPHEN + "\n", "").replace(_SOFT_HYPHEN, "")
+    return _LINE_WRAP_HYPHEN.sub(r"\1\2", text)
 
 
 def _is_toc_page(text: str) -> bool:
@@ -311,10 +331,20 @@ def _headings_from_outline(doc, page_offsets, full_text) -> list[tuple[str | Non
 _MAX_HEADING_WORDS = 8
 _MULTI_SENTENCE = re.compile(r"[a-z][.!?][ \t]+[A-Z]")
 _EQUATION_GLYPHS = set("=∇∂∑∫∏√≤≥≈≠±·")
+# Numbered artefact labels are captions/references, not headings: a bold "Figure 22: ..."
+# caption sails through the shape filters and mis-titles a section (2026-06-05 evaluation).
+# Local re-declaration on purpose — extract/ must not import from ingest/ (entities._LABEL).
+_HEADING_LABEL = re.compile(
+    r"^(?:figure|fig\.?|table|tbl\.?|equation|eq\.?|algorithm|alg\.?|listing|scheme|plate"
+    r"|chart|exhibit)\s*\.?\s*\d",
+    re.IGNORECASE,
+)
 
 
 def _plausible_heading(text: str) -> bool:
     if not text[:1].isalnum() or text[:1].islower():
+        return False
+    if _HEADING_LABEL.match(text):  # "Figure 22:", "Table 3" — captions, not headings
         return False
     if any(ord(c) < 32 for c in text):  # control chars: mangled math in the text layer
         return False

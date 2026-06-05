@@ -17,11 +17,12 @@ They are a fast first pass; the LLM-as-judge (judge.py) assesses actual faithful
 
 from __future__ import annotations
 
+import json
 import re
 from collections import Counter
 from dataclasses import dataclass, field
 
-from locus.ingest.entities import is_noise
+from locus.ingest.entities import is_grounded, is_noise
 from locus.ingest.propositions import rejection_reason
 
 # A proposition opening with one of these is almost certainly not self-contained.
@@ -54,6 +55,16 @@ class DocMetrics:
     suspect_props: dict[str, int] = field(default_factory=dict)  # reason -> count
     noise_entities: int = 0
     empty_synthesis: bool = False
+    # LLM-generated fields (synthesis/summaries/propositions) carrying the JSON-escape LaTeX
+    # corruption signature (has_corruption_signature). Must be 0 on a post-sanitizer ingest.
+    corrupted_fields: int = 0
+    # Gap flags that are real knowledge gaps (audit-trail entries — math-OCR fallbacks,
+    # degraded passes — excluded). Liveness signal: the 2026-06-05 evaluation found the gap
+    # pass inert, and corpus-wide zero must be loud, not silent.
+    semantic_gaps: int = 0
+    # The zero-prop sections BY NAME — a bare count hides "the core method section has no
+    # propositions" (2026-06-05 evaluation, regime paper §3).
+    empty_prop_section_titles: list[str] = field(default_factory=list)
     entity_type_counts: dict[str, int] = field(default_factory=dict)
 
     @property
@@ -63,6 +74,33 @@ class DocMetrics:
     @property
     def ungrounded_pct(self) -> float:
         return 100.0 * self.ungrounded_entities / self.entities if self.entities else 0.0
+
+
+def has_corruption_signature(text: str | None) -> bool:
+    """Detect the JSON-escape LaTeX corruption signature in an LLM-generated field.
+
+    Unescaped LaTeX in model JSON turned `\\tau`/`\\frac`/`\\beta` into control chars at parse
+    time (2026-06-05 evaluation; fixed by llm._sanitize_latex_escapes). Stored text showing
+    (a) any control char that isn't a real newline/tab/CR, or (b) a TAB immediately followed
+    by letters (the TAB+`au` residue of `\\tau`) carries that signature. Newline-based corruption
+    (`\\nu` -> LF+`u`) is not separately matched: a bare LF before a word is legitimate text,
+    and corrupt docs always carry the other signatures too.
+    """
+    if not text:
+        return False
+    if any(ord(c) < 32 and c not in "\n\t\r" for c in text):
+        return True
+    return bool(re.search(r"\t[a-z]{2,}", text))
+
+
+# Audit-trail gap_flags written by the pipeline itself (not knowledge gaps): math-OCR
+# fallback notes and degraded-pass markers (ingest_pipeline._prepare).
+_AUDIT_GAP = re.compile(r"^(math-OCR kept original text on |\w+ pass failed for section )")
+
+
+def semantic_gaps(flags: list[str]) -> list[str]:
+    """The gap_flags entries that are actual knowledge gaps, not pipeline audit lines."""
+    return [g for g in flags if not _AUDIT_GAP.match(g)]
 
 
 def _normalize(name: str) -> str:
@@ -81,11 +119,6 @@ def _is_self_contained(text: str) -> bool:
     return not (words and words[0].lower() in _PRONOUN_STARTS)
 
 
-def _is_grounded(name: str, source_lower: str) -> bool:
-    tokens = [t for t in _normalize(name).split() if len(t) >= 3]
-    return any(t in source_lower for t in tokens) if tokens else True
-
-
 def _redundant_pairs(names: list[str]) -> int:
     """Count name pairs in a section where one normalized name contains the other."""
     norms = sorted({_normalize(n) for n in names if n.strip()}, key=len)
@@ -99,16 +132,17 @@ def _redundant_pairs(names: list[str]) -> int:
 
 def doc_metrics(conn, doc_id: int) -> DocMetrics:
     doc = conn.execute(
-        "SELECT title, source_date, category, thesis, method, result, limitations "
+        "SELECT title, source_date, category, thesis, method, result, limitations, gap_flags "
         "FROM documents WHERE id=?",
         (doc_id,),
     ).fetchone()
     title = doc["title"]
     sections = conn.execute(
-        "SELECT id, title FROM sections WHERE doc_id=? ORDER BY position", (doc_id,)
+        "SELECT id, title, summary FROM sections WHERE doc_id=? ORDER BY position", (doc_id,)
     ).fetchall()
 
     prop_counts: list[int] = []
+    empty_prop_titles: list[str] = []
     non_self_contained = 0
     ungrounded = 0
     redundant = 0
@@ -116,16 +150,24 @@ def doc_metrics(conn, doc_id: int) -> DocMetrics:
     noise_ents = 0
     type_counts: Counter[str] = Counter()
     total_entities = 0
+    corrupted = sum(
+        1 for f in ("thesis", "method", "result", "limitations")
+        if has_corruption_signature(doc[f])
+    )
 
     for s in sections:
         sid = s["id"]
         source = _section_source(conn, sid)
+        corrupted += has_corruption_signature(s["summary"])
 
         props = [r["text"] for r in conn.execute(
             "SELECT text FROM propositions WHERE section_id=?", (sid,)
         )]
         prop_counts.append(len(props))
+        if not props:
+            empty_prop_titles.append(s["title"] or "(untitled)")
         non_self_contained += sum(1 for p in props if not _is_self_contained(p))
+        corrupted += sum(1 for p in props if has_corruption_signature(p))
         for p in props:
             reason = rejection_reason(p, s["title"])
             if reason is not None:
@@ -137,7 +179,7 @@ def doc_metrics(conn, doc_id: int) -> DocMetrics:
         total_entities += len(ents)
         for e in ents:
             type_counts[e["type"]] += 1
-            if not _is_grounded(e["name"], source):
+            if not is_grounded(e["name"], source):
                 ungrounded += 1
             if is_noise(e["name"]):
                 noise_ents += 1
@@ -161,6 +203,9 @@ def doc_metrics(conn, doc_id: int) -> DocMetrics:
         redundant_entity_pairs=redundant,
         suspect_props=dict(suspect.most_common()),
         noise_entities=noise_ents,
+        corrupted_fields=corrupted,
+        semantic_gaps=len(semantic_gaps(json.loads(doc["gap_flags"] or "[]"))),
+        empty_prop_section_titles=empty_prop_titles,
         empty_synthesis=not any(
             (doc[f] or "").strip() for f in ("thesis", "method", "result", "limitations")
         ),
@@ -196,13 +241,30 @@ def format_metrics(docs: list[DocMetrics]) -> str:
         lines.append(
             f"    QC: suspect props {sum(d.suspect_props.values())} ({suspect}) | "
             f"noise entities {d.noise_entities} | "
-            f"empty synthesis {'YES' if d.empty_synthesis else 'no'}"
+            f"empty synthesis {'YES' if d.empty_synthesis else 'no'} | "
+            f"corrupted fields {d.corrupted_fields} | "
+            f"semantic gaps {d.semantic_gaps}"
         )
         top_types = ", ".join(f"{t}:{n}" for t, n in list(d.entity_type_counts.items())[:6])
         lines.append(f"    entity types: {top_types}")
+        if d.empty_prop_section_titles:
+            shown = d.empty_prop_section_titles[:8]
+            more = len(d.empty_prop_section_titles) - len(shown)
+            lines.append(
+                "    zero-prop sections: "
+                + "; ".join(shown)
+                + (f" (+{more} more)" if more > 0 else "")
+            )
     if len(docs) > 1:
         lines.append("")
         lines.append(_distribution(docs))
+        with_gaps = sum(1 for d in docs if d.semantic_gaps > 0)
+        lines.append(f"    gap liveness: {with_gaps}/{len(docs)} docs with >=1 semantic gap")
+        if with_gaps == 0:
+            lines.append(
+                "    WARNING: zero semantic gaps corpus-wide — the gap-flagging pass "
+                "looks inert (2026-06-05 evaluation failure mode)."
+            )
     return "\n".join(lines)
 
 

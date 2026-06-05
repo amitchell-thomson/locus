@@ -84,6 +84,72 @@ def test_retrieval_scoring_is_pure_and_correct():
     assert agg["cross_domain_recall"] == 1.0  # only the cross-domain query counts
 
 
+def test_corruption_signature_predicate():
+    from locus.eval.metrics import has_corruption_signature
+
+    # The JSON-escape corruption residues: TAB+`au` (\tau), FF+`rac` (\frac), BS+`eta` (\beta).
+    assert has_corruption_signature("decays with \tau time constant")
+    assert has_corruption_signature("the term \x0crac{K}{s-2}")
+    assert has_corruption_signature("\x08eta-convergence")
+    # Clean text — including legitimate newlines and intact LaTeX — does not flag.
+    assert not has_corruption_signature("a clean summary")
+    assert not has_corruption_signature("line one\nline two")
+    assert not has_corruption_signature(r"intact \tau and \frac{K}{s-2}")
+    assert not has_corruption_signature(None)
+    assert not has_corruption_signature("")
+
+
+def test_doc_metrics_counts_corrupted_fields(conn):
+    # Baseline: the seeded doc is clean.
+    assert doc_metrics(conn, 1).corrupted_fields == 0
+    conn.execute("UPDATE sections SET summary='decays with \tau' WHERE id=1")
+    conn.execute(
+        "INSERT INTO propositions (id, section_id, doc_id, position, text, embed_model)"
+        " VALUES (10,1,1,9,'the term \x0crac{K}{s-2} appears','nomic')"
+    )
+    conn.execute("UPDATE documents SET thesis='uses \x08eta decay' WHERE id=1")
+    conn.commit()
+    assert doc_metrics(conn, 1).corrupted_fields == 3
+
+
+def test_zero_prop_sections_are_named(conn):
+    from locus.eval.metrics import format_metrics
+
+    conn.execute(
+        "INSERT INTO sections (id, doc_id, position, title, summary) "
+        "VALUES (2,1,1,'Methodology','the core method section')"
+    )
+    conn.commit()  # section 2 has no propositions
+    m = doc_metrics(conn, 1)
+    assert m.empty_prop_sections == 1
+    assert m.empty_prop_section_titles == ["Methodology"]
+    assert "zero-prop sections: Methodology" in format_metrics([m])
+
+
+def test_semantic_gaps_exclude_audit_trail_lines(conn):
+    from locus.eval.metrics import format_metrics, semantic_gaps
+
+    flags = [
+        "math-OCR kept original text on page 3",
+        "propositions pass failed for section 2 (Methods)",
+        "Root locus design is mentioned but not covered.",
+    ]
+    assert semantic_gaps(flags) == ["Root locus design is mentioned but not covered."]
+
+    import json as _json
+
+    conn.execute("UPDATE documents SET gap_flags=? WHERE id=1", (_json.dumps(flags),))
+    conn.commit()
+    m = doc_metrics(conn, 1)
+    assert m.semantic_gaps == 1
+    # Corpus-wide liveness: with a live gap, no warning; with only audit lines, warn.
+    out = format_metrics([m, m])
+    assert "gap liveness: 2/2" in out and "WARNING" not in out
+    m.semantic_gaps = 0
+    out = format_metrics([m, m])
+    assert "gap liveness: 0/2" in out and "WARNING: zero semantic gaps" in out
+
+
 def test_doc_metrics_qc_flags_suspect_rows(conn):
     conn.execute(
         "INSERT INTO propositions (id, section_id, doc_id, position, text, embed_model)"

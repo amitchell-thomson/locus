@@ -99,3 +99,41 @@ def test_inspect_document_unknown_is_reported(seeded_db):
     m = mcp_server._build()
     out = _text(asyncio.run(m.call_tool("inspect_document", {"doc": "no-such-doc"})))
     assert "No unique document matches" in out
+
+
+def _stub_result(low_confidence: bool):
+    from locus.retrieve.assemble import Citation
+
+    cite = '"Control Notes", §Stability, pp 5–7'
+    return types.SimpleNamespace(
+        context="CTX",
+        citations=[cite],
+        citation_details=[Citation(text=cite, doc_id=1, rerank_score=4.21)],
+        survivors=[],
+        low_confidence=low_confidence,
+    )
+
+
+def test_retrieve_tool_annotates_category_and_score(seeded_db, monkeypatch):
+    monkeypatch.setattr(
+        mcp_server, "run_retrieval", lambda q, facets=None: _stub_result(low_confidence=False)
+    )
+    out = _text(asyncio.run(mcp_server._build().call_tool("retrieve", {"query": "q"})))
+    assert "rerank +4.21" in out
+    assert "[paper," in out  # doc 1's category, looked up from the seeded DB
+    assert "LOW CONFIDENCE" not in out
+
+
+def test_retrieve_tool_flags_low_confidence(seeded_db, monkeypatch):
+    monkeypatch.setattr(
+        mcp_server, "run_retrieval", lambda q, facets=None: _stub_result(low_confidence=True)
+    )
+    out = _text(asyncio.run(mcp_server._build().call_tool("retrieve", {"query": "q"})))
+    assert out.startswith("LOW CONFIDENCE")
+    assert "corpus may not cover" in out
+
+
+def test_sources_fall_back_to_plain_citations():
+    # A result without citation_details (e.g. older callers) renders the plain strings.
+    result = types.SimpleNamespace(citations=["plain cite"], citation_details=[])
+    assert mcp_server._sources(result) == "- plain cite"

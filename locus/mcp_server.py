@@ -88,9 +88,12 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
         """Retrieve grounded context for a query from the knowledge vault.
 
         Runs hybrid retrieval (dense + lexical + entity -> cross-encoder rerank -> hierarchical
-        expansion -> context assembly) and returns the assembled context plus citations. This is
-        the core tool: ground your answer in the returned material and cite its sources. Does not
-        call any LLM itself — you generate the answer from this context.
+        expansion -> context assembly) and returns the assembled context plus citations, each
+        annotated with its document category and rerank score (cross-encoder logit; higher is
+        more relevant). This is the core tool: ground your answer in the returned material and
+        cite its sources. Does not call any LLM itself — you generate the answer from this
+        context. Results may span multiple documents and domains; a bridge you draw between
+        co-retrieved sources is your inference, not a stored corpus link — present it as such.
 
         Args:
             query: The question or topic to retrieve material for.
@@ -102,8 +105,7 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
         result = run_retrieval(query, facets=facets)
         if not result.context:
             return "No relevant material was retrieved for that query (with the given facets)."
-        sources = "\n".join(f"- {c}" for c in result.citations) or "- (none)"
-        return f"{result.context}\n\n--- sources ---\n{sources}"
+        return f"{_confidence_banner(result)}{result.context}\n\n--- sources ---\n{_sources(result)}"
 
     # NOT decorated: registered below only when enable_query is set, so the billable tool is
     # absent from the advertised list by default.
@@ -132,8 +134,7 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
             raise ValueError(f"unknown mode {mode!r}; choose from {sorted(QUERY_MODES)}")
         facets = _facets(since, until, category)
         result = run_answer(question, mode=mode, facets=facets)
-        sources = "\n".join(f"- {c}" for c in result.citations) or "- (none)"
-        return f"{result.answer}\n\n--- sources ---\n{sources}"
+        return f"{_confidence_banner(result)}{result.answer}\n\n--- sources ---\n{_sources(result)}"
 
     if enable_query:
         mcp.add_tool(query)  # opt-in: only now is the billable tool advertised to clients
@@ -207,6 +208,44 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
 
 
 # --- shared helpers ----------------------------------------------------------------------
+
+
+def _confidence_banner(result) -> str:
+    """The coverage warning the 2026-06-05 evaluation found missing: weak matches must not
+    arrive looking like strong ones. Empty when retrieval is confident."""
+    if not getattr(result, "low_confidence", False):
+        return ""
+    return (
+        "LOW CONFIDENCE — every retrieved unit scored below the relevance floor; "
+        "the corpus may not cover this query. Treat the material below as weak matches.\n\n"
+    )
+
+
+def _sources(result) -> str:
+    """Format citations annotated with document category + best rerank score.
+
+    Falls back to the plain citation strings when details are absent (e.g. a stubbed result).
+    """
+    details = getattr(result, "citation_details", None)
+    if not details:
+        return "\n".join(f"- {c}" for c in result.citations) or "- (none)"
+    doc_ids = sorted({d.doc_id for d in details})
+    categories: dict[int, str | None] = {}
+    conn = get_connection(load().paths.db)
+    try:
+        placeholders = ",".join("?" * len(doc_ids))
+        for row in conn.execute(
+            f"SELECT id, category FROM documents WHERE id IN ({placeholders})", doc_ids
+        ):
+            categories[row["id"]] = row["category"]
+    finally:
+        conn.close()
+    lines = []
+    for d in details:
+        tags = [t for t in (categories.get(d.doc_id),) if t]
+        tags.append(f"rerank {d.rerank_score:+.2f}" if d.rerank_score is not None else "rerank n/a")
+        lines.append(f"- {d.text} [{', '.join(tags)}]")
+    return "\n".join(lines)
 
 
 def _validate_dates(since: str | None, until: str | None) -> None:

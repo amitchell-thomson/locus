@@ -21,6 +21,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import shutil
 import struct
 from dataclasses import dataclass
@@ -97,6 +98,16 @@ def _mtime_date(path: Path) -> str:
     return datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).date().isoformat()
 
 
+# Pagination fallback titles from extract/pdf.py ("Section (pp 6–9)") carry no meaning for
+# retrieval or navigation (2026-06-05 evaluation); the summary pass's semantic title replaces
+# them. Real extractor headings are never overridden. Page ranges live in section_map.
+_PSEUDO_TITLE = re.compile(r"^Section \(pp \d+[–-]\d+\)$")
+
+
+def _needs_semantic_title(title: str | None) -> bool:
+    return title is None or bool(_PSEUDO_TITLE.match(title))
+
+
 def _vec_blob(vec: list[float]) -> bytes:
     """Pack a float vector as the little-endian float32 blob sqlite-vec stores."""
     return struct.pack(f"{len(vec)}f", *vec)
@@ -168,14 +179,23 @@ def _prepare(path: Path) -> _Prepared:
             return empty
 
     for sec in doc.sections:
-        summary = summarize.summarize_section(sec.title, sec.text)
-        props = _optional_pass(propositions.extract_propositions, sec, "propositions", [])
+        sec_summary = summarize.summarize_section(sec.title, sec.text)
+        summary = sec_summary.summary
+        # Pagination pseudo-titles get the summary pass's semantic title instead.
+        title = sec.title
+        if _needs_semantic_title(title) and sec_summary.title and sec_summary.title.strip():
+            title = sec_summary.title.strip()
+        props = _optional_pass(
+            # has_math routes the math-dense prompt variant (claims-in-words for formulas).
+            lambda t, x, _m=sec.has_math: propositions.extract_propositions(t, x, math_heavy=_m),
+            sec, "propositions", [],
+        )
         ents = _optional_pass(entities.extract_entities, sec, "entities", [])
         chunks = chunk.chunk_text(sec.text)
         prepared.append(
             _PreparedSection(
                 position=sec.position,
-                title=sec.title,
+                title=title,
                 page_start=sec.page_start,
                 page_end=sec.page_end,
                 summary=summary,
@@ -198,7 +218,12 @@ def _prepare(path: Path) -> _Prepared:
         f"Thesis: {syn.thesis}\nMethod: {syn.method}\n"
         f"Result: {syn.result}\nLimitations: {syn.limitations}"
     )
-    gap_list = gaps.flag_gaps(doc.title, context)
+    # Evidence-grounded gap pass: section summaries show what IS covered; raw text is scanned
+    # for explicit deferral phrases (confirmed gaps). See gaps.flag_gaps.
+    gap_list = gaps.flag_gaps(
+        doc.title, context,
+        sections=[(p.title, p.summary, s.text) for p, s in zip(prepared, doc.sections)],
+    )
     # Persist the math-OCR audit trail (extract/mathocr.py): pages where QC kept the original
     # text are extraction gaps in the §15.0 sense — content quality was knowingly degraded
     # there, and that must be queryable, not just logged.

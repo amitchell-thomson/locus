@@ -109,31 +109,60 @@ _PROMPT_RULES = (
 )
 
 
-def extract_propositions(title: str | None, text: str, **kw) -> list[str]:
+# Math-dense sections (PageFlags/has_math at extraction) lose their claims when the model
+# skips formula-bearing statements wholesale: the 2026-06-05 evaluation found a paper's core
+# method section with ZERO propositions while its abstract had nine. The variant line asks
+# for the relationship in words instead of omission (the dropped-formula filter still rejects
+# sentences written around an illegible gap).
+_MATH_HEAVY_RULE = (
+    "\nThis section is math-dense. When a formula's symbols are legible, state the "
+    "relationship it expresses in WORDS as a proposition (e.g. 'The output equals the "
+    "convolution of the input with the impulse response') rather than skipping it. Only "
+    "omit a claim when its formula is actually missing or garbled."
+)
+
+
+def extract_propositions(
+    title: str | None, text: str, math_heavy: bool = False, **kw
+) -> list[str]:
     """Return the atomic propositions asserted in the section (possibly empty), filtered.
 
-    One bounded retry when the model produced output but the filter rejected all of it —
-    a noisy generation gets a second chance before the section is recorded proposition-free.
+    One bounded retry when the section came out proposition-free — whether the model
+    produced output the filter rejected entirely, or produced nothing at all (the latter
+    previously shipped silently: 2026-06-05 evaluation). `math_heavy` adds a prompt rule
+    asking for formula relationships in words (set from the extractor's has_math flag).
     """
+    rules = _PROMPT_RULES + (_MATH_HEAVY_RULE if math_heavy else "")
     user = (
         f"Section title: {title or '(untitled)'}\n\n"
         f"Section text:\n{text}\n\n"
-        f"{_PROMPT_RULES}"
+        f"{rules}"
     )
     raw = generate_structured(Propositions, user, **kw).propositions
     kept, rejected = filter_propositions(raw, title)
 
-    if raw and not kept:
-        reasons = ", ".join(sorted({r for _, r in rejected}))
-        retry = (
-            f"{user}\n\n"
-            f"Your previous attempt was rejected entirely ({reasons}): it contained only "
-            "meta-statements, title echoes, fragments, or claims written around missing "
-            "formulas. Extract only substantive, complete factual claims about the subject "
-            "matter; if the section asserts none, return an empty list."
-        )
-        raw = generate_structured(Propositions, retry, **kw).propositions
+    if not kept:
+        if raw:
+            reasons = ", ".join(sorted({r for _, r in rejected}))
+            complaint = (
+                f"Your previous attempt was rejected entirely ({reasons}): it contained only "
+                "meta-statements, title echoes, fragments, or claims written around missing "
+                "formulas. Extract only substantive, complete factual claims about the subject "
+                "matter; if the section asserts none, return an empty list."
+            )
+        else:
+            log.warning(
+                "propositions: model returned zero propositions for section %r; retrying", title
+            )
+            complaint = (
+                "Your previous attempt returned no propositions. Re-read the section: if it "
+                "asserts substantive factual claims, extract them; return an empty list only "
+                "if it genuinely asserts none."
+            )
+        raw = generate_structured(Propositions, f"{user}\n\n{complaint}", **kw).propositions
         kept, rejected = filter_propositions(raw, title)
+        if not kept:
+            log.warning("propositions: section %r is proposition-free after retry", title)
 
     if rejected:
         log.info(

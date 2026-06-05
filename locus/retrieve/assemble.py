@@ -16,9 +16,23 @@ from locus.retrieve.expand import Expanded
 
 
 @dataclass
+class Citation:
+    """A provenance string plus the structure consumers need to annotate it.
+
+    `rerank_score` is the best cross-encoder score among the units sharing this provenance —
+    the confidence signal the 2026-06-05 evaluation found missing from the MCP surface.
+    """
+
+    text: str
+    doc_id: int
+    rerank_score: float | None = None
+
+
+@dataclass
 class AssembledContext:
     text: str
     citations: list[str] = field(default_factory=list)
+    citation_details: list[Citation] = field(default_factory=list)
     included: int = 0
     dropped: int = 0
 
@@ -63,15 +77,21 @@ def assemble(expanded: list[Expanded], budget: int | None = None) -> AssembledCo
 
     lines: list[str] = []
     citations: list[str] = []
+    details: dict[str, Citation] = {}  # provenance -> detail (order-preserving in 3.7+)
     tokens = 0
     included = dropped = 0
 
     def cite(e: Expanded) -> None:
         # A proposition and a chunk from the same section share one provenance string;
-        # list it once (order-preserving) instead of repeating it per included unit.
+        # list it once (order-preserving) instead of repeating it per included unit. The
+        # detail keeps the best rerank score among the units behind the shared string.
         p = _provenance(e)
         if p not in citations:
             citations.append(p)
+        score = e.candidate.rerank_score
+        d = details.setdefault(p, Citation(text=p, doc_id=e.doc_id, rerank_score=score))
+        if score is not None and (d.rerank_score is None or score > d.rerank_score):
+            d.rerank_score = score
 
     def fits(text: str) -> bool:
         nonlocal tokens
@@ -120,4 +140,7 @@ def assemble(expanded: list[Expanded], budget: int | None = None) -> AssembledCo
                 else:
                     dropped += 1
 
-    return AssembledContext(text="".join(lines), citations=citations, included=included, dropped=dropped)
+    return AssembledContext(
+        text="".join(lines), citations=citations, citation_details=list(details.values()),
+        included=included, dropped=dropped,
+    )

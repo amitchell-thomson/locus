@@ -332,6 +332,22 @@ done **before** the bulk ingest. Each item ≈ one work-block.
   from the audit: unpruned −8..−10 tails under a +5.35 top hit (current code prunes them;
   the audit also quotes the pre-7.5 single-band banner wording — stale MCP server process
   suspected). Deferred: per-slide sections (step 9 polish note stands).
+  **Residual closure (same day):** (6) answer-key exclusion moved to the CANDIDATE pool —
+  post-hoc scoring exclusion left self-ingested eval-file chunks consuming top-k slots
+  (cross-domain recall 0.75 contaminated → 1.000 clean). (7) prior-round re-checks the
+  audit handed back: gap filter HELD (0/30 docs fail re-applied predicate; fixed the new
+  grounding-fallback audit lines being misclassified as semantic gaps — backfill would
+  have deleted them); PCMCI/PCMIC is the PAPER'S OWN typo (attested verbatim → extraction
+  faithful, aliasing stays step-12); numeric faithfulness measured corpus-wide via a new
+  `unattested_numbers` audit predicate (2 real instances, both on known degraded-math
+  pages with existing OCR-fallback flags; predicate knows faithful conversions: vulgar
+  fractions, k-suffix, Nov-YY years, decimal commas, digit lists vs thousands-grouping).
+  (8) source under-retrieval CLOSED: path-anchored search arm (file stem named in query →
+  section candidate with grounded signature summary) + query-named exemption in select()
+  (per-doc cap + child-redundancy demotion are breadth rules; neither applies to a file
+  the query names — a repo is one doc but many files). Final re-gate: recall@8 **1.000**,
+  full-recall 1.000, cross-domain 1.000, banner rate 0.000, **file_recall 1.000** (was
+  0.333). All round-3 findings and hand-backs closed; figures (step 11) unblocked.
 - [ ] **11. Figures** `[RB]` (medium) — `figures` + `figure_vectors`; extract/store/caption +
   optional local VLM description; multimodal Claude at generation. **Per 10.5: the figure
   text/caption pass MUST go through the summary grounding guard.**

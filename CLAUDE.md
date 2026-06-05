@@ -775,8 +775,15 @@ math-stripped text). Details per step in `PLAN.md`.
     no entities); **eval refresh** (30-doc queries incl. file-level `expected_paths` on the
     previously-hallucinated files + `cross_domain_banner_rate` must-be-zero metric). The
     audit's unpruned-noise claim under a strong top hit did NOT reproduce (stale MCP server
-    process suspected — it also quoted pre-step-7.5 banner wording). Figures (step 11) must
-    route its caption/description pass through the same grounding guard.
+    process suspected — it also quoted pre-step-7.5 banner wording). Residual closure (same
+    day): answer-key exclusion moved to the candidate pool (self-ingested eval chunks were
+    consuming top-k slots); prior-round re-checks — gap filter held (0/30), PCMCI/PCMIC is
+    the paper's own typo (faithful extraction; aliasing = step 12), numeric faithfulness now
+    a permanent audit predicate (`unattested_numbers`, 2 hits, both known degraded-math
+    pages); source under-retrieval closed via a **path-anchored search arm** + query-named
+    exemption from the per-doc cap / child-redundancy rules in `select()`. Final re-gate:
+    recall@8 1.000, cross-domain 1.000, banner rate 0.000, file_recall 1.000. Figures
+    (step 11) must route its caption/description pass through the same grounding guard.
 11. **Figures** `[re-ingest-bound]` (PDF/slides quality, medium). `figures` + `figure_vectors`
     schema; extract/store images + captions; optional local VLM (moondream / minicpm-v) →
     retrievable; multimodal Claude at generation (query.py passes the figure image). See §15.1.

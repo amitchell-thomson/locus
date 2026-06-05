@@ -307,6 +307,14 @@ def _prepare_doc(
             )
             if summary_cache:
                 summary_cache.stage(sec, sec_summary)
+        if not sec_summary.grounded:
+            # The model twice produced a summary about something other than this section
+            # (the round-3 hallucination finding); a deterministic fallback replaced it.
+            # Surface that as a doc gap so audit/inspect show the degradation.
+            pass_gaps.append(
+                f"summary failed grounding for section {sec.position} ({sec.title}); "
+                "deterministic fallback used"
+            )
         summary = sec_summary.summary
         # Pagination pseudo-titles get the summary pass's semantic title instead.
         title = sec.title

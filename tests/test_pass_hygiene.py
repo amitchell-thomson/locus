@@ -292,3 +292,101 @@ def test_merge_plural_variants_is_evidence_based():
     assert sections[0][0].name == "Laplace transform"  # collapsed onto attested singular
     assert sections[2][0].name == "Fourier series"  # untouched
     assert sections[3][0].name == "Laplace transforms"  # type mismatch: untouched
+
+
+# --- summary grounding guard (round-3 evaluation: hallucinated code summaries) -------------
+
+
+HMM_SOURCE = '''\
+"""Gaussian HMM regime detector with multi-seed selection."""
+
+import numpy as np
+from hmmlearn.hmm import GaussianHMM
+
+
+class HMMRegimeDetector:
+    def fit_best_of_n_seeds(self, X, n_seeds=10):
+        """Fit candidate models across seeds and keep the highest-likelihood one."""
+        models = [self._fit_one(X, seed) for seed in range(n_seeds)]
+        return max(models, key=lambda m: m.score(X))
+
+    def _fit_one(self, X, seed):
+        return GaussianHMM(n_components=3, random_state=seed).fit(X)
+'''
+
+
+def test_grounding_rejects_the_round3_hallucinations():
+    from locus.ingest.summarize import is_grounded
+
+    # Verbatim from the corpus: fluent, plausible, and about a different topic entirely.
+    assert not is_grounded(
+        "The document discusses basic electrical circuits and their components.", HMM_SOURCE
+    )
+    assert not is_grounded(
+        "The document describes a new algorithm for image recognition with improved accuracy.",
+        HMM_SOURCE,
+    )
+    # All-boilerplate filler that names nothing from the unit.
+    assert not is_grounded(
+        "Document contains information on system architecture and key components.", HMM_SOURCE
+    )
+
+
+def test_grounding_accepts_honest_summaries():
+    from locus.ingest.summarize import is_grounded
+
+    assert is_grounded(
+        "Implements a Gaussian HMM regime detector; fit_best_of_n_seeds fits candidate "
+        "models across random seeds and keeps the highest-likelihood one.",
+        HMM_SOURCE,
+    )
+    # Morphology must not break matching ("detector" vs "detection" etc.).
+    assert is_grounded(
+        "Detects regimes with a Gaussian hidden Markov model, selecting among seeded fits "
+        "by likelihood scoring.",
+        HMM_SOURCE,
+    )
+
+
+def test_summarize_retries_then_returns_grounded(monkeypatch):
+    from locus.ingest import summarize as sum_mod
+
+    outputs = iter([
+        sum_mod.SectionSummary(summary="The document discusses basic electrical circuits."),
+        sum_mod.SectionSummary(summary="A Gaussian HMM regime detector selecting seeds by likelihood."),
+    ])
+    prompts: list[str] = []
+
+    def fake(schema, user, **kw):
+        prompts.append(user)
+        return next(outputs)
+
+    monkeypatch.setattr(sum_mod, "generate_structured", fake)
+    out = sum_mod.summarize_section("src/regimes/hmm.py", HMM_SOURCE, code=True)
+    assert out.grounded is True
+    assert "regime detector" in out.summary
+    assert len(prompts) == 2 and "MUST use the actual names" in prompts[1]
+
+
+def test_summarize_falls_back_to_code_signature(monkeypatch):
+    from locus.ingest import summarize as sum_mod
+
+    bad = sum_mod.SectionSummary(summary="The document discusses basic electrical circuits.")
+    monkeypatch.setattr(sum_mod, "generate_structured", lambda *a, **kw: bad)
+    out = sum_mod.summarize_section("src/regimes/hmm.py", HMM_SOURCE, code=True)
+    assert out.grounded is False
+    # Deterministic signature summary: docstring first line + def/class names.
+    assert "HMMRegimeDetector" in out.summary
+    assert "fit_best_of_n_seeds" in out.summary
+    assert "Gaussian HMM regime detector" in out.summary
+
+
+def test_summarize_falls_back_to_leading_text_for_prose(monkeypatch):
+    from locus.ingest import summarize as sum_mod
+
+    bad = sum_mod.SectionSummary(summary="Discusses image recognition accuracy gains.")
+    monkeypatch.setattr(sum_mod, "generate_structured", lambda *a, **kw: bad)
+    text = "The Biot number compares conductive and convective resistance in a body. " * 4
+    out = sum_mod.summarize_section("Transient conduction", text)
+    assert out.grounded is False
+    assert out.summary.startswith("Transient conduction: The Biot number compares")

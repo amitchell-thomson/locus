@@ -44,6 +44,33 @@ _PROMPT = (
 )
 
 _MIN_WORDS = 8  # a usable description names at least a subject and some structure
+
+# VLM input bound: Ollama 0.30.x runs the qwen2.5vl vision encoder on CPU ("clip_ctx: CLIP
+# using CPU backend"), and encode cost scales with patch count — a 2x-zoom render (~1500-
+# 2000px) costs ~30 s/figure of pure CPU. 1024px is ample to read labels for a 1-4 sentence
+# findability description (precise reading happens at tier 3, where Claude gets the bigger
+# image), and cuts encode ~3-4x. The pass cache stays keyed on the ORIGINAL bytes.
+_VLM_MAX_EDGE_PX = 1024
+
+
+def _vlm_input(image_bytes: bytes) -> bytes:
+    """Downscale a PNG to the VLM input bound; original bytes on any failure."""
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+
+        with Image.open(BytesIO(image_bytes)) as im:
+            w, h = im.size
+            if max(w, h) <= _VLM_MAX_EDGE_PX:
+                return image_bytes
+            scale = _VLM_MAX_EDGE_PX / max(w, h)
+            im = im.resize((max(1, round(w * scale)), max(1, round(h * scale))))
+            out = BytesIO()
+            im.save(out, format="PNG", optimize=True)
+            return out.getvalue()
+    except Exception:  # corrupt PNG etc. — let the VLM see the original
+        return image_bytes
 _REFUSAL = re.compile(
     r"\b(?:i cannot|i can't|i am unable|i'm unable|as an ai|unable to (?:see|view)|"
     r"no (?:image|figure) (?:was |is )?(?:provided|attached|visible))\b",
@@ -83,6 +110,7 @@ def describe_figure(
     (per-figure graceful degradation; one stubborn figure must not quarantine the doc).
     """
     model = model or load().figures.model
+    image_bytes = _vlm_input(image_bytes)  # bound the CPU-side vision-encode cost
     prompt = _PROMPT
     if caption:
         prompt += f"\n\nThe author's caption for this figure: {caption!r}"

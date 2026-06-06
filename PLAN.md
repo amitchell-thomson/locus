@@ -449,6 +449,14 @@ done **before** the bulk ingest. Each item ≈ one work-block.
   including quant-finance papers + ≥1 code repo (the second domain the synthesis modes need);
   then pour the corpus. **Before the pour: run the fig-v1→v2 description backfill** (~223
   figures, regenerable from stored PNGs — no re-ingest; doubles as the guard-4 validation).
+  **Pre-pour decision — VLM vision-encode placement:** Ollama ≤0.30.6 runs the qwen2.5vl
+  CLIP tower on CPU (`clip_ctx: CLIP using CPU backend`, confirmed post-upgrade) — every
+  figure description pays a ~20-25 s CPU encode even with describe inputs downscaled to
+  1024px (`figures._vlm_input`); the LLM half sits 100% on GPU and is not the bottleneck.
+  At bulk-pour scale (~thousands of figures) that is the dominant figure cost: ~6-8 h per
+  1000 figures vs ~1 h if the encoder ran on GPU. Resolve before the pour: newer Ollama
+  (watch release notes for GPU mtmd / new-engine qwen2.5vl support), an alternative
+  serving path for the describe pass, or accept and schedule the pour's figure time.
 
 **After the pour (not `[RB]`):** ANN-index warning (§11.D), Obsidian projection (§14),
 YouTube / podcast transcript ingest, broader retrieval tests.

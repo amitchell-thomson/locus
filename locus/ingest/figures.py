@@ -108,6 +108,13 @@ def describe_figure(
     figure shows, which anchors the description. Returns None when both attempts fail QC
     or the model call errors: the caller stores the figure caption-only and continues
     (per-figure graceful degradation; one stubborn figure must not quarantine the doc).
+
+    `client` selects the transport: an Ollama Client (or None, the default Ollama path),
+    or anything with a `.chat(prompt, image_bytes, temperature=, max_tokens=)` method —
+    in production a `llamacpp.LlamaServer` (GPU vision encode, step 11.6). Everything
+    else (QC, bounded retry, temperature escalation, downscale, caption context) is
+    engine-agnostic. A `LlamaServerError` from a dying server propagates — the BATCH
+    falls back to Ollama; per-call errors degrade this one figure to caption-only.
     """
     model = model or load().figures.model
     image_bytes = _vlm_input(image_bytes)  # bound the CPU-side vision-encode cost
@@ -123,21 +130,30 @@ def describe_figure(
                 f"\n\nYour previous answer was rejected ({reason}). Look at the image again "
                 "and describe what is actually visible, in 1-4 plain sentences."
             )
+        temperature = 0.0 if attempt == 0 else 0.3
         try:
-            out = llm.vision_chat(
-                attempt_prompt,
-                image_bytes,
-                model=model,
-                client=client,
-                temperature=0.0 if attempt == 0 else 0.3,
-                # One image + a short prompt + <=512 out needs nowhere near 8k context —
-                # and at num_ctx=8192 qwen2.5vl does NOT fit the 8 GB card (Ollama plans a
-                # kept 74/26 CPU/GPU split and the whole figure batch runs several-fold
-                # slow; observed live 2026-06-06, capacity-driven — re-split on a clean
-                # card). 4096 shrinks the KV/vision buffers so the model fits fully.
-                num_ctx=4096,
-                num_predict=512,  # 1-4 sentences; a cap stops degeneration loops early
-            )
+            if hasattr(client, "proc"):
+                # llama-server-shaped client (llamacpp.LlamaServer, or a fake exposing
+                # .proc + .chat): GPU vision encode via the OpenAI-style call.
+                out = client.chat(
+                    attempt_prompt, image_bytes,
+                    temperature=temperature, max_tokens=512,
+                )
+            else:
+                out = llm.vision_chat(
+                    attempt_prompt,
+                    image_bytes,
+                    model=model,
+                    client=client,
+                    temperature=temperature,
+                    # One image + a short prompt + <=512 out needs nowhere near 8k
+                    # context — and at num_ctx=8192 qwen2.5vl does NOT fit the 8 GB card
+                    # (Ollama plans a kept 74/26 CPU/GPU split and the whole figure batch
+                    # runs several-fold slow; observed live 2026-06-06, capacity-driven —
+                    # re-split on a clean card). 4096 fits fully.
+                    num_ctx=4096,
+                    num_predict=512,  # 1-4 sentences; a cap stops degeneration loops early
+                )
         except llm.IngestExtractionError as exc:
             log.warning("figure description failed: %s", exc)
             return None

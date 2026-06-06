@@ -444,19 +444,41 @@ done **before** the bulk ingest. Each item ≈ one work-block.
   fonts); diagram terminology slips (§11.B). **Operational lesson: a split model produces
   identical outputs SLOWLY — no gate catches it; watch for GPU-idle + multi-core
   llama-server during ingest.**
+- [x] **11.6 llama.cpp GPU vision backend for figures** — **done** (2026-06-06, same
+  evening). Ollama ≤0.30.6 runs the qwen2.5vl vision encoder on CPU (`clip_ctx: CLIP
+  using CPU backend`, unchanged after upgrading 0.30.2→0.30.6) — ~27.5 s/figure measured
+  across the fig-v2 backfill. Fix: serve the SAME weights via `llama-server` (official
+  **Vulkan** Ubuntu build b9544 at `~/.local/opt/llama-b9544/` — no official Linux CUDA
+  binary exists; Vulkan offloads LLM + mmproj to the 3070 Ti) with
+  `ggml-org/Qwen2.5-VL-7B-Instruct-GGUF:Q4_K_M` (~4.7 GB HF download; Ollama's blobs are
+  owner-unreadable and qwen mmproj blobs are cross-incompatible). Implementation:
+  `[figures] engine = "ollama"|"llamacpp"` (+ `llamacpp_*` keys); `ingest/llamacpp.py`
+  `LlamaServer` context manager (spawn → `/health` poll → terminate; `unload_all`
+  confirmed-settle owns the card handoff); OpenAI data-URI chat; `describe_figure`
+  dispatches on a `.proc`-bearing client — QC/retry/downscale unchanged;
+  `_describe_figures` in the pipeline spawns PER-DOC-BATCH (a long-lived server would
+  starve the text passes — the split trap) and **fails closed to ollama** with a doc gap
+  on any lifecycle failure (binary absent, startup timeout, mid-batch death — remaining
+  figures redone via ollama; never quarantines); `_FigureCache` keys on the EFFECTIVE
+  engine model string (ollama keys untouched; engines never reuse each other's outputs).
+  **Judge gate (eval/figure_fidelity.py + scripts/judge_figures.py, 10 figures vs the
+  stored backfill baseline, Claude judging against the actual images): the Q8_0 mmproj
+  auto-pair FAILED (faith 2.80 vs 3.10, halluc 24 vs 18 — quantized visual features
+  invent more); the f16 mmproj PASSED — faith 3.10 vs 3.00, concreteness 3.60 vs 3.40,
+  halluc 20=20, zero failures, 2.1 s/figure (13x).** Engine flipped in live config with
+  the explicit f16 `llamacpp_mmproj`. Verified end-to-end: a re-ingest under the engine
+  produced clean figures with no fallback gap; audit QC zero; math suite 0.889 (in band —
+  the run-after-any-VRAM-change rule). Pour figure economics: ~35 min per 1000 figures
+  (was ~7.5 h). 11 model-free tests (lifecycle/request-shape/dispatch/fallback).
+  System dep: the llama.cpp binary (optional, like soffice — absent ⇒ ollama path).
+  Residual: figure-description quality itself (~3 faithfulness on hard diagrams) is the
+  §11.B model ceiling, unchanged by the executor — revisit at the next VLM generation.
 - [ ] **12. Entity-alias resolution + Retrieval eval (Layer 3) → BULK INGEST** — canonicalise
   entity names cross-document (the *link* substrate); validate on a heterogeneous sample
   including quant-finance papers + ≥1 code repo (the second domain the synthesis modes need);
   then pour the corpus. **Before the pour: run the fig-v1→v2 description backfill** (~223
   figures, regenerable from stored PNGs — no re-ingest; doubles as the guard-4 validation).
-  **Pre-pour decision — VLM vision-encode placement:** Ollama ≤0.30.6 runs the qwen2.5vl
-  CLIP tower on CPU (`clip_ctx: CLIP using CPU backend`, confirmed post-upgrade) — every
-  figure description pays a ~20-25 s CPU encode even with describe inputs downscaled to
-  1024px (`figures._vlm_input`); the LLM half sits 100% on GPU and is not the bottleneck.
-  At bulk-pour scale (~thousands of figures) that is the dominant figure cost: ~6-8 h per
-  1000 figures vs ~1 h if the encoder ran on GPU. Resolve before the pour: newer Ollama
-  (watch release notes for GPU mtmd / new-engine qwen2.5vl support), an alternative
-  serving path for the describe pass, or accept and schedule the pour's figure time.
+  **Pre-pour decision — VLM vision-encode placement: RESOLVED by step 11.6 (below).**
 
 **After the pour (not `[RB]`):** ANN-index warning (§11.D), Obsidian projection (§14),
 YouTube / podcast transcript ingest, broader retrieval tests.

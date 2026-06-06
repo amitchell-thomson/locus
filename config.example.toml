@@ -51,6 +51,13 @@ model         = "qwen2.5vl:7b"    # Ollama model used by the "qwen" engine
 # retrieval slot.
 enabled          = true
 model            = "qwen2.5vl:7b" # Ollama VLM (already pulled for the mathocr "qwen" engine)
+engine           = "ollama"       # "ollama" (default; CPU vision encode, ~25 s/figure) or
+                                  # "llamacpp" (GPU vision encode via an on-demand llama-server,
+                                  # ~3-5 s/figure; needs the llama.cpp binary — optional system
+                                  # dep; absent/failing it falls closed to "ollama")
+# llamacpp_binary = "/home/<user>/.local/opt/llama-bXXXX/llama-server"  # abs path => bundled libs found
+# llamacpp_model  = "ggml-org/Qwen2.5-VL-7B-Instruct-GGUF:Q4_K_M"       # -hf spec or local .gguf
+# llamacpp_port   = 8090
 render_slides    = true           # full-slide render via LibreOffice (`soffice` must be on PATH;
                                   # absent => slides skip figures with a warning, never quarantine)
 min_area_frac    = 0.03           # area band, as fraction of page area: below = icons/decoration

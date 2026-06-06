@@ -843,10 +843,21 @@ math-stripped text). Details per step in `PLAN.md`.
     fig-v1→v2 backfill (~223 figures, no re-ingest). **Lesson: a split model produces
     identical output slowly — no quality gate sees it; watch GPU-idle + multi-core
     llama-server.**
+11.6. **llama.cpp GPU vision backend for figures** — **done** (2026-06-06). Ollama ≤0.30.6
+    runs the qwen2.5vl vision encoder on CPU (~27.5 s/figure); the same weights served by
+    `llama-server` (official Vulkan build b9544, `ggml-org/Qwen2.5-VL-7B-Instruct-GGUF:
+    Q4_K_M` + **f16 mmproj** — the Q8_0 auto-pair FAILED the judge gate, quantized visual
+    features hallucinate more) run at **2.1 s/figure (13x)** with quality parity-or-better
+    (judged vs the stored corpus: faith 3.10 vs 3.00, halluc 20=20, zero failures —
+    eval-artifacts/figures/). `[figures] engine` config; `ingest/llamacpp.py` LlamaServer
+    (per-doc-batch spawn, unload_all-settled handoff, fails closed to ollama with a doc
+    gap — never quarantines); engine-separated figure-cache keys; 11 model-free tests.
+    Verified live end-to-end + math suite in band (the after-any-VRAM-change rule).
+    System dep: the llama.cpp binary (optional, like soffice). The fig-v1→v2 backfill
+    (389/389 descriptions) ran earlier the same day and is the judge baseline.
 12. **Entity-alias resolution + Retrieval eval (Layer 3) → BULK INGEST.** Canonicalise entity
     names cross-document (the *link* substrate); run the heterogeneous-corpus retrieval eval on
-    a sample including quant-finance papers + ≥1 code repo; then pour the corpus. Before the
-    pour: the fig-v1→v2 description backfill (cheap; also validates the handoff-settle guard).
+    a sample including quant-finance papers + ≥1 code repo; then pour the corpus.
 
 **After the pour (not re-ingest-bound):** ANN-index warning (§11.D), Obsidian projection (§14),
 YouTube/podcast transcript ingest, broader retrieval tests.

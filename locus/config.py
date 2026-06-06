@@ -108,6 +108,28 @@ class FiguresConfig(BaseModel):
 
     enabled: bool = Field(True, description="Run figure extraction + description at ingest.")
     model: str = Field("qwen2.5vl:7b", description="Ollama VLM for figure descriptions.")
+    # Engine for the description pass. "ollama" = the default Ollama path (its qwen2.5vl
+    # vision encoder runs on CPU, ~25 s/figure); "llamacpp" = an on-demand llama-server
+    # with the mmproj on GPU (~3-5 s/figure) — needs the llama.cpp binary installed
+    # (optional system dep, like soffice); absent/failing it falls closed to "ollama".
+    engine: str = Field("ollama", description="'ollama' | 'llamacpp' (GPU vision encode).")
+    llamacpp_binary: str = Field(
+        "llama-server", description="llama-server binary (PATH name or absolute path)."
+    )
+    llamacpp_model: str = Field(
+        "ggml-org/Qwen2.5-VL-7B-Instruct-GGUF:Q4_K_M",
+        description="-hf spec (repo:quant) or a local .gguf path.",
+    )
+    llamacpp_mmproj: str | None = Field(
+        None, description="Explicit mmproj .gguf path; None = -hf auto-pair."
+    )
+    llamacpp_host: str = Field("127.0.0.1", description="llama-server bind host.")
+    llamacpp_port: int = Field(8090, description="llama-server bind port.")
+    llamacpp_ngl: int = Field(99, description="LLM layers to offload to GPU.")
+    llamacpp_ctx: int = Field(4096, description="Context size (4096 fits the 8 GB card).")
+    llamacpp_startup_timeout: float = Field(
+        300.0, description="Seconds to wait for /health (first spawn downloads ~5.5 GB)."
+    )
     render_slides: bool = Field(
         True, description="Render visual-bearing slides via LibreOffice (soffice) to PNG."
     )

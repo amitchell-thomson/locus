@@ -334,6 +334,11 @@ class _FigureCache:
     change invalidates naturally. A QC-failed description is cached as "" (tried, failed
     deterministically at temperature 0 + one retry; a prompt bump is the retry lever).
     Same read/stage/flush contract as _SummaryCache.
+
+    `model` is the EFFECTIVE model string of the engine that actually produced (or will
+    produce) the description — `figures.model` for the Ollama engine (existing keys stay
+    valid), `figures.llamacpp_model` for the llama.cpp engine — so engines never reuse
+    each other's outputs and a mid-batch fallback caches truthfully (step 11.6).
     """
 
     def __init__(self, conn):
@@ -341,22 +346,22 @@ class _FigureCache:
         self._puts: list[tuple[str, str]] = []
 
     @staticmethod
-    def _key(image_bytes: bytes) -> str:
+    def _key(image_bytes: bytes, model: str | None = None) -> str:
         raw = (
             f"{hashlib.sha256(image_bytes).hexdigest()}:figure:"
-            f"{load().figures.model}:{figures_pass.PROMPT_VERSION}"
+            f"{model or load().figures.model}:{figures_pass.PROMPT_VERSION}"
         )
         return hashlib.sha256(raw.encode()).hexdigest()
 
-    def get(self, image_bytes: bytes) -> str | None:
+    def get(self, image_bytes: bytes, model: str | None = None) -> str | None:
         """Cached description ("" = cached failure), or None when never attempted."""
         row = self._conn.execute(
-            "SELECT payload FROM pass_cache WHERE key=?", (self._key(image_bytes),)
+            "SELECT payload FROM pass_cache WHERE key=?", (self._key(image_bytes, model),)
         ).fetchone()
         return row["payload"] if row else None
 
-    def stage(self, image_bytes: bytes, description: str) -> None:
-        self._puts.append((self._key(image_bytes), description))
+    def stage(self, image_bytes: bytes, description: str, model: str | None = None) -> None:
+        self._puts.append((self._key(image_bytes, model), description))
 
     def flush(self) -> None:
         """Persist staged entries (own transaction; call after the doc write commits)."""
@@ -366,6 +371,65 @@ class _FigureCache:
                     "INSERT OR REPLACE INTO pass_cache (key, payload) VALUES (?,?)", self._puts
                 )
             self._puts = []
+
+
+def _describe_figures(
+    doc_figures: list, figure_cache: _FigureCache | None, gap_list: list[str]
+) -> list[str | None]:
+    """Engine-dispatched figure-description batch with fail-closed fallback (step 11.6).
+
+    `engine="llamacpp"` spawns one llama-server for the doc's batch (GPU vision encode;
+    the server's __enter__ owns the VRAM handoff via unload_all). ANY lifecycle failure —
+    binary absent, startup timeout, server death mid-batch — degrades the remaining
+    figures to the Ollama engine with a doc gap line; a dead server must never quarantine
+    a document. Cache entries are keyed by the engine that actually produced them.
+    """
+    cfg = load().figures
+    descriptions: list[str | None] = [None] * len(doc_figures)
+    todo = list(range(len(doc_figures)))
+
+    def run_engine(indices: list[int], client, model_key: str) -> list[int]:
+        """Describe figures at `indices`; returns the indices left undone (server died)."""
+        for n, i in enumerate(indices):
+            fig = doc_figures[i]
+            cached = figure_cache.get(fig.image_bytes, model_key) if figure_cache else None
+            if cached is not None:
+                descriptions[i] = cached or None  # "" = cached QC failure
+                continue
+            try:
+                desc = figures_pass.describe_figure(fig.image_bytes, fig.caption, client=client)
+            except Exception as exc:
+                # Lifecycle failure (llamacpp.LlamaServerError) — hand the rest back for
+                # fallback. Per-call errors never reach here (describe_figure degrades
+                # them to None itself).
+                log.warning("figure VLM engine failed mid-batch: %s", exc)
+                return indices[n:]
+            if figure_cache is not None:
+                figure_cache.stage(fig.image_bytes, desc or "", model_key)
+            descriptions[i] = desc
+        return []
+
+    if cfg.engine == "llamacpp" and todo:
+        from locus.ingest import llamacpp  # lazy, mirrors the mathocr import style
+
+        try:
+            with llamacpp.LlamaServer(cfg) as server:
+                todo = run_engine(todo, server, cfg.llamacpp_model)
+        except llamacpp.LlamaServerError as exc:
+            log.warning("llamacpp figure engine unavailable: %s", exc)
+        if todo:
+            gap_list.append(
+                f"figure VLM engine 'llamacpp' unavailable for {len(todo)} figure(s); "
+                "fell back to ollama"
+            )
+    if todo:
+        # Ollama path (default engine, or llamacpp fallback). Explicit handoff: evict the
+        # text model BEFORE the VLM loads — loading the ~6 GB VLM while Ollama is still
+        # evicting the ~6.4 GB text model gets planned with a KEPT CPU/GPU split
+        # (observed live 2026-06-06: 74/26 for a whole figure batch).
+        llm.unload()
+        run_engine(todo, None, cfg.model)
+    return descriptions
 
 
 def _prepare(path: Path, source_type: str, figure_cache: _FigureCache | None = None) -> _Prepared:
@@ -494,27 +558,13 @@ def _prepare_doc(
     gap_list += [f"math-OCR kept original text on {f}" for f in doc.ocr_fallbacks]
     gap_list += pass_gaps  # sections whose optional passes degraded to empty
 
-    # Figure-description pass, batched AFTER all text passes: Ollama swaps the text model
-    # for the VLM once per document instead of thrashing per section (the 8 GB VRAM
-    # choreography). Descriptions come from the content-keyed cache when the image bytes
-    # were seen before; embedding runs as one batch afterwards.
+    # Figure-description pass, batched AFTER all text passes: the VLM takes the card
+    # once per document instead of thrashing per section (the 8 GB VRAM choreography).
+    # Descriptions come from the content-keyed cache when the image bytes were seen
+    # before; embedding runs as one batch afterwards.
     prepared_figs: list[_PreparedFigure] = []
     if doc.figures and profile.figures and load().figures.enabled:
-        # Explicit handoff: evict the text model BEFORE the VLM loads. Loading the ~6 GB
-        # VLM while Ollama is still evicting the ~6.4 GB text model under pressure makes
-        # the planner allocate a CPU/GPU split — which Ollama then KEEPS for the whole
-        # figure batch (observed live 2026-06-06: 74/26 split, several-fold slower).
-        llm.unload()
-        descriptions: list[str | None] = []
-        for fig in doc.figures:
-            cached = figure_cache.get(fig.image_bytes) if figure_cache else None
-            if cached is None:
-                desc = figures_pass.describe_figure(fig.image_bytes, fig.caption)
-                if figure_cache is not None:
-                    figure_cache.stage(fig.image_bytes, desc or "")
-            else:
-                desc = cached or None  # "" = cached QC failure
-            descriptions.append(desc)
+        descriptions = _describe_figures(doc.figures, figure_cache, gap_list)
         index_texts = [
             figures_pass.index_text(f.caption, d) for f, d in zip(doc.figures, descriptions)
         ]

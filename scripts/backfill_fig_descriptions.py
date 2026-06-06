@@ -30,6 +30,11 @@ cfg = load()
 conn = get_connection(cfg.paths.db)
 cache = _FigureCache(conn)
 
+# Effective model = the engine that will produce the descriptions (cache keys are
+# engine-separated, step 11.6).
+fig_cfg = cfg.figures
+effective_model = fig_cfg.llamacpp_model if fig_cfg.engine == "llamacpp" else fig_cfg.model
+
 todo: list[tuple[int, int, str, str | None, bytes]] = []  # (fig_id, doc_id, raw_path, caption, png)
 already = missing = 0
 for r in conn.execute("SELECT id, doc_id, raw_path, caption, description FROM figures ORDER BY doc_id, position"):
@@ -39,7 +44,7 @@ for r in conn.execute("SELECT id, doc_id, raw_path, caption, description FROM fi
     except OSError:
         missing += 1
         continue
-    cached = cache.get(png)  # v2-keyed (current model + PROMPT_VERSION)
+    cached = cache.get(png, effective_model)  # keyed: engine model + PROMPT_VERSION
     if cached is not None and (cached or None) == (r["description"] or None):
         already += 1
         continue
@@ -51,12 +56,26 @@ if not todo:
 
 t_start = time.time()
 done = kept_v1 = 0
-try:
-    with ingest_lock():
+
+
+def _engine_client():
+    """One llama-server for the WHOLE run when engine='llamacpp' (no interleaved text
+    passes here, unlike per-doc ingest); None = the Ollama path."""
+    if fig_cfg.engine != "llamacpp":
         llm.unload_all()  # start the VLM on a clean card (and exercise the settle guard)
+        from contextlib import nullcontext
+
+        return nullcontext(None)
+    from locus.ingest.llamacpp import LlamaServer
+
+    return LlamaServer(fig_cfg)
+
+
+try:
+    with ingest_lock(), _engine_client() as vlm_client:
         for i, (fig_id, doc_id, raw_path, caption, png) in enumerate(todo, 1):
             t0 = time.time()
-            desc = describe_figure(png, caption)
+            desc = describe_figure(png, caption, client=vlm_client)
             if i == 1:  # guard-4 validation evidence: is the VLM split?
                 try:
                     from ollama import Client
@@ -69,7 +88,7 @@ try:
             if desc is None:
                 kept_v1 += 1  # QC failed twice: keep the stored v1 description
                 continue
-            cache.stage(png, desc)
+            cache.stage(png, desc, effective_model)
             text = index_text(caption, desc)
             vec = embed.embed_text(text) if text else None
             with conn:

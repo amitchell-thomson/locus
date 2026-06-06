@@ -409,10 +409,46 @@ done **before** the bulk ingest. Each item ≈ one work-block.
   slide renders, optional at runtime. Deferred: PPT-drawn box-and-arrow diagrams
   (autoshape census misfires on card-layout decks; box text still extracted via the text
   layer), per-figure regions on slides (whole-slide render is the unit).
+- [x] **11.5 Remediation pass 4 (2026-06-06 external figure audit)** — a desktop-Claude audit
+  of the step-11 figure layer (uniquely able to judge VLM descriptions against the attached
+  images) found 7 issues; verification against the DB showed its HIGH finding far larger than
+  sampled: **the GOT math-OCR pass had OOM'd on 255 pages across 14 docs during the step-11
+  re-ingest** — the new figures VLM was the last GPU user of every figure-bearing doc, and
+  `ocr_pages` evicted only the ingest model. One bug class, four manifestations, each now
+  guarded: (1) evict ALL resident models before GOT (`llm.unload_all`); (2) eviction is
+  CONFIRMED, not issued — Ollama delists a model before its runner frees VRAM, so a consumer
+  loading in that window OOMs/splits (settle-poll in `unload_all`); (3) qwen2.5vl at
+  num_ctx=8192 does NOT fit the 8 GB card — Ollama plans a KEPT 74/26 CPU/GPU split (the
+  "GPU idle, llama-server burning 6 cores" signature; figure phases ran ~3x slow through the
+  whole step-11 batch) — descriptions need ~no context, so `num_ctx=4096` (verified 100%
+  GPU, model 5.7→4.4 GB); (4) the same teardown race at the text→VLM handoff (`llm.unload`
+  settle-polls too; landed after the recovery run — validates on the next VLM-heavy run,
+  e.g. the fig-v2 backfill). Plus: per-page OOM retry after a 15 s teardown wait; engine
+  errors store one truncated line (no tracebacks/PIDs in gap_flags); audit gains an
+  **OCR-fallback page counter** + heavy-fallback warning (the regression was invisible to
+  every headline gate — and the math suite, skipped at the step-11 re-gate as "extraction
+  unchanged", would have caught it: run it whenever VRAM choreography changes); math eval
+  fixed to sample PDFs only (crashed on repo manifests). Other audit findings: fig-v2 prompt
+  (diagram topology + blur honesty; structural hallucinations gone on the audit's repro,
+  residual terminology slips remain — §11.B class, bounded by tier 3); image-attachment
+  floor (min_rerank_score gates IMAGES only; text/citations stay flag-never-filter); cap
+  notes on MCP + query ("N figures cited; K attached") so citations never dangle. Recovery:
+  targeted re-ingest selected by OOM gap signature (97→98 pages, two passes — the first
+  re-lost 31 pages to manifestation (2) before it was understood), final state **zero OOM
+  gaps corpus-wide**, 19 fallbacks all QC-reasoned, categories intact, 389 figures intact.
+  Re-gate: math fidelity 0.876 (n=20; baseline 0.922 — verified sample-composition + the
+  known picture-embedded-formula ceiling, NOT recovery damage: the weak pages were
+  successfully-OCR'd hard pages, and the one QC-fallback page in the sample scored 0.85).
+  Residuals: fig-v1 descriptions on ~223 figures (cheap backfill before the pour — also the
+  validation run for guard 4); LibreOffice font substitution overlaps slide renders (host
+  fonts); diagram terminology slips (§11.B). **Operational lesson: a split model produces
+  identical outputs SLOWLY — no gate catches it; watch for GPU-idle + multi-core
+  llama-server during ingest.**
 - [ ] **12. Entity-alias resolution + Retrieval eval (Layer 3) → BULK INGEST** — canonicalise
   entity names cross-document (the *link* substrate); validate on a heterogeneous sample
   including quant-finance papers + ≥1 code repo (the second domain the synthesis modes need);
-  then pour the corpus.
+  then pour the corpus. **Before the pour: run the fig-v1→v2 description backfill** (~223
+  figures, regenerable from stored PNGs — no re-ingest; doubles as the guard-4 validation).
 
 **After the pour (not `[RB]`):** ANN-index warning (§11.D), Obsidian projection (§14),
 YouTube / podcast transcript ingest, broader retrieval tests.

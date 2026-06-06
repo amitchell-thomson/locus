@@ -9,6 +9,7 @@ pipeline catches to quarantine the single document without aborting the batch.
 
 from __future__ import annotations
 
+import time
 from functools import lru_cache
 from typing import TypeVar
 
@@ -50,45 +51,95 @@ def ingest_model() -> str:
     return load().ollama.ingest_model
 
 
-def unload(model: str | None = None) -> bool:
+def unload(model: str | None = None, settle_seconds: float = 15.0) -> bool:
     """Best-effort evict `model` (default: the ingest model) from Ollama if it is resident.
 
-    Used to choreograph the 8 GB card between Ollama and the math-OCR engine: evict before
-    the OCR engine takes the GPU (else its allocation OOMs against a resident 6 GB LLM and
-    every page silently falls back un-OCR'd), and evict a CPU/GPU-split residue afterwards
-    (see unload_if_split). Returns True if an unload was issued. Never raises — this is
-    VRAM choreography, not a correctness requirement.
+    Used to choreograph the 8 GB card between Ollama and the math-OCR engine / figures
+    VLM: evict before the next consumer takes the GPU (else its allocation OOMs or — for
+    an Ollama-to-Ollama handoff — the incoming model is PLANNED with a kept CPU/GPU split
+    against the outgoing model's teardown). Eviction is CONFIRMED, not just issued: the
+    keep_alive=0 request returns before the runner's VRAM is actually freed, and a model
+    loaded inside that window splits (observed live 2026-06-06, third recurrence of the
+    same race — text-model teardown vs figures-VLM load). Polls ps() until the model is
+    gone or `settle_seconds`, then a short grace for the runner process to exit. Returns
+    True if an unload was issued. Never raises — VRAM choreography, not correctness.
     """
     try:
         client = _client()
         model = model or ingest_model()
-        if any(m.model == model for m in client.ps().models or []):
-            # keep_alive=0 with an empty prompt unloads without generating.
-            client.generate(model=model, prompt="", keep_alive=0)
-            return True
+        if not any(m.model == model for m in client.ps().models or []):
+            return False
+        # keep_alive=0 with an empty prompt unloads without generating.
+        client.generate(model=model, prompt="", keep_alive=0)
+        deadline = time.monotonic() + settle_seconds
+        while time.monotonic() < deadline:
+            if not any(m.model == model for m in client.ps().models or []):
+                break
+            time.sleep(1.0)
+        time.sleep(2.0)  # grace for the runner process to actually release VRAM
+        return True
     except Exception:  # pragma: no cover - best-effort; ingest must not care
         pass
     return False
+
+
+def unload_all(settle_seconds: float = 30.0) -> int:
+    """Best-effort evict EVERY resident Ollama model; returns how many were unloaded.
+
+    The OCR engine needs the whole card, and which model is resident depends on the
+    previous document's last pass — after step 11 that is usually the figures VLM, not
+    the ingest model, so a named unload misses it (2026-06-06 external audit: the GOT
+    pass OOM'd on every doc that followed a figure-bearing one — 255 pages across 14
+    docs fell back un-OCR'd). Enumerating ps() is robust to whatever model ran last.
+
+    Eviction is then CONFIRMED, not just issued: Ollama removes the model from ps()
+    before the runner's VRAM teardown finishes, and a consumer that allocates
+    immediately races it (recovery batch, same day: 31 pages re-OOM'd mid-document
+    against a lingering 4.4 GiB runner). Polls ps() until empty or `settle_seconds`.
+    """
+    count = 0
+    try:
+        client = _client()
+        for m in client.ps().models or []:
+            try:
+                client.generate(model=m.model, prompt="", keep_alive=0)
+                count += 1
+            except Exception:  # pragma: no cover - keep evicting the rest
+                pass
+        if count:
+            deadline = time.monotonic() + settle_seconds
+            while time.monotonic() < deadline:
+                if not (client.ps().models or []):
+                    break
+                time.sleep(1.0)
+            time.sleep(2.0)  # grace for the runner process to actually exit
+    except Exception:  # pragma: no cover - best-effort; ingest must not care
+        pass
+    return count
 
 
 def unload_if_split(model: str | None = None) -> bool:
-    """Unload `model` only if it is resident but split CPU/GPU.
+    """Unload any resident model that is split CPU/GPU (or just `model` when given).
 
     Ollama plans a model's CPU/GPU split at load time and KEEPS it for as long as the model
-    stays resident — a model loaded while the math-OCR engine held VRAM stays half-on-CPU
-    even after that VRAM is freed, and generation runs several-fold slower (observed live).
-    Called between a document's OCR phase and its LLM passes (no request in flight), so the
-    next pass reloads it fully on the GPU. Returns True if an unload was issued.
+    stays resident — a model loaded while the math-OCR engine held VRAM (or while another
+    model was still being evicted) stays half-on-CPU even after that VRAM is freed, and
+    generation runs several-fold slower (observed live twice: the ingest model after GOT,
+    and the figures VLM after the text-model handoff — 2026-06-06, 74/26 split through a
+    50-figure batch). Checks ALL resident models by default so no phase's model escapes
+    the check. Returns True if any unload was issued.
     """
+    issued = False
     try:
         client = _client()
-        model = model or ingest_model()
         for m in client.ps().models or []:
-            if m.model == model and (m.size_vram or 0) < (m.size or 0):
-                return unload(model)
+            if model is not None and m.model != model:
+                continue
+            if (m.size_vram or 0) < (m.size or 0):
+                issued = unload(m.model) or issued
     except Exception:  # pragma: no cover - best-effort; ingest must not care
         pass
-    return False
+    return issued
 
 
 def vision_chat(

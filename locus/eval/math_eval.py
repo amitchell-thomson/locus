@@ -76,7 +76,11 @@ def evaluate_math_fidelity(
     client = anthropic.Anthropic(api_key=Config.anthropic_api_key())
     model = judge_model or load().generation.model
 
-    docs = conn.execute("SELECT id, title, raw_path FROM documents ORDER BY id").fetchall()
+    # PDFs only: the math-OCR pass exists for the PDF path, and non-PDF raw entries
+    # (code-repo manifests, pptx) are not openable as page images.
+    docs = conn.execute(
+        "SELECT id, title, raw_path FROM documents WHERE source_type='pdf' ORDER BY id"
+    ).fetchall()
     pool: list[tuple[int, str, int]] = []  # (doc_id, title, page_1based)
     for d in docs:
         pool.extend((d["id"], d["title"], p + 1) for p in _flagged_pages(conn, d["id"]))

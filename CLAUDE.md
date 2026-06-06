@@ -821,9 +821,32 @@ math-stripped text). Details per step in `PLAN.md`.
     deterministic; the VLM's source is the image, not section text) — hallucination cost
     is bounded by QC + caption-as-context + tier 3, where Claude sees the actual image
     (§15.0 recoverable class). pillow promoted to core deps.
+11.5. **Remediation pass 4 (2026-06-06 external figure audit)** — **done** (same day). A
+    desktop-Claude audit of the figure layer (it can judge VLM descriptions against the
+    attached images) found 7 issues; DB verification showed the HIGH one far larger than
+    sampled: **GOT math-OCR had OOM'd on 255 pages / 14 docs during the step-11 re-ingest**
+    (the figures VLM was each doc's last GPU user; `ocr_pages` evicted only the ingest
+    model). One bug class, four manifestations, each guarded: evict ALL models before GOT
+    (`unload_all`); evictions CONFIRMED by settle-poll (Ollama delists before VRAM frees —
+    loading in that window OOMs/splits); qwen2.5vl needs `num_ctx=4096` to fit 8 GB at all
+    (at 8192 it runs a KEPT 74/26 split — figure phases were ~3x slow all of step 11);
+    same settle at the text→VLM handoff. Plus per-page OOM retry, truncated engine-error
+    gap lines (no tracebacks in gap_flags), an audit **OCR-fallback page counter** +
+    warning (the regression was invisible to every headline gate; the math suite — skipped
+    at the step-11 re-gate — would have caught it: run it whenever VRAM choreography
+    changes), fig-v2 prompt (diagram structural hallucinations fixed on the audit repro;
+    terminology slips remain — §11.B, bounded by tier 3), image-attachment rerank floor
+    (images only; text stays flag-never-filter), and cited-vs-attached cap notes. Recovery:
+    OOM-signature-selected re-ingests → **zero OOM gaps corpus-wide**, 19 fallbacks all
+    QC-reasoned; math fidelity 0.876 n=20 (vs 0.922 baseline — verified sample composition
+    + the picture-formula ceiling, not recovery damage). Residual for step 12's pour prep:
+    fig-v1→v2 backfill (~223 figures, no re-ingest). **Lesson: a split model produces
+    identical output slowly — no quality gate sees it; watch GPU-idle + multi-core
+    llama-server.**
 12. **Entity-alias resolution + Retrieval eval (Layer 3) → BULK INGEST.** Canonicalise entity
     names cross-document (the *link* substrate); run the heterogeneous-corpus retrieval eval on
-    a sample including quant-finance papers + ≥1 code repo; then pour the corpus.
+    a sample including quant-finance papers + ≥1 code repo; then pour the corpus. Before the
+    pour: the fig-v1→v2 description backfill (cheap; also validates the handoff-settle guard).
 
 **After the pour (not re-ingest-bound):** ANN-index warning (§11.D), Obsidian projection (§14),
 YouTube/podcast transcript ingest, broader retrieval tests.

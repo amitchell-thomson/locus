@@ -85,6 +85,11 @@ class RetrievalResult:
     citation_details: list[Citation] = field(default_factory=list)
     survivors: list[Candidate] = field(default_factory=list)
     figures: list[RetrievedFigure] = field(default_factory=list)
+    # How many figure units are cited in the context/sources. When > len(figures), the
+    # image cap (or the image-attachment floor) truncated — consumers say so explicitly
+    # rather than leaving "[figure on p.N]" citations dangling without an image
+    # (2026-06-06 audit finding).
+    figures_cited: int = 0
     # True when min_rerank_score is configured and even the best survivor falls below it —
     # a signal for the consumer, never a filter of the best material.
     low_confidence: bool = False
@@ -189,13 +194,23 @@ def retrieve(
         assembled = assemble(expanded)
         # Figure survivors' image hand-off (tier 3): best-scored first, capped — the
         # consumer attaches the actual PNGs to its (multimodal) generation call.
+        # The min_rerank_score floor applies to IMAGE attachment only (2026-06-06 audit:
+        # a -0.36 marketing screenshot rode along as a full image block): flag-never-filter
+        # still governs the figure's TEXT and citation, but image tokens are not spent on
+        # candidates the cross-encoder already judged irrelevant.
         fig_expanded = [e for e in expanded if e.figure_path]
+        figures_cited = len(fig_expanded)
         fig_expanded.sort(
             key=lambda e: e.candidate.rerank_score
             if e.candidate.rerank_score is not None
             else float("-inf"),
             reverse=True,
         )
+        if floor is not None:
+            fig_expanded = [
+                e for e in fig_expanded
+                if e.candidate.rerank_score is None or e.candidate.rerank_score >= floor
+            ]
         figures = [
             RetrievedFigure(
                 raw_path=e.figure_path, page=e.figure_page, kind=e.figure_kind,
@@ -207,7 +222,7 @@ def retrieve(
         return RetrievalResult(
             query=query, context=assembled.text,
             citations=assembled.citations, citation_details=assembled.citation_details,
-            survivors=survivors, figures=figures,
+            survivors=survivors, figures=figures, figures_cited=figures_cited,
             low_confidence=band is not None, confidence_band=band,
         )
     finally:

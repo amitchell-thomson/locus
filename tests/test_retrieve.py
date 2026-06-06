@@ -497,3 +497,53 @@ def test_unnamed_section_redundancy_rule_unchanged():
     ]
     out = select(ranked, top_k=2, per_doc_cap=3)
     assert [(c.id, c.kind) for c in out] == [(2, "chunk"), (3, "chunk")]
+
+
+def test_figure_images_floored_and_cited_count_kept(monkeypatch, tmp_path):
+    """Image attachment respects the rerank floor (text/citations never filtered), and
+    figures_cited records the pre-cap count so consumers can announce truncation
+    (2026-06-06 audit findings 3+4)."""
+    import types
+
+    from locus.retrieve import pipeline as pl
+
+    rcfg = types.SimpleNamespace(rerank_top_k=8, per_doc_cap=3, min_rerank_score=0.22)
+    monkeypatch.setattr(
+        pl, "load",
+        lambda: types.SimpleNamespace(retrieve=rcfg, figures=types.SimpleNamespace(image_cap=2)),
+    )
+
+    def fake_search(conn, q, facets=None):
+        return []
+
+    def fake_rerank(q, cands, top_k, per_doc_cap, min_score=None, prefer_code=False):
+        return []
+
+    def fake_expand(conn, survivors):
+        from locus.retrieve.expand import Expanded
+        from locus.retrieve.search import Candidate
+
+        def fig(id_, score):
+            c = Candidate("figure", id_, 1, 1, f"fig {id_}", 0.0)
+            c.rerank_score = score
+            return Expanded(
+                candidate=c, doc_id=1, doc_title="D", thesis=None, method=None,
+                result=None, limitations=None, section_id=1, section_title=None,
+                section_summary=None, page_start=id_, page_end=id_,
+                figure_path=f"f{id_}.png", figure_caption=None,
+                figure_kind="raster", figure_page=id_,
+            )
+
+        # 4 figure survivors: scores 5.0, 3.0, 1.0, and -0.4 (below the 0.22 floor)
+        return [fig(1, 5.0), fig(2, 3.0), fig(3, 1.0), fig(4, -0.4)]
+
+    monkeypatch.setattr(pl, "search", fake_search)
+    monkeypatch.setattr(pl, "rerank", fake_rerank)
+    monkeypatch.setattr(pl, "expand", fake_expand)
+    monkeypatch.setattr(pl, "assemble", lambda exp: types.SimpleNamespace(
+        text="CTX", citations=[], citation_details=[], included=0, dropped=0))
+
+    r = pl.retrieve("q", conn=object())
+    assert r.figures_cited == 4
+    assert [f.page for f in r.figures] == [1, 2]  # floor killed -0.4, cap kept top 2
+    assert all(f.rerank_score >= 0.22 for f in r.figures)

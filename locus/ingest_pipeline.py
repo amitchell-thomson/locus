@@ -370,9 +370,13 @@ class _FigureCache:
 
 def _prepare(path: Path, source_type: str, figure_cache: _FigureCache | None = None) -> _Prepared:
     doc = _extract(path, source_type)
-    # If the OCR engine's VRAM forced Ollama to load the ingest model split across CPU/GPU,
-    # evict it now (no request in flight) so the passes below run it fully on the GPU.
-    # Safe no-op when no OCR ran (non-PDF formats, clean PDFs).
+    # VRAM choreography before the text passes (the mirror of the text->VLM handoff in
+    # _prepare_doc): evict the PREVIOUS document's figures VLM if it is still resident —
+    # otherwise the ~6.4 GB text model loads while Ollama evicts the ~6 GB VLM under
+    # pressure and the planner allocates a kept CPU/GPU split. Then clear any model that
+    # is already split (e.g. residue of the OCR engine's VRAM window). Both are safe
+    # no-ops when nothing is resident.
+    llm.unload(load().figures.model)
     llm.unload_if_split()
     return _prepare_doc(doc, source_type, figure_cache=figure_cache)
 
@@ -496,6 +500,11 @@ def _prepare_doc(
     # were seen before; embedding runs as one batch afterwards.
     prepared_figs: list[_PreparedFigure] = []
     if doc.figures and profile.figures and load().figures.enabled:
+        # Explicit handoff: evict the text model BEFORE the VLM loads. Loading the ~6 GB
+        # VLM while Ollama is still evicting the ~6.4 GB text model under pressure makes
+        # the planner allocate a CPU/GPU split — which Ollama then KEEPS for the whole
+        # figure batch (observed live 2026-06-06: 74/26 split, several-fold slower).
+        llm.unload()
         descriptions: list[str | None] = []
         for fig in doc.figures:
             cached = figure_cache.get(fig.image_bytes) if figure_cache else None

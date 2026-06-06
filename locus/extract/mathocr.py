@@ -175,6 +175,35 @@ def release_gpu() -> None:
 # --- the pass ------------------------------------------------------------------------------
 
 
+def _with_oom_retry(engine, page, page_no: int, *, wait_seconds: float = 15.0):
+    """Run the engine on a page, retrying once after a CUDA OOM.
+
+    A transient OOM usually means another GPU consumer's teardown had not finished
+    (observed live 2026-06-06: an evicted Ollama runner's VRAM lingered seconds past its
+    removal from ps(), and pages 13-19 of several docs fell back while pages 1-12 and
+    20+ OCR'd fine). Waiting out the teardown and clearing the torch cache converts
+    those page losses into a one-retry blip. A second OOM is real pressure — propagate
+    so the caller's per-page fallback handles it.
+    """
+    try:
+        return engine(page)
+    except Exception as exc:
+        if "out of memory" not in str(exc).lower():
+            raise
+        log.info("math-OCR OOM on page %d; waiting %.0fs for VRAM teardown and retrying",
+                 page_no, wait_seconds)
+        import time as _time
+
+        _time.sleep(wait_seconds)
+        try:
+            import torch
+
+            torch.cuda.empty_cache()
+        except Exception:  # pragma: no cover - torch optional for the qwen engine
+            pass
+        return engine(page)
+
+
 class OcrOutcome:
     """Audit trail for one document's OCR pass."""
 
@@ -194,21 +223,28 @@ def ocr_pages(doc, page_texts: list[str], flagged: list[int]) -> tuple[list[str]
     if cfg.engine == "off" or not flagged:
         return page_texts, outcome
     if cfg.engine == "got":
-        # Evict the (6 GB) Ollama ingest model BEFORE GOT takes the card: against a resident
-        # LLM, GOT's allocation OOMs and every page silently falls back un-OCR'd. The LLM
-        # passes reload it after release_gpu() below frees the card again.
-        from locus.ingest.llm import unload as _unload_llm
+        # Evict EVERY resident Ollama model BEFORE GOT takes the card: against a resident
+        # LLM, GOT's allocation OOMs and every page silently falls back un-OCR'd. Must be
+        # all-models, not just the ingest model — after step 11 the previous document's
+        # last GPU user is usually the figures VLM (2026-06-06 audit: the named unload
+        # missed it and 255 pages across 14 docs fell back). The LLM passes reload their
+        # model after release_gpu() below frees the card again.
+        from locus.ingest.llm import unload_all as _unload_all
 
-        _unload_llm()
+        _unload_all()
     engine = _ENGINES[cfg.engine]
     out = list(page_texts)
     try:
         for i in flagged:
             try:
-                ocr_text = engine(doc[i])
+                ocr_text = _with_oom_retry(engine, doc[i], i + 1)
             except Exception as exc:  # engine/server error: keep original, keep going
                 log.warning("math-OCR failed on page %d: %s", i + 1, exc)
-                outcome.fallbacks.append((i + 1, f"engine-error: {exc}"))
+                # First line only: the full exception (a CUDA OOM traceback with PIDs,
+                # memory stats, doc links) otherwise lands verbatim in the user-facing
+                # gap_flags field (2026-06-06 external audit).
+                reason = str(exc).splitlines()[0][:160] if str(exc) else type(exc).__name__
+                outcome.fallbacks.append((i + 1, f"engine-error: {reason}"))
                 continue
             ocr_text = _strip_fences(ocr_text)
             reason = qc_reject_reason(ocr_text, page_texts[i])

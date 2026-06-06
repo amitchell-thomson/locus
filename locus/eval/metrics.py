@@ -80,6 +80,10 @@ class DocMetrics:
     figures_caption_only: int = 0
     figures_unsearchable: int = 0
     suspect_figure_descriptions: int = 0
+    # Pages whose math-OCR fell back to the raw text layer (gap audit lines). Counted so a
+    # mass OCR failure is LOUD: the 2026-06-06 external audit found 255 OOM'd pages across
+    # 14 docs that the audit-line classification had kept out of every headline number.
+    ocr_fallback_pages: int = 0
 
     @property
     def non_self_contained_pct(self) -> float:
@@ -325,6 +329,10 @@ def doc_metrics(conn, doc_id: int) -> DocMetrics:
         figures_caption_only=figures_caption_only,
         figures_unsearchable=figures_unsearchable,
         suspect_figure_descriptions=suspect_fig_descs,
+        ocr_fallback_pages=sum(
+            1 for g in json.loads(doc["gap_flags"] or "[]")
+            if g.startswith("math-OCR kept original text on ")
+        ),
     )
 
 
@@ -359,7 +367,8 @@ def format_metrics(docs: list[DocMetrics]) -> str:
             f"empty synthesis {'YES' if d.empty_synthesis else 'no'} | "
             f"corrupted fields {d.corrupted_fields} | "
             f"unattested numbers {d.unattested_numbers} | "
-            f"semantic gaps {d.semantic_gaps}"
+            f"semantic gaps {d.semantic_gaps} | "
+            f"OCR-fallback pages {d.ocr_fallback_pages}"
         )
         top_types = ", ".join(f"{t}:{n}" for t, n in list(d.entity_type_counts.items())[:6])
         lines.append(f"    entity types: {top_types}")
@@ -386,6 +395,14 @@ def format_metrics(docs: list[DocMetrics]) -> str:
             lines.append(
                 "    WARNING: zero semantic gaps corpus-wide — the gap-flagging pass "
                 "looks inert (2026-06-05 evaluation failure mode)."
+            )
+        ocr_fb = sum(d.ocr_fallback_pages for d in docs)
+        ocr_docs = sum(1 for d in docs if d.ocr_fallback_pages > 0)
+        lines.append(f"    OCR fallbacks: {ocr_fb} page(s) across {ocr_docs} doc(s)")
+        if ocr_fb > 20:
+            lines.append(
+                "    WARNING: heavy OCR fallback — the math-OCR engine is likely failing "
+                "systematically (2026-06-06 audit failure mode: VRAM not evicted before GOT)."
             )
     return "\n".join(lines)
 

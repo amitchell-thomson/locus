@@ -25,14 +25,19 @@ from locus.ingest import llm
 log = logging.getLogger(__name__)
 
 # Cache-key component: bump when the prompt changes so cached descriptions regenerate.
-PROMPT_VERSION = "fig-v1"
+PROMPT_VERSION = "fig-v2"  # v2 (2026-06-06 audit): diagram topology + blur honesty rules
 
 _PROMPT = (
     "Describe this figure faithfully and concretely in 1-4 sentences, so it can be found "
     "by a text search.\n"
     "- Name the axes, labels, and components you can actually read in the image.\n"
-    "- For a block or signal-flow diagram: name the blocks and how they connect.\n"
+    "- For a block or signal-flow diagram: name ONLY the blocks, arrows, and paths that "
+    "are actually drawn. Do not add elements (delays, panels, comparisons) the drawing "
+    "does not contain, and do not describe layouts (e.g. 'left panel / right panel') "
+    "unless the image really has them.\n"
     "- For a plot or chart: state what is plotted against what, and the visible trend.\n"
+    "- If a region is blurred or unreadable, say it is unreadable — never guess its "
+    "contents.\n"
     "- Do NOT speculate about meaning the figure does not show, and do NOT invent numbers "
     "or labels that are not visible.\n"
     "- Output ONLY the description — no preamble, no markdown."
@@ -97,6 +102,12 @@ def describe_figure(
                 model=model,
                 client=client,
                 temperature=0.0 if attempt == 0 else 0.3,
+                # One image + a short prompt + <=512 out needs nowhere near 8k context —
+                # and at num_ctx=8192 qwen2.5vl does NOT fit the 8 GB card (Ollama plans a
+                # kept 74/26 CPU/GPU split and the whole figure batch runs several-fold
+                # slow; observed live 2026-06-06, capacity-driven — re-split on a clean
+                # card). 4096 shrinks the KV/vision buffers so the model fits fully.
+                num_ctx=4096,
                 num_predict=512,  # 1-4 sentences; a cap stops degeneration loops early
             )
         except llm.IngestExtractionError as exc:

@@ -119,6 +119,19 @@ def _user_content(retrieved, question: str) -> tuple[list[dict] | str, int]:
             }
         )
         attached += 1
+    cited = getattr(retrieved, "figures_cited", 0)
+    if attached and cited > attached:
+        # Tell the model the truncation exists so it never claims to "see" an
+        # unattached-but-cited figure (2026-06-06 audit: dangling figure citations).
+        blocks.append(
+            {
+                "type": "text",
+                "text": (
+                    f"(Note: {cited} figures are cited in the context; only the "
+                    f"{attached} most relevant are attached as images.)"
+                ),
+            }
+        )
     return (blocks, attached) if attached else (text, 0)
 
 

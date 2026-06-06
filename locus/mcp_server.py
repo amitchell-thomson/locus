@@ -242,6 +242,7 @@ def _figure_images(result) -> list:
     from locus.retrieve.figure_images import load_figure_png
 
     out: list = []
+    attached = 0
     for fig in figures:  # already best-first and capped at [figures].image_cap
         png = load_figure_png(fig.raw_path)
         if png is None:
@@ -249,6 +250,14 @@ def _figure_images(result) -> list:
         unit = "slide " if fig.kind == "slide" else "figure on p."
         out.append(f"[{unit}{fig.page} of \"{fig.doc_title}\"]")
         out.append(Image(data=png, format="png"))
+        attached += 1
+    cited = getattr(result, "figures_cited", 0)
+    if attached and cited > attached:
+        # Say the truncation out loud: a "[figure on p.N]" citation without an attached
+        # image otherwise reads as drift (2026-06-06 audit finding).
+        out.append(
+            f"({cited} figures cited above; the {attached} most relevant attached as images)"
+        )
     return out
 
 

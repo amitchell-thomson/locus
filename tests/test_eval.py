@@ -324,3 +324,15 @@ def test_unattested_numbers_handles_k_suffix_lists_and_years():
     assert unattested_numbers("Anchored since November 2025.", "stuck at 3.7% since nov-25") == []
     # Real thousands-grouping still normalizes.
     assert unattested_numbers("Sample of 24,000 rows.", "a sample of 24000 rows") == []
+
+
+def test_score_query_any_of_alternatives():
+    """A '|'-separated expected entry matches on ANY alternative (one doc slot)."""
+    from locus.eval.retrieval_eval import LabelledQuery, score_query
+
+    q = LabelledQuery("q", ["Control Theory", "Regime Shift|Neural Markov"])
+    r = score_query(q, ["Inspectable Neural Markov Models", "Control Theory Notes"])
+    assert r.recall == 1.0
+    assert r.first_rank == 1  # the alternative matched at rank 1
+    r2 = score_query(q, ["Control Theory Notes"])  # neither alternative present
+    assert r2.recall == 0.5

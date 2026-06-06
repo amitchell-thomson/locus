@@ -21,6 +21,7 @@ chunk_tokens  = 512
 proposition_top_k    = 10         # highest-signal claims, searched as first-class units
 fine_top_k           = 20         # L3 chunks
 section_top_k        = 5          # L2 section summaries
+figure_top_k         = 8          # figure caption+description vectors (step 11)
 rerank_top_k         = 8          # survivors after cross-encoder rerank
 per_doc_cap          = 3          # max units per document among survivors (diversity; relaxed if underfull)
 context_token_budget = 100000     # cap on assembled context to the Claude API call
@@ -40,6 +41,27 @@ context_token_budget = 100000     # cap on assembled context to the Claude API c
 engine        = "got"             # "got" (transformers, mathocr extra) | "qwen" (Ollama VLM) | "off"
 model         = "qwen2.5vl:7b"    # Ollama model used by the "qwen" engine
 
+[figures]
+# Figure extraction + VLM description (step 11, §15.1). Tier 1: detect raster images and
+# vector diagrams in PDFs (and visual-bearing slides), render to PNG in the raw store with
+# any paired caption. Tier 2: a local VLM describes each figure; caption+description is
+# embedded and searched as a first-class unit (figure_vectors). Tier 3: at generation, the
+# top figure survivors attach as actual images to the (multimodal) Claude call.
+# Thresholds lean STRICT — a missed figure is benign; a junk figure burns a VLM call and a
+# retrieval slot.
+enabled          = true
+model            = "qwen2.5vl:7b" # Ollama VLM (already pulled for the mathocr "qwen" engine)
+render_slides    = true           # full-slide render via LibreOffice (`soffice` must be on PATH;
+                                  # absent => slides skip figures with a warning, never quarantine)
+min_area_frac    = 0.03           # area band, as fraction of page area: below = icons/decoration
+max_area_frac    = 0.92           #   above = full-page background
+min_vector_paths = 8              # strokes needed for a vector cluster to count as a diagram
+max_text_density = 2.0            # max text-layer chars/1000pt² in a region (diagrams <=1.6
+                                  # corpus-measured; prose-with-drawings and tables >=2.2)
+caption_max_gap_pt = 60.0         # max vertical gap (pt) figure <-> caption block
+max_per_page     = 4              # junk guard
+image_cap        = 3              # max figure images attached per Claude call / MCP reply
+
 [generation]
 # RAG generation model (§1: answer quality is the priority). Use a 4.6+ model (adaptive
 # thinking). claude-sonnet-4-6 is a cheaper, very capable alternative for high query volume.
@@ -50,6 +72,7 @@ model         = "claude-opus-4-8"
 # tools are local-only (free). Keep false so the server never advertises a billable tool unless
 # you opt in (or pass `locus mcp --enable-query`).
 enable_query  = false
+include_figure_images = true      # attach retrieved figure images as MCP image content blocks
 
 [repos]
 # Tracked code repositories (step 10). `locus watch` checks each repo's git HEAD every

@@ -47,7 +47,10 @@ def _provenance(e: Expanded) -> str:
     parts = [f'"{e.doc_title}"' if e.doc_title else f"doc {e.doc_id}"]
     if e.section_title:
         parts.append(f"§{e.section_title}")
-    if e.file_path and e.line_start:
+    if e.figure_path:
+        unit = "slide" if e.figure_kind == "slide" else "figure on p."
+        parts.append(f"[{unit}{e.figure_page}]" if e.figure_page else "[figure]")
+    elif e.file_path and e.line_start:
         parts.append(f"{e.file_path}:{e.line_start}-{e.line_end}")
     elif e.video_timestamp is not None:
         parts.append(f"?t={e.video_timestamp}")
@@ -59,21 +62,26 @@ def _provenance(e: Expanded) -> str:
 def assemble(expanded: list[Expanded], budget: int | None = None) -> AssembledContext:
     budget = budget or load().retrieve.context_token_budget
 
-    # Group survivors by doc (in first-seen / rerank order), then by section.
+    # Group survivors by doc (in first-seen / rerank order), then by section. Figures with
+    # no section mapping group at the doc level so they still render and cite.
     docs: dict[int, dict] = {}
     for e in expanded:
         d = docs.setdefault(
             e.doc_id,
-            {"e": e, "sections": {}},
+            {"e": e, "sections": {}, "figures": []},
         )
         if e.section_id is not None:
             sec = d["sections"].setdefault(
-                e.section_id, {"e": e, "propositions": [], "chunks": []}
+                e.section_id, {"e": e, "propositions": [], "chunks": [], "figures": []}
             )
             if e.candidate.kind == "proposition":
                 sec["propositions"].append(e)
             elif e.candidate.kind == "chunk":
                 sec["chunks"].append(e)
+            elif e.candidate.kind == "figure":
+                sec["figures"].append(e)
+        elif e.candidate.kind == "figure":
+            d["figures"].append(e)
 
     lines: list[str] = []
     citations: list[str] = []
@@ -101,6 +109,13 @@ def assemble(expanded: list[Expanded], budget: int | None = None) -> AssembledCo
         tokens += t
         return True
 
+    def figure_block(fe: Expanded) -> str:
+        unit = "slide" if fe.figure_kind == "slide" else f"figure on p.{fe.figure_page}"
+        # candidate.text is caption+description (the indexed text); the actual image
+        # attaches at generation (query.py) / over MCP, not in the text context.
+        body = fe.candidate.text.replace("\n", "\n      ")
+        return f"    {unit}:\n      {body}\n"
+
     for n, (doc_id, d) in enumerate(docs.items(), start=1):
         e = d["e"]
         header = (
@@ -112,6 +127,14 @@ def assemble(expanded: list[Expanded], budget: int | None = None) -> AssembledCo
             break
         lines.append(header)
 
+        for fe in d["figures"]:  # figures with no section mapping: doc-level
+            if fits(figure_block(fe)):
+                lines.append(figure_block(fe))
+                included += 1
+                cite(fe)
+            else:
+                dropped += 1
+
         for sec in d["sections"].values():
             se = sec["e"]
             sec_head = f"  Section: \"{se.section_title}\" {_page_label(se)}\n"
@@ -119,6 +142,14 @@ def assemble(expanded: list[Expanded], budget: int | None = None) -> AssembledCo
                 sec_head += f"    summary: {se.section_summary}\n"
             if fits(sec_head):
                 lines.append(sec_head)
+
+            for fe in sec["figures"]:  # denser than chunks: filled before them
+                if fits(figure_block(fe)):
+                    lines.append(figure_block(fe))
+                    included += 1
+                    cite(fe)
+                else:
+                    dropped += 1
 
             if sec["propositions"]:
                 lines.append("    claims:\n")

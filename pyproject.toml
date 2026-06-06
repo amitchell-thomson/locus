@@ -14,6 +14,9 @@ dependencies = [
     "mcp>=1.27.2",
     "python-docx>=1.1",
     "python-pptx>=1.0",
+    # Image handling for the figures pipeline (step 11): downscale guard at generation/MCP.
+    # (python-pptx already pulls pillow transitively; declared direct because we import PIL.)
+    "pillow>=10.0",
 ]
 
 [project.optional-dependencies]
@@ -22,7 +25,7 @@ rerank = ["sentence-transformers>=3.0"]
 # Math-OCR pass (plan step 6): GOT-OCR2.0 via transformers — chosen by benchmark
 # (eval-artifacts/mathocr/report.md: 0 hallucinations / 0 engine failures, vs qwen-VL's
 # 0.97-with-an-invention and Nougat's 4/10 failures). torch itself comes via `rerank`.
-mathocr = ["transformers>=4.48", "torchvision", "pillow"]
+mathocr = ["transformers>=4.48", "torchvision"]
 
 [project.scripts]
 locus = "locus.cli:main"

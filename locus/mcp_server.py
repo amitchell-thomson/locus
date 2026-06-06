@@ -84,16 +84,19 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
         since: str | None = None,
         until: str | None = None,
         category: str | None = None,
-    ) -> str:
+    ):
         """Retrieve grounded context for a query from the knowledge vault.
 
         Runs hybrid retrieval (dense + lexical + entity -> cross-encoder rerank -> hierarchical
         expansion -> context assembly) and returns the assembled context plus citations, each
         annotated with its document category and rerank score (cross-encoder logit; higher is
-        more relevant). This is the core tool: ground your answer in the returned material and
-        cite its sources. Does not call any LLM itself — you generate the answer from this
-        context. Results may span multiple documents and domains; a bridge you draw between
-        co-retrieved sources is your inference, not a stored corpus link — present it as such.
+        more relevant). When a retrieved unit is a FIGURE (diagram/plot/slide), the actual
+        image follows the text as an image content block — interpret it directly; its caption
+        and description are in the text context under the same citation. This is the core
+        tool: ground your answer in the returned material and cite its sources. Does not call
+        any LLM itself — you generate the answer from this context. Results may span multiple
+        documents and domains; a bridge you draw between co-retrieved sources is your
+        inference, not a stored corpus link — present it as such.
 
         Args:
             query: The question or topic to retrieve material for.
@@ -105,7 +108,8 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
         result = run_retrieval(query, facets=facets)
         if not result.context:
             return "No relevant material was retrieved for that query (with the given facets)."
-        return f"{_confidence_banner(result)}{result.context}\n\n--- sources ---\n{_sources(result)}"
+        text = f"{_confidence_banner(result)}{result.context}\n\n--- sources ---\n{_sources(result)}"
+        return [text, *_figure_images(result)]
 
     # NOT decorated: registered below only when enable_query is set, so the billable tool is
     # absent from the advertised list by default.
@@ -221,6 +225,33 @@ def _confidence_banner(result) -> str:
     return f"{text}\n\n" if text else ""
 
 
+def _figure_images(result) -> list:
+    """Retrieved figures as MCP content: a text label + an Image block per figure.
+
+    The actual image rides along with the assembled text (tier 3, §15.1) so the client
+    model can interpret the figure directly. FastMCP flattens a mixed [str | Image] return
+    into TextContent/ImageContent blocks. Gated by [mcp].include_figure_images; a missing
+    or unreadable PNG silently degrades to text-only (the figure's caption+description are
+    already in the context).
+    """
+    figures = getattr(result, "figures", None)
+    if not figures or not load().mcp.include_figure_images:
+        return []
+    from mcp.server.fastmcp import Image  # lazy, like the FastMCP import in _build
+
+    from locus.retrieve.figure_images import load_figure_png
+
+    out: list = []
+    for fig in figures:  # already best-first and capped at [figures].image_cap
+        png = load_figure_png(fig.raw_path)
+        if png is None:
+            continue
+        unit = "slide " if fig.kind == "slide" else "figure on p."
+        out.append(f"[{unit}{fig.page} of \"{fig.doc_title}\"]")
+        out.append(Image(data=png, format="png"))
+    return out
+
+
 def _sources(result) -> str:
     """Format citations annotated with document category + best rerank score.
 
@@ -327,6 +358,17 @@ def _inspect(conn, ident: str, section: int | None) -> str:
         ).fetchall()
         out.append(f"  ENTITIES ({len(ents)}):")
         out.extend(f"    - {e['name']} ({e['type']})" for e in ents)
+        figs = conn.execute(
+            "SELECT page, kind, caption, description FROM figures "
+            "WHERE section_id=? ORDER BY position",
+            (s["id"],),
+        ).fetchall()
+        if figs:
+            out.append(f"  FIGURES ({len(figs)}):")
+            for f in figs:
+                label = f"p.{f['page']} {f['kind']}"
+                body = f["caption"] or f["description"] or "(no caption/description)"
+                out.append(f"    - [{label}] {body}")
 
     return "\n".join(out)
 

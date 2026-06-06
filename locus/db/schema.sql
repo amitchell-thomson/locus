@@ -5,7 +5,7 @@
 -- in db/migrations/versions/, applied via `alembic upgrade head` (or locus.db.migrate.migrate).
 -- When you add a migration, update this snapshot to match the resulting state.
 --
--- Current state == migrations applied through revision: 0006
+-- Current state == migrations applied through revision: 0007
 --   0001 initial schema
 --   0002 chunks_fts (FTS5 lexical index over chunk text + sync triggers) for hybrid retrieval
 --   0003 temporal + category metadata: documents.source_date (ISO 'YYYY-MM-DD') + category,
@@ -17,6 +17,10 @@
 --        commit-triggered repo re-ingests only re-run passes on changed files (step 10)
 --   0006 widened documents.source_type CHECK again, adding 'slides' for the step-9 .pptx
 --        extractor (same table-rebuild pattern as 0004)
+--   0007 figures(id, section_id NULLABLE, doc_id, position, page, kind raster|vector|slide,
+--        caption, description, raw_path, embed_model, UNIQUE(doc_id, position)) +
+--        figure_vectors vec0 — figures as a first-class retrieval unit (step 11, §15.1);
+--        image PNGs live in the flat raw store as '{content_hash}_fig{N}.png'
 --
 -- Version tracking is owned by Alembic's `alembic_version` table.
 --

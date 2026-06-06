@@ -37,6 +37,7 @@ from locus.extract import pptx as pptx_extract
 from locus.extract import textdoc
 from locus.extract.base import ExtractedDoc, ExtractedSection, PreChunk
 from locus.ingest import chunk, embed, entities, gaps, llm, propositions, summarize, synthesis
+from locus.ingest import figures as figures_pass
 
 log = logging.getLogger(__name__)
 
@@ -50,6 +51,7 @@ class IngestResult:
     chunks: int = 0
     propositions: int = 0
     entities: int = 0
+    figures: int = 0
     error: str | None = None
 
 
@@ -146,6 +148,43 @@ def _copy_to_raw(path: Path, content_hash: str) -> str:
     return name
 
 
+def _copy_figures_to_raw(content_hash: str, figures: list["_PreparedFigure"]) -> None:
+    """Write figure PNGs into the flat raw store as '{content_hash}_fig{N}.png', in place.
+
+    Called AFTER prepare succeeds and BEFORE _write opens its transaction (the bytes come
+    FROM extraction, so the source-file ordering of _copy_to_raw is impossible here).
+    Deterministic names keyed on the source hash make the write idempotent: re-ingesting
+    identical content rewrites the same files. Orphans from a *changed* source (new hash)
+    are removed by the caller using the replaced doc's stored figures.raw_path rows.
+    """
+    raw_store = load().paths.raw_store
+    raw_store.mkdir(parents=True, exist_ok=True)
+    for fig in figures:
+        name = f"{content_hash}_fig{fig.position}.png"
+        dest = raw_store / name
+        if not dest.exists():
+            dest.write_bytes(fig.image_bytes)
+        fig.raw_name = name
+
+
+def _figure_raw_paths(conn, doc_id: int) -> list[str]:
+    """The stored raw-store PNG names of a document's figures (for orphan cleanup)."""
+    return [
+        r["raw_path"] for r in conn.execute("SELECT raw_path FROM figures WHERE doc_id=?", (doc_id,))
+    ]
+
+
+def _unlink_figure_files(names: list[str], keep: set[str]) -> None:
+    """Best-effort removal of replaced figure PNGs from the raw store, after commit."""
+    raw_store = load().paths.raw_store
+    for name in names:
+        if name and name not in keep:
+            try:
+                (raw_store / name).unlink(missing_ok=True)
+            except OSError as exc:  # cleanup must never fail an ingest
+                log.warning("could not remove replaced figure file %s: %s", name, exc)
+
+
 # --- per-source-type pass profile ----------------------------------------------------------
 # Which LLM passes run for a source type (§2.6 keeps RETRIEVAL unified; ingest passes may
 # vary, like video's transcript pre-pass). Code skips propositions (claims-from-raw-code is
@@ -158,11 +197,16 @@ class _PassProfile:
     propositions: bool = True
     llm_entities: bool = True
     code_prompts: bool = False  # source-file summary + repository synthesis prompt variants
+    # Figure capture + VLM description (step 11): only formats with a visual layer the text
+    # extractor cannot represent. False elsewhere so audit knows 0 figures is BY DESIGN.
+    figures: bool = False
 
 
 _DEFAULT_PROFILE = _PassProfile()
 _PASS_PROFILE: dict[str, _PassProfile] = {
     "code": _PassProfile(propositions=False, llm_entities=False, code_prompts=True),
+    "pdf": _PassProfile(figures=True),
+    "slides": _PassProfile(figures=True),
 }
 
 
@@ -195,6 +239,19 @@ class _PreparedSection:
 
 
 @dataclass
+class _PreparedFigure:
+    position: int  # order within the document
+    section_position: int | None  # ExtractedSection.position of the enclosing section
+    page: int  # 1-based page / slide number
+    kind: str  # 'raster' | 'vector' | 'slide'
+    caption: str | None
+    description: str | None  # VLM output; None when the pass failed QC (caption-only figure)
+    index_vec: list[float] | None  # embedding of caption+description; None when both absent
+    image_bytes: bytes
+    raw_name: str | None = None  # set by _copy_figures_to_raw before _write
+
+
+@dataclass
 class _Prepared:
     title: str | None
     source_date: str | None  # ISO 'YYYY-MM-DD' from the source's metadata; None if absent
@@ -202,14 +259,16 @@ class _Prepared:
     gaps: list[str]
     sections: list[_PreparedSection]
     embed_model: str
+    figures: list[_PreparedFigure]
 
 
 def _extract(path: Path, source_type: str) -> pdf_extract.ExtractedDoc:
     """Dispatch to the per-format extractor. Everything downstream is format-agnostic (§2.6)."""
     if source_type == "pdf":
-        # mathocr=True: the pipeline (unlike ad-hoc extraction) runs the math-OCR pass on pages
-        # the damage/math detector flags, per config [mathocr] (engine='off' disables).
-        return pdf_extract.extract_pdf(path, mathocr=True)
+        # mathocr=True / figures=True: the pipeline (unlike ad-hoc extraction) runs the
+        # math-OCR pass on pages the damage/math detector flags (config [mathocr];
+        # engine='off' disables) and detects+renders figure regions (config [figures]).
+        return pdf_extract.extract_pdf(path, mathocr=True, figures=True)
     if source_type == "docx":
         return docx_extract.extract_docx(path)
     if source_type == "markdown":
@@ -219,7 +278,7 @@ def _extract(path: Path, source_type: str) -> pdf_extract.ExtractedDoc:
     if source_type == "notebook":
         return textdoc.extract_notebook(path)
     if source_type == "slides":
-        return pptx_extract.extract_pptx(path)
+        return pptx_extract.extract_pptx(path, figures=True)
     raise ValueError(f"no extractor for source_type {source_type!r}")
 
 
@@ -267,17 +326,62 @@ class _SummaryCache:
             self._puts = []
 
 
-def _prepare(path: Path, source_type: str) -> _Prepared:
+class _FigureCache:
+    """Content-keyed cache over the figure-description pass (pass_cache table, 0005).
+
+    Keyed by sha256(image_bytes) : figure : model : PROMPT_VERSION — image-content keyed,
+    so re-ingesting an unchanged document re-runs ZERO VLM calls, and a model or prompt
+    change invalidates naturally. A QC-failed description is cached as "" (tried, failed
+    deterministically at temperature 0 + one retry; a prompt bump is the retry lever).
+    Same read/stage/flush contract as _SummaryCache.
+    """
+
+    def __init__(self, conn):
+        self._conn = conn
+        self._puts: list[tuple[str, str]] = []
+
+    @staticmethod
+    def _key(image_bytes: bytes) -> str:
+        raw = (
+            f"{hashlib.sha256(image_bytes).hexdigest()}:figure:"
+            f"{load().figures.model}:{figures_pass.PROMPT_VERSION}"
+        )
+        return hashlib.sha256(raw.encode()).hexdigest()
+
+    def get(self, image_bytes: bytes) -> str | None:
+        """Cached description ("" = cached failure), or None when never attempted."""
+        row = self._conn.execute(
+            "SELECT payload FROM pass_cache WHERE key=?", (self._key(image_bytes),)
+        ).fetchone()
+        return row["payload"] if row else None
+
+    def stage(self, image_bytes: bytes, description: str) -> None:
+        self._puts.append((self._key(image_bytes), description))
+
+    def flush(self) -> None:
+        """Persist staged entries (own transaction; call after the doc write commits)."""
+        if self._puts:
+            with self._conn:
+                self._conn.executemany(
+                    "INSERT OR REPLACE INTO pass_cache (key, payload) VALUES (?,?)", self._puts
+                )
+            self._puts = []
+
+
+def _prepare(path: Path, source_type: str, figure_cache: _FigureCache | None = None) -> _Prepared:
     doc = _extract(path, source_type)
     # If the OCR engine's VRAM forced Ollama to load the ingest model split across CPU/GPU,
     # evict it now (no request in flight) so the passes below run it fully on the GPU.
     # Safe no-op when no OCR ran (non-PDF formats, clean PDFs).
     llm.unload_if_split()
-    return _prepare_doc(doc, source_type)
+    return _prepare_doc(doc, source_type, figure_cache=figure_cache)
 
 
 def _prepare_doc(
-    doc: ExtractedDoc, source_type: str, summary_cache: _SummaryCache | None = None
+    doc: ExtractedDoc,
+    source_type: str,
+    summary_cache: _SummaryCache | None = None,
+    figure_cache: _FigureCache | None = None,
 ) -> _Prepared:
     profile = _PASS_PROFILE.get(source_type, _DEFAULT_PROFILE)
     prepared: list[_PreparedSection] = []
@@ -385,6 +489,47 @@ def _prepare_doc(
     # there, and that must be queryable, not just logged.
     gap_list += [f"math-OCR kept original text on {f}" for f in doc.ocr_fallbacks]
     gap_list += pass_gaps  # sections whose optional passes degraded to empty
+
+    # Figure-description pass, batched AFTER all text passes: Ollama swaps the text model
+    # for the VLM once per document instead of thrashing per section (the 8 GB VRAM
+    # choreography). Descriptions come from the content-keyed cache when the image bytes
+    # were seen before; embedding runs as one batch afterwards.
+    prepared_figs: list[_PreparedFigure] = []
+    if doc.figures and profile.figures and load().figures.enabled:
+        descriptions: list[str | None] = []
+        for fig in doc.figures:
+            cached = figure_cache.get(fig.image_bytes) if figure_cache else None
+            if cached is None:
+                desc = figures_pass.describe_figure(fig.image_bytes, fig.caption)
+                if figure_cache is not None:
+                    figure_cache.stage(fig.image_bytes, desc or "")
+            else:
+                desc = cached or None  # "" = cached QC failure
+            descriptions.append(desc)
+        index_texts = [
+            figures_pass.index_text(f.caption, d) for f, d in zip(doc.figures, descriptions)
+        ]
+        vecs = embed.embed_texts([t for t in index_texts if t])
+        vec_iter = iter(vecs)
+        for i, (fig, desc, text) in enumerate(zip(doc.figures, descriptions, index_texts)):
+            prepared_figs.append(
+                _PreparedFigure(
+                    position=i,
+                    section_position=fig.section_position,
+                    page=fig.page,
+                    kind=fig.kind,
+                    caption=fig.caption,
+                    description=desc,
+                    index_vec=next(vec_iter) if text else None,
+                    image_bytes=fig.image_bytes,
+                )
+            )
+        failed = sum(1 for d in descriptions if d is None)
+        if failed:
+            gap_list.append(f"figure description failed QC for {failed}/{len(doc.figures)} figures")
+        log.info("figures: %d described, %d caption-only", len(doc.figures) - failed, failed)
+    # Degraded figure capture (e.g. slides without LibreOffice) is an extraction gap (§15.0).
+    gap_list += [f"figure capture degraded: {f}" for f in doc.figure_fallbacks]
     if doc.ocr_replaced:
         log.info("math-OCR replaced %d page(s); %d fallback(s)",
                  len(doc.ocr_replaced), len(doc.ocr_fallbacks))
@@ -395,7 +540,9 @@ def _prepare_doc(
     if pdf_extract.title_is_suspect(title) and (syn.title or "").strip():
         title = syn.title.strip()
         log.info("title corrected: %r -> %r", doc.title, title)
-    return _Prepared(title, doc.source_date, syn, gap_list, prepared, embed.embedding_model())
+    return _Prepared(
+        title, doc.source_date, syn, gap_list, prepared, embed.embedding_model(), prepared_figs
+    )
 
 
 # --- transactional write -----------------------------------------------------------------
@@ -420,6 +567,7 @@ def _write(
     source_date = prep.source_date or _mtime_date(path)
     category = category or _category(path)
     n_chunks = n_props = n_ents = 0
+    pos_to_section_id: dict[int, int] = {}  # ExtractedSection.position -> sections.id (figures)
 
     with conn:  # one transaction: commit on success, rollback on any error
         if replace_doc_id is not None:
@@ -445,6 +593,7 @@ def _write(
                  json.dumps(s.call_graph) if s.call_graph else None),
             )
             section_id = cur.lastrowid
+            pos_to_section_id[s.position] = section_id
             conn.execute(
                 "INSERT INTO section_vectors (section_id, embedding) VALUES (?,?)",
                 (section_id, _vec_blob(s.summary_vec)),
@@ -485,9 +634,28 @@ def _write(
                 )
                 n_ents += max(0, cur.rowcount)
 
+        for f in prep.figures:
+            if f.raw_name is None:  # programming error: _copy_figures_to_raw must precede
+                raise RuntimeError(f"figure {f.position} has no raw_name; copy step skipped")
+            cur = conn.execute(
+                "INSERT INTO figures (section_id, doc_id, position, page, kind, caption, "
+                "description, raw_path, embed_model) VALUES (?,?,?,?,?,?,?,?,?)",
+                (
+                    pos_to_section_id.get(f.section_position), doc_id, f.position, f.page,
+                    f.kind, f.caption, f.description, f.raw_name, prep.embed_model,
+                ),
+            )
+            # A caption-less, description-failed figure has nothing to search on: stored
+            # for tier-1 preservation (and the audit), but given no vector.
+            if f.index_vec is not None:
+                conn.execute(
+                    "INSERT INTO figure_vectors (figure_id, embedding) VALUES (?,?)",
+                    (cur.lastrowid, _vec_blob(f.index_vec)),
+                )
+
     return IngestResult(
         str(path), "ingested", doc_id=doc_id, sections=len(prep.sections),
-        chunks=n_chunks, propositions=n_props, entities=n_ents,
+        chunks=n_chunks, propositions=n_props, entities=n_ents, figures=len(prep.figures),
     )
 
 
@@ -504,16 +672,20 @@ def _delete_document_rows(conn, doc_id: int) -> None:
     sids = [r["id"] for r in conn.execute("SELECT id FROM sections WHERE doc_id=?", (doc_id,))]
     cids = [r["id"] for r in conn.execute("SELECT id FROM chunks WHERE doc_id=?", (doc_id,))]
     pids = [r["id"] for r in conn.execute("SELECT id FROM propositions WHERE doc_id=?", (doc_id,))]
+    fids = [r["id"] for r in conn.execute("SELECT id FROM figures WHERE doc_id=?", (doc_id,))]
     conn.executemany("DELETE FROM section_vectors WHERE section_id=?", [(i,) for i in sids])
     conn.executemany("DELETE FROM chunk_vectors WHERE chunk_id=?", [(i,) for i in cids])
     conn.executemany("DELETE FROM proposition_vectors WHERE proposition_id=?", [(i,) for i in pids])
+    conn.executemany("DELETE FROM figure_vectors WHERE figure_id=?", [(i,) for i in fids])
     conn.execute("DELETE FROM documents WHERE id=?", (doc_id,))
 
 
 def delete_document(conn, doc_id: int) -> None:
-    """Delete a document and all of its rows (own transaction)."""
+    """Delete a document and all of its rows (own transaction), plus its figure PNGs."""
+    figure_files = _figure_raw_paths(conn, doc_id)
     with conn:
         _delete_document_rows(conn, doc_id)
+    _unlink_figure_files(figure_files, keep=set())  # after commit; best-effort
 
 
 def ingest_file(path: str | Path, conn, *, reingest: bool = False) -> IngestResult:
@@ -533,17 +705,40 @@ def ingest_file(path: str | Path, conn, *, reingest: bool = False) -> IngestResu
     try:
         content_hash = _hash_file(path)
         existing = conn.execute(
-            "SELECT id FROM documents WHERE content_hash=?", (content_hash,)
+            "SELECT id, source_uri, category FROM documents WHERE content_hash=?", (content_hash,)
         ).fetchone()
         if existing and not reingest:
             return IngestResult(str(path), "skipped", doc_id=existing["id"])
 
+        # Re-ingest metadata continuity: a replacement's bytes usually come from the raw
+        # store, whose path carries neither the drop-folder category nor the original
+        # source location — deriving them from the new path silently wipes the facets
+        # (observed live: a raw-store re-ingest turned a 'paper' into 'uncategorized'
+        # with a raw-store source_uri). Inherit from the replaced doc unless the new path
+        # supplies real values: a deliberate re-drop into a category folder still wins,
+        # and a non-raw-store path is a genuine new source location.
+        category = source_uri = None
+        if existing:
+            derived = _category(path)
+            category = derived if derived != "uncategorized" else existing["category"]
+            in_raw_store = path.resolve().parent == load().paths.raw_store
+            source_uri = existing["source_uri"] if in_raw_store else None
+
         raw_name = _copy_to_raw(path, content_hash)
-        prep = _prepare(path, source_type)  # all expensive work BEFORE any delete
-        return _write(
+        cache = _FigureCache(conn)
+        prep = _prepare(path, source_type, figure_cache=cache)  # expensive work BEFORE any delete
+        _copy_figures_to_raw(content_hash, prep.figures)
+        old_figure_files = _figure_raw_paths(conn, existing["id"]) if existing else []
+        result = _write(
             conn, path, content_hash, source_type, raw_name, prep,
+            category=category, source_uri=source_uri,
             replace_doc_id=existing["id"] if existing else None,
         )
+        cache.flush()  # only after the document committed
+        # Replaced doc's figure PNGs: remove any not re-written under the new hash. (Same
+        # content hash => same names => nothing to remove; changed file => orphans go.)
+        _unlink_figure_files(old_figure_files, keep={f.raw_name for f in prep.figures})
+        return result
     except Exception as exc:  # quarantine this doc, keep the batch alive (§6)
         log.warning("Quarantined %s: %s", path, exc)
         return IngestResult(str(path), "quarantined", error=str(exc))

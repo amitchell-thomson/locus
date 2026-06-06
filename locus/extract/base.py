@@ -45,6 +45,11 @@ _MATH_DENSE_CHARS = 30  # chars set in math fonts on a page
 _MATHUNI_CHARS = 20  # math-unicode chars in the text layer on a page
 _SMALL_IMAGE_MIN = 3  # small raster images (formula-sized) on a page
 
+# Size box (pt) below which a raster image reads as a rendered formula, not a figure.
+# Shared by the math detector (pdf._page_flags counts images INSIDE the box) and figure
+# detection (figures_detect keeps only images OUTSIDE it) — one definition, no gap/overlap.
+SMALL_IMAGE_MAX_W, SMALL_IMAGE_MAX_H = 400.0, 60.0
+
 
 class PageFlags(BaseModel):
     """Per-page extraction-damage and math-evidence signals (1-based page number)."""
@@ -95,6 +100,25 @@ class PreChunk(BaseModel):
     video_timestamp: int | None = None  # seconds, for ?t= deep links
 
 
+class ExtractedFigure(BaseModel):
+    """A detected figure region, rendered to PNG (step 11 tier 1 — preserve).
+
+    Carried in-memory through the prepare phase; the PNG bytes are written to the flat raw
+    store (as '{content_hash}_fig{N}.png') only after prepare succeeds, and are NEVER
+    JSON-serialized (the pass cache stores the VLM *description*, keyed by image hash).
+    `section_position` ties the figure to its enclosing section (by the section's
+    `position`); None when the page could not be mapped — the figure is still kept,
+    with doc-level provenance.
+    """
+
+    page: int  # 1-based page (PDF) or slide number (slides)
+    bbox: tuple[float, float, float, float] | None = None  # PDF points; None = full-slide render
+    image_bytes: bytes
+    caption: str | None = None  # paired "Figure N: ..." block, when one was found
+    kind: str  # 'raster' | 'vector' | 'slide'
+    section_position: int | None = None
+
+
 class PreEntity(BaseModel):
     """An extractor-supplied entity (deterministic, e.g. from a code AST — no LLM).
 
@@ -131,6 +155,8 @@ class ExtractedDoc(BaseModel):
     page_flags: list[PageFlags] = []  # per-page damage/math signals (pdf OCR routing)
     ocr_replaced: list[int] = []  # 1-based pages whose text the math-OCR pass replaced
     ocr_fallbacks: list[str] = []  # "page: reason" entries where QC kept the original text
+    figures: list[ExtractedFigure] = []  # detected figure regions (pdf/slides; step 11)
+    figure_fallbacks: list[str] = []  # reasons figure capture degraded (e.g. soffice missing)
 
 
 def window_by_chars(

@@ -91,6 +91,39 @@ def unload_if_split(model: str | None = None) -> bool:
     return False
 
 
+def vision_chat(
+    prompt: str,
+    image_bytes: bytes,
+    *,
+    model: str,
+    client: Client | None = None,
+    temperature: float = 0.0,
+    num_ctx: int = 8192,
+    num_predict: int = -1,  # uncapped by default: page OCR legitimately runs long
+) -> str:
+    """One Ollama chat call with an attached image; returns the raw text reply.
+
+    Shared by the math-OCR 'qwen' engine (extract/mathocr.py) and the figure-description
+    pass (ingest/figures.py). Raises IngestExtractionError on network/server/model errors —
+    callers decide whether that quarantines, falls back, or skips (per-unit graceful
+    degradation, §6).
+    """
+    client = client or _client()
+    try:
+        resp = client.chat(
+            model=model,
+            messages=[{"role": "user", "content": prompt, "images": [image_bytes]}],
+            options={
+                "temperature": temperature,
+                "num_ctx": num_ctx,
+                "num_predict": num_predict,
+            },
+        )
+    except Exception as exc:
+        raise IngestExtractionError(f"Ollama vision chat failed (model={model}): {exc}") from exc
+    return _message_content(resp)
+
+
 def _message_content(resp) -> str:
     msg = getattr(resp, "message", None)
     if msg is not None:

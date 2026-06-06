@@ -64,12 +64,27 @@ def split_facets(query: str) -> list[str]:
 
 
 @dataclass
+class RetrievedFigure:
+    """A figure survivor's image hand-off: what generation surfaces (query.py, MCP) need
+    to attach the actual image (tier 3, §15.1). At most [figures].image_cap per retrieval,
+    best rerank scores first."""
+
+    raw_path: str  # PNG name in the flat raw store
+    page: int | None  # 1-based page / slide number
+    kind: str | None  # 'raster' | 'vector' | 'slide'
+    caption: str | None
+    doc_title: str | None
+    rerank_score: float | None
+
+
+@dataclass
 class RetrievalResult:
     query: str
     context: str
     citations: list[str] = field(default_factory=list)
     citation_details: list[Citation] = field(default_factory=list)
     survivors: list[Candidate] = field(default_factory=list)
+    figures: list[RetrievedFigure] = field(default_factory=list)
     # True when min_rerank_score is configured and even the best survivor falls below it —
     # a signal for the consumer, never a filter of the best material.
     low_confidence: bool = False
@@ -170,11 +185,30 @@ def retrieve(
                     if c.rerank_score is None or c.rerank_score >= deep
                     or facet_best.get(id(c), float("-inf")) >= facet_floor
                 ]
-        assembled = assemble(expand(conn, survivors))
+        expanded = expand(conn, survivors)
+        assembled = assemble(expanded)
+        # Figure survivors' image hand-off (tier 3): best-scored first, capped — the
+        # consumer attaches the actual PNGs to its (multimodal) generation call.
+        fig_expanded = [e for e in expanded if e.figure_path]
+        fig_expanded.sort(
+            key=lambda e: e.candidate.rerank_score
+            if e.candidate.rerank_score is not None
+            else float("-inf"),
+            reverse=True,
+        )
+        figures = [
+            RetrievedFigure(
+                raw_path=e.figure_path, page=e.figure_page, kind=e.figure_kind,
+                caption=e.figure_caption, doc_title=e.doc_title,
+                rerank_score=e.candidate.rerank_score,
+            )
+            for e in fig_expanded[: load().figures.image_cap]
+        ]
         return RetrievalResult(
             query=query, context=assembled.text,
             citations=assembled.citations, citation_details=assembled.citation_details,
-            survivors=survivors, low_confidence=band is not None, confidence_band=band,
+            survivors=survivors, figures=figures,
+            low_confidence=band is not None, confidence_band=band,
         )
     finally:
         if own:

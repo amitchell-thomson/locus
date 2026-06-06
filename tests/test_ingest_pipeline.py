@@ -312,3 +312,156 @@ def test_reingest_rebuilds_without_orphan_vectors(tmp_path, conn, fake_passes):
     assert _count(conn, "chunk_vectors") == _count(conn, "chunks") == first_chunks
     assert _count(conn, "proposition_vectors") == _count(conn, "propositions")
     assert _count(conn, "section_vectors") == _count(conn, "sections")
+
+
+# --- figures through the pipeline (step 11) -------------------------------------------------
+
+
+def _make_figure_pdf(path: Path, *, caption: str = "Figure 3: Closed-loop control system.") -> Path:
+    """A PDF with body text, one vector diagram, and a caption."""
+    doc = pymupdf.open()
+    page = doc.new_page()
+    y = 72.0
+    lines = [("Section A", 20.0)]
+    lines += [(f"Section A body sentence {i} with several descriptive words.", 11.0) for i in range(12)]
+    for text, size in lines:
+        page.insert_text((72, y), text, fontsize=size)
+        y += size + 6
+    rect = pymupdf.Rect(100, 420, 450, 660)
+    for i in range(12):
+        yy = 420 + i * 20
+        page.draw_line((100, yy), (450, yy - 10))
+    page.draw_rect(rect)
+    page.insert_text((100, 690), caption, fontsize=10)
+    doc.save(str(path))
+    doc.close()
+    return path
+
+
+@pytest.fixture()
+def fig_env(tmp_path, fake_passes, monkeypatch):
+    """Isolate the raw store and fake the VLM; returns the call log."""
+    from locus.config import load as cfg_load
+    from locus.ingest import figures as figures_mod
+
+    monkeypatch.setattr(cfg_load().paths, "raw_store", tmp_path / "raw")
+    calls: list[str] = []
+
+    def fake_describe(image_bytes, caption=None, **kw):
+        calls.append(caption or "")
+        return "A closed-loop block diagram with controller and plant connected by feedback."
+
+    monkeypatch.setattr(figures_mod, "describe_figure", fake_describe)
+    return calls
+
+
+def test_figures_written_with_vector_and_raw_png(tmp_path, conn, fig_env):
+    from locus.config import load as cfg_load
+
+    result = ingest_file(_make_figure_pdf(tmp_path / "doc.pdf"), conn)
+    assert result.status == "ingested"
+    assert result.figures == 1
+    row = conn.execute("SELECT * FROM figures").fetchone()
+    assert row["kind"] == "vector"
+    assert row["caption"].startswith("Figure 3")
+    assert row["description"].startswith("A closed-loop block diagram")
+    assert row["section_id"] is not None
+    assert _count(conn, "figure_vectors") == 1
+    png = cfg_load().paths.raw_store / row["raw_path"]
+    assert png.exists() and png.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+    import json
+
+    flags = json.loads(conn.execute("SELECT gap_flags FROM documents").fetchone()["gap_flags"])
+    assert not any("figure description failed" in f for f in flags)
+
+
+def test_reingest_hits_description_cache(tmp_path, conn, fig_env):
+    pdf = _make_figure_pdf(tmp_path / "doc.pdf")
+    ingest_file(pdf, conn)
+    assert len(fig_env) == 1  # one VLM call on first ingest
+    result = ingest_file(pdf, conn, reingest=True)
+    assert result.status == "ingested" and result.figures == 1
+    assert len(fig_env) == 1  # cache hit: NO second VLM call
+    assert _count(conn, "figures") == 1 and _count(conn, "figure_vectors") == 1
+
+
+def test_reingest_removes_orphaned_figure_pngs(tmp_path, conn, fig_env, monkeypatch):
+    from locus.config import load as cfg_load
+    from locus.extract import figures_detect
+
+    pdf = _make_figure_pdf(tmp_path / "doc.pdf")
+    ingest_file(pdf, conn)
+    raw = cfg_load().paths.raw_store
+    first = conn.execute("SELECT raw_path FROM figures").fetchone()["raw_path"]
+    assert (raw / first).exists()
+
+    # Detection rules changed (e.g. stricter filters): same content now yields no figures.
+    monkeypatch.setattr(figures_detect, "detect_figures", lambda *a, **k: [])
+    result = ingest_file(pdf, conn, reingest=True)
+    assert result.status == "ingested" and result.figures == 0
+    assert _count(conn, "figures") == 0 and _count(conn, "figure_vectors") == 0
+    assert not (raw / first).exists()  # orphan removed after commit
+
+
+def test_delete_document_removes_figure_pngs(tmp_path, conn, fig_env):
+    from locus.config import load as cfg_load
+
+    result = ingest_file(_make_figure_pdf(tmp_path / "doc.pdf"), conn)
+    raw_path = conn.execute("SELECT raw_path FROM figures").fetchone()["raw_path"]
+    png = cfg_load().paths.raw_store / raw_path
+    assert png.exists()
+    delete_document(conn, result.doc_id)
+    assert _count(conn, "figures") == 0 and _count(conn, "figure_vectors") == 0
+    assert not png.exists()
+
+
+def test_failed_description_stores_caption_only(tmp_path, conn, fig_env, monkeypatch):
+    from locus.ingest import figures as figures_mod
+
+    monkeypatch.setattr(figures_mod, "describe_figure", lambda *a, **k: None)
+    result = ingest_file(_make_figure_pdf(tmp_path / "doc.pdf"), conn)
+    assert result.status == "ingested" and result.figures == 1
+    row = conn.execute("SELECT caption, description FROM figures").fetchone()
+    assert row["description"] is None and row["caption"].startswith("Figure 3")
+    assert _count(conn, "figure_vectors") == 1  # caption alone is still searchable
+    import json
+
+    flags = json.loads(conn.execute("SELECT gap_flags FROM documents").fetchone()["gap_flags"])
+    assert any("figure description failed" in f for f in flags)
+
+
+def test_reingest_inherits_category_and_source_uri_from_raw_store(tmp_path, conn, fake_passes, monkeypatch):
+    """A raw-store re-ingest must not wipe the facets: category and source_uri inherit
+    from the replaced doc (observed live: a 'paper' became 'uncategorized')."""
+    from locus.config import load as cfg_load
+
+    raw_store = tmp_path / "raw"
+    raw_store.mkdir()
+    monkeypatch.setattr(cfg_load().paths, "raw_store", raw_store)
+
+    pdf = _make_pdf(tmp_path / "doc.pdf")
+    first = ingest_file(pdf, conn)
+    conn.execute(
+        "UPDATE documents SET category='paper', source_uri='vault/incoming/papers/orig.pdf' "
+        "WHERE id=?", (first.doc_id,),
+    )
+    conn.commit()
+
+    # Re-ingest the identical bytes from inside the raw store (the ONE-re-ingest path).
+    import shutil as _sh
+
+    raw_copy = raw_store / "deadbeef.pdf"
+    _sh.copy2(pdf, raw_copy)
+    result = ingest_file(raw_copy, conn, reingest=True)
+    assert result.status == "ingested"
+    row = conn.execute("SELECT category, source_uri FROM documents").fetchone()
+    assert row["category"] == "paper"  # inherited, not 'uncategorized'
+    assert row["source_uri"] == "vault/incoming/papers/orig.pdf"  # original location kept
+
+    # A re-drop from a NON-raw-store path is a genuine new source: uri updates, category
+    # still inherits when the new path derives none.
+    result2 = ingest_file(pdf, conn, reingest=True)
+    row2 = conn.execute("SELECT category, source_uri FROM documents").fetchone()
+    assert result2.status == "ingested"
+    assert row2["category"] == "paper"
+    assert row2["source_uri"] == str(pdf)

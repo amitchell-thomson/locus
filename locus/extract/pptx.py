@@ -17,7 +17,13 @@ LIMITATIONS (documented, not bugs):
   ordering (§15.0) — same tradeoff docx.py takes for tables.
 - Hidden slides are included (python-pptx has no first-class hidden flag); authored
   content stays retrievable.
-- Slide images / charts / SmartArt contribute no text; figures are block-11 work.
+- Slide images / charts / SmartArt contribute no text. With `figures=True` (the pipeline's
+  setting), visual-bearing slides are instead captured WHOLE: the deck is converted to PDF
+  via LibreOffice (`soffice --headless`) and each qualifying slide page is rendered to PNG
+  as an ExtractedFigure(kind="slide") — the step-11 fix for chart-blind decks. Requires
+  `soffice` on PATH; absent (or conversion failure / page-count mismatch from hidden
+  slides) the deck degrades gracefully: text extraction proceeds, no figures, the reason
+  recorded in `figure_fallbacks` (-> gap_flags). Never quarantines (§6).
 
 Section text includes its own heading line (the title placeholder falls out of the
 shape walk), mirroring pdf.py / docx.py / textdoc.py.
@@ -25,18 +31,25 @@ shape walk), mirroring pdf.py / docx.py / textdoc.py.
 
 from __future__ import annotations
 
+import logging
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 from pptx import Presentation
-from pptx.enum.shapes import PP_PLACEHOLDER
+from pptx.enum.shapes import MSO_SHAPE_TYPE, PP_PLACEHOLDER
 
 from locus.extract.base import (
     MIN_SECTION_CHARS,
     ExtractedDoc,
+    ExtractedFigure,
     ExtractedSection,
     has_math,
     window_by_chars,
 )
+
+log = logging.getLogger(__name__)
 
 _NOTES_MARKER = "Notes:"
 
@@ -54,8 +67,13 @@ _CHROME_PLACEHOLDERS = {
 _SlideSpan = tuple[str | None, str, int]
 
 
-def extract_pptx(path: str | Path) -> ExtractedDoc:
-    """Extract a structured ExtractedDoc from the .pptx file at `path`."""
+def extract_pptx(path: str | Path, *, figures: bool = False) -> ExtractedDoc:
+    """Extract a structured ExtractedDoc from the .pptx file at `path`.
+
+    `figures=True` (the pipeline's setting) renders visual-bearing slides to PNG via
+    LibreOffice and attaches them as `doc.figures` (see module docstring). Default False so
+    ad-hoc extraction never shells out to soffice.
+    """
     path = Path(path)
     try:
         prs = Presentation(str(path))
@@ -75,6 +93,18 @@ def extract_pptx(path: str | Path) -> ExtractedDoc:
     else:
         strategy = "single"
 
+    figure_list: list[ExtractedFigure] = []
+    figure_fallbacks: list[str] = []
+    if figures:
+        from locus.config import load  # lazy, mirrors pdf.py
+
+        fig_cfg = load().figures
+        if fig_cfg.enabled and fig_cfg.render_slides:
+            figure_list, figure_fallbacks = _slide_figures(path, prs)
+            from locus.extract.figures_detect import assign_sections
+
+            assign_sections(figure_list, sections)
+
     return ExtractedDoc(
         title=_resolve_title(prs, spans, path),
         page_count=slide_count,  # a slide IS a page; sections carry real slide ranges
@@ -82,6 +112,8 @@ def extract_pptx(path: str | Path) -> ExtractedDoc:
         sections=sections,
         source_path=str(path),
         source_date=_resolve_source_date(prs),
+        figures=figure_list,
+        figure_fallbacks=figure_fallbacks,
     )
 
 
@@ -209,6 +241,143 @@ def _build_slide_sections(spans: list[_SlideSpan]) -> list[ExtractedSection]:
         )
         for i, (title, text, start, end) in enumerate(windowed)
     ]
+
+
+# --- slide figures (step 11): full-slide render of visual-bearing slides ------------------
+
+# Shape types that ARE visual content on their own, at any size.
+_ALWAYS_VISUAL = {
+    MSO_SHAPE_TYPE.CHART,
+    MSO_SHAPE_TYPE.DIAGRAM,  # SmartArt
+    MSO_SHAPE_TYPE.MEDIA,
+}
+# Pictures are visual only when sizeable: every slide of a templated deck carries a small
+# logo PICTURE (measured 0.26% of slide area on the first real deck), while content
+# pictures/screenshots run far larger (56%). The [figures] min_area_frac threshold (3%)
+# separates them cleanly. AUTO_SHAPE/FREEFORM counts are deliberately NOT a signal:
+# consulting-style decks build text layouts from large autoshape cards (measured 13-29%
+# of slide area each), indistinguishable from drawn diagrams by shape census — a
+# PowerPoint-drawn box-and-arrow diagram is therefore a documented miss (its box text is
+# still extracted; only the arrows are lost), the err-strict side of the tradeoff.
+_PICTURE_TYPES = {MSO_SHAPE_TYPE.PICTURE, MSO_SHAPE_TYPE.LINKED_PICTURE}
+_SOFFICE_TIMEOUT = 180.0  # seconds; whole-deck PDF conversion
+_RENDER_ZOOM = 2.0  # matches figures_detect: enough detail for the VLM
+
+
+def _slide_has_visual(slide, slide_area: int, min_area_frac: float) -> bool:
+    """True when a slide carries visual content the text layer cannot represent."""
+
+    def walk(shapes) -> bool:
+        for shape in shapes:
+            try:
+                stype = shape.shape_type
+            except Exception:  # python-pptx raises on some exotic shape XML
+                continue
+            if stype in _ALWAYS_VISUAL or getattr(shape, "has_chart", False):
+                return True
+            if stype in _PICTURE_TYPES and slide_area > 0:
+                area = (shape.width or 0) * (shape.height or 0)
+                if area / slide_area >= min_area_frac:
+                    return True
+            if stype == MSO_SHAPE_TYPE.GROUP and walk(shape.shapes):
+                return True
+        return False
+
+    return walk(slide.shapes)
+
+
+def _slide_figures(path: Path, prs) -> tuple[list[ExtractedFigure], list[str]]:
+    """Render each visual-bearing slide to a PNG ExtractedFigure(kind='slide').
+
+    Whole-deck conversion via `soffice --headless --convert-to pdf`, then per-page render
+    with pymupdf. The slide->page mapping is trusted only when the rendered page count
+    equals the slide count (hidden slides can be dropped from the export, silently
+    shifting every page); on mismatch — or soffice missing/failing — the deck degrades
+    to no figures with the reason returned for the audit trail. Never raises.
+    """
+    from locus.config import load
+
+    min_area_frac = load().figures.min_area_frac
+    slide_area = prs.slide_width * prs.slide_height
+    visual = [
+        no
+        for no, slide in enumerate(prs.slides, start=1)
+        if _slide_has_visual(slide, slide_area, min_area_frac)
+    ]
+    if not visual:
+        return [], []
+    if shutil.which("soffice") is None:
+        log.warning("slide figures unavailable for %s: soffice (LibreOffice) not on PATH", path)
+        return [], ["slide figures unavailable: soffice (LibreOffice) not on PATH"]
+
+    import pymupdf  # local import keeps the soffice-less path import-free
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="locus-slides-") as td:
+            proc = subprocess.run(
+                ["soffice", "--headless", "--convert-to", "pdf", "--outdir", td, str(path)],
+                capture_output=True,
+                timeout=_SOFFICE_TIMEOUT,
+            )
+            rendered = Path(td) / f"{path.stem}.pdf"
+            if proc.returncode != 0 or not rendered.exists():
+                reason = (proc.stderr or proc.stdout or b"").decode(errors="replace").strip()
+                log.warning("soffice conversion failed for %s: %s", path, reason[:200])
+                return [], ["slide figures unavailable: soffice conversion failed"]
+            doc = pymupdf.open(rendered)
+            try:
+                if doc.page_count != len(prs.slides):
+                    log.warning(
+                        "slide figures skipped for %s: rendered %d pages != %d slides "
+                        "(hidden slides?)", path, doc.page_count, len(prs.slides),
+                    )
+                    return [], [
+                        f"slide figures unavailable: rendered {doc.page_count} pages "
+                        f"!= {len(prs.slides)} slides"
+                    ]
+                figures: list[ExtractedFigure] = []
+                for slide_no in visual:
+                    png = doc[slide_no - 1].get_pixmap(
+                        matrix=pymupdf.Matrix(_RENDER_ZOOM, _RENDER_ZOOM)
+                    ).tobytes("png")
+                    figures.append(
+                        ExtractedFigure(
+                            page=slide_no,
+                            image_bytes=png,
+                            caption=_slide_caption(prs.slides[slide_no - 1], slide_no),
+                            kind="slide",
+                        )
+                    )
+                return figures, []
+            finally:
+                doc.close()
+    except subprocess.TimeoutExpired:
+        log.warning("soffice conversion timed out for %s", path)
+        return [], ["slide figures unavailable: soffice conversion timed out"]
+    except Exception as exc:  # degradation, never quarantine (§6)
+        log.warning("slide figure render failed for %s: %s", path, exc)
+        return [], [f"slide figures unavailable: {exc}"]
+
+
+_CAPTION_MAX_CHARS = 160  # a caption is the slide's heading line, not its body
+
+
+def _slide_caption(slide, slide_no: int) -> str | None:
+    """The slide's visible heading, for use as the rendered figure's caption.
+
+    Title placeholder when present; otherwise the first non-empty body line — decks
+    exported without placeholder structure (the first real deck: Google-Slides export,
+    zero title placeholders) put the visible heading in a plain text box, which leads
+    the body text. Deterministic; None when the slide has no text at all.
+    """
+    title = _slide_title(slide)
+    if title:
+        return title
+    for line in _slide_body(slide, slide_no).splitlines():
+        line = line.strip()
+        if line:
+            return line[:_CAPTION_MAX_CHARS]
+    return None
 
 
 def _resolve_title(prs, spans: list[_SlideSpan], path: Path) -> str | None:

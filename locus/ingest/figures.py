@@ -1,0 +1,123 @@
+"""Figure-description pass: a local VLM makes figures findable (step 11, tier 2 — §15.1).
+
+For each detected figure (extract/figures_detect.py, extract/pptx.py), one Ollama vision
+call describes the image; `caption + description` is then embedded into figure_vectors and
+searched as a first-class retrieval unit. The description only has to make the figure
+FINDABLE — precise interpretation happens at generation, where the actual image goes to
+(multimodal) Claude (tier 3). That asymmetry sets the quality bar: faithful and concrete
+beats exhaustive.
+
+Hygiene mirrors propositions.py: a faithfulness-first prompt, deterministic QC predicates
+on the output (no inference), one bounded retry, then graceful degradation — a figure whose
+description fails QC twice is stored caption-only (tier 1, preserve, still holds) and the
+audit counts it. `rejection_reason` is re-applied by `locus audit` to stored rows.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+
+from locus.config import load
+from locus.extract.mathocr import _has_repetition_loop
+from locus.ingest import llm
+
+log = logging.getLogger(__name__)
+
+# Cache-key component: bump when the prompt changes so cached descriptions regenerate.
+PROMPT_VERSION = "fig-v1"
+
+_PROMPT = (
+    "Describe this figure faithfully and concretely in 1-4 sentences, so it can be found "
+    "by a text search.\n"
+    "- Name the axes, labels, and components you can actually read in the image.\n"
+    "- For a block or signal-flow diagram: name the blocks and how they connect.\n"
+    "- For a plot or chart: state what is plotted against what, and the visible trend.\n"
+    "- Do NOT speculate about meaning the figure does not show, and do NOT invent numbers "
+    "or labels that are not visible.\n"
+    "- Output ONLY the description — no preamble, no markdown."
+)
+
+_MIN_WORDS = 8  # a usable description names at least a subject and some structure
+_REFUSAL = re.compile(
+    r"\b(?:i cannot|i can't|i am unable|i'm unable|as an ai|unable to (?:see|view)|"
+    r"no (?:image|figure) (?:was |is )?(?:provided|attached|visible))\b",
+    re.IGNORECASE,
+)
+
+
+def rejection_reason(description: str) -> str | None:
+    """Why a description is unusable as retrieval text, or None if it is fine.
+
+    Deterministic and cheap (no inference) — also re-applied to stored rows by the audit.
+    """
+    t = description.strip()
+    if not t:
+        return "empty"
+    if len(t.split()) < _MIN_WORDS:
+        return "too-short"
+    if _REFUSAL.search(t):
+        return "refusal"
+    if _has_repetition_loop(t):
+        return "repetition-loop"
+    return None
+
+
+def describe_figure(
+    image_bytes: bytes,
+    caption: str | None = None,
+    *,
+    client=None,
+    model: str | None = None,
+) -> str | None:
+    """One VLM description of the figure, QC'd with one bounded retry.
+
+    The caption (when present) is given as context — it names what the author thinks the
+    figure shows, which anchors the description. Returns None when both attempts fail QC
+    or the model call errors: the caller stores the figure caption-only and continues
+    (per-figure graceful degradation; one stubborn figure must not quarantine the doc).
+    """
+    model = model or load().figures.model
+    prompt = _PROMPT
+    if caption:
+        prompt += f"\n\nThe author's caption for this figure: {caption!r}"
+
+    reason = None
+    for attempt in range(2):
+        attempt_prompt = prompt
+        if attempt == 1:  # bounded repair: say what was wrong, demand a usable answer
+            attempt_prompt += (
+                f"\n\nYour previous answer was rejected ({reason}). Look at the image again "
+                "and describe what is actually visible, in 1-4 plain sentences."
+            )
+        try:
+            out = llm.vision_chat(
+                attempt_prompt,
+                image_bytes,
+                model=model,
+                client=client,
+                temperature=0.0 if attempt == 0 else 0.3,
+                num_predict=512,  # 1-4 sentences; a cap stops degeneration loops early
+            )
+        except llm.IngestExtractionError as exc:
+            log.warning("figure description failed: %s", exc)
+            return None
+        out = " ".join(out.split())
+        reason = rejection_reason(out)
+        if reason is None:
+            return out
+        log.info("figure description rejected (%s), attempt %d", reason, attempt + 1)
+    log.warning("figure description unusable after retry (%s); storing caption-only", reason)
+    return None
+
+
+def index_text(caption: str | None, description: str | None) -> str:
+    """The text that is embedded and reranked for a figure: caption + description.
+
+    The caption carries author intent ('Figure 4: closed-loop step response'), the
+    description carries visual content — concatenated they maximise lexical and semantic
+    recall. Either may be absent; the result may be "" (such a figure is stored for
+    tier-1 preservation but gets no vector — nothing usable to search on).
+    """
+    parts = [p.strip() for p in (caption, description) if p and p.strip()]
+    return "\n".join(parts)

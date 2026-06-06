@@ -35,6 +35,8 @@ import pymupdf
 from locus.extract.base import (
     MAX_SECTION_CHARS,
     MIN_SECTION_CHARS,
+    SMALL_IMAGE_MAX_H,
+    SMALL_IMAGE_MAX_W,
     _MATH,
     ExtractedDoc,
     ExtractedSection,
@@ -75,8 +77,9 @@ def _mathuni_count(text: str) -> int:
     return sum(1 for c in text if 0x1D400 <= ord(c) <= 0x1D7FF or c in "∂∇∑∫∞≤≥≈≠±ℝℕℤℂ")
 
 
-# Size box for formula-sized raster images (the count threshold lives with PageFlags in base).
-_SMALL_IMAGE_MAX_W, _SMALL_IMAGE_MAX_H = 400.0, 60.0
+# Size box for formula-sized raster images: shared with figure detection via base
+# (the count threshold lives with PageFlags in base).
+_SMALL_IMAGE_MAX_W, _SMALL_IMAGE_MAX_H = SMALL_IMAGE_MAX_W, SMALL_IMAGE_MAX_H
 
 
 def _page_flags(page, pno: int, text: str) -> PageFlags:
@@ -112,7 +115,7 @@ _TOC_MIN_LEADER_LINES = 5
 _TOC_LEADER_FRACTION = 0.3
 
 
-def extract_pdf(path: str | Path, *, mathocr: bool = False) -> ExtractedDoc:
+def extract_pdf(path: str | Path, *, mathocr: bool = False, figures: bool = False) -> ExtractedDoc:
     """Extract a structured ExtractedDoc from the PDF at `path`.
 
     `mathocr=True` (the ingest pipeline's setting) routes pages flagged by the damage/math
@@ -121,6 +124,12 @@ def extract_pdf(path: str | Path, *, mathocr: bool = False) -> ExtractedDoc:
     heading offsets may not be locatable in the replaced text, so section boundaries there
     degrade gracefully to page boundaries — the recovered structure stays in the text itself.
     Default False so ad-hoc extraction (tests, scripts, audits) never invokes a model.
+
+    `figures=True` (also the pipeline's setting) detects + renders figure regions
+    (extract/figures_detect.py; config `[figures]`) and attaches them as `doc.figures`,
+    section-assigned. Deterministic and model-free — the VLM description runs later, in the
+    ingest pass — but rendering PNGs for every doc is waste for ad-hoc extraction, so it
+    defaults off.
     """
     path = Path(path)
     doc = pymupdf.open(path)
@@ -162,6 +171,15 @@ def extract_pdf(path: str | Path, *, mathocr: bool = False) -> ExtractedDoc:
         # A heading-poor doc that had to be windowed by page is "paginated", not "single".
         if strategy == "single" and len(sections) > 1:
             strategy = "paginated"
+        figure_list: list = []
+        if figures:
+            from locus.config import load
+            from locus.extract import figures_detect  # lazy, mirrors the mathocr import
+
+            fig_cfg = load().figures
+            if fig_cfg.enabled:
+                figure_list = figures_detect.detect_figures(doc, fig_cfg, skip_pages=toc_idxs)
+                figures_detect.assign_sections(figure_list, sections)
         return ExtractedDoc(
             title=title,
             page_count=len(page_texts),
@@ -173,6 +191,7 @@ def extract_pdf(path: str | Path, *, mathocr: bool = False) -> ExtractedDoc:
             page_flags=flags,
             ocr_replaced=ocr_replaced,
             ocr_fallbacks=ocr_fallbacks,
+            figures=figure_list,
         )
     finally:
         doc.close()

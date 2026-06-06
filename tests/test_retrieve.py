@@ -223,7 +223,10 @@ def _pipeline_fakes(monkeypatch, floor, scores):
     from locus.retrieve import pipeline as pl
 
     rcfg = types.SimpleNamespace(rerank_top_k=8, per_doc_cap=3, min_rerank_score=floor)
-    monkeypatch.setattr(pl, "load", lambda: types.SimpleNamespace(retrieve=rcfg))
+    monkeypatch.setattr(
+        pl, "load",
+        lambda: types.SimpleNamespace(retrieve=rcfg, figures=types.SimpleNamespace(image_cap=3)),
+    )
 
     def _rr(query, candidates, top_k, per_doc_cap, min_score=None, prefer_code=False):
         for c, s in zip(candidates, scores):
@@ -329,7 +332,10 @@ def _facet_fakes(monkeypatch, floor, scores, facet_scores):
     from locus.retrieve import pipeline as pl
 
     rcfg = types.SimpleNamespace(rerank_top_k=8, per_doc_cap=3, min_rerank_score=floor)
-    monkeypatch.setattr(pl, "load", lambda: types.SimpleNamespace(retrieve=rcfg))
+    monkeypatch.setattr(
+        pl, "load",
+        lambda: types.SimpleNamespace(retrieve=rcfg, figures=types.SimpleNamespace(image_cap=3)),
+    )
 
     def _rr(query, candidates, top_k, per_doc_cap, min_score=None, prefer_code=False):
         for c, s in zip(candidates, scores):

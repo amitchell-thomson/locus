@@ -33,6 +33,11 @@ class Expanded:
     line_start: int | None = None
     line_end: int | None = None
     video_timestamp: int | None = None
+    # figure-only provenance (step 11): the raw-store PNG + caption for generation/MCP
+    figure_path: str | None = None
+    figure_caption: str | None = None
+    figure_kind: str | None = None  # 'raster' | 'vector' | 'slide'
+    figure_page: int | None = None  # 1-based page / slide number
 
 
 def expand(conn, candidates: list[Candidate]) -> list[Expanded]:
@@ -69,6 +74,17 @@ def expand(conn, candidates: list[Candidate]) -> list[Expanded]:
                 file_path, line_start = ch["file_path"], ch["line_start"]
                 line_end, video_timestamp = ch["line_end"], ch["video_timestamp"]
 
+        figure_path = figure_caption = figure_kind = figure_page = None
+        if c.kind == "figure":
+            fig = conn.execute(
+                "SELECT raw_path, caption, kind, page FROM figures WHERE id=?", (c.id,)
+            ).fetchone()
+            if fig is not None:
+                figure_path, figure_caption = fig["raw_path"], fig["caption"]
+                figure_kind, figure_page = fig["kind"], fig["page"]
+                # A figure's page beats the section's page range for citation precision.
+                page_start = page_end = fig["page"]
+
         out.append(
             Expanded(
                 candidate=c,
@@ -87,6 +103,10 @@ def expand(conn, candidates: list[Candidate]) -> list[Expanded]:
                 line_start=line_start,
                 line_end=line_end,
                 video_timestamp=video_timestamp,
+                figure_path=figure_path,
+                figure_caption=figure_caption,
+                figure_kind=figure_kind,
+                figure_page=figure_page,
             )
         )
     return out

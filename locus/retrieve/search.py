@@ -31,7 +31,7 @@ _PATH_STEM_STOP = frozenset(
 
 @dataclass
 class Candidate:
-    kind: str  # 'proposition' | 'chunk' | 'section'
+    kind: str  # 'proposition' | 'chunk' | 'section' | 'figure'
     id: int
     doc_id: int
     section_id: int | None
@@ -137,6 +137,18 @@ def search(conn, query: str, facets: Facets | None = None) -> list[Candidate]:
     ):
         add("section", r["id"], r["doc_id"], r["id"], r["summary"], r["distance"], "dense",
             file_path=r["file_path"])
+
+    # Figures (step 11): the indexed text is caption+description (ingest/figures.index_text),
+    # which is also what the cross-encoder scores. The image itself attaches at generation.
+    for r in conn.execute(
+        "SELECT f.id, f.doc_id, f.section_id, f.caption, f.description, k.distance FROM "
+        "(SELECT figure_id, distance FROM figure_vectors "
+        " WHERE embedding MATCH ? ORDER BY distance LIMIT ?) k "
+        "JOIN figures f ON f.id = k.figure_id",
+        (qvec, cfg.figure_top_k),
+    ):
+        text = "\n".join(p for p in (r["caption"], r["description"]) if p)
+        add("figure", r["id"], r["doc_id"], r["section_id"], text, r["distance"], "dense")
 
     # --- lexical (FTS5 / BM25) over chunk text ---
     fq = _fts_query(query)

@@ -79,7 +79,8 @@ def _print_results(results) -> None:
         if r.status == "ingested":
             print(
                 f"[ingested]  {r.path}  doc_id={r.doc_id} sections={r.sections} "
-                f"chunks={r.chunks} props={r.propositions} entities={r.entities}"
+                f"chunks={r.chunks} props={r.propositions} entities={r.entities} "
+                f"figures={r.figures}"
             )
         elif r.status == "skipped":
             print(f"[skipped]   {r.path}  (already ingested, doc_id={r.doc_id})")
@@ -232,6 +233,8 @@ def cmd_query(args) -> None:
         from locus.retrieve.pipeline import confidence_banner
         print(confidence_banner(result.confidence_band) + "\n")
     print(result.answer)
+    if result.figures_attached:
+        print(f"\n[{result.figures_attached} figure image(s) were attached to the Claude call]")
     if result.citations:
         print("\n--- sources ---")
         for c in result.citations:
@@ -253,6 +256,14 @@ def cmd_retrieve(args) -> None:
     print("\n=== citations ===")
     for cit in r.citations:
         print("  *", cit)
+    if r.figures:
+        from locus.config import load as _load
+
+        raw = _load().paths.raw_store
+        print("\n=== figures (images attach at generation) ===")
+        for f in r.figures:
+            unit = "slide" if f.kind == "slide" else f"p.{f.page}"
+            print(f"  * [{unit}] \"{f.doc_title}\" — {raw / f.raw_path}")
     if args.context:
         print("\n=== assembled context ===")
         print(r.context)

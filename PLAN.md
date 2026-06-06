@@ -348,9 +348,67 @@ done **before** the bulk ingest. Each item ≈ one work-block.
   the query names — a repo is one doc but many files). Final re-gate: recall@8 **1.000**,
   full-recall 1.000, cross-domain 1.000, banner rate 0.000, **file_recall 1.000** (was
   0.333). All round-3 findings and hand-backs closed; figures (step 11) unblocked.
-- [ ] **11. Figures** `[RB]` (medium) — `figures` + `figure_vectors`; extract/store/caption +
-  optional local VLM description; multimodal Claude at generation. **Per 10.5: the figure
-  text/caption pass MUST go through the summary grounding guard.**
+- [x] **11. Figures** `[RB]` (medium) — **landed + corpus re-ingested 2026-06-06** (28/28
+  docs in 5.18 h, zero quarantines; **389 figures, 100% described + vectored**; categories
+  intact — coursework 12 / paper 12 / project 8 / career 1, zero uncategorized). Re-gate
+  vs step-7.5: recall@8 **1.000**, cross-domain 1.000, file_recall 1.000, banner rate 0,
+  judge 4.02 (baseline 4.08, n=8 noise; entity recall still weakest → step 12), audit QC
+  zero on every re-ingested doc (the only noise entities live on two code repos untouched
+  by this batch → step-12 hygiene). End-to-end verified live: MCP `retrieve` returns
+  labeled ImageContent blocks; `locus query` answered a block-diagram question from 3
+  attached figure images with `[figure on p.N]` citations; the Citadel deck's 11 chart
+  slides are searchable (the step-9 gap, closed). Fixes landed during the run:
+  **re-ingest metadata continuity** (raw-store re-ingest inherits category/source_uri from
+  the replaced doc — caught live when a test re-ingest wiped a 'paper' to 'uncategorized');
+  slide-caption fallback to first body line (placeholder-less decks); eval-label updates
+  for corpus growth ('|' any-of in expected entries; slug-titled docs re-arbitrate titles
+  per re-ingest so labels keep durable tokens). Driver: scripts/reingest_step11.py.
+  Schema: migration 0007 `figures` + `figure_vectors` vec0 (propositions mirror; nullable
+  `section_id`; PNGs in the flat raw store as `{hash}_fig{N}.png`, orphan-cleaned on
+  replace/delete). **Tier 1 (preserve):** `extract/figures_detect.py` — raster
+  (`get_image_info`, xref-deduped doc-wide) + vector diagrams (`cluster_drawings` ≥8 paths;
+  the control-notes block-diagram case), clip-rendered at 2x (handles masks/composites;
+  vector clusters have no xref), area band 3–92% of page, aspect ≤20:1, formula box shared
+  with the math detector via `base.SMALL_IMAGE_MAX_*`. Caption pairing (below > above >
+  contained — vector clusters swallow their own captions) decides survival: figure-class
+  caption = author's assertion (overrides density; recovers text-boxy flowcharts at 5–7
+  chars/1000pt²), table-class caption = reject (text layer already has it), uncaptioned =
+  keep only under `max_text_density` 2.0 (corpus-measured: real diagrams ≤1.6,
+  prose-with-formula-drawings/gridline tables ≥2.2 — the doc-50 Colab false-positive
+  class). Corpus sweep after calibration: 347 figures, 72% captioned, 0 junk on prose
+  docs. Slides: visual-bearing slides (chart/SmartArt/media/picture ≥3% slide area — the
+  0.26% template logo dies; drawn-autoshape census deliberately NOT a signal, consulting
+  decks build text layouts from large autoshapes) render whole via `soffice --headless` →
+  PDF → PNG; soffice absent/failing/page-count-mismatch degrades to a `figure_fallbacks`
+  gap line, never quarantines. **Tier 2 (findable):** `ingest/figures.py` VLM pass
+  (qwen2.5vl:7b via the new shared `llm.vision_chat`, refactored out of mathocr's qwen
+  engine), faithfulness prompt + deterministic QC (empty/short/refusal/repetition-loop) +
+  one bounded retry → caption-only fallback; batched AFTER all text passes (one
+  Ollama model swap per doc); `caption+description` embedded into `figure_vectors`;
+  `_FigureCache` keyed sha256(image):model:PROMPT_VERSION ⇒ re-ingests re-run ZERO VLM
+  calls. **Retrieval:** 4th dense arm (`figure_top_k`), reranker scores the indexed text,
+  `select()` caps per (section, figure) and figure-children demote section summaries;
+  expansion carries figure provenance (figure page beats section range); citations read
+  `[figure on p.N]`/`[slide N]`. **Tier 3 (interpretable):** `RetrievalResult.figures`
+  (top `image_cap`=3 by rerank) → `query.py` attaches the actual PNGs as base64 image
+  blocks in the uncached user turn (cached system prefix unaffected) with downscale
+  guard (1568px/3MB, `retrieve/figure_images.py`); MCP `retrieve` returns
+  `[text, *labels, *Image]` content blocks (gated `mcp.include_figure_images`); missing
+  image always degrades to text-only. Audit: per-doc figures line (caption-only /
+  unsearchable / suspect descriptions re-applying the QC predicate); figure audit lines
+  excluded from semantic-gap counts. Eval: 3 figure-shaped labelled queries. Verified
+  live: doc 91's "Figure 2" pipeline diagram is the TOP survivor (rr +8.49) for its
+  figure query, beating the caption-bearing chunk. **Re the 10.5 directive ("figure
+  text MUST go through the summary grounding guard"): resolved as not-applicable by
+  design** — figures never pass through the summarizer (captions are extracted verbatim,
+  deterministically), and the VLM description's source is the IMAGE, not section text,
+  so vocabulary-grounding has nothing to ground against; the hallucination cost is
+  bounded instead by the faithfulness prompt + QC, the caption given as anchor context,
+  and tier 3 (Claude sees the actual image at generation and can override a wrong
+  description — §15.0 recoverable class). System dep: **LibreOffice** (`soffice`) for
+  slide renders, optional at runtime. Deferred: PPT-drawn box-and-arrow diagrams
+  (autoshape census misfires on card-layout decks; box text still extracted via the text
+  layer), per-figure regions on slides (whole-slide render is the unit).
 - [ ] **12. Entity-alias resolution + Retrieval eval (Layer 3) → BULK INGEST** — canonicalise
   entity names cross-document (the *link* substrate); validate on a heterogeneous sample
   including quant-finance papers + ≥1 code repo (the second domain the synthesis modes need);
@@ -361,6 +419,8 @@ YouTube / podcast transcript ingest, broader retrieval tests.
 
 **New dependencies:** `mcp`, `python-docx` (landed, step 8), `python-pptx` (landed, step 9),
 an OCR-to-markup
-model (benchmarked, step 6). `nbconvert` turned out unneeded — the `.ipynb` extractor reads the
-notebook JSON with the stdlib (§3 build-vs-buy). Keep heavy optional ones (VLM, math-OCR)
-behind extras like `[rerank]`.
+model (benchmarked, step 6), `pillow` promoted to core (step 11: generation/MCP image
+downscale; was mathocr-extra-only). `nbconvert` turned out unneeded — the `.ipynb` extractor
+reads the notebook JSON with the stdlib (§3 build-vs-buy). Keep heavy optional ones (VLM,
+math-OCR) behind extras like `[rerank]`. **System dep (optional):** LibreOffice (`soffice`)
+for step-11 slide figure renders — absent, slide decks ingest text-only with an audit gap line.

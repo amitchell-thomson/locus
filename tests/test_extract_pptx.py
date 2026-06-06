@@ -181,3 +181,77 @@ def test_non_pptx_raises_value_error(tmp_path: Path):
     bogus.write_bytes(b"this is not a zip archive")
     with pytest.raises(ValueError, match="not a readable pptx"):
         extract_pptx(bogus)
+
+
+# --- slide figures (step 11) ---------------------------------------------------------------
+
+
+def _png_bytes(w: int = 320, h: int = 240) -> bytes:
+    import pymupdf
+
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, w, h))
+    pix.clear_with(120)
+    return pix.tobytes("png")
+
+
+def _add_picture(slide, *, inches: float) -> None:
+    import io
+
+    slide.shapes.add_picture(
+        io.BytesIO(_png_bytes()), Inches(1), Inches(2), Inches(inches), Inches(inches)
+    )
+
+
+def test_slide_has_visual_sizeable_picture_yes_logo_no(tmp_path: Path):
+    from locus.extract.pptx import _slide_has_visual
+
+    prs = Presentation()
+    big = _add_slide(prs, title="Architecture", body=BODY)
+    _add_picture(big, inches=5.0)  # content-sized
+    logo = _add_slide(prs, title="Summary", body=BODY)
+    _add_picture(logo, inches=0.5)  # template-logo-sized
+    plain = _add_slide(prs, title="Text only", body=BODY)
+
+    area = prs.slide_width * prs.slide_height
+    assert _slide_has_visual(big, area, 0.03) is True
+    assert _slide_has_visual(logo, area, 0.03) is False
+    assert _slide_has_visual(plain, area, 0.03) is False
+
+
+def test_slide_figures_degrade_without_soffice(tmp_path: Path, monkeypatch):
+    """soffice absent => text extraction proceeds, no figures, reason in figure_fallbacks."""
+    import locus.extract.pptx as pptx_mod
+
+    monkeypatch.setattr(pptx_mod.shutil, "which", lambda _: None)
+    prs = Presentation()
+    slide = _add_slide(prs, title="Charts", body=BODY)
+    _add_picture(slide, inches=5.0)
+    doc = extract_pptx(_save(prs, tmp_path / "deck.pptx"), figures=True)
+    assert doc.sections  # text path unaffected
+    assert doc.figures == []
+    assert any("soffice" in f for f in doc.figure_fallbacks)
+
+
+def test_slide_figures_default_off(tmp_path: Path):
+    prs = Presentation()
+    slide = _add_slide(prs, title="Charts", body=BODY)
+    _add_picture(slide, inches=5.0)
+    doc = extract_pptx(_save(prs, tmp_path / "deck.pptx"))  # ad-hoc default
+    assert doc.figures == [] and doc.figure_fallbacks == []
+
+
+@pytest.mark.skipif(__import__("shutil").which("soffice") is None, reason="LibreOffice not installed")
+def test_slide_figures_real_render(tmp_path: Path):
+    """End-to-end render via soffice; activates once LibreOffice is on the host."""
+    prs = Presentation()
+    visual = _add_slide(prs, title="Architecture diagram", body=BODY)
+    _add_picture(visual, inches=5.0)
+    _add_slide(prs, title="Text only", body=BODY)
+    doc = extract_pptx(_save(prs, tmp_path / "deck.pptx"), figures=True)
+    assert doc.figure_fallbacks == []
+    assert len(doc.figures) == 1
+    fig = doc.figures[0]
+    assert fig.kind == "slide" and fig.page == 1
+    assert fig.caption == "Architecture diagram"
+    assert fig.image_bytes[:8] == b"\x89PNG\r\n\x1a\n"
+    assert fig.section_position == 0

@@ -23,6 +23,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 
 from locus.ingest.entities import is_grounded, is_noise
+from locus.ingest.figures import rejection_reason as figure_rejection_reason
 from locus.ingest.propositions import rejection_reason
 
 # A proposition opening with one of these is almost certainly not self-contained.
@@ -70,6 +71,15 @@ class DocMetrics:
     # propositions" (2026-06-05 evaluation, regime paper §3).
     empty_prop_section_titles: list[str] = field(default_factory=list)
     entity_type_counts: dict[str, int] = field(default_factory=dict)
+    # Figures (step 11): captured units + how findable they are. caption_only = the VLM
+    # description failed QC at ingest (tier-1 preserve held; tier-2 findability degraded
+    # to the caption). unsearchable = neither caption nor description — stored but no
+    # vector, invisible to retrieval. suspect_descriptions re-applies the ingest QC
+    # predicate to stored rows (figures profile docs only).
+    figures: int = 0
+    figures_caption_only: int = 0
+    figures_unsearchable: int = 0
+    suspect_figure_descriptions: int = 0
 
     @property
     def non_self_contained_pct(self) -> float:
@@ -98,10 +108,12 @@ def has_corruption_signature(text: str | None) -> bool:
 
 
 # Audit-trail gap_flags written by the pipeline itself (not knowledge gaps): math-OCR
-# fallback notes and degraded-pass markers (ingest_pipeline._prepare).
+# fallback notes, degraded-pass markers, and figure-capture/description degradation
+# (ingest_pipeline._prepare/_prepare_doc).
 _AUDIT_GAP = re.compile(
     r"^(math-OCR kept original text on |\w+ pass failed for section "
-    r"|summary failed grounding for section )"
+    r"|summary failed grounding for section "
+    r"|figure description failed QC for |figure capture degraded: )"
 )
 
 
@@ -265,6 +277,22 @@ def doc_metrics(conn, doc_id: int) -> DocMetrics:
         if profile.llm_entities:
             redundant += _redundant_pairs([e["name"] for e in ents])
 
+    fig_rows = conn.execute(
+        "SELECT caption, description FROM figures WHERE doc_id=?", (doc_id,)
+    ).fetchall()
+    figures_caption_only = sum(
+        1 for f in fig_rows if not (f["description"] or "").strip() and (f["caption"] or "").strip()
+    )
+    figures_unsearchable = sum(
+        1 for f in fig_rows
+        if not (f["description"] or "").strip() and not (f["caption"] or "").strip()
+    )
+    suspect_fig_descs = sum(
+        1 for f in fig_rows
+        if (f["description"] or "").strip()
+        and figure_rejection_reason(f["description"]) is not None
+    )
+
     total_props = sum(prop_counts)
     return DocMetrics(
         doc_id=doc_id,
@@ -293,6 +321,10 @@ def doc_metrics(conn, doc_id: int) -> DocMetrics:
             (doc[f] or "").strip() for f in ("thesis", "method", "result", "limitations")
         ),
         entity_type_counts=dict(type_counts.most_common()),
+        figures=len(fig_rows),
+        figures_caption_only=figures_caption_only,
+        figures_unsearchable=figures_unsearchable,
+        suspect_figure_descriptions=suspect_fig_descs,
     )
 
 
@@ -331,6 +363,12 @@ def format_metrics(docs: list[DocMetrics]) -> str:
         )
         top_types = ", ".join(f"{t}:{n}" for t, n in list(d.entity_type_counts.items())[:6])
         lines.append(f"    entity types: {top_types}")
+        if d.figures:
+            lines.append(
+                f"    figures: {d.figures} | caption-only {d.figures_caption_only} | "
+                f"unsearchable {d.figures_unsearchable} | "
+                f"suspect descriptions {d.suspect_figure_descriptions}"
+            )
         if d.empty_prop_section_titles:
             shown = d.empty_prop_section_titles[:8]
             more = len(d.empty_prop_section_titles) - len(shown)

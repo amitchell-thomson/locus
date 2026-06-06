@@ -65,6 +65,9 @@ class RetrieveConfig(BaseModel):
     proposition_top_k: int = 10
     fine_top_k: int = 20
     section_top_k: int = 5
+    # Figure descriptions are a 4th dense arm (figure_vectors, plan step 11) — sized between
+    # sections (5) and propositions (10): figures are sparse but high-signal when they match.
+    figure_top_k: int = 8
     rerank_top_k: int = 8
     # Diversity cap on rerank survivors: at most this many units per document in the top-k,
     # relaxed (fallback fill) only when honouring it would leave the top-k underfull. Stops a
@@ -92,6 +95,41 @@ class MathOCRConfig(BaseModel):
     model: str = Field("qwen2.5vl:7b", description="Ollama model for the 'qwen' engine.")
 
 
+class FiguresConfig(BaseModel):
+    """Figure extraction + VLM description (plan step 11, §15.1).
+
+    Tier 1 (preserve): detect figure regions in PDFs (raster images + vector diagrams) and
+    visual-bearing slides, render to PNG in the raw store with any paired caption.
+    Tier 2 (make findable): describe each figure with a local VLM via Ollama and embed
+    caption+description into figure_vectors. Detection thresholds lean STRICT: a missed
+    figure is benign, a junk figure burns a VLM call and a retrieval slot (the same risk
+    asymmetry as `_plausible_heading`).
+    """
+
+    enabled: bool = Field(True, description="Run figure extraction + description at ingest.")
+    model: str = Field("qwen2.5vl:7b", description="Ollama VLM for figure descriptions.")
+    render_slides: bool = Field(
+        True, description="Render visual-bearing slides via LibreOffice (soffice) to PNG."
+    )
+    # Area band as a fraction of page area: below = decoration/icons, above = page background.
+    min_area_frac: float = Field(0.03, description="Min figure area as a fraction of page area.")
+    max_area_frac: float = Field(0.92, description="Max figure area as a fraction of page area.")
+    # A real diagram has many strokes; a stray underline or rule does not.
+    min_vector_paths: int = Field(8, description="Min drawing paths for a vector cluster to count.")
+    # Text-layer chars per 1000pt² inside the region. Real diagrams carry sparse labels
+    # (corpus-measured max 1.6); prose blocks with formula/decoration drawings and gridline
+    # tables read 2.2+ — their content is already in the text layer, so they are junk here.
+    max_text_density: float = Field(
+        2.0, description="Max text-layer char density (chars/1000pt²) for a figure region."
+    )
+    caption_max_gap_pt: float = Field(
+        60.0, description="Max vertical gap (pt) between a figure and its caption block."
+    )
+    max_per_page: int = Field(4, description="Cap on detected figures per page (junk guard).")
+    # Bounds image tokens/cost at generation: top-N figure survivors attach as images.
+    image_cap: int = Field(3, description="Max figure images attached per Claude call / MCP reply.")
+
+
 class ReposConfig(BaseModel):
     """Tracked code repositories (PLAN.md step 10). `locus watch` checks each repo's git
     HEAD every `check_interval` seconds and re-ingests only when new commits landed —
@@ -108,6 +146,9 @@ class MCPConfig(BaseModel):
     enable_query: bool = Field(
         False, description="Expose the server-side-generating `query` MCP tool (costs API spend)."
     )
+    include_figure_images: bool = Field(
+        True, description="Attach retrieved figure images as MCP image content blocks."
+    )
 
 
 class Config(BaseModel):
@@ -120,6 +161,8 @@ class Config(BaseModel):
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     # Optional: absent [mathocr] falls back to defaults (qwen engine via Ollama).
     mathocr: MathOCRConfig = Field(default_factory=MathOCRConfig)
+    # Optional: absent [figures] falls back to defaults (enabled, qwen2.5vl via Ollama).
+    figures: FiguresConfig = Field(default_factory=FiguresConfig)
     # Optional: absent [repos] means no tracked repos (sync is a no-op).
     repos: ReposConfig = Field(default_factory=ReposConfig)
 

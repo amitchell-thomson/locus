@@ -132,7 +132,7 @@ def select(
     are exempt from both — they still earn their slot on cross-encoder score alone.
     """
     sections_with_units = {
-        c.section_id for c in ranked if c.kind in ("proposition", "chunk")
+        c.section_id for c in ranked if c.kind in ("proposition", "chunk", "figure")
     }
     selected: list[Candidate] = []
     skipped: list[Candidate] = []

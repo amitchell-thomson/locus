@@ -24,7 +24,11 @@ from dataclasses import dataclass, field
 @dataclass
 class LabelledQuery:
     query: str
-    expected: list[str]  # title substrings (case-insensitive); each is one expected doc
+    # Title substrings (case-insensitive); each entry is one expected doc. An entry may
+    # carry '|'-separated alternatives ("Regime Shift|Neural Markov") satisfied by ANY
+    # match — for queries where the corpus holds several legitimately substitutable
+    # answers and ranking between them is model choice, not retrieval quality.
+    expected: list[str]
     expected_paths: list[str] = field(default_factory=list)  # file-path substrings (code)
     cross_domain: bool = False
 
@@ -42,7 +46,9 @@ LABELLED_QUERIES: list[LabelledQuery] = [
     ),
     LabelledQuery(
         "How do regime-switching models in finance relate to state-space models in control theory?",
-        ["Control Theory", "Regime Shift"],
+        # Either regime-modeling paper satisfies the finance side (the 2026-06-06 arrival,
+        # an inspectable-neural-Markov-models paper, legitimately outranks the treasury one).
+        ["Control Theory", "Regime Shift|Neural Markov"],
         cross_domain=True,
     ),
     LabelledQuery(
@@ -60,9 +66,10 @@ LABELLED_QUERIES: list[LabelledQuery] = [
     ),
     LabelledQuery(
         "How does maximum likelihood estimation differ from Bayesian inference?",
-        # Doc 50's junk extractor title ('mathreview.ipynb - Colab') was arbitrated to
-        # 'Linear Algebra and Probability Fundamentals' (title backfill, 2026-06-05).
-        ["Probability Fundamentals"],
+        # Slug-titled source (ML-maths.pdf): the synthesis pass re-arbitrates a title on
+        # every re-ingest, so the label keeps only the durable token ('Probability
+        # Fundamentals' became 'Probability Concepts with Parameter Estimation').
+        ["Probability"],
     ),
     LabelledQuery(
         "What is gradient descent and what role does the learning rate play?",
@@ -112,6 +119,24 @@ LABELLED_QUERIES: list[LabelledQuery] = [
         "What did my Citadel deck recommend about monetary policy?",
         ["Monetary Policy Recommendation"],
     ),
+    # --- figures (step 11): figure-shaped queries that the figure_vectors arm should
+    # serve (block diagrams, plots, pipeline figures). Doc-level recall still passes via
+    # text units, so these measure that figure phrasing surfaces the right documents —
+    # the figure arm's contribution shows up in the survivors' kinds, not the score.
+    LabelledQuery(
+        "Show the block diagram of a sampled-data control system with a zero-order hold.",
+        ["Control Theory"],
+    ),
+    LabelledQuery(
+        "Which figure illustrates aliasing as overlapping spectra in the frequency domain?",
+        # Slug-titled source (N456_1.pdf): arbitrated title varies per re-ingest
+        # ('Signals and Systems' -> 'Signal Processing Techniques and Spectral Analysis').
+        ["Spectral|Signals and Systems"],
+    ),
+    LabelledQuery(
+        "The pipeline diagram where DINOv3 features match class prototypes and SAM segments regions.",
+        ["Fine-Grained Semantic Segmentation"],
+    ),
 ]
 
 
@@ -156,12 +181,18 @@ def score_query(
     matched: list[str] = []
     first_rank: int | None = None
     for pattern in q.expected:
+        alternatives = [a.strip().lower() for a in pattern.split("|")]  # any-of
+        done = False
         for rank, title in enumerate(deduped, start=1):
-            if pattern.lower() in (title or "").lower():
-                matched.append(pattern)
-                if first_rank is None or rank < first_rank:
-                    first_rank = rank
+            if done:
                 break
+            for alt in alternatives:
+                if alt and alt in (title or "").lower():
+                    matched.append(pattern)
+                    if first_rank is None or rank < first_rank:
+                        first_rank = rank
+                    done = True
+                    break
     paths = survivor_paths or []
     matched_paths = [
         p for p in q.expected_paths if any(p.lower() in (sp or "").lower() for sp in paths)

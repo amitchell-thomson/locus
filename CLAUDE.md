@@ -782,11 +782,45 @@ math-stripped text). Details per step in `PLAN.md`.
     a permanent audit predicate (`unattested_numbers`, 2 hits, both known degraded-math
     pages); source under-retrieval closed via a **path-anchored search arm** + query-named
     exemption from the per-doc cap / child-redundancy rules in `select()`. Final re-gate:
-    recall@8 1.000, cross-domain 1.000, banner rate 0.000, file_recall 1.000. Figures
-    (step 11) must route its caption/description pass through the same grounding guard.
-11. **Figures** `[re-ingest-bound]` (PDF/slides quality, medium). `figures` + `figure_vectors`
-    schema; extract/store images + captions; optional local VLM (moondream / minicpm-v) →
-    retrievable; multimodal Claude at generation (query.py passes the figure image). See §15.1.
+    recall@8 1.000, cross-domain 1.000, banner rate 0.000, file_recall 1.000. (The
+    figures-must-use-the-grounding-guard hand-off was resolved in step 11: not applicable
+    by design — see the step-11 entry.)
+11. **Figures** `[re-ingest-bound]` — **done** (2026-06-06; ONE corpus re-ingest completed
+    same day: 28/28 docs in 5.18 h, zero quarantines, **389 figures, 100% described+
+    vectored**; re-gate vs the step-7.5 baseline: recall@8 **1.000** / cross-domain 1.000 /
+    file_recall 1.000 / banner rate 0, judge 4.02 (baseline 4.08, within n=8 noise; entity
+    recall still the weak dimension → step 12), audit QC zero on all re-ingested docs;
+    verified end-to-end live: MCP returns figure ImageContent blocks, `locus query` answers
+    a block-diagram question FROM 3 attached figure images). Two fixes landed during the
+    run: **re-ingest metadata continuity** (a raw-store re-ingest inherits category +
+    source_uri from the replaced doc instead of wiping the facets — caught live before the
+    batch), and slide captions fall back to the first body line when a deck has no title
+    placeholders. Eval labels updated for corpus growth ('|' any-of alternatives; slug-titled
+    docs get re-arbitrated titles each re-ingest, so labels keep durable tokens only).
+    Migration 0007: `figures` + `figure_vectors` (propositions mirror; PNGs in the
+    raw store as `{hash}_fig{N}.png`, orphan-cleaned on replace/delete). Tier 1:
+    `extract/figures_detect.py` — raster + vector-cluster detection, clip-rendered at 2x;
+    caption pairing decides survival (a figure-class caption overrides the text-density
+    filter — recovers text-boxy flowcharts; a table-class caption rejects; uncaptioned
+    regions need density ≤2.0 chars/1000pt², corpus-calibrated: real diagrams ≤1.6,
+    prose-with-formula-drawings/tables ≥2.2). Corpus sweep: 347 figures, 72% captioned,
+    0 junk on prose docs. Slides render whole via LibreOffice (`soffice`, optional system
+    dep) for visual-bearing slides only (chart/SmartArt/media/picture ≥3% slide area —
+    template logos filtered); absent soffice ⇒ gap line, never quarantine. Tier 2:
+    qwen2.5vl:7b via the shared `llm.vision_chat` (refactored from mathocr); faithfulness
+    prompt + deterministic QC + bounded retry → caption-only fallback; batched after text
+    passes (one VRAM swap per doc); caption+description embedded; image-content-keyed
+    pass cache ⇒ re-ingests re-run zero VLM calls. Retrieval: 4th dense arm
+    (`figure_top_k`), `[figure on p.N]`/`[slide N]` citations. Tier 3: top-3 figure
+    survivors attach as real images to the Claude call (`query.py`, downscale-guarded)
+    and as MCP image content blocks (`mcp.include_figure_images`); a missing image always
+    degrades to text-only. Audit: per-doc figures QC line; 3 figure-shaped labelled
+    queries. Verified live: a paper's pipeline-diagram figure is the TOP survivor
+    (rr +8.49) for its query. The step-10.5 grounding-guard directive resolved
+    not-applicable by design: figures never pass through the summarizer (captions are
+    deterministic; the VLM's source is the image, not section text) — hallucination cost
+    is bounded by QC + caption-as-context + tier 3, where Claude sees the actual image
+    (§15.0 recoverable class). pillow promoted to core deps.
 12. **Entity-alias resolution + Retrieval eval (Layer 3) → BULK INGEST.** Canonicalise entity
     names cross-document (the *link* substrate); run the heterogeneous-corpus retrieval eval on
     a sample including quant-finance papers + ≥1 code repo; then pour the corpus.
@@ -797,7 +831,9 @@ YouTube/podcast transcript ingest, broader retrieval tests.
 New dependencies introduced along the way: `mcp`, `python-docx` (landed, step 8),
 `python-pptx` (landed, step 9), and (for math) an OCR-to-markup model (benchmarked, step 6). `nbconvert`
 turned out unneeded — the `.ipynb` extractor reads notebook JSON with the stdlib (§3).
-Keep heavy/optional ones (VLM, math-OCR) behind extras like `[rerank]`.
+`pillow` promoted to core (step 11: image downscale at generation/MCP). Optional SYSTEM
+dep: LibreOffice (`soffice`) for step-11 slide figure renders (absent ⇒ text-only + gap
+line). Keep heavy/optional ones (VLM, math-OCR) behind extras like `[rerank]`.
 
 
 

@@ -98,17 +98,11 @@ def qc_reject_reason(ocr_text: str, original_text: str) -> str | None:
 
 def _ocr_qwen(page) -> str:
     """qwen2.5vl via Ollama: render the page, one chat call with the image."""
-    from ollama import Client
+    from locus.ingest.llm import vision_chat  # lazy: extract/ -> ingest/ only at call time
 
     cfg = load()
     png = page.get_pixmap(matrix=__import__("pymupdf").Matrix(_RENDER_ZOOM, _RENDER_ZOOM))
-    client = Client(host=cfg.ollama.host)
-    resp = client.chat(
-        model=cfg.mathocr.model,
-        messages=[{"role": "user", "content": PROMPT, "images": [png.tobytes("png")]}],
-        options={"temperature": 0.0, "num_ctx": 8192},
-    )
-    return resp["message"]["content"]
+    return vision_chat(PROMPT, png.tobytes("png"), model=cfg.mathocr.model)
 
 
 _GOT_CACHE: dict = {}

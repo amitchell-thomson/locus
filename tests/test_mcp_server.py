@@ -54,8 +54,12 @@ def seeded_db(tmp_path: Path, monkeypatch):
 
 
 def _text(call_result) -> str:
-    """call_tool returns (content_blocks, ...); pull the first text block."""
+    """Pull the first text block. call_tool returns (content_blocks, structured) for
+    str-returning tools but a plain block list for list-returning tools (retrieve, which
+    may append ImageContent figure blocks) — handle both shapes."""
     blocks = call_result[0]
+    if not isinstance(blocks, list):
+        return blocks.text
     return blocks[0].text
 
 
@@ -146,3 +150,41 @@ def test_sources_fall_back_to_plain_citations():
     # A result without citation_details (e.g. older callers) renders the plain strings.
     result = types.SimpleNamespace(citations=["plain cite"], citation_details=[])
     assert mcp_server._sources(result) == "- plain cite"
+
+
+def test_retrieve_tool_attaches_figure_images(seeded_db, monkeypatch, tmp_path):
+    """A figure survivor rides along as an ImageContent block (step 11 tier 3 over MCP)."""
+    import pymupdf
+
+    from locus.retrieve.pipeline import RetrievedFigure
+
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 120, 80))
+    pix.clear_with(100)
+    (tmp_path / "h_fig0.png").write_bytes(pix.tobytes("png"))
+
+    cfg = types.SimpleNamespace(
+        paths=types.SimpleNamespace(db=seeded_db, raw_store=tmp_path),
+        mcp=types.SimpleNamespace(include_figure_images=True),
+    )
+    monkeypatch.setattr(mcp_server, "load", lambda *a, **k: cfg)
+    # figure_images.load_figure_png uses its own config import
+    import locus.retrieve.figure_images as fi
+
+    monkeypatch.setattr(fi, "load", lambda *a, **k: cfg)
+
+    result = _stub_result()
+    result.figures = [
+        RetrievedFigure(raw_path="h_fig0.png", page=5, kind="vector",
+                        caption="Figure 1", doc_title="Control Notes", rerank_score=4.0),
+    ]
+    monkeypatch.setattr(mcp_server, "run_retrieval", lambda q, facets=None: result)
+    blocks = asyncio.run(mcp_server._build().call_tool("retrieve", {"query": "q"}))
+    kinds = [b.type for b in blocks]
+    assert kinds == ["text", "text", "image"]
+    assert 'figure on p.5 of "Control Notes"' in blocks[1].text
+    assert blocks[2].mimeType == "image/png"
+
+    # gate off => text only
+    cfg.mcp.include_figure_images = False
+    blocks = asyncio.run(mcp_server._build().call_tool("retrieve", {"query": "q"}))
+    assert [b.type for b in blocks] == ["text"]

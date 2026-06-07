@@ -341,6 +341,87 @@ def corpus_metrics(conn) -> list[DocMetrics]:
     return [doc_metrics(conn, i) for i in ids]
 
 
+@dataclass
+class AliasQC:
+    """Corpus-level QC over the entity-alias substrate (step 12, `locus link`)."""
+
+    variants: int
+    clusters: int
+    nontrivial_clusters: int
+    merged_variants: int
+    tier_counts: dict[str, int]
+    cross_doc_canonicals: int  # canonicals spanning >1 doc — the link payload
+    suspicious_merges: int  # llm-tier merges with zero lexical evidence (spot-check these)
+    suspicious_examples: list[str]
+
+
+def alias_qc(conn) -> AliasQC | None:
+    """QC the stored entity_aliases table; None when the substrate isn't built yet.
+
+    Suspicious merge = an llm-tier variant sharing no >=4-char token with its canonical
+    (both sides having such tokens at all): exactly the merges with no lexical evidence,
+    where a model error would hide. Counted + sampled, never auto-reverted — review with
+    `locus audit`, fix by re-running `locus link --no-cache` after a prompt fix.
+    """
+    from locus.link.aliases import _tokens
+    from locus.link.related import aliases_built
+
+    if not aliases_built(conn):
+        return None
+    rows = conn.execute("SELECT * FROM entity_aliases").fetchall()
+    tier_counts = Counter(r["tier"] for r in rows)
+    cluster_sizes = Counter(r["cluster_id"] for r in rows)
+    nontrivial = {cid for cid, n in cluster_sizes.items() if n > 1}
+
+    suspicious: list[str] = []
+    for r in rows:
+        if r["tier"] != "llm":
+            continue
+        vt, ct = _tokens(r["variant_name"]), _tokens(r["canonical_name"])
+        if vt and ct and not (vt & ct):
+            suspicious.append(f"{r['variant_name']!r} -> {r['canonical_name']!r}")
+
+    cross_doc = conn.execute(
+        """
+        SELECT COUNT(*) FROM (
+            SELECT a.canonical_name, a.canonical_type
+            FROM entities e
+            JOIN entity_aliases a
+              ON a.variant_name = e.name AND a.variant_type = e.type
+            GROUP BY a.canonical_name, a.canonical_type
+            HAVING COUNT(DISTINCT e.doc_id) > 1
+        )
+        """
+    ).fetchone()[0]
+
+    return AliasQC(
+        variants=len(rows),
+        clusters=len(cluster_sizes),
+        nontrivial_clusters=len(nontrivial),
+        merged_variants=sum(n for n in cluster_sizes.values() if n > 1),
+        tier_counts=dict(tier_counts),
+        cross_doc_canonicals=cross_doc,
+        suspicious_merges=len(suspicious),
+        suspicious_examples=suspicious[:8],
+    )
+
+
+def format_alias_qc(qc: AliasQC | None) -> str:
+    if qc is None:
+        return "ALIAS SUBSTRATE: not built (run `locus link`)"
+    tiers = ", ".join(f"{t}:{n}" for t, n in sorted(qc.tier_counts.items()))
+    lines = [
+        "ALIAS SUBSTRATE (entity_aliases)",
+        f"    variants {qc.variants} | clusters {qc.clusters} "
+        f"({qc.nontrivial_clusters} non-trivial, {qc.merged_variants} variants merged)",
+        f"    tiers: {tiers}",
+        f"    cross-doc canonicals: {qc.cross_doc_canonicals}",
+        f"    suspicious merges (llm, zero lexical evidence): {qc.suspicious_merges}",
+    ]
+    lines.extend(f"      - {ex}" for ex in qc.suspicious_examples)
+    return "\n".join(lines)
+
+
 def format_metrics(docs: list[DocMetrics]) -> str:
     if not docs:
         return "No documents ingested yet."

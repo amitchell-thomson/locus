@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 
 from locus.config import load
 from locus.ingest.embed import embed_text
+from locus.link.related import aliases_built
 
 # Entity-arm bounds: ignore very short names, and cap how many entity candidates we add.
 _MIN_ENTITY_LEN = 4
@@ -188,17 +189,46 @@ def search(conn, query: str, facets: Facets | None = None) -> list[Candidate]:
             path_added += 1
 
     # --- entity-anchored: sections naming an entity that appears in the query ---
+    # With the alias substrate built (`locus link`, step 12), matching is canonical-group
+    # aware: a query naming ANY variant ("KL divergence") surfaces sections naming any
+    # sibling variant ("Kullback-Leibler (KL) divergence"). Before the first link run the
+    # table is empty and matching falls back to raw entity names (pre-step-12 behaviour).
     added = 0
-    for r in conn.execute(
-        "SELECT DISTINCT e.name, e.section_id, e.doc_id, s.summary, s.file_path "
-        "FROM entities e JOIN sections s ON s.id = e.section_id"
-    ):
-        if added >= _MAX_ENTITY_CANDIDATES:
-            break
-        name = r["name"] or ""
-        if len(name) >= _MIN_ENTITY_LEN and name.lower() in q_lower:
-            add("section", r["section_id"], r["doc_id"], r["section_id"], r["summary"], 0.0,
-                "entity", file_path=r["file_path"])
-            added += 1
+    if aliases_built(conn):
+        matched: set[tuple[str, str]] = set()
+        for r in conn.execute(
+            "SELECT variant_name, canonical_name, canonical_type FROM entity_aliases"
+        ):
+            name = r["variant_name"] or ""
+            if len(name) >= _MIN_ENTITY_LEN and name.lower() in q_lower:
+                matched.add((r["canonical_name"], r["canonical_type"]))
+        for canon_name, canon_type in sorted(matched):  # deterministic under the cap
+            if added >= _MAX_ENTITY_CANDIDATES:
+                break
+            for r in conn.execute(
+                "SELECT DISTINCT e.section_id, e.doc_id, s.summary, s.file_path "
+                "FROM entity_aliases a "
+                "JOIN entities e ON e.name = a.variant_name AND e.type = a.variant_type "
+                "JOIN sections s ON s.id = e.section_id "
+                "WHERE a.canonical_name = ? AND a.canonical_type = ?",
+                (canon_name, canon_type),
+            ):
+                if added >= _MAX_ENTITY_CANDIDATES:
+                    break
+                add("section", r["section_id"], r["doc_id"], r["section_id"], r["summary"],
+                    0.0, "entity", file_path=r["file_path"])
+                added += 1
+    else:
+        for r in conn.execute(
+            "SELECT DISTINCT e.name, e.section_id, e.doc_id, s.summary, s.file_path "
+            "FROM entities e JOIN sections s ON s.id = e.section_id"
+        ):
+            if added >= _MAX_ENTITY_CANDIDATES:
+                break
+            name = r["name"] or ""
+            if len(name) >= _MIN_ENTITY_LEN and name.lower() in q_lower:
+                add("section", r["section_id"], r["doc_id"], r["section_id"], r["summary"], 0.0,
+                    "entity", file_path=r["file_path"])
+                added += 1
 
     return list(out.values())

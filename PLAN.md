@@ -473,12 +473,44 @@ done **before** the bulk ingest. Each item ≈ one work-block.
   System dep: the llama.cpp binary (optional, like soffice — absent ⇒ ollama path).
   Residual: figure-description quality itself (~3 faithfulness on hard diagrams) is the
   §11.B model ceiling, unchanged by the executor — revisit at the next VLM generation.
-- [ ] **12. Entity-alias resolution + Retrieval eval (Layer 3) → BULK INGEST** — canonicalise
-  entity names cross-document (the *link* substrate); validate on a heterogeneous sample
-  including quant-finance papers + ≥1 code repo (the second domain the synthesis modes need);
-  then pour the corpus. **Before the pour: run the fig-v1→v2 description backfill** (~223
-  figures, regenerable from stored PNGs — no re-ingest; doubles as the guard-4 validation).
-  **Pre-pour decision — VLM vision-encode placement: RESOLVED by step 11.6 (below).**
+- [x] **12. Entity-alias resolution + Retrieval eval (Layer 3)** — done (2026-06-06); the
+  **BULK INGEST itself remains** (owner-run per `docs/pour-runbook.md`; pre-pour blocker:
+  the laptop outbox's `coursework/` folder is not syncing). Canonicalises entity names
+  cross-document — the *link* substrate. **Substrate:** `entity_aliases` (migration 0008) —
+  DERIVED + REGENERABLE total mapping `(name,type) → (canonical_name, canonical_type)`;
+  `entities` never mutated; rebuild = delete + recompute; built by **`locus link`**
+  (`locus/link/aliases.py`). Tiers: deterministic first (casefold / punct / attested
+  acronym-expansion incl. plural-chained lookups ("LTI models"→attested "LTI model") /
+  attested cross-doc plural — same-type only, hard evidence), then embedding-blocked
+  lookalike clusters (cosine ≥0.86 AND token-Jaccard ≥0.34 — the token guard kills
+  theme-mates like Kalman/particle filter) adjudicated by the **Claude API** (owner
+  decision; forced tool-use, judge.py pattern), verdicts cached in pass_cache keyed on
+  cluster content+model+PROMPT_VERSION ⇒ incremental re-runs are ~free (verified: rerun =
+  359 cache hits, 0 API calls, byte-identical). Hard guards override the LLM (it proposes,
+  aliases.py disposes): min-merge-length 4 (homonyms: 'var', 'P2'); same-section
+  co-occurrence ⇒ never merge (authorial evidence); canonical snapped to an actual member
+  surface; code docs excluded from clustering (AST identifiers exact; identity rows keep
+  the join total); oversize components (>8 reps) skip the LLM (cost guard — correctly
+  skipped the MSH-variant and Qwen-model-zoo families). **Live build (33 docs):** 4,696
+  identities → 4,257 clusters (340 non-trivial, 779 variants merged; llm 502, casefold
+  165, punct 54, plural 33, acronym 25); cross-doc canonicals 182→**211**; 17 guard
+  splits; audit suspicious-merges (llm-tier, zero lexical evidence) **0**; spot-checked
+  sample clean (type collapses, author normalisation, no wrong merges). **Consumers:**
+  entity-anchored retrieval arm matches via canonical groups (query "KL divergence"
+  surfaces the doc storing only "Kullback-Leibler (KL) divergence"; substrate checked per
+  query, no process cache ⇒ MCP picks up rebuilds without restart; empty-table fallback =
+  pre-step-12 behaviour); `related_documents` (`locus/link/related.py`, joins-only) in
+  `locus inspect` + MCP `inspect_document` — the step-7.5 cross-doc edges, with a
+  stop-entity guard designed now and OFF until the pour (~0.4×doc count). **Eval Layer 3
+  (pre-pour gate, 33-doc heterogeneous corpus incl. quant papers + 5 code repos):**
+  recall@8 **1.000** / cross-domain **1.000** / banner **0.000** / file_recall **1.000**
+  (21 labelled queries incl. a new alias-bridged one) + **links_recall 1.000**
+  (`score_links`, 4/4 labelled related-pair directions); judge **4.35** (n=8; baseline
+  band 4.02–4.08; entity recall still weakest 3.38 — extraction recall is the §11.B model
+  ceiling, untouched by aliasing); math fidelity **0.928**, 87.5% pages ≥0.8 (in the
+  measured band). Audit gains the ALIAS SUBSTRATE QC block; config `[alias]`. 322 tests
+  green (27 new). The fig-v1→v2 backfill + VLM placement pre-pour items were closed by
+  11.6.
 
 **After the pour (not `[RB]`):** ANN-index warning (§11.D), Obsidian projection (§14),
 YouTube / podcast transcript ingest, broader retrieval tests.

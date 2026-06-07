@@ -152,6 +152,30 @@ class FiguresConfig(BaseModel):
     image_cap: int = Field(3, description="Max figure images attached per Claude call / MCP reply.")
 
 
+class AliasConfig(BaseModel):
+    """Cross-document entity-alias resolution (locus/link/aliases.py, plan step 12).
+
+    Deterministic tiers (casefold/punct/acronym/plural) run first; remaining lookalike
+    clusters — blocked by name-embedding cosine AND a token-overlap guard — are adjudicated
+    by the Claude API (the judge.py pattern). Wrong merges corrupt the link substrate, so
+    every threshold here leans conservative: a missed merge is fragmentation, a wrong merge
+    is corruption.
+    """
+
+    # Cosine floor over nomic name embeddings for candidate edges. Below it, names are not
+    # even considered lookalikes.
+    block_threshold: float = Field(0.86, description="Cosine floor for candidate clustering.")
+    # Jaccard overlap over >=4-char lowercase tokens. Backstops the embedder pulling
+    # thematically-adjacent but DISTINCT names together ('Kalman filter' vs 'particle filter').
+    min_token_overlap: float = Field(0.34, description="Token-Jaccard guard on candidate edges.")
+    # Connected components larger than this skip the LLM and stay deterministic-only —
+    # a giant component is almost always a blocking-threshold failure, not one real entity.
+    max_cluster_size: int = Field(8, description="Max cluster size sent to the LLM (cost guard).")
+    # Names shorter than this never merge into a different surface (homonym risk: 'var', 'P2').
+    min_merge_len: int = Field(4, description="Min name length eligible for any merge.")
+    use_llm: bool = Field(True, description="Adjudicate fuzzy clusters via the Claude API.")
+
+
 class ReposConfig(BaseModel):
     """Tracked code repositories (PLAN.md step 10). `locus watch` checks each repo's git
     HEAD every `check_interval` seconds and re-ingests only when new commits landed —
@@ -187,6 +211,8 @@ class Config(BaseModel):
     figures: FiguresConfig = Field(default_factory=FiguresConfig)
     # Optional: absent [repos] means no tracked repos (sync is a no-op).
     repos: ReposConfig = Field(default_factory=ReposConfig)
+    # Optional: absent [alias] falls back to defaults (LLM adjudication on).
+    alias: AliasConfig = Field(default_factory=AliasConfig)
 
     def resolve_paths(self) -> "Config":
         """Make all configured paths absolute, relative to the project root."""

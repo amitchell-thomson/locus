@@ -97,6 +97,8 @@ def test_inspect_document_shows_synthesis_and_sections(seeded_db):
     assert "Stability is determined by the poles." in out
     assert "Nyquist criterion (theorem)" in out
     assert "missing proof" in out  # gap flag
+    # Alias substrate not built in this fixture -> graceful hint, not an error (step 12).
+    assert "RELATED DOCUMENTS" in out and "locus link" in out
 
 
 def test_inspect_document_unknown_is_reported(seeded_db):

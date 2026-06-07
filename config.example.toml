@@ -94,3 +94,14 @@ paths = [
   "/home/alec/server-projects/tanker-flow",
 ]
 check_interval = 3600   # seconds between HEAD checks inside `locus watch`
+
+[alias]
+# Cross-document entity-alias resolution (`locus link`, step 12). Deterministic tiers run
+# first; remaining lookalike clusters are adjudicated by the Claude API (billed — only on
+# new/changed clusters, verdicts are cached). Thresholds lean conservative: a missed merge
+# is fragmentation, a wrong merge corrupts the link substrate.
+block_threshold   = 0.86   # cosine floor (nomic name embeddings) for candidate edges
+min_token_overlap = 0.34   # token-Jaccard guard on candidate edges
+max_cluster_size  = 8      # clusters larger than this skip the LLM (cost guard)
+min_merge_len     = 4      # names shorter than this never merge (homonym risk: 'var', 'P2')
+use_llm           = true   # false = deterministic tiers only (no API)

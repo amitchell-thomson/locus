@@ -83,8 +83,40 @@ def test_lexical_arm_matches_text_terms(conn):
 
 
 def test_entity_arm_fires_on_named_entity(conn):
+    # entity_aliases is empty here -> exercises the pre-`locus link` fallback path.
     cands = search(conn, "explain the Nyquist criterion please")
     assert any("entity" in c.sources for c in cands)
+
+
+def test_entity_arm_matches_via_alias_variants(conn):
+    # Section 2 names only the LONG variant; the alias substrate maps both surfaces to one
+    # canonical, so a query naming the SHORT variant surfaces that section (step 12).
+    conn.execute(
+        "INSERT INTO sections (id, doc_id, position, title, summary) "
+        "VALUES (2,1,1,'Divergences','measures of distributional distance')"
+    )
+    conn.execute(
+        "INSERT INTO entities (doc_id, section_id, name, type) "
+        "VALUES (1,2,'Kullback-Leibler (KL) divergence','concept')"
+    )
+    conn.executemany(
+        "INSERT INTO entity_aliases "
+        "(variant_name, variant_type, canonical_name, canonical_type, cluster_id, tier) "
+        "VALUES (?,?,?,?,?,?)",
+        [
+            ("Kullback-Leibler (KL) divergence", "concept",
+             "KL divergence", "concept", 1, "acronym"),
+            ("KL divergence", "concept", "KL divergence", "concept", 1, "acronym"),
+            ("Nyquist criterion", "theorem", "Nyquist criterion", "theorem", 2, "identity"),
+        ],
+    )
+    conn.commit()
+    cands = search(conn, "what is the KL divergence")
+    hit = [c for c in cands if "entity" in c.sources]
+    assert any(c.section_id == 2 for c in hit)
+    # The identity-mapped entity still matches through the alias path.
+    cands2 = search(conn, "explain the Nyquist criterion please")
+    assert any("entity" in c.sources for c in cands2)
 
 
 def test_expand_attaches_parent_context(conn):

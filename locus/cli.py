@@ -119,6 +119,29 @@ def cmd_sync(args) -> None:
         conn.close()
 
 
+def cmd_link(args) -> None:
+    """Rebuild the entity-alias substrate (entity_aliases) over the stored corpus.
+
+    Manual-only by design: the fuzzy tier makes billed Claude API calls (only for
+    new/changed clusters — verdicts are cached), so it never rides the watcher. Run after
+    ingest batches; a long-lived MCP server should be restarted afterwards (it caches the
+    alias map per process).
+    """
+    from locus.link.aliases import build_aliases
+
+    conn = _open()
+    try:
+        # build_aliases logs progress + the final report through `log`.
+        build_aliases(
+            conn,
+            use_llm=False if args.no_llm else None,  # None -> config [alias].use_llm
+            use_cache=not args.no_cache,
+            log=print,
+        )
+    finally:
+        conn.close()
+
+
 def cmd_list(args) -> None:
     conn = _open()
     rows = conn.execute(
@@ -164,6 +187,12 @@ def cmd_inspect(args) -> None:
     print(f"  gaps ({len(flags)}):")
     for g in flags:
         print(f"    - {g}")
+
+    from locus.link.related import format_related
+
+    print("-" * 88)
+    for line in format_related(conn, doc_id):
+        print(line)
 
     section_map = {m["position"]: m for m in json.loads(doc["section_map"] or "[]")}
     sections = conn.execute(
@@ -284,12 +313,17 @@ def cmd_mcp(args) -> None:
 
 
 def cmd_audit(args) -> None:
-    from locus.eval.metrics import corpus_metrics, doc_metrics, format_metrics
+    from locus.eval.metrics import (
+        alias_qc, corpus_metrics, doc_metrics, format_alias_qc, format_metrics,
+    )
 
     conn = _open()
     docs = [doc_metrics(conn, int(args.doc))] if args.doc else corpus_metrics(conn)
-    conn.close()
     print(format_metrics(docs))
+    if not args.doc:  # alias substrate is corpus-level, not per-doc
+        print()
+        print(format_alias_qc(alias_qc(conn)))
+    conn.close()
 
 
 def cmd_eval(args) -> None:
@@ -332,6 +366,12 @@ def cmd_eval(args) -> None:
             print("\n=== Labelled retrieval (recall@k / MRR) ===")
             results, agg = retrieval_eval.evaluate_retrieval(conn)
             print(retrieval_eval.format_results(results, agg))
+            print("\n=== Link substrate (related-document pairs) ===")
+            lines, lagg = retrieval_eval.score_links(conn)
+            for line in lines:
+                print(line)
+            for k, v in lagg.items():
+                print(f"  {k:<24} {v:.3f}")
     finally:
         conn.close()
 
@@ -389,6 +429,20 @@ def main(argv=None) -> None:
         help="also expose the server-side `query` tool (makes billed Claude API calls)",
     )
     pm.set_defaults(func=cmd_mcp)
+
+    pk = sub.add_parser(
+        "link",
+        help="rebuild the cross-document entity-alias substrate (Claude API for fuzzy clusters)",
+    )
+    pk.add_argument(
+        "--no-llm", action="store_true",
+        help="deterministic tiers only (no API; fuzzy clusters stay unmerged)",
+    )
+    pk.add_argument(
+        "--no-cache", action="store_true",
+        help="re-adjudicate every fuzzy cluster, ignoring cached verdicts",
+    )
+    pk.set_defaults(func=cmd_link)
 
     pa = sub.add_parser("audit", help="structural ingest-quality metrics (no API)")
     pa.add_argument("--doc", default=None, help="restrict to one document id")

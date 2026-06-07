@@ -1,0 +1,536 @@
+"""Step 12: cross-document entity-alias resolution (locus/link/).
+
+All model-free: deterministic tiers run as-is; the Claude adjudicator is exercised through
+an injected fake client (the judge.py pattern); embeddings come from an injected embed_fn.
+"""
+
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from locus.db.connection import get_connection
+from locus.db.migrate import migrate
+from locus.link import aliases as al
+from locus.link.adjudicate import AliasVerdict, ClusterMember, adjudicate_cluster
+
+
+def _seed_doc(conn, doc_id: int, source_type: str = "pdf", title: str | None = None):
+    conn.execute(
+        "INSERT INTO documents (id, content_hash, source_type, source_uri, raw_path, title,"
+        " ingest_model) VALUES (?,?,?,?,?,?,?)",
+        (doc_id, f"h{doc_id}", source_type, f"u{doc_id}", f"p{doc_id}",
+         title or f"Doc {doc_id}", "m"),
+    )
+
+
+def _seed_section(conn, sec_id: int, doc_id: int, position: int = 0):
+    conn.execute(
+        "INSERT INTO sections (id, doc_id, position, title, summary) VALUES (?,?,?,?,?)",
+        (sec_id, doc_id, position, f"S{sec_id}", f"summary {sec_id}"),
+    )
+
+
+def _seed_entity(conn, doc_id: int, sec_id: int, name: str, type_: str = "concept"):
+    conn.execute(
+        "INSERT OR IGNORE INTO entities (doc_id, section_id, name, type) VALUES (?,?,?,?)",
+        (doc_id, sec_id, name, type_),
+    )
+
+
+@pytest.fixture()
+def conn(tmp_path: Path):
+    db = tmp_path / "a.db"
+    migrate(db)
+    c = get_connection(db)
+    yield c
+    c.close()
+
+
+def _aliases(conn) -> dict[tuple[str, str], tuple[str, str, str]]:
+    """(variant_name, variant_type) -> (canonical_name, canonical_type, tier)."""
+    return {
+        (r["variant_name"], r["variant_type"]):
+            (r["canonical_name"], r["canonical_type"], r["tier"])
+        for r in conn.execute("SELECT * FROM entity_aliases")
+    }
+
+
+# --- deterministic tiers ----------------------------------------------------------------------
+
+
+def test_casefold_merges_case_variants(conn):
+    _seed_doc(conn, 1)
+    _seed_section(conn, 1, 1)
+    _seed_section(conn, 2, 1, 1)
+    _seed_doc(conn, 2)
+    _seed_section(conn, 3, 2)
+    # "Bode Diagram" in two docs, "Bode diagram" in one -> canonical = most doc-attested.
+    _seed_entity(conn, 1, 1, "Bode Diagram")
+    _seed_entity(conn, 2, 3, "Bode Diagram")
+    _seed_entity(conn, 1, 2, "Bode diagram")
+    conn.commit()
+    al.build_aliases(conn, use_llm=False)
+    a = _aliases(conn)
+    assert a[("Bode diagram", "concept")] == ("Bode Diagram", "concept", "casefold")
+    assert a[("Bode Diagram", "concept")][0] == "Bode Diagram"
+
+
+def test_casefold_same_type_only(conn):
+    _seed_doc(conn, 1)
+    _seed_section(conn, 1, 1)
+    _seed_section(conn, 2, 1, 1)
+    _seed_entity(conn, 1, 1, "Fourier Transform", "concept")
+    _seed_entity(conn, 1, 2, "fourier transform", "method")
+    conn.commit()
+    al.build_aliases(conn, use_llm=False)
+    a = _aliases(conn)
+    # Different types never merge deterministically (LLM-only).
+    assert a[("Fourier Transform", "concept")][0] == "Fourier Transform"
+    assert a[("fourier transform", "method")][0] == "fourier transform"
+
+
+def test_short_names_never_casefold_merge(conn):
+    _seed_doc(conn, 1)
+    _seed_section(conn, 1, 1)
+    _seed_section(conn, 2, 1, 1)
+    _seed_entity(conn, 1, 1, "VAR", "method")
+    _seed_entity(conn, 1, 2, "var", "method")
+    conn.commit()
+    al.build_aliases(conn, use_llm=False)
+    a = _aliases(conn)
+    assert a[("VAR", "method")] == ("VAR", "method", "identity")
+    assert a[("var", "method")] == ("var", "method", "identity")
+
+
+def test_punct_tier_merges_hyphen_variants(conn):
+    _seed_doc(conn, 1)
+    _seed_section(conn, 1, 1)
+    _seed_section(conn, 2, 1, 1)
+    _seed_entity(conn, 1, 1, "Black-Scholes model", "method")
+    _seed_entity(conn, 1, 2, "Black Scholes model", "method")
+    conn.commit()
+    al.build_aliases(conn, use_llm=False)
+    a = _aliases(conn)
+    canon = a[("Black-Scholes model", "method")][0]
+    assert a[("Black Scholes model", "method")][0] == canon
+
+
+def test_acronym_expansion_links_attested_surfaces(conn):
+    _seed_doc(conn, 1)
+    _seed_section(conn, 1, 1)
+    _seed_doc(conn, 2)
+    _seed_section(conn, 2, 2)
+    _seed_section(conn, 3, 2, 1)
+    # Long form in doc 1; bare acronym form in doc 2 (the singular of "LTI models").
+    _seed_entity(conn, 1, 1, "Linear, Time-invariant (LTI) models")
+    _seed_entity(conn, 2, 2, "LTI model")
+    _seed_entity(conn, 2, 3, "LTI")
+    conn.commit()
+    al.build_aliases(conn, use_llm=False)
+    a = _aliases(conn)
+    canon = a[("Linear, Time-invariant (LTI) models", "concept")][0]
+    # All three surfaces collapse onto one canonical.
+    assert a[("LTI model", "concept")][0] == canon
+    assert a[("LTI", "concept")][0] == canon
+
+
+def test_acronym_requires_attestation(conn):
+    _seed_doc(conn, 1)
+    _seed_section(conn, 1, 1)
+    # Long form only; no bare-acronym entity exists -> nothing to link, no invention.
+    _seed_entity(conn, 1, 1, "Kullback-Leibler (KL) divergence")
+    conn.commit()
+    al.build_aliases(conn, use_llm=False)
+    a = _aliases(conn)
+    assert a[("Kullback-Leibler (KL) divergence", "concept")][2] == "identity"
+    assert len(a) == 1  # no invented surfaces
+
+
+def test_cross_doc_plural_merges_onto_attested_singular(conn):
+    _seed_doc(conn, 1)
+    _seed_section(conn, 1, 1)
+    _seed_doc(conn, 2)
+    _seed_section(conn, 2, 2)
+    _seed_entity(conn, 1, 1, "Laplace transform")
+    _seed_entity(conn, 2, 2, "Laplace transforms")
+    conn.commit()
+    al.build_aliases(conn, use_llm=False)
+    a = _aliases(conn)
+    assert a[("Laplace transforms", "concept")][0] == "Laplace transform"
+
+
+def test_plural_without_attested_singular_stays(conn):
+    _seed_doc(conn, 1)
+    _seed_section(conn, 1, 1)
+    _seed_entity(conn, 1, 1, "Fourier series")
+    conn.commit()
+    al.build_aliases(conn, use_llm=False)
+    a = _aliases(conn)
+    # "Fourier serie" is attested nowhere -> never mangled.
+    assert a[("Fourier series", "concept")] == ("Fourier series", "concept", "identity")
+
+
+def test_code_entities_excluded_from_clustering(conn):
+    _seed_doc(conn, 1, source_type="code")
+    _seed_section(conn, 1, 1)
+    _seed_doc(conn, 2)
+    _seed_section(conn, 2, 2)
+    # Same-ish surfaces on a code doc and a prose doc; the code-only identity must not
+    # join any cluster, but still gets an identity row (join totality).
+    _seed_entity(conn, 1, 1, "Rebalancer.weights", "method")
+    _seed_entity(conn, 1, 1, "rebalancer.Weights", "method")
+    _seed_entity(conn, 2, 2, "portfolio rebalancing", "concept")
+    conn.commit()
+    al.build_aliases(conn, use_llm=False)
+    a = _aliases(conn)
+    assert a[("Rebalancer.weights", "method")] == ("Rebalancer.weights", "method", "identity")
+    assert a[("rebalancer.Weights", "method")] == ("rebalancer.Weights", "method", "identity")
+    assert len(a) == 3
+
+
+def test_totality_and_rebuild_idempotence(conn):
+    _seed_doc(conn, 1)
+    _seed_section(conn, 1, 1)
+    _seed_entity(conn, 1, 1, "Kalman filter", "method")
+    _seed_entity(conn, 1, 1, "transfer function", "concept")
+    conn.commit()
+    al.build_aliases(conn, use_llm=False)
+    first = _aliases(conn)
+    n_entities = conn.execute(
+        "SELECT COUNT(*) FROM (SELECT DISTINCT name, type FROM entities)"
+    ).fetchone()[0]
+    assert len(first) == n_entities  # total mapping
+    al.build_aliases(conn, use_llm=False)
+    assert _aliases(conn) == first  # delete + recompute is idempotent
+
+
+def test_pick_canonical_prefers_doc_freq_then_shortest(conn):
+    nodes = [
+        al._Node("Long Name Surface", "concept", docs={1}),
+        al._Node("Short", "concept", docs={1, 2}),
+        al._Node("Other", "concept", docs={1, 2}),
+    ]
+    # doc_freq wins first; among ties, alphabetical after length ("Other" vs "Short": same
+    # length -> alpha).
+    assert al.pick_canonical_idx([0, 1, 2], nodes) == 2
+
+
+# --- LLM path with injected fake client --------------------------------------------------------
+
+
+class _FakeClient:
+    """Anthropic-shaped fake: returns a fixed tool_use verdict."""
+
+    def __init__(self, verdict: dict):
+        self._verdict = verdict
+        self.calls = 0
+        self.messages = self  # client.messages.create(...)
+
+    def create(self, **kwargs):
+        self.calls += 1
+        block = SimpleNamespace(type="tool_use", input=self._verdict)
+        return SimpleNamespace(content=[block])
+
+
+def _seed_fuzzy_pair(conn):
+    """Two cross-type surfaces of one concept, in different sections (no co-occurrence)."""
+    _seed_doc(conn, 1, title="Signals Notes")
+    _seed_section(conn, 1, 1)
+    _seed_doc(conn, 2, title="PDE Notes")
+    _seed_section(conn, 2, 2)
+    _seed_entity(conn, 1, 1, "Fourier transform", "concept")
+    _seed_entity(conn, 2, 2, "fourier transform", "method")
+    conn.commit()
+
+
+def _close_embed(names: list[str]) -> list[list[float]]:
+    """Embed near-identical strings identically: same casefolded text -> same vector."""
+    out = []
+    seen: dict[str, int] = {}
+    for n in names:
+        key = n.lower()
+        if key not in seen:
+            seen[key] = len(seen)
+        v = [0.0] * 768
+        v[seen[key]] = 1.0
+        out.append(v)
+    return out
+
+
+def test_llm_merges_cross_type_variants(conn):
+    _seed_fuzzy_pair(conn)
+    fake = _FakeClient({
+        "groups": [{
+            "member_indices": [0, 1],
+            "canonical_name": "Fourier transform",
+            "canonical_type": "concept",
+        }]
+    })
+    report = al.build_aliases(conn, use_llm=True, client=fake, model="fake", embed_fn=_close_embed)
+    a = _aliases(conn)
+    assert a[("fourier transform", "method")] == ("Fourier transform", "concept", "llm")
+    assert a[("Fourier transform", "concept")][0] == "Fourier transform"
+    assert report.llm_calls == 1 and fake.calls == 1
+
+
+def test_llm_verdict_cached_in_pass_cache(conn):
+    _seed_fuzzy_pair(conn)
+    verdict = {
+        "groups": [{
+            "member_indices": [0, 1],
+            "canonical_name": "Fourier transform",
+            "canonical_type": "concept",
+        }]
+    }
+    fake = _FakeClient(verdict)
+    al.build_aliases(conn, use_llm=True, client=fake, model="fake", embed_fn=_close_embed)
+    assert fake.calls == 1
+    # Second run: verdict comes from pass_cache, no API call.
+    fake2 = _FakeClient(verdict)
+    report = al.build_aliases(conn, use_llm=True, client=fake2, model="fake", embed_fn=_close_embed)
+    assert fake2.calls == 0
+    assert report.cache_hits == 1 and report.llm_calls == 0
+    assert _aliases(conn)[("fourier transform", "method")][0] == "Fourier transform"
+
+
+def test_token_jaccard_guard_blocks_theme_mates(conn):
+    # "Kalman filter" vs "particle filter": embedder pulls them together (faked at cos 1.0)
+    # but token Jaccard is 1/3 < 0.34 -> never even becomes an LLM candidate.
+    _seed_doc(conn, 1)
+    _seed_section(conn, 1, 1)
+    _seed_section(conn, 2, 1, 1)
+    _seed_entity(conn, 1, 1, "Kalman filter", "method")
+    _seed_entity(conn, 1, 2, "particle filter", "method")
+    conn.commit()
+    fake = _FakeClient({"groups": []})
+
+    def both_close(names):
+        return [[1.0] + [0.0] * 767 for _ in names]
+
+    report = al.build_aliases(conn, use_llm=True, client=fake, model="fake", embed_fn=both_close)
+    assert report.llm_candidate_clusters == 0 and fake.calls == 0
+    a = _aliases(conn)
+    assert a[("Kalman filter", "method")][0] == "Kalman filter"
+    assert a[("particle filter", "method")][0] == "particle filter"
+
+
+def test_cooccurrence_guard_overrides_llm(conn):
+    # Both surfaces in the SAME section -> the author treats them as distinct; a fake
+    # verdict trying to merge them must be split back. ("extended Kalman filter" shares
+    # 2/3 tokens with "Kalman filter", so it passes the token guard and reaches the LLM.)
+    _seed_doc(conn, 1)
+    _seed_section(conn, 1, 1)
+    _seed_entity(conn, 1, 1, "Kalman filter", "method")
+    _seed_entity(conn, 1, 1, "extended Kalman filter", "method")
+    conn.commit()
+    fake = _FakeClient({
+        "groups": [{
+            "member_indices": [0, 1],
+            "canonical_name": "Kalman filter",
+            "canonical_type": "method",
+        }]
+    })
+
+    def both_close(names):
+        return [[1.0] + [0.0] * 767 for _ in names]
+
+    report = al.build_aliases(conn, use_llm=True, client=fake, model="fake", embed_fn=both_close)
+    a = _aliases(conn)
+    assert a[("Kalman filter", "method")][0] == "Kalman filter"
+    assert a[("extended Kalman filter", "method")][0] == "extended Kalman filter"
+    assert report.guard_splits >= 1
+
+
+def test_short_name_guard_overrides_llm(conn):
+    _seed_doc(conn, 1)
+    _seed_section(conn, 1, 1)
+    _seed_doc(conn, 2)
+    _seed_section(conn, 2, 2)
+    _seed_entity(conn, 1, 1, "VaR", "metric")
+    _seed_entity(conn, 2, 2, "Vary", "metric")  # 4 chars, close-ish string
+    conn.commit()
+    fake = _FakeClient({
+        "groups": [{
+            "member_indices": [0, 1],
+            "canonical_name": "VaR",
+            "canonical_type": "metric",
+        }]
+    })
+
+    def both_close(names):
+        return [[1.0] + [0.0] * 767 for _ in names]
+
+    al.build_aliases(conn, use_llm=True, client=fake, model="fake", embed_fn=both_close)
+    a = _aliases(conn)
+    # "VaR" is < min_merge_len -> the group is rejected, both stay identity.
+    assert a[("VaR", "metric")][0] == "VaR"
+    assert a[("Vary", "metric")][0] == "Vary"
+
+
+def test_invented_canonical_snaps_to_member(conn):
+    _seed_fuzzy_pair(conn)
+    fake = _FakeClient({
+        "groups": [{
+            "member_indices": [0, 1],
+            "canonical_name": "The Fourier Transform (invented)",
+            "canonical_type": "concept",
+        }]
+    })
+    al.build_aliases(conn, use_llm=True, client=fake, model="fake", embed_fn=_close_embed)
+    a = _aliases(conn)
+    canon = a[("fourier transform", "method")][0]
+    # Never an invented surface: the canonical is one of the actual members.
+    assert canon in {"Fourier transform", "fourier transform"}
+
+
+def test_oversize_cluster_skipped(conn, monkeypatch):
+    _seed_doc(conn, 1)
+    for i in range(1, 12):
+        _seed_section(conn, i, 1, i - 1)
+        _seed_entity(conn, 1, i, f"thing variant number {i}", "concept")
+    conn.commit()
+
+    def all_same(names):
+        return [[1.0] + [0.0] * 767 for _ in names]
+
+    fake = _FakeClient({"groups": []})
+    report = al.build_aliases(conn, use_llm=True, client=fake, model="fake", embed_fn=all_same)
+    assert report.oversize_skipped == 1
+    assert fake.calls == 0  # never sent to the LLM
+
+
+# --- related documents ---------------------------------------------------------------------------
+
+
+def _seed_related_corpus(conn):
+    """Three docs: 1 and 2 share two canonicals (one via alias variants); 3 shares one
+    ubiquitous canonical with everything (the stop-entity)."""
+    for d in (1, 2, 3):
+        _seed_doc(conn, d, title=f"Doc {d}")
+        _seed_section(conn, d, d)
+    _seed_entity(conn, 1, 1, "Fourier transform")
+    _seed_entity(conn, 1, 1, "Laplace transform")
+    _seed_entity(conn, 1, 1, "model")
+    _seed_entity(conn, 2, 2, "fourier transform")  # variant of doc 1's surface
+    _seed_entity(conn, 2, 2, "Laplace transform")
+    _seed_entity(conn, 2, 2, "model")
+    _seed_entity(conn, 3, 3, "model")
+    conn.commit()
+    al.build_aliases(conn, use_llm=False)
+
+
+def test_related_documents_ranked_by_shared_canonicals(conn):
+    from locus.link.related import related_documents
+
+    _seed_related_corpus(conn)
+    rel = related_documents(conn, 1)
+    assert [r.doc_id for r in rel] == [2, 3]
+    assert rel[0].shared_count == 3  # fourier + laplace + model
+    assert rel[1].shared_count == 1  # model only
+    assert "Laplace transform" in rel[0].shared_names
+
+
+def test_related_documents_stop_entity_guard(conn):
+    from locus.link.related import related_documents
+
+    _seed_related_corpus(conn)
+    # "model" spans 3 docs; with the guard at 2 it stops linking anything.
+    rel = related_documents(conn, 1, stop_doc_freq=2)
+    assert [r.doc_id for r in rel] == [2]
+    assert rel[0].shared_count == 2
+    assert "model" not in rel[0].shared_names
+
+
+def test_related_documents_top_n(conn):
+    from locus.link.related import related_documents
+
+    _seed_related_corpus(conn)
+    assert len(related_documents(conn, 1, top_n=1)) == 1
+
+
+def test_format_related_before_link_run(conn):
+    from locus.link.related import format_related
+
+    _seed_doc(conn, 1)
+    conn.commit()
+    (line,) = format_related(conn, 1)
+    assert "locus link" in line  # graceful hint, never an error
+
+
+# --- audit QC + links eval -----------------------------------------------------------------------
+
+
+def test_alias_qc_reports_substrate(conn):
+    from locus.eval.metrics import alias_qc, format_alias_qc
+
+    assert alias_qc(conn) is None  # not built yet
+    assert "locus link" in format_alias_qc(None)
+    _seed_related_corpus(conn)
+    qc = alias_qc(conn)
+    assert qc is not None
+    assert qc.variants == conn.execute("SELECT COUNT(*) FROM entity_aliases").fetchone()[0]
+    assert qc.nontrivial_clusters >= 1  # the fourier casefold pair
+    assert qc.cross_doc_canonicals >= 2  # fourier (via alias), laplace, model
+    assert qc.suspicious_merges == 0  # no llm merges in this fixture
+    assert "ALIAS SUBSTRATE" in format_alias_qc(qc)
+
+
+def test_alias_qc_flags_zero_evidence_llm_merge(conn):
+    from locus.eval.metrics import alias_qc
+
+    _seed_doc(conn, 1)
+    _seed_section(conn, 1, 1)
+    _seed_entity(conn, 1, 1, "spectral density")
+    conn.execute(
+        "INSERT INTO entity_aliases "
+        "(variant_name, variant_type, canonical_name, canonical_type, cluster_id, tier) "
+        "VALUES ('spectral density','concept','unrelated surface','concept',1,'llm')"
+    )
+    conn.commit()
+    qc = alias_qc(conn)
+    assert qc.suspicious_merges == 1
+    assert "spectral density" in qc.suspicious_examples[0]
+
+
+def test_score_links_requires_substrate_and_finds_pairs(conn):
+    from locus.eval.retrieval_eval import score_links
+
+    lines, agg = score_links(conn, [("Doc 1", "Doc 2")])
+    assert agg == {} and "locus link" in lines[0]  # graceful skip pre-substrate
+    _seed_related_corpus(conn)
+    lines, agg = score_links(conn, [("Doc 1", "Doc 2")])
+    assert agg["links_recall"] == 1.0
+    lines, agg = score_links(conn, [("Doc 1", "No Such Doc")])
+    assert agg["links_recall"] == 0.0
+
+
+# --- adjudicator unit ---------------------------------------------------------------------------
+
+
+def test_adjudicate_cluster_parses_tool_use():
+    fake = _FakeClient({
+        "groups": [{
+            "member_indices": [0],
+            "canonical_name": "KL divergence",
+            "canonical_type": "concept",
+        }]
+    })
+    v = adjudicate_cluster(
+        [ClusterMember("KL divergence", "concept", ("Info Theory",))],
+        client=fake, model="fake",
+    )
+    assert isinstance(v, AliasVerdict)
+    assert v.groups[0].canonical_name == "KL divergence"
+
+
+def test_adjudicate_cluster_raises_without_tool_use():
+    class NoTool:
+        def __init__(self):
+            self.messages = self
+
+        def create(self, **kwargs):
+            return SimpleNamespace(content=[SimpleNamespace(type="text", text="hi")])
+
+    with pytest.raises(RuntimeError):
+        adjudicate_cluster([ClusterMember("x", "concept")], client=NoTool(), model="fake")

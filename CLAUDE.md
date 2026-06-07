@@ -493,9 +493,10 @@ matrix) with no custom code.
 - **Entity node identity = `name+type`.** Matches the schema's
   `UNIQUE(doc_id, section_id, name, type)` and never wrong-merges distinct entities that share
   a string. Known cost: the 8B model's inconsistent `type` labelling (§11.B/C) can produce
-  near-duplicate nodes for one real concept. *Mitigation deferred:* if the real post-slice-2
-  graph shows duplicate-fragmentation, add a view-layer alias/normalization map **in the
-  exporter only** (never altering the DB). Do not build the alias layer pre-emptively.
+  near-duplicate nodes for one real concept. *Mitigation — SUPERSEDED by step 12 (§16):*
+  the alias layer is now a real, corpus-level substrate (`entity_aliases`, built by
+  `locus link`; still never alters `entities`). The exporter should render **canonical**
+  entities as nodes (join through `entity_aliases`), not raw surfaces.
 - **`vault/obsidian/` placement & git.** Lives at `vault/obsidian/`, sibling to
   `incoming/ raw/ notes/`. **Gitignored** (derived, regenerable). The exporter owns and
   regenerates only its own subtrees (e.g. `docs/`, `entities/`) and **must never touch
@@ -855,9 +856,32 @@ math-stripped text). Details per step in `PLAN.md`.
     Verified live end-to-end + math suite in band (the after-any-VRAM-change rule).
     System dep: the llama.cpp binary (optional, like soffice). The fig-v1→v2 backfill
     (389/389 descriptions) ran earlier the same day and is the judge baseline.
-12. **Entity-alias resolution + Retrieval eval (Layer 3) → BULK INGEST.** Canonicalise entity
-    names cross-document (the *link* substrate); run the heterogeneous-corpus retrieval eval on
-    a sample including quant-finance papers + ≥1 code repo; then pour the corpus.
+12. **Entity-alias resolution + Retrieval eval (Layer 3)** — **done** (2026-06-06); the
+    **BULK INGEST remains** (owner-run; runbook at `docs/pour-runbook.md`; open blocker:
+    laptop-outbox `coursework/` not syncing). The link substrate: `entity_aliases`
+    (migration 0008), a DERIVED/REGENERABLE total mapping `(name,type) →
+    (canonical_name, canonical_type)` built by **`locus link`** (`locus/link/aliases.py`);
+    `entities` never mutated; rebuild = delete + recompute. Deterministic tiers
+    (casefold/punct/attested acronym-expansion/attested cross-doc plural; same-type only)
+    then embedding-blocked lookalike clusters (cosine ≥0.86 AND token-Jaccard ≥0.34)
+    adjudicated by the **Claude API** (per §11.B: judgement-quality work; a wrong merge
+    corrupts the graph — a missed merge is only fragmentation), verdicts cached in
+    pass_cache ⇒ incremental re-runs ≈ 0 API calls (verified: 359 cache hits, identical
+    output). Hard guards override LLM verdicts: min-merge-len 4 (homonyms), same-section
+    co-occurrence never merges (authorial evidence), canonical snapped to a member
+    surface, code docs excluded from clustering (AST identifiers exact; identity rows
+    keep the mapping total), oversize clusters (>8 reps) skip the LLM. Live build
+    (33 docs): 4,696 identities → 4,257 clusters (340 non-trivial, 779 variants merged);
+    cross-doc canonicals 182→211; audit suspicious-merges 0. Consumers: alias-aware
+    entity retrieval arm (variant query → sibling-variant sections; substrate checked per
+    query so MCP needs no restart after rebuilds; empty-table fallback) and
+    `related_documents` in `locus inspect` + MCP `inspect_document` (the step-7.5
+    cross-doc edges; stop-entity guard built, OFF until the pour, ~0.4×doc count).
+    Pre-pour gate (heterogeneous 33-doc corpus, quant papers + 5 code repos): recall@8
+    1.000 / cross-domain 1.000 / banner 0.000 / file_recall 1.000 / **links_recall
+    1.000** (new `score_links` over labelled related-doc pairs); judge 4.35 (entity
+    recall 3.38 still weakest — §11.B extraction ceiling, not aliasing-fixable); math
+    0.928 in band. Config `[alias]`; audit gains the ALIAS SUBSTRATE QC block.
 
 **After the pour (not re-ingest-bound):** ANN-index warning (§11.D), Obsidian projection (§14),
 YouTube/podcast transcript ingest, broader retrieval tests.

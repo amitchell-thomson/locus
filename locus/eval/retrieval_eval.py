@@ -137,6 +137,27 @@ LABELLED_QUERIES: list[LabelledQuery] = [
         "The pipeline diagram where DINOv3 features match class prototypes and SAM segments regions.",
         ["Fine-Grained Semantic Segmentation"],
     ),
+    # --- entity-alias substrate (step 12): the query is phrased with a variant surface the
+    # target doc does NOT use verbatim — the probability notes store the entity as
+    # 'Kullback-Leibler (KL) divergence'; only the neural-Markov paper writes 'KL
+    # divergence'. The acronym tier links them, so the alias-aware entity arm must bridge
+    # the phrasing to BOTH documents.
+    LabelledQuery(
+        "Where does the KL divergence appear — in estimation theory and in regime-model "
+        "evaluation?",
+        ["Probability", "Neural Markov"],
+    ),
+]
+
+
+# Known related-document pairs (title substrings, same matching rules as `expected`).
+# Verified on the 2026-06-06 corpus: the pairs share entity surfaces ('Laplace transform',
+# 'Fourier series', 'LTI system', 'transfer function'), so once the alias substrate is
+# built each pair must appear in the other's related-documents list — the joins-only
+# link layer's labelled check (step 12).
+RELATED_PAIRS: list[tuple[str, str]] = [
+    ("Introduction to Control Theory", "Lectures 1-4"),
+    ("Partial Differential Equations", "Time Frequency"),
 ]
 
 
@@ -243,6 +264,51 @@ def evaluate_retrieval(conn, queries: list[LabelledQuery] | None = None) -> tupl
             "retrieval eval: %d answer-key survivor(s) excluded from scoring", excluded
         )
     return results, aggregate(results)
+
+
+def score_links(
+    conn,
+    pairs: list[tuple[str, str]] | None = None,
+    *,
+    top_n: int = 5,
+) -> tuple[list[str], dict[str, float]]:
+    """Check labelled related-document pairs against the alias-substrate link layer.
+
+    Each (a, b) title-substring pair is checked in BOTH directions: some doc matching `a`
+    must list a different doc matching `b` in its related-documents top-N, and vice versa.
+    Returns (report lines, {'links_recall': fraction of pair-directions satisfied}); empty
+    metrics when the substrate has not been built (`locus link`).
+    """
+    from locus.link.related import aliases_built, related_documents
+
+    pairs = pairs or RELATED_PAIRS
+    if not aliases_built(conn):
+        return (["  entity_aliases not built (run `locus link`) — links check skipped"], {})
+
+    def _docs_matching(pattern: str) -> list[int]:
+        return [
+            r["id"] for r in conn.execute("SELECT id, title FROM documents")
+            if pattern.lower() in (r["title"] or "").lower()
+        ]
+
+    lines: list[str] = []
+    satisfied = 0
+    total = 0
+    for a_pat, b_pat in pairs:
+        for src_pat, dst_pat in ((a_pat, b_pat), (b_pat, a_pat)):
+            total += 1
+            hit = False
+            for src_id in _docs_matching(src_pat):
+                for rel in related_documents(conn, src_id, top_n=top_n):
+                    if rel.doc_id != src_id and dst_pat.lower() in rel.title.lower():
+                        hit = True
+                        break
+                if hit:
+                    break
+            satisfied += hit
+            mark = "✓" if hit else "✗"
+            lines.append(f"  {mark} {src_pat!r} -> {dst_pat!r} in related top-{top_n}")
+    return lines, {"links_recall": satisfied / total if total else 1.0}
 
 
 def aggregate(results: list[QueryResult]) -> dict[str, float]:

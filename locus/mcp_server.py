@@ -338,6 +338,11 @@ def _inspect(conn, ident: str, section: int | None) -> str:
     out.append(f"  gaps ({len(gaps)}):")
     out.extend(f"    - {g}" for g in gaps)
 
+    from locus.link.related import format_related
+
+    out.append("")
+    out.extend(format_related(conn, doc_id))
+
     section_map = {m["position"]: m for m in json.loads(doc["section_map"] or "[]")}
     rows = conn.execute(
         "SELECT * FROM sections WHERE doc_id=? ORDER BY position", (doc_id,)

@@ -15,6 +15,12 @@ repo-relative path, text = full verbatim source, §15.0), with:
     (docstring/imports/`__all__` only) are skipped entirely.
   - `.md` files become plain-text sections (no ATX splitting — one section per file keeps
     `file_path` provenance clean; chunked by the generic token splitter downstream).
+  - `.ipynb` files (research repos carry notebooks, not just .py) are rendered cell-by-cell
+    to a markdown text section via the same renderer the standalone-notebook path uses —
+    prose + $...$ math + fenced code, outputs dropped. No AST treatment: exploratory cell
+    code rarely defines clean top-level symbols, so it rides the generic chunker like .md.
+    Exempt from the byte cap below — a notebook's raw size is mostly base64 outputs we
+    strip, so it's unrepresentative of the source the section actually carries.
   - A file that fails `ast.parse` (SyntaxError) degrades to a plain-text section — logged,
     never fails the repo.
 
@@ -28,6 +34,7 @@ from __future__ import annotations
 import ast
 import fnmatch
 import hashlib
+import json
 import logging
 import subprocess
 from pathlib import Path
@@ -35,12 +42,14 @@ from pydantic import BaseModel
 
 from locus.config import load
 from locus.extract.base import ExtractedDoc, ExtractedSection, PreChunk, PreEntity, has_math
+from locus.extract.textdoc import notebook_to_markdown
 from locus.ingest.chunk import count_tokens
 
 log = logging.getLogger(__name__)
 
-# Eligible source suffixes. .py gets the AST treatment; .md rides along as plain text.
-ALLOWED_SUFFIXES = {".py", ".md", ".markdown"}
+# Eligible source suffixes. .py gets the AST treatment; .md/.ipynb ride along as plain text
+# (notebooks are rendered to markdown first — see _notebook_section).
+ALLOWED_SUFFIXES = {".py", ".md", ".markdown", ".ipynb"}
 # Vendored/generated dir names skipped in both the git and walk paths (belt-and-braces:
 # git ls-files usually excludes these already, but committed vendored code exists).
 EXCLUDED_DIR_PARTS = {
@@ -139,6 +148,8 @@ def _eligible(repo: Path, rel: str) -> bool:
         size = full.stat().st_size
     except OSError:
         return False
+    if p.suffix.lower() == ".ipynb":
+        return size > 0  # outputs (stripped at render) dominate raw size — cap doesn't apply
     return 0 < size <= MAX_FILE_BYTES
 
 
@@ -188,13 +199,18 @@ def extract_repo(repo: str | Path, snapshot: RepoSnapshot | None = None) -> Extr
             # full section with an LLM summary saying nothing — entity-table and section
             # noise, never a useful retrieval target (2026-06-05 round-3 evaluation).
             continue
-        position = len(sections)
-        if Path(rel).suffix.lower() == ".py":
-            sections.append(_py_section(position, rel, source))
+        suffix = Path(rel).suffix.lower()
+        if suffix == ".ipynb":
+            section = _notebook_section(len(sections), rel, source)
+            if section is None:
+                continue  # a notebook of only outputs/empty cells renders empty — skip
+            sections.append(section)
+        elif suffix == ".py":
+            sections.append(_py_section(len(sections), rel, source))
         else:
             sections.append(
                 ExtractedSection(
-                    position=position, title=rel, text=source, page_start=1, page_end=1,
+                    position=len(sections), title=rel, text=source, page_start=1, page_end=1,
                     has_math=has_math(source), file_path=rel,
                 )
             )
@@ -246,6 +262,30 @@ def _is_trivial_init(rel: str, source: str) -> bool:
                 continue  # __all__ / __version__ / similar dunder metadata
         return False
     return True
+
+
+def _notebook_section(position: int, rel: str, source: str) -> ExtractedSection | None:
+    """One plain-text section per .ipynb: nbformat cells rendered to markdown.
+
+    Reuses the standalone-notebook renderer (textdoc.notebook_to_markdown) so a notebook
+    reads identically whether ingested on its own or as a repo file. No AST def-chunks,
+    call graph, or entities — exploratory notebook code is not module-shaped; the rendered
+    prose+code rides the generic token chunker downstream like a .md section. Returns None
+    for a notebook that renders empty (only outputs / blank cells) so the repo skips it
+    rather than emitting a contentless section.
+    """
+    try:
+        nb = json.loads(source)
+        text = notebook_to_markdown(nb)
+    except (json.JSONDecodeError, AttributeError) as exc:
+        log.warning("unreadable notebook %s (%s): skipping", rel, exc)
+        return None
+    if not text.strip():
+        return None
+    return ExtractedSection(
+        position=position, title=rel, text=text, page_start=1, page_end=1,
+        has_math=has_math(text), file_path=rel,
+    )
 
 
 def _py_section(position: int, rel: str, source: str) -> ExtractedSection:

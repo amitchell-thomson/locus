@@ -3,6 +3,7 @@
 Synthetic repos built in tmp_path; git-dependent tests are skipped when git is missing.
 """
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -173,6 +174,54 @@ def test_readme_is_plain_text_section(tmp_path: Path):
     readme = next(s for s in doc.sections if s.title == "README.md")
     assert readme.chunks is None and readme.call_graph is None
     assert "computes things" in readme.text
+
+
+NB = json.dumps(
+    {
+        "cells": [
+            {"cell_type": "markdown", "source": ["# Research\n", "\n", "We estimate $$\\beta = (X^TX)^{-1}X^Ty$$ via OLS.\n"]},
+            {"cell_type": "code", "source": ["import numpy as np\n", "beta = np.linalg.lstsq(X, y)[0]\n"]},
+            {"cell_type": "code", "source": [""], "outputs": [{"text": "noise"}]},  # empty source
+        ],
+        "metadata": {"language_info": {"name": "python"}},
+        "nbformat": 4,
+        "nbformat_minor": 5,
+    }
+)
+# A notebook whose cells carry no source (outputs-only export) must render empty.
+NB_EMPTY = json.dumps({"cells": [{"cell_type": "code", "source": [""], "outputs": [1, 2, 3]}], "nbformat": 4})
+
+
+def test_notebook_in_repo_is_rendered_text_section(tmp_path: Path):
+    repo = tmp_path / "research"
+    repo.mkdir()
+    (repo / "analysis.ipynb").write_text(NB)
+    doc = extract_repo(repo)
+    sec = next(s for s in doc.sections if s.title == "analysis.ipynb")
+    assert sec.file_path == "analysis.ipynb"
+    assert sec.chunks is None and sec.call_graph is None  # rides generic chunker, no AST
+    assert "We estimate" in sec.text  # markdown cell verbatim
+    assert "import numpy as np" in sec.text and "```python" in sec.text  # code cell fenced
+    assert sec.has_math  # display math preserved from the markdown cell
+
+
+def test_notebook_is_eligible_above_byte_cap(tmp_path: Path):
+    """A >1 MB notebook (output-heavy) is eligible — the cap doesn't apply to .ipynb."""
+    repo = tmp_path / "bignb"
+    repo.mkdir()
+    bloat = json.dumps({"cells": [{"cell_type": "code", "source": ["x = 1\n"], "outputs": ["z" * (1 << 21)]}], "nbformat": 4})
+    (repo / "heavy.ipynb").write_text(bloat)
+    snap = collect_repo(repo)
+    assert "heavy.ipynb" in snap.files
+
+
+def test_empty_notebook_renders_no_section(tmp_path: Path):
+    repo = tmp_path / "emptynb"
+    repo.mkdir()
+    (repo / "blank.ipynb").write_text(NB_EMPTY)
+    (repo / "main.py").write_text(PY_MAIN)  # keep the repo non-empty
+    doc = extract_repo(repo)
+    assert not any(s.title == "blank.ipynb" for s in doc.sections)
 
 
 def test_oversized_def_line_splits_with_exact_subspans(tmp_path: Path):

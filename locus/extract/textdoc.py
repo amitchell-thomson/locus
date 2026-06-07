@@ -84,7 +84,7 @@ def extract_notebook(path: str | Path) -> ExtractedDoc:
         nb = json.loads(_read_text(path))
     except json.JSONDecodeError as exc:
         raise ValueError(f"not a valid notebook (bad JSON): {exc}") from exc
-    body = _notebook_to_markdown(nb)
+    body = notebook_to_markdown(nb)
     return _from_markdown(body, path, meta={})
 
 
@@ -197,12 +197,13 @@ def _resolve_title(meta: dict[str, str], body: str, path: Path) -> str | None:
     return path.stem
 
 
-def _notebook_to_markdown(nb: dict) -> str:
+def notebook_to_markdown(nb: dict) -> str:
     """Render nbformat-v4 cells to markdown: markdown cells verbatim, code cells fenced.
 
     Outputs are deliberately skipped — in Colab/Jupyter exports they are base64 images,
     HTML tables, and tracebacks that pollute retrieval; the *source* cells carry the
-    knowledge (prose + $...$ math + code).
+    knowledge (prose + $...$ math + code). Public because the repo extractor
+    (extract/code.py) reuses it to ingest .ipynb files that live inside a code repo.
     """
     lang = (
         nb.get("metadata", {}).get("kernelspec", {}).get("language")

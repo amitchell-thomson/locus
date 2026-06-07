@@ -121,12 +121,34 @@ def _process_repo_drop(conn, tree: Path, quarantine: Path) -> IngestResult:
         result = IngestResult(str(tree), "quarantined", error=str(exc))
     if result.status in ("ingested", "skipped"):
         shutil.rmtree(tree, ignore_errors=True)  # archived in vault/raw; drop zone is disposable
+        _prune_empty_parents(tree.parent, quarantine.parent)  # quarantine.parent == incoming
     else:
         dest = quarantine / REPO_DROP_CATEGORY / tree.name
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(tree), str(dest))
     log.info("watch: %s/ -> %s", tree.name, result.status)
     return result
+
+
+def _prune_empty_parents(start: Path, root: Path) -> None:
+    """Remove now-empty ancestor dirs of an ingested drop, climbing up to (not incl.) root.
+
+    A drained nested subfolder (incoming/career/career-documents/) is a remnant, not a drop
+    target — the laptop outbox recreates category folders on the next rsync, so an emptied
+    one is clutter. `rmdir` is self-guarding: a folder still holding a settle-pending sibling
+    file simply isn't empty, so it survives to be pruned on a later tick once that file
+    ingests. Never touches `root` itself (the incoming/.gitkeep anchor lives there) nor any
+    dotted subtree (.quarantine).
+    """
+    d = start
+    while d != root and root in d.parents:
+        if any(part.startswith(".") for part in d.relative_to(root).parts):
+            break  # don't climb into/prune .quarantine and friends
+        try:
+            d.rmdir()  # succeeds only when the directory is empty
+        except OSError:
+            break  # non-empty (pending siblings) or already gone — stop climbing
+        d = d.parent
 
 
 def process_once(conn, *, incoming: Path | None = None, settle: float = 3.0) -> list[IngestResult]:
@@ -142,6 +164,7 @@ def process_once(conn, *, incoming: Path | None = None, settle: float = 3.0) -> 
         rel = path.relative_to(incoming)
         if result.status in ("ingested", "skipped"):
             path.unlink(missing_ok=True)  # canonical copy is already in vault/raw
+            _prune_empty_parents(path.parent, incoming)  # don't leave drained subfolders behind
         else:  # unsupported / quarantined — set aside so it is not retried every tick
             # Preserve the drop subpath: keeps category provenance visible and avoids
             # same-name collisions across category folders.

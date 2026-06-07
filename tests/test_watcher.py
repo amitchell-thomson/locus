@@ -87,6 +87,32 @@ def test_subfolder_drops_are_seen(incoming, monkeypatch):
     assert not f.exists()
 
 
+def test_drained_subfolder_is_pruned(incoming, monkeypatch):
+    """An ingested file's now-empty parent folder is removed — no remnant husks in incoming
+    (incoming/career/career-documents/ left behind after its files ingest)."""
+    monkeypatch.setattr(watcher_mod, "ingest_file", _fake_ingest("ingested"))
+    sub = incoming / "career" / "career-documents"
+    sub.mkdir(parents=True)
+    _drop(sub, "cv.pdf")
+    process_once(object(), incoming=incoming)
+    assert not sub.exists()  # nested folder pruned
+    assert not (incoming / "career").exists()  # and its now-empty category parent
+    assert incoming.exists() and (incoming / ".gitkeep").exists()  # root anchor untouched
+
+
+def test_prune_stops_at_pending_sibling(incoming, monkeypatch):
+    """A folder still holding a settle-pending sibling is NOT pruned when one file ingests —
+    rmdir is self-guarding, so the folder survives to a later tick."""
+    monkeypatch.setattr(watcher_mod, "ingest_file", _fake_ingest("ingested"))
+    sub = incoming / "papers"
+    sub.mkdir()
+    _drop(sub, "settled.pdf")  # ingested this tick
+    pending = sub / "arriving.pdf"
+    pending.write_text("x")  # current mtime -> within settle window, not a candidate
+    process_once(object(), incoming=incoming, settle=3.0)
+    assert sub.exists() and pending.exists()  # folder kept; pending file still there
+
+
 def test_subfolder_quarantine_preserves_subpath(incoming, monkeypatch):
     monkeypatch.setattr(watcher_mod, "ingest_file", _fake_ingest("unsupported"))
     (incoming / "projects").mkdir()

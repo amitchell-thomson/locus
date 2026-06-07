@@ -23,6 +23,16 @@ documents, not re-ingesting existing ones.
       `soffice` (slide renders), `llama-server` (fast figure descriptions; falls back to
       Ollama with a gap line if absent).
 
+## Staged first batch (round-6 audit gate)
+
+Before the unattended bulk run: pour a **pilot batch of 5–10 docs spanning formats**
+(must include `.py`-bearing repos/notebooks AND prose/markdown), then `locus audit` it —
+specifically the `ungrounded summaries` line (template-echo + grounding predicates) and
+a manual read of 3–4 summaries against their excerpts. Hallucinated-summary classes have
+now twice surfaced in corners the gates didn't cover (round 5: window slide; round 6:
+prompt-scaffold echo); the pilot batch is the cheap insurance that the next corner, if
+it exists, costs 10 docs and not the whole pour. Clean pilot ⇒ proceed unattended.
+
 ## Staging
 
 - Drop files into `vault/incoming/<category>/…` — the folder name (normalised singular)

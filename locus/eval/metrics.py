@@ -26,6 +26,7 @@ from locus.ingest.entities import is_grounded, is_noise
 from locus.ingest.figures import rejection_reason as figure_rejection_reason
 from locus.ingest.propositions import rejection_reason
 from locus.ingest.summarize import is_grounded as summary_is_grounded
+from locus.ingest.summarize import is_template_echo
 
 # A proposition opening with one of these is almost certainly not self-contained.
 _PRONOUN_STARTS = {
@@ -258,12 +259,15 @@ def doc_metrics(conn, doc_id: int) -> DocMetrics:
         source = _section_source(conn, sid)
         corrupted += has_corruption_signature(s["summary"])
         unattested_nums += len(unattested_numbers(s["summary"], source))
-        # Re-apply the summary grounding guard to the STORED row (round-5 audit: a
-        # hallucinated summary lived in the corpus for two days with no audit line —
-        # the guard ran only at ingest). Catches the zero-overlap/all-generic class;
-        # topic-coherent fabrications need the window-bound input fix, not a predicate.
-        if (s["summary"] or "").strip() and not summary_is_grounded(
-            s["summary"], f"{s['title'] or ''}\n{source}"
+        # Re-apply the summary grounding guard + template-echo fingerprint to the
+        # STORED row (round-5/6 audits: hallucinated summaries lived in the corpus with
+        # no audit line — the guards ran only at ingest). Grounding catches the
+        # zero-overlap/all-generic class; the echo fingerprint catches prompt-scaffold
+        # transcription (round 6: 'example_module'); topic-coherent fabrications need
+        # the window-bound input fix, not a predicate.
+        if (s["summary"] or "").strip() and (
+            is_template_echo(s["summary"])
+            or not summary_is_grounded(s["summary"], f"{s['title'] or ''}\n{source}")
         ):
             ungrounded_summaries += 1
 

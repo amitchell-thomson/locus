@@ -101,6 +101,7 @@ exclude_globs = [
   "locus/eval/retrieval_eval.py",
   "tests/test_retrieve.py",
   "tests/test_link_aliases.py",
+  "tests/test_pass_hygiene.py",
 ]
 
 [alias]

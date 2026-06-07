@@ -22,6 +22,18 @@ from dataclasses import dataclass
 # How many shared canonical names to sample per related document (display context).
 _SAMPLE_NAMES = 5
 
+# Round-6 audit: code repos' related lists were dominated by ubiquitous bare identifiers
+# ("2 shared: main, run") — every Python project defines `main`, so sharing it says
+# nothing. Excluded from the RELATED pool only (alias table and retrieval untouched):
+# short, all-lowercase, single-token names. Distinctive identifiers survive on length
+# ('run_migrations_offline' — the genuine Alembic link), and anything with case or
+# spaces ('F1', 'Bode plot') is untouched.
+_BARE_IDENT_FILTER = (
+    "NOT (a.canonical_name = lower(a.canonical_name)"
+    "     AND length(a.canonical_name) < 6"
+    "     AND a.canonical_name NOT LIKE '% %')"
+)
+
 
 @dataclass(frozen=True)
 class RelatedDoc:
@@ -89,6 +101,7 @@ def related_documents(
             FROM entities e
             JOIN entity_aliases a
               ON a.variant_name = e.name AND a.variant_type = e.type
+            WHERE {_BARE_IDENT_FILTER}
         ),
         name_freq AS (
             SELECT canonical_name, COUNT(DISTINCT doc_id) AS doc_freq
@@ -127,6 +140,7 @@ def related_documents(
                     FROM entities e
                     JOIN entity_aliases a
                       ON a.variant_name = e.name AND a.variant_type = e.type
+                    WHERE {_BARE_IDENT_FILTER}
                 ),
                 name_freq AS (
                     SELECT canonical_name, COUNT(DISTINCT doc_id) AS doc_freq

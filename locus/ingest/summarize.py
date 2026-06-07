@@ -33,8 +33,11 @@ log = logging.getLogger(__name__)
 # (fit_to_window) — sections larger than num_ctx previously slid out of the context and
 # produced topic-coherent hallucinations the guard cannot catch (round-5 audit:
 # CLAUDE.md, 12k tokens, summarised as an 'image compression' paper); v2-cached
-# summaries of oversized sections are untrustworthy and must regenerate.
-PROMPT_VERSION = "3"
+# summaries of oversized sections are untrustworthy and must regenerate. "4":
+# template-echo rejection added (round-6 audit: summarising THIS file echoed the prompt
+# scaffold as a filled-in 'example_module' template, and grounding passed it because the
+# file's own string literals attest summary-vocabulary).
+PROMPT_VERSION = "4"
 
 
 class SectionSummary(BaseModel):
@@ -75,6 +78,30 @@ def _word_tokens(text: str) -> set[str]:
     identifiers (`HMMRegimeDetector`, `fit_best_of_n_seeds`) yield their natural words."""
     text = _CAMEL_BOUNDARY.sub(" ", text.replace("_", " "))
     return {m.group(0).lower() for m in _WORD.finditer(text)}
+
+
+# Prompt-scaffold fingerprints. A summary carrying any of these is the model echoing the
+# instructions/template instead of summarising — observed (round-6 audit) on the one file
+# whose SOURCE contains the prompt strings as literals: summarising locus/ingest/
+# summarize.py produced "Source file: example_module\nThis module defines key functions
+# for data processing... public API consists of process_data() and handle_input()",
+# which sailed through is_grounded because the prompt text in the file attests generic
+# summary vocabulary. Deterministic fingerprints, not similarity: the legit fallback
+# writes "Source file {title}." (no colon), so "Source file:" is unambiguous echo.
+_TEMPLATE_ECHO = (
+    "example_module",
+    "process_data()",
+    "handle_input()",
+    "\\n",  # a literal backslash-n: the model transcribed the f-string, not text
+    "(unknown path)",
+)
+
+
+def is_template_echo(summary: str) -> bool:
+    """True when the summary is the prompt scaffold echoed back, not a real summary."""
+    if summary.startswith("Source file:"):
+        return True
+    return any(t in summary for t in _TEMPLATE_ECHO)
 
 
 def is_grounded(summary: str, source: str) -> bool:
@@ -163,7 +190,7 @@ def summarize_section(title: str | None, text: str, *, code: bool = False, **kw)
         )
     source = f"{title or ''}\n{full_text}"
     out = generate_structured(SectionSummary, user, **kw)
-    if is_grounded(out.summary, source):
+    if not is_template_echo(out.summary) and is_grounded(out.summary, source):
         return out
     log.warning("ungrounded summary for %r (%r); regenerating", title, out.summary[:80])
     retry = user + (
@@ -172,7 +199,7 @@ def summarize_section(title: str | None, text: str, *, code: bool = False, **kw)
         "literally there."
     )
     out = generate_structured(SectionSummary, retry, **kw)
-    if is_grounded(out.summary, source):
+    if not is_template_echo(out.summary) and is_grounded(out.summary, source):
         return out
     log.warning("summary failed grounding twice for %r; deterministic fallback used", title)
     return _fallback(title, full_text, code)

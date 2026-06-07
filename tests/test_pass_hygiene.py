@@ -431,3 +431,50 @@ def test_summarize_feeds_window_bounded_text_but_grounds_on_full(monkeypatch):
     assert "[... source truncated" in prompts[0]
     # ...but grounding ran against the FULL text, so the tail-grounded summary passes.
     assert out.grounded is True and "quasinorm" in out.summary
+
+
+# --- template-echo rejection (round-6 audit: summarising summarize.py itself echoed the
+# prompt scaffold as 'Source file: example_module\n... process_data() and handle_input()',
+# and grounding passed it because the file's own string literals attest the vocabulary) ---
+
+
+def test_template_echo_fingerprints():
+    from locus.ingest.summarize import is_template_echo
+
+    # The verified round-6 stored summary, verbatim shape.
+    assert is_template_echo(
+        "Source file: example_module\\nThis module defines key functions for data "
+        "processing and includes a class for handling user inputs. The public API "
+        "consists of process_data() and handle_input()."
+    )
+    assert is_template_echo("Source file: foo.py — summary text")  # prompt-format prefix
+    assert is_template_echo("Mentions example_module in passing.")
+    # The legitimate deterministic fallback ("Source file {title}." — no colon) passes.
+    assert not is_template_echo(
+        "Source file locus/ingest/summarize.py. Defines classes: SectionSummary."
+    )
+    assert not is_template_echo(
+        "Detects regimes with a Gaussian hidden Markov model selected by likelihood."
+    )
+
+
+def test_summarize_rejects_template_echo_despite_grounding(monkeypatch):
+    from locus.ingest import summarize as sum_mod
+
+    # Source that ATTESTS the echo's vocabulary (the self-referential trap): grounding
+    # alone would pass; the echo fingerprint must still reject -> fallback.
+    source = (
+        '"""Summary pass."""\n'
+        'PROMPT = "Source file: {title} This module defines key functions for data '
+        'processing and includes a class for handling user inputs."\n'
+        "def summarize_section(title, text):\n    return PROMPT\n"
+    )
+    echo = sum_mod.SectionSummary(
+        summary="Source file: example_module\\nThis module defines key functions for "
+        "data processing and includes a class for handling user inputs."
+    )
+    monkeypatch.setattr(sum_mod, "generate_structured", lambda *a, **kw: echo)
+    out = sum_mod.summarize_section("locus/ingest/summarize.py", source, code=True)
+    assert out.grounded is False  # both echo attempts rejected -> deterministic fallback
+    assert "summarize_section" in out.summary  # signature fallback, faithful by construction
+    assert "example_module" not in out.summary

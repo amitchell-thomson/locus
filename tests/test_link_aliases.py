@@ -405,17 +405,18 @@ def test_oversize_cluster_skipped(conn, monkeypatch):
 
 def _seed_related_corpus(conn):
     """Three docs: 1 and 2 share two canonicals (one via alias variants); 3 shares one
-    ubiquitous canonical with everything (the stop-entity)."""
+    ubiquitous canonical with everything (the stop-entity). "simulation" not "model":
+    short bare lowercase tokens are excluded from the related pool (round 6)."""
     for d in (1, 2, 3):
         _seed_doc(conn, d, title=f"Doc {d}")
         _seed_section(conn, d, d)
     _seed_entity(conn, 1, 1, "Fourier transform")
     _seed_entity(conn, 1, 1, "Laplace transform")
-    _seed_entity(conn, 1, 1, "model")
+    _seed_entity(conn, 1, 1, "simulation")
     _seed_entity(conn, 2, 2, "fourier transform")  # variant of doc 1's surface
     _seed_entity(conn, 2, 2, "Laplace transform")
-    _seed_entity(conn, 2, 2, "model")
-    _seed_entity(conn, 3, 3, "model")
+    _seed_entity(conn, 2, 2, "simulation")
+    _seed_entity(conn, 3, 3, "simulation")
     conn.commit()
     al.build_aliases(conn, use_llm=False)
 
@@ -426,11 +427,11 @@ def test_related_documents_ranked_by_shared_canonicals(conn):
     _seed_related_corpus(conn)
     rel = related_documents(conn, 1)
     assert [r.doc_id for r in rel] == [2, 3]
-    assert rel[0].shared_count == 3  # fourier + laplace + model
-    assert rel[1].shared_count == 1  # model only
+    assert rel[0].shared_count == 3  # fourier + laplace + simulation
+    assert rel[1].shared_count == 1  # simulation only
     assert "Laplace transform" in rel[0].shared_names
     # Distinctive names (doc_freq 2) sample before the corpus-wide one ('model', freq 3).
-    assert rel[0].shared_names[-1] == "model"
+    assert rel[0].shared_names[-1] == "simulation"
 
 
 def test_related_documents_dedupe_same_name_across_types(conn):
@@ -478,11 +479,11 @@ def test_related_documents_stop_entity_guard(conn):
     from locus.link.related import related_documents
 
     _seed_related_corpus(conn)
-    # "model" spans 3 docs; with the guard at 2 it stops linking anything.
+    # "simulation" spans 3 docs; with the guard at 2 it stops linking anything.
     rel = related_documents(conn, 1, stop_doc_freq=2)
     assert [r.doc_id for r in rel] == [2]
     assert rel[0].shared_count == 2
-    assert "model" not in rel[0].shared_names
+    assert "simulation" not in rel[0].shared_names
 
 
 def test_related_documents_top_n(conn):
@@ -572,6 +573,25 @@ def test_typo_tier_respects_type_and_length(conn):
     assert report.llm_candidate_clusters == 0 and fake.calls == 0
 
 
+def test_related_documents_filter_bare_identifiers(conn):
+    # Round-6 audit: code repos linked on ubiquitous bare identifiers ("2 shared: main,
+    # run"). Short all-lowercase single-token names are excluded from the related pool;
+    # distinctive identifiers ('run_migrations_offline') and cased names ('F1') survive.
+    from locus.link.related import related_documents
+
+    for d in (1, 2):
+        _seed_doc(conn, d, source_type="code", title=f"Repo {d}")
+        _seed_section(conn, d, d)
+        _seed_entity(conn, d, d, "main", "method")
+        _seed_entity(conn, d, d, "run", "method")
+        _seed_entity(conn, d, d, "run_migrations_offline", "method")
+    conn.commit()
+    al.build_aliases(conn, use_llm=False)
+    (rel,) = related_documents(conn, 1)
+    assert rel.shared_count == 1
+    assert rel.shared_names == ("run_migrations_offline",)
+
+
 # --- API throttle ----------------------------------------------------------------------------------
 
 
@@ -613,7 +633,7 @@ def test_alias_qc_reports_substrate(conn):
     assert qc is not None
     assert qc.variants == conn.execute("SELECT COUNT(*) FROM entity_aliases").fetchone()[0]
     assert qc.nontrivial_clusters >= 1  # the fourier casefold pair
-    assert qc.cross_doc_canonicals >= 2  # fourier (via alias), laplace, model
+    assert qc.cross_doc_canonicals >= 2  # fourier (via alias), laplace, simulation
     assert qc.suspicious_merges == 0  # no llm merges in this fixture
     assert "ALIAS SUBSTRATE" in format_alias_qc(qc)
 

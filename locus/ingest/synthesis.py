@@ -3,7 +3,7 @@
 Operates over the section summaries (coarse, fits context) rather than raw text, so it sees
 the whole document at a manageable size.
 
-Validation is semantic, not just structural (2026-06-04 evaluation; PLAN.md step 5): an
+Validation is semantic, not just structural (2026-06-04 evaluation; build step 5): an
 all-empty synthesis is schema-valid JSON, and one shipped silently — the doc header then
 leads every assembled context with four blank fields. Field validators reject blank values,
 which routes the failure through llm.py's bounded repair loop; if the model still cannot

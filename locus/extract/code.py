@@ -18,7 +18,7 @@ repo-relative path, text = full verbatim source, §15.0), with:
   - A file that fails `ast.parse` (SyntaxError) degrades to a plain-text section — logged,
     never fails the repo.
 
-Two repo channels share this extractor (PLAN.md step 10): tracked server repos (git,
+Two repo channels share this extractor (build step 10): tracked server repos (git,
 commit-sha content hash) and LocusDrop snapshot drops (possibly no .git — eligible files
 fall back to a filesystem walk and the content hash to a manifest hash).
 """

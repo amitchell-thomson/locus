@@ -1,4 +1,4 @@
-"""temporal + category metadata (PLAN.md step 1, CLAUDE.md §15.4/§16) [re-ingest-bound]
+"""temporal + category metadata (build step 1, CLAUDE.md §15.4/§16) [re-ingest-bound]
 
 Personal/historical content has meaningful *dates* (when an achievement happened, when a
 project ran) and *kinds* (paper / project / achievement / note / cv / code / video). Add

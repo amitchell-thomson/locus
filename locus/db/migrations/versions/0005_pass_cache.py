@@ -1,4 +1,4 @@
-"""pass-output cache for repo re-ingest (PLAN.md step 10)
+"""pass-output cache for repo re-ingest (build step 10)
 
 Revision ID: 0005
 Revises: 0004

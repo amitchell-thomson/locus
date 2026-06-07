@@ -72,12 +72,12 @@ class RetrieveConfig(BaseModel):
     # Diversity cap on rerank survivors: at most this many units per document in the top-k,
     # relaxed (fallback fill) only when honouring it would leave the top-k underfull. Stops a
     # single best-matching document from monopolising every slot, which breaks cross-domain
-    # synthesis queries (the 2026-06-04 evaluation, PLAN.md step 3).
+    # synthesis queries (the 2026-06-04 evaluation, build step 3).
     per_doc_cap: int = 3
     context_token_budget: int = 100_000
     # Confidence floor on cross-encoder (ms-marco-MiniLM) scores — raw logits, roughly -11..+11.
     # None disables it (ship default until calibrated against the live corpus + negative-control
-    # queries; the 2026-06-05 evaluation, PLAN.md). When set: the rerank refill never pads the
+    # queries; the 2026-06-05 evaluation). When set: the rerank refill never pads the
     # top-k with below-floor candidates, and a retrieval whose best survivor falls below the
     # floor is flagged low-confidence ("the corpus may not cover this") — flagged, not filtered.
     min_rerank_score: float | None = None
@@ -177,7 +177,7 @@ class AliasConfig(BaseModel):
 
 
 class ReposConfig(BaseModel):
-    """Tracked code repositories (PLAN.md step 10). `locus watch` checks each repo's git
+    """Tracked code repositories (build step 10). `locus watch` checks each repo's git
     HEAD every `check_interval` seconds and re-ingests only when new commits landed —
     the check itself is ~free (git rev-parse). Manual runs: `locus sync [--force]`."""
 

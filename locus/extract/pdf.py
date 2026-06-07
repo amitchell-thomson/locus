@@ -11,7 +11,7 @@ Text is preserved verbatim from the PDF's text layer (no lossy normalisation), s
 math survives in the text layer is kept intact. One deliberate exception: printed
 table-of-contents pages (dense dotted-leader lines) are excised before sectioning — they are
 navigation noise that otherwise ingests as content, competes for retrieval slots, and seeds
-bogus headings (2026-06-04 evaluation; PLAN.md step 4). The structure they describe is
+bogus headings (2026-06-04 evaluation; build step 4). The structure they describe is
 captured properly in the section map.
 
 LIMITATION (documented, not a bug): PyMuPDF reads the *text layer*. It does not reconstruct
@@ -46,7 +46,7 @@ from locus.extract.base import (
 # PyMuPDF span flag bit for bold text.
 _FLAG_BOLD = 1 << 4
 
-# --- page-level extraction-damage / math-evidence signals (PLAN.md step 6, eval phase D) ---
+# --- page-level extraction-damage / math-evidence signals (build step 6, eval phase D) ---
 # Each signal below was verified against the corpus before being coded; none is speculative.
 #
 # Broken-ligature words: a font with a damaged/absent toUnicode CMap *drops* fi/fl/ffi

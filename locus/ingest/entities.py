@@ -4,13 +4,13 @@ The type is a closed vocabulary (grammar-constrained), which keeps the name+type
 used downstream (Obsidian projection, entity-anchored retrieval) consistent across documents.
 Section provenance (doc_id, section_id) is attached by the caller, not the model.
 
-Hygiene (2026-06-04 evaluation; PLAN.md step 5): names are surface-normalised at write time
+Hygiene (2026-06-04 evaluation; build step 5): names are surface-normalised at write time
 (whitespace, surrounding punctuation, leading articles) and noise is filtered — equation/
 figure labels ("equation 1.36") and bare symbols ("β", "f(t,x,y,z)") are not entities, and
 they degrade the entity-anchored retrieval arm. Plural/singular variants are merged per
 document with `merge_plural_variants`, evidence-based (only when the singular form is itself
 attested), so irregular words ("Fourier series") are never mangled. Full *cross-document*
-alias resolution stays a separate pass (PLAN.md step 12).
+alias resolution stays a separate pass (build step 12).
 """
 
 from __future__ import annotations

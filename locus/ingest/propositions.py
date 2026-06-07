@@ -3,7 +3,7 @@
 These are embedded and directly retrieved, so each must stand alone out of context — the
 prompt enforces resolving pronouns/references and one assertion per proposition.
 
-A deterministic post-filter (2026-06-04 evaluation; PLAN.md step 5) rejects the 8B model's
+A deterministic post-filter (2026-06-04 evaluation; build step 5) rejects the 8B model's
 recurring failure shapes — meta-statements about the document ("X is discussed in this
 section"), echoes of the section title, fragments, and fluent sentences written *around* a
 formula the extractor dropped ("the inner product is given by .") — the last being worse than

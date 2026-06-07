@@ -1,4 +1,4 @@
-"""Corpus math-fidelity metric (PLAN.md step 7) — the gate metric for the bulk pour.
+"""Corpus math-fidelity metric (build step 7) — the gate metric for the bulk pour.
 
 "Fraction of math-bearing pages whose formulas survived into the stored text." Math lost at
 extraction is NOT Claude-recoverable (§15.0), so this number gates everything else.

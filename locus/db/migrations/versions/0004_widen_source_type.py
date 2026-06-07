@@ -1,4 +1,4 @@
-"""widen source_type CHECK for format breadth (PLAN.md step 8)
+"""widen source_type CHECK for format breadth (build step 8)
 
 Revision ID: 0004
 Revises: 0003

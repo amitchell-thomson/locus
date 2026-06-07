@@ -1,4 +1,4 @@
-"""MCP server (PLAN.md step 2): tool registration, facet validation, and read tools.
+"""MCP server (build step 2): tool registration, facet validation, and read tools.
 
 The tools are thin wrappers over retrieve()/answer() (covered elsewhere) plus read-only DB
 queries. These tests cover the wiring: the right tools are registered, facet validation rejects

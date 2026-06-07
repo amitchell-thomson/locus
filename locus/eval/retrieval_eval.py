@@ -1,4 +1,4 @@
-"""Labelled retrieval eval (PLAN.md step 7): recall@k + MRR over a fixed query set.
+"""Labelled retrieval eval (build step 7): recall@k + MRR over a fixed query set.
 
 A retrieval miss is NOT Claude-recoverable (§15.0) — this is the definitive check that the
 right content surfaces. Queries are labelled with expected documents by title substring

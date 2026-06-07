@@ -1,969 +1,313 @@
 # CLAUDE.md — Locus
 
-> Drop-in context for Claude Code. This file is authoritative for architecture and
-> conventions. Where it conflicts with ad-hoc instructions in chat, ask before deviating.
+> Drop-in context for Claude Code. Authoritative for architecture and conventions; where it
+> conflicts with ad-hoc instructions in chat, ask before deviating. Development history
+> (steps 1–12, benchmarks, remediation passes) lives in git history and commit messages.
 
 ---
 
 ## 1. What Locus is
 
-Locus is a **self-hosted system for querying, linking, and serving as Claude's context over
-the owner's entire personal knowledge base** — not just technical reading, but the full record
-of what the owner has learned, built, and achieved: papers, code, lecture/seminar notes,
-videos, **and personal/professional material — projects, achievements, write-ups, historical
-records, and general information.** It ingests that heterogeneous corpus and supports intelligent
-retrieval over it via a CLI.
+A **self-hosted system for querying, linking, and serving as Claude's context over the
+owner's entire personal knowledge base**: papers, lecture/seminar notes, code repos, slide
+decks, project write-ups, achievements, historical records.
 
 **Three primary uses (all equal):**
-1. **Query** — ask questions and get grounded, cited answers over the whole corpus.
-2. **Link** — surface connections *across* the corpus (cross-domain, cross-project, cross-time),
-   tying disparate material together.
-3. **Give Claude context** — act as a retrieval/memory backend that feeds the owner's own
-   knowledge into Claude on demand (today via the CLI/`query`; a context-provider surface —
-   e.g. an MCP server or retrieval API — is a natural future surface, see §15).
+1. **Query** — grounded, cited answers over the whole corpus.
+2. **Link** — surface connections *across* the corpus (cross-domain, cross-project, cross-time).
+3. **Give Claude context** — retrieval/memory backend feeding the owner's knowledge into
+   Claude on demand (live today via the MCP server).
 
-Engineering ↔ quantitative-finance synthesis, gap analysis, and professional framing are
-*important use cases within this*, not the whole scope. The corpus is broad and personal.
+**Design objective:** maximise *retrieval answer quality* per query. Ingest cost (time,
+compute) is effectively unbounded; retrieval latency and answer quality are the only
+constraints that matter. Workflow is query-driven, not browse-driven; no GUI.
 
-**Workflow is query-driven, not browse-driven.** There is no bespoke UI in phase 1 (an Obsidian
-projection, §14, is an optional visual layer *on top of* the data, never the primary surface).
+## 2. Current state (2026-06-06)
 
-**Design objective, stated precisely:** maximise *retrieval answer quality* per query.
-Ingest cost (time, compute) is treated as effectively unbounded; **retrieval latency and
-answer quality are the only constraints that matter.**
+Steps 1–12 of the build plan are **done**. Working today on a 33-doc heterogeneous corpus
+(coursework, quant/CS papers, code repos, slides, CV): full ingest→retrieve→generate spine
+for PDF/DOCX/MD/TXT/IPYNB/PPTX/code-repos; math-faithful OCR; figures as a first-class
+multimodal retrieval unit; entity-alias link substrate; MCP server; four eval suites.
 
----
+Latest gate (step 12, pre-pour): recall@8 **1.000** / cross-domain **1.000** / LOW-CONFIDENCE
+banner misfires **0** / file_recall **1.000** / links_recall **1.000**; judge **4.35**/5;
+math fidelity **0.928** (text-layer baseline was 0.73). Audit QC zero corpus-wide. 322 tests.
 
-## 2. Core principles (these govern every design decision)
+**Next: the BULK INGEST** (multi-year corpus pour) — owner-run, checklist in
+`docs/pour-runbook.md`. Open blocker: the laptop outbox's `coursework/` folder is not
+syncing. **After the pour (not re-ingest-bound):** ANN-index warning (§11), Obsidian
+projection (§13), YouTube/podcast transcript ingest, multi-query cross-domain expansion.
 
-1. **Local data ownership.** Everything lives on the local server. No cloud storage of
-   corpus content. The only network egress at runtime is the Claude API call for final
-   generation.
-2. **Terminal-first.** CLI is the product surface. No GUI until the core pipeline is proven.
-3. **Pragmatic build-vs-buy.** This is a custom build because off-the-shelf tools
-   (AnythingLLM, Open WebUI, Khoj, NotebookLM, Obsidian plugins) were evaluated and rejected
-   *as the retrieval/knowledge engine* — none does hierarchical L1/L2/L3 + rerank retrieval.
-   Do not reintroduce a dependency that re-buys that engine. **Narrow exception:** Obsidian is
-   permitted strictly as a *read-only projection / visualization layer* rendered over the
-   SQLite source of truth (see §14). In that role it is a rendering target, not a dependency in
-   the retrieval path, and does not re-buy what was rejected.
-4. **Quality over speed at ingest.** Ingest passes have no time budget. Never trade ingest
-   quality for throughput.
-5. **Local models for ingest, Claude API for generation.** Forced by the 8GB VRAM ceiling.
-   *Caveat — see §11 open decisions: the proposition/synthesis passes are generation-quality
-   work running on the weakest model in the stack, so this split is provisional for those
-   passes specifically, not settled.*
-6. **The three-level schema generalises across all source types.** PDFs, code, and video all
-   reduce to the same L1/L2/L3 structure so retrieval logic stays unified. Do not fork the
-   retrieval path per source type.
-7. **Idempotent ingest by content hash.** Re-ingesting the same content is a no-op.
+## 3. Core principles
 
----
+1. **Local data ownership.** Corpus content never leaves the server. Runtime network egress
+   is only the Claude API call for final generation (and the opt-in judgement passes below).
+2. **Terminal-first.** The CLI and MCP server are the product surface.
+3. **Pragmatic build-vs-buy.** Off-the-shelf RAG tools were evaluated and rejected as the
+   engine (none does hierarchical L1/L2/L3 + rerank). Don't re-buy that engine. Obsidian is
+   permitted strictly as a read-only projection layer (§13).
+4. **Quality over speed at ingest.** Ingest has no time budget. Never trade ingest quality
+   for throughput.
+5. **Local models for ingest; Claude API for generation and judgement.** Forced by the 8 GB
+   VRAM ceiling. Judgement-quality work where errors corrupt durable state (eval judging,
+   alias adjudication) deliberately uses the API — an 8B model's mistakes there are the
+   §11.B failure class.
+6. **One schema for every source type.** All formats reduce to L1/L2/L3 so retrieval logic
+   never forks per source type.
+7. **Idempotent ingest by content hash.** Re-ingest of identical content is a no-op.
+8. **Recoverability governs priorities.** Claude only sees what retrieval surfaces.
+   Generation-time noise is recoverable (raw chunks are always co-assembled with derived
+   units — keep that property). Extraction loss and retrieval misses are NOT recoverable;
+   they always outrank cosmetic quality work.
+9. **Derived data is regenerable, never authoritative.** Aliases, pass caches, the future
+   Obsidian vault: rebuild = delete + recompute; the ingested tables are never mutated by
+   derived layers.
 
-## 3. Hardware envelope (the binding constraints)
+## 4. Hardware envelope (binding)
 
 | Resource | Spec | Consequence |
 |---|---|---|
-| GPU | RTX 3070 Ti, **8 GB VRAM** | **Binding constraint.** Local LLMs limited to ~8B params, quantised. |
-| CPU | Ryzen 5 5600X | Reranker runs here (cross-encoder, CPU). |
-| RAM | 32 GB | Comfortable for SQLite + Ollama host overhead. |
-| Storage | 1 TB SSD | Flat raw-file store + SQLite DB. |
+| GPU | RTX 3070 Ti, **8 GB VRAM** | THE architectural driver: local LLMs ≤ ~8B quantised; ingest local, generation API; strict VRAM choreography (§7). |
+| CPU | Ryzen 5 5600X | Cross-encoder reranker runs here. |
+| RAM | 32 GB | SQLite + Ollama host overhead. |
+| Storage | 1 TB SSD | Flat raw store + single SQLite DB file. |
 
-The 8 GB VRAM ceiling is *the* architectural driver: it is why ingest is local and
-generation is API. Any proposal that assumes a larger local model is out of scope unless the
-hardware changes.
+## 5. Tech stack
 
----
+| Layer | Tool |
+|---|---|
+| Extraction | `pymupdf` (PDF), `python-docx`, `python-pptx`, stdlib (md/txt/ipynb), `ast` (code) |
+| Math OCR | GOT-OCR-2.0 (benchmark-chosen on risk asymmetry: degrades, never invents) |
+| Figure VLM | qwen2.5vl:7b — via Ollama, or `llama-server` (Vulkan) for GPU vision encode (13x) |
+| Ingest LLM | `qwen2.5:7b-instruct-q5_K_M` via Ollama (benchmark-chosen vs llama3.1:8b) |
+| Embeddings | `nomic-embed-text` via Ollama — **768-dim, locked** (change ⇒ full re-embed) |
+| Vector store | `sqlite-vec` (brute-force KNN) + SQLite **FTS5/BM25** lexical arm |
+| Reranker | `ms-marco-MiniLM` cross-encoder (CPU) |
+| Generation / judgement | Claude API (single call per query; multimodal — figure images attach) |
+| Context surface | `mcp` SDK server over stdio (tunnelled via SSH) |
+| Schema | SQLite + Alembic (forward-only migrations) |
 
-## 4. Tech stack
+Optional system deps (absent ⇒ graceful degradation + audit gap line, never quarantine):
+LibreOffice `soffice` (slide renders), `llama-server` binary (fast figure descriptions).
+Heavy ML deps live behind extras (`[rerank]`, `[mathocr]`).
 
-| Layer | Tool | Notes |
-|---|---|---|
-| PDF extraction | `pymupdf` | text + structure; preserve raw LaTeX for math-heavy sections |
-| Code parsing | `python-ast` | per-file functions + call graph |
-| Video transcripts | `youtube-transcript-api` | timestamps retained for `?t=` deep links |
-| Embeddings | `nomic-embed-text` via Ollama | **768-dim** — fixed across the vector tables |
-| Local LLM (ingest) | `qwen2.5:7b-instruct-q5_K_M` via Ollama | **settled by benchmark** (§11.C, 2026-06-05) |
-| Vector store | `sqlite-vec` | brute-force KNN; acceptable at personal-corpus scale (see §11) |
-| Metadata + schema | SQLite | single DB file |
-| Reranker | `ms-marco-MiniLM` cross-encoder | runs on **CPU** |
-| RAG generation | Claude API | **single call per query** |
-| (Existing infra available) | Parquet, PostgreSQL, DuckDB | not required for phase 1 |
+## 6. Data model
 
----
+Three levels per document, identical for every source type. Source of truth = Alembic
+migrations in `locus/db/migrations/versions/` (`alembic upgrade head`; currently 0008);
+`locus/db/schema.sql` is a human-reference summary. Never `ALTER` a live DB ad-hoc; never
+force a re-ingest for a schema change — migrate forward.
 
-## 5. Data model
+- **documents** (L1): `content_hash` (idempotency, UNIQUE), `source_type`
+  (pdf|code|video|docx|markdown|text|notebook|slides), `source_uri`, `raw_path`, `title`,
+  `source_date`, `category` (paper|coursework|project|career|note — KIND of content, one
+  axis; format lives in source_type), synthesis columns (`thesis/method/result/limitations`
+  — discrete, queryable), `section_map` JSON, `gap_flags` JSON, `ingest_model`.
+- **sections** (L2): position, title, LLM `summary`, `file_path`+`call_graph` for code.
+  + `section_vectors` (vec0 768).
+- **chunks** (L3): ~512-token raw text; provenance: `file_path:line_start-line_end` (code),
+  `video_timestamp` (video). + `chunk_vectors` (vec0) + `chunks_fts` (FTS5, trigger-synced).
+- **propositions**: atomic self-contained claims, first-class + embedded
+  (+ `proposition_vectors`). Decision A: the highest-signal unit must be directly searchable.
+- **figures**: caption + VLM description, embedded (+ `figure_vectors`); PNGs in the raw
+  store as `{hash}_fig{N}.png`, orphan-cleaned on replace/delete. Same first-class logic.
+- **entities**: typed (`method|dataset|author|concept|ticker|tool|theorem|metric|
+  organization|other`), section-anchored, `UNIQUE(doc_id, section_id, name, type)`.
+- **entity_aliases** (step 12): DERIVED, REGENERABLE total mapping `(name,type) →
+  (canonical_name, canonical_type)` + cluster_id + tier; built by `locus link`; `entities`
+  never mutated; singletons map to self so consumers inner-join.
+- **pass_cache**: content-keyed LLM pass outputs (summaries, figure descriptions, alias
+  verdicts) — re-ingests and alias re-runs only pay for what changed.
+- **tags / doc_tags**: doc-level, normalised.
 
-Three levels per document. Same shape for every source type. Committed DDL below is
-authoritative for phase 1. (`db/schema.sql` is a maintained human-reference snapshot;
-the operational source of truth is the Alembic migration set — see below.)
+## 7. Ingest pipeline
 
-```sql
--- Migration tracking is owned by Alembic (the `alembic_version` table, created
--- automatically). Schema is managed forward-only via Alembic migrations in
--- db/migrations/versions/, applied with `alembic upgrade head`. REQUIRED from day 1:
--- re-running full ingest is the single most expensive operation, so never force a
--- re-ingest just to change schema. Migrate forward instead.
--- (Note: an earlier draft used a hand-rolled `schema_version` table; Alembic replaces it.)
-
--- L1 — document
-CREATE TABLE documents (
-    id           INTEGER PRIMARY KEY,
-    content_hash TEXT    NOT NULL UNIQUE,          -- idempotency key
-    source_type  TEXT    NOT NULL CHECK (source_type IN ('pdf','code','video')),
-    source_uri   TEXT    NOT NULL,                 -- original path or URL
-    raw_path     TEXT    NOT NULL,                 -- location in flat raw store
-    title        TEXT,
-    ingested_at  TEXT    NOT NULL DEFAULT (datetime('now')),
-    ingest_model TEXT    NOT NULL,                 -- local LLM that produced synthesis
-    -- doc synthesis (kept as discrete columns, not a JSON blob, so they're queryable)
-    thesis       TEXT,
-    method       TEXT,
-    result       TEXT,
-    limitations  TEXT,
-    section_map  TEXT,                             -- JSON: ordered section index
-    gap_flags    TEXT                              -- JSON: array of flagged gaps
-);
-
--- L2 — section
-CREATE TABLE sections (
-    id                 INTEGER PRIMARY KEY,
-    doc_id             INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-    position           INTEGER NOT NULL,           -- order within doc
-    title              TEXT,
-    summary            TEXT,                        -- LLM section summary
-    -- propositions are first-class rows in the `propositions` table below (decision A, RESOLVED),
-    -- NOT a JSON blob here, so they can be embedded and directly retrieved. Single source of truth.
-    cross_section_deps TEXT,                        -- JSON: section ids this depends on
-    -- code-specific
-    file_path          TEXT,                        -- per-file for code
-    call_graph         TEXT,                        -- JSON for code
-    UNIQUE (doc_id, position)
-);
-
-CREATE VIRTUAL TABLE section_vectors USING vec0(
-    section_id INTEGER PRIMARY KEY,
-    embedding  FLOAT[768]
-);
-
--- L3 — chunk
-CREATE TABLE chunks (
-    id              INTEGER PRIMARY KEY,
-    section_id      INTEGER NOT NULL REFERENCES sections(id)  ON DELETE CASCADE,
-    doc_id          INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-    position        INTEGER NOT NULL,
-    raw_text        TEXT    NOT NULL,               -- ~512 tokens
-    embed_model     TEXT    NOT NULL,               -- model that produced the vector
-    -- provenance
-    file_path       TEXT,                           -- code
-    line_start      INTEGER,                        -- code
-    line_end        INTEGER,                        -- code
-    video_timestamp INTEGER,                         -- video: seconds, for ?t=
-    UNIQUE (section_id, position)
-);
-
-CREATE VIRTUAL TABLE chunk_vectors USING vec0(
-    chunk_id  INTEGER PRIMARY KEY,
-    embedding FLOAT[768]
-);
-
--- entities: typed + section-anchored provenance
-CREATE TABLE entities (
-    id         INTEGER PRIMARY KEY,
-    doc_id     INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-    section_id INTEGER          REFERENCES sections(id)  ON DELETE CASCADE,
-    name       TEXT    NOT NULL,
-    type       TEXT    NOT NULL,                     -- method|dataset|author|concept|ticker|...
-    UNIQUE (doc_id, section_id, name, type)
-);
-CREATE INDEX idx_entities_name ON entities(name);
-
--- tags: doc-level, normalised
-CREATE TABLE tags (
-    id   INTEGER PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE
-);
-CREATE TABLE doc_tags (
-    doc_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-    tag_id INTEGER NOT NULL REFERENCES tags(id)      ON DELETE CASCADE,
-    PRIMARY KEY (doc_id, tag_id)
-);
-```
-
-### Propositions as first-class retrieval units (decision A — RESOLVED, committed)
-
-Propositions are the highest-signal knowledge unit, so they are a **direct retrieval target**,
-not JSON hidden on a section. They get their own table + their own `vec0` embeddings and are
-searched alongside chunks (L3) and section summaries (L2). This is committed schema, written
-in the same per-document transaction as the other levels.
-
-```sql
--- propositions: atomic, self-contained claims, embedded + directly retrievable
-CREATE TABLE propositions (
-    id          INTEGER PRIMARY KEY,
-    section_id  INTEGER NOT NULL REFERENCES sections(id)  ON DELETE CASCADE,
-    doc_id      INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-    position    INTEGER NOT NULL,                  -- order within the section
-    text        TEXT    NOT NULL,                  -- the claim, self-contained
-    embed_model TEXT    NOT NULL,                  -- model that produced the vector
-    UNIQUE (section_id, position)
-);
-
-CREATE VIRTUAL TABLE proposition_vectors USING vec0(
-    proposition_id INTEGER PRIMARY KEY,
-    embedding      FLOAT[768]
-);
-```
-
-**Why first-class (the rationale, kept for posterity):** if propositions only lived as JSON on
-the section they would never be embedded, so the vector search could never match one directly —
-they would surface only via hierarchical expansion. Promoting them to embedded rows makes the
-single highest-value unit searchable. Embedding is the expensive, irreversible step, so this was
-decided **before** the first full ingest to avoid a later re-embed.
-
----
-
-## 6. Ingest pipeline
-
-Orchestrated in `ingest_pipeline.py`. Idempotent by `content_hash`. Writes all three levels
-in a single transaction per document.
+`ingest_pipeline.py`. Idempotent by content hash; per-document transaction (prepare first,
+then delete+write atomically — a failed re-ingest never destroys the prior doc); failures
+quarantine the single doc and the batch continues. An advisory flock enforces **one ingest
+process at a time** (Ollama contention produces spurious quarantines).
 
 ```
-source file
-  → hash; if hash exists in documents → skip (no-op)
-  → copy raw file into flat raw store (raw_path)
-  → EXTRACT (source-specific):
-        pdf   : pymupdf → text + section structure; preserve LaTeX in math sections
-        code  : python-ast → functions, per-file structure, call graph
-        video : youtube-transcript-api → transcript + timestamps
-  → INGEST PASSES (local LLM, quality-only, unbounded time):
-        section pass : summary + propositions + quant results + cross-section deps
-        doc synthesis: thesis + method + result + limitations
-        entity pass  : typed entities + section provenance
-        gap flagging : doc-level gap_flags
-        (code)       : function extraction + repo synthesis
-        (video)      : transcript cleaning + structure injection, THEN standard passes
-  → EMBED (nomic-embed-text): L3 chunks (512 tok) + L2 section summaries + propositions
-  → WRITE L1/L2/L3 + entities + tags in one transaction
+source file (vault/incoming/<category>/… or repo)
+  → hash; existing → skip
+  → raw store copy
+  → EXTRACT (per type; extract/)
+      pdf: sections via font+shape heuristics, ToC pages excised, per-page de-hyphenation
+           (doc-vocab attested), PageFlags damage/math detector → GOT math-OCR with
+           deterministic QC fallback; figure detection (raster + vector clusters,
+           caption-pairing, density filters)
+      pptx: one span per slide, real slide-number provenance, notes; visual-bearing
+            slides rendered via soffice for the figure pass
+      code: repo = doc, files = sections, def-granular chunks with line provenance,
+            call graph, deterministic AST entities (no LLM passes — pass profile)
+  → LLM PASSES (local qwen, schema-validated pydantic, bounded repair retries with
+      temperature escalation; length-truncation-aware; LaTeX-escape sanitizer)
+      section summaries (grounding guard: distinctive-stem overlap with own source,
+      else deterministic fallback) · propositions (anti-meta prompt + deterministic
+      rejection filters) · entities (normalisation, noise/grounding filters, plural
+      merge) · doc synthesis (semantic validation; arbitrated title when extractor's
+      is suspect) · gap flagging (evidence-grounded, precision-filtered)
+  → FIGURES (batched after text passes — one VRAM swap per doc): VLM describe with QC +
+      caption-only fallback; engine ollama or llama-server (fails closed to ollama)
+  → EMBED (nomic): chunks + summaries + propositions + figure caption+description
+  → WRITE all levels in one transaction
 ```
 
-**Hard rule for every structured LLM output (propositions, entities, synthesis, gaps):**
-validate against a schema (pydantic or equivalent), with **bounded retries and a repair
-prompt** on malformed JSON. An 8B quantised model *will* emit invalid/partial JSON; the
-pipeline must never silently write garbage or crash a batch on one bad doc. Log and quarantine
-failures; do not abort the run.
+**VRAM choreography (hard-won, step 11.5):** evictions must be settle-polled (Ollama
+delists before VRAM frees); evict ALL models before GOT; qwen2.5vl needs `num_ctx=4096` to
+fit 8 GB. A split model produces identical output SLOWLY — no quality gate sees it; watch
+GPU-idle + multi-core llama-server. **Run the math eval suite after any VRAM-choreography
+change.**
 
----
+**Hard rule:** every structured LLM output is pydantic-validated with bounded repair; the
+pipeline never silently writes garbage and never aborts a batch on one bad doc.
 
-## 7. Retrieval pipeline
+Continuous ingest: `locus watch` (recursive incoming/ watcher, category from drop folder,
+settle window, quarantine preserves subpath) + tracked-repo sync (`[repos]` config; HEAD
+checked hourly, re-ingest only on new commits; `locus sync [--force]` manual).
 
-In `retrieve/` + `query.py`. Single Claude API call at the end.
+## 8. Retrieval pipeline
+
+`retrieve/` + `query.py`. Single Claude API call at the end.
 
 ```
 embed query (nomic)
-  ├─ proposition search: top 10 over proposition_vectors (highest-signal claims)
-  ├─ fine search   : top 20 over chunk_vectors      (L3)
-  ├─ section search: top 5  over section_vectors    (L2)
-  └─ entity-anchored search: only for named-entity queries (exact/normalised match on entities.name)
-merge candidates
-  → rerank top 8 with ms-marco-MiniLM cross-encoder (CPU)
-  → hierarchical expansion: for each survivor, fetch parent section summary + doc synthesis
-                            via plain SQLite joins (free, no inference)
-  → context assembly, coarse-to-fine: doc summaries → section summaries → chunks
-                            (enforce a token budget cap; see config)
-  → Claude API: 1 call
+  ├─ propositions  top-10 (dense)        ├─ chunks  top-20 (dense)
+  ├─ sections      top-5  (dense)        ├─ figures top-8  (dense)
+  ├─ lexical FTS5/BM25 over chunks (exact symbols/tickers dense embeddings blur)
+  ├─ path-anchored: code sections whose file stem is named in the query
+  └─ entity-anchored: alias-aware — query naming ANY variant surfaces sections naming
+     any sibling variant (canonical groups via entity_aliases; falls back to raw names
+     pre-`locus link`)
+merge → rerank (cross-encoder, CPU) → select() with diversity rules:
+     per-(section,kind) cap, child-redundancy demotion, per-doc cap (config), all soft
+     with refill; query-named files exempt; prefer_code guarantees a source unit for
+     implementation-intent queries
+  → confidence: calibrated floor (min_rerank_score 0.22) — flag, never filter;
+     two-tier band (ambiguous|absent); facet-aware scoring suppresses the banner when
+     every facet of a bridge query is covered; sub-floor noise pruned only when signal exists
+  → hierarchical expansion (parent summary + doc synthesis, plain joins, no inference)
+  → assemble coarse-to-fine under context_token_budget; citations deduped;
+     code cites file:line, slides cite slide numbers, figures cite [figure on p.N]
+  → Claude API ×1 — top-3 retrieved figure images attach as real images (downscale-guarded;
+     missing image degrades to text-only)
 ```
 
-- **Code results** must include the function body + `file_path:line_start-line_end`.
-- **Video results** must include the `?t=<seconds>` deep-link URL.
-- **Query modes** (standard RAG, gap analysis, cross-domain synthesis, code recall,
-  professional framing, project recommendation) are a **system-prompt lever only** — they do
-  **not** change the retrieval pipeline. Implement them as swappable system prompts over the
-  same assembled context.
-- **Concept graph / coverage map** are generated from SQLite metadata with **no inference**
-  (joins over entities/tags/sections). Useful for navigation absent a UI. Cheap; build when
-  convenient.
+Document facets: `--since/--until/--category`. Query modes are a system-prompt lever only —
+they never change the retrieval pipeline.
 
----
+## 9. Link layer (step 12)
 
-## 8. Repository layout (target)
+`locus/link/` — runs AFTER ingest, cross-corpus, outside the ingest/retrieval spine.
+
+- **`locus link`** builds `entity_aliases`: deterministic tiers first (casefold / punct /
+  attested acronym-expansion incl. plural-chained lookups / attested cross-doc plural —
+  same-type only, hard evidence), then embedding-blocked lookalike clusters (cosine ≥0.86
+  AND token-Jaccard ≥0.34) adjudicated by the **Claude API** (forced tool-use). Verdicts
+  cached in pass_cache ⇒ re-runs ≈ 0 API calls. Hard guards override the LLM: min-merge-len
+  4, same-section co-occurrence never merges, canonical snapped to an actual member
+  surface, code docs excluded from clustering, oversize clusters (>8) skipped.
+- **`related_documents`** (`link/related.py`, joins-only): docs ranked by shared canonical
+  entities; in `locus inspect` + MCP `inspect_document`. Stop-entity guard (`stop_doc_freq`)
+  built but OFF until the pour (~0.4 × doc count).
+- Manual-only by design (billed API); run after ingest batches. The retrieval arm checks the
+  substrate per query, so the MCP server needs no restart after rebuilds.
+
+## 10. MCP server (primary use #3)
+
+`locus mcp` — `retrieve` (core, free, local-only) / `list_documents` / `inspect_document`,
+plus opt-in `query` (server-side Claude call, billed; default OFF so the server never
+advertises a billable tool unless the owner opts in). Figure images return as MCP image
+content blocks (`mcp.include_figure_images`). Architecture: the server runs where the data
+is (DB + sqlite-vec + Ollama + reranker); local Claude clients connect via **stdio over
+SSH** — `ssh <host> ".../uv run locus mcp"` (absolute path: non-interactive SSH shells
+don't source .zshrc). No open ports, no auth surface, no server-side key needed for
+`retrieve`.
+
+## 11. Evaluation & quality system
+
+Four suites (`locus eval --suite judge|math|retrieval|full`) + a deterministic audit:
+
+- **audit** (`locus audit`, no API): per-doc QC re-applying ingest hygiene predicates to
+  stored rows (suspect props, noise/ungrounded entities, empty synthesis, corruption
+  signatures, unattested numbers, OCR-fallback counter with loud warning, figure QC,
+  zero-prop sections); corpus date/category distribution; gap-liveness warning; ALIAS
+  SUBSTRATE block (tiers, cross-doc canonicals, suspicious merges).
+- **judge**: Claude scores stored extractions against source (6 dimensions; also the
+  A/B harness that settled the ingest-model choice).
+- **math**: math-fidelity gate — flagged pages rendered to PNG, Claude judges stored text
+  against the image. Doubles as the VRAM-regression canary.
+- **retrieval**: labelled recall@8 / MRR / cross-domain banner rate / file-level recall for
+  code / links_recall over labelled related-doc pairs; answer-key exclusion at the
+  candidate pool (the locus repo itself is in the corpus). Labels live in
+  `locus/eval/retrieval_eval.py` — **extend them whenever the corpus grows**.
+
+Baselines to hold (step-12 gate): recall@8 1.000, cross-domain 1.000, banner 0.000,
+file_recall 1.000, links_recall 1.000, judge ~4.0–4.4 band (n=8 noise), math ~0.87–0.95
+band. Known weakest dimension: judge entity recall (~3.4) — §11.B extraction ceiling.
+
+**Known limits & standing decisions:**
+- **§11.B — the weakest model owns high-value passes.** 8B-quantised quality is the ceiling
+  on summaries/propositions/entities/VLM descriptions. Mitigated by validation + grounding
+  guards + raw-chunk co-assembly (recoverable class); revisit per-pass API routing only on
+  eval evidence, and revisit VLM quality at the next model generation.
+- **Brute-force KNN** (sqlite-vec): fine at personal scale; add the ANN index when the
+  count warning fires post-pour.
+- **Content-hash idempotency is whitespace-sensitive**; normalise before hashing if
+  re-export duplicates appear.
+- **Context budget** enforced in `assemble.py`, truncating finest-grained first.
+
+## 12. Repository layout
 
 ```
 locus/
-├── CLAUDE.md
-├── pyproject.toml              # prefer uv; pip works
-├── alembic.ini                 # Alembic config; DB url resolved at runtime from config.toml
-├── config.toml                 # see §9
+├── CLAUDE.md / README.md / docs/pour-runbook.md
+├── pyproject.toml (uv; extras: rerank, mathocr) · alembic.ini · config.toml (+ example)
 ├── locus/
-│   ├── config.py               # load + validate config.toml
-│   ├── db/
-│   │   ├── schema.sql           # human-reference snapshot (NOT applied directly)
-│   │   ├── connection.py        # opens SQLite, loads sqlite-vec extension
-│   │   ├── migrate.py           # in-process Alembic driver: migrate()/current_revision()
-│   │   └── migrations/          # Alembic env.py + script.py.mako + versions/ (forward-only)
-│   ├── extract/  { pdf.py, code.py, video.py }
-│   ├── ingest/   { sectioner.py, summarize.py, propositions.py, entities.py,
-│   │               synthesis.py, gaps.py, embed.py }
-│   ├── ingest_pipeline.py      # orchestration + idempotency + transactional write
-│   ├── retrieve/ { search.py, rerank.py, expand.py, assemble.py }
-│   ├── query.py                # retrieve → assemble → Claude API
-│   ├── watcher.py              # /vault/incoming/ watch + source-type routing
-│   └── cli.py                  # entrypoint (the product surface)
-├── tests/
-└── vault/
-    ├── incoming/               # watcher source; auto-routed by type
-    ├── raw/                    # flat raw-file store
-    └── notes/                  # owner's manual annotations (watched; ingested as docs)
+│   ├── cli.py            # product surface: ingest list inspect watch sync link
+│   │                     #   query retrieve mcp audit eval
+│   ├── config.py         # typed config; ANTHROPIC_API_KEY via env/.env only
+│   ├── db/               # connection (sqlite-vec load), migrate.py, migrations/ (0001–0008)
+│   ├── extract/          # base, pdf, mathocr, figures_detect, docx, pptx, textdoc, code
+│   ├── ingest/           # llm (validated I/O + repair), summarize, propositions, entities,
+│   │                     #   synthesis, gaps, chunk, embed, figures, llamacpp
+│   ├── ingest_pipeline.py · ingest_lock.py · watcher.py · sync.py
+│   ├── retrieve/         # search (all arms), rerank+select, expand, assemble, pipeline,
+│   │                     #   figure_images
+│   ├── link/             # aliases (tiers+guards), adjudicate (Claude), related
+│   ├── query.py          # retrieve → assemble → Claude (multimodal)
+│   └── mcp_server.py
+├── scripts/              # benchmarks, calibration, backfills, judges (one-off, kept)
+├── eval-artifacts/       # benchmark results + reports (mathocr, figures)
+├── tests/                # 322 model-free-by-default tests
+└── vault/                # incoming/ (watched, category folders) · raw/ · notes/ · locus.db
 ```
 
----
-
-## 9. Environment & config conventions
-
-- **Python 3.11+**, managed with **uv** (`uv venv`, `uv pip install`). Type hints mandatory.
-- **No secrets in code or config committed to git.** Claude API key via env var
-  (`ANTHROPIC_API_KEY`); `config.toml` may be templated as `config.example.toml`.
-- All tunables live in `config.toml`, not scattered constants. Minimum set:
-
-```toml
-[ollama]
-host          = "http://localhost:11434"
-embed_model   = "nomic-embed-text"
-ingest_model  = "qwen2.5:7b-instruct-q5_K_M"  # settled by the §11.C benchmark (2026-06-05)
-
-[paths]
-db            = "vault/locus.db"
-raw_store     = "vault/raw"
-incoming      = "vault/incoming"
-notes         = "vault/notes"
-
-[embed]
-dim           = 768               # locked to nomic-embed-text; changing => full re-embed
-chunk_tokens  = 512
-
-[retrieve]
-proposition_top_k = 10            # highest-signal claims, searched as first-class units
-fine_top_k    = 20
-section_top_k = 5
-rerank_top_k  = 8
-context_token_budget = 100000     # cap on assembled context to the Claude API call
-
-[generation]
-model         = "claude-..."      # set to current model id
-```
-
----
-
-## 10. Build order
-
-Build in **working vertical slices** — prove the core retrieval path end-to-end on one
-source type before adding breadth. Defer UI entirely.
-
-**Phase 1:**
-1. Ingest script for **PDFs** with the full 3-level schema (extract → passes → embed → write).
-2. **RAG CLI** with hierarchical retrieval (the full §7 pipeline) over the PDF corpus.
-3. **Folder watcher** at `vault/incoming/`, auto-routing by source type.
-4. Full **Llama ingest passes** (section / synthesis / entity / gap), quality-tuned.
-5. **Code repo** ingest (python-ast, call graph, per-file sections).
-6. **YouTube** ingest (transcript clean + structure injection → standard passes).
-
-Slices 1→2 are the critical path: a single PDF ingested correctly and a query answered
-end-to-end is the first milestone. Everything else is breadth on a proven spine.
-
-**Hardening (see §15):** after the Stage 6/7 retrieval spine is proven and *before* the
-multi-year bulk ingest, do **Stage 5.1** (math-aware extraction, figures, scanned-PDF OCR,
-entity resolution — all re-ingest-bound). Hybrid lexical retrieval folds into Stage 6.
-
-**Corpus scope (broad, personal — see §1):** technical reading (quant-finance papers,
-control-systems / signal-processing notes, seminar notes, code) **plus** personal/professional
-material — project write-ups, achievements, CV/portfolio material, historical records, and
-general notes. This heterogeneity (many formats, not just PDF; content with its own dates and
-categories) drives several pre-bulk-ingest decisions — see §15.
-
----
-
-## 11. Open decisions & known risks (resolve deliberately, don't drift past them)
-
-**A. Propositions as a retrieval unit — RESOLVED.** Propositions are promoted to a first-class,
-embedded, directly-retrievable table (committed DDL in §5; embedded in §6; searched in §7 with
-`proposition_top_k`, §9). Chosen over downgrading them to context-only material because they are
-the highest-signal unit. Decided before the first full ingest, so no re-embed is needed.
-
-**B. The weakest model owns the highest-value pass.** Proposition/synthesis extraction is
-generation-quality work on an 8B quantised model; quality will be inconsistent. Mitigations:
-(i) strict schema-validation + bounded repair retries (already mandated, §6); (ii) treat
-"local vs Claude API for the proposition pass specifically" as an *empirical* question —
-measure proposition quality from the 8B model on a sample before committing to local-only.
-The "local for ingest" principle should not pre-empt that measurement.
-
-**C. Local-model benchmark — RESOLVED (2026-06-05): qwen2.5:7b-instruct-q5_K_M.**
-Head-to-head on a fixed 12-section prose sample (seed 0), same q5_K_M quant for both,
-passes regenerated per model and Claude-judged (`locus eval --suite judge --models a,b`):
-qwen overall **3.96** vs llama3.1:8b 3.65. llama edged propositions slightly
-(atomicity 4.17 vs 3.83 — within noise at n=12) but collapsed on **summary faithfulness
-2.75 vs 4.50** — the L2 retrieval unit and the synthesis input, the dimension that matters
-most. Both models: zero schema-validation failures. The incumbent stays; no re-ingest.
-
-**D. sqlite-vec does brute-force KNN (no ANN index).** Fine at personal-corpus scale (linear
-scan over even ~10⁵ vectors is sub-second). Add a candidate-count check that warns if the
-vector count grows into a range where latency degrades, so the constraint surfaces before it
-bites rather than after.
-
-**E. "Parallel" fine + section search.** SQLite + the GIL make this logically-concurrent at
-best. Treat "parallel" as "both queries issued before merge," not as a threading requirement.
-Don't over-engineer concurrency here.
-
-**F. Content-hash idempotency is whitespace-sensitive.** A re-downloaded or re-exported
-source with trivial formatting differences will re-ingest as a new doc. Acceptable for now;
-revisit with content normalisation before hashing if duplicate docs become a problem.
-
-**G. Context-budget enforcement.** Coarse-to-fine assembly can overflow the model window on
-large docs. The `context_token_budget` cap (§9) must be enforced in `assemble.py`, truncating
-finest-grained (chunk) content first.
-
----
-
-## 12. Out of scope (phase 1)
-
-- Any *custom-built* GUI / web front end.
-- Obsidian *as a retrieval/knowledge engine* (rejected, see §3.3). **Note:** Obsidian as a
-  read-only projection layer over SQLite is **not** out of scope — it is deferred to
-  post-slice-2 and specified in §14. `vault/notes/` still covers manual annotation and ingests
-  as before.
-- Cloud storage of corpus content.
-- Multi-user / auth.
-- Models larger than ~8B locally (hardware-bound).
-
----
-
-## 13. Coding conventions
-
-- Type-hinted, explicit, small functions. State assumptions in docstrings where non-obvious.
-- Structured LLM I/O goes through validated models (pydantic), never raw dict access.
-- Every external call (Ollama, Claude API, file IO) has explicit error handling; ingest
-  failures quarantine the single doc and continue the batch.
-- DB access is transactional per document; schema changes go through **Alembic migrations**
-  in `db/migrations/versions/` (applied with `alembic upgrade head`), never ad-hoc `ALTER`
-  against a live DB. vec0 virtual tables are created via raw `op.execute(...)` in migrations
-  (autogenerate cannot model them); `env.py` loads the sqlite-vec extension on the migration
-  connection.
-- Prefer correctness and legibility over cleverness. No premature optimisation of ingest;
-  optimise retrieval latency only where measured.
-
----
-
-## 14. Obsidian projection layer (deferred — post-slice-2)
-
-A **read-only visualization/navigation layer** rendered over the SQLite source of truth.
-Obsidian is a *render target*, not part of the ingest or retrieval path. This is the
-"concept graph / coverage map" navigation described in §7, materialised in Obsidian instead
-of a bespoke viewer.
-
-**Non-negotiable invariants:**
-
-1. **SQLite is the single source of truth.** The export is one-way: `SQLite → vault/obsidian/`.
-   The generated vault is **never read back** into the DB.
-2. **Generated, disposable, regenerable.** `vault/obsidian/` is produced by a pure function of
-   the DB and can be deleted and rebuilt at any time. It is **gitignored**.
-3. **Authored notes are unaffected.** Hand-written notes still live in `vault/notes/` and ingest
-   into SQLite via the watcher exactly as before. They are an *input*; `vault/obsidian/` is an
-   *output*. Do not conflate the two directories.
-4. **Outside the spine.** Lives in `locus/export/obsidian.py`. Building or breaking it must not
-   touch ingest or retrieval. No-inference, joins-only (same constraint as §7's concept graph).
-
-**Sequencing:** built only after Phase-1 slices 1–2 (PDF ingest + RAG CLI) are proven
-end-to-end. There is nothing meaningful to visualise until the entity pass has run on real docs.
-
-**Node / edge granularity:**
-
-| Schema level | Becomes | Notes |
-|---|---|---|
-| Document (L1) | One note file | Anchor node. Frontmatter: `thesis/method/result/limitations/tags/gap_flags`; body renders `section_map` as headings. |
-| Entity | One note file | The connective tissue — drives the cross-domain "linked ideas" graph (§1 objective). Identity key: see open sub-decision below. |
-| Tag | Native `tags:` frontmatter | No separate files. |
-| Section (L2) | Headings within the doc note | Not separate files (keeps graph legible). `cross_section_deps` → links. |
-| Chunk / proposition (L3) | Not nodes | Too fine. |
-
-Edges derive from existing data only: doc↔entity (mention), entity↔entity (co-occurrence),
-doc↔doc (shared entities / `cross_section_deps`), `gap_flags` as callouts. Structured YAML
-frontmatter enables Dataview / Mermaid / Charts dashboards (coverage map = `tag × source_type`
-matrix) with no custom code.
-
-**Resolved sub-decisions:**
-- **Entity node identity = `name+type`.** Matches the schema's
-  `UNIQUE(doc_id, section_id, name, type)` and never wrong-merges distinct entities that share
-  a string. Known cost: the 8B model's inconsistent `type` labelling (§11.B/C) can produce
-  near-duplicate nodes for one real concept. *Mitigation — SUPERSEDED by step 12 (§16):*
-  the alias layer is now a real, corpus-level substrate (`entity_aliases`, built by
-  `locus link`; still never alters `entities`). The exporter should render **canonical**
-  entities as nodes (join through `entity_aliases`), not raw surfaces.
-- **`vault/obsidian/` placement & git.** Lives at `vault/obsidian/`, sibling to
-  `incoming/ raw/ notes/`. **Gitignored** (derived, regenerable). The exporter owns and
-  regenerates only its own subtrees (e.g. `docs/`, `entities/`) and **must never touch
-  `.obsidian/`** (Obsidian's own plugin/graph config) — regenerate per-owned-subtree, never
-  blanket-wipe the folder.
-
----
-
-## 15. Planned hardening & future work (Stage 5.1 + retrieval), with sequencing
-
-This records the spec for hardening identified while validating ingest quality on a real
-corpus. Do not lose it.
-
-### 15.0 The governing principle — what Claude can and cannot recover
-This is RAG: **Claude only ever sees what retrieval surfaces.** Recoverability of poor ingest
-depends on *where* quality was lost:
-- **Generation-time noise** (coarse/slightly-wrong summary, proposition, entity; redundant
-  context) → **recoverable**, *because retrieval assembles raw chunks + section summaries + doc
-  synthesis, not just the LLM-derived units*, so Claude grounds on source text. Keep this
-  property: always retrieve and assemble the raw chunk alongside derived units.
-- **Extraction loss** (garbled/lost equations, scanned-no-text, ignored figures) → **not
-  recoverable** — the information never entered the system.
-- **Retrieval miss** (right content exists but isn't surfaced) → **not recoverable** — Claude
-  never sees it.
-Prioritise the two Claude *cannot* fix: clean content **in** (math/figures), right content **out**
-(hybrid retrieval).
-
-### 15.1 Stage 5.1 — ingest hardening (RE-INGEST-BOUND; settle before scaling the corpus)
-These change stored/embedded data, so adding them later forces a full re-ingest. Do them
-**after** the retrieval spine (Stage 6/7) is proven but **before** the multi-year bulk ingest.
-
-- **Math-aware extraction.** The text layer garbles or drops equations; the corpus is
-  math-dense (quant/control/signal-processing). Route `has_math` regions (already flagged in
-  `extract/pdf.py`) through a math model — Nougat or GROBID for papers, or a vision/OCR pass —
-  to recover LaTeX. **Not Claude-recoverable; highest-value gap.**
-- **Figures / diagrams** (PDFs often contain block diagrams, plots, schematics). Three tiers:
-  1. *Preserve* — detect figure regions, extract + store the image in the raw store with its
-     caption + in-text references; filter decorative/logo images by area. Cheap, do always.
-  2. *Make findable* — generate a text description per figure via a local VLM that fits 8 GB
-     (e.g. `moondream` ~2 GB or `minicpm-v` 8B Q4 ~5.5 GB), loaded sequentially with the text
-     model at ingest (unbounded-time, §2.4). Store as a **first-class retrievable unit**:
-     `figures` table + `figure_vectors` vec0 (mirrors propositions, decision A).
-  3. *Make interpretable* — at generation (Stage 7), include the **actual figure image** in the
-     Claude call when a retrieved unit references it; Claude is multimodal, so the precise
-     interpretation happens there for ~free (the local VLM only has to make it *findable*).
-  **Schema decision (settle before bulk ingest, like decision A):** add the `figures` +
-  `figure_vectors` tables.
-- **Scanned / image-only PDFs.** Detect low text-density pages → OCR fallback (else the doc
-  ingests as near-empty and is invisible to queries).
-- **Entity resolution / alias-canonicalization.** Collapse `name+type` near-duplicates
-  (`LTI model` vs `Linear, Time-invariant (LTI) models`). Mainly unlocks the cross-domain
-  Obsidian graph (§14) — duplicates fragment the "linked ideas" connections; invisible to
-  direct Q&A. Coordinate with §14's deferred alias decision.
-- **Content-hash normalization** (§11.F) — normalize whitespace/formatting before hashing so a
-  re-exported PDF does not duplicate.
-- **(Measure first)** Per §11.B, route the proposition/synthesis passes to the Claude API only
-  if the eval (`locus eval`) shows local quality insufficient — the raw-chunk fallback above
-  makes local "good enough" in many cases.
-
-### 15.2 Stage 6 — retrieval hardening (NOT re-ingest-bound; build into Stage 6)
-These operate over existing data, so they can be added/changed anytime without re-ingest.
-- **Hybrid lexical + dense retrieval.** Add SQLite **FTS5/BM25** over chunk text beside the
-  vector search. Dense embeddings (general-purpose nomic) blur exact symbols, tickers, and
-  specific method names; lexical catches them. A retrieval miss is **not Claude-recoverable**,
-  so this is the highest-ROI retrieval fix — fold it into the Stage 6 build.
-- **Cross-domain retrieval mode / multi-query expansion.** The killer use case (engineering ↔
-  quant synthesis) needs non-obvious cross-domain links surfaced; pure relevance reranking may
-  miss them. Claude can synthesise the bridge *only if both sides are retrieved*.
-- **ANN index** when the brute-force KNN count-warning fires (§11.D).
-
-### 15.3 Sequencing
-1. Prove the **Stage 6 + 7** spine on the current corpus (fold in 15.2 hybrid lexical). ✅ done.
-2. Then **Stage 5.1** (15.1 + 15.4) before the multi-year bulk ingest — re-ingest-bound work must
-   be locked in before the expensive pour. Figures span 5.1 (store + describe) and 7 (multimodal
-   generation).
-
-### 15.4 Re-prioritised for the broad personal-KB goal (§1)
-The §1 reframe (entire personal KB — projects, achievements, history — to query, **link**, and
-**feed Claude**) shifts what matters most before bulk ingest. Priority order:
-
-- **Format coverage (do first).** The KB is heterogeneous; only PDF ingests today. Add a
-  text/markdown extractor (`.md`/`.txt` — cheap, deterministic, and `vault/notes/` already
-  expects it), then `.docx`. You cannot bulk-ingest a personal KB that is mostly notes and
-  write-ups if the pipeline only reads PDFs. *Ingest-capability gate — before the pour.*
-- **Temporal + category metadata (re-ingest-bound schema decision).** Personal/historical
-  content has meaningful *dates* (when an achievement happened, when a project ran) and *kinds*
-  (settled 2026-06-05: paper / coursework / project / career / note — one axis, KIND of
-  content; format lives in `source_type`, so no code/slides category; notes = owner-written,
-  coursework = handed to the owner; career absorbs CV/applications/achievements).
-  Add `source_date` + `category` to `documents`
-  (+ retrieval facets) so "what did I work on in 2023" and "show my projects" work. Settle the
-  schema before bulk — backfilling dates across a multi-year ingest is the expensive redo.
-- **Entity-alias resolution (elevated).** "Link" is now a primary use, and cross-document entity
-  co-occurrence is the linking substrate — duplicate/variant entity names fragment exactly the
-  connections this goal is about. Promote from §14's deferred view-layer note to a real pass.
-- **The Claude-context surface (primary use #3, not re-ingest-bound).** Decide the interface for
-  feeding the KB into Claude — an **MCP server** exposing `retrieve`/`query` is the natural fit,
-  or a thin retrieval API. Plan it now (shapes utility); build after the spine, independent of the
-  bulk ingest.
-- **Retrieval eval (Layer 3).** Now spans heterogeneous content — the definitive check that
-  query+link quality holds across the broad corpus. Run before trusting bulk results.
-- **Math-aware extraction + figures (15.1).** Still needed for the *technical subset*; slightly
-  lower priority than format coverage, which touches the whole KB.
-
----
-
-## 16. Near-term development plan (current — supersedes the §10 slice list)
-
-> Human-readable version with checkboxes + the MCP architecture note: **`PLAN.md`** (repo root).
-> Keep the two in sync.
-
-Critical path (ingest → query) is done on PDFs. This is the ordered plan to reach a usable,
-broad-corpus system, weighted per the owner's direction: **MCP server is a primary deliverable;
-temporal metadata is high; math + figures are medium but kept (most of the corpus is PDF), done
-before the bulk pour. Target formats: PDF (done), DOCX, slides (PPTX), code repos; later YouTube /
-podcast transcripts.**
-
-**Ordering principle:** lock *re-ingest-bound* work before the bulk ingest (changing it later
-forces re-ingesting the whole corpus); deliver daily utility early (MCP); broaden formats;
-validate; then pour. Each block is roughly a work-day; `[re-ingest-bound]` = must precede bulk.
-
-**2026-06-04 corpus evaluation (re-ordered steps 3–7).** An external evaluation over the MCP
-server found, verified against the code: math destroyed at extraction (broken font CMaps *drop*
-ligatures — unrecoverable post-hoc — and Colab exports lose formulas entirely; corruption also
-defeats the `has_math` regex, so the math-OCR pass would miss its targets); sectioning
-over-fragmentation (font heuristic accepts sentence-shaped lines as headings: 109 sections /
-78 pp; ToC pages ingest as content); pass-hygiene gaps (all-empty synthesis is schema-valid and
-ships; meta-propositions; entity noise); and retrieval-selection gaps (one section can occupy
-three rerank slots as proposition+chunk+section; pure-relevance top-8 collapses onto one
-document, breaking cross-domain synthesis). Date/category facets were already fixed in code —
-the corpus predates migration 0003; re-ingest activates them. Remediation: selection fix first
-(not re-ingest-bound, daily utility), then all re-ingest-bound fixes before the *one* re-ingest
-of the small corpus, re-evaluate against the 2026-06-04 baseline, then resume breadth. The §11.C
-model benchmark stays deferred until extraction is fixed (both models currently summarise
-math-stripped text). Details per step in `PLAN.md`.
-
-1. **Temporal + category metadata** `[re-ingest-bound]`. Migration: `documents.source_date` +
-   `category`. Extraction: PDF metadata creation date → file mtime fallback; category by
-   drop-folder convention / heuristic. Retrieval facets (`--since`/`--until`/`--category`);
-   `audit` shows the date/category distribution. *Lock the schema first.*
-2. **MCP server.** Expose `retrieve` / `query` (+ `list` / `inspect`) as MCP tools (`mcp` SDK) so
-   the vault is callable from Claude Code, the desktop app, and the API. Immediate daily utility
-   over the current corpus; not re-ingest-bound. **Architecture (local Claude ↔ server corpus):**
-   the MCP *server* runs server-side (needs DB + sqlite-vec + Ollama + reranker); the local Claude
-   is the client. Use **stdio over SSH** — Claude spawns `ssh compute-node "… /home/alec/.local/bin/uv run locus mcp"` (absolute path: non-interactive SSH shells do not source .zshrc, so `uv` is not on PATH),
-   tunnelling stdio over the existing SSH (no open ports/auth). Expose `retrieve` as the core tool
-   so the local Claude pulls the KB as context and generates itself (needs no server-side Claude
-   key). See `PLAN.md`.
-3. **Retrieval selection** (eval phase A; *not* re-ingest-bound) — **done.** In
-   `retrieve/rerank.py`, `select()`: cap units per `(section_id, kind)` at 1 after scoring;
-   demote section-summary candidates already represented by a child (expansion re-attaches the
-   summary); per-doc diversity cap (config `per_doc_cap`) — all soft, with fallback refill so
-   top-k stays full. Citations deduped in `assemble.py`. Verified live: the Fourier
-   signal-processing↔PDE bridge query surfaces 3 documents (was 1).
-4. **Sectioning + front-matter** `[re-ingest-bound]` (eval phase B) — **done** (effective on
-   the step-7 re-ingest). Deterministic, in `extract/pdf.py`: printed-ToC pages excised at
-   extraction (dotted-leader density; `ExtractedDoc.toc_pages` audit trail — excision chosen
-   over an `is_frontmatter` tag: stronger, no schema change); `_plausible_heading` shape
-   filters on font-heuristic candidates; sanity cap `max(8, 1.5×pages)` post-filter.
-   `MIN_SECTION_CHARS` deliberately stays 400 — measurement showed fragmentation came from
-   bogus headings, not the size band (PDE doc: 109→37 sections, median 745→2540 chars).
-5. **Pass hygiene** `[re-ingest-bound]` (eval phase C) — **done** (effective on the step-7
-   re-ingest). Anti-meta proposition prompt + deterministic post-filter in `propositions.py`
-   (fragment/too-short/meta/dropped-formula/title-echo; one bounded retry when everything is
-   rejected); *semantic* synthesis validation (blank fields fail pydantic validation → repair
-   loop → quarantine); entity surface normalization + equation-label/bare-symbol filters +
-   evidence-based plural merge in `entities.py`; `audit` re-applies the same predicates to
-   stored rows (QC line). Verified on the live corpus: finds doc 19's empty synthesis,
-   123 suspect propositions, 209 noise entities.
-6. **Math-faithful extraction** `[re-ingest-bound]` (eval phase D; promoted from late-plan) —
-   **done** (effective on the step-7 re-ingest; `.ipynb` extractor deferred to step 8).
-   Per-page damage/math detector (`PageFlags` in `extract/pdf.py`: broken-ligature words,
-   ω→'!' symbol garbage, math-font/math-unicode density, image/vector-drawing formulas) also
-   fixes `has_math` via font evidence. Engine chosen by benchmark on 10 flagged corpus pages,
-   Claude-judged against the page image (`locus/eval/math_fidelity.py` — reusable as the
-   step-7 gate metric): text-layer 0.73 → **GOT-OCR-2.0 0.93 with 0 hallucinations / 0 engine
-   failures** (Nougat 0.97 but 4/10 failures; qwen2.5-vl 0.97 but 1 invented equation —
-   GOT picked on risk asymmetry: it degrades, never invents). Routing in `extract/mathocr.py`:
-   whole-page replace guarded by deterministic QC (length / repetition-loop / residual
-   corruption → fall back + audit), pipeline-only (`extract_pdf(mathocr=True)`), config
-   `[mathocr]`, deps behind the `mathocr` extra. See §15.1.
-7. **Validate → re-ingest → re-evaluate** (eval phase E) — **done** (2026-06-05). Corpus
-   poured at 24 docs (engineering + 11 quant/CS papers + CV). `locus eval --suite
-   judge|math|retrieval|full`: **math fidelity 0.952 (gate PASS**, text-layer baseline 0.73),
-   retrieval recall@8 0.958 / MRR 1.000 (cross-domain 0.75), judge 3.77/5 (entities weakest →
-   step 12). Audit QC zero corpus-wide. Pour-hardening landed alongside: WAL, two-way GPU
-   choreography, char-level OCR-loop QC + persisted audit trail, temperature-escalating repair,
-   per-section graceful degradation. Operational rule: one ingest process at a time. The §11.C
-   local-model benchmark is now unblocked.
-7.5. **Remediation pass 2 (2026-06-05 external evaluation)** — **done** (2026-06-05). A
-   desktop-Claude audit over the MCP server found 8 issues; all fixed in one batch + ONE
-   re-ingest, re-gated against the step-7 baseline. Fixes: JSON-escape LaTeX corruption in
-   LLM fields (sanitizer in `llm.py` + `has_corruption_signature` audit predicate); retrieval
-   confidence (per-citation rerank scores + category in MCP/CLI, `min_rerank_score` floor —
-   **calibrated 0.22** via `scripts/calibrate_rerank_threshold.py` — LOW CONFIDENCE banner,
-   flag-never-filter, threshold-safe refill); evidence-grounded gap pass (deferral-phrase
-   hints; liveness 24/24 docs, was 0); entity hygiene 2 (unbalanced brackets, ingest-time
-   grounding, `organization` type); caption-label heading filter + semantic titles for
-   pagination pseudo-titles; zero-raw proposition retry + math-dense prompt variant +
-   named zero-prop sections in audit; per-page de-hyphenation; length-truncation-aware
-   repair (`done_reason: length` ⇒ demand shorter). Cross-doc edges deferred to step 12.
-   Re-gate: judge **4.08** (was 3.77), recall@8 **1.000** / cross-domain **1.000** (was
-   0.958/0.75) with the floor active, negative controls flag LOW CONFIDENCE, audit QC +
-   corruption zero corpus-wide, quarantines 0. Math fidelity 0.922 (n=20) vs 0.952 (n=8) —
-   verified sample composition, not regression; weak pages are picture-embedded formulas
-   (step 11 scope). Follow-up: doc-title arbitration — synthesis pass emits a title, applied
-   only when `pdf.title_is_suspect(candidate)` (banners/fragments/slugs/tab-titles; trusted
-   titles never rewritten); stored titles backfilled without re-ingest
-   (`scripts/backfill_titles.py`, 5/24 retitled). A **round-2 external audit** verified the
-   fixes and surfaced 3 residuals, all fixed: two-tier confidence band (`ambiguous` vs
-   `absent`, `DEEP_FLOOR_MARGIN=4`) so cross-domain queries aren't mislabelled absent +
-   deep-noise pruning only when signal exists; gap-pass precision filter (`filter_gaps`:
-   hint-backed or majority-unattested only) + `scripts/backfill_gaps.py`; attestation-based
-   de-hyphenation (joins only doc-vocab-attested words) `[re-ingest-bound]`. Residuals map
-   to planned steps: facet scoring → §15.2; aliasing/edges → step 12; numeric faithfulness
-   → §11.B/C. Corpus declared **ready for format breadth (steps 8–10)**.
-8. **DOCX + Markdown/text + notebook extractors** — **done** (2026-06-05). Four formats:
-   `.docx` (`python-docx`: heading-style sections, tables flattened, core-props title/date),
-   `.md` (fence-aware ATX sectioning; stdlib YAML frontmatter → title/`source_date`), `.txt`
-   (single section, char-windowed), `.ipynb` (deferred here from step 6; stdlib JSON — not
-   nbconvert — markdown cells verbatim preserving `$...$`, code cells fenced, outputs
-   dropped). Shared models + size-band machinery extracted to `extract/base.py` (pdf.py
-   re-imports). Migration 0004 widens the `source_type` CHECK by table rebuild
-   (`docx`/`markdown`/`text`/`notebook`). Routing: `_SUFFIX_TYPE` + `_extract()` dispatch;
-   downstream pipeline untouched (§2.6) — title arbitration, mtime date fallback, category
-   convention all inherited. **Watcher fixed during verification:** it never recursed into
-   category subfolders, so laptop-outbox drops (`incoming/papers/…`) sat unprocessed; now
-   recursive, quarantine preserves the drop subpath. Verified live: all four formats ingest
-   + retrieve with citations, audit QC clean, drop-folder category derived via watcher.
-9. **Slides (PPTX) extractor** — **done** (2026-06-05). `extract/pptx.py` (`python-pptx`),
-   `source_type='slides'` (semantic name per §15.4). One span per slide: title placeholder
-   + all text-bearing shapes in XML order, tables pipe-joined in-flow, speaker notes under
-   a `Notes:` marker (`notes_text_frame` only — the notes-shapes walk would pull the
-   slide-number placeholder). Slide chrome filtered two ways: slide-number/footer/date
-   *placeholders*, and plain text boxes whose entire text equals the slide's own number
-   (Google-Slides-style exports render page numbers as literal TEXT_BOXes — found on the
-   first real deck, where placeholders alone caught nothing). Sections carry **real slide-number ranges** in
-   `page_start`/`page_end` via a private paged banding (`_build_slide_sections` reuses
-   base MIN/MAX + `window_by_chars`; `base.build_sections` stays unpaginated by contract),
-   so citations point at slides ("pp 1–2" = slides 1–2). Title/date from core properties
-   (docx chain). Migration 0006 widens the source_type CHECK (0004 rebuild pattern).
-   Default pass profile. Documented limitations: XML shape order (no geometric sort),
-   hidden slides included, images/charts contribute no text — slide images feed the
-   figures pipeline (step 11). Deferred polish: source-type-aware citation label
-   ("slides 3–5") needs `source_type` plumbed through `retrieve/expand.py` →
-   `assemble.py` → `mcp_server.py`. Verified live on a real 20-slide deck: 14 sections
-   with honest merge ranges (pp 9–10, pp 15–20), speaker notes captured 1/1, retrieval
-   cites the right slides, audit QC zero; the deck's chart-heavy slides confirmed the
-   step-11 figures gap (chart content is invisible to the text layer).
-10. **Code-repo ingest + continuous repo sync** — **done** (2026-06-05, deliberately ahead
-    of step 9). Two channels, one extractor (`extract/code.py`, stdlib ast): *tracked
-    repos* (config `[repos]`, all 5 server repos; commit-triggered — `locus watch` checks
-    HEAD hourly, re-ingests only on new commits; `locus sync [--force]` manual; manifest
-    JSON as the raw-store entry — git is the raw store) and *LocusDrop snapshots* (a
-    directory under `incoming/projects/<name>/` = one repo unit; ctime-settled; tarball
-    to raw; `locusdrop:<name>` source_uri so re-drops replace). Doc = repo, sections =
-    files, def-granular PreChunks with real `file_path:line` provenance (§7's path now
-    live), per-file `call_graph`, deterministic AST entities. Per-source-type pass
-    profile (`pass_profile()`): code skips propositions + LLM entities, code-variant
-    summary. Content-keyed pass cache (migration 0005) makes re-ingests proportional to
-    changed files. Re-ingest ordering fixed pipeline-wide (prepare first, delete+write in
-    one transaction — a failed re-ingest no longer destroys the prior doc). Ingest flock
-    turns the one-ingest-at-a-time rule into a guardrail. Audit is profile-aware.
-10.5. **Remediation pass 3 (2026-06-05 round-3 external audit)** — **done** (2026-06-05).
-    Headline finding: the local model silently hallucinated code-file summaries (`hmm.py` →
-    "electrical circuits", `evaluation.py` → "image recognition"; 6 more found in a DB sweep),
-    unguarded because code carries 0 propositions. Fixes: **summary grounding guard** in
-    `summarize.py` (distinctive-stem overlap with the unit's own source; retry → deterministic
-    signature/leading-text fallback + gap flag; PROMPT_VERSION 2 invalidates cached bad
-    summaries — calibrated against all 766 stored sections); **facet-aware confidence**
-    (`pipeline.py` `split_facets` + per-facet rescoring via `rerank.score_pairs`; banner
-    suppressed when every facet of a bridge query is covered at facet floor = floor − 2.0;
-    fixes the two-rounds-standing cross-domain misfire, verified live, negative controls
-    still flag); **floor enforcement** (sub-deep-floor units pruned whenever full-query or
-    facet signal exists); **code retrievability/noise** (`prefer_code` guarantees a source
-    unit for implementation-intent queries; trivial `__init__.py` skipped; `test_*` defs emit
-    no entities); **eval refresh** (30-doc queries incl. file-level `expected_paths` on the
-    previously-hallucinated files + `cross_domain_banner_rate` must-be-zero metric). The
-    audit's unpruned-noise claim under a strong top hit did NOT reproduce (stale MCP server
-    process suspected — it also quoted pre-step-7.5 banner wording). Residual closure (same
-    day): answer-key exclusion moved to the candidate pool (self-ingested eval chunks were
-    consuming top-k slots); prior-round re-checks — gap filter held (0/30), PCMCI/PCMIC is
-    the paper's own typo (faithful extraction; aliasing = step 12), numeric faithfulness now
-    a permanent audit predicate (`unattested_numbers`, 2 hits, both known degraded-math
-    pages); source under-retrieval closed via a **path-anchored search arm** + query-named
-    exemption from the per-doc cap / child-redundancy rules in `select()`. Final re-gate:
-    recall@8 1.000, cross-domain 1.000, banner rate 0.000, file_recall 1.000. (The
-    figures-must-use-the-grounding-guard hand-off was resolved in step 11: not applicable
-    by design — see the step-11 entry.)
-11. **Figures** `[re-ingest-bound]` — **done** (2026-06-06; ONE corpus re-ingest completed
-    same day: 28/28 docs in 5.18 h, zero quarantines, **389 figures, 100% described+
-    vectored**; re-gate vs the step-7.5 baseline: recall@8 **1.000** / cross-domain 1.000 /
-    file_recall 1.000 / banner rate 0, judge 4.02 (baseline 4.08, within n=8 noise; entity
-    recall still the weak dimension → step 12), audit QC zero on all re-ingested docs;
-    verified end-to-end live: MCP returns figure ImageContent blocks, `locus query` answers
-    a block-diagram question FROM 3 attached figure images). Two fixes landed during the
-    run: **re-ingest metadata continuity** (a raw-store re-ingest inherits category +
-    source_uri from the replaced doc instead of wiping the facets — caught live before the
-    batch), and slide captions fall back to the first body line when a deck has no title
-    placeholders. Eval labels updated for corpus growth ('|' any-of alternatives; slug-titled
-    docs get re-arbitrated titles each re-ingest, so labels keep durable tokens only).
-    Migration 0007: `figures` + `figure_vectors` (propositions mirror; PNGs in the
-    raw store as `{hash}_fig{N}.png`, orphan-cleaned on replace/delete). Tier 1:
-    `extract/figures_detect.py` — raster + vector-cluster detection, clip-rendered at 2x;
-    caption pairing decides survival (a figure-class caption overrides the text-density
-    filter — recovers text-boxy flowcharts; a table-class caption rejects; uncaptioned
-    regions need density ≤2.0 chars/1000pt², corpus-calibrated: real diagrams ≤1.6,
-    prose-with-formula-drawings/tables ≥2.2). Corpus sweep: 347 figures, 72% captioned,
-    0 junk on prose docs. Slides render whole via LibreOffice (`soffice`, optional system
-    dep) for visual-bearing slides only (chart/SmartArt/media/picture ≥3% slide area —
-    template logos filtered); absent soffice ⇒ gap line, never quarantine. Tier 2:
-    qwen2.5vl:7b via the shared `llm.vision_chat` (refactored from mathocr); faithfulness
-    prompt + deterministic QC + bounded retry → caption-only fallback; batched after text
-    passes (one VRAM swap per doc); caption+description embedded; image-content-keyed
-    pass cache ⇒ re-ingests re-run zero VLM calls. Retrieval: 4th dense arm
-    (`figure_top_k`), `[figure on p.N]`/`[slide N]` citations. Tier 3: top-3 figure
-    survivors attach as real images to the Claude call (`query.py`, downscale-guarded)
-    and as MCP image content blocks (`mcp.include_figure_images`); a missing image always
-    degrades to text-only. Audit: per-doc figures QC line; 3 figure-shaped labelled
-    queries. Verified live: a paper's pipeline-diagram figure is the TOP survivor
-    (rr +8.49) for its query. The step-10.5 grounding-guard directive resolved
-    not-applicable by design: figures never pass through the summarizer (captions are
-    deterministic; the VLM's source is the image, not section text) — hallucination cost
-    is bounded by QC + caption-as-context + tier 3, where Claude sees the actual image
-    (§15.0 recoverable class). pillow promoted to core deps.
-11.5. **Remediation pass 4 (2026-06-06 external figure audit)** — **done** (same day). A
-    desktop-Claude audit of the figure layer (it can judge VLM descriptions against the
-    attached images) found 7 issues; DB verification showed the HIGH one far larger than
-    sampled: **GOT math-OCR had OOM'd on 255 pages / 14 docs during the step-11 re-ingest**
-    (the figures VLM was each doc's last GPU user; `ocr_pages` evicted only the ingest
-    model). One bug class, four manifestations, each guarded: evict ALL models before GOT
-    (`unload_all`); evictions CONFIRMED by settle-poll (Ollama delists before VRAM frees —
-    loading in that window OOMs/splits); qwen2.5vl needs `num_ctx=4096` to fit 8 GB at all
-    (at 8192 it runs a KEPT 74/26 split — figure phases were ~3x slow all of step 11);
-    same settle at the text→VLM handoff. Plus per-page OOM retry, truncated engine-error
-    gap lines (no tracebacks in gap_flags), an audit **OCR-fallback page counter** +
-    warning (the regression was invisible to every headline gate; the math suite — skipped
-    at the step-11 re-gate — would have caught it: run it whenever VRAM choreography
-    changes), fig-v2 prompt (diagram structural hallucinations fixed on the audit repro;
-    terminology slips remain — §11.B, bounded by tier 3), image-attachment rerank floor
-    (images only; text stays flag-never-filter), and cited-vs-attached cap notes. Recovery:
-    OOM-signature-selected re-ingests → **zero OOM gaps corpus-wide**, 19 fallbacks all
-    QC-reasoned; math fidelity 0.876 n=20 (vs 0.922 baseline — verified sample composition
-    + the picture-formula ceiling, not recovery damage). Residual for step 12's pour prep:
-    fig-v1→v2 backfill (~223 figures, no re-ingest). **Lesson: a split model produces
-    identical output slowly — no quality gate sees it; watch GPU-idle + multi-core
-    llama-server.**
-11.6. **llama.cpp GPU vision backend for figures** — **done** (2026-06-06). Ollama ≤0.30.6
-    runs the qwen2.5vl vision encoder on CPU (~27.5 s/figure); the same weights served by
-    `llama-server` (official Vulkan build b9544, `ggml-org/Qwen2.5-VL-7B-Instruct-GGUF:
-    Q4_K_M` + **f16 mmproj** — the Q8_0 auto-pair FAILED the judge gate, quantized visual
-    features hallucinate more) run at **2.1 s/figure (13x)** with quality parity-or-better
-    (judged vs the stored corpus: faith 3.10 vs 3.00, halluc 20=20, zero failures —
-    eval-artifacts/figures/). `[figures] engine` config; `ingest/llamacpp.py` LlamaServer
-    (per-doc-batch spawn, unload_all-settled handoff, fails closed to ollama with a doc
-    gap — never quarantines); engine-separated figure-cache keys; 11 model-free tests.
-    Verified live end-to-end + math suite in band (the after-any-VRAM-change rule).
-    System dep: the llama.cpp binary (optional, like soffice). The fig-v1→v2 backfill
-    (389/389 descriptions) ran earlier the same day and is the judge baseline.
-12. **Entity-alias resolution + Retrieval eval (Layer 3)** — **done** (2026-06-06); the
-    **BULK INGEST remains** (owner-run; runbook at `docs/pour-runbook.md`; open blocker:
-    laptop-outbox `coursework/` not syncing). The link substrate: `entity_aliases`
-    (migration 0008), a DERIVED/REGENERABLE total mapping `(name,type) →
-    (canonical_name, canonical_type)` built by **`locus link`** (`locus/link/aliases.py`);
-    `entities` never mutated; rebuild = delete + recompute. Deterministic tiers
-    (casefold/punct/attested acronym-expansion/attested cross-doc plural; same-type only)
-    then embedding-blocked lookalike clusters (cosine ≥0.86 AND token-Jaccard ≥0.34)
-    adjudicated by the **Claude API** (per §11.B: judgement-quality work; a wrong merge
-    corrupts the graph — a missed merge is only fragmentation), verdicts cached in
-    pass_cache ⇒ incremental re-runs ≈ 0 API calls (verified: 359 cache hits, identical
-    output). Hard guards override LLM verdicts: min-merge-len 4 (homonyms), same-section
-    co-occurrence never merges (authorial evidence), canonical snapped to a member
-    surface, code docs excluded from clustering (AST identifiers exact; identity rows
-    keep the mapping total), oversize clusters (>8 reps) skip the LLM. Live build
-    (33 docs): 4,696 identities → 4,257 clusters (340 non-trivial, 779 variants merged);
-    cross-doc canonicals 182→211; audit suspicious-merges 0. Consumers: alias-aware
-    entity retrieval arm (variant query → sibling-variant sections; substrate checked per
-    query so MCP needs no restart after rebuilds; empty-table fallback) and
-    `related_documents` in `locus inspect` + MCP `inspect_document` (the step-7.5
-    cross-doc edges; stop-entity guard built, OFF until the pour, ~0.4×doc count).
-    Pre-pour gate (heterogeneous 33-doc corpus, quant papers + 5 code repos): recall@8
-    1.000 / cross-domain 1.000 / banner 0.000 / file_recall 1.000 / **links_recall
-    1.000** (new `score_links` over labelled related-doc pairs); judge 4.35 (entity
-    recall 3.38 still weakest — §11.B extraction ceiling, not aliasing-fixable); math
-    0.928 in band. Config `[alias]`; audit gains the ALIAS SUBSTRATE QC block.
-
-**After the pour (not re-ingest-bound):** ANN-index warning (§11.D), Obsidian projection (§14),
-YouTube/podcast transcript ingest, broader retrieval tests.
-
-New dependencies introduced along the way: `mcp`, `python-docx` (landed, step 8),
-`python-pptx` (landed, step 9), and (for math) an OCR-to-markup model (benchmarked, step 6). `nbconvert`
-turned out unneeded — the `.ipynb` extractor reads notebook JSON with the stdlib (§3).
-`pillow` promoted to core (step 11: image downscale at generation/MCP). Optional SYSTEM
-dep: LibreOffice (`soffice`) for step-11 slide figure renders (absent ⇒ text-only + gap
-line). Keep heavy/optional ones (VLM, math-OCR) behind extras like `[rerank]`.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+## 13. Obsidian projection (post-pour, deferred)
+
+Read-only visualization layer rendered over SQLite — a render target, never in the
+ingest/retrieval path (`locus/export/obsidian.py` when built). Invariants: one-way export
+to `vault/obsidian/` (gitignored, regenerable, never read back); authored notes in
+`vault/notes/` are an input, the export is an output; joins-only. Nodes: doc notes
+(synthesis frontmatter) + **canonical** entity notes (join through `entity_aliases` — never
+raw surfaces); sections are headings; chunks/propositions are not nodes. Edges from
+existing data only (mention, co-occurrence, shared entities). The exporter owns only its
+subtrees and never touches `.obsidian/`.
+
+## 14. Coding & operational conventions
+
+- Python 3.11+, uv-managed; type hints mandatory; small explicit functions; docstrings
+  state non-obvious assumptions and the *why* (this codebase's docstrings carry the
+  decision log).
+- Structured LLM I/O through pydantic models, never raw dicts; every external call has
+  explicit error handling.
+- Tests are model-free by default (injected fake clients/embeddings, seeded tmp DBs);
+  guarded integration tests where a model is unavoidable. Keep the suite green.
+- No secrets in code or committed config; key via `ANTHROPIC_API_KEY` (env or .env).
+- All tunables in `config.toml` (`[ollama] [paths] [embed] [retrieve] [generation] [mcp]
+  [mathocr] [figures] [repos] [alias]`); optional sections default cleanly.
+- Operational rules: ONE ingest process at a time (flock-enforced); math suite after any
+  VRAM-choreography change; `locus link` after ingest batches; quarantines are bugs to
+  triage, not casualties; eval labels grow with the corpus.
+- Out of scope: custom GUI, cloud storage of corpus content, multi-user/auth, local models
+  > ~8B (hardware-bound).

@@ -5,7 +5,7 @@ an OCR-to-markup engine; the recovered markdown+LaTeX REPLACES that page's text-
 Replacement is guarded by quality checks — if the OCR output fails them, the original text is
 kept and the page is recorded in the audit trail (`OcrResult.fallbacks`). This gives
 whole-page replacement the safety of keep-both without polluting chunks/embeddings with the
-corrupted variant (decision record: PLAN.md step 6).
+corrupted variant (decision record: build step 6).
 
 Engines (selected by config `[mathocr].engine`; benchmarked on flagged corpus pages —
 see eval-artifacts/mathocr/report.md for the race that picked the default):

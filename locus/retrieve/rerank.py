@@ -4,7 +4,7 @@ The bi-encoder/lexical candidates are coarse; a ms-marco-MiniLM cross-encoder sc
 (query, candidate text) pair jointly. Runs on CPU on purpose (§3/§4): the 8 GB GPU is reserved
 for Ollama, so we never let sentence-transformers grab CUDA.
 
-The cut to rerank_top_k is NOT a plain top-k (2026-06-04 evaluation, PLAN.md step 3): a plain
+The cut to rerank_top_k is NOT a plain top-k (2026-06-04 evaluation, build step 3): a plain
 cut lets one section occupy several slots (its proposition, chunk, and summary are separate
 candidates) and lets the single best-matching document monopolise the whole top-k, which breaks
 cross-domain synthesis queries. `select()` applies redundancy + diversity rules, relaxed only

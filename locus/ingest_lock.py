@@ -1,4 +1,4 @@
-"""Advisory ingest lock: one Ollama-driving process at a time (PLAN.md step 7 rule).
+"""Advisory ingest lock: one Ollama-driving process at a time (build step 7 rule).
 
 Two concurrent ingests contend for the 8 GB GPU and produce spurious quarantines. This
 was an honor-system operational rule; the flock turns it into a guardrail. Acquired at

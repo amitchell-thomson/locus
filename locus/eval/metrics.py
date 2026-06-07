@@ -7,7 +7,7 @@ These catch the common 8B-model failure modes without judging correctness:
   - redundant entities  : near-duplicate entity names within a section (name+type churn)
   - empty coverage      : sections that yielded no propositions
 
-QC (2026-06-04 evaluation; PLAN.md step 5): the audit also re-applies the ingest-time hygiene
+QC (2026-06-04 evaluation; build step 5): the audit also re-applies the ingest-time hygiene
 predicates to *stored* rows — suspect propositions (meta/title-echo/fragment/dropped-formula),
 noise entities, and an empty document synthesis. Non-zero counts on documents ingested before
 the hygiene pass quantify exactly what the step-7 re-ingest will clean.

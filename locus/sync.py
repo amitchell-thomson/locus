@@ -1,4 +1,4 @@
-"""Commit-triggered sync of tracked code repos (PLAN.md step 10).
+"""Commit-triggered sync of tracked code repos (build step 10).
 
 The repos in config `[repos]` are working directories under active development. Each
 sync pass compares every repo's `git rev-parse HEAD` against the stored document's

@@ -1,4 +1,4 @@
-"""MCP server — expose the vault to an MCP client (PLAN.md step 2, CLAUDE.md §16).
+"""MCP server — expose the vault to an MCP client (build step 2, CLAUDE.md §16).
 
 WHAT THIS IS
 ------------

@@ -1,4 +1,4 @@
-"""widen source_type CHECK for slides (PLAN.md step 9)
+"""widen source_type CHECK for slides (build step 9)
 
 Revision ID: 0006
 Revises: 0005

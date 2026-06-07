@@ -12,7 +12,7 @@ them exactly like PDFs downstream (§2.6). Section boundaries:
   - notebook : .ipynb JSON (nbformat v4) rendered to markdown — markdown cells verbatim
                (preserves $...$ math), code cells as fenced blocks, outputs skipped (Colab
                noise: base64 images / HTML) — then sectioned exactly like markdown. This is
-               the "prefer source formats over PDF exports" path (PLAN.md step 6): the
+               the "prefer source formats over PDF exports" path (build step 6): the
                notebook's own LaTeX never suffers the export-to-PDF formula loss.
 
 Section text is verbatim and *includes its own heading line*, mirroring pdf.py, so merged

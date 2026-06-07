@@ -40,7 +40,7 @@ def has_math(text: str) -> bool:
     return len(_MATH.findall(text)) >= 3 or MATH_MARKUP.search(text) is not None
 
 
-# Thresholds for PageFlags (measured on the corpus; see PLAN.md step 6).
+# Thresholds for PageFlags (measured on the corpus; see build step 6).
 _MATH_DENSE_CHARS = 30  # chars set in math fonts on a page
 _MATHUNI_CHARS = 20  # math-unicode chars in the text layer on a page
 _SMALL_IMAGE_MIN = 3  # small raster images (formula-sized) on a page

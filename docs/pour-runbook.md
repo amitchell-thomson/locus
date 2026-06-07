@@ -1,6 +1,6 @@
 # Bulk-ingest (pour) runbook
 
-Operational checklist for pouring the multi-year corpus (PLAN.md step 12 → BULK INGEST).
+Operational checklist for pouring the multi-year corpus (build step 12 → BULK INGEST).
 Everything re-ingest-bound is locked in (steps 1–12); this run is *additive* — pouring new
 documents, not re-ingesting existing ones.
 
@@ -75,6 +75,6 @@ Run `locus watch` (or batched `locus ingest <files>` under the flock) and monito
 
 ## After
 
-- Update PLAN.md step 12 + CLAUDE.md §16 with the pour result (doc count, eval numbers).
+- Update CLAUDE.md §2 (current state) with the pour result (doc count, eval numbers).
 - Post-pour roadmap (not re-ingest-bound): ANN-index warning, Obsidian projection (§14),
   YouTube/podcast transcripts, broader retrieval tests.

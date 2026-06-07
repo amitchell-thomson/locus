@@ -26,6 +26,7 @@ fall back to a filesystem walk and the content hash to a manifest hash).
 from __future__ import annotations
 
 import ast
+import fnmatch
 import hashlib
 import logging
 import subprocess
@@ -112,6 +113,17 @@ def _walk_files(repo: Path) -> list[str]:
     return out
 
 
+def _exclude_globs() -> list[str]:
+    """Configured repo-relative exclude globs ([repos].exclude_globs).
+
+    Round-5 audit: the locus repo ingests itself, and files carrying the labelled eval
+    queries verbatim (eval fixtures, retrieval tests) ranked #1 on those queries in live
+    retrieval — answer-key contamination. Config-driven so the owner excludes exactly
+    the fixture files, not tests or eval code wholesale.
+    """
+    return load().repos.exclude_globs
+
+
 def _eligible(repo: Path, rel: str) -> bool:
     p = Path(rel)
     if p.suffix.lower() not in ALLOWED_SUFFIXES:
@@ -119,6 +131,8 @@ def _eligible(repo: Path, rel: str) -> bool:
     if p.name.endswith(".lock"):
         return False
     if any(part in EXCLUDED_DIR_PARTS for part in p.parts):
+        return False
+    if any(fnmatch.fnmatch(rel, g) for g in _exclude_globs()):
         return False
     full = repo / p
     try:

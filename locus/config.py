@@ -174,6 +174,13 @@ class AliasConfig(BaseModel):
     # Names shorter than this never merge into a different surface (homonym risk: 'var', 'P2').
     min_merge_len: int = Field(4, description="Min name length eligible for any merge.")
     use_llm: bool = Field(True, description="Adjudicate fuzzy clusters via the Claude API.")
+    # Minimum spacing between adjudication API calls. A full rebuild is hundreds of small
+    # sequential calls (359 on the 33-doc corpus; more post-pour) — unthrottled, the burst
+    # rides the account's per-minute rate limit and gets 429-throttled by the SDK anyway.
+    # 1.5 s ≈ 40 requests/min, under the lowest tier's ceiling. 0 disables.
+    api_call_interval: float = Field(
+        1.5, description="Seconds between alias-adjudication API calls (0 = unthrottled)."
+    )
 
 
 class ReposConfig(BaseModel):
@@ -183,6 +190,14 @@ class ReposConfig(BaseModel):
 
     paths: list[str] = Field(default_factory=list, description="Absolute repo paths to track.")
     check_interval: float = Field(3600.0, description="Seconds between HEAD checks in `locus watch`.")
+    # Repo-relative fnmatch globs excluded from ingest. Exists for self-ingestion
+    # contamination (round-5 audit): the locus repo indexes itself, and files carrying
+    # the labelled eval queries verbatim ranked #1 on those very queries, displacing
+    # real content. Exclude the answer keys, not the codebase.
+    exclude_globs: list[str] = Field(
+        default_factory=list,
+        description="Repo-relative fnmatch globs to skip at repo ingest.",
+    )
 
 
 class MCPConfig(BaseModel):

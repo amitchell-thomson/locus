@@ -1,9 +1,17 @@
 """Related documents via shared canonical entities — joins-only, no inference (step 12).
 
 The cross-doc edges deferred from step 7.5: with the alias substrate built (`locus link`),
-two documents are related when their entities map to the same canonical `(name, type)`.
-Consumed by `locus inspect` and the MCP `inspect_document` tool; the same joins will feed
-the Obsidian projection (§14) post-pour.
+two documents are related when their entities map to the same canonical entity. Consumed
+by `locus inspect` and the MCP `inspect_document` tool; the same joins will feed the
+Obsidian projection (§14) post-pour.
+
+Round-5 audit hardening:
+  - Sharing is counted at canonical NAME level, not (name, type): "LLM" stored under
+    concept/method/tool is one shared term, not three ("4 shared: F1, LLM, LLM, LLM").
+  - Ranking is inverse-doc-frequency weighted: a name shared by half the corpus ("F1",
+    "LLM") says almost nothing about *this* pair, so each shared name contributes
+    1/doc_freq rather than 1. Generic terms stop displacing genuine neighbours while
+    still counting a little. Raw shared count is kept for display.
 """
 
 from __future__ import annotations
@@ -19,8 +27,8 @@ _SAMPLE_NAMES = 5
 class RelatedDoc:
     doc_id: int
     title: str
-    shared_count: int
-    shared_names: tuple[str, ...]  # up to _SAMPLE_NAMES canonical names, most distinctive first
+    shared_count: int  # distinct shared canonical names
+    shared_names: tuple[str, ...]  # up to _SAMPLE_NAMES, most distinctive (rarest) first
 
 
 def aliases_built(conn: sqlite3.Connection) -> bool:
@@ -60,43 +68,43 @@ def related_documents(
     top_n: int = 5,
     stop_doc_freq: int | None = None,
 ) -> list[RelatedDoc]:
-    """Top documents sharing the most canonical entities with `doc_id`.
+    """Top documents sharing canonical entity NAMES with `doc_id`, IDF-weighted.
 
-    `stop_doc_freq`: exclude canonicals appearing in more than this many documents —
-    stop-entities ("model", "system") link everything and say nothing. Off (None) at
-    small corpus scale; the pour runbook enables it (~0.4 x doc count) post-pour.
+    Each shared name contributes 1/doc_freq (docs it appears in corpus-wide) to the
+    ranking, so corpus-ubiquitous terms cannot dominate. `stop_doc_freq` additionally
+    EXCLUDES names appearing in more than that many documents (hard stop-entity cut —
+    off by default at small corpus scale; the pour runbook enables it, ~0.4 x doc count).
     Returns [] when the alias substrate has not been built yet.
     """
     stop_clause = ""
-    params: list = [doc_id, doc_id]  # my.doc_id, cd.doc_id != — SQL text order
+    params: list = [doc_id, doc_id]
     if stop_doc_freq is not None:
-        stop_clause = (
-            " AND (cd.canonical_name, cd.canonical_type) NOT IN ("
-            "   SELECT a2.canonical_name, a2.canonical_type"
-            "   FROM entities e2 JOIN entity_aliases a2"
-            "     ON a2.variant_name = e2.name AND a2.variant_type = e2.type"
-            "   GROUP BY a2.canonical_name, a2.canonical_type"
-            "   HAVING COUNT(DISTINCT e2.doc_id) > ?)"
-        )
+        stop_clause = " AND nf.doc_freq <= ?"
         params.append(stop_doc_freq)
 
     rows = conn.execute(
         f"""
         WITH canon_docs AS (
-            SELECT DISTINCT a.canonical_name, a.canonical_type, e.doc_id
+            SELECT DISTINCT a.canonical_name, e.doc_id
             FROM entities e
             JOIN entity_aliases a
               ON a.variant_name = e.name AND a.variant_type = e.type
         ),
-        my AS (SELECT canonical_name, canonical_type FROM canon_docs WHERE doc_id = ?)
-        SELECT cd.doc_id, d.title, COUNT(*) AS shared
+        name_freq AS (
+            SELECT canonical_name, COUNT(DISTINCT doc_id) AS doc_freq
+            FROM canon_docs GROUP BY canonical_name
+        ),
+        my AS (SELECT canonical_name FROM canon_docs WHERE doc_id = ?)
+        SELECT cd.doc_id, d.title,
+               COUNT(*)                  AS shared,
+               SUM(1.0 / nf.doc_freq)    AS weight
         FROM canon_docs cd
-        JOIN my ON my.canonical_name = cd.canonical_name
-              AND my.canonical_type = cd.canonical_type
-        JOIN documents d ON d.id = cd.doc_id
+        JOIN my        ON my.canonical_name = cd.canonical_name
+        JOIN name_freq nf ON nf.canonical_name = cd.canonical_name
+        JOIN documents d  ON d.id = cd.doc_id
         WHERE cd.doc_id != ?{stop_clause}
         GROUP BY cd.doc_id
-        ORDER BY shared DESC, cd.doc_id
+        ORDER BY weight DESC, shared DESC, cd.doc_id
         LIMIT {int(top_n)}
         """,
         params,
@@ -104,12 +112,10 @@ def related_documents(
 
     out: list[RelatedDoc] = []
     for r in rows:
-        # Same stop-entity filter as the ranking query: a stop-entity must neither count
-        # nor show up in the displayed sample. Most distinctive (lowest spread) first.
         name_params: list = [doc_id, r["doc_id"]]
-        spread_clause = ""
+        name_stop = ""
         if stop_doc_freq is not None:
-            spread_clause = " AND spread <= ?"
+            name_stop = " AND nf.doc_freq <= ?"
             name_params.append(stop_doc_freq)
         name_params.append(_SAMPLE_NAMES)
         names = [
@@ -117,25 +123,21 @@ def related_documents(
             for n in conn.execute(
                 f"""
                 WITH canon_docs AS (
-                    SELECT DISTINCT a.canonical_name, a.canonical_type, e.doc_id
+                    SELECT DISTINCT a.canonical_name, e.doc_id
                     FROM entities e
                     JOIN entity_aliases a
                       ON a.variant_name = e.name AND a.variant_type = e.type
                 ),
-                shared AS (
-                    SELECT c1.canonical_name, c1.canonical_type,
-                           (SELECT COUNT(DISTINCT c3.doc_id) FROM canon_docs c3
-                            WHERE c3.canonical_name = c1.canonical_name
-                              AND c3.canonical_type = c1.canonical_type) AS spread
-                    FROM canon_docs c1
-                    JOIN canon_docs c2
-                      ON c2.canonical_name = c1.canonical_name
-                     AND c2.canonical_type = c1.canonical_type
-                    WHERE c1.doc_id = ? AND c2.doc_id = ?
+                name_freq AS (
+                    SELECT canonical_name, COUNT(DISTINCT doc_id) AS doc_freq
+                    FROM canon_docs GROUP BY canonical_name
                 )
-                SELECT canonical_name FROM shared
-                WHERE 1=1{spread_clause}
-                ORDER BY spread ASC, canonical_name
+                SELECT c1.canonical_name
+                FROM canon_docs c1
+                JOIN canon_docs c2 ON c2.canonical_name = c1.canonical_name
+                JOIN name_freq nf  ON nf.canonical_name = c1.canonical_name
+                WHERE c1.doc_id = ? AND c2.doc_id = ?{name_stop}
+                ORDER BY nf.doc_freq ASC, c1.canonical_name
                 LIMIT ?
                 """,
                 name_params,

@@ -390,3 +390,44 @@ def test_summarize_falls_back_to_leading_text_for_prose(monkeypatch):
     out = sum_mod.summarize_section("Transient conduction", text)
     assert out.grounded is False
     assert out.summary.startswith("Transient conduction: The Biot number compares")
+
+
+# --- window-bounded summary input (round-5 audit: 12k-token CLAUDE.md section slid out of
+# the 8192 num_ctx and was summarised as a non-existent 'image compression' paper) ---------
+
+
+def test_fit_to_window_truncates_oversized_text():
+    from locus.ingest.llm import fit_to_window
+
+    small = "word " * 100
+    assert fit_to_window(small) == small  # under budget: untouched
+    huge = "alpha bravo charlie " * 5000  # ~100k chars >> any window budget
+    bounded = fit_to_window(huge)
+    assert len(bounded) < len(huge)
+    assert bounded.endswith("[... source truncated to fit the model context window]")
+    assert bounded.startswith("alpha bravo charlie")  # head kept — the model sees the source
+
+
+def test_summarize_feeds_window_bounded_text_but_grounds_on_full(monkeypatch):
+    from locus.ingest import summarize as sum_mod
+
+    # Source far beyond the window; the distinctive term appears ONLY in the tail.
+    head = "regime detector gaussian likelihood seeds " * 3000  # ~130k chars
+    tail = " The zeta-functional quasinorm estimator concludes the module."
+    source = head + tail
+    prompts: list[str] = []
+
+    def fake(schema, user, **kw):
+        prompts.append(user)
+        # Summary grounded only in the TAIL: passes only if the guard sees the full text.
+        return sum_mod.SectionSummary(
+            summary="Defines the zeta-functional quasinorm estimator for regime detection."
+        )
+
+    monkeypatch.setattr(sum_mod, "generate_structured", fake)
+    out = sum_mod.summarize_section("big.md", source, code=False)
+    # Prompt was bounded (the raw 130k source must not be sent verbatim)...
+    assert len(prompts[0]) < len(source)
+    assert "[... source truncated" in prompts[0]
+    # ...but grounding ran against the FULL text, so the tail-grounded summary passes.
+    assert out.grounded is True and "quasinorm" in out.summary

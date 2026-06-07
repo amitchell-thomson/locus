@@ -33,8 +33,9 @@ class LabelledQuery:
     cross_domain: bool = False
 
 
-# Grounded in the current 30-doc corpus (24 prose + 5 code repos + 1 slide deck).
-# Keep title substrings short and durable.
+# Grounded in the live corpus (33 docs at the round-5 refresh: prose + 5 code repos +
+# slides). Keep title substrings short and durable — slug-titled docs get re-arbitrated
+# titles each re-ingest.
 LABELLED_QUERIES: list[LabelledQuery] = [
     LabelledQuery(
         "What is the Biot number and what does it tell you about transient conduction?",

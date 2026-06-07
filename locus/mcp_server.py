@@ -334,7 +334,11 @@ def _inspect(conn, ident: str, section: int | None) -> str:
     ]
     for field in ("thesis", "method", "result", "limitations"):
         out.append(f"  {field:<12}: {doc[field]}")
-    gaps = json.loads(doc["gap_flags"] or "[]")
+    # Knowledge gaps only — pipeline audit-trail lines (OCR fallbacks, CUDA tracebacks)
+    # leaked into the client-facing surface (round-4/5 audits); they live in `locus audit`.
+    from locus.eval.metrics import semantic_gaps
+
+    gaps = semantic_gaps(json.loads(doc["gap_flags"] or "[]"))
     out.append(f"  gaps ({len(gaps)}):")
     out.extend(f"    - {g}" for g in gaps)
 

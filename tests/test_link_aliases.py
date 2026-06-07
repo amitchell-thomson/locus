@@ -429,6 +429,49 @@ def test_related_documents_ranked_by_shared_canonicals(conn):
     assert rel[0].shared_count == 3  # fourier + laplace + model
     assert rel[1].shared_count == 1  # model only
     assert "Laplace transform" in rel[0].shared_names
+    # Distinctive names (doc_freq 2) sample before the corpus-wide one ('model', freq 3).
+    assert rel[0].shared_names[-1] == "model"
+
+
+def test_related_documents_dedupe_same_name_across_types(conn):
+    # Round-5 audit: "LLM" stored under three types must count as ONE shared name,
+    # not render as "LLM, LLM, LLM".
+    from locus.link.related import related_documents
+
+    for d in (1, 2):
+        _seed_doc(conn, d, title=f"Doc {d}")
+        _seed_section(conn, d, d)
+        _seed_entity(conn, d, d, "LLM", "concept")
+        _seed_entity(conn, d, d, "LLM", "method")
+        _seed_entity(conn, d, d, "LLM", "tool")
+    conn.commit()
+    al.build_aliases(conn, use_llm=False)
+    (rel,) = related_documents(conn, 1)
+    assert rel.shared_count == 1
+    assert rel.shared_names == ("LLM",)
+
+
+def test_related_documents_idf_weighting_beats_raw_count(conn):
+    # Doc 2 shares TWO corpus-ubiquitous names with doc 1; doc 3 shares ONE rare name.
+    # Raw count would rank doc 2 first; IDF weighting ranks the genuine neighbour first.
+    from locus.link.related import related_documents
+
+    for d in (1, 2, 3, 4, 5, 6):
+        _seed_doc(conn, d, title=f"Doc {d}")
+        _seed_section(conn, d, d)
+    for d in (1, 2, 4, 5, 6):  # "F1" and "LLM" appear in 5 of 6 docs (generic)
+        _seed_entity(conn, d, d, "F1 score", "metric")
+        _seed_entity(conn, d, d, "LLM agent", "concept")
+    _seed_entity(conn, 1, 1, "Regime-PCMCI", "method")  # rare: only docs 1 and 3
+    _seed_entity(conn, 3, 3, "Regime-PCMCI", "method")
+    conn.commit()
+    al.build_aliases(conn, use_llm=False)
+    rel = related_documents(conn, 1)
+    # weight(doc 3) = 1/2 = 0.5 > weight(docs 2/4/5/6) = 1/5 + 1/5 = 0.4: the single
+    # rare shared name outranks two corpus-ubiquitous ones. Raw counting would put
+    # doc 3 last.
+    assert rel[0].doc_id == 3
+    assert rel[0].shared_names == ("Regime-PCMCI",)
 
 
 def test_related_documents_stop_entity_guard(conn):
@@ -456,6 +499,105 @@ def test_format_related_before_link_run(conn):
     conn.commit()
     (line,) = format_related(conn, 1)
     assert "locus link" in line  # graceful hint, never an error
+
+
+# --- typo-class candidate tier (round-5 audit: PCMCI/PCMIC) ---------------------------------------
+
+
+def _orthogonal_embed(names: list[str]) -> list[list[float]]:
+    """Every distinct name embeds orthogonally: NO embedding edges form, so any candidate
+    cluster reaching the LLM got there through the typo tier alone."""
+    out = []
+    seen: dict[str, int] = {}
+    for n in names:
+        if n not in seen:
+            seen[n] = len(seen)
+        v = [0.0] * 768
+        v[seen[n]] = 1.0
+        out.append(v)
+    return out
+
+
+def test_typo_pair_reaches_llm_and_merges(conn):
+    _seed_doc(conn, 1)
+    _seed_section(conn, 1, 1)
+    _seed_doc(conn, 2)
+    _seed_section(conn, 2, 2)
+    _seed_entity(conn, 1, 1, "PCMCI", "method")
+    _seed_entity(conn, 2, 2, "PCMIC", "method")  # the paper's own typo (transposition)
+    conn.commit()
+    fake = _FakeClient({
+        "groups": [{
+            "member_indices": [0, 1],
+            "canonical_name": "PCMCI",
+            "canonical_type": "method",
+        }]
+    })
+    report = al.build_aliases(conn, use_llm=True, client=fake, model="fake",
+                              embed_fn=_orthogonal_embed)
+    assert report.llm_candidate_clusters == 1 and fake.calls == 1
+    a = _aliases(conn)
+    assert a[("PCMIC", "method")] == ("PCMCI", "method", "llm")
+
+
+def test_typo_digit_guard_blocks_model_variants(conn):
+    _seed_doc(conn, 1)
+    _seed_section(conn, 1, 1)
+    _seed_section(conn, 2, 1, 1)
+    _seed_entity(conn, 1, 1, "MSH(2) models", "other")
+    _seed_entity(conn, 1, 2, "MSH(20) models", "other")  # one edit apart, DIFFERENT models
+    conn.commit()
+    fake = _FakeClient({"groups": []})
+    report = al.build_aliases(conn, use_llm=True, client=fake, model="fake",
+                              embed_fn=_orthogonal_embed)
+    assert report.llm_candidate_clusters == 0 and fake.calls == 0
+    a = _aliases(conn)
+    assert a[("MSH(2) models", "other")][2] == "identity"
+    assert a[("MSH(20) models", "other")][2] == "identity"
+
+
+def test_typo_tier_respects_type_and_length(conn):
+    _seed_doc(conn, 1)
+    _seed_section(conn, 1, 1)
+    _seed_section(conn, 2, 1, 1)
+    # Same edit distance but different types -> no edge; short names -> no edge.
+    _seed_entity(conn, 1, 1, "BinSeg", "method")
+    _seed_entity(conn, 1, 2, "BiaSeg", "tool")
+    _seed_entity(conn, 1, 1, "VaR", "metric")
+    _seed_entity(conn, 1, 2, "VeR", "metric")
+    conn.commit()
+    fake = _FakeClient({"groups": []})
+    report = al.build_aliases(conn, use_llm=True, client=fake, model="fake",
+                              embed_fn=_orthogonal_embed)
+    assert report.llm_candidate_clusters == 0 and fake.calls == 0
+
+
+# --- API throttle ----------------------------------------------------------------------------------
+
+
+def test_throttle_spaces_api_calls_but_not_cache_hits(conn, monkeypatch):
+    # Two fuzzy clusters -> two API calls on the first build: exactly ONE sleep (between
+    # calls, none before the first). Second build is all cache hits: zero sleeps.
+    for d, names in ((1, ("Fourier transform", "Laplace transform")),
+                     (2, ("fourier transform", "laplace transform"))):
+        _seed_doc(conn, d, title=f"Doc {d}")
+        _seed_section(conn, d, d)
+        for n in names:
+            _seed_entity(conn, d, d, n, "concept" if d == 1 else "method")
+    conn.commit()
+    sleeps: list[float] = []
+    monkeypatch.setattr(al.time, "sleep", lambda s: sleeps.append(s))
+    fake = _FakeClient({"groups": []})
+    report = al.build_aliases(conn, use_llm=True, client=fake, model="fake",
+                              embed_fn=_close_embed)
+    assert report.llm_calls == 2
+    assert len(sleeps) == 1 and sleeps[0] > 0
+    sleeps.clear()
+    fake2 = _FakeClient({"groups": []})
+    report2 = al.build_aliases(conn, use_llm=True, client=fake2, model="fake",
+                               embed_fn=_close_embed)
+    assert report2.cache_hits == 2 and report2.llm_calls == 0
+    assert sleeps == []
 
 
 # --- audit QC + links eval -----------------------------------------------------------------------

@@ -82,6 +82,20 @@ def test_walk_path_eligibility_without_git(tmp_path: Path):
     assert collect_repo(repo).content_hash == snap.content_hash
 
 
+def test_exclude_globs_drop_answer_key_files(tmp_path: Path, monkeypatch):
+    # Round-5 audit: files carrying the labelled eval queries verbatim must be excludable
+    # from repo ingest, or they outrank real content on their own questions.
+    from locus.extract import code as code_mod
+
+    repo = _make_tree(tmp_path / "plain")
+    (repo / "eval").mkdir()
+    (repo / "eval" / "fixtures.py").write_text("QUERIES = ['the exact eval question']\n")
+    monkeypatch.setattr(code_mod, "_exclude_globs", lambda: ["eval/fixtures.py"])
+    snap = collect_repo(repo)
+    assert "eval/fixtures.py" not in snap.files
+    assert "main.py" in snap.files  # everything else untouched
+
+
 @needs_git
 def test_git_path_uses_head_and_tracked_files(tmp_path: Path):
     repo = _make_git_repo(tmp_path / "gitrepo")

@@ -29,6 +29,7 @@ from __future__ import annotations
 import hashlib
 import re
 import sqlite3
+import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Callable
@@ -256,6 +257,55 @@ def _run_deterministic_tiers(
             break  # longest matching suffix only
 
 
+# --- typo-class candidate edges (round-5 audit: PCMCI vs PCMIC never reached the LLM) -------
+
+
+def _digits(name: str) -> str:
+    return "".join(c for c in name if c.isdigit())
+
+
+def _typo_edges(rep_indices: list[int], nodes: list[_Node]) -> set[tuple[int, int]]:
+    """Same-type pairs within Damerau-Levenshtein distance ~1 (substitution, single
+    insert/delete, adjacent transposition) — the typo class ('PCMCI'/'PCMIC',
+    'BinSeg'/'BiaSeg') that BOTH blocking guards miss: single-token names have
+    token-Jaccard 0 between variants, and an embedder may or may not pull them close.
+
+    Found via deletion-variant hashing (SymSpell trick): two names are within the band
+    iff one is in the other's single-deletion set, or their deletion sets intersect.
+    Slight over-generation beyond Damerau-1 is fine — every edge still goes to the LLM
+    for adjudication and through the hard guards; nothing here auto-merges.
+
+    Guards: same type only; both names >= 5 chars (acronym homonyms are one substitution
+    apart by chance); DIGIT-SEQUENCE EQUALITY — 'MSH(2)' and 'MSH(20)' are one edit apart
+    and are DIFFERENT models, so any pair whose digits differ is rejected outright.
+
+    Returns LOCAL index pairs (a, b), a < b, into rep_indices.
+    """
+    folded = [_casefold_key(nodes[i].name) for i in rep_indices]
+    buckets: dict[str, list[int]] = defaultdict(list)
+    for li, name in enumerate(folded):
+        if len(name) < 5:
+            continue
+        for v in {name} | {name[:k] + name[k + 1 :] for k in range(len(name))}:
+            buckets[v].append(li)
+    edges: set[tuple[int, int]] = set()
+    for lis in buckets.values():
+        if len(lis) < 2:
+            continue
+        for x in range(len(lis)):
+            for y in range(x + 1, len(lis)):
+                a, b = lis[x], lis[y]
+                if a == b or folded[a] == folded[b]:
+                    continue  # identical surfaces are the casefold tier's business
+                na, nb = nodes[rep_indices[a]], nodes[rep_indices[b]]
+                if na.type != nb.type:
+                    continue
+                if _digits(na.name) != _digits(nb.name):
+                    continue  # MSH(2) vs MSH(20): one edit, different models
+                edges.add((a, b) if a < b else (b, a))
+    return edges
+
+
 # --- embedding-blocked candidate clusters ---------------------------------------------------
 
 
@@ -271,8 +321,10 @@ def _candidate_clusters(
 
     An edge needs BOTH embedding cosine >= block_threshold AND token-Jaccard >=
     min_token_overlap — identical strings under different types pass trivially (1.0/1.0);
-    theme-mates ("Kalman filter"/"particle filter") fail the token guard. Similarities are
-    computed in row blocks so memory stays bounded post-pour.
+    theme-mates ("Kalman filter"/"particle filter") fail the token guard. Typo-class
+    edges (_typo_edges) are unioned in besides — they fail the token guard by
+    construction. Similarities are computed in row blocks so memory stays bounded
+    post-pour.
     """
     import numpy as np
 
@@ -299,6 +351,9 @@ def _candidate_clusters(
                 continue
             if _jaccard(toks[a], toks[b]) >= min_token_overlap:
                 uf.union(a, b)
+
+    for a, b in _typo_edges(rep_indices, nodes):
+        uf.union(a, b)
 
     comps: dict[int, list[int]] = defaultdict(list)
     for local, rep_idx in enumerate(rep_indices):
@@ -425,6 +480,7 @@ def build_aliases(
         report.llm_candidate_clusters = len(candidates)
         gen_model = model or load().generation.model
         cache_puts: list[tuple[str, str]] = []
+        last_api_call = 0.0  # monotonic time of the previous adjudication call
         for cluster in candidates:
             if len(cluster) > cfg.max_cluster_size:
                 report.oversize_skipped += 1
@@ -442,6 +498,14 @@ def build_aliases(
                     verdict = AliasVerdict.model_validate_json(row["payload"])
                     report.cache_hits += 1
             if verdict is None:
+                # Throttle: space API calls so a full rebuild (hundreds of clusters)
+                # stays under the account's per-minute rate limit instead of leaning
+                # on SDK 429-retries. Cache hits skip this entirely.
+                if cfg.api_call_interval > 0 and last_api_call:
+                    wait = cfg.api_call_interval - (time.monotonic() - last_api_call)
+                    if wait > 0:
+                        time.sleep(wait)
+                last_api_call = time.monotonic()
                 verdict = adjudicate.adjudicate_cluster(
                     [ClusterMember(m.name, m.type, tuple(m.titles)) for m in members],
                     client=client, model=gen_model,

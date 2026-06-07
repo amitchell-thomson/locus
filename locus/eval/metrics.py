@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from locus.ingest.entities import is_grounded, is_noise
 from locus.ingest.figures import rejection_reason as figure_rejection_reason
 from locus.ingest.propositions import rejection_reason
+from locus.ingest.summarize import is_grounded as summary_is_grounded
 
 # A proposition opening with one of these is almost certainly not self-contained.
 _PRONOUN_STARTS = {
@@ -84,6 +85,9 @@ class DocMetrics:
     # mass OCR failure is LOUD: the 2026-06-06 external audit found 255 OOM'd pages across
     # 14 docs that the audit-line classification had kept out of every headline number.
     ocr_fallback_pages: int = 0
+    # Stored summaries failing the ingest-time grounding guard (round-5 audit: the guard
+    # only ran at ingest, so a hallucinated stored summary was invisible to audit).
+    ungrounded_summaries: int = 0
 
     @property
     def non_self_contained_pct(self) -> float:
@@ -248,11 +252,20 @@ def doc_metrics(conn, doc_id: int) -> DocMetrics:
     )
 
     unattested_nums = 0
+    ungrounded_summaries = 0
     for s in sections:
         sid = s["id"]
         source = _section_source(conn, sid)
         corrupted += has_corruption_signature(s["summary"])
         unattested_nums += len(unattested_numbers(s["summary"], source))
+        # Re-apply the summary grounding guard to the STORED row (round-5 audit: a
+        # hallucinated summary lived in the corpus for two days with no audit line —
+        # the guard ran only at ingest). Catches the zero-overlap/all-generic class;
+        # topic-coherent fabrications need the window-bound input fix, not a predicate.
+        if (s["summary"] or "").strip() and not summary_is_grounded(
+            s["summary"], f"{s['title'] or ''}\n{source}"
+        ):
+            ungrounded_summaries += 1
 
         props = [r["text"] for r in conn.execute(
             "SELECT text FROM propositions WHERE section_id=?", (sid,)
@@ -333,6 +346,7 @@ def doc_metrics(conn, doc_id: int) -> DocMetrics:
             1 for g in json.loads(doc["gap_flags"] or "[]")
             if g.startswith("math-OCR kept original text on ")
         ),
+        ungrounded_summaries=ungrounded_summaries,
     )
 
 
@@ -449,7 +463,8 @@ def format_metrics(docs: list[DocMetrics]) -> str:
             f"corrupted fields {d.corrupted_fields} | "
             f"unattested numbers {d.unattested_numbers} | "
             f"semantic gaps {d.semantic_gaps} | "
-            f"OCR-fallback pages {d.ocr_fallback_pages}"
+            f"OCR-fallback pages {d.ocr_fallback_pages} | "
+            f"ungrounded summaries {d.ungrounded_summaries}"
         )
         top_types = ", ".join(f"{t}:{n}" for t, n in list(d.entity_type_counts.items())[:6])
         lines.append(f"    entity types: {top_types}")

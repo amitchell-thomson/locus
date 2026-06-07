@@ -183,7 +183,11 @@ def cmd_inspect(args) -> None:
     print("SYNTHESIS")
     for field in ("thesis", "method", "result", "limitations"):
         print(f"  {field:<12}: {doc[field]}")
-    flags = json.loads(doc["gap_flags"] or "[]")
+    # Knowledge gaps only — pipeline audit-trail lines (OCR fallbacks, degraded passes)
+    # belong to `locus audit`, not the content surface (round-5 audit finding).
+    from locus.eval.metrics import semantic_gaps
+
+    flags = semantic_gaps(json.loads(doc["gap_flags"] or "[]"))
     print(f"  gaps ({len(flags)}):")
     for g in flags:
         print(f"    - {g}")

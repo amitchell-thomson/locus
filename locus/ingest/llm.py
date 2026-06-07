@@ -42,6 +42,26 @@ _RETRY_TEMPERATURES = (0.3, 0.6)
 _NUM_PREDICT = 2048
 
 
+def fit_to_window(text: str, *, reserve_tokens: int = 600) -> str:
+    """Truncate pass input so prompt + generation always fit the configured num_ctx.
+
+    Ollama keeps the LAST num_ctx tokens: when prompt + output exceed the window, the
+    HEAD — the source text — silently slides out mid-generation and the model "summarises"
+    from nothing (round-5 audit: a 12k-token section in an 8192 window produced a fluent
+    summary of a non-existent 'image compression' paper, and the lexical grounding guard
+    cannot reliably catch topic-coherent fabrications). Bounding the input is the root-cause
+    fix: the model always sees (the head of) its source.
+
+    `reserve_tokens` covers the prompt scaffold/instructions around the text; _NUM_PREDICT
+    is the output budget. ~4 chars/token is conservative for English prose and code.
+    """
+    budget_tokens = load().ollama.num_ctx - _NUM_PREDICT - reserve_tokens
+    budget_chars = max(4_000, budget_tokens * 4)
+    if len(text) <= budget_chars:
+        return text
+    return text[:budget_chars] + "\n[... source truncated to fit the model context window]"
+
+
 @lru_cache(maxsize=1)
 def _client() -> Client:
     return Client(host=load().ollama.host)

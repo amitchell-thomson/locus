@@ -124,10 +124,15 @@ def extract_entities(title: str | None, text: str, **kw) -> list[Entity]:
         "other. Typing rules with examples: 'author' is a PERSON who wrote something (Rudolf "
         "Kalman, Zhang) — an institution (FOMC, IMF, the Federal Reserve, MIT) is "
         "'organization', never 'author'. 'ticker' is an exchange symbol (AAPL, SPY) — a policy "
-        "or programme (QE3, Basel III) is 'concept', not 'ticker'. Include only entities "
-        "actually mentioned in the text; do not invent any. Do NOT list numbered references "
-        "(equation/figure/table numbers) or bare mathematical symbols — they are not entities. "
-        "Return an empty list only if there are none."
+        "or programme (QE3, Basel III) is 'concept', not 'ticker'. When an entity is a "
+        "specialised compound, ALSO list the base concept it specialises as its own entity, "
+        "provided the base concept is itself discussed in the text: 'Markov-switching VAR' -> "
+        "also 'Markov model' and 'VAR'; 'rolling-window PCMCI' -> also 'PCMCI'; 'regime shift "
+        "detection' -> also 'regime shift'. Base concepts are what connect documents to each "
+        "other — a section about regime-switching models IS about Markov models. Include only "
+        "entities actually mentioned in the text; do not invent any. Do NOT list numbered "
+        "references (equation/figure/table numbers) or bare mathematical symbols — they are "
+        "not entities. Return an empty list only if there are none."
     )
     raw = generate_structured(_Entities, user, **kw).entities
     out: list[Entity] = []

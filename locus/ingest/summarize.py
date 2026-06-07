@@ -22,15 +22,19 @@ import re
 
 from pydantic import BaseModel
 
-from locus.ingest.llm import generate_structured
+from locus.ingest.llm import fit_to_window, generate_structured
 
 log = logging.getLogger(__name__)
 
 # Bumped whenever a summary prompt below changes wording: it is an ingredient of the
 # pass-cache key (ingest_pipeline), so a prompt edit invalidates cached summaries without
 # a manual flush. "2": grounding guard added — cached round-2 summaries include the
-# hallucinated ones, so they must regenerate.
-PROMPT_VERSION = "2"
+# hallucinated ones, so they must regenerate. "3": input now window-bounded
+# (fit_to_window) — sections larger than num_ctx previously slid out of the context and
+# produced topic-coherent hallucinations the guard cannot catch (round-5 audit:
+# CLAUDE.md, 12k tokens, summarised as an 'image compression' paper); v2-cached
+# summaries of oversized sections are untrustworthy and must regenerate.
+PROMPT_VERSION = "3"
 
 
 class SectionSummary(BaseModel):
@@ -127,7 +131,15 @@ def summarize_section(title: str | None, text: str, *, code: bool = False, **kw)
 
     `code=True` switches to the source-file variant (repo ingest): module responsibility +
     key definitions + public API, instead of the prose key-points framing.
+
+    The text fed to the model is window-bounded (fit_to_window): repo file sections are
+    one-section-per-file and can exceed num_ctx, where the unbounded source slid out of
+    the window and yielded pure hallucination (round-5 audit). The grounding guard and
+    the prose fallback still see the FULL text — attestation must not weaken just
+    because the prompt was truncated.
     """
+    full_text = text
+    text = fit_to_window(text)
     if code:
         user = (
             f"Source file: {title or '(unknown path)'}\n\n"
@@ -149,7 +161,7 @@ def summarize_section(title: str | None, text: str, *, code: bool = False, **kw)
             "title (3-8 words) naming what the section is actually about. Do not add information "
             "not present in the text."
         )
-    source = f"{title or ''}\n{text}"
+    source = f"{title or ''}\n{full_text}"
     out = generate_structured(SectionSummary, user, **kw)
     if is_grounded(out.summary, source):
         return out
@@ -163,4 +175,4 @@ def summarize_section(title: str | None, text: str, *, code: bool = False, **kw)
     if is_grounded(out.summary, source):
         return out
     log.warning("summary failed grounding twice for %r; deterministic fallback used", title)
-    return _fallback(title, text, code)
+    return _fallback(title, full_text, code)

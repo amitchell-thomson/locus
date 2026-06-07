@@ -22,16 +22,30 @@ decks, project write-ups, achievements, historical records.
 compute) is effectively unbounded; retrieval latency and answer quality are the only
 constraints that matter. Workflow is query-driven, not browse-driven; no GUI.
 
-## 2. Current state (2026-06-06)
+## 2. Current state (2026-06-07, post remediation round 5)
 
-Steps 1–12 of the build plan are **done**. Working today on a 33-doc heterogeneous corpus
-(coursework, quant/CS papers, code repos, slides, CV): full ingest→retrieve→generate spine
-for PDF/DOCX/MD/TXT/IPYNB/PPTX/code-repos; math-faithful OCR; figures as a first-class
-multimodal retrieval unit; entity-alias link substrate; MCP server; four eval suites.
+Steps 1–12 of the build plan are **done**, plus **remediation round 5** (the fifth external
+desktop-Claude audit): window-bounded summary inputs (v3 — killed the oversized-section
+hallucination class at its root), base-concept entity emission (compounds also emit the
+grounded base concept — the cross-paper link bridge), typo-tier alias candidates
+(PCMCI/PCMIC merged; digit-guarded), IDF-weighted name-deduped related-docs, answer-key
+file exclusion from self-ingest, gap audit-line filtering, API throttle on alias
+adjudication. ONE full re-ingest (2.91 h, 0 quarantines) + alias rebuild landed it all.
 
-Latest gate (step 12, pre-pour): recall@8 **1.000** / cross-domain **1.000** / LOW-CONFIDENCE
-banner misfires **0** / file_recall **1.000** / links_recall **1.000**; judge **4.35**/5;
-math fidelity **0.928** (text-layer baseline was 0.73). Audit QC zero corpus-wide. 322 tests.
+Working today on a 33-doc heterogeneous corpus (coursework, quant/CS papers, code repos,
+slides, CV): full ingest→retrieve→generate spine for PDF/DOCX/MD/TXT/IPYNB/PPTX/code-repos;
+math-faithful OCR; figures as a first-class multimodal retrieval unit; entity-alias link
+substrate (cross-doc canonicals 230; regime↔SVAR/Neural-Markov now link via "Markov
+model"/"regime shift" base concepts); MCP server; four eval suites.
+
+Round-5 gate: recall@8 **1.000** / cross-domain **1.000** / banner misfires **0** /
+file_recall **1.000** / links_recall **1.000**; judge **4.02**/5 (band 4.02–4.35; entity
+precision dipped with base-concept emission — judged marginal, accepted for the link
+payoff); math fidelity 0.775 n=20 raw — **verified sample composition, not regression**
+(two never-before-sampled vector-drawn-formula pages at 0.06/0.19 drag it; the other 18
+average 0.847, in band; extraction byte-identical, detector silent on those pages both
+ingests — the vector-formula class is the documented §11 ceiling). Audit QC zero
+(ungrounded summaries 0 corpus-wide). 331 tests.
 
 **Next: the BULK INGEST** (multi-year corpus pour) — owner-run, checklist in
 `docs/pour-runbook.md`. Open blocker: the laptop outbox's `coursework/` folder is not

@@ -94,6 +94,14 @@ paths = [
   "/home/alec/server-projects/tanker-flow",
 ]
 check_interval = 3600   # seconds between HEAD checks inside `locus watch`
+# Repo-relative globs excluded from ingest. The locus repo indexes itself, and these
+# files carry the labelled eval queries verbatim — answer keys that outrank real
+# content on their own questions (round-5 audit).
+exclude_globs = [
+  "locus/eval/retrieval_eval.py",
+  "tests/test_retrieve.py",
+  "tests/test_link_aliases.py",
+]
 
 [alias]
 # Cross-document entity-alias resolution (`locus link`, step 12). Deterministic tiers run
@@ -105,3 +113,4 @@ min_token_overlap = 0.34   # token-Jaccard guard on candidate edges
 max_cluster_size  = 8      # clusters larger than this skip the LLM (cost guard)
 min_merge_len     = 4      # names shorter than this never merge (homonym risk: 'var', 'P2')
 use_llm           = true   # false = deterministic tiers only (no API)
+api_call_interval = 1.5    # seconds between adjudication API calls (rate-limit politeness; 0 = off)

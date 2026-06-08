@@ -183,6 +183,22 @@ class AliasConfig(BaseModel):
     )
 
 
+class RetitleConfig(BaseModel):
+    """Corpus-level document retitling (locus/retitle.py).
+
+    Composes distinctive '[Module — ][Seq: ]Topic' titles after ingest batches, breaking
+    same-title collisions across the corpus. The topic is distilled from the stored synthesis
+    by the Claude API (judgement-quality, §11.B), cached by content hash; use_llm False falls
+    back to a deterministic thesis-clause topic. Manual-only, like [alias] — billed, global
+    view, run after the pour.
+    """
+
+    use_llm: bool = Field(True, description="Distil topics via the Claude API (else thesis-clause).")
+    api_call_interval: float = Field(
+        1.5, description="Seconds between topic-distillation API calls (0 = unthrottled)."
+    )
+
+
 class ReposConfig(BaseModel):
     """Tracked code repositories (build step 10). `locus watch` checks each repo's git
     HEAD every `check_interval` seconds and re-ingests only when new commits landed —
@@ -228,6 +244,8 @@ class Config(BaseModel):
     repos: ReposConfig = Field(default_factory=ReposConfig)
     # Optional: absent [alias] falls back to defaults (LLM adjudication on).
     alias: AliasConfig = Field(default_factory=AliasConfig)
+    # Optional: absent [retitle] falls back to defaults (LLM topic distillation on).
+    retitle: RetitleConfig = Field(default_factory=RetitleConfig)
 
     def resolve_paths(self) -> "Config":
         """Make all configured paths absolute, relative to the project root."""

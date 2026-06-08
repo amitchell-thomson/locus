@@ -43,7 +43,8 @@ class DocSynthesis(BaseModel):
 
 
 def synthesize_document(
-    title: str | None, section_summaries: list[str], *, code: bool = False, **kw
+    title: str | None, section_summaries: list[str], *, code: bool = False,
+    source_name: str | None = None, **kw
 ) -> DocSynthesis:
     """Synthesise the document from its section summaries into the four L1 synthesis fields.
 
@@ -71,8 +72,14 @@ def synthesize_document(
             "of leaving it blank."
         )
     else:
+        # The source filename often carries a series/sequence marker ('Lecture3') that the
+        # page banner drops, so distinct lecture PDFs collapse to one module-title. Surfacing
+        # it lets the model keep that distinction (the corpus-level `locus retitle` pass still
+        # owns cross-document collision-breaking — a doc can't see its siblings here).
+        fn_line = f"Source filename: {source_name}\n" if source_name else ""
         user = (
-            f"Extracted title candidate: {title or '(none)'}\n\n"
+            f"Extracted title candidate: {title or '(none)'}\n"
+            f"{fn_line}\n"
             f"Section summaries:\n{joined}\n\n"
             "Synthesise the whole document into:\n"
             "- thesis: its central claim or purpose,\n"
@@ -82,7 +89,9 @@ def synthesize_document(
             "- title: the document's title. The candidate above was extracted heuristically and "
             "may be a page banner, a browser-tab suffix, a fragment, or a filename. If it is the "
             "document's actual title, return it VERBATIM; otherwise give the true title, or a "
-            "faithful descriptive one (at most 12 words) based on the summaries.\n"
+            "faithful descriptive one (at most 12 words) based on the summaries. When the source "
+            "is one of a numbered series, keep the distinguishing part (e.g. the lecture number "
+            "or topic) so it is not identical to its siblings.\n"
             "Be faithful to the summaries and concise. Every field must be non-empty: if the "
             "document does not state one, give a brief best-effort characterisation instead of "
             "leaving it blank."

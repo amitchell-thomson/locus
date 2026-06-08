@@ -142,6 +142,37 @@ def cmd_link(args) -> None:
         conn.close()
 
 
+def cmd_retitle(args) -> None:
+    """Recompute distinctive '[Module — ][Seq: ]Topic' titles across the corpus.
+
+    Manual-only, like `locus link`: needs the global view to break same-title collisions,
+    and distils topics via billed Claude API calls (cached by content hash — re-runs after
+    new ingests only call for unseen docs). Writes only documents.title (no re-ingest). Run
+    after the pour; a long-lived MCP server need not restart (list/inspect read title live).
+    --dry-run previews every change without writing; --rollback restores the prior titles.
+    """
+    from locus import retitle
+
+    conn = _open()
+    try:
+        if args.rollback:
+            retitle.rollback(conn, log=print)
+            return
+        report = retitle.build_titles(
+            conn,
+            use_llm=False if args.no_llm else None,  # None -> config [retitle].use_llm
+            use_cache=not args.no_cache,
+            dry_run=args.dry_run,
+            log=print,
+        )
+        for doc_id, old, new in report.proposals:
+            print(f"  [{doc_id}] {old!r}\n        -> {new!r}")
+        if args.dry_run:
+            print("(dry run — no titles written)")
+    finally:
+        conn.close()
+
+
 def cmd_list(args) -> None:
     conn = _open()
     rows = conn.execute(
@@ -447,6 +478,28 @@ def main(argv=None) -> None:
         help="re-adjudicate every fuzzy cluster, ignoring cached verdicts",
     )
     pk.set_defaults(func=cmd_link)
+
+    pr = sub.add_parser(
+        "retitle",
+        help="recompute distinctive document titles corpus-wide (Claude API for topics)",
+    )
+    pr.add_argument(
+        "--no-llm", action="store_true",
+        help="deterministic thesis-clause topics only (no API)",
+    )
+    pr.add_argument(
+        "--no-cache", action="store_true",
+        help="re-distil every doc's topic, ignoring cached topics",
+    )
+    pr.add_argument(
+        "--dry-run", action="store_true",
+        help="print every proposed title change without writing",
+    )
+    pr.add_argument(
+        "--rollback", action="store_true",
+        help="restore titles from the most recent pre-run snapshot",
+    )
+    pr.set_defaults(func=cmd_retitle)
 
     pa = sub.add_parser("audit", help="structural ingest-quality metrics (no API)")
     pa.add_argument("--doc", default=None, help="restrict to one document id")

@@ -541,7 +541,10 @@ def _prepare_doc(
     if profile.llm_entities:
         entities.merge_plural_variants([p.entities for p in prepared])
 
-    syn = synthesis.synthesize_document(doc.title, summaries, code=profile.code_prompts)
+    syn = synthesis.synthesize_document(
+        doc.title, summaries, code=profile.code_prompts,
+        source_name=Path(doc.source_path).name if doc.source_path else None,
+    )
     context = (
         f"Thesis: {syn.thesis}\nMethod: {syn.method}\n"
         f"Result: {syn.result}\nLimitations: {syn.limitations}"

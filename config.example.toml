@@ -115,3 +115,13 @@ max_cluster_size  = 8      # clusters larger than this skip the LLM (cost guard)
 min_merge_len     = 4      # names shorter than this never merge (homonym risk: 'var', 'P2')
 use_llm           = true   # false = deterministic tiers only (no API)
 api_call_interval = 1.5    # seconds between adjudication API calls (rate-limit politeness; 0 = off)
+
+[retitle]
+# Corpus-level document retitling (`locus retitle`). Composes distinctive
+# '[Module — ][Seq: ]Topic' titles and breaks same-title collisions across the corpus.
+# The topic is distilled from the stored synthesis by the Claude API (billed — cached by
+# content hash, so re-runs only call for new docs). Manual-only, like [alias]; run after
+# the pour. `--no-llm` falls back to a deterministic thesis-clause topic (rewrites only
+# docs with a module/sequence signal). `--dry-run` previews; `--rollback` restores.
+use_llm           = true   # false = deterministic thesis-clause topics only (no API)
+api_call_interval = 1.5    # seconds between topic-distillation API calls (0 = off)

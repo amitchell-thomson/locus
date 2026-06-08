@@ -179,32 +179,55 @@ def process_once(conn, *, incoming: Path | None = None, settle: float = 3.0) -> 
 def watch(*, interval: float = 5.0, settle: float = 3.0, once: bool = False) -> None:
     """Poll vault/incoming/ and ingest new files until interrupted (or one pass if `once`).
 
-    Also runs the tracked-repo sync every config [repos].check_interval seconds (and once
-    on `--once`, so that flag means "process everything now"). Each tick holds the ingest
-    lock; if a manual `locus ingest`/`locus sync` holds it, the tick is skipped and
-    retried on the next interval.
+    Incoming-only: tracked-repo sync lives in `watch_repos` (`locus watch-repo`) so a
+    commit-triggered repo re-ingest can never steal the slot from a bulk pour mid-tick.
+    The two loops are mutually exclusive through the shared ingest lock — each holds it for
+    its tick, and the other's tick simply skips (IngestLockHeld) and retries next interval.
     """
     cfg = load()
     migrate(cfg.paths.db)  # ensure the schema is current before ingesting
     conn = get_connection(cfg.paths.db)
-    repos = [Path(p) for p in cfg.repos.paths]
-    last_sync = float("-inf")  # sync on the first tick (cheap: HEAD checks only)
-    log.info(
-        "watching %s (interval %.0fs; %d tracked repo(s), sync every %.0fs)",
-        cfg.paths.incoming, interval, len(repos), cfg.repos.check_interval,
-    )
+    log.info("watching %s (interval %.0fs)", cfg.paths.incoming, interval)
     try:
         while True:
             try:
                 with ingest_lock():
                     process_once(conn, incoming=cfg.paths.incoming, settle=settle)
-                    if repos and (once or time.monotonic() - last_sync >= cfg.repos.check_interval):
-                        sync_repos(conn, repos)
-                        last_sync = time.monotonic()
             except IngestLockHeld as exc:
                 log.info("tick skipped: %s", exc)
             if once:
                 break
             time.sleep(interval)
+    finally:
+        conn.close()
+
+
+def watch_repos(*, once: bool = False) -> None:
+    """Poll tracked code repos (config [repos]) and incrementally re-ingest moved HEADs.
+
+    Separate process from `locus watch` so a repo re-ingest is isolated from the incoming/
+    pour — but mutually exclusive with it through the SAME ingest lock: a tick that finds the
+    lock held (the pour mid-tick, or a manual `locus ingest`/`sync`) skips and retries, and
+    while THIS loop holds it the pour's tick skips. Each moved repo re-ingests incrementally
+    (repo_sync): only the files a commit changed are re-prepared, so even a held slot is
+    brief. Polls every config [repos].check_interval seconds.
+    """
+    cfg = load()
+    migrate(cfg.paths.db)
+    conn = get_connection(cfg.paths.db)
+    repos = [Path(p) for p in cfg.repos.paths]
+    log.info(
+        "watching %d tracked repo(s), HEAD check every %.0fs", len(repos), cfg.repos.check_interval
+    )
+    try:
+        while True:
+            try:
+                with ingest_lock():
+                    sync_repos(conn, repos)
+            except IngestLockHeld as exc:
+                log.info("repo tick skipped: %s", exc)
+            if once:
+                break
+            time.sleep(cfg.repos.check_interval)
     finally:
         conn.close()

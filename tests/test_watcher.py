@@ -5,11 +5,14 @@ ingest_file is monkeypatched so these test the watcher's file-handling logic wit
 
 import os
 import time
+from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from locus import watcher as watcher_mod
+from locus.ingest_lock import IngestLockHeld
 from locus.ingest_pipeline import IngestResult
 from locus.watcher import QUARANTINE_DIRNAME, process_once
 
@@ -153,3 +156,57 @@ def test_unsettled_file_is_skipped(incoming, monkeypatch):
     fresh.write_text("x")  # current mtime -> within settle window
     process_once(object(), incoming=incoming, settle=3.0)
     assert fresh.exists()  # not ingested yet — still settling
+
+
+# --- watch / watch-repo separation + shared-lock mutual exclusion --------------------------
+
+
+def _patch_loop(monkeypatch, tmp_path, *, repos=("/r",)):
+    """Stub config/db so watch() and watch_repos() loops run in isolation. Returns a dict
+    recording process_once / sync_repos calls and the lock-acquired flag."""
+    rec = {"process": 0, "sync": [], "locked": 0}
+    cfg = SimpleNamespace(
+        paths=SimpleNamespace(db=tmp_path / "x.db", incoming=tmp_path / "in"),
+        repos=SimpleNamespace(paths=list(repos), check_interval=0.01),
+    )
+    monkeypatch.setattr(watcher_mod, "load", lambda: cfg)
+    monkeypatch.setattr(watcher_mod, "migrate", lambda db: None)
+    monkeypatch.setattr(watcher_mod, "get_connection", lambda db: SimpleNamespace(close=lambda: None))
+    monkeypatch.setattr(watcher_mod, "process_once", lambda conn, **k: rec.__setitem__("process", rec["process"] + 1) or [])
+    monkeypatch.setattr(watcher_mod, "sync_repos", lambda conn, repos: rec["sync"].append(repos) or [])
+
+    @contextmanager
+    def _lock():
+        rec["locked"] += 1
+        yield
+    monkeypatch.setattr(watcher_mod, "ingest_lock", _lock)
+    return rec, cfg
+
+
+def test_watch_is_incoming_only(monkeypatch, tmp_path):
+    rec, _ = _patch_loop(monkeypatch, tmp_path)
+    watcher_mod.watch(once=True)
+    assert rec["process"] == 1 and rec["locked"] == 1
+    assert rec["sync"] == []  # repo sync no longer rides the incoming watcher
+
+
+def test_watch_repos_syncs_tracked_repos_under_lock(monkeypatch, tmp_path):
+    rec, _ = _patch_loop(monkeypatch, tmp_path, repos=("/a", "/b"))
+    watcher_mod.watch_repos(once=True)
+    assert rec["sync"] == [[Path("/a"), Path("/b")]]  # synced the configured repos
+    assert rec["locked"] == 1 and rec["process"] == 0  # under the lock; no incoming work
+
+
+def test_watch_repo_tick_skips_when_lock_held(monkeypatch, tmp_path):
+    """Mutual exclusion: if the shared ingest lock is held (the pour mid-tick), a watch-repo
+    tick skips rather than interrupting it — no sync runs."""
+    rec, _ = _patch_loop(monkeypatch, tmp_path)
+
+    @contextmanager
+    def _held():
+        raise IngestLockHeld("held by locus watch")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(watcher_mod, "ingest_lock", _held)
+    watcher_mod.watch_repos(once=True)  # must not raise; tick skipped
+    assert rec["sync"] == []  # the pour was not interrupted

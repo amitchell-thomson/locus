@@ -3,10 +3,10 @@
 The repos in config `[repos]` are working directories under active development. Each
 sync pass compares every repo's `git rev-parse HEAD` against the stored document's
 `content_hash` (located by `source_uri`, which is stable across commits) and re-ingests
-only repos with new commits — so the hourly check inside `locus watch` is ~free, and an
-actual re-ingest happens only after the owner commits. The pass-output cache
-(ingest_pipeline._SummaryCache) makes that re-ingest proportional to the files the
-commit touched, not the repo size.
+only repos with new commits — so the hourly check inside `locus watch-repo` is ~free, and
+an actual re-ingest happens only after the owner commits. That re-ingest is INCREMENTAL
+(locus/repo_sync.py): a blob-sha diff against the stored manifest re-prepares only the
+files the commit changed, leaving every unchanged section/chunk/vector untouched.
 
 Errors are per-repo: a missing path or non-git dir is reported and the batch continues.
 """
@@ -18,7 +18,8 @@ from pathlib import Path
 
 from locus.config import load
 from locus.extract.code import repo_head
-from locus.ingest_pipeline import IngestResult, ingest_repo
+from locus.ingest_pipeline import IngestResult
+from locus.repo_sync import reingest_repo_incremental
 
 log = logging.getLogger(__name__)
 
@@ -49,8 +50,10 @@ def sync_repos(conn, repos: list[Path] | None = None, *, force: bool = False) ->
             (str(repo),),
         ).fetchone()
         if existing and existing["content_hash"] == head and not force:
+            # Cheap unchanged-HEAD skip BEFORE the blob hashing in reingest — keeps the
+            # hourly poll ~free (a `git rev-parse`, no file reads).
             results.append(IngestResult(str(repo), "skipped", doc_id=existing["id"]))
             continue
-        log.info("sync: %s @ %s -> ingesting", repo.name, head[:12])
-        results.append(ingest_repo(repo, conn, force=force))
+        log.info("sync: %s @ %s -> ingesting (incremental)", repo.name, head[:12])
+        results.append(reingest_repo_incremental(repo, conn, force=force))
     return results

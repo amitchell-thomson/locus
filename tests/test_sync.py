@@ -68,11 +68,11 @@ def test_sync_skips_when_head_matches(tmp_path, conn, monkeypatch):
     )
     conn.commit()
     called = []
-    monkeypatch.setattr(sync_mod, "ingest_repo", lambda *a, **k: called.append(a) or None)
+    monkeypatch.setattr(sync_mod, "reingest_repo_incremental", lambda *a, **k: called.append(a) or None)
 
     results = sync_repos(conn, [repo])
     assert [r.status for r in results] == ["skipped"]
-    assert called == []  # no ingest attempted
+    assert called == []  # no ingest attempted (cheap HEAD-match skip, before any blob hashing)
 
 
 @needs_git
@@ -80,7 +80,7 @@ def test_sync_ingests_on_new_commit_and_force(tmp_path, conn, monkeypatch):
     repo = _make_repo(tmp_path / "proj")
     calls = []
     monkeypatch.setattr(
-        sync_mod, "ingest_repo",
+        sync_mod, "reingest_repo_incremental",
         lambda r, c, **k: calls.append(k) or IngestResult(str(r), "ingested", doc_id=1),
     )
     # No prior doc -> ingests.

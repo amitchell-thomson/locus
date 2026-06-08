@@ -445,6 +445,88 @@ def _prepare(path: Path, source_type: str, figure_cache: _FigureCache | None = N
     return _prepare_doc(doc, source_type, figure_cache=figure_cache)
 
 
+def _run_optional_pass(fn, sec, what: str, empty, pass_gaps: list[str]):
+    """Run a non-critical pass; on persistent LLM failure degrade to empty + a gap flag.
+
+    Propositions/entities are enhancements on top of the raw chunks + summary (§15.0:
+    retrieval assembles raw text regardless) — one stubborn section must not quarantine a
+    whole document. The summary pass stays fatal: it is the L2 retrieval unit itself.
+    """
+    try:
+        return fn(sec.title, sec.text)
+    except llm.IngestExtractionError as exc:
+        log.warning("%s pass failed for section %r: %s", what, sec.title, exc)
+        pass_gaps.append(f"{what} pass failed for section {sec.position} ({sec.title})")
+        return empty
+
+
+def _prepare_section(
+    sec, profile: "_PassProfile", summary_cache: "_SummaryCache | None", pass_gaps: list[str]
+) -> _PreparedSection:
+    """Prepare one section: summary (cached) + chunks + propositions/entities + embeddings.
+
+    Pure per-section work — no DB writes, no synthesis. Shared by full-document ingest
+    (_prepare_doc) and incremental repo re-ingest (repo_sync), so a changed file is prepared
+    identically whether the whole doc or one file is being (re)ingested.
+    """
+    sec_summary = summary_cache.get(sec) if summary_cache else None
+    if sec_summary is None:
+        sec_summary = summarize.summarize_section(sec.title, sec.text, code=profile.code_prompts)
+        if summary_cache:
+            summary_cache.stage(sec, sec_summary)
+    if not sec_summary.grounded:
+        # The model twice produced a summary about something other than this section
+        # (the round-3 hallucination finding); a deterministic fallback replaced it.
+        # Surface that as a doc gap so audit/inspect show the degradation.
+        pass_gaps.append(
+            f"summary failed grounding for section {sec.position} ({sec.title}); "
+            "deterministic fallback used"
+        )
+    summary = sec_summary.summary
+    # Pagination pseudo-titles get the summary pass's semantic title instead.
+    title = sec.title
+    if _needs_semantic_title(title) and sec_summary.title and sec_summary.title.strip():
+        title = sec_summary.title.strip()
+    if profile.propositions:
+        props = _run_optional_pass(
+            # has_math routes the math-dense prompt variant (claims-in-words for formulas).
+            lambda t, x, _m=sec.has_math: propositions.extract_propositions(t, x, math_heavy=_m),
+            sec, "propositions", [], pass_gaps,
+        )
+    else:
+        props = []
+    if sec.entities is not None:
+        # Extractor-supplied (deterministic, e.g. code AST) — validated into the closed
+        # EntityType vocabulary; never sent through the LLM pass.
+        ents = [entities.Entity(name=e.name, type=e.type) for e in sec.entities]
+    elif profile.llm_entities:
+        ents = _run_optional_pass(entities.extract_entities, sec, "entities", [], pass_gaps)
+    else:
+        ents = []
+    if sec.chunks is not None:
+        chunks = [pc.text for pc in sec.chunks]
+        chunk_provenance = sec.chunks
+    else:
+        chunks = chunk.chunk_text(sec.text)
+        chunk_provenance = None
+    return _PreparedSection(
+        position=sec.position,
+        title=title,
+        page_start=sec.page_start,
+        page_end=sec.page_end,
+        summary=summary,
+        summary_vec=embed.embed_text(summary),
+        chunks=chunks,
+        chunk_vecs=embed.embed_texts(chunks),
+        propositions=props,
+        proposition_vecs=embed.embed_texts(props),
+        entities=ents,
+        file_path=sec.file_path,
+        call_graph=sec.call_graph,
+        chunk_provenance=chunk_provenance,
+    )
+
+
 def _prepare_doc(
     doc: ExtractedDoc,
     source_type: str,
@@ -457,82 +539,10 @@ def _prepare_doc(
 
     pass_gaps: list[str] = []
 
-    def _optional_pass(fn, sec, what: str, empty):
-        """Run a non-critical pass; on persistent LLM failure degrade to empty + gap flag.
-
-        Propositions/entities are enhancements on top of the raw chunks + summary (§15.0:
-        retrieval assembles raw text regardless) — one stubborn section must not quarantine
-        a whole document. The summary pass stays fatal: it is the L2 retrieval unit itself.
-        """
-        try:
-            return fn(sec.title, sec.text)
-        except llm.IngestExtractionError as exc:
-            log.warning("%s pass failed for section %r: %s", what, sec.title, exc)
-            pass_gaps.append(f"{what} pass failed for section {sec.position} ({sec.title})")
-            return empty
-
     for sec in doc.sections:
-        sec_summary = summary_cache.get(sec) if summary_cache else None
-        if sec_summary is None:
-            sec_summary = summarize.summarize_section(
-                sec.title, sec.text, code=profile.code_prompts
-            )
-            if summary_cache:
-                summary_cache.stage(sec, sec_summary)
-        if not sec_summary.grounded:
-            # The model twice produced a summary about something other than this section
-            # (the round-3 hallucination finding); a deterministic fallback replaced it.
-            # Surface that as a doc gap so audit/inspect show the degradation.
-            pass_gaps.append(
-                f"summary failed grounding for section {sec.position} ({sec.title}); "
-                "deterministic fallback used"
-            )
-        summary = sec_summary.summary
-        # Pagination pseudo-titles get the summary pass's semantic title instead.
-        title = sec.title
-        if _needs_semantic_title(title) and sec_summary.title and sec_summary.title.strip():
-            title = sec_summary.title.strip()
-        if profile.propositions:
-            props = _optional_pass(
-                # has_math routes the math-dense prompt variant (claims-in-words for formulas).
-                lambda t, x, _m=sec.has_math: propositions.extract_propositions(t, x, math_heavy=_m),
-                sec, "propositions", [],
-            )
-        else:
-            props = []
-        if sec.entities is not None:
-            # Extractor-supplied (deterministic, e.g. code AST) — validated into the closed
-            # EntityType vocabulary; never sent through the LLM pass.
-            ents = [entities.Entity(name=e.name, type=e.type) for e in sec.entities]
-        elif profile.llm_entities:
-            ents = _optional_pass(entities.extract_entities, sec, "entities", [])
-        else:
-            ents = []
-        if sec.chunks is not None:
-            chunks = [pc.text for pc in sec.chunks]
-            chunk_provenance = sec.chunks
-        else:
-            chunks = chunk.chunk_text(sec.text)
-            chunk_provenance = None
-        prepared.append(
-            _PreparedSection(
-                position=sec.position,
-                title=title,
-                page_start=sec.page_start,
-                page_end=sec.page_end,
-                summary=summary,
-                summary_vec=embed.embed_text(summary),
-                chunks=chunks,
-                chunk_vecs=embed.embed_texts(chunks),
-                propositions=props,
-                proposition_vecs=embed.embed_texts(props),
-                entities=ents,
-                file_path=sec.file_path,
-                call_graph=sec.call_graph,
-                chunk_provenance=chunk_provenance,
-            )
-        )
-        summaries.append(summary)
+        ps = _prepare_section(sec, profile, summary_cache, pass_gaps)
+        prepared.append(ps)
+        summaries.append(ps.summary)
         log.info("section %s/%s done (%s)", sec.position + 1, len(doc.sections), sec.title)
 
     # Doc-level entity hygiene: collapse plural/singular surface variants (evidence-based).
@@ -648,53 +658,11 @@ def _write(
         doc_id = cur.lastrowid
 
         for s in prep.sections:
-            cur = conn.execute(
-                "INSERT INTO sections (doc_id, position, title, summary, cross_section_deps, "
-                "file_path, call_graph) VALUES (?,?,?,?,?,?,?)",
-                (doc_id, s.position, s.title, s.summary, None, s.file_path,
-                 json.dumps(s.call_graph) if s.call_graph else None),
-            )
-            section_id = cur.lastrowid
+            section_id, sc, sp, se = _insert_section(conn, doc_id, s, prep.embed_model)
             pos_to_section_id[s.position] = section_id
-            conn.execute(
-                "INSERT INTO section_vectors (section_id, embedding) VALUES (?,?)",
-                (section_id, _vec_blob(s.summary_vec)),
-            )
-            for i, (text, vec) in enumerate(zip(s.chunks, s.chunk_vecs)):
-                prov = s.chunk_provenance[i] if s.chunk_provenance else None
-                cur = conn.execute(
-                    "INSERT INTO chunks (section_id, doc_id, position, raw_text, embed_model, "
-                    "file_path, line_start, line_end, video_timestamp) "
-                    "VALUES (?,?,?,?,?,?,?,?,?)",
-                    (section_id, doc_id, i, text, prep.embed_model,
-                     prov.file_path if prov else None,
-                     prov.line_start if prov else None,
-                     prov.line_end if prov else None,
-                     prov.video_timestamp if prov else None),
-                )
-                conn.execute(
-                    "INSERT INTO chunk_vectors (chunk_id, embedding) VALUES (?,?)",
-                    (cur.lastrowid, _vec_blob(vec)),
-                )
-                n_chunks += 1
-            for i, (text, vec) in enumerate(zip(s.propositions, s.proposition_vecs)):
-                cur = conn.execute(
-                    "INSERT INTO propositions (section_id, doc_id, position, text, embed_model) "
-                    "VALUES (?,?,?,?,?)",
-                    (section_id, doc_id, i, text, prep.embed_model),
-                )
-                conn.execute(
-                    "INSERT INTO proposition_vectors (proposition_id, embedding) VALUES (?,?)",
-                    (cur.lastrowid, _vec_blob(vec)),
-                )
-                n_props += 1
-            for e in s.entities:
-                cur = conn.execute(
-                    "INSERT OR IGNORE INTO entities (doc_id, section_id, name, type) "
-                    "VALUES (?,?,?,?)",
-                    (doc_id, section_id, e.name, str(e.type)),
-                )
-                n_ents += max(0, cur.rowcount)
+            n_chunks += sc
+            n_props += sp
+            n_ents += se
 
         for f in prep.figures:
             if f.raw_name is None:  # programming error: _copy_figures_to_raw must precede
@@ -721,7 +689,82 @@ def _write(
     )
 
 
+def _insert_section(conn, doc_id: int, s: _PreparedSection, embed_model: str) -> tuple[int, int, int, int]:
+    """Insert one prepared section + its vectors/chunks/propositions/entities. No transaction
+    (caller owns it). Returns (section_id, n_chunks, n_props, n_entities). Shared by the
+    whole-doc write (_write) and the surgical incremental update (repo_sync)."""
+    cur = conn.execute(
+        "INSERT INTO sections (doc_id, position, title, summary, cross_section_deps, "
+        "file_path, call_graph) VALUES (?,?,?,?,?,?,?)",
+        (doc_id, s.position, s.title, s.summary, None, s.file_path,
+         json.dumps(s.call_graph) if s.call_graph else None),
+    )
+    section_id = cur.lastrowid
+    conn.execute(
+        "INSERT INTO section_vectors (section_id, embedding) VALUES (?,?)",
+        (section_id, _vec_blob(s.summary_vec)),
+    )
+    n_chunks = n_props = n_ents = 0
+    for i, (text, vec) in enumerate(zip(s.chunks, s.chunk_vecs)):
+        prov = s.chunk_provenance[i] if s.chunk_provenance else None
+        cur = conn.execute(
+            "INSERT INTO chunks (section_id, doc_id, position, raw_text, embed_model, "
+            "file_path, line_start, line_end, video_timestamp) VALUES (?,?,?,?,?,?,?,?,?)",
+            (section_id, doc_id, i, text, embed_model,
+             prov.file_path if prov else None,
+             prov.line_start if prov else None,
+             prov.line_end if prov else None,
+             prov.video_timestamp if prov else None),
+        )
+        conn.execute(
+            "INSERT INTO chunk_vectors (chunk_id, embedding) VALUES (?,?)",
+            (cur.lastrowid, _vec_blob(vec)),
+        )
+        n_chunks += 1
+    for i, (text, vec) in enumerate(zip(s.propositions, s.proposition_vecs)):
+        cur = conn.execute(
+            "INSERT INTO propositions (section_id, doc_id, position, text, embed_model) "
+            "VALUES (?,?,?,?,?)",
+            (section_id, doc_id, i, text, embed_model),
+        )
+        conn.execute(
+            "INSERT INTO proposition_vectors (proposition_id, embedding) VALUES (?,?)",
+            (cur.lastrowid, _vec_blob(vec)),
+        )
+        n_props += 1
+    for e in s.entities:
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO entities (doc_id, section_id, name, type) VALUES (?,?,?,?)",
+            (doc_id, section_id, e.name, str(e.type)),
+        )
+        n_ents += max(0, cur.rowcount)
+    return section_id, n_chunks, n_props, n_ents
+
+
 # --- public entry points -----------------------------------------------------------------
+
+
+def _delete_section_rows(conn, section_id: int) -> None:
+    """Delete ONE section and all its children (caller owns the transaction).
+
+    Mirrors _delete_document_rows' discipline at section granularity for the incremental
+    repo update. Two reasons everything is deleted EXPLICITLY rather than via FK cascade:
+    sqlite-vec `vec0` tables carry no foreign key (orphan vectors collide on a reused row
+    id), and `recursive_triggers` is off — so the chunks_fts sync trigger only fires on a
+    DIRECT `DELETE FROM chunks`, not on a cascade from the parent section.
+    """
+    cids = [r["id"] for r in conn.execute("SELECT id FROM chunks WHERE section_id=?", (section_id,))]
+    pids = [r["id"] for r in conn.execute("SELECT id FROM propositions WHERE section_id=?", (section_id,))]
+    fids = [r["id"] for r in conn.execute("SELECT id FROM figures WHERE section_id=?", (section_id,))]
+    conn.executemany("DELETE FROM chunk_vectors WHERE chunk_id=?", [(i,) for i in cids])
+    conn.executemany("DELETE FROM proposition_vectors WHERE proposition_id=?", [(i,) for i in pids])
+    conn.executemany("DELETE FROM figure_vectors WHERE figure_id=?", [(i,) for i in fids])
+    conn.execute("DELETE FROM section_vectors WHERE section_id=?", (section_id,))
+    conn.execute("DELETE FROM chunks WHERE section_id=?", (section_id,))  # explicit: fires FTS trigger
+    conn.execute("DELETE FROM propositions WHERE section_id=?", (section_id,))
+    conn.execute("DELETE FROM figures WHERE section_id=?", (section_id,))
+    conn.execute("DELETE FROM entities WHERE section_id=?", (section_id,))
+    conn.execute("DELETE FROM sections WHERE id=?", (section_id,))
 
 
 def _delete_document_rows(conn, doc_id: int) -> None:

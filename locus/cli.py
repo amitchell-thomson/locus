@@ -279,6 +279,23 @@ def cmd_watch(args) -> None:
         print("\nstopped.")
 
 
+def cmd_watch_repo(args) -> None:
+    """Watch tracked code repos and incrementally re-ingest moved HEADs (own process).
+
+    Mutually exclusive with `locus watch` through the shared ingest lock — run them as two
+    processes and neither interrupts the other's ingest.
+    """
+    import logging
+
+    from locus.watcher import watch_repos
+
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    try:
+        watch_repos(once=args.once)
+    except KeyboardInterrupt:
+        print("\nstopped.")
+
+
 def cmd_query(args) -> None:
     from locus.config import Config
     from locus.query import QUERY_MODES, answer
@@ -437,6 +454,13 @@ def main(argv=None) -> None:
     pw.add_argument("--interval", type=float, default=5.0, help="poll interval seconds")
     pw.add_argument("--once", action="store_true", help="process the backlog once and exit")
     pw.set_defaults(func=cmd_watch)
+
+    pwr = sub.add_parser(
+        "watch-repo",
+        help="watch tracked code repos; incrementally re-ingest moved HEADs (separate process from watch)",
+    )
+    pwr.add_argument("--once", action="store_true", help="sync all tracked repos once and exit")
+    pwr.set_defaults(func=cmd_watch_repo)
 
     ps = sub.add_parser("sync", help="re-ingest tracked code repos whose git HEAD moved")
     ps.add_argument("paths", nargs="*", help="repo paths (default: config [repos].paths)")

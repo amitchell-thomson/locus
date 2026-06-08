@@ -100,6 +100,20 @@ def test_drained_subfolder_is_pruned(incoming, monkeypatch):
     assert incoming.exists() and (incoming / ".gitkeep").exists()  # root anchor untouched
 
 
+def test_quarantining_last_file_prunes_drained_subfolder(incoming, monkeypatch):
+    """When the only file in a drop subfolder is unsupported/quarantined, the move empties
+    the source folder — prune it too, or it lingers as a remnant (observed: an empty
+    notebook quarantined out of notes/alpha-fund/ left the folder behind)."""
+    monkeypatch.setattr(watcher_mod, "ingest_file", _fake_ingest("unsupported"))
+    sub = incoming / "notes" / "alpha-fund"
+    sub.mkdir(parents=True)
+    _drop(sub, "empty.ipynb")
+    process_once(object(), incoming=incoming)
+    assert (incoming / QUARANTINE_DIRNAME / "notes" / "alpha-fund" / "empty.ipynb").exists()  # set aside
+    assert not sub.exists() and not (incoming / "notes").exists()  # source side pruned
+    assert (incoming / ".gitkeep").exists()  # root anchor untouched
+
+
 def test_prune_stops_at_pending_sibling(incoming, monkeypatch):
     """A folder still holding a settle-pending sibling is NOT pruned when one file ingests —
     rmdir is self-guarding, so the folder survives to a later tick."""

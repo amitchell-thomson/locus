@@ -171,6 +171,7 @@ def process_once(conn, *, incoming: Path | None = None, settle: float = 3.0) -> 
             dest = quarantine / rel
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(path), str(dest))
+            _prune_empty_parents(path.parent, incoming)  # the move drained the source dir too
         log.info("watch: %s -> %s", rel, result.status)
     return results
 

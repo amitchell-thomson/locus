@@ -55,10 +55,20 @@ echo "[$(ts)] flushing $DROP_DIR -> $REMOTE:$REMOTE_DIR"
   -e "$SSH_OPTS" \
   "$DROP_DIR"/ "$REMOTE:$REMOTE_DIR/"
 
+# Clean up the drop folder. rsync left the macOS noise files behind (we exclude
+# .DS_Store/._*/etc. from transfer), and a subfolder still holding one of those is
+# not -empty, so it would survive the sweep below. Purge that junk first, then the
+# now-truly-empty subdirectories.
+find "$DROP_DIR" -mindepth 1 -type f \
+  \( -name '.DS_Store' -o -name '._*' \) -delete
+find "$DROP_DIR" -mindepth 1 -type d \
+  \( -name '.Spotlight-V100' -o -name '.Trashes' -o -name '.fseventsd' \) \
+  -exec rm -rf {} +
 # Tidy now-empty subdirectories left behind by dropped folders-of-files — but only at
 # depth 2+: the FIRST-level folders are the owner's permanent category taxonomy
-# (papers/, notes/, ...), which the server derives `documents.category` from, and they
-# must survive being emptied by a flush. Never remove the drop folder itself either.
+# (papers/, coursework/, projects/, career/, notes/), which the server derives
+# `documents.category` from, and they must survive being emptied by a flush. Never
+# remove the drop folder itself either.
 find "$DROP_DIR" -mindepth 2 -type d -empty -delete
 
 echo "[$(ts)] done"

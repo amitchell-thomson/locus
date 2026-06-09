@@ -60,13 +60,14 @@ Post-pour work landed this round (on top of the pour):
   `vault/raw`. The desktop eval's cross-domain NO-GO was a **stale MCP server** (the process
   predated the H2 fix), not a code gap — restart `locus mcp` after any retrieval change.
 
-Eval (post-dedup): recall@k **0.976**, cross-domain 1.000, banner 0.000, file_recall 1.000,
+Eval (post-dedup): recall@k **1.000**, cross-domain 1.000, banner 0.000, file_recall 1.000,
 **links_recall 1.000**, mrr 0.833; math fidelity **0.869** (in band — the OCR-fallback pages
 are handwritten notes / vector-drawn formulas, GOT's safe degrade-not-invent, **not** a VRAM
-failure); audit QC 0 ungrounded summaries. One labelled query (Fourier 'signals + PDEs') sits
-at recall 0.50 — a real under-retrieval of the signals facet on a non-bridge 'both X and Y'
-query (expansion fires only on explicit bridge phrasing / low confidence), left visible by
-design.
+failure); audit QC 0 ungrounded summaries. The former Fourier 'signals + PDEs' miss is fixed:
+multi-query expansion now also does deterministic **facet decomposition** for conjunctive
+('both X and Y') queries — it distributes the shared context over each conjunct and retrieves
+each separately, so an under-represented facet is no longer crowded out (`retrieve/pipeline.py`
+`decompose_conjunction`).
 
 **H2 — cross-domain bridge: FIXED** via **multi-query expansion** (`retrieve/multiquery.py`):
 a bridge-shaped or low-confidence query is rephrased into other disciplinary vocabularies
@@ -76,10 +77,8 @@ labelled bridge query now co-retrieves the engineering control doc (−3.25 → 
 finance/ML papers. Tune via `[retrieve].multi_query_expansion / multi_query_k`.
 
 **Known open (priority):** doc 165 §10 F1 prop reads inverted (1/14, synthesis correct —
-ledgered); `[200] harry_thoughts.docx` (career) may be a third party's work (confirm);
-non-bridge 'both X and Y' queries don't trigger multi-query expansion (the Fourier facet
-under-retrieval above); ANN index (§11) when KNN latency degrades; Obsidian projection
-(§13); transcript ingest.
+ledgered); `[200] harry_thoughts.docx` (career) may be a third party's work (confirm); ANN
+index (§11) when KNN latency degrades; Obsidian projection (§13); transcript ingest.
 
 **Operational hardening (this round):** `link`/`retitle` now persist each billed verdict to
 `pass_cache` in its own commit (crash mid-rebuild no longer wastes spend — was a single

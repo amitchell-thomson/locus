@@ -579,3 +579,12 @@ def test_figure_images_floored_and_cited_count_kept(monkeypatch, tmp_path):
     assert r.figures_cited == 4
     assert [f.page for f in r.figures] == [1, 2]  # floor killed -0.4, cap kept top 2
     assert all(f.rerank_score >= 0.22 for f in r.figures)
+
+
+def test_excluded_doc_ids_resolves_source_uris(conn):
+    """The self-ingestion exclusion maps configured source_uris to doc ids (exact match)."""
+    from locus.retrieve.pipeline import _excluded_doc_ids
+
+    assert _excluded_doc_ids(conn, ["u"]) == {1}  # seeded doc's source_uri
+    assert _excluded_doc_ids(conn, ["/not/in/corpus"]) == set()
+    assert _excluded_doc_ids(conn, []) == set()

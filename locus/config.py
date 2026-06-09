@@ -81,6 +81,11 @@ class RetrieveConfig(BaseModel):
     # top-k with below-floor candidates, and a retrieval whose best survivor falls below the
     # floor is flagged low-confidence ("the corpus may not cover this") — flagged, not filtered.
     min_rerank_score: float | None = None
+    # Documents (by exact source_uri) dropped from the candidate pool in production retrieval.
+    # The locus repo self-ingests, so 1000+ chunks of its own RAG/test/README code compete
+    # with and contaminate real queries (a finance query surfacing locus test files —
+    # 2026-06-09 audit). Excluded by default; `locus retrieve --include-excluded` overrides.
+    exclude_source_uris: list[str] = Field(default_factory=list)
 
 
 class GenerationConfig(BaseModel):

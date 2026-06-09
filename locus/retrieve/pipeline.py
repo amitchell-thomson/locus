@@ -124,19 +124,33 @@ def confidence_banner(band: str | None) -> str:
     return ""
 
 
+def _excluded_doc_ids(conn, source_uris: list[str]) -> set[int]:
+    """Doc ids whose source_uri is in the configured exclusion list (exact match)."""
+    if not source_uris:
+        return set()
+    placeholders = ",".join("?" * len(source_uris))
+    rows = conn.execute(
+        f"SELECT id FROM documents WHERE source_uri IN ({placeholders})", source_uris
+    ).fetchall()
+    return {r["id"] for r in rows}
+
+
 def retrieve(
-    query: str, conn=None, facets: Facets | None = None, exclude=None
+    query: str, conn=None, facets: Facets | None = None, exclude=None,
+    *, include_excluded: bool = False,
 ) -> RetrievalResult:
     """Run the full retrieval pipeline and return assembled context + provenance.
 
     `facets` optionally restricts retrieval to documents within a date range / category
     (CLAUDE.md §16); None retrieves over the whole corpus.
 
-    `exclude` is an optional Candidate predicate dropped BEFORE rerank. Eval-only (the
-    answer-key guard): since the locus repo self-ingested, chunks of the eval file contain
-    the labelled queries verbatim and (correctly) win the live ranking — post-hoc scoring
-    exclusion left them consuming top-k slots and crowding out the real targets, so the
-    measurement needs them gone from the candidate pool. Never set in production paths.
+    Two candidate-pool filters run BEFORE rerank:
+      - config `[retrieve].exclude_source_uris` — production exclusion of self-ingestion
+        noise (the locus repo's own code/tests/README competing with real queries); skipped
+        when `include_excluded=True` (the `--include-excluded` escape hatch).
+      - `exclude` — an optional Candidate predicate. Eval-only (the answer-key guard): the
+        eval file's chunks contain the labelled queries verbatim and would win the live
+        ranking, so the measurement needs them gone from the pool. Never set in production.
     """
     own = conn is None
     if own:
@@ -144,6 +158,11 @@ def retrieve(
     try:
         cfg = load().retrieve
         candidates = search(conn, query, facets)
+        excluded_uris = getattr(cfg, "exclude_source_uris", None)
+        if not include_excluded and excluded_uris:
+            ex_ids = _excluded_doc_ids(conn, excluded_uris)
+            if ex_ids:
+                candidates = [c for c in candidates if c.doc_id not in ex_ids]
         if exclude is not None:
             candidates = [c for c in candidates if not exclude(c)]
         survivors = rerank(

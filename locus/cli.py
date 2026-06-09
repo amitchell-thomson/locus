@@ -325,7 +325,7 @@ def cmd_query(args) -> None:
 def cmd_retrieve(args) -> None:
     from locus.retrieve import retrieve
 
-    r = retrieve(args.query, facets=_facets(args))
+    r = retrieve(args.query, facets=_facets(args), include_excluded=args.include_excluded)
     print(f"query: {r.query}\n")
     if r.low_confidence:
         from locus.retrieve.pipeline import confidence_banner
@@ -479,6 +479,10 @@ def main(argv=None) -> None:
     pr = sub.add_parser("retrieve", help="run the retrieval pipeline and show what it returns")
     pr.add_argument("query", help="the query text")
     pr.add_argument("--context", action="store_true", help="also print the assembled context")
+    pr.add_argument(
+        "--include-excluded", action="store_true",
+        help="include docs in [retrieve].exclude_source_uris (e.g. the self-ingested locus repo)",
+    )
     _add_facet_args(pr)
     pr.set_defaults(func=cmd_retrieve)
 

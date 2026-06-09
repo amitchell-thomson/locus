@@ -31,6 +31,10 @@ context_token_budget = 100000     # cap on assembled context to the Claude API c
                                   # the result LOW CONFIDENCE (signal, not filter). Calibrate with
                                   # scripts/calibrate_rerank_threshold.py (0.22 = the 2026-06-05
                                   # calibration on the 24-doc corpus); recalibrate after bulk ingest.
+# Docs (exact source_uri) dropped from the candidate pool in production retrieval — e.g. the
+# self-ingested locus repo, whose own code/tests/README would otherwise compete with real
+# queries. `locus retrieve --include-excluded` overrides. Default: none.
+# exclude_source_uris = ["/abs/path/to/locus"]
 
 [mathocr]
 # Math-aware page OCR: pages whose text layer is damaged or math-dense are re-read by an

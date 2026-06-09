@@ -364,6 +364,109 @@ def cmd_mcp(args) -> None:
     run(enable_query=args.enable_query or cfg.mcp.enable_query)
 
 
+def _backup_root(args) -> Path:
+    """Backup destination: --dest if given, else vault/backups (sibling of the DB)."""
+    if getattr(args, "dest", None):
+        return Path(args.dest)
+    return load().paths.db.parent / "backups"
+
+
+def _fmt_bytes(n: float) -> str:
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if n < 1024 or unit == "GiB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n:.1f} GiB"
+
+
+def cmd_backup(args) -> None:
+    """Snapshot the durable corpus state (DB + raw store + authored notes)."""
+    from locus import backup as bk
+
+    cfg = load()
+    root = _backup_root(args)
+
+    if args.list:
+        snaps = bk.list_snapshots(root)
+        if not snaps:
+            print(f"No snapshots under {root}")
+            return
+        for s in snaps:
+            m = bk.read_manifest(s)
+            if m:
+                print(f"  {s.name}  ({m.doc_count} docs, db {_fmt_bytes(m.db_bytes)}, "
+                      f"raw {_fmt_bytes(m.raw_bytes)} / {m.raw_files} files, sha {m.git_sha})")
+            else:
+                print(f"  {s.name}  (no manifest)")
+        return
+
+    print(f"Backing up to {root} ...")
+    snapshot = bk.create_backup(
+        db=cfg.paths.db, raw_store=cfg.paths.raw_store, notes=cfg.paths.notes,
+        backup_root=root, log=print,
+    )
+    m = bk.read_manifest(snapshot)
+    print(f"\nSnapshot: {snapshot}")
+    if m:
+        print(f"  {m.doc_count} docs | db {_fmt_bytes(m.db_bytes)} ({m.db_page_count} pages) "
+              f"| raw {_fmt_bytes(m.raw_bytes)} ({m.raw_files} files)"
+              + (f" | hardlinked vs {m.linked_from}" if m.linked_from else ""))
+
+
+def cmd_restore(args) -> None:
+    """Restore the corpus from a snapshot (DESTRUCTIVE — overwrites live DB/raw/notes)."""
+    from locus import backup as bk
+    from locus.ingest_lock import IngestLockHeld, ingest_lock
+
+    cfg = load()
+    snapshot = Path(args.snapshot)
+    if not snapshot.is_absolute() and not snapshot.exists():
+        snapshot = _backup_root(args) / snapshot  # accept a bare snapshot name
+    if not snapshot.exists():
+        print(f"No such snapshot: {snapshot}")
+        sys.exit(1)
+
+    m = bk.read_manifest(snapshot)
+    print(f"Restore from {snapshot}")
+    if m:
+        print(f"  {m.doc_count} docs, db {_fmt_bytes(m.db_bytes)}, raw {m.raw_files} files, "
+              f"taken {m.created_at} (code sha {m.git_sha})")
+    if not args.yes:
+        print("\nThis OVERWRITES the live DB, raw store, and notes. Re-run with --yes to proceed.")
+        return
+    # The ingest lock guarantees no writer is mid-transaction while we swap the DB file out.
+    try:
+        with ingest_lock():
+            bk.restore_backup(
+                snapshot, db=cfg.paths.db, raw_store=cfg.paths.raw_store,
+                notes=cfg.paths.notes, log=print,
+            )
+    except IngestLockHeld as exc:
+        print(exc)
+        sys.exit(1)
+    print("Restore complete. Restart any long-lived `locus mcp` server.")
+
+
+def cmd_status(args) -> None:
+    """One-screen operational health summary (no API; local only)."""
+    from locus.config import PROJECT_ROOT
+    from locus.status import collect_status, format_status
+
+    cfg = load()
+    conn = _open()
+    try:
+        report = collect_status(
+            conn,
+            db_path=cfg.paths.db,
+            incoming=cfg.paths.incoming,
+            backup_root=_backup_root(args),
+            project_root=PROJECT_ROOT,
+        )
+    finally:
+        conn.close()
+    print(format_status(report))
+
+
 def cmd_audit(args) -> None:
     from locus.eval.metrics import (
         alias_qc, corpus_metrics, doc_metrics, format_alias_qc, format_metrics,
@@ -528,6 +631,20 @@ def main(argv=None) -> None:
         help="restore titles from the most recent pre-run snapshot",
     )
     pr.set_defaults(func=cmd_retitle)
+
+    pst = sub.add_parser("status", help="one-screen operational health summary (no API)")
+    pst.set_defaults(func=cmd_status)
+
+    pb = sub.add_parser("backup", help="snapshot the corpus (DB + raw store + notes)")
+    pb.add_argument("--dest", default=None, help="backup root (default: vault/backups)")
+    pb.add_argument("--list", action="store_true", help="list existing snapshots and exit")
+    pb.set_defaults(func=cmd_backup)
+
+    prs = sub.add_parser("restore", help="restore the corpus from a snapshot (destructive)")
+    prs.add_argument("snapshot", help="snapshot dir path, or bare name under the backup root")
+    prs.add_argument("--dest", default=None, help="backup root for bare names (default: vault/backups)")
+    prs.add_argument("--yes", action="store_true", help="actually overwrite live state (else dry-run)")
+    prs.set_defaults(func=cmd_restore)
 
     pa = sub.add_parser("audit", help="structural ingest-quality metrics (no API)")
     pa.add_argument("--doc", default=None, help="restrict to one document id")

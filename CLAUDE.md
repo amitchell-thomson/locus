@@ -22,14 +22,14 @@ decks, project write-ups, achievements, historical records.
 compute) is effectively unbounded; retrieval latency and answer quality are the only
 constraints that matter. Workflow is query-driven, not browse-driven; no GUI.
 
-## 2. Current state (2026-06-09, post bulk pour + round-6 desktop audit)
+## 2. Current state (2026-06-09, post bulk pour + round-7 desktop-eval remediation)
 
-Steps 1–12 done, and the **BULK POUR is complete**: 33 → **306 docs** (coursework 246,
-career 27, project 15, paper 13, note 5) — multi-year Oxford engineering coursework,
-quant/CS papers, tracked code repos, slides, career/CV. Full ingest→retrieve→generate spine
-for PDF/DOCX/MD/TXT/IPYNB/PPTX/code-repos; math-faithful OCR; figures as a first-class
-multimodal unit; entity-alias link substrate (cross-doc canonicals **2,217**); MCP server;
-four eval suites + deterministic audit. **384 tests.**
+Steps 1–12 done, and the **BULK POUR is complete**: 33 → 306 docs, then **deduped to 292**
+(coursework 246, career **14**, project **14**, paper 13, note 5) — multi-year Oxford
+engineering coursework, quant/CS papers, tracked code repos, slides, career/CV. Full
+ingest→retrieve→generate spine for PDF/DOCX/MD/TXT/IPYNB/PPTX/code-repos; math-faithful OCR;
+figures as a first-class multimodal unit; entity-alias link substrate (cross-doc canonicals
+~2,217); MCP server; four eval suites + deterministic audit. **391 tests.**
 
 Post-pour work landed this round (on top of the pour):
 - **Titles** — `locus retitle` (NEW, billed/cached, `locus/retitle.py`): corpus-level
@@ -48,13 +48,25 @@ Post-pour work landed this round (on top of the pour):
   repo is **excluded from production retrieval** (`[retrieve].exclude_source_uris`;
   `--include-excluded` overrides). Stop-entity guard enabled (`[alias].stop_doc_freq_ratio`
   0.4 — inert until an entity exceeds 40% of the corpus; IDF weighting does the live work).
+- **Round-7 desktop-eval remediation:** (M4) related-docs now exclude code-boilerplate
+  identifiers (Alembic env API, leading-underscore privates/dunders, `test_*`) so two repos
+  sharing only an Alembic setup no longer read as related (`link/related.py`). **Eval labels
+  re-curated** to stable `source_uri` keys (arxiv id / repo path / module folder) — `retitle`
+  had silently broken every title-substring label; `links_recall` restored via 3
+  mutually-verified pairs, recall@k 0.881→**0.976**, file_recall→**1.000** (the locus-internals
+  query now lifts the self-exclusion via a per-label `include_excluded`). **Career dedup**
+  27→14: 8 superseded CV versions, 3 cover-letter format dupes, the third-party `Aaron Rose
+  CV`, a QR-code, + a duplicate Citadel deck (project 15→14) — originals retained in
+  `vault/raw`. The desktop eval's cross-domain NO-GO was a **stale MCP server** (the process
+  predated the H2 fix), not a code gap — restart `locus mcp` after any retrieval change.
 
-Eval (post-pour, post-fix): recall@8 **0.929**, cross-domain 1.000, banner 0.000,
-file_recall 1.000; math fidelity **0.869** (in band — the OCR-fallback pages are handwritten
-notes / vector-drawn formulas, GOT's safe degrade-not-invent, **not** a VRAM failure);
-audit QC 0 ungrounded summaries. `links_recall` is **stale** (title-substring labels broken
-by retitle + corpus growth crowding the related top-5) — needs label re-curation, not a
-retrieval fix.
+Eval (post-dedup): recall@k **0.976**, cross-domain 1.000, banner 0.000, file_recall 1.000,
+**links_recall 1.000**, mrr 0.833; math fidelity **0.869** (in band — the OCR-fallback pages
+are handwritten notes / vector-drawn formulas, GOT's safe degrade-not-invent, **not** a VRAM
+failure); audit QC 0 ungrounded summaries. One labelled query (Fourier 'signals + PDEs') sits
+at recall 0.50 — a real under-retrieval of the signals facet on a non-bridge 'both X and Y'
+query (expansion fires only on explicit bridge phrasing / low confidence), left visible by
+design.
 
 **H2 — cross-domain bridge: FIXED** via **multi-query expansion** (`retrieve/multiquery.py`):
 a bridge-shaped or low-confidence query is rephrased into other disciplinary vocabularies
@@ -63,11 +75,12 @@ written in another field's terms clears the floor instead of being demoted. Live
 labelled bridge query now co-retrieves the engineering control doc (−3.25 → +1.20) with the
 finance/ML papers. Tune via `[retrieve].multi_query_expansion / multi_query_k`.
 
-**Known open (priority):** eval-label re-curation (title-id matching would be more
-robust than title-substring); doc 165 §10 F1 prop reads inverted (1/14, synthesis correct —
-ledgered); `[183] Aaron Rose CV` is a third party's document (confirm it belongs); `link`
-and `retitle` batch their cache writes at the end (a crash wastes spend — make incremental);
-ANN index (§11) when KNN latency degrades; Obsidian projection (§13); transcript ingest.
+**Known open (priority):** doc 165 §10 F1 prop reads inverted (1/14, synthesis correct —
+ledgered); `[200] harry_thoughts.docx` (career) may be a third party's work (confirm);
+non-bridge 'both X and Y' queries don't trigger multi-query expansion (the Fourier facet
+under-retrieval above); `link` and `retitle` batch their cache writes at the end (a crash
+wastes spend — make incremental); ANN index (§11) when KNN latency degrades; Obsidian
+projection (§13); transcript ingest.
 
 ## 3. Core principles
 

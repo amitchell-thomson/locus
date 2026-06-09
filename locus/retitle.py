@@ -77,12 +77,13 @@ class RetitleReport:
     collisions_broken: int = 0
     api_calls: int = 0
     cache_hits: int = 0
+    failed: int = 0  # docs whose topic distill errored — stored title kept
     proposals: list[tuple[int, str, str]] = field(default_factory=list)  # (id, old, new)
 
     def summary(self) -> str:
         return (
             f"retitle: {self.total} docs | changed {self.changed} | kept {self.kept} | "
-            f"collisions broken {self.collisions_broken} | "
+            f"collisions broken {self.collisions_broken} | failed {self.failed} | "
             f"llm: {self.api_calls} calls, {self.cache_hits} cache hits"
         )
 
@@ -151,8 +152,26 @@ def distill_topic(
     )
     for block in resp.content:
         if getattr(block, "type", None) == "tool_use":
-            return TopicVerdict.model_validate(block.input)
+            return TopicVerdict.model_validate(_unwrap(block.input))
     raise RuntimeError("Retitle topic distiller returned no tool_use block")
+
+
+def _unwrap(raw):
+    """Recover the occasional double-encoded tool input.
+
+    ~1 in 200 responses nests the whole verdict as a JSON STRING inside the `topic`
+    field and omits `keep_existing` ({'topic': '{"keep_existing":...,"topic":"..."}'}),
+    which would fail validation and (pre-fix) abort the run. If the top-level dict is
+    missing keep_existing but its topic parses as a verdict, use the inner object.
+    """
+    if isinstance(raw, dict) and "keep_existing" not in raw and isinstance(raw.get("topic"), str):
+        try:
+            inner = json.loads(raw["topic"])
+        except (json.JSONDecodeError, TypeError):
+            return raw
+        if isinstance(inner, dict) and "keep_existing" in inner:
+            return inner
+    return raw
 
 
 # --- deterministic signal extraction ------------------------------------------------------
@@ -315,11 +334,19 @@ def build_titles(
             else:
                 title = compose(module, seq, _fallback_topic(r["thesis"], r["title"]))
         else:
-            verdict, last_api = _topic_for(
-                r, model, use_cache, client, cache_puts, report, conn,
-                throttle=cfg.api_call_interval, last_api=last_api,
-            )
-            title = verdict.topic.strip() if verdict.keep_existing else compose(module, seq, verdict.topic)
+            try:
+                verdict, last_api = _topic_for(
+                    r, model, use_cache, client, cache_puts, report, conn,
+                    throttle=cfg.api_call_interval, last_api=last_api,
+                )
+                title = verdict.topic.strip() if verdict.keep_existing else compose(module, seq, verdict.topic)
+            except Exception as exc:
+                # One unparseable/failed response must not abort 300+ docs (and waste the
+                # API spend) — keep this doc's stored title and carry on. The doc-level
+                # collision-break below still guarantees uniqueness.
+                report.failed += 1
+                log(f"retitle: topic distill failed for doc {r['id']} ({r['title']!r}): {exc}; keeping title")
+                title = r["title"]
         composed.append((r["id"], title, r["source_date"], r["source_uri"]))
 
     final = _break_collisions(composed, report)

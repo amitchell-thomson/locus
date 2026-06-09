@@ -153,6 +153,35 @@ def test_no_llm_uses_deterministic_topic(conn):
     assert title == "calc — Lecture 1: Vector calculus and its operators"
 
 
+def test_unwraps_double_encoded_topic():
+    # Model nests the verdict as a JSON string in `topic` and omits keep_existing.
+    raw = {"topic": '{"keep_existing": false, "topic": "Modal Decoupling"}'}
+    out = retitle._unwrap(raw)
+    assert out == {"keep_existing": False, "topic": "Modal Decoupling"}
+    # A normal payload passes through untouched.
+    ok = {"keep_existing": True, "topic": "Real Title"}
+    assert retitle._unwrap(ok) == ok
+
+
+def test_one_bad_response_keeps_title_and_does_not_abort(conn):
+    _seed(conn, 1, "/h/vault/incoming/papers/a.pdf", "Title A", "To study A.")
+    _seed(conn, 2, "/h/vault/incoming/papers/b.pdf", "Title B", "To study B.")
+
+    class _PartlyBroken:
+        def __init__(self):
+            self.messages = self
+        def create(self, **kwargs):
+            user = kwargs["messages"][0]["content"]
+            if "a.pdf" in user:  # malformed for doc 1
+                return SimpleNamespace(content=[SimpleNamespace(type="tool_use", input={"oops": 1})])
+            return SimpleNamespace(content=[SimpleNamespace(type="tool_use", input={"keep_existing": False, "topic": "Study of B"})])
+
+    report = retitle.build_titles(conn, use_llm=True, client=_PartlyBroken(), log=lambda *_: None)
+    assert report.failed == 1  # doc 1 failed
+    assert conn.execute("SELECT title FROM documents WHERE id=1").fetchone()["title"] == "Title A"  # kept
+    assert conn.execute("SELECT title FROM documents WHERE id=2").fetchone()["title"] == "Study of B"  # processed
+
+
 def test_no_llm_keeps_title_without_structural_signal(conn):
     # A paper in a bucket (no module, no sequence) keeps its stored title under --no-llm.
     _seed(conn, 1, "/h/vault/incoming/papers/attention.pdf", "Attention Is All You Need", "To study X.")

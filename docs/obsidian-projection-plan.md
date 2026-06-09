@@ -121,6 +121,34 @@ emit_entity_notes = true       # entity notes can be turned off for a docs-only 
 3. **Phase 3 (optional) — richer views.** Entity↔entity co-occurrence, category dashboards,
    Dataview-friendly frontmatter. Only if the graph proves useful enough to live in.
 
+## 10. Viewing from the Mac (transport)
+
+The export runs on the home server; Obsidian is a GUI that runs on the Mac. The data and the
+UI are on opposite sides of the SSH boundary, so the projection must be *transported* to the
+Mac to be viewed. **Recommended: rsync-pull to a Mac-local vault.**
+
+```bash
+# on the server (after `locus link`):
+ssh server "cd ~/server-projects/locus && uv run locus export-obsidian"
+
+# pull to the Mac (run from the Mac):
+rsync -az --delete --exclude '.obsidian/' \
+  server:~/server-projects/locus/vault/obsidian/ \
+  ~/LocusVault/
+# then in Obsidian: Open folder as vault → ~/LocusVault
+```
+
+Why pull (vs. an SSHFS mount): Obsidian's graph view, file watcher, and indexing read a local
+SSD instead of round-tripping every stat over SSH — usable vs. sluggish at ~2,500 notes.
+
+The `--delete --exclude '.obsidian/'` flags are the transport-layer restatement of invariant
+**#4**: stale doc notes are removed on the Mac, but the Mac's `.obsidian/` (layout, theme,
+plugins, graph positions) is never clobbered. The **Mac owns its `.obsidian/`** — that config
+is per-machine and lives only on the Mac, which keeps the projection strictly one-way
+(invariant #1): the vault is a render target you browse, never edit. SSHFS is the zero-copy
+alternative (re-export is instantly visible) at the cost of GUI lag and putting `.obsidian/`
+inside the exporter-owned tree on the server; acceptable but not preferred.
+
 ## 9. Open questions (resolve before Phase 1)
 
 - **Figures**: link the raw-store PNG into the doc note as an embedded image (`![[...]]`)?

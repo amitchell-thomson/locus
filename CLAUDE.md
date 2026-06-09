@@ -98,9 +98,31 @@ finance/ML papers. Tune via `[retrieve].multi_query_expansion / multi_query_k`.
 Eval (post-polish): recall@k **1.000**, cross-domain 1.000, banner 0.000, file_recall 1.000,
 **links_recall 1.000**, mrr 0.843 — over the expanded 53-query / 10-pair set.
 
+**Obsidian projection — SHIPPED (2026-06-09):** `locus export-obsidian` (NEW,
+`locus/export/obsidian.py`) renders the corpus to a read-only Obsidian vault — joins-only, no
+API, no figures yet (Phase 1+2: doc notes with synthesis frontmatter + section summaries,
+canonical entity notes spanning ≥2 docs, `related` doc↔doc edges reusing `related_documents`,
+generated `_index.md`). One-way/regenerable; the exporter owns only `docs/`+`entities/` and
+never touches `.obsidian/`. Live: 290 doc + 2146 entity notes, 1369 related edges,
+byte-identical re-export. View from the Mac by rsync-pulling the tree (plan §10). Design +
+transport in `docs/obsidian-projection-plan.md`.
+
+**Code concept linking — Phase 1 SHIPPED (2026-06-09):** code repos carried AST identifiers,
+not the domain concepts they implement, so the owner's projects orphaned in the link graph
+(6/12 linked to nothing) — failing the primary Link use case (§1.2). NEW `ingest/concepts.py`
+(pass profile `concept_entities`, code-only) extracts domain concepts from a repo's NARRATIVE
+(synthesis + README + file summaries, never raw code — the §11.B-safe surface) into the same
+`(name,type)` space as paper entities; `locus link`'s deterministic tiers then merge them.
+Backfill existing repos: `scripts/backfill_code_concepts.py` (no re-embed) → `locus link` →
+`locus export-obsidian`. Result: **0 Obsidian orphans** (was 3); quant projects link to each
+other (regime-ml ↔ tanker-flow ↔ downside-risk), `links_recall` 1.000 over 13 pairs. Config
+`[concepts]`. **Boundary:** project→PAPER links surface but at rank 6–8 (shared=1) — top-5
+reach is Phase 2 (fuzzy clustering of code-only surfaces). Design: `docs/code-concept-extraction-plan.md`.
+
 **Known open (priority):** ANN index (§11) when KNN latency degrades (the count-warning is
-still unimplemented — brute-force is fine at 291 docs); Obsidian projection (§13 — design in
-`docs/obsidian-projection-plan.md`); transcript ingest.
+still unimplemented — brute-force is fine at 291 docs); code-concept Phase 2 (fuzzy clustering
+to lift project→paper into top-5); Obsidian Phase 3 (figure embeds, co-occurrence edges);
+transcript ingest.
 
 **Operational hardening:** `link`/`retitle` persist each billed verdict to `pass_cache` in
 its own commit (crash mid-rebuild no longer wastes spend). `locus mcp` logs a build stamp
@@ -209,7 +231,8 @@ source file (vault/incoming/<category>/… or repo)
       pptx: one span per slide, real slide-number provenance, notes; visual-bearing
             slides rendered via soffice for the figure pass
       code: repo = doc, files = sections, def-granular chunks with line provenance,
-            call graph, deterministic AST entities (no LLM passes — pass profile)
+            call graph, deterministic AST entities + an LLM domain-concept pass over the repo
+            narrative (concepts.py, §1.2 Link); skips propositions/LLM-entity passes — pass profile
   → LLM PASSES (local qwen, schema-validated pydantic, bounded repair retries with
       temperature escalation; length-truncation-aware; LaTeX-escape sanitizer)
       section summaries (grounding guard: distinctive-stem overlap with own source,
@@ -335,18 +358,19 @@ locus/
 ├── pyproject.toml (uv; extras: rerank, mathocr) · alembic.ini · config.toml (+ example)
 ├── locus/
 │   ├── cli.py            # product surface: ingest list inspect watch sync link retitle
-│   │                     #   query retrieve mcp status backup restore audit eval
+│   │                     #   query retrieve mcp status backup restore export-obsidian audit eval
 │   ├── backup.py         # WAL-safe DB snapshot + rsync-hardlinked raw store; restore
 │   ├── status.py         # `locus status` health summary (counts, alias staleness, backups)
 │   ├── config.py         # typed config; ANTHROPIC_API_KEY via env/.env only
 │   ├── db/               # connection (sqlite-vec load), migrate.py, migrations/ (0001–0008)
 │   ├── extract/          # base, pdf, mathocr, figures_detect, docx, pptx, textdoc, code
 │   ├── ingest/           # llm (validated I/O + repair), summarize, propositions, entities,
-│   │                     #   synthesis, gaps, chunk, embed, figures, llamacpp
+│   │                     #   concepts (code domain concepts), synthesis, gaps, chunk, embed, figures, llamacpp
 │   ├── ingest_pipeline.py · ingest_lock.py · watcher.py · sync.py
 │   ├── retrieve/         # search (all arms), rerank+select, expand, assemble, pipeline,
 │   │                     #   figure_images
 │   ├── link/             # aliases (tiers+guards), adjudicate (Claude), related
+│   ├── export/           # obsidian.py — read-only vault projection (§13, joins-only)
 │   ├── query.py          # retrieve → assemble → Claude (multimodal)
 │   └── mcp_server.py
 ├── scripts/              # benchmarks, calibration, backfills, judges (one-off, kept)
@@ -355,16 +379,23 @@ locus/
 └── vault/                # incoming/ (watched, category folders) · raw/ · notes/ · locus.db
 ```
 
-## 13. Obsidian projection (post-pour, deferred)
+## 13. Obsidian projection (SHIPPED — Phase 1+2)
 
 Read-only visualization layer rendered over SQLite — a render target, never in the
-ingest/retrieval path (`locus/export/obsidian.py` when built). Invariants: one-way export
-to `vault/obsidian/` (gitignored, regenerable, never read back); authored notes in
-`vault/notes/` are an input, the export is an output; joins-only. Nodes: doc notes
-(synthesis frontmatter) + **canonical** entity notes (join through `entity_aliases` — never
-raw surfaces); sections are headings; chunks/propositions are not nodes. Edges from
-existing data only (mention, co-occurrence, shared entities). The exporter owns only its
-subtrees and never touches `.obsidian/`.
+ingest/retrieval path (`locus/export/obsidian.py`; `locus export-obsidian`). Invariants:
+one-way export to `vault/obsidian/` (gitignored, regenerable, never read back); authored
+notes in `vault/notes/` are an input, the export is an output; joins-only. Nodes: doc notes
+(synthesis frontmatter + section-summary body) + **canonical** entity notes (join through
+`entity_aliases` — never raw surfaces; emitted only when a canonical spans ≥`min_cluster_docs`
+exported docs); sections are headings; chunks/propositions are not nodes. Edges: `mention`
+(doc→canonical entity) + `related` (doc↔doc, reusing `related_documents` — same ranking as
+`locus inspect`). The exporter owns only `docs/`+`entities/` and never touches `.obsidian/`;
+it prunes stale notes within those subtrees only. Deterministic (byte-identical re-export:
+stable id-suffixed slugs + sorted iteration). Manual-only, like `link`/`retitle` — run after
+`locus link`; warns + degrades to a docs-only graph if the alias substrate is absent. Config:
+`[obsidian]`. **Transport to the Mac** (where Obsidian's GUI runs): rsync-pull the tree,
+`rsync --delete --exclude '.obsidian/'` (mirrors the ownership invariant) — plan §10.
+**Deferred to Phase 3:** figure embeds + entity↔entity co-occurrence edges (plan §9).
 
 ## 14. Coding & operational conventions
 

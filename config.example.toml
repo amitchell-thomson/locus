@@ -139,3 +139,25 @@ stop_doc_freq_ratio = 0.4
 # docs with a module/sequence signal). `--dry-run` previews; `--rollback` restores.
 use_llm           = true   # false = deterministic thesis-clause topics only (no API)
 api_call_interval = 1.5    # seconds between topic-distillation API calls (0 = off)
+
+[obsidian]
+# Read-only Obsidian projection (`locus export-obsidian`, §13). A one-way, regenerable
+# render of the corpus as a browsable vault — never read back, never in the retrieval path,
+# joins-only (no API). Run AFTER `locus link` (entity notes need the alias substrate). The
+# exporter owns only its docs/ and entities/ subtrees and never touches .obsidian/. View it
+# from the Mac by rsync-pulling the tree (see docs/obsidian-projection-plan.md §10).
+out_dir          = "vault/obsidian"   # exporter-owned root (gitignored, regenerable)
+top_related      = 5                  # doc<->doc related edges per note (matches related_documents)
+min_cluster_docs = 2                  # emit a canonical entity note only if it spans >= this many docs
+emit_entity_notes = true              # false = docs-only graph (no canonical entity notes)
+
+[concepts]
+# Code concept-entity pass (`ingest/concepts.py`, §1.2 Link). Extracts the DOMAIN
+# concepts a repository implements/studies from its narrative (synthesis + README + file
+# summaries, never raw code) into concept/method/tool/dataset/metric/theorem entities, so
+# code projects link to the papers they are built on. A doc-level local-qwen pass run for
+# source_type=code; `locus link` then folds the concepts into the alias substrate. Backfill
+# existing repos with `uv run python -m scripts.backfill_code_concepts`.
+enabled     = true   # run the concept pass at ingest for code repos
+max_per_doc = 40     # cap concepts written per repo (a runaway README is the failure mode)
+# stoplist  = []     # override the built-in generic-term stoplist (empty = built-in default)

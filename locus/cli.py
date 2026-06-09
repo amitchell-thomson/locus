@@ -467,6 +467,46 @@ def cmd_status(args) -> None:
     print(format_status(report))
 
 
+def cmd_export_obsidian(args) -> None:
+    """Render the corpus to a read-only Obsidian vault (§13; joins-only, no API).
+
+    Manual-only, like `link`/`retitle`: it reads the alias substrate, so run it AFTER
+    `locus link` (it warns and degrades to a docs-only graph otherwise). The output is
+    regenerable and gitignored; view it from the Mac by rsync-pulling the tree — see
+    docs/obsidian-projection-plan.md §10.
+    """
+    from locus.export import export_vault
+
+    cfg = load()
+    out_dir = Path(args.dest) if args.dest else cfg.obsidian.out_dir
+    conn = _open()
+    try:
+        report = export_vault(
+            conn,
+            out_dir,
+            top_related=args.top_related if args.top_related is not None else cfg.obsidian.top_related,
+            include_excluded=args.include_excluded,
+            min_cluster_docs=cfg.obsidian.min_cluster_docs,
+            emit_entity_notes=cfg.obsidian.emit_entity_notes and not args.no_entity_notes,
+            db_path=cfg.paths.db,
+            log=print,
+        )
+    finally:
+        conn.close()
+    print(
+        f"\nExported to {report.out_dir}\n"
+        f"  {report.doc_notes} doc notes | {report.entity_notes} entity notes | "
+        f"{report.related_edges} related edges | {report.pruned} pruned"
+    )
+    for w in report.warnings:
+        print(f"  ! {w}")
+    print(
+        "\nView from the Mac (plan §10):\n"
+        "  rsync -az --delete --exclude '.obsidian/' "
+        f"<host>:{report.out_dir}/ ~/LocusVault/"
+    )
+
+
 def cmd_audit(args) -> None:
     from locus.eval.metrics import (
         alias_qc, corpus_metrics, doc_metrics, format_alias_qc, format_metrics,
@@ -634,6 +674,19 @@ def main(argv=None) -> None:
 
     pst = sub.add_parser("status", help="one-screen operational health summary (no API)")
     pst.set_defaults(func=cmd_status)
+
+    px = sub.add_parser(
+        "export-obsidian",
+        help="render the corpus to a read-only Obsidian vault (joins-only, no API; run after `locus link`)",
+    )
+    px.add_argument("--dest", default=None, help="output vault root (default: [obsidian].out_dir, vault/obsidian)")
+    px.add_argument("--top-related", type=int, default=None, help="doc<->doc related edges per note (default: config)")
+    px.add_argument("--no-entity-notes", action="store_true", help="docs-only graph (skip canonical entity notes)")
+    px.add_argument(
+        "--include-excluded", action="store_true",
+        help="include docs in [retrieve].exclude_source_uris (e.g. the self-ingested locus repo)",
+    )
+    px.set_defaults(func=cmd_export_obsidian)
 
     pb = sub.add_parser("backup", help="snapshot the corpus (DB + raw store + notes)")
     pb.add_argument("--dest", default=None, help="backup root (default: vault/backups)")

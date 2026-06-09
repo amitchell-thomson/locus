@@ -274,6 +274,18 @@ RELATED_PAIRS: list[tuple[str, str]] = [
     ("Mech vib slides", "Mechanical Vibrations Notes 2026"),  # vibration: slides <-> notes
     ("1P4-Heat-and-Mass-Transfer", "Heat and Mass Transfer Lecture"),  # heat transfer: two lecture sets
     ("P3_dynamics_notes", "A3 Classical Dynamics course notes"),  # dynamics: year-1 P3 <-> year-2 A3
+    # --- 2026-06-09 code concept pass (CLAUDE.md §1.2 Link). The concept-entity pass
+    # (ingest/concepts.py) gave code repos the DOMAIN concepts they implement, so the owner's
+    # quant projects link to EACH OTHER via shared concepts — all three were orphans before
+    # (code carried only AST identifiers, which related.py filters). Verified mutual in the
+    # live related top-5 at curation time. NB project<->PAPER links now also surface (regime-ml
+    # reaches the SVAR/Markov papers via the base concept 'Markov model') but at shared=1,
+    # rank 6-8 — below top-5, crowded out by these stronger cross-project links. Lifting a paper
+    # into the project's top-5 needs fuzzy clustering of the code-only surfaces ('regime
+    # switching' vs the papers' 'regime shift') — Phase 2 (docs/code-concept-extraction-plan.md).
+    ("regime-conditioned-equity-ml", "tanker-flow"),            # regime switching / Markov-switching / mean reversion
+    ("regime-conditioned-equity-ml", "downside-risk-prediction"),  # regime switching / mean reversion / portfolio optimization
+    ("tanker-flow", "downside-risk-prediction"),                # Markov model / regime switching / mean reversion
 ]
 
 

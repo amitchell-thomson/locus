@@ -237,6 +237,41 @@ class ReposConfig(BaseModel):
     )
 
 
+class ConceptsConfig(BaseModel):
+    """Code concept-entity pass (ingest/concepts.py, CLAUDE.md §1.2 — Link).
+
+    Extracts the domain concepts a repository implements/studies from its NARRATIVE (synthesis
+    + README + file summaries, never raw code) into `concept`/`method`/… entities, so code
+    projects link to the papers they're built on. A doc-level local-qwen pass run for
+    `source_type='code'`; the durable merge decision still goes through `locus link`."""
+
+    enabled: bool = Field(True, description="Run the code concept-entity pass at ingest.")
+    # Bound on concepts written per repo — a runaway README is the failure mode (a junk concept
+    # is a false cross-domain link, so cap + the grounding/stoplist guards lean conservative).
+    max_per_doc: int = Field(40, description="Max concepts written per repository.")
+    # Generic terms never written as concepts (they would link everything to everything).
+    # Empty list => the built-in ingest/concepts.DEFAULT_STOPLIST.
+    stoplist: list[str] = Field(default_factory=list, description="Override the generic-term stoplist (empty = built-in).")
+
+
+class ObsidianConfig(BaseModel):
+    """Read-only Obsidian projection of the corpus (locus/export/obsidian.py, §13).
+
+    One-way, regenerable render of the SQLite corpus as a browsable vault — never read back,
+    never in the retrieval path. Joins-only (no LLM), canonical entities only (joins through
+    entity_aliases). The exporter owns only its docs/ and entities/ subtrees and never touches
+    `.obsidian/` (the user's per-machine layout/plugin config). See the plan in
+    docs/obsidian-projection-plan.md.
+    """
+
+    out_dir: Path = Field(Path("vault/obsidian"), description="Exporter-owned vault root.")
+    top_related: int = Field(5, description="doc<->doc related edges per note (matches related_documents).")
+    # A canonical entity becomes a note only if it spans >= this many EXPORTED docs. A
+    # single-doc canonical is noise (no cross-doc link to draw), mirroring related.py.
+    min_cluster_docs: int = Field(2, description="Emit a canonical entity note only if it spans >= this many docs.")
+    emit_entity_notes: bool = Field(True, description="Emit canonical entity notes (false = docs-only graph).")
+
+
 class MCPConfig(BaseModel):
     # The MCP `query` tool makes a billed Claude API call server-side; `retrieve` and the read
     # tools are local-only (free). Default OFF so the server never exposes a billable tool unless
@@ -267,6 +302,10 @@ class Config(BaseModel):
     alias: AliasConfig = Field(default_factory=AliasConfig)
     # Optional: absent [retitle] falls back to defaults (LLM topic distillation on).
     retitle: RetitleConfig = Field(default_factory=RetitleConfig)
+    # Optional: absent [concepts] falls back to defaults (code concept pass on).
+    concepts: ConceptsConfig = Field(default_factory=ConceptsConfig)
+    # Optional: absent [obsidian] falls back to defaults (vault/obsidian, entity notes on).
+    obsidian: ObsidianConfig = Field(default_factory=ObsidianConfig)
 
     def resolve_paths(self) -> "Config":
         """Make all configured paths absolute, relative to the project root."""
@@ -275,6 +314,7 @@ class Config(BaseModel):
         self.paths.raw_store = (base / self.paths.raw_store).resolve()
         self.paths.incoming = (base / self.paths.incoming).resolve()
         self.paths.notes = (base / self.paths.notes).resolve()
+        self.obsidian.out_dir = (base / self.obsidian.out_dir).resolve()
         return self
 
     @staticmethod

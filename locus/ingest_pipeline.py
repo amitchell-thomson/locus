@@ -36,7 +36,7 @@ from locus.extract import pdf as pdf_extract
 from locus.extract import pptx as pptx_extract
 from locus.extract import textdoc
 from locus.extract.base import ExtractedDoc, ExtractedSection, PreChunk
-from locus.ingest import chunk, embed, entities, gaps, llm, propositions, summarize, synthesis
+from locus.ingest import chunk, concepts, embed, entities, gaps, llm, propositions, summarize, synthesis
 from locus.ingest import figures as figures_pass
 
 log = logging.getLogger(__name__)
@@ -189,7 +189,9 @@ def _unlink_figure_files(names: list[str], keep: set[str]) -> None:
 # Which LLM passes run for a source type (§2.6 keeps RETRIEVAL unified; ingest passes may
 # vary, like video's transcript pre-pass). Code skips propositions (claims-from-raw-code is
 # the weakest 8B task, §11.B — raw chunks + file summaries carry retrieval, §15.0) and the
-# LLM entity pass (the extractor supplies exact AST entities for free).
+# LLM entity pass (the extractor supplies exact AST entities for free) — but runs the
+# concept_entities pass instead, which reads the repo's NARRATIVE (not raw code) for the
+# domain concepts that link a project to the papers it implements (§1.2 Link; concepts.py).
 
 
 @dataclass(frozen=True)
@@ -197,6 +199,9 @@ class _PassProfile:
     propositions: bool = True
     llm_entities: bool = True
     code_prompts: bool = False  # source-file summary + repository synthesis prompt variants
+    # Domain-concept entities from the repo narrative (concepts.py): the cross-corpus link
+    # substrate for code, which carries AST identifiers, not concepts. Code-only by design.
+    concept_entities: bool = False
     # Figure capture + VLM description (step 11): only formats with a visual layer the text
     # extractor cannot represent. False elsewhere so audit knows 0 figures is BY DESIGN.
     figures: bool = False
@@ -204,7 +209,9 @@ class _PassProfile:
 
 _DEFAULT_PROFILE = _PassProfile()
 _PASS_PROFILE: dict[str, _PassProfile] = {
-    "code": _PassProfile(propositions=False, llm_entities=False, code_prompts=True),
+    "code": _PassProfile(
+        propositions=False, llm_entities=False, code_prompts=True, concept_entities=True
+    ),
     "pdf": _PassProfile(figures=True),
     "slides": _PassProfile(figures=True),
 }
@@ -527,6 +534,31 @@ def _prepare_section(
     )
 
 
+def _readme_text(doc: ExtractedDoc, limit: int = 6000) -> str:
+    """Raw text of a repo's narrative sections (README / markdown), the richest concept input
+    beyond the summaries. Empty for repos without one (the synthesis + summaries are the floor)."""
+    parts = [
+        s.text for s in doc.sections
+        if (s.title or "").lower().endswith((".md", ".markdown")) or "readme" in (s.title or "").lower()
+    ]
+    return "\n\n".join(parts)[:limit]
+
+
+def _attach_concepts(concept_entities: list, prepared: list[_PreparedSection]) -> None:
+    """Anchor each doc-level concept to the section whose summary attests it (fallback: the
+    first section), so the existing section-anchored INSERT-OR-IGNORE write path stores it
+    idempotently — no NULL-section special case, and `locus inspect` provenance stays honest."""
+    if not prepared:
+        return
+    for ent in concept_entities:
+        anchor = prepared[0]
+        for p in prepared:
+            if entities.is_grounded(ent.name, p.summary or ""):
+                anchor = p
+                break
+        anchor.entities.append(ent)
+
+
 def _prepare_doc(
     doc: ExtractedDoc,
     source_type: str,
@@ -559,6 +591,22 @@ def _prepare_doc(
         f"Thesis: {syn.thesis}\nMethod: {syn.method}\n"
         f"Result: {syn.result}\nLimitations: {syn.limitations}"
     )
+    # Code concept pass (§1.2 Link): the domain concepts a repo implements, read from its
+    # narrative (synthesis + summaries + README), anchored to the section that attests each so
+    # the section-anchored write path stores them. Non-fatal — like propositions/entities, a
+    # concept-pass failure degrades to a gap flag, never quarantines the doc.
+    if profile.concept_entities and load().concepts.enabled:
+        ccfg = load().concepts
+        try:
+            code_concepts = concepts.extract_code_concepts(
+                doc.title, context, summaries, readme_text=_readme_text(doc),
+                stoplist=set(ccfg.stoplist) or None, max_concepts=ccfg.max_per_doc,
+            )
+            _attach_concepts(code_concepts, prepared)
+            log.info("concept pass: %d domain concept(s)", len(code_concepts))
+        except llm.IngestExtractionError as exc:
+            log.warning("concept pass failed: %s", exc)
+            pass_gaps.append("code concept pass failed")
     # Evidence-grounded gap pass: section summaries show what IS covered; raw text is scanned
     # for explicit deferral phrases (confirmed gaps). See gaps.flag_gaps.
     gap_list = gaps.flag_gaps(

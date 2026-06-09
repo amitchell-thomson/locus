@@ -74,7 +74,7 @@ LABELLED_QUERIES: list[LabelledQuery] = [
     ),
     LabelledQuery(
         "What is gradient descent and what role does the learning rate play?",
-        ["Mathematical Optimization"],
+        ["Gradient descent"],  # retitled 2026-06-09 (was 'Mathematical Optimization')
     ),
     LabelledQuery(
         "How is the transfer function H(omega) used to analyse a linear system's response?",
@@ -82,7 +82,7 @@ LABELLED_QUERIES: list[LabelledQuery] = [
     ),
     LabelledQuery(
         "How does Shannon's equation bound the capacity of a communication channel?",
-        ["Sensors signals"],
+        ["Sensing, Signals and Communications"],  # retitled 2026-06-09 (was 'Sensors signals')
     ),
     LabelledQuery(
         "What has Alec achieved academically?",
@@ -112,7 +112,7 @@ LABELLED_QUERIES: list[LabelledQuery] = [
     ),
     LabelledQuery(
         "How does Locus rerank retrieval candidates with a cross-encoder?",
-        ["Locus"],
+        ["knowledge base"],  # retitled 2026-06-09: locus repo title dropped the name 'Locus'
         expected_paths=["retrieve/rerank.py"],
     ),
     # --- slides corpus (step 9).

@@ -182,3 +182,21 @@ def test_notebook_bad_json_raises(tmp_path: Path):
     path = _write(tmp_path / "broken.ipynb", "{not json")
     with pytest.raises(ValueError, match="bad JSON"):
         extract_notebook(path)
+
+
+def test_data_dump_word_list_is_rejected(tmp_path: Path):
+    """A single-column word/id list quarantines rather than being confabulated into a
+    document (the words_alpha.txt -> 'network security' hallucination, 2026-06-09 audit)."""
+    word_list = "\n".join(f"word{i:05d}" for i in range(300))  # 300 single-token lines
+    path = _write(tmp_path / "words_alpha.txt", word_list)
+    with pytest.raises(ValueError, match="non-prose data file"):
+        extract_text(path)
+
+
+def test_short_list_and_prose_are_not_rejected(tmp_path: Path):
+    # Below the line floor: a short list is harmless and ingests.
+    extract_text(_write(tmp_path / "short.txt", "\n".join(f"item{i}" for i in range(40)) + "\n" + BODY))
+    # Real prose (multi-token lines) ingests even when long.
+    prose = "\n".join("This sentence has several words on its own line." for _ in range(300))
+    doc = extract_text(_write(tmp_path / "prose.txt", prose))
+    assert doc.sections

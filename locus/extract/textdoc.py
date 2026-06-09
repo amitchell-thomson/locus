@@ -44,10 +44,36 @@ _FRONTMATTER_KV = re.compile(r"^([A-Za-z_][\w-]*)\s*:\s*(.*)$")
 _FM_DATE = re.compile(r"^(\d{4})(?:[-/](\d{1,2})(?:[-/](\d{1,2}))?)?\b")
 
 
+# Pre-ingest content gate (2026-06-09 external audit): a plain-text/markdown file that is
+# overwhelmingly one token per line is a DATA FILE — a word list, id/keyword dump, single-
+# column export — not a document. Ingesting one lets the synthesis pass confabulate a fluent
+# document over meaningless input (words_alpha.txt -> a hallucinated "network security via
+# advanced encryption" doc with 3043 chunks + 4129 phantom entities). Reject it so it
+# quarantines with a clear reason rather than polluting the corpus and entity space. H1 was a
+# process failure (no input validation), not a model failure — this is the gate that was missing.
+_DATA_DUMP_MIN_LINES = 100
+_DATA_DUMP_SINGLE_TOKEN_FRAC = 0.9
+
+
+def _reject_if_data_dump(text: str, path: Path) -> None:
+    """Raise (→ quarantine) if `text` reads as a single-column data file, not prose."""
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    if len(lines) < _DATA_DUMP_MIN_LINES:
+        return  # too short to judge; a real short list is harmless
+    single = sum(1 for ln in lines if len(ln.split()) == 1)
+    frac = single / len(lines)
+    if frac >= _DATA_DUMP_SINGLE_TOKEN_FRAC:
+        raise ValueError(
+            f"non-prose data file: {frac:.0%} of {len(lines)} lines are a single token — "
+            f"{path.name} looks like a word/id list, not a document (quarantined, not ingested)"
+        )
+
+
 def extract_markdown(path: str | Path) -> ExtractedDoc:
     """Extract a structured ExtractedDoc from the Markdown file at `path`."""
     path = Path(path)
     meta, body = _parse_frontmatter(_read_text(path))
+    _reject_if_data_dump(body, path)
     return _from_markdown(body, path, meta)
 
 
@@ -62,6 +88,7 @@ def extract_text(path: str | Path) -> ExtractedDoc:
     text = _read_text(path)
     if not text.strip():
         raise ValueError("no extractable text")
+    _reject_if_data_dump(text, path)
     sections = build_sections([(None, text)])
     return ExtractedDoc(
         title=path.stem,

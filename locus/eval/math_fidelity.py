@@ -2,7 +2,7 @@
 
 Claude (multimodal) compares a rendered page against a candidate transcription and scores
 equation survival. Two uses (plan step 6 + step 7):
-  - the math-OCR engine benchmark (scripts/judge_mathocr.py) — choosing the routing engine;
+  - the math-OCR engine benchmark (scripts/benchmarks/judge_mathocr.py) — choosing the routing engine;
   - the corpus math-fidelity metric — the gate metric for the bulk ingest ("fraction of
     math-bearing sections whose formulas survived extraction").
 

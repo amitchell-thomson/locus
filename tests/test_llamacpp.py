@@ -2,7 +2,7 @@
 
 All model-free: a fake Popen + fake HTTP drive LlamaServer; the pipeline fallback test
 monkeypatches the server to fail. The live server (spawn, GPU offload, real chat) is
-validated separately by scripts/judge_figures.py and the smoke run.
+validated separately by scripts/benchmarks/judge_figures.py and the smoke run.
 """
 
 import json

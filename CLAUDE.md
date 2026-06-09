@@ -113,7 +113,7 @@ not the domain concepts they implement, so the owner's projects orphaned in the 
 (pass profile `concept_entities`, code-only) extracts domain concepts from a repo's NARRATIVE
 (synthesis + README + file summaries, never raw code — the §11.B-safe surface) into the same
 `(name,type)` space as paper entities; `locus link`'s deterministic tiers then merge them.
-Backfill existing repos: `scripts/backfill_code_concepts.py` (no re-embed) → `locus link` →
+Backfill existing repos: `scripts/backfills/backfill_code_concepts.py` (no re-embed) → `locus link` →
 `locus export-obsidian`. Result: **0 Obsidian orphans** (was 3); quant projects link to each
 other (regime-ml ↔ tanker-flow ↔ downside-risk), `links_recall` 1.000 over 13 pairs. Config
 `[concepts]`. **Boundary:** project→PAPER links surface but at rank 6–8 (shared=1) — top-5
@@ -373,7 +373,7 @@ locus/
 │   ├── export/           # obsidian.py — read-only vault projection (§13, joins-only)
 │   ├── query.py          # retrieve → assemble → Claude (multimodal)
 │   └── mcp_server.py
-├── scripts/              # benchmarks, calibration, backfills, judges (one-off, kept)
+├── scripts/              # one-off, kept: backfills/ benchmarks/ reingest/ (+ scripts/README.md)
 ├── eval-artifacts/       # benchmark results + reports (mathocr, figures)
 ├── tests/                # 322 model-free-by-default tests
 └── vault/                # incoming/ (watched, category folders) · raw/ · notes/ · locus.db

@@ -61,6 +61,23 @@ repositories, slides, CV — 782 sections, 3,876 chunks, 4,025 propositions, 389
 Every number is reproducible: `locus eval --suite full` runs all gates; `locus audit` runs
 deterministic corpus QC with zero API calls.
 
+## Key decisions
+
+The choices that shaped the system, and why. Each is elaborated in the sections below.
+
+| Decision | Why |
+|---|---|
+| **Build the retrieval engine, don't buy** | No off-the-shelf RAG does hierarchical L1/L2/L3 retrieval + cross-encoder rerank with figures and atomic claims as first-class targets. The engine is the differentiator — it's the part worth owning; everything else is glue. |
+| **Local models ingest; the Claude API only generates** | The 8 GB VRAM ceiling and a *corpus-never-leaves-the-server* constraint force the split. The only content that ever leaves the machine is the retrieved context for the question being asked. |
+| **One schema for every source type** | A PDF, a git repo, and a slide deck all reduce to L1 document → L2 sections → L3 chunks, so retrieval logic never forks per format. A new format is an extraction problem, never a retrieval one. |
+| **Propositions and figures are first-class, embedded units** | The highest-signal content must be *searchable*, not merely assembled into context after a coarser unit matches. Figures additionally attach to the Claude call as images, so interpretation happens in the strongest model. |
+| **Hybrid retrieval, then rerank** | Dense embeddings blur exact symbols and tickers, so a BM25 lexical arm plus path- and entity-anchored arms run alongside four dense granularities — all merged through a CPU cross-encoder with diversity-aware selection. |
+| **Choose models by judged benchmark, on risk asymmetry** | GOT-OCR-2.0 was picked over two *higher-scoring* math-OCR engines because it degrades instead of inventing. The ingest LLM, the VLM serving path, and the mmproj quantisation were all settled by A/B against the source / page image. |
+| **Quality is eval-gated and adversarially audited** | Four eval suites plus a deterministic, API-free audit gate every change. Red-team findings become permanent audit predicates or eval labels, so a fixed bug cannot silently recur. |
+| **The model proposes, deterministic code disposes** | Every structured LLM output is schema-validated with bounded repair, grounding-checked against its source, and overridable by hard guards. One bad document quarantines; the batch continues. |
+| **Derived data is regenerable, never authoritative** | The canonical entity graph, pass caches, and the Obsidian projection are pure functions of the SQLite store — rebuilt with one command, never mutating the ingested tables. |
+| **Cross-domain links via a canonical entity substrate** | Surface variation ("LTI model" vs "Linear, Time-invariant model") fragments the very connections a knowledge graph is for; deterministic merge tiers + Claude-adjudicated fuzzy clusters (with hard guards) canonicalise them, and multi-query expansion bridges vocabulary across fields. |
+
 ## Architecture
 
 ```
@@ -251,23 +268,18 @@ Setup: `uv sync` (extras: `[rerank]`, `[mathocr]`), copy `config.example.toml` �
 (+ `qwen2.5vl:7b` for figures). Optional: LibreOffice (slide renders), llama.cpp
 (fast figure descriptions) — absent, the pipeline degrades gracefully and says so.
 
-## Design notes
+## Hard-won lessons
 
-- **Choose by measurement, not reputation.** The ingest model, the math-OCR engine, the
-  VLM serving path, and even the mmproj quantisation (f16 vs Q8_0 — the Q8 auto-pair
-  *failed* the judge gate: quantised visual features hallucinate more) were all decided
-  by judged benchmarks on real corpus pages.
-- **Risk asymmetry beats average score.** GOT-OCR was picked over two higher-scoring
-  engines because its failure mode is degradation, not invention. The same logic shapes
-  the alias guards: a missed merge is fragmentation; a wrong merge is corruption.
-- **The model proposes, deterministic code disposes.** Every LLM output passes through
-  validation, grounding checks against the source, and hard guards that can overrule it.
-- **Derived data is disposable.** Aliases, caches, the planned Obsidian projection:
-  pure functions of the database, rebuilt with one command, never authoritative.
-- **A split model produces identical output, slowly.** The hardest bug class on 8 GB:
-  a model silently half-evicted to CPU passes every quality gate while running 3× slow —
-  or starves a downstream pass of VRAM entirely. Evictions are now settle-polled and
-  confirmed, and the math suite runs after any VRAM-choreography change.
+Two findings that don't fit the decision table above because they're debugging war stories,
+not choices — and they were the most expensive to learn on an 8 GB card:
+
+- **A split model produces identical output, slowly.** The hardest bug class here: a model
+  silently half-evicted to CPU passes every quality gate while running ~3× slow — or starves a
+  downstream pass of VRAM entirely. Evictions are now settle-polled and confirmed, and the
+  math-fidelity suite runs after any VRAM-choreography change as a regression canary.
+- **Quantised vision features hallucinate.** The mmproj auto-pair at Q8_0 (vs f16) *failed* the
+  figure-judge gate — the language weights quantise cleanly, the visual projector does not — a
+  failure only caught because figure description quality is itself measured against the image.
 
 ## Status
 

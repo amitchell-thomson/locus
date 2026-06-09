@@ -168,12 +168,12 @@ truth and `audit` keeps reporting reality (§11 "0 props is BY DESIGN").
 
 ## 8. Backfill (the existing 12 repos)
 
-`scripts/backfill_code_concepts.py` — for each `source_type='code'` doc, run the pass over its
+`scripts/backfills/backfill_code_concepts.py` — for each `source_type='code'` doc, run the pass over its
 **already-stored** synthesis + summaries + README text and insert `concept` entities. **No
 re-extract, no re-embed, no re-ingest** (the narrative inputs are already in the DB; entities
 aren't vectors). Idempotent via `pass_cache` + the entity UNIQUE constraint. Then:
 
-1. `scripts/backfill_code_concepts.py` (writes concept entities)
+1. `scripts/backfills/backfill_code_concepts.py` (writes concept entities)
 2. `locus link` (rebuild `entity_aliases` — billed Claude adjudication, but cached/incremental)
 3. `locus export-obsidian` (the orphans should now link)
 

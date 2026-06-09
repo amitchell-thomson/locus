@@ -1,7 +1,7 @@
 """Figure-description judging: is a description faithful to the figure image? (step 11.6)
 
 Claude (multimodal) sees the actual figure PNG as ground truth and scores a candidate
-description. Used by scripts/judge_figures.py to gate the llama.cpp vision engine against
+description. Used by scripts/benchmarks/judge_figures.py to gate the llama.cpp vision engine against
 the stored Ollama-served descriptions (the corpus baseline): identical weights served by a
 different executor must produce descriptions of equal faithfulness — speed is judged
 separately by the wall clock.

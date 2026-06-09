@@ -47,6 +47,7 @@ def test_module_context_skips_buckets_and_years():
     ("Calculus 3", None, "Vector Calculus", "Calculus 3 — Vector Calculus"),
     (None, "Lecture 5", "Modern Portfolio Theory", "Lecture 5: Modern Portfolio Theory"),
     (None, None, "Attention Is All You Need", "Attention Is All You Need"),
+    ("Locus", None, "Locus self-hosted knowledge base", "Locus self-hosted knowledge base"),  # no double-name
 ])
 def test_compose(module, seq, topic, expected):
     assert retitle.compose(module, seq, topic) == expected
@@ -128,6 +129,29 @@ def test_build_titles_composes_and_breaks_collisions(conn):
     assert titles[1] == "Ordinary Differential Equations 1 — Lecture 1: Solving ODEs"
     assert titles[2] == "Ordinary Differential Equations 1 — Lecture 6: Fourier Series"
     assert report.changed == 2 and report.api_calls == 2
+
+
+@pytest.mark.parametrize("uri,expected", [
+    ("/h/server-projects/optiver-trading-academy", "Optiver Trading Academy"),
+    ("/h/server-projects/locus", "Locus"),
+    ("locusdrop:alpha-fund", "Alpha Fund"),
+    ("/h/server-projects/quant-data", "Quant Data"),
+])
+def test_clean_repo_name(uri, expected):
+    assert retitle._clean_repo_name(uri) == expected
+
+
+def test_code_repo_title_leads_with_repo_name(conn):
+    # A code doc whose LLM topic is a name-less description gets the repo name prepended.
+    conn.execute(
+        "INSERT INTO documents (id, content_hash, source_type, source_uri, raw_path, title,"
+        " ingest_model, thesis, method, result, category)"
+        " VALUES (1,'h1','code','/h/server-projects/optiver-trading-academy','p','Financial Trading Algorithms',"
+        "'m','t','meth','res','project')",
+    )
+    fake = _FakeClient({"optiver-trading-academy": {"keep_existing": False, "topic": "market making and arbitrage"}})
+    retitle.build_titles(conn, use_llm=True, client=fake, log=lambda *_: None)
+    assert conn.execute("SELECT title FROM documents WHERE id=1").fetchone()["title"] == "Optiver Trading Academy — market making and arbitrage"
 
 
 def test_keep_existing_title_is_left_verbatim(conn):

@@ -216,12 +216,26 @@ def module_context(source_uri: str) -> str | None:
     return None
 
 
+def _clean_repo_name(source_uri: str) -> str:
+    """A display name for a code repo from its path/uri, used as the title's leading slot:
+    'optiver-trading-academy' -> 'Optiver Trading Academy', 'locusdrop:alpha-fund' ->
+    'Alpha Fund'. Already-uppercase tokens (acronyms) are preserved; the rest are
+    capitalised. Repos otherwise lose their identity to a name-less description."""
+    base = source_uri.rstrip("/").split("/")[-1].split(":", 1)[-1]  # drop a 'locusdrop:' prefix
+    words = [w for w in re.split(r"[-_\s]+", base) if w]
+    return " ".join(w if w.isupper() else w.capitalize() for w in words)
+
+
 def compose(module: str | None, seq: str | None, topic: str) -> str:
     """Assemble [Module — ][Seq: ]Topic from the available slots."""
     topic = topic.strip()
     if module and seq:
         return f"{module} — {seq}: {topic}"
     if module:
+        # A topic that already leads with the module name (a repo whose description names
+        # itself) must not be doubled — 'Locus — Locus self-hosted...' -> 'Locus self-hosted...'.
+        if topic.lower().startswith(module.lower()):
+            return topic
         return f"{module} — {topic}"
     if seq:
         return f"{seq}: {topic}"
@@ -309,7 +323,7 @@ def build_titles(
         client = _anthropic_client()
 
     rows = conn.execute(
-        "SELECT id, title, source_uri, source_date, content_hash, "
+        "SELECT id, title, source_uri, source_date, content_hash, source_type, "
         "COALESCE(thesis,'') thesis, COALESCE(method,'') method, COALESCE(result,'') result "
         "FROM documents ORDER BY id"
     ).fetchall()
@@ -320,8 +334,15 @@ def build_titles(
     composed: list[tuple[int, str, str, str | None]] = []  # (id, title, date, uri)
 
     for r in rows:
-        module = module_context(r["source_uri"])
-        seq = parse_sequence(Path(r["source_uri"].rstrip("/")).name)
+        if r["source_type"] == "code":
+            # A repo has no incoming-anchored module, and a name-less description loses the
+            # project's identity ('self-hosted knowledge base' for what is Locus). Use the
+            # repo name as the module slot so the title leads with it ('Locus — ...'); the
+            # LLM topic stays the description. seq is meaningless for a repo.
+            module, seq = _clean_repo_name(r["source_uri"]), None
+        else:
+            module = module_context(r["source_uri"])
+            seq = parse_sequence(Path(r["source_uri"].rstrip("/")).name)
 
         if not use_llm:
             # The deterministic path has no way to tell a good title from a banner, so it

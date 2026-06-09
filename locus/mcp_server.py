@@ -84,6 +84,7 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
         since: str | None = None,
         until: str | None = None,
         category: str | None = None,
+        include_excluded: bool = False,
     ):
         """Retrieve grounded context for a query from the knowledge vault.
 
@@ -103,9 +104,13 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
             since: Optional inclusive lower bound on document date (ISO 'YYYY-MM-DD').
             until: Optional inclusive upper bound on document date (ISO 'YYYY-MM-DD').
             category: Optional document category filter (e.g. 'paper', 'project', 'note').
+            include_excluded: Default False. Some documents are excluded from retrieval by
+                config (e.g. Locus's OWN source code, kept out so it doesn't compete with the
+                owner's knowledge). Set True ONLY when the query is explicitly about Locus's
+                own implementation/source; leave False for everything else.
         """
         facets = _facets(since, until, category)
-        result = run_retrieval(query, facets=facets)
+        result = run_retrieval(query, facets=facets, include_excluded=include_excluded)
         if not result.context:
             return "No relevant material was retrieved for that query (with the given facets)."
         text = f"{_confidence_banner(result)}{result.context}\n\n--- sources ---\n{_sources(result)}"

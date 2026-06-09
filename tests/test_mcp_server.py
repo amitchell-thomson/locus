@@ -123,7 +123,7 @@ def _stub_result(band: str | None = None):
 
 def test_retrieve_tool_annotates_category_and_score(seeded_db, monkeypatch):
     monkeypatch.setattr(
-        mcp_server, "run_retrieval", lambda q, facets=None: _stub_result(band=None)
+        mcp_server, "run_retrieval", lambda q, facets=None, **kw: _stub_result(band=None)
     )
     out = _text(asyncio.run(mcp_server._build().call_tool("retrieve", {"query": "q"})))
     assert "rerank +4.21" in out
@@ -131,17 +131,31 @@ def test_retrieve_tool_annotates_category_and_score(seeded_db, monkeypatch):
     assert "LOW CONFIDENCE" not in out
 
 
+def test_retrieve_tool_passes_include_excluded(seeded_db, monkeypatch):
+    """The MCP tool exposes include_excluded (default False) so Locus's own source — excluded
+    from retrieval by config — can be queried on request, matching the CLI flag."""
+    seen = {}
+    monkeypatch.setattr(
+        mcp_server, "run_retrieval",
+        lambda q, facets=None, **kw: seen.update(kw) or _stub_result(band=None),
+    )
+    asyncio.run(mcp_server._build().call_tool("retrieve", {"query": "q"}))
+    assert seen.get("include_excluded") is False  # default: excluded docs stay out
+    asyncio.run(mcp_server._build().call_tool("retrieve", {"query": "q", "include_excluded": True}))
+    assert seen.get("include_excluded") is True  # opt-in reaches the pipeline
+
+
 def test_retrieve_tool_flags_low_confidence_by_band(seeded_db, monkeypatch):
     # 'absent': strong wording. 'ambiguous': must NOT claim the corpus lacks the topic
     # (the cross-domain mislabel from the 2026-06-05 second evaluation).
     monkeypatch.setattr(
-        mcp_server, "run_retrieval", lambda q, facets=None: _stub_result(band="absent")
+        mcp_server, "run_retrieval", lambda q, facets=None, **kw: _stub_result(band="absent")
     )
     out = _text(asyncio.run(mcp_server._build().call_tool("retrieve", {"query": "q"})))
     assert out.startswith("LOW CONFIDENCE") and "very likely does not cover" in out
 
     monkeypatch.setattr(
-        mcp_server, "run_retrieval", lambda q, facets=None: _stub_result(band="ambiguous")
+        mcp_server, "run_retrieval", lambda q, facets=None, **kw: _stub_result(band="ambiguous")
     )
     out = _text(asyncio.run(mcp_server._build().call_tool("retrieve", {"query": "q"})))
     assert out.startswith("LOW CONFIDENCE") and "covers the parts separately" in out
@@ -179,7 +193,7 @@ def test_retrieve_tool_attaches_figure_images(seeded_db, monkeypatch, tmp_path):
         RetrievedFigure(raw_path="h_fig0.png", page=5, kind="vector",
                         caption="Figure 1", doc_title="Control Notes", rerank_score=4.0),
     ]
-    monkeypatch.setattr(mcp_server, "run_retrieval", lambda q, facets=None: result)
+    monkeypatch.setattr(mcp_server, "run_retrieval", lambda q, facets=None, **kw: result)
     blocks = asyncio.run(mcp_server._build().call_tool("retrieve", {"query": "q"}))
     kinds = [b.type for b in blocks]
     assert kinds == ["text", "text", "image"]

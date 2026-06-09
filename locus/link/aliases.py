@@ -479,7 +479,6 @@ def build_aliases(
         )
         report.llm_candidate_clusters = len(candidates)
         gen_model = model or load().generation.model
-        cache_puts: list[tuple[str, str]] = []
         last_api_call = 0.0  # monotonic time of the previous adjudication call
         for cluster in candidates:
             if len(cluster) > cfg.max_cluster_size:
@@ -511,7 +510,15 @@ def build_aliases(
                     client=client, model=gen_model,
                 )
                 report.llm_calls += 1
-                cache_puts.append((key, verdict.model_dump_json()))
+                # Persist this verdict immediately, in its own commit, so a crash partway
+                # through a rebuild never discards the billed adjudications already made — a
+                # re-run resumes from the cache instead of re-paying for them (2026-06-09:
+                # was a single executemany flushed only at the very end of the loop).
+                with conn:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO pass_cache (key, payload) VALUES (?,?)",
+                        (key, verdict.model_dump_json()),
+                    )
             # Members are deterministic-component REPRESENTATIVES; the co-occurrence guard
             # must see each component's FULL section set, not just the rep's.
             member_sections = [
@@ -527,11 +534,6 @@ def build_aliases(
                         tiers.setdefault(cluster[k], LLM)
                         tiers.setdefault(first, LLM)
                 llm_canonical[uf.find(first)] = (canon_name, canon_type)
-        if cache_puts:
-            with conn:
-                conn.executemany(
-                    "INSERT OR REPLACE INTO pass_cache (key, payload) VALUES (?,?)", cache_puts
-                )
 
     # --- finalise clusters + write ------------------------------------------------------------
     final: dict[int, list[int]] = defaultdict(list)

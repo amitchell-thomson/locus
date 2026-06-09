@@ -329,7 +329,6 @@ def build_titles(
     ).fetchall()
     report = RetitleReport(total=len(rows))
 
-    cache_puts: list[tuple[str, str]] = []
     last_api = 0.0
     composed: list[tuple[int, str, str, str | None]] = []  # (id, title, date, uri)
 
@@ -357,7 +356,7 @@ def build_titles(
         else:
             try:
                 verdict, last_api = _topic_for(
-                    r, model, use_cache, client, cache_puts, report, conn,
+                    r, model, use_cache, client, report, conn, dry_run=dry_run,
                     throttle=cfg.api_call_interval, last_api=last_api,
                 )
                 title = verdict.topic.strip() if verdict.keep_existing else compose(module, seq, verdict.topic)
@@ -380,8 +379,6 @@ def build_titles(
         else:
             report.kept += 1
 
-    if cache_puts and not dry_run:
-        conn.executemany("INSERT OR REPLACE INTO pass_cache (key, payload) VALUES (?,?)", cache_puts)
     if not dry_run:
         snapshot = {str(r["id"]): r["title"] for r in rows}
         _backup_path().write_text(json.dumps(snapshot, indent=0))
@@ -394,11 +391,13 @@ def build_titles(
     return report
 
 
-def _topic_for(r, model, use_cache, client, cache_puts, report, conn, *, throttle, last_api):
+def _topic_for(r, model, use_cache, client, report, conn, *, dry_run, throttle, last_api):
     """Resolve one document's TopicVerdict via cache or a throttled API call.
 
-    Returns (verdict, last_api) — last_api is the monotonic timestamp of the most recent
-    real API call, advanced only on a cache miss so the caller can space subsequent calls.
+    On a cache miss the freshly distilled verdict is persisted to pass_cache immediately, in
+    its own commit (unless dry_run), so a crash never discards a billed topic. Returns
+    (verdict, last_api) — last_api is the monotonic timestamp of the most recent real API
+    call, advanced only on a cache miss so the caller can space subsequent calls.
     """
     key = _topic_cache_key(r["content_hash"], model)
     if use_cache:
@@ -416,7 +415,14 @@ def _topic_for(r, model, use_cache, client, cache_puts, report, conn, *, throttl
         method=r["method"], result=r["result"], client=client, model=model,
     )
     report.api_calls += 1
-    cache_puts.append((key, verdict.model_dump_json()))
+    # Persist immediately (own commit) so a crash never discards a billed topic — a re-run
+    # resumes from cache instead of re-paying. dry_run stays side-effect-free (no cache write).
+    if not dry_run:
+        with conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO pass_cache (key, payload) VALUES (?,?)",
+                (key, verdict.model_dump_json()),
+            )
     return verdict, time.monotonic()
 
 

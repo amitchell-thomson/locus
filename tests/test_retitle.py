@@ -169,6 +169,34 @@ def test_cache_avoids_second_api_call(conn):
     assert r1.api_calls == 1 and r2.api_calls == 0 and r2.cache_hits == 1
 
 
+def test_verdict_persisted_incrementally_survives_a_crash(conn):
+    # A hard interrupt mid-run (BaseException — NOT caught by the per-doc Exception guard)
+    # must leave the already-distilled verdict in pass_cache, so a re-run resumes from cache
+    # instead of re-paying. With the old end-of-run flush, doc 1's billed verdict would be
+    # lost entirely. Docs process in id order, so doc 1 is cached before doc 2 crashes.
+    _seed(conn, 1, "/h/vault/incoming/papers/one.pdf", "banner one", "To study X.")
+    _seed(conn, 2, "/h/vault/incoming/papers/two.pdf", "banner two", "To study Y.")
+
+    class _CrashOnSecond(_FakeClient):
+        def create(self, **kwargs):
+            if self.calls >= 1:  # first verdict already served + committed; now hard-crash
+                raise KeyboardInterrupt("simulated interrupt mid-run")
+            return super().create(**kwargs)
+
+    fake = _CrashOnSecond({"one.pdf": {"keep_existing": False, "topic": "Study of X"}})
+    with pytest.raises(KeyboardInterrupt):
+        retitle.build_titles(conn, use_llm=True, client=fake, log=lambda *_: None)
+    # doc 1's verdict persisted before the crash; doc 2 never reached its write.
+    assert conn.execute("SELECT COUNT(*) AS n FROM pass_cache").fetchone()["n"] == 1
+    # and a resumed run pays only for doc 2 (doc 1 is a cache hit).
+    resumed = _FakeClient({
+        "one.pdf": {"keep_existing": False, "topic": "Study of X"},
+        "two.pdf": {"keep_existing": False, "topic": "Study of Y"},
+    })
+    rep = retitle.build_titles(conn, use_llm=True, client=resumed, log=lambda *_: None)
+    assert rep.cache_hits == 1 and rep.api_calls == 1
+
+
 def test_no_llm_uses_deterministic_topic(conn):
     base = "/h/vault/incoming/coursework/oxford-year1/Calculus/calc"
     _seed(conn, 1, f"{base}/Slides lecture 1.pdf", "banner", "To introduce vector calculus and its operators.")

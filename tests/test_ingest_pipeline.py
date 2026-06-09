@@ -254,6 +254,21 @@ def test_markdown_ingests_end_to_end(tmp_path, conn, fake_passes):
     assert row["source_date"] == "2023-07-21"  # frontmatter date beats mtime fallback
 
 
+def test_data_dump_file_is_quarantined_not_ingested(tmp_path, conn, fake_passes):
+    """A single-column data file (word/id list) must quarantine at the pipeline level, not
+    just raise in the extractor (2026-06-09 audit: words_alpha.txt was confabulated into a
+    fake doc with 4129 phantom entities). The reject fires at EXTRACT, so no LLM pass runs
+    and nothing is written — the closing point of that audit was that 'rejects in source'
+    and 'rejects in the running pipeline' must not silently diverge."""
+    dump = tmp_path / "words_alpha.txt"
+    dump.write_text("\n".join(f"keyword{i:05d}" for i in range(300)), encoding="utf-8")
+    result = ingest_file(dump, conn)
+    assert result.status == "quarantined"
+    assert "non-prose data file" in (result.error or "")
+    assert _count(conn, "documents") == 0  # nothing written
+    assert _count(conn, "entities") == 0  # no phantom entity space
+
+
 def test_slides_ingest_end_to_end(tmp_path, conn, fake_passes):
     from pptx import Presentation
     from pptx.util import Inches

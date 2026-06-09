@@ -22,16 +22,38 @@ from dataclasses import dataclass
 # How many shared canonical names to sample per related document (display context).
 _SAMPLE_NAMES = 5
 
-# Round-6 audit: code repos' related lists were dominated by ubiquitous bare identifiers
-# ("2 shared: main, run") — every Python project defines `main`, so sharing it says
-# nothing. Excluded from the RELATED pool only (alias table and retrieval untouched):
-# short, all-lowercase, single-token names. Distinctive identifiers survive on length
-# ('run_migrations_offline' — the genuine Alembic link), and anything with case or
-# spaces ('F1', 'Bode plot') is untouched.
+# Code-identifier noise in the RELATED pool (alias table + retrieval untouched). A "related
+# document" should mean a shared TOPIC, but code repos were linking on scaffolding identifiers
+# that every project of a given stack defines regardless of subject. Excluded in four classes:
+#
+#   - short bare tokens (round-6): short, all-lowercase, single-token ("main", "run") —
+#     every Python project has them.
+#   - privates / dunders: a leading underscore ("_cand", "__init__") — implementation detail,
+#     never a topical link.
+#   - test scaffolding: a "test_" prefix — test function names are framework boilerplate.
+#   - framework boilerplate by name (_CODE_BOILERPLATE): the Alembic migration-env API
+#     (upgrade/downgrade/run_migrations_*). Round-7 audit: the locus repo's top "related"
+#     doc was Tanker-Flow purely because both merely *use* Alembic — `run_migrations_offline`
+#     had been kept as "distinctive" (round 6) when it is in fact the most generic possible
+#     code link. DISTINCTIVE shared identifiers (a domain function reused across the owner's
+#     own projects, e.g. `implied_vol_from_mid`) are deliberately NOT listed — those ARE a
+#     real cross-project link, the whole point of the layer.
+#
+# Anything with case or spaces ('F1', 'Bode plot', a shared library class) is untouched.
+_CODE_BOILERPLATE = frozenset(
+    {"upgrade", "downgrade", "run_migrations_online", "run_migrations_offline"}  # Alembic env.py
+)
 _BARE_IDENT_FILTER = (
-    "NOT (a.canonical_name = lower(a.canonical_name)"
-    "     AND length(a.canonical_name) < 6"
-    "     AND a.canonical_name NOT LIKE '% %')"
+    "NOT ("
+    "  a.canonical_name LIKE '\\_%' ESCAPE '\\'"
+    "  OR a.canonical_name LIKE 'test\\_%' ESCAPE '\\'"
+    "  OR (a.canonical_name = lower(a.canonical_name)"
+    "      AND length(a.canonical_name) < 6"
+    "      AND a.canonical_name NOT LIKE '% %')"
+    "  OR lower(a.canonical_name) IN ("
+    + ",".join(f"'{n}'" for n in sorted(_CODE_BOILERPLATE))
+    + ")"
+    ")"
 )
 
 

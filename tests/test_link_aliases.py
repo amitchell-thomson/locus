@@ -588,22 +588,29 @@ def test_typo_tier_respects_type_and_length(conn):
 
 
 def test_related_documents_filter_bare_identifiers(conn):
-    # Round-6 audit: code repos linked on ubiquitous bare identifiers ("2 shared: main,
-    # run"). Short all-lowercase single-token names are excluded from the related pool;
-    # distinctive identifiers ('run_migrations_offline') and cased names ('F1') survive.
+    # Round-6/round-7 audits: code repos linked on scaffolding identifiers every project of
+    # a stack defines. Excluded classes: short bare tokens ("main", "run"), privates/dunders
+    # ("_cand"), test scaffolding ("test_*"), and framework boilerplate by name — the Alembic
+    # env API ("upgrade", "run_migrations_offline"), which round 6 had wrongly kept as
+    # "distinctive". A DISTINCTIVE shared identifier ("implied_vol_from_mid") is a real
+    # cross-project link and survives — that is the whole point of the layer.
     from locus.link.related import related_documents
 
     for d in (1, 2):
         _seed_doc(conn, d, source_type="code", title=f"Repo {d}")
         _seed_section(conn, d, d)
-        _seed_entity(conn, d, d, "main", "method")
-        _seed_entity(conn, d, d, "run", "method")
-        _seed_entity(conn, d, d, "run_migrations_offline", "method")
+        _seed_entity(conn, d, d, "main", "method")  # short bare token
+        _seed_entity(conn, d, d, "run", "method")  # short bare token
+        _seed_entity(conn, d, d, "upgrade", "method")  # Alembic env API (no '_' to catch it)
+        _seed_entity(conn, d, d, "run_migrations_offline", "method")  # Alembic env API
+        _seed_entity(conn, d, d, "_cand", "method")  # private (leading underscore)
+        _seed_entity(conn, d, d, "test_signal", "method")  # test scaffolding
+        _seed_entity(conn, d, d, "implied_vol_from_mid", "method")  # distinctive — survives
     conn.commit()
     al.build_aliases(conn, use_llm=False)
     (rel,) = related_documents(conn, 1)
     assert rel.shared_count == 1
-    assert rel.shared_names == ("run_migrations_offline",)
+    assert rel.shared_names == ("implied_vol_from_mid",)
 
 
 # --- API throttle ----------------------------------------------------------------------------------

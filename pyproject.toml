@@ -2,6 +2,8 @@
 name = "locus"
 version = "0.1.0"
 description = "Self-hosted, AI-queryable personal knowledge vault (CLI, query-driven RAG)."
+authors = [{ name = "Alec Mitchell-Thomson" }]
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.6",

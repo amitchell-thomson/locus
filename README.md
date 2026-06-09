@@ -18,6 +18,10 @@ locus query "How do regime-switching models in finance relate to
 > quant-finance paper and control-theory lecture notes — because retrieval surfaces both
 > sides and Claude synthesises over the actual source text, attached figures included.
 
+<!-- DEMO: embed a 2–4 min walkthrough (video or GIF) here — ingest a document →
+     `locus query` with citations → a cross-domain link → the MCP server answering inside
+     Claude Code → the Obsidian graph. This is the highest-leverage portfolio artifact. -->
+
 ---
 
 ## Why this exists
@@ -43,23 +47,26 @@ into Claude Code / Desktop on demand).
 
 ## Headline results
 
-Measured on the live 33-document corpus (coursework, quant-finance + CS papers, 5 code
-repositories, slides, CV — 782 sections, 3,876 chunks, 4,025 propositions, 389 figures,
-5,948 entity mentions):
+Measured on the live 291-document corpus — multi-year Oxford engineering coursework (246
+PDFs), 13 quant-finance and CS papers, 12 tracked code repositories, slide decks, notebooks,
+and career documents — comprising 2,986 sections, 10,082 chunks, 16,308 propositions, 3,886
+figures, and 21,173 entity mentions canonicalised into ~2,160 cross-document entities:
 
 | Metric | Result |
 |---|---|
-| Labelled retrieval recall@8 (21 queries incl. code + figures + alias-bridged) | **1.000** |
+| Labelled retrieval recall@8 (53 queries incl. code, figures, alias-bridged) | **1.000** |
+| Mean reciprocal rank | **0.843** |
 | Cross-domain recall / confidence-banner misfires | **1.000 / 0** |
 | File-level recall (the *source file* surfaces, not prose about it) | **1.000** |
-| Related-document link pairs (entity-graph layer) | **4/4** |
-| Math extraction fidelity (Claude-judged vs page image) | **0.93** (raw text layer: 0.73) |
-| Ingest quality, LLM-as-judge, 6 dimensions | **4.35 / 5** |
+| Related-document link pairs (entity-graph layer) | **13 / 13** |
+| Math extraction fidelity, Claude-judged vs page image (sampled, in band) | **~0.87** |
+| Ingest quality, LLM-as-judge, 6 dimensions (sampled) | **~4.3 / 5** |
 | Figure description throughput (GPU vision encode vs CPU) | **13× faster at judged parity** |
-| Tests (model-free by default: fake clients, injected embeddings) | **322 green** |
+| Tests (model-free by default: fake clients, injected embeddings) | **416 green** |
 
 Every number is reproducible: `locus eval --suite full` runs all gates; `locus audit` runs
-deterministic corpus QC with zero API calls.
+deterministic corpus QC with zero API calls. (Sampled metrics carry small run-to-run noise;
+the retrieval, link, and audit gates are deterministic.)
 
 ## Key decisions
 
@@ -186,6 +193,15 @@ entity retrieval (query "KL divergence", surface the document that only ever wri
 "Kullback-Leibler (KL) divergence") and a joins-only related-documents view in the CLI
 and MCP server.
 
+Two layers sit on top of it. **Code repositories are given the domain concepts they
+implement** — extracted from each repo's README, synthesis, and file summaries (never raw
+code, where an 8B model is weakest) — so a project links to the *papers and coursework on the
+same subject*, not just to other code: the regime-detection repo surfaces the Markov-switching
+papers it's built on. And a read-only **Obsidian projection** (`locus export-obsidian`) renders
+the whole corpus as a browsable graph — document notes with synthesis frontmatter, canonical
+entity hubs, and related-document edges — generated one-way from SQLite and never read back,
+so the shape of the corpus (clusters, bridges, orphans) becomes visible without leaving it.
+
 ### Retrieval: hybrid, reranked, diversity-aware, calibrated
 
 Six candidate arms (four dense granularities, BM25 lexical for the exact symbols dense
@@ -253,8 +269,14 @@ locus query "What did my Citadel deck recommend about monetary policy?"
 locus retrieve "transfer function H(omega)" --since 2025-01-01 --category coursework
 locus inspect <doc>                                # synthesis, sections, related documents
 
-# link + quality
+# link + project
 locus link                                         # (re)build the entity-alias substrate
+locus retitle                                      # distinctive, collision-broken titles corpus-wide
+locus export-obsidian                              # render the corpus as a read-only Obsidian vault
+
+# operate + quality
+locus status                                       # one-screen health: counts, alias staleness, backups
+locus backup        /  locus restore <snap>        # WAL-safe snapshot of DB + raw store + notes
 locus audit                                        # deterministic corpus QC, no API
 locus eval --suite full                            # judge + math + retrieval gates
 
@@ -283,10 +305,13 @@ not choices — and they were the most expensive to learn on an 8 GB card:
 
 ## Status
 
-Build steps 1–12 complete and gated. Next: the bulk pour of the multi-year corpus
-(runbook in `docs/pour-runbook.md`), then the post-pour roadmap — ANN indexing when the
-brute-force-KNN warning fires, an Obsidian projection of the canonical entity graph, and
-YouTube/podcast transcript ingest.
+Build steps 1–12 complete and gated, the multi-year corpus poured (33 → 291 documents,
+deduplicated; runbook in `docs/pour-runbook.md`), and the post-pour roadmap largely shipped:
+corpus-level distinctive titling, WAL-safe backup/restore and a one-screen health command, a
+read-only Obsidian projection of the canonical entity graph, and cross-corpus code-concept
+linking so projects connect to the papers they implement. Open: an ANN index when brute-force
+KNN's count warning fires (it is fine at this scale), fuzzy concept linking to lift
+project↔paper connections into the top ranks, and transcript ingest.
 
 ---
 

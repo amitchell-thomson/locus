@@ -22,35 +22,49 @@ decks, project write-ups, achievements, historical records.
 compute) is effectively unbounded; retrieval latency and answer quality are the only
 constraints that matter. Workflow is query-driven, not browse-driven; no GUI.
 
-## 2. Current state (2026-06-07, post remediation round 5)
+## 2. Current state (2026-06-09, post bulk pour + round-6 desktop audit)
 
-Steps 1–12 of the build plan are **done**, plus **remediation round 5** (the fifth external
-desktop-Claude audit): window-bounded summary inputs (v3 — killed the oversized-section
-hallucination class at its root), base-concept entity emission (compounds also emit the
-grounded base concept — the cross-paper link bridge), typo-tier alias candidates
-(PCMCI/PCMIC merged; digit-guarded), IDF-weighted name-deduped related-docs, answer-key
-file exclusion from self-ingest, gap audit-line filtering, API throttle on alias
-adjudication. ONE full re-ingest (2.91 h, 0 quarantines) + alias rebuild landed it all.
+Steps 1–12 done, and the **BULK POUR is complete**: 33 → **306 docs** (coursework 246,
+career 27, project 15, paper 13, note 5) — multi-year Oxford engineering coursework,
+quant/CS papers, tracked code repos, slides, career/CV. Full ingest→retrieve→generate spine
+for PDF/DOCX/MD/TXT/IPYNB/PPTX/code-repos; math-faithful OCR; figures as a first-class
+multimodal unit; entity-alias link substrate (cross-doc canonicals **2,217**); MCP server;
+four eval suites + deterministic audit. **384 tests.**
 
-Working today on a 33-doc heterogeneous corpus (coursework, quant/CS papers, code repos,
-slides, CV): full ingest→retrieve→generate spine for PDF/DOCX/MD/TXT/IPYNB/PPTX/code-repos;
-math-faithful OCR; figures as a first-class multimodal retrieval unit; entity-alias link
-substrate (cross-doc canonicals 230; regime↔SVAR/Neural-Markov now link via "Markov
-model"/"regime shift" base concepts); MCP server; four eval suites.
+Post-pour work landed this round (on top of the pour):
+- **Titles** — `locus retitle` (NEW, billed/cached, `locus/retitle.py`): corpus-level
+  distinctive `[Module — ][Seq:] Topic` titles, collision-broken to **0 duplicates**; code
+  repos lead with the project name. (At ingest, lecture series + generic-metadata exports
+  had collapsed to one shared title; this is the fix. Title backup at `vault/title_backup*`.)
+- **Incremental repo re-ingest** (NEW `locus/repo_sync.py`): a commit re-prepares only the
+  files it changed (blob-manifest diff vs the stored manifest), not the whole repo. Repo
+  watching is now a **separate `locus watch-repo`** process, mutually exclusive with
+  `locus watch` (incoming-only) via the shared ingest lock.
+- **`.ipynb` files ingest inside code repos** (rendered to a markdown section).
+- **Round-6 desktop-audit remediation:** (H1/M1) `words_alpha.txt` (the English dictionary)
+  had been ingested and the synthesis pass **hallucinated** a fake doc with 4129 phantom
+  entities that hung retrieval — deleted; a **pre-ingest content gate** now quarantines
+  single-column data files (`textdoc._reject_if_data_dump`). (M3) the self-ingested locus
+  repo is **excluded from production retrieval** (`[retrieve].exclude_source_uris`;
+  `--include-excluded` overrides). Stop-entity guard enabled (`[alias].stop_doc_freq_ratio`
+  0.4 — inert until an entity exceeds 40% of the corpus; IDF weighting does the live work).
 
-Round-5 gate: recall@8 **1.000** / cross-domain **1.000** / banner misfires **0** /
-file_recall **1.000** / links_recall **1.000**; judge **4.02**/5 (band 4.02–4.35; entity
-precision dipped with base-concept emission — judged marginal, accepted for the link
-payoff); math fidelity 0.775 n=20 raw — **verified sample composition, not regression**
-(two never-before-sampled vector-drawn-formula pages at 0.06/0.19 drag it; the other 18
-average 0.847, in band; extraction byte-identical, detector silent on those pages both
-ingests — the vector-formula class is the documented §11 ceiling). Audit QC zero
-(ungrounded summaries 0 corpus-wide). 331 tests.
+Eval (post-pour, post-fix): recall@8 **0.929**, cross-domain 1.000, banner 0.000,
+file_recall 1.000; math fidelity **0.869** (in band — the OCR-fallback pages are handwritten
+notes / vector-drawn formulas, GOT's safe degrade-not-invent, **not** a VRAM failure);
+audit QC 0 ungrounded summaries. `links_recall` is **stale** (title-substring labels broken
+by retitle + corpus growth crowding the related top-5) — needs label re-curation, not a
+retrieval fix.
 
-**Next: the BULK INGEST** (multi-year corpus pour) — owner-run, checklist in
-`docs/pour-runbook.md`. Open blocker: the laptop outbox's `coursework/` folder is not
-syncing. **After the pour (not re-ingest-bound):** ANN-index warning (§11), Obsidian
-projection (§13), YouTube/podcast transcript ingest, multi-query cross-domain expansion.
+**Known open (priority):** **H2 — cross-domain bridge.** Within-domain retrieval is strong,
+but a query in one domain's vocabulary doesn't surface the other's: the entity bridge fires
+(shared "state space" canonical) yet the cross-encoder demotes the semantically-distant
+match below the floor. The fix is **multi-query cross-domain expansion** (§13/planned), NOT
+more canonicalization. Also open: eval-label re-curation (title-id matching would be more
+robust than title-substring); doc 165 §10 F1 prop reads inverted (1/14, synthesis correct —
+ledgered); `[183] Aaron Rose CV` is a third party's document (confirm it belongs); `link`
+and `retitle` batch their cache writes at the end (a crash wastes spend — make incremental);
+ANN index (§11) when KNN latency degrades; Obsidian projection (§13); transcript ingest.
 
 ## 3. Core principles
 

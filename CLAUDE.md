@@ -56,11 +56,14 @@ audit QC 0 ungrounded summaries. `links_recall` is **stale** (title-substring la
 by retitle + corpus growth crowding the related top-5) — needs label re-curation, not a
 retrieval fix.
 
-**Known open (priority):** **H2 — cross-domain bridge.** Within-domain retrieval is strong,
-but a query in one domain's vocabulary doesn't surface the other's: the entity bridge fires
-(shared "state space" canonical) yet the cross-encoder demotes the semantically-distant
-match below the floor. The fix is **multi-query cross-domain expansion** (§13/planned), NOT
-more canonicalization. Also open: eval-label re-curation (title-id matching would be more
+**H2 — cross-domain bridge: FIXED** via **multi-query expansion** (`retrieve/multiquery.py`):
+a bridge-shaped or low-confidence query is rephrased into other disciplinary vocabularies
+(local qwen) and each candidate is reranked against the variant that found it, so a match
+written in another field's terms clears the floor instead of being demoted. Live: the
+labelled bridge query now co-retrieves the engineering control doc (−3.25 → +1.20) with the
+finance/ML papers. Tune via `[retrieve].multi_query_expansion / multi_query_k`.
+
+**Known open (priority):** eval-label re-curation (title-id matching would be more
 robust than title-substring); doc 165 §10 F1 prop reads inverted (1/14, synthesis correct —
 ledgered); `[183] Aaron Rose CV` is a third party's document (confirm it belongs); `link`
 and `retitle` batch their cache writes at the end (a crash wastes spend — make incremental);

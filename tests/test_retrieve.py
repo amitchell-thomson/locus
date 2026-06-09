@@ -357,6 +357,23 @@ def test_split_facets_on_bridge_queries():
     assert split_facets("gradient descent learning rate") == []
 
 
+def test_decompose_conjunction():
+    from locus.retrieve.pipeline import decompose_conjunction
+
+    # 'both X and Y' distributes the shared context over each conjunct.
+    assert decompose_conjunction("How is Fourier used both for signals and for solving PDEs?") == [
+        "How is Fourier used for signals?", "How is Fourier used for solving PDEs?",
+    ]
+    # repeated preposition without 'both' ('in X and in Y').
+    assert decompose_conjunction("Where does KL appear in estimation and in regime evaluation?") == [
+        "Where does KL appear in estimation?", "Where does KL appear in regime evaluation?",
+    ]
+    # compound nouns / single-topic queries must NOT fire (no bare-'and' mis-split).
+    assert decompose_conjunction("Explain signals and systems theory.") == []
+    assert decompose_conjunction("What is the Biot number and transient conduction?") == []
+    assert decompose_conjunction("Compare both methods.") == []  # no 'and' after 'both'
+
+
 def _facet_fakes(monkeypatch, floor, scores, facet_scores):
     """Pipeline fakes where score_pairs returns the next row of facet_scores per facet."""
     import types

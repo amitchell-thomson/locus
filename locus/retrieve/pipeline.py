@@ -63,6 +63,50 @@ def split_facets(query: str) -> list[str]:
     return facets if len(facets) >= 2 else []
 
 
+# Correlative / parallel conjunctions marking a query with two distinct facets that a SINGLE
+# retrieval pass under-serves: both facets exist in the corpus, but the dominant one
+# monopolises the top-k and crowds the other out (unlike _BRIDGE, which is cross-DOMAIN
+# vocabulary mismatch). 2026-06-09: "...Fourier analysis used both for signals and for solving
+# PDEs" returned only PDE docs — yet the distributed "...used for signals" surfaces the
+# Time-Frequency docs at +4.7. Two patterns, "both X and Y" tried first (it strips the "both"
+# cleanly); else a repeated preposition ("for X and for Y", "in X and in Y").
+_BOTH_AND = re.compile(r"^(.*?)\bboth\b\s+(.+?)\s+\band\b\s+(.+?)([?.!]*)$", re.IGNORECASE | re.DOTALL)
+_PREP = r"(?:for|in|of|on|to|with|about|across|over|into|from)"
+_PREP_AND = re.compile(
+    rf"^(.*?)\b({_PREP})\s+(.+?)\s+and\s+(?:\2)\s+(.+?)([?.!]*)$", re.IGNORECASE | re.DOTALL
+)
+
+
+def decompose_conjunction(query: str) -> list[str]:
+    """Two focused sub-queries for a conjunctive ('both X and Y') query, [] otherwise.
+
+    Distributes the shared context over each conjunct so the under-represented facet gets its
+    own retrieval pass: 'How is Fourier used both for signals and for solving PDEs?' ->
+    ['How is Fourier used for signals?', 'How is Fourier used for solving PDEs?']. Each
+    conjunct must be >= 2 words (a degenerate 'both cats and dogs' split must not fire), and
+    the two sub-queries must differ from each other and from the original. Deterministic — no
+    LLM, no cost. Used only to widen the retrieval pool (multi-query expansion), never to
+    relabel confidence.
+    """
+    m = _BOTH_AND.search(query)
+    if m:
+        prefix, x, y, tail = m.group(1).strip(), m.group(2).strip(), m.group(3).strip(), m.group(4)
+    else:
+        m = _PREP_AND.search(query)
+        if not m:
+            return []
+        prefix, prep = m.group(1).strip(), m.group(2)
+        x, y, tail = f"{prep} {m.group(3).strip()}", f"{prep} {m.group(4).strip()}", m.group(5)
+    if len(x.split()) < 2 or len(y.split()) < 2:
+        return []
+    head = f"{prefix} " if prefix else ""
+    sub1, sub2 = f"{head}{x}{tail}".strip(), f"{head}{y}{tail}".strip()
+    lo = query.lower()
+    if sub1.lower() == sub2.lower() or sub1.lower() == lo or sub2.lower() == lo:
+        return []
+    return [sub1, sub2]
+
+
 @dataclass
 class RetrievedFigure:
     """A figure survivor's image hand-off: what generation surfaces (query.py, MCP) need
@@ -144,28 +188,35 @@ def _score(query: str, candidates: list[Candidate]) -> None:
 
 
 def _rerank_with_expansion(query, candidates, gather, cfg, *, prefer_code) -> list[Candidate]:
-    """Score + diversity-select, expanding cross-domain when warranted (multiquery.py).
+    """Score + diversity-select, expanding the retrieval pool when warranted (multiquery.py).
 
-    Expansion triggers when the query is bridge-shaped OR the single pass is low-confidence
-    (best score below the floor). Each reformulation's candidates are scored against THAT
-    reformulation; the merged pool keeps the MAX score per unit — so a doc written in another
-    discipline's vocabulary is ranked by its best-matching phrasing instead of being demoted
-    by the original's. With expansion off (or untriggered) this is exactly the old single-pass
-    rerank: score against the query, sort, select.
+    Two complementary expansion variant sources, both retrieved separately and merged keeping
+    the MAX score per unit (so a unit is ranked by its best-matching phrasing, never demoted by
+    the original's):
+      - cross-DOMAIN reformulations (LLM, `reformulate`): a bridge query whose target is
+        written in another field's vocabulary — gated on `multi_query_k > 0`.
+      - facet DECOMPOSITION (deterministic, free, `decompose_conjunction`): a 'both X and Y'
+        query whose under-represented facet is crowded out of a single pass — the shared
+        context is distributed over each conjunct so each facet gets its own retrieval.
+    Expansion triggers on a bridge shape, a conjunction, OR a low-confidence single pass.
+    Off / untriggered, this is exactly the old single-pass rerank: score, sort, select.
     """
     floor = cfg.min_rerank_score
     _score(query, candidates)
     base_best = max((c.rerank_score for c in candidates if c.rerank_score is not None), default=None)
-    expand_on = (
-        getattr(cfg, "multi_query_expansion", False)
-        and getattr(cfg, "multi_query_k", 0) > 0
-        and (bool(split_facets(query)) or (floor is not None and base_best is not None and base_best < floor))
+    low_conf = floor is not None and base_best is not None and base_best < floor
+    facet_subqueries = decompose_conjunction(query)
+    expand_on = getattr(cfg, "multi_query_expansion", False) and (
+        bool(split_facets(query)) or bool(facet_subqueries) or low_conf
     )
     if expand_on:
         from locus.retrieve.multiquery import reformulate
 
+        variants = list(facet_subqueries)
+        if getattr(cfg, "multi_query_k", 0) > 0:
+            variants += reformulate(query, cfg.multi_query_k)
         pool: dict[tuple[str, int], Candidate] = {(c.kind, c.id): c for c in candidates}
-        for variant in reformulate(query, cfg.multi_query_k):
+        for variant in variants:
             vc = gather(variant)
             _score(variant, vc)
             for c in vc:

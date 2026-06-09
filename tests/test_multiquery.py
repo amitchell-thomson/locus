@@ -75,6 +75,41 @@ def test_expansion_surfaces_cross_domain_match(monkeypatch):
     assert by_id[1] == 5.0  # fin kept its original-query score (max over variants)
 
 
+def test_facet_decomposition_surfaces_crowded_out_facet(monkeypatch):
+    """A 'both X and Y' query whose Y-facet is buried by the dominant X-facet in a single
+    pass: the deterministic decomposition retrieves each facet separately so both surface.
+    No LLM reformulation needed (multi_query_k=0) — decomposition is free and still fires."""
+    def fake_score_pairs(q, texts):
+        ql = q.lower()
+        only_sig = "signals" in ql and "pde" not in ql
+        only_pde = "pde" in ql and "signals" not in ql
+        out = []
+        for t in texts:
+            if only_sig:
+                out.append(6.0 if "SIGNALS" in t else -2.0)
+            elif only_pde:
+                out.append(6.0 if "PDE" in t else -2.0)
+            else:  # full query carries BOTH facets; PDE dominates, SIGNALS buried below floor
+                out.append(5.0 if "PDE" in t else -3.0)
+        return out
+
+    monkeypatch.setattr(pl, "score_pairs", fake_score_pairs)
+    monkeypatch.setattr(multiquery, "reformulate", lambda *a, **k: pytest.fail("LLM not needed"))
+    gather = lambda q: [_cand("chunk", 1, "SIGNALS time frequency"),
+                        _cand("chunk", 2, "PDE laplace transform")]
+    cfg = types.SimpleNamespace(
+        rerank_top_k=8, per_doc_cap=3, min_rerank_score=0.22,
+        multi_query_expansion=True, multi_query_k=0,  # LLM off; decomposition still fires
+    )
+    survivors = pl._rerank_with_expansion(
+        "How is analysis used both for signals and for solving PDEs?",
+        gather("orig"), gather, cfg, prefer_code=False,
+    )
+    by_id = {c.id: c.rerank_score for c in survivors}
+    assert by_id[1] == 6.0  # SIGNALS surfaced via the decomposed 'for signals' sub-query
+    assert by_id[2] == 6.0  # PDE via 'for solving PDEs' (max over variants beats the orig 5.0)
+
+
 def test_no_expansion_when_disabled_is_single_pass(monkeypatch):
     fin = _cand("chunk", 1, "FINANCE regime switching")
     monkeypatch.setattr(pl, "score_pairs", lambda q, texts: [4.0 for _ in texts])

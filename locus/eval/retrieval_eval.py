@@ -1,10 +1,17 @@
 """Labelled retrieval eval (build step 7): recall@k + MRR over a fixed query set.
 
 A retrieval miss is NOT Claude-recoverable (§15.0) — this is the definitive check that the
-right content surfaces. Queries are labelled with expected documents by title substring
-(stable across re-ingests, unlike ids). Two checks beyond plain recall (2026-06-05 round-3
-evaluation, which found the eval set stale at 24 docs and structurally blind to two live
-regressions):
+right content surfaces. Queries are labelled by **source_uri substring** (the 2026-06-09
+re-curation): titles are re-arbitrated on every re-ingest and were wholesale rewritten by
+`locus retitle`, which silently broke every title-substring label; `source_uri` is stable
+across both retitle AND re-ingest (and, unlike the numeric id, survives a code-repo's
+delete+rewrite on each commit). Stable keys in practice: arxiv ids for papers
+(`2605.30363v1`), repo paths for code (`regime-conditioned-equity-ml`), and the **module
+folder** for coursework (`Heat and Mass Transfer/`) — the pour created dense topic clusters
+(16 heat-transfer, 23 control docs), so the right granularity for "does the corpus cover
+this topic" is the module, not one brittle file. Two checks beyond plain recall (2026-06-05
+round-3 evaluation, which found the eval set stale at 24 docs and structurally blind to two
+live regressions):
 
   - `expected_paths`: file-level targets for code documents. Doc-level recall is satisfied
     by ANY unit of the repo doc, so a code query that returns prose-about-code instead of
@@ -24,73 +31,77 @@ from dataclasses import dataclass, field
 @dataclass
 class LabelledQuery:
     query: str
-    # Title substrings (case-insensitive); each entry is one expected doc. An entry may
-    # carry '|'-separated alternatives ("Regime Shift|Neural Markov") satisfied by ANY
-    # match — for queries where the corpus holds several legitimately substitutable
-    # answers and ranking between them is model choice, not retrieval quality.
+    # source_uri substrings (case-insensitive); each entry is one expected doc. An entry may
+    # carry '|'-separated alternatives ("2605.30943v1|2605.30363v1") satisfied by ANY match —
+    # for queries where the corpus holds several legitimately substitutable answers and
+    # ranking between them is model choice, not retrieval quality. Coursework entries use the
+    # module-folder fragment ("Time Frequency Analysis/"), so any lecture in the module counts.
     expected: list[str]
     expected_paths: list[str] = field(default_factory=list)  # file-path substrings (code)
     cross_domain: bool = False
+    # Run this query with the production self-exclusion lifted (retrieve(include_excluded=True)).
+    # Only the query about Locus's OWN source needs it: doc 217 (the locus repo) is excluded
+    # from production retrieval, so the labelled target is unreachable otherwise — and a user
+    # asking about Locus's internals is exactly when they'd set the flag. Everything else stays
+    # False so the eval measures the production pool.
+    include_excluded: bool = False
 
 
-# Grounded in the live corpus (33 docs at the round-5 refresh: prose + 5 code repos +
-# slides). Keep title substrings short and durable — slug-titled docs get re-arbitrated
-# titles each re-ingest.
+# Grounded in the live post-pour corpus (306 docs; 2026-06-09 re-curation). Keys are
+# source_uri substrings — see the module docstring. EXTEND whenever the corpus grows.
 LABELLED_QUERIES: list[LabelledQuery] = [
     LabelledQuery(
         "What is the Biot number and what does it tell you about transient conduction?",
-        ["Partial Differential Equations"],
+        ["Heat and Mass Transfer/"],  # conduction/Biot lives in L2 of the module
     ),
     LabelledQuery(
         "How is Fourier analysis used both for signals and for solving PDEs?",
-        ["Partial Differential Equations", "Time Frequency"],
+        ["Partial Differential Equations/", "Time Frequency Analysis/"],
     ),
     LabelledQuery(
         "How do regime-switching models in finance relate to state-space models in control theory?",
-        # Either regime-modeling paper satisfies the finance side (the 2026-06-06 arrival,
-        # an inspectable-neural-Markov-models paper, legitimately outranks the treasury one).
-        ["Control Theory", "Regime Shift|Neural Markov"],
+        # Finance side: either regime paper (Neural Markov / treasury Regime Shift). Control
+        # side: any control-theory doc ("Control Theory" matches the module folder AND the
+        # pre-pour "Control Theory (II) Notes").
+        ["Control Theory", "2605.30943v1|2605.30363v1"],
         cross_domain=True,
     ),
     LabelledQuery(
         "Which optimization techniques schedule shipping and trading over long horizons?",
-        ["liquefied natural gas"],
+        ["2511.08404v1"],  # Multistart LNS for LNG transportation+trading
         cross_domain=True,  # operations-research framing of a trading problem
     ),
     LabelledQuery(
         "What detects regime shifts in the treasury market using unstructured data?",
-        ["Regime Shift"],
+        ["2605.30363v1"],
     ),
     LabelledQuery(
         "How does geometric Brownian motion arise in models of coordination and asset dynamics?",
-        ["geometric Brownian motion"],
+        ["2605.30950v1"],
     ),
     LabelledQuery(
         "How does maximum likelihood estimation differ from Bayesian inference?",
-        # Slug-titled source (ML-maths.pdf): the synthesis pass re-arbitrates a title on
-        # every re-ingest, so the label keeps only the durable token ('Probability
-        # Fundamentals' became 'Probability Concepts with Parameter Estimation').
-        ["Probability"],
+        ["Statistics and Probability/|ML-maths"],  # estimation: module folder or the ML-maths notes
     ),
     LabelledQuery(
         "What is gradient descent and what role does the learning rate play?",
-        ["Gradient descent"],  # retitled 2026-06-09 (was 'Mathematical Optimization')
+        ["optimisation.pdf"],
     ),
     LabelledQuery(
         "How is the transfer function H(omega) used to analyse a linear system's response?",
-        ["Time Frequency"],
+        ["Time Frequency Analysis/|Control Theory"],  # transfer functions live in both modules
     ),
     LabelledQuery(
         "How does Shannon's equation bound the capacity of a communication channel?",
-        ["Sensing, Signals and Communications"],  # retitled 2026-06-09 (was 'Sensors signals')
+        ["Sensing, Signals and Communications/"],
     ),
     LabelledQuery(
         "What has Alec achieved academically?",
-        ["Mitchell-Thomson"],
+        ["Mitchell-Thomson_CV|Mitchell-Thomson CV"],  # any surviving CV (underscore or spaced)
     ),
     LabelledQuery(
         "How do heavy tails affect predictability in energy-transition financial markets?",
-        ["Transition-Energy"],
+        ["2605.26890v1"],
     ),
     # --- code corpus (step 10). The two regimes/ files carried the round-3 hallucinated
     # summaries ("electrical circuits" / "image recognition"): these queries fail unless
@@ -98,27 +109,31 @@ LABELLED_QUERIES: list[LabelledQuery] = [
     # silent latent defect.
     LabelledQuery(
         "Show me the class that implements HMM regime detection in my regime ML project.",
-        ["Regime-Conditioned"],
+        ["regime-conditioned-equity-ml"],
         expected_paths=["regimes/hmm.py"],
     ),
     LabelledQuery(
         "What metrics does the regime detection evaluation module compute in my regime ML code?",
-        ["Regime-Conditioned"],
+        ["regime-conditioned-equity-ml"],
         expected_paths=["regimes/evaluation.py"],
     ),
     LabelledQuery(
         "Why are the HMM emission means initialised with KMeans, and how is the best seed chosen?",
-        ["Regime-Conditioned"],
+        ["regime-conditioned-equity-ml"],
     ),
     LabelledQuery(
         "How does Locus rerank retrieval candidates with a cross-encoder?",
-        ["knowledge base"],  # retitled 2026-06-09: locus repo title dropped the name 'Locus'
+        # The locus repo (doc 217) is excluded from production retrieval, and its repo-root
+        # source_uri is a prefix of every vault doc's path, so it can't be keyed by source_uri
+        # substring — the file-path target IS the discriminator here.
+        [],
         expected_paths=["retrieve/rerank.py"],
+        include_excluded=True,
     ),
     # --- slides corpus (step 9).
     LabelledQuery(
         "What did my Citadel deck recommend about monetary policy?",
-        ["Monetary Policy Recommendation"],
+        ["Policy Recommendation v1"],  # the .pptx (two near-dup copies; either satisfies)
     ),
     # --- figures (step 11): figure-shaped queries that the figure_vectors arm should
     # serve (block diagrams, plots, pipeline figures). Doc-level recall still passes via
@@ -130,13 +145,11 @@ LABELLED_QUERIES: list[LabelledQuery] = [
     ),
     LabelledQuery(
         "Which figure illustrates aliasing as overlapping spectra in the frequency domain?",
-        # Slug-titled source (N456_1.pdf): arbitrated title varies per re-ingest
-        # ('Signals and Systems' -> 'Signal Processing Techniques and Spectral Analysis').
-        ["Spectral|Signals and Systems"],
+        ["Time Frequency Analysis/|N456_1"],  # aliasing/PSD: the time-freq module or N456 notes
     ),
     LabelledQuery(
         "The pipeline diagram where DINOv3 features match class prototypes and SAM segments regions.",
-        ["Fine-Grained Semantic Segmentation"],
+        ["7c8c0b9075b6"],  # FungiTastic segmentation paper (raw-store hash; original path lost)
     ),
     # --- entity-alias substrate (step 12): the query is phrased with a variant surface the
     # target doc does NOT use verbatim — the probability notes store the entity as
@@ -146,26 +159,34 @@ LABELLED_QUERIES: list[LabelledQuery] = [
     LabelledQuery(
         "Where does the KL divergence appear — in estimation theory and in regime-model "
         "evaluation?",
-        ["Probability", "Neural Markov"],
+        ["Statistics and Probability/|ML-maths", "2605.30943v1"],
     ),
 ]
 
 
-# Known related-document pairs (title substrings, same matching rules as `expected`).
-# Verified on the 2026-06-06 corpus: the pairs share entity surfaces ('Laplace transform',
-# 'Fourier series', 'LTI system', 'transfer function'), so once the alias substrate is
-# built each pair must appear in the other's related-documents list — the joins-only
-# link layer's labelled check (step 12).
+# Known related-document pairs (source_uri substrings, same matching rules as `expected`).
+# Re-curated 2026-06-09 against the live related-docs layer: each pair was VERIFIED to surface
+# mutually in the other's top-5 (the joins-only layer is deterministic — these assert genuine,
+# currently-surfacing relationships, not aspirations). The pre-pour PDE<->Time-Frequency pair
+# was DROPPED: post-pour each side has closer same-module siblings that crowd the cross-module
+# link out of the top-5, so labelling it would assert a relationship the layer no longer
+# produces. EXTEND as the corpus grows.
 RELATED_PAIRS: list[tuple[str, str]] = [
-    ("Introduction to Control Theory", "Lectures 1-4"),
-    ("Partial Differential Equations", "Time Frequency"),
+    # finance papers — SVAR <-> Inspectable Neural Markov (mutual #2, 8 shared canonicals)
+    ("2603.16035v1", "2605.30943v1"),
+    # control theory I <-> II lecture notes (mutual #1, 68 shared canonicals)
+    ("2A2A Control Theory (I) Notes", "2A2B Control Theory (II) Notes"),
+    # regime cluster — treasury Regime Shift <-> SVAR (mutual within top-5: #1 and #4).
+    # NB the Neural-Markov <-> Regime-Shift pair was NOT used: genuine but rank ~8, crowded
+    # below closer finance siblings, so it is absent from the consumer-facing top-5.
+    ("2605.30363v1", "2603.16035v1"),
 ]
 
 
 @dataclass
 class QueryResult:
     query: LabelledQuery
-    survivor_titles: list[str]  # doc titles in rank order (deduped, first occurrence)
+    survivor_keys: list[str]  # doc source_uris in rank order (deduped, first occurrence)
     survivor_paths: list[str] = field(default_factory=list)  # file paths among survivors
     matched: list[str] = field(default_factory=list)
     matched_paths: list[str] = field(default_factory=list)
@@ -191,13 +212,18 @@ class QueryResult:
 
 def score_query(
     q: LabelledQuery,
-    survivor_titles: list[str],
+    survivor_keys: list[str],
     survivor_paths: list[str] | None = None,
     confidence_band: str | None = None,
 ) -> QueryResult:
-    """Score one query given the doc titles of the rank-ordered survivors (pure, testable)."""
+    """Score one query given the match-keys (source_uris) of the rank-ordered survivors.
+
+    Pure and testable: the function is a generic substring matcher over whatever rank-ordered
+    strings it is handed (production feeds source_uris; unit tests feed plain strings — the
+    logic is identical either way).
+    """
     deduped: list[str] = []
-    for t in survivor_titles:
+    for t in survivor_keys:
         if t not in deduped:
             deduped.append(t)
     matched: list[str] = []
@@ -205,11 +231,11 @@ def score_query(
     for pattern in q.expected:
         alternatives = [a.strip().lower() for a in pattern.split("|")]  # any-of
         done = False
-        for rank, title in enumerate(deduped, start=1):
+        for rank, key in enumerate(deduped, start=1):
             if done:
                 break
             for alt in alternatives:
-                if alt and alt in (title or "").lower():
+                if alt and alt in (key or "").lower():
                     matched.append(pattern)
                     if first_rank is None or rank < first_rank:
                         first_rank = rank
@@ -220,7 +246,7 @@ def score_query(
         p for p in q.expected_paths if any(p.lower() in (sp or "").lower() for sp in paths)
     ]
     return QueryResult(
-        query=q, survivor_titles=deduped, survivor_paths=paths, matched=matched,
+        query=q, survivor_keys=deduped, survivor_paths=paths, matched=matched,
         matched_paths=matched_paths, first_rank=first_rank, confidence_band=confidence_band,
     )
 
@@ -249,15 +275,17 @@ def evaluate_retrieval(conn, queries: list[LabelledQuery] | None = None) -> tupl
                 return True
             return False
 
-        r = retrieve(q.query, conn=conn, exclude=_answer_key)
-        titles = []
+        r = retrieve(
+            q.query, conn=conn, exclude=_answer_key, include_excluded=q.include_excluded
+        )
+        keys = []
         paths = []
         for c in r.survivors:
-            row = conn.execute("SELECT title FROM documents WHERE id=?", (c.doc_id,)).fetchone()
-            titles.append(row["title"] if row else f"doc {c.doc_id}")
+            row = conn.execute("SELECT source_uri FROM documents WHERE id=?", (c.doc_id,)).fetchone()
+            keys.append(row["source_uri"] if row else f"doc {c.doc_id}")
             if c.file_path:
                 paths.append(c.file_path)
-        results.append(score_query(q, titles, paths, confidence_band=r.confidence_band))
+        results.append(score_query(q, keys, paths, confidence_band=r.confidence_band))
     if excluded:
         import logging
 
@@ -275,7 +303,7 @@ def score_links(
 ) -> tuple[list[str], dict[str, float]]:
     """Check labelled related-document pairs against the alias-substrate link layer.
 
-    Each (a, b) title-substring pair is checked in BOTH directions: some doc matching `a`
+    Each (a, b) source_uri-substring pair is checked in BOTH directions: some doc matching `a`
     must list a different doc matching `b` in its related-documents top-N, and vice versa.
     Returns (report lines, {'links_recall': fraction of pair-directions satisfied}); empty
     metrics when the substrate has not been built (`locus link`).
@@ -286,11 +314,11 @@ def score_links(
     if not aliases_built(conn):
         return (["  entity_aliases not built (run `locus link`) — links check skipped"], {})
 
+    uris = {r["id"]: r["source_uri"] for r in conn.execute("SELECT id, source_uri FROM documents")}
+
     def _docs_matching(pattern: str) -> list[int]:
-        return [
-            r["id"] for r in conn.execute("SELECT id, title FROM documents")
-            if pattern.lower() in (r["title"] or "").lower()
-        ]
+        pat = pattern.lower()
+        return [doc_id for doc_id, uri in uris.items() if pat in (uri or "").lower()]
 
     lines: list[str] = []
     satisfied = 0
@@ -302,7 +330,7 @@ def score_links(
             stop = resolve_stop_doc_freq(conn)  # reflect the production stop-entity guard
             for src_id in _docs_matching(src_pat):
                 for rel in related_documents(conn, src_id, top_n=top_n, stop_doc_freq=stop):
-                    if rel.doc_id != src_id and dst_pat.lower() in rel.title.lower():
+                    if rel.doc_id != src_id and dst_pat.lower() in (uris.get(rel.doc_id) or "").lower():
                         hit = True
                         break
                 if hit:
@@ -350,7 +378,9 @@ def format_results(results: list[QueryResult], agg: dict[str, float]) -> str:
         missing = [e for e in r.query.expected if e not in r.matched]
         missing += [p for p in r.query.expected_paths if p not in r.matched_paths]
         if missing:
-            lines.append(f"      missing: {missing}  got: {[t[:40] for t in r.survivor_titles[:4]]}")
+            # Show the TAIL of each survivor key (source_uris share a long common prefix).
+            got = [k.rsplit("/", 1)[-1][:40] for k in r.survivor_keys[:4]]
+            lines.append(f"      missing: {missing}  got: {got}")
     lines.append("")
     for k, v in agg.items():
         lines.append(f"  {k:<24} {v:.3f}")

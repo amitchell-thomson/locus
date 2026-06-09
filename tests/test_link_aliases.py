@@ -679,12 +679,13 @@ def test_alias_qc_flags_zero_evidence_llm_merge(conn):
 def test_score_links_requires_substrate_and_finds_pairs(conn):
     from locus.eval.retrieval_eval import score_links
 
-    lines, agg = score_links(conn, [("Doc 1", "Doc 2")])
+    # Pairs are source_uri substrings (re-curation): _seed_doc sets source_uri = "u{id}".
+    lines, agg = score_links(conn, [("u1", "u2")])
     assert agg == {} and "locus link" in lines[0]  # graceful skip pre-substrate
     _seed_related_corpus(conn)
-    lines, agg = score_links(conn, [("Doc 1", "Doc 2")])
+    lines, agg = score_links(conn, [("u1", "u2")])
     assert agg["links_recall"] == 1.0
-    lines, agg = score_links(conn, [("Doc 1", "No Such Doc")])
+    lines, agg = score_links(conn, [("u1", "no-such-uri")])
     assert agg["links_recall"] == 0.0
 
 

@@ -260,12 +260,12 @@ def _pipeline_fakes(monkeypatch, floor, scores):
         lambda: types.SimpleNamespace(retrieve=rcfg, figures=types.SimpleNamespace(image_cap=3)),
     )
 
-    def _rr(query, candidates, top_k, per_doc_cap, min_score=None, prefer_code=False):
+    def _rr(query, candidates, gather, cfg, *, prefer_code=False):
         for c, s in zip(candidates, scores):
             c.rerank_score = s
-        return candidates[: len(scores)][:top_k]
+        return candidates[: len(scores)][: cfg.rerank_top_k]
 
-    monkeypatch.setattr(pl, "rerank", _rr)
+    monkeypatch.setattr(pl, "_rerank_with_expansion", _rr)
     return pl
 
 
@@ -369,12 +369,12 @@ def _facet_fakes(monkeypatch, floor, scores, facet_scores):
         lambda: types.SimpleNamespace(retrieve=rcfg, figures=types.SimpleNamespace(image_cap=3)),
     )
 
-    def _rr(query, candidates, top_k, per_doc_cap, min_score=None, prefer_code=False):
+    def _rr(query, candidates, gather, cfg, *, prefer_code=False):
         for c, s in zip(candidates, scores):
             c.rerank_score = s
-        return candidates[: len(scores)][:top_k]
+        return candidates[: len(scores)][: cfg.rerank_top_k]
 
-    monkeypatch.setattr(pl, "rerank", _rr)
+    monkeypatch.setattr(pl, "_rerank_with_expansion", _rr)
     rows = iter(facet_scores)
     monkeypatch.setattr(pl, "score_pairs", lambda f, texts: list(next(rows))[: len(texts)])
     return pl
@@ -548,7 +548,7 @@ def test_figure_images_floored_and_cited_count_kept(monkeypatch, tmp_path):
     def fake_search(conn, q, facets=None):
         return []
 
-    def fake_rerank(q, cands, top_k, per_doc_cap, min_score=None, prefer_code=False):
+    def fake_rerank(q, cands, gather, cfg, *, prefer_code=False):
         return []
 
     def fake_expand(conn, survivors):
@@ -570,7 +570,7 @@ def test_figure_images_floored_and_cited_count_kept(monkeypatch, tmp_path):
         return [fig(1, 5.0), fig(2, 3.0), fig(3, 1.0), fig(4, -0.4)]
 
     monkeypatch.setattr(pl, "search", fake_search)
-    monkeypatch.setattr(pl, "rerank", fake_rerank)
+    monkeypatch.setattr(pl, "_rerank_with_expansion", fake_rerank)
     monkeypatch.setattr(pl, "expand", fake_expand)
     monkeypatch.setattr(pl, "assemble", lambda exp: types.SimpleNamespace(
         text="CTX", citations=[], citation_details=[], included=0, dropped=0))

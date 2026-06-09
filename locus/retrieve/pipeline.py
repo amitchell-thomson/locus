@@ -9,7 +9,7 @@ from locus.config import load
 from locus.db.connection import get_connection
 from locus.retrieve.assemble import Citation, assemble
 from locus.retrieve.expand import expand
-from locus.retrieve.rerank import rerank, score_pairs
+from locus.retrieve.rerank import score_pairs, select
 from locus.retrieve.search import Candidate, Facets, search
 
 
@@ -135,6 +135,55 @@ def _excluded_doc_ids(conn, source_uris: list[str]) -> set[int]:
     return {r["id"] for r in rows}
 
 
+def _score(query: str, candidates: list[Candidate]) -> None:
+    """Cross-encoder-score candidates against `query`, in place."""
+    if not candidates:
+        return
+    for c, s in zip(candidates, score_pairs(query, [c.text for c in candidates])):
+        c.rerank_score = float(s)
+
+
+def _rerank_with_expansion(query, candidates, gather, cfg, *, prefer_code) -> list[Candidate]:
+    """Score + diversity-select, expanding cross-domain when warranted (multiquery.py).
+
+    Expansion triggers when the query is bridge-shaped OR the single pass is low-confidence
+    (best score below the floor). Each reformulation's candidates are scored against THAT
+    reformulation; the merged pool keeps the MAX score per unit — so a doc written in another
+    discipline's vocabulary is ranked by its best-matching phrasing instead of being demoted
+    by the original's. With expansion off (or untriggered) this is exactly the old single-pass
+    rerank: score against the query, sort, select.
+    """
+    floor = cfg.min_rerank_score
+    _score(query, candidates)
+    base_best = max((c.rerank_score for c in candidates if c.rerank_score is not None), default=None)
+    expand_on = (
+        getattr(cfg, "multi_query_expansion", False)
+        and getattr(cfg, "multi_query_k", 0) > 0
+        and (bool(split_facets(query)) or (floor is not None and base_best is not None and base_best < floor))
+    )
+    if expand_on:
+        from locus.retrieve.multiquery import reformulate
+
+        pool: dict[tuple[str, int], Candidate] = {(c.kind, c.id): c for c in candidates}
+        for variant in reformulate(query, cfg.multi_query_k):
+            vc = gather(variant)
+            _score(variant, vc)
+            for c in vc:
+                key = (c.kind, c.id)
+                existing = pool.get(key)
+                if existing is None:
+                    pool[key] = c
+                else:  # same unit found by another variant: keep its best score, union arms
+                    existing.sources |= c.sources
+                    if (c.rerank_score or float("-inf")) > (existing.rerank_score or float("-inf")):
+                        existing.rerank_score = c.rerank_score
+        candidates = list(pool.values())
+    candidates.sort(
+        key=lambda c: c.rerank_score if c.rerank_score is not None else float("-inf"), reverse=True
+    )
+    return select(candidates, cfg.rerank_top_k, cfg.per_doc_cap, min_score=floor, prefer_code=prefer_code)
+
+
 def retrieve(
     query: str, conn=None, facets: Facets | None = None, exclude=None,
     *, include_excluded: bool = False,
@@ -157,18 +206,22 @@ def retrieve(
         conn = get_connection(load().paths.db)
     try:
         cfg = load().retrieve
-        candidates = search(conn, query, facets)
+        ex_ids: set[int] = set()
         excluded_uris = getattr(cfg, "exclude_source_uris", None)
         if not include_excluded and excluded_uris:
             ex_ids = _excluded_doc_ids(conn, excluded_uris)
+
+        def _gather(q: str) -> list[Candidate]:
+            cands = search(conn, q, facets)
             if ex_ids:
-                candidates = [c for c in candidates if c.doc_id not in ex_ids]
-        if exclude is not None:
-            candidates = [c for c in candidates if not exclude(c)]
-        survivors = rerank(
-            query, candidates, cfg.rerank_top_k, cfg.per_doc_cap,
-            min_score=cfg.min_rerank_score,
-            prefer_code=bool(_IMPL_INTENT.search(query)),
+                cands = [c for c in cands if c.doc_id not in ex_ids]
+            if exclude is not None:
+                cands = [c for c in cands if not exclude(c)]
+            return cands
+
+        candidates = _gather(query)
+        survivors = _rerank_with_expansion(
+            query, candidates, _gather, cfg, prefer_code=bool(_IMPL_INTENT.search(query)),
         )
         band: str | None = None
         floor = cfg.min_rerank_score

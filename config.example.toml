@@ -35,6 +35,12 @@ context_token_budget = 100000     # cap on assembled context to the Claude API c
 # self-ingested locus repo, whose own code/tests/README would otherwise compete with real
 # queries. `locus retrieve --include-excluded` overrides. Default: none.
 # exclude_source_uris = ["/abs/path/to/locus"]
+# Multi-query cross-domain expansion (H2): when a query is bridge-shaped ("X relate to Y")
+# or the first pass is low-confidence, rephrase it into N other disciplinary vocabularies
+# (local qwen) and rerank each candidate against the variant that found it — so a doc written
+# in another field's terms clears the floor instead of being demoted. 0 = single-pass only.
+multi_query_expansion = true
+multi_query_k        = 2          # reformulations beyond the original
 
 [mathocr]
 # Math-aware page OCR: pages whose text layer is damaged or math-dense are re-read by an

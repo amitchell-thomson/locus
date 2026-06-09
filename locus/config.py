@@ -86,6 +86,14 @@ class RetrieveConfig(BaseModel):
     # with and contaminate real queries (a finance query surfacing locus test files —
     # 2026-06-09 audit). Excluded by default; `locus retrieve --include-excluded` overrides.
     exclude_source_uris: list[str] = Field(default_factory=list)
+    # Multi-query cross-domain expansion (H2 fix, §13). A query in one domain's vocabulary
+    # doesn't surface another's docs — the cross-encoder demotes the semantically-distant
+    # match below the floor even though the entity bridge fired. When a query is bridge-shaped
+    # OR the first pass is low-confidence, rephrase it into `multi_query_k` other disciplinary
+    # vocabularies (local qwen), retrieve each, and rerank every candidate against the variant
+    # that found it (max) so the cross-domain match clears the floor. Off => single-pass only.
+    multi_query_expansion: bool = Field(True, description="Enable multi-query cross-domain expansion.")
+    multi_query_k: int = Field(2, description="Reformulations beyond the original (0 = off).")
 
 
 class GenerationConfig(BaseModel):

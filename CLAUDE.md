@@ -22,14 +22,15 @@ decks, project write-ups, achievements, historical records.
 compute) is effectively unbounded; retrieval latency and answer quality are the only
 constraints that matter. Workflow is query-driven, not browse-driven; no GUI.
 
-## 2. Current state (2026-06-09, post bulk pour + round-7 desktop-eval remediation)
+## 2. Current state (2026-06-09, post bulk pour + round-7 + production-polish round)
 
-Steps 1–12 done, and the **BULK POUR is complete**: 33 → 306 docs, then **deduped to 292**
-(coursework 246, career **14**, project **14**, paper 13, note 5) — multi-year Oxford
+Steps 1–12 done, and the **BULK POUR is complete**: 33 → 306 docs, then **deduped to 292**,
+then **291** after the third-party `harry_thoughts.docx` was removed this round
+(coursework 246, career **13**, project 14, paper 13, note 5) — multi-year Oxford
 engineering coursework, quant/CS papers, tracked code repos, slides, career/CV. Full
 ingest→retrieve→generate spine for PDF/DOCX/MD/TXT/IPYNB/PPTX/code-repos; math-faithful OCR;
 figures as a first-class multimodal unit; entity-alias link substrate (cross-doc canonicals
-~2,217); MCP server; four eval suites + deterministic audit. **391 tests.**
+~2,156); MCP server; four eval suites + deterministic audit. **403 tests.**
 
 Post-pour work landed this round (on top of the pour):
 - **Titles** — `locus retitle` (NEW, billed/cached, `locus/retitle.py`): corpus-level
@@ -76,15 +77,36 @@ written in another field's terms clears the floor instead of being demoted. Live
 labelled bridge query now co-retrieves the engineering control doc (−3.25 → +1.20) with the
 finance/ML papers. Tune via `[retrieve].multi_query_expansion / multi_query_k`.
 
-**Known open (priority):** doc 165 §10 F1 prop reads inverted (1/14, synthesis correct —
-ledgered); `[200] harry_thoughts.docx` (career) may be a third party's work (confirm); ANN
-index (§11) when KNN latency degrades; Obsidian projection (§13); transcript ingest.
+**Production-polish round (2026-06-09):**
+- **`locus backup` / `locus restore`** (NEW, `locus/backup.py`): WAL-safe DB snapshot via
+  SQLite's online backup API + rsync `--link-dest` hardlinked raw-store snapshots (cheap
+  incremental) + notes; restore is gated on `--yes` and the ingest lock. Default root
+  `vault/backups` (gitignored). Closes the no-disaster-recovery gap (principle 8/9).
+- **`locus status`** (NEW, `locus/status.py`): one-screen health — doc counts by
+  category/type, last ingest, vector/unit totals, **alias-substrate staleness** (entity
+  surfaces not yet in `entity_aliases` ⇒ rerun `locus link`), quarantine count, last-backup
+  age, and the build stamp to compare against the running MCP server.
+- **Eval label set grown 21→53 queries + 3→10 related pairs** (`eval/retrieval_eval.py`):
+  the pre-pour set measured <10% of the 291-doc corpus, so recall@k 1.000 had gone
+  uninformative. New labels cover the coursework bulk (maths/thermo/dynamics/signals/
+  control), the unlabelled papers, projects, career, and notes; every label verified live.
+  Two ungrounded cross-domain bridges and one non-mutual stats pair were dropped, not forced.
+- **Two known-opens closed:** doc 165 §10's inverted F1 proposition (it misread "matches
+  that level [0.82]" as 0.68 — deleted, prop 24707); `harry_thoughts.docx` (doc 200,
+  third-party work) removed from the DB (raw original retained in `vault/raw`).
 
-**Operational hardening (this round):** `link`/`retitle` now persist each billed verdict to
-`pass_cache` in its own commit (crash mid-rebuild no longer wastes spend — was a single
-end-of-run flush). `locus mcp` logs a build stamp (`build <sha>[+dirty] (<date>)`) to stderr
-at startup so a stale long-lived server is identifiable at connect time — restart it after
-any retrieval/pipeline change and check the stamp against `git rev-parse --short HEAD`.
+Eval (post-polish): recall@k **1.000**, cross-domain 1.000, banner 0.000, file_recall 1.000,
+**links_recall 1.000**, mrr 0.843 — over the expanded 53-query / 10-pair set.
+
+**Known open (priority):** ANN index (§11) when KNN latency degrades (the count-warning is
+still unimplemented — brute-force is fine at 291 docs); Obsidian projection (§13 — design in
+`docs/obsidian-projection-plan.md`); transcript ingest.
+
+**Operational hardening:** `link`/`retitle` persist each billed verdict to `pass_cache` in
+its own commit (crash mid-rebuild no longer wastes spend). `locus mcp` logs a build stamp
+(`build <sha>[+dirty] (<date>)`) to stderr at startup so a stale long-lived server is
+identifiable at connect time — restart it after any retrieval/pipeline change and check the
+stamp against `git rev-parse --short HEAD` (or `locus status`).
 
 ## 3. Core principles
 
@@ -312,8 +334,10 @@ locus/
 ├── CLAUDE.md / README.md / docs/pour-runbook.md
 ├── pyproject.toml (uv; extras: rerank, mathocr) · alembic.ini · config.toml (+ example)
 ├── locus/
-│   ├── cli.py            # product surface: ingest list inspect watch sync link
-│   │                     #   query retrieve mcp audit eval
+│   ├── cli.py            # product surface: ingest list inspect watch sync link retitle
+│   │                     #   query retrieve mcp status backup restore audit eval
+│   ├── backup.py         # WAL-safe DB snapshot + rsync-hardlinked raw store; restore
+│   ├── status.py         # `locus status` health summary (counts, alias staleness, backups)
 │   ├── config.py         # typed config; ANTHROPIC_API_KEY via env/.env only
 │   ├── db/               # connection (sqlite-vec load), migrate.py, migrations/ (0001–0008)
 │   ├── extract/          # base, pdf, mathocr, figures_detect, docx, pptx, textdoc, code

@@ -396,9 +396,48 @@ def _inspect(conn, ident: str, section: int | None) -> str:
     return "\n".join(out)
 
 
+def _build_stamp() -> str:
+    """A one-line build identifier (git commit + date + dirty flag) for the startup log.
+
+    The server runs the code as of its process START — a long-lived stdio-over-SSH server
+    keeps serving old behaviour after a fix lands until it is restarted. The 2026-06-09
+    desktop eval misdiagnosed a fixed feature as broken because it had connected to a server
+    that predated the fix (CLAUDE.md §2 / round-7). Logging this at startup makes the running
+    version identifiable at connect time: compare it to `git rev-parse --short HEAD`. Best
+    effort — degrades to 'unknown' when git is unavailable (e.g. a tarball deploy)."""
+    import subprocess
+
+    from locus.config import PROJECT_ROOT
+
+    def _git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(PROJECT_ROOT), *args],
+            capture_output=True, text=True, timeout=5,
+        ).stdout.strip()
+
+    try:
+        commit = _git("rev-parse", "--short", "HEAD") or "unknown"
+        when = _git("show", "-s", "--format=%cs", "HEAD")  # authored date, YYYY-MM-DD
+        dirty = "+dirty" if _git("status", "--porcelain") else ""
+        return f"{commit}{dirty} ({when})" if when else f"{commit}{dirty}"
+    except Exception:
+        return "unknown"
+
+
 def run(enable_query: bool = False) -> None:
     """Run the MCP server over stdio (the transport used for stdio-over-SSH).
 
     `enable_query` opts into the billable server-side `query` tool (default off).
     """
+    import os
+    import sys
+
+    # stderr ONLY — stdout carries the JSON-RPC protocol on the stdio transport. This is the
+    # version-at-connect-time stamp; a stale server is otherwise invisible (see _build_stamp).
+    print(
+        f"locus mcp starting — build {_build_stamp()} | pid {os.getpid()}"
+        + (" | query ENABLED (billable)" if enable_query else ""),
+        file=sys.stderr,
+        flush=True,
+    )
     _build(enable_query=enable_query).run()

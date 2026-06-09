@@ -280,7 +280,7 @@ def score_links(
     Returns (report lines, {'links_recall': fraction of pair-directions satisfied}); empty
     metrics when the substrate has not been built (`locus link`).
     """
-    from locus.link.related import aliases_built, related_documents
+    from locus.link.related import aliases_built, related_documents, resolve_stop_doc_freq
 
     pairs = pairs or RELATED_PAIRS
     if not aliases_built(conn):
@@ -299,8 +299,9 @@ def score_links(
         for src_pat, dst_pat in ((a_pat, b_pat), (b_pat, a_pat)):
             total += 1
             hit = False
+            stop = resolve_stop_doc_freq(conn)  # reflect the production stop-entity guard
             for src_id in _docs_matching(src_pat):
-                for rel in related_documents(conn, src_id, top_n=top_n):
+                for rel in related_documents(conn, src_id, top_n=top_n, stop_doc_freq=stop):
                     if rel.doc_id != src_id and dst_pat.lower() in rel.title.lower():
                         hit = True
                         break

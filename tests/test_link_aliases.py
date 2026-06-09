@@ -493,6 +493,20 @@ def test_related_documents_top_n(conn):
     assert len(related_documents(conn, 1, top_n=1)) == 1
 
 
+def test_resolve_stop_doc_freq_scales_and_floors(conn, monkeypatch):
+    from locus.link import related as rel_mod
+
+    # ratio x corpus, but off below the small-corpus floor and when ratio <= 0.
+    monkeypatch.setattr(rel_mod, "_MIN_CORPUS_FOR_STOP", 3)
+    for i in range(1, 6):  # 5 docs
+        _seed_doc(conn, i)
+    conn.commit()
+    assert rel_mod.resolve_stop_doc_freq(conn, 0.4) == 2  # int(0.4 * 5)
+    assert rel_mod.resolve_stop_doc_freq(conn, 0.0) is None  # disabled
+    monkeypatch.setattr(rel_mod, "_MIN_CORPUS_FOR_STOP", 50)
+    assert rel_mod.resolve_stop_doc_freq(conn, 0.4) is None  # below the small-corpus floor
+
+
 def test_format_related_before_link_run(conn):
     from locus.link.related import format_related
 

@@ -43,6 +43,30 @@ class RelatedDoc:
     shared_names: tuple[str, ...]  # up to _SAMPLE_NAMES, most distinctive (rarest) first
 
 
+# The guard only makes sense once the corpus is large enough for "appears in many docs" to
+# mean "ubiquitous". Below this it stays off, matching CLAUDE.md §9 ("off at small scale").
+_MIN_CORPUS_FOR_STOP = 50
+
+
+def resolve_stop_doc_freq(conn: sqlite3.Connection, ratio: float | None = None) -> int | None:
+    """Absolute stop-entity doc-frequency from the config ratio x current corpus size.
+
+    Returns None (guard off) when the ratio is <= 0 or the corpus is below the small-corpus
+    floor; otherwise int(ratio x doc_count) — e.g. 0.4 x 313 docs -> exclude entities in
+    more than 125 documents. Scales with the corpus, so no re-tuning as it grows.
+    """
+    if ratio is None:
+        from locus.config import load
+
+        ratio = load().alias.stop_doc_freq_ratio
+    if ratio <= 0:
+        return None
+    doc_count = conn.execute("SELECT COUNT(*) AS n FROM documents").fetchone()["n"]
+    if doc_count < _MIN_CORPUS_FOR_STOP:
+        return None
+    return int(ratio * doc_count)
+
+
 def aliases_built(conn: sqlite3.Connection) -> bool:
     """True when the entity_aliases substrate exists and is populated (post `locus link`)."""
     row = conn.execute(
@@ -60,9 +84,15 @@ def format_related(
     top_n: int = 5,
     stop_doc_freq: int | None = None,
 ) -> list[str]:
-    """Render the RELATED DOCUMENTS block (shared by `locus inspect` and MCP inspect)."""
+    """Render the RELATED DOCUMENTS block (shared by `locus inspect` and MCP inspect).
+
+    `stop_doc_freq=None` resolves the corpus-aware stop-entity guard from config (the
+    production default); pass an explicit int to override, or 0/None-via-config to disable.
+    """
     if not aliases_built(conn):
         return ["RELATED DOCUMENTS: (run `locus link` to build the alias substrate)"]
+    if stop_doc_freq is None:
+        stop_doc_freq = resolve_stop_doc_freq(conn)
     related = related_documents(conn, doc_id, top_n=top_n, stop_doc_freq=stop_doc_freq)
     if not related:
         return ["RELATED DOCUMENTS: (none — no shared entities with other documents)"]

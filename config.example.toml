@@ -115,6 +115,10 @@ max_cluster_size  = 8      # clusters larger than this skip the LLM (cost guard)
 min_merge_len     = 4      # names shorter than this never merge (homonym risk: 'var', 'P2')
 use_llm           = true   # false = deterministic tiers only (no API)
 api_call_interval = 1.5    # seconds between adjudication API calls (rate-limit politeness; 0 = off)
+# Related-documents stop-entity guard: drop entities appearing in >this fraction of the
+# corpus from related-doc ranking (ubiquitous terms say nothing about a pairing). Resolved
+# to ratio x doc count at query time; auto-off below a small-corpus floor. 0 disables.
+stop_doc_freq_ratio = 0.4
 
 [retitle]
 # Corpus-level document retitling (`locus retitle`). Composes distinctive

@@ -174,6 +174,14 @@ class AliasConfig(BaseModel):
     # Names shorter than this never merge into a different surface (homonym risk: 'var', 'P2').
     min_merge_len: int = Field(4, description="Min name length eligible for any merge.")
     use_llm: bool = Field(True, description="Adjudicate fuzzy clusters via the Claude API.")
+    # Related-documents stop-entity guard (link/related.py): a canonical entity appearing in
+    # more than this FRACTION of the corpus is too ubiquitous to indicate a real pairing
+    # (every coursework doc shares 'ODE', 'Fourier') and is excluded from the related ranking.
+    # Resolved to an absolute doc-frequency at query time (ratio x doc count). Auto-disabled
+    # below a small-corpus floor; 0 disables entirely. Enabled post-pour (CLAUDE.md §9).
+    stop_doc_freq_ratio: float = Field(
+        0.4, description="Exclude related-doc entities appearing in >this fraction of the corpus (0 = off)."
+    )
     # Minimum spacing between adjudication API calls. A full rebuild is hundreds of small
     # sequential calls (359 on the 33-doc corpus; more post-pour) — unthrottled, the burst
     # rides the account's per-minute rate limit and gets 429-throttled by the SDK anyway.

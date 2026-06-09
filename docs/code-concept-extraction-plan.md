@@ -140,10 +140,10 @@ The win comes almost entirely from the **deterministic** alias tiers, which need
 
 **Residual gap → Phase 2:** the `code_only` flag (`aliases.py:63,167,454`) excludes
 surfaces seen *only* on code docs from the **fuzzy LLM** tier. So a code concept that only
-*fuzzily* matches a paper ("Black-Scholes model" vs "Black-Scholes") won't merge. Fix:
-make the eligibility `not n.code_only or n.type == 'concept'` so code-only **concepts** are
-fuzzy-clusterable while code identifiers stay excluded. Deferred because exact/casefold
-already delivers the primary use case; fuzzy is the long tail.
+*fuzzily* matches a paper ("Black-Scholes model" vs "Black-Scholes") won't merge. The naive
+fix — `not n.code_only or n.type == 'concept'` — turned out **insufficient** once measured: the
+`concept` type is polluted by AST class names and domain concepts span `concept` AND `method`,
+so type alone can't gate it. The full, grounded Phase 2 plan is **§14**.
 
 ## 6. Schema
 
@@ -223,8 +223,13 @@ relax it.
    backfill the 12 repos, `locus link`, add the verified cross-project eval pairs. Deterministic
    alias tiers do the linking; 0 orphans, `links_recall` 1.000. AST `concept→tool` re-typing
    deferred. Outcome + the project→paper boundary documented in the status header.
-2. **Phase 2 — fuzzy code concepts.** Relax `code_only` for `type='concept'` so near-miss
-   surfaces ("Black-Scholes model" ↔ "Black-Scholes") cluster via the LLM tier.
+2. **Phase 2 — lift project→paper into the top-5 (detailed in §14).** The papers already
+   appear in a project's related list (rank 6–15, sharing the generic `Markov model`); Phase 2
+   gives projects a *rare* shared concept with their papers via fuzzy clustering. Requires a
+   provenance separation first (the `concept`/`method` types are polluted by AST identifiers,
+   so `type` alone can't gate the relaxation), then relax `code_only` for narrative concepts,
+   then a new **directional** project→paper eval metric (mutual top-5 is the wrong bar). Incurs
+   billed adjudication (Phase 1 was $0).
 3. **Phase 3 — depth.** Richer typing (method/dataset/metric split), concept extraction from
    notebooks if they show the same gap, and co-occurrence edges in the Obsidian projection.
 
@@ -241,3 +246,130 @@ relax it.
 - **Concept granularity.** "time series" (too broad) vs "regime-switching volatility model"
   (good). The stoplist + `max_per_doc` + the corpus-aware stop-entity guard tune this; start
   conservative (a missed concept is fragmentation; a junk concept is a false link).
+
+---
+
+## 14. Phase 2 — detailed plan: lifting project→paper into the top-5
+
+> Goal: when the owner opens a project (regime-ml, tanker-flow, alpha-fund), the **papers it is
+> built on** appear in its related-documents top-5 (and in the Obsidian local graph). Phase 1
+> got them *onto the list*; Phase 2 gets them *up the list*.
+
+### 14.1 Starting point (measured 2026-06-09, post-Phase-1)
+
+The regime papers already appear in regime-ml's related list — but buried:
+
+```
+regime-ml (175) related, full ranking:
+   1. tanker-flow                shared=4  [Markov-switching model, mean reversion, regime switching]
+   2. downside-risk              shared=4  [mean reversion, regime switching, portfolio optimization]
+   3. citadel-analysis           shared=1  [Markov-switching model]
+   4. alpha-fund                 shared=1  [portfolio optimization]
+   5. optiver                    shared=1  [portfolio optimization]
+   6. 2603.16035 (SVAR)          shared=1  [Markov model]   <-- regime paper
+  10. 2605.30943 (Neural Markov) shared=1  [Markov model]   <-- regime paper
+  15. 2605.30363 (Regime Shift)  shared=1  [Markov model]   <-- regime paper
+```
+
+The substrate confirms regime-ml ↔ Regime-Shift-paper share exactly **one** canonical:
+`Markov model`. So this is a **ranking** problem, not an absence:
+
+- The papers tie at the bottom on `Markov model`, which 15+ corpus docs share → **low IDF
+  weight** (`related.py` weights each shared name by `1/doc_freq`).
+- The code↔code links rank above them because they share **rarer** concepts
+  (`Markov-switching model`, `portfolio optimization`) with higher IDF weight.
+
+So the lever is clear: **give a project a RARE, specific shared concept with its papers** —
+not the generic `Markov model`. The specific surfaces exist on both sides but don't match:
+regime-ml has `Markov-switching model`; paper 165 has `Markov-switching VAR`/`VARs`.
+
+### 14.2 The three coupled obstacles (all measured)
+
+1. **The `concept`/`method` types are polluted by AST identifiers.** regime-ml's `concept`
+   entities are ~90 % class names (`BaseRegimeDetector`, `ChainedTransform`,
+   `GroupPCATransformer`); its `method` entities are function names (`HMMRegimeDetector.fit`).
+   The genuine domain concepts (`Markov-switching model`, `regime switching`) sit in the SAME
+   two types. **So the Phase-1-sketched `n.type == 'concept'` relaxation cannot work** — it
+   would make every class name a fuzzy-clustering candidate (noise + billed API on garbage).
+2. **The high-value bridge is a fuzzy variant that *would* pass the block:**
+   `Markov-switching model` ↔ `Markov-switching VAR` → token-Jaccard **0.67** ≥ 0.34 ✓. Merging
+   these yields a rare `Markov-switching` canonical shared by regime-ml and the papers → rank
+   lift. **But** the code-side surface is `code_only`, so it is excluded from the fuzzy tier
+   today (`aliases.py:454`).
+3. **Some near-synonyms fall just under the guard:** `regime switching` ↔ `regime shift` and
+   `mean reversion` ↔ `mean-reverting` both score Jaccard **0.33** < 0.34 — the block rejects
+   them before the LLM ever sees them.
+
+### 14.3 Prerequisite — provenance separation (mandatory; re-typing alone is insufficient)
+
+Because the type axis can't distinguish AST identifiers from narrative concepts (obstacle 1),
+Phase 2 needs an explicit **provenance** signal. Two options:
+
+- **(A) Re-type all AST entities to a dedicated `symbol` type** (`extract/code.py`: functions
+  AND classes → `type='symbol'`; `entities.type` is free-text, no CHECK). Lightweight, no
+  migration. Then narrative concepts own `concept`/`method`/`tool`/`dataset`/`metric`/`theorem`
+  and the fuzzy relaxation is simply "code-only eligible if `type != 'symbol'`". Touches the
+  entity-anchored retrieval arm and the Obsidian entity folders (eval-gated). **Recommended for
+  its simplicity** unless the retrieval arm proves type-sensitive.
+- **(B) Add an `entities.source` column** (`ast` | `concept_pass` | `llm`) via migration 0009.
+  Most robust and future-proof — provenance is explicit regardless of type — but a schema change
+  and a column to populate (re-ingest sets it correctly; old rows default by heuristic).
+
+Either way the population mechanism is the same: **re-ingest the 12 code repos** (`locus ingest
+--reingest`), which regenerates AST entities with the new type/source AND re-runs the concept
+pass — also cleaning up the additive accumulation from Phase 1's two backfill runs. Ingest has
+no time budget (principle 4), so the re-embed cost is acceptable.
+
+### 14.4 Lever 1 (primary) — fuzzy clustering of narrative concepts
+
+With provenance in place, relax the `code_only` exclusion **for narrative-concept entities
+only** (by `source`/non-`symbol` type) in `aliases.py`. Effect, traced through the live data:
+
+- `Markov-switching model` (regime-ml, now eligible) enters a candidate cluster with
+  `Markov-switching VAR`/`VARs` (paper 165/140) — cosine high, Jaccard 0.67 → passes the block
+  → the **Claude adjudicator** decides the merge (the existing billed tier, with all its
+  guards: min-merge-len 4, same-section-never-merges, oversize skip).
+- The merged `Markov-switching` canonical is **rare** (few docs) → high IDF → regime-ml now
+  shares a high-weight concept with the regime papers → they rise toward the top-5.
+
+This is the mechanism that converts Phase 1's "papers on the list at rank 6–15" into "papers in
+the top-5". It is the core of Phase 2.
+
+### 14.5 Lever 2 (secondary, optional) — near-synonym guard tuning
+
+The 0.33-Jaccard pairs (`regime switching`↔`regime shift`, `mean reversion`↔`mean-reverting`)
+never reach the adjudicator. Options, in increasing risk:
+
+- **Lower the token-Jaccard floor for concept↔concept candidates only** (e.g. 0.25), leaning on
+  the cosine floor (0.86) + the LLM adjudicator as the real gate. Identifier merges keep the
+  strict 0.34. A wrong *concept* merge is lower-stakes than a wrong identifier merge, but still
+  corrupts the substrate, so this stays conservative and eval-gated.
+- **Do nothing** — accept that exact + 0.67-class fuzzy bridges (Lever 1) deliver enough, and
+  the 0.33 long tail is not worth the over-merge risk. Decide from the Lever-1 re-measurement.
+
+### 14.6 Acceptance & eval
+
+The Phase-1 eval bar (mutual top-5 in `RELATED_PAIRS`) is the wrong shape here: papers will
+never rank a project in *their* top-5 (a paper has many closer paper-siblings), so
+project↔paper is inherently **directional**. Add a **directional link metric**:
+
+- `PROJECT_PAPER_LINKS: list[tuple[repo_uri, paper_uri]]` checked **one way** — the paper must
+  appear in the repo's related top-5. Targets: regime-ml → {SVAR 2603.16035, Neural-Markov
+  2605.30943, Regime-Shift 2605.30363}; tanker-flow → LNG 2511.08404; alpha-fund →
+  {a Black-Scholes/Monte-Carlo paper}. **Baseline today: these are rank 6–15 → score 0.**
+  Acceptance: each project surfaces ≥1 target paper in its top-5.
+- Keep the bidirectional `RELATED_PAIRS` (code↔code) as-is; hold `links_recall` 1.000.
+
+### 14.7 Cost, risks, phasing
+
+- **Cost.** Unlike Phase 1 ($0), the fuzzy relaxation creates new candidate clusters involving
+  code concepts → **billed Claude adjudication** (throttled 1.5 s/call, cached). Estimate the
+  candidate count from a `--no-llm` dry pass first and report before spending.
+- **Risks.** (i) Over-merge — mitigated by the conservative block + LLM gate + provenance
+  keeping identifiers out entirely; (ii) eval churn from re-typing/provenance — gate on the
+  retrieval suite, keep reversible; (iii) the directional-metric design is new eval surface —
+  keep it small and verified.
+- **Phasing within Phase 2:** **2a** provenance separation + re-ingest (the prerequisite);
+  **2b** relax `code_only` for concepts + re-`link` + re-measure (Lever 1); **2c** add the
+  directional eval + decide Lever 2 from the numbers. Each step is independently measurable, so
+  stop as soon as the projects surface their papers in the top-5.

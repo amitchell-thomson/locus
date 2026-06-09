@@ -147,7 +147,7 @@ api_call_interval = 1.5    # seconds between topic-distillation API calls (0 = o
 # exporter owns only its docs/ and entities/ subtrees and never touches .obsidian/. View it
 # from the Mac by rsync-pulling the tree (see docs/obsidian-projection-plan.md §10).
 out_dir          = "vault/obsidian"   # exporter-owned root (gitignored, regenerable)
-top_related      = 5                  # doc<->doc related edges per note (matches related_documents)
+top_related      = 10                 # doc<->doc related edges per note (matches related_documents)
 min_cluster_docs = 2                  # emit a canonical entity note only if it spans >= this many docs
 emit_entity_notes = true              # false = docs-only graph (no canonical entity notes)
 

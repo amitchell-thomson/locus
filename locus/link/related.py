@@ -103,10 +103,15 @@ def format_related(
     conn: sqlite3.Connection,
     doc_id: int,
     *,
-    top_n: int = 5,
+    top_n: int = 10,
     stop_doc_freq: int | None = None,
 ) -> list[str]:
     """Render the RELATED DOCUMENTS block (shared by `locus inspect` and MCP inspect).
+
+    top_n=10 (not 5): a code project shares its rarest, highest-weight concepts with other
+    projects, so the *papers* it is built on rank ~6-15 (they tie on a low-IDF generic concept
+    like 'Markov model'). A top-10 view surfaces those papers in `inspect`/MCP without the
+    Phase-2 fuzzy-linking machinery. The eval's `score_links` keeps its own explicit top-5 bar.
 
     `stop_doc_freq=None` resolves the corpus-aware stop-entity guard from config (the
     production default); pass an explicit int to override, or 0/None-via-config to disable.

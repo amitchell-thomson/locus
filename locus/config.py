@@ -265,7 +265,10 @@ class ObsidianConfig(BaseModel):
     """
 
     out_dir: Path = Field(Path("vault/obsidian"), description="Exporter-owned vault root.")
-    top_related: int = Field(5, description="doc<->doc related edges per note (matches related_documents).")
+    # 10 (not 5): code projects share rarer concepts with each other than with papers, so the
+    # papers a project is built on land at rank ~6-15 (the generic shared concept, e.g. 'Markov
+    # model', is low-IDF). A top-10 list surfaces them without the cost of Phase-2 fuzzy linking.
+    top_related: int = Field(10, description="doc<->doc related edges per note.")
     # A canonical entity becomes a note only if it spans >= this many EXPORTED docs. A
     # single-doc canonical is noise (no cross-doc link to draw), mirroring related.py.
     min_cluster_docs: int = Field(2, description="Emit a canonical entity note only if it spans >= this many docs.")

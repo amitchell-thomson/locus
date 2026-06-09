@@ -78,9 +78,14 @@ finance/ML papers. Tune via `[retrieve].multi_query_expansion / multi_query_k`.
 **Known open (priority):** doc 165 §10 F1 prop reads inverted (1/14, synthesis correct —
 ledgered); `[200] harry_thoughts.docx` (career) may be a third party's work (confirm);
 non-bridge 'both X and Y' queries don't trigger multi-query expansion (the Fourier facet
-under-retrieval above); `link` and `retitle` batch their cache writes at the end (a crash
-wastes spend — make incremental); ANN index (§11) when KNN latency degrades; Obsidian
-projection (§13); transcript ingest.
+under-retrieval above); ANN index (§11) when KNN latency degrades; Obsidian projection
+(§13); transcript ingest.
+
+**Operational hardening (this round):** `link`/`retitle` now persist each billed verdict to
+`pass_cache` in its own commit (crash mid-rebuild no longer wastes spend — was a single
+end-of-run flush). `locus mcp` logs a build stamp (`build <sha>[+dirty] (<date>)`) to stderr
+at startup so a stale long-lived server is identifiable at connect time — restart it after
+any retrieval/pipeline change and check the stamp against `git rev-parse --short HEAD`.
 
 ## 3. Core principles
 

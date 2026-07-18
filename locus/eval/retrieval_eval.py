@@ -230,7 +230,7 @@ LABELLED_QUERIES: list[LabelledQuery] = [
                   ["citadel-analysis"]),
     # --- career ---
     LabelledQuery("What does the quant finance internship application roadmap recommend for students?",
-                  ["career-guide.md"]),
+                  ["jun_2026_career_plan.md"]),
     LabelledQuery("What are the terms of the Brevan Howard summer internship offer?",
                   ["Summer Intern Offer Letter|Intern employment contract"]),
     LabelledQuery("What did the cover letter to DE Shaw say about the trader/analyst role?",

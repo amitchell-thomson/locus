@@ -1,11 +1,11 @@
 """Step 12: cross-document entity-alias resolution (locus/link/).
 
 All model-free: deterministic tiers run as-is; the Claude adjudicator is exercised through
-an injected fake client (the judge.py pattern); embeddings come from an injected embed_fn.
+an injected fake runner (the headless `claude -p` seam); embeddings come from an injected embed_fn.
 """
 
+import json
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -219,18 +219,16 @@ def test_pick_canonical_prefers_doc_freq_then_shortest(conn):
 # --- LLM path with injected fake client --------------------------------------------------------
 
 
-class _FakeClient:
-    """Anthropic-shaped fake: returns a fixed tool_use verdict."""
+class _FakeRunner:
+    """Fake `claude -p` runner: returns a fixed verdict as JSON text (no subprocess)."""
 
     def __init__(self, verdict: dict):
-        self._verdict = verdict
+        self._text = json.dumps(verdict)
         self.calls = 0
-        self.messages = self  # client.messages.create(...)
 
-    def create(self, **kwargs):
+    def __call__(self, prompt: str, model: str | None) -> str:
         self.calls += 1
-        block = SimpleNamespace(type="tool_use", input=self._verdict)
-        return SimpleNamespace(content=[block])
+        return self._text
 
 
 def _seed_fuzzy_pair(conn):
@@ -260,14 +258,14 @@ def _close_embed(names: list[str]) -> list[list[float]]:
 
 def test_llm_merges_cross_type_variants(conn):
     _seed_fuzzy_pair(conn)
-    fake = _FakeClient({
+    fake = _FakeRunner({
         "groups": [{
             "member_indices": [0, 1],
             "canonical_name": "Fourier transform",
             "canonical_type": "concept",
         }]
     })
-    report = al.build_aliases(conn, use_llm=True, client=fake, model="fake", embed_fn=_close_embed)
+    report = al.build_aliases(conn, use_llm=True, runner=fake, model="fake", embed_fn=_close_embed)
     a = _aliases(conn)
     assert a[("fourier transform", "method")] == ("Fourier transform", "concept", "llm")
     assert a[("Fourier transform", "concept")][0] == "Fourier transform"
@@ -283,12 +281,12 @@ def test_llm_verdict_cached_in_pass_cache(conn):
             "canonical_type": "concept",
         }]
     }
-    fake = _FakeClient(verdict)
-    al.build_aliases(conn, use_llm=True, client=fake, model="fake", embed_fn=_close_embed)
+    fake = _FakeRunner(verdict)
+    al.build_aliases(conn, use_llm=True, runner=fake, model="fake", embed_fn=_close_embed)
     assert fake.calls == 1
     # Second run: verdict comes from pass_cache, no API call.
-    fake2 = _FakeClient(verdict)
-    report = al.build_aliases(conn, use_llm=True, client=fake2, model="fake", embed_fn=_close_embed)
+    fake2 = _FakeRunner(verdict)
+    report = al.build_aliases(conn, use_llm=True, runner=fake2, model="fake", embed_fn=_close_embed)
     assert fake2.calls == 0
     assert report.cache_hits == 1 and report.llm_calls == 0
     assert _aliases(conn)[("fourier transform", "method")][0] == "Fourier transform"
@@ -303,12 +301,12 @@ def test_token_jaccard_guard_blocks_theme_mates(conn):
     _seed_entity(conn, 1, 1, "Kalman filter", "method")
     _seed_entity(conn, 1, 2, "particle filter", "method")
     conn.commit()
-    fake = _FakeClient({"groups": []})
+    fake = _FakeRunner({"groups": []})
 
     def both_close(names):
         return [[1.0] + [0.0] * 767 for _ in names]
 
-    report = al.build_aliases(conn, use_llm=True, client=fake, model="fake", embed_fn=both_close)
+    report = al.build_aliases(conn, use_llm=True, runner=fake, model="fake", embed_fn=both_close)
     assert report.llm_candidate_clusters == 0 and fake.calls == 0
     a = _aliases(conn)
     assert a[("Kalman filter", "method")][0] == "Kalman filter"
@@ -324,7 +322,7 @@ def test_cooccurrence_guard_overrides_llm(conn):
     _seed_entity(conn, 1, 1, "Kalman filter", "method")
     _seed_entity(conn, 1, 1, "extended Kalman filter", "method")
     conn.commit()
-    fake = _FakeClient({
+    fake = _FakeRunner({
         "groups": [{
             "member_indices": [0, 1],
             "canonical_name": "Kalman filter",
@@ -335,7 +333,7 @@ def test_cooccurrence_guard_overrides_llm(conn):
     def both_close(names):
         return [[1.0] + [0.0] * 767 for _ in names]
 
-    report = al.build_aliases(conn, use_llm=True, client=fake, model="fake", embed_fn=both_close)
+    report = al.build_aliases(conn, use_llm=True, runner=fake, model="fake", embed_fn=both_close)
     a = _aliases(conn)
     assert a[("Kalman filter", "method")][0] == "Kalman filter"
     assert a[("extended Kalman filter", "method")][0] == "extended Kalman filter"
@@ -350,7 +348,7 @@ def test_short_name_guard_overrides_llm(conn):
     _seed_entity(conn, 1, 1, "VaR", "metric")
     _seed_entity(conn, 2, 2, "Vary", "metric")  # 4 chars, close-ish string
     conn.commit()
-    fake = _FakeClient({
+    fake = _FakeRunner({
         "groups": [{
             "member_indices": [0, 1],
             "canonical_name": "VaR",
@@ -361,7 +359,7 @@ def test_short_name_guard_overrides_llm(conn):
     def both_close(names):
         return [[1.0] + [0.0] * 767 for _ in names]
 
-    al.build_aliases(conn, use_llm=True, client=fake, model="fake", embed_fn=both_close)
+    al.build_aliases(conn, use_llm=True, runner=fake, model="fake", embed_fn=both_close)
     a = _aliases(conn)
     # "VaR" is < min_merge_len -> the group is rejected, both stay identity.
     assert a[("VaR", "metric")][0] == "VaR"
@@ -370,14 +368,14 @@ def test_short_name_guard_overrides_llm(conn):
 
 def test_invented_canonical_snaps_to_member(conn):
     _seed_fuzzy_pair(conn)
-    fake = _FakeClient({
+    fake = _FakeRunner({
         "groups": [{
             "member_indices": [0, 1],
             "canonical_name": "The Fourier Transform (invented)",
             "canonical_type": "concept",
         }]
     })
-    al.build_aliases(conn, use_llm=True, client=fake, model="fake", embed_fn=_close_embed)
+    al.build_aliases(conn, use_llm=True, runner=fake, model="fake", embed_fn=_close_embed)
     a = _aliases(conn)
     canon = a[("fourier transform", "method")][0]
     # Never an invented surface: the canonical is one of the actual members.
@@ -394,8 +392,8 @@ def test_oversize_cluster_skipped(conn, monkeypatch):
     def all_same(names):
         return [[1.0] + [0.0] * 767 for _ in names]
 
-    fake = _FakeClient({"groups": []})
-    report = al.build_aliases(conn, use_llm=True, client=fake, model="fake", embed_fn=all_same)
+    fake = _FakeRunner({"groups": []})
+    report = al.build_aliases(conn, use_llm=True, runner=fake, model="fake", embed_fn=all_same)
     assert report.oversize_skipped == 1
     assert fake.calls == 0  # never sent to the LLM
 
@@ -541,14 +539,14 @@ def test_typo_pair_reaches_llm_and_merges(conn):
     _seed_entity(conn, 1, 1, "PCMCI", "method")
     _seed_entity(conn, 2, 2, "PCMIC", "method")  # the paper's own typo (transposition)
     conn.commit()
-    fake = _FakeClient({
+    fake = _FakeRunner({
         "groups": [{
             "member_indices": [0, 1],
             "canonical_name": "PCMCI",
             "canonical_type": "method",
         }]
     })
-    report = al.build_aliases(conn, use_llm=True, client=fake, model="fake",
+    report = al.build_aliases(conn, use_llm=True, runner=fake, model="fake",
                               embed_fn=_orthogonal_embed)
     assert report.llm_candidate_clusters == 1 and fake.calls == 1
     a = _aliases(conn)
@@ -562,8 +560,8 @@ def test_typo_digit_guard_blocks_model_variants(conn):
     _seed_entity(conn, 1, 1, "MSH(2) models", "other")
     _seed_entity(conn, 1, 2, "MSH(20) models", "other")  # one edit apart, DIFFERENT models
     conn.commit()
-    fake = _FakeClient({"groups": []})
-    report = al.build_aliases(conn, use_llm=True, client=fake, model="fake",
+    fake = _FakeRunner({"groups": []})
+    report = al.build_aliases(conn, use_llm=True, runner=fake, model="fake",
                               embed_fn=_orthogonal_embed)
     assert report.llm_candidate_clusters == 0 and fake.calls == 0
     a = _aliases(conn)
@@ -581,8 +579,8 @@ def test_typo_tier_respects_type_and_length(conn):
     _seed_entity(conn, 1, 1, "VaR", "metric")
     _seed_entity(conn, 1, 2, "VeR", "metric")
     conn.commit()
-    fake = _FakeClient({"groups": []})
-    report = al.build_aliases(conn, use_llm=True, client=fake, model="fake",
+    fake = _FakeRunner({"groups": []})
+    report = al.build_aliases(conn, use_llm=True, runner=fake, model="fake",
                               embed_fn=_orthogonal_embed)
     assert report.llm_candidate_clusters == 0 and fake.calls == 0
 
@@ -628,14 +626,14 @@ def test_throttle_spaces_api_calls_but_not_cache_hits(conn, monkeypatch):
     conn.commit()
     sleeps: list[float] = []
     monkeypatch.setattr(al.time, "sleep", lambda s: sleeps.append(s))
-    fake = _FakeClient({"groups": []})
-    report = al.build_aliases(conn, use_llm=True, client=fake, model="fake",
+    fake = _FakeRunner({"groups": []})
+    report = al.build_aliases(conn, use_llm=True, runner=fake, model="fake",
                               embed_fn=_close_embed)
     assert report.llm_calls == 2
     assert len(sleeps) == 1 and sleeps[0] > 0
     sleeps.clear()
-    fake2 = _FakeClient({"groups": []})
-    report2 = al.build_aliases(conn, use_llm=True, client=fake2, model="fake",
+    fake2 = _FakeRunner({"groups": []})
+    report2 = al.build_aliases(conn, use_llm=True, runner=fake2, model="fake",
                                embed_fn=_close_embed)
     assert report2.cache_hits == 2 and report2.llm_calls == 0
     assert sleeps == []
@@ -692,8 +690,8 @@ def test_score_links_requires_substrate_and_finds_pairs(conn):
 # --- adjudicator unit ---------------------------------------------------------------------------
 
 
-def test_adjudicate_cluster_parses_tool_use():
-    fake = _FakeClient({
+def test_adjudicate_cluster_parses_json():
+    fake = _FakeRunner({
         "groups": [{
             "member_indices": [0],
             "canonical_name": "KL divergence",
@@ -702,19 +700,26 @@ def test_adjudicate_cluster_parses_tool_use():
     })
     v = adjudicate_cluster(
         [ClusterMember("KL divergence", "concept", ("Info Theory",))],
-        client=fake, model="fake",
+        runner=fake, model="fake",
     )
     assert isinstance(v, AliasVerdict)
     assert v.groups[0].canonical_name == "KL divergence"
 
 
-def test_adjudicate_cluster_raises_without_tool_use():
-    class NoTool:
-        def __init__(self):
-            self.messages = self
+def test_adjudicate_cluster_tolerates_prose_around_json():
+    # The CLI reply may wrap the object in prose / code fences; we slice first { .. last }.
+    def runner(prompt, model):
+        return ('Here is the partition:\n```json\n'
+                '{"groups": [{"member_indices": [0], "canonical_name": "KL divergence", '
+                '"canonical_type": "concept"}]}\n```')
 
-        def create(self, **kwargs):
-            return SimpleNamespace(content=[SimpleNamespace(type="text", text="hi")])
+    v = adjudicate_cluster([ClusterMember("KL divergence", "concept")], runner=runner, model="m")
+    assert v.groups[0].canonical_name == "KL divergence"
 
+
+def test_adjudicate_cluster_raises_on_unparseable_reply():
     with pytest.raises(RuntimeError):
-        adjudicate_cluster([ClusterMember("x", "concept")], client=NoTool(), model="fake")
+        adjudicate_cluster(
+            [ClusterMember("x", "concept")],
+            runner=lambda prompt, model: "sorry, no json here", model="fake",
+        )

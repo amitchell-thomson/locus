@@ -16,7 +16,9 @@ Round-5 audit hardening:
 
 from __future__ import annotations
 
+import math
 import sqlite3
+import struct
 from dataclasses import dataclass
 
 # How many shared canonical names to sample per related document (display context).
@@ -55,6 +57,125 @@ _BARE_IDENT_FILTER = (
     + ")"
     ")"
 )
+
+# The (canonical_name, doc_id) substrate + corpus-wide doc frequency per canonical name, shared
+# by every related-docs query (the candidate scoring, the per-doc vector norms, and the shared-name
+# sampling). Factored to one place so the boilerplate filter and frequency definition cannot drift
+# between them.
+_CANON_CTE = f"""
+    canon_docs AS (
+        SELECT DISTINCT a.canonical_name, e.doc_id
+        FROM entities e
+        JOIN entity_aliases a
+          ON a.variant_name = e.name AND a.variant_type = e.type
+        WHERE {_BARE_IDENT_FILTER}
+    ),
+    name_freq AS (
+        SELECT canonical_name, COUNT(DISTINCT doc_id) AS doc_freq
+        FROM canon_docs GROUP BY canonical_name
+    )
+"""
+
+
+# Cross-domain ranking (round-8). The owner's high-value material — quant/finance PAPERS, code
+# PROJECTS, and CAREER/application docs — is a minority of a corpus that is ~80% engineering
+# coursework (246/313), a dense topical clique. So a high-value doc's genuinely useful cross-domain
+# neighbour (a repo and the paper it implements; a project and the role it targets) ranks just below
+# its same-category siblings and the incidental coursework overlap. Boosting a link's IDF weight
+# when BOTH endpoints are high-value categories lifts paper<->project, project<->career,
+# paper<->career (and same-category project<->project etc.) above coursework noise — WITHOUT
+# touching coursework links (factor 1.0; they are legitimate, just not the under-served signal),
+# so it cannot demote the coursework pairs the link eval protects. Tunable; pass {} to disable.
+_HIGH_VALUE_CATEGORIES = ("paper", "project", "career")
+_CROSS_DOMAIN_BOOST = 1.5
+
+
+def _default_category_affinity() -> dict[tuple[str, str], float]:
+    """Symmetric (src_cat, cand_cat) -> weight multiplier; >1 only among high-value categories."""
+    return {
+        (a, b): _CROSS_DOMAIN_BOOST
+        for a in _HIGH_VALUE_CATEGORIES
+        for b in _HIGH_VALUE_CATEGORIES
+    }
+
+
+def _load_category_affinity() -> dict[tuple[str, str], float]:
+    """Production affinity matrix. Module default for now; a config override can be wired here
+    later (the function boundary keeps `related_documents` agnostic to where the matrix is set)."""
+    return _default_category_affinity()
+
+
+# Semantic arm (round-8). The entity-overlap arm is precise but blind to docs that are clearly
+# about the same thing yet share no exact canonical surface — e.g. tanker-flow and regime-ml (both
+# regime-detection quant repos) share only filtered code boilerplate, so entity overlap surfaces
+# NOTHING between them. A doc-level embedding (mean-pooled section vectors) recovers these: their
+# synthesis/section text embeds at cosine ~0.91. The two arms are combined by Reciprocal Rank
+# Fusion with the entity arm weighted higher (_SEMANTIC_WEIGHT < 1) so the precise entity links
+# stay primary and genre similarity (all the owner's repos embed alike) cannot displace them — it
+# only ADDS neighbours the entity arm missed. Graceful: with no section vectors the arm is inert.
+_RRF_K = 60
+_SEMANTIC_WEIGHT = 1.0
+_SEMANTIC_CANDIDATES = 10  # top-K semantic neighbours fused per source doc
+_doc_vector_cache: dict[int, dict[int, list[float]]] = {}
+
+
+def _doc_vectors(conn: sqlite3.Connection) -> dict[int, list[float]]:
+    """Per-doc L2-normalised embedding = mean of its section vectors. Cached per connection for
+    the process lifetime (the substrate is static during a link/inspect/export run)."""
+    cached = _doc_vector_cache.get(id(conn))
+    if cached is not None:
+        return cached
+    acc: dict[int, list[float]] = {}
+    cnt: dict[int, int] = {}
+    rows = conn.execute(
+        "SELECT s.doc_id AS doc_id, sv.embedding AS embedding "
+        "FROM section_vectors sv JOIN sections s ON s.id = sv.section_id"
+    ).fetchall()
+    for r in rows:
+        vec = struct.unpack(f"{len(r['embedding']) // 4}f", r["embedding"])
+        a = acc.get(r["doc_id"])
+        if a is None:
+            acc[r["doc_id"]] = list(vec)
+        else:
+            for i, x in enumerate(vec):
+                a[i] += x
+        cnt[r["doc_id"]] = cnt.get(r["doc_id"], 0) + 1
+    out: dict[int, list[float]] = {}
+    for doc_id, a in acc.items():
+        n = cnt[doc_id]
+        mean = [x / n for x in a]
+        norm = math.sqrt(sum(x * x for x in mean)) or 1.0
+        out[doc_id] = [x / norm for x in mean]
+    _doc_vector_cache[id(conn)] = out
+    return out
+
+
+def _shared_names(
+    conn: sqlite3.Connection, doc_a: int, doc_b: int, stop_doc_freq: int | None
+) -> list[str]:
+    """The shared canonical names between two docs, rarest (most distinctive) first."""
+    params: list = [doc_a, doc_b]
+    name_stop = ""
+    if stop_doc_freq is not None:
+        name_stop = " AND nf.doc_freq <= ?"
+        params.append(stop_doc_freq)
+    params.append(_SAMPLE_NAMES)
+    return [
+        n["canonical_name"]
+        for n in conn.execute(
+            f"""
+            WITH {_CANON_CTE}
+            SELECT c1.canonical_name
+            FROM canon_docs c1
+            JOIN canon_docs c2 ON c2.canonical_name = c1.canonical_name
+            JOIN name_freq nf  ON nf.canonical_name = c1.canonical_name
+            WHERE c1.doc_id = ? AND c2.doc_id = ?{name_stop}
+            ORDER BY nf.doc_freq ASC, c1.canonical_name
+            LIMIT ?
+            """,
+            params,
+        )
+    ]
 
 
 @dataclass(frozen=True)
@@ -136,83 +257,113 @@ def related_documents(
     *,
     top_n: int = 5,
     stop_doc_freq: int | None = None,
+    category_affinity: dict[tuple[str, str], float] | None = None,
 ) -> list[RelatedDoc]:
     """Top documents sharing canonical entity NAMES with `doc_id`, IDF-weighted.
 
-    Each shared name contributes 1/doc_freq (docs it appears in corpus-wide) to the
-    ranking, so corpus-ubiquitous terms cannot dominate. `stop_doc_freq` additionally
-    EXCLUDES names appearing in more than that many documents (hard stop-entity cut —
-    off by default at small corpus scale; the pour runbook enables it, ~0.4 x doc count).
-    Returns [] when the alias substrate has not been built yet.
+    Each shared name contributes 1/doc_freq (docs it appears in corpus-wide) to the ranking, so
+    corpus-ubiquitous terms cannot dominate. `stop_doc_freq` additionally EXCLUDES names appearing
+    in more than that many documents (hard stop-entity cut — off by default at small scale; the
+    pour runbook enables it, ~0.4 x doc count). Returns [] when the alias substrate is unbuilt.
+
+    Cross-domain ranking (round-8): the raw IDF-weighted overlap reflects the corpus's makeup —
+    246/313 docs are engineering coursework, a dense topical clique — so for the owner's
+    high-value docs (quant papers, code projects, career/applications) the genuinely useful
+    cross-domain neighbours (a repo and the paper it implements) sit just below same-category
+    siblings. `category_affinity` multiplies a pair's weight by a per-(src,cand)-category factor
+    so links *among* the high-value categories surface above incidental coursework overlap. It
+    is applied AFTER IDF weighting and never changes `shared_count`/`shared_names` (raw display);
+    defaults from config (`relate_category_affinity`) when None — pass `{}` to disable.
+
+    A **semantic arm** (doc-embedding cosine, mean-pooled section vectors) is fused in by
+    reciprocal-rank fusion, weighted below the entity arm (`_SEMANTIC_WEIGHT`): it recovers
+    neighbours that are clearly about the same thing but share NO canonical surface (tanker-flow
+    <-> regime-ml — both regime-detection repos — overlap only on filtered code boilerplate, so
+    entity overlap finds nothing; their text embeds at cosine ~0.91). The entity arm stays
+    primary, so semantic genre-similarity cannot displace real entity links — it only fills slots
+    the entity arm leaves empty. Inert when section vectors are absent (e.g. seeded test DBs).
+
+    NB cosine/length-normalised scoring of the ENTITY arm was tried and reverted: it tanked
+    `links_recall` (1.000 -> 0.769) by over-rewarding short docs. The semantic arm is additive
+    (fusion), not a re-normalisation of the entity arm, so it has no such side effect.
     """
+    if category_affinity is None:
+        category_affinity = _load_category_affinity()
+
+    src_cat_row = conn.execute(
+        "SELECT category FROM documents WHERE id = ?", (doc_id,)
+    ).fetchone()
+    src_cat = (src_cat_row["category"] if src_cat_row else None) or ""
+
     stop_clause = ""
-    params: list = [doc_id, doc_id]
+    stop_params: list = []
     if stop_doc_freq is not None:
         stop_clause = " AND nf.doc_freq <= ?"
-        params.append(stop_doc_freq)
+        stop_params = [stop_doc_freq]
 
-    rows = conn.execute(
+    cands = conn.execute(
         f"""
-        WITH canon_docs AS (
-            SELECT DISTINCT a.canonical_name, e.doc_id
-            FROM entities e
-            JOIN entity_aliases a
-              ON a.variant_name = e.name AND a.variant_type = e.type
-            WHERE {_BARE_IDENT_FILTER}
-        ),
-        name_freq AS (
-            SELECT canonical_name, COUNT(DISTINCT doc_id) AS doc_freq
-            FROM canon_docs GROUP BY canonical_name
-        ),
+        WITH {_CANON_CTE},
         my AS (SELECT canonical_name FROM canon_docs WHERE doc_id = ?)
-        SELECT cd.doc_id, d.title,
-               COUNT(*)                  AS shared,
-               SUM(1.0 / nf.doc_freq)    AS weight
+        SELECT cd.doc_id, d.title, d.category,
+               COUNT(*)               AS shared,
+               SUM(1.0 / nf.doc_freq) AS weight
         FROM canon_docs cd
         JOIN my        ON my.canonical_name = cd.canonical_name
         JOIN name_freq nf ON nf.canonical_name = cd.canonical_name
         JOIN documents d  ON d.id = cd.doc_id
         WHERE cd.doc_id != ?{stop_clause}
         GROUP BY cd.doc_id
-        ORDER BY weight DESC, shared DESC, cd.doc_id
-        LIMIT {int(top_n)}
         """,
-        params,
+        [doc_id, doc_id, *stop_params],
     ).fetchall()
 
-    out: list[RelatedDoc] = []
-    for r in rows:
-        name_params: list = [doc_id, r["doc_id"]]
-        name_stop = ""
-        if stop_doc_freq is not None:
-            name_stop = " AND nf.doc_freq <= ?"
-            name_params.append(stop_doc_freq)
-        name_params.append(_SAMPLE_NAMES)
-        names = [
-            n["canonical_name"]
-            for n in conn.execute(
-                f"""
-                WITH canon_docs AS (
-                    SELECT DISTINCT a.canonical_name, e.doc_id
-                    FROM entities e
-                    JOIN entity_aliases a
-                      ON a.variant_name = e.name AND a.variant_type = e.type
-                    WHERE {_BARE_IDENT_FILTER}
-                ),
-                name_freq AS (
-                    SELECT canonical_name, COUNT(DISTINCT doc_id) AS doc_freq
-                    FROM canon_docs GROUP BY canonical_name
-                )
-                SELECT c1.canonical_name
-                FROM canon_docs c1
-                JOIN canon_docs c2 ON c2.canonical_name = c1.canonical_name
-                JOIN name_freq nf  ON nf.canonical_name = c1.canonical_name
-                WHERE c1.doc_id = ? AND c2.doc_id = ?{name_stop}
-                ORDER BY nf.doc_freq ASC, c1.canonical_name
-                LIMIT ?
-                """,
-                name_params,
+    # --- entity arm: weight x category-affinity, ranked (0-based) for fusion ---
+    entity_scored = sorted(
+        (
+            (
+                r["weight"] * category_affinity.get((src_cat, r["category"] or ""), 1.0),
+                r["shared"],
+                r["doc_id"],
+                r["title"],
             )
-        ]
-        out.append(RelatedDoc(r["doc_id"], r["title"] or "(untitled)", r["shared"], tuple(names)))
+            for r in cands
+        ),
+        key=lambda t: (-t[0], -t[1], t[2]),
+    )
+    meta = {cid: (sh, ti) for _w, sh, cid, ti in entity_scored}
+    entity_rank = {cid: i for i, (_w, _sh, cid, _ti) in enumerate(entity_scored)}
+
+    # --- semantic arm: doc-embedding cosine, ranked; recovers entity-less neighbours ---
+    sem_rank: dict[int, int] = {}
+    vectors = _doc_vectors(conn)
+    src_vec = vectors.get(doc_id)
+    if src_vec is not None:
+        sims = sorted(
+            ((sum(a * b for a, b in zip(src_vec, v)), cid) for cid, v in vectors.items() if cid != doc_id),
+            reverse=True,
+        )[:_SEMANTIC_CANDIDATES]
+        sem_rank = {cid: i for i, (_s, cid) in enumerate(sims)}
+
+    # --- reciprocal-rank fusion: entity arm primary, semantic only ADDS (weight < 1) ---
+    fused = []
+    for cid in set(entity_rank) | set(sem_rank):
+        score = 0.0
+        if cid in entity_rank:
+            score += 1.0 / (_RRF_K + entity_rank[cid])
+        if cid in sem_rank:
+            score += _SEMANTIC_WEIGHT / (_RRF_K + sem_rank[cid])
+        fused.append((score, meta.get(cid, (0, ""))[0], cid))
+    fused.sort(key=lambda t: (-t[0], -t[1], t[2]))
+
+    out: list[RelatedDoc] = []
+    for _score, shared, cand_id in fused[: int(top_n)]:
+        title = meta.get(cand_id, (0, ""))[1]
+        if not title:
+            row = conn.execute("SELECT title FROM documents WHERE id = ?", (cand_id,)).fetchone()
+            title = (row["title"] if row else "") or "(untitled)"
+        # Only entity-overlap neighbours have shared canonical names to display; a semantic-only
+        # neighbour (shared == 0) is a meaning match with no shared surface.
+        names = tuple(_shared_names(conn, doc_id, cand_id, stop_doc_freq)) if shared else ()
+        out.append(RelatedDoc(cand_id, title or "(untitled)", shared, names))
     return out

@@ -428,16 +428,17 @@ def build_aliases(
     *,
     use_llm: bool | None = None,
     use_cache: bool = True,
-    client=None,
+    runner=None,
     model: str | None = None,
     embed_fn: Callable[[list[str]], list[list[float]]] = embed_texts,
     log: Callable[[str], None] = lambda _msg: None,
 ) -> AliasBuildReport:
     """Rebuild the entity_aliases table from the stored entities. Regenerable; one transaction.
 
-    `use_llm=None` follows config. `client`/`embed_fn` are injectable for tests. LLM verdicts
-    are cached in pass_cache keyed on cluster content + model + PROMPT_VERSION, so re-runs
-    after new ingests only adjudicate new/changed clusters; `use_cache=False` re-adjudicates.
+    `use_llm=None` follows config. `runner`/`embed_fn` are injectable for tests (`runner` is the
+    headless-`claude -p` adjudication callable). LLM verdicts are cached in pass_cache keyed on
+    cluster content + model + PROMPT_VERSION, so re-runs after new ingests only adjudicate
+    new/changed clusters; `use_cache=False` re-adjudicates.
     """
     cfg = load().alias
     if use_llm is None:
@@ -497,9 +498,8 @@ def build_aliases(
                     verdict = AliasVerdict.model_validate_json(row["payload"])
                     report.cache_hits += 1
             if verdict is None:
-                # Throttle: space API calls so a full rebuild (hundreds of clusters)
-                # stays under the account's per-minute rate limit instead of leaning
-                # on SDK 429-retries. Cache hits skip this entirely.
+                # Throttle: space adjudication calls so a full rebuild (hundreds of clusters)
+                # stays under the subscription's rate limit. Cache hits skip this entirely.
                 if cfg.api_call_interval > 0 and last_api_call:
                     wait = cfg.api_call_interval - (time.monotonic() - last_api_call)
                     if wait > 0:
@@ -507,13 +507,13 @@ def build_aliases(
                 last_api_call = time.monotonic()
                 verdict = adjudicate.adjudicate_cluster(
                     [ClusterMember(m.name, m.type, tuple(m.titles)) for m in members],
-                    client=client, model=gen_model,
+                    runner=runner, model=gen_model,
                 )
                 report.llm_calls += 1
                 # Persist this verdict immediately, in its own commit, so a crash partway
-                # through a rebuild never discards the billed adjudications already made — a
-                # re-run resumes from the cache instead of re-paying for them (2026-06-09:
-                # was a single executemany flushed only at the very end of the loop).
+                # through a rebuild never discards the adjudications already made — a re-run
+                # resumes from the cache instead of repeating them (2026-06-09: was a single
+                # executemany flushed only at the very end of the loop).
                 with conn:
                     conn.execute(
                         "INSERT OR REPLACE INTO pass_cache (key, payload) VALUES (?,?)",

@@ -42,3 +42,5 @@ ingest-*.log
 reingest-*.log
 eval-*.log
 vault/.ingest.lock
+# `locus retitle` safety backups — regenerable, not tracked
+vault/title_backup*.json

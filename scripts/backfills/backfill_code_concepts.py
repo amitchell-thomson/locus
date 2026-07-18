@@ -27,8 +27,10 @@ from locus.ingest import concepts
 from locus.ingest.entities import is_grounded
 
 
-def _readme_text(conn, doc_id: int, limit: int = 6000) -> str:
-    """Reconstruct a repo's README/markdown text from its chunks (sections store no raw text)."""
+def _readme_text(conn, doc_id: int, limit: int = 12000) -> str:
+    """Reconstruct a repo's README/markdown text from its chunks (sections store no raw text).
+    The PRIMARY concept surface — supply generously; `extract_code_concepts` caps it to its
+    markdown budget and weights it above the code summaries."""
     rows = conn.execute(
         """
         SELECT c.raw_text FROM chunks c JOIN sections s ON s.id = c.section_id

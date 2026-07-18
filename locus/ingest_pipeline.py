@@ -534,9 +534,10 @@ def _prepare_section(
     )
 
 
-def _readme_text(doc: ExtractedDoc, limit: int = 6000) -> str:
-    """Raw text of a repo's narrative sections (README / markdown), the richest concept input
-    beyond the summaries. Empty for repos without one (the synthesis + summaries are the floor)."""
+def _readme_text(doc: ExtractedDoc, limit: int = 12000) -> str:
+    """Raw text of a repo's narrative sections (README / markdown), the PRIMARY concept input —
+    `extract_code_concepts` weights it above the code summaries, so supply generously and let
+    the pass cap to its markdown budget. Empty for repos without one (synthesis is the floor)."""
     parts = [
         s.text for s in doc.sections
         if (s.title or "").lower().endswith((".md", ".markdown")) or "readme" in (s.title or "").lower()

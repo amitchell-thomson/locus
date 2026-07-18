@@ -69,22 +69,28 @@ def extract_code_concepts(
     stoplist: frozenset[str] | set[str] | None = None,
     max_concepts: int = 40,
     max_narrative_chars: int = 12000,
+    markdown_fraction: float = 0.75,
     **kw,
 ) -> list[Entity]:
     """Domain concepts the repository implements/studies, as normalised + filtered entities.
 
-    Inputs are the repo's already-extracted narrative (synthesis + section summaries + README
-    text) — never raw code. Returns at most `max_concepts` `Entity` objects, deduped by
-    (name, type), each grounded in the narrative shown and absent from `stoplist`
+    Inputs are the repo's already-extracted narrative (synthesis + README/markdown-doc text +
+    section summaries) — never raw code. Markdown docs are the domain-concept-bearing surface,
+    so they get `markdown_fraction` of the num_ctx-bounded budget and the code-file summaries
+    the remainder (CLAUDE.md §1.2 — Link). Returns at most `max_concepts` `Entity` objects,
+    deduped by (name, type), each grounded in the narrative shown and absent from `stoplist`
     (`None` => the built-in `DEFAULT_STOPLIST`)."""
     stop = {s.casefold() for s in (stoplist if stoplist is not None else DEFAULT_STOPLIST)}
-    # Bound the narrative to the ingest context window: a large repo (regime-ml has 88 files)
-    # overflows num_ctx when ALL summaries are joined, and the model degrades to a single junk
-    # concept (observed 2026-06-09). The synthesis is the densest, most complete signal, so it
-    # is always included whole; the README and a bounded slice of file summaries fill the rest
-    # (concepts recur across files, so a representative slice suffices).
-    readme = (readme_text or "")[: max_narrative_chars // 2]
-    budget = max(0, max_narrative_chars - len(synthesis_text) - len(readme))
+    # Weight markdown FAR above code. A repo's domain concepts live in its prose docs (README,
+    # analysis/*.md, design notes); its code-file summaries describe implementation and yield
+    # mostly identifiers, not the concepts that bridge a project to its papers (CLAUDE.md §1.2).
+    # So the markdown docs get the majority (`markdown_fraction`) of the num_ctx-bounded budget
+    # and the code summaries a bounded remainder — a large repo (regime-ml has 88 files)
+    # overflows num_ctx when ALL summaries are joined and the model degrades to one junk concept
+    # (observed 2026-06-09). Synthesis is the densest signal and is always included whole; if
+    # the docs are short the remainder grows, so a doc-light repo still gets its summaries.
+    docs = (readme_text or "")[: int(max_narrative_chars * markdown_fraction)]
+    budget = max(0, max_narrative_chars - len(synthesis_text) - len(docs))
     summ_lines: list[str] = []
     used = 0
     for s in section_summaries:
@@ -96,12 +102,17 @@ def extract_code_concepts(
     summaries = "\n".join(summ_lines) or "(none)"
     # Grounding source = exactly the text we show the model, so a concept must be attested in
     # the narrative, not merely in the model's (fabricable) `evidence` field.
-    narrative = "\n".join(filter(None, [synthesis_text, summaries, readme]))
+    narrative = "\n".join(filter(None, [synthesis_text, docs, summaries]))
     user = (
         f"Project: {title or '(unknown)'}\n\n"
         f"Project description (synthesis):\n{synthesis_text}\n\n"
-        f"Per-file summaries:\n{summaries}\n\n"
-        + (f"README / docs:\n{readme}\n\n" if readme else "")
+        + (
+            "Project documentation (README / design docs — the PRIMARY source of domain "
+            f"concepts):\n{docs}\n\n"
+            if docs
+            else ""
+        )
+        + f"Per-file code summaries (supplementary — mostly implementation detail):\n{summaries}\n\n"
         + "This is a SOFTWARE PROJECT. List the DOMAIN CONCEPTS, models, methods, techniques, "
         "datasets, theorems, and metrics this project implements, uses, or studies — the ideas "
         "that connect it to academic papers and coursework on the same subjects. Examples: "

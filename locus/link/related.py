@@ -58,10 +58,35 @@ _BARE_IDENT_FILTER = (
     ")"
 )
 
-# The (canonical_name, doc_id) substrate + corpus-wide doc frequency per canonical name, shared
-# by every related-docs query (the candidate scoring, the per-doc vector norms, and the shared-name
-# sampling). Factored to one place so the boilerplate filter and frequency definition cannot drift
-# between them.
+# Code-symbol segregation (Phase 2, §1.2 Link). A repo's AST identifiers (functions ->
+# 'method', classes -> 'concept'; extract/code.py) are the exact function/class names, not the
+# DOMAIN concepts that bridge a project to its papers. The round-6 `_BARE_IDENT_FILTER` above
+# only catches short/private/test names; identifiers like `lifespan`, `Candidate`, `build_signals`
+# survive and, being rare, earn high IDF weight — a shared framework identifier (`lifespan` in two
+# FastAPI repos) then outranks a genuinely shared concept (`mean reversion`). So we CLASSIFY
+# code-symbols and score them separately: concepts drive ranking for ANY pair; a code-symbol
+# contributes only a small tiebreak weight and ONLY when BOTH docs are code (never code<->paper).
+# This keeps a distinctive shared function (`implied_vol_from_mid`) visible as a code<->code link
+# without letting boilerplate displace concept links.
+#
+# Classifier (joins-only, no new column — the substrate stays regenerable): a canonical is a
+# code-symbol iff it is single-token (no space — every real bridging concept the pass emits is
+# multi-word, e.g. 'mean reversion', or is attested in narrative) AND every one of its corpus
+# occurrences is a code-file section of a code doc. A concept anchored to a repo's `.md` doc, or
+# any surface appearing in a paper/coursework doc, therefore never classifies as a code-symbol.
+_NARRATIVE_SECTION = (
+    "(s.file_path IS NULL"
+    " OR lower(s.file_path) LIKE '%.md'"
+    " OR lower(s.file_path) LIKE '%.markdown'"
+    " OR lower(s.file_path) LIKE '%.rst'"
+    " OR lower(s.file_path) LIKE '%.txt')"
+)
+_NARRATIVE_OCCURRENCE = f"(d.source_type != 'code' OR {_NARRATIVE_SECTION})"
+
+# The (canonical_name, doc_id) substrate + corpus-wide doc frequency per canonical name + the
+# code-symbol set, shared by every related-docs query (the candidate scoring, the per-doc vector
+# norms, and the shared-name sampling). Factored to one place so the boilerplate filter, frequency
+# definition, and code-symbol classifier cannot drift between them.
 _CANON_CTE = f"""
     canon_docs AS (
         SELECT DISTINCT a.canonical_name, e.doc_id
@@ -73,8 +98,24 @@ _CANON_CTE = f"""
     name_freq AS (
         SELECT canonical_name, COUNT(DISTINCT doc_id) AS doc_freq
         FROM canon_docs GROUP BY canonical_name
+    ),
+    code_symbols AS (
+        SELECT a.canonical_name
+        FROM entities e
+        JOIN entity_aliases a
+          ON a.variant_name = e.name AND a.variant_type = e.type
+        JOIN sections s  ON s.id = e.section_id
+        JOIN documents d ON d.id = e.doc_id
+        WHERE a.canonical_name NOT LIKE '% %'
+        GROUP BY a.canonical_name
+        HAVING SUM(CASE WHEN {_NARRATIVE_OCCURRENCE} THEN 1 ELSE 0 END) = 0
     )
 """
+
+# A code-symbol's tiebreak weight, applied ONLY to code<->code pairs. Small (0.1) so any shared
+# domain concept outranks any amount of shared boilerplate, yet non-zero so a distinctive shared
+# function still surfaces as a code<->code neighbour when no concept is shared.
+_CODE_SYMBOL_WEIGHT = 0.1
 
 
 # Cross-domain ranking (round-8). The owner's high-value material — quant/finance PAPERS, code
@@ -106,16 +147,16 @@ def _load_category_affinity() -> dict[tuple[str, str], float]:
 
 
 # Semantic arm (round-8). The entity-overlap arm is precise but blind to docs that are clearly
-# about the same thing yet share no exact canonical surface — e.g. tanker-flow and regime-ml (both
-# regime-detection quant repos) share only filtered code boilerplate, so entity overlap surfaces
-# NOTHING between them. A doc-level embedding (mean-pooled section vectors) recovers these: their
-# synthesis/section text embeds at cosine ~0.91. The two arms are combined by Reciprocal Rank
-# Fusion with the entity arm weighted higher (_SEMANTIC_WEIGHT < 1) so the precise entity links
-# stay primary and genre similarity (all the owner's repos embed alike) cannot displace them — it
-# only ADDS neighbours the entity arm missed. Graceful: with no section vectors the arm is inert.
-_RRF_K = 60
-_SEMANTIC_WEIGHT = 1.0
-_SEMANTIC_CANDIDATES = 10  # top-K semantic neighbours fused per source doc
+# about the same thing yet share no canonical surface at all. A doc-level embedding (mean-pooled
+# section vectors, cosine ~0.91 for same-topic docs) recovers these. It is STRICTLY TAIL-ADDITIVE:
+# a semantic-only neighbour (no shared entity) can only fill a slot AFTER every entity/concept
+# neighbour, never displace one. (Reciprocal-Rank Fusion was tried and reverted — with k=60 it
+# flattened entity rank 1 vs 7, so genre similarity, all the owner's repos embed alike, displaced
+# genuine concept links; measured: it demoted tanker-flow's concept-shared downside-risk neighbour
+# below its boilerplate-identifier ones. Post code-concept extraction the concept arm subsumes the
+# arm's original recall job, so additive-only loses nothing and restores links_recall to 1.000.)
+# Graceful: with no section vectors the arm is inert.
+_SEMANTIC_CANDIDATES = 10  # top-K semantic-only neighbours appended per source doc
 _doc_vector_cache: dict[int, dict[int, list[float]]] = {}
 
 
@@ -169,8 +210,9 @@ def _shared_names(
             FROM canon_docs c1
             JOIN canon_docs c2 ON c2.canonical_name = c1.canonical_name
             JOIN name_freq nf  ON nf.canonical_name = c1.canonical_name
+            LEFT JOIN code_symbols cs ON cs.canonical_name = c1.canonical_name
             WHERE c1.doc_id = ? AND c2.doc_id = ?{name_stop}
-            ORDER BY nf.doc_freq ASC, c1.canonical_name
+            ORDER BY (cs.canonical_name IS NOT NULL), nf.doc_freq ASC, c1.canonical_name
             LIMIT ?
             """,
             params,
@@ -275,25 +317,27 @@ def related_documents(
     is applied AFTER IDF weighting and never changes `shared_count`/`shared_names` (raw display);
     defaults from config (`relate_category_affinity`) when None — pass `{}` to disable.
 
-    A **semantic arm** (doc-embedding cosine, mean-pooled section vectors) is fused in by
-    reciprocal-rank fusion, weighted below the entity arm (`_SEMANTIC_WEIGHT`): it recovers
-    neighbours that are clearly about the same thing but share NO canonical surface (tanker-flow
-    <-> regime-ml — both regime-detection repos — overlap only on filtered code boilerplate, so
-    entity overlap finds nothing; their text embeds at cosine ~0.91). The entity arm stays
-    primary, so semantic genre-similarity cannot displace real entity links — it only fills slots
-    the entity arm leaves empty. Inert when section vectors are absent (e.g. seeded test DBs).
+    Code-symbol segregation (Phase 2): shared canonicals classified as code-symbols (AST
+    identifiers — single-token, only ever in code-file sections; `code_symbols` CTE) drive
+    ranking ONLY for code<->code pairs and only at a downweighted tiebreak (`_CODE_SYMBOL_WEIGHT`),
+    so a shared DOMAIN concept always outranks a shared identifier and a code identifier never
+    links a repo to a paper. Domain concepts drive ranking for any pair.
+
+    A **semantic arm** (doc-embedding cosine, mean-pooled section vectors) is tail-additive: it
+    appends same-topic neighbours that share NO entity surface after the entity/concept
+    neighbours, never displacing one. Inert when section vectors are absent (e.g. seeded tests).
 
     NB cosine/length-normalised scoring of the ENTITY arm was tried and reverted: it tanked
-    `links_recall` (1.000 -> 0.769) by over-rewarding short docs. The semantic arm is additive
-    (fusion), not a re-normalisation of the entity arm, so it has no such side effect.
+    `links_recall` (1.000 -> 0.769) by over-rewarding short docs.
     """
     if category_affinity is None:
         category_affinity = _load_category_affinity()
 
-    src_cat_row = conn.execute(
-        "SELECT category FROM documents WHERE id = ?", (doc_id,)
+    src_row = conn.execute(
+        "SELECT category, source_type FROM documents WHERE id = ?", (doc_id,)
     ).fetchone()
-    src_cat = (src_cat_row["category"] if src_cat_row else None) or ""
+    src_cat = (src_row["category"] if src_row else None) or ""
+    src_is_code = bool(src_row) and src_row["source_type"] == "code"
 
     stop_clause = ""
     stop_params: list = []
@@ -305,37 +349,44 @@ def related_documents(
         f"""
         WITH {_CANON_CTE},
         my AS (SELECT canonical_name FROM canon_docs WHERE doc_id = ?)
-        SELECT cd.doc_id, d.title, d.category,
-               COUNT(*)               AS shared,
-               SUM(1.0 / nf.doc_freq) AS weight
+        SELECT cd.doc_id, d.title, d.category, d.source_type,
+               COUNT(*) AS shared,
+               SUM(CASE WHEN cs.canonical_name IS NULL THEN 1 ELSE 0 END) AS concept_shared,
+               SUM(CASE WHEN cs.canonical_name IS NULL
+                        THEN 1.0 / nf.doc_freq ELSE 0 END) AS concept_weight,
+               SUM(CASE WHEN cs.canonical_name IS NOT NULL
+                        THEN 1.0 / nf.doc_freq ELSE 0 END) AS code_weight
         FROM canon_docs cd
         JOIN my        ON my.canonical_name = cd.canonical_name
         JOIN name_freq nf ON nf.canonical_name = cd.canonical_name
         JOIN documents d  ON d.id = cd.doc_id
+        LEFT JOIN code_symbols cs ON cs.canonical_name = cd.canonical_name
         WHERE cd.doc_id != ?{stop_clause}
         GROUP BY cd.doc_id
         """,
         [doc_id, doc_id, *stop_params],
     ).fetchall()
 
-    # --- entity arm: weight x category-affinity, ranked (0-based) for fusion ---
-    entity_scored = sorted(
-        (
-            (
-                r["weight"] * category_affinity.get((src_cat, r["category"] or ""), 1.0),
-                r["shared"],
-                r["doc_id"],
-                r["title"],
-            )
-            for r in cands
-        ),
-        key=lambda t: (-t[0], -t[1], t[2]),
-    )
+    # --- entity arm: concepts drive ranking (any pair); code-symbols add only a downweighted
+    # tiebreak, and only for code<->code (never code<->paper). Category-affinity multiplies the
+    # concept weight. `shared` for display prefers the shared CONCEPT count so the graph reads as
+    # topic links; a pure code<->code neighbour (no shared concept) falls back to its raw count.
+    entity_scored = []
+    for r in cands:
+        both_code = src_is_code and r["source_type"] == "code"
+        affinity = category_affinity.get((src_cat, r["category"] or ""), 1.0)
+        weight = r["concept_weight"] * affinity
+        if both_code:
+            weight += _CODE_SYMBOL_WEIGHT * r["code_weight"]
+        if weight <= 0:
+            continue  # only code-symbols shared across a non-code pair -> not a topical link
+        shared = r["concept_shared"] or r["shared"]
+        entity_scored.append((weight, shared, r["doc_id"], r["title"]))
+    entity_scored.sort(key=lambda t: (-t[0], -t[1], t[2]))
     meta = {cid: (sh, ti) for _w, sh, cid, ti in entity_scored}
-    entity_rank = {cid: i for i, (_w, _sh, cid, _ti) in enumerate(entity_scored)}
 
-    # --- semantic arm: doc-embedding cosine, ranked; recovers entity-less neighbours ---
-    sem_rank: dict[int, int] = {}
+    # --- semantic arm: doc-embedding cosine, best-first; recovers entity-less neighbours ---
+    sem_order: list[int] = []
     vectors = _doc_vectors(conn)
     src_vec = vectors.get(doc_id)
     if src_vec is not None:
@@ -343,22 +394,20 @@ def related_documents(
             ((sum(a * b for a, b in zip(src_vec, v)), cid) for cid, v in vectors.items() if cid != doc_id),
             reverse=True,
         )[:_SEMANTIC_CANDIDATES]
-        sem_rank = {cid: i for i, (_s, cid) in enumerate(sims)}
+        sem_order = [cid for _s, cid in sims]
 
-    # --- reciprocal-rank fusion: entity arm primary, semantic only ADDS (weight < 1) ---
-    fused = []
-    for cid in set(entity_rank) | set(sem_rank):
-        score = 0.0
-        if cid in entity_rank:
-            score += 1.0 / (_RRF_K + entity_rank[cid])
-        if cid in sem_rank:
-            score += _SEMANTIC_WEIGHT / (_RRF_K + sem_rank[cid])
-        fused.append((score, meta.get(cid, (0, ""))[0], cid))
-    fused.sort(key=lambda t: (-t[0], -t[1], t[2]))
+    # --- tail-additive fusion: entity/concept neighbours first (weight order), then semantic-only
+    # docs (no shared entity) fill remaining slots — never displacing a concept neighbour. ---
+    ordered = [cid for _w, _sh, cid, _ti in entity_scored]
+    seen = set(ordered)
+    for cid in sem_order:
+        if cid not in seen:
+            ordered.append(cid)
+            seen.add(cid)
 
     out: list[RelatedDoc] = []
-    for _score, shared, cand_id in fused[: int(top_n)]:
-        title = meta.get(cand_id, (0, ""))[1]
+    for cand_id in ordered[: int(top_n)]:
+        shared, title = meta.get(cand_id, (0, ""))
         if not title:
             row = conn.execute("SELECT title FROM documents WHERE id = ?", (cand_id,)).fetchone()
             title = (row["title"] if row else "") or "(untitled)"

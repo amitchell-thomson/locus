@@ -518,3 +518,63 @@ only work if the line is held.
 4. **Existing digest project** — review what it does before folding it in (§13.C) rather than rebuilding.
 5. **Local-VLM transcription mode** — worth offering for sensitive notes (failure mode #1)? Decide
    when privacy posture is set.
+
+---
+
+## 17. Requirements-refinement decisions (Q&A round, 2026-07)
+
+Confirmed with the owner before the implementation-ready rewrite. These **supersede** any conflicting
+detail above; the next revision folds them into the body.
+
+1. **Purpose (now):** a master **learning / project-development / interview-prep / idea-generation**
+   tool for a quant-track student — not yet trading. Architected so it can extend toward live-trading
+   support (theses, trade ideas, market-regime recall) in ~4–5 years without a rebuild.
+2. **Primary use modes (ranked):** **critique partner (c) ≈ proactive surfacing (a)** co-priority;
+   **synthesis on demand (b)** falls out of those; **understanding/revision check (d)**. The
+   query/critique/synthesis surface lives in **Claude via the existing MCP server** — enrich it, don't
+   rebuild it. The link-quality work already shipped is its substrate.
+3. **First-class structured objects, extensible base:** **Project · Concept-to-master · Open question ·
+   Reading**, over a shared base (id, type, provenance, maturity, timestamps, links). **Built
+   server-side from freeform capture — agent-proposed, human-blessed — never imposed at write time**
+   (capture stays frictionless/handwritten). Schema designed so a **Thesis / Trade-idea** type slots in
+   later with no migration pain.
+4. **Understanding-evolution — a named pillar** (was buried as "contradiction detection"): a dated
+   trajectory of the owner's positions per concept/project ("first thought X → then Y after Z"), to
+   learn and avoid repeating past mistakes across projects. Built on **propositions + concept-spine +
+   timestamps**; fed strongly by captured Claude conversations.
+5. **Capture universe:** books/papers/lectures (read) + **reMarkable handwritten annotations & notes
+   (dominant)** + code repos + **Claude conversations (NEW first-class producer)**. **News enters only
+   via active reading/annotation** (Loop B on a news PDF) — **no ambient news feed** (dilution risk;
+   a trading-era feature).
+6. **Claude-conversation capture — layered:** an **MCP `capture` tool** on the Locus server (core,
+   cross-client — Claude Code, claude.ai, phone), a thin **Claude Code skill** (`/locus-capture`,
+   ergonomic), and a **batch `.jsonl` importer** for flagged Code sessions. All write to the capture
+   inbox → normal enrich/link/ingest. **Curated** (the owner picks what's worth keeping).
+7. **Surfaces — two primary, one optional:** **reMarkable** (capture + reading + pushed proactive/daily
+   page) and **Claude** (query/critique/synthesis). **Obsidian is an optional, deferred visualization
+   projection** (graph exploration — "cool display," not load-bearing); the read-only export already
+   exists. **Syncthing / "Obsidian as THE front-end" drops off the critical path.**
+8. **The daily reMarkable page — dense, thought-provoking, ruthlessly small; NOT a passive ingestion
+   log.** ≤3 surfaced connections/tensions · ≤5 recall/interview-practice questions · ≤3 read-next.
+   **Annotatable + reingestable:** handwritten answers/reactions are pulled back, transcribed, graded
+   against the corpus; reactions become belief-updates; engagement trains the acceptance flywheel. This
+   handwriting-driven recall+serendipity+feedback loop is what makes "one surface" actually work. Exact
+   composition tuned during build; longevity guardrails (§13.D) outrank features.
+9. **Privacy:** **no constraint now** — all learning material may transit to Claude. Local-only /
+   local-VLM mode is **deferred to the trading era** (removed from the near-term plan; failure mode #1
+   dissolves for this user).
+10. **Ingest model routing — hybrid, per-pass (NOT "ditch local"):** embeddings **stay local**
+    (`nomic`, no Claude equivalent); GOT **math-OCR stays local** (safe-degrade). Route the durable
+    passes (propositions/entities/synthesis/gaps/concepts, and summaries) to a **cheap Claude model —
+    Haiku by default, Sonnet for judgment-heavy passes only on judge-eval evidence** (§11.B: "revisit
+    per-pass API routing only on eval evidence"). **Bulk re-ingest via API Batch** (−50%, no latency
+    budget; ~$15–50 one-time — *estimate, size in Phase 0*); **ongoing daily via subscription
+    `claude -p`** arbitrated by the budget guard, or pay-as-you-go (~$15–25/mo). This lifts the §11.B
+    ceiling that belief-evolution and critique quality depend on.
+11. **Reprioritization (approved):** bring the **value surfaces forward** — concept-spine, structured
+    objects, belief-evolution, the critique/synthesis MCP surface, and **interview-prep aids (gap
+    detection + practice-question generation)**. **Defer** voice, feeds, full auto-organise, and the
+    elaborate dashboard.
+12. **Non-negotiable design principle:** every feature must make the owner **think MORE, not less** —
+    capabilities *prompt* cognition (recall, critique, evolution), never replace it. Guards failure
+    mode #6.

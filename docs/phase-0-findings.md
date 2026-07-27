@@ -262,6 +262,34 @@ by construction. Binary confirms the only config key is `WebInterfaceEnabled` (n
 
 Note: `127.0.0.1:8787` was a red herring (different xochitl HTTP service, 404s on these routes) — the
 real interface is `10.11.99.1:80`. Config backups: `xochitl.conf.locus.bak`, `.locus.bak2`.
+
+### PRODUCTIONISED 2026-07-27 — reMarkable side fully autonomous (all 4 items above done)
+
+The transport is built end-to-end; the reMarkable side needs no further device SSH.
+- **On-device capture agent** (`/home/root/locus/render-push.sh`, v4): walks every
+  `~/.local/share/remarkable/xochitl/*.metadata`, change-keys on the doc's **`lastModified`** value
+  (edits re-push; opens/reads do NOT — md5(.metadata) fallback), renders changed docs via
+  `http://10.11.99.1/download/<uuid>/pdf`, pushes `LOCUSDOC <uuid> <key> <sz>\n<pdf>` over the tailnet
+  with `tailscale nc`. Self-heals usb0 IP + restarts xochitl if `:80` is down. PID-locked, idempotent.
+- **Boot-persistence** in the PERSISTENT rootfs `/etc` (Paper Pro `/etc` is a volatile tmpfs overlay;
+  rootfs is plain ext4, no dm-verity — units written to the overlay lower via `remount,rw /` +
+  `--bind / /mnt/persistroot`). Units: `locus-usb0.service` (static 10.11.99.1/32, Before=xochitl →
+  cable-free `:80`), `locus-tailscaled.service` (userspace, Restart=always), `locus-agent.timer`
+  (OnBootSec=120 / OnUnitActiveSec=300). **Re-run the installer after firmware updates** (A/B slot flip).
+- **Server receiver**: `scripts/remarkable/receiver.py` run by the `systemd --user` service
+  `locus-remarkable-receiver` (linger on; `~/.config/systemd/user/`). Binds tailnet `100.117.10.28:9010`,
+  lands renders at `/home/alec/remarkable-import/<uuid>.pdf` (atomic overwrite). Survives session +
+  server reboot; retries bind until the tailnet IP is up.
+- **PROVEN LIVE**: reboot → whole chain auto-starts + re-imports all 17 docs; edited doc pushes
+  cable-free over WiFi; durable receiver self-test + real pushes land in staging.
+
+**Remaining = server-only Loop-A ingest wiring (zero device):** join pushed `<uuid>.pdf` to reMarkable
+cloud metadata via `rmapi` (names/folders, by UUID) → folder→category map → `vault/incoming/<category>`
+→ hash-idempotent `locus ingest` (maturity per source type). The reMarkable can serve as the canonical
+insert point for the *document/reading/annotation/handwriting* stream (not code repos or conversations —
+those keep their own paths). Known tunables (server/agent, no device SSH): whole-notebook re-render on
+any page edit (per-page hashing, §10); 5-min timer interval; for born-digital PDFs, optionally ingest
+the original (better text layer) vs the device re-render.
   - Setup safety: the install is additive (packages under entware/opkg), does not modify firmware or
     touch xochitl/notebooks, and is reversible (`opkg remove` / factory reset). SSH is an
     reMarkable-documented feature. Only behavior changes: turn OFF auto-update (manual only), and

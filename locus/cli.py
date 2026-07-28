@@ -555,6 +555,27 @@ def cmd_read(args) -> None:
         print(f"delivered {result.filename} -> reMarkable:/{result.remote_folder}{note}")
 
 
+def cmd_notes_sync(args) -> None:
+    """Incrementally ingest the authoring notes directory (agent-layer §6.7).
+
+    (Re)ingests only notes whose whitespace-normalised content changed, skips trivial re-saves,
+    and deletes documents whose note file was removed. Maturity comes from each note's frontmatter
+    (`maturity: rough|tidy`), else `--default-maturity`. The capture loops call this internally;
+    run it by hand to ingest notes you authored or dropped into vault/notes/.
+    """
+    from locus.notes_sync import sync_notes
+
+    conn = _open()
+    try:
+        r = sync_notes(conn, args.dir, default_maturity=args.default_maturity)
+    finally:
+        conn.close()
+    print(
+        f"notes-sync: {r.ingested} ingested, {r.skipped} unchanged, "
+        f"{r.deleted} deleted, {r.failed} failed"
+    )
+
+
 def cmd_audit(args) -> None:
     from locus.eval.metrics import (
         alias_qc, corpus_metrics, doc_metrics, format_alias_qc, format_metrics,
@@ -745,6 +766,17 @@ def main(argv=None) -> None:
     prd.add_argument("--out", default=None, help="write PDFs to this dir (default: beside the source)")
     prd.add_argument("--no-push", action="store_true", help="render locally only; skip the rmapi push")
     prd.set_defaults(func=cmd_read)
+
+    pns = sub.add_parser(
+        "notes-sync",
+        help="incrementally ingest vault/notes/ (changed notes only; deletes removed ones)",
+    )
+    pns.add_argument("--dir", default=None, help="notes directory (default: [paths].notes)")
+    pns.add_argument(
+        "--default-maturity", choices=["rough", "tidy"], default="rough",
+        help="maturity for notes without a frontmatter maturity (default: rough)",
+    )
+    pns.set_defaults(func=cmd_notes_sync)
 
     pb = sub.add_parser("backup", help="snapshot the corpus (DB + raw store + notes)")
     pb.add_argument("--dest", default=None, help="backup root (default: vault/backups)")

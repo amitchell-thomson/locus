@@ -24,11 +24,14 @@ points at a specific concept and the specific documents that produced it (invari
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
 
 from locus.agent import state
 from locus.agent.state import entity_key, parse_entity_key
 from locus.eval.metrics import semantic_gaps
+
+log = logging.getLogger(__name__)
 
 # Concepts under this many corpus-wide propositions read as thin coverage (signal 2). Low on
 # purpose: this is a prompt to go deeper, not an accusation, and a noisy version gets ignored.
@@ -77,10 +80,35 @@ def _doc_ids_for_object(conn, object_id: int) -> list[int]:
     ]
 
 
-def concepts_of_documents(conn, doc_ids: list[int]) -> dict[tuple[str, str], list[int]]:
-    """canonical (name,type) -> the doc ids among `doc_ids` that carry it."""
+def _excluded_names(conn) -> set[str]:
+    """Lowercase canonical names that are not CONCEPTS — shared with the proposer's gate 1b/1c.
+
+    Without this, a code repo's gaps are its AST identifiers: the first live run on tanker-flow
+    reported `upgrade`, `run_migrations_offline`, `main` and `gpkg_to_wkb` as things the owner
+    "has never written about", burying the one real finding (Kalman filter) under Alembic
+    boilerplate. A gap list nobody can act on is worse than no gap list."""
+    names: set[str] = set()
+    try:
+        from locus.link.related import non_topical_names
+
+        names |= non_topical_names(conn)
+    except Exception as exc:  # a missing alias substrate must not block gap detection
+        log.debug("gaps: generic-name filter unavailable: %s", exc)
+    return names
+
+
+def concepts_of_documents(
+    conn, doc_ids: list[int], *, exclude_types: list[str] | None = None
+) -> dict[tuple[str, str], list[int]]:
+    """canonical (name,type) -> the doc ids among `doc_ids` that carry it.
+
+    Filtered exactly as the proposer filters concepts (generic identifiers out by name, and
+    non-idea entity KINDS out by type), so "a concept you have not explained" means the same
+    thing in both surfaces."""
     if not doc_ids:
         return {}
+    excluded_names = _excluded_names(conn)
+    excluded_types = {t.casefold() for t in (exclude_types or [])}
     placeholders = ",".join("?" * len(doc_ids))
     out: dict[tuple[str, str], list[int]] = {}
     for r in conn.execute(
@@ -88,6 +116,8 @@ def concepts_of_documents(conn, doc_ids: list[int]) -> dict[tuple[str, str], lis
         doc_ids,
     ):
         key = _canonical_of(conn, r["name"], r["type"])
+        if key[0].lower() in excluded_names or (key[1] or "").casefold() in excluded_types:
+            continue
         out.setdefault(key, [])
         if r["doc_id"] not in out[key]:
             out[key].append(r["doc_id"])
@@ -172,7 +202,12 @@ def gaps_for_object(
     explanation: list[Gap] = []
     thin: list[Gap] = []
 
-    for (name, type_), carriers in concepts_of_documents(conn, doc_ids).items():
+    from locus.config import load as _load
+
+    exclude_types = _load().structure.concept_exclude_entity_types
+    for (name, type_), carriers in concepts_of_documents(
+        conn, doc_ids, exclude_types=exclude_types
+    ).items():
         titles = _titles(conn, carriers)
         mentions = _owner_authored_mentions(conn, name, type_, owner_categories)
         has_position = bool(state.positions_for(conn, "concept", entity_key(name, type_)))

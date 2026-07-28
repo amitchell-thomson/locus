@@ -206,3 +206,23 @@ def practice_for_concept_key(
     return generate_practice(
         conn, candidates_for_concept(conn, name), max_items=max_items, runner=runner, model=model
     )
+
+
+def candidates_from_documents(conn, doc_ids: list[int], *, limit: int = _MAX_CANDIDATES) -> list[_Candidate]:
+    """Propositions from specific documents — the grounded fallback when no concept name matches.
+
+    Used by the synthesis surface for topics the corpus covers well under a different canonical
+    name than the owner asked about ('portfolio construction' vs 'portfolio optimization'). Still
+    the owner's own stored propositions; only the route to them is looser than a concept join."""
+    ids = sorted({d for d in doc_ids if d is not None})
+    if not ids:
+        return []
+    placeholders = ",".join("?" * len(ids))
+    return [
+        _Candidate(r["id"], r["text"], r["title"], None)
+        for r in conn.execute(
+            f"SELECT p.id, p.text, d.title FROM propositions p JOIN documents d ON d.id=p.doc_id "
+            f"WHERE p.doc_id IN ({placeholders}) ORDER BY p.id LIMIT ?",
+            (*ids, limit),
+        )
+    ]

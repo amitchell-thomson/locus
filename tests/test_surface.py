@@ -25,6 +25,11 @@ from locus.surface.synthesise import synthesise
 
 @dataclass
 class _Cite:
+    """Stands in for a retrieval SURVIVOR (a Candidate): `text` is the unit's real content.
+
+    Deliberately not a Citation — a Citation's `.text` is the provenance string, and the
+    surfaces must read content, not a bibliography (a live run failed exactly this way)."""
+
     doc_id: int
     rerank_score: float | None
     text: str
@@ -32,8 +37,15 @@ class _Cite:
 
 @dataclass
 class _Result:
-    citation_details: list
+    survivors: list
     low_confidence: bool = False
+    citation_details: list = None  # type: ignore[assignment]
+
+    def __post_init__(self):
+        # Provenance strings, as the real pipeline builds them — never the unit content.
+        self.citation_details = [
+            _Cite(c.doc_id, c.rerank_score, f"doc {c.doc_id}, provenance") for c in self.survivors
+        ]
 
 
 def _doc(conn, doc_id, *, title, uri, category="note"):
@@ -71,7 +83,7 @@ def conn(tmp_path: Path):
 
 def _retrieve(*cites, low=False):
     def fn(_query):
-        return _Result(citation_details=list(cites), low_confidence=low)
+        return _Result(survivors=list(cites), low_confidence=low)
     return fn
 
 

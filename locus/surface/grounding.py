@@ -25,6 +25,7 @@ class Evidence:
     key: str  # short stable handle, e.g. 'S1'
     text: str
     source: str  # document title / provenance line
+    doc_id: int | None = None  # which document it came from (practice selection reads this)
 
 
 @dataclass
@@ -66,12 +67,31 @@ class GroundingSet:
         return "\n".join(lines) or "(no corpus material found)"
 
 
+# Chars of a retrieved unit shown per evidence item. Enough to reason from; bounded so a dozen
+# units do not blow the prompt out.
+_EVIDENCE_CHARS = 900
+
+
 def _retrieval_evidence(result, *, floor: float | None, titles: dict[int, str]) -> list[Evidence]:
+    """Floor-clearing retrieved units as citable evidence.
+
+    Reads `survivors`, NOT `citation_details`: a Citation's `.text` is the PROVENANCE STRING
+    ("Doc title, p.3"), not the unit's content. The first live critique run was handed keys and
+    titles with no substance and correctly refused to write challenges — "I need the actual
+    corpus documents". A grounded surface has to pass the material, not a bibliography."""
     out: list[Evidence] = []
-    for i, c in enumerate(getattr(result, "citation_details", []) or [], start=1):
-        if floor is not None and (c.rerank_score is None or c.rerank_score < floor):
+    survivors = getattr(result, "survivors", None) or []
+    for i, c in enumerate(survivors, start=1):
+        score = getattr(c, "rerank_score", None)
+        if floor is not None and (score is None or score < floor):
             continue
-        out.append(Evidence(key=f"S{i}", text=c.text, source=titles.get(c.doc_id, "corpus")))
+        text = (getattr(c, "text", "") or "").strip()
+        if not text:
+            continue
+        out.append(Evidence(
+            key=f"S{i}", text=text[:_EVIDENCE_CHARS], source=titles.get(c.doc_id, "corpus"),
+            doc_id=c.doc_id,
+        ))
     return out
 
 
@@ -110,8 +130,8 @@ def ground_topic(
     out = GroundingSet(topic=topic)
     result = retrieve_fn(topic)
     out.low_confidence = bool(getattr(result, "low_confidence", False))
-    details = getattr(result, "citation_details", []) or []
-    titles = _titles(conn, [c.doc_id for c in details])
+    survivors = getattr(result, "survivors", None) or []
+    titles = _titles(conn, [c.doc_id for c in survivors])
     out.evidence = _retrieval_evidence(
         result, floor=load().retrieve.min_rerank_score, titles=titles
     )[:max_evidence]

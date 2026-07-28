@@ -157,7 +157,9 @@ def _practice_for(
     """Practice over the topic's own material: an object's gap-driven candidates when one matched,
     else propositions from the concepts the trajectories cover."""
     from locus.agent.state import parse_entity_key
-    from locus.learn.practice import candidates_for_concept, candidates_for_object
+    from locus.learn.practice import (
+        candidates_for_concept, candidates_for_object, candidates_from_documents,
+    )
 
     candidates = []
     for obj in ground.objects:
@@ -168,6 +170,16 @@ def _practice_for(
                 candidates += candidates_for_concept(conn, parse_entity_key(traj.subject_key)[0])
     if not candidates:
         candidates = candidates_for_concept(conn, ground.topic)
+    if not candidates:
+        # Last resort, still grounded: propositions from the documents RETRIEVAL surfaced for
+        # this topic. Exact concept-name matching alone is too brittle to hang the feature on —
+        # "portfolio construction" retrieves richly but the canonical entity is "portfolio
+        # optimization", so a name-only lookup found nothing to practise on a topic the corpus
+        # covers well. These are still the owner's own stored propositions; only the route to
+        # them is looser.
+        candidates = candidates_from_documents(
+            conn, [e.doc_id for e in ground.evidence if e.doc_id is not None]
+        )
     return generate_practice(
         conn, candidates, max_items=max_items, runner=runner, model=model
     )

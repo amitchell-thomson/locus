@@ -284,3 +284,28 @@ def test_prompt_with_a_deleted_referent_degrades_rather_than_vanishing(conn):
     text, _source = review.resolve_prompt(conn, item)
     assert "no longer in the corpus" in text
     assert review.due_items(conn, today=date(2030, 1, 1))  # the history row survives
+
+
+def test_ast_identifiers_are_not_reported_as_knowledge_gaps(conn, tanker):
+    """The first live run buried the one real finding (Kalman filter) under Alembic boilerplate:
+    `upgrade`, `run_migrations_offline`, `main`. gaps.py now shares the proposer's filters."""
+    for name in ("upgrade", "run_migrations_offline", "main", "_rebuild_constraint"):
+        _entity(conn, 1, name, "method")
+    with conn:
+        for name in ("upgrade", "run_migrations_offline", "main", "_rebuild_constraint",
+                     "AIS interpolation"):
+            conn.execute(
+                "INSERT OR IGNORE INTO entity_aliases (variant_name, variant_type, canonical_name, "
+                "canonical_type, cluster_id, tier) VALUES (?,?,?,?,1,'identity')",
+                (name, "method" if name != "AIS interpolation" else "concept", name,
+                 "method" if name != "AIS interpolation" else "concept"),
+            )
+    subjects = {g.subject for g in gaps.gaps_for_object(conn, tanker)}
+    assert not ({"upgrade", "run_migrations_offline", "main", "_rebuild_constraint"} & subjects)
+
+
+def test_tool_typed_entities_are_not_gaps(conn, tanker):
+    """Same kind-filter as the proposer: never having 'written about Python' is not a gap."""
+    _entity(conn, 1, "Python", "tool")
+    subjects = {g.subject for g in gaps.gaps_for_object(conn, tanker)}
+    assert "Python" not in subjects

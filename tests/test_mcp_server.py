@@ -64,13 +64,16 @@ def _text(call_result) -> str:
 
 
 def test_query_tool_is_opt_in():
-    # Default: the billable `query` tool is NOT advertised (hard cost guard).
+    """The cost guard: `query` is the ONLY billable tool and is absent unless opted into.
+
+    Asserted as an invariant (the delta between the two tool sets), not as an exact tool list —
+    the exact-set version went stale the moment Loop C added `capture`, which is the wrong
+    failure: a new FREE tool must not break the cost-guard test."""
     default_tools = {t.name for t in mcp_server._build()._tool_manager.list_tools()}
-    assert default_tools == {"retrieve", "list_documents", "inspect_document"}
-    assert "query" not in default_tools
-    # Opting in adds exactly `query`.
     enabled_tools = {t.name for t in mcp_server._build(enable_query=True)._tool_manager.list_tools()}
-    assert enabled_tools == {"retrieve", "query", "list_documents", "inspect_document"}
+    assert "query" not in default_tools
+    assert enabled_tools - default_tools == {"query"}  # opting in adds exactly `query`
+    assert {"retrieve", "list_documents", "inspect_document"} <= default_tools
 
 
 def test_facets_validation_and_active():

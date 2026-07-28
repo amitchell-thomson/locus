@@ -690,6 +690,65 @@ def cmd_objects(args) -> None:
         conn.close()
 
 
+def cmd_review(args) -> None:
+    """Spaced-repetition review over the owner's own propositions (agent-layer §3.6, SM-2).
+
+    With no flags, shows what is due. `--grade <item_id>:<0-5>` records a recall grade and
+    reschedules. `--add-object <id>` schedules an object's practice material.
+    """
+    from locus.learn import review as rv
+
+    conn = _open()
+    try:
+        for spec in args.grade or []:
+            ref, _, quality = spec.partition(":")
+            if not quality.isdigit():
+                print(f"bad --grade {spec!r}; expected <item_id>:<0-5>")
+                continue
+            item = rv.grade_item(conn, int(ref), int(quality))
+            print(f"item {ref}: next due {item.due} (interval {item.interval}d, "
+                  f"ease {item.ease:.2f})" if item else f"no review item {ref}")
+        for oid in args.add_object or []:
+            item = rv.schedule_prompt(conn, prompt_kind="object", prompt_ref=str(oid))
+            print(f"scheduled object {oid} as review item {item.id} (due {item.due})")
+        if args.grade or args.add_object:
+            return
+
+        due = rv.due_items(conn, limit=args.limit)
+        if not due:
+            print("Nothing due. (A calm empty state is a valid one — §9.)")
+            return
+        for item in due:
+            text, source = rv.resolve_prompt(conn, item)
+            where = f"  — {source}" if source else ""
+            print(f"[{item.id}] due {item.due} (reps {item.reps}, ease {item.ease:.2f}){where}")
+            print(f"      {text}")
+        print(f"\n{len(due)} item(s) due. Grade with `locus review --grade <id>:<0-5>`.")
+    finally:
+        conn.close()
+
+
+def cmd_gaps(args) -> None:
+    """Where the owner's grasp is thin, for a project/concept object (agent-layer §3.6).
+
+    Deterministic — no model call. The strong signal is the EXPLANATION gap: a concept the
+    project implements that he has never written about in his own words.
+    """
+    from locus.learn.gaps import gaps_for_object
+
+    conn = _open()
+    try:
+        found = gaps_for_object(conn, args.object, limit=args.limit)
+        if not found:
+            print("No gaps detected (or no such object).")
+            return
+        for gap in found:
+            print(f"  {gap.render()}")
+        print(f"\n{len(found)} gap(s)")
+    finally:
+        conn.close()
+
+
 def cmd_evolution(args) -> None:
     """Render the owner's dated position trajectory per concept/project (agent-layer §6.3).
 
@@ -999,6 +1058,17 @@ def main(argv=None) -> None:
     pstr.add_argument("--dry-run", action="store_true", help="run every gate and print the plan; write nothing")
     pstr.add_argument("--verbose", action="store_true", help="also show rejected candidates and why")
     pstr.set_defaults(func=cmd_structure)
+
+    prv = sub.add_parser("review", help="spaced-repetition review over your own propositions (SM-2)")
+    prv.add_argument("--grade", action="append", help="record a grade: <item_id>:<0-5> (repeatable)")
+    prv.add_argument("--add-object", action="append", help="schedule an object for review (repeatable)")
+    prv.add_argument("--limit", type=int, default=5, help="max items shown (daily-page cap)")
+    prv.set_defaults(func=cmd_review)
+
+    pgp = sub.add_parser("gaps", help="where your grasp is thin for a project/concept object (no API)")
+    pgp.add_argument("object", type=int, help="object id (see `locus objects`)")
+    pgp.add_argument("--limit", type=int, default=10)
+    pgp.set_defaults(func=cmd_gaps)
 
     pev = sub.add_parser("evolution", help="show the dated belief trajectory for a concept/project")
     pev.add_argument("subject", nargs="?", default=None, help="concept name or project title (omit to list all)")

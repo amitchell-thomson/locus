@@ -1,0 +1,286 @@
+"""Interview-prep aids: gap detection, practice generation, SM-2 review (plan §3.6, §8.4).
+
+Gap detection and SM-2 are model-free by construction (joins and arithmetic); practice generation
+injects the runner. The load-bearing assertions are that the EXPLANATION gap fires on exactly the
+"built with it, never wrote about it" case, and that a practice question referencing a proposition
+we never offered is dropped.
+"""
+
+from __future__ import annotations
+
+import json
+from datetime import date
+from pathlib import Path
+
+import pytest
+
+from locus.agent import state
+from locus.agent.claude import ClaudeError, ClaudeResult
+from locus.agent.state import ObjectLink
+from locus.db.connection import get_connection
+from locus.db.migrate import migrate
+from locus.learn import gaps, practice, review
+
+
+def _doc(conn, doc_id, *, title, uri, category, gap_flags=None):
+    with conn:
+        conn.execute(
+            "INSERT INTO documents (id, content_hash, source_type, source_uri, raw_path, title, "
+            "category, gap_flags, ingested_at, ingest_model) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (doc_id, f"h{doc_id}", "markdown", uri, f"r{doc_id}", title, category,
+             json.dumps(gap_flags or []), "2026-01-01T00:00:00Z", "test"),
+        )
+        conn.execute(
+            "INSERT INTO sections (id, doc_id, position, title, summary) VALUES (?,?,0,?,'s')",
+            (doc_id, doc_id, title),
+        )
+
+
+def _entity(conn, doc_id, name, type_="concept"):
+    with conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO entities (doc_id, section_id, name, type) VALUES (?,?,?,?)",
+            (doc_id, doc_id, name, type_),
+        )
+
+
+def _prop(conn, doc_id, text):
+    with conn:
+        cur = conn.execute(
+            "INSERT INTO propositions (section_id, doc_id, position, text, embed_model) "
+            "VALUES (?,?,(SELECT COALESCE(MAX(position),-1)+1 FROM propositions WHERE section_id=?),?,'m')",
+            (doc_id, doc_id, doc_id, text),
+        )
+    return cur.lastrowid
+
+
+@pytest.fixture()
+def conn(tmp_path: Path):
+    db = tmp_path / "learn.db"
+    migrate(db)
+    c = get_connection(db)
+    # The tanker-flow shape: a repo implementing two concepts; he has written about one of them.
+    _doc(c, 1, title="tanker-flow", uri="repos/tanker-flow", category="project",
+         gap_flags=["no out-of-sample validation is described"])
+    _doc(c, 2, title="Notes on laden ton-miles", uri="notes/ton-miles.md", category="note")
+    _doc(c, 3, title="AIS paper", uri="papers/ais.pdf", category="paper")
+    _entity(c, 1, "laden ton-miles")
+    _entity(c, 1, "AIS interpolation")
+    _entity(c, 2, "laden ton-miles")   # written about in his own words
+    _entity(c, 3, "AIS interpolation")  # only ever read about
+    for i in range(4):
+        _prop(c, 3, f"AIS fixes are irregular in time ({i})")
+    oid, _ = state.upsert_object(c, type_="project", title="tanker-flow")
+    state.add_links(c, oid, [ObjectLink("doc", "repos/tanker-flow", "implements")])
+    yield c
+    c.close()
+
+
+@pytest.fixture()
+def tanker(conn) -> int:
+    """The seeded tanker-flow project object's id."""
+    return conn.execute("SELECT id FROM objects WHERE title='tanker-flow'").fetchone()["id"]
+
+
+# --- gap detection -------------------------------------------------------------------------------
+
+
+def test_explanation_gap_fires_on_used_but_never_explained(conn, tanker):
+    found = gaps.gaps_for_object(conn, tanker)
+    explanation = [g for g in found if g.kind == "explanation"]
+    assert [g.subject for g in explanation] == ["AIS interpolation"]
+    assert "never written about" in explanation[0].detail
+    assert explanation[0].sources == ["tanker-flow"]
+
+
+def test_a_concept_he_has_written_about_is_not_an_explanation_gap(conn, tanker):
+    subjects = [g.subject for g in gaps.gaps_for_object(conn, tanker)
+                if g.kind == "explanation"]
+    assert "laden ton-miles" not in subjects
+
+
+def test_a_recorded_belief_position_also_closes_the_explanation_gap(conn, tanker):
+    state.record_position(conn, subject_kind="concept",
+                          subject_key=state.entity_key("AIS interpolation", "concept"),
+                          stance="linear interpolation is good enough between fixes",
+                          dated_at="2026-03-01")
+    subjects = [g.subject for g in gaps.gaps_for_object(conn, tanker)
+                if g.kind == "explanation"]
+    assert subjects == []
+
+
+def test_thin_coverage_fires_on_a_concept_with_almost_no_propositions(conn, tanker):
+    kinds = {(g.kind, g.subject) for g in gaps.gaps_for_object(conn, tanker)}
+    # 'laden ton-miles' is explained but carries 0 propositions -> thin, not an explanation gap.
+    assert ("thin_coverage", "laden ton-miles") in kinds
+
+
+def test_ingest_flagged_gaps_are_included_and_audit_lines_are_not(conn, tanker):
+    _doc(conn, 4, title="noisy", uri="notes/noisy.md", category="note",
+         gap_flags=["math-OCR kept original text on p.4",
+                    "the derivation of the bound is not given"])
+    with conn:
+        conn.execute("INSERT INTO object_links (object_id, target_kind, target_key, relation) "
+                     "VALUES (?,'doc','notes/noisy.md','relates')", (tanker,))
+    details = [g.detail for g in gaps.gaps_for_object(conn, tanker)
+               if g.kind == "flagged"]
+    assert "the derivation of the bound is not given" in details
+    assert not any("math-OCR" in d for d in details)  # pipeline audit line, not a knowledge gap
+
+
+def test_gaps_are_ordered_strongest_signal_first(conn, tanker):
+    kinds = [g.kind for g in gaps.gaps_for_object(conn, tanker)]
+    assert kinds.index("explanation") < kinds.index("thin_coverage")
+    assert kinds.index("thin_coverage") < kinds.index("flagged")
+
+
+def test_gaps_for_an_unknown_object_are_empty(conn):
+    assert gaps.gaps_for_object(conn, 9999) == []
+
+
+def test_alias_variants_count_as_having_written_about_it(conn, tanker):
+    """Writing about 'AIS-interpolation' must close the gap on canonical 'AIS interpolation'."""
+    _doc(conn, 5, title="Interp notes", uri="notes/interp.md", category="note")
+    _entity(conn, 5, "AIS-interpolation")
+    with conn:
+        for variant in ("AIS interpolation", "AIS-interpolation"):
+            conn.execute(
+                "INSERT INTO entity_aliases (variant_name, variant_type, canonical_name, "
+                "canonical_type, cluster_id, tier) VALUES (?,?,?,?,1,'punct')",
+                (variant, "concept", "AIS interpolation", "concept"),
+            )
+    subjects = [g.subject for g in gaps.gaps_for_object(conn, tanker)
+                if g.kind == "explanation"]
+    assert "AIS interpolation" not in subjects
+
+
+# --- practice generation ---------------------------------------------------------------------------
+
+
+def test_practice_questions_keep_the_proposition_as_the_reference_answer(conn):
+    cands = practice.candidates_for_concept(conn, "AIS interpolation")
+    assert cands, "expected propositions from the AIS paper"
+    pid = cands[0].id
+
+    def runner(p, m):
+        return ClaudeResult(text=json.dumps({"questions": [
+            {"proposition_id": pid, "question": "Why can't you assume AIS fixes are evenly spaced?"}
+        ]}))
+
+    out = practice.generate_practice(conn, cands, runner=runner)
+    assert len(out.items) == 1
+    assert out.items[0].answer == cands[0].text  # the stored proposition IS the answer
+    assert out.items[0].source_title == "AIS paper"
+
+
+def test_a_question_about_a_proposition_we_never_offered_is_dropped(conn):
+    cands = practice.candidates_for_concept(conn, "AIS interpolation")
+    def runner(p, m):
+        return ClaudeResult(text=json.dumps({"questions": [
+            {"proposition_id": 99999, "question": "What is the Black-Scholes PDE?"}
+        ]}))
+
+    assert practice.generate_practice(conn, cands, runner=runner).items == []
+
+
+def test_practice_selection_is_gap_driven(conn, tanker):
+    """§12.3: what he cannot explain comes before what he already can."""
+    cands = practice.candidates_for_object(conn, tanker)
+    assert cands and cands[0].concept == "AIS interpolation"  # the explanation gap leads
+
+
+def test_practice_respects_max_items(conn):
+    cands = practice.candidates_for_concept(conn, "AIS interpolation")
+    def runner(p, m):
+        return ClaudeResult(text=json.dumps({"questions": [
+            {"proposition_id": c.id, "question": f"Q{c.id}?"} for c in cands
+        ]}))
+
+    assert len(practice.generate_practice(conn, cands, runner=runner, max_items=2).items) == 2
+
+
+def test_practice_degrades_on_model_failure(conn):
+    def failing(p, m):
+        raise ClaudeError("nope")
+
+    out = practice.generate_practice(
+        conn, practice.candidates_for_concept(conn, "AIS interpolation"), runner=failing
+    )
+    assert out.degraded is True and out.items == []
+
+
+def test_no_candidates_means_no_model_call(conn):
+    def explode(p, m):
+        raise AssertionError("must not call the model with nothing to ask about")
+
+    assert practice.generate_practice(conn, [], runner=explode).items == []
+
+
+# --- SM-2 -----------------------------------------------------------------------------------------
+
+
+def test_scheduling_is_idempotent_and_due_immediately(conn):
+    first = review.schedule_prompt(conn, prompt_kind="proposition", prompt_ref="7",
+                                   today=date(2026, 6, 1))
+    again = review.schedule_prompt(conn, prompt_kind="proposition", prompt_ref="7",
+                                   today=date(2026, 6, 2))
+    assert first.id == again.id
+    assert first.due == "2026-06-01"  # never seen -> nothing to wait for
+
+
+def test_sm2_interval_progression(conn):
+    ease, interval, reps = review.next_interval(grade=5, ease=2.5, interval=0, reps=0)
+    assert (interval, reps) == (1, 1)
+    ease, interval, reps = review.next_interval(grade=5, ease=ease, interval=interval, reps=reps)
+    assert (interval, reps) == (6, 2)
+    ease, interval, reps = review.next_interval(grade=4, ease=ease, interval=interval, reps=reps)
+    assert interval == round(6 * ease) and reps == 3
+
+
+def test_a_lapse_resets_repetitions_but_keeps_ease_tracking_difficulty(conn):
+    ease, interval, reps = review.next_interval(grade=1, ease=2.5, interval=30, reps=5)
+    assert (interval, reps) == (1, 0)      # re-learn from tomorrow
+    assert ease < 2.5                       # but the item is remembered as hard
+    assert ease >= 1.3
+
+
+def test_ease_floors_at_1_3(conn):
+    ease = 2.5
+    for _ in range(10):
+        ease, _i, _r = review.next_interval(grade=0, ease=ease, interval=1, reps=0)
+    assert ease == pytest.approx(1.3)
+
+
+def test_grading_reschedules_and_records_history(conn):
+    item = review.schedule_prompt(conn, prompt_kind="proposition", prompt_ref="7",
+                                  today=date(2026, 6, 1))
+    updated = review.grade_item(conn, item.id, 5, today=date(2026, 6, 1))
+    assert updated.due == "2026-06-02" and updated.reps == 1 and updated.last_grade == 5
+    assert review.due_items(conn, today=date(2026, 6, 1)) == []       # no longer due today
+    assert len(review.due_items(conn, today=date(2026, 6, 2))) == 1   # due tomorrow
+
+
+def test_due_items_respects_the_daily_cap(conn):
+    for ref in range(10):
+        review.schedule_prompt(conn, prompt_kind="proposition", prompt_ref=str(ref),
+                               today=date(2026, 6, 1))
+    assert len(review.due_items(conn, today=date(2026, 6, 1), limit=5)) == 5
+
+
+def test_grading_an_unknown_item_returns_none(conn):
+    assert review.grade_item(conn, 999, 4) is None
+
+
+def test_an_invalid_grade_is_rejected(conn):
+    with pytest.raises(ValueError):
+        review.next_interval(grade=9, ease=2.5, interval=1, reps=1)
+
+
+def test_prompt_with_a_deleted_referent_degrades_rather_than_vanishing(conn):
+    pid = _prop(conn, 3, "some claim")
+    item = review.schedule_prompt(conn, prompt_kind="proposition", prompt_ref=str(pid))
+    with conn:
+        conn.execute("DELETE FROM propositions WHERE id=?", (pid,))
+    text, _source = review.resolve_prompt(conn, item)
+    assert "no longer in the corpus" in text
+    assert review.due_items(conn, today=date(2030, 1, 1))  # the history row survives

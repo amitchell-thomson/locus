@@ -690,6 +690,52 @@ def cmd_objects(args) -> None:
         conn.close()
 
 
+def cmd_evolution(args) -> None:
+    """Render the owner's dated position trajectory per concept/project (agent-layer §6.3).
+
+    With no `--subject`, lists every subject that has a recorded chain. `--tensions` additionally
+    runs the judged contradiction pass over the latest stance (billed, advisory).
+    """
+    from locus.evolve.trajectory import all_trajectories, build_trajectory, render_trajectory
+
+    conn = _open()
+    try:
+        if not args.subject:
+            trajectories = all_trajectories(conn, limit=args.limit)
+            if not trajectories:
+                print("No belief positions recorded yet. Run `locus structure` over your notes.")
+                return
+            for traj in trajectories:
+                span = f"{traj.entries[0].dated_at} → {traj.entries[-1].dated_at}"
+                print(f"  [{traj.subject_kind}] {traj.label}  ({len(traj.entries)} positions, {span})")
+            print(f"\n{len(trajectories)} subject(s) with a trajectory")
+            return
+
+        kind, key = _resolve_subject(conn, args.subject)
+        if key is None:
+            print(f"No trajectory subject matches {args.subject!r}.")
+            return
+        traj = build_trajectory(conn, kind, key, with_tensions=args.tensions)
+        print(render_trajectory(traj))
+    finally:
+        conn.close()
+
+
+def _resolve_subject(conn, subject: str) -> tuple[str, str | None]:
+    """Resolve a subject name to (kind, key): a project object title, else a canonical concept."""
+    from locus.agent import state
+
+    row = conn.execute(
+        "SELECT id FROM objects WHERE type='project' AND title=? COLLATE NOCASE", (subject,)
+    ).fetchone()
+    if row:
+        return "project", str(row["id"])
+    for kind, key, _ in state.subjects_with_positions(conn, limit=500):
+        if kind == "concept" and state.parse_entity_key(key)[0].casefold() == subject.casefold():
+            return "concept", key
+    return "concept", None
+
+
 def cmd_capture_conversation(args) -> None:
     """Loop C: save a Claude conversation as a rough note (agent-layer §8.3).
 
@@ -953,6 +999,12 @@ def main(argv=None) -> None:
     pstr.add_argument("--dry-run", action="store_true", help="run every gate and print the plan; write nothing")
     pstr.add_argument("--verbose", action="store_true", help="also show rejected candidates and why")
     pstr.set_defaults(func=cmd_structure)
+
+    pev = sub.add_parser("evolution", help="show the dated belief trajectory for a concept/project")
+    pev.add_argument("subject", nargs="?", default=None, help="concept name or project title (omit to list all)")
+    pev.add_argument("--tensions", action="store_true", help="also run the judged contradiction pass (billed)")
+    pev.add_argument("--limit", type=int, default=50, help="max subjects when listing")
+    pev.set_defaults(func=cmd_evolution)
 
     pobj = sub.add_parser("objects", help="list / bless / archive structured objects")
     pobj.add_argument("--type", choices=["project", "concept", "question", "reading"], default=None)

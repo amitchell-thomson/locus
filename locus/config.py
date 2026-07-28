@@ -275,6 +275,22 @@ class ObsidianConfig(BaseModel):
     emit_entity_notes: bool = Field(True, description="Emit canonical entity notes (false = docs-only graph).")
 
 
+class ReadingConfig(BaseModel):
+    """Server->device reading delivery (`locus read`, agent-layer plan §8.5, Phase 0.5).
+
+    Renders a markdown doc to a device-tuned PDF and `rmapi put`s it to the tablet. Geometry
+    defaults target the reMarkable Paper Pro screen (2160x1620 @229dpi => 7.07x9.43in) so text
+    renders at its true point size; a different device is a config change, not a code change.
+    """
+
+    rmapi_binary: str = Field("rmapi", description="rmapi binary (PATH name or absolute path).")
+    target_folder: str = Field("Locus", description="Device folder that delivered docs land in.")
+    page_width_in: float = Field(7.07, description="PDF page width (in) — Paper Pro screen width.")
+    page_height_in: float = Field(9.43, description="PDF page height (in) — Paper Pro screen height.")
+    margin_in: float = Field(0.5, description="Page margin (in).")
+    font_pt: float = Field(11.0, description="Body text size (pt).")
+
+
 class MCPConfig(BaseModel):
     # The MCP `query` tool makes a billed Claude API call server-side; `retrieve` and the read
     # tools are local-only (free). Default OFF so the server never exposes a billable tool unless
@@ -309,6 +325,8 @@ class Config(BaseModel):
     concepts: ConceptsConfig = Field(default_factory=ConceptsConfig)
     # Optional: absent [obsidian] falls back to defaults (vault/obsidian, entity notes on).
     obsidian: ObsidianConfig = Field(default_factory=ObsidianConfig)
+    # Optional: absent [reading] falls back to defaults (Paper Pro geometry, folder "Locus").
+    reading: ReadingConfig = Field(default_factory=ReadingConfig)
 
     def resolve_paths(self) -> "Config":
         """Make all configured paths absolute, relative to the project root."""

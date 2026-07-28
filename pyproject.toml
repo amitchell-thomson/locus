@@ -28,6 +28,10 @@ rerank = ["sentence-transformers>=3.0"]
 # (eval-artifacts/mathocr/report.md: 0 hallucinations / 0 engine failures, vs qwen-VL's
 # 0.97-with-an-invention and Nougat's 4/10 failures). torch itself comes via `rerank`.
 mathocr = ["transformers>=4.48", "torchvision"]
+# Reading delivery (`locus read`, agent-layer §8.5): markdown -> device-tuned PDF -> reMarkable.
+# Both bundle their own binaries (no system pandoc/typst/LaTeX needed): pypandoc-binary ships
+# the pandoc executable (md->typst, LaTeX-math-aware), typst ships the compiler (typst->PDF).
+reading = ["typst>=0.15", "pypandoc-binary>=1.15"]
 
 [project.scripts]
 locus = "locus.cli:main"

@@ -507,6 +507,54 @@ def cmd_export_obsidian(args) -> None:
     )
 
 
+def cmd_read(args) -> None:
+    """Render markdown -> a device-tuned PDF and push it to the reMarkable (agent-layer §8.5).
+
+    The server->device push channel (rmapi put) — proven here, relied on by the daily page and
+    every reading loop. `<path>` is a markdown file or a directory (each *.md rendered + pushed).
+    `--no-push` renders locally only (writes PDFs beside the source or to --out), which is also
+    the offline path when the device is asleep.
+    """
+    from locus.reading.deliver_remarkable import deliver_pdf
+    from locus.reading.md2pdf import PageGeometry, render_markdown_file
+
+    cfg = load().reading
+    geometry = PageGeometry(
+        width_in=cfg.page_width_in,
+        height_in=cfg.page_height_in,
+        margin_in=cfg.margin_in,
+        font_pt=cfg.font_pt,
+    )
+    folder = args.to or cfg.target_folder
+
+    src = Path(args.path)
+    if src.is_dir():
+        md_files = sorted(src.glob("*.md"))
+        if not md_files:
+            print(f"no .md files under {src}")
+            sys.exit(1)
+    elif src.is_file():
+        md_files = [src]
+    else:
+        print(f"not found: {src}")
+        sys.exit(1)
+
+    out_dir = Path(args.out) if args.out else None
+    for md in md_files:
+        out_pdf = (out_dir / f"{md.stem}.pdf") if out_dir else md.with_suffix(".pdf")
+        render_markdown_file(md, out_pdf, geometry=geometry)
+        if args.no_push:
+            print(f"rendered {md.name} -> {out_pdf}")
+            continue
+        result = deliver_pdf(
+            out_pdf,
+            remote_folder=folder,
+            rmapi_binary=cfg.rmapi_binary,
+        )
+        note = " (created folder)" if result.created_folder else ""
+        print(f"delivered {result.filename} -> reMarkable:/{result.remote_folder}{note}")
+
+
 def cmd_audit(args) -> None:
     from locus.eval.metrics import (
         alias_qc, corpus_metrics, doc_metrics, format_alias_qc, format_metrics,
@@ -687,6 +735,16 @@ def main(argv=None) -> None:
         help="include docs in [retrieve].exclude_source_uris (e.g. the self-ingested locus repo)",
     )
     px.set_defaults(func=cmd_export_obsidian)
+
+    prd = sub.add_parser(
+        "read",
+        help="render markdown -> a reMarkable-tuned PDF and push it to the tablet (rmapi)",
+    )
+    prd.add_argument("path", help="a markdown file, or a directory of *.md files")
+    prd.add_argument("--to", default=None, help="device folder (default: [reading].target_folder)")
+    prd.add_argument("--out", default=None, help="write PDFs to this dir (default: beside the source)")
+    prd.add_argument("--no-push", action="store_true", help="render locally only; skip the rmapi push")
+    prd.set_defaults(func=cmd_read)
 
     pb = sub.add_parser("backup", help="snapshot the corpus (DB + raw store + notes)")
     pb.add_argument("--dest", default=None, help="backup root (default: vault/backups)")

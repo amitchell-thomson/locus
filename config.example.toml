@@ -161,3 +161,15 @@ emit_entity_notes = true              # false = docs-only graph (no canonical en
 enabled     = true   # run the concept pass at ingest for code repos
 max_per_doc = 40     # cap concepts written per repo (a runaway README is the failure mode)
 # stoplist  = []     # override the built-in generic-term stoplist (empty = built-in default)
+
+[reading]
+# Server->device reading delivery (`locus read <path|dir>`, agent-layer §8.5, Phase 0.5).
+# Renders markdown -> a device-tuned PDF (pandoc md->typst -> typst compile; needs the
+# `[reading]` extra) and `rmapi put`s it to the tablet. Geometry defaults target the reMarkable
+# Paper Pro screen (2160x1620 @229dpi => 7.07x9.43in) so text renders at its true point size.
+rmapi_binary   = "rmapi"   # rmapi binary (PATH name or absolute path)
+target_folder  = "Locus"   # device folder that delivered docs land in
+page_width_in  = 7.07      # PDF page width (in) — Paper Pro screen width
+page_height_in = 9.43      # PDF page height (in) — Paper Pro screen height
+margin_in      = 0.5       # page margin (in)
+font_pt        = 11.0      # body text size (pt)

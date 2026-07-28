@@ -320,6 +320,35 @@ class AgentConfig(BaseModel):
     )
 
 
+class StructureConfig(BaseModel):
+    """Object/belief proposal (locus/structure/propose.py, agent-layer plan §6.2-6.3, Phase 2).
+
+    Every default here is a PRECISION knob, and precision is the whole game: an agent that
+    proposes six plausible objects per note trains the owner to ignore it (failure mode #7), and
+    a belief trajectory containing one stance he did not actually take is worse than no
+    trajectory. Loosen deliberately, on evidence from a `--dry-run`."""
+
+    # Hard cap on objects proposed per document. The model is asked for its most consequential
+    # first, so the cap truncates the tail rather than sampling.
+    max_objects_per_doc: int = Field(3, description="Max objects proposed per document.")
+    # A concept must already span this many documents to be proposable. >=2 is the substantive
+    # bar: a "concept" appearing in exactly one document is that document's vocabulary, not a
+    # thread through the corpus, and the Link use case (§1.2) is about threads.
+    min_concept_docs: int = Field(2, description="Min documents a canonical concept must span.")
+    # Extra cross-document `relates` links per object, taken only from retrieval citations that
+    # clear [retrieve].min_rerank_score.
+    max_support_links: int = Field(3, description="Max floor-clearing support links per object.")
+    # Categories whose documents may yield BELIEF POSITIONS. Default `note` only: handwriting and
+    # captured conversations are the owner's own words. A paper's claim is the paper's position;
+    # attributing it to him corrupts the headline capability (§3.4).
+    belief_source_categories: list[str] = Field(
+        default_factory=lambda: ["note"],
+        description="Categories whose docs may yield belief positions (owner-authored only).",
+    )
+    # Override the agent model for this pass (None = [agent].model, Haiku).
+    model: str | None = Field(None, description="claude -p model for the proposal pass.")
+
+
 class IngestConfig(BaseModel):
     """Per-pass ingest LLM routing (agent-layer plan §7). Maps a durable text pass to an engine:
     `local` = the local qwen model (Ollama, the default) · any other value = a Claude model
@@ -411,6 +440,8 @@ class Config(BaseModel):
     capture: CaptureConfig = Field(default_factory=CaptureConfig)
     # Optional: absent [ingest] falls back to defaults (pass_routing empty = every pass local).
     ingest: IngestConfig = Field(default_factory=IngestConfig)
+    # Optional: absent [structure] falls back to the conservative proposal precision bar.
+    structure: StructureConfig = Field(default_factory=StructureConfig)
 
     def resolve_paths(self) -> "Config":
         """Make all configured paths absolute, relative to the project root."""

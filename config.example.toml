@@ -205,3 +205,14 @@ transcribe_dpi   = 150                              # page render DPI for transc
 excluded_folders = ["trash", "Locus", "admin"]     # folders that are not Loop-A handwriting capture
 default_category = "note"                           # category for folders not in the map
 # folder_category = { rough_notes = "note", projects = "project", careers = "career" }
+
+[structure]
+# Object/belief proposal (agent-layer §6.2-6.3, Phase 2). Every value here is a PRECISION knob:
+# an agent proposing six plausible objects per note trains the owner to ignore it (failure mode
+# #7), and one stance he never took corrupts the belief trajectory. Loosen on --dry-run evidence.
+max_objects_per_doc      = 3          # hard cap; the model ranks, the cap truncates the tail
+min_concept_docs         = 2          # a proposable concept must already span >= N documents
+max_support_links        = 3          # extra cross-doc links, only from floor-clearing citations
+belief_source_categories = ["note"]   # ONLY owner-authored docs may yield positions; a paper's
+                                      #   claim is the paper's, not his (§3.4)
+# model = "haiku"                     # override [agent].model for this pass

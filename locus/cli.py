@@ -584,6 +584,112 @@ def cmd_capture_sync(args) -> None:
               f"{r.ingest.deleted} deleted, {r.ingest.failed} failed")
 
 
+def cmd_structure(args) -> None:
+    """Propose structured objects + belief positions from ingested documents (agent-layer §6.2-6.3).
+
+    Objects land as `status=proposed`; the owner blesses them with `locus objects --bless <id>`.
+    `--dry-run` runs every precision gate against the real corpus and writes NOTHING — the way to
+    check the proposal bar before turning this loose corpus-wide.
+    """
+    from locus.structure.propose import structure_documents
+
+    conn = _open()
+    try:
+        doc_ids = _resolve_structure_docs(conn, args)
+        if not doc_ids:
+            print("No documents match. Use --doc, --category, or --since.")
+            return
+        print(f"Structuring {len(doc_ids)} document(s){' (DRY RUN — no writes)' if args.dry_run else ''}…")
+        out = structure_documents(conn, doc_ids, dry_run=args.dry_run)
+        for res in out.per_doc:
+            plan = res.plan
+            if plan is None:
+                continue
+            header = f"[{res.doc_id}] {plan.doc_title}"
+            items = plan.objects if args.dry_run else None
+            if args.dry_run and (plan.objects or plan.positions or (args.verbose and plan.rejected)):
+                print(f"\n{header}")
+                for o in items or []:
+                    print(f"  + {o.type:<9} {o.title}   ({len(o.links)} links)")
+                    if o.why:
+                        print(f"      why: {o.why}")
+                for p in plan.positions:
+                    print(f"  ~ position [{p.subject_kind}] {p.dated_at}: {p.stance[:110]}")
+                if args.verbose:
+                    for r in plan.rejected:
+                        print(f"  - rejected {r.kind} {r.subject!r}: {r.reason}")
+            elif not args.dry_run and (res.created or res.updated or res.positions):
+                print(f"{header}: {len(res.created)} new, {len(res.updated)} updated, "
+                      f"{res.positions} position(s)")
+        verb = "would create/update" if args.dry_run else "created"
+        print(f"\nstructure: {out.documents} docs · {out.created} {verb} · {out.updated} updated · "
+              f"{out.positions} positions · {out.rejected} rejected · {out.degraded} degraded "
+              f"· ${out.cost_usd:.4f}")
+    finally:
+        conn.close()
+
+
+def _resolve_structure_docs(conn, args) -> list[int]:
+    """Which documents to structure: explicit --doc ids, else a category/date/maturity selection."""
+    if args.doc:
+        return [int(d) for d in args.doc]
+    clauses, params = [], []
+    if args.category:
+        clauses.append("category = ?")
+        params.append(args.category)
+    if args.since:
+        clauses.append("COALESCE(source_date, ingested_at) >= ?")
+        params.append(args.since)
+    if args.maturity:
+        clauses.append("maturity = ?")
+        params.append(args.maturity)
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    sql = f"SELECT id FROM documents {where} ORDER BY id"
+    if args.limit:
+        sql += f" LIMIT {int(args.limit)}"
+    return [r["id"] for r in conn.execute(sql, params)]
+
+
+def cmd_objects(args) -> None:
+    """List / bless / archive proposed structured objects (the human half of propose-never-mutate).
+
+    Blessing is the ONLY way an object becomes `active`; agents may re-propose into its body but
+    never change its status.
+    """
+    from locus.agent import state
+
+    conn = _open()
+    try:
+        if args.bless or args.archive:
+            for raw in args.bless or []:
+                ok = state.set_status(conn, int(raw), "active")
+                state.log_acceptance(conn, surface="object", candidate_key=str(raw),
+                                     verdict="kept" if ok else "rejected")
+                print(f"{'blessed' if ok else 'no such object'} {raw}")
+            for raw in args.archive or []:
+                ok = state.set_status(conn, int(raw), "archived")
+                state.log_acceptance(conn, surface="object", candidate_key=str(raw),
+                                     verdict="rejected")
+                print(f"{'archived' if ok else 'no such object'} {raw}")
+            return
+        objects = state.list_objects(conn, type_=args.type, status=args.status, limit=args.limit)
+        if not objects:
+            print("No objects match.")
+            return
+        for obj in objects:
+            print(f"[{obj.id}] {obj.status:<8} {obj.type:<9} {obj.title}")
+            for key in ("why", "approach", "mastery", "state"):
+                if obj.body.get(key):
+                    print(f"      {key}: {obj.body[key]}")
+            for thread in obj.body.get("open_threads", []):
+                print(f"      · {thread}")
+            for link in state.links_for(conn, obj.id):
+                print(f"      -> {link.relation} {link.target_kind}:{link.target_key}")
+        print(f"\n{len(objects)} object(s)")
+    finally:
+        conn.close()
+
+
 def cmd_capture_conversation(args) -> None:
     """Loop C: save a Claude conversation as a rough note (agent-layer §8.3).
 
@@ -834,6 +940,27 @@ def main(argv=None) -> None:
     pcs.add_argument("--staging", default=None, help="staging dir (default: [capture].staging_dir)")
     pcs.add_argument("--no-ingest", action="store_true", help="render notes only; skip the notes-sync ingest")
     pcs.set_defaults(func=cmd_capture_sync)
+
+    pstr = sub.add_parser(
+        "structure",
+        help="propose structured objects + belief positions from ingested docs (billed; --dry-run is free of writes)",
+    )
+    pstr.add_argument("--doc", action="append", help="document id (repeatable); else use the filters")
+    pstr.add_argument("--category", default=None, help="only documents in this category")
+    pstr.add_argument("--since", default=None, help="only documents dated/ingested on or after (YYYY-MM-DD)")
+    pstr.add_argument("--maturity", choices=["rough", "tidy"], default=None, help="only documents of this maturity")
+    pstr.add_argument("--limit", type=int, default=None, help="cap how many documents are processed")
+    pstr.add_argument("--dry-run", action="store_true", help="run every gate and print the plan; write nothing")
+    pstr.add_argument("--verbose", action="store_true", help="also show rejected candidates and why")
+    pstr.set_defaults(func=cmd_structure)
+
+    pobj = sub.add_parser("objects", help="list / bless / archive structured objects")
+    pobj.add_argument("--type", choices=["project", "concept", "question", "reading"], default=None)
+    pobj.add_argument("--status", choices=["proposed", "active", "archived"], default=None)
+    pobj.add_argument("--limit", type=int, default=50)
+    pobj.add_argument("--bless", action="append", help="object id to mark active (repeatable)")
+    pobj.add_argument("--archive", action="append", help="object id to archive (repeatable)")
+    pobj.set_defaults(func=cmd_objects)
 
     pcc = sub.add_parser(
         "capture-conversation",

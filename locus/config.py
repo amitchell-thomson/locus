@@ -320,6 +320,28 @@ class AgentConfig(BaseModel):
     )
 
 
+class CaptureConfig(BaseModel):
+    """Loop A — reMarkable handwriting capture (agent-layer plan §8.1, Phase 1 ④).
+
+    The device pushes each changed notebook to `staging_dir` as `<uuid>.pdf`; capture identifies,
+    transcribes, enriches, and files it as a `rough` note. Folder→category maps a reMarkable top
+    folder to a Locus category (empty dict = the built-in map in capture/remarkable.py)."""
+
+    staging_dir: Path = Field(
+        Path("/home/alec/remarkable-import"),
+        description="Where the device-push receiver lands <uuid>.pdf renders (absolute).",
+    )
+    rmapi_binary: str = Field("rmapi", description="rmapi binary (PATH name or absolute path).")
+    folder_category: dict[str, str] = Field(
+        default_factory=dict, description="reMarkable folder -> Locus category (empty = built-in)."
+    )
+    excluded_folders: list[str] = Field(
+        default_factory=lambda: ["trash", "Locus", "admin"],
+        description="reMarkable folders whose docs are not Loop-A capture.",
+    )
+    default_category: str = Field("note", description="Category for folders not in the map.")
+
+
 class MCPConfig(BaseModel):
     # The MCP `query` tool makes a billed Claude API call server-side; `retrieve` and the read
     # tools are local-only (free). Default OFF so the server never exposes a billable tool unless
@@ -358,6 +380,8 @@ class Config(BaseModel):
     reading: ReadingConfig = Field(default_factory=ReadingConfig)
     # Optional: absent [agent] falls back to defaults (claude -p model 'haiku', $5/day cap).
     agent: AgentConfig = Field(default_factory=AgentConfig)
+    # Optional: absent [capture] falls back to defaults (staging dir, built-in folder→category).
+    capture: CaptureConfig = Field(default_factory=CaptureConfig)
 
     def resolve_paths(self) -> "Config":
         """Make all configured paths absolute, relative to the project root."""

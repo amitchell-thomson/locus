@@ -185,3 +185,13 @@ font_pt        = 11.0      # body text size (pt)
 # claude -p envelope's total_cost_usd. Bulk work uses API Batch instead (added with hybrid routing).
 model              = "haiku"   # claude -p model for durable agent passes (Phase-0 routing choice)
 daily_cost_cap_usd = 5.0       # soft daily claude -p spend cap (USD); omit/None for no cap
+
+[capture]
+# Loop A — reMarkable handwriting capture (agent-layer §8.1). The device pushes each changed
+# notebook to staging_dir as <uuid>.pdf; capture maps it to its name+folder via rmapi (find+stat)
+# and files it as a rough note. folder_category overrides the built-in map (empty = built-in).
+staging_dir      = "/path/to/remarkable-import"    # where the device-push receiver lands renders
+rmapi_binary     = "rmapi"                          # PATH name or absolute path
+excluded_folders = ["trash", "Locus", "admin"]     # folders that are not Loop-A handwriting capture
+default_category = "note"                           # category for folders not in the map
+# folder_category = { rough_notes = "note", projects = "project", careers = "career" }

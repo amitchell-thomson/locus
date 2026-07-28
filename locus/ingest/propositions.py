@@ -138,7 +138,7 @@ def extract_propositions(
         f"Section text:\n{text}\n\n"
         f"{rules}"
     )
-    raw = generate_structured(Propositions, user, **kw).propositions
+    raw = generate_structured(Propositions, user, pass_name="propositions", **kw).propositions
     kept, rejected = filter_propositions(raw, title)
 
     if not kept:
@@ -159,7 +159,7 @@ def extract_propositions(
                 "asserts substantive factual claims, extract them; return an empty list only "
                 "if it genuinely asserts none."
             )
-        raw = generate_structured(Propositions, f"{user}\n\n{complaint}", **kw).propositions
+        raw = generate_structured(Propositions, f"{user}\n\n{complaint}", pass_name="propositions", **kw).propositions
         kept, rejected = filter_propositions(raw, title)
         if not kept:
             log.warning("propositions: section %r is proposition-free after retry", title)

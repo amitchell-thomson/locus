@@ -271,17 +271,86 @@ def _sanitize_latex_escapes(raw: str) -> str:
     return "".join(out)
 
 
+# Claude model aliases accepted in [ingest].pass_routing (kept swappable via config).
+_CLAUDE_ALIASES = {"haiku": "claude-haiku-4-5-20251001", "sonnet": "claude-sonnet-5"}
+
+
+def route_for(pass_name: str | None) -> str:
+    """Engine for an ingest pass: 'local' (Ollama, default) or a Claude model id (§7)."""
+    if not pass_name:
+        return "local"
+    engine = load().ingest.pass_routing.get(pass_name, "local")
+    return "local" if engine == "local" else _CLAUDE_ALIASES.get(engine, engine)
+
+
+def _extract_json(text: str) -> str:
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end <= start:
+        raise IngestExtractionError(f"no JSON object in reply: {text[:200]!r}")
+    return text[start : end + 1]
+
+
+def _generate_structured_claude(
+    schema: type[T], system: str, user: str, *, model: str, retries: int, sdk_client=None
+) -> T:
+    """The routed path: one metered Anthropic SDK call per pass, same prompt/schema as local (zero
+    drift, Phase-0). The schema is appended to the prompt (the SDK has no grammar constraint); a
+    validation failure retries with the error. Raises IngestExtractionError to quarantine, like the
+    local path."""
+    import json
+
+    if sdk_client is None:
+        import anthropic
+
+        from locus.config import Config
+
+        sdk_client = anthropic.Anthropic(api_key=Config.anthropic_api_key())
+
+    base = (
+        f"{user}\n\nRespond with ONLY a JSON object conforming to this JSON Schema "
+        f"(no prose, no code fences):\n{json.dumps(schema.model_json_schema())}"
+    )
+    prompt, last = base, None
+    for _ in range(retries + 1):
+        try:
+            resp = sdk_client.messages.create(
+                model=model, max_tokens=4096,
+                system=[{"type": "text", "text": system}],
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except Exception as exc:
+            raise IngestExtractionError(f"Claude ingest call failed (model={model}): {exc}") from exc
+        text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
+        try:
+            return schema.model_validate_json(_sanitize_latex_escapes(_extract_json(text)))
+        except (ValidationError, ValueError, IngestExtractionError) as exc:
+            last = exc
+            prompt = f"{base}\n\nYour previous reply was invalid ({exc}). Return ONLY corrected JSON."
+    raise IngestExtractionError(f"{schema.__name__}: no schema-valid output from {model}: {last}")
+
+
 def generate_structured(
     schema: type[T],
     user: str,
     *,
     system: str = DEFAULT_SYSTEM,
+    pass_name: str | None = None,
     client: Client | None = None,
     model: str | None = None,
     retries: int = 2,
     temperature: float = 0.0,
+    sdk_client=None,
 ) -> T:
-    """Generate JSON matching `schema`, repairing on validation failure up to `retries` times."""
+    """Generate JSON matching `schema`, repairing on validation failure up to `retries` times.
+
+    `pass_name` selects the engine via `[ingest].pass_routing` (§7): unset or 'local' uses the local
+    qwen path below; anything else routes this pass to a metered Claude model (same prompt/schema)."""
+    engine = route_for(pass_name)
+    if engine != "local":
+        return _generate_structured_claude(
+            schema, system, user, model=engine, retries=retries, sdk_client=sdk_client
+        )
+
     client = client or _client()
     ollama_cfg = load().ollama
     model = model or ollama_cfg.ingest_model

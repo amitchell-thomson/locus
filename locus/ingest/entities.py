@@ -134,7 +134,7 @@ def extract_entities(title: str | None, text: str, **kw) -> list[Entity]:
         "references (equation/figure/table numbers) or bare mathematical symbols — they are "
         "not entities. Return an empty list only if there are none."
     )
-    raw = generate_structured(_Entities, user, **kw).entities
+    raw = generate_structured(_Entities, user, pass_name="entities", **kw).entities
     out: list[Entity] = []
     seen: set[tuple[str, str]] = set()
     for e in raw:

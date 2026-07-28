@@ -131,7 +131,7 @@ def extract_code_concepts(
         "Only concepts actually supported by the text; do not invent. Return an empty list if "
         "there are none."
     )
-    raw = generate_structured(_Concepts, user, **kw).concepts
+    raw = generate_structured(_Concepts, user, pass_name="concepts", **kw).concepts
     out: list[Entity] = []
     seen: set[tuple[str, str]] = set()
     for c in raw:

@@ -96,4 +96,4 @@ def synthesize_document(
             "document does not state one, give a brief best-effort characterisation instead of "
             "leaving it blank."
         )
-    return generate_structured(DocSynthesis, user, **kw)
+    return generate_structured(DocSynthesis, user, pass_name="synthesis", **kw)

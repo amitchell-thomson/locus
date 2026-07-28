@@ -186,6 +186,13 @@ font_pt        = 11.0      # body text size (pt)
 model              = "haiku"   # claude -p model for durable agent passes (Phase-0 routing choice)
 daily_cost_cap_usd = 5.0       # soft daily claude -p spend cap (USD); omit/None for no cap
 
+[ingest]
+# Per-pass ingest LLM routing (agent-layer §7). 'local' = local qwen (Ollama, default); a Claude
+# alias ('haiku'/'sonnet') or model id routes that pass to the METERED Anthropic SDK (cheap Haiku;
+# the right channel for high-volume small passes). Embeddings + math-OCR are ALWAYS local. Empty =
+# every pass local. Uncomment to move the durable passes to Haiku (metered; needs ANTHROPIC_API_KEY):
+# pass_routing = { summarize = "haiku", propositions = "haiku", entities = "haiku", synthesis = "haiku", gaps = "haiku", concepts = "haiku" }
+
 [capture]
 # Loop A — reMarkable handwriting capture (agent-layer §8.1). The device pushes each changed
 # notebook to staging_dir as <uuid>.pdf; capture maps it to its name+folder via rmapi (find+stat)

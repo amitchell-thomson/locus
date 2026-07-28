@@ -153,7 +153,7 @@ def flag_gaps(
         "explicitly, assumed as a prerequisite, or genuinely absent from every summary. "
         "Return an empty list if nothing qualifies."
     )
-    raw = generate_structured(_Gaps, "\n".join(parts), **kw).gaps
+    raw = generate_structured(_Gaps, "\n".join(parts), pass_name="gaps", **kw).gaps
     if sections:
         return filter_gaps(raw, hints, "\n".join(raw_text for _, _, raw_text in sections))
     return raw

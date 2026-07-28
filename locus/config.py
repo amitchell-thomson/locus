@@ -320,6 +320,22 @@ class AgentConfig(BaseModel):
     )
 
 
+class IngestConfig(BaseModel):
+    """Per-pass ingest LLM routing (agent-layer plan §7). Maps a durable text pass to an engine:
+    `local` = the local qwen model (Ollama, the default) · any other value = a Claude model
+    alias/id run via the METERED Anthropic SDK (cheap Haiku — the right channel for high-volume
+    small passes, not `claude -p` whose per-call harness prompt dominates small-task cost, Phase-0).
+
+    Embeddings and math-OCR are ALWAYS local (no Claude equivalent / safe-degrade) and are not
+    routed here. Absent/empty `pass_routing` => every pass runs local (current behaviour, no
+    change). Pass names: summarize · propositions · entities · synthesis · gaps · concepts."""
+
+    pass_routing: dict[str, str] = Field(
+        default_factory=dict,
+        description="ingest pass -> 'local' | claude model alias/id (haiku/sonnet). Empty = all local.",
+    )
+
+
 class CaptureConfig(BaseModel):
     """Loop A — reMarkable handwriting capture (agent-layer plan §8.1, Phase 1 ④).
 
@@ -393,6 +409,8 @@ class Config(BaseModel):
     agent: AgentConfig = Field(default_factory=AgentConfig)
     # Optional: absent [capture] falls back to defaults (staging dir, built-in folder→category).
     capture: CaptureConfig = Field(default_factory=CaptureConfig)
+    # Optional: absent [ingest] falls back to defaults (pass_routing empty = every pass local).
+    ingest: IngestConfig = Field(default_factory=IngestConfig)
 
     def resolve_paths(self) -> "Config":
         """Make all configured paths absolute, relative to the project root."""

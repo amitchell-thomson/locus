@@ -189,7 +189,7 @@ def summarize_section(title: str | None, text: str, *, code: bool = False, **kw)
             "not present in the text."
         )
     source = f"{title or ''}\n{full_text}"
-    out = generate_structured(SectionSummary, user, **kw)
+    out = generate_structured(SectionSummary, user, pass_name="summarize", **kw)
     if not is_template_echo(out.summary) and is_grounded(out.summary, source):
         return out
     log.warning("ungrounded summary for %r (%r); regenerating", title, out.summary[:80])
@@ -198,7 +198,7 @@ def summarize_section(title: str | None, text: str, *, code: bool = False, **kw)
         "material above (function/class names, methods, subject terms). Describe only what is "
         "literally there."
     )
-    out = generate_structured(SectionSummary, retry, **kw)
+    out = generate_structured(SectionSummary, retry, pass_name="summarize", **kw)
     if not is_template_echo(out.summary) and is_grounded(out.summary, source):
         return out
     log.warning("summary failed grounding twice for %r; deterministic fallback used", title)

@@ -213,6 +213,10 @@ default_category = "note"                           # category for folders not i
 max_objects_per_doc      = 3          # hard cap; the model ranks, the cap truncates the tail
 min_concept_docs         = 2          # a proposable concept must already span >= N documents
 max_support_links        = 3          # extra cross-doc links, only from floor-clearing citations
+# A Concept object is an IDEA. A language, a platform, a person, a company, a ticker are not —
+# however central they are to the work. The first live run proposed `Python` and `Optibook`
+# (both entity type `tool`) as concepts to track; filtering by KIND is the right instrument.
+concept_exclude_entity_types = ["tool", "author", "organization", "ticker", "other"]
 belief_source_categories = ["note"]   # ONLY owner-authored docs may yield positions; a paper's
                                       #   claim is the paper's, not his (§3.4)
 # model = "haiku"                     # override [agent].model for this pass

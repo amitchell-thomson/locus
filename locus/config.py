@@ -338,6 +338,15 @@ class StructureConfig(BaseModel):
     # Extra cross-document `relates` links per object, taken only from retrieval citations that
     # clear [retrieve].min_rerank_score.
     max_support_links: int = Field(3, description="Max floor-clearing support links per object.")
+    # Entity TYPES that cannot become a Concept object. A Concept is an IDEA the owner engages
+    # with; a language, a platform, a person and a company are none of those, however often they
+    # co-occur with his work. The first live run proposed `Python` (tool) and `Optibook` (tool)
+    # as concepts to track — both cleared every other gate, because the problem is not their
+    # frequency but their kind. Types come from the ingest entity taxonomy (§6).
+    concept_exclude_entity_types: list[str] = Field(
+        default_factory=lambda: ["tool", "author", "organization", "ticker", "other"],
+        description="Entity types that may not become Concept objects (a concept is an idea).",
+    )
     # Categories whose documents may yield BELIEF POSITIONS. Default `note` only: handwriting and
     # captured conversations are the owner's own words. A paper's claim is the paper's position;
     # attributing it to him corrupts the headline capability (§3.4).

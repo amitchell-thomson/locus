@@ -199,7 +199,9 @@ def _doc_text(conn, doc_id: int, *, limit: int = _MAX_DOC_CHARS) -> str:
     return "\n".join(r["raw_text"] for r in rows)[:limit]
 
 
-def canonical_concepts(conn, doc_id: int, *, min_docs: int) -> dict[str, tuple[str, str]]:
+def canonical_concepts(
+    conn, doc_id: int, *, min_docs: int, exclude_types: list[str] | None = None
+) -> dict[str, tuple[str, str]]:
     """The doc's canonical entities that span >= `min_docs` documents — gate 1's whitelist.
 
     Joins the doc's raw entity surfaces through `entity_aliases` to their canonicals, then counts
@@ -232,7 +234,17 @@ def canonical_concepts(conn, doc_id: int, *, min_docs: int) -> dict[str, tuple[s
         """,
         (doc_id, min_docs),
     ).fetchall()
-    out = {r["cname"].casefold(): (r["cname"], r["ctype"]) for r in rows}
+    # Gate 1c: a Concept object is an IDEA. A language, a platform, a person, a company and a
+    # ticker are not, however central they are to the work — the first live run proposed `Python`
+    # and `Optibook` (both entity type `tool`) as concepts to track. Filtering by KIND rather than
+    # by frequency is the right instrument here: these are not rare, they are the wrong sort of
+    # thing.
+    excluded = {t.casefold() for t in (exclude_types or [])}
+    out = {
+        r["cname"].casefold(): (r["cname"], r["ctype"])
+        for r in rows
+        if (r["ctype"] or "").casefold() not in excluded
+    }
 
     # Gate 1b: drop names too generic to BE a concept. A live dry-run (2026-07-28) offered
     # `state` and `ingest` as domain concepts for the tanker-flow repo — both clear the
@@ -413,7 +425,10 @@ def plan_for_document(
         plan.rejected.append(Rejection("object", plan.doc_title, "agent-generated source"))
         return plan
 
-    concepts = canonical_concepts(conn, doc_id, min_docs=scfg.min_concept_docs)
+    concepts = canonical_concepts(
+        conn, doc_id, min_docs=scfg.min_concept_docs,
+        exclude_types=scfg.concept_exclude_entity_types,
+    )
     text = _doc_text(conn, doc_id)
     support = [
         d for d in _supporting_docs(

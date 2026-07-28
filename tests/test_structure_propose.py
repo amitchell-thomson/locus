@@ -473,3 +473,32 @@ def test_generic_code_identifiers_are_not_proposable_concepts(conn):
         runner=_runner({"objects": [{"type": "concept", "title": "state", "anchor": "state"}]}),
     )
     assert plan.objects == []
+
+
+def test_tool_and_person_entities_cannot_become_concept_objects(conn):
+    """Gate 1c: a Concept is an IDEA. The first live run proposed `Python` (tool) as one."""
+    _doc(conn, 8, title="repo C", uri="repos/c", category="project", text="z")
+    for d in (1, 8):
+        _entity(conn, d, "Python", "tool")
+        _entity(conn, d, "Ken Griffin", "author")
+        _entity(conn, d, "mean reversion", "concept")
+
+    concepts = propose.canonical_concepts(
+        conn, 1, min_docs=2, exclude_types=["tool", "author", "organization", "ticker", "other"]
+    )
+    assert "python" not in concepts and "ken griffin" not in concepts
+    assert "mean reversion" in concepts  # a real idea is untouched
+
+    plan = propose.plan_for_document(
+        conn, 1, retrieve_fn=_no_support,
+        runner=_runner({"objects": [{"type": "concept", "title": "Python", "anchor": "Python"}]}),
+    )
+    assert plan.objects == []
+
+
+def test_excluding_no_types_keeps_everything(conn):
+    """The filter is config-driven; an empty exclusion list is a no-op."""
+    _doc(conn, 8, title="repo C", uri="repos/c", category="project", text="z")
+    for d in (1, 8):
+        _entity(conn, d, "Python", "tool")
+    assert "python" in propose.canonical_concepts(conn, 1, min_docs=2, exclude_types=[])

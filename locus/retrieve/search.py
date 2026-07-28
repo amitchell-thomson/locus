@@ -84,6 +84,14 @@ def _eligible_docs(conn, facets: Facets | None) -> set[int] | None:
     return {r["id"] for r in conn.execute(sql, params)}
 
 
+def rough_doc_ids(conn) -> set[int]:
+    """Doc ids tagged `maturity='rough'` (capture notes). The retrieval pipeline penalises
+    their candidates' cross-encoder score so rough capture is down-weighted, not filtered
+    (agent-layer §6.1). One cheap query per retrieval; empty on an all-`tidy` corpus (a no-op
+    until Loop A lands rough notes)."""
+    return {r["id"] for r in conn.execute("SELECT id FROM documents WHERE maturity='rough'")}
+
+
 def _fts_query(query: str) -> str | None:
     """Build a safe FTS5 MATCH string: OR of the query's word tokens (recall + bm25 ranks)."""
     tokens = re.findall(r"\w+", query.lower())

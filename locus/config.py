@@ -94,6 +94,17 @@ class RetrieveConfig(BaseModel):
     # that found it (max) so the cross-domain match clears the floor. Off => single-pass only.
     multi_query_expansion: bool = Field(True, description="Enable multi-query cross-domain expansion.")
     multi_query_k: int = Field(2, description="Reformulations beyond the original (0 = off).")
+    # Down-weight for `maturity=rough` capture notes (agent-layer §6.1). Subtracted from the
+    # cross-encoder rerank_score of rough-doc candidates before the final sort. It is a PENALTY
+    # in cross-encoder logit space, NOT the plan's "multiplier on the pre-rerank score": the
+    # arms' pre-rerank scores are explicitly not cross-arm comparable and do not order results
+    # (search.py) — only the rerank_score does — and a multiplier on signed logits is incoherent
+    # (it would PROMOTE a negatively-scored unit). A subtractive penalty is a well-defined,
+    # monotonic demotion that still lets a strongly-matching rough note surface (flag, never
+    # filter — principle 8). Inert until rough notes exist (Phase 1 Loop A); eval-tune then (§18).
+    rough_penalty: float = Field(
+        1.5, description="Cross-encoder-score penalty applied to maturity=rough candidates (0 = off)."
+    )
 
 
 class GenerationConfig(BaseModel):

@@ -152,6 +152,36 @@ def test_reingest_is_a_noop(tmp_path, conn, fake_passes):
     assert _count(conn, "chunks") == chunks_after_first
 
 
+def _maturity(conn, doc_id: int) -> str:
+    return conn.execute("SELECT maturity FROM documents WHERE id=?", (doc_id,)).fetchone()["maturity"]
+
+
+def test_maturity_defaults_to_tidy(tmp_path, conn, fake_passes):
+    result = ingest_file(_make_pdf(tmp_path / "doc.pdf"), conn)
+    assert _maturity(conn, result.doc_id) == "tidy"
+
+
+def test_maturity_rough_is_stored(tmp_path, conn, fake_passes):
+    result = ingest_file(_make_pdf(tmp_path / "note.pdf"), conn, maturity="rough")
+    assert _maturity(conn, result.doc_id) == "rough"
+
+
+def test_reingest_inherits_maturity_when_not_specified(tmp_path, conn, fake_passes):
+    # A note ingested rough must not be silently promoted to tidy on a re-ingest that
+    # doesn't pass maturity (agent-layer §6.1: promotion is explicit, mirrors category continuity).
+    pdf = _make_pdf(tmp_path / "note.pdf")
+    first = ingest_file(pdf, conn, maturity="rough")
+    ingest_file(pdf, conn, reingest=True)  # no maturity given
+    assert _maturity(conn, first.doc_id) == "rough"
+
+
+def test_reingest_explicit_maturity_promotes(tmp_path, conn, fake_passes):
+    pdf = _make_pdf(tmp_path / "note.pdf")
+    first = ingest_file(pdf, conn, maturity="rough")
+    ingest_file(pdf, conn, reingest=True, maturity="tidy")  # promotion
+    assert _maturity(conn, first.doc_id) == "tidy"
+
+
 def test_failure_is_quarantined_with_no_partial_write(tmp_path, conn, monkeypatch, fake_passes):
     # A pass blows up mid-prepare; nothing must be written.
     def boom(*a, **k):

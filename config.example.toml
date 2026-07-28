@@ -41,6 +41,11 @@ context_token_budget = 100000     # cap on assembled context to the Claude API c
 # in another field's terms clears the floor instead of being demoted. 0 = single-pass only.
 multi_query_expansion = true
 multi_query_k        = 2          # reformulations beyond the original
+# Down-weight for maturity=rough capture notes (agent-layer §6.1): subtracted from the
+# cross-encoder score of rough-doc candidates before the final sort (a logit penalty, NOT a
+# multiplier — pre-rerank arm scores don't order results, and a multiplier on signed logits is
+# incoherent). Flag/down-weight, never filter. Inert until rough notes exist; eval-tune then. 0 = off.
+rough_penalty        = 1.5
 
 [mathocr]
 # Math-aware page OCR: pages whose text layer is damaged or math-dense are re-read by an

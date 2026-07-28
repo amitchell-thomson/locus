@@ -260,7 +260,7 @@ def _pipeline_fakes(monkeypatch, floor, scores):
         lambda: types.SimpleNamespace(retrieve=rcfg, figures=types.SimpleNamespace(image_cap=3)),
     )
 
-    def _rr(query, candidates, gather, cfg, *, prefer_code=False):
+    def _rr(query, candidates, gather, cfg, *, prefer_code=False, rough_ids=None):
         for c, s in zip(candidates, scores):
             c.rerank_score = s
         return candidates[: len(scores)][: cfg.rerank_top_k]
@@ -386,7 +386,7 @@ def _facet_fakes(monkeypatch, floor, scores, facet_scores):
         lambda: types.SimpleNamespace(retrieve=rcfg, figures=types.SimpleNamespace(image_cap=3)),
     )
 
-    def _rr(query, candidates, gather, cfg, *, prefer_code=False):
+    def _rr(query, candidates, gather, cfg, *, prefer_code=False, rough_ids=None):
         for c, s in zip(candidates, scores):
             c.rerank_score = s
         return candidates[: len(scores)][: cfg.rerank_top_k]
@@ -565,7 +565,7 @@ def test_figure_images_floored_and_cited_count_kept(monkeypatch, tmp_path):
     def fake_search(conn, q, facets=None):
         return []
 
-    def fake_rerank(q, cands, gather, cfg, *, prefer_code=False):
+    def fake_rerank(q, cands, gather, cfg, *, prefer_code=False, rough_ids=None):
         return []
 
     def fake_expand(conn, survivors):
@@ -592,7 +592,9 @@ def test_figure_images_floored_and_cited_count_kept(monkeypatch, tmp_path):
     monkeypatch.setattr(pl, "assemble", lambda exp: types.SimpleNamespace(
         text="CTX", citations=[], citation_details=[], included=0, dropped=0))
 
-    r = pl.retrieve("q", conn=object())
+    # Stub conn: retrieve() now queries rough_doc_ids(conn); this test fakes the pipeline
+    # internals, so a no-row execute() stands in for "no rough docs".
+    r = pl.retrieve("q", conn=types.SimpleNamespace(execute=lambda *a, **k: []))
     assert r.figures_cited == 4
     assert [f.page for f in r.figures] == [1, 2]  # floor killed -0.4, cap kept top 2
     assert all(f.rerank_score >= 0.22 for f in r.figures)

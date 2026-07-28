@@ -672,7 +672,7 @@ def _prepare_doc(
 def _write(
     conn, path: Path, content_hash: str, source_type: str, raw_name: str, prep: _Prepared,
     *, category: str | None = None, source_uri: str | None = None,
-    replace_doc_id: int | None = None,
+    maturity: str = "tidy", replace_doc_id: int | None = None,
 ) -> IngestResult:
     """Write the prepared document in ONE transaction.
 
@@ -695,11 +695,11 @@ def _write(
             _delete_document_rows(conn, replace_doc_id)
         cur = conn.execute(
             "INSERT INTO documents (content_hash, source_type, source_uri, raw_path, title, "
-            "ingest_model, source_date, category, thesis, method, result, limitations, "
-            "section_map, gap_flags) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "ingest_model, source_date, category, maturity, thesis, method, result, limitations, "
+            "section_map, gap_flags) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 content_hash, source_type, source_uri or str(path), raw_name, prep.title,
-                llm.ingest_model(), source_date, category,
+                llm.ingest_model(), source_date, category, maturity,
                 prep.synthesis.thesis, prep.synthesis.method, prep.synthesis.result,
                 prep.synthesis.limitations, json.dumps(section_map), json.dumps(prep.gaps),
             ),
@@ -842,13 +842,20 @@ def delete_document(conn, doc_id: int) -> None:
     _unlink_figure_files(figure_files, keep=set())  # after commit; best-effort
 
 
-def ingest_file(path: str | Path, conn, *, reingest: bool = False) -> IngestResult:
+def ingest_file(
+    path: str | Path, conn, *, reingest: bool = False, maturity: str | None = None
+) -> IngestResult:
     """Ingest one file into the given DB connection. Never raises: failures are quarantined.
 
     If `reingest` is True, an already-present document (same content hash) is replaced —
     the old document is deleted inside the SAME transaction that writes the new one, so a
     failed prepare leaves the prior document untouched (prepare-first ordering; previously
     the delete ran before prepare and a failure destroyed the old doc).
+
+    `maturity` (`rough`|`tidy`, agent-layer §6.1) tags capture notes for retrieval down-weighting.
+    `None` inherits the replaced doc's maturity on re-ingest (else defaults `tidy`), mirroring
+    category continuity below — a raw-store re-ingest must not silently promote a rough note. An
+    explicit value always wins (promotion re-ingests as `tidy`; the capture loops pass `rough`).
     """
     path = Path(path)
     if not path.exists():
@@ -859,10 +866,13 @@ def ingest_file(path: str | Path, conn, *, reingest: bool = False) -> IngestResu
     try:
         content_hash = _hash_file(path)
         existing = conn.execute(
-            "SELECT id, source_uri, category FROM documents WHERE content_hash=?", (content_hash,)
+            "SELECT id, source_uri, category, maturity FROM documents WHERE content_hash=?",
+            (content_hash,),
         ).fetchone()
         if existing and not reingest:
             return IngestResult(str(path), "skipped", doc_id=existing["id"])
+        # Explicit maturity wins; else inherit on re-ingest (don't silently promote), else tidy.
+        resolved_maturity = maturity or (existing["maturity"] if existing else "tidy")
 
         # Re-ingest metadata continuity: a replacement's bytes usually come from the raw
         # store, whose path carries neither the drop-folder category nor the original
@@ -885,7 +895,7 @@ def ingest_file(path: str | Path, conn, *, reingest: bool = False) -> IngestResu
         old_figure_files = _figure_raw_paths(conn, existing["id"]) if existing else []
         result = _write(
             conn, path, content_hash, source_type, raw_name, prep,
-            category=category, source_uri=source_uri,
+            category=category, source_uri=source_uri, maturity=resolved_maturity,
             replace_doc_id=existing["id"] if existing else None,
         )
         cache.flush()  # only after the document committed
@@ -964,13 +974,19 @@ def ingest_repo(
         return IngestResult(str(repo), "quarantined", error=str(exc))
 
 
-def ingest_paths(paths: list[str | Path], conn=None, *, reingest: bool = False) -> list[IngestResult]:
-    """Ingest several files into the configured DB (or a provided connection)."""
+def ingest_paths(
+    paths: list[str | Path], conn=None, *, reingest: bool = False, maturity: str | None = None
+) -> list[IngestResult]:
+    """Ingest several files into the configured DB (or a provided connection).
+
+    `maturity` (`rough`|`tidy`, agent-layer §6.1) applies to every path in the batch — the
+    capture loops ingest a batch of notes as `rough`; the default path leaves it to
+    `ingest_file` (inherit-or-tidy)."""
     own = conn is None
     if own:
         conn = get_connection(load().paths.db)
     try:
-        return [ingest_file(p, conn, reingest=reingest) for p in paths]
+        return [ingest_file(p, conn, reingest=reingest, maturity=maturity) for p in paths]
     finally:
         if own:
             conn.close()

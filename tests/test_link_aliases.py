@@ -723,3 +723,27 @@ def test_adjudicate_cluster_raises_on_unparseable_reply():
             [ClusterMember("x", "concept")],
             runner=lambda prompt, model: "sorry, no json here", model="fake",
         )
+
+
+def test_cli_runner_scrubs_metered_keys_from_subprocess_env(monkeypatch):
+    # The default CLI runner must NOT pass ANTHROPIC_API_KEY/AUTH_TOKEN to `claude -p`, else the
+    # subscription call silently reroutes to metered billing (Phase-0 finding 1).
+    from locus.link import adjudicate
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-metered")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "tok")
+    captured = {}
+
+    class _Proc:
+        returncode = 0
+        stdout = '{"result": "{\\"groups\\": []}", "is_error": false}'
+        stderr = ""
+
+    def fake_run(cmd, **kwargs):
+        captured["env"] = kwargs.get("env")
+        return _Proc()
+
+    monkeypatch.setattr(adjudicate.subprocess, "run", fake_run)
+    adjudicate._claude_cli_runner("prompt", "model")
+    assert "ANTHROPIC_API_KEY" not in captured["env"]
+    assert "ANTHROPIC_AUTH_TOKEN" not in captured["env"]

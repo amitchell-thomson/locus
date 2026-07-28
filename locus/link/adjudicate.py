@@ -21,6 +21,7 @@ same-section co-occurrence, member-surface snapping) override any verdict.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import tempfile
 import typing
@@ -108,16 +109,27 @@ def _build_prompt(members: list[ClusterMember]) -> str:
     )
 
 
+# Env vars that reroute `claude -p` off the subscription onto metered billing (Phase-0 finding 1).
+_METERED_KEYS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
+
+
 def _claude_cli_runner(prompt: str, model: str | None) -> str:
     """Run one headless `claude -p` and return the assistant's text.
 
     Uses `--output-format json` (a stable envelope around the reply) and a neutral working
     directory so the call does NOT pick up this repo's CLAUDE.md or project MCP servers — each
     adjudication is a clean, cheap, single-shot classification.
+
+    Runs with a SCRUBBED env: `locus.config` injects the project `.env`'s ANTHROPIC_API_KEY into
+    `os.environ` at import, and a `claude -p` subprocess that inherits it prefers that METERED key
+    over the subscription OAuth login — silently routing adjudication spend to pay-as-you-go
+    (Phase-0 finding 1; the same scrub `agent/claude.py` does). Adjudication is meant to run on the
+    owner's subscription.
     """
     cmd = ["claude", "-p", prompt, "--output-format", "json"]
     if model:
         cmd += ["--model", model]
+    env = {k: v for k, v in os.environ.items() if k not in _METERED_KEYS}
     try:
         proc = subprocess.run(
             cmd,
@@ -125,6 +137,7 @@ def _claude_cli_runner(prompt: str, model: str | None) -> str:
             text=True,
             timeout=_CLI_TIMEOUT_S,
             cwd=tempfile.gettempdir(),
+            env=env,
         )
     except FileNotFoundError as e:
         raise RuntimeError(

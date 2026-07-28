@@ -359,24 +359,37 @@ locus/
 ├── locus/
 │   ├── cli.py            # product surface: ingest list inspect watch sync link retitle
 │   │                     #   query retrieve mcp status backup restore export-obsidian audit eval
+│   │                     #   read capture-sync capture-conversation notes-sync
+│   │                     #   structure objects evolution gaps review   (agent layer)
 │   ├── backup.py         # WAL-safe DB snapshot + rsync-hardlinked raw store; restore
 │   ├── status.py         # `locus status` health summary (counts, alias staleness, backups)
 │   ├── config.py         # typed config; ANTHROPIC_API_KEY via env/.env only
-│   ├── db/               # connection (sqlite-vec load), migrate.py, migrations/ (0001–0008)
+│   ├── db/               # connection (sqlite-vec load), migrate.py, migrations/ (0001–0011)
 │   ├── extract/          # base, pdf, mathocr, figures_detect, docx, pptx, textdoc, code
-│   ├── ingest/           # llm (validated I/O + repair), summarize, propositions, entities,
-│   │                     #   concepts (code domain concepts), synthesis, gaps, chunk, embed, figures, llamacpp
-│   ├── ingest_pipeline.py · ingest_lock.py · watcher.py · sync.py
+│   ├── ingest/           # llm (validated I/O + repair + per-pass routing), summarize, propositions,
+│   │                     #   entities, concepts (code domain concepts), synthesis, gaps, chunk, embed, figures, llamacpp
+│   ├── ingest_pipeline.py · ingest_lock.py · watcher.py · sync.py · notes_sync.py · repo_sync.py
 │   ├── retrieve/         # search (all arms), rerank+select, expand, assemble, pipeline,
 │   │                     #   figure_images
 │   ├── link/             # aliases (tiers+guards), adjudicate (Claude), related
 │   ├── export/           # obsidian.py — read-only vault projection (§13, joins-only)
+│   │  ── agent layer (§15) ──
+│   ├── agent/            # claude.py (the claude -p runner) · journal.py (agent_runs) ·
+│   │                     #   budget.py (cost ledger) · state.py (objects/links/positions/acceptance)
+│   ├── capture/          # remarkable · transcribe · fillin · loop_a · conversations
+│   ├── structure/        # propose.py — gated object + belief proposal (plan/apply split)
+│   ├── evolve/           # trajectory.py — dated position chain + advisory tension detection
+│   ├── learn/            # gaps.py · practice.py · review.py (SM-2)
+│   ├── surface/          # grounding.py · critique.py · synthesise.py (the §8.4 MCP surface)
+│   ├── enrich/           # related.py — grounded `> [!ai] Related` owned blocks
+│   ├── reading/          # md2pdf · deliver_remarkable (`locus read`)
+│   ├── vault/            # writer.py (owned blocks, atomic, provenance) · markers · sidecar
 │   ├── query.py          # retrieve → assemble → Claude (multimodal)
 │   └── mcp_server.py
 ├── scripts/              # one-off, kept: backfills/ benchmarks/ reingest/ (+ scripts/README.md)
 ├── eval-artifacts/       # benchmark results + reports (mathocr, figures)
-├── tests/                # 322 model-free-by-default tests
-└── vault/                # incoming/ (watched, category folders) · raw/ · notes/ · locus.db
+├── tests/                # 596 model-free-by-default tests (tests/conftest.py pins pass_routing local)
+└── vault/                # incoming/ (watched, category folders) · raw/ · notes/ · backups/ · locus.db
 ```
 
 ## 13. Obsidian projection (SHIPPED — Phase 1+2)
@@ -408,9 +421,62 @@ stable id-suffixed slugs + sorted iteration). Manual-only, like `link`/`retitle`
   guarded integration tests where a model is unavoidable. Keep the suite green.
 - No secrets in code or committed config; key via `ANTHROPIC_API_KEY` (env or .env).
 - All tunables in `config.toml` (`[ollama] [paths] [embed] [retrieve] [generation] [mcp]
-  [mathocr] [figures] [repos] [alias]`); optional sections default cleanly.
+  [mathocr] [figures] [repos] [alias] [retitle] [concepts] [obsidian] [reading] [agent]
+  [capture] [ingest] [structure]`); optional sections default cleanly.
 - Operational rules: ONE ingest process at a time (flock-enforced); math suite after any
   VRAM-choreography change; `locus link` after ingest batches; quarantines are bugs to
   triage, not casualties; eval labels grow with the corpus.
 - Out of scope: custom GUI, cloud storage of corpus content, multi-user/auth, local models
   > ~8B (hardware-bound).
+
+## 15. Agent layer — capture, structure, learn (Phases 1–2 SHIPPED)
+
+Spec: `docs/obsidian-agent-layer-plan.md`. Turns Locus from a RAG engine into the owner's
+learning / project-development / interview-prep tool. **Agent state lives in its own tables and
+never mutates the ingest spine** (principles 7–9); the corpus stays immutable and regenerable.
+
+**Phase 1 — capture density (shipped).** `documents.maturity` (rough|tidy, migration 0009) +
+`[retrieve].rough_penalty` (a SUBTRACTIVE penalty on the cross-encoder score — flag/down-weight,
+never filter) · `agent/` foundation: `claude.py` is the ONE `claude -p` runner (env-SCRUBBED so
+it uses subscription OAuth, not the metered `.env` key — this bug silently rerouted billing in
+Phase 0 and again in `link/adjudicate.py`), `journal.py` (agent_runs, migration 0010),
+`budget.py` · `vault/writer.py` owned-block protocol (`<!-- locus:ai:<kind> -->` markers, atomic
+temp→fsync→replace, sidecar on conflict) + incremental `notes_sync` · **Loop A** (reMarkable
+handwriting → Sonnet vision transcription → Haiku fill-in → grounded Related block → rough note
+→ ingest) · **Loop C** (conversation capture: MCP `capture` tool, CLI, `.jsonl` importer) ·
+per-pass ingest routing (`[ingest].pass_routing`, metered SDK not `claude -p`).
+
+**Phase 2 — the value surfaces (shipped).** Migration **0011**: `objects`, `object_links`,
+`belief_positions`, `review_schedule`, `acceptance_log`.
+- **`structure/propose.py`** — agent PROPOSES objects + belief positions; the owner blesses
+  (`locus objects --bless`). `upsert_object` never writes `status`; body merges additively so a
+  re-proposal cannot delete a thread the owner tracks. **The precision bar is the module**
+  (failure mode #7): concepts must resolve through `entity_aliases` to a canonical spanning
+  ≥`min_concept_docs` (2) documents AND survive `link/related.non_topical_names()` (the round-6/7
+  boilerplate + code-symbol filters, shared so the two layers agree what a concept is); projects/
+  readings must anchor to a real `source_uri`; every object carries ≥1 grounding link; ≤3 per
+  document; **belief positions only from owner-authored categories** (`[structure].
+  belief_source_categories`, default `note`) with the stance sharing ≥60% distinctive vocabulary
+  with the source. Plan/apply split ⇒ `--dry-run` genuinely writes nothing; use it before any
+  corpus-wide run.
+- **`evolve/trajectory.py`** — the headline capability. Dated position chain ordered by
+  `dated_at` = the SOURCE note's date, rendered as a pure join. Tension detection is
+  retrieve-then-judge (cosine alone cannot separate agreement from contradiction — they are
+  equally near); a verdict citing a claim the judge was not shown is DROPPED.
+- **`learn/`** — `gaps.py` (deterministic, no model: the strong signal is a concept the project
+  implements that he has never written about in his own words), `practice.py` (questions only
+  from stored propositions, which stay as the reference answer), `review.py` (SM-2).
+- **`surface/`** — `critique` / `synthesise`: ground in-process, hand evidence to `claude -p`,
+  then DROP any claim citing an evidence key it was not given.
+
+**MCP tools added:** `capture` · `critique` · `synthesise` · `objects` · `evolution`. These call
+a model but through `claude -p` (SUBSCRIPTION); `query` remains the only tool that bills
+`ANTHROPIC_API_KEY`, and stays opt-in. **Restart `locus mcp` after any surface change.**
+
+**Invariants (non-negotiable):** propose-never-mutate · grounded-or-silent (every link, critique
+claim, practice item and tension cites a real retrieved unit or does not appear) · provenance on
+everything (`author: agent`, `source_run`) · `_generated/` is corpus-excluded and is never read
+back by the structurer (no feedback contamination).
+
+**Next (Phase 3):** Loop B (PDF annotate, migration 0012 `annotations`) · the annotatable daily
+reMarkable page · the acceptance-feedback flywheel (`acceptance_log` → related-doc ranking).

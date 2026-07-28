@@ -192,6 +192,9 @@ daily_cost_cap_usd = 5.0       # soft daily claude -p spend cap (USD); omit/None
 # and files it as a rough note. folder_category overrides the built-in map (empty = built-in).
 staging_dir      = "/path/to/remarkable-import"    # where the device-push receiver lands renders
 rmapi_binary     = "rmapi"                          # PATH name or absolute path
+transcribe_model = "claude-sonnet-5"                # VISION model (metered SDK). Sonnet default: A/B on
+                                                    # real dense handwriting beat Haiku decisively; seeds corpus
+transcribe_dpi   = 150                              # page render DPI for transcription
 excluded_folders = ["trash", "Locus", "admin"]     # folders that are not Loop-A handwriting capture
 default_category = "note"                           # category for folders not in the map
 # folder_category = { rough_notes = "note", projects = "project", careers = "career" }

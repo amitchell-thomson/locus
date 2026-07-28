@@ -333,10 +333,14 @@ class CaptureConfig(BaseModel):
     )
     rmapi_binary: str = Field("rmapi", description="rmapi binary (PATH name or absolute path).")
     # Transcription is a VISION call — an Anthropic SDK request with the page image, NOT `claude -p`
-    # (Phase-0: claude -p spun an 8-turn loop at $0.23/page; the SDK image call is ~$0.01/page). It
-    # is METERED (needs ANTHROPIC_API_KEY). Haiku 4.5 is the owner's vision choice; keep it swappable.
+    # (Phase-0: claude -p spun an 8-turn loop at $0.23/page; the SDK image call is cents/page). It is
+    # METERED (needs ANTHROPIC_API_KEY). Default SONNET, not Haiku: a 2026-07-28 A/B on a real dense
+    # notebook (Jargon Sheet) showed Haiku produced confident NONSENSE on hard quant-jargon pages
+    # while Sonnet transcribed coherently and flagged uncertainty — and transcription seeds the
+    # corpus (errors propagate, failure mode #3). ~$0.015/page; the text passes (fill-in/enrich) stay
+    # on cheap Haiku (agent.model). This is the plan's "escalate to Sonnet on eval evidence".
     transcribe_model: str = Field(
-        "claude-haiku-4-5-20251001", description="Anthropic vision model id for transcription."
+        "claude-sonnet-5", description="Anthropic vision model id for transcription (seeds the corpus)."
     )
     transcribe_dpi: int = Field(150, description="Render DPI for handwriting pages (legible, not huge).")
     folder_category: dict[str, str] = Field(

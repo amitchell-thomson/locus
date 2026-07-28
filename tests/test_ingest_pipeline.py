@@ -284,6 +284,27 @@ def test_markdown_ingests_end_to_end(tmp_path, conn, fake_passes):
     assert row["source_date"] == "2023-07-21"  # frontmatter date beats mtime fallback
 
 
+def test_replace_uri_supersedes_prior_doc_at_path_no_duplicate(tmp_path, conn, fake_passes):
+    """Path-identity ingest (notes, §6.7): editing a note must REPLACE its document, not leave
+    the old version as a duplicate. Without replace_uri, the edited content hashes differently and
+    ingest_file would insert a second doc (the bug the note-sync end-to-end run surfaced)."""
+    body = " ".join(f"Sentence {i} has several descriptive words." for i in range(12))
+    note = tmp_path / "note.md"
+    note.write_text(f"# First\n\n{body}\n", encoding="utf-8")
+
+    r1 = ingest_file(note, conn, category="note", replace_uri=str(note), maturity="rough")
+    assert r1.status == "ingested"
+    assert _count(conn, "documents") == 1
+    row = conn.execute("SELECT id, category, maturity FROM documents").fetchone()
+    assert (row["category"], row["maturity"]) == ("note", "rough")  # explicit category applied
+
+    note.write_text(f"# Second, revised\n\n{body} And a new clause.\n", encoding="utf-8")
+    r2 = ingest_file(note, conn, category="note", replace_uri=str(note), maturity="rough")
+    assert r2.status == "ingested"
+    assert _count(conn, "documents") == 1  # REPLACED at the path, not duplicated
+    assert conn.execute("SELECT category FROM documents").fetchone()["category"] == "note"
+
+
 def test_data_dump_file_is_quarantined_not_ingested(tmp_path, conn, fake_passes):
     """A single-column data file (word/id list) must quarantine at the pipeline level, not
     just raise in the extractor (2026-06-09 audit: words_alpha.txt was confabulated into a

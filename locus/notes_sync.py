@@ -46,11 +46,16 @@ class NotesSyncResult:
 
 def normalized_hash(text: str) -> str:
     """SHA-256 of `text` after whitespace normalisation, so trivial re-saves hash identically:
-    line endings unified, trailing per-line whitespace dropped, leading/trailing blank lines
-    trimmed. A real content edit still changes the hash."""
+    line endings unified, trailing per-line whitespace dropped, runs of blank lines collapsed to
+    one, and leading/trailing blank lines trimmed. A real content edit still changes the hash."""
     unified = text.replace("\r\n", "\n").replace("\r", "\n")
-    lines = [ln.rstrip() for ln in unified.split("\n")]
-    return hashlib.sha256(("\n".join(lines).strip() + "\n").encode("utf-8")).hexdigest()
+    collapsed: list[str] = []
+    for line in unified.split("\n"):
+        stripped = line.rstrip()
+        if stripped == "" and collapsed and collapsed[-1] == "":
+            continue  # collapse consecutive blank lines
+        collapsed.append(stripped)
+    return hashlib.sha256(("\n".join(collapsed).strip() + "\n").encode("utf-8")).hexdigest()
 
 
 def _is_ingestable_note(path: Path, notes_dir: Path) -> bool:
@@ -126,7 +131,13 @@ def sync_notes(
             new_manifest[key] = h
             result.skipped += 1
             continue
-        r = ingest_file(path, conn, reingest=True, maturity=_read_maturity(path, default_maturity))
+        # replace_uri=key: a note's identity is its PATH — an edit REPLACES the prior document at
+        # this path (not a new content-hash doc alongside it). category='note': notes live under
+        # vault/notes/, outside the incoming/<cat>/ folder convention (§6.7).
+        r = ingest_file(
+            path, conn, reingest=True, maturity=_read_maturity(path, default_maturity),
+            category="note", replace_uri=key,
+        )
         if r.status in ("ingested", "skipped"):
             new_manifest[key] = h
             result.ingested += 1 if r.status == "ingested" else 0

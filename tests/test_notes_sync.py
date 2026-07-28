@@ -20,8 +20,10 @@ from locus.notes_sync import _iter_notes, _read_maturity, normalized_hash, sync_
 def test_normalized_hash_ignores_whitespace_only_changes():
     a = normalized_hash("# Note\n\nBody.\n")
     b = normalized_hash("# Note   \r\n\r\nBody.  \n\n\n")  # trailing ws, CRLF, extra blank lines
+    d = normalized_hash("# Note\n\n\n\nBody.\n")            # internal blank-line run
     c = normalized_hash("# Note\n\nBody edited.\n")         # real change
     assert a == b
+    assert a == d   # runs of blank lines collapse -> no churn
     assert a != c
 
 
@@ -68,13 +70,18 @@ def conn(tmp_path: Path):
 def fake_ingest(monkeypatch):
     calls: list[tuple[str, str | None]] = []
 
-    def _fake(path, conn, *, reingest=False, maturity=None):
+    def _fake(path, conn, *, reingest=False, maturity=None, category=None, replace_uri=None):
+        # Faithful to real ingest_file: content-hash identity, but replace_uri supersedes the doc
+        # at that path (an edit REPLACES, never duplicates). content_hash varies with content.
         calls.append((Path(path).name, maturity))
-        conn.execute("DELETE FROM documents WHERE source_uri=?", (str(path),))
+        if replace_uri is not None:
+            conn.execute("DELETE FROM documents WHERE source_uri=?", (replace_uri,))
+        h = normalized_hash(Path(path).read_text(encoding="utf-8"))[:12]
         cur = conn.execute(
             "INSERT INTO documents (content_hash, source_type, source_uri, raw_path, title, "
-            "ingest_model, maturity) VALUES (?,?,?,?,?,?,?)",
-            (f"h-{path}", "markdown", str(path), str(path), Path(path).stem, "test", maturity),
+            "ingest_model, maturity, category) VALUES (?,?,?,?,?,?,?,?)",
+            (f"{path}:{h}", "markdown", str(path), str(path), Path(path).stem, "test",
+             maturity, category),
         )
         conn.commit()
         return IngestResult(str(path), "ingested", doc_id=cur.lastrowid)
@@ -99,6 +106,9 @@ def test_first_sync_ingests_all(tmp_path, conn, fake_ingest):
     assert {name for name, _ in fake_ingest} == {"a.md", "b.md"}
     # a.md has no frontmatter -> default rough; b.md -> tidy from frontmatter
     assert dict(fake_ingest) == {"a.md": "rough", "b.md": "tidy"}
+    # notes are filed as category='note' (outside the incoming/<cat>/ folder convention)
+    cats = {r["category"] for r in conn.execute("SELECT DISTINCT category FROM documents")}
+    assert cats == {"note"}
 
 
 def test_unchanged_and_whitespace_only_resave_skip(tmp_path, conn, fake_ingest):
@@ -129,6 +139,8 @@ def test_real_edit_reingests(tmp_path, conn, fake_ingest):
     r = _sync(conn, nd, manifest)
     assert r.ingested == 1
     assert fake_ingest == [("a.md", "rough")]
+    # the edit REPLACED the prior doc at this path — exactly one doc, no duplicate
+    assert conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0] == 1
 
 
 def test_deleted_note_removes_document(tmp_path, conn, fake_ingest):
@@ -154,7 +166,7 @@ def test_failed_ingest_stays_out_of_manifest_and_retries(tmp_path, conn, monkeyp
 
     calls = {"n": 0}
 
-    def flaky(path, conn, *, reingest=False, maturity=None):
+    def flaky(path, conn, *, reingest=False, maturity=None, category=None, replace_uri=None):
         calls["n"] += 1
         return IngestResult(str(path), "quarantined", error="boom")
 

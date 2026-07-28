@@ -843,7 +843,8 @@ def delete_document(conn, doc_id: int) -> None:
 
 
 def ingest_file(
-    path: str | Path, conn, *, reingest: bool = False, maturity: str | None = None
+    path: str | Path, conn, *, reingest: bool = False, maturity: str | None = None,
+    category: str | None = None, replace_uri: str | None = None,
 ) -> IngestResult:
     """Ingest one file into the given DB connection. Never raises: failures are quarantined.
 
@@ -856,6 +857,15 @@ def ingest_file(
     `None` inherits the replaced doc's maturity on re-ingest (else defaults `tidy`), mirroring
     category continuity below — a raw-store re-ingest must not silently promote a rough note. An
     explicit value always wins (promotion re-ingests as `tidy`; the capture loops pass `rough`).
+
+    `category` overrides the drop-folder derivation (notes live under `vault/notes/`, not
+    `incoming/<cat>/`, so they need `category='note'` set explicitly — §6.7).
+
+    `replace_uri` switches identity from CONTENT to PATH: the document currently at that
+    `source_uri` is the one replaced, even though the note's edited content hashes differently.
+    Without it (content-addressed incoming files), an edit would leave the old version orphaned as
+    a duplicate. The replace still runs through `_write`'s one-transaction prepare-first path, so a
+    failed re-ingest never destroys the prior note.
     """
     path = Path(path)
     if not path.exists():
@@ -869,10 +879,24 @@ def ingest_file(
             "SELECT id, source_uri, category, maturity FROM documents WHERE content_hash=?",
             (content_hash,),
         ).fetchone()
-        if existing and not reingest:
+        # Path-identity replace target (notes): the doc at this source_uri, whatever its hash.
+        path_doc = None
+        if replace_uri is not None:
+            path_doc = conn.execute(
+                "SELECT id, source_uri, category, maturity FROM documents WHERE source_uri=?",
+                (replace_uri,),
+            ).fetchone()
+        # Skip only a true no-op: identical content already present, and (for path identity) it is
+        # the very doc at this path. Otherwise proceed to (re)ingest/replace.
+        if existing and not reingest and (
+            replace_uri is None or (path_doc is not None and path_doc["id"] == existing["id"])
+        ):
             return IngestResult(str(path), "skipped", doc_id=existing["id"])
-        # Explicit maturity wins; else inherit on re-ingest (don't silently promote), else tidy.
-        resolved_maturity = maturity or (existing["maturity"] if existing else "tidy")
+
+        # The doc being superseded: by path for note-identity, else by content hash.
+        replace_target = path_doc if replace_uri is not None else existing
+        # Explicit maturity wins; else inherit from the replaced doc (don't silently promote), else tidy.
+        resolved_maturity = maturity or (replace_target["maturity"] if replace_target else "tidy")
 
         # Re-ingest metadata continuity: a replacement's bytes usually come from the raw
         # store, whose path carries neither the drop-folder category nor the original
@@ -881,22 +905,25 @@ def ingest_file(
         # with a raw-store source_uri). Inherit from the replaced doc unless the new path
         # supplies real values: a deliberate re-drop into a category folder still wins,
         # and a non-raw-store path is a genuine new source location.
-        category = source_uri = None
-        if existing:
+        resolved_category = source_uri = None
+        if replace_target:
             derived = _category(path)
-            category = derived if derived != "uncategorized" else existing["category"]
+            resolved_category = derived if derived != "uncategorized" else replace_target["category"]
             in_raw_store = path.resolve().parent == load().paths.raw_store
-            source_uri = existing["source_uri"] if in_raw_store else None
+            # Path-identity notes keep their note path as source_uri (str(path)); don't inherit.
+            source_uri = replace_target["source_uri"] if (in_raw_store and replace_uri is None) else None
+        if category is not None:
+            resolved_category = category
 
         raw_name = _copy_to_raw(path, content_hash)
         cache = _FigureCache(conn)
         prep = _prepare(path, source_type, figure_cache=cache)  # expensive work BEFORE any delete
         _copy_figures_to_raw(content_hash, prep.figures)
-        old_figure_files = _figure_raw_paths(conn, existing["id"]) if existing else []
+        old_figure_files = _figure_raw_paths(conn, replace_target["id"]) if replace_target else []
         result = _write(
             conn, path, content_hash, source_type, raw_name, prep,
-            category=category, source_uri=source_uri, maturity=resolved_maturity,
-            replace_doc_id=existing["id"] if existing else None,
+            category=resolved_category, source_uri=source_uri, maturity=resolved_maturity,
+            replace_doc_id=replace_target["id"] if replace_target else None,
         )
         cache.flush()  # only after the document committed
         # Replaced doc's figure PNGs: remove any not re-written under the new hash. (Same

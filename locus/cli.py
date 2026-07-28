@@ -755,7 +755,9 @@ def cmd_evolution(args) -> None:
     With no `--subject`, lists every subject that has a recorded chain. `--tensions` additionally
     runs the judged contradiction pass over the latest stance (billed, advisory).
     """
-    from locus.evolve.trajectory import all_trajectories, build_trajectory, render_trajectory
+    from locus.evolve.trajectory import (
+        all_trajectories, build_trajectory, render_trajectory, resolve_subject,
+    )
 
     conn = _open()
     try:
@@ -770,7 +772,7 @@ def cmd_evolution(args) -> None:
             print(f"\n{len(trajectories)} subject(s) with a trajectory")
             return
 
-        kind, key = _resolve_subject(conn, args.subject)
+        kind, key = resolve_subject(conn, args.subject)
         if key is None:
             print(f"No trajectory subject matches {args.subject!r}.")
             return
@@ -779,20 +781,6 @@ def cmd_evolution(args) -> None:
     finally:
         conn.close()
 
-
-def _resolve_subject(conn, subject: str) -> tuple[str, str | None]:
-    """Resolve a subject name to (kind, key): a project object title, else a canonical concept."""
-    from locus.agent import state
-
-    row = conn.execute(
-        "SELECT id FROM objects WHERE type='project' AND title=? COLLATE NOCASE", (subject,)
-    ).fetchone()
-    if row:
-        return "project", str(row["id"])
-    for kind, key, _ in state.subjects_with_positions(conn, limit=500):
-        if kind == "concept" and state.parse_entity_key(key)[0].casefold() == subject.casefold():
-            return "concept", key
-    return "concept", None
 
 
 def cmd_capture_conversation(args) -> None:

@@ -310,6 +310,26 @@ def write_trajectory_note(
     )
 
 
+def resolve_subject(conn, subject: str) -> tuple[str, str | None]:
+    """Resolve a subject NAME to the (kind, key) the position tables use.
+
+    A project object title wins over a concept of the same name — the object is the more specific
+    thing the owner named. Returns key=None when nothing matches, so callers report "no
+    trajectory" rather than rendering an empty one for a subject that does not exist.
+
+    Shared by the CLI and the MCP surface deliberately: two copies of this would drift, and a
+    subject that resolves in one surface but not the other is a confusing bug to chase."""
+    row = conn.execute(
+        "SELECT id FROM objects WHERE type='project' AND title=? COLLATE NOCASE", (subject,)
+    ).fetchone()
+    if row:
+        return "project", str(row["id"])
+    for kind, key, _n in state.subjects_with_positions(conn, limit=500):
+        if kind == "concept" and parse_entity_key(key)[0].casefold() == subject.casefold():
+            return "concept", key
+    return "concept", None
+
+
 def all_trajectories(conn, *, limit: int = 50) -> list[Trajectory]:
     """Every subject that has a recorded chain — what `locus evolution` and the MCP read list."""
     return [

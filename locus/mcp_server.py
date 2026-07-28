@@ -30,12 +30,23 @@ TOOLS
                    API spend on a tool that isn't advertised.
 - list_documents : what is in the corpus (with date/category facets). FREE (local only).
 - inspect_document: what was ingested for one document (synthesis + sections). FREE.
+- capture        : save this conversation into the vault as a rough note (Loop C). FREE.
+- critique       : stress-test a project/reasoning against the owner's own corpus (§8.4).
+- synthesise     : "what do I know and think about X", incl. the dated belief trajectory.
+- objects        : the structured project/concept/question/reading overlays. FREE.
+- evolution      : the dated position trajectory for a concept/project. FREE (unless tensions).
 
 All retrieval tools accept the temporal/category facets (`since`/`until`/`category`).
 
 COST NOTE: the *client* model chooses which tool to call from the advertised list - the server
 does not decide. Descriptions only nudge that choice; the hard cost control is not exposing
 `query` (the default). retrieve + the read tools are local (Ollama + CPU reranker), so free.
+
+`critique`/`synthesise` DO call a model, but through `claude -p` — the owner's SUBSCRIPTION,
+not ANTHROPIC_API_KEY (agent/claude.py scrubs that key from the subprocess env precisely so it
+cannot happen). That is why they are advertised by default while `query`, which bills the
+metered API, stays opt-in. The invariant the default tool list protects is unchanged: no
+advertised tool can spend against the API key.
 """
 
 from __future__ import annotations
@@ -74,8 +85,13 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
             "achievements). Use `retrieve` to pull grounded context + citations into your own "
             "context and answer from it; use `query` to get a finished server-generated answer; "
             "use `list_documents`/`inspect_document` to see what the corpus contains; use "
-            "`capture` to save this conversation's decisions into the vault as a rough note. Prefer "
-            "`retrieve` and ground every claim in the returned material with its citation."
+            "`capture` to save this conversation's decisions into the vault as a rough note. "
+            "For the owner's own thinking rather than raw material: `critique` stress-tests a "
+            "project or argument against what he has read and concluded, `synthesise` gives what "
+            "he knows and thinks about a topic including how his view has changed, `objects` "
+            "lists his projects/concepts/questions, and `evolution` shows the dated trajectory "
+            "of his positions. Prefer `retrieve` and ground every claim in the returned material "
+            "with its citation."
         ),
     )
 
@@ -235,7 +251,133 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
         cap = capture_conversation(content, title=title, project=project, source="claude")
         return f"Captured '{cap.title}' to {cap.path} (rough note; ingested on the next note-sync)."
 
+    # --- Phase-2 value surfaces (agent-layer §8.4) -----------------------------------------
+    # critique/synthesise ground in-process (free, local) and then make ONE `claude -p` call.
+    # That call runs on the owner's SUBSCRIPTION, not the metered API key — which is why they
+    # are advertised by default while `query` (metered) stays opt-in. The cost guard's shape is
+    # unchanged: no tool here can spend against ANTHROPIC_API_KEY.
+
+    @mcp.tool()
+    def critique(target: str, object_id: int | None = None) -> str:
+        """Stress-test a project or a piece of reasoning against the owner's OWN corpus.
+
+        Use when the owner wants his thinking challenged — a project's approach, a conclusion he
+        has drawn, an argument he is about to make. Grounds in his corpus first (retrieval +
+        structured objects + his recorded positions + detected gaps), then produces challenges
+        that each cite a specific piece of his material. A challenge that cannot be grounded is
+        DISCARDED rather than shown, so the absence of challenges means the corpus does not
+        support one — not that the reasoning is sound.
+
+        Args:
+            target: What to critique — a project name, or the reasoning/claim in full.
+            object_id: Optional structured-object id to centre the critique on (see `objects`).
+        """
+        from locus.surface.critique import critique as run_critique
+
+        conn = get_connection(load().paths.db)
+        try:
+            result = run_critique(conn, target, object_id=object_id)
+        finally:
+            conn.close()
+        note = "\n\n_(model call degraded; showing only the deterministic half)_" if result.degraded else ""
+        return result.render() + note
+
+    @mcp.tool()
+    def synthesise(topic: str, with_practice: bool = False) -> str:
+        """What the owner knows and THINKS about a topic, including how his view has changed.
+
+        Not a general explanation of the topic — an account of what he has read, built, and
+        concluded, every point cited to his own material, plus the dated trajectory of his
+        positions (what he used to think, what changed it). Set `with_practice=True` to also
+        generate recall questions from his own stored propositions.
+
+        Args:
+            topic: The topic to synthesise (e.g. 'portfolio construction').
+            with_practice: Also generate practice questions from his propositions.
+        """
+        from locus.surface.synthesise import synthesise as run_synthesis
+
+        conn = get_connection(load().paths.db)
+        try:
+            result = run_synthesis(conn, topic, with_practice=with_practice)
+        finally:
+            conn.close()
+        note = "\n\n_(model call degraded; showing only the deterministic half)_" if result.degraded else ""
+        return result.render() + note
+
+    @mcp.tool()
+    def objects(type: str | None = None, status: str | None = None, limit: int = 25) -> str:
+        """List the owner's structured objects — projects, concepts, questions, readings. FREE.
+
+        These are agent-proposed and human-blessed overlays on the corpus: a project carries its
+        approach, open threads and learnings; a concept carries mastery. `status='proposed'`
+        shows what is awaiting his blessing. Read-only — blessing happens through the CLI.
+
+        Args:
+            type: Filter by 'project' | 'concept' | 'question' | 'reading'.
+            status: Filter by 'proposed' | 'active' | 'archived'.
+            limit: Max objects to return.
+        """
+        from locus.agent import state
+
+        conn = get_connection(load().paths.db)
+        try:
+            rows = state.list_objects(conn, type_=type, status=status, limit=limit)
+            if not rows:
+                return "No structured objects match. Run `locus structure` to propose some."
+            out = []
+            for obj in rows:
+                out.append(f"[{obj.id}] {obj.status} {obj.type}: {obj.title}")
+                for key in ("why", "approach", "mastery", "state"):
+                    if obj.body.get(key):
+                        out.append(f"    {key}: {obj.body[key]}")
+                for thread in obj.body.get("open_threads", []):
+                    out.append(f"    open thread: {thread}")
+                for learning in obj.body.get("learnings", []):
+                    out.append(f"    learning: {learning}")
+                for link in state.links_for(conn, obj.id):
+                    out.append(f"    -> {link.relation} {link.target_kind}:{link.target_key}")
+            return "\n".join(out)
+        finally:
+            conn.close()
+
+    @mcp.tool()
+    def evolution(subject: str | None = None, tensions: bool = False) -> str:
+        """The owner's DATED position trajectory on a concept or project. FREE unless `tensions`.
+
+        Shows what he thought and when, oldest first, each with the note it came from — the
+        record of how his understanding actually moved. Omit `subject` to list every subject
+        that has a trajectory. `tensions=True` additionally runs a judged check for stored
+        claims that contradict his latest position (one model call; advisory only).
+
+        Args:
+            subject: Concept name or project title. Omit to list all subjects.
+            tensions: Also check the latest position for contradictions.
+        """
+        from locus.evolve.trajectory import (
+            all_trajectories, build_trajectory, render_trajectory, resolve_subject,
+        )
+
+        conn = get_connection(load().paths.db)
+        try:
+            if not subject:
+                trajectories = all_trajectories(conn)
+                if not trajectories:
+                    return "No belief positions recorded yet."
+                return "\n".join(
+                    f"- [{t.subject_kind}] {t.label} ({len(t.entries)} positions, "
+                    f"{t.entries[0].dated_at} → {t.entries[-1].dated_at})"
+                    for t in trajectories
+                )
+            kind, key = resolve_subject(conn, subject)
+            if key is None:
+                return f"No trajectory recorded for {subject!r}."
+            return render_trajectory(build_trajectory(conn, kind, key, with_tensions=tensions))
+        finally:
+            conn.close()
+
     return mcp
+
 
 
 # --- shared helpers ----------------------------------------------------------------------

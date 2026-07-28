@@ -178,3 +178,10 @@ page_width_in  = 7.07      # PDF page width (in) — Paper Pro screen width
 page_height_in = 9.43      # PDF page height (in) — Paper Pro screen height
 margin_in      = 0.5       # page margin (in)
 font_pt        = 11.0      # body text size (pt)
+
+[agent]
+# Agent-layer orchestration (agent-layer plan §10, Phase 1). Capture/enrichment loops run
+# language tasks through headless `claude -p` (subscription), metered by a cost ledger over the
+# claude -p envelope's total_cost_usd. Bulk work uses API Batch instead (added with hybrid routing).
+model              = "haiku"   # claude -p model for durable agent passes (Phase-0 routing choice)
+daily_cost_cap_usd = 5.0       # soft daily claude -p spend cap (USD); omit/None for no cap

@@ -5,7 +5,7 @@
 -- in db/migrations/versions/, applied via `alembic upgrade head` (or locus.db.migrate.migrate).
 -- When you add a migration, update this snapshot to match the resulting state.
 --
--- Current state == migrations applied through revision: 0009
+-- Current state == migrations applied through revision: 0010
 --   0001 initial schema
 --   0002 chunks_fts (FTS5 lexical index over chunk text + sync triggers) for hybrid retrieval
 --   0003 temporal + category metadata: documents.source_date (ISO 'YYYY-MM-DD') + category,
@@ -30,6 +30,10 @@
 --   0009 documents.maturity (TEXT NOT NULL DEFAULT 'tidy' CHECK rough|tidy) — capture-maturity
 --        tag (agent-layer §6.1). Retrieval down-weights maturity='rough' notes (a cross-encoder
 --        score penalty, retrieve/pipeline.py) — flag, never filter. [re-ingest-bound]
+--   0010 agent_runs(id, kind, started_at, finished_at, status running|ok|error|degraded, stats
+--        JSON) + (kind, started_at) index — crash-safe journal for agent-layer runs (agent-layer
+--        §6.4, §10). AGENT-STATE, not the ingest spine (separate table, same DB). The rest of the
+--        agent-state tables (objects, belief_positions, ...) land in a later migration (Phase 2).
 --
 -- Version tracking is owned by Alembic's `alembic_version` table.
 --

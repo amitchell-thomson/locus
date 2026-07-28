@@ -302,6 +302,24 @@ class ReadingConfig(BaseModel):
     font_pt: float = Field(11.0, description="Body text size (pt).")
 
 
+class AgentConfig(BaseModel):
+    """Agent-layer orchestration (agent-layer plan §10, Phase 1). The capture/enrichment loops
+    run language tasks through headless `claude -p` (the owner's subscription), metered by a
+    cost ledger (agent/budget.py). Bulk work uses API Batch instead (added with hybrid routing)."""
+
+    # `claude -p --model` for durable agent passes. Haiku is the Phase-0 routing choice (it beat
+    # local AND Sonnet on the durable passes at 3x less cost); a CLI alias so it tracks the
+    # current Haiku without pinning a dated id. Judgement-heavy passes may override per-call.
+    model: str = Field("haiku", description="claude -p model alias/id for agent language tasks.")
+    # Soft daily spend ceiling (USD) for agent-layer `claude -p`, summed from agent_runs across
+    # the day (agent/budget.spent_today). None disables the cap. The foreground-yield guard is
+    # not yet built (needs the live-throttle error shape, Phase-0 finding d); this cost cap is
+    # the working guard until then.
+    daily_cost_cap_usd: float | None = Field(
+        5.0, description="Daily agent-layer claude -p spend cap in USD (None = no cap)."
+    )
+
+
 class MCPConfig(BaseModel):
     # The MCP `query` tool makes a billed Claude API call server-side; `retrieve` and the read
     # tools are local-only (free). Default OFF so the server never exposes a billable tool unless
@@ -338,6 +356,8 @@ class Config(BaseModel):
     obsidian: ObsidianConfig = Field(default_factory=ObsidianConfig)
     # Optional: absent [reading] falls back to defaults (Paper Pro geometry, folder "Locus").
     reading: ReadingConfig = Field(default_factory=ReadingConfig)
+    # Optional: absent [agent] falls back to defaults (claude -p model 'haiku', $5/day cap).
+    agent: AgentConfig = Field(default_factory=AgentConfig)
 
     def resolve_paths(self) -> "Config":
         """Make all configured paths absolute, relative to the project root."""

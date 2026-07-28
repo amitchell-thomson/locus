@@ -332,6 +332,13 @@ class CaptureConfig(BaseModel):
         description="Where the device-push receiver lands <uuid>.pdf renders (absolute).",
     )
     rmapi_binary: str = Field("rmapi", description="rmapi binary (PATH name or absolute path).")
+    # Transcription is a VISION call — an Anthropic SDK request with the page image, NOT `claude -p`
+    # (Phase-0: claude -p spun an 8-turn loop at $0.23/page; the SDK image call is ~$0.01/page). It
+    # is METERED (needs ANTHROPIC_API_KEY). Haiku 4.5 is the owner's vision choice; keep it swappable.
+    transcribe_model: str = Field(
+        "claude-haiku-4-5-20251001", description="Anthropic vision model id for transcription."
+    )
+    transcribe_dpi: int = Field(150, description="Render DPI for handwriting pages (legible, not huge).")
     folder_category: dict[str, str] = Field(
         default_factory=dict, description="reMarkable folder -> Locus category (empty = built-in)."
     )

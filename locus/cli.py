@@ -584,6 +584,37 @@ def cmd_capture_sync(args) -> None:
               f"{r.ingest.deleted} deleted, {r.ingest.failed} failed")
 
 
+def cmd_capture_conversation(args) -> None:
+    """Loop C: save a Claude conversation as a rough note (agent-layer §8.3).
+
+    `--jsonl` imports a Claude Code transcript from disk; otherwise reads markdown from `--file`
+    or stdin (e.g. a decision-summary). Write-to-inbox: the note lands in notes/conversations/ and
+    is ingested by note-sync (run with `--ingest` to sync now).
+    """
+    from locus.capture.conversations import capture_conversation, import_jsonl_transcript
+
+    if args.jsonl:
+        cap = import_jsonl_transcript(args.jsonl, title=args.title, project=args.project)
+    else:
+        content = Path(args.file).read_text(encoding="utf-8") if args.file else sys.stdin.read()
+        if not content.strip():
+            print("no content (pass --jsonl, --file, or pipe markdown on stdin)")
+            sys.exit(1)
+        cap = capture_conversation(
+            content, title=args.title or "Captured conversation", project=args.project, source="cli"
+        )
+    print(f"captured: {cap.path}")
+    if args.ingest:
+        from locus.notes_sync import sync_notes
+
+        conn = _open()
+        try:
+            r = sync_notes(conn)
+        finally:
+            conn.close()
+        print(f"ingest: {r.ingested} ingested, {r.skipped} unchanged, {r.failed} failed")
+
+
 def cmd_notes_sync(args) -> None:
     """Incrementally ingest the authoring notes directory (agent-layer §6.7).
 
@@ -803,6 +834,17 @@ def main(argv=None) -> None:
     pcs.add_argument("--staging", default=None, help="staging dir (default: [capture].staging_dir)")
     pcs.add_argument("--no-ingest", action="store_true", help="render notes only; skip the notes-sync ingest")
     pcs.set_defaults(func=cmd_capture_sync)
+
+    pcc = sub.add_parser(
+        "capture-conversation",
+        help="Loop C: save a Claude conversation (or a .jsonl transcript) as a rough note",
+    )
+    pcc.add_argument("--jsonl", default=None, help="import a Claude Code .jsonl transcript from disk")
+    pcc.add_argument("--file", default=None, help="read markdown content from a file (else stdin)")
+    pcc.add_argument("--title", default=None, help="note title (default: first user line / stem)")
+    pcc.add_argument("--project", default=None, help="project tag (provenance)")
+    pcc.add_argument("--ingest", action="store_true", help="run note-sync after capturing")
+    pcc.set_defaults(func=cmd_capture_conversation)
 
     pns = sub.add_parser(
         "notes-sync",

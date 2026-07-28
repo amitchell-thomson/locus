@@ -73,7 +73,8 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
             "Locus is the owner's personal knowledge vault (papers, code, notes, projects, "
             "achievements). Use `retrieve` to pull grounded context + citations into your own "
             "context and answer from it; use `query` to get a finished server-generated answer; "
-            "use `list_documents`/`inspect_document` to see what the corpus contains. Prefer "
+            "use `list_documents`/`inspect_document` to see what the corpus contains; use "
+            "`capture` to save this conversation's decisions into the vault as a rough note. Prefer "
             "`retrieve` and ground every claim in the returned material with its citation."
         ),
     )
@@ -212,6 +213,27 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
             return _inspect(conn, doc, section)
         finally:
             conn.close()
+
+    @mcp.tool()
+    def capture(content: str, title: str, project: str | None = None) -> str:
+        """Save this conversation (or a decision-summary of it) into Locus as a rough note (Loop C).
+
+        Use when the owner wants to preserve reasoning, decisions, or conclusions from this
+        conversation into their knowledge vault. WRITE-TO-INBOX ONLY — this does NOT ingest or
+        modify the corpus; it drops a markdown note into the capture inbox that the next note-sync
+        picks up (as maturity=rough, so it informs retrieval without drowning authoritative
+        sources). Prefer capturing a concise decision-summary (what was decided/concluded and why,
+        open questions) over the raw transcript.
+
+        Args:
+            content: The markdown to save — ideally a decision-summary of the conversation.
+            title: A short, descriptive title for the note.
+            project: Optional project tag (provenance), e.g. 'regime-ml'.
+        """
+        from locus.capture.conversations import capture_conversation
+
+        cap = capture_conversation(content, title=title, project=project, source="claude")
+        return f"Captured '{cap.title}' to {cap.path} (rough note; ingested on the next note-sync)."
 
     return mcp
 

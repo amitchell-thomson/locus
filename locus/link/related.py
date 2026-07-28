@@ -118,6 +118,30 @@ _CANON_CTE = f"""
 _CODE_SYMBOL_WEIGHT = 0.1
 
 
+def non_topical_names(conn: sqlite3.Connection) -> set[str]:
+    """Canonical names too generic to carry topical meaning — boilerplate + code symbols.
+
+    Exposed because the structured-object proposer needs exactly this judgement (a concept too
+    generic to justify a related-doc link is too generic to become a Concept object), and a second
+    implementation would drift from this one. Round 6/7 tuned these predicates against the live
+    corpus; a 2026-07-28 proposal dry-run without them offered `state` and `ingest` as domain
+    concepts for the tanker-flow repo, which is the same failure in a new surface.
+
+    Returns lowercase names. Empty when the alias substrate has not been built."""
+    names: set[str] = set()
+    # Bare identifiers: privates/dunders, test scaffolding, short lowercase single tokens, and
+    # the named framework boilerplate — the complement of _BARE_IDENT_FILTER.
+    for r in conn.execute(
+        "SELECT DISTINCT a.canonical_name AS n FROM entity_aliases a "
+        f"WHERE NOT ({_BARE_IDENT_FILTER})"
+    ):
+        names.add(r["n"].lower())
+    # Code symbols: single-token canonicals whose every corpus occurrence is a code-file section.
+    for r in conn.execute(f"WITH {_CANON_CTE} SELECT canonical_name AS n FROM code_symbols"):
+        names.add(r["n"].lower())
+    return names
+
+
 # Cross-domain ranking (round-8). The owner's high-value material — quant/finance PAPERS, code
 # PROJECTS, and CAREER/application docs — is a minority of a corpus that is ~80% engineering
 # coursework (246/313), a dense topical clique. So a high-value doc's genuinely useful cross-domain

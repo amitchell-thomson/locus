@@ -42,7 +42,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
 from locus.agent import journal, state
 from locus.agent.budget import BudgetLedger
@@ -65,12 +65,34 @@ _MAX_DOC_CHARS = 6000
 # --- what the model is asked for -------------------------------------------------------------
 
 
+def _as_list(v):
+    """Coerce a scalar into a one-element list.
+
+    A live Haiku run (2026-07-28) returned `open_threads` as a prose string rather than a list on
+    the majority of documents. Rejecting the whole proposal over container shape discards good
+    candidates for a formatting slip; the PRECISION gates below are what protect quality, and
+    they are unaffected by this. Tolerant parse, unchanged bar — the same trade `_extract_json`
+    already makes by accepting prose around the JSON."""
+    if v is None:
+        return []
+    if isinstance(v, str):
+        return [v] if v.strip() else []
+    return v
+
+
 class ProposedObject(BaseModel):
     """One candidate object. `anchor` is what gates 1/2 check: a canonical entity name for a
-    concept, a document source_uri (or a distinctive fragment of one) for a project/reading."""
+    concept, a document source_uri (or a distinctive fragment of one) for a project/reading.
 
-    type: Literal["project", "concept", "question", "reading"]
-    title: str
+    Field aliases and coercions absorb the shapes a real Haiku run produced ('kind' for 'type',
+    a missing 'title', a scalar where a list belongs) — see `_as_list`."""
+
+    # `kind` observed live as an alias for `type`; accepted by population alias rather than
+    # spending a retry on it.
+    type: Literal["project", "concept", "question", "reading"] = Field(
+        validation_alias=AliasChoices("type", "kind")
+    )
+    title: str = ""
     anchor: str = ""
     why: str = ""  # one line, grounded — shown to the owner when blessing
     approach: str = ""
@@ -79,13 +101,29 @@ class ProposedObject(BaseModel):
     mastery: str = ""  # thin | working | solid
     state: str = ""  # reading: queued | reading | done
 
+    _coerce_lists = field_validator("open_threads", "learnings", mode="before")(_as_list)
+
+    @model_validator(mode="after")
+    def _title_falls_back_to_anchor(self):
+        """A titleless candidate is named by its anchor rather than dropped.
+
+        Safe because the anchor is precisely what gates 1-2 then verify: a concept's anchor must
+        resolve to a canonical entity (and `_canonical_title` renames it to the canonical), and a
+        project's must resolve to a real document. An anchor that resolves to nothing is rejected
+        either way, so this cannot let an ungrounded object through."""
+        if not self.title.strip() and self.anchor.strip():
+            self.title = self.anchor.strip()
+        return self
+
 
 class ProposedPosition(BaseModel):
     """One dated stance. `stance` must be the owner's words, quoted from the source."""
 
-    subject_kind: Literal["concept", "project"]
-    subject: str
-    stance: str
+    # 'position'/'claim' observed live as aliases for 'stance'; subject_kind defaults to concept
+    # (the common case) rather than failing the whole reply when the model omits it.
+    subject_kind: Literal["concept", "project"] = "concept"
+    subject: str = ""
+    stance: str = Field(default="", validation_alias=AliasChoices("stance", "position", "claim"))
 
 
 class Proposals(BaseModel):
@@ -194,7 +232,21 @@ def canonical_concepts(conn, doc_id: int, *, min_docs: int) -> dict[str, tuple[s
         """,
         (doc_id, min_docs),
     ).fetchall()
-    return {r["cname"].casefold(): (r["cname"], r["ctype"]) for r in rows}
+    out = {r["cname"].casefold(): (r["cname"], r["ctype"]) for r in rows}
+
+    # Gate 1b: drop names too generic to BE a concept. A live dry-run (2026-07-28) offered
+    # `state` and `ingest` as domain concepts for the tanker-flow repo — both clear the
+    # cross-document bar trivially, because every code repo has them. The link layer already
+    # tuned this exact judgement in rounds 6/7; reusing its definition rather than writing a
+    # second one keeps the two surfaces from disagreeing about what a concept is.
+    try:
+        from locus.link.related import non_topical_names
+
+        for name in non_topical_names(conn):
+            out.pop(name, None)
+    except Exception as exc:  # a missing alias substrate must not block proposing
+        log.debug("propose: generic-name filter unavailable: %s", exc)
+    return out
 
 
 def _source_uris(conn) -> dict[str, str]:
@@ -262,28 +314,47 @@ You are helping structure a personal knowledge vault. Below is ONE document the 
 added, plus context from the rest of their corpus. Propose the structured objects it implies and \
 any position the OWNER takes in it.
 
-Return ONLY a JSON object: {{"objects": [...], "positions": [...]}}.
+Return ONLY a JSON object in EXACTLY this shape. Use these key names verbatim. Every list field \
+must be a JSON array of strings, even when it has one element:
 
-An object is one of:
-- "project"  — work the owner is building. anchor = the repo/document path it lives in. \
-Fill approach, open_threads (what is unresolved), learnings.
-- "concept"  — an idea the owner is engaging with. anchor = the concept name, and it MUST be one \
-of the CORPUS CONCEPTS listed below, copied exactly. Fill mastery (thin|working|solid).
-- "question" — an open question this document raises. anchor may be empty.
-- "reading"  — something to read. anchor = its document path if it is already in the corpus. \
-Fill state (queued|reading|done).
+{{
+  "objects": [
+    {{"type": "project", "title": "regime-ml", "anchor": "repos/regime-ml",
+      "why": "one line: what in THIS document justifies the object",
+      "approach": "how he is going about it",
+      "open_threads": ["what is still unresolved"],
+      "learnings": ["what he has concluded so far"]}},
+    {{"type": "concept", "title": "regime detection", "anchor": "regime detection",
+      "why": "...", "mastery": "thin"}},
+    {{"type": "question", "title": "Do regimes persist out of sample?", "why": "..."}},
+    {{"type": "reading", "title": "Ang - Asset Management", "anchor": "papers/ang.pdf",
+      "why": "...", "state": "queued"}}
+  ],
+  "positions": [
+    {{"subject_kind": "concept", "subject": "regime detection",
+      "stance": "his own words, quoted from the document text"}}
+  ]
+}}
+
+Object types:
+- "project"  — work the owner is building. anchor = the repo/document path it lives in.
+- "concept"  — an idea he is engaging with. anchor = the concept name, and it MUST be one of the \
+CORPUS CONCEPTS listed below, copied EXACTLY. mastery is thin|working|solid.
+- "question" — an open question this document raises. anchor may be omitted.
+- "reading"  — something to read. anchor = its document path if already in the corpus. \
+state is queued|reading|done.
 
 Rules, strictly:
 - Propose AT MOST {max_objects}, most consequential first. Fewer is better than padded.
 - Never invent a concept that is not in the CORPUS CONCEPTS list.
-- "why" is one line saying what in THIS document justifies the object.
+- Omit a field rather than inventing a value for it. Use [] for an empty list, never a sentence.
 
 A position is a view the OWNER HIMSELF expresses in this document — a stance, a decision, a \
 conclusion he reached. Quote it in HIS OWN WORDS (verbatim or lightly trimmed); do not \
 paraphrase, do not improve it. subject must be a CORPUS CONCEPT (subject_kind "concept") or a \
 project title you proposed (subject_kind "project"). If the document states no view of his own — \
-if it only reports what a source says — return an empty positions list. That is the normal case \
-for papers and lecture notes.
+if it only reports what a source says — return "positions": []. That is the normal case for \
+papers and lecture notes.
 
 DOCUMENT
 title: {title}

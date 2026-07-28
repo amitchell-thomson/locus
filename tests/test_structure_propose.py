@@ -393,3 +393,83 @@ def test_apply_plan_is_the_only_writer(conn):
     obj = state.get_object(conn, res.created[0])
     assert obj.type == "question" and obj.status == "proposed"
     assert obj.links[0].relation == "raised_by"
+
+
+# --- tolerant parsing (shapes a real Haiku run produced, 2026-07-28) ----------------------------
+
+
+def test_kind_alias_and_scalar_lists_are_absorbed(conn):
+    """A live run emitted 'kind' for 'type' and prose where a list belongs. Tolerant parse,
+    unchanged gates — the object still has to clear gate 2."""
+    plan = propose.plan_for_document(
+        conn, 1, retrieve_fn=_no_support,
+        runner=_runner({"objects": [
+            {"kind": "project", "title": "regime-ml", "anchor": "repos/regime-ml",
+             "open_threads": "compare to changepoint", "learnings": "HMM overfits"}
+        ]}),
+    )
+    assert len(plan.objects) == 1
+    assert plan.objects[0].body["open_threads"] == ["compare to changepoint"]
+    assert plan.objects[0].body["learnings"] == ["HMM overfits"]
+
+
+def test_a_titleless_candidate_is_named_by_its_anchor(conn):
+    plan = propose.plan_for_document(
+        conn, 1, retrieve_fn=_no_support,
+        runner=_runner({"objects": [
+            {"type": "concept", "anchor": "regime detection", "mastery": "working"}
+        ]}),
+    )
+    assert [o.title for o in plan.objects] == ["regime detection"]
+
+
+def test_a_titleless_candidate_with_an_unresolvable_anchor_is_still_rejected(conn):
+    """The fallback must not become a way past the gates."""
+    plan = propose.plan_for_document(
+        conn, 1, retrieve_fn=_no_support,
+        runner=_runner({"objects": [{"type": "project", "anchor": "repos/does-not-exist"}]}),
+    )
+    assert plan.objects == []
+
+
+def test_position_aliases_are_absorbed(conn):
+    plan = propose.plan_for_document(
+        conn, 1, retrieve_fn=_no_support,
+        runner=_runner({"objects": [], "positions": [
+            {"subject": "regime detection",
+             "position": "the HMM approach overfits and changepoint detection is the honest baseline"}
+        ]}),
+    )
+    assert len(plan.positions) == 1  # 'position' read as 'stance', subject_kind defaulted
+
+
+def test_an_empty_stance_is_not_a_position(conn):
+    plan = propose.plan_for_document(
+        conn, 1, retrieve_fn=_no_support,
+        runner=_runner({"objects": [], "positions": [
+            {"subject_kind": "concept", "subject": "regime detection", "stance": ""}
+        ]}),
+    )
+    assert plan.positions == []
+
+
+def test_generic_code_identifiers_are_not_proposable_concepts(conn):
+    """Gate 1b: `state`/`ingest` clear the cross-document bar trivially (every repo has them).
+    Reuses link/related.non_topical_names so the two surfaces agree on what a concept is."""
+    _doc(conn, 6, title="repo A", uri="repos/a", category="project", text="x")
+    _doc(conn, 7, title="repo B", uri="repos/b", category="project", text="y")
+    for d in (1, 6, 7):
+        _entity(conn, d, "state")
+    with conn:
+        conn.execute(
+            "INSERT INTO entity_aliases (variant_name, variant_type, canonical_name, "
+            "canonical_type, cluster_id, tier) VALUES ('state','concept','state','concept',9,'identity')"
+        )
+    concepts = propose.canonical_concepts(conn, 1, min_docs=2)
+    assert "state" not in concepts  # short bare lowercase identifier
+
+    plan = propose.plan_for_document(
+        conn, 1, retrieve_fn=_no_support,
+        runner=_runner({"objects": [{"type": "concept", "title": "state", "anchor": "state"}]}),
+    )
+    assert plan.objects == []

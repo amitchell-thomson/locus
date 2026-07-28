@@ -75,14 +75,29 @@ def _iter_notes(notes_dir: Path) -> list[Path]:
     return sorted(p for p in notes_dir.rglob("*.md") if _is_ingestable_note(p, notes_dir))
 
 
-def _read_maturity(path: Path, default: str) -> str:
-    """The note's `maturity` frontmatter value (rough|tidy), else `default`."""
+_VALID_CATEGORIES = ("paper", "coursework", "project", "career", "note")
+
+
+def _read_frontmatter_field(path: Path, key: str) -> str | None:
     try:
         meta, _ = _parse_frontmatter(path.read_text(encoding="utf-8"))
     except OSError:
-        return default
-    value = (meta.get("maturity") or "").strip().lower()
+        return None
+    return (meta.get(key) or "").strip().lower() or None
+
+
+def _read_maturity(path: Path, default: str) -> str:
+    """The note's `maturity` frontmatter value (rough|tidy), else `default`."""
+    value = _read_frontmatter_field(path, "maturity")
     return value if value in ("rough", "tidy") else default
+
+
+def _read_category(path: Path, default: str) -> str:
+    """The note's `category` frontmatter value, else `default`. Lets Loop A file a note under its
+    reMarkable-folder category (mostly `note`, some coursework/project); an authored note without
+    the field stays `note`."""
+    value = _read_frontmatter_field(path, "category")
+    return value if value in _VALID_CATEGORIES else default
 
 
 def _manifest_path(explicit: Path | None) -> Path:
@@ -136,7 +151,7 @@ def sync_notes(
         # vault/notes/, outside the incoming/<cat>/ folder convention (§6.7).
         r = ingest_file(
             path, conn, reingest=True, maturity=_read_maturity(path, default_maturity),
-            category="note", replace_uri=key,
+            category=_read_category(path, "note"), replace_uri=key,
         )
         if r.status in ("ingested", "skipped"):
             new_manifest[key] = h

@@ -111,6 +111,17 @@ def test_first_sync_ingests_all(tmp_path, conn, fake_ingest):
     assert cats == {"note"}
 
 
+def test_category_comes_from_frontmatter(tmp_path, conn, fake_ingest):
+    nd = tmp_path / "notes"
+    nd.mkdir()
+    (nd / "lec.md").write_text("---\ncategory: coursework\nmaturity: rough\n---\nBody\n", encoding="utf-8")
+    (nd / "plain.md").write_text("no frontmatter body\n", encoding="utf-8")
+    _sync(conn, nd, tmp_path / "m.json")
+    cats = {r["title"]: r["category"] for r in conn.execute("SELECT title, category FROM documents")}
+    assert cats["lec"] == "coursework"  # Loop A category flows through frontmatter
+    assert cats["plain"] == "note"       # default when absent
+
+
 def test_unchanged_and_whitespace_only_resave_skip(tmp_path, conn, fake_ingest):
     nd = tmp_path / "notes"
     nd.mkdir()

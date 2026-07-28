@@ -555,6 +555,35 @@ def cmd_read(args) -> None:
         print(f"delivered {result.filename} -> reMarkable:/{result.remote_folder}{note}")
 
 
+def cmd_capture_sync(args) -> None:
+    """Loop A: transcribe + fill-in + enrich + ingest staged reMarkable handwriting renders.
+
+    Each changed <uuid>.pdf in the staging dir becomes a `rough` note (Sonnet vision transcription,
+    Haiku fill-in, grounded Related block), then note-sync ingests it. Idempotent — an unchanged
+    render is skipped. Billed (metered vision + subscription text); the run is journaled.
+    """
+    from locus.capture.loop_a import capture_sync
+
+    conn = _open()
+    try:
+        r = capture_sync(conn, staging_dir=args.staging, ingest=not args.no_ingest)
+    finally:
+        conn.close()
+    for o in r.outcomes:
+        if o.status == "captured":
+            print(f"  captured  {o.name}  ({o.pages}pp · {o.illegible} illegible · {o.uncertain} [?] · "
+                  f"{o.filled} filled · {o.related} related)  -> {o.note_path}")
+        elif o.status == "failed":
+            print(f"  FAILED    {o.name}: {o.error}")
+    n_unchanged = sum(o.status == "unchanged" for o in r.outcomes)
+    n_failed = sum(o.status == "failed" for o in r.outcomes)
+    print(f"\ncapture: {r.captured} captured, {n_unchanged} unchanged, {n_failed} failed, "
+          f"{len(r.unmapped)} unmapped   est cost ${r.cost_usd:.4f}")
+    if r.ingest:
+        print(f"ingest: {r.ingest.ingested} ingested, {r.ingest.skipped} unchanged, "
+              f"{r.ingest.deleted} deleted, {r.ingest.failed} failed")
+
+
 def cmd_notes_sync(args) -> None:
     """Incrementally ingest the authoring notes directory (agent-layer §6.7).
 
@@ -766,6 +795,14 @@ def main(argv=None) -> None:
     prd.add_argument("--out", default=None, help="write PDFs to this dir (default: beside the source)")
     prd.add_argument("--no-push", action="store_true", help="render locally only; skip the rmapi push")
     prd.set_defaults(func=cmd_read)
+
+    pcs = sub.add_parser(
+        "capture-sync",
+        help="Loop A: transcribe + enrich + ingest staged reMarkable handwriting renders (billed)",
+    )
+    pcs.add_argument("--staging", default=None, help="staging dir (default: [capture].staging_dir)")
+    pcs.add_argument("--no-ingest", action="store_true", help="render notes only; skip the notes-sync ingest")
+    pcs.set_defaults(func=cmd_capture_sync)
 
     pns = sub.add_parser(
         "notes-sync",

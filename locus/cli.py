@@ -640,6 +640,13 @@ def _resolve_structure_docs(conn, args) -> list[int]:
     if args.since:
         clauses.append("COALESCE(source_date, ingested_at) >= ?")
         params.append(args.since)
+    if getattr(args, "ingested_since", None):
+        # Distinct from --since, which filters on the AUTHORED date. A scheduled run needs
+        # "what has arrived since I last looked", and a handwritten note authored weeks ago but
+        # ingested last night must be structured — --since would skip it. Without this a nightly
+        # timer either re-bills every document or silently misses the new ones.
+        clauses.append("ingested_at >= ?")
+        params.append(args.ingested_since)
     if args.maturity:
         clauses.append("maturity = ?")
         params.append(args.maturity)
@@ -1040,7 +1047,9 @@ def main(argv=None) -> None:
     )
     pstr.add_argument("--doc", action="append", help="document id (repeatable); else use the filters")
     pstr.add_argument("--category", default=None, help="only documents in this category")
-    pstr.add_argument("--since", default=None, help="only documents dated/ingested on or after (YYYY-MM-DD)")
+    pstr.add_argument("--since", default=None, help="only documents AUTHORED on or after (YYYY-MM-DD)")
+    pstr.add_argument("--ingested-since", default=None,
+                      help="only documents INGESTED on or after (YYYY-MM-DD) — for scheduled runs")
     pstr.add_argument("--maturity", choices=["rough", "tidy"], default=None, help="only documents of this maturity")
     pstr.add_argument("--limit", type=int, default=None, help="cap how many documents are processed")
     pstr.add_argument("--dry-run", action="store_true", help="run every gate and print the plan; write nothing")

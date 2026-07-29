@@ -1,0 +1,13 @@
+[Unit]
+Description=Locus backup — WAL-safe DB snapshot + hardlinked raw store
+Documentation=file:///home/alec/server-projects/locus/CLAUDE.md
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/alec/server-projects/locus
+# "locus backup is sacred" (CLAUDE.md failure mode #10) and nothing scheduled it until now.
+# Snapshots hardlink against the previous one, so a daily cadence is cheap on disk.
+ExecStart=/home/alec/.local/bin/uv run locus backup
+TimeoutStartSec=3600
+Nice=15
+IOSchedulingClass=idle

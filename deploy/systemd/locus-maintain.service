@@ -1,0 +1,20 @@
+[Unit]
+Description=Locus nightly — rebuild alias substrate, structure newly ingested documents
+Documentation=file:///home/alec/server-projects/locus/docs/obsidian-agent-layer-plan.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/alec/server-projects/locus
+# 1. link: folds new entity surfaces into entity_aliases. Verdicts are cached in pass_cache,
+#    so a run with nothing new costs ~0 API calls.
+ExecStart=/home/alec/.local/bin/uv run locus link
+# 2. structure: ONLY documents ingested in the last two days. --ingested-since (not --since,
+#    which filters on the AUTHORED date) is what makes this safe to schedule: a nightly run
+#    over the whole corpus would re-bill every document every night for no new information.
+#    Two days rather than one so a missed window does not silently skip a day's capture.
+ExecStart=/bin/sh -c '/home/alec/.local/bin/uv run locus structure --ingested-since "$(date -d "2 days ago" +%%Y-%%m-%%d)"'
+TimeoutStartSec=7200
+Nice=15
+IOSchedulingClass=idle

@@ -1,0 +1,13 @@
+[Unit]
+Description=Run Locus handwriting capture every 30 minutes
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=30min
+# Spread load and avoid every timer firing on the same second after a reboot.
+RandomizedDelaySec=2min
+# A missed window (machine asleep/off) runs once on resume rather than never.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

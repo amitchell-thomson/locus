@@ -1,0 +1,18 @@
+[Unit]
+Description=Locus Loop A — pull reMarkable handwriting, transcribe, enrich, ingest
+Documentation=file:///home/alec/server-projects/locus/docs/obsidian-agent-layer-plan.md
+# The ingest lock (flock) enforces one ingest at a time, but not starting on top of a
+# structure run keeps the journal readable and avoids lock-contention noise in the logs.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/alec/server-projects/locus
+# capture-sync is BILLED (Sonnet vision) but idempotent: a per-uuid raster hash means an
+# unchanged notebook costs nothing, so a frequent timer only spends when you actually write.
+ExecStart=/home/alec/.local/bin/uv run locus capture-sync
+# Never let a wedged rmapi/model call hold the ingest lock into the next window.
+TimeoutStartSec=3600
+Nice=10
+IOSchedulingClass=idle

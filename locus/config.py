@@ -102,8 +102,28 @@ class RetrieveConfig(BaseModel):
     # (it would PROMOTE a negatively-scored unit). A subtractive penalty is a well-defined,
     # monotonic demotion that still lets a strongly-matching rough note surface (flag, never
     # filter — principle 8). Inert until rough notes exist (Phase 1 Loop A); eval-tune then (§18).
+    #
+    # EVAL-TUNED 2026-07-29 (that §18 tune), 1.5 -> 0.0 (OFF) — swept over 14 queries x 4 values
+    # (scripts/analysis/rough_penalty_sweep.py) once Loop A had landed 12 real rough notes:
+    #
+    #   penalty | note queries recovered | non-note queries still correct
+    #      1.5  |          2/6           |            8/8
+    #     0.75  |          2/6           |            8/8
+    #     0.35  |          2/6           |            8/8
+    #      0.0  |          3/6           |            8/8
+    #
+    # Monotonic, and the penalty bought NOTHING: intrusion was 8/8 at every value, so no non-note
+    # target was ever displaced by a rough note. At 1.5 it cost real recall — the EM-rates note was
+    # entirely unreachable, and the internship<->offer query surfaced neither side. The premise was
+    # wrong, not just the magnitude: `rough` measures POLISH, and retrieval must rank on VALUE. A
+    # jotted idea is often the higher-value unit precisely because it is the owner's own thinking
+    # and exists in no other document, whereas a polished paper usually has near-duplicates in the
+    # corpus. Cost of switching off, stated honestly: two coursework queries lose one rank position
+    # each (rank 1 -> 2, a rough note above a still-surfacing target) — an MRR cost, not a recall one.
+    # The knob is KEPT (not deleted) so the demotion is one config edit away if capture volume grows
+    # enough to genuinely crowd results.
     rough_penalty: float = Field(
-        1.5, description="Cross-encoder-score penalty applied to maturity=rough candidates (0 = off)."
+        0.0, description="Cross-encoder-score penalty applied to maturity=rough candidates (0 = off)."
     )
     # Per-CATEGORY cross-encoder penalty, same mechanism and same rationale as rough_penalty.
     # Measured 2026-07-29: engineering coursework is 246/295 documents, 81% of propositions and

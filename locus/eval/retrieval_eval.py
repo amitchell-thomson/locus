@@ -267,16 +267,23 @@ LABELLED_QUERIES: list[LabelledQuery] = [
     # entirely unmeasured. These are keyed on the note's stable vault filename stem.
     #
     # All seven were verified live before being committed (scripts/analysis/verify_eval_candidates.py).
-    # SIX further candidates were written and REJECTED for missing their target, and are recorded
-    # here so they are not naively re-proposed — each is a real, open retrieval weakness:
-    #   - "mispricings in Central/Eastern European rates across tenors" -> em-rates-trading MISSED
-    #     (banner correctly said 'absent'); "price discovery / AI-assisted risk reporting" ->
-    #     em-ideas MISSED. Both notes are dense idea-lists whose vocabulary the summaries flatten.
-    #   - three note<->project / note<->paper / note<->career BRIDGES all half-missed (the project
-    #     or paper side surfaced, the NOTE side did not; the mean-reversion bridge also misfired
-    #     the banner as 'ambiguous'). Rough handwriting does not yet compete with polished prose
-    #     in the reranker — `[retrieve].rough_penalty` is a SUBTRACTIVE penalty and these queries
-    #     are where its cost is visible. Re-test these when the penalty is next tuned.
+    # SIX further candidates were written and REJECTED for missing their target. They were kept
+    # (not discarded) as the test set for the rough_penalty sweep run the same day — and that sweep
+    # SPLIT them into two distinct causes, which is why only some have since been promoted:
+    #
+    #   RANKING-BLOCKED (fixed by rough_penalty 1.5 -> 0.0): the EM-rates note was unreachable at
+    #     1.5 and reaches rank 4 at 0.0 — promoted to a real label below. The mean-reversion bridge
+    #     also recovers BOTH sides at 0.0 but still reports 'ambiguous', so it is NOT labelled: as a
+    #     cross_domain label it would assert a banner the pipeline does not yet clear, and relabelling
+    #     it non-cross-domain to dodge that check would be gaming the metric.
+    #
+    #   EXTRACTION-BLOCKED (unchanged at EVERY penalty value, so the reranker was never the cause):
+    #     "price discovery / AI-assisted risk reporting" -> em-ideas, the Markov note<->paper bridge,
+    #     and the note<->career offer bridge. These notes never enter the candidate pool at all, so
+    #     no scoring change can rescue them. Both are dense idea-lists whose GENERATED SUMMARIES
+    #     flatten into generic prose that embeds near nothing specific. The fix is a stronger
+    #     summary/proposition pass for maturity=rough docs (§11.B), not a retrieval knob — these
+    #     three stay here as its acceptance test.
     LabelledQuery("How does fixing risk in an emerging market currency swap decompose around a central bank meeting?",
                   ["dashboard-"]),
     LabelledQuery("What is the difference between an FX swap, a cross-currency swap, and an interest rate swap?",
@@ -291,6 +298,19 @@ LABELLED_QUERIES: list[LabelledQuery] = [
                   ["jane-steet-social"]),
     LabelledQuery("How are hidden Markov models used for credit stress and risk attribution?",
                   ["robert-training"]),
+    # KNOWN-FAILING, RETAINED DELIBERATELY. Promoted from the rejected set after the sweep showed it
+    # at rank 4 with rough_penalty=0.0 — then it MISSED on the very next full eval run, retrieving
+    # its sibling notes (dashboard, swaps-momentum) instead. So it is genuinely borderline, and the
+    # single sweep observation was too thin to promote on.
+    #
+    # It is kept FAILING rather than reverted, because the two cases are not the same: a label is
+    # retired when its target is gone or the layer structurally cannot produce it (see Buckingham pi
+    # and the tanker-flow pair above), NOT when the system simply misses. This query is well-formed
+    # and `em-rates-trading` genuinely answers it — the miss is a real capability gap, and deleting
+    # it would buy recall@k 1.000 by hiding the one thing worth tracking. It is the visible metric
+    # for the rough-note summary-quality fix; it should start passing when that lands.
+    LabelledQuery("Where are the mispricings in Central and Eastern European rates across tenors?",
+                  ["em-rates-trading"]),
 ]
 
 

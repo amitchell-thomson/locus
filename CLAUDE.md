@@ -437,7 +437,8 @@ never mutates the ingest spine** (principles 7–9); the corpus stays immutable 
 
 **Phase 1 — capture density (shipped).** `documents.maturity` (rough|tidy, migration 0009) +
 `[retrieve].rough_penalty` (a SUBTRACTIVE penalty on the cross-encoder score — flag/down-weight,
-never filter) · `agent/` foundation: `claude.py` is the ONE `claude -p` runner (env-SCRUBBED so
+never filter; **eval-tuned 1.5 → 0.0 = OFF on 2026-07-29**, see below) · `agent/` foundation:
+`claude.py` is the ONE `claude -p` runner (env-SCRUBBED so
 it uses subscription OAuth, not the metered `.env` key — this bug silently rerouted billing in
 Phase 0 and again in `link/adjudicate.py`), `journal.py` (agent_runs, migration 0010),
 `budget.py` · `vault/writer.py` owned-block protocol (`<!-- locus:ai:<kind> -->` markers, atomic
@@ -478,5 +479,32 @@ claim, practice item and tension cites a real retrieved unit or does not appear)
 everything (`author: agent`, `source_run`) · `_generated/` is corpus-excluded and is never read
 back by the structurer (no feedback contamination).
 
-**Next (Phase 3):** Loop B (PDF annotate, migration 0012 `annotations`) · the annotatable daily
-reMarkable page · the acceptance-feedback flywheel (`acceptance_log` → related-doc ranking).
+**Eval re-curation + `rough_penalty` OFF (2026-07-29).** After the quant-focus prune (306 → 203
+docs) the label set was re-checked against what the corpus is now FOR. Only ONE label had broken
+(Buckingham pi — its target was pruned and no surviving doc teaches the theorem, so it was
+RETIRED, not repointed); the real defect was balance — 38% of queries targeted coursework while
+**all 12 captured handwriting notes were unmeasured**. Added 7 note queries + 5 note related-pairs
+(each verified live); retired the one related pair the layer no longer produces (`tanker-flow` ↔
+`downside-risk`, direction-asymmetric after the concepts backfill). **60 queries / 17 pairs:
+recall@k 0.983, links_recall 1.000 (34/34), mrr 0.802, cross-domain 1.000, banner 0.000,
+file_recall 1.000** — the one miss is a deliberately-retained known-failing label (below), and
+recall over a set built largely from verified-passing labels is a RE-BASELINE, not a gain. The
+labelled set is also NOT fully deterministic: multi-query expansion rephrases via local qwen, so
+borderline targets move between runs — promote a label only on repeated observation.
+Then `[retrieve].rough_penalty` was
+swept (14 queries × 4 values) and taken **1.5 → 0.0**: recovery 2/6 → 3/6 while non-note queries
+stayed 8/8 correct at every value, so the penalty prevented no intrusion and only cost recall. The
+premise was wrong, not the magnitude — `rough` measures POLISH, retrieval must rank on VALUE, and
+a jotted idea exists in no other document. **Residual, and the real limit:** 3 of the 6 rejected
+candidates are unchanged at EVERY penalty value — dense idea-list notes whose generated summaries
+flatten into generic prose, so they never enter the candidate pool. That is a §11.B extraction
+ceiling (fix: stronger summary pass for `maturity=rough`), not a ranking problem; those three
+queries live in `retrieval_eval.py` as its acceptance test.
+
+**Next (Phase 3):** Loop B (PDF annotate, migration 0013 `annotations`) · the annotatable daily
+reMarkable page (`agent/compose_daily.py`, not yet built) · the acceptance-feedback flywheel
+(`acceptance_log` → related-doc ranking; **verified 2026-07-29 that `acceptance_counts()` has no
+callers** — 32 judgments recorded, none consumed) · note↔note surface (the captured rates notes
+formed their own mutual cluster, shared=10 — the plan assumed notes link to the corpus, not to
+each other) · a stronger summary pass for rough notes (above) · concept promotion tier (**17% of
+canonicals span ≥2 docs**; 698 new cross-doc concepts measured, not built).

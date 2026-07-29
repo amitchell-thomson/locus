@@ -45,7 +45,14 @@ multi_query_k        = 2          # reformulations beyond the original
 # cross-encoder score of rough-doc candidates before the final sort (a logit penalty, NOT a
 # multiplier — pre-rerank arm scores don't order results, and a multiplier on signed logits is
 # incoherent). Flag/down-weight, never filter. Inert until rough notes exist; eval-tune then. 0 = off.
-rough_penalty        = 1.5
+# EVAL-TUNED 2026-07-29: 1.5 -> 0.0 (OFF). Swept 14 queries x 4 values against the 12 real
+# rough notes Loop A captured (scripts/analysis/rough_penalty_sweep.py): recovery 2/6 at 1.5,
+# 0.75 and 0.35, but 3/6 at 0.0 — while non-note queries stayed 8/8 correct at EVERY value, so
+# the penalty never actually prevented an intrusion. It only cost recall: at 1.5 the EM-rates
+# note was unreachable. `rough` measures POLISH; retrieval must rank on VALUE, and a jotted idea
+# is often the higher-value unit — it is the owner's own thinking and exists nowhere else.
+# Knob kept (not deleted) so the demotion is one edit away if capture volume ever crowds results.
+rough_penalty        = 0.0
 
 [mathocr]
 # Math-aware page OCR: pages whose text layer is damaged or math-dense are re-read by an

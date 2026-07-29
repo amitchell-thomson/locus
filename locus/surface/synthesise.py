@@ -154,32 +154,46 @@ def synthesise(
 def _practice_for(
     conn, ground: GroundingSet, *, max_items: int, runner, model: str | None
 ) -> PracticeSet:
-    """Practice over the topic's own material: an object's gap-driven candidates when one matched,
-    else propositions from the concepts the trajectories cover."""
+    """Choose what to practise: gap-driven WITHIN what retrieval judged relevant.
+
+    Relevance and gap-drivenness are both real signals, and they rank differently — so the order
+    they are applied decides the result. A live `synthesise("market making and arbitrage
+    strategies")` matched the `market making` concept object, whose gaps point at Optibook setup
+    material, and generated three questions about what a Python IDE is while the Optiver
+    market-making repo sat at the top of the evidence. Relevance has to be the FILTER (the owner
+    asked about this topic) and the gap ordering the SORT (§12.3) — not the other way round.
+
+    So: take the object's gap-driven candidates, keep those whose document retrieval actually
+    surfaced, then top up from the retrieved documents in relevance order. Every route ends at
+    the owner's own stored propositions; only the path differs."""
     from locus.agent.state import parse_entity_key
     from locus.learn.practice import (
         candidates_for_concept, candidates_for_object, candidates_from_documents,
     )
 
-    candidates = []
+    evidence_docs = [e.doc_id for e in ground.evidence if e.doc_id is not None]
+    relevant = set(evidence_docs)
+
+    gap_driven: list = []
     for obj in ground.objects:
-        candidates += candidates_for_object(conn, obj.id)
-    if not candidates:
+        gap_driven += candidates_for_object(conn, obj.id)
+    if not gap_driven:
         for traj in ground.trajectories:
             if traj.subject_kind == "concept":
-                candidates += candidates_for_concept(conn, parse_entity_key(traj.subject_key)[0])
-    if not candidates:
-        candidates = candidates_for_concept(conn, ground.topic)
-    if not candidates:
-        # Last resort, still grounded: propositions from the documents RETRIEVAL surfaced for
-        # this topic. Exact concept-name matching alone is too brittle to hang the feature on —
-        # "portfolio construction" retrieves richly but the canonical entity is "portfolio
-        # optimization", so a name-only lookup found nothing to practise on a topic the corpus
-        # covers well. These are still the owner's own stored propositions; only the route to
-        # them is looser.
-        candidates = candidates_from_documents(
-            conn, [e.doc_id for e in ground.evidence if e.doc_id is not None]
-        )
+                gap_driven += candidates_for_concept(conn, parse_entity_key(traj.subject_key)[0])
+    if not gap_driven:
+        gap_driven = candidates_for_concept(conn, ground.topic)
+
+    # Gap-driven candidates the retrieval ALSO surfaced: both signals agree, so they lead.
+    candidates = [c for c in gap_driven if c.doc_id in relevant] if relevant else list(gap_driven)
+    seen = {c.id for c in candidates}
+    for cand in candidates_from_documents(conn, evidence_docs):
+        if cand.id not in seen:
+            seen.add(cand.id)
+            candidates.append(cand)
+    if not candidates:  # no retrieval evidence at all — fall back to the gap-driven set
+        candidates = gap_driven
+
     return generate_practice(
         conn, candidates, max_items=max_items, runner=runner, model=model
     )

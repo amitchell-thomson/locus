@@ -67,13 +67,14 @@ class _Candidate:
     text: str
     doc_title: str
     concept: str | None
+    doc_id: int | None = None  # lets callers restrict candidates to relevance-ranked documents
 
 
 def candidates_for_concept(conn, name: str, *, limit: int = _MAX_CANDIDATES) -> list[_Candidate]:
     """Propositions from sections naming this canonical concept (alias-aware)."""
     rows = conn.execute(
         """
-        SELECT DISTINCT p.id, p.text, d.title
+        SELECT DISTINCT p.id, p.text, p.doc_id, d.title
         FROM propositions p
         JOIN documents d ON d.id = p.doc_id
         WHERE p.section_id IN (
@@ -88,7 +89,7 @@ def candidates_for_concept(conn, name: str, *, limit: int = _MAX_CANDIDATES) -> 
         """,
         (name, limit),
     ).fetchall()
-    return [_Candidate(r["id"], r["text"], r["title"], name) for r in rows]
+    return [_Candidate(r["id"], r["text"], r["title"], name, r["doc_id"]) for r in rows]
 
 
 def candidates_for_object(conn, object_id: int, *, limit: int = _MAX_CANDIDATES) -> list[_Candidate]:
@@ -113,13 +114,14 @@ def candidates_for_object(conn, object_id: int, *, limit: int = _MAX_CANDIDATES)
     if doc_ids and len(out) < limit:
         placeholders = ",".join("?" * len(doc_ids))
         for r in conn.execute(
-            f"SELECT p.id, p.text, d.title FROM propositions p JOIN documents d ON d.id=p.doc_id "
+            f"SELECT p.id, p.text, p.doc_id, d.title FROM propositions p "
+            f"JOIN documents d ON d.id=p.doc_id "
             f"WHERE p.doc_id IN ({placeholders}) ORDER BY p.id LIMIT ?",
             (*doc_ids, limit),
         ):
             if r["id"] not in seen:
                 seen.add(r["id"])
-                out.append(_Candidate(r["id"], r["text"], r["title"], None))
+                out.append(_Candidate(r["id"], r["text"], r["title"], None, r["doc_id"]))
     return out[:limit]
 
 
@@ -241,7 +243,7 @@ def candidates_from_documents(conn, doc_ids: list[int], *, limit: int = _MAX_CAN
     ):
         bucket = by_doc.setdefault(r["doc_id"], [])
         if len(bucket) < _PER_DOC_CAP:
-            bucket.append(_Candidate(r["id"], r["text"], r["title"], None))
+            bucket.append(_Candidate(r["id"], r["text"], r["title"], None, r["doc_id"]))
 
     out: list[_Candidate] = []
     for rank in range(_PER_DOC_CAP):

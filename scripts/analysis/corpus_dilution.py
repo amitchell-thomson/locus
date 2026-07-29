@@ -63,7 +63,7 @@ def main() -> None:
     # What survives a prune: cross-doc concepts among non-coursework documents only.
     keep = {d for d in cats if d not in cw_docs}
     survive = {c for c, d in canon_docs.items() if len(d & keep) >= 2}
-    print(f"\nIF COURSEWORK WERE REMOVED ENTIRELY:")
+    print("\nIF COURSEWORK WERE REMOVED ENTIRELY:")
     print(f"  cross-document canonicals surviving : {len(survive)} (from {len(cross)})")
 
     # Eval-label exposure: how many labelled queries point at coursework documents.

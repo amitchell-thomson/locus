@@ -10,7 +10,9 @@ from locus.db.connection import get_connection
 from locus.retrieve.assemble import Citation, assemble
 from locus.retrieve.expand import expand
 from locus.retrieve.rerank import score_pairs, select
-from locus.retrieve.search import Candidate, Facets, rough_doc_ids, search
+from locus.retrieve.search import (
+    Candidate, Facets, penalised_doc_ids, rough_doc_ids, search,
+)
 
 
 # How far below the floor a score must sit to read as "definitely irrelevant" rather than
@@ -187,6 +189,21 @@ def _score(query: str, candidates: list[Candidate]) -> None:
         c.rerank_score = float(s)
 
 
+def _apply_category_penalty(candidates, penalties: dict[int, float]) -> None:
+    """Subtract each candidate's per-CATEGORY penalty from its cross-encoder score, in place.
+
+    Identical mechanism to `_apply_maturity_penalty` (see its note on why subtractive, not a
+    multiplier): a monotonic demotion applied after all scoring and before the final sort, so a
+    penalised document must out-score competitors by the penalty to still rank. Never a filter."""
+    if not penalties:
+        return
+    for c in candidates:
+        if c.rerank_score is not None:
+            penalty = penalties.get(c.doc_id)
+            if penalty:
+                c.rerank_score -= penalty
+
+
 def _apply_maturity_penalty(candidates, rough_ids: set[int], penalty: float) -> None:
     """Down-weight `maturity=rough` candidates by subtracting `penalty` from their cross-encoder
     score, in place (agent-layer §6.1). Applied after all scoring (incl. expansion variants) and
@@ -200,7 +217,8 @@ def _apply_maturity_penalty(candidates, rough_ids: set[int], penalty: float) -> 
             c.rerank_score -= penalty
 
 
-def _rerank_with_expansion(query, candidates, gather, cfg, *, prefer_code, rough_ids=None) -> list[Candidate]:
+def _rerank_with_expansion(query, candidates, gather, cfg, *, prefer_code, rough_ids=None,
+                           category_penalties=None) -> list[Candidate]:
     """Score + diversity-select, expanding the retrieval pool when warranted (multiquery.py).
 
     Two complementary expansion variant sources, both retrieved separately and merged keeping
@@ -243,6 +261,7 @@ def _rerank_with_expansion(query, candidates, gather, cfg, *, prefer_code, rough
                         existing.rerank_score = c.rerank_score
         candidates = list(pool.values())
     _apply_maturity_penalty(candidates, rough_ids or set(), getattr(cfg, "rough_penalty", 0.0))
+    _apply_category_penalty(candidates, category_penalties or {})
     candidates.sort(
         key=lambda c: c.rerank_score if c.rerank_score is not None else float("-inf"), reverse=True
     )
@@ -288,6 +307,7 @@ def retrieve(
         survivors = _rerank_with_expansion(
             query, candidates, _gather, cfg,
             prefer_code=bool(_IMPL_INTENT.search(query)), rough_ids=rough_doc_ids(conn),
+            category_penalties=penalised_doc_ids(conn, getattr(cfg, "category_penalty", {}) or {}),
         )
         band: str | None = None
         floor = cfg.min_rerank_score

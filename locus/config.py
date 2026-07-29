@@ -105,6 +105,18 @@ class RetrieveConfig(BaseModel):
     rough_penalty: float = Field(
         1.5, description="Cross-encoder-score penalty applied to maturity=rough candidates (0 = off)."
     )
+    # Per-CATEGORY cross-encoder penalty, same mechanism and same rationale as rough_penalty.
+    # Measured 2026-07-29: engineering coursework is 246/295 documents, 81% of propositions and
+    # 97% of figures, and 87% of cross-document canonical entities are reachable ONLY through it.
+    # That mass crowds the owner's quant material out of results for queries that are not about
+    # coursework. This DOWN-WEIGHTS, never filters (principle 8) — a coursework document that
+    # genuinely answers a coursework question still wins by out-scoring the penalty, which is why
+    # it is preferred over deleting documents: nothing is lost and the knob is reversible.
+    # Empty = no category is penalised (previous behaviour).
+    category_penalty: dict[str, float] = Field(
+        default_factory=dict,
+        description="category -> cross-encoder-score penalty for its candidates (empty = off).",
+    )
 
 
 class GenerationConfig(BaseModel):
@@ -353,6 +365,16 @@ class StructureConfig(BaseModel):
     belief_source_categories: list[str] = Field(
         default_factory=lambda: ["note"],
         description="Categories whose docs may yield belief positions (owner-authored only).",
+    )
+    # A Concept object must touch at least one document in these categories. Measured 2026-07-29:
+    # 87% of cross-document canonical entities are reachable ONLY through engineering coursework,
+    # so without this the concept space is overwhelmingly Ampere's-law-linking-two-lecture-notes
+    # rather than the owner's quant work. The 89 concepts that BRIDGE coursework into papers/
+    # projects/career/notes (LTI system, transfer function, Markov model, regime shift detection)
+    # are kept by construction — they touch a listed category. Empty = no requirement.
+    concept_require_categories: list[str] = Field(
+        default_factory=lambda: ["paper", "project", "career", "note"],
+        description="A concept must appear in >=1 doc of these categories (empty = no requirement).",
     )
     # Override the agent model for this pass (None = [agent].model, Haiku).
     model: str | None = Field(None, description="claude -p model for the proposal pass.")

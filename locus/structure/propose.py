@@ -200,7 +200,8 @@ def _doc_text(conn, doc_id: int, *, limit: int = _MAX_DOC_CHARS) -> str:
 
 
 def canonical_concepts(
-    conn, doc_id: int, *, min_docs: int, exclude_types: list[str] | None = None
+    conn, doc_id: int, *, min_docs: int, exclude_types: list[str] | None = None,
+    require_categories: list[str] | None = None,
 ) -> dict[str, tuple[str, str]]:
     """The doc's canonical entities that span >= `min_docs` documents — gate 1's whitelist.
 
@@ -245,6 +246,28 @@ def canonical_concepts(
         for r in rows
         if (r["ctype"] or "").casefold() not in excluded
     }
+
+    # Gate 1d: a concept must touch the owner's actual work, not only his coursework. Without
+    # this the concept space is dominated by the 87% of cross-document canonicals reachable only
+    # through 246 engineering coursework documents. The concepts that BRIDGE coursework into
+    # papers/projects/career/notes survive by construction — they touch a required category.
+    if require_categories:
+        placeholders = ",".join("?" * len(require_categories))
+        touching = {
+            r["cname"].casefold()
+            for r in conn.execute(
+                f"""
+                SELECT DISTINCT COALESCE(
+                         (SELECT a.canonical_name FROM entity_aliases a
+                           WHERE a.variant_name = e.name AND a.variant_type = e.type), e.name
+                       ) AS cname
+                FROM entities e JOIN documents d ON d.id = e.doc_id
+                WHERE d.category IN ({placeholders})
+                """,
+                sorted(require_categories),
+            )
+        }
+        out = {k: v for k, v in out.items() if k in touching}
 
     # Gate 1b: drop names too generic to BE a concept. A live dry-run (2026-07-28) offered
     # `state` and `ingest` as domain concepts for the tanker-flow repo — both clear the
@@ -428,6 +451,7 @@ def plan_for_document(
     concepts = canonical_concepts(
         conn, doc_id, min_docs=scfg.min_concept_docs,
         exclude_types=scfg.concept_exclude_entity_types,
+        require_categories=scfg.concept_require_categories,
     )
     text = _doc_text(conn, doc_id)
     support = [

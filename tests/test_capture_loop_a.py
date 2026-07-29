@@ -121,3 +121,35 @@ def test_one_doc_failure_does_not_abort_batch(tmp_path, conn):
     assert by["Good"].status == "captured"
     assert by["Bad"].status == "failed" and "500" in by["Bad"].error
     assert conn.execute("SELECT status FROM agent_runs").fetchone()["status"] == "ok"
+
+
+def test_capture_config_reaches_identify_staged(conn, tmp_path, monkeypatch):
+    """[capture] identification settings must actually be passed through.
+
+    `identify_staged` defaults every one of them, so an omitted argument does not fail — it
+    silently ignores config. `excluded_folders` was dead exactly this way: adding `reading_list`
+    to config.toml (to keep a 211-page book out of handwriting transcription) changed nothing.
+    """
+    from locus.capture import loop_a as mod
+
+    seen = {}
+
+    def fake_identify(staging_dir, **kwargs):
+        seen.update(kwargs)
+        return [], []
+
+    monkeypatch.setattr("locus.capture.remarkable.identify_staged", fake_identify)
+
+    from locus.config import load
+
+    cfg = load()
+    monkeypatch.setattr(cfg.capture, "excluded_folders", ["trash", "reading_list"], raising=False)
+    monkeypatch.setattr(cfg.capture, "default_category", "note", raising=False)
+    monkeypatch.setattr(cfg.capture, "folder_category", {"projects": "project"}, raising=False)
+
+    mod.capture_sync(conn, staging_dir=tmp_path / "staging", notes_dir=tmp_path / "notes",
+                     manifest_path=tmp_path / "m.json", ingest=False)
+
+    assert seen["excluded_folders"] == ("trash", "reading_list")
+    assert seen["default_category"] == "note"
+    assert seen["folder_category"] == {"projects": "project"}

@@ -113,7 +113,20 @@ def capture_sync(
     cfg = load()
     staging = Path(staging_dir) if staging_dir is not None else cfg.capture.staging_dir
     ndir = Path(notes_dir) if notes_dir is not None else cfg.paths.notes
-    identify_fn = identify_fn or (lambda s: identify_staged(s, rmapi_binary=cfg.capture.rmapi_binary))
+    # Every [capture] identification setting must be threaded through: `identify_staged` has
+    # defaults for all of them, so omitting one does not fail loudly — it silently ignores the
+    # owner's config. `excluded_folders` was dead this way, and adding `reading_list` to
+    # config.toml (to keep a 211-page BOOK out of handwriting transcription) changed nothing at
+    # all until this was fixed. folder_category and default_category were dead for the same reason.
+    identify_fn = identify_fn or (
+        lambda s: identify_staged(
+            s,
+            rmapi_binary=cfg.capture.rmapi_binary,
+            folder_category=cfg.capture.folder_category or None,
+            excluded_folders=tuple(cfg.capture.excluded_folders),
+            default_category=cfg.capture.default_category,
+        )
+    )
     transcribe_fn = transcribe_fn or transcribe_pdf
     fillin_fn = fillin_fn or fill_gaps
     enrich_fn = enrich_fn or enrich_note

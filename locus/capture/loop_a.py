@@ -74,11 +74,25 @@ def _pdf_hash(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _authored_date(item, *, fallback: str) -> str:
+    """The note's `date:` — the device's ModifiedClient (when the owner last WROTE in the
+    notebook), falling back to the capture time only when the device reported none.
+
+    This is what `extract/textdoc` turns into documents.source_date and therefore what
+    `belief_positions.dated_at` records. Dating handwriting by capture time makes every note
+    captured in one batch share a date, which flattens the understanding-evolution trajectory
+    (§6.3) into a single point — the failure observed on the first 12-document capture."""
+    stamp = (getattr(item, "modified", None) or "").strip()
+    return (stamp or fallback)[:10]
+
+
 def _frontmatter(item, *, now: str) -> str:
     # title/category/maturity are consumed by ingest (notes_sync reads category+maturity); the
     # remarkable_* fields are capture provenance (the folder is kept, not mirrored into category).
     fields = {
         "title": item.name,
+        # `date` is read by extract/textdoc into source_date -> belief_positions.dated_at.
+        "date": _authored_date(item, fallback=now),
         "category": item.category,
         "maturity": "rough",
         "remarkable_folder": item.folder,

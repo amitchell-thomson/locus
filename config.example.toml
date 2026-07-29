@@ -202,7 +202,12 @@ rmapi_binary     = "rmapi"                          # PATH name or absolute path
 transcribe_model = "claude-sonnet-5"                # VISION model (metered SDK). Sonnet default: A/B on
                                                     # real dense handwriting beat Haiku decisively; seeds corpus
 transcribe_dpi   = 150                              # page render DPI for transcription
-excluded_folders = ["trash", "Locus", "admin"]     # folders that are not Loop-A handwriting capture
+excluded_folders = ["trash", "Locus", "admin", "reading_list"]     # not Loop-A handwriting capture. reading_list holds BOOKS being read: the staged PDF is
+                                                   # the device render with the published page and the owner's ink flattened
+                                                   # together, so vision transcription cannot tell his margin note from the
+                                                   # author's sentence — and note-category docs are read as HIS words by
+                                                   # belief-position extraction. Waits for Loop B (§8.2), which separates
+                                                   # highlight/margin/underline from source text.
 default_category = "note"                           # category for folders not in the map
 # folder_category = { rough_notes = "note", projects = "project", careers = "career" }
 

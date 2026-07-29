@@ -20,7 +20,8 @@ _FIND = "\n".join([
     "[f] /trash/Old scribble",
 ])
 _STAT = {
-    "/brevan_howard/Jargon Sheet": {"ID": "uuid-jargon", "Name": "Jargon Sheet", "Type": "DocumentType"},
+    "/brevan_howard/Jargon Sheet": {"ID": "uuid-jargon", "Name": "Jargon Sheet", "Type": "DocumentType",
+                                    "ModifiedClient": "2026-07-10T13:13:56Z"},
     "/projects/Tanker Flow Ideas": {"ID": "uuid-tanker", "Name": "Tanker Flow Ideas"},
     "/rough_notes/Random thought": {"ID": "uuid-rough", "Name": "Random thought"},
     "/trash/Old scribble": {"ID": "uuid-trash", "Name": "Old scribble"},
@@ -43,8 +44,10 @@ def _fake_runner(calls: list | None = None):
 
 def test_build_uuid_index_maps_and_skips_excluded():
     idx = build_uuid_index(_fake_runner(), excluded_folders=("trash",))
-    assert idx["uuid-jargon"] == ("Jargon Sheet", "brevan_howard")
-    assert idx["uuid-tanker"] == ("Tanker Flow Ideas", "projects")
+    # ModifiedClient rides along: it is the only honest date for handwriting (the device's own
+    # last-edited stamp). A document that reports none yields None, never a guessed date.
+    assert idx["uuid-jargon"] == ("Jargon Sheet", "brevan_howard", "2026-07-10T13:13:56Z")
+    assert idx["uuid-tanker"] == ("Tanker Flow Ideas", "projects", None)
     assert "uuid-trash" not in idx  # trash folder excluded
 
 
@@ -96,3 +99,11 @@ def test_default_category_for_unmapped_folder(tmp_path: Path):
     (staging / "uuid-misc.pdf").write_bytes(b"%PDF")
     items, _ = identify_staged(staging, runner=runner, default_category="note")
     assert items[0].category == "note" and items[0].folder == "misc"
+
+
+def test_identify_carries_the_device_modified_date(tmp_path):
+    """The date the owner last WROTE, not the date capture ran — belief_positions.dated_at
+    ultimately comes from here, and dating handwriting by capture time flattens the trajectory."""
+    (tmp_path / "uuid-jargon.pdf").write_bytes(b"%PDF-1.4\n")
+    items, _ = identify_staged(tmp_path, runner=_fake_runner(), excluded_folders=("trash",))
+    assert [i.modified for i in items] == ["2026-07-10T13:13:56Z"]

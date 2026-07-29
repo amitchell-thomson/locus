@@ -153,3 +153,52 @@ def test_capture_config_reaches_identify_staged(conn, tmp_path, monkeypatch):
     assert seen["excluded_folders"] == ("trash", "reading_list")
     assert seen["default_category"] == "note"
     assert seen["folder_category"] == {"projects": "project"}
+
+
+def test_note_is_dated_by_the_device_not_by_capture_time(tmp_path, conn):
+    """A note's `date:` frontmatter must be when the owner last wrote in the notebook.
+
+    extract/textdoc reads it into documents.source_date, which becomes
+    belief_positions.dated_at. The first live 12-document capture dated every note "today",
+    collapsing the understanding-evolution trajectory to a single point.
+    """
+    from locus.capture import loop_a as mod
+
+    staging, notes = tmp_path / "stage", tmp_path / "notes"
+    staging.mkdir()
+    notes.mkdir()
+    item = _item(staging, "u-dated", "Rates Foundations", "brevan_howard", "note")
+    item = CaptureItem(uuid=item.uuid, pdf_path=item.pdf_path, name=item.name,
+                       folder=item.folder, category=item.category,
+                       modified="2026-07-10T13:13:56Z")
+
+    mod.capture_sync(
+        conn, staging_dir=staging, notes_dir=notes, manifest_path=tmp_path / "m.json",
+        ingest=False, identify_fn=lambda s: ([item], []),
+        transcribe_fn=lambda p: _transcript("swaps are discount factors"),
+        fillin_fn=lambda md: FillResult(markdown=md, filled=0, total_gaps=0),
+        enrich_fn=lambda *a, **k: EnrichResult(related=0, wrote_block=False),
+        now="2026-07-29T09:00:00+00:00",
+    )
+    text = next(notes.glob("*.md")).read_text()
+    assert "date: 2026-07-10" in text          # the device's ModifiedClient
+    assert "date: 2026-07-29" not in text      # not the capture date
+
+
+def test_note_without_a_device_date_falls_back_to_capture_time(tmp_path, conn):
+    """No invented dates: a document the device reports no timestamp for uses capture time."""
+    from locus.capture import loop_a as mod
+
+    staging, notes = tmp_path / "stage", tmp_path / "notes"
+    staging.mkdir()
+    notes.mkdir()
+    item = _item(staging, "u-undated", "Scribble", "rough_notes", "note")
+    mod.capture_sync(
+        conn, staging_dir=staging, notes_dir=notes, manifest_path=tmp_path / "m.json",
+        ingest=False, identify_fn=lambda s: ([item], []),
+        transcribe_fn=lambda p: _transcript("x"),
+        fillin_fn=lambda md: FillResult(markdown=md, filled=0, total_gaps=0),
+        enrich_fn=lambda *a, **k: EnrichResult(related=0, wrote_block=False),
+        now="2026-07-29T09:00:00+00:00",
+    )
+    assert "date: 2026-07-29" in next(notes.glob("*.md")).read_text()

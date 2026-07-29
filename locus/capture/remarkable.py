@@ -52,6 +52,13 @@ class CaptureItem:
     name: str        # human document name from reMarkable
     folder: str      # top-level device folder
     category: str    # mapped Locus category
+    # `rmapi stat`'s ModifiedClient — WHEN THE OWNER LAST WROTE IN THE NOTEBOOK, not when capture
+    # ran. It becomes the note's `date:` frontmatter and hence documents.source_date, and hence
+    # belief_positions.dated_at. Without it every captured note is dated "today" and the whole
+    # understanding-evolution trajectory (§6.3) collapses to a flat line at the capture date —
+    # which is exactly what happened to the first 12-document capture. None if the device did not
+    # report one.
+    modified: str | None = None
 
 
 def _subprocess_runner(binary: str) -> RmapiRunner:
@@ -90,9 +97,12 @@ def _stat(runner: RmapiRunner, device_path: str) -> dict | None:
 
 def build_uuid_index(
     runner: RmapiRunner, *, excluded_folders: tuple[str, ...] = DEFAULT_EXCLUDED_FOLDERS
-) -> dict[str, tuple[str, str]]:
-    """Map every non-excluded document's `uuid -> (name, top_folder)` via find + stat."""
-    index: dict[str, tuple[str, str]] = {}
+) -> dict[str, tuple[str, str, str | None]]:
+    """Map every non-excluded document's `uuid -> (name, top_folder, modified)` via find + stat.
+
+    `modified` is `ModifiedClient` — the device's own last-edited timestamp, which is the only
+    honest date for handwriting (see CaptureItem.modified)."""
+    index: dict[str, tuple[str, str, str | None]] = {}
     for device_path in _find_file_paths(runner):
         folder = device_path.lstrip("/").split("/", 1)[0]
         if folder in excluded_folders:
@@ -100,7 +110,9 @@ def build_uuid_index(
         meta = _stat(runner, device_path)
         if not meta or not meta.get("ID"):
             continue
-        index[meta["ID"]] = (meta.get("Name") or Path(device_path).name, folder)
+        index[meta["ID"]] = (
+            meta.get("Name") or Path(device_path).name, folder, meta.get("ModifiedClient"),
+        )
     return index
 
 
@@ -130,11 +142,11 @@ def identify_staged(
         if uuid not in index:
             unmapped.append(uuid)
             continue
-        name, folder = index[uuid]
+        name, folder, modified = index[uuid]
         items.append(
             CaptureItem(
                 uuid=uuid, pdf_path=pdf, name=name, folder=folder,
-                category=cats.get(folder, default_category),
+                category=cats.get(folder, default_category), modified=modified,
             )
         )
     return items, unmapped

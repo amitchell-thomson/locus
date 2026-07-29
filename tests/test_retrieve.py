@@ -260,7 +260,7 @@ def _pipeline_fakes(monkeypatch, floor, scores):
         lambda: types.SimpleNamespace(retrieve=rcfg, figures=types.SimpleNamespace(image_cap=3)),
     )
 
-    def _rr(query, candidates, gather, cfg, *, prefer_code=False, rough_ids=None):
+    def _rr(query, candidates, gather, cfg, *, prefer_code=False, rough_ids=None, **_kw):
         for c, s in zip(candidates, scores):
             c.rerank_score = s
         return candidates[: len(scores)][: cfg.rerank_top_k]
@@ -386,7 +386,7 @@ def _facet_fakes(monkeypatch, floor, scores, facet_scores):
         lambda: types.SimpleNamespace(retrieve=rcfg, figures=types.SimpleNamespace(image_cap=3)),
     )
 
-    def _rr(query, candidates, gather, cfg, *, prefer_code=False, rough_ids=None):
+    def _rr(query, candidates, gather, cfg, *, prefer_code=False, rough_ids=None, **_kw):
         for c, s in zip(candidates, scores):
             c.rerank_score = s
         return candidates[: len(scores)][: cfg.rerank_top_k]
@@ -565,7 +565,7 @@ def test_figure_images_floored_and_cited_count_kept(monkeypatch, tmp_path):
     def fake_search(conn, q, facets=None):
         return []
 
-    def fake_rerank(q, cands, gather, cfg, *, prefer_code=False, rough_ids=None):
+    def fake_rerank(q, cands, gather, cfg, *, prefer_code=False, rough_ids=None, **_kw):
         return []
 
     def fake_expand(conn, survivors):

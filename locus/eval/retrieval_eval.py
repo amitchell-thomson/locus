@@ -47,8 +47,21 @@ class LabelledQuery:
     include_excluded: bool = False
 
 
-# Grounded in the live post-pour corpus (291 docs; 2026-06-09 dedup+expansion). Keys are
-# source_uri substrings — see the module docstring. EXTEND whenever the corpus grows.
+# Grounded in the live corpus (203 docs; 2026-07-29 re-curation after the quant-focus prune).
+# Keys are source_uri substrings — see the module docstring. EXTEND whenever the corpus grows.
+#
+# 2026-07-29 re-curation. The prune took the corpus 306 -> 203 (coursework 246 -> 144) and Loop A
+# added 12 handwriting notes, so the set was re-checked against what the corpus is now FOR. Only
+# ONE label had been broken by the prune (Buckingham pi — retired below), but the balance was
+# wrong: 38% of queries targeted coursework, now support material, while ALL 12 captured notes —
+# the owner's own internship work, and the content the reMarkable loop exists to serve — were
+# unmeasured. Seven note queries and five note related-pairs were added (each verified live);
+# two labels the layer no longer produces were retired.
+#
+# The passing COURSEWORK labels were deliberately KEPT, not trimmed to rebalance: they still
+# measure 144 live documents, they cost only eval runtime, and deleting labels that pass removes
+# information without adding any. Re-weighting (if a coursework regression should count for less
+# than a note regression) is a scoring change, not a labelling one.
 LABELLED_QUERIES: list[LabelledQuery] = [
     LabelledQuery(
         "What is the Biot number and what does it tell you about transient conduction?",
@@ -184,8 +197,12 @@ LABELLED_QUERIES: list[LabelledQuery] = [
                   ["Thermodynamics"]),
     LabelledQuery("How is a heat engine's efficiency related to the Carnot cycle?",
                   ["Thermodynamics|Energy Systems"]),
-    LabelledQuery("How does dimensional analysis and the Buckingham pi theorem reduce the variables in a fluids problem?",
-                  ["Dimensional Analysis"]),
+    # NB a Buckingham-pi / dimensional-analysis query was RETIRED in the 2026-07-29 re-curation:
+    # its only real target ('Dimensional Analysis') was deleted in the quant-focus prune, and a
+    # content sweep found no surviving doc that teaches the theorem — the remaining hits are
+    # syllabus line-items and tangential non-dimensional groups (Biot/Fourier in heat transfer).
+    # It was retired rather than repointed: relabelling it at those docs would assert coverage
+    # the corpus does not have, which is the failure this eval exists to catch.
     LabelledQuery("How is convective heat transfer characterised by the Nusselt and Reynolds numbers?",
                   ["Heat and Mass Transfer"]),
     # --- coursework: dynamics / structures ---
@@ -242,6 +259,38 @@ LABELLED_QUERIES: list[LabelledQuery] = [
                   ["OXDAQ"]),
     LabelledQuery("How is Modern Portfolio Theory used to optimise a portfolio in the alpha-fund lectures?",
                   ["Lecture5.ipynb|Lecture1.ipynb"]),
+    # === 2026-07-29 re-curation: the captured handwriting (Loop A) ==========================
+    # The prune (306 -> 203 docs) refocused the corpus on quant work, and Loop A landed 12 rough
+    # handwriting notes — the owner's OWN Brevan Howard internship material (EM rates, swaps,
+    # fixing risk, momentum). Every one of them was UNLABELLED: the newest and most personally
+    # valuable content in the corpus, and the surface the reMarkable loop exists to serve, was
+    # entirely unmeasured. These are keyed on the note's stable vault filename stem.
+    #
+    # All seven were verified live before being committed (scripts/analysis/verify_eval_candidates.py).
+    # SIX further candidates were written and REJECTED for missing their target, and are recorded
+    # here so they are not naively re-proposed — each is a real, open retrieval weakness:
+    #   - "mispricings in Central/Eastern European rates across tenors" -> em-rates-trading MISSED
+    #     (banner correctly said 'absent'); "price discovery / AI-assisted risk reporting" ->
+    #     em-ideas MISSED. Both notes are dense idea-lists whose vocabulary the summaries flatten.
+    #   - three note<->project / note<->paper / note<->career BRIDGES all half-missed (the project
+    #     or paper side surfaced, the NOTE side did not; the mean-reversion bridge also misfired
+    #     the banner as 'ambiguous'). Rough handwriting does not yet compete with polished prose
+    #     in the reranker — `[retrieve].rough_penalty` is a SUBTRACTIVE penalty and these queries
+    #     are where its cost is visible. Re-test these when the penalty is next tuned.
+    LabelledQuery("How does fixing risk in an emerging market currency swap decompose around a central bank meeting?",
+                  ["dashboard-"]),
+    LabelledQuery("What is the difference between an FX swap, a cross-currency swap, and an interest rate swap?",
+                  ["swaps-b3f4d16b"]),
+    LabelledQuery("How can time-series momentum be captured in emerging market local interest rates?",
+                  ["swaps-momentum-strat"]),
+    LabelledQuery("What is a discount factor and how do day-count conventions affect swap valuation?",
+                  ["rates-foundations|jargon-sheet"]),
+    LabelledQuery("What did the Brevan Howard speakers say about risk management and technology in macro trading?",
+                  ["speaker-sessions"]),
+    LabelledQuery("What does Jane Street look for in candidates?",
+                  ["jane-steet-social"]),
+    LabelledQuery("How are hidden Markov models used for credit stress and risk attribution?",
+                  ["robert-training"]),
 ]
 
 
@@ -285,7 +334,22 @@ RELATED_PAIRS: list[tuple[str, str]] = [
     # switching' vs the papers' 'regime shift') — Phase 2 (docs/code-concept-extraction-plan.md).
     ("regime-conditioned-equity-ml", "tanker-flow"),            # regime switching / Markov-switching / mean reversion
     ("regime-conditioned-equity-ml", "downside-risk-prediction"),  # regime switching / mean reversion / portfolio optimization
-    ("tanker-flow", "downside-risk-prediction"),                # Markov model / regime switching / mean reversion
+    # NB ('tanker-flow', 'downside-risk-prediction') was RETIRED in the 2026-07-29 re-curation.
+    # It passed forward (tanker-flow -> downside-risk at #3) but NOT back: after the prune and the
+    # code-concept backfill, downside-risk's own top-5 is regime-ml (shared=4), a MIDAS paper (4)
+    # and the Brevan Howard speaker note (shared=3) — all genuinely closer than tanker-flow's
+    # shared=2, which loses the tie. Same reasoning that retired the PDE<->Time-Frequency pair
+    # above: the layer does not produce it, so labelling it asserts an aspiration. Project<->project
+    # linking stays measured by the two regime-ml pairs, which remain mutual.
+    # --- 2026-07-29: the rates-notes cluster (Loop A handwriting).
+    # The captured notes formed a genuine mutual cluster of their own — the first evidence that
+    # handwriting participates in the link substrate rather than sitting inert beside it. All five
+    # verified mutual in the live related top-5 at curation time (shared counts in comments).
+    ("rates-foundations", "swaps-momentum-strat"),   # discount factors / compounding  (10, mutual #1/#1)
+    ("swaps-b3f4d16b", "rates-foundations"),         # swap pricing mechanics          (6,  mutual #1/#2)
+    ("em-rates-trading", "em-ideas"),                # EM desk ideas / analytics        (7,  mutual #1/#1)
+    ("dashboard-", "em-rates-trading"),              # fixing risk / EM curves          (6,  mutual #2/#2)
+    ("jargon-sheet", "swaps-momentum-strat"),        # swap terminology <-> the strat   (7,  mutual #1/#2)
 ]
 
 

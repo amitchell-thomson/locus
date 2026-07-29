@@ -208,21 +208,47 @@ def practice_for_concept_key(
     )
 
 
+# Propositions taken from any single document in the fallback. A cap forces the round-robin to
+# reach the 2nd/3rd ranked document rather than filling up on the 1st.
+_PER_DOC_CAP = 3
+
+
 def candidates_from_documents(conn, doc_ids: list[int], *, limit: int = _MAX_CANDIDATES) -> list[_Candidate]:
     """Propositions from specific documents — the grounded fallback when no concept name matches.
 
     Used by the synthesis surface for topics the corpus covers well under a different canonical
     name than the owner asked about ('portfolio construction' vs 'portfolio optimization'). Still
-    the owner's own stored propositions; only the route to them is looser than a concept join."""
-    ids = sorted({d for d in doc_ids if d is not None})
-    if not ids:
+    the owner's own stored propositions; only the route to them is looser than a concept join.
+
+    `doc_ids` MUST arrive in retrieval-relevance order, and is honoured in that order: an earlier
+    version sorted by proposition id, which meant the lowest-numbered document won regardless of
+    relevance. A live `synthesise("market making and arbitrage strategies")` then generated
+    practice questions off a Python tutorial ("What is an IDE?") while the Optiver market-making
+    repo sat further down the evidence list. Round-robin with a per-document cap so the top
+    documents lead and one verbose document cannot monopolise the set."""
+    ordered: list[int] = []
+    for d in doc_ids:
+        if d is not None and d not in ordered:
+            ordered.append(d)
+    if not ordered:
         return []
-    placeholders = ",".join("?" * len(ids))
-    return [
-        _Candidate(r["id"], r["text"], r["title"], None)
-        for r in conn.execute(
-            f"SELECT p.id, p.text, d.title FROM propositions p JOIN documents d ON d.id=p.doc_id "
-            f"WHERE p.doc_id IN ({placeholders}) ORDER BY p.id LIMIT ?",
-            (*ids, limit),
-        )
-    ]
+    by_doc: dict[int, list[_Candidate]] = {}
+    placeholders = ",".join("?" * len(ordered))
+    for r in conn.execute(
+        f"SELECT p.id, p.text, p.doc_id, d.title FROM propositions p "
+        f"JOIN documents d ON d.id=p.doc_id WHERE p.doc_id IN ({placeholders}) ORDER BY p.id",
+        ordered,
+    ):
+        bucket = by_doc.setdefault(r["doc_id"], [])
+        if len(bucket) < _PER_DOC_CAP:
+            bucket.append(_Candidate(r["id"], r["text"], r["title"], None))
+
+    out: list[_Candidate] = []
+    for rank in range(_PER_DOC_CAP):
+        for doc_id in ordered:  # retrieval order, best document first
+            bucket = by_doc.get(doc_id, [])
+            if rank < len(bucket):
+                out.append(bucket[rank])
+                if len(out) >= limit:
+                    return out
+    return out

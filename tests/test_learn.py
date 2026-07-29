@@ -309,3 +309,31 @@ def test_tool_typed_entities_are_not_gaps(conn, tanker):
     _entity(conn, 1, "Python", "tool")
     subjects = {g.subject for g in gaps.gaps_for_object(conn, tanker)}
     assert "Python" not in subjects
+
+
+def test_document_fallback_honours_retrieval_order_not_proposition_id(conn):
+    """A live synthesise() generated practice off a Python tutorial because the lowest doc id
+    won. The fallback must follow the ORDER it is given (retrieval relevance)."""
+    _doc(conn, 10, title="Python tutorial", uri="notes/py.md", category="note")
+    _doc(conn, 11, title="Market making repo", uri="repos/mm", category="project")
+    for i in range(5):
+        _prop(conn, 10, f"an IDE offers code completion ({i})")
+    for i in range(5):
+        _prop(conn, 11, f"inventory-skewed quoting manages risk ({i})")
+
+    # Retrieval ranked the market-making doc first, despite its higher id / later propositions.
+    cands = practice.candidates_from_documents(conn, [11, 10])
+    assert cands[0].doc_title == "Market making repo"
+    assert {c.doc_title for c in cands} == {"Market making repo", "Python tutorial"}  # both reached
+
+
+def test_document_fallback_caps_any_single_document(conn):
+    """One verbose document must not monopolise the practice set."""
+    _doc(conn, 10, title="Verbose", uri="notes/v.md", category="note")
+    _doc(conn, 11, title="Terse", uri="notes/t.md", category="note")
+    for i in range(20):
+        _prop(conn, 10, f"claim {i}")
+    _prop(conn, 11, "the one terse claim")
+    cands = practice.candidates_from_documents(conn, [10, 11])
+    assert sum(c.doc_title == "Verbose" for c in cands) <= 3
+    assert any(c.doc_title == "Terse" for c in cands)

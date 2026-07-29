@@ -103,10 +103,13 @@ def build_trajectory(
         label=subject_label(conn, subject_kind, subject_key),
     )
     titles = _doc_titles(conn, [p.source_doc_id for p in positions if p.source_doc_id])
+    by_uri = _titles_by_uri(conn, [p.source_uri for p in positions if p.source_uri])
     traj.entries = [
         TrajectoryEntry(
             dated_at=p.dated_at, stance=p.stance, source_doc_id=p.source_doc_id,
-            source_title=titles.get(p.source_doc_id),
+            # source_uri FIRST: notes_sync replaces a changed note with a new document id, so the
+            # id goes stale on any edit while the path does not (migration 0012).
+            source_title=by_uri.get(p.source_uri) or titles.get(p.source_doc_id),
         )
         for p in positions
     ]
@@ -116,6 +119,20 @@ def build_trajectory(
             runner=runner,
         )
     return traj
+
+
+def _titles_by_uri(conn, uris: list[str]) -> dict[str, str]:
+    """source_uri -> current document title. The provenance lookup that survives a re-ingest."""
+    keys = sorted({u for u in uris if u})
+    if not keys:
+        return {}
+    placeholders = ",".join("?" * len(keys))
+    return {
+        r["source_uri"]: r["title"]
+        for r in conn.execute(
+            f"SELECT source_uri, title FROM documents WHERE source_uri IN ({placeholders})", keys
+        )
+    }
 
 
 def _doc_titles(conn, doc_ids: list[int]) -> dict[int, str]:

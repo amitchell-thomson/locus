@@ -184,3 +184,52 @@ def test_acceptance_counts_group_by_candidate(conn):
     assert counts == {"a->b": {"kept": 2}, "a->c": {"rejected": 1}}
     with pytest.raises(ValueError):
         state.log_acceptance(conn, surface="link", candidate_key="x", verdict="maybe")
+
+
+# ---------- migration 0012: provenance that survives a re-ingest ----------
+
+
+def test_position_provenance_survives_the_note_being_reingested(conn):
+    """notes_sync replaces a changed note by DELETING its row and inserting a NEW id, so
+    source_doc_id goes stale on any edit — even a frontmatter one. source_uri does not."""
+    with conn:
+        conn.execute(
+            "INSERT INTO documents (id, content_hash, source_type, source_uri, raw_path, title, "
+            "ingested_at, ingest_model) VALUES (40,'h','markdown','notes/rates.md','r','Rates v1','t','m')"
+        )
+    key = entity_key("discount factors", "concept")
+    state.record_position(
+        conn, subject_kind="concept", subject_key=key, stance="discount factors are the atoms",
+        dated_at="2026-07-10", source_doc_id=40, source_uri="notes/rates.md",
+    )
+    # The note is edited -> replace-by-path: old row deleted, NEW id inserted, same path.
+    with conn:
+        conn.execute("DELETE FROM documents WHERE id=40")
+        conn.execute(
+            "INSERT INTO documents (id, content_hash, source_type, source_uri, raw_path, title, "
+            "ingested_at, ingest_model) VALUES (41,'h2','markdown','notes/rates.md','r','Rates v2','t','m')"
+        )
+    pos = state.positions_for(conn, "concept", key)[0]
+    assert pos.source_doc_id == 40          # stale by design, kept as a fast path
+    assert pos.source_uri == "notes/rates.md"  # still resolves
+
+    from locus.evolve.trajectory import build_trajectory
+
+    entry = build_trajectory(conn, "concept", key).entries[0]
+    assert entry.source_title == "Rates v2"  # provenance recovered through the stable path
+
+
+def test_position_without_a_source_uri_still_resolves_by_doc_id(conn):
+    """Rows predating 0012 (and any the backfill could not resolve) keep working."""
+    with conn:
+        conn.execute(
+            "INSERT INTO documents (id, content_hash, source_type, source_uri, raw_path, title, "
+            "ingested_at, ingest_model) VALUES (50,'h','markdown','notes/old.md','r','Old note','t','m')"
+        )
+    key = entity_key("legacy", "concept")
+    state.record_position(conn, subject_kind="concept", subject_key=key, stance="a stance",
+                          dated_at="2026-01-01", source_doc_id=50)
+
+    from locus.evolve.trajectory import build_trajectory
+
+    assert build_trajectory(conn, "concept", key).entries[0].source_title == "Old note"

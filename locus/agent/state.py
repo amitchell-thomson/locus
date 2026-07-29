@@ -240,6 +240,9 @@ class Position:
     source_doc_id: int | None
     dated_at: str
     source_run: int | None = None
+    # The note's path — STABLE across re-ingest, unlike source_doc_id (notes_sync replaces a
+    # changed note with a NEW document id, orphaning the id). Prefer this for provenance.
+    source_uri: str | None = None
 
 
 def record_position(
@@ -250,6 +253,7 @@ def record_position(
     stance: str,
     dated_at: str,
     source_doc_id: int | None = None,
+    source_uri: str | None = None,
     source_run: int | None = None,
     now: Callable[[], str] = _utcnow,
 ) -> int | None:
@@ -263,8 +267,9 @@ def record_position(
     with conn:
         cur = conn.execute(
             "INSERT OR IGNORE INTO belief_positions (subject_kind, subject_key, stance, "
-            "source_doc_id, source_run, dated_at, created_at) VALUES (?,?,?,?,?,?,?)",
-            (subject_kind, subject_key, stance, source_doc_id, source_run, dated_at, now()),
+            "source_doc_id, source_uri, source_run, dated_at, created_at) VALUES (?,?,?,?,?,?,?,?)",
+            (subject_kind, subject_key, stance, source_doc_id, source_uri, source_run, dated_at,
+             now()),
         )
     return int(cur.lastrowid) if cur.rowcount else None
 
@@ -272,8 +277,8 @@ def record_position(
 def positions_for(conn, subject_kind: str, subject_key: str) -> list[Position]:
     """The trajectory: one subject's stances oldest-first by the SOURCE date (§6.3)."""
     rows = conn.execute(
-        "SELECT id, subject_kind, subject_key, stance, source_doc_id, source_run, dated_at "
-        "FROM belief_positions WHERE subject_kind=? AND subject_key=? "
+        "SELECT id, subject_kind, subject_key, stance, source_doc_id, source_uri, source_run, "
+        "dated_at FROM belief_positions WHERE subject_kind=? AND subject_key=? "
         "ORDER BY dated_at, id",
         (subject_kind, subject_key),
     ).fetchall()
@@ -281,7 +286,7 @@ def positions_for(conn, subject_kind: str, subject_key: str) -> list[Position]:
         Position(
             id=r["id"], subject_kind=r["subject_kind"], subject_key=r["subject_key"],
             stance=r["stance"], source_doc_id=r["source_doc_id"], dated_at=r["dated_at"],
-            source_run=r["source_run"],
+            source_run=r["source_run"], source_uri=r["source_uri"],
         )
         for r in rows
     ]

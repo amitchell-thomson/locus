@@ -164,6 +164,8 @@ class PlannedPosition:
 class Plan:
     doc_id: int
     doc_title: str = ""
+    # The source note's path — stable across re-ingest, unlike doc_id (migration 0012).
+    doc_uri: str | None = None
     objects: list[PlannedObject] = field(default_factory=list)
     positions: list[PlannedPosition] = field(default_factory=list)
     rejected: list[Rejection] = field(default_factory=list)
@@ -440,7 +442,7 @@ def plan_for_document(
     doc = _doc_row(conn, doc_id)
     if doc is None:
         raise ValueError(f"no document with id {doc_id}")
-    plan = Plan(doc_id=doc_id, doc_title=doc["title"] or "")
+    plan = Plan(doc_id=doc_id, doc_title=doc["title"] or "", doc_uri=doc["source_uri"])
 
     # Invariant 5: agent-generated notes are corpus-excluded and must never feed the structurer —
     # that is exactly the feedback loop where the system starts learning from itself.
@@ -666,7 +668,8 @@ def apply_plan(conn, plan: Plan, *, run_id: int | None = None, now=None) -> Prop
             key = pos.subject_ref
         if state.record_position(
             conn, subject_kind=pos.subject_kind, subject_key=key, stance=pos.stance,
-            dated_at=pos.dated_at, source_doc_id=plan.doc_id, source_run=run_id, **kw
+            dated_at=pos.dated_at, source_doc_id=plan.doc_id, source_uri=plan.doc_uri,
+            source_run=run_id, **kw
         ):
             result.positions += 1
     return result

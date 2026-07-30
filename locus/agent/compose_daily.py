@@ -84,6 +84,10 @@ class ReadNext:
     title: str
     reason: str
     object_id: int
+    # Where the anchor points: a blessed reading object, or a corpus document to re-read.
+    # Stable string key either way — never a doc row id, which a re-ingest changes.
+    target_kind: str = "object"
+    target_key: str = ""
 
 
 @dataclass
@@ -196,31 +200,49 @@ def build_recalls(
 
 
 def build_readings(conn: sqlite3.Connection, *, limit: int = MAX_READINGS) -> list[ReadNext]:
-    """Blessed reading objects ranked by how many gaps they close (§12.3: gap-driven, not FIFO).
+    """What to read next: blessed reading objects first, then gap-ranked re-reads.
 
-    `learn.gaps` is deterministic and model-free, so this stays inside the aggregate-only rule.
-    Only `active` (blessed) readings appear: offering the owner a reading he has not yet agreed
-    is a thing to read would be proposing, which is not this page's job.
+    Blessed `reading` objects come first because they are an explicit decision the owner has
+    already made. Nothing has ever proposed one, though, and a `reading` proposal must anchor to
+    a document already in the corpus — so on its own this slot was structurally guaranteed to be
+    empty. `learn.reread` fills it deterministically: the corpus document that would close the
+    most open gaps (§12.3, gap-driven rather than FIFO).
+
+    Both are model-free. The genuinely valuable version — proposing material the corpus does NOT
+    contain — is docs/reading-discovery-plan.md.
     """
-    scored: list[tuple[int, ReadNext]] = []
+    from locus.learn.reread import reread_candidates
+
+    out: list[ReadNext] = []
     for obj in state.list_objects(conn, type_="reading", status="active", limit=50):
         found = learn_gaps.gaps_for_object(conn, obj.id, limit=3)
         if not found:
             continue
-        top = found[0]
-        scored.append(
-            (
-                len(found),
-                ReadNext(
-                    anchor="",
-                    title=obj.title,
-                    reason=f"closes a gap on {getattr(top, 'name', '')}".rstrip(),
-                    object_id=obj.id,
-                ),
+        out.append(
+            ReadNext(
+                anchor="",
+                title=obj.title,
+                reason=f"closes a gap on {getattr(found[0], 'name', '')}".rstrip(),
+                object_id=obj.id,
+                target_kind="object",
+                target_key=str(obj.id),
             )
         )
-    scored.sort(key=lambda p: -p[0])
-    return [r for _, r in scored[:limit]]
+        if len(out) >= limit:
+            return out[:limit]
+
+    for cand in reread_candidates(conn, limit=limit - len(out)):
+        out.append(
+            ReadNext(
+                anchor="",
+                title=cand.title,
+                reason=cand.reason,
+                object_id=0,
+                target_kind="doc",
+                target_key=cand.source_uri,
+            )
+        )
+    return out[:limit]
 
 
 def _format_grounding(link: state.ObjectLink) -> str:
@@ -301,7 +323,8 @@ def compose(conn: sqlite3.Connection, *, today: date | None = None) -> DailyPage
     for i, d in enumerate(page.readings, 1):
         d.anchor = f"D{i}"
         page.anchors.append(
-            Anchor(d.anchor, "reading", "object", str(d.object_id), label=d.title)
+            Anchor(d.anchor, "reading", d.target_kind, d.target_key or str(d.object_id),
+                   label=d.title)
         )
     for i, b in enumerate(page.blessings, 1):
         b.anchor = f"B{i}"

@@ -92,6 +92,33 @@ def candidates_for_concept(conn, name: str, *, limit: int = _MAX_CANDIDATES) -> 
     return [_Candidate(r["id"], r["text"], r["title"], name, r["doc_id"]) for r in rows]
 
 
+def concept_grounded(text: str, concept: str | None) -> bool:
+    """Is this proposition actually ABOUT the concept it was selected for?
+
+    Concept-anchoring is only as good as the entity pass, and that pass is the known §11.B weak
+    link. Observed 2026-07-30: `Exchange object` — the one genuinely valuable concept in the
+    Optibook reference — was recorded against its "Introduction to Python Programming" sections
+    rather than the "Optibook Client and Trading Methods" section that actually discusses it. So
+    selecting "propositions from sections naming Exchange object" returned "Python is an
+    interpreted programming language."
+
+    This does not repair the misplaced entity; it stops the misplacement reaching the owner. The
+    test is the same distinctive-vocabulary overlap the summary pass uses as its grounding guard
+    (ingest/summarize.is_grounded): a proposition offered as teaching X must share a distinctive
+    word with X. A concept whose words are all generic is not a usable anchor, so it passes
+    rather than rejecting everything.
+    """
+    from locus.ingest.summarize import _GENERIC, _word_tokens
+
+    if not concept:
+        return True
+    wanted = _word_tokens(concept) - _GENERIC
+    if not wanted:
+        return True
+    stems = {t[:6] for t in _word_tokens(text)}
+    return any(w[:6] in stems for w in wanted)
+
+
 def candidates_for_object(conn, object_id: int, *, limit: int = _MAX_CANDIDATES) -> list[_Candidate]:
     """Propositions from an object's own documents, PREFERRING the concepts flagged as gaps.
 

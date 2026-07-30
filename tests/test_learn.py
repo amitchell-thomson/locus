@@ -71,7 +71,7 @@ def conn(tmp_path: Path):
     for i in range(4):
         # Long enough to clear review._MIN_PROMPT_CHARS — real propositions are full claims,
         # and a fixture of 30-char stubs would silently exercise the wrong path.
-        _prop(c, 3, f"AIS position fixes arrive irregularly in time, so leg {i} needs resampling before any signal is derived.")
+        _prop(c, 3, f"AIS interpolation over leg {i} must resample irregular position fixes before any signal is derived from them.")
     oid, _ = state.upsert_object(c, type_="project", title="tanker-flow")
     state.add_links(c, oid, [ObjectLink("doc", "repos/tanker-flow", "implements")])
     yield c
@@ -410,3 +410,40 @@ def test_enrolment_skips_prompts_too_thin_to_be_worth_asking(conn, tanker):
     refs = {r["prompt_ref"] for r in conn.execute("SELECT prompt_ref FROM review_schedule")}
     assert "900" not in refs
     assert refs, "substantive propositions must still be enrolled"
+
+
+# ---------- re-read ranking ----------
+
+
+def test_reread_ranks_by_gaps_closed(conn, tanker):
+    from locus.learn import reread
+
+    state.set_status(conn, tanker, "active")
+    got = reread.reread_candidates(conn, limit=3)
+    assert got, "a blessed object with open gaps must yield a re-read candidate"
+    # The AIS paper covers the gap concept; it is not the project's own document.
+    assert any("AIS paper" == c.title for c in got)
+    assert all("tanker-flow" != c.title for c in got)
+
+
+def test_reread_never_suggests_his_own_notes(conn, tanker):
+    """A gap exists because he has not written it up; handing his notes back is circular."""
+    from locus.learn import reread
+
+    state.set_status(conn, tanker, "active")
+    titles = {c.title for c in reread.reread_candidates(conn, limit=10)}
+    assert "Notes on laden ton-miles" not in titles
+
+
+def test_reread_is_empty_without_blessed_objects(conn):
+    from locus.learn import reread
+
+    assert reread.reread_candidates(conn) == []
+
+
+def test_reread_reason_names_the_concepts(conn, tanker):
+    from locus.learn import reread
+
+    state.set_status(conn, tanker, "active")
+    got = reread.reread_candidates(conn, limit=1)
+    assert "AIS interpolation" in got[0].reason or got[0].concepts

@@ -201,7 +201,7 @@ def enrol_from_blessed_objects(
     nightly converges instead of accumulating duplicates. Objects are visited oldest-blessed
     first so the queue drains in a fair order rather than re-sampling whatever changed today.
     """
-    from locus.learn.practice import candidates_for_object
+    from locus.learn.practice import candidates_for_object, concept_grounded
 
     added: list[ReviewItem] = []
     rows = conn.execute(
@@ -217,6 +217,8 @@ def enrol_from_blessed_objects(
                 break
             if len(cand.text.strip()) < _MIN_PROMPT_CHARS:
                 continue  # too thin to be worth asking — see _MIN_PROMPT_CHARS
+            if not concept_grounded(cand.text, cand.concept):
+                continue  # selected for a concept it is not actually about (see that function)
             ref = str(cand.id)
             if _already_scheduled(conn, "proposition", ref):
                 continue

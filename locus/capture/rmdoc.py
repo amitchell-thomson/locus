@@ -91,17 +91,35 @@ class RmDoc:
 
 
 def _page_index(content: dict) -> dict[str, int]:
-    """page uuid -> 0-based PDF page index, from `.content`'s cPages.
+    """page uuid -> 0-based PDF page index, from `.content`.
 
-    `redir.value` is the PDF page a reMarkable page redirects to. This is the "uuid pagemap"
-    rmapi reports as missing — it is present, just not where that tool looks.
+    TWO SCHEMAS, both live on the same account (found 2026-07-30 when the daily page returned
+    zero annotated pages while visibly covered in ink):
+
+      - `formatVersion` 2+ — `cPages.pages[]`, each with `id` and `redir.value`. This is the
+        "uuid pagemap" rmapi reports as missing; it is present, just not where that tool looks.
+      - `formatVersion` 1 — a flat `pages` list of uuids with a PARALLEL `redirectionPageMap`
+        of PDF page indices. Older documents, and anything uploaded by a client that still
+        writes v1 (which is what `rmapi put` produces, so every Locus-delivered PDF lands here).
+
+    A page mapped to -1 is an INSERTED page with no PDF behind it; it is left out rather than
+    guessed onto page 0.
     """
     out: dict[str, int] = {}
     for page in (content.get("cPages") or {}).get("pages") or []:
         pid = page.get("id")
         redir = (page.get("redir") or {}).get("value")
-        if pid is not None and isinstance(redir, int):
+        if pid is not None and isinstance(redir, int) and redir >= 0:
             out[pid] = redir
+    if out:
+        return out
+
+    pages = content.get("pages") or []
+    redirect = content.get("redirectionPageMap") or []
+    for i, pid in enumerate(pages):
+        idx = redirect[i] if i < len(redirect) else i
+        if isinstance(pid, str) and isinstance(idx, int) and idx >= 0:
+            out[pid] = idx
     return out
 
 
@@ -180,6 +198,64 @@ def read_rmdoc(path: str | Path) -> RmDoc:
 
     pages.sort(key=lambda p: p.pdf_page)
     return RmDoc(doc_uuid=doc_uuid, pdf_bytes=pdf_bytes, pages=pages)
+
+
+def ink_hash(rmdoc: RmDoc) -> str:
+    """A stable fingerprint of the STROKES in a document.
+
+    Compositing is not byte-reproducible — pymupdf stamps each save — so hashing the rendered
+    PDF would report "changed" on every run and re-pay a billed vision pass every time a timer
+    fires. The ink is the thing the guard actually means: unchanged handwriting is unchanged
+    handwriting however it happens to be drawn.
+    """
+    import hashlib
+
+    h = hashlib.sha256()
+    for page in sorted(rmdoc.pages, key=lambda p: p.pdf_page):
+        h.update(f"p{page.pdf_page}:".encode())
+        for stroke in page.strokes:
+            h.update(b";")
+            for x, y in stroke.points:
+                h.update(f"{x:.2f},{y:.2f}|".encode())
+    return h.hexdigest()
+
+
+def composite_pdf(rmdoc: RmDoc, out_path: str | Path, *, width: float = 1.4) -> Path:
+    """Draw the strokes onto their PDF pages and write the result. Returns `out_path`.
+
+    Loop B does not need this — it asks which words a mark covers, which is geometry. The DAILY
+    PAGE does: it asks what the owner WROTE, and reading handwriting needs pixels for the vision
+    pass. This is the missing half of the pull-back, and it is why the device-render route was
+    ever attempted: the tablet composites ink for notebooks but hands back the ORIGINAL file for
+    an uploaded PDF (proved 2026-07-30), and every Locus-delivered page is an uploaded PDF.
+
+    Compositing here instead means the whole path runs off the CLOUD copy, so it works with the
+    tablet asleep and needs nothing installed on the device.
+    """
+    import pymupdf
+
+    doc = pymupdf.open(stream=rmdoc.pdf_bytes, filetype="pdf")
+    try:
+        for annotated in rmdoc.pages:
+            if annotated.pdf_page >= doc.page_count:
+                continue
+            page = doc[annotated.pdf_page]
+            for stroke in annotated.strokes:
+                if len(stroke.points) < 2:
+                    continue
+                # Clipped to the page: ink written beside a portrait page has no page
+                # coordinates, and pymupdf refuses to draw outside the rect.
+                pts = [pymupdf.Point(x, y) for x, y in stroke.points]
+                try:
+                    page.draw_polyline(pts, color=(0, 0, 0), width=width)
+                except (ValueError, RuntimeError):
+                    continue
+        out_path = Path(out_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        doc.save(str(out_path))
+        return out_path
+    finally:
+        doc.close()
 
 
 def fetch_rmdoc(device_path: str, dest_dir: str | Path, *, rmapi_binary: str = "rmapi") -> Path:

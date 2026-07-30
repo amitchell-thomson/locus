@@ -431,75 +431,93 @@ def route_regions(
 
 # --- device transport -------------------------------------------------------------------------
 #
-# The return leg needs no new transport. The on-device agent already pushes every CHANGED
-# document over the tailnet into the staging dir as `<uuid>.pdf` (scripts/remarkable/receiver.py),
-# which is how Loop A gets handwriting. Annotating the daily page changes it, so it arrives here
-# on its own — the only thing missing was working out WHICH staged uuid is the page.
+# THE RETURN LEG COMES FROM THE CLOUD, NOT THE TABLET. This was originally built on the tailnet
+# staging dir — the on-device agent pushes every changed document there as `<uuid>.pdf`, which is
+# how Loop A gets handwriting — and that route is STRUCTURALLY WRONG here. The device composites
+# ink for NOTEBOOKS; for an UPLOADED PDF its render endpoint hands back the original file. Every
+# Locus-delivered page is an uploaded PDF, so the staged copy is always blank.
 #
-# Loop A deliberately EXCLUDES the `Locus` folder (invariant 5: our own pushed output must not be
-# re-ingested as if it were the owner's writing). The pull-back is the exact inverse: it wants
-# only that folder, and only the document named for the date in question.
+# That failed silently and expensively: a blank page still costs a vision call, and recording its
+# hash marks the date as read, so a day of real handwriting would be dropped with no error. Found
+# 2026-07-30 on a page carrying 183 strokes that the pull reported as "not pushed back yet".
+#
+# The working route is `rmapi get` -> `.rmdoc` -> composite the strokes back onto the PDF
+# (`capture/rmdoc.py`), which is the same transport Loop B uses for book annotations. It reads the
+# CLOUD copy, so it works with the tablet asleep and needs nothing installed on the device.
 
 
 def _pdf_hash(path: Path) -> str:
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def find_staged_page(
+def fetch_annotated_page(
     page_date: str,
     *,
-    staging_dir: str | Path | None = None,
-    runner=None,
+    dest_dir: str | Path | None = None,
     rmapi_binary: str | None = None,
     folder: str | None = None,
-) -> Path | None:
-    """The staged `<uuid>.pdf` for a given daily page, or None if the device has not sent it.
+) -> tuple[Path, str] | None:
+    """Download the daily page from the cloud; return (PDF with its ink drawn on, ink hash).
 
-    Matched on the device-side document NAME (`daily-<date>`), which is exactly what
-    `cmd_daily` uploads, so the mapping is the filename contract and nothing more subtle.
+    Returns None when the page carries no strokes at all — an untouched page is the normal
+    case, and it must not cost a vision call.
+
+    The device path is the filename contract `cmd_daily` uploads (`<folder>/daily-<date>`), so
+    the mapping is nothing more subtle than the name.
     """
-    from locus.capture.remarkable import build_uuid_index
+    from locus.capture.rmdoc import composite_pdf, fetch_rmdoc, ink_hash, read_rmdoc
 
     cfg = load()
-    staging_dir = Path(staging_dir or cfg.capture.staging_dir)
     folder = folder or cfg.reading.target_folder
-    if not staging_dir.is_dir():
+    dest_dir = Path(dest_dir or cfg.paths.notes_dir) / "_generated"
+    device_path = f"/{folder}/daily-{page_date}"
+
+    try:
+        bundle = fetch_rmdoc(
+            device_path, dest_dir, rmapi_binary=rmapi_binary or cfg.reading.rmapi_binary
+        )
+        rmdoc = read_rmdoc(bundle)
+    except (RuntimeError, ValueError, OSError):
         return None
 
-    if runner is None:
-        from locus.capture.remarkable import _subprocess_runner
-
-        runner = _subprocess_runner(rmapi_binary or cfg.reading.rmapi_binary)
-
-    # excluded_folders=() so the Locus folder IS considered — the inverse of Loop A's filter.
-    index = build_uuid_index(runner, excluded_folders=())
-    want = f"daily-{page_date}"
-    for uuid, (name, top_folder, _modified) in index.items():
-        if top_folder != folder or Path(name).stem != want:
-            continue
-        staged = staging_dir / f"{uuid}.pdf"
-        if staged.is_file():
-            return staged
-    return None
+    if not any(p.strokes for p in rmdoc.pages):
+        return None
+    out = composite_pdf(rmdoc, dest_dir / f"daily-{page_date}-annotated.pdf")
+    return out, ink_hash(rmdoc)
 
 
-def already_pulled(conn: sqlite3.Connection, page_date: str, pdf_path: str | Path) -> bool:
-    """True when this exact file was already read for this page.
+def already_pulled(
+    conn: sqlite3.Connection,
+    page_date: str,
+    pdf_path: str | Path,
+    *,
+    content_hash: str | None = None,
+) -> bool:
+    """True when this exact content was already read for this page.
 
     Routing is idempotent regardless; this guard exists so a scheduled pull does not pay for a
-    vision call on a page nobody has touched since the last run.
+    vision call on a page nobody has touched since the last run. `content_hash` is the stroke
+    fingerprint when the page came from a `.rmdoc`; a hand-supplied PDF falls back to its bytes.
     """
     row = conn.execute(
         "SELECT pulled_hash FROM daily_pages WHERE page_date=?", (page_date,)
     ).fetchone()
-    return bool(row and row["pulled_hash"] and row["pulled_hash"] == _pdf_hash(pdf_path))
+    return bool(row and row["pulled_hash"] and row["pulled_hash"] == (
+        content_hash or _pdf_hash(pdf_path)
+    ))
 
 
-def _record_pull(conn: sqlite3.Connection, page_date: str, pdf_path: str | Path) -> None:
+def _record_pull(
+    conn: sqlite3.Connection,
+    page_date: str,
+    pdf_path: str | Path,
+    *,
+    content_hash: str | None = None,
+) -> None:
     with conn:
         conn.execute(
             "UPDATE daily_pages SET pulled_hash=?, pulled_at=? WHERE page_date=?",
-            (_pdf_hash(pdf_path), _utcnow(), page_date),
+            (content_hash or _pdf_hash(pdf_path), _utcnow(), page_date),
         )
 
 
@@ -514,18 +532,20 @@ def pull_daily(
 ) -> PullResult:
     """Extract and route one annotated daily page.
 
-    With no `pdf_path`, the staged copy the device pushed is located automatically. Skips the
+    With no `pdf_path`, the annotated page is fetched from the cloud automatically. Skips the
     (billed) vision pass when the file is byte-identical to the last one read, unless `force`.
     """
     page_date = page_date or date.today().isoformat()
+    content_hash: str | None = None
     if pdf_path is None:
-        pdf_path = find_staged_page(page_date)
-        if pdf_path is None:
+        fetched = fetch_annotated_page(page_date)
+        if fetched is None:
             return PullResult(page_date=page_date, status="not-on-device")
-    if not force and already_pulled(conn, page_date, pdf_path):
+        pdf_path, content_hash = fetched
+    if not force and already_pulled(conn, page_date, pdf_path, content_hash=content_hash):
         return PullResult(page_date=page_date, status="unchanged")
 
     regions = extract_regions(pdf_path, client=client)
     result = route_regions(conn, page_date, regions, source_run=source_run)
-    _record_pull(conn, page_date, pdf_path)
+    _record_pull(conn, page_date, pdf_path, content_hash=content_hash)
     return result

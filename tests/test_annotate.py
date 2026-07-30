@@ -70,6 +70,79 @@ def test_strokes_outside_the_page_are_not_clipped():
     assert x > PAGE_W
 
 
+# ---------- the two .content pagemap schemas ----------
+
+
+def test_new_format_pagemap_is_read_from_cpages():
+    from locus.capture.rmdoc import _page_index
+
+    assert _page_index(
+        {"cPages": {"pages": [{"id": "a", "redir": {"value": 0}},
+                              {"id": "b", "redir": {"value": 3}}]}}
+    ) == {"a": 0, "b": 3}
+
+
+def test_old_format_pagemap_is_read_from_the_parallel_lists():
+    """formatVersion 1 — what `rmapi put` produces, so EVERY Locus-delivered page lands here.
+
+    Missing this schema made the daily page report "not pushed back yet" while carrying 183
+    strokes (2026-07-30); every stroke layer was dropped as unplaceable.
+    """
+    from locus.capture.rmdoc import _page_index
+
+    assert _page_index(
+        {"formatVersion": 1, "pages": ["a", "b", "c"], "redirectionPageMap": [0, 1, 2]}
+    ) == {"a": 0, "b": 1, "c": 2}
+
+
+def test_an_inserted_page_has_no_pdf_page_and_is_dropped():
+    """-1 means a page the owner ADDED; it must not be guessed onto page 0."""
+    from locus.capture.rmdoc import _page_index
+
+    assert _page_index(
+        {"pages": ["a", "ins", "b"], "redirectionPageMap": [0, -1, 1]}
+    ) == {"a": 0, "b": 1}
+
+
+# ---------- the spend guard's key ----------
+
+
+def test_ink_hash_is_stable_across_renderings_and_moves_with_the_ink():
+    """The guard keys on strokes because compositing is NOT byte-reproducible."""
+    from locus.capture.rmdoc import RmDoc, ink_hash
+
+    a = RmDoc("u", b"%PDF", [AnnotatedPage(0, "p", [Stroke([(1.0, 2.0), (3.0, 4.0)])])])
+    same = RmDoc("u", b"%PDF-DIFFERENT-BYTES",
+                 [AnnotatedPage(0, "p", [Stroke([(1.0, 2.0), (3.0, 4.0)])])])
+    more = RmDoc("u", b"%PDF", [AnnotatedPage(0, "p", [Stroke([(1.0, 2.0), (3.0, 9.0)])])])
+
+    assert ink_hash(a) == ink_hash(same)
+    assert ink_hash(a) != ink_hash(more)
+
+
+def test_composite_draws_the_ink_onto_the_page(page):
+    """The daily page needs PIXELS: reading handwriting is a vision job, not a geometry one."""
+    import pymupdf
+
+    from locus.capture.rmdoc import RmDoc, composite_pdf
+
+    doc = pymupdf.open()
+    doc.new_page(width=PAGE_W, height=PAGE_H)
+    blank = doc.tobytes()
+    doc.close()
+
+    strokes = [Stroke([(80.0, 300.0), (300.0, 300.0), (300.0, 360.0)])]
+    out = composite_pdf(RmDoc("u", blank, [AnnotatedPage(0, "p", strokes)]), "/tmp/_ink.pdf")
+
+    marked = pymupdf.open(str(out))
+    try:
+        drawn = marked[0].get_drawings()
+        assert drawn, "the stroke must appear on the page or vision has nothing to read"
+    finally:
+        marked.close()
+        out.unlink(missing_ok=True)
+
+
 # ---------- classification ----------
 
 

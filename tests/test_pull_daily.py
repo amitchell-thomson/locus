@@ -58,6 +58,16 @@ def _body(conn, oid):
     return state.get_object(conn, oid).body
 
 
+def _cfg(tmp_path):
+    """A config stub for the cloud-fetch transport (no device, no network)."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        reading=SimpleNamespace(target_folder="Locus", rmapi_binary="rmapi"),
+        paths=SimpleNamespace(notes_dir=str(tmp_path / "notes")),
+    )
+
+
 # ---------- the four-way blessing table ----------
 
 
@@ -291,28 +301,70 @@ def test_the_same_question_re_pulled_does_not_create_a_second_object(conn):
 # ---------- device transport + spend guard ----------
 
 
-def test_find_staged_page_looks_in_the_folder_loop_a_excludes(conn, tmp_path, monkeypatch):
-    """Loop A skips the Locus folder (invariant 5); the pull-back wants only that folder."""
-    staging = tmp_path / "stage"
-    staging.mkdir()
-    (staging / "uuid-aaa.pdf").write_bytes(b"%PDF-1.7 page")
-    (staging / "uuid-bbb.pdf").write_bytes(b"%PDF-1.7 notebook")
+def test_an_untouched_page_is_not_fetched_as_annotated(monkeypatch, tmp_path):
+    """No strokes means no vision call — an unwritten page is the normal case, not an error.
 
-    index = {
-        "uuid-aaa": ("daily-2026-06-01", "Locus", None),
-        "uuid-bbb": ("EM Rates Trading", "brevan_howard", None),
-    }
-    monkeypatch.setattr("locus.capture.remarkable.build_uuid_index", lambda *a, **k: index)
+    The staged-`<uuid>.pdf` route this replaced could not tell the difference: the device hands
+    back the ORIGINAL file for an uploaded PDF, so a blank page and a covered one looked
+    identical and both cost a vision pass.
+    """
+    from locus.capture.rmdoc import RmDoc
 
-    got = pd.find_staged_page(
-        "2026-06-01", staging_dir=staging, runner=lambda a: (0, "", ""), folder="Locus"
+    monkeypatch.setattr(pd, "load", lambda: _cfg(tmp_path))
+    monkeypatch.setattr("locus.capture.rmdoc.fetch_rmdoc", lambda *a, **k: tmp_path / "x.rmdoc")
+    monkeypatch.setattr(
+        "locus.capture.rmdoc.read_rmdoc", lambda *a, **k: RmDoc("u", b"%PDF-1.7", [])
     )
-    assert got == staging / "uuid-aaa.pdf"
+    assert pd.fetch_annotated_page("2026-06-01") is None
 
-    # A date the device has not sent back is None, not an error.
-    assert pd.find_staged_page(
-        "2026-06-02", staging_dir=staging, runner=lambda a: (0, "", ""), folder="Locus"
-    ) is None
+
+def test_a_page_absent_from_the_cloud_is_not_an_error(monkeypatch, tmp_path):
+    monkeypatch.setattr(pd, "load", lambda: _cfg(tmp_path))
+
+    def _boom(*a, **k):
+        raise RuntimeError("rmapi get failed: file doesn't exist")
+
+    monkeypatch.setattr("locus.capture.rmdoc.fetch_rmdoc", _boom)
+    assert pd.fetch_annotated_page("2026-06-01") is None
+
+
+def test_the_spend_guard_keys_on_ink_not_on_the_rendered_bytes(conn, tmp_path, monkeypatch):
+    """Compositing is not byte-reproducible, so a file hash would re-pay vision on every run.
+
+    Found 2026-07-30: pymupdf stamps each save, so two composites of the SAME strokes differ.
+    The guard therefore keys on the strokes, which is what "has he written anything new" means.
+    """
+    _proposed(conn, "alpha")
+    page = _page(conn)
+    monkeypatch.setattr("locus.capture.transcribe.render_pdf_pages", lambda *a, **k: [b"png"])
+
+    first_pdf = tmp_path / "a.pdf"
+    first_pdf.write_bytes(b"%PDF-1.7 render-one")
+    monkeypatch.setattr(pd, "fetch_annotated_page", lambda *a, **k: (first_pdf, "INK-1"))
+    assert pd.pull_daily(
+        conn, None, page_date=page.page_date,
+        client=_FakeVision('{"regions":[{"anchor":"B1","mark":"tick","text":""}]}'),
+    ).status == "routed"
+
+    # A DIFFERENT rendering of the SAME ink must not pay for vision again.
+    second_pdf = tmp_path / "b.pdf"
+    second_pdf.write_bytes(b"%PDF-1.7 render-two-different-bytes")
+
+    class _Boom:
+        def __getattr__(self, _n):
+            raise AssertionError("unchanged ink must not reach the model")
+
+    monkeypatch.setattr(pd, "fetch_annotated_page", lambda *a, **k: (second_pdf, "INK-1"))
+    assert pd.pull_daily(conn, None, page_date=page.page_date, client=_Boom()).status == (
+        "unchanged"
+    )
+
+    # New ink IS read again.
+    monkeypatch.setattr(pd, "fetch_annotated_page", lambda *a, **k: (second_pdf, "INK-2"))
+    assert pd.pull_daily(
+        conn, None, page_date=page.page_date,
+        client=_FakeVision('{"regions":[{"anchor":"B1","mark":"tick","text":"revised"}]}'),
+    ).status == "routed"
 
 
 def test_unchanged_page_is_skipped_without_a_model_call(conn, tmp_path, monkeypatch):
@@ -351,7 +403,7 @@ def test_unchanged_page_is_skipped_without_a_model_call(conn, tmp_path, monkeypa
 
 def test_missing_page_reports_not_on_device_rather_than_failing(conn, tmp_path, monkeypatch):
     _page(conn)
-    monkeypatch.setattr(pd, "find_staged_page", lambda *a, **k: None)
+    monkeypatch.setattr(pd, "fetch_annotated_page", lambda *a, **k: None)
     res = pd.pull_daily(conn, None, page_date="2026-06-01")
     assert res.status == "not-on-device"
     assert res.outcomes == []

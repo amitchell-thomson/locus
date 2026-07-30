@@ -469,7 +469,7 @@ def fetch_annotated_page(
 
     cfg = load()
     folder = folder or cfg.reading.target_folder
-    dest_dir = Path(dest_dir or cfg.paths.notes_dir) / "_generated"
+    dest_dir = Path(dest_dir or cfg.paths.notes) / "_generated"
     device_path = f"/{folder}/daily-{page_date}"
 
     try:

@@ -59,12 +59,24 @@ def _body(conn, oid):
 
 
 def _cfg(tmp_path):
-    """A config stub for the cloud-fetch transport (no device, no network)."""
+    """A config stub for the cloud-fetch transport (no device, no network).
+
+    Built from the REAL config models, not a SimpleNamespace. The first version invented
+    `paths.notes_dir`; the code under test read the same invented name, so the test passed and
+    the CLI crashed on the first live run. A stub that agrees with the bug is worse than none.
+    """
     from types import SimpleNamespace
 
+    from locus.config import PathsConfig, ReadingConfig
+
     return SimpleNamespace(
-        reading=SimpleNamespace(target_folder="Locus", rmapi_binary="rmapi"),
-        paths=SimpleNamespace(notes_dir=str(tmp_path / "notes")),
+        reading=ReadingConfig(),
+        paths=PathsConfig(
+            db=tmp_path / "x.db",
+            raw_store=tmp_path / "raw",
+            incoming=tmp_path / "in",
+            notes=tmp_path / "notes",
+        ),
     )
 
 

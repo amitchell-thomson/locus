@@ -337,3 +337,55 @@ def test_document_fallback_caps_any_single_document(conn):
     cands = practice.candidates_from_documents(conn, [10, 11])
     assert sum(c.doc_title == "Verbose" for c in cands) <= 3
     assert any(c.doc_title == "Terse" for c in cands)
+
+
+# ---------- enrolment (the reason review_schedule sat at zero rows) ----------
+
+
+def test_enrolment_only_draws_from_blessed_objects(conn, tanker):
+    """Unblessed means he has not agreed it matters; enrolling it would be presumptuous."""
+    assert review.enrol_from_blessed_objects(conn) == []
+
+    state.set_status(conn, tanker, "active")
+    added = review.enrol_from_blessed_objects(conn)
+    assert added, "a blessed object with propositions must yield review items"
+    assert all(i.prompt_kind == "proposition" for i in added)
+
+
+def test_enrolment_never_duplicates_and_eventually_exhausts(conn, tanker):
+    """It ACCUMULATES by design (a few more each night) but never re-adds the same prompt.
+
+    Strict "second run is a no-op" would be the wrong contract: gradual growth is the point.
+    What must hold is that a prompt is scheduled at most once, and that repeated runs converge
+    on the available material rather than growing without bound.
+    """
+    state.set_status(conn, tanker, "active")
+    for _ in range(10):
+        review.enrol_from_blessed_objects(conn)
+
+    rows = conn.execute(
+        "SELECT prompt_kind, prompt_ref, COUNT(*) n FROM review_schedule "
+        "GROUP BY prompt_kind, prompt_ref HAVING n > 1"
+    ).fetchall()
+    assert rows == [], f"duplicate schedule rows: {[tuple(r) for r in rows]}"
+
+    scheduled = conn.execute("SELECT COUNT(*) FROM review_schedule").fetchone()[0]
+    available = conn.execute("SELECT COUNT(*) FROM propositions").fetchone()[0]
+    assert scheduled <= available
+    assert review.enrol_from_blessed_objects(conn) == [], "converged: nothing left to add"
+
+
+def test_enrolment_is_gradual_not_a_dump(conn, tanker):
+    """A saturated queue is the guilt-inducing backlog §9 exists to prevent."""
+    state.set_status(conn, tanker, "active")
+    added = review.enrol_from_blessed_objects(conn, per_object=1, max_new=2)
+    assert len(added) <= 2
+
+
+def test_enrolled_items_become_due_and_resolve_to_their_proposition(conn, tanker):
+    state.set_status(conn, tanker, "active")
+    added = review.enrol_from_blessed_objects(conn, today=date(2026, 1, 1))
+    due = review.due_items(conn, today=date(2026, 1, 1), limit=5)
+    assert {i.id for i in due} & {i.id for i in added}
+    text, _source = review.resolve_prompt(conn, due[0])
+    assert text and "no longer in the corpus" not in text

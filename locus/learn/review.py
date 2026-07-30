@@ -141,3 +141,72 @@ def resolve_prompt(conn, item: ReviewItem) -> tuple[str, str]:
         return "(source proposition no longer in the corpus)", ""
     row = conn.execute("SELECT title FROM objects WHERE id=?", (item.prompt_ref,)).fetchone()
     return (row["title"] if row else "(object no longer exists)"), ""
+
+
+# --- enrolment ---------------------------------------------------------------------------------
+#
+# `review_schedule` sat at ZERO rows from the day it was built, because the only way in was
+# `locus review --add-object <id>`, by hand, one object at a time. A spaced-repetition system
+# nobody enrols into is furniture: the daily page's recall section was permanently empty, so the
+# single most useful thing the page could do for interview prep never happened.
+#
+# Enrolment is deterministic and model-free. The source is the owner's BLESSED objects — the
+# things he has explicitly said he cares about — and within each, `practice.candidates_for_object`
+# orders propositions gap-first (§12.3: what he cannot yet explain in his own words comes before
+# what he can). Nothing here generates a question; a stored proposition IS the prompt and stays
+# its own reference answer, which is the §15 grounded-or-silent rule applied to learning.
+#
+# Deliberately GRADUAL. Enrolling every proposition of 32 blessed objects would put thousands of
+# items in the queue and produce a permanently-saturated recall section — the guilt-inducing
+# backlog §9 exists to prevent. A small per-run cap means the schedule grows a few items a night
+# and settles at whatever rate he actually answers them.
+
+DEFAULT_PER_OBJECT = 2
+DEFAULT_MAX_NEW = 8
+
+
+def _already_scheduled(conn, prompt_kind: str, prompt_ref: str) -> bool:
+    return (
+        conn.execute(
+            "SELECT 1 FROM review_schedule WHERE prompt_kind=? AND prompt_ref=?",
+            (prompt_kind, prompt_ref),
+        ).fetchone()
+        is not None
+    )
+
+
+def enrol_from_blessed_objects(
+    conn,
+    *,
+    per_object: int = DEFAULT_PER_OBJECT,
+    max_new: int = DEFAULT_MAX_NEW,
+    today: date | None = None,
+) -> list[ReviewItem]:
+    """Add a few unscheduled propositions from blessed objects. Returns only the NEW items.
+
+    Idempotent: an already-scheduled prompt is skipped rather than re-added, so running this
+    nightly converges instead of accumulating duplicates. Objects are visited oldest-blessed
+    first so the queue drains in a fair order rather than re-sampling whatever changed today.
+    """
+    from locus.learn.practice import candidates_for_object
+
+    added: list[ReviewItem] = []
+    rows = conn.execute(
+        "SELECT id FROM objects WHERE status='active' ORDER BY updated_at, id"
+    ).fetchall()
+
+    for row in rows:
+        if len(added) >= max_new:
+            break
+        taken = 0
+        for cand in candidates_for_object(conn, row["id"]):
+            if taken >= per_object or len(added) >= max_new:
+                break
+            ref = str(cand.id)
+            if _already_scheduled(conn, "proposition", ref):
+                continue
+            added.append(
+                schedule_prompt(conn, prompt_kind="proposition", prompt_ref=ref, today=today)
+            )
+            taken += 1
+    return added

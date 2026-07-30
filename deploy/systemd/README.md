@@ -16,7 +16,7 @@ is required so the timers survive logout — verify with `loginctl show-user ale
 cp deploy/systemd/* ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now locus-capture.timer locus-maintain.timer locus-backup.timer \
-  locus-daily.timer
+  locus-daily.timer locus-daily-pull.timer
 systemctl --user list-timers | grep locus
 ```
 
@@ -25,9 +25,10 @@ systemctl --user list-timers | grep locus
 | Timer | Cadence | Does | Cost |
 |---|---|---|---|
 | `locus-capture` | every 30 min | `locus capture-sync` — pull reMarkable, transcribe changed notebooks, enrich, ingest | **$0 when nothing changed** |
-| `locus-maintain` | 03:30 daily | `locus link`, then `locus structure --ingested-since <2 days ago>` | ~$0 link (cached) + per new doc |
+| `locus-maintain` | 03:30 daily | `locus link`, `locus structure --ingested-since <2 days ago>`, then `locus review --enrol` | ~$0 link (cached) + per new doc; enrol is free |
 | `locus-backup` | 02:00 daily | `locus backup` | free |
 | `locus-daily` | 05:30 daily | `locus daily` — compose the reMarkable page and push the PDF | free (aggregate-only) |
+| `locus-daily-pull` | hourly | `locus daily-pull` — read the annotated page back and route it | **$0 unless the page changed** (hash-guarded) |
 
 **Why a 30-minute capture timer is safe.** `capture-sync` keys each document on a hash of its
 rendered raster, so an unchanged notebook is skipped before any model call. The first scheduled run

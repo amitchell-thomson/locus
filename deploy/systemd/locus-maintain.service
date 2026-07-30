@@ -15,6 +15,12 @@ ExecStart=/home/alec/.local/bin/uv run locus link
 #    over the whole corpus would re-bill every document every night for no new information.
 #    Two days rather than one so a missed window does not silently skip a day's capture.
 ExecStart=/bin/sh -c '/home/alec/.local/bin/uv run locus structure --ingested-since "$(date -d "2 days ago" +%%Y-%%m-%%d)"'
+# Enrol a few propositions from BLESSED objects into the SM-2 schedule. Deterministic and
+# free (no model), idempotent, and deliberately gradual — it adds a handful a night so the
+# recall section fills at the rate he actually answers, instead of dumping a backlog.
+# Without this the schedule stays at zero rows and the daily page's recall section is
+# permanently empty, which is how it sat from the day the table was created.
+ExecStart=/home/alec/.local/bin/uv run locus review --enrol
 TimeoutStartSec=7200
 Nice=15
 IOSchedulingClass=idle

@@ -38,6 +38,7 @@ durable marker rather than by relaxing the additive merge (docs/owner-authority-
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import sqlite3
 from dataclasses import dataclass, field
@@ -171,6 +172,9 @@ class PullResult:
     page_date: str
     outcomes: list[RouteOutcome] = field(default_factory=list)
     unknown_anchors: list[str] = field(default_factory=list)
+    # 'routed' | 'not-on-device' (the tablet has not pushed it back yet) | 'unchanged'
+    # (byte-identical to the last pull, so no model call was made)
+    status: str = "routed"
 
     @property
     def acted(self) -> int:
@@ -375,15 +379,103 @@ def route_regions(
     return result
 
 
+# --- device transport -------------------------------------------------------------------------
+#
+# The return leg needs no new transport. The on-device agent already pushes every CHANGED
+# document over the tailnet into the staging dir as `<uuid>.pdf` (scripts/remarkable/receiver.py),
+# which is how Loop A gets handwriting. Annotating the daily page changes it, so it arrives here
+# on its own — the only thing missing was working out WHICH staged uuid is the page.
+#
+# Loop A deliberately EXCLUDES the `Locus` folder (invariant 5: our own pushed output must not be
+# re-ingested as if it were the owner's writing). The pull-back is the exact inverse: it wants
+# only that folder, and only the document named for the date in question.
+
+
+def _pdf_hash(path: Path) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def find_staged_page(
+    page_date: str,
+    *,
+    staging_dir: str | Path | None = None,
+    runner=None,
+    rmapi_binary: str | None = None,
+    folder: str | None = None,
+) -> Path | None:
+    """The staged `<uuid>.pdf` for a given daily page, or None if the device has not sent it.
+
+    Matched on the device-side document NAME (`daily-<date>`), which is exactly what
+    `cmd_daily` uploads, so the mapping is the filename contract and nothing more subtle.
+    """
+    from locus.capture.remarkable import build_uuid_index
+
+    cfg = load()
+    staging_dir = Path(staging_dir or cfg.capture.staging_dir)
+    folder = folder or cfg.reading.target_folder
+    if not staging_dir.is_dir():
+        return None
+
+    if runner is None:
+        from locus.capture.remarkable import _subprocess_runner
+
+        runner = _subprocess_runner(rmapi_binary or cfg.reading.rmapi_binary)
+
+    # excluded_folders=() so the Locus folder IS considered — the inverse of Loop A's filter.
+    index = build_uuid_index(runner, excluded_folders=())
+    want = f"daily-{page_date}"
+    for uuid, (name, top_folder, _modified) in index.items():
+        if top_folder != folder or Path(name).stem != want:
+            continue
+        staged = staging_dir / f"{uuid}.pdf"
+        if staged.is_file():
+            return staged
+    return None
+
+
+def already_pulled(conn: sqlite3.Connection, page_date: str, pdf_path: str | Path) -> bool:
+    """True when this exact file was already read for this page.
+
+    Routing is idempotent regardless; this guard exists so a scheduled pull does not pay for a
+    vision call on a page nobody has touched since the last run.
+    """
+    row = conn.execute(
+        "SELECT pulled_hash FROM daily_pages WHERE page_date=?", (page_date,)
+    ).fetchone()
+    return bool(row and row["pulled_hash"] and row["pulled_hash"] == _pdf_hash(pdf_path))
+
+
+def _record_pull(conn: sqlite3.Connection, page_date: str, pdf_path: str | Path) -> None:
+    with conn:
+        conn.execute(
+            "UPDATE daily_pages SET pulled_hash=?, pulled_at=? WHERE page_date=?",
+            (_pdf_hash(pdf_path), _utcnow(), page_date),
+        )
+
+
 def pull_daily(
     conn: sqlite3.Connection,
-    pdf_path: str | Path,
+    pdf_path: str | Path | None = None,
     *,
     page_date: str | None = None,
     client=None,
     source_run: int | None = None,
+    force: bool = False,
 ) -> PullResult:
-    """Extract and route one annotated daily page."""
+    """Extract and route one annotated daily page.
+
+    With no `pdf_path`, the staged copy the device pushed is located automatically. Skips the
+    (billed) vision pass when the file is byte-identical to the last one read, unless `force`.
+    """
     page_date = page_date or date.today().isoformat()
+    if pdf_path is None:
+        pdf_path = find_staged_page(page_date)
+        if pdf_path is None:
+            return PullResult(page_date=page_date, status="not-on-device")
+    if not force and already_pulled(conn, page_date, pdf_path):
+        return PullResult(page_date=page_date, status="unchanged")
+
     regions = extract_regions(pdf_path, client=client)
-    return route_regions(conn, page_date, regions, source_run=source_run)
+    result = route_regions(conn, page_date, regions, source_run=source_run)
+    _record_pull(conn, page_date, pdf_path)
+    return result

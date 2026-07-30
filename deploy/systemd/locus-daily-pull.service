@@ -1,0 +1,19 @@
+[Unit]
+Description=Locus daily page — read the annotated page back off the tablet and route it
+Documentation=file:///home/alec/server-projects/locus/docs/obsidian-agent-layer-plan.md
+# Needs the device receiver up: the tablet pushes changed documents into the staging dir over
+# the tailnet, and this reads the page from there. Ordered after it, but not bound to it — a
+# missing staged file is reported as "not pushed back yet", never an error.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/alec/server-projects/locus
+# BILLED, but only when the page actually changed: the pull is hash-guarded, so a page nobody
+# has written on since the last run costs nothing at all. That is what makes an hourly cadence
+# affordable — corrections land within the hour instead of waiting for the next morning.
+ExecStart=/home/alec/.local/bin/uv run locus daily-pull
+TimeoutStartSec=1800
+Nice=10
+IOSchedulingClass=idle

@@ -640,9 +640,17 @@ def cmd_daily_pull(args) -> None:
 
     conn = _open()
     try:
-        result = pull_daily(conn, args.pdf, page_date=args.date)
+        result = pull_daily(conn, args.pdf, page_date=args.date, force=args.force)
     finally:
         conn.close()
+
+    if result.status == "not-on-device":
+        # Not an error: the page is simply still on the tablet, or untouched and never re-pushed.
+        print(f"{result.page_date}: not pushed back from the device yet — nothing to read.")
+        return
+    if result.status == "unchanged":
+        print(f"{result.page_date}: unchanged since the last pull — skipped (no model call).")
+        return
 
     for o in result.outcomes:
         print(f"  {o.anchor:<4} {o.kind:<11} {o.outcome:<18} {o.detail}")
@@ -812,6 +820,17 @@ def cmd_review(args) -> None:
             item = rv.grade_item(conn, int(ref), int(quality))
             print(f"item {ref}: next due {item.due} (interval {item.interval}d, "
                   f"ease {item.ease:.2f})" if item else f"no review item {ref}")
+        if args.enrol:
+            added = rv.enrol_from_blessed_objects(
+                conn,
+                **({} if args.enrol_max is None else {'max_new': args.enrol_max}),
+            )
+            if not added:
+                print("nothing new to enrol (every candidate is already scheduled)")
+            for item in added:
+                text, source = rv.resolve_prompt(conn, item)
+                print(f"enrolled item {item.id} (due {item.due}): {text[:72]}")
+            return
         for oid in args.add_object or []:
             item = rv.schedule_prompt(conn, prompt_kind="object", prompt_ref=str(oid))
             print(f"scheduled object {oid} as review item {item.id} (due {item.due})")
@@ -1144,8 +1163,15 @@ def main(argv=None) -> None:
         "daily-pull",
         help="read an annotated daily page and route the handwriting (billed: vision per page)",
     )
-    pdp.add_argument("pdf", help="the annotated daily page, pulled off the tablet")
+    pdp.add_argument(
+        "pdf", nargs="?", default=None,
+        help="the annotated page (default: find the staged copy the device pushed back)",
+    )
     pdp.add_argument("--date", default=None, help="page date (default: today)")
+    pdp.add_argument(
+        "--force", action="store_true",
+        help="re-read even if the file is unchanged since the last pull (spends a vision call)",
+    )
     pdp.set_defaults(func=cmd_daily_pull)
 
     pcs = sub.add_parser(
@@ -1175,6 +1201,14 @@ def main(argv=None) -> None:
     prv.add_argument("--grade", action="append", help="record a grade: <item_id>:<0-5> (repeatable)")
     prv.add_argument("--add-object", action="append", help="schedule an object for review (repeatable)")
     prv.add_argument("--limit", type=int, default=5, help="max items shown (daily-page cap)")
+    prv.add_argument(
+        "--enrol", action="store_true",
+        help="add a few unscheduled propositions from blessed objects (deterministic, free)",
+    )
+    prv.add_argument(
+        "--enrol-max", type=int, default=None,
+        help="cap new items this run (default: a small, deliberately gradual number)",
+    )
     prv.set_defaults(func=cmd_review)
 
     pgp = sub.add_parser("gaps", help="where your grasp is thin for a project/concept object (no API)")

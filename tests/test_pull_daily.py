@@ -282,3 +282,72 @@ def test_the_same_question_re_pulled_does_not_create_a_second_object(conn):
     pd.route_regions(conn, page.page_date, [R("Q1", None, "why does CIP break?")])
     pd.route_regions(conn, page.page_date, [R("Q1", None, "why does CIP break?")])
     assert len(state.list_objects(conn, type_="question")) == 1
+
+
+# ---------- device transport + spend guard ----------
+
+
+def test_find_staged_page_looks_in_the_folder_loop_a_excludes(conn, tmp_path, monkeypatch):
+    """Loop A skips the Locus folder (invariant 5); the pull-back wants only that folder."""
+    staging = tmp_path / "stage"
+    staging.mkdir()
+    (staging / "uuid-aaa.pdf").write_bytes(b"%PDF-1.7 page")
+    (staging / "uuid-bbb.pdf").write_bytes(b"%PDF-1.7 notebook")
+
+    index = {
+        "uuid-aaa": ("daily-2026-06-01", "Locus", None),
+        "uuid-bbb": ("EM Rates Trading", "brevan_howard", None),
+    }
+    monkeypatch.setattr("locus.capture.remarkable.build_uuid_index", lambda *a, **k: index)
+
+    got = pd.find_staged_page(
+        "2026-06-01", staging_dir=staging, runner=lambda a: (0, "", ""), folder="Locus"
+    )
+    assert got == staging / "uuid-aaa.pdf"
+
+    # A date the device has not sent back is None, not an error.
+    assert pd.find_staged_page(
+        "2026-06-02", staging_dir=staging, runner=lambda a: (0, "", ""), folder="Locus"
+    ) is None
+
+
+def test_unchanged_page_is_skipped_without_a_model_call(conn, tmp_path, monkeypatch):
+    """A scheduled pull must cost nothing on days the owner did not write."""
+    oid = _proposed(conn, "alpha")
+    page = _page(conn)
+    pdf = tmp_path / "daily.pdf"
+    pdf.write_bytes(b"%PDF-1.7 annotated")
+    monkeypatch.setattr(
+        "locus.capture.transcribe.render_pdf_pages", lambda *a, **k: [b"png"]
+    )
+
+    class _Boom:
+        def __getattr__(self, _n):
+            raise AssertionError("extraction must not run for an unchanged page")
+
+    first = pd.pull_daily(
+        conn, pdf, page_date=page.page_date,
+        client=_FakeVision('{"regions":[{"anchor":"B1","ticked":true,"text":""}]}'),
+    )
+    assert first.status == "routed"
+    assert _status(conn, oid) == "active"
+
+    second = pd.pull_daily(conn, pdf, page_date=page.page_date, client=_Boom())
+    assert second.status == "unchanged"
+
+    # ...but a page that CHANGED is read again.
+    pdf.write_bytes(b"%PDF-1.7 annotated more")
+    third = pd.pull_daily(
+        conn, pdf, page_date=page.page_date,
+        client=_FakeVision('{"regions":[{"anchor":"B1","ticked":true,"text":"revised"}]}'),
+    )
+    assert third.status == "routed"
+    assert _body(conn, oid)["why"] == "revised"
+
+
+def test_missing_page_reports_not_on_device_rather_than_failing(conn, tmp_path, monkeypatch):
+    _page(conn)
+    monkeypatch.setattr(pd, "find_staged_page", lambda *a, **k: None)
+    res = pd.pull_daily(conn, None, page_date="2026-06-01")
+    assert res.status == "not-on-device"
+    assert res.outcomes == []

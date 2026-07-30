@@ -364,7 +364,7 @@ locus/
 │   ├── backup.py         # WAL-safe DB snapshot + rsync-hardlinked raw store; restore
 │   ├── status.py         # `locus status` health summary (counts, alias staleness, backups)
 │   ├── config.py         # typed config; ANTHROPIC_API_KEY via env/.env only
-│   ├── db/               # connection (sqlite-vec load), migrate.py, migrations/ (0001–0013)
+│   ├── db/               # connection (sqlite-vec load), migrate.py, migrations/ (0001–0016)
 │   ├── extract/          # base, pdf, mathocr, figures_detect, docx, pptx, textdoc, code
 │   ├── ingest/           # llm (validated I/O + repair + per-pass routing), summarize, propositions,
 │   │                     #   entities, concepts (code domain concepts), synthesis, gaps, chunk, embed, figures, llamacpp
@@ -378,10 +378,11 @@ locus/
 │   │                     #   budget.py (cost ledger) · state.py (objects/links/positions/acceptance) ·
 │   │                     #   compose_daily.py (the §9 daily reMarkable page — aggregate-only) ·
 │   │                     #   pull_daily.py (annotated-page pull-back: route, four-way bless)
-│   ├── capture/          # remarkable · transcribe · fillin · loop_a · conversations
+│   ├── capture/          # remarkable · transcribe · fillin · loop_a · conversations ·
+│   │                     #   rmdoc (.rmdoc stroke geometry) · annotate (Loop B text linking)
 │   ├── structure/        # propose.py — gated object + belief proposal (plan/apply split)
 │   ├── evolve/           # trajectory.py — dated position chain + advisory tension detection
-│   ├── learn/            # gaps.py · practice.py · review.py (SM-2)
+│   ├── learn/            # gaps.py · practice.py · review.py (SM-2, + enrolment) · reread.py
 │   ├── surface/          # grounding.py · critique.py · synthesise.py (the §8.4 MCP surface)
 │   ├── enrich/           # related.py — grounded `> [!ai] Related` owned blocks
 │   ├── reading/          # md2pdf · deliver_remarkable (`locus read`)

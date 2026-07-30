@@ -277,13 +277,19 @@ LABELLED_QUERIES: list[LabelledQuery] = [
     #     cross_domain label it would assert a banner the pipeline does not yet clear, and relabelling
     #     it non-cross-domain to dodge that check would be gaming the metric.
     #
-    #   EXTRACTION-BLOCKED (unchanged at EVERY penalty value, so the reranker was never the cause):
-    #     "price discovery / AI-assisted risk reporting" -> em-ideas, the Markov note<->paper bridge,
-    #     and the note<->career offer bridge. These notes never enter the candidate pool at all, so
-    #     no scoring change can rescue them. Both are dense idea-lists whose GENERATED SUMMARIES
-    #     flatten into generic prose that embeds near nothing specific. The fix is a stronger
-    #     summary/proposition pass for maturity=rough docs (§11.B), not a retrieval knob — these
-    #     three stay here as its acceptance test.
+    #   EXTRACTION-BLOCKED -- **THIS DIAGNOSIS WAS WRONG. Corrected 2026-07-30.** It read:
+    #     "these notes never enter the candidate pool at all, so no scoring change can rescue
+    #     them ... the fix is a stronger summary/proposition pass for maturity=rough docs".
+    #     Measured against the live pipeline, three of the four targets ARE in the pool, and for
+    #     em-ideas the target section was the single best-scoring unit in the WHOLE pool (+0.192,
+    #     runner-up 4.7 points behind) and still did not survive. The cause was `select()`, which
+    #     demoted a section summary whenever any chunk of that section sat anywhere in the pool --
+    #     including a rough note's raw-handwriting chunk at rank 42 that no cut would ever reach.
+    #     Fixed by making the test "a child MAKES THE CUT"; the mispricings label below now passes.
+    #     The sweep varied one knob and its silence was over-read: "unchanged at every penalty
+    #     value" ruled out the reranker's SCORES, not the selection rules downstream of them.
+    #     Full evidence, and why the two remaining misses are not summariser problems either:
+    #     docs/rough-note-retrieval-finding.md
     LabelledQuery("How does fixing risk in an emerging market currency swap decompose around a central bank meeting?",
                   ["dashboard-"]),
     LabelledQuery("What is the difference between an FX swap, a cross-currency swap, and an interest rate swap?",
@@ -298,17 +304,19 @@ LABELLED_QUERIES: list[LabelledQuery] = [
                   ["jane-steet-social"]),
     LabelledQuery("How are hidden Markov models used for credit stress and risk attribution?",
                   ["robert-training"]),
-    # KNOWN-FAILING, RETAINED DELIBERATELY. Promoted from the rejected set after the sweep showed it
-    # at rank 4 with rough_penalty=0.0 — then it MISSED on the very next full eval run, retrieving
-    # its sibling notes (dashboard, swaps-momentum) instead. So it is genuinely borderline, and the
-    # single sweep observation was too thin to promote on.
+    # WAS KNOWN-FAILING; **NOW PASSES** (2026-07-30). Kept exactly as it is, as the regression
+    # guard for the defect it exposed.
     #
-    # It is kept FAILING rather than reverted, because the two cases are not the same: a label is
-    # retired when its target is gone or the layer structurally cannot produce it (see Buckingham pi
-    # and the tanker-flow pair above), NOT when the system simply misses. This query is well-formed
-    # and `em-rates-trading` genuinely answers it — the miss is a real capability gap, and deleting
-    # it would buy recall@k 1.000 by hiding the one thing worth tracking. It is the visible metric
-    # for the rough-note summary-quality fix; it should start passing when that lands.
+    # History worth preserving, because retaining it is what made the fix findable. It was
+    # promoted after the sweep showed it at rank 4 with rough_penalty=0.0, then missed on the very
+    # next full run — genuinely borderline, and too thin to promote on. It was kept FAILING rather
+    # than reverted, on the rule that a label is retired when its target is gone or the layer
+    # structurally cannot produce it, NOT when the system simply misses. Deleting it would have
+    # bought recall@k 1.000 by hiding the one thing worth tracking — and would have hidden a
+    # real retrieval defect that was costing whole documents corpus-wide, not just this note.
+    #
+    # It now returns `em-rates-trading` at rank 1 (repeat-verified: three separate acceptance runs
+    # plus the full eval, per the standing rule not to promote on a single observation).
     LabelledQuery("Where are the mispricings in Central and Eastern European rates across tenors?",
                   ["em-rates-trading"]),
 ]

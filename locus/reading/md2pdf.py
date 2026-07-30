@@ -46,12 +46,23 @@ class PageGeometry:
         """Typst `#set` rules prepended to the converted body to impose the page geometry.
 
         `justify` + a slightly looser leading read better than Typst's defaults on e-ink; the
-        page has no header/footer/numbering (a reading page, not a printed document)."""
+        page has no header/footer/numbering (a reading page, not a printed document).
+
+        `horizontalrule` must be defined here. Pandoc's typst writer emits a bare
+        `#horizontalrule` for a markdown `---`, but that binding lives in pandoc's own typst
+        TEMPLATE, and we use only the converted BODY — so every `---` in every document
+        delivered to the tablet has been rendering as nothing at all (verified 2026-07-30:
+        zero full-width strokes in the output PDF). Silent, because an unknown identifier used
+        as a value compiles to empty rather than failing. It is bound to a real ruled line now,
+        which is also what gives the daily page (§9) the lines the owner writes corrections on.
+        """
         return (
             f"#set page(width: {self.width_in}in, height: {self.height_in}in, "
             f"margin: {self.margin_in}in)\n"
             f"#set text(size: {self.font_pt}pt)\n"
-            f"#set par(justify: true, leading: 0.7em)\n\n"
+            f"#set par(justify: true, leading: 0.7em)\n"
+            f"#let horizontalrule = block(width: 100%, above: 1.5em, below: 1.5em, "
+            f"line(length: 100%, stroke: 0.4pt + luma(65%)))\n\n"
         )
 
 

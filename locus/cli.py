@@ -555,6 +555,73 @@ def cmd_read(args) -> None:
         print(f"delivered {result.filename} -> reMarkable:/{result.remote_folder}{note}")
 
 
+def cmd_daily(args) -> None:
+    """Compose the daily reMarkable page and push it as an annotatable PDF (agent-layer §9).
+
+    Aggregates only — no model call, no proposal, no spend. The page renders whether or not
+    last night's structure run succeeded, which is §9's "degrades silently if an agent didn't
+    run" guardrail; an empty day is a valid, calm page, not an error.
+    """
+    from locus.agent import compose_daily as cd
+    from locus.reading.deliver_remarkable import deliver_pdf
+    from locus.reading.md2pdf import PageGeometry, render_markdown_file
+    from locus.vault.writer import write_generated_note
+
+    cfg = load()
+    conn = _open()
+    try:
+        page = cd.compose(conn)
+        body = cd.render(page)
+
+        out_dir = Path(args.out) if args.out else Path(cfg.paths.notes) / "_generated"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        md_path = out_dir / "_home.md"
+        # `_generated/` is corpus-excluded (notes_sync) so the page never re-enters retrieval —
+        # invariant 5, no feedback contamination from the agent's own output.
+        write_generated_note(
+            md_path, body, run_id=f"daily:{page.page_date}",
+            extra={"title": f"Daily {page.page_date}"},
+        )
+
+        pdf_path = md_path.with_suffix(".pdf")
+        if not args.no_render:
+            r = cfg.reading
+            render_markdown_file(
+                md_path, pdf_path,
+                geometry=PageGeometry(
+                    width_in=r.page_width_in, height_in=r.page_height_in,
+                    margin_in=r.margin_in, font_pt=r.font_pt,
+                ),
+            )
+
+        cd.persist(
+            conn, page,
+            md_path=str(md_path),
+            pdf_path=str(pdf_path) if not args.no_render else None,
+        )
+
+        counts = (
+            f"{len(page.connections)} connection(s) · {len(page.recalls)} recall · "
+            f"{len(page.readings)} read-next · {len(page.blessings)} awaiting"
+        )
+        print(f"composed {page.page_date}: {counts}")
+        print(f"  {md_path}")
+        if args.no_render:
+            return
+        if args.no_push:
+            print(f"  {pdf_path}")
+            return
+        res = deliver_pdf(
+            pdf_path,
+            remote_folder=args.to or cfg.reading.target_folder,
+            rmapi_binary=cfg.reading.rmapi_binary,
+        )
+        note = " (created folder)" if res.created_folder else ""
+        print(f"  delivered {res.filename} -> reMarkable:/{res.remote_folder}{note}")
+    finally:
+        conn.close()
+
+
 def cmd_capture_sync(args) -> None:
     """Loop A: transcribe + fill-in + enrich + ingest staged reMarkable handwriting renders.
 
@@ -1032,6 +1099,16 @@ def main(argv=None) -> None:
     prd.add_argument("--out", default=None, help="write PDFs to this dir (default: beside the source)")
     prd.add_argument("--no-push", action="store_true", help="render locally only; skip the rmapi push")
     prd.set_defaults(func=cmd_read)
+
+    pdy = sub.add_parser(
+        "daily",
+        help="compose today's reMarkable page (aggregate-only, no spend) and push it as a PDF",
+    )
+    pdy.add_argument("--to", default=None, help="device folder (default: [reading].target_folder)")
+    pdy.add_argument("--out", default=None, help="write _home.md here (default: <notes>/_generated)")
+    pdy.add_argument("--no-push", action="store_true", help="render locally only; skip the rmapi push")
+    pdy.add_argument("--no-render", action="store_true", help="write the markdown only; skip the PDF")
+    pdy.set_defaults(func=cmd_daily)
 
     pcs = sub.add_parser(
         "capture-sync",

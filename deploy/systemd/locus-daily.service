@@ -1,0 +1,19 @@
+[Unit]
+Description=Locus daily page — compose the reMarkable page and push it as an annotatable PDF
+Documentation=file:///home/alec/server-projects/locus/docs/obsidian-agent-layer-plan.md
+# Ordered AFTER locus-maintain so the page reflects the night's link + structure run. The
+# ordering is best-effort by design: `compose` only aggregates, so a maintain run that failed
+# or is still going yields a thinner page, never a broken one (§9 "degrades silently if an
+# agent didn't run"). Nothing here takes the ingest lock.
+After=network-online.target locus-maintain.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/alec/server-projects/locus
+# FREE: aggregate-only, no model call. The only external work is the rmapi push.
+ExecStart=/home/alec/.local/bin/uv run locus daily
+# A wedged rmapi push must not hold the unit open until the next window.
+TimeoutStartSec=900
+Nice=10
+IOSchedulingClass=idle

@@ -360,11 +360,11 @@ locus/
 │   ├── cli.py            # product surface: ingest list inspect watch sync link retitle
 │   │                     #   query retrieve mcp status backup restore export-obsidian audit eval
 │   │                     #   read capture-sync capture-conversation notes-sync
-│   │                     #   structure objects evolution gaps review   (agent layer)
+│   │                     #   structure objects evolution gaps review daily   (agent layer)
 │   ├── backup.py         # WAL-safe DB snapshot + rsync-hardlinked raw store; restore
 │   ├── status.py         # `locus status` health summary (counts, alias staleness, backups)
 │   ├── config.py         # typed config; ANTHROPIC_API_KEY via env/.env only
-│   ├── db/               # connection (sqlite-vec load), migrate.py, migrations/ (0001–0011)
+│   ├── db/               # connection (sqlite-vec load), migrate.py, migrations/ (0001–0013)
 │   ├── extract/          # base, pdf, mathocr, figures_detect, docx, pptx, textdoc, code
 │   ├── ingest/           # llm (validated I/O + repair + per-pass routing), summarize, propositions,
 │   │                     #   entities, concepts (code domain concepts), synthesis, gaps, chunk, embed, figures, llamacpp
@@ -375,7 +375,8 @@ locus/
 │   ├── export/           # obsidian.py — read-only vault projection (§13, joins-only)
 │   │  ── agent layer (§15) ──
 │   ├── agent/            # claude.py (the claude -p runner) · journal.py (agent_runs) ·
-│   │                     #   budget.py (cost ledger) · state.py (objects/links/positions/acceptance)
+│   │                     #   budget.py (cost ledger) · state.py (objects/links/positions/acceptance) ·
+│   │                     #   compose_daily.py (the §9 daily reMarkable page — aggregate-only)
 │   ├── capture/          # remarkable · transcribe · fillin · loop_a · conversations
 │   ├── structure/        # propose.py — gated object + belief proposal (plan/apply split)
 │   ├── evolve/           # trajectory.py — dated position chain + advisory tension detection

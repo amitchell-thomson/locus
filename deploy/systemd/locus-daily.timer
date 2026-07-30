@@ -1,0 +1,14 @@
+[Unit]
+Description=Build the Locus daily page each morning, after the overnight maintain run
+
+[Timer]
+# 05:30 — after locus-maintain (03:35) has had two hours, and before the owner picks the
+# tablet up. One page per day: the surface is a prompt to think, not a feed.
+OnCalendar=*-*-* 05:30:00
+RandomizedDelaySec=5min
+# A missed morning (machine asleep) builds once on resume. Composing is idempotent — the page
+# is keyed by date, so a late run revises today's page rather than adding a second one.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

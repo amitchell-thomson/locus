@@ -583,7 +583,12 @@ def cmd_daily(args) -> None:
             extra={"title": f"Daily {page.page_date}"},
         )
 
-        pdf_path = md_path.with_suffix(".pdf")
+        # DATED filename, one device document per day. Two reasons, both load-bearing:
+        # yesterday's page must survive on the tablet until it has been pulled back (the
+        # two-way loop reads the annotations off it), and rmapi REFUSES a same-named
+        # re-upload rather than duplicating it — a fixed name works once and fails every
+        # day after (caught by running the systemd unit at deploy, 2026-07-30).
+        pdf_path = out_dir / f"daily-{page.page_date}.pdf"
         if not args.no_render:
             r = cfg.reading
             render_markdown_file(
@@ -615,6 +620,8 @@ def cmd_daily(args) -> None:
             pdf_path,
             remote_folder=args.to or cfg.reading.target_folder,
             rmapi_binary=cfg.reading.rmapi_binary,
+            # Same-day rebuilds revise today's page; different days never collide.
+            replace=True,
         )
         note = " (created folder)" if res.created_folder else ""
         print(f"  delivered {res.filename} -> reMarkable:/{res.remote_folder}{note}")

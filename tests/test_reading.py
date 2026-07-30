@@ -123,3 +123,48 @@ def test_deliver_raises_on_put_failure(tmp_path: Path):
 def test_deliver_missing_file_raises(tmp_path: Path):
     with pytest.raises(FileNotFoundError):
         deliver_pdf(tmp_path / "nope.pdf", runner=FakeRmapi({}))
+
+
+class SequencedRmapi(FakeRmapi):
+    """Like FakeRmapi, but `put` returns a different scripted result on each call."""
+
+    def __init__(self, responses, put_sequence):
+        super().__init__(responses)
+        self.put_sequence = list(put_sequence)
+
+    def __call__(self, args):
+        self.calls.append(args)
+        if args[0] == "put" and self.put_sequence:
+            return self.put_sequence.pop(0)
+        return self.responses.get(args[0], (0, "", ""))
+
+
+def test_deliver_replaces_an_existing_entry_when_asked(tmp_path: Path):
+    """The deploy-day bug: rmapi REFUSES a same-named re-upload, it does not duplicate.
+
+    A recurring delivery therefore works exactly once and fails every run afterwards. Caught
+    on 2026-07-30 by running the daily systemd unit rather than only the command by hand.
+    """
+    pdf = tmp_path / "daily-2026-07-30.pdf"
+    pdf.write_bytes(b"%PDF-1.7\n...")
+    fake = SequencedRmapi(
+        {"mkdir": (1, "", "entry already exists")},
+        put_sequence=[(1, "", "entry already exists (use --force ...)"), (0, "replaced", "")],
+    )
+
+    result = deliver_pdf(pdf, remote_folder="Locus", replace=True, runner=fake)
+
+    assert result.filename == "daily-2026-07-30.pdf"
+    puts = [c for c in fake.calls if c[0] == "put"]
+    assert puts[1] == ["put", "--content-only", str(pdf), "Locus"]
+
+
+def test_deliver_does_not_replace_unless_asked(tmp_path: Path):
+    """Default stays strict: silently overwriting a page the owner annotated would lose it."""
+    pdf = tmp_path / "doc.pdf"
+    pdf.write_bytes(b"%PDF-1.7\n...")
+    fake = FakeRmapi({"mkdir": (0, "", ""), "put": (1, "", "entry already exists")})
+
+    with pytest.raises(RuntimeError, match="already exists"):
+        deliver_pdf(pdf, remote_folder="Locus", runner=fake)
+    assert not any("--content-only" in c for c in fake.calls)

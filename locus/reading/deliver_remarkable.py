@@ -60,14 +60,23 @@ def deliver_pdf(
     *,
     remote_folder: str = "Locus",
     rmapi_binary: str = "rmapi",
+    replace: bool = False,
     runner: RmapiRunner | None = None,
 ) -> DeliveryResult:
     """Upload `pdf_path` to `remote_folder` on the reMarkable, creating the folder if needed.
 
-    `rmapi put <file> <dir>` uploads under the (already-existing) directory. A same-named doc
-    re-uploaded creates a device-side duplicate rather than overwriting — the caller keeps the
-    PDF filename stable per source so re-reads land predictably; true idempotent replace is a
-    Phase-1 concern once the capture loop drives delivery.
+    `rmapi put <file> <dir>` uploads under the (already-existing) directory.
+
+    `replace=True` makes re-delivery idempotent. The original note here assumed a same-named
+    re-upload would create a device-side duplicate; it does not — rmapi REFUSES it outright
+    ("entry already exists"), which surfaced the first time a scheduled unit tried to deliver
+    the same filename twice (2026-07-30 deploy). Left alone, any recurring delivery works once
+    and then fails every run after. With `replace`, an existing entry is re-uploaded with
+    `--content-only`, which swaps the PDF while keeping the device-side document.
+
+    Callers that must NOT clobber a page the owner may have annotated should give each
+    delivery a distinct name instead (the daily page dates its filename) and use `replace`
+    only for same-name rebuilds.
     """
     pdf_path = Path(pdf_path)
     if not pdf_path.is_file():
@@ -76,6 +85,8 @@ def deliver_pdf(
 
     created = _ensure_folder(runner, remote_folder)
     code, out, err = runner(["put", str(pdf_path), remote_folder])
+    if code != 0 and replace and "already exists" in (err + out):
+        code, out, err = runner(["put", "--content-only", str(pdf_path), remote_folder])
     if code != 0:
         raise RuntimeError(
             f"rmapi put {pdf_path.name!r} -> {remote_folder!r} failed: "

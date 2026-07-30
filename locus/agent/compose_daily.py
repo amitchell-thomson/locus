@@ -419,7 +419,7 @@ def render(page: DailyPage) -> str:
         lines += [
             "## Awaiting your call",
             "",
-            "Tick to bless. Write to correct — corrections apply whether or not you tick.",
+            "Tick to bless, cross to drop it for good. Write to correct — corrections apply either way, and writing without a mark keeps it here.",
             "",
         ]
         for b in page.blessings:

@@ -17,14 +17,20 @@ one — a page scanned twice cannot double-grade a recall answer or bless an obj
 **The four-way blessing outcome.** Tick and writing are independent signals, so there are four
 states, not two, and the interesting one is the third:
 
-    ticked, no writing    -> bless (status -> active)
-    ticked, with writing  -> apply the correction, then bless
-    writing, not ticked   -> apply the correction, LEAVE IT PROPOSED
-    neither               -> no-op; it is re-offered on a later page
+    tick, no writing      -> bless (status -> active)
+    tick, with writing    -> apply the correction, then bless
+    CROSS                 -> archive: never proposed or offered again (writing still kept)
+    writing, no mark      -> apply the correction, LEAVE IT PROPOSED
+    nothing               -> no-op; it is re-offered on a later page
 
 "Wrote corrections but didn't tick" means *keep working on this* — not yes, and not no. Blessing
 it would put words in the owner's mouth; discarding the writing would throw away the most
 informative thing on the page. So the edit lands and the object stays in the queue.
+
+A CROSS is the explicit no. The first cut had no refusal at all and, worse, its extraction
+prompt counted a cross as "a mark is present, therefore ticked" — so crossing something out
+blessed it. A checkbox that does the opposite of what a person means is worse than no checkbox,
+and without an archive path an unwanted object could only ever rotate to the back of the queue.
 
 Every one of the four is written to `acceptance_log`, including the no-op. A rejection is as
 much signal as an acceptance, and "offered three times, never acted on" is a judgement the
@@ -67,9 +73,14 @@ SURFACE_RECALL = "recall"
 
 class _Region(BaseModel):
     anchor: str = Field(description="The printed region label, e.g. 'R1', 'C2', 'B3'.")
-    ticked: bool | None = Field(
-        default=None,
-        description="True if the [ ] box is ticked, False if clearly empty, null if no box.",
+    # The SHAPE of the mark, not merely its presence. A cross is a refusal; reading it as
+    # "a mark is present, therefore yes" blessed the very things the owner was rejecting.
+    mark: str = Field(
+        default="none",
+        description=(
+            "What is in the [ ] box: 'tick' for a tick/check, 'cross' for an X or a strike "
+            "through the box, 'none' if it is empty or there is no box."
+        ),
     )
     text: str = Field(default="", description="Handwriting in this region, verbatim. '' if none.")
 
@@ -88,11 +99,13 @@ _USER = (
     "printed text and then ruled blank lines for handwriting.\n\n"
     "For EVERY labelled region visible on this page, report:\n"
     "  - anchor: the label exactly as printed (e.g. 'B2')\n"
-    "  - ticked: for a region with a `[ ]` box — true if there is a tick/cross/mark inside it, "
-    "false if it is clearly empty. Use null if the region has no box at all.\n"
+    "  - mark: for a region with a `[ ]` box, report the SHAPE of what is in it — 'tick' for a "
+    "tick or check mark, 'cross' for an X or a line struck through the box, and 'none' if the "
+    "box is empty or the region has no box. A cross is NOT a tick: report them differently, "
+    "and never report 'tick' merely because some mark is present.\n"
     "  - text: the HANDWRITING in that region, transcribed verbatim. Empty string if the ruled "
     "lines are blank. Do NOT include the printed text — only what was written by hand.\n\n"
-    "Report a region even when it is entirely untouched (ticked false/null, text empty): a "
+    "Report a region even when it is entirely untouched (mark 'none', text empty): a "
     "region the owner deliberately left alone is a real signal. Never invent a label that is "
     "not printed on the page."
 )
@@ -101,12 +114,21 @@ _USER = (
 @dataclass
 class ExtractedRegion:
     anchor: str
-    ticked: bool | None
+    ticked: bool | None   # affirmative mark present (derived from `mark`; kept for the record)
     text: str
+    mark: str = "none"    # 'tick' | 'cross' | 'none'
 
     @property
     def has_writing(self) -> bool:
         return bool(self.text.strip())
+
+    @property
+    def is_tick(self) -> bool:
+        return self.mark == "tick"
+
+    @property
+    def is_cross(self) -> bool:
+        return self.mark == "cross"
 
 
 def extract_regions(
@@ -151,8 +173,14 @@ def extract_regions(
             continue
         for r in parsed.regions:
             anchor = r.anchor.strip().upper()
-            if anchor:
-                out[anchor] = ExtractedRegion(anchor, r.ticked, r.text.strip())
+            if not anchor:
+                continue
+            mark = (r.mark or "none").strip().lower()
+            if mark not in ("tick", "cross", "none"):
+                mark = "none"  # never guess an affirmative from an unrecognised label
+            out[anchor] = ExtractedRegion(
+                anchor, True if mark == "tick" else False, r.text.strip(), mark=mark
+            )
     return list(out.values())
 
 
@@ -192,15 +220,16 @@ def _record(
     stamp = _utcnow()
     with conn:
         conn.execute(
-            "INSERT INTO annotations (page_date, anchor, ticked, text, outcome, source_run, "
-            "captured_at, processed_at) VALUES (?,?,?,?,?,?,?,?) "
+            "INSERT INTO annotations (page_date, anchor, ticked, mark, text, outcome, source_run, "
+            "captured_at, processed_at) VALUES (?,?,?,?,?,?,?,?,?) "
             "ON CONFLICT(page_date, anchor) DO UPDATE SET "
-            "ticked=excluded.ticked, text=excluded.text, outcome=excluded.outcome, "
-            "source_run=excluded.source_run, processed_at=excluded.processed_at",
+            "ticked=excluded.ticked, mark=excluded.mark, text=excluded.text, "
+            "outcome=excluded.outcome, source_run=excluded.source_run, "
+            "processed_at=excluded.processed_at",
             (
                 page_date, r.anchor,
                 None if r.ticked is None else int(r.ticked),
-                r.text, outcome, source_run, stamp, stamp,
+                r.mark, r.text, outcome, source_run, stamp, stamp,
             ),
         )
 
@@ -288,8 +317,27 @@ def _route_blessing(conn, anchor, region, r: ExtractedRegion, *, page_date: str)
     if obj is None:
         return RouteOutcome(r.anchor, "blessing", "error", "object no longer exists")
 
-    ticked = bool(r.ticked)
     wrote = r.has_writing
+
+    if r.is_cross:
+        # A refusal, and a durable one. Archived objects are never re-proposed (upsert_object
+        # never writes `status`) and never re-offered on the page, so this is the only way to
+        # say "stop showing me this" — without it the queue merely rotates forever. Any writing
+        # is still kept: an explanation of WHY it was wrong is worth more than the rejection.
+        if wrote:
+            state.apply_owner_edit(
+                conn, object_id, {"why": r.text.strip()},
+                source=f"daily:{page_date}#{r.anchor}",
+            )
+        state.set_status(conn, object_id, "archived")
+        state.log_acceptance(
+            conn, surface=SURFACE_BLESSING, candidate_key=str(object_id), verdict="rejected"
+        )
+        return RouteOutcome(
+            r.anchor, "blessing", "archived" if not wrote else "corrected+archived", obj.title
+        )
+
+    ticked = r.is_tick
 
     if wrote:
         # The owner's words replace the agent's one-line rationale, and the marker makes that
@@ -321,16 +369,18 @@ def _route_blessing(conn, anchor, region, r: ExtractedRegion, *, page_date: str)
 
 def _prior_annotations(
     conn: sqlite3.Connection, page_date: str
-) -> dict[str, tuple[bool | None, str]]:
-    """anchor -> (ticked, text) already routed for this page, for the re-pull guard."""
-    out: dict[str, tuple[bool | None, str]] = {}
+) -> dict[str, tuple[str, str]]:
+    """anchor -> (mark, text) already routed for this page, for the re-pull guard.
+
+    Keyed on the mark SHAPE: changing a tick to a cross must re-route, and comparing only an
+    affirmative boolean would have treated that reversal as "unchanged"."""
+    out: dict[str, tuple[str, str]] = {}
     for row in conn.execute(
-        "SELECT anchor, ticked, text, outcome FROM annotations WHERE page_date=?", (page_date,)
+        "SELECT anchor, mark, text, outcome FROM annotations WHERE page_date=?", (page_date,)
     ):
         if row["outcome"] in (None, "error"):
             continue  # a region that failed to route is retried, not skipped
-        ticked = None if row["ticked"] is None else bool(row["ticked"])
-        out[row["anchor"]] = (ticked, (row["text"] or "").strip())
+        out[row["anchor"]] = (row["mark"] or "none", (row["text"] or "").strip())
     return out
 
 
@@ -353,7 +403,7 @@ def route_regions(
             result.unknown_anchors.append(r.anchor)
             continue
         seen = prior.get(r.anchor)
-        if seen is not None and seen == (r.ticked, r.text.strip()):
+        if seen is not None and seen == (r.mark, r.text.strip()):
             # Byte-identical to what we already routed for this region: re-applying would
             # advance the SM-2 schedule a second time for one answer and double-count the
             # acceptance judgement the flywheel reads. Idempotency is about the SIDE EFFECTS,

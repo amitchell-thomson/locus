@@ -18,7 +18,11 @@ from locus.db.connection import get_connection
 from locus.db.migrate import migrate
 from locus.learn import review as learn_review
 
-R = pd.ExtractedRegion
+def R(anchor: str, ticked, text: str, mark: str | None = None):
+    """Build an ExtractedRegion. `ticked=True` means a tick; pass mark='cross' for a refusal."""
+    if mark is None:
+        mark = "tick" if ticked else "none"
+    return pd.ExtractedRegion(anchor, mark == "tick", text, mark=mark)
 
 
 @pytest.fixture()
@@ -241,8 +245,8 @@ def test_extract_regions_parses_and_uppercases(conn, monkeypatch):
         "locus.capture.transcribe.render_pdf_pages", lambda *a, **k: [b"png"]
     )
     client = _FakeVision(
-        '{"regions":[{"anchor":"b1","ticked":true,"text":" tighten this "},'
-        '{"anchor":"R1","ticked":null,"text":""}]}'
+        '{"regions":[{"anchor":"b1","mark":"tick","text":" tighten this "},'
+        '{"anchor":"R1","mark":"none","text":""}]}'
     )
     got = {r.anchor: r for r in pd.extract_regions("x.pdf", client=client)}
     assert got["B1"].ticked is True and got["B1"].text == "tighten this"
@@ -327,7 +331,7 @@ def test_unchanged_page_is_skipped_without_a_model_call(conn, tmp_path, monkeypa
 
     first = pd.pull_daily(
         conn, pdf, page_date=page.page_date,
-        client=_FakeVision('{"regions":[{"anchor":"B1","ticked":true,"text":""}]}'),
+        client=_FakeVision('{"regions":[{"anchor":"B1","mark":"tick","text":""}]}'),
     )
     assert first.status == "routed"
     assert _status(conn, oid) == "active"
@@ -339,7 +343,7 @@ def test_unchanged_page_is_skipped_without_a_model_call(conn, tmp_path, monkeypa
     pdf.write_bytes(b"%PDF-1.7 annotated more")
     third = pd.pull_daily(
         conn, pdf, page_date=page.page_date,
-        client=_FakeVision('{"regions":[{"anchor":"B1","ticked":true,"text":"revised"}]}'),
+        client=_FakeVision('{"regions":[{"anchor":"B1","mark":"tick","text":"revised"}]}'),
     )
     assert third.status == "routed"
     assert _body(conn, oid)["why"] == "revised"
@@ -351,3 +355,68 @@ def test_missing_page_reports_not_on_device_rather_than_failing(conn, tmp_path, 
     res = pd.pull_daily(conn, None, page_date="2026-06-01")
     assert res.status == "not-on-device"
     assert res.outcomes == []
+
+
+# ---------- the cross: an explicit, durable refusal ----------
+
+
+def test_cross_archives_instead_of_blessing(conn):
+    """The shipped bug: the prompt counted a cross as 'a mark is present, therefore ticked',
+    so crossing something out BLESSED it — the exact opposite of what a person means."""
+    oid = _proposed(conn, "alpha")
+    page = _page(conn)
+    pd.route_regions(conn, page.page_date, [R("B1", None, "", mark="cross")])
+    assert _status(conn, oid) == "archived"
+
+
+def test_a_crossed_object_is_never_offered_again(conn):
+    """Without an archive path an unwanted object only rotates to the back of the queue."""
+    oid = _proposed(conn, "alpha")
+    page = _page(conn)
+    pd.route_regions(conn, page.page_date, [R("B1", None, "", mark="cross")])
+    later = cd.compose(conn, today=date(2026, 6, 9))
+    assert oid not in [b.object_id for b in later.blessings]
+
+
+def test_a_cross_keeps_any_writing(conn):
+    """Why it was wrong is worth more than the rejection itself."""
+    oid = _proposed(conn, "alpha")
+    page = _page(conn)
+    pd.route_regions(
+        conn, page.page_date, [R("B1", None, "conflates two different things", mark="cross")]
+    )
+    assert _status(conn, oid) == "archived"
+    assert _body(conn, oid)["why"] == "conflates two different things"
+
+
+def test_a_cross_is_logged_as_a_rejection(conn):
+    oid = _proposed(conn, "alpha")
+    page = _page(conn)
+    pd.route_regions(conn, page.page_date, [R("B1", None, "", mark="cross")])
+    assert state.acceptance_counts(conn, surface=pd.SURFACE_BLESSING)[str(oid)] == {"rejected": 1}
+
+
+def test_an_archived_object_cannot_be_revived_by_the_agent(conn):
+    """propose-never-mutate: the owner's refusal is not an agent's to undo."""
+    oid = _proposed(conn, "alpha")
+    page = _page(conn)
+    pd.route_regions(conn, page.page_date, [R("B1", None, "", mark="cross")])
+    state.upsert_object(conn, type_="concept", title="alpha", body={"why": "re-proposed"})
+    assert _status(conn, oid) == "archived"
+
+
+def test_changing_a_tick_to_a_cross_re_routes(conn):
+    """The re-pull guard keys on the mark SHAPE — a reversal must not read as 'unchanged'."""
+    oid = _proposed(conn, "alpha")
+    page = _page(conn)
+    pd.route_regions(conn, page.page_date, [R("B1", True, "")])
+    assert _status(conn, oid) == "active"
+    pd.route_regions(conn, page.page_date, [R("B1", None, "", mark="cross")])
+    assert _status(conn, oid) == "archived"
+
+
+def test_an_unrecognised_mark_never_becomes_an_affirmative(conn):
+    oid = _proposed(conn, "alpha")
+    page = _page(conn)
+    pd.route_regions(conn, page.page_date, [R("B1", None, "", mark="scribble?")])
+    assert _status(conn, oid) == "proposed"

@@ -164,6 +164,19 @@ def resolve_prompt(conn, item: ReviewItem) -> tuple[str, str]:
 DEFAULT_PER_OBJECT = 2
 DEFAULT_MAX_NEW = 8
 
+# Minimum prompt length, in characters. A crude proxy for substance, and openly so — it does not
+# measure whether a claim is worth remembering, only whether it is specific enough to be worth
+# being ASKED. The first live enrolment (2026-07-30) surfaced "The tanker-flow project is
+# prioritized." (39) and "Python is an interpreted programming language." (46) alongside genuinely
+# useful material; both are true, both survived the ingest-time anti-meta filters, and neither is
+# a question anyone benefits from answering.
+#
+# Tuned against those observations rather than picked round: 60 was tried first and also rejected
+# short-but-real claims like "Covered interest parity fails under funding stress." (51). 50 clears
+# the observed junk while keeping terse substantive ones. It is a blunt instrument standing in for
+# a judgement call, and the honest upgrade is a quality pass over candidates, not a bigger number.
+_MIN_PROMPT_CHARS = 50
+
 
 def _already_scheduled(conn, prompt_kind: str, prompt_ref: str) -> bool:
     return (
@@ -202,6 +215,8 @@ def enrol_from_blessed_objects(
         for cand in candidates_for_object(conn, row["id"]):
             if taken >= per_object or len(added) >= max_new:
                 break
+            if len(cand.text.strip()) < _MIN_PROMPT_CHARS:
+                continue  # too thin to be worth asking — see _MIN_PROMPT_CHARS
             ref = str(cand.id)
             if _already_scheduled(conn, "proposition", ref):
                 continue

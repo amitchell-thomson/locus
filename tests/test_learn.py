@@ -69,7 +69,9 @@ def conn(tmp_path: Path):
     _entity(c, 2, "laden ton-miles")   # written about in his own words
     _entity(c, 3, "AIS interpolation")  # only ever read about
     for i in range(4):
-        _prop(c, 3, f"AIS fixes are irregular in time ({i})")
+        # Long enough to clear review._MIN_PROMPT_CHARS — real propositions are full claims,
+        # and a fixture of 30-char stubs would silently exercise the wrong path.
+        _prop(c, 3, f"AIS position fixes arrive irregularly in time, so leg {i} needs resampling before any signal is derived.")
     oid, _ = state.upsert_object(c, type_="project", title="tanker-flow")
     state.add_links(c, oid, [ObjectLink("doc", "repos/tanker-flow", "implements")])
     yield c
@@ -389,3 +391,22 @@ def test_enrolled_items_become_due_and_resolve_to_their_proposition(conn, tanker
     assert {i.id for i in due} & {i.id for i in added}
     text, _source = review.resolve_prompt(conn, due[0])
     assert text and "no longer in the corpus" not in text
+
+
+def test_enrolment_skips_prompts_too_thin_to_be_worth_asking(conn, tanker):
+    """Live enrolment surfaced 'Python is an interpreted programming language.' — true, and
+    useless as a recall question. Short propositions are overwhelmingly status lines or
+    definitions of the obvious."""
+    state.set_status(conn, tanker, "active")
+    conn.execute(
+        "INSERT INTO propositions(id, section_id, doc_id, position, text, embed_model) "
+        "VALUES (900, 1, 3, 90, 'The project is prioritized.', 'nomic-embed-text')"
+    )
+    conn.commit()
+
+    for _ in range(10):
+        review.enrol_from_blessed_objects(conn)
+
+    refs = {r["prompt_ref"] for r in conn.execute("SELECT prompt_ref FROM review_schedule")}
+    assert "900" not in refs
+    assert refs, "substantive propositions must still be enrolled"

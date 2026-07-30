@@ -186,6 +186,28 @@ def test_select_drops_section_summary_when_child_in_pool():
     assert [(c.kind, c.id) for c in out] == [("chunk", 10), ("chunk", 11)]
 
 
+def test_select_keeps_section_summary_when_its_child_never_makes_the_cut():
+    """The 2026-07-30 defect: a whole document deleted by a child that is never selected.
+
+    Shape of a captured rough note — one section whose summary reranks at the top of the
+    pool and whose only chunk is raw handwriting that reranks near the bottom. Suppressing
+    the summary because that chunk merely EXISTS lost the document from the results
+    entirely (docs/rough-note-retrieval-finding.md). Other documents fill the cut, so the
+    note's chunk is far out of reach; the summary must still earn its slot on score.
+    """
+    ranked = [
+        _cand("section", 1, 1, 1),                     # the note's summary — best in pool
+        _cand("chunk", 20, 2, 2), _cand("chunk", 21, 3, 3),  # unrelated docs fill the cut
+        _cand("chunk", 10, 1, 1),                      # the note's own chunk, ranked last
+    ]
+    out = select(ranked, top_k=2, per_doc_cap=10)
+    kinds = [(c.kind, c.id) for c in out]
+    # Even with the section dropped, chunk 10 is out of reach of a 2-slot cut, so
+    # suppressing the summary would leave document 1 unrepresented entirely.
+    assert ("section", 1) in kinds, kinds
+    assert out[0].kind == "section"  # kept in rank order, not demoted to a refill slot
+
+
 def test_select_keeps_section_summary_without_child():
     ranked = [_cand("section", 1, 1, 1), _cand("chunk", 10, 1, 2)]
     out = select(ranked, top_k=2, per_doc_cap=10)

@@ -92,6 +92,58 @@ def _is_source_unit(c: Candidate) -> bool:
     return bool(c.file_path) and c.file_path.endswith(".py")
 
 
+_CHILD_KINDS = ("proposition", "chunk", "figure")
+
+
+def _cut(
+    ranked: list[Candidate], top_k: int, per_doc_cap: int,
+    *, redundant_sections: set[int | None], sections_only: bool = False,
+) -> tuple[list[Candidate], list[Candidate]]:
+    """One diversity-capped pass over a rank-ordered list. Returns (selected, skipped).
+
+    `redundant_sections` are section ids whose summary should yield to a child that wins a
+    slot anyway. `sections_only=False` with an empty set is the plain no-redundancy pass.
+    """
+    selected: list[Candidate] = []
+    skipped: list[Candidate] = []
+    kind_taken: set[tuple[int | None, str]] = set()
+    doc_counts: Counter[int] = Counter()
+
+    for c in ranked:
+        if len(selected) >= top_k:
+            break
+        query_named = "path" in c.sources
+        if sections_only and c.kind == "section" and not query_named:
+            continue  # probe pass: let the children compete without their parents
+        redundant = (
+            (c.section_id, c.kind) in kind_taken
+            or (c.kind == "section" and c.section_id in redundant_sections and not query_named)
+        )
+        if redundant or (doc_counts[c.doc_id] >= per_doc_cap and not query_named):
+            skipped.append(c)
+            continue
+        selected.append(c)
+        kind_taken.add((c.section_id, c.kind))
+        doc_counts[c.doc_id] += 1
+    return selected, skipped
+
+
+def _children_in_cut(
+    ranked: list[Candidate], top_k: int, per_doc_cap: int
+) -> set[int | None]:
+    """Sections whose chunk/proposition/figure would win a slot, so the summary can yield.
+
+    Resolved by a probe pass that drops every section candidate, giving the children the most
+    favourable competition they could possibly face. That makes the result a sound
+    over-approximation in the direction that matters: a child absent from THIS cut cannot
+    appear in the real one (where sections also compete for slots), so suppressing its parent
+    would delete the document outright — the 2026-07-30 bug. A child present here usually
+    survives the real pass too, preserving the slot economy the rule was built for.
+    """
+    probe, _ = _cut(ranked, top_k, per_doc_cap, redundant_sections=set(), sections_only=True)
+    return {c.section_id for c in probe if c.kind in _CHILD_KINDS}
+
+
 def select(
     ranked: list[Candidate], top_k: int, per_doc_cap: int, min_score: float | None = None,
     prefer_code: bool = False,
@@ -101,8 +153,17 @@ def select(
     Rules, each motivated by what the assembled context actually gains per slot:
       - one unit per (section_id, kind): a section's 2nd-best chunk adds little beyond its
         best one, but costs a slot another section or document could use;
-      - a 'section' (summary) candidate is redundant when any proposition/chunk of the same
-        section is in the pool: expansion re-attaches the summary to the child for free;
+      - a 'section' (summary) candidate is redundant when a proposition/chunk of the same
+        section MAKES THE CUT: expansion re-attaches the summary to that child for free, so
+        the parent's slot buys nothing. The test is "a child is selected", not "a child is
+        anywhere in the pool" (2026-07-30) — the pool test silently DELETED whole documents.
+        A rough note is one section whose summary reranks well and whose single raw chunk
+        (`# Ideas`, bullet fragments, OCR marks) reranks near the bottom; the summary, often
+        the best unit in the entire pool, was demoted for a child at rank 42 that no cut
+        would ever reach, and refill could not rescue it because `min_score` gates refill.
+        The document then surfaced nowhere at all. This was mis-recorded as a §11.B
+        extraction ceiling; the summaries were fine (docs/rough-note-retrieval-finding.md).
+        Which children make the cut is resolved by `_children_in_cut` below;
       - at most per_doc_cap units per document, so one best-matching document cannot
         monopolise the top-k (cross-domain queries need the *set*, not the single best doc).
 
@@ -131,32 +192,10 @@ def select(
     the pool, which will never be selected and so re-attach nothing. Path-sourced candidates
     are exempt from both — they still earn their slot on cross-encoder score alone.
     """
-    sections_with_units = {
-        c.section_id for c in ranked if c.kind in ("proposition", "chunk", "figure")
-    }
-    selected: list[Candidate] = []
-    skipped: list[Candidate] = []
-    kind_taken: set[tuple[int | None, str]] = set()
-    doc_counts: Counter[int] = Counter()
-
-    for c in ranked:
-        if len(selected) >= top_k:
-            break
-        query_named = "path" in c.sources
-        redundant = (
-            (c.section_id, c.kind) in kind_taken
-            or (
-                c.kind == "section"
-                and c.section_id in sections_with_units
-                and not query_named
-            )
-        )
-        if redundant or (doc_counts[c.doc_id] >= per_doc_cap and not query_named):
-            skipped.append(c)
-            continue
-        selected.append(c)
-        kind_taken.add((c.section_id, c.kind))
-        doc_counts[c.doc_id] += 1
+    sections_with_child_in_cut = _children_in_cut(ranked, top_k, per_doc_cap)
+    selected, skipped = _cut(
+        ranked, top_k, per_doc_cap, redundant_sections=sections_with_child_in_cut
+    )
 
     for c in skipped:  # relax the caps rather than return an underfull top-k
         if len(selected) >= top_k:

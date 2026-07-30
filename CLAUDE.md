@@ -504,10 +504,36 @@ flatten into generic prose, so they never enter the candidate pool. That is a §
 ceiling (fix: stronger summary pass for `maturity=rough`), not a ranking problem; those three
 queries live in `retrieval_eval.py` as its acceptance test.
 
-**Next (Phase 3):** Loop B (PDF annotate, migration 0013 `annotations`) · the annotatable daily
-reMarkable page (`agent/compose_daily.py`, not yet built) · the acceptance-feedback flywheel
-(`acceptance_log` → related-doc ranking; **verified 2026-07-29 that `acceptance_counts()` has no
-callers** — 32 judgments recorded, none consumed) · note↔note surface (the captured rates notes
-formed their own mutual cluster, shared=10 — the plan assumed notes link to the corpus, not to
-each other) · a stronger summary pass for rough notes (above) · concept promotion tier (**17% of
-canonicals span ≥2 docs**; 698 new cross-doc concepts measured, not built).
+**Phase 3 — the two-way daily page (SHIPPED 2026-07-30).** The loop the whole agent layer was
+for: `locus daily` composes an aggregate-only page (migration 0013 `daily_pages`/`daily_anchors`/
+`annotations`) and pushes it as an annotatable PDF; `locus daily-pull` reads it back and routes
+the handwriting. Both on systemd timers.
+- **Transport (hard-won, twice).** The pull-back reads the CLOUD copy: `rmapi get` → `.rmdoc` →
+  composite the strokes back onto the PDF (`capture/rmdoc.py`). The device's render endpoint
+  composites ink for NOTEBOOKS only — for an UPLOADED PDF it returns the original, and every
+  Locus-delivered page is an uploaded PDF, so the tailnet-staged copy is always blank. `.content`
+  carries **two pagemap schemas** (`cPages[].redir.value` and formatVersion-1 `pages` +
+  `redirectionPageMap`); `rmapi put` writes the older one, so missing it dropped every stroke
+  layer on every delivered page. The spend guard keys on a **stroke fingerprint**, not the
+  rendered bytes — compositing is not byte-reproducible, so a file hash re-pays vision every run.
+- **Loop B (`capture/rmdoc.py` + `capture/annotate.py`, migration 0016).** Book/PDF annotations
+  read from the same `.rmdoc` and linked to the exact passage by GEOMETRY, not vision: shape
+  decides the gesture (underline / bracket / margin note), position only sets `in_margin`; hand
+  underlines sit BELOW their glyph boxes. Live: 26 marks on *Advanced Portfolio Management*.
+  Migration 0016 also adds the **`idea`** object type — what reading actually produces.
+- **Writing is CONTENT, not a checkbox.** The first real page settled this: he wrote three times,
+  all three questions, none in the box labelled for questions. `classify_writing` (deterministic)
+  routes handwriting under ANY region into an owner-owned `question`/`idea` object grounded in
+  that region (`raised_by`). A question on a recall line no longer counts as a recall attempt.
+- **Read-next ranks by RARITY** (`learn/reread.concept_weight`, 1/log2(1+doc_freq)), not by a raw
+  count of gaps closed — that had handed the slot to coursework (`frequency response` 18 docs,
+  `eigenvector` 13, vs the quant gaps at 1 doc each).
+- The **acceptance flywheel is closed**: `link/related.acceptance_factors()` folds judgments into
+  related-doc ranking (it had 32 recorded and zero callers).
+
+**Next:** turn a marked passage into an idea with a model pass (the geometry hands it a clean
+grounded input) · the discovery reading list (`docs/reading-discovery-plan.md`) · note↔note
+surface (captured notes form their own mutual cluster, shared=10 — the plan assumed notes link to
+the corpus, not to each other) · a stronger summary pass for rough notes · concept promotion tier
+(**17% of canonicals span ≥2 docs**; ~520 new cross-doc concepts measured, ~90% coursework junk,
+so a filter is needed first).

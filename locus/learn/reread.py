@@ -28,6 +28,7 @@ way.
 
 from __future__ import annotations
 
+import math
 import sqlite3
 from dataclasses import dataclass
 
@@ -43,7 +44,7 @@ class ReReadCandidate:
     doc_id: int
     source_uri: str
     title: str
-    concepts: tuple[str, ...]   # the open gap concepts this document covers, most-shared first
+    concepts: tuple[str, ...]   # the open gap concepts this document covers, RAREST first
     objects: tuple[str, ...]    # the blessed objects those gaps belong to
 
     @property
@@ -51,6 +52,47 @@ class ReReadCandidate:
         head = ", ".join(self.concepts[:2])
         more = f" (+{len(self.concepts) - 2} more)" if len(self.concepts) > 2 else ""
         return f"covers {head}{more} — used in your work, never written up"
+
+
+def _concept_doc_freq(conn: sqlite3.Connection, concepts) -> dict[str, int]:
+    """How many documents each canonical concept appears in."""
+    if not concepts:
+        return {}
+    marks = ",".join("?" * len(concepts))
+    rows = conn.execute(
+        f"""
+        SELECT canonical_name AS c, COUNT(DISTINCT doc_id) AS n FROM (
+            SELECT e.doc_id AS doc_id,
+                   COALESCE(
+                     (SELECT a.canonical_name FROM entity_aliases a
+                       WHERE a.variant_name = e.name AND a.variant_type = e.type),
+                     e.name
+                   ) AS canonical_name
+            FROM entities e
+        ) WHERE canonical_name IN ({marks}) GROUP BY canonical_name
+        """,
+        tuple(concepts),
+    ).fetchall()
+    return {r["c"]: r["n"] for r in rows}
+
+
+def concept_weight(doc_freq: int) -> float:
+    """How much covering one gap concept should count towards reading a document.
+
+    RARITY IS THE SIGNAL. Ranking on a raw count of gaps closed handed the read-next slot to
+    coursework and kept it there: measured 2026-07-30, the open gaps included `frequency
+    response` (18 documents) and `eigenvector` (13), which every signals and control handout
+    mentions, while the gaps that actually matter to his work — `market regime detection`,
+    `walk-forward cross-validation` — sat at ONE document each. Two generic hits beat one
+    decisive one, so the page offered Nyquist plots and Mechanical Vibration.
+
+    A concept spanning eighteen documents tells you almost nothing about which of them to
+    read; a concept in one document means that document IS the place. This weighting says so,
+    and it is not a thumb on the scale for quant: if he later adds fifty papers that all
+    discuss regimes, `regime` becomes generic and stops driving the ranking, exactly as it
+    should. Category-based down-weighting would have hard-coded today's corpus instead.
+    """
+    return 1.0 / math.log2(1 + max(doc_freq, 1))
 
 
 def open_gap_concepts(conn: sqlite3.Connection, *, limit: int = 100) -> dict[str, set[str]]:
@@ -133,15 +175,22 @@ def reread_candidates(
         )
         entry["concepts"].add(r["concept"])
 
+    freq = _concept_doc_freq(conn, list(gaps))
     ranked = sorted(
         by_doc.items(),
-        # most gaps closed first; ties broken by the doc id so the page is stable day to day
-        key=lambda kv: (-len(kv[1]["concepts"]), kv[0]),
+        # Rarity-weighted, not a raw count (see concept_weight). Ties broken by doc id so the
+        # page is stable day to day.
+        key=lambda kv: (
+            -sum(concept_weight(freq.get(c, 1)) for c in kv[1]["concepts"]),
+            kv[0],
+        ),
     )
 
     out: list[ReReadCandidate] = []
     for doc_id, entry in ranked[:limit]:
-        concepts = sorted(entry["concepts"], key=lambda c: (-len(gaps.get(c, ())), c))
+        # Rarest first, so the printed reason leads with the concept that actually singles this
+        # document out rather than one every handout mentions.
+        concepts = sorted(entry["concepts"], key=lambda c: (freq.get(c, 1), c))
         objects = sorted({o for c in concepts for o in gaps.get(c, ())})
         out.append(
             ReReadCandidate(

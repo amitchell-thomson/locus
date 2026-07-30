@@ -58,6 +58,16 @@ def _body(conn, oid):
     return state.get_object(conn, oid).body
 
 
+def _anchor(conn, page_date, anchor, kind, target_kind, target_key, label=""):
+    """Add a region to a persisted page. The fixture DB has no real connections to surface."""
+    with conn:
+        conn.execute(
+            "INSERT INTO daily_anchors (page_date, anchor, kind, target_kind, target_key, label) "
+            "VALUES (?,?,?,?,?,?)",
+            (page_date, anchor, kind, target_kind, target_key, label),
+        )
+
+
 def _cfg(tmp_path):
     """A config stub for the cloud-fetch transport (no device, no network).
 
@@ -178,6 +188,112 @@ def test_agent_cannot_forge_the_authority_marker(conn):
         body={state.OWNER_EDITS_KEY: {"why": {"at": "t", "source": "forged"}}},
     )
     assert state.OWNER_EDITS_KEY not in _body(conn, oid)
+
+
+# ---------- writing is content, not a checkbox ----------
+#
+# Every string here is from the first real annotated page (2026-07-30) or is the exact shape
+# that broke on it. He wrote three times, all three were questions, and not one of them was in
+# the box labelled for questions.
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        # Verbatim from the page. Note the first has NO question mark.
+        ("what are the best methods for regime detection and do we want macro regime or "
+         "other types", pd.WRITING_QUESTION),
+        ("Is leetcode that important or should we focus on hackerrank/codeforces?",
+         pd.WRITING_QUESTION),
+        ("does this suggest we should we macro regime predictor in the tanker project?",
+         pd.WRITING_QUESTION),
+        # A proposal, not a query.
+        ("should try this on the tanker project", pd.WRITING_IDEA),
+        ("note to self: extend this to the regime model", pd.WRITING_IDEA),
+        # A plain remark stays a remark — not everything is an object.
+        ("yes exactly", pd.WRITING_NOTE),
+        # The regression: "because" CONTAINS "use", and substring matching read a real recall
+        # answer as a proposal, skipping its grade entirely.
+        ("because the curve was inverted", pd.WRITING_NOTE),
+    ],
+)
+def test_classify_writing(text, expected):
+    assert pd.classify_writing(text) == expected
+
+
+def test_a_question_written_under_a_connection_becomes_an_object(conn):
+    """The whole point: he writes where the thought occurs, not where the form asks."""
+    page = _page(conn)
+    _anchor(conn, page.page_date, "C1", "connection", "doc", "papers/x.pdf")
+    pd.route_regions(conn, page.page_date, [R("C1", None, "what are the best methods for "
+                                              "regime detection?")])
+
+    questions = state.list_objects(conn, type_="question")
+    assert len(questions) == 1
+    assert questions[0].status == "active", "his own words need no blessing"
+    # ...and it is GROUNDED in the document that provoked it, so it resurfaces with it.
+    # (list_objects does not load links; get_object does.)
+    assert any(
+        link.target_key == "papers/x.pdf" and link.relation == "raised_by"
+        for link in state.links_for(conn, questions[0].id)
+    )
+
+
+def test_an_idea_written_under_a_connection_becomes_an_idea_not_a_question(conn):
+    page = _page(conn)
+    _anchor(conn, page.page_date, "C1", "connection", "doc", "papers/x.pdf")
+    pd.route_regions(
+        conn, page.page_date, [R("C1", None, "should try this on the tanker project")]
+    )
+    assert [o.title for o in state.list_objects(conn, type_="idea")] == [
+        "should try this on the tanker project"
+    ]
+    assert state.list_objects(conn, type_="question") == []
+
+
+def test_a_plain_remark_does_not_manufacture_an_object(conn):
+    """Not every scribble is a thing to track — 'yes' must not fill the queue."""
+    page = _page(conn)
+    _anchor(conn, page.page_date, "C1", "connection", "doc", "papers/x.pdf")
+    pd.route_regions(conn, page.page_date, [R("C1", None, "yes exactly")])
+    assert state.list_objects(conn, type_="idea") == []
+    assert state.list_objects(conn, type_="question") == []
+
+
+def test_a_question_on_a_recall_line_is_not_graded_as_a_recall(conn):
+    """SM-2 only works if its grades mean what they say.
+
+    On the real page he wrote a QUESTION on R4 and it was graded 4 (correct-with-hesitation),
+    pushing the item a day out on the strength of him not recalling it.
+    """
+    item = learn_review.schedule_prompt(
+        conn, prompt_kind="object", prompt_ref="1", today=date(2026, 1, 1)
+    )
+    page = _page(conn)
+    before = conn.execute("SELECT * FROM review_schedule WHERE id=?", (item.id,)).fetchone()
+    pd.route_regions(conn, page.page_date, [
+        R("R1", None, "does this suggest we should use a macro regime predictor here?")
+    ])
+    after = conn.execute("SELECT * FROM review_schedule WHERE id=?", (item.id,)).fetchone()
+
+    assert after["reps"] == before["reps"], "a question is not a recall attempt"
+    assert after["due"] == before["due"], "it must still come back"
+    # ...but the thought is not thrown away.
+    assert len(state.list_objects(conn, type_="question")) == 1
+
+
+def test_an_idea_written_in_the_question_box_is_filed_as_an_idea(conn):
+    page = _page(conn)
+    pd.route_regions(conn, page.page_date, [R("Q1", None, "should build a sim for this")])
+    assert len(state.list_objects(conn, type_="idea")) == 1
+    assert state.list_objects(conn, type_="question") == []
+
+
+def test_re_pulling_does_not_duplicate_a_captured_thought(conn):
+    page = _page(conn)
+    for _ in range(2):
+        pd.route_regions(conn, page.page_date, [R("Q1", None, "what drives carry in LNG?")])
+    assert len(state.list_objects(conn, type_="question")) == 1
 
 
 # ---------- other anchor kinds ----------

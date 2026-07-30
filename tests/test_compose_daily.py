@@ -200,3 +200,68 @@ def test_entity_grounding_is_printed_readably(conn):
     body = cd.render(cd.compose(conn, today=date(2026, 6, 1)))
     assert "matching engine (concept)" in body
     assert "\x1f" not in body
+
+
+# ---------- the reading marks section (Loop B's consumer) ----------
+
+
+def _mark(conn, *, uri="books/apm.pdf", page=70, text, kind="underline", at="2026-07-30T10:00:00"):
+    with conn:
+        conn.execute(
+            "INSERT INTO pdf_annotations (source_uri, pdf_page, kind, bbox_key, covered_text, "
+            "in_margin, captured_at) VALUES (?,?,?,?,?,0,?)",
+            (uri, page, kind, f"k{page}-{len(text)}", text, at),
+        )
+
+
+_PASSAGE = "the extreme case in which every hedge fund holds a copy of the same portfolio"
+
+
+def test_marked_passages_are_surfaced(conn):
+    """Loop B stored 26 marks with NOTHING reading them — capture was write-only."""
+    _mark(conn, text=_PASSAGE)
+    marks = cd.build_marks(conn)
+    assert len(marks) == 1
+    assert marks[0].passage == _PASSAGE
+    assert marks[0].page == 71, "pages are printed 1-based for a human"
+
+
+def test_a_mark_already_turned_into_something_is_not_re_offered(conn):
+    """Once a passage has become an idea it has moved on; re-offering it is an unread count."""
+    _mark(conn, text=_PASSAGE)
+    conn.execute("UPDATE pdf_annotations SET object_id=1")
+    conn.commit()
+    assert cd.build_marks(conn) == []
+
+
+def test_a_stray_stroke_is_not_a_passage(conn):
+    """Below a few words a mark means nothing when it comes back a week later."""
+    _mark(conn, text="the")
+    assert cd.build_marks(conn) == []
+
+
+def test_one_passage_per_document(conn):
+    """Two quotes from the same chapter are one thought; a book must not own the section."""
+    _mark(conn, page=70, text=_PASSAGE)
+    _mark(conn, page=71, text=_PASSAGE + " and again on the next page entirely")
+    _mark(conn, uri="books/other.pdf", page=5, text=_PASSAGE + " but in a different book")
+    assert {m.source_uri for m in cd.build_marks(conn)} == {"books/apm.pdf", "books/other.pdf"}
+
+
+def test_marks_are_capped_and_anchored_and_rendered(conn):
+    for i in range(5):
+        _mark(conn, uri=f"books/b{i}.pdf", page=i, text=f"{_PASSAGE} number {i}")
+    page = cd.compose(conn, today=date(2026, 7, 30))
+    assert len(page.marks) <= cd.MAX_MARKS
+
+    anchors = {a.anchor for a in page.anchors if a.kind == "mark"}
+    assert anchors == {m.anchor for m in page.marks}
+    body = cd.render(page)
+    for m in page.marks:
+        assert f"**{m.anchor}.**" in body, "an unanchored region cannot be routed back"
+
+
+def test_marks_degrade_silently_when_loop_b_has_never_run(conn):
+    conn.execute("DROP TABLE pdf_annotations")
+    conn.commit()
+    assert cd.build_marks(conn) == []

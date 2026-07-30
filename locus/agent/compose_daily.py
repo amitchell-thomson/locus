@@ -39,6 +39,7 @@ MAX_CONNECTIONS = 3
 MAX_RECALLS = 5
 MAX_READINGS = 3
 MAX_BLESSINGS = 3
+MAX_MARKS = 2
 
 # Categories whose documents are the owner's OWN recent capture — the "why now" that makes a
 # connection worth surfacing today rather than any other day.
@@ -91,6 +92,18 @@ class ReadNext:
 
 
 @dataclass
+class Mark:
+    """A passage the owner marked while reading (Loop B), brought back to him."""
+
+    anchor: str
+    passage: str
+    source_title: str
+    source_uri: str
+    page: int
+    kind: str            # 'underline' | 'bracket' | 'margin_note' | 'mark'
+
+
+@dataclass
 class Blessing:
     anchor: str
     object_id: int
@@ -105,13 +118,16 @@ class DailyPage:
     page_date: str
     connections: list[Connection] = field(default_factory=list)
     recalls: list[Recall] = field(default_factory=list)
+    marks: list[Mark] = field(default_factory=list)
     readings: list[ReadNext] = field(default_factory=list)
     blessings: list[Blessing] = field(default_factory=list)
     anchors: list[Anchor] = field(default_factory=list)
 
     @property
     def is_empty(self) -> bool:
-        return not (self.connections or self.recalls or self.readings or self.blessings)
+        return not (
+            self.connections or self.recalls or self.marks or self.readings or self.blessings
+        )
 
 
 def _utcnow() -> str:
@@ -245,6 +261,61 @@ def build_readings(conn: sqlite3.Connection, *, limit: int = MAX_READINGS) -> li
     return out[:limit]
 
 
+# A marked passage needs enough words to mean something on its own. Below this it is a stray
+# stroke or a single word, which tells him nothing when it comes back a week later.
+_MIN_PASSAGE_CHARS = 40
+
+
+def build_marks(conn: sqlite3.Connection, *, limit: int = MAX_MARKS) -> list[Mark]:
+    """Passages the owner marked while reading, not yet turned into anything (Loop B, §8.2).
+
+    This is the consumer Loop B did not have. 26 marks sat in `pdf_annotations` with nothing
+    reading them, which made the whole capture path write-only — he annotates a book and the
+    system files it away silently.
+
+    Only marks with no derived note or object are offered: once a passage has become an idea
+    it has moved on, and re-offering it is the "unread count" §9 forbids. Newest first, because
+    what he marked last night is what he is thinking about now.
+
+    Degrades silently if the table is absent (Loop B is optional).
+    """
+    try:
+        rows = conn.execute(
+            "SELECT a.*, d.title AS doc_title FROM pdf_annotations a "
+            "LEFT JOIN documents d ON d.source_uri = a.source_uri "
+            "WHERE a.note IS NULL AND a.object_id IS NULL "
+            "AND LENGTH(TRIM(COALESCE(a.covered_text,''))) >= ? "
+            "ORDER BY a.captured_at DESC, a.id DESC LIMIT ?",
+            (_MIN_PASSAGE_CHARS, limit * 4),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+
+    out: list[Mark] = []
+    seen_docs: set[str] = set()
+    for row in rows:
+        uri = row["source_uri"]
+        # One passage per document per page: two quotes from the same chapter is one thought,
+        # and the cap is small enough that a single book would otherwise own the section.
+        if uri in seen_docs:
+            continue
+        seen_docs.add(uri)
+        passage = " ".join((row["covered_text"] or "").split())
+        out.append(
+            Mark(
+                anchor="",
+                passage=passage if len(passage) <= 300 else passage[:297] + "...",
+                source_title=row["doc_title"] or uri.rsplit("/", 1)[-1],
+                source_uri=uri,
+                page=row["pdf_page"] + 1,   # 1-based for a human
+                kind=row["kind"],
+            )
+        )
+        if len(out) >= limit:
+            break
+    return out
+
+
 def _format_grounding(link: state.ObjectLink) -> str:
     """Human-readable grounding for the page.
 
@@ -307,6 +378,7 @@ def compose(conn: sqlite3.Connection, *, today: date | None = None) -> DailyPage
     page = DailyPage(page_date=today.isoformat())
     page.connections = build_connections(conn)
     page.recalls = build_recalls(conn, today=today)
+    page.marks = build_marks(conn)
     page.readings = build_readings(conn)
     page.blessings = build_blessings(conn)
 
@@ -319,6 +391,11 @@ def compose(conn: sqlite3.Connection, *, today: date | None = None) -> DailyPage
         r.anchor = f"R{i}"
         page.anchors.append(
             Anchor(r.anchor, "recall", "review_item", str(r.item_id), label=r.prompt[:120])
+        )
+    for i, m in enumerate(page.marks, 1):
+        m.anchor = f"M{i}"
+        page.anchors.append(
+            Anchor(m.anchor, "mark", "doc", m.source_uri, label=m.passage[:120])
         )
     for i, d in enumerate(page.readings, 1):
         d.anchor = f"D{i}"
@@ -432,6 +509,17 @@ def render(page: DailyPage) -> str:
             if r.source:
                 lines += ["", f"*{r.source}*"]
             lines += ["", _rules(3)]
+
+    if page.marks:
+        lines += ["## You marked this", ""]
+        for m in page.marks:
+            lines += [
+                f"**{m.anchor}.** “{m.passage}”",
+                "",
+                f"*{m.source_title} — p.{m.page}*",
+                "",
+                _rules(2),
+            ]
 
     if page.readings:
         lines += ["## Read next", ""]

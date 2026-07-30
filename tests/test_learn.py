@@ -447,3 +447,42 @@ def test_reread_reason_names_the_concepts(conn, tanker):
     state.set_status(conn, tanker, "active")
     got = reread.reread_candidates(conn, limit=1)
     assert "AIS interpolation" in got[0].reason or got[0].concepts
+
+
+def test_rarity_outranks_raw_count(conn, tanker):
+    """The coursework-dominance fix, in miniature.
+
+    Live on 2026-07-30 the read-next slot offered Nyquist plots and Mechanical Vibration: the
+    open gaps included `frequency response` (18 documents) and `eigenvector` (13), which every
+    signals handout mentions, so a raw count of gaps closed put generic coursework above the
+    one paper that uniquely covered a gap that mattered.
+    """
+    from locus.learn import reread
+
+    state.set_status(conn, tanker, "active")
+    # Two more gap concepts that are EVERYWHERE — the `eigenvector`/`frequency response` shape.
+    _entity(conn, 1, "eigenvector")           # the project uses them, so they become gaps...
+    _entity(conn, 1, "frequency response")
+    # ...and one handout covers BOTH of them: a higher RAW COUNT than the AIS paper's single gap.
+    _doc(conn, 10, title="Generic handout", uri="course/generic.pdf", category="coursework")
+    _entity(conn, 10, "eigenvector")
+    _entity(conn, 10, "frequency response")
+    for i in range(11, 25):                   # both generic concepts span many documents
+        _doc(conn, i, title=f"handout {i}", uri=f"course/h{i}.pdf", category="coursework")
+        _entity(conn, i, "eigenvector")
+        _entity(conn, i, "frequency response")
+
+    got = reread.reread_candidates(conn, limit=3)
+    assert got, "there are open gaps, so there must be candidates"
+    assert got[0].title == "AIS paper", (
+        "the paper covering the RARE gap must outrank the handout covering more gaps"
+    )
+    # ...and the printed reason leads with the concept that singles the document out.
+    assert got[0].concepts[0] == "AIS interpolation"
+
+
+def test_concept_weight_falls_as_a_concept_spreads(conn):
+    from locus.learn.reread import concept_weight
+
+    assert concept_weight(1) > concept_weight(13) > concept_weight(18)
+    assert concept_weight(0) == concept_weight(1), "an unseen concept is not infinitely valuable"

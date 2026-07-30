@@ -234,13 +234,120 @@ def _record(
         )
 
 
+# --- what did he actually write? -------------------------------------------------------------
+#
+# The first cut treated handwriting as a CHECKBOX: a region was "written on" or not, and only the
+# blessing boxes read the words. The first real page (2026-07-30) showed why that is wrong. He
+# wrote three times and every one was a QUESTION — under a connection, under another connection,
+# and on a recall line — while Q1, the box explicitly labelled for questions, he left blank.
+#
+# He writes where the thought occurs, not where the form asks for it. So the content has to be
+# read wherever it lands, and it has to become something he can develop later, or the most
+# valuable material on the page is a log row saying "he engaged".
+#
+# The classifier is DELIBERATELY DETERMINISTIC. A model round-trip per region would be billed,
+# slow, and — on this distinction — no better: interrogative form is a syntactic fact, and the
+# vision pass has already done the hard part by turning ink into text. Being wrong is also cheap
+# in a way that matters: the worst case is an idea filed as a question or vice versa, both of
+# which are owner-owned objects that surface again anyway. Nothing is discarded on a misread.
+
+# WH-WORDS ONLY. A leading auxiliary ("is", "does", "should") is ambiguous without the question
+# mark: "should we use X?" asks, while "should try X on the tanker project" proposes — same first
+# word, opposite intent. An auxiliary-led question almost always carries its '?', and that is
+# tested first, so restricting this list to wh-words loses nothing and stops reading every
+# proposal as a query.
+_INTERROGATIVE = ("what", "why", "how", "when", "where", "which", "who", "whose")
+# Proposal vocabulary — the shape of "we could do X", as opposed to asking whether X is so.
+_PROPOSAL = (
+    "should", "could", "try", "idea", "build", "add", "use", "apply", "maybe",
+    "worth", "consider", "todo", "implement", "extend",
+)
+
+WRITING_QUESTION = "question"
+WRITING_IDEA = "idea"
+WRITING_NOTE = "note"
+
+
+def classify_writing(text: str) -> str:
+    """What KIND of thing is this handwriting: a question, an idea, or a remark?
+
+    Interrogative form wins over proposal vocabulary, because the two overlap heavily in his
+    actual writing ("do we want macro regimes or other types" is a question that contains a
+    proposal). Asking is the weaker commitment, so when a sentence is both, treating it as the
+    question is the reading that claims less.
+    """
+    body = " ".join(text.split()).strip()
+    if not body:
+        return WRITING_NOTE
+    lowered = body.lower()
+    # WORDS, not substrings. The first cut tested `word in lowered` and so read "because" as
+    # containing "use" — turning a real recall answer ("because the curve was inverted") into an
+    # idea and skipping its grade. Matching on token boundaries is the whole fix.
+    words = [w.strip(".,;:!?\"'()[]") for w in lowered.split()]
+    first = words[0] if words else ""
+
+    if body.endswith("?") or first in _INTERROGATIVE:
+        return WRITING_QUESTION
+    if any(w in _PROPOSAL for w in words) or "note to self" in lowered:
+        return WRITING_IDEA
+    return WRITING_NOTE
+
+
+def _thought_title(text: str) -> str:
+    body = " ".join(text.split())
+    return body if len(body) <= 120 else body[:117] + "..."
+
+
+def _capture_thought(
+    conn, r: ExtractedRegion, anchor, *, page_date: str, kind: str
+) -> tuple[int, bool]:
+    """Store a question/idea the owner wrote, grounded in the region it was written under.
+
+    Returns (object_id, created). Created `active`, not `proposed`: the text is his, so there
+    is nothing here for him to bless — asking him to approve his own handwriting is theatre.
+
+    The grounding link is what makes this more than a note. An idea written under a connection
+    to the tanker paper LINKS to that paper, so it resurfaces with the material that provoked
+    it rather than floating free in a list. `raised_by` is the existing relation for exactly
+    this: the target did not state the thought, it prompted it.
+
+    Idempotent by title, so a re-pull of the same page updates rather than duplicating.
+    """
+    text = " ".join(r.text.split())
+    object_id, created = state.upsert_object(conn, type_=kind, title=_thought_title(text))
+    state.apply_owner_edit(
+        conn, object_id, {kind: text, "from_anchor": f"{page_date}#{r.anchor}"},
+        source=f"daily:{page_date}#{r.anchor}",
+    )
+    state.set_status(conn, object_id, "active")
+    if anchor is not None and anchor.target_kind in ("doc", "entity", "object"):
+        state.add_links(
+            conn, object_id,
+            [state.ObjectLink(anchor.target_kind, anchor.target_key, "raised_by")],
+        )
+    return object_id, created
+
+
+def _route_writing(conn, anchor, r: ExtractedRegion, *, page_date: str) -> str:
+    """Capture whatever was written under a non-blessing region. Returns a detail string.
+
+    A plain remark is left as the annotation row it already is: not every scribble is a thing
+    to track, and manufacturing an object from "yes" would fill the queue with noise.
+    """
+    kind = classify_writing(r.text)
+    if kind == WRITING_NOTE:
+        return "noted"
+    _capture_thought(conn, r, anchor, page_date=page_date, kind=kind)
+    return f"{kind}: {_thought_title(r.text)}"
+
+
 # A recall answer is graded 0-5 for SM-2. Grading the ANSWER against the stored proposition is a
 # judgement call and would need a model; what is deterministic — and what the schedule actually
 # needs — is whether he attempted it. An attempted item advances, an untouched one does not.
 _ATTEMPTED_GRADE = 4
 
 
-def _route_recall(conn, anchor, region, r: ExtractedRegion) -> RouteOutcome:
+def _route_recall(conn, anchor, region, r: ExtractedRegion, *, page_date: str) -> RouteOutcome:
     if not r.has_writing:
         return RouteOutcome(r.anchor, "recall", "untouched")
     try:
@@ -250,6 +357,22 @@ def _route_recall(conn, anchor, region, r: ExtractedRegion) -> RouteOutcome:
     row = conn.execute("SELECT * FROM review_schedule WHERE id=?", (item_id,)).fetchone()
     if row is None:
         return RouteOutcome(r.anchor, "recall", "error", "review item no longer exists")
+
+    # WRITING IS NOT THE SAME AS ANSWERING. On the first real page he wrote "does this suggest
+    # we should [use a] macro regime predictor in the tanker project?" on a recall line — a
+    # question, not a recall attempt — and it was graded 4 (correct-with-hesitation), pushing
+    # the item a day further out on the strength of him NOT recalling it. SM-2 only works if
+    # its grades mean what they say, so a question or a proposal leaves the schedule alone and
+    # is captured as the thought it actually is. He still engaged, so the flywheel still hears
+    # about it.
+    kind = classify_writing(r.text)
+    if kind != WRITING_NOTE:
+        detail = _route_writing(conn, anchor, r, page_date=page_date)
+        state.log_acceptance(
+            conn, surface=SURFACE_RECALL, candidate_key=str(item_id), verdict="kept"
+        )
+        return RouteOutcome(r.anchor, "recall", "not-an-answer", detail)
+
     learn_review.grade_item(conn, item_id, grade=_ATTEMPTED_GRADE)
     state.log_acceptance(
         conn, surface=SURFACE_RECALL, candidate_key=str(item_id), verdict="kept"
@@ -257,11 +380,12 @@ def _route_recall(conn, anchor, region, r: ExtractedRegion) -> RouteOutcome:
     return RouteOutcome(r.anchor, "recall", "graded", f"item {item_id} advanced")
 
 
-def _route_connection(conn, anchor, region, r: ExtractedRegion) -> RouteOutcome:
-    """A reaction to a surfaced connection is a free relevance judgement (§12.1).
+def _route_connection(conn, anchor, region, r: ExtractedRegion, *, page_date: str) -> RouteOutcome:
+    """A reaction to a surfaced connection is a free relevance judgement (§12.1) AND content.
 
     Written-on means the connection was worth his attention; untouched means it was not. Both
-    go to `acceptance_log` — the whole point of the flywheel is that a rejection is data.
+    go to `acceptance_log` — the whole point of the flywheel is that a rejection is data. What
+    he WROTE is captured too, linked back to the document that provoked it.
     """
     verdict = "kept" if r.has_writing else "rejected"
     state.log_acceptance(
@@ -269,17 +393,39 @@ def _route_connection(conn, anchor, region, r: ExtractedRegion) -> RouteOutcome:
     )
     if not r.has_writing:
         return RouteOutcome(r.anchor, "connection", "untouched")
-    return RouteOutcome(r.anchor, "connection", "kept", anchor.target_key)
+    return RouteOutcome(
+        r.anchor, "connection", "kept", _route_writing(conn, anchor, r, page_date=page_date)
+    )
 
 
-def _route_reading(conn, anchor, region, r: ExtractedRegion) -> RouteOutcome:
+def _route_reading(conn, anchor, region, r: ExtractedRegion, *, page_date: str) -> RouteOutcome:
     verdict = "kept" if r.has_writing else "rejected"
     state.log_acceptance(
         conn, surface=SURFACE_READING, candidate_key=anchor.target_key, verdict=verdict
     )
     if not r.has_writing:
         return RouteOutcome(r.anchor, "reading", "untouched")
-    return RouteOutcome(r.anchor, "reading", "kept", anchor.target_key)
+    return RouteOutcome(
+        r.anchor, "reading", "kept", _route_writing(conn, anchor, r, page_date=page_date)
+    )
+
+
+def _route_mark(conn, anchor, region, r: ExtractedRegion, *, page_date: str) -> RouteOutcome:
+    """A passage he marked while reading, resurfaced on the page (Loop B's consumer).
+
+    Reactions are logged under the `reading` surface rather than a new one: a judgement about
+    a passage from a book is a judgement about reading material, and migration 0011 already
+    fixed that vocabulary in a CHECK. Reusing it keeps one history instead of two.
+    """
+    verdict = "kept" if r.has_writing else "rejected"
+    state.log_acceptance(
+        conn, surface=SURFACE_READING, candidate_key=anchor.target_key, verdict=verdict
+    )
+    if not r.has_writing:
+        return RouteOutcome(r.anchor, "mark", "untouched")
+    return RouteOutcome(
+        r.anchor, "mark", "kept", _route_writing(conn, anchor, r, page_date=page_date)
+    )
 
 
 def _route_question(
@@ -297,14 +443,14 @@ def _route_question(
     """
     if not r.has_writing:
         return RouteOutcome(r.anchor, "question", "untouched")
-    text = " ".join(r.text.split())
-    title = text if len(text) <= 120 else text[:117] + "..."
-    object_id, created = state.upsert_object(conn, type_="question", title=title)
-    state.apply_owner_edit(
-        conn, object_id, {"question": text}, source=f"daily:{page_date}#{r.anchor}"
+    # The box invites a question, but he is not filling in a form: an idea written here is an
+    # idea. Only the classifier's IDEA verdict overrides the box — a plain remark still becomes
+    # a question object, because that is what he reached for the region to record.
+    kind = WRITING_IDEA if classify_writing(r.text) == WRITING_IDEA else "question"
+    _, created = _capture_thought(conn, r, anchor, page_date=page_date, kind=kind)
+    return RouteOutcome(
+        r.anchor, "question", "created" if created else "updated", _thought_title(r.text)
     )
-    state.set_status(conn, object_id, "active")
-    return RouteOutcome(r.anchor, "question", "created" if created else "updated", title)
 
 
 def _route_blessing(conn, anchor, region, r: ExtractedRegion, *, page_date: str) -> RouteOutcome:
@@ -412,11 +558,13 @@ def route_regions(
             result.outcomes.append(RouteOutcome(r.anchor, anchor.kind, "unchanged"))
             continue
         if anchor.kind == "recall":
-            outcome = _route_recall(conn, anchor, r.anchor, r)
+            outcome = _route_recall(conn, anchor, r.anchor, r, page_date=page_date)
         elif anchor.kind == "connection":
-            outcome = _route_connection(conn, anchor, r.anchor, r)
+            outcome = _route_connection(conn, anchor, r.anchor, r, page_date=page_date)
         elif anchor.kind == "reading":
-            outcome = _route_reading(conn, anchor, r.anchor, r)
+            outcome = _route_reading(conn, anchor, r.anchor, r, page_date=page_date)
+        elif anchor.kind == "mark":
+            outcome = _route_mark(conn, anchor, r.anchor, r, page_date=page_date)
         elif anchor.kind == "blessing":
             outcome = _route_blessing(conn, anchor, r.anchor, r, page_date=page_date)
         elif anchor.kind == "question":

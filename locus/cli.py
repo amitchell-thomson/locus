@@ -660,6 +660,45 @@ def cmd_daily_pull(args) -> None:
     print(f"{result.page_date}: {result.acted} region(s) acted on of {len(result.outcomes)}")
 
 
+def cmd_annotate(args) -> None:
+    """Loop B: pull a PDF's reMarkable annotations and record which passage each one marks.
+
+    Reads the CLOUD copy (`rmapi get` -> .rmdoc), so it works with the tablet powered off. The
+    linking is geometry, not vision: strokes are mapped into PDF page coordinates and
+    intersected with the text layer, so no model is called and nothing is billed.
+    """
+    import tempfile
+
+    from locus.capture.annotate import marks_for_document, store_marks
+    from locus.capture.rmdoc import fetch_rmdoc, read_rmdoc
+
+    if args.rmdoc:
+        path = Path(args.rmdoc)
+    else:
+        tmp = tempfile.mkdtemp(prefix="locus-rmdoc-")
+        print(f"fetching {args.device_path!r} from the reMarkable cloud ...")
+        path = fetch_rmdoc(args.device_path, tmp)
+
+    doc = read_rmdoc(path)
+    marks = marks_for_document(doc)
+    source_uri = args.source_uri or args.device_path or str(path)
+
+    conn = _open()
+    try:
+        written = store_marks(conn, marks, source_uri=source_uri, doc_uuid=doc.doc_uuid)
+    finally:
+        conn.close()
+
+    from collections import Counter
+
+    kinds = Counter(m.kind for m in marks)
+    print(f"{len(doc.pages)} annotated page(s), {len(marks)} mark(s): {dict(kinds)}")
+    for m in marks:
+        text = (m.covered_text or m.line_text or "").strip()
+        print(f"  p{m.pdf_page + 1:<5} {m.kind:<12} {text[:88]}")
+    print(f"stored {written} mark(s) against {source_uri}")
+
+
 def cmd_capture_sync(args) -> None:
     """Loop A: transcribe + fill-in + enrich + ingest staged reMarkable handwriting renders.
 
@@ -1173,6 +1212,18 @@ def main(argv=None) -> None:
         help="re-read even if the file is unchanged since the last pull (spends a vision call)",
     )
     pdp.set_defaults(func=cmd_daily_pull)
+
+    pan = sub.add_parser(
+        "annotate",
+        help="Loop B: read a PDF's reMarkable annotations and link them to the text they mark",
+    )
+    pan.add_argument(
+        "device_path", nargs="?", default=None,
+        help="device path, e.g. '/reading_list/Advanced Portfolio Management'",
+    )
+    pan.add_argument("--rmdoc", default=None, help="use an already-downloaded .rmdoc instead")
+    pan.add_argument("--source-uri", default=None, help="stable key to store marks under")
+    pan.set_defaults(func=cmd_annotate)
 
     pcs = sub.add_parser(
         "capture-sync",

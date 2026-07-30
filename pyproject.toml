@@ -6,6 +6,7 @@ authors = [{ name = "Alec Mitchell-Thomson" }]
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "rmscene>=0.8.0",   # .rm v6 stroke geometry for Loop B (annotation linking)
     "pydantic>=2.6",
     "sqlite-vec>=0.1.6",
     "alembic>=1.13",

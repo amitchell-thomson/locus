@@ -31,7 +31,10 @@ from typing import Callable, Iterable
 # `name\x1ftype` round-trips unambiguously (a ':' or '|' would collide with real names).
 _KEY_SEP = "\x1f"
 
-OBJECT_TYPES = ("project", "concept", "question", "reading")
+# `idea` (0016): what reading actually produces. A question is something he does not know, a
+# concept something that exists, a project something he is building — an IDEA is something he
+# MIGHT build, and marginalia is where they come from.
+OBJECT_TYPES = ("project", "concept", "question", "reading", "idea")
 RELATIONS = ("implements", "about", "raised_by", "answered_by", "reads", "relates")
 
 

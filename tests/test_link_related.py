@@ -109,3 +109,81 @@ def test_concept_outranks_code_symbol_and_bridges_to_paper(tmp_path):
         assert "mean reversion" in repo2.shared_names
     finally:
         conn.close()
+
+
+# ---------- acceptance flywheel (§12.1) ----------
+
+
+def test_acceptance_factors_are_inert_until_something_has_been_judged(tmp_path):
+    """Day one must behave exactly as before — no silent reordering from an empty log."""
+    from locus.db.migrate import migrate
+    from locus.db.connection import get_connection
+    from locus.link.related import acceptance_factors
+
+    db = tmp_path / "a.db"
+    migrate(db)
+    conn = get_connection(db)
+    try:
+        assert acceptance_factors(conn) == {}
+    finally:
+        conn.close()
+
+
+def test_acceptance_factors_key_through_source_uri_and_are_clamped(tmp_path):
+    from locus.agent import state
+    from locus.db.migrate import migrate
+    from locus.db.connection import get_connection
+    from locus.link.related import (
+        _ACCEPTANCE_MAX, _ACCEPTANCE_MIN, _ACCEPTANCE_SURFACE, acceptance_factors,
+    )
+
+    db = tmp_path / "b.db"
+    migrate(db)
+    conn = get_connection(db)
+    try:
+        conn.execute(
+            "INSERT INTO documents (id, content_hash, source_type, source_uri, raw_path, title, "
+            "ingest_model) VALUES (1,'h','pdf','vault/a.pdf','raw/a.pdf','A','test')"
+        )
+        conn.commit()
+        for _ in range(20):
+            state.log_acceptance(
+                conn, surface=_ACCEPTANCE_SURFACE, candidate_key="vault/a.pdf", verdict="kept"
+            )
+        assert acceptance_factors(conn)[1] == _ACCEPTANCE_MAX, "must be clamped, not unbounded"
+
+        for _ in range(60):
+            state.log_acceptance(
+                conn, surface=_ACCEPTANCE_SURFACE, candidate_key="vault/a.pdf", verdict="rejected"
+            )
+        assert acceptance_factors(conn)[1] == _ACCEPTANCE_MIN
+
+        # A judgement whose document is gone is dropped, never reattached to another row.
+        state.log_acceptance(
+            conn, surface=_ACCEPTANCE_SURFACE, candidate_key="vault/gone.pdf", verdict="kept"
+        )
+        assert set(acceptance_factors(conn)) == {1}
+    finally:
+        conn.close()
+
+
+def test_other_surfaces_do_not_move_related_ranking(tmp_path):
+    """A blessing says nothing about whether two documents belong near each other."""
+    from locus.agent import state
+    from locus.db.migrate import migrate
+    from locus.db.connection import get_connection
+    from locus.link.related import acceptance_factors
+
+    db = tmp_path / "c.db"
+    migrate(db)
+    conn = get_connection(db)
+    try:
+        conn.execute(
+            "INSERT INTO documents (id, content_hash, source_type, source_uri, raw_path, title, "
+            "ingest_model) VALUES (1,'h','pdf','vault/a.pdf','raw/a.pdf','A','test')"
+        )
+        conn.commit()
+        state.log_acceptance(conn, surface="object", candidate_key="vault/a.pdf", verdict="kept")
+        assert acceptance_factors(conn) == {}
+    finally:
+        conn.close()

@@ -62,6 +62,10 @@ class Connection:
     source_title: str
     source_date: str
     other_title: str
+    # STABLE key for the other document. Titles are not stable — `retitle` rewrote every one
+    # of them in round 7 and silently broke every title-keyed eval label. Anything persisted
+    # (anchors, acceptance judgements) keys on source_uri.
+    other_uri: str
     why_now: str
     shared: tuple[str, ...]
 
@@ -131,6 +135,11 @@ def _recent_capture(conn: sqlite3.Connection, *, limit: int) -> list[sqlite3.Row
     )
 
 
+def _source_uri(conn: sqlite3.Connection, doc_id: int) -> str:
+    row = conn.execute("SELECT source_uri FROM documents WHERE id=?", (doc_id,)).fetchone()
+    return (row["source_uri"] if row else "") or str(doc_id)
+
+
 def build_connections(conn: sqlite3.Connection, *, limit: int = MAX_CONNECTIONS) -> list[Connection]:
     """Cross-corpus links out of recent capture — a pure `related_documents` join.
 
@@ -162,6 +171,7 @@ def build_connections(conn: sqlite3.Connection, *, limit: int = MAX_CONNECTIONS)
                     source_title=src["title"] or src["source_uri"],
                     source_date=src["source_date"] or "",
                     other_title=rel.title,
+                    other_uri=_source_uri(conn, rel.doc_id),
                     why_now=(
                         f"you wrote this on {src['source_date']}; it shares "
                         f"{rel.shared_count} concept{'s' if rel.shared_count != 1 else ''} "
@@ -281,7 +291,7 @@ def compose(conn: sqlite3.Connection, *, today: date | None = None) -> DailyPage
     for i, c in enumerate(page.connections, 1):
         c.anchor = f"C{i}"
         page.anchors.append(
-            Anchor(c.anchor, "connection", "doc", c.other_title, label=c.source_title)
+            Anchor(c.anchor, "connection", "doc", c.other_uri, label=c.source_title)
         )
     for i, r in enumerate(page.recalls, 1):
         r.anchor = f"R{i}"
@@ -298,6 +308,11 @@ def compose(conn: sqlite3.Connection, *, today: date | None = None) -> DailyPage
         page.anchors.append(
             Anchor(b.anchor, "blessing", "object", str(b.object_id), label=b.title)
         )
+    # One always-present open region. It is an invitation, not a prompt with a right answer, so
+    # it carries no count and no backlog — anything written here becomes a Question object the
+    # owner already owns (he wrote it), which is the only thing on this page that originates
+    # with him rather than with the agent.
+    page.anchors.append(Anchor("Q1", "question", "none", "open", label="open question"))
     return page
 
 
@@ -421,5 +436,9 @@ def render(page: DailyPage) -> str:
                 "",
                 _rules(3),
             ]
+
+    # The one region that starts with him rather than with the agent. Always offered when
+    # there is a page at all; no prompt, no count, nothing to be behind on.
+    lines += ["## Anything on your mind", "", "**Q1.**", "", _rules(4)]
 
     return "\n".join(lines)

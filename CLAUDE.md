@@ -376,7 +376,8 @@ locus/
 │   │  ── agent layer (§15) ──
 │   ├── agent/            # claude.py (the claude -p runner) · journal.py (agent_runs) ·
 │   │                     #   budget.py (cost ledger) · state.py (objects/links/positions/acceptance) ·
-│   │                     #   compose_daily.py (the §9 daily reMarkable page — aggregate-only)
+│   │                     #   compose_daily.py (the §9 daily reMarkable page — aggregate-only) ·
+│   │                     #   pull_daily.py (annotated-page pull-back: route, four-way bless)
 │   ├── capture/          # remarkable · transcribe · fillin · loop_a · conversations
 │   ├── structure/        # propose.py — gated object + belief proposal (plan/apply split)
 │   ├── evolve/           # trajectory.py — dated position chain + advisory tension detection

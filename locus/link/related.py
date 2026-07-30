@@ -164,6 +164,58 @@ def _default_category_affinity() -> dict[tuple[str, str], float]:
     }
 
 
+# --- acceptance flywheel (plan §12.1) --------------------------------------------------------
+#
+# Keep/reject of a surfaced connection is a free labelled relevance judgement. `acceptance_log`
+# has been collecting them since Phase 2, and `acceptance_counts()` had NO CALLERS — 32 recorded
+# judgements that changed nothing. This is where they finally do something.
+#
+# Deliberately gentle and bounded. The signal is thin (a handful of judgements per document at
+# most), the ranking underneath it is well-tuned, and an over-eager multiplier would let two
+# accidental ticks reorder a graph that currently scores links_recall 1.000. So: one step per
+# net judgement, hard-clamped, and applied to the SAME slot as category affinity (a multiplier on
+# concept weight) rather than as a new arm — it can reorder neighbours, never invent one.
+#
+# Scoped to the daily-connection surface only. A blessing or a recall judgement says nothing
+# about whether two documents belong near each other.
+_ACCEPTANCE_SURFACE = "connection"  # the vocabulary migration 0011 fixed in a CHECK constraint
+_ACCEPTANCE_STEP = 0.15
+_ACCEPTANCE_MIN = 0.6
+_ACCEPTANCE_MAX = 1.6
+
+
+def acceptance_factors(conn: sqlite3.Connection) -> dict[int, float]:
+    """doc_id -> ranking multiplier learned from what the owner kept or ignored.
+
+    Keyed through `source_uri`, not a doc row id: acceptance judgements outlive re-ingest, and a
+    judgement silently reattaching itself to whatever document inherited an id would be worse
+    than losing it (the lesson migration 0012 paid for).
+
+    Returns {} when nothing has been judged, which makes this inert until the loop has actually
+    run — no behaviour change on day one.
+    """
+    from locus.agent.state import acceptance_counts
+
+    counts = acceptance_counts(conn, surface=_ACCEPTANCE_SURFACE)
+    if not counts:
+        return {}
+    by_uri = {
+        (r["source_uri"] or ""): r["id"]
+        for r in conn.execute("SELECT id, source_uri FROM documents")
+    }
+    out: dict[int, float] = {}
+    for uri, verdicts in counts.items():
+        doc_id = by_uri.get(uri)
+        if doc_id is None:
+            continue  # judged document no longer in the corpus: drop it, never guess a target
+        net = verdicts.get("kept", 0) - verdicts.get("rejected", 0)
+        if net:
+            out[doc_id] = max(
+                _ACCEPTANCE_MIN, min(_ACCEPTANCE_MAX, 1.0 + _ACCEPTANCE_STEP * net)
+            )
+    return out
+
+
 def _load_category_affinity() -> dict[tuple[str, str], float]:
     """Production affinity matrix. Module default for now; a config override can be wired here
     later (the function boundary keeps `related_documents` agnostic to where the matrix is set)."""
@@ -324,6 +376,7 @@ def related_documents(
     top_n: int = 5,
     stop_doc_freq: int | None = None,
     category_affinity: dict[tuple[str, str], float] | None = None,
+    acceptance: dict[int, float] | None = None,
 ) -> list[RelatedDoc]:
     """Top documents sharing canonical entity NAMES with `doc_id`, IDF-weighted.
 
@@ -356,6 +409,8 @@ def related_documents(
     """
     if category_affinity is None:
         category_affinity = _load_category_affinity()
+    if acceptance is None:
+        acceptance = acceptance_factors(conn)
 
     src_row = conn.execute(
         "SELECT category, source_type FROM documents WHERE id = ?", (doc_id,)
@@ -399,7 +454,7 @@ def related_documents(
     for r in cands:
         both_code = src_is_code and r["source_type"] == "code"
         affinity = category_affinity.get((src_cat, r["category"] or ""), 1.0)
-        weight = r["concept_weight"] * affinity
+        weight = r["concept_weight"] * affinity * acceptance.get(r["doc_id"], 1.0)
         if both_code:
             weight += _CODE_SYMBOL_WEIGHT * r["code_weight"]
         if weight <= 0:

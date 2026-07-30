@@ -622,6 +622,29 @@ def cmd_daily(args) -> None:
         conn.close()
 
 
+def cmd_daily_pull(args) -> None:
+    """Pull an annotated daily page back and route what was written on it (agent-layer §9).
+
+    Idempotent by (page date, anchor): re-running against the same scan revises each region
+    rather than adding a second one, so a page read twice cannot double-grade a recall answer
+    or bless an object twice. Billed — one vision call per page.
+    """
+    from locus.agent.pull_daily import pull_daily
+
+    conn = _open()
+    try:
+        result = pull_daily(conn, args.pdf, page_date=args.date)
+    finally:
+        conn.close()
+
+    for o in result.outcomes:
+        print(f"  {o.anchor:<4} {o.kind:<11} {o.outcome:<18} {o.detail}")
+    if result.unknown_anchors:
+        # Never guessed at: an anchor we did not print is not something we can route.
+        print(f"  ignored unknown anchors: {', '.join(sorted(result.unknown_anchors))}")
+    print(f"{result.page_date}: {result.acted} region(s) acted on of {len(result.outcomes)}")
+
+
 def cmd_capture_sync(args) -> None:
     """Loop A: transcribe + fill-in + enrich + ingest staged reMarkable handwriting renders.
 
@@ -1109,6 +1132,14 @@ def main(argv=None) -> None:
     pdy.add_argument("--no-push", action="store_true", help="render locally only; skip the rmapi push")
     pdy.add_argument("--no-render", action="store_true", help="write the markdown only; skip the PDF")
     pdy.set_defaults(func=cmd_daily)
+
+    pdp = sub.add_parser(
+        "daily-pull",
+        help="read an annotated daily page and route the handwriting (billed: vision per page)",
+    )
+    pdp.add_argument("pdf", help="the annotated daily page, pulled off the tablet")
+    pdp.add_argument("--date", default=None, help="page date (default: today)")
+    pdp.set_defaults(func=cmd_daily_pull)
 
     pcs = sub.add_parser(
         "capture-sync",

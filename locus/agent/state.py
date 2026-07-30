@@ -80,25 +80,123 @@ def _row_to_object(row) -> AgentObject:
     )
 
 
+# Reserved body keys recording what the OWNER has authored. They are metadata about authority,
+# never content, so an incoming agent body can neither read nor write them (docs/owner-authority-design.md).
+OWNER_EDITS_KEY = "_owner_edits"      # field -> {at, source}: the owner authored this field
+OWNER_REMOVED_KEY = "_owner_removed"  # field -> [items]: the owner struck these from a list
+_RESERVED_KEYS = (OWNER_EDITS_KEY, OWNER_REMOVED_KEY)
+
+
 def merge_body(existing: dict, incoming: dict) -> dict:
-    """Additively merge a proposed body into a stored one (rule 2).
+    """Additively merge a proposed (AGENT) body into a stored one (rule 2).
 
     Lists union preserving order (stored items first, new ones appended, exact duplicates
     dropped); scalars fill only where the stored value is missing/empty; nested dicts recurse.
     The asymmetry is deliberate — an agent may ADD to what the owner is tracking, never silently
-    replace it."""
+    replace it.
+
+    Owner authority (2026-07-30). Emptiness was being used as a proxy for "nobody has decided
+    this yet", and it is a leaky one, so an owner edit now leaves an explicit marker that this
+    merge honours. Two holes closed, both cases where the additive merge silently overrode an
+    owner decision:
+
+      - a field the owner deliberately CLEARED read as empty, so the agent refilled it;
+      - a list item the owner REMOVED was re-appended by the next union.
+
+    Both rules only ever make the agent do less; nothing here lets it overwrite anything it
+    could not overwrite before. The owner's own write path is `apply_owner_edit`, which is where
+    overwriting lives — see docs/owner-authority-design.md for why that split is the right shape.
+    """
     merged = dict(existing)
+    owner_fields = set(existing.get(OWNER_EDITS_KEY, {}))
+    removed = existing.get(OWNER_REMOVED_KEY, {})
+
     for key, new in incoming.items():
+        if key in _RESERVED_KEYS:
+            continue  # authority metadata is not the agent's to assert
+        if key in owner_fields:
+            continue  # the owner authored this field; an empty value is still their decision
         old = merged.get(key)
         if isinstance(old, list) and isinstance(new, list):
-            merged[key] = old + [v for v in new if v not in old]
+            struck = removed.get(key, [])
+            merged[key] = old + [v for v in new if v not in old and v not in struck]
         elif isinstance(old, dict) and isinstance(new, dict):
             merged[key] = merge_body(old, new)
         elif old in (None, "", [], {}):
             merged[key] = new
     for key, new in incoming.items():
-        merged.setdefault(key, new)
+        if key in _RESERVED_KEYS or key in owner_fields:
+            continue
+        if key not in merged:
+            struck = removed.get(key, [])
+            merged[key] = (
+                [v for v in new if v not in struck] if isinstance(new, list) and struck else new
+            )
     return merged
+
+
+def apply_owner_edit(
+    conn,
+    object_id: int,
+    edits: dict,
+    *,
+    source: str,
+    remove: dict | None = None,
+    now: Callable[[], str] = _utcnow,
+) -> bool:
+    """The OWNER's write path: replace fields outright and record that they did.
+
+    This is the counterpart to `upsert_object`, not a variant of it. The propose-never-mutate
+    invariant constrains the AGENT; the owner is the authority and a hand-written correction on
+    the daily page must be able to overwrite agent text. Keeping them as separate verbs states
+    that directly instead of leaning on emptiness to imply authority.
+
+    `edits` replaces scalars wholesale. `remove` strikes items from list fields. Both record
+    markers (`_owner_edits` / `_owner_removed`) so the additive agent merge cannot undo the edit
+    on the next structure run — without them a correction would survive only until tonight, and
+    having to re-make it nightly is precisely the chore §9 forbids.
+
+    Never writes `status`: correcting an object and blessing it stay separate, independently
+    auditable acts (blessing is `set_status`). Returns False if the object is unknown.
+    """
+    obj = get_object(conn, object_id)
+    if obj is None:
+        return False
+
+    body = dict(obj.body)
+    stamp = now()
+    marks = dict(body.get(OWNER_EDITS_KEY, {}))
+    struck = {k: list(v) for k, v in body.get(OWNER_REMOVED_KEY, {}).items()}
+
+    for key, value in (edits or {}).items():
+        if key in _RESERVED_KEYS:
+            raise ValueError(f"{key!r} is authority metadata, not an editable field")
+        body[key] = value
+        marks[key] = {"at": stamp, "source": source}
+
+    for key, items in (remove or {}).items():
+        if key in _RESERVED_KEYS:
+            raise ValueError(f"{key!r} is authority metadata, not an editable field")
+        current = body.get(key)
+        if isinstance(current, list):
+            body[key] = [v for v in current if v not in items]
+        struck.setdefault(key, [])
+        struck[key] += [v for v in items if v not in struck[key]]
+        # NOTE: a removal does NOT mark the field as owner-authored. Striking one item means
+        # "not that one", not "this list is closed" — marking the field would freeze it and the
+        # agent could never append a genuinely new thread again. The `_owner_removed` tombstone
+        # is precisely scoped to the items struck, which is all the durability this needs.
+
+    body[OWNER_EDITS_KEY] = marks
+    if struck:
+        body[OWNER_REMOVED_KEY] = struck
+
+    with conn:
+        conn.execute(
+            "UPDATE objects SET body=?, updated_at=? WHERE id=?",
+            (json.dumps(body), stamp, object_id),
+        )
+    return True
 
 
 # --- objects ---------------------------------------------------------------------------------

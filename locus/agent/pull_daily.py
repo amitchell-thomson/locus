@@ -453,6 +453,66 @@ def _route_question(
     )
 
 
+def _route_open(conn, anchor, region, r: ExtractedRegion, *, page_date: str) -> RouteOutcome:
+    """Continue, close, or drop one of his own open threads.
+
+    Deliberately the SAME gesture vocabulary as the blessing boxes, because asking him to
+    remember two different meanings for a tick is how a paper interface stops being used:
+
+        tick, no writing   -> resolved (he has his answer; it just is not worth writing down)
+        tick, with writing -> the writing IS the resolution, then closed
+        CROSS              -> let it go; archived either way, and any writing is still kept
+        writing, no mark   -> development. It stays open and comes back.
+        nothing            -> no-op; re-offered later
+
+    Development APPENDS rather than replaces. A thread is a sequence of passes at the same
+    question, and overwriting yesterday's thinking with today's would destroy the only record
+    of how his view moved — which is the thing `evolve/trajectory.py` exists to read.
+    """
+    try:
+        object_id = int(anchor.target_key)
+    except ValueError:
+        return RouteOutcome(r.anchor, "open", "error", "unparseable object id")
+    obj = state.get_object(conn, object_id)
+    if obj is None:
+        return RouteOutcome(r.anchor, "open", "error", "thread no longer exists")
+
+    text = " ".join(r.text.split())
+    if text:
+        entries = list((obj.body or {}).get(cd.DEVELOPMENT_KEY) or [])
+        entries.append({"at": page_date, "text": text, "anchor": r.anchor})
+        state.apply_owner_edit(
+            conn, object_id, {cd.DEVELOPMENT_KEY: entries},
+            source=f"daily:{page_date}#{r.anchor}",
+        )
+
+    if r.is_cross:
+        state.set_status(conn, object_id, "archived")
+        state.log_acceptance(
+            conn, surface=SURFACE_BLESSING, candidate_key=str(object_id), verdict="rejected"
+        )
+        return RouteOutcome(r.anchor, "open", "dropped", obj.title)
+
+    if r.is_tick:
+        if text:
+            state.apply_owner_edit(
+                conn, object_id, {"resolution": text},
+                source=f"daily:{page_date}#{r.anchor}",
+            )
+        state.set_status(conn, object_id, "archived")
+        state.log_acceptance(
+            conn, surface=SURFACE_BLESSING, candidate_key=str(object_id), verdict="kept"
+        )
+        return RouteOutcome(r.anchor, "open", "resolved", obj.title)
+
+    if text:
+        state.log_acceptance(
+            conn, surface=SURFACE_BLESSING, candidate_key=str(object_id), verdict="kept"
+        )
+        return RouteOutcome(r.anchor, "open", "developed", obj.title)
+    return RouteOutcome(r.anchor, "open", "untouched", obj.title)
+
+
 def _route_blessing(conn, anchor, region, r: ExtractedRegion, *, page_date: str) -> RouteOutcome:
     """The four-way table. See the module docstring for why 'writing, not ticked' is separate."""
     try:
@@ -565,6 +625,8 @@ def route_regions(
             outcome = _route_reading(conn, anchor, r.anchor, r, page_date=page_date)
         elif anchor.kind == "mark":
             outcome = _route_mark(conn, anchor, r.anchor, r, page_date=page_date)
+        elif anchor.kind == "open":
+            outcome = _route_open(conn, anchor, r.anchor, r, page_date=page_date)
         elif anchor.kind == "blessing":
             outcome = _route_blessing(conn, anchor, r.anchor, r, page_date=page_date)
         elif anchor.kind == "question":

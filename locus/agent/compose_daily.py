@@ -40,6 +40,11 @@ MAX_RECALLS = 5
 MAX_READINGS = 3
 MAX_BLESSINGS = 3
 MAX_MARKS = 2
+MAX_OPEN = 2
+
+# The object types that represent an OPEN THREAD of his own — something he asked or proposed and
+# has not finished with. Concepts and projects are not threads: they are things that exist.
+_THREAD_TYPES = ("question", "idea")
 
 # Categories whose documents are the owner's OWN recent capture — the "why now" that makes a
 # connection worth surfacing today rather than any other day.
@@ -92,6 +97,18 @@ class ReadNext:
 
 
 @dataclass
+class OpenThread:
+    """A question or idea of his own that is still open."""
+
+    anchor: str
+    object_id: int
+    type_: str
+    title: str
+    raised: str                  # the date it first appeared, for "how long has this sat"
+    development: tuple[str, ...] # what he has already written on it, oldest first
+
+
+@dataclass
 class Mark:
     """A passage the owner marked while reading (Loop B), brought back to him."""
 
@@ -119,6 +136,7 @@ class DailyPage:
     connections: list[Connection] = field(default_factory=list)
     recalls: list[Recall] = field(default_factory=list)
     marks: list[Mark] = field(default_factory=list)
+    open_threads: list[OpenThread] = field(default_factory=list)
     readings: list[ReadNext] = field(default_factory=list)
     blessings: list[Blessing] = field(default_factory=list)
     anchors: list[Anchor] = field(default_factory=list)
@@ -126,7 +144,8 @@ class DailyPage:
     @property
     def is_empty(self) -> bool:
         return not (
-            self.connections or self.recalls or self.marks or self.readings or self.blessings
+            self.connections or self.recalls or self.marks
+            or self.open_threads or self.readings or self.blessings
         )
 
 
@@ -316,6 +335,61 @@ def build_marks(conn: sqlite3.Connection, *, limit: int = MAX_MARKS) -> list[Mar
     return out
 
 
+DEVELOPMENT_KEY = "development"
+
+
+def development_entries(body: dict) -> list[str]:
+    """The owner's successive notes on a thread, oldest first.
+
+    Stored as `[{"at": iso, "text": ...}]` rather than one blob so the page can show what he
+    last said without losing the earlier passes, and so promotion to the corpus can date them.
+    """
+    out: list[str] = []
+    for entry in (body or {}).get(DEVELOPMENT_KEY) or []:
+        if isinstance(entry, dict) and str(entry.get("text", "")).strip():
+            out.append(str(entry["text"]).strip())
+        elif isinstance(entry, str) and entry.strip():
+            out.append(entry.strip())
+    return out
+
+
+def build_open_threads(conn: sqlite3.Connection, *, limit: int = MAX_OPEN) -> list[OpenThread]:
+    """His own open questions and ideas, least-recently-touched first.
+
+    THE DEAD END THIS CLOSES. Everything he wrote on the page became an `active` object, and the
+    only section that offered objects back was the blessing queue, which reads `proposed` —
+    so a question he asked was recorded and then never shown to him again. Objects are also not
+    embedded and sit in no retrieval arm, so `locus query` could not see it either: he could ask
+    the system something and the system had no way to work on it.
+
+    Least-recently-touched first is the fair queue, the same rule the blessing section uses. It
+    surfaces the thread going stale rather than the one he just wrote, and with a cap of two the
+    fresh ones come round soon enough anyway. Nothing here counts what is outstanding (§9).
+    """
+    rows = conn.execute(
+        f"SELECT id FROM objects WHERE status='active' AND type IN "
+        f"({','.join('?' * len(_THREAD_TYPES))}) ORDER BY updated_at, id LIMIT ?",
+        (*_THREAD_TYPES, limit),
+    ).fetchall()
+
+    out: list[OpenThread] = []
+    for row in rows:
+        obj = state.get_object(conn, row["id"])
+        if obj is None:
+            continue
+        out.append(
+            OpenThread(
+                anchor="",
+                object_id=obj.id,
+                type_=obj.type,
+                title=obj.title,
+                raised=(obj.created_at or "")[:10],
+                development=tuple(development_entries(obj.body)),
+            )
+        )
+    return out
+
+
 def _format_grounding(link: state.ObjectLink) -> str:
     """Human-readable grounding for the page.
 
@@ -379,6 +453,7 @@ def compose(conn: sqlite3.Connection, *, today: date | None = None) -> DailyPage
     page.connections = build_connections(conn)
     page.recalls = build_recalls(conn, today=today)
     page.marks = build_marks(conn)
+    page.open_threads = build_open_threads(conn)
     page.readings = build_readings(conn)
     page.blessings = build_blessings(conn)
 
@@ -396,6 +471,11 @@ def compose(conn: sqlite3.Connection, *, today: date | None = None) -> DailyPage
         m.anchor = f"M{i}"
         page.anchors.append(
             Anchor(m.anchor, "mark", "doc", m.source_uri, label=m.passage[:120])
+        )
+    for i, t in enumerate(page.open_threads, 1):
+        t.anchor = f"O{i}"
+        page.anchors.append(
+            Anchor(t.anchor, "open", "object", str(t.object_id), label=t.title)
         )
     for i, d in enumerate(page.readings, 1):
         d.anchor = f"D{i}"
@@ -520,6 +600,21 @@ def render(page: DailyPage) -> str:
                 "",
                 _rules(2),
             ]
+
+    if page.open_threads:
+        lines += [
+            "## Still open",
+            "",
+            "Yours. Write to develop it, tick when you have your answer, cross to let it go.",
+            "",
+        ]
+        for t in page.open_threads:
+            lines += [f"**{t.anchor}.**  `[   ]`   *{t.type_}* — {t.title}", ""]
+            for prior in t.development[-2:]:
+                # The last couple of passes only: the point is to continue the thought, not to
+                # reprint a transcript he has already read.
+                lines += [f"> {prior}", ""]
+            lines += [f"*raised {t.raised}*", "", _rules(3)]
 
     if page.readings:
         lines += ["## Read next", ""]

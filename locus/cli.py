@@ -636,11 +636,18 @@ def cmd_daily_pull(args) -> None:
     rather than adding a second one, so a page read twice cannot double-grade a recall answer
     or bless an object twice. Billed — one vision call per page.
     """
+    from locus.agent.promote import promote_all
     from locus.agent.pull_daily import pull_daily
 
     conn = _open()
+    promoted = []
     try:
         result = pull_daily(conn, args.pdf, page_date=args.date, force=args.force)
+        if result.status == "routed" and not args.no_promote:
+            # Anything he DEVELOPED becomes a note, so the next `locus notes-sync` puts his own
+            # thinking into the corpus. Without this the loop ends in a side table that no
+            # retrieval arm can see (locus/agent/promote.py).
+            promoted = [p for p in promote_all(conn) if p.wrote]
     finally:
         conn.close()
 
@@ -658,6 +665,38 @@ def cmd_daily_pull(args) -> None:
         # Never guessed at: an anchor we did not print is not something we can route.
         print(f"  ignored unknown anchors: {', '.join(sorted(result.unknown_anchors))}")
     print(f"{result.page_date}: {result.acted} region(s) acted on of {len(result.outcomes)}")
+    for p in promoted:
+        print(f"  promoted ({p.status}): {p.path.name}  [{p.entries} pass(es)]")
+    if promoted:
+        print("  run `locus notes-sync` to bring them into the corpus")
+
+
+def cmd_promote(args) -> None:
+    """Write developed threads out as notes so his own thinking enters the corpus (§15).
+
+    Free and local — no model. Only OWNER-authored text is written: agent rationale must never
+    re-enter the corpus as if it were his (locus/agent/promote.py).
+    """
+    from locus.agent.promote import promote_all, unpromoted_count
+
+    conn = _open()
+    try:
+        if args.count:
+            print(f"{unpromoted_count(conn)} thread(s) carry your development and are not notes yet")
+            return
+        results = promote_all(conn, notes_dir=args.out)
+    finally:
+        conn.close()
+
+    wrote = [p for p in results if p.wrote]
+    for p in wrote:
+        print(f"  {p.status:<9} {p.path}  [{p.entries} pass(es)]")
+    print(
+        f"{len(wrote)} note(s) written, {len(results) - len(wrote)} already current"
+        if results else "nothing to promote — no thread carries development yet"
+    )
+    if wrote:
+        print("run `locus notes-sync` to ingest them")
 
 
 def cmd_annotate(args) -> None:
@@ -1204,7 +1243,11 @@ def main(argv=None) -> None:
     )
     pdp.add_argument(
         "pdf", nargs="?", default=None,
-        help="the annotated page (default: find the staged copy the device pushed back)",
+        help="the annotated page (default: fetch the annotated copy from the cloud)",
+    )
+    pdp.add_argument(
+        "--no-promote", action="store_true",
+        help="skip writing developed threads out as notes",
     )
     pdp.add_argument("--date", default=None, help="page date (default: today)")
     pdp.add_argument(
@@ -1212,6 +1255,16 @@ def main(argv=None) -> None:
         help="re-read even if the file is unchanged since the last pull (spends a vision call)",
     )
     pdp.set_defaults(func=cmd_daily_pull)
+
+    ppr = sub.add_parser(
+        "promote",
+        help="write developed threads out as notes so they enter the corpus (free, local)",
+    )
+    ppr.add_argument("--out", default=None, help="notes dir (default: [paths].notes)")
+    ppr.add_argument(
+        "--count", action="store_true", help="report how many threads are not yet notes"
+    )
+    ppr.set_defaults(func=cmd_promote)
 
     pan = sub.add_parser(
         "annotate",

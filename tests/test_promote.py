@@ -1,0 +1,260 @@
+"""Threads: the "Still open" section, and promotion of his own thinking into the corpus.
+
+Model-free. The invariant under test throughout is AUTHORSHIP: only what the owner wrote may be
+written out as a note, because a note in `vault/notes/` is ingested as HIS material.
+"""
+
+from __future__ import annotations
+
+from datetime import date
+from pathlib import Path
+
+import pytest
+
+from locus.agent import compose_daily as cd
+from locus.agent import promote as pr
+from locus.agent import pull_daily as pd
+from locus.agent import state
+from locus.db.connection import get_connection
+from locus.db.migrate import migrate
+
+
+@pytest.fixture()
+def conn(tmp_path: Path):
+    db = tmp_path / "threads.db"
+    migrate(db)
+    c = get_connection(db)
+    yield c
+    c.close()
+
+
+def _thread(conn, title="what drives carry in LNG?", type_="question", *, develop=()):
+    """An owner-authored thread, optionally with development passes."""
+    oid, _ = state.upsert_object(conn, type_=type_, title=title)
+    state.apply_owner_edit(conn, oid, {type_: title}, source="daily:2026-07-30#Q1")
+    state.set_status(conn, oid, "active")
+    if develop:
+        state.apply_owner_edit(
+            conn, oid,
+            {cd.DEVELOPMENT_KEY: [{"at": d, "text": t} for d, t in develop]},
+            source="daily:2026-07-31#O1",
+        )
+    return oid
+
+
+def _page(conn, today=date(2026, 8, 1)):
+    page = cd.compose(conn, today=today)
+    cd.persist(conn, page, md_path="/tmp/_home.md")
+    return page
+
+
+# ---------- the dead end: his own threads come back ----------
+
+
+def test_an_active_question_is_offered_back(conn):
+    """It became an `active` object and only `proposed` ones were ever shown again."""
+    oid = _thread(conn)
+    threads = cd.build_open_threads(conn)
+    assert [t.object_id for t in threads] == [oid]
+    assert threads[0].type_ == "question"
+
+
+def test_a_resolved_thread_stops_coming_back(conn):
+    oid = _thread(conn)
+    state.set_status(conn, oid, "archived")
+    assert cd.build_open_threads(conn) == []
+
+
+def test_concepts_and_projects_are_not_threads(conn):
+    """A concept is a thing that exists; a thread is something he has not finished with."""
+    for t in ("concept", "project", "reading"):
+        oid, _ = state.upsert_object(conn, type_=t, title=f"x {t}")
+        state.set_status(conn, oid, "active")
+    assert cd.build_open_threads(conn) == []
+
+
+def test_least_recently_touched_comes_first(conn):
+    """The fair queue: surface what is going stale, not what he just wrote."""
+    old = _thread(conn, "older question?")
+    new = _thread(conn, "newer question?")
+    conn.execute("UPDATE objects SET updated_at='2026-01-01T00:00:00Z' WHERE id=?", (old,))
+    conn.commit()
+    assert [t.object_id for t in cd.build_open_threads(conn, limit=2)] == [old, new]
+
+
+def test_threads_are_capped_anchored_and_rendered(conn):
+    for i in range(5):
+        _thread(conn, f"question number {i}?")
+    page = _page(conn)
+    assert len(page.open_threads) <= cd.MAX_OPEN
+    assert {a.anchor for a in page.anchors if a.kind == "open"} == {
+        t.anchor for t in page.open_threads
+    }
+    body = cd.render(page)
+    for t in page.open_threads:
+        assert f"**{t.anchor}.**" in body
+
+
+def test_prior_development_is_shown_so_he_can_continue(conn):
+    _thread(conn, develop=[("2026-07-31", "term structure matters more than spot")])
+    page = _page(conn)
+    assert "term structure matters more than spot" in cd.render(page)
+
+
+# ---------- develop / resolve / drop ----------
+
+
+def _route(conn, page, text="", mark="none"):
+    region = pd.ExtractedRegion("O1", mark == "tick", text, mark=mark)
+    return pd.route_regions(conn, page.page_date, [region])
+
+
+def test_writing_develops_the_thread_and_keeps_it_open(conn):
+    oid = _thread(conn)
+    page = _page(conn)
+    _route(conn, page, text="the answer is probably in the freight curve")
+
+    obj = state.get_object(conn, oid)
+    assert obj.status == "active", "developing is not finishing"
+    assert cd.development_entries(obj.body) == ["the answer is probably in the freight curve"]
+
+
+def test_development_appends_rather_than_replacing(conn):
+    """A thread is successive passes; overwriting destroys how his view moved."""
+    oid = _thread(conn, develop=[("2026-07-31", "first pass")])
+    page = _page(conn)
+    _route(conn, page, text="second pass")
+    assert cd.development_entries(state.get_object(conn, oid).body) == [
+        "first pass", "second pass"
+    ]
+
+
+def test_a_tick_resolves_it(conn):
+    oid = _thread(conn)
+    page = _page(conn)
+    _route(conn, page, text="it is the freight curve", mark="tick")
+
+    obj = state.get_object(conn, oid)
+    assert obj.status == "archived"
+    assert obj.body["resolution"] == "it is the freight curve"
+
+
+def test_a_cross_drops_it_but_keeps_what_he_wrote(conn):
+    oid = _thread(conn)
+    page = _page(conn)
+    _route(conn, page, text="wrong question entirely", mark="cross")
+
+    obj = state.get_object(conn, oid)
+    assert obj.status == "archived"
+    assert "resolution" not in obj.body, "dropping is not resolving"
+    assert cd.development_entries(obj.body) == ["wrong question entirely"]
+
+
+def test_an_untouched_thread_is_re_offered(conn):
+    oid = _thread(conn)
+    page = _page(conn)
+    _route(conn, page)
+    assert state.get_object(conn, oid).status == "active"
+    assert [t.object_id for t in cd.build_open_threads(conn)] == [oid]
+
+
+# ---------- promotion into the corpus ----------
+
+
+def test_a_bare_thread_is_not_promoted(conn):
+    """A question with no thinking on it is a question, not a note."""
+    oid = _thread(conn)
+    assert pr.promote_thread(conn, oid, notes_dir=conn_dir(conn)) is None
+
+
+def conn_dir(conn) -> Path:
+    return Path(conn.execute("PRAGMA database_list").fetchone()[2]).parent / "notes"
+
+
+def test_a_developed_thread_becomes_an_ingestable_note(conn):
+    oid = _thread(conn, develop=[("2026-07-31", "the freight curve leads the spread by a week")])
+    out = pr.promote_thread(conn, oid, notes_dir=conn_dir(conn))
+
+    assert out is not None and out.status == "created"
+    text = out.path.read_text(encoding="utf-8")
+    assert text.startswith("---"), "notes_sync reads frontmatter"
+    assert "category: note" in text
+    assert "the freight curve leads the spread by a week" in text
+    assert "what drives carry in LNG?" in text
+    # It lands where notes_sync looks, and NOT under the corpus-excluded _generated/.
+    assert out.path.parent.name == pr.THREADS_SUBDIR
+    assert "_generated" not in str(out.path)
+
+
+def test_only_owner_authored_text_reaches_the_corpus(conn):
+    """The invariant. Agent rationale must never re-enter as if he wrote it."""
+    oid = _thread(conn, develop=[("2026-07-31", "my own thinking")])
+    # The structurer adds its own rationale, exactly as it does to any object.
+    state.upsert_object(
+        conn, type_="question", title="what drives carry in LNG?",
+        body={"why": "AGENT GUESS about why this matters", "summary": "AGENT SUMMARY"},
+    )
+    text = pr.promote_thread(conn, oid, notes_dir=conn_dir(conn)).path.read_text()
+
+    assert "my own thinking" in text
+    assert "AGENT GUESS" not in text
+    assert "AGENT SUMMARY" not in text
+
+
+def test_re_promoting_unchanged_content_writes_nothing(conn):
+    """The churn trap: promotion runs after every pull, and notes_sync re-embeds on any change.
+
+    The first draft stamped a fresh `promoted:` timestamp into the frontmatter, which would
+    have re-ingested and re-embedded every thread note on every hourly run.
+    """
+    oid = _thread(conn, develop=[("2026-07-31", "stable content")])
+    first = pr.promote_thread(conn, oid, notes_dir=conn_dir(conn))
+    before = first.path.read_text(encoding="utf-8")
+
+    second = pr.promote_thread(conn, oid, notes_dir=conn_dir(conn))
+    assert second.status == "unchanged"
+    assert second.path.read_text(encoding="utf-8") == before, "the render must be deterministic"
+
+
+def test_further_development_updates_the_same_note(conn):
+    oid = _thread(conn, develop=[("2026-07-31", "first")])
+    first = pr.promote_thread(conn, oid, notes_dir=conn_dir(conn))
+
+    page = _page(conn)
+    _route(conn, page, text="second")
+    second = pr.promote_thread(conn, oid, notes_dir=conn_dir(conn))
+
+    assert second.path == first.path, "one thread is one note, never a second file"
+    assert second.status == "updated"
+    body = second.path.read_text(encoding="utf-8")
+    assert "first" in body and "second" in body
+
+
+def test_promotion_bookkeeping_is_not_recorded_as_an_owner_edit(conn):
+    """`owner_fields` decides what may enter the corpus; the agent must not enlarge it."""
+    oid = _thread(conn, develop=[("2026-07-31", "content")])
+    pr.promote_thread(conn, oid, notes_dir=conn_dir(conn))
+    body = state.get_object(conn, oid).body
+    assert pr.PROMOTED_PATH_KEY in body
+    assert pr.PROMOTED_PATH_KEY not in pr.owner_fields(body)
+
+
+def test_promotion_does_not_reorder_the_open_queue(conn):
+    """Bookkeeping must not push a stale thread to the back as though he had touched it."""
+    old = _thread(conn, "older?", develop=[("2026-07-31", "x")])
+    _thread(conn, "newer?")
+    conn.execute("UPDATE objects SET updated_at='2026-01-01T00:00:00Z' WHERE id=?", (old,))
+    conn.commit()
+
+    pr.promote_all(conn, notes_dir=conn_dir(conn))
+    assert cd.build_open_threads(conn, limit=2)[0].object_id == old
+
+
+def test_promote_all_is_idempotent(conn):
+    _thread(conn, develop=[("2026-07-31", "a")])
+    _thread(conn, "second?", type_="idea", develop=[("2026-07-31", "b")])
+    first = [p for p in pr.promote_all(conn, notes_dir=conn_dir(conn)) if p.wrote]
+    second = [p for p in pr.promote_all(conn, notes_dir=conn_dir(conn)) if p.wrote]
+
+    assert len(first) == 2
+    assert second == [], "a second run must not rewrite anything"

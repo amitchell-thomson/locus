@@ -360,7 +360,8 @@ locus/
 │   ├── cli.py            # product surface: ingest list inspect watch sync link retitle
 │   │                     #   query retrieve mcp status backup restore export-obsidian audit eval
 │   │                     #   read capture-sync capture-conversation notes-sync
-│   │                     #   structure objects evolution gaps review daily   (agent layer)
+│   │                     #   structure objects evolution gaps review daily daily-pull
+│   │                     #   promote annotate                               (agent layer)
 │   ├── backup.py         # WAL-safe DB snapshot + rsync-hardlinked raw store; restore
 │   ├── status.py         # `locus status` health summary (counts, alias staleness, backups)
 │   ├── config.py         # typed config; ANTHROPIC_API_KEY via env/.env only
@@ -377,7 +378,8 @@ locus/
 │   ├── agent/            # claude.py (the claude -p runner) · journal.py (agent_runs) ·
 │   │                     #   budget.py (cost ledger) · state.py (objects/links/positions/acceptance) ·
 │   │                     #   compose_daily.py (the §9 daily reMarkable page — aggregate-only) ·
-│   │                     #   pull_daily.py (annotated-page pull-back: route, four-way bless)
+│   │                     #   pull_daily.py (annotated-page pull-back: route, five-way bless) ·
+│   │                     #   promote.py (developed threads -> vault/notes -> the corpus)
 │   ├── capture/          # remarkable · transcribe · fillin · loop_a · conversations ·
 │   │                     #   rmdoc (.rmdoc stroke geometry) · annotate (Loop B text linking)
 │   ├── structure/        # propose.py — gated object + belief proposal (plan/apply split)
@@ -530,6 +532,20 @@ the handwriting. Both on systemd timers.
   `eigenvector` 13, vs the quant gaps at 1 doc each).
 - The **acceptance flywheel is closed**: `link/related.acceptance_factors()` folds judgments into
   related-doc ranking (it had 32 recorded and zero callers).
+
+- **His own thinking circulates (2026-07-30).** Two halves of one loop. A **"Still open"** section
+  (`compose_daily.build_open_threads`) offers back his `active` question/idea objects, least
+  recently touched first — they were previously written to `objects` and never shown again, since
+  the only section reading objects is the blessing queue and that reads `proposed`. Same gesture
+  vocabulary as blessings: tick resolves, cross drops, writing DEVELOPS (appends, never replaces —
+  overwriting would destroy the record `evolve/trajectory.py` reads). Then **`locus promote`**
+  (NEW, `agent/promote.py`, free/local, also automatic after `daily-pull`) writes any thread
+  carrying his development out to `vault/notes/threads/` as an ordinary note, where `notes_sync`
+  ingests it — so it embeds, links, and can come back as a connection. **Only fields carrying an
+  `_owner_edits` marker are written**: agent rationale must never re-enter the corpus as his
+  (invariant 5), and a thread's body legitimately holds both. The render is deterministic and
+  content-only (a promotion timestamp in the frontmatter would re-ingest and re-embed every
+  thread note on every hourly run), and promotion bookkeeping is NOT an owner edit.
 
 **Next:** turn a marked passage into an idea with a model pass (the geometry hands it a clean
 grounded input) · the discovery reading list (`docs/reading-discovery-plan.md`) · note↔note

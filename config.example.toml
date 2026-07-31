@@ -186,6 +186,20 @@ page_height_in = 9.43      # PDF page height (in) — Paper Pro screen height
 margin_in      = 0.5       # page margin (in)
 font_pt        = 11.0      # body text size (pt)
 
+[discovery]
+# Proposed reading and the accept loop (docs/reading-discovery-plan.md, Phase 4).
+# `Locus/Reading/{Proposed,In-Progress,Finished}` on the device: moving a file OUT of Proposed is
+# the accept signal and triggers ingest; leaving it there is a rejection. Free and local — the
+# accept loop calls no model and no network.
+root_folder  = "Locus/Reading"  # device folder holding the three reading folders
+rmapi_binary = "rmapi"          # rmapi binary (PATH name or absolute path)
+# Caps are on the STOCK sitting in Proposed, not on a rate: a full folder proposes nothing, so
+# falling behind produces silence rather than a backlog. Empty is a valid state.
+paper_cap    = 3                # max papers held in Proposed at once
+book_cap     = 1                # max books — one considered suggestion, not a feed
+ttl_days     = 21               # days in Proposed before it reads as a no (a WEAK negative)
+drop_folder  = "paper"          # folder under vault/incoming/ that accepted readings ingest via
+
 [agent]
 # Agent-layer orchestration (agent-layer plan §10, Phase 1). Capture/enrichment loops run
 # language tasks through headless `claude -p` (subscription), metered by a cost ledger over the

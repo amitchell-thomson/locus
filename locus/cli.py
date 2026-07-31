@@ -699,6 +699,91 @@ def cmd_promote(args) -> None:
         print("run `locus notes-sync` to ingest them")
 
 
+def cmd_discover(args) -> None:
+    """The reading accept loop (Phase 4 step 1): propose, watch, ingest what he moved.
+
+    Free and local — no model, no network. `--pull` is the scheduled half: it reads where each
+    proposed reading now sits on the device and ingests the ones he moved out of `Proposed`.
+    """
+    from locus.reading import accept as R_accept
+    from locus.reading import proposals as P
+    from locus.reading import watch as R_watch
+
+    dcfg = load().discovery
+    conn = _open()
+    try:
+        if args.seed:
+            new_id = P.add_candidate(
+                conn, kind=args.kind, title=args.seed, why=args.why or "",
+                why_kind="manual", evidence_key=args.evidence or "manual",
+                authors=args.authors or "", url=args.url,
+            )
+            print(f"seeded #{new_id}" if new_id else "already known — not re-proposed")
+            return
+
+        if args.deliver:
+            from locus.reading.deliver import deliver_proposal
+
+            prop = next((p for p in P.list_proposals(conn, limit=500) if p.id == args.deliver), None)
+            if prop is None:
+                print(f"no proposal #{args.deliver}")
+                return
+            if not args.file:
+                print("--deliver needs --file (the PDF to push: the paper, or a stub page)")
+                return
+            free = P.slots_free(conn, prop.kind, caps=dcfg.caps)
+            if not free and not args.force:
+                print(f"no free {prop.kind} slot — {prop.kind} folder is full "
+                      f"(a full folder proposes nothing; --force overrides)")
+                return
+            out = deliver_proposal(
+                conn, prop, args.file, is_real=not args.stub,
+                root=dcfg.root_folder, rmapi_binary=dcfg.rmapi_binary,
+            )
+            print(f"delivered #{out.proposal_id} as {out.filename!r} "
+                  f"(uuid {out.device_uuid or 'unknown'}) -> Proposed")
+            return
+
+        if args.pull:
+            outcomes = R_watch.scan(
+                conn,
+                ttl_days=args.ttl if args.ttl is not None else dcfg.ttl_days,
+                root="/" + dcfg.root_folder.strip("/"),
+                rmapi_binary=dcfg.rmapi_binary,
+            )
+            for o in outcomes:
+                where = f" -> {o.folder}" if o.folder else ""
+                detail = f" [{o.resolution}]" if o.resolution else ""
+                print(f"  {o.action:<9} {o.title[:56]}{where}{detail}")
+            ingested = R_accept.ingest_accepted(
+                conn, drop_folder=dcfg.drop_folder, dry_run=args.dry_run
+            )
+            for r in ingested:
+                print(f"  {r.status:<13} {r.title[:56]}"
+                      f"{f'  doc {r.doc_id}' if r.doc_id else ''}"
+                      f"{f'  ({r.detail})' if r.detail else ''}")
+            if not outcomes and not ingested:
+                print("nothing awaiting a verdict")
+            return
+
+        # Default: what is in flight, and what the channels have learned so far.
+        for status in ("proposed", "candidate", "accepted"):
+            rows = P.list_proposals(conn, status=status, limit=20)
+            if rows:
+                print(f"{status}:")
+                for p in rows:
+                    print(f"  #{p.id:<4} [{p.kind}] {p.title[:60]}")
+                    print(f"        why: {p.why[:72]}")
+        stats = P.channel_stats(conn)
+        if stats:
+            print("channels:")
+            for kind, s in sorted(stats.items()):
+                print(f"  {kind:<12} kept {s['kept']} · ttl {s['ttl']} · "
+                      f"removed {s['removed']} · open {s['open']}")
+    finally:
+        conn.close()
+
+
 def cmd_annotate(args) -> None:
     """Loop B: pull a PDF's reMarkable annotations and record which passage each one marks.
 
@@ -1255,6 +1340,32 @@ def main(argv=None) -> None:
         help="re-read even if the file is unchanged since the last pull (spends a vision call)",
     )
     pdp.set_defaults(func=cmd_daily_pull)
+
+    pds = sub.add_parser(
+        "discover",
+        help="proposed reading: list, deliver to the tablet, and ingest what you moved (free)",
+    )
+    pds.add_argument(
+        "--pull", action="store_true",
+        help="read where each proposal now sits on the device and ingest the accepted ones",
+    )
+    pds.add_argument("--seed", metavar="TITLE", default=None,
+                     help="hand-seed a candidate (validates the loop without a source)")
+    pds.add_argument("--kind", choices=("paper", "book"), default="paper")
+    pds.add_argument("--why", default=None, help="the grounded reason (required with --seed)")
+    pds.add_argument("--evidence", default=None, help="what grounds it (doc uri / mark id)")
+    pds.add_argument("--authors", default=None)
+    pds.add_argument("--url", default=None)
+    pds.add_argument("--deliver", type=int, metavar="ID", default=None,
+                     help="push proposal ID to Locus/Reading/Proposed")
+    pds.add_argument("--file", default=None, help="the PDF to push with --deliver")
+    pds.add_argument("--stub", action="store_true",
+                     help="the pushed PDF describes the work rather than being it (never ingested)")
+    pds.add_argument("--force", action="store_true", help="deliver even with no free slot")
+    pds.add_argument("--ttl", type=int, default=None,
+                     help="days in Proposed before it reads as a no (default: [discovery].ttl_days)")
+    pds.add_argument("--dry-run", action="store_true", help="do not ingest accepted proposals")
+    pds.set_defaults(func=cmd_discover)
 
     ppr = sub.add_parser(
         "promote",

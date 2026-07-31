@@ -334,6 +334,39 @@ class ReadingConfig(BaseModel):
     font_pt: float = Field(11.0, description="Body text size (pt).")
 
 
+class DiscoveryConfig(BaseModel):
+    """Proposed reading and the accept loop (docs/reading-discovery-plan.md, Phase 4).
+
+    `Locus/Reading/{Proposed,In-Progress,Finished}` on the device: moving a file OUT of `Proposed`
+    is the accept signal and triggers ingest; leaving it there is a rejection.
+
+    The caps are on the STOCK sitting in `Proposed`, not on a rate. A weekly quota keeps topping up
+    a folder he has not cleared, which is how a reading list turns into a guilt metric; a stock cap
+    means an untouched folder proposes nothing, and empty stays a valid state.
+    """
+
+    root_folder: str = Field(
+        "Locus/Reading", description="Device folder holding the three reading folders."
+    )
+    rmapi_binary: str = Field("rmapi", description="rmapi binary (PATH name or absolute path).")
+    paper_cap: int = Field(3, description="Max papers held in Proposed at once (a stock, not a rate).")
+    book_cap: int = Field(
+        1, description="Max books held in Proposed at once — one considered suggestion, not a feed."
+    )
+    ttl_days: int = Field(
+        21,
+        description="Days in Proposed before it reads as a no. A WEAK negative: silence is as "
+                    "likely to mean a busy fortnight as a bad suggestion.",
+    )
+    drop_folder: str = Field(
+        "paper", description="Folder under vault/incoming/ that accepted readings are ingested via."
+    )
+
+    @property
+    def caps(self) -> dict[str, int]:
+        return {"paper": self.paper_cap, "book": self.book_cap}
+
+
 class AgentConfig(BaseModel):
     """Agent-layer orchestration (agent-layer plan §10, Phase 1). The capture/enrichment loops
     run language tasks through headless `claude -p` (the owner's subscription), metered by a
@@ -485,6 +518,8 @@ class Config(BaseModel):
     obsidian: ObsidianConfig = Field(default_factory=ObsidianConfig)
     # Optional: absent [reading] falls back to defaults (Paper Pro geometry, folder "Locus").
     reading: ReadingConfig = Field(default_factory=ReadingConfig)
+    # Optional: absent [discovery] falls back to defaults (Locus/Reading, 3 papers / 1 book, 21d).
+    discovery: DiscoveryConfig = Field(default_factory=DiscoveryConfig)
     # Optional: absent [agent] falls back to defaults (claude -p model 'haiku', $5/day cap).
     agent: AgentConfig = Field(default_factory=AgentConfig)
     # Optional: absent [capture] falls back to defaults (staging dir, built-in folder→category).

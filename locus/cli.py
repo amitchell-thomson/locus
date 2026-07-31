@@ -743,8 +743,20 @@ def cmd_annotate(args) -> None:
     reading = None
     try:
         if args.ingest:
-            ingested = ingest_file(dest, conn, category=args.category)
-            if ingested.status in ("ingested", "skipped"):
+            # UNDER THE INGEST LOCK. `ingest_file` is called directly here rather than through
+            # `cmd_ingest`, and the first cut skipped the lock — so a 40-minute book ingest could
+            # run concurrently with the half-hourly capture-sync timer, which also ingests.
+            # Concurrent ingests contend on Ollama and produce spurious quarantines (§14), and
+            # the failure would land on the OTHER job, making it hard to attribute.
+            from locus.ingest_lock import IngestLockHeld, ingest_lock
+
+            try:
+                with ingest_lock():
+                    ingested = ingest_file(dest, conn, category=args.category)
+            except IngestLockHeld as exc:
+                print(f"{exc}\nmarks stored; re-run with --ingest when the other ingest finishes")
+                ingested = None
+            if ingested is not None and ingested.status in ("ingested", "skipped"):
                 row = conn.execute(
                     "SELECT source_uri FROM documents WHERE id=?", (ingested.doc_id,)
                 ).fetchone()
@@ -756,7 +768,7 @@ def cmd_annotate(args) -> None:
                     moved = rekey_marks(conn, old_uri=source_uri, new_uri=row["source_uri"])
                     source_uri = row["source_uri"]
                     print(f"ingested doc {ingested.doc_id}; re-keyed {moved} existing mark(s)")
-            else:
+            elif ingested is not None:
                 print(f"ingest {ingested.status}: {ingested.reason or ''} — marks keyed by path")
 
         written = store_marks(conn, marks, source_uri=source_uri, doc_uuid=doc.doc_uuid)

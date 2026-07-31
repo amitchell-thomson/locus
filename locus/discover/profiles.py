@@ -46,6 +46,8 @@ MAX_SECTION_FACETS = 30
 MIN_SECTION_CHARS = 120
 # Cap on the method/concept vocabulary bag (regime-ml alone names 263).
 MAX_CONCEPT_NAMES = 120
+# An open thread shorter than this is a stub, not a problem statement.
+MIN_THREAD_CHARS = 25
 
 
 def _utcnow() -> str:
@@ -132,7 +134,60 @@ def _project_facets(
     if len(names) >= 5:
         facets.append(("concepts", _clean(f"{title}. Methods and concepts: " + ", ".join(names))))
 
+    facets.extend(_open_problem_facets(conn, object_id, title))
     return facets, doc_ids
+
+
+def _open_problem_facets(
+    conn: sqlite3.Connection, object_id: int, title: str
+) -> list[tuple[str, str]]:
+    """Facets built from what the project has NOT solved — its open threads and learnings.
+
+    THE MOST DISCRIMINATIVE QUERY A PROJECT HAS, and it was going unused. Everything else in a
+    profile describes what the project IS, and describing what something is retrieves more
+    descriptions of the same thing. An OPEN PROBLEM describes what he needs, which is what a
+    method paper supplies:
+
+        "Whether rebalancing heuristic is overfit to training data"
+        "Out-of-sample persistence of cascade mean-reversion patterns"
+        "Generalize arbitrage to multiple stock pairs simultaneously"
+
+    Each of those is a better query for finding transferable work than "a system that detects
+    market regimes" will ever be, and it is the shape of the thing the owner asked this engine to
+    do — surface a paper whose METHOD applies to a problem he actually has.
+
+    `learnings` are included for the same reason at one remove: a finding states what did and did
+    not work, which is a claim a paper can agree or disagree with.
+
+    Each thread is its own facet rather than one concatenated blob, because a project's threads are
+    unrelated to each other and averaging them produces a vector describing none of them.
+    """
+    row = conn.execute("SELECT body FROM objects WHERE id = ?", (object_id,)).fetchone()
+    if not row:
+        return []
+    try:
+        body = json.loads(row["body"] or "{}")
+    except (TypeError, ValueError):
+        return []
+
+    out: list[tuple[str, str]] = []
+    for i, thread in enumerate(body.get("open_threads") or []):
+        text = str(thread).strip()
+        if len(text) >= MIN_THREAD_CHARS:
+            # The title gives the bare thread its domain — "expand market making to exploit idle
+            # periods" is ambiguous without knowing it belongs to a trading project.
+            out.append((f"thread:{i}", _clean(f"{title}. Open problem: {text}")))
+
+    learnings = [str(x).strip() for x in (body.get("learnings") or []) if str(x).strip()]
+    if learnings:
+        out.append(("learnings", _clean(f"{title}. Findings: " + " ".join(learnings))))
+
+    approach = " ".join(
+        str(body.get(k) or "").strip() for k in ("approach", "why")
+    ).strip()
+    if len(approach) >= MIN_THREAD_CHARS:
+        out.append(("approach", _clean(f"{title}. {approach}")))
+    return out
 
 
 def _excluded_prefixes() -> tuple[str, ...]:

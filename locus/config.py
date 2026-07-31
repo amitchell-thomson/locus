@@ -378,12 +378,18 @@ class DiscoveryConfig(BaseModel):
         description="arXiv categories to harvest. Category tokens only — validated on send.",
     )
     per_category: int = Field(
-        25,
-        description="Papers pulled from EACH category. A quota, not a shared pool: q-fin is "
+        60,
+        description="Max papers pulled from EACH category. A quota, not a shared pool: q-fin is "
                     "outpublished ~10x by stat.ML/cs.LG, so one OR-query returned 2 q-fin.PM "
                     "papers out of 200 (measured 2026-07-31).",
     )
-    harvest_limit: int = Field(400, description="Overall cap across all categories.")
+    harvest_limit: int = Field(600, description="Overall cap across all categories.")
+    harvest_days: int = Field(
+        21,
+        description="Only harvest papers published within this many days. Paging stops at the "
+                    "cutoff, so coverage is a time window rather than an accident of publication "
+                    "volume — a flat count bought 2 days of cs.RO but a month of q-fin.PM.",
+    )
     familiarity_weight: float = Field(
         0.25,
         description="Penalty on a candidate resembling material he already has. SWEPT 2026-07-31, "

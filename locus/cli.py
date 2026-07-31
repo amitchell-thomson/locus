@@ -748,8 +748,12 @@ def cmd_discover(args) -> None:
             from locus.discover import arxiv, profiles as D_profiles, rank as D_rank
 
             if args.harvest:
-                papers = arxiv.harvest(dcfg.arxiv_categories, per_category=dcfg.per_category,
-                                       limit=dcfg.harvest_limit)
+                from datetime import date as _d, timedelta as _td
+                since = (_d.today() - _td(days=dcfg.harvest_days)).isoformat()
+                papers = arxiv.harvest(
+                    dcfg.arxiv_categories, per_category=dcfg.per_category,
+                    limit=dcfg.harvest_limit, since=since,
+                )
                 added = D_rank.store(conn, papers)
                 print(f"harvested {len(papers)} · {added} new "
                       f"(sent: categories only — {', '.join(dcfg.arxiv_categories)})")

@@ -33,6 +33,20 @@ def conn(tmp_path: Path):
     c.close()
 
 
+@pytest.fixture(autouse=True)
+def _geometry_only(monkeypatch):
+    """Disable the cross-encoder for the vector-geometry tests.
+
+    These build synthetic unit vectors with placeholder text, so a cross-encoder scoring the pair
+    would be reading "A Paper" against "a project" — arbitrary numbers that swamp the geometric
+    differences under test. The reranker gets its own tests below; here the subject is the cosine
+    layer, and mixing the two would test neither.
+    """
+    import locus.discover.rank as R
+
+    monkeypatch.setattr(R, "_cross_scores", lambda pairs: [])
+
+
 def unit(*, axis: int) -> list[float]:
     """A unit basis vector — orthogonal to any other axis, so cosine is exactly 0 or 1."""
     v = [0.0] * DIM
@@ -364,3 +378,90 @@ def test_a_project_gets_many_facets_not_one_summary(conn):
     assert "sharpe improved" in synthesis and "regime lag" in synthesis
     # The whole project is now represented by far more than its pitch.
     assert sum(len(t) for _, t in facets) > 5 * len(synthesis)
+
+
+# ---------- open problems, harvest window, cross-encoder ----------
+
+
+def test_open_threads_become_their_own_facets(conn):
+    """An open problem is the most discriminative query a project has, and it was unused.
+
+    Everything else in a profile describes what the project IS, and that retrieves more
+    descriptions of the same thing. "Whether rebalancing heuristic is overfit to training data"
+    describes what he NEEDS, which is what a method paper supplies.
+    """
+    import json
+
+    from locus.discover.profiles import _open_problem_facets
+
+    conn.execute(
+        "INSERT INTO objects (type, title, status, body, created_at, updated_at) "
+        "VALUES ('project','Alpha Fund','active',?,'2026-07-31','2026-07-31')",
+        (json.dumps({
+            "open_threads": [
+                "Out-of-sample persistence of cascade mean-reversion patterns",
+                "short",                       # a stub, not a problem statement
+            ],
+            "learnings": ["cascades cluster near close"],
+            "approach": "detect stop-loss cascades from order book imbalance data",
+        }),),
+    )
+    conn.commit()
+    oid = conn.execute("SELECT id FROM objects").fetchone()["id"]
+
+    facets = dict(_open_problem_facets(conn, oid, "Alpha Fund"))
+    assert "thread:0" in facets and "out-of-sample persistence" in facets["thread:0"].lower()
+    assert "thread:1" not in facets, "a stub thread is not a problem statement"
+    assert "learnings" in facets and "approach" in facets
+    # Each thread is its own vector: averaging unrelated problems describes none of them.
+    assert facets["thread:0"].startswith("Alpha Fund.")
+
+
+def test_harvest_stops_at_the_date_cutoff():
+    """Coverage should be a time window, not an accident of publication volume."""
+    feed = _FEED.replace("2026-07-30T10:00:00Z", "2026-06-01T10:00:00Z")
+    calls: list[str] = []
+
+    def fetch(url):
+        calls.append(url)
+        return feed
+
+    assert arxiv.harvest(["q-fin.PM"], per_category=200, since="2026-07-01",
+                         fetch=fetch, pause_s=0) == []
+    assert len(calls) == 1, "must stop paging once it reaches papers older than the cutoff"
+
+
+def test_ranking_survives_the_reranker_being_absent(conn, monkeypatch):
+    """The `rerank` extra is optional; without it the cosine ordering must still stand."""
+    import locus.discover.rank as R
+
+    _seed_profile(conn, "a project", unit(axis=0))
+    _seed_candidate(conn, "arxiv:1", "A Paper", unit(axis=0))
+    monkeypatch.setattr(R, "_cross_scores", lambda pairs: [])
+
+    top = R.rank(conn, limit=3)
+    assert len(top) == 1 and top[0].cross_score is None
+    assert top[0].score == pytest.approx(top[0].fit, abs=1e-6)
+
+
+def test_the_cross_encoder_decides_the_order_when_available(conn, monkeypatch):
+    """The second stage every corpus query already runs through, finally applied to discovery.
+
+    Bi-encoder cosine cannot separate "this method applies to that problem" from "these texts
+    share vocabulary" — that is what `retrieve/rerank.py` exists for, and discovery was running
+    without it.
+    """
+    import locus.discover.rank as R
+
+    _seed_profile(conn, "a project", unit(axis=0))
+    _seed_candidate(conn, "arxiv:near", "Cosine Favourite", unit(axis=0))
+    _seed_candidate(conn, "arxiv:far", "Cross-Encoder Favourite", blend(0, 6, 0.15))
+
+    # The reranker disagrees with the cosine ordering, and it must win.
+    monkeypatch.setattr(
+        R, "_cross_scores",
+        lambda pairs: [5.0 if "Cross-Encoder" in t else -5.0 for _q, t in pairs],
+    )
+    top = R.rank(conn, limit=2)
+    assert top[0].external_id == "arxiv:far"
+    assert top[0].cross_score == 5.0

@@ -69,6 +69,9 @@ PER_PROFILE_K = 25
 # Corpus sections examined when measuring familiarity. Over-fetched because the profile's own
 # source documents are filtered out afterwards (vec0 KNN cannot express the join condition).
 FAMILIARITY_K = 40
+# ms-marco-MiniLM budgets 512 tokens across the PAIR, so the facet half is capped to leave
+# room for the abstract it is being compared against.
+_CROSS_QUERY_CHARS = 900
 
 
 def _utcnow() -> str:
@@ -94,6 +97,7 @@ class Scored:
     score: float
     matched_kind: str    # 'project' | 'gap'
     matched_label: str
+    cross_score: float | None = None   # None when the reranker was unavailable
 
     @property
     def why(self) -> str:
@@ -212,15 +216,15 @@ def rank(
     returns the same shortlist.
     """
     profiles = conn.execute(
-        "SELECT p.id, p.subject_kind, p.label, p.doc_ids, v.embedding FROM discovery_profiles p "
-        "JOIN discovery_profile_vectors v ON v.profile_id = p.id"
+        "SELECT p.id, p.subject_kind, p.label, p.doc_ids, p.text, v.embedding "
+        "FROM discovery_profiles p JOIN discovery_profile_vectors v ON v.profile_id = p.id"
     ).fetchall()
     if not profiles:
         log.warning("no discovery profiles — run the profile rebuild first")
         return []
 
-    # candidate_id -> (weighted fit, kind, label, the profile's own source docs)
-    best: dict[int, tuple[float, str, str, set[int]]] = {}
+    # candidate_id -> (weighted fit, kind, label, the profile's own source docs, facet text)
+    best: dict[int, tuple[float, str, str, set[int], str]] = {}
     for prof in profiles:
         weight = gap_weight if prof["subject_kind"] == "gap" else 1.0
         try:
@@ -236,7 +240,7 @@ def rank(
             current = best.get(r["candidate_id"])
             if current is None or fit > current[0]:
                 best[r["candidate_id"]] = (
-                    fit, prof["subject_kind"], prof["label"], own_docs
+                    fit, prof["subject_kind"], prof["label"], own_docs, prof["text"]
                 )
 
     if not best:
@@ -251,9 +255,9 @@ def rank(
 
     raw: list[tuple] = []
     for r in rows:
-        fit, kind, label, own_docs = best[r["id"]]
+        fit, kind, label, own_docs, facet_text = best[r["id"]]
         fam = _familiarity(conn, r["embedding"], own_docs)
-        raw.append((r, fit, fam, kind, label))
+        raw.append((r, fit, fam, kind, label, facet_text))
 
     # RELEVANCE GATES; NOVELTY SORTS. Both live runs argued for this shape by failing without it.
     #
@@ -273,18 +277,52 @@ def rank(
     raw.sort(key=lambda t: -t[1])
     gated = raw[: max(limit, int(len(raw) * gate_fraction))]
 
+    # CROSS-ENCODER RERANK — the same second stage every corpus query already runs through.
+    # Discovery was ranking on bi-encoder cosine alone, i.e. half the engine: `retrieve/rerank.py`
+    # exists precisely because a bi-encoder's cosine is a coarse similarity and cannot tell
+    # "this method applies to that problem" from "these two texts share vocabulary". Reusing it
+    # here costs nothing (CPU, already a dependency) and is the single biggest available lever.
+    #
+    # A failure is non-fatal: without the optional `[rerank]` extra installed the cosine ordering
+    # still stands, degraded rather than broken (the same graceful-degradation rule the rest of the
+    # pipeline follows for optional system deps).
+    cross = _cross_scores([(facet, f"{r['title']}. {r['abstract']}") for r, _, _, _, _, facet in gated])
+
     scored = [
         Scored(
             candidate_id=r["id"], external_id=r["external_id"], title=r["title"],
             authors=r["authors"] or "", url=r["url"] or "", pdf_url=r["pdf_url"] or "",
             abstract=r["abstract"], fit=fit, familiarity=fam,
-            score=fit - familiarity_weight * fam, matched_kind=kind, matched_label=label,
+            score=(cross[i] if cross else fit) - familiarity_weight * fam,
+            cross_score=cross[i] if cross else None,
+            matched_kind=kind, matched_label=label,
         )
-        for (r, fit, fam, kind, label) in gated
+        for i, (r, fit, fam, kind, label, _facet) in enumerate(gated)
     ]
 
     scored.sort(key=lambda s: -s.score)
     return _cap_per_profile(scored, limit=limit)
+
+
+def _cross_scores(pairs: list[tuple[str, str]]) -> list[float]:
+    """Cross-encoder relevance for (profile facet, candidate) pairs; [] if unavailable.
+
+    The facet is truncated because ms-marco-MiniLM takes 512 tokens across BOTH halves of the
+    pair — feeding it a 4000-character section summary would push the candidate's own abstract
+    out of the window entirely, scoring the paper against nothing.
+    """
+    if not pairs:
+        return []
+    try:
+        from locus.retrieve.rerank import _cross_encoder
+
+        model = _cross_encoder()
+        return [
+            float(x) for x in model.predict([(q[:_CROSS_QUERY_CHARS], t) for q, t in pairs])
+        ]
+    except Exception as exc:                       # extra not installed, model not cached, OOM
+        log.warning("cross-encoder unavailable (%s) — falling back to cosine ordering", exc)
+        return []
 
 
 def _cap_per_profile(scored: list[Scored], *, limit: int, per_profile: int = 2) -> list[Scored]:

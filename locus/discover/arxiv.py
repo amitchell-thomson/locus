@@ -64,6 +64,9 @@ DEFAULT_CATEGORIES: tuple[str, ...] = (
 # argv-free injection point: takes a URL, returns the response body. Tests pass a fake.
 Fetcher = Callable[[str], str]
 
+# arXiv caps a single response well below this; paging keeps each request small and polite.
+_PAGE = 100
+
 
 @dataclass(frozen=True)
 class ArxivPaper:
@@ -163,8 +166,9 @@ def parse(xml: str) -> list[ArxivPaper]:
 def harvest(
     categories: Iterable[str] = DEFAULT_CATEGORIES,
     *,
-    per_category: int = 25,
-    limit: int = 400,
+    per_category: int = 60,
+    limit: int = 600,
+    since: str | None = None,
     fetch: Fetcher | None = None,
     pause_s: float = 3.0,
 ) -> list[ArxivPaper]:
@@ -184,15 +188,34 @@ def harvest(
     fetch = fetch or _default_fetch
     papers: list[ArxivPaper] = []
     seen: set[str] = set()
+    requests = 0
 
-    for i, category in enumerate(categories):
+    for category in categories:
         if len(papers) >= limit:
             break
-        if i and pause_s:
-            time.sleep(pause_s)  # arXiv asks unauthenticated clients to space requests
-        url = build_query([category], start=0, page=per_category)
-        for p in parse(fetch(url)):
-            if p.external_id not in seen:
-                seen.add(p.external_id)
-                papers.append(p)
+        # PAGE UNTIL THE WINDOW IS COVERED, not until a flat count is hit. A fixed quota makes
+        # coverage an accident of publication volume: measured 2026-07-31, 25 papers bought two
+        # DAYS of cs.RO but nearly a month of q-fin.PM, so a weekly run would silently miss most
+        # of the busy categories while re-reading the quiet ones. Paging to a date makes the
+        # window a decision.
+        got = 0
+        while got < per_category and len(papers) < limit:
+            if requests and pause_s:
+                time.sleep(pause_s)  # arXiv asks unauthenticated clients to space requests
+            page = min(_PAGE, per_category - got)
+            batch = parse(fetch(build_query([category], start=got, page=page)))
+            requests += 1
+            if not batch:
+                break
+            got += len(batch)
+            stale = False
+            for p in batch:
+                if since and p.published and p.published < since:
+                    stale = True          # sorted newest-first, so everything after is older too
+                    continue
+                if p.external_id not in seen:
+                    seen.add(p.external_id)
+                    papers.append(p)
+            if stale or len(batch) < page:
+                break
     return papers[:limit]

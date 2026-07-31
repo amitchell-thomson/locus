@@ -234,6 +234,37 @@ def test_a_mark_already_turned_into_something_is_not_re_offered(conn):
     assert cd.build_marks(conn) == []
 
 
+def test_transcribing_the_ink_does_not_hide_the_mark(conn):
+    """`note` is the transcription, NOT a has-been-dealt-with flag.
+
+    The first cut filtered on `note IS NULL`, so reading his handwriting HID the mark —
+    exactly backwards, since a passage he wrote a paragraph about is the most worth returning.
+    """
+    _mark(conn, text=_PASSAGE)
+    conn.execute("UPDATE pdf_annotations SET note='is this any good?'")
+    conn.commit()
+    marks = cd.build_marks(conn)
+    assert len(marks) == 1
+    assert marks[0].note == "is this any good?"
+
+
+def test_his_own_words_rank_above_a_bare_underline(conn):
+    _mark(conn, uri="books/a.pdf", page=1, text=_PASSAGE + " bare", at="2026-07-31T10:00:00")
+    _mark(conn, uri="books/b.pdf", page=2, text=_PASSAGE + " annotated", at="2026-07-30T10:00:00")
+    conn.execute("UPDATE pdf_annotations SET note='my objection' WHERE source_uri='books/b.pdf'")
+    conn.commit()
+    assert cd.build_marks(conn, limit=1)[0].source_uri == "books/b.pdf"
+
+
+def test_his_comment_is_printed_with_the_passage(conn):
+    _mark(conn, text=_PASSAGE)
+    conn.execute("UPDATE pdf_annotations SET note='no momentum in Japan??'")
+    conn.commit()
+    body = cd.render(cd.compose(conn, today=date(2026, 7, 31)))
+    assert "no momentum in Japan??" in body
+    assert _PASSAGE in body, "the objection and the claim must travel together"
+
+
 def test_a_stray_stroke_is_not_a_passage(conn):
     """Below a few words a mark means nothing when it comes back a week later."""
     _mark(conn, text="the")

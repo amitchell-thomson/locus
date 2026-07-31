@@ -118,6 +118,7 @@ class Mark:
     source_uri: str
     page: int
     kind: str            # 'underline' | 'bracket' | 'margin_note' | 'mark'
+    note: str = ""       # what he WROTE beside it, once transcribed (capture/mark_text.py)
 
 
 @dataclass
@@ -292,9 +293,13 @@ def build_marks(conn: sqlite3.Connection, *, limit: int = MAX_MARKS) -> list[Mar
     reading them, which made the whole capture path write-only — he annotates a book and the
     system files it away silently.
 
-    Only marks with no derived note or object are offered: once a passage has become an idea
-    it has moved on, and re-offering it is the "unread count" §9 forbids. Newest first, because
-    what he marked last night is what he is thinking about now.
+    A mark is finished with when it has become an OBJECT (`object_id`), not when it has a
+    `note`: `note` is the transcription of what he wrote beside it, and the first cut used it
+    as the has-been-dealt-with flag. Transcribing the ink then HID the mark — exactly
+    backwards, since a passage he wrote a paragraph about is the one most worth bringing back.
+
+    Marks carrying his own words rank first for the same reason, then newest, because what he
+    marked last night is what he is thinking about now.
 
     Degrades silently if the table is absent (Loop B is optional).
     """
@@ -302,10 +307,12 @@ def build_marks(conn: sqlite3.Connection, *, limit: int = MAX_MARKS) -> list[Mar
         rows = conn.execute(
             "SELECT a.*, d.title AS doc_title FROM pdf_annotations a "
             "LEFT JOIN documents d ON d.source_uri = a.source_uri "
-            "WHERE a.note IS NULL AND a.object_id IS NULL "
-            "AND LENGTH(TRIM(COALESCE(a.covered_text,''))) >= ? "
-            "ORDER BY a.captured_at DESC, a.id DESC LIMIT ?",
-            (_MIN_PASSAGE_CHARS, limit * 4),
+            "WHERE a.object_id IS NULL "
+            "AND (LENGTH(TRIM(COALESCE(a.covered_text,''))) >= ? "
+            "     OR TRIM(COALESCE(a.note,'')) != '') "
+            "ORDER BY (TRIM(COALESCE(a.note,'')) != '') DESC, a.captured_at DESC, a.id DESC "
+            "LIMIT ?",
+            (_MIN_PASSAGE_CHARS, limit * 8),
         ).fetchall()
     except sqlite3.OperationalError:
         return []
@@ -328,6 +335,7 @@ def build_marks(conn: sqlite3.Connection, *, limit: int = MAX_MARKS) -> list[Mar
                 source_uri=uri,
                 page=row["pdf_page"] + 1,   # 1-based for a human
                 kind=row["kind"],
+                note=" ".join((row["note"] or "").split()),
             )
         )
         if len(out) >= limit:
@@ -593,13 +601,13 @@ def render(page: DailyPage) -> str:
     if page.marks:
         lines += ["## You marked this", ""]
         for m in page.marks:
-            lines += [
-                f"**{m.anchor}.** “{m.passage}”",
-                "",
-                f"*{m.source_title} — p.{m.page}*",
-                "",
-                _rules(2),
-            ]
+            lines += [f"**{m.anchor}.** “{m.passage}”" if m.passage
+                      else f"**{m.anchor}.** *{m.source_title}*", ""]
+            if m.note:
+                # His own words, printed back with the passage they belong to. This pairing is
+                # the whole point of Loop B: the objection and the claim it objects to.
+                lines += [f"> you wrote: {m.note}", ""]
+            lines += [f"*{m.source_title} — p.{m.page}*", "", _rules(2)]
 
     if page.open_threads:
         lines += [

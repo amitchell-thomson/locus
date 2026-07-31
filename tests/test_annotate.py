@@ -269,3 +269,134 @@ def test_existing_object_types_survive_the_rebuild(conn):
 
     for t in ("project", "concept", "question", "reading"):
         assert state.upsert_object(conn, type_=t, title=f"x {t}")[1]
+
+
+# ---------- reading the handwriting beside a mark ----------
+
+
+class _FakeVision:
+    """Returns a fixed reply and counts calls, so spend guards are testable."""
+
+    def __init__(self, reply='{"text": "is a factor like a feature in ML?"}'):
+        self.reply = reply
+        self.calls = 0
+        self.messages = self
+
+    def create(self, **kw):
+        self.calls += 1
+        block = type("B", (), {"type": "text", "text": self.reply})()
+        return type("R", (), {"content": [block]})()
+
+
+def _ink(n_strokes: int, *, page=0):
+    """A mark carrying `n_strokes` of scribble."""
+    from locus.capture import annotate as a
+
+    strokes = [Stroke([(100.0 + i, 300.0), (104.0 + i, 312.0), (108.0 + i, 300.0)])
+               for i in range(n_strokes)]
+    bbox = (100.0, 300.0, 100.0 + n_strokes + 8, 312.0)
+    return a.Mark(kind="margin_note", pdf_page=page, bbox=bbox, covered_text="ctx",
+                  stroke_count=n_strokes, strokes=strokes)
+
+
+def test_a_gesture_is_not_worth_a_model_call():
+    """Underlines and brackets carry no words. The real book's distribution has an empty band
+    between 2 strokes and 13, so the threshold sits inside it."""
+    from locus.capture import mark_text as mt
+
+    assert not mt.has_ink(_ink(1))
+    assert not mt.has_ink(_ink(2))
+    assert mt.has_ink(_ink(13))
+
+
+def test_ink_renders_to_a_png_without_the_page():
+    """Rendered on its own: marginalia falls OUTSIDE the page rect and a composite drops it."""
+    from locus.capture import mark_text as mt
+
+    png = mt.render_ink(_ink(20))
+    assert png.startswith(b"\x89PNG")
+
+
+def test_a_mark_without_stroke_geometry_renders_nothing(conn):
+    """A Mark rebuilt from the DB has no strokes; that must not raise."""
+    from locus.capture import annotate as a
+    from locus.capture import mark_text as mt
+
+    assert mt.render_ink(a.Mark(kind="mark", pdf_page=0, bbox=(0, 0, 10, 10))) == b""
+
+
+def test_transcription_is_stored_against_the_right_mark(conn):
+    from locus.capture import annotate as a
+    from locus.capture import mark_text as mt
+
+    mark = _ink(20)
+    a.store_marks(conn, [mark], source_uri="books/apm.pdf")
+    client = _FakeVision()
+    assert mt.transcribe_marks(conn, [mark], source_uri="books/apm.pdf", client=client) == 1
+
+    row = conn.execute("SELECT note, covered_text FROM pdf_annotations").fetchone()
+    assert row["note"] == "is a factor like a feature in ML?"
+    assert row["covered_text"] == "ctx", "the passage and the comment travel together"
+
+
+def test_already_transcribed_ink_is_not_re_read(conn):
+    """Re-running must not re-pay for ink it has already read."""
+    from locus.capture import annotate as a
+    from locus.capture import mark_text as mt
+
+    mark = _ink(20)
+    a.store_marks(conn, [mark], source_uri="books/apm.pdf")
+    client = _FakeVision()
+    mt.transcribe_marks(conn, [mark], source_uri="books/apm.pdf", client=client)
+    mt.transcribe_marks(conn, [mark], source_uri="books/apm.pdf", client=client)
+    assert client.calls == 1
+
+
+def test_gestures_cost_nothing(conn):
+    from locus.capture import annotate as a
+    from locus.capture import mark_text as mt
+
+    marks = [_ink(1), _ink(2, page=1)]
+    a.store_marks(conn, marks, source_uri="books/apm.pdf")
+    client = _FakeVision()
+    assert mt.transcribe_marks(conn, marks, source_uri="books/apm.pdf", client=client) == 0
+    assert client.calls == 0
+
+
+def test_the_spend_cap_is_honoured(conn):
+    from locus.capture import annotate as a
+    from locus.capture import mark_text as mt
+
+    marks = [_ink(20, page=i) for i in range(5)]
+    a.store_marks(conn, marks, source_uri="books/apm.pdf")
+    client = _FakeVision()
+    assert mt.transcribe_marks(
+        conn, marks, source_uri="books/apm.pdf", client=client, limit=2
+    ) == 2
+    assert client.calls == 2
+
+
+def test_an_unparseable_reply_writes_nothing(conn):
+    """A bad reply loses one transcription; it must never write a guess."""
+    from locus.capture import annotate as a
+    from locus.capture import mark_text as mt
+
+    mark = _ink(20)
+    a.store_marks(conn, [mark], source_uri="books/apm.pdf")
+    mt.transcribe_marks(
+        conn, [mark], source_uri="books/apm.pdf", client=_FakeVision("sorry, I cannot read this")
+    )
+    assert conn.execute("SELECT note FROM pdf_annotations").fetchone()["note"] is None
+
+
+def test_shapes_with_no_words_leave_the_note_empty(conn):
+    """A dense squiggle is ink, but there is nothing to transcribe."""
+    from locus.capture import annotate as a
+    from locus.capture import mark_text as mt
+
+    mark = _ink(20)
+    a.store_marks(conn, [mark], source_uri="books/apm.pdf")
+    assert mt.transcribe_marks(
+        conn, [mark], source_uri="books/apm.pdf", client=_FakeVision('{"text": ""}')
+    ) == 0
+    assert conn.execute("SELECT note FROM pdf_annotations").fetchone()["note"] is None

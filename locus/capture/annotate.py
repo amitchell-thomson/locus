@@ -55,6 +55,9 @@ class Mark:
     in_margin: bool = False
     stroke_count: int = 1
     point_count: int = 0
+    # The strokes themselves, kept in memory and never persisted — `capture/mark_text.py`
+    # renders them to transcribe the handwriting. A Mark rebuilt from the DB has none.
+    strokes: list = field(default_factory=list)
 
     @property
     def has_text(self) -> bool:
@@ -174,6 +177,7 @@ def marks_for_page(page, annotated: AnnotatedPage) -> list[Mark]:
                 in_margin=in_margin,
                 stroke_count=len(group),
                 point_count=sum(len(s.points) for s in group),
+                strokes=list(group),
             )
         )
     return out

@@ -723,8 +723,18 @@ def cmd_annotate(args) -> None:
     source_uri = args.source_uri or args.device_path or str(path)
 
     conn = _open()
+    transcribed = 0
     try:
         written = store_marks(conn, marks, source_uri=source_uri, doc_uuid=doc.doc_uuid)
+        if args.transcribe:
+            # The other half of Loop B: the geometry says WHICH passage he marked, this says
+            # what he wrote beside it. Billed — one vision call per handwritten mark, and only
+            # for ink that has never been read (locus/capture/mark_text.py).
+            from locus.capture.mark_text import transcribe_marks
+
+            transcribed = transcribe_marks(
+                conn, marks, source_uri=source_uri, limit=args.max_transcribe
+            )
     finally:
         conn.close()
 
@@ -735,6 +745,14 @@ def cmd_annotate(args) -> None:
     for m in marks:
         text = (m.covered_text or m.line_text or "").strip()
         print(f"  p{m.pdf_page + 1:<5} {m.kind:<12} {text[:88]}")
+    if args.transcribe:
+        print(f"transcribed {transcribed} handwritten mark(s)")
+    else:
+        from locus.capture.mark_text import has_ink
+
+        pending = sum(1 for m in marks if has_ink(m))
+        if pending:
+            print(f"{pending} mark(s) carry handwriting — `--transcribe` to read them (billed)")
     print(f"stored {written} mark(s) against {source_uri}")
 
 
@@ -1276,6 +1294,14 @@ def main(argv=None) -> None:
     )
     pan.add_argument("--rmdoc", default=None, help="use an already-downloaded .rmdoc instead")
     pan.add_argument("--source-uri", default=None, help="stable key to store marks under")
+    pan.add_argument(
+        "--transcribe", action="store_true",
+        help="also read the handwriting beside each mark (billed: one vision call per note)",
+    )
+    pan.add_argument(
+        "--max-transcribe", type=int, default=None,
+        help="stop after this many transcriptions (spend cap for a heavily annotated book)",
+    )
     pan.set_defaults(func=cmd_annotate)
 
     pcs = sub.add_parser(

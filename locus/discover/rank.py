@@ -5,19 +5,21 @@ THE SCORE, and the reasoning behind its shape:
     score = fit - familiarity_penalty
 
 `fit` is the best cosine between a candidate's abstract and one of his profiles (a project, or an
-open gap). That alone is not enough, and getting this wrong is how the whole feature turns into
-noise: ranking on similarity ALONE converges on papers about the things he already has papers
-about. The corpus has 14 papers on regime detection and adjacent topics; the nearest neighbours of
-"regime detection" are more regime-detection papers, and proposing those adds nothing.
+open gap). It does the overwhelming majority of the work, and the 2026-07-31 validation is
+unambiguous about that: judged against real output, fit alone produced the best list.
 
-`familiarity` is the best cosine between the candidate and anything already in the corpus. It is
-SUBTRACTED. That single sign is what turns a similarity search into a discovery engine: it rewards
-work that is close to a project he is building but far from anything he already owns. A robotics
-paper on Kalman filtering scores well for the AIS project precisely BECAUSE no shipping paper in
-his corpus resembles it — which is the shape of the idea he described wanting, an attraction term
-borrowed from physics landing in a vessel-tracking model.
+`familiarity` is the best cosine between the candidate and anything already in the corpus, and it
+is SUBTRACTED — the intent being to reward work close to a project he is building but unlike
+anything he owns, so that a Kalman-filtering paper from robotics can reach the AIS project
+precisely because no shipping paper in his corpus resembles it.
 
-It is also, for free, a novelty filter: a paper he effectively already has scores near zero.
+THAT INTENT IS RIGHT AND THE TERM IS CURRENTLY WEAK, which is worth stating plainly rather than
+implying the design is fully vindicated. Subtracting familiarity presumes the corpus is dense
+enough that "he already has this" is often TRUE. His is 205 documents of which 14 are papers, so
+the nearest existing material to a quant abstract is usually unrelated coursework, and the term
+mostly measures noise. Swept at 1.0 it actively destroyed the ranking (see FAMILIARITY_WEIGHT).
+It is kept at 0.25 as a tiebreaker and should be raised as density grows — the density this
+feature exists to create.
 
 Everything here is a cosine and an arithmetic comparison. A model could write a prettier `why`,
 but the why is "closest to this project, and nothing you own resembles it" — already true without
@@ -44,10 +46,21 @@ log = logging.getLogger(__name__)
 # How much a gap match counts relative to a project match. Projects are what he is actually
 # building; a gap is a concept he has not written up, which is weaker evidence of intent.
 GAP_WEIGHT = 0.6
-# How hard to punish "you already have this". Tuned conservatively to start: at 1.0 a candidate
-# must be closer to a project than to anything in the corpus to score at all, which is the
-# behaviour we want, but the right value is an evidence question (see the plan's §10 risks).
-FAMILIARITY_WEIGHT = 1.0
+# How hard to punish "you already have this".
+#
+# SWEPT AGAINST REAL OUTPUT 2026-07-31 (0.0 / 0.25 / 0.5 / 1.0 over a 297-candidate pool), and
+# taken 1.0 -> 0.25. At 1.0 the term was actively destructive: the two best papers in the whole
+# harvest for the Alpha Fund project ("Portfolio Optimization and Tail-Risk Analytics of Actively
+# Managed ETFs", fit 0.75, and "AlphaZeroBeta: Deep RL for Market-Neutral Portfolios") were pushed
+# out of the top 10 entirely, and their slots went to building-energy measurement-and-verification
+# and PDE identification. At 0.25 both lead the list.
+#
+# The premise was right but premature. Subtracting familiarity assumes the corpus is DENSE enough
+# that "he already has this" is often true; his is 205 documents of which 14 are papers, so the
+# nearest existing material is usually unrelated coursework and the term mostly measures noise.
+# It is kept as a TIEBREAKER rather than deleted, and should rise as density does — which is the
+# whole point of the feature.
+FAMILIARITY_WEIGHT = 0.25
 # Fraction of the fit-ranked shortlist that survives the relevance gate. Novelty only orders what
 # is already relevant — see `rank` for the two live runs that established this.
 GATE_FRACTION = 0.25

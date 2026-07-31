@@ -51,6 +51,14 @@ DEFAULT_CATEGORIES: tuple[str, ...] = (
     "econ.EM",    # econometrics
     "stat.ML",    # machine learning (statistics)
     "stat.AP",    # applied statistics
+    # State estimation and tracking, for tanker-flow: interpolating AIS gaps is a tracking
+    # problem and no q-fin category carries the method. `eess.SP` was tried FIRST and removed —
+    # measured 2026-07-31, its recent output is entirely wireless telecom (RIS, beamforming,
+    # MIMO, GNSS, OTFS-NOMA): 19 papers harvested, none about tracking or filtering. These two
+    # were then sampled before being trusted: ~4-5 of every 15 mention Kalman filtering, state
+    # estimation or odometry.
+    "eess.SY",    # systems & control — filtering, distributed state estimation
+    "cs.RO",      # robotics — tracking, odometry, sensor fusion
 )
 
 # argv-free injection point: takes a URL, returns the response body. Tests pass a fake.
@@ -155,27 +163,36 @@ def parse(xml: str) -> list[ArxivPaper]:
 def harvest(
     categories: Iterable[str] = DEFAULT_CATEGORIES,
     *,
-    limit: int = 200,
-    page: int = 100,
+    per_category: int = 25,
+    limit: int = 400,
     fetch: Fetcher | None = None,
     pause_s: float = 3.0,
 ) -> list[ArxivPaper]:
-    """Fetch up to `limit` recent papers across `categories`, newest first."""
+    """Fetch the most recent `per_category` papers from EACH category, newest first.
+
+    ONE QUERY PER CATEGORY, NOT ONE OR-QUERY — and this is the difference between a useful pool
+    and a useless one. arXiv sorts the combined result by date, and `stat.ML` and `cs.LG` publish
+    roughly an order of magnitude more than the q-fin categories do. Measured on the first live
+    harvest: a single OR-query for 200 papers returned 46 stat.ML, 31 cs.LG, 25 stat.ME... and
+    exactly **2** q-fin.PM. 81% of the pool was general statistics and machine learning, so the
+    ranking was picking the best of the wrong candidates and no amount of reweighting could have
+    fixed it. Querying `q-fin.PM` on its own returns twenty portfolio-management papers at once.
+
+    A per-category quota makes the pool's composition a decision rather than an accident of
+    publication volume.
+    """
     fetch = fetch or _default_fetch
     papers: list[ArxivPaper] = []
     seen: set[str] = set()
 
-    for start in range(0, limit, page):
-        url = build_query(categories, start=start, page=min(page, limit - start))
-        batch = parse(fetch(url))
-        if not batch:
+    for i, category in enumerate(categories):
+        if len(papers) >= limit:
             break
-        for p in batch:
+        if i and pause_s:
+            time.sleep(pause_s)  # arXiv asks unauthenticated clients to space requests
+        url = build_query([category], start=0, page=per_category)
+        for p in parse(fetch(url)):
             if p.external_id not in seen:
                 seen.add(p.external_id)
                 papers.append(p)
-        if len(batch) < page:
-            break
-        if pause_s:
-            time.sleep(pause_s)  # arXiv asks unauthenticated clients to space requests
     return papers[:limit]

@@ -106,12 +106,62 @@ def keep_doc_ids(
     ]
 
 
+def is_bare_acronym(concept: str) -> bool:
+    """A short all-caps token with no context — a terrible thing to embed.
+
+    Measured 2026-07-31: the gap concept `AIS` (as in AIS vessel-tracking data) retrieved
+    "AI Strategy: How to Choose What AI Product to Implement" as its top match, because a
+    three-letter token embeds essentially as "AI". `AEX`, `DAX`, `GMV` and `TTF` are the same
+    shape — instrument and venue tickers that the entity pass emits as concepts. They match noise
+    rather than nothing, which is worse: noise scores.
+
+    The expanded form is what carries meaning, so a bare acronym is dropped rather than guessed
+    at. (Reuniting it with its expansion is `entity_aliases`' job, and the fuller gap filter tier
+    the plan defers.)
+    """
+    token = concept.strip()
+    return len(token) <= 6 and token.isupper() and " " not in token
+
+
+def is_excluded_project(
+    conn: sqlite3.Connection, object_id: int, prefixes: tuple[str, ...]
+) -> bool:
+    """True when the object IS an excluded project — not merely linked to one.
+
+    The test is an exact `source_uri` match against an excluded prefix, i.e. the repo's own
+    root document. That is precise enough to be safe: a project that happens to cite a file
+    inside another repo is untouched, only the repo itself is dropped.
+
+    Filtering this object's documents was not enough, and made things worse. The live `locus`
+    object is grounded in four documents: two self-ingested paths, plus — through a structurer
+    mislink — an unrelated syllabus and a quant paper on nonlinear VAR forecasting. Removing the
+    two real ones left a profile whose text DESCRIBED A TIME-SERIES FINANCE PAPER, so "locus"
+    then attracted every regime-switching abstract in the harvest and mislabelled it. A profile
+    built from the leftovers of an excluded project describes nothing anyone chose.
+    """
+    from locus.learn.gaps import _doc_ids_for_object
+
+    doc_ids = _doc_ids_for_object(conn, object_id)
+    if not doc_ids or not prefixes:
+        return False
+    marks = ",".join("?" * len(doc_ids))
+    uris = [
+        (r["source_uri"] or "").rstrip("/")
+        for r in conn.execute(
+            f"SELECT source_uri FROM documents WHERE id IN ({marks})", doc_ids
+        )
+    ]
+    return any(u in {p.rstrip("/") for p in prefixes} for u in uris)
+
+
 def collect(conn: sqlite3.Connection, *, gap_limit: int = 40) -> list[Profile]:
     """The profiles worth ranking against: every active project, then the open gaps."""
     out: list[Profile] = []
 
     excluded_uris = _excluded_prefixes()
     for obj in state.list_objects(conn, type_="project", status="active", limit=100):
+        if is_excluded_project(conn, obj.id, excluded_uris):
+            continue
         text, doc_ids = _project_text(conn, obj.id, obj.title, excluded_uris)
         if len(text) <= len(obj.title) + 20:   # not grounded in anything real, just a title
             continue
@@ -126,7 +176,7 @@ def collect(conn: sqlite3.Connection, *, gap_limit: int = 40) -> list[Profile]:
     excluded = {n.lower() for n in non_topical_names(conn)}
     gaps = open_gap_concepts(conn)
     for concept, owners in sorted(gaps.items())[:gap_limit]:
-        if concept.lower() in excluded or len(concept) < 4:
+        if concept.lower() in excluded or len(concept) < 4 or is_bare_acronym(concept):
             continue
         out.append(Profile(
             "gap", concept, concept,

@@ -204,12 +204,15 @@ drop_folder  = "paper"          # folder under vault/incoming/ that accepted rea
 # third party on a timer, so relevance is judged LOCALLY instead: harvest a broad slice by
 # subject, embed the abstracts on his own GPU, rank against his own projects.
 arxiv_categories = ["q-fin.PM", "q-fin.ST", "q-fin.TR", "q-fin.RM", "q-fin.CP",
-                    "econ.EM", "stat.ML", "stat.AP"]
-harvest_limit      = 200        # max papers pulled per harvest run
+                    "econ.EM", "stat.ML", "stat.AP", "eess.SY", "cs.RO"]
+# A quota PER CATEGORY, not a shared pool. q-fin is outpublished ~10x by stat.ML/cs.LG, so a
+# single OR-query returned just 2 q-fin.PM papers out of 200 (measured 2026-07-31).
+per_category       = 25
+harvest_limit      = 400        # overall cap across all categories
 # THE term that makes this discovery rather than more-of-the-same: a candidate's similarity to
 # material he ALREADY has is subtracted, so the engine rewards work that is close to a project
 # but unlike anything in the corpus. Sweep it against his judgement before trusting the value.
-familiarity_weight = 1.0
+familiarity_weight = 0.25  # SWEPT 2026-07-31: 1.0 buried the best papers
 gap_weight         = 0.6        # a gap match counts less than a project match
 
 [agent]

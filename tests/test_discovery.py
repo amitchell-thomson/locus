@@ -117,8 +117,24 @@ def test_malformed_xml_raises_rather_than_returning_nothing():
         arxiv.parse("<feed><entry>")
 
 
-def test_harvest_dedupes_across_pages():
-    papers = arxiv.harvest(["stat.ML"], limit=5, page=5, fetch=lambda url: _FEED, pause_s=0)
+def test_harvest_queries_each_category_separately_and_dedupes():
+    """One query per category, not one OR-query.
+
+    Measured on the first live harvest: a single OR-query for 200 papers returned 46 stat.ML and
+    exactly 2 q-fin.PM, because arXiv sorts the union by date and stat.ML outpublishes q-fin by
+    roughly an order of magnitude. The pool, not the score, was the problem.
+    """
+    urls: list[str] = []
+
+    def fetch(url):
+        urls.append(url)
+        return _FEED
+
+    papers = arxiv.harvest(["q-fin.PM", "stat.ML"], per_category=25, fetch=fetch, pause_s=0)
+    assert len(urls) == 2, "each category must get its own quota"
+    assert "cat%3Aq-fin.PM" in urls[0] and "cat%3Astat.ML" in urls[1]
+    assert " OR " not in urls[0]
+    # The same paper appearing in two categories is stored once.
     assert [p.external_id for p in papers] == ["arxiv:2607.12345"]
 
 
@@ -306,3 +322,13 @@ def test_candidates_are_not_documents(conn):
     """Structural, not a config flag: no retrieval arm can reach a third-party abstract."""
     rank.store(conn, arxiv.parse(_FEED))
     assert conn.execute("SELECT COUNT(*) n FROM documents").fetchone()["n"] == 0
+
+
+def test_bare_acronyms_are_not_embedded_as_gaps():
+    """`AIS` embeds essentially as "AI" — measured, it matched an AI-strategy paper."""
+    from locus.discover.profiles import is_bare_acronym
+
+    for ticker in ("AIS", "AEX", "DAX", "GMV", "TTF"):
+        assert is_bare_acronym(ticker)
+    for real in ("Kalman filter", "Modern Portfolio Theory", "regime detection", "HMM tuning"):
+        assert not is_bare_acronym(real)

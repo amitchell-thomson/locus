@@ -368,16 +368,23 @@ class DiscoveryConfig(BaseModel):
     arxiv_categories: list[str] = Field(
         default_factory=lambda: [
             "q-fin.PM", "q-fin.ST", "q-fin.TR", "q-fin.RM", "q-fin.CP",
-            "econ.EM", "stat.ML", "stat.AP",
+            "econ.EM", "stat.ML", "stat.AP", "eess.SY", "cs.RO",
         ],
         description="arXiv categories to harvest. Category tokens only — validated on send.",
     )
-    harvest_limit: int = Field(200, description="Max papers pulled per harvest run.")
+    per_category: int = Field(
+        25,
+        description="Papers pulled from EACH category. A quota, not a shared pool: q-fin is "
+                    "outpublished ~10x by stat.ML/cs.LG, so one OR-query returned 2 q-fin.PM "
+                    "papers out of 200 (measured 2026-07-31).",
+    )
+    harvest_limit: int = Field(400, description="Overall cap across all categories.")
     familiarity_weight: float = Field(
-        1.0,
-        description="How hard to penalise a candidate resembling material he already has. This "
-                    "is the term that makes it discovery rather than more-of-the-same; the right "
-                    "value is an evidence question, so sweep it before trusting it.",
+        0.25,
+        description="Penalty on a candidate resembling material he already has. SWEPT 2026-07-31, "
+                    "1.0 -> 0.25: at 1.0 it pushed the harvest's two best portfolio papers out of "
+                    "the top 10 in favour of building-energy M&V. A tiebreaker, not a driver, "
+                    "until the corpus is dense enough for 'already have this' to be often true.",
     )
     gap_weight: float = Field(
         0.6, description="Weight of a gap match relative to a project match (projects win)."

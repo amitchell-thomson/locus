@@ -19,9 +19,19 @@ from locus.config import load
 _BATCH = 64
 
 
+# The ollama client defaults to `Timeout(timeout=None)` — it blocks FOREVER on a request that
+# never completes. That is not theoretical: the 211-page book ingest hung here twice
+# (2026-07-31), the process sitting at zero CPU with one ESTAB socket to 127.0.0.1:11434 open for
+# fifteen minutes, while Ollama itself happily served new requests (`/api/embeddings` answered in
+# 28ms). Nothing timed out, nothing logged, and from outside it was indistinguishable from slow
+# work. Embedding is a small, fast call — 28ms measured — so two minutes is already absurdly
+# generous, and bounding it means a wedged request fails loudly instead of stopping the pipeline.
+_TIMEOUT_S = 120.0
+
+
 @lru_cache(maxsize=1)
 def _client() -> Client:
-    return Client(host=load().ollama.host)
+    return Client(host=load().ollama.host, timeout=_TIMEOUT_S)
 
 
 def embedding_model() -> str:

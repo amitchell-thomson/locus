@@ -62,9 +62,17 @@ def fit_to_window(text: str, *, reserve_tokens: int = 600) -> str:
     return text[:budget_chars] + "\n[... source truncated to fit the model context window]"
 
 
+# See the note in `ingest/embed.py`: the ollama client's default timeout is None, i.e. block
+# forever. Generation is legitimately slow here — a 7B model on an 8GB card, sometimes after a
+# VRAM swap, producing up to 4096 tokens — so this ceiling is deliberately high. It exists to
+# bound a WEDGED request, not to police a slow one; anything past ten minutes is not a slow
+# generation, it is a request that is never coming back.
+_OLLAMA_TIMEOUT_S = 600.0
+
+
 @lru_cache(maxsize=1)
 def _client() -> Client:
-    return Client(host=load().ollama.host)
+    return Client(host=load().ollama.host, timeout=_OLLAMA_TIMEOUT_S)
 
 
 def ingest_model() -> str:
@@ -308,8 +316,13 @@ _SDK_TIMEOUT_S = 90.0
 _SDK_MAX_RETRIES = 3
 
 
-def _client():
-    """The shared Anthropic client, built once per process."""
+def _sdk_client():
+    """The shared Anthropic client, built once per process.
+
+    NOT named `_client`: that name is already the module's OLLAMA client (line ~74), and the
+    first cut of this shadowed it — the later definition wins, so every local-generation call
+    site would silently have received the Anthropic client instead.
+    """
     global _SDK_CLIENT
     if _SDK_CLIENT is None:
         import anthropic
@@ -334,7 +347,7 @@ def _generate_structured_claude(
     import json
 
     if sdk_client is None:
-        sdk_client = _client()
+        sdk_client = _sdk_client()
 
     base = (
         f"{user}\n\nRespond with ONLY a JSON object conforming to this JSON Schema "

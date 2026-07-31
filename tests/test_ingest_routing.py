@@ -83,7 +83,7 @@ def test_the_sdk_client_is_built_once_not_per_call(monkeypatch):
     monkeypatch.setattr("anthropic.Anthropic", _Fake)
     monkeypatch.setattr("locus.config.Config.anthropic_api_key", staticmethod(lambda: "k"))
 
-    a, b = llm._client(), llm._client()
+    a, b = llm._sdk_client(), llm._sdk_client()
     assert a is b, "the client must be reused across passes"
     assert len(built) == 1
 
@@ -102,6 +102,58 @@ def test_the_client_fails_fast_rather_than_blocking_for_ten_minutes(monkeypatch)
     monkeypatch.setattr("anthropic.Anthropic", _Fake)
     monkeypatch.setattr("locus.config.Config.anthropic_api_key", staticmethod(lambda: "k"))
 
-    llm._client()
+    llm._sdk_client()
     assert built["timeout"] <= 120, "an ingest pass returns <=4096 tokens; minutes is too long"
     assert built["max_retries"] >= 1
+
+
+# ---------- the local (Ollama) client must also be bounded ----------
+
+
+def test_ollama_clients_have_a_timeout():
+    """The ollama client defaults to Timeout(None) — it blocks FOREVER.
+
+    Live failure 2026-07-31: the book ingest hung here twice, zero CPU with one open socket to
+    127.0.0.1:11434 for fifteen minutes, while Ollama itself answered new requests in 28ms.
+    Nothing timed out and nothing logged, so it was indistinguishable from slow work.
+    """
+    from locus.ingest import embed as embed_mod
+    from locus.ingest import llm as llm_mod
+
+    for mod in (embed_mod, llm_mod):
+        mod._client.cache_clear()
+
+    seen = []
+
+    class _Fake:
+        def __init__(self, host=None, **kw):
+            seen.append(kw)
+
+    import ollama
+
+    orig = ollama.Client
+    try:
+        embed_mod.Client = _Fake
+        llm_mod.Client = _Fake
+        embed_mod._client()
+        llm_mod._client()
+    finally:
+        embed_mod.Client = orig
+        llm_mod.Client = orig
+        embed_mod._client.cache_clear()
+        llm_mod._client.cache_clear()
+
+    assert len(seen) == 2
+    for kw in seen:
+        assert kw.get("timeout"), "an unbounded ollama client can wedge the whole pipeline"
+        assert kw["timeout"] <= 600
+
+
+def test_the_sdk_helper_does_not_shadow_the_ollama_client():
+    """`llm._client` is the OLLAMA client. Naming the Anthropic helper `_client` too meant the
+    later definition won, so every local-generation call site silently got the wrong client."""
+    from locus.ingest import llm
+
+    assert llm._sdk_client is not llm._client
+    # The ollama one is the lru_cached factory the eviction/generation helpers call.
+    assert hasattr(llm._client, "cache_clear"), "the ollama client factory must still be cached"

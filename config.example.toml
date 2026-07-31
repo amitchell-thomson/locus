@@ -199,6 +199,18 @@ paper_cap    = 3                # max papers held in Proposed at once
 book_cap     = 1                # max books — one considered suggestion, not a feed
 ttl_days     = 21               # days in Proposed before it reads as a no (a WEAK negative)
 drop_folder  = "paper"          # folder under vault/incoming/ that accepted readings ingest via
+# The discovery engine (step 2). WHAT LEAVES THE MACHINE: a category token, an offset and a page
+# size — nothing else. Searching arXiv for his topics would ship his research vocabulary to a
+# third party on a timer, so relevance is judged LOCALLY instead: harvest a broad slice by
+# subject, embed the abstracts on his own GPU, rank against his own projects.
+arxiv_categories = ["q-fin.PM", "q-fin.ST", "q-fin.TR", "q-fin.RM", "q-fin.CP",
+                    "econ.EM", "stat.ML", "stat.AP"]
+harvest_limit      = 200        # max papers pulled per harvest run
+# THE term that makes this discovery rather than more-of-the-same: a candidate's similarity to
+# material he ALREADY has is subtracted, so the engine rewards work that is close to a project
+# but unlike anything in the corpus. Sweep it against his judgement before trusting the value.
+familiarity_weight = 1.0
+gap_weight         = 0.6        # a gap match counts less than a project match
 
 [agent]
 # Agent-layer orchestration (agent-layer plan §10, Phase 1). Capture/enrichment loops run

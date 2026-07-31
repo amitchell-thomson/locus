@@ -744,6 +744,51 @@ def cmd_discover(args) -> None:
                   f"(uuid {out.device_uuid or 'unknown'}) -> Proposed")
             return
 
+        if args.harvest or args.profiles or args.rank or args.propose:
+            from locus.discover import arxiv, profiles as D_profiles, rank as D_rank
+
+            if args.harvest:
+                papers = arxiv.harvest(dcfg.arxiv_categories, limit=dcfg.harvest_limit)
+                added = D_rank.store(conn, papers)
+                print(f"harvested {len(papers)} · {added} new "
+                      f"(sent: categories only — {', '.join(dcfg.arxiv_categories)})")
+                embedded = D_rank.embed_pending(conn)
+                print(f"embedded {embedded} abstract(s) locally")
+
+            if args.profiles:
+                built = D_profiles.rebuild(conn)
+                kinds = {}
+                for p in built:
+                    kinds[p.subject_kind] = kinds.get(p.subject_kind, 0) + 1
+                print(f"profiles rebuilt: " + ", ".join(f"{v} {k}" for k, v in sorted(kinds.items()))
+                      if built else "no profiles — bless a project object first")
+
+            if args.rank or args.propose:
+                top = D_rank.rank(
+                    conn, limit=args.top,
+                    familiarity_weight=dcfg.familiarity_weight, gap_weight=dcfg.gap_weight,
+                )
+                if not top:
+                    print("nothing ranked — harvest and rebuild profiles first")
+                    return
+                for s in top:
+                    print(f"  {s.score:+.3f}  {s.title[:66]}")
+                    print(f"          {s.why}")
+                    print(f"          {s.url}")
+                if args.propose:
+                    free = P.slots_free(conn, "paper", caps=dcfg.caps)
+                    made = 0
+                    for s in top[:free]:
+                        if P.add_candidate(
+                            conn, kind="paper", title=s.title, why=s.why, why_kind="discovery",
+                            evidence_key=f"{s.matched_kind}:{s.matched_label}",
+                            authors=s.authors, url=s.url, abstract=s.abstract,
+                            external_id=s.external_id, oa_pdf_url=s.pdf_url, score=s.score,
+                        ):
+                            made += 1
+                    print(f"proposed {made} (free slots: {free})")
+            return
+
         if args.pull:
             outcomes = R_watch.scan(
                 conn,
@@ -1365,6 +1410,15 @@ def main(argv=None) -> None:
     pds.add_argument("--ttl", type=int, default=None,
                      help="days in Proposed before it reads as a no (default: [discovery].ttl_days)")
     pds.add_argument("--dry-run", action="store_true", help="do not ingest accepted proposals")
+    pds.add_argument("--harvest", action="store_true",
+                     help="pull recent arXiv metadata (sends a category and a date, nothing else)")
+    pds.add_argument("--profiles", action="store_true",
+                     help="rebuild the project/gap vectors candidates are ranked against")
+    pds.add_argument("--rank", action="store_true",
+                     help="show the best candidates for your projects right now")
+    pds.add_argument("--propose", action="store_true",
+                     help="turn the top-ranked candidates into proposals (respects the cap)")
+    pds.add_argument("--top", type=int, default=10, help="how many to rank (default 10)")
     pds.set_defaults(func=cmd_discover)
 
     ppr = sub.add_parser(

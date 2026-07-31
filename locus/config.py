@@ -362,6 +362,27 @@ class DiscoveryConfig(BaseModel):
         "paper", description="Folder under vault/incoming/ that accepted readings are ingested via."
     )
 
+    # --- the discovery engine (step 2) ---
+    # ONLY these category tokens ever leave the machine. Not concepts, not project names — the
+    # relevance judgement happens locally against his own embeddings (locus/discover/arxiv.py).
+    arxiv_categories: list[str] = Field(
+        default_factory=lambda: [
+            "q-fin.PM", "q-fin.ST", "q-fin.TR", "q-fin.RM", "q-fin.CP",
+            "econ.EM", "stat.ML", "stat.AP",
+        ],
+        description="arXiv categories to harvest. Category tokens only — validated on send.",
+    )
+    harvest_limit: int = Field(200, description="Max papers pulled per harvest run.")
+    familiarity_weight: float = Field(
+        1.0,
+        description="How hard to penalise a candidate resembling material he already has. This "
+                    "is the term that makes it discovery rather than more-of-the-same; the right "
+                    "value is an evidence question, so sweep it before trusting it.",
+    )
+    gap_weight: float = Field(
+        0.6, description="Weight of a gap match relative to a project match (projects win)."
+    )
+
     @property
     def caps(self) -> dict[str, int]:
         return {"paper": self.paper_cap, "book": self.book_cap}

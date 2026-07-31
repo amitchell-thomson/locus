@@ -523,6 +523,11 @@ the handwriting. Both on systemd timers.
   decides the gesture (underline / bracket / margin note), position only sets `in_margin`; hand
   underlines sit BELOW their glyph boxes. Live: 26 marks on *Advanced Portfolio Management*.
   Migration 0016 also adds the **`idea`** object type — what reading actually produces.
+  **`--transcribe`** (`capture/mark_text.py`, billed) then reads the HANDWRITING beside each
+  mark: the ink is rendered on its own (marginalia falls outside the page rect, so cropping a
+  composite silently loses the longest notes), and stroke count — not `kind` — decides what
+  costs a call (the book's distribution has an empty band, 2 -> 13). Live: 16 notes read,
+  paired with the passages they object to.
 - **Writing is CONTENT, not a checkbox.** The first real page settled this: he wrote three times,
   all three questions, none in the box labelled for questions. `classify_writing` (deterministic)
   routes handwriting under ANY region into an owner-owned `question`/`idea` object grounded in

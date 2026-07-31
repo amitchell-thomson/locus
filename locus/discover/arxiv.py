@@ -112,6 +112,95 @@ def build_query(categories: Iterable[str], *, start: int = 0, page: int = 100) -
     return f"{API}?{urllib.parse.urlencode(params)}"
 
 
+# Characters that would break out of a quoted arXiv search phrase. Terms are technical noun
+# phrases, so stripping these loses nothing and keeps the query well-formed.
+_UNSAFE_TERM = re.compile(r'["\\()]|\bAND\b|\bOR\b|\bANDNOT\b')
+
+
+def build_search(term: str, *, start: int = 0, page: int = 25, exact: bool = True) -> str:
+    """A RELEVANCE-sorted search for one technical phrase, over the whole archive.
+
+    Deliberately not `sortBy=submittedDate`, which is what the category browse uses. Methods are
+    old: the canonical treatment of a technique is usually years back, and a date-sorted feed can
+    never reach it. Measured 2026-07-31, this query shape returned relevant work from 2008, 2014
+    and 2020 for the regime project, none of which any recency browse could have found.
+    """
+    phrase = _UNSAFE_TERM.sub(" ", term).strip()
+    phrase = " ".join(phrase.split())
+    if len(phrase) < 4:
+        raise ValueError(f"search term too short after sanitising: {term!r}")
+    params = {
+        "search_query": f'all:"{phrase}"' if exact else _loose(phrase),
+        "start": str(start),
+        "max_results": str(page),
+        "sortBy": "relevance",
+    }
+    return f"{API}?{urllib.parse.urlencode(params)}"
+
+
+def _loose(phrase: str) -> str:
+    """AND of the phrase's content words — the recall tier.
+
+    An exact quoted phrase is precise and often EMPTY: measured 2026-07-31, 18 book-derived terms
+    like `liquidity-aware portfolio optimization` returned 9 papers between them, because a book's
+    phrasing is rarely a paper's phrasing. Falling back to an AND of the content words keeps the
+    concept while dropping the exact wording, which is the difference between "nobody wrote this
+    sentence" and "nobody works on this".
+    """
+    words = [w for w in re.split(r"[^A-Za-z0-9-]+", phrase) if len(w) > 2][:6]
+    return " AND ".join(f"all:{w}" for w in words) or f'all:"{phrase}"' 
+
+
+def search(
+    terms,
+    *,
+    per_term: int = 12,
+    limit: int = 400,
+    fetch: Fetcher | None = None,
+    pause_s: float = 3.0,
+) -> "list[tuple[ArxivPaper, object]]":
+    """Search the literature for each term; returns `(paper, term)` so the WHY survives.
+
+    Pairing each paper with the term that found it is what keeps the proposal grounded: the reason
+    shown to the owner is "this came up searching <concept you underlined>", which is a fact about
+    a real query rather than a similarity score he has to take on trust.
+    """
+    fetch = fetch or _default_fetch
+    out: list[tuple[ArxivPaper, object]] = []
+    seen: set[str] = set()
+
+    for i, term in enumerate(terms):
+        if len(out) >= limit:
+            break
+        text = getattr(term, "term", term)
+        if i and pause_s:
+            time.sleep(pause_s)
+        batch = []
+        # Precision first, then recall: an exact phrase that finds nothing is not evidence that
+        # nobody works on the concept, only that nobody phrased it his way.
+        for exact in (True, False):
+            try:
+                url = build_search(text, page=per_term, exact=exact)
+            except ValueError:
+                break
+            try:
+                batch = parse(fetch(url))
+            except RuntimeError as exc:
+                log.warning("arXiv search for %r failed: %s", text, exc)
+                batch = []
+            if batch:
+                break
+            if pause_s:
+                time.sleep(pause_s)
+        if not batch:
+            continue
+        for p in batch:
+            if p.external_id not in seen:
+                seen.add(p.external_id)
+                out.append((p, term))
+    return out[:limit]
+
+
 def _text(node, tag: str) -> str:
     found = node.find(tag)
     return " ".join((found.text or "").split()) if found is not None else ""

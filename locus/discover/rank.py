@@ -98,6 +98,9 @@ class Scored:
     matched_kind: str    # 'project' | 'gap'
     matched_label: str
     cross_score: float | None = None   # None when the reranker was unavailable
+    found_term: str | None = None      # the concept whose search returned this paper
+    found_kind: str | None = None      # 'reading' | 'project' | 'gap' | 'browse'
+    found_label: str | None = None     # the document/project that concept came from
 
     @property
     def why(self) -> str:
@@ -109,6 +112,15 @@ class Scored:
         it. A reason that overstates its evidence is worse than a terse one: it is the same failure
         as an ungrounded citation, and the whole point of the why is that he can trust it.
         """
+        # A real query beats a similarity score. When the paper was found by searching a concept
+        # he underlined, say so — that is a fact he can check, not a number he has to trust.
+        if self.found_term and self.found_kind in ("reading", "project", "gap"):
+            origin = {
+                "reading": f"a concept you marked while reading {self.found_label or ''}".strip(),
+                "project": f"a method your {self.found_label or 'project'} work uses",
+                "gap": "a concept your work uses but has never written up",
+            }[self.found_kind]
+            return f'found by searching "{self.found_term}" — {origin}'
         anchor = ("your work on" if self.matched_kind == "project"
                   else "a concept your work uses but has never written up:")
         margin = self.fit - self.familiarity
@@ -118,18 +130,28 @@ class Scored:
                 f"nearest existing material {self.familiarity:.2f} — {gloss})")
 
 
-def store(conn: sqlite3.Connection, papers) -> int:
-    """Record harvested metadata. Idempotent by `external_id`; returns how many were new."""
+def store(conn: sqlite3.Connection, papers, *, term=None) -> int:
+    """Record harvested metadata. Idempotent by `external_id`; returns how many were new.
+
+    `papers` is either a list of papers (a category browse) or a list of `(paper, term)` pairs
+    from a concept search. The term is stored because it IS the reason the paper is here — see
+    migration 0020.
+    """
     new = 0
     with conn:
-        for p in papers:
+        for item in papers:
+            p, t = item if isinstance(item, tuple) else (item, term)
+            kind = getattr(t, "source_kind", None) or ("browse" if t is None else "search")
+            with_term = getattr(t, "term", t if isinstance(t, str) else None)
             cur = conn.execute(
                 "INSERT INTO discovery_candidates (external_id, dedupe_key, title, authors, "
                 "abstract, primary_category, categories, published, url, pdf_url, source, "
-                "harvested_at) VALUES (?,?,?,?,?,?,?,?,?,?,'arxiv',?) "
+                "harvested_at, found_term, found_kind, found_label) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,'arxiv',?,?,?,?) "
                 "ON CONFLICT(external_id) DO NOTHING",
                 (p.external_id, dedupe_key(p.title, p.authors), p.title, p.authors, p.abstract,
-                 p.primary_category, p.categories, p.published, p.url, p.pdf_url, _utcnow()),
+                 p.primary_category, p.categories, p.published, p.url, p.pdf_url, _utcnow(),
+                 with_term, kind, getattr(t, "source_label", None)),
             )
             new += cur.rowcount
     return new
@@ -296,6 +318,8 @@ def rank(
             score=(cross[i] if cross else fit) - familiarity_weight * fam,
             cross_score=cross[i] if cross else None,
             matched_kind=kind, matched_label=label,
+            found_term=r["found_term"], found_kind=r["found_kind"],
+            found_label=r["found_label"],
         )
         for i, (r, fit, fam, kind, label, _facet) in enumerate(gated)
     ]
@@ -326,20 +350,54 @@ def _cross_scores(pairs: list[tuple[str, str]]) -> list[float]:
 
 
 def _cap_per_profile(scored: list[Scored], *, limit: int, per_profile: int = 2) -> list[Scored]:
-    """At most `per_profile` candidates from any one project or gap.
+    """Interleave by subject, best-first, so every project gets its best paper before any gets two.
 
-    Without it a single broad-vocabulary profile monopolises the list — measured on the first live
-    run, where one profile took 8 of 12 slots. The reading list is meant to span his work, not to
-    report which profile happens to embed nearest the harvest.
+    A flat global sort is unfair in a way that is easy to miss, because the numbers look
+    comparable and are not. Measured 2026-07-31: tanker-flow's best facet scores 0.61 while Alpha
+    Fund's scores 0.76 — a difference in how EMBEDDABLE the two descriptions are, not in how
+    relevant the papers are. Sorting globally hands Alpha Fund the slots permanently and tanker-
+    flow never appears, however good its top candidate is for it.
+
+    Round-robin fixes that: one pass gives each subject its single best candidate, the next pass
+    gives seconds, and only then does rank order decide. The earlier version capped each subject
+    at two but still filled the list in global order, which let the loud subjects take the whole
+    first page anyway.
     """
-    out: list[Scored] = []
-    seen: dict[str, int] = {}
+    # THE SUBJECT IS THE CONCEPT THAT FOUND IT, when one did. A paper returned by searching
+    # "liquidity-aware portfolio optimization" has already demonstrated relevance to a term he
+    # underlined by hand; making it re-compete on cosine similarity to a project blob discards
+    # that evidence and buries it. Measured before this change: 79 search hits produced exactly
+    # 2 of the top 12. Grouping by the search term instead gives every concept he cares about its
+    # own best paper.
+    # `match:` namespaces the candidates that no search found, so a browsed paper that happens to
+    # sit closest to a PROJECT profile is not bucketed as though a project search had returned it.
+    by_subject: dict[str, list[Scored]] = {}
     for s in scored:
-        key = f"{s.matched_kind}:{s.matched_label}"
-        if seen.get(key, 0) >= per_profile:
-            continue
-        seen[key] = seen.get(key, 0) + 1
-        out.append(s)
-        if len(out) >= limit:
-            break
-    return out
+        key = (f"{s.found_kind}:{s.found_term}" if s.found_term
+               else f"match:{s.matched_kind}:{s.matched_label}")
+        by_subject.setdefault(key, []).append(s)
+
+    # INTERLEAVE THE CHANNELS rather than ranking them. Strict priority looked right and was not:
+    # his reading currently supplies 24 search terms against ~19 from projects, so ordering
+    # reading-first handed it every slot and no project appeared at all. A reading list that only
+    # reflects the last book he opened is as narrow as one that only reflects his code.
+    channels: dict[str, list[str]] = {"reading": [], "project": [], "gap": [], "match": []}
+    for key in sorted(by_subject, key=lambda k: -by_subject[k][0].score):
+        channels.setdefault(key.split(":", 1)[0], []).append(key)
+
+    order: list[str] = []
+    queues = [q for q in (channels["reading"], channels["project"],
+                          channels["gap"], channels["match"]) if q]
+    for i in range(max((len(q) for q in queues), default=0)):
+        for q in queues:
+            if i < len(q):
+                order.append(q[i])
+
+    out: list[Scored] = []
+    for round_ in range(per_profile):
+        for key in order:
+            if len(out) >= limit:
+                return out
+            if len(by_subject[key]) > round_:
+                out.append(by_subject[key][round_])
+    return out[:limit]

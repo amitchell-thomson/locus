@@ -465,3 +465,77 @@ def test_the_cross_encoder_decides_the_order_when_available(conn, monkeypatch):
     top = R.rank(conn, limit=2)
     assert top[0].external_id == "arxiv:far"
     assert top[0].cross_score == 5.0
+
+
+# ---------- literature search ----------
+
+
+def test_search_is_relevance_sorted_not_date_sorted():
+    """Methods are old. A date-sorted feed can never reach the canonical treatment.
+
+    Measured: a relevance search for regime switching returns work from 2008, 2014 and 2020 —
+    none of which a recency browse could ever surface.
+    """
+    url = arxiv.build_search("regime switching")
+    assert "sortBy=relevance" in url and "submittedDate" not in url
+
+
+def test_search_falls_back_from_exact_phrase_to_content_words():
+    """An exact phrase that finds nothing means nobody phrased it his way, not that nobody works
+    on it: 18 book-derived phrases returned 9 papers quoted, 79 with the fallback."""
+    urls: list[str] = []
+
+    def fetch(url):
+        urls.append(url)
+        return "" if len(urls) == 1 else _FEED   # quoted attempt returns nothing
+
+    from locus.discover.queries import SearchTerm
+
+    got = arxiv.search([SearchTerm("liquidity-aware portfolio optimization", "reading", "book")],
+                       fetch=fetch, pause_s=0)
+    assert len(urls) == 2, "must retry with the loose query"
+    assert "%22" in urls[0], "first attempt is the quoted phrase"
+    assert "AND" in urls[1], "fallback is an AND of content words"
+    assert got and got[0][1].term == "liquidity-aware portfolio optimization"
+
+
+def test_search_terms_reject_document_internal_names():
+    """`Procedure 6.2 ...` and `IS/OOS split at 2019-01-01` are real entities and useless queries."""
+    from locus.discover.queries import _usable
+
+    for bad in ("Procedure 6.2 Sizing alphas into positions", "IS/OOS split at 2019-01-01",
+                "get_positions", "CAC 40", "AEX", "Beta", "stock return = market + idio"):
+        assert not _usable(bad, set()), bad
+    for good in ("liquidity-aware portfolio optimization", "Marginal Contribution to Factor Risk",
+                 "walk-forward cross-validation", "Crowding"):
+        assert _usable(good, set()), good
+
+
+def test_the_concept_that_found_a_paper_becomes_its_reason(conn):
+    """A real query beats a similarity score, and it is a fact he can check."""
+    from locus.discover.queries import SearchTerm
+
+    rank.store(conn, [(arxiv.parse(_FEED)[0],
+                       SearchTerm("sticky HMM priors", "reading", "Advanced Portfolio Management"))])
+    row = conn.execute("SELECT found_term, found_kind, found_label FROM discovery_candidates").fetchone()
+    assert (row["found_term"], row["found_kind"]) == ("sticky HMM priors", "reading")
+
+    s = rank.Scored(1, "arxiv:1", "T", "", "", "", "abs", 0.7, 0.6, 0.1, "project", "P",
+                    found_term="sticky HMM priors", found_kind="reading",
+                    found_label="Advanced Portfolio Management")
+    assert "sticky HMM priors" in s.why and "marked while reading" in s.why
+
+
+def test_slots_interleave_across_channels(conn):
+    """His reading supplies more terms than his projects; strict priority gave it every slot."""
+    for i in range(6):
+        _seed_profile(conn, f"read{i}", unit(axis=i), kind="project")
+        _seed_candidate(conn, f"arxiv:r{i}", f"Read {i}", unit(axis=i))
+        conn.execute("UPDATE discovery_candidates SET found_term=?, found_kind='reading' "
+                     "WHERE external_id=?", (f"term{i}", f"arxiv:r{i}"))
+    _seed_profile(conn, "a project", unit(axis=40))
+    _seed_candidate(conn, "arxiv:p", "Project Match", unit(axis=40))
+    conn.commit()
+
+    kinds = {s.found_kind for s in rank.rank(conn, limit=8)}
+    assert "reading" in kinds and None in kinds, "both channels must be represented"

@@ -195,7 +195,8 @@ root_folder  = "Locus/Reading"  # device folder holding the three reading folder
 rmapi_binary = "rmapi"          # rmapi binary (PATH name or absolute path)
 # Caps are on the STOCK sitting in Proposed, not on a rate: a full folder proposes nothing, so
 # falling behind produces silence rather than a backlog. Empty is a valid state.
-paper_cap    = 3                # max papers held in Proposed at once
+paper_cap    = 10               # max papers in Proposed at once — a menu to triage,
+                                # and each rejection is flywheel signal (3 -> 10, 2026-07-31)
 book_cap     = 1                # max books — one considered suggestion, not a feed
 ttl_days     = 21               # days in Proposed before it reads as a no (a WEAK negative)
 drop_folder  = "paper"          # folder under vault/incoming/ that accepted readings ingest via

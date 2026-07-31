@@ -37,9 +37,18 @@ READING_FOLDERS = (FOLDER_PROPOSED, FOLDER_IN_PROGRESS, FOLDER_FINISHED)
 # `pull_daily.SURFACE_READING` already owns for the daily page's re-read slot — see migration 0017.
 SURFACE_DISCOVERY = "discovery"
 
-# Stock caps (plan §7). Papers cost one swipe; a book is a month of his time, so it gets exactly
-# one considered suggestion at a time rather than a feed.
-DEFAULT_CAPS = {"paper": 3, "book": 1}
+# Stock caps (plan §7). A book is a month of his time, so it gets exactly one considered
+# suggestion at a time rather than a feed.
+#
+# PAPERS 3 -> 10 (owner's call, 2026-07-31). Three was chosen to protect against suggestion
+# fatigue, but that reasoning treats a proposal as a demand on his attention when it is really a
+# MENU: rejecting nine papers costs one glance each and is itself the most valuable thing the
+# system can collect. The flywheel learns per-channel from judgments, and at three-a-time it was
+# starved of them. More choice, more judgments, faster tuning.
+#
+# The cap is still on the STOCK, so this is not a firehose: ten is the most that can ever be
+# waiting, not a weekly quota, and an untouched folder still proposes nothing.
+DEFAULT_CAPS = {"paper": 10, "book": 1}
 
 STATUSES = ("candidate", "proposed", "accepted", "ingested", "rejected", "superseded")
 

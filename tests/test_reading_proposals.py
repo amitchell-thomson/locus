@@ -129,8 +129,14 @@ def test_an_ungrounded_proposal_is_refused(conn, why, evidence):
 
 
 def test_cap_is_on_the_stock_not_the_flow(conn):
-    assert P.slots_free(conn, "paper") == 3
-    for i in range(3):
+    """The invariant, not the number: the cap counts what is SITTING in Proposed.
+
+    Asserted against `DEFAULT_CAPS` rather than a literal, so retuning the cap (3 -> 10 on
+    2026-07-31) does not require editing a test whose subject is the mechanism.
+    """
+    cap = P.DEFAULT_CAPS["paper"]
+    assert P.slots_free(conn, "paper") == cap
+    for i in range(cap):
         pid = _seed(conn, title=f"Paper {i}")
         P.mark_proposed(conn, pid, filename=f"2026-07-31 Paper {i}.pdf")
     assert P.slots_free(conn, "paper") == 0, "a full folder must propose nothing"

@@ -10,11 +10,21 @@ ranking nobody can inspect is a ranking nobody should trust. When a paper is pro
 regime-detection project", the question "what did you think that project was?" has to have a
 readable answer, or the grounded-or-silent invariant is decorative.
 
-A project's text is drawn from the documents it is GROUNDED IN (`object_links`), not from the
-object title alone: "regime ml" as a bare string embeds to almost nothing useful, while the thesis
-and method of the write-ups behind it describe the actual problem. Gaps are the weaker signal and
-are treated as such — a bare concept name carries little, so it is embedded together with the
-projects that raised it.
+A subject gets MANY vectors, not one, and a candidate matches on its BEST facet (migration 0019).
+The first version embedded one string per project — title, thesis and method, 289 characters for
+`regime-ml` against 34,856 available — and it matched relevant work roughly by luck, because that
+string is the elevator pitch. Everything specific enough to match a METHOD paper lives below it:
+88 section summaries, the `result` and `limitations` fields, and 263 named methods and concepts,
+none of which were being used.
+
+Simply concatenating all of it would not work either. nomic truncates around 2k tokens, and
+averaging a whole repository into one vector makes every project collapse toward "a machine
+learning system with a data pipeline" — generic exactly where it must be specific. Facets keep
+each slice sharp: a section about tuning state persistence can match a paper on sticky HMM priors,
+while the project pitch never will.
+
+Gaps stay single-facet and weaker by design — a bare concept name carries little, so it is
+embedded together with the projects that raised it.
 """
 
 from __future__ import annotations
@@ -27,9 +37,15 @@ from datetime import datetime, timezone
 
 from locus.agent import state
 
-# How much source text to embed per profile. nomic truncates long inputs, and a project's first
-# few documents describe it as well as its twentieth does.
+# Per-FACET cap. nomic truncates around 2k tokens, and this is a ceiling on one slice, not on the
+# whole project — the project's total representation is now the sum of its facets.
 _MAX_CHARS = 4000
+# Section summaries embedded per project, longest first. A repo's short summaries are its
+# `__init__.py` and setup boilerplate; embedding those buys noise, not coverage.
+MAX_SECTION_FACETS = 30
+MIN_SECTION_CHARS = 120
+# Cap on the method/concept vocabulary bag (regime-ml alone names 263).
+MAX_CONCEPT_NAMES = 120
 
 
 def _utcnow() -> str:
@@ -50,23 +66,73 @@ class Profile:
     # The documents the profile was built from. Ranking excludes these when measuring "do I
     # already have this?" — see migration 0018 and `rank._familiarity`.
     doc_ids: list[int] = field(default_factory=list)
+    # Which slice of the subject this row holds: 'synthesis' | 'section:<n>' | 'concepts'.
+    # One subject has many facets and a candidate matches on its BEST one (migration 0019).
+    facet: str = "synthesis"
 
 
-def _project_text(
-    conn: sqlite3.Connection, object_id: int, title: str, prefixes: tuple[str, ...] = ()
-) -> tuple[str, list[int]]:
-    """What a project IS, in the words of the documents behind it, and which those were."""
+def _clean(text: str, limit: int = _MAX_CHARS) -> str:
+    return " ".join((text or "").split())[:limit]
+
+
+def _project_facets(
+    conn: sqlite3.Connection, object_id: int, title: str, prefixes: tuple[str, ...] = (),
+    *, max_sections: int = MAX_SECTION_FACETS,
+) -> tuple[list[tuple[str, str]], list[int]]:
+    """`[(facet, text), ...]` for one project, plus the documents they came from.
+
+    THREE KINDS OF FACET, because a project is not one topic and one vector cannot say what it is:
+
+      `synthesis`   the whole-project pitch — title, thesis, method, result, limitations. This is
+                    what the profile used to be, except it was missing `result` and `limitations`
+                    entirely, which is where a write-up says what actually HAPPENED.
+      `section:<n>` one per section summary. This is the bulk of the signal and none of it was
+                    being used: `regime-ml` has 88 section summaries totalling 34,385 characters
+                    against the 289 the old profile embedded. A section describing how state
+                    persistence is tuned can match a paper on sticky HMM priors; the project-level
+                    pitch ("regime-conditioned equity ML trading") never will.
+      `concepts`    the method and concept entities the project's documents name, as one bag. A
+                    plain vocabulary list, which is often the most direct route to a method paper.
+
+    Sections are ranked by summary length and capped, because a repo's short summaries are its
+    `__init__.py` and its setup boilerplate, and embedding those buys nothing but noise.
+    """
     from locus.learn.gaps import _doc_ids_for_object
 
     doc_ids = keep_doc_ids(conn, _doc_ids_for_object(conn, object_id), prefixes)
+    if not doc_ids:
+        return [], []
+    marks = ",".join("?" * len(doc_ids))
+
     parts = [title]
-    if doc_ids:
-        marks = ",".join("?" * len(doc_ids))
-        for r in conn.execute(
-            f"SELECT title, thesis, method FROM documents WHERE id IN ({marks})", doc_ids
-        ):
-            parts += [p for p in (r["title"], r["thesis"], r["method"]) if p]
-    return " ".join(" ".join(parts).split())[:_MAX_CHARS], doc_ids
+    for r in conn.execute(
+        f"SELECT title, thesis, method, result, limitations FROM documents WHERE id IN ({marks})",
+        doc_ids,
+    ):
+        parts += [
+            p for p in (r["title"], r["thesis"], r["method"], r["result"], r["limitations"]) if p
+        ]
+    facets: list[tuple[str, str]] = [("synthesis", _clean(" ".join(parts)))]
+
+    for i, r in enumerate(conn.execute(
+        f"SELECT title, summary FROM sections WHERE doc_id IN ({marks}) "
+        f"AND summary IS NOT NULL AND LENGTH(summary) >= ? "
+        f"ORDER BY LENGTH(summary) DESC LIMIT ?",
+        (*doc_ids, MIN_SECTION_CHARS, max_sections),
+    )):
+        facets.append((f"section:{i}", _clean(f"{title}. {r['title'] or ''} {r['summary']}")))
+
+    names = [
+        r["name"] for r in conn.execute(
+            f"SELECT DISTINCT name FROM entities WHERE doc_id IN ({marks}) "
+            f"AND type IN ('method','concept') ORDER BY name LIMIT ?",
+            (*doc_ids, MAX_CONCEPT_NAMES),
+        )
+    ]
+    if len(names) >= 5:
+        facets.append(("concepts", _clean(f"{title}. Methods and concepts: " + ", ".join(names))))
+
+    return facets, doc_ids
 
 
 def _excluded_prefixes() -> tuple[str, ...]:
@@ -162,10 +228,12 @@ def collect(conn: sqlite3.Connection, *, gap_limit: int = 40) -> list[Profile]:
     for obj in state.list_objects(conn, type_="project", status="active", limit=100):
         if is_excluded_project(conn, obj.id, excluded_uris):
             continue
-        text, doc_ids = _project_text(conn, obj.id, obj.title, excluded_uris)
-        if len(text) <= len(obj.title) + 20:   # not grounded in anything real, just a title
+        facets, doc_ids = _project_facets(conn, obj.id, obj.title, excluded_uris)
+        # Not grounded in anything real, just a title restated.
+        if not facets or len(facets[0][1]) <= len(obj.title) + 20:
             continue
-        out.append(Profile("project", str(obj.id), obj.title, text, doc_ids))
+        for facet, text in facets:
+            out.append(Profile("project", str(obj.id), obj.title, text, doc_ids, facet))
 
     # Gaps are the secondary signal. `non_topical_names` is the same predicate the structurer and
     # related-docs use, so the layers keep agreeing what counts as a concept — without it a code
@@ -202,9 +270,9 @@ def rebuild(
         conn.execute("DELETE FROM discovery_profiles")
         for prof, vec in zip(profiles, vectors):
             cur = conn.execute(
-                "INSERT INTO discovery_profiles (subject_kind, subject_key, label, text, "
-                "doc_ids, built_at) VALUES (?,?,?,?,?,?)",
-                (prof.subject_kind, prof.subject_key, prof.label, prof.text,
+                "INSERT INTO discovery_profiles (subject_kind, subject_key, facet, label, "
+                "text, doc_ids, built_at) VALUES (?,?,?,?,?,?,?)",
+                (prof.subject_kind, prof.subject_key, prof.facet, prof.label, prof.text,
                  json.dumps(prof.doc_ids), _utcnow()),
             )
             conn.execute(

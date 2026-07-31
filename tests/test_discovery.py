@@ -332,3 +332,35 @@ def test_bare_acronyms_are_not_embedded_as_gaps():
         assert is_bare_acronym(ticker)
     for real in ("Kalman filter", "Modern Portfolio Theory", "regime detection", "HMM tuning"):
         assert not is_bare_acronym(real)
+
+
+def test_a_project_gets_many_facets_not_one_summary(conn):
+    """One vector per project matched relevant work by luck; the specifics live below the pitch."""
+    from locus.agent import state
+    from locus.discover.profiles import _project_facets
+
+    doc = _seed_corpus_section(conn, unit(axis=0), title="regime-ml")
+    conn.execute(
+        "UPDATE documents SET thesis='detects market regimes', method='hidden markov models', "
+        "result='sharpe improved', limitations='regime lag' WHERE id=?", (doc,))
+    for i in range(4):
+        conn.execute(
+            "INSERT INTO sections (doc_id, position, title, summary) VALUES (?,?,?,?)",
+            (doc, i + 1, f"mod{i}", "tuning state persistence so regimes do not flicker " * 4),
+        )
+    for name in ("Kalman filter", "Viterbi", "Baum-Welch", "HMM", "regime detection"):
+        conn.execute(
+            "INSERT INTO entities (doc_id, name, type) VALUES (?,?,'method')", (doc, name))
+    obj, _ = state.upsert_object(conn, type_="project", title="regime-ml", body={})
+    state.add_links(conn, obj, [state.ObjectLink("doc", "uregime-ml", "implements")])
+    conn.commit()
+
+    facets, doc_ids = _project_facets(conn, obj, "regime-ml")
+    kinds = {f for f, _ in facets}
+    assert "synthesis" in kinds and "concepts" in kinds
+    assert sum(1 for f, _ in facets if f.startswith("section:")) >= 4
+    # `result` and `limitations` were previously dropped on the floor.
+    synthesis = next(t for f, t in facets if f == "synthesis")
+    assert "sharpe improved" in synthesis and "regime lag" in synthesis
+    # The whole project is now represented by far more than its pitch.
+    assert sum(len(t) for _, t in facets) > 5 * len(synthesis)

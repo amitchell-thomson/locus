@@ -349,7 +349,12 @@ class DiscoveryConfig(BaseModel):
         "Locus/Reading", description="Device folder holding the three reading folders."
     )
     rmapi_binary: str = Field("rmapi", description="rmapi binary (PATH name or absolute path).")
-    paper_cap: int = Field(3, description="Max papers held in Proposed at once (a stock, not a rate).")
+    paper_cap: int = Field(
+        10,
+        description="Max papers held in Proposed at once (a stock, not a rate). 3 -> 10 on "
+                    "2026-07-31: a proposal is a menu, not a demand, and rejecting one is the "
+                    "signal the flywheel tunes on — three at a time starved it.",
+    )
     book_cap: int = Field(
         1, description="Max books held in Proposed at once — one considered suggestion, not a feed."
     )

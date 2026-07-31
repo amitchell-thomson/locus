@@ -181,22 +181,30 @@ def _excluded_names(conn: sqlite3.Connection) -> set[str]:
 
 
 def all_terms(conn: sqlite3.Connection, *, per_source: int = 25) -> list[SearchTerm]:
-    """Every search term worth spending a request on, de-duplicated, reading first.
+    """Every search term worth spending a request on, de-duplicated and INTERLEAVED by source.
 
-    Reading leads deliberately: a concept he underlined by hand is a stronger statement of interest
-    than one his code happens to name, and the ordering decides what gets searched when the request
-    budget runs out.
+    Interleaved, not concatenated, and the difference is not cosmetic. Concatenating reading first
+    meant any truncation took reading only: the live run searched 18 terms off the front of the
+    list and got 18 reading terms, so ZERO project or gap concepts were ever searched — 79 papers
+    harvested, all from one book. His projects were invisible to the channel that works.
+
+    A request budget always runs out somewhere, so the ordering has to be balanced at every prefix
+    rather than only at the end. Reading still goes first within each round, because a concept he
+    underlined by hand is a stronger statement of interest than one his code happens to name.
     """
-    seen: set[str] = set()
-    out: list[SearchTerm] = []
-    for group in (
+    groups = [
         reading_terms(conn, limit=per_source),
         project_terms(conn, limit=per_source),
         gap_terms(conn, limit=per_source),
-    ):
-        for t in group:
-            key = t.term.casefold()
+    ]
+    seen: set[str] = set()
+    out: list[SearchTerm] = []
+    for i in range(max((len(g) for g in groups), default=0)):
+        for g in groups:
+            if i >= len(g):
+                continue
+            key = g[i].term.casefold()
             if key not in seen:
                 seen.add(key)
-                out.append(t)
+                out.append(g[i])
     return out

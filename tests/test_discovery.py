@@ -539,3 +539,25 @@ def test_slots_interleave_across_channels(conn):
 
     kinds = {s.found_kind for s in rank.rank(conn, limit=8)}
     assert "reading" in kinds and None in kinds, "both channels must be represented"
+
+
+def test_search_terms_interleave_so_a_truncated_budget_still_covers_projects(conn):
+    """Concatenating sources meant projects were NEVER searched.
+
+    The live run took 18 terms off the front of a reading-first list and got 18 reading terms:
+    79 papers harvested, all from one book, zero project or gap concepts. A request budget always
+    runs out somewhere, so the ordering must be balanced at every prefix, not only at the end.
+    """
+    import locus.discover.queries as Q
+
+    monkey = {
+        "reading_terms": [Q.SearchTerm(f"read {i}", "reading", "book") for i in range(9)],
+        "project_terms": [Q.SearchTerm(f"proj {i}", "project", "regime-ml") for i in range(5)],
+        "gap_terms": [Q.SearchTerm(f"gap {i}", "gap", "work") for i in range(4)],
+    }
+    for name, value in monkey.items():
+        setattr(Q, name, lambda conn, *, limit=0, _v=value: _v)
+
+    kinds = [t.source_kind for t in Q.all_terms(conn)[:6]]
+    assert set(kinds) == {"reading", "project", "gap"}, kinds
+    assert kinds[0] == "reading", "reading still leads within each round"

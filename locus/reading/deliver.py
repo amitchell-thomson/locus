@@ -80,6 +80,29 @@ class Delivered:
     device_uuid: str | None
 
 
+def fetch_open_access(url: str, dest: Path, *, timeout: int = 120) -> Path:
+    """Download an open-access PDF so the proposal can BE the paper rather than describe it.
+
+    Only ever called with a `oa_pdf_url` the metadata itself advertised as open access — this
+    fetches what the publisher offers freely, and nothing is sent but the request. A proposal with
+    no such URL stays a stub and waits for him to supply the file (invariant 5).
+
+    Verifies the payload really is a PDF: an arXiv rate-limit or maintenance page returns 200 with
+    HTML, and silently delivering that to the device would put an error page in the reading folder
+    wearing a paper's title.
+    """
+    import urllib.request
+
+    req = urllib.request.Request(url, headers={"User-Agent": "locus-discovery/1.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        payload = resp.read()
+    if not payload.startswith(b"%PDF"):
+        raise RuntimeError(f"{url} did not return a PDF ({len(payload)} bytes, {payload[:16]!r})")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(payload)
+    return dest
+
+
 def deliver_proposal(
     conn: sqlite3.Connection,
     proposal: P.Proposal,

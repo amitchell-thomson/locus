@@ -790,6 +790,37 @@ def cmd_discover(args) -> None:
                     print(f"proposed {made} (free slots: {free})")
             return
 
+        if args.push:
+            from pathlib import Path as _Path
+
+            from locus.reading.deliver import deliver_proposal, fetch_open_access
+
+            free = P.slots_free(conn, "paper", caps=dcfg.caps)
+            queued = [p for p in P.list_proposals(conn, status="candidate", kind="paper", limit=50)]
+            if not free:
+                print("no free slots — the Proposed folder is full (a full folder proposes nothing)")
+                return
+            staging = _Path(args.staging or "/tmp/locus-reading")
+            sent = 0
+            for prop in queued[:free]:
+                if not prop.oa_pdf_url:
+                    # Not open access: it stays a candidate rather than becoming a stub silently.
+                    print(f"  skip (no open-access PDF)  {prop.title[:56]}")
+                    continue
+                try:
+                    pdf = fetch_open_access(prop.oa_pdf_url, staging / f"{prop.id}.pdf")
+                    out = deliver_proposal(
+                        conn, prop, pdf, is_real=True,
+                        root=dcfg.root_folder, rmapi_binary=dcfg.rmapi_binary,
+                    )
+                except Exception as exc:            # network, rmapi, or a non-PDF payload
+                    print(f"  FAILED  {prop.title[:52]}: {exc}")
+                    continue
+                sent += 1
+                print(f"  sent  {out.filename}")
+            print(f"{sent} paper(s) now in {dcfg.root_folder}/Proposed")
+            return
+
         if args.pull:
             outcomes = R_watch.scan(
                 conn,
@@ -1420,6 +1451,9 @@ def main(argv=None) -> None:
     pds.add_argument("--propose", action="store_true",
                      help="turn the top-ranked candidates into proposals (respects the cap)")
     pds.add_argument("--top", type=int, default=10, help="how many to rank (default 10)")
+    pds.add_argument("--push", action="store_true",
+                     help="fetch the open-access PDFs of queued candidates and put them in Proposed")
+    pds.add_argument("--staging", default=None, help="where to download PDFs before pushing")
     pds.set_defaults(func=cmd_discover)
 
     ppr = sub.add_parser(

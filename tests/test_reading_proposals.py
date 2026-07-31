@@ -161,7 +161,7 @@ def test_moving_out_of_proposed_accepts(conn):
     pid = _seed(conn, title="Regime Shifts")
     P.mark_proposed(conn, pid, filename="2026-07-31 Regime Shifts.pdf")
 
-    out = W.scan(conn, runner=_runner(["/Locus/Reading/In-Progress/2026-07-31 Regime Shifts"]))
+    out = W.scan(conn, runner=_runner(["Reading/In-Progress/2026-07-31 Regime Shifts"]))
     assert [(o.action, o.resolution) for o in out] == [("accepted", "moved")]
     assert P.list_proposals(conn, status="accepted")[0].id == pid
 
@@ -169,7 +169,7 @@ def test_moving_out_of_proposed_accepts(conn):
 def test_staying_in_proposed_holds_until_the_ttl(conn):
     pid = _seed(conn, title="Slow Burn")
     P.mark_proposed(conn, pid, filename="2026-07-31 Slow Burn.pdf")
-    runner = _runner(["/Locus/Reading/Proposed/2026-07-31 Slow Burn"])
+    runner = _runner(["Reading/Proposed/2026-07-31 Slow Burn"])
 
     assert W.scan(conn, runner=runner)[0].action == "held"
 
@@ -182,7 +182,7 @@ def test_deleting_it_is_a_stronger_no_than_leaving_it(conn):
     pid = _seed(conn, title="Gone")
     P.mark_proposed(conn, pid, filename="2026-07-31 Gone.pdf")
     # It is not under the reading root any more, but the listing is healthy.
-    out = W.scan(conn, runner=_runner(["/Locus/Reading/Proposed/2026-07-31 Something Else"]))
+    out = W.scan(conn, runner=_runner(["Reading/Proposed/2026-07-31 Something Else"]))
     assert (out[0].action, out[0].resolution) == ("rejected", "removed")
 
 
@@ -206,7 +206,7 @@ def test_a_failed_listing_raises_rather_than_rejecting(conn):
 def test_acceptance_is_logged_to_the_discovery_surface(conn):
     pid = _seed(conn, title="Logged")
     P.mark_proposed(conn, pid, filename="2026-07-31 Logged.pdf")
-    W.scan(conn, runner=_runner(["/Locus/Reading/Finished/2026-07-31 Logged"]))
+    W.scan(conn, runner=_runner(["Reading/Finished/2026-07-31 Logged"]))
 
     rows = conn.execute(
         "SELECT surface, verdict FROM acceptance_log WHERE surface='discovery'"
@@ -326,3 +326,22 @@ def test_channel_stats_separate_ttl_from_removal(conn):
 
     stats = P.channel_stats(conn)["discovery"]
     assert (stats["kept"], stats["ttl"], stats["removed"]) == (1, 1, 1)
+
+
+def test_every_rmapi_path_rendering_parses(conn):
+    """rmapi renders paths relative to the PARENT of what it searched, and without a leading slash.
+
+    `rmapi find /Locus/Reading` returns `Reading/Proposed/<name>`; `rmapi find /Locus` returns
+    `Locus/Reading/Proposed/<name>`. Prefix-matching the root matched NONE of them, so ten papers
+    sat on the device while the watch saw zero — and the scan would have scored that as deletion.
+    Verified against the live device, not assumed.
+    """
+    pid = _seed(conn, title="Both Forms")
+    P.mark_proposed(conn, pid, filename="2026-07-31 Both Forms.pdf")
+
+    # All three renderings rmapi is known to emit, depending on what it was asked to search.
+    for path in ("Reading/Finished/2026-07-31 Both Forms",
+                 "Locus/Reading/Finished/2026-07-31 Both Forms",
+                 "/Locus/Reading/Finished/2026-07-31 Both Forms"):
+        entries = W.list_reading_entries(_runner([path]))
+        assert [e.folder for e in entries] == ["Finished"], path

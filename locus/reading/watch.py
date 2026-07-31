@@ -39,6 +39,8 @@ from pathlib import Path
 from locus.reading import proposals as P
 from locus.reading.deliver_remarkable import RmapiRunner, _subprocess_runner
 
+READING_FOLDERS = P.READING_FOLDERS
+
 log = logging.getLogger(__name__)
 
 DEFAULT_ROOT = "/Locus/Reading"
@@ -80,20 +82,32 @@ def list_reading_entries(
     if code != 0:
         raise RuntimeError(f"rmapi find {root!r} failed: {err.strip() or out.strip()}")
 
-    prefix = root.rstrip("/") + "/"
+    # THE FOLDER IS THE FILE'S IMMEDIATE PARENT — do not try to match the root as a prefix.
+    #
+    # rmapi renders paths relative to the PARENT of whatever it was asked to search, and without a
+    # leading slash: `rmapi find /Locus/Reading` returns `Reading/Proposed/<name>`, while
+    # `rmapi find /Locus` returns `Locus/Reading/Proposed/<name>`. Prefix-matching the root
+    # therefore matched nothing at all, and every delivered paper read as "no longer under the
+    # reading root" — which the scan would have scored as him deleting it. Ten papers were live on
+    # the device while the watch saw zero.
+    #
+    # It survived unit testing because the fixture was written with the format the code expected
+    # rather than the one rmapi emits; only running it against the device exposed it. Taking the
+    # parent directory is invariant to how rmapi chooses to render the prefix, so this cannot break
+    # again if the rendering changes.
     entries: list[DeviceEntry] = []
     for line in out.splitlines():
         line = line.strip()
         if not line.startswith("[f] "):
             continue  # '[d] ' entries are the folders themselves
         path = line[4:].strip()
-        if not path.startswith(prefix):
-            continue
-        rel = path[len(prefix):]
-        folder, _, rest = rel.partition("/")
-        if not rest:
-            continue  # a file loose in the reading root belongs to no folder — ignore it
-        entries.append(DeviceEntry(path=path, folder=folder, stem=_stem(Path(rest).name)))
+        parts = [p for p in path.split("/") if p]
+        if len(parts) < 2:
+            continue  # a file with no parent folder belongs to no reading folder
+        folder = parts[-2]
+        if folder not in READING_FOLDERS:
+            continue  # something else living under the root — not part of the accept signal
+        entries.append(DeviceEntry(path=path, folder=folder, stem=_stem(parts[-1])))
     return entries
 
 

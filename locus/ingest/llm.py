@@ -290,6 +290,40 @@ def _extract_json(text: str) -> str:
     return text[start : end + 1]
 
 
+# ONE client for the process, not one per call. The first cut constructed
+# `anthropic.Anthropic(...)` inside the per-call function, so every pass on every section built a
+# fresh client with its own connection pool and nothing ever closed them. Measured live on the
+# 211-page book ingest (2026-07-31): 324 open file descriptors and climbing ~15/min, 218 of them
+# sockets to the API — on a default 1024-fd limit that is a guaranteed death about 45 minutes in.
+# The SDK client is thread-safe and designed to be reused; reusing it also keeps HTTP connections
+# alive instead of paying a TLS handshake per pass.
+_SDK_CLIENT = None
+
+# The SDK's defaults are 600s per request with 2 retries — up to THIRTY MINUTES of silent blocking
+# on one hung call, which is what wedged that ingest: zero CPU, no log output, connections piling
+# up, for fifteen minutes before it was killed. An ingest pass returns at most 4096 tokens, so a
+# minute is already generous; failing fast lets the pipeline's own retry/quarantine logic run
+# instead of the process appearing to hang.
+_SDK_TIMEOUT_S = 90.0
+_SDK_MAX_RETRIES = 3
+
+
+def _client():
+    """The shared Anthropic client, built once per process."""
+    global _SDK_CLIENT
+    if _SDK_CLIENT is None:
+        import anthropic
+
+        from locus.config import Config
+
+        _SDK_CLIENT = anthropic.Anthropic(
+            api_key=Config.anthropic_api_key(),
+            timeout=_SDK_TIMEOUT_S,
+            max_retries=_SDK_MAX_RETRIES,
+        )
+    return _SDK_CLIENT
+
+
 def _generate_structured_claude(
     schema: type[T], system: str, user: str, *, model: str, retries: int, sdk_client=None
 ) -> T:
@@ -300,11 +334,7 @@ def _generate_structured_claude(
     import json
 
     if sdk_client is None:
-        import anthropic
-
-        from locus.config import Config
-
-        sdk_client = anthropic.Anthropic(api_key=Config.anthropic_api_key())
+        sdk_client = _client()
 
     base = (
         f"{user}\n\nRespond with ONLY a JSON object conforming to this JSON Schema "

@@ -63,3 +63,45 @@ def test_claude_path_raises_after_exhausting_retries(monkeypatch):
     fake = _FakeSDK("nope", "still nope", "nope again")
     with pytest.raises(IngestExtractionError):
         generate_structured(SectionSummary, "t", pass_name="summarize", sdk_client=fake, retries=2)
+
+
+# ---------- the routed SDK client: one per process, and it must fail fast ----------
+
+
+def test_the_sdk_client_is_built_once_not_per_call(monkeypatch):
+    """Live failure 2026-07-31: a client per call leaked 324 fds (218 API sockets) climbing
+    ~15/min on a 1024 limit, and the 211-page book ingest wedged."""
+    from locus.ingest import llm
+
+    monkeypatch.setattr(llm, "_SDK_CLIENT", None)
+    built = []
+
+    class _Fake:
+        def __init__(self, **kw):
+            built.append(kw)
+
+    monkeypatch.setattr("anthropic.Anthropic", _Fake)
+    monkeypatch.setattr("locus.config.Config.anthropic_api_key", staticmethod(lambda: "k"))
+
+    a, b = llm._client(), llm._client()
+    assert a is b, "the client must be reused across passes"
+    assert len(built) == 1
+
+
+def test_the_client_fails_fast_rather_than_blocking_for_ten_minutes(monkeypatch):
+    """The SDK default is 600s x 2 retries = up to 30 min of silent blocking on one hung call."""
+    from locus.ingest import llm
+
+    monkeypatch.setattr(llm, "_SDK_CLIENT", None)
+    built = {}
+
+    class _Fake:
+        def __init__(self, **kw):
+            built.update(kw)
+
+    monkeypatch.setattr("anthropic.Anthropic", _Fake)
+    monkeypatch.setattr("locus.config.Config.anthropic_api_key", staticmethod(lambda: "k"))
+
+    llm._client()
+    assert built["timeout"] <= 120, "an ingest pass returns <=4096 tokens; minutes is too long"
+    assert built["max_retries"] >= 1

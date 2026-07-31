@@ -722,9 +722,43 @@ def cmd_annotate(args) -> None:
     marks = marks_for_document(doc)
     source_uri = args.source_uri or args.device_path or str(path)
 
+    ingested = None
+    if args.ingest:
+        # The annotated PDF itself belongs in the corpus. Without this the marks key on a DEVICE
+        # PATH that joins to no document, so the passages and his notes are invisible to
+        # retrieval and to `locus link` — a book he read and annotated leaves no trace the rest
+        # of the system can use. The source PDF is already inside the bundle we downloaded.
+        from locus.config import load as _load
+        from locus.ingest_pipeline import ingest_file
+
+        name = (args.device_path or path.stem).rstrip("/").rsplit("/", 1)[-1]
+        dest = Path(_load().paths.incoming) / args.category / f"{name}.pdf"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if not dest.exists():
+            dest.write_bytes(doc.pdf_bytes)
+        print(f"ingesting {dest} (this is not quick — 200+ pages) ...")
+
     conn = _open()
     transcribed = 0
+    reading = None
     try:
+        if args.ingest:
+            ingested = ingest_file(dest, conn, category=args.category)
+            if ingested.status in ("ingested", "skipped"):
+                row = conn.execute(
+                    "SELECT source_uri FROM documents WHERE id=?", (ingested.doc_id,)
+                ).fetchone()
+                if row:
+                    # Re-key anything captured earlier under the device path so he does not
+                    # have to re-annotate the book to connect it up.
+                    from locus.capture.annotate import rekey_marks
+
+                    moved = rekey_marks(conn, old_uri=source_uri, new_uri=row["source_uri"])
+                    source_uri = row["source_uri"]
+                    print(f"ingested doc {ingested.doc_id}; re-keyed {moved} existing mark(s)")
+            else:
+                print(f"ingest {ingested.status}: {ingested.reason or ''} — marks keyed by path")
+
         written = store_marks(conn, marks, source_uri=source_uri, doc_uuid=doc.doc_uuid)
         if args.transcribe:
             # The other half of Loop B: the geometry says WHICH passage he marked, this says
@@ -735,6 +769,12 @@ def cmd_annotate(args) -> None:
             transcribed = transcribe_marks(
                 conn, marks, source_uri=source_uri, limit=args.max_transcribe
             )
+        if args.notes:
+            # His margin notes are HIS writing and belong in the corpus as such — the passages
+            # they mark belong to the book. Emitted as a note, quoting each passage as evidence.
+            from locus.agent.promote import promote_reading_notes
+
+            reading = promote_reading_notes(conn, source_uri)
     finally:
         conn.close()
 
@@ -747,6 +787,9 @@ def cmd_annotate(args) -> None:
         print(f"  p{m.pdf_page + 1:<5} {m.kind:<12} {text[:88]}")
     if args.transcribe:
         print(f"transcribed {transcribed} handwritten mark(s)")
+    if reading is not None:
+        print(f"reading notes ({reading.status}): {reading.path}  [{reading.entries} note(s)]")
+        print("  run `locus notes-sync` to bring them into the corpus")
     else:
         from locus.capture.mark_text import has_ink
 
@@ -1297,6 +1340,18 @@ def main(argv=None) -> None:
     pan.add_argument(
         "--transcribe", action="store_true",
         help="also read the handwriting beside each mark (billed: one vision call per note)",
+    )
+    pan.add_argument(
+        "--ingest", action="store_true",
+        help="also ingest the annotated PDF itself, and key the marks to that document",
+    )
+    pan.add_argument(
+        "--category", default="paper",
+        help="category for --ingest (default: paper)",
+    )
+    pan.add_argument(
+        "--notes", action="store_true",
+        help="write your transcribed margin notes out as a note (free, local)",
     )
     pan.add_argument(
         "--max-transcribe", type=int, default=None,

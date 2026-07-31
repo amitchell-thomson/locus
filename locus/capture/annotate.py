@@ -210,6 +210,30 @@ def bbox_key(bbox: tuple[float, float, float, float]) -> str:
     return ",".join(str(int(round(v))) for v in bbox)
 
 
+def rekey_marks(conn, *, old_uri: str, new_uri: str) -> int:
+    """Move stored marks onto a different `source_uri`. Returns the number moved.
+
+    Loop B originally keyed marks by DEVICE PATH (`/reading_list/<name>`), which joins to no
+    document — so the passages and the owner's notes existed only in `pdf_annotations` and were
+    invisible to retrieval and to `locus link`. Once the annotated PDF is ingested, its marks
+    belong under the document's real `source_uri`, and this moves the ones already captured
+    rather than making him re-annotate.
+
+    Rows that would collide with an existing mark at the new key are dropped, not duplicated:
+    the UNIQUE is (source_uri, pdf_page, bbox_key) and the destination copy is the current one.
+    """
+    with conn:
+        conn.execute(
+            "DELETE FROM pdf_annotations WHERE source_uri=? AND (pdf_page, bbox_key) IN "
+            "(SELECT pdf_page, bbox_key FROM pdf_annotations WHERE source_uri=?)",
+            (old_uri, new_uri),
+        )
+        cur = conn.execute(
+            "UPDATE pdf_annotations SET source_uri=? WHERE source_uri=?", (new_uri, old_uri)
+        )
+    return cur.rowcount
+
+
 def store_marks(conn, marks, *, source_uri: str, doc_uuid: str = "", source_run=None) -> int:
     """Upsert marks for one document. Returns the number of rows written.
 

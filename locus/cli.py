@@ -706,7 +706,15 @@ def cmd_annotate(args) -> None:
     linking is geometry, not vision: strokes are mapped into PDF page coordinates and
     intersected with the text layer, so no model is called and nothing is billed.
     """
+    import logging
     import tempfile
+
+    # Progress logging ON. `--ingest` can run a 200-page book for tens of minutes, and the
+    # pipeline already emits per-section progress ("section 12/87 done") — but this command
+    # never configured logging, so every one of those lines was discarded. Three attempts at the
+    # book ingest were debugged from CPU counters and socket tables because of it, when the log
+    # would have said which section it stopped on. `ingest`/`sync` have always done this.
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     from locus.capture.annotate import marks_for_document, store_marks
     from locus.capture.rmdoc import fetch_rmdoc, read_rmdoc

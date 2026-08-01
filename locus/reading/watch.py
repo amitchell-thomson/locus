@@ -52,8 +52,12 @@ DEFAULT_TTL_DAYS = 21
 
 @dataclass(frozen=True)
 class DeviceEntry:
-    path: str     # full device path
-    folder: str   # first path segment under the reading root ('Proposed', 'In-Progress', ...)
+    # ABSOLUTE device path, reconstructed rather than taken from rmapi's output. `rmapi find`
+    # renders paths relative to the parent of whatever it searched (`Reading/In-Progress/X`), and
+    # feeding that straight to `rmapi get` fails — which is exactly how the first real annotation
+    # sweep failed, on a paper the owner had genuinely moved and marked up.
+    path: str
+    folder: str   # reading folder it currently sits in ('Proposed', 'In-Progress', 'Finished')
     stem: str     # document display name, without the .pdf the device strips
 
 
@@ -107,7 +111,10 @@ def list_reading_entries(
         folder = parts[-2]
         if folder not in READING_FOLDERS:
             continue  # something else living under the root — not part of the accept signal
-        entries.append(DeviceEntry(path=path, folder=folder, stem=_stem(parts[-1])))
+        stem = _stem(parts[-1])
+        entries.append(DeviceEntry(
+            path=f"/{root.strip('/')}/{folder}/{stem}", folder=folder, stem=stem,
+        ))
     return entries
 
 

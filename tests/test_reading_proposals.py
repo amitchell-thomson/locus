@@ -345,3 +345,16 @@ def test_every_rmapi_path_rendering_parses(conn):
                  "/Locus/Reading/Finished/2026-07-31 Both Forms"):
         entries = W.list_reading_entries(_runner([path]))
         assert [e.folder for e in entries] == ["Finished"], path
+
+
+def test_device_entries_carry_an_absolute_path_usable_by_rmapi_get(conn):
+    """`rmapi find` renders paths relative to the parent of what it searched.
+
+    Feeding that back to `rmapi get` fails, which is how the first real annotation sweep died —
+    on a paper the owner had genuinely moved to In-Progress and written on.
+    """
+    entries = W.list_reading_entries(
+        _runner(["Reading/In-Progress/2026-07-31 AlphaZeroBeta"]), root="/Locus/Reading"
+    )
+    assert entries[0].path == "/Locus/Reading/In-Progress/2026-07-31 AlphaZeroBeta"
+    assert entries[0].folder == "In-Progress"

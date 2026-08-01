@@ -597,11 +597,10 @@ def test_openalex_query_filters_to_works_with_abstracts():
     assert "has_abstract" in url and "mailto=a%40b.c" in url
 
 
-def test_citation_bonus_treats_unknown_as_neutral_not_zero():
-    """arXiv reports no citation count; scoring absence as 'uncited' would demote every preprint."""
-    assert rank._citation_bonus(None) == 0.0
-    assert rank._citation_bonus(0) == 0.0
-    assert rank._citation_bonus(1000) > rank._citation_bonus(10) > 0
+def test_citation_bonus_is_monotonic_in_citations():
+    """More-cited still ranks above less-cited; centring changes the origin, not the order."""
+    low, mid, high = rank._citation_bonuses([10, 1_000, 100_000])
+    assert high > mid > low
 
 
 # ---------- the judge ----------
@@ -685,3 +684,59 @@ def test_only_a_truly_marked_concept_claims_to_be_marked(conn):
                        found_label="Advanced Portfolio Management")
     assert "underlined" in marked.why
     assert "underlined" not in read.why and "annotated" in read.why
+
+
+def test_citation_prior_is_centred_so_unknown_is_not_a_penalty(conn):
+    """Raw log-citations demoted every arXiv preprint for its SOURCE, not its quality.
+
+    Measured 2026-08-01: the median known count in the live pool was 601, worth +0.42 at the
+    configured weight, while arXiv reports no count at all and scored 0.00. Centring maps unknown
+    to the middle of the field instead of the bottom of it.
+    """
+    b = dict(zip(("unknown", "median", "high"),
+                 rank._citation_bonuses([None, 100, 100, 100_000])))
+    assert b["unknown"] == 0.0, "no citation data must mean no opinion"
+    assert b["median"] == pytest.approx(0.0, abs=1e-9), "a median work is the reference point"
+    # And the whole term stays small: it orders relevant papers, it cannot promote irrelevant ones.
+    assert abs(rank._citation_bonuses([None, 0, 121_773])[2]) < 4.0
+
+
+def test_openalex_searches_titles_and_abstracts_not_fulltext():
+    """`search=` matched 719,908 works for one finance phrase, led by medical guidelines."""
+    from locus.discover import openalex
+
+    url = openalex.build_query("Marginal Contribution to Factor Risk")
+    assert "title_and_abstract.search" in url
+    assert "search=Marginal" not in url, "the loose fulltext parameter must not be used"
+
+
+def test_openalex_backs_off_on_rate_limiting(monkeypatch):
+    """A silently-truncated harvest is the worst failure shape: less coverage, no error."""
+    import urllib.error
+
+    from locus.discover import openalex
+
+    calls = {"n": 0}
+
+    def flaky(req, timeout=0):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise urllib.error.HTTPError(req.full_url, 429, "Too Many Requests", {}, None)
+
+        class R:
+            def read(self):
+                return b'{"results":[]}'
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        return R()
+
+    monkeypatch.setattr(openalex.urllib.request, "urlopen", flaky)
+    monkeypatch.setattr(openalex.time if hasattr(openalex, "time") else __import__("time"),
+                        "sleep", lambda s: None)
+    assert openalex._default_fetch("https://x") == '{"results":[]}'
+    assert calls["n"] == 3, "must retry through the 429s rather than give up or crash"

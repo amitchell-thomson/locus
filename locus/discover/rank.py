@@ -320,6 +320,7 @@ def rank(
     # pipeline follows for optional system deps).
     cross = _cross_scores([(facet, f"{r['title']}. {r['abstract']}") for r, _, _, _, _, facet in gated])
 
+    bonuses = _citation_bonuses([r["cited_by"] for r, _, _, _, _, _ in gated])
     scored = [
         Scored(
             candidate_id=r["id"], external_id=r["external_id"], title=r["title"],
@@ -327,7 +328,7 @@ def rank(
             abstract=r["abstract"], fit=fit, familiarity=fam,
             score=((cross[i] if cross else fit)
                    - familiarity_weight * fam
-                   + citation_weight * _citation_bonus(r["cited_by"])),
+                   + citation_weight * bonuses[i]),
             cross_score=cross[i] if cross else None,
             matched_kind=kind, matched_label=label,
             found_term=r["found_term"], found_kind=r["found_kind"],
@@ -343,19 +344,36 @@ def rank(
     return shortlist[:limit]
 
 
-def _citation_bonus(cited_by) -> float:
-    """log10(1+citations), or 0.0 when UNKNOWN.
+def _citation_bonuses(counts: list) -> list[float]:
+    """Log-citations CENTRED on the pool median, so the prior can only ever break ties.
 
-    Unknown must not read as zero-with-a-penalty: arXiv gives no citation count at all, so
-    treating absence as "uncited" would systematically demote every preprint the moment the prior
-    was switched on. Absence scores neutral; only a real, known count can earn the bonus.
+    The first version returned raw `log10(1+citations)` and scored UNKNOWN as 0.0, on the
+    reasoning that absence must not be read as "uncited". Measured, that reasoning was half
+    right and the implementation was wrong: the median known count in the live pool is 601,
+    worth +0.42 at weight 0.15, while arXiv reports no count at all and therefore scored 0.00.
+    Every preprint sat 0.42 behind every median journal article for no reason but its source —
+    exactly the systematic demotion the zero was meant to prevent.
+
+    Centring fixes it. The bonus is the distance from the pool's median in log space, so a
+    well-cited work earns a little, a barely-cited one loses a little, and an UNKNOWN count maps
+    to precisely 0.0 — the middle of the field rather than the bottom of it.
+
+    The magnitude is deliberately small and log10 keeps it that way: across the entire live pool
+    the term spans about 0.76, against a cross-encoder interquartile range of 3.59. Citations
+    order papers that are already relevant; they never promote one that is not.
     """
-    if cited_by is None:
-        return 0.0
-    try:
-        return math.log10(1.0 + max(int(cited_by), 0))
-    except (TypeError, ValueError):
-        return 0.0
+    known = [math.log10(1.0 + max(int(c), 0)) for c in counts if c is not None]
+    if not known:
+        return [0.0] * len(counts)
+    known.sort()
+    median = known[len(known) // 2]
+    out: list[float] = []
+    for c in counts:
+        if c is None:
+            out.append(0.0)                 # unknown == the median, i.e. no opinion
+        else:
+            out.append(math.log10(1.0 + max(int(c), 0)) - median)
+    return out
 
 
 def _apply_judge(conn, shortlist, *, judge, drop_at_or_below: int):

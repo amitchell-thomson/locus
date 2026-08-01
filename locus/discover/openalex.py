@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -53,26 +54,52 @@ class OpenAlexWork:
     doi: str
 
 
-def _default_fetch(url: str) -> str:
-    req = urllib.request.Request(url, headers={"User-Agent": "locus-discovery/1.0"})
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        return resp.read().decode("utf-8", errors="replace")
+def _default_fetch(url: str, *, attempts: int = 4) -> str:
+    """GET with backoff on 429.
+
+    Hit for real on 2026-08-01: a single harvest makes one request per search term (73 of them),
+    and the unauthenticated common pool starts returning `429 Too Many Requests` well inside that.
+    Without a retry the weekly job would quietly harvest a fraction of the literature and report
+    success, which is the worst failure shape available — silently less coverage, no error.
+
+    Setting `[discovery].openalex_mailto` moves the client into OpenAlex's polite pool, where the
+    limits are far higher; this backoff is what makes the run survive without it.
+    """
+    import time
+
+    delay = 2.0
+    for attempt in range(attempts):
+        req = urllib.request.Request(url, headers={"User-Agent": "locus-discovery/1.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                return resp.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as exc:
+            if exc.code != 429 or attempt == attempts - 1:
+                raise
+            log.info("OpenAlex rate-limited; backing off %.0fs", delay)
+            time.sleep(delay)
+            delay *= 2
+    raise RuntimeError("unreachable")
 
 
 def build_query(term: str, *, per_page: int = 25, mailto: str = "") -> str:
-    """A relevance-ranked search for one technical phrase.
+    """A relevance-ranked search of TITLES AND ABSTRACTS for one technical phrase.
 
-    `search` covers title, abstract and fulltext. Filtered to works that HAVE an abstract, since a
-    work without one cannot be embedded, reranked or judged — it would occupy a slot on the
-    strength of its title alone.
+    Also filtered to works that HAVE an abstract, since a work without one cannot be embedded,
+    reranked or judged — it would occupy a slot on the strength of its title alone.
     """
     phrase = " ".join((term or "").split())
     if len(phrase) < 4:
         raise ValueError(f"search term too short: {term!r}")
+    # TITLE AND ABSTRACT, not the general `search` parameter, which also matches FULLTEXT and is
+    # far too loose to be useful. Measured 2026-08-01 on `Marginal Contribution to Factor Risk`:
+    # `search=` returned 719,908 matches led by the 2019 ESC/EAS dyslipidaemia guidelines and a
+    # global burden-of-disease study, because the words "risk", "factor" and "contribution" occur
+    # all over medicine. The same phrase against title_and_abstract returns 1,879 — a 380x
+    # narrowing — led by Sharpe's CAPM, which is the actual canonical answer.
     params = {
-        "search": phrase,
         "per_page": str(per_page),
-        "filter": "has_abstract:true",
+        "filter": f"has_abstract:true,title_and_abstract.search:{phrase}",
     }
     if mailto:
         params["mailto"] = mailto      # the polite pool: better limits, and they ask for it

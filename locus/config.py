@@ -422,9 +422,10 @@ class DiscoveryConfig(BaseModel):
     openalex_per_term: int = Field(10, description="Works pulled per search term from OpenAlex.")
     citation_weight: float = Field(
         0.15,
-        description="Weight on log10(1+citations) in the score — a cheap proxy for 'canonical "
-                    "treatment' rather than 'newest variant'. Unknown counts (arXiv) score 0, "
-                    "never negative, so preprints are not systematically demoted.",
+        description="Weight on log-citations CENTRED on the pool median — a cheap proxy for "
+                    "'the canonical treatment' over 'the newest variant'. Centred, not raw: the "
+                    "median live count is 601 (worth +0.42 raw) while arXiv reports none at all, "
+                    "so a raw prior put every preprint 0.42 behind for its source alone.",
     )
     judge_enabled: bool = Field(
         True,

@@ -218,6 +218,21 @@ harvest_days       = 21
 # but unlike anything in the corpus. Sweep it against his judgement before trusting the value.
 familiarity_weight = 0.25  # SWEPT 2026-07-31: 1.0 buried the best papers
 gap_weight         = 0.6        # a gap match counts less than a project match
+# Category browsing is RETIRED (2026-08-01): targeted search superseded it, and browse supplied
+# the weak half of every judged list while capping the pool at a rolling ~3-week window.
+browse_categories  = false
+# OpenAlex covers journals, books and chapters — arXiv is preprints and misses most of the
+# finance canon. No key needed; mailto buys the polite pool's higher rate limits.
+openalex_enabled   = true
+openalex_mailto    = ""         # e.g. "you@example.com"
+openalex_per_term  = 10
+# Cheap proxy for "the canonical treatment" over "the newest variant". Unknown counts score 0,
+# never negative, so arXiv preprints are not systematically demoted.
+citation_weight    = 0.15
+# A local model that DROPS clear irrelevance. A filter, not a ranker — measured, it uses only
+# 1-3 of its scale, so it cannot order the good papers but it bins the junk reliably.
+judge_enabled      = true
+judge_drop_at_or_below = 1
 
 [agent]
 # Agent-layer orchestration (agent-layer plan §10, Phase 1). Capture/enrichment loops run

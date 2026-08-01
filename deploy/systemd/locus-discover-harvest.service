@@ -1,0 +1,17 @@
+[Unit]
+Description=Locus reading — search the literature for your concepts and refill the reading folder
+Documentation=file:///home/alec/server-projects/locus/docs/reading-discovery-plan.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/alec/server-projects/locus
+# Weekly, not hourly, and the reason is the literature rather than the cost: searching arXiv and
+# OpenAlex for ~50 concepts is a few hundred polite requests, and the published record does not
+# change meaningfully between Tuesdays. Local embedding of the results uses the GPU, so this is
+# also the one unit that should not contend with an ingest.
+ExecStart=/home/alec/.local/bin/uv run locus discover --harvest --profiles --propose --push
+TimeoutStartSec=7200
+Nice=15
+IOSchedulingClass=idle

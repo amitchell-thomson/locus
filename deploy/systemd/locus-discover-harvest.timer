@@ -1,0 +1,12 @@
+[Unit]
+Description=Weekly literature search and reading-folder refill
+
+[Timer]
+OnCalendar=Sun 04:30
+RandomizedDelaySec=30min
+# Proposing is capped on the STOCK sitting in Proposed, so a missed week does not produce a
+# backlog: the next run still tops up to the cap and no further.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

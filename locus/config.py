@@ -384,6 +384,10 @@ class DiscoveryConfig(BaseModel):
                     "papers out of 200 (measured 2026-07-31).",
     )
     harvest_limit: int = Field(600, description="Overall cap across all categories.")
+    terms_per_source: int = Field(
+        25, description="Search terms taken from each of reading / projects / gaps."
+    )
+    per_term: int = Field(8, description="arXiv results pulled per search term.")
     harvest_days: int = Field(
         21,
         description="Only harvest papers published within this many days. Paging stops at the "
@@ -400,6 +404,35 @@ class DiscoveryConfig(BaseModel):
     gap_weight: float = Field(
         0.6, description="Weight of a gap match relative to a project match (projects win)."
     )
+    # RETIRED 2026-08-01, kept as a knob rather than deleted (the `rough_penalty` precedent).
+    # Browsing recent category listings was the original mechanism and targeted search superseded
+    # it: judged against real output, browse supplied the weak half of every list while capping
+    # the pool at a rolling ~3-week window. Set true to re-enable.
+    browse_categories: bool = Field(
+        False, description="Also browse recent category listings (retired; search superseded it)."
+    )
+    openalex_enabled: bool = Field(
+        True,
+        description="Search OpenAlex as well as arXiv — journals, books and chapters, plus "
+                    "citation counts. arXiv alone misses most of the finance canon.",
+    )
+    openalex_mailto: str = Field(
+        "", description="Contact email for OpenAlex's polite pool (higher rate limits)."
+    )
+    openalex_per_term: int = Field(10, description="Works pulled per search term from OpenAlex.")
+    citation_weight: float = Field(
+        0.15,
+        description="Weight on log10(1+citations) in the score — a cheap proxy for 'canonical "
+                    "treatment' rather than 'newest variant'. Unknown counts (arXiv) score 0, "
+                    "never negative, so preprints are not systematically demoted.",
+    )
+    judge_enabled: bool = Field(
+        True,
+        description="Run a local model over the shortlist and DROP clear irrelevance. A filter, "
+                    "not a ranker: measured, it scores 1-3 only, so it has no resolution at the "
+                    "top of its scale but bins junk the cross-encoder ranks 7th.",
+    )
+    judge_drop_at_or_below: int = Field(1, description="Judge score at or below which to drop.")
 
     @property
     def caps(self) -> dict[str, int]:

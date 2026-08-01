@@ -561,3 +561,110 @@ def test_search_terms_interleave_so_a_truncated_budget_still_covers_projects(con
     kinds = [t.source_kind for t in Q.all_terms(conn)[:6]]
     assert set(kinds) == {"reading", "project", "gap"}, kinds
     assert kinds[0] == "reading", "reading still leads within each round"
+
+
+# ---------- OpenAlex ----------
+
+
+_OA = """{"results":[{
+  "id":"https://openalex.org/W123","display_name":"Trading and Exchanges",
+  "publication_date":"2002-10-01","cited_by_count":1500,
+  "doi":"https://doi.org/10.1234/x",
+  "abstract_inverted_index":{"Market":[0],"microstructure":[1],"for":[2],"practitioners":[3],
+      "covering":[4],"order":[5],"books":[6],"and":[7],"liquidity":[8],"provision":[9],
+      "in":[10],"modern":[11],"electronic":[12],"venues":[13],"worldwide":[14],"today":[15]},
+  "primary_location":{"source":{"display_name":"Oxford University Press"}},
+  "open_access":{"oa_url":"https://example.org/x.pdf"},
+  "authorships":[{"author":{"display_name":"L Harris"}}]},
+ {"id":"https://openalex.org/W999","display_name":"No Abstract","cited_by_count":3}]}"""
+
+
+def test_openalex_reconstructs_inverted_abstracts_and_skips_unusable():
+    from locus.discover import openalex
+
+    works = openalex.parse(_OA)
+    assert len(works) == 1, "a work with no abstract cannot be ranked — skip it"
+    w = works[0]
+    assert w.abstract.startswith("Market microstructure for practitioners")
+    assert w.cited_by == 1500 and w.venue == "Oxford University Press"
+    assert w.pdf_url.endswith(".pdf") and w.external_id == "openalex:W123"
+
+
+def test_openalex_query_filters_to_works_with_abstracts():
+    from locus.discover import openalex
+
+    url = openalex.build_query("market microstructure", mailto="a@b.c")
+    assert "has_abstract" in url and "mailto=a%40b.c" in url
+
+
+def test_citation_bonus_treats_unknown_as_neutral_not_zero():
+    """arXiv reports no citation count; scoring absence as 'uncited' would demote every preprint."""
+    assert rank._citation_bonus(None) == 0.0
+    assert rank._citation_bonus(0) == 0.0
+    assert rank._citation_bonus(1000) > rank._citation_bonus(10) > 0
+
+
+# ---------- the judge ----------
+
+
+def test_judge_drops_only_the_floor_and_never_reorders(conn, monkeypatch):
+    """A filter, not a ranker: measured, it uses 1-3 of its scale so it cannot order the good."""
+    from locus.discover import judge as J
+
+    # One profile each, so the per-profile diversity cap is not what does the filtering.
+    for i, name in enumerate(("keep-a", "junk", "keep-b")):
+        _seed_profile(conn, f"project {i}", unit(axis=i))
+        _seed_candidate(conn, f"arxiv:{name}", name, unit(axis=i))
+
+    scores = {"junk": 1, "keep-a": 3, "keep-b": 2}
+    monkeypatch.setattr(
+        J, "score",
+        lambda items, **kw: [J.Verdict(scores[t], "") for _l, _f, t, _a in items],
+    )
+    kept = [s.title for s in rank.rank(conn, limit=3, judge={"model": "m", "host": "h"})]
+    assert "junk" not in kept and set(kept) == {"keep-a", "keep-b"}
+
+
+def test_a_broken_judge_passes_everything_through(conn):
+    """A judge that cannot answer must degrade to no filtering, never to an empty reading list."""
+    from locus.discover import judge as J
+
+    def exploding(prompts):
+        raise RuntimeError("ollama down")
+
+    verdicts = J.score([("p", "f", "t", "a")], model="m", host="h",
+                       judge_fn=lambda ps: [J.Verdict(3, "x")])
+    assert verdicts[0].score == 3
+    # A count mismatch is also survivable.
+    assert J.score([("p", "f", "t", "a")], model="m", host="h",
+                   judge_fn=lambda ps: [])[0].score == 3
+
+
+# ---------- the annotation sweep ----------
+
+
+def test_sweep_skips_unread_papers_and_records_folder(conn):
+    """A paper still in Proposed has nothing written on it, so it costs no download."""
+    from locus.reading import proposals as P
+    from locus.reading.sweep import sweep
+
+    P.link_target(conn, source_uri="vault/incoming/paper/x.pdf", doc_uuid="u1",
+                  device_path="2026-08-01 X.pdf", linked_by="delivery")
+
+    def runner(args):
+        return 0, "[f] Reading/Proposed/2026-08-01 X\n", ""
+
+    out = sweep(conn, runner=runner)
+    assert [(r.status, r.folder) for r in out] == [("unread", "Proposed")]
+    row = conn.execute("SELECT device_folder, last_swept FROM reading_targets").fetchone()
+    assert row["device_folder"] == "Proposed" and row["last_swept"]
+
+
+def test_sweep_reports_a_reading_that_left_the_folders(conn):
+    from locus.reading import proposals as P
+    from locus.reading.sweep import sweep
+
+    P.link_target(conn, source_uri="vault/incoming/paper/x.pdf", doc_uuid="u1",
+                  device_path="2026-08-01 X.pdf", linked_by="delivery")
+    out = sweep(conn, runner=lambda a: (0, "[f] Reading/Finished/2026-08-01 Other\n", ""))
+    assert out[0].status == "gone"

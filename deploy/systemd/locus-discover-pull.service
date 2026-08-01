@@ -1,0 +1,19 @@
+[Unit]
+Description=Locus reading — observe folder moves, ingest accepted papers, read back your marks
+Documentation=file:///home/alec/server-projects/locus/docs/reading-discovery-plan.md
+# Needs the reMarkable cloud reachable: the accept signal and the ink both come from `rmapi`.
+# Ordered after the network but not bound to it — an unreachable cloud is reported and skipped,
+# and the safety rule in reading/watch.py means an empty listing changes nothing.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/alec/server-projects/locus
+# FREE and local: the folder watch is one `rmapi find`, ingest is the ordinary spine, and the
+# annotation sweep is guarded by a stroke fingerprint so unchanged ink costs nothing. Hourly is
+# affordable because doing nothing is genuinely cheap.
+ExecStart=/home/alec/.local/bin/uv run locus discover --pull
+TimeoutStartSec=3600
+Nice=10
+IOSchedulingClass=idle

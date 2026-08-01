@@ -1,0 +1,14 @@
+[Unit]
+Description=Check hourly whether reading has been accepted, rejected or marked up
+
+[Timer]
+OnBootSec=20min
+OnUnitActiveSec=1h
+RandomizedDelaySec=5min
+# A missed window runs once on resume. Every step is idempotent — the folder watch re-reads
+# current state rather than a delta, ingest is content-hashed, and marks upsert on
+# (source_uri, page, bbox) — so a late or repeated run cannot double-ingest or duplicate ink.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

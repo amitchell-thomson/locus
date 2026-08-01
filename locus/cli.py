@@ -748,17 +748,32 @@ def cmd_discover(args) -> None:
             from locus.discover import arxiv, profiles as D_profiles, rank as D_rank
 
             if args.harvest:
-                from datetime import date as _d, timedelta as _td
-                since = (_d.today() - _td(days=dcfg.harvest_days)).isoformat()
-                papers = arxiv.harvest(
-                    dcfg.arxiv_categories, per_category=dcfg.per_category,
-                    limit=dcfg.harvest_limit, since=since,
-                )
-                added = D_rank.store(conn, papers)
-                print(f"harvested {len(papers)} · {added} new "
-                      f"(sent: categories only — {', '.join(dcfg.arxiv_categories)})")
-                embedded = D_rank.embed_pending(conn)
-                print(f"embedded {embedded} abstract(s) locally")
+                from locus.discover import openalex, queries
+
+                terms = queries.all_terms(conn, per_source=dcfg.terms_per_source)
+                print(f"searching {len(terms)} concept(s) from your reading, projects and gaps")
+                found = arxiv.search(terms, per_term=dcfg.per_term, limit=dcfg.harvest_limit)
+                print(f"  arXiv    {len(found)}")
+                if dcfg.openalex_enabled:
+                    oa = openalex.search(
+                        terms, per_term=dcfg.openalex_per_term, limit=dcfg.harvest_limit,
+                        mailto=dcfg.openalex_mailto,
+                    )
+                    print(f"  OpenAlex {len(oa)}  (journals, books, citation counts)")
+                    found = found + oa
+                if dcfg.browse_categories:
+                    # Retired by default: search superseded it (see [discovery].browse_categories).
+                    from datetime import date as _d, timedelta as _td
+                    browsed = arxiv.harvest(
+                        dcfg.arxiv_categories, per_category=dcfg.per_category,
+                        limit=dcfg.harvest_limit,
+                        since=(_d.today() - _td(days=dcfg.harvest_days)).isoformat(),
+                    )
+                    print(f"  browse   {len(browsed)}")
+                    found = found + [(b, None) for b in browsed]
+                added = D_rank.store(conn, found)
+                print(f"{added} new candidate(s); embedding locally ...")
+                print(f"embedded {D_rank.embed_pending(conn)}")
 
             if args.profiles:
                 built = D_profiles.rebuild(conn)
@@ -769,9 +784,15 @@ def cmd_discover(args) -> None:
                       if built else "no profiles — bless a project object first")
 
             if args.rank or args.propose:
+                judge = None
+                if dcfg.judge_enabled and not args.no_judge:
+                    cfg_all = load()
+                    judge = {"model": cfg_all.ollama.ingest_model, "host": cfg_all.ollama.host}
                 top = D_rank.rank(
                     conn, limit=args.top,
                     familiarity_weight=dcfg.familiarity_weight, gap_weight=dcfg.gap_weight,
+                    citation_weight=dcfg.citation_weight, judge=judge,
+                    judge_floor=dcfg.judge_drop_at_or_below,
                 )
                 if not top:
                     print("nothing ranked — harvest and rebuild profiles first")
@@ -839,6 +860,19 @@ def cmd_discover(args) -> None:
             ingested = R_accept.ingest_accepted(
                 conn, drop_folder=dcfg.drop_folder, dry_run=args.dry_run
             )
+            # THE OTHER HALF OF THE LOOP. Accepting ingests the paper's TEXT; this captures what
+            # he wrote ON it afterwards, which is the signal that seeds the next concept search.
+            # Without it a paper read and annotated end to end reaches the corpus as a clean PDF
+            # and his reading of it is thrown away (migration 0022).
+            if not args.no_sweep:
+                from locus.reading.sweep import sweep as _sweep
+
+                for r in _sweep(conn, rmapi_binary=dcfg.rmapi_binary,
+                                root="/" + dcfg.root_folder.strip("/")):
+                    if r.status == "marks":
+                        print(f"  marked        {r.marks} mark(s) on {r.title[:48]} [{r.folder}]")
+                    elif r.status == "failed":
+                        print(f"  sweep-failed  {r.title[:48]}: {r.detail}")
             for r in ingested:
                 print(f"  {r.status:<13} {r.title[:56]}"
                       f"{f'  doc {r.doc_id}' if r.doc_id else ''}"
@@ -1447,7 +1481,7 @@ def main(argv=None) -> None:
                      help="days in Proposed before it reads as a no (default: [discovery].ttl_days)")
     pds.add_argument("--dry-run", action="store_true", help="do not ingest accepted proposals")
     pds.add_argument("--harvest", action="store_true",
-                     help="pull recent arXiv metadata (sends a category and a date, nothing else)")
+                     help="search arXiv + OpenAlex for the concepts in your reading, projects and gaps")
     pds.add_argument("--profiles", action="store_true",
                      help="rebuild the project/gap vectors candidates are ranked against")
     pds.add_argument("--rank", action="store_true",
@@ -1455,6 +1489,10 @@ def main(argv=None) -> None:
     pds.add_argument("--propose", action="store_true",
                      help="turn the top-ranked candidates into proposals (respects the cap)")
     pds.add_argument("--top", type=int, default=10, help="how many to rank (default 10)")
+    pds.add_argument("--no-sweep", action="store_true",
+                     help="skip reading back the marks you made on accepted papers")
+    pds.add_argument("--no-judge", action="store_true",
+                     help="skip the local relevance filter (faster; keeps clear irrelevance)")
     pds.add_argument("--push", action="store_true",
                      help="fetch the open-access PDFs of queued candidates and put them in Proposed")
     pds.add_argument("--staging", default=None, help="where to download PDFs before pushing")

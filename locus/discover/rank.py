@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -101,6 +102,8 @@ class Scored:
     found_term: str | None = None      # the concept whose search returned this paper
     found_kind: str | None = None      # 'reading' | 'project' | 'gap' | 'browse'
     found_label: str | None = None     # the document/project that concept came from
+    cited_by: int | None = None        # None means UNKNOWN (arXiv), never zero
+    venue: str | None = None
 
     @property
     def why(self) -> str:
@@ -146,12 +149,15 @@ def store(conn: sqlite3.Connection, papers, *, term=None) -> int:
             cur = conn.execute(
                 "INSERT INTO discovery_candidates (external_id, dedupe_key, title, authors, "
                 "abstract, primary_category, categories, published, url, pdf_url, source, "
-                "harvested_at, found_term, found_kind, found_label) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,'arxiv',?,?,?,?) "
+                "harvested_at, found_term, found_kind, found_label, cited_by, venue, doi) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
                 "ON CONFLICT(external_id) DO NOTHING",
                 (p.external_id, dedupe_key(p.title, p.authors), p.title, p.authors, p.abstract,
-                 p.primary_category, p.categories, p.published, p.url, p.pdf_url, _utcnow(),
-                 with_term, kind, getattr(t, "source_label", None)),
+                 getattr(p, "primary_category", None), getattr(p, "categories", None),
+                 p.published, p.url, p.pdf_url,
+                 "openalex" if p.external_id.startswith("openalex:") else "arxiv",
+                 _utcnow(), with_term, kind, getattr(t, "source_label", None),
+                 getattr(p, "cited_by", None), getattr(p, "venue", None), getattr(p, "doi", None)),
             )
             new += cur.rowcount
     return new
@@ -230,6 +236,9 @@ def rank(
     familiarity_weight: float = FAMILIARITY_WEIGHT,
     gap_weight: float = GAP_WEIGHT,
     gate_fraction: float = GATE_FRACTION,
+    citation_weight: float = 0.0,
+    judge: dict | None = None,
+    judge_floor: int = 1,
 ) -> list[Scored]:
     """Best candidates for him right now, most promising first.
 
@@ -315,17 +324,61 @@ def rank(
             candidate_id=r["id"], external_id=r["external_id"], title=r["title"],
             authors=r["authors"] or "", url=r["url"] or "", pdf_url=r["pdf_url"] or "",
             abstract=r["abstract"], fit=fit, familiarity=fam,
-            score=(cross[i] if cross else fit) - familiarity_weight * fam,
+            score=((cross[i] if cross else fit)
+                   - familiarity_weight * fam
+                   + citation_weight * _citation_bonus(r["cited_by"])),
             cross_score=cross[i] if cross else None,
             matched_kind=kind, matched_label=label,
             found_term=r["found_term"], found_kind=r["found_kind"],
-            found_label=r["found_label"],
+            found_label=r["found_label"], cited_by=r["cited_by"], venue=r["venue"],
         )
         for i, (r, fit, fam, kind, label, _facet) in enumerate(gated)
     ]
 
     scored.sort(key=lambda s: -s.score)
-    return _cap_per_profile(scored, limit=limit)
+    shortlist = _cap_per_profile(scored, limit=limit * 2 if judge else limit)
+    if judge:
+        shortlist = _apply_judge(conn, shortlist, judge=judge, drop_at_or_below=judge_floor)
+    return shortlist[:limit]
+
+
+def _citation_bonus(cited_by) -> float:
+    """log10(1+citations), or 0.0 when UNKNOWN.
+
+    Unknown must not read as zero-with-a-penalty: arXiv gives no citation count at all, so
+    treating absence as "uncited" would systematically demote every preprint the moment the prior
+    was switched on. Absence scores neutral; only a real, known count can earn the bonus.
+    """
+    if cited_by is None:
+        return 0.0
+    try:
+        return math.log10(1.0 + max(int(cited_by), 0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _apply_judge(conn, shortlist, *, judge, drop_at_or_below: int):
+    """Drop clear irrelevance. Order is untouched — the judge has no resolution to rank with."""
+    from locus.discover import judge as J
+
+    facets = {}
+    for s in shortlist:
+        row = conn.execute(
+            "SELECT text FROM discovery_profiles WHERE label = ? ORDER BY LENGTH(text) DESC "
+            "LIMIT 1", (s.matched_label,),
+        ).fetchone()
+        facets[s.candidate_id] = row["text"] if row else s.matched_label
+
+    verdicts = J.score(
+        [(s.matched_label, facets[s.candidate_id], s.title, s.abstract) for s in shortlist],
+        model=judge.get("model", ""), host=judge.get("host", ""),
+        judge_fn=judge.get("judge_fn"),
+    )
+    kept = [s for s, v in zip(shortlist, verdicts) if v.score > drop_at_or_below]
+    dropped = len(shortlist) - len(kept)
+    if dropped:
+        log.info("judge dropped %d candidate(s) scoring <= %d", dropped, drop_at_or_below)
+    return kept
 
 
 def _cross_scores(pairs: list[tuple[str, str]]) -> list[float]:

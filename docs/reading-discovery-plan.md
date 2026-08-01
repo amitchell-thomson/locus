@@ -1,6 +1,10 @@
 # Reading discovery — Phase 4
 
-**Status:** DESIGN. Not built.
+**Status:** SHIPPED (Phases 1-2), 2026-08-01. Productionised on systemd timers.
+
+> This document is the DESIGN as it was reasoned out. Three rounds of measurement then overtook
+> parts of it, and the corrections are recorded in `## What measurement changed` at the end —
+> read that alongside the design, because several confident calls here turned out to be wrong.
 **Supersedes:** the 2026-07-30 design note of the same name (kept in git history).
 **Date:** 2026-07-31
 **Referenced from:** `locus/learn/reread.py`, `locus/agent/compose_daily.py` (`build_readings`).
@@ -399,3 +403,58 @@ that re-baselining to be the real work of the session that follows.
   ingesting the book is the likely answer — and it is a decision, not an implementation detail.
 - **A proposal moved to `Finished` without ever being opened** is currently indistinguishable from
   a real read. Probably acceptable; worth not pretending otherwise.
+
+
+## What measurement changed
+
+Written after building it. Each of these was a considered decision that the evidence reversed.
+
+**Category browsing was the wrong mechanism, and it was the whole mechanism.** Harvesting recent
+listings caps the pool at a rolling window, and METHODS ARE OLD — the canonical treatment of a
+technique is usually years back. A relevance search for `regime switching AND hidden Markov`
+returns work from 2008, 2014 and 2020, none of which any recency browse could reach. Browse is
+now retired (`[discovery].browse_categories = false`), kept as a knob rather than deleted.
+
+**arXiv alone is not enough.** It is preprints, skewed to CS/physics/maths. A search for
+`Kalman filter AND trajectory interpolation` — a problem he has written down — returned ZERO
+results there, because that work is published elsewhere. OpenAlex added journals, books and
+chapters, and brought citation counts, which gave the quality prior the design never had. It
+immediately surfaced Harris's *Trading and Exchanges* and Christoffersen's VaR backtesting paper.
+
+**The profiles were the bottleneck before the ranking was.** `regime-ml` was represented by 289
+characters against 34,856 available — its section summaries, `result`, `limitations` and 263
+named methods all unused. One vector per project matched relevant work by luck. Facets fixed it.
+
+**Concepts he MARKED WHILE READING are the best query source**, better than anything derived from
+his code, and the design did not mention them. They now lead the search rotation.
+
+**Two interleave bugs, the same mistake twice.** Concatenating sources meant a truncated budget
+took only the first: 79 papers harvested and ZERO project or gap concepts ever searched. The
+ranking had the identical flaw. An ordering has to be balanced at every prefix, not just at the
+end.
+
+**A local judge is a filter, not a ranker.** Asked yes/no it rejected all 14 candidates including
+the two best; asked for a 1-5 score it binned exactly the junk. It is wired as a floor only.
+
+**The familiarity term was premature.** Swept, 1.0 destroyed the ranking by burying the two best
+papers. At 205 documents "he already has this" is rarely true, so it now runs at 0.25 as a
+tiebreaker and should rise as density grows.
+
+**Coursework concepts are kept deliberately.** `eigenvector` and `frequency response` look like
+noise and are not: the link between eigenvectors in factor models and in modal analysis is exactly
+the cross-domain transfer this engine exists for. The owner overruled a proposal to filter them,
+and an AIAA paper on eigenvector rates of change now appears legitimately.
+
+**Accepting a paper stopped the loop.** `watch.scan` only revisits `status='proposed'`, so once a
+paper was ingested nothing watched it again — he could read and annotate it and none of that
+reached the corpus. `reading/sweep.py` (migration 0022) closes it, guarded by a stroke fingerprint.
+
+## Operations
+
+    locus discover --harvest --profiles   # search arXiv + OpenAlex for your concepts, embed
+    locus discover --rank --top 10        # what it would propose, and why
+    locus discover --propose --push       # fill free slots and put the PDFs on the tablet
+    locus discover --pull                 # observe moves, ingest accepted, read back your marks
+
+Timers (`deploy/systemd/`): `locus-discover-pull` hourly (free, local), `locus-discover-harvest`
+weekly (network + GPU). `locus status` reports proposals in flight, pool size and marks read back.

@@ -9,6 +9,12 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=/home/alec/server-projects/locus
+# systemd's user PATH is the system default and does NOT include ~/.local/bin, where uv,
+# rmapi and the `claude` CLI all live. Leaving it implicit is why locus-maintain died on
+# six consecutive nights with "`claude` CLI not found on PATH", taking `locus link` with
+# it and leaving 1,989 entity surfaces outside the alias substrate. Stated explicitly here
+# so no unit depends on what the manager happens to have inherited at login.
+Environment=PATH=/home/alec/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # capture-sync is BILLED (Sonnet vision) but idempotent: a per-uuid raster hash means an
 # unchanged notebook costs nothing, so a frequent timer only spends when you actually write.
 ExecStart=/home/alec/.local/bin/uv run locus capture-sync

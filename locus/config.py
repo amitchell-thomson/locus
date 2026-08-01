@@ -226,7 +226,14 @@ class AliasConfig(BaseModel):
     min_token_overlap: float = Field(0.34, description="Token-Jaccard guard on candidate edges.")
     # Connected components larger than this skip the LLM and stay deterministic-only —
     # a giant component is almost always a blocking-threshold failure, not one real entity.
-    max_cluster_size: int = Field(8, description="Max cluster size sent to the LLM (cost guard).")
+    max_cluster_size: int = Field(8, description="Max members per adjudication prompt (cost guard).")
+    max_cluster_chunks: int = Field(
+        4,
+        description="An oversize cluster is split into at most this many prompts before being "
+                    "skipped instead. 4 x 8 = 32 members, which rescues real concepts like the "
+                    "Fama-French family (9) while still dropping topic blobs such as the 48 "
+                    "'Laplace transform of ...' surfaces.",
+    )
     # Names shorter than this never merge into a different surface (homonym risk: 'var', 'P2').
     min_merge_len: int = Field(4, description="Min name length eligible for any merge.")
     use_llm: bool = Field(True, description="Adjudicate fuzzy clusters via the Claude API.")

@@ -78,6 +78,7 @@ class AliasBuildReport:
     llm_calls: int = 0
     cache_hits: int = 0
     oversize_skipped: int = 0
+    oversize_chunked: int = 0  # oversize clusters adjudicated in pieces rather than dropped
     guard_splits: int = 0  # LLM groups rejected/split by hard guards
     cross_doc_canonicals: int = 0  # canonicals spanning >1 document (the link payload)
 
@@ -88,10 +89,29 @@ class AliasBuildReport:
             f"({self.nontrivial_clusters} non-trivial, {self.merged_variants} variants merged)\n"
             f"  tiers: {tiers}\n"
             f"  llm: {self.llm_candidate_clusters} candidate clusters, {self.llm_calls} API "
-            f"calls, {self.cache_hits} cache hits, {self.oversize_skipped} oversize skipped, "
+            f"calls, {self.cache_hits} cache hits, {self.oversize_chunked} oversize chunked, "
+            f"{self.oversize_skipped} oversize skipped, "
             f"{self.guard_splits} guard splits\n"
             f"  cross-doc canonicals: {self.cross_doc_canonicals}"
         )
+
+
+def _chunk_cluster(
+    cluster: list[int], nodes, size: int, max_chunks: int
+) -> list[list[int]]:
+    """Split an oversize cluster into adjudication-sized pieces, or [] if it is too large.
+
+    Sorted by normalised name so that surfaces differing only in case, punctuation or a dash sit
+    adjacent and therefore land in the SAME chunk — chunking an unsorted cluster would scatter the
+    variants it exists to merge.
+    """
+    if size <= 0 or len(cluster) > size * max_chunks:
+        return []
+    ordered = sorted(
+        cluster,
+        key=lambda i: nodes[i].name.casefold().replace("-", " ").replace("\u2013", " "),
+    )
+    return [ordered[i : i + size] for i in range(0, len(ordered), size)]
 
 
 class _UnionFind:
@@ -481,12 +501,40 @@ def build_aliases(
         report.llm_candidate_clusters = len(candidates)
         gen_model = model or load().generation.model
         last_api_call = 0.0  # monotonic time of the previous adjudication call
+        # OVERSIZE CLUSTERS ARE CHUNKED, NOT DROPPED.
+        #
+        # `max_cluster_size` is a COST guard — it bounds how much goes into one adjudication
+        # prompt — but it was being applied as a judgement: anything larger was skipped entirely
+        # and never adjudicated at all. Measured on the 2026-08-01 rebuild, that silently dropped
+        # real concepts alongside the junk it was aimed at:
+        #
+        #   Fama and French / Fama-French factors / three-factor model / five-factor model  (9)
+        #   Portfolio Optimisation / portfolio optimization / portfolio construction        (11)
+        #
+        # both skipped, while `portfolio construction` is simultaneously one of the live search
+        # terms driving reading discovery — so the fragmentation propagated outward.
+        #
+        # Splitting preserves what the guard is actually for. Each chunk is a bounded prompt, so
+        # cost per call is unchanged; members are sorted by normalised name first so near-
+        # identical surfaces land in the same chunk rather than being separated arbitrarily. A
+        # cluster too large even to chunk (`Laplace transform of ...`, 48 surfaces) is still
+        # skipped, because at that size it is a topic rather than a concept.
+        units: list[list[int]] = []
         for cluster in candidates:
-            if len(cluster) > cfg.max_cluster_size:
+            if len(cluster) <= cfg.max_cluster_size:
+                units.append(cluster)
+                continue
+            chunks = _chunk_cluster(cluster, nodes, cfg.max_cluster_size, cfg.max_cluster_chunks)
+            preview = ", ".join(nodes[i].name for i in cluster[:6])
+            if not chunks:
                 report.oversize_skipped += 1
-                preview = ", ".join(nodes[i].name for i in cluster[:6])
                 log(f"oversize cluster skipped ({len(cluster)} reps): {preview}, ...")
                 continue
+            report.oversize_chunked += 1
+            log(f"oversize cluster chunked ({len(cluster)} reps -> {len(chunks)}): {preview}, ...")
+            units.extend(chunks)
+
+        for cluster in units:
             members = [nodes[i] for i in cluster]
             key = _verdict_cache_key(members, gen_model)
             verdict: AliasVerdict | None = None

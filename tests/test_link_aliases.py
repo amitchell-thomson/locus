@@ -382,20 +382,43 @@ def test_invented_canonical_snaps_to_member(conn):
     assert canon in {"Fourier transform", "fourier transform"}
 
 
-def test_oversize_cluster_skipped(conn, monkeypatch):
+def _all_same(names):
+    return [[1.0] + [0.0] * 767 for _ in names]
+
+
+def test_oversize_cluster_is_chunked_and_still_adjudicated(conn, monkeypatch):
+    """CHANGED 2026-08-01: oversize used to mean "skip", and that dropped real concepts.
+
+    `max_cluster_size` bounds one adjudication PROMPT; applying it as a judgement meant the
+    Fama-French family (9 surfaces) and the portfolio-optimisation family (11) were never looked
+    at, while `portfolio construction` was simultaneously a live reading-discovery search term.
+    An 11-member cluster is now split into prompt-sized pieces and every piece is judged.
+    """
     _seed_doc(conn, 1)
     for i in range(1, 12):
         _seed_section(conn, i, 1, i - 1)
         _seed_entity(conn, 1, i, f"thing variant number {i}", "concept")
     conn.commit()
 
-    def all_same(names):
-        return [[1.0] + [0.0] * 767 for _ in names]
+    fake = _FakeRunner({"groups": []})
+    report = al.build_aliases(conn, use_llm=True, runner=fake, model="fake", embed_fn=_all_same)
+    assert report.oversize_chunked == 1 and report.oversize_skipped == 0
+    assert fake.calls == 2, "11 members at 8 per prompt is two prompts, both sent"
+
+
+def test_a_cluster_too_large_even_to_chunk_is_still_skipped(conn, monkeypatch):
+    """The guard still holds where it was aimed: 48 `Laplace transform of ...` surfaces are a
+    topic, not a concept, and must not be merged into one canonical."""
+    _seed_doc(conn, 1)
+    for i in range(1, 40):
+        _seed_section(conn, i, 1, i - 1)
+        _seed_entity(conn, 1, i, f"thing variant number {i}", "concept")
+    conn.commit()
 
     fake = _FakeRunner({"groups": []})
-    report = al.build_aliases(conn, use_llm=True, runner=fake, model="fake", embed_fn=all_same)
-    assert report.oversize_skipped == 1
-    assert fake.calls == 0  # never sent to the LLM
+    report = al.build_aliases(conn, use_llm=True, runner=fake, model="fake", embed_fn=_all_same)
+    assert report.oversize_skipped == 1 and report.oversize_chunked == 0
+    assert fake.calls == 0, "beyond the chunk budget it is never sent"
 
 
 # --- related documents ---------------------------------------------------------------------------
@@ -747,3 +770,44 @@ def test_cli_runner_scrubs_metered_keys_from_subprocess_env(monkeypatch):
     adjudicate._claude_cli_runner("prompt", "model")
     assert "ANTHROPIC_API_KEY" not in captured["env"]
     assert "ANTHROPIC_AUTH_TOKEN" not in captured["env"]
+
+
+def test_oversize_clusters_are_chunked_not_dropped():
+    """`max_cluster_size` bounds a PROMPT; it was being applied as a judgement.
+
+    Measured on the 2026-08-01 rebuild, skipping oversize clusters silently dropped the
+    Fama-French family (9 surfaces) and the portfolio-optimisation family (11) along with the
+    junk it was aimed at — while `portfolio construction` was simultaneously a live search term
+    driving reading discovery.
+    """
+    from locus.link.aliases import _chunk_cluster
+
+    class N:
+        def __init__(self, name):
+            self.name = name
+
+    names = ["Fama and French", "Fama-French factors", "Fama–French models",
+             "Fama-French three-factor model", "Fama-French five-factor model",
+             "fama french factor model", "Fama-French factor model",
+             "FAMA AND FRENCH", "Fama French"]
+    nodes = [N(n) for n in names]
+    chunks = _chunk_cluster(list(range(len(names))), nodes, 8, 4)
+
+    assert chunks, "a 9-member concept must be adjudicated, not skipped"
+    assert sum(len(c) for c in chunks) == len(names), "every member survives chunking"
+    assert all(len(c) <= 8 for c in chunks), "each chunk stays within the prompt budget"
+    # Sorted by normalised name, so case/dash variants of one surface sit together.
+    first = [nodes[i].name.casefold() for i in chunks[0]]
+    assert first == sorted(first), "chunk members are normalised-sorted, not arbitrary"
+
+
+def test_a_topic_blob_is_still_skipped():
+    """48 'Laplace transform of ...' surfaces are a topic, not a concept — the guard must hold."""
+    from locus.link.aliases import _chunk_cluster
+
+    class N:
+        def __init__(self, name):
+            self.name = name
+
+    nodes = [N(f"Laplace transform of function {i}") for i in range(48)]
+    assert _chunk_cluster(list(range(48)), nodes, 8, 4) == [], "beyond 4 chunks it is skipped"

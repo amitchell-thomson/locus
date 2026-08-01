@@ -5,6 +5,12 @@ Documentation=file:///home/alec/server-projects/locus/CLAUDE.md
 [Service]
 Type=oneshot
 WorkingDirectory=/home/alec/server-projects/locus
+# systemd's user PATH is the system default and does NOT include ~/.local/bin, where uv,
+# rmapi and the `claude` CLI all live. Leaving it implicit is why locus-maintain died on
+# six consecutive nights with "`claude` CLI not found on PATH", taking `locus link` with
+# it and leaving 1,989 entity surfaces outside the alias substrate. Stated explicitly here
+# so no unit depends on what the manager happens to have inherited at login.
+Environment=PATH=/home/alec/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # "locus backup is sacred" (CLAUDE.md failure mode #10) and nothing scheduled it until now.
 # Snapshots hardlink against the previous one, so a daily cadence is cheap on disk.
 ExecStart=/home/alec/.local/bin/uv run locus backup

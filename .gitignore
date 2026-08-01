@@ -44,3 +44,9 @@ eval-*.log
 vault/.ingest.lock
 # `locus retitle` safety backups — regenerable, not tracked
 vault/title_backup*.json
+
+# Scratch that must never be tracked (swept in by an over-broad `git add -A`, 2026-08-01)
+.claude/worktrees/
+config.toml.bak-*
+scripts/benchmarks/*.log
+scripts/benchmarks/*_out.json

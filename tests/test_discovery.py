@@ -740,3 +740,101 @@ def test_openalex_backs_off_on_rate_limiting(monkeypatch):
                         "sleep", lambda s: None)
     assert openalex._default_fetch("https://x") == '{"results":[]}'
     assert calls["n"] == 3, "must retry through the 429s rather than give up or crash"
+
+
+# ---------- step 3: citation mining ----------
+
+
+_WORK = """{"referenced_works": ["https://openalex.org/W1", "https://openalex.org/W2"]}"""
+_WORK_B = """{"referenced_works": ["https://openalex.org/W2", "https://openalex.org/W3"]}"""
+
+
+def test_co_citation_is_distinguished_from_a_single_citation(conn):
+    """A work TWO of his sources point at is consensus; one is a suggestion. Different channels."""
+    from locus.discover import citations
+
+    seen: list[str] = []
+
+    def fetch(url):
+        seen.append(url)
+        return _WORK if "1111.11111" in url else _WORK_B
+
+    cited = citations.referenced_works(
+        [("arxiv:1111.11111", "Paper A"), ("arxiv:2222.22222", "Paper B")], fetch=fetch
+    )
+    by_id = {c.work_id: c for c in cited}
+    assert by_id["W2"].channel == "co_citation", "cited by both papers"
+    assert by_id["W1"].channel == "citation" and by_id["W3"].channel == "citation"
+    assert by_id["W2"].citing_titles == ("Paper A", "Paper B")
+
+
+def test_a_document_with_no_identifier_is_skipped_not_guessed(conn):
+    """A title search would attribute someone else's bibliography to his reading."""
+    from locus.discover import citations
+
+    conn.execute(
+        "INSERT INTO documents (content_hash, source_type, source_uri, raw_path, title, "
+        "category, ingest_model) VALUES "
+        "('h1','pdf','vault/incoming/papers/2605.30363v1.pdf','r','Has ID','paper','t')"
+    )
+    conn.execute(
+        "INSERT INTO documents (content_hash, source_type, source_uri, raw_path, title, "
+        "category, ingest_model) VALUES "
+        "('h2','pdf','vault/incoming/paper/A Book.pdf','r','No ID','paper','t')"
+    )
+    conn.commit()
+    ids = citations.corpus_identifiers(conn)
+    # The DataCite DOI is the selector OpenAlex resolves; `arxiv:<id>` 404s (verified live).
+    assert ids == [("doi:10.48550/arXiv.2605.30363", "Has ID")]
+
+
+def test_one_unreadable_bibliography_does_not_abandon_the_rest(conn):
+    """A bibliography we cannot read is a coverage gap, never a reason to drop the others."""
+    from locus.discover import citations
+
+    def fetch(url):
+        if "9999" in url:
+            raise OSError("429")
+        return _WORK
+
+    cited = citations.referenced_works(
+        [("arxiv:9999.99999", "Broken"), ("arxiv:1111.11111", "Fine")], fetch=fetch
+    )
+    assert {c.work_id for c in cited} == {"W1", "W2"}
+
+
+def test_referenced_works_are_batched_within_the_api_ceiling():
+    from locus.discover import citations
+
+    urls: list[str] = []
+
+    def fetch(url):
+        urls.append(url)
+        return '{"results":[]}'
+
+    citations.resolve([f"W{i}" for i in range(120)], fetch=fetch, batch=50)
+    assert len(urls) == 3, "120 ids must go out as 50 + 50 + 20"
+    assert "openalex_id%3AW0%7CW1" in urls[0], "ids are pipe-separated in one filter"
+
+
+def test_citation_reasons_do_not_pretend_to_be_searches():
+    """"cited by 3 papers you keep" is a fact about a reference, not a similarity score."""
+    s = rank.Scored(1, "a", "T", "", "", "", "abs", 0.7, 0.6, 0.1, "project", "P",
+                    found_term="X", found_kind="co_citation", found_label="3 papers you keep")
+    assert s.why == "cited by 3 papers you keep"
+    assert "found by searching" not in s.why
+
+
+def test_the_openalex_key_never_reaches_a_log_or_an_error(monkeypatch):
+    """The key travels as a query parameter and HTTPError stringifies the whole URL.
+
+    Failures are exactly when logging happens, so an unredacted message would write the
+    credential into the journal on every rate-limited request.
+    """
+    from locus.discover import openalex
+
+    monkeypatch.setenv("OPENALEX_API_KEY", "SECRET123")
+    assert "SECRET123" in openalex.build_query("regime switching")
+    leaked = "boom https://api.openalex.org/works?api_key=SECRET123"
+    assert openalex.redact(leaked) == "boom https://api.openalex.org/works?api_key=***"
+    assert "SECRET123" not in openalex.redact(leaked)

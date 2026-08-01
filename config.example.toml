@@ -226,6 +226,9 @@ browse_categories  = false
 openalex_enabled   = true
 openalex_mailto    = ""         # e.g. "you@example.com"
 openalex_per_term  = 10
+# Mine what the papers you keep CITE. Co-citation — a work two or more of your own sources point
+# at — is the strongest of the citation signals and ranks just behind what you underlined.
+citations_enabled  = true
 # Cheap proxy for "the canonical treatment" over "the newest variant", CENTRED on the pool
 # median so it can only break ties. Raw log-citations put every arXiv preprint ~0.42 behind
 # every median journal article purely because arXiv reports no count; centred, unknown maps to

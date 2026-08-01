@@ -117,13 +117,21 @@ class Scored:
         """
         # A real query beats a similarity score. When the paper was found by searching a concept
         # he underlined, say so — that is a fact he can check, not a number he has to trust.
-        if self.found_term and self.found_kind in ("marked", "reading", "project", "gap"):
+        if self.found_term and self.found_kind in (
+            "marked", "reading", "project", "gap", "citation", "co_citation",
+        ):
             origin = {
                 "marked": f"a passage you underlined in {self.found_label or 'your reading'}",
                 "reading": f"a concept from {self.found_label or 'your reading'}, which you annotated",
                 "project": f"a method your {self.found_label or 'project'} work uses",
                 "gap": "a concept your work uses but has never written up",
+                # The citation channels earn the strongest wording available: this is not a
+                # similarity, it is a reference his own sources chose to make.
+                "citation": f"cited by {self.found_label or 'a paper you keep'}",
+                "co_citation": f"cited by {self.found_label or 'several papers you keep'}",
             }[self.found_kind]
+            if self.found_kind in ("citation", "co_citation"):
+                return origin
             return f'found by searching "{self.found_term}" — {origin}'
         anchor = ("your work on" if self.matched_kind == "project"
                   else "a concept your work uses but has never written up:")
@@ -454,14 +462,19 @@ def _cap_per_profile(scored: list[Scored], *, limit: int, per_profile: int = 2) 
     # reading-first handed it every slot and no project appeared at all. A reading list that only
     # reflects the last book he opened is as narrow as one that only reflects his code.
     channels: dict[str, list[str]] = {
-        "marked": [], "reading": [], "project": [], "gap": [], "match": [],
+        "marked": [], "co_citation": [], "reading": [], "project": [],
+        "citation": [], "gap": [], "match": [],
     }
     for key in sorted(by_subject, key=lambda k: -by_subject[k][0].score):
         channels.setdefault(key.split(":", 1)[0], []).append(key)
 
     order: list[str] = []
-    queues = [q for q in (channels["marked"], channels["reading"], channels["project"],
-                          channels["gap"], channels["match"]) if q]
+    # Co-citation sits second, behind only what he underlined: a work TWO of his own sources
+    # point at is consensus among references he has already endorsed. A single citation is a
+    # weaker suggestion and rides lower, beside gaps.
+    queues = [q for q in (channels["marked"], channels["co_citation"], channels["reading"],
+                          channels["project"], channels["citation"], channels["gap"],
+                          channels["match"]) if q]
     for i in range(max((len(q) for q in queues), default=0)):
         for q in queues:
             if i < len(q):

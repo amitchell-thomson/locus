@@ -36,6 +36,32 @@ log = logging.getLogger(__name__)
 API = "https://api.openalex.org/works"
 Fetcher = Callable[[str], str]
 
+# Premium key, read from the environment ONLY — never config.toml, which is a settings file the
+# owner edits and shares the shape of. Same contract as ANTHROPIC_API_KEY (config.py docstring).
+_KEY_ENV = "OPENALEX_API_KEY"
+
+
+def api_key() -> str:
+    import os
+
+    # Importing config is what populates os.environ from the project .env (config._load_dotenv
+    # runs at import). Without it the key is invisible to any caller that reached this module
+    # without touching config first — which is most of them.
+    import locus.config  # noqa: F401
+
+    return os.environ.get(_KEY_ENV, "").strip()
+
+
+def redact(text: str) -> str:
+    """Strip the key from anything that might be logged or raised.
+
+    `HTTPError` stringifies with the FULL URL, and the key travels as a query parameter, so an
+    unredacted warning would write the credential into the journal on every failed request —
+    and failures are exactly when logging happens.
+    """
+    key = api_key()
+    return text.replace(key, "***") if key else text
+
 # Works with fewer characters of reconstructed abstract than this cannot be ranked meaningfully.
 _MIN_ABSTRACT = 120
 
@@ -75,7 +101,7 @@ def _default_fetch(url: str, *, attempts: int = 4) -> str:
                 return resp.read().decode("utf-8", errors="replace")
         except urllib.error.HTTPError as exc:
             if exc.code != 429 or attempt == attempts - 1:
-                raise
+                raise RuntimeError(redact(f"OpenAlex HTTP {exc.code}: {exc.url}")) from None
             log.info("OpenAlex rate-limited; backing off %.0fs", delay)
             time.sleep(delay)
             delay *= 2
@@ -103,6 +129,8 @@ def build_query(term: str, *, per_page: int = 25, mailto: str = "") -> str:
     }
     if mailto:
         params["mailto"] = mailto      # the polite pool: better limits, and they ask for it
+    if api_key():
+        params["api_key"] = api_key()  # premium pool: far higher limits again
     return f"{API}?{urllib.parse.urlencode(params)}"
 
 
@@ -188,7 +216,7 @@ def search(
         try:
             works = parse(fetch(url))
         except (RuntimeError, OSError) as exc:
-            log.warning("OpenAlex search for %r failed: %s", text, exc)
+            log.warning("OpenAlex search for %r failed: %s", text, redact(str(exc)))
             continue
         for w in works:
             if w.external_id not in seen:

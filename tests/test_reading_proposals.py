@@ -358,3 +358,28 @@ def test_device_entries_carry_an_absolute_path_usable_by_rmapi_get(conn):
     )
     assert entries[0].path == "/Locus/Reading/In-Progress/2026-07-31 AlphaZeroBeta"
     assert entries[0].folder == "In-Progress"
+
+
+def test_rmdoc_fetch_closes_stdin_and_honours_a_short_timeout(monkeypatch, tmp_path):
+    """An hourly job cannot answer a re-auth prompt, and it holds the ingest lock while it waits.
+
+    Measured 2026-08-01: one fetch blocked in `do_poll` for half an hour on the 1800s default,
+    stalling the whole reading pipeline and every other ingest with it.
+    """
+    import subprocess
+
+    from locus.capture import rmdoc
+
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen.update(kw)
+        raise subprocess.TimeoutExpired(cmd, kw.get("timeout", 0))
+
+    monkeypatch.setattr(rmdoc.__dict__.get("subprocess", subprocess), "run", fake_run,
+                        raising=False)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    with pytest.raises(subprocess.TimeoutExpired):
+        rmdoc.fetch_rmdoc("/Locus/Reading/In-Progress/X", tmp_path, timeout=5)
+    assert seen["timeout"] == 5, "the caller's timeout must win over the interactive default"
+    assert seen["stdin"] == subprocess.DEVNULL, "a scheduled job must never wait on a prompt"

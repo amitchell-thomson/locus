@@ -7,6 +7,11 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=/home/alec/server-projects/locus
+# systemd's user PATH is the system default and does NOT include ~/.local/bin, where both `uv`
+# and `rmapi` live. `uv` is invoked absolutely below, but `rmapi` is resolved from PATH by the
+# transport layer, so without this the unit dies with FileNotFoundError: 'rmapi' — which is
+# exactly how it failed the first time it was started.
+Environment=PATH=/home/alec/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # Weekly, not hourly, and the reason is the literature rather than the cost: searching arXiv and
 # OpenAlex for ~50 concepts is a few hundred polite requests, and the published record does not
 # change meaningfully between Tuesdays. Local embedding of the results uses the GPU, so this is

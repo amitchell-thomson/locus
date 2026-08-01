@@ -10,6 +10,11 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=/home/alec/server-projects/locus
+# systemd's user PATH is the system default and does NOT include ~/.local/bin, where both `uv`
+# and `rmapi` live. `uv` is invoked absolutely below, but `rmapi` is resolved from PATH by the
+# transport layer, so without this the unit dies with FileNotFoundError: 'rmapi' — which is
+# exactly how it failed the first time it was started.
+Environment=PATH=/home/alec/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # FREE and local: the folder watch is one `rmapi find`, ingest is the ordinary spine, and the
 # annotation sweep is guarded by a stroke fingerprint so unchanged ink costs nothing. Hourly is
 # affordable because doing nothing is genuinely cheap.

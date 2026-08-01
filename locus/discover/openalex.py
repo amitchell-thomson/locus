@@ -108,7 +108,7 @@ def _default_fetch(url: str, *, attempts: int = 4) -> str:
     raise RuntimeError("unreachable")
 
 
-def build_query(term: str, *, per_page: int = 25, mailto: str = "") -> str:
+def build_query(term: str, *, per_page: int = 25, mailto: str = "", exact: bool = True) -> str:
     """A relevance-ranked search of TITLES AND ABSTRACTS for one technical phrase.
 
     Also filtered to works that HAVE an abstract, since a work without one cannot be embedded,
@@ -123,9 +123,20 @@ def build_query(term: str, *, per_page: int = 25, mailto: str = "") -> str:
     # global burden-of-disease study, because the words "risk", "factor" and "contribution" occur
     # all over medicine. The same phrase against title_and_abstract returns 1,879 — a 380x
     # narrowing — led by Sharpe's CAPM, which is the actual canonical answer.
+    # QUOTED IS THE PRECISION TIER. Unquoted, OpenAlex ANDs the words anywhere in title or
+    # abstract, which for a two-word concept is barely a filter at all. Measured 2026-08-01:
+    #
+    #   "Alternative Data"   768,995 -> 4,742 matches  (led by psychometrics and a genomics tool
+    #                                                   -> by alternative data in FINANCE)
+    #   "Information Ratio"  385,741 -> 1,071 matches  (led by Shannon's Elements of Information
+    #                                                   Theory -> by "The Information Ratio")
+    #
+    # The caller falls back to unquoted when the phrase finds too little, so precision is tried
+    # first and recall is the safety net — the same shape as the arXiv channel.
+    quoted = f'"{phrase}"' if exact else phrase
     params = {
         "per_page": str(per_page),
-        "filter": f"has_abstract:true,title_and_abstract.search:{phrase}",
+        "filter": f"has_abstract:true,title_and_abstract.search:{quoted}",
     }
     if mailto:
         params["mailto"] = mailto      # the polite pool: better limits, and they ask for it
@@ -205,18 +216,26 @@ def search(
         if len(out) >= limit:
             break
         text = getattr(term, "term", term)
-        try:
-            url = build_query(text, per_page=per_term, mailto=mailto)
-        except ValueError:
-            continue
         if i and pause_s:
             import time
 
             time.sleep(pause_s)
-        try:
-            works = parse(fetch(url))
-        except (RuntimeError, OSError) as exc:
-            log.warning("OpenAlex search for %r failed: %s", text, redact(str(exc)))
+        works = []
+        # Precision, then recall: an exact phrase that finds nothing means nobody phrased the
+        # concept his way, not that nobody works on it.
+        for exact in (True, False):
+            try:
+                url = build_query(text, per_page=per_term, mailto=mailto, exact=exact)
+            except ValueError:
+                break
+            try:
+                works = parse(fetch(url))
+            except (RuntimeError, OSError) as exc:
+                log.warning("OpenAlex search for %r failed: %s", text, redact(str(exc)))
+                works = []
+            if works:
+                break
+        if not works:
             continue
         for w in works:
             if w.external_id not in seen:

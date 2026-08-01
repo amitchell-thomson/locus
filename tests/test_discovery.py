@@ -838,3 +838,24 @@ def test_the_openalex_key_never_reaches_a_log_or_an_error(monkeypatch):
     leaked = "boom https://api.openalex.org/works?api_key=SECRET123"
     assert openalex.redact(leaked) == "boom https://api.openalex.org/works?api_key=***"
     assert "SECRET123" not in openalex.redact(leaked)
+
+
+def test_openalex_tries_the_quoted_phrase_before_the_loose_one():
+    """Unquoted, OpenAlex ANDs the words anywhere — barely a filter for a two-word concept.
+
+    Measured: "Information Ratio" unquoted returns 385,741 works led by Shannon's *Elements of
+    Information Theory*; quoted returns 1,071 led by "The Information Ratio".
+    """
+    from locus.discover import openalex
+
+    urls: list[str] = []
+
+    def fetch(url):
+        urls.append(url)
+        return _OA if len(urls) > 1 else '{"results":[]}'   # quoted finds nothing
+
+    got = openalex.search(["Information Ratio"], fetch=fetch, pause_s=0)
+    assert len(urls) == 2, "must fall back to the loose query when the phrase finds nothing"
+    assert "%22Information+Ratio%22" in urls[0], "first attempt is the quoted phrase"
+    assert "%22" not in urls[1], "fallback drops the quotes"
+    assert got, "the fallback's results are kept"

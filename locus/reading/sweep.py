@@ -55,6 +55,7 @@ def sweep(
     rmapi_binary: str = "rmapi",
     root: str = "/Locus/Reading",
     limit: int = 40,
+    fetch_timeout: int = 180,
 ) -> list[SweepResult]:
     """Check every delivered reading for new ink and record any marks it now carries."""
     from locus.capture.annotate import marks_for_document, store_marks
@@ -97,8 +98,13 @@ def sweep(
 
         with tempfile.TemporaryDirectory() as tmp:
             try:
-                doc = read_rmdoc(fetch_rmdoc(entry.path, tmp, rmapi_binary=rmapi_binary))
-            except Exception as exc:                 # not synced, no ink layer, transport error
+                # Three minutes, not the thirty-minute default: a marked-up paper is ~1 MB, this
+                # runs hourly, and it holds the ingest lock while it waits. A slow fetch must
+                # surface as one skipped document, never as a stalled pipeline.
+                doc = read_rmdoc(fetch_rmdoc(
+                    entry.path, tmp, rmapi_binary=rmapi_binary, timeout=fetch_timeout,
+                ))
+            except Exception as exc:                 # timeout, not synced, no ink, transport
                 out.append(SweepResult(t["source_uri"], t["title"], "failed",
                                        folder=entry.folder, detail=str(exc)[:120]))
                 _touch(conn, t["id"], folder=entry.folder)

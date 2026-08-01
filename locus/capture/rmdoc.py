@@ -258,7 +258,10 @@ def composite_pdf(rmdoc: RmDoc, out_path: str | Path, *, width: float = 1.4) -> 
         doc.close()
 
 
-def fetch_rmdoc(device_path: str, dest_dir: str | Path, *, rmapi_binary: str = "rmapi") -> Path:
+def fetch_rmdoc(
+    device_path: str, dest_dir: str | Path, *, rmapi_binary: str = "rmapi",
+    timeout: int = 1800,
+) -> Path:
     """`rmapi get` a document into `dest_dir` and return the downloaded `.rmdoc`.
 
     The cloud copy is the source of truth here, so this works with the tablet powered off —
@@ -269,9 +272,16 @@ def fetch_rmdoc(device_path: str, dest_dir: str | Path, *, rmapi_binary: str = "
     dest = Path(dest_dir)
     dest.mkdir(parents=True, exist_ok=True)
     before = set(dest.glob("*.rmdoc"))
+    # stdin CLOSED, and the timeout is a caller's decision.
+    #
+    # Both learned from one stall on 2026-08-01: the hourly reading job sat blocked for half an
+    # hour in `do_poll` holding the INGEST LOCK, so nothing else could ingest either. rmapi with
+    # an inherited stdin will wait forever on a re-auth prompt that no scheduled job can ever
+    # answer, and the 1800s default — sized for pulling a large notebook interactively — turned
+    # that into a thirty-minute outage per run rather than a fast, visible failure.
     proc = subprocess.run(
         [rmapi_binary, "get", device_path], cwd=str(dest), capture_output=True, text=True,
-        timeout=1800,
+        timeout=timeout, stdin=subprocess.DEVNULL,
     )
     if proc.returncode != 0:
         raise RuntimeError(

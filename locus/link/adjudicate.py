@@ -156,20 +156,63 @@ def _claude_cli_runner(prompt: str, model: str | None) -> str:
     return envelope.get("result", "")
 
 
-def _parse_verdict(text: str) -> AliasVerdict:
-    """Extract the JSON verdict object from the model's reply and validate it.
+def _json_objects(text: str) -> list[str]:
+    """Every balanced top-level {...} span in `text`, in order, ignoring braces inside strings."""
+    spans: list[str] = []
+    depth = start = 0
+    in_str = escaped = False
+    for i, ch in enumerate(text):
+        if in_str:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            if depth:
+                depth -= 1
+                if depth == 0:
+                    spans.append(text[start : i + 1])
+    return spans
 
-    Tolerant of leading/trailing prose or code fences: slices from the first '{' to the last
-    '}'. Raises RuntimeError (caught/surfaced by the caller) on anything unparseable.
+
+def _parse_verdict(text: str) -> AliasVerdict:
+    """Extract the JSON verdict from the model's reply and validate it.
+
+    Scans for BALANCED objects rather than slicing first-'{' to last-'}'. The old slice broke the
+    moment a reply contained more than one object: observed 2026-08-01, the adjudicator answered,
+    then wrote "Wait — let me reconsider..." and emitted a SECOND verdict, so the slice spanned
+    both objects and the prose between them and parsed as nothing. That single reply aborted an
+    entire alias rebuild.
+
+    AN AMBIGUOUS REPLY IS REFUSED, not guessed at. If two different verdicts validate, there is no
+    honest way to know which the model meant — and the asymmetry matters: a wrong merge corrupts
+    the alias substrate durably (the §11.B failure class), while an unmerged cluster is a
+    recoverable miss that the next run can revisit. So ambiguity declines to merge.
     """
-    start, end = text.find("{"), text.rfind("}")
-    if start == -1 or end <= start:
-        raise RuntimeError(f"adjudicator returned no JSON object: {text[:200]!r}")
-    try:
-        obj = json.loads(text[start : end + 1])
-        return AliasVerdict.model_validate(obj)
-    except (json.JSONDecodeError, ValidationError) as e:
-        raise RuntimeError(f"adjudicator returned invalid verdict: {text[:200]!r}") from e
+    candidates = []
+    for span in _json_objects(text):
+        try:
+            candidates.append(AliasVerdict.model_validate(json.loads(span)))
+        except (json.JSONDecodeError, ValidationError):
+            continue
+    if not candidates:
+        raise RuntimeError(f"adjudicator returned no usable verdict: {text[:200]!r}")
+    if len(candidates) > 1 and any(
+        c.model_dump() != candidates[0].model_dump() for c in candidates[1:]
+    ):
+        raise RuntimeError(
+            f"adjudicator returned {len(candidates)} conflicting verdicts: {text[:200]!r}"
+        )
+    return candidates[0]
 
 
 def adjudicate_cluster(

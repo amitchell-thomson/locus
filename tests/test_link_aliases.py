@@ -811,3 +811,51 @@ def test_a_topic_blob_is_still_skipped():
 
     nodes = [N(f"Laplace transform of function {i}") for i in range(48)]
     assert _chunk_cluster(list(range(48)), nodes, 8, 4) == [], "beyond 4 chunks it is skipped"
+
+
+def test_one_unreadable_verdict_does_not_abort_the_rebuild(conn):
+    """Observed 2026-08-01: a reply containing two verdicts aborted a run mid-way.
+
+    The ingest spine quarantines a bad document and continues (§7); the alias layer must not be
+    weaker, especially now that chunking sends MORE clusters to the model.
+    """
+    _seed_doc(conn, 1)
+    for i in range(1, 5):
+        _seed_section(conn, i, 1, i - 1)
+        _seed_entity(conn, 1, i, f"fourier transform v{i}", "method")
+    conn.commit()
+
+    class Exploding:
+        calls = 0
+
+        def __call__(self, prompt, model):
+            Exploding.calls += 1
+            return 'not json at all'
+
+    report = al.build_aliases(
+        conn, use_llm=True, runner=Exploding(), model="fake", embed_fn=_all_same, use_cache=False,
+    )
+    assert report.adjudication_failures >= 1, "the failure is counted, not swallowed"
+    assert report.total_identities > 0, "the rebuild completed rather than raising"
+
+
+def test_a_reply_with_trailing_prose_still_parses():
+    """The model appended 'Wait — let me reconsider...' after valid JSON."""
+    from locus.link.adjudicate import _parse_verdict
+
+    good = ('{"groups": [{"member_indices": [0, 1], "canonical_name": "Fama-French", '
+            '"canonical_type": "concept"}]}')
+    assert len(_parse_verdict(good + "\n\nWait — let me reconsider.").groups) == 1
+
+
+def test_two_conflicting_verdicts_are_refused_not_guessed():
+    """A wrong merge corrupts the substrate durably; an unmerged cluster is recoverable."""
+    import pytest as _pytest
+
+    from locus.link.adjudicate import _parse_verdict
+
+    a = ('{"groups": [{"member_indices": [0, 1], "canonical_name": "A", '
+         '"canonical_type": "concept"}]}')
+    b = a.replace('"A"', '"B"')
+    with _pytest.raises(RuntimeError, match="conflicting"):
+        _parse_verdict(f"{a}\nOn reflection:\n{b}")

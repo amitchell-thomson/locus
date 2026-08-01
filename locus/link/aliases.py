@@ -80,6 +80,7 @@ class AliasBuildReport:
     oversize_skipped: int = 0
     oversize_chunked: int = 0  # oversize clusters adjudicated in pieces rather than dropped
     guard_splits: int = 0  # LLM groups rejected/split by hard guards
+    adjudication_failures: int = 0  # replies we could not read; cluster left unmerged
     cross_doc_canonicals: int = 0  # canonicals spanning >1 document (the link payload)
 
     def format(self) -> str:
@@ -91,7 +92,8 @@ class AliasBuildReport:
             f"  llm: {self.llm_candidate_clusters} candidate clusters, {self.llm_calls} API "
             f"calls, {self.cache_hits} cache hits, {self.oversize_chunked} oversize chunked, "
             f"{self.oversize_skipped} oversize skipped, "
-            f"{self.guard_splits} guard splits\n"
+            f"{self.guard_splits} guard splits, "
+            f"{self.adjudication_failures} unreadable\n"
             f"  cross-doc canonicals: {self.cross_doc_canonicals}"
         )
 
@@ -553,10 +555,25 @@ def build_aliases(
                     if wait > 0:
                         time.sleep(wait)
                 last_api_call = time.monotonic()
-                verdict = adjudicate.adjudicate_cluster(
-                    [ClusterMember(m.name, m.type, tuple(m.titles)) for m in members],
-                    runner=runner, model=gen_model,
-                )
+                try:
+                    verdict = adjudicate.adjudicate_cluster(
+                        [ClusterMember(m.name, m.type, tuple(m.titles)) for m in members],
+                        runner=runner, model=gen_model,
+                    )
+                except RuntimeError as exc:
+                    # ONE BAD REPLY MUST NOT COST THE WHOLE REBUILD. Observed 2026-08-01: the
+                    # adjudicator answered, then wrote "Wait — let me reconsider..." and emitted a
+                    # second verdict; the resulting parse error propagated and aborted a run that
+                    # had already paid for hundreds of adjudications. The ingest spine has held
+                    # this line for years — a bad document is quarantined and the batch continues
+                    # (§7) — and the alias layer should not be weaker.
+                    #
+                    # Skipping leaves the cluster unmerged, which is the recoverable direction:
+                    # the next run retries it, and nothing durable is written from a reply we
+                    # could not read.
+                    report.adjudication_failures += 1
+                    log(f"adjudication failed, cluster left unmerged: {exc}")
+                    continue
                 report.llm_calls += 1
                 # Persist this verdict immediately, in its own commit, so a crash partway
                 # through a rebuild never discards the adjudications already made — a re-run

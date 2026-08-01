@@ -523,7 +523,7 @@ def test_the_concept_that_found_a_paper_becomes_its_reason(conn):
     s = rank.Scored(1, "arxiv:1", "T", "", "", "", "abs", 0.7, 0.6, 0.1, "project", "P",
                     found_term="sticky HMM priors", found_kind="reading",
                     found_label="Advanced Portfolio Management")
-    assert "sticky HMM priors" in s.why and "marked while reading" in s.why
+    assert "sticky HMM priors" in s.why and "which you annotated" in s.why
 
 
 def test_slots_interleave_across_channels(conn):
@@ -668,3 +668,20 @@ def test_sweep_reports_a_reading_that_left_the_folders(conn):
                   device_path="2026-08-01 X.pdf", linked_by="delivery")
     out = sweep(conn, runner=lambda a: (0, "[f] Reading/Finished/2026-08-01 Other\n", ""))
     assert out[0].status == "gone"
+
+
+def test_only_a_truly_marked_concept_claims_to_be_marked(conn):
+    """The `reading` tier must not say "you marked this" — it is almost always false.
+
+    Measured 2026-08-01: the portfolio book carries 1,212 entities against 26 marks, and
+    `positive feedback investment strategies` was proposed as "a concept you marked" while
+    appearing in none of them. Two tiers now, and only one makes the claim.
+    """
+    marked = rank.Scored(1, "a", "T", "", "", "", "abs", 0.7, 0.6, 0.1, "project", "P",
+                         found_term="factor-mimicking portfolios", found_kind="marked",
+                         found_label="Advanced Portfolio Management")
+    read = rank.Scored(1, "a", "T", "", "", "", "abs", 0.7, 0.6, 0.1, "project", "P",
+                       found_term="dollar volatility", found_kind="reading",
+                       found_label="Advanced Portfolio Management")
+    assert "underlined" in marked.why
+    assert "underlined" not in read.why and "annotated" in read.why

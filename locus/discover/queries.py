@@ -10,10 +10,11 @@ worth reading.
 
 THREE SOURCES, and the first is the one that was missing entirely:
 
-  `reading`  concepts from documents he has ANNOTATED, and from his notes on them. He marked
-             these passages by hand; nothing else in the system states his interests as directly.
-             `Betting Against Beta`, `Beta compression`, `Crowding`, `Alternative Data` all come
-             from one book he read last week.
+  `marked`   concepts occurring inside a passage he actually underlined, or in the handwriting
+             beside it. The strongest signal in the system: he chose it with a pen.
+  `reading`  other concepts from documents he has annotated. Weaker, and labelled honestly as
+             such — the portfolio book carries 1,212 entities against 26 marks, so "you marked
+             this" is true of very few of them.
   `project`  method entities from the documents behind his active projects — what he builds with.
   `gap`      concepts his blessed work uses but never explains.
 
@@ -59,6 +60,27 @@ class SearchTerm:
         return f"{self.source_kind}:{self.source_label}"
 
 
+def _collect(rows, kind: str, limit: int, excluded: set[str]) -> list[SearchTerm]:
+    """Usable terms, deduped case-insensitively.
+
+    The entity pass stores `Factor-mimicking portfolios`, `factor-mimicking portfolios` and
+    `Factor-Mimicking Portfolios` as three surfaces of one concept, so without this a third of a
+    scarce search budget goes on asking the same question three times.
+    """
+    seen: set[str] = set()
+    out: list[SearchTerm] = []
+    for r in rows:
+        name = (r["name"] or "").strip()
+        key = name.casefold()
+        if key in seen or not _usable(name, excluded):
+            continue
+        seen.add(key)
+        out.append(SearchTerm(name, kind, r["title"] or "your reading"))
+        if len(out) >= limit:
+            break
+    return out
+
+
 def _usable(term: str, excluded: set[str]) -> bool:
     """Is this entity name worth spending a search on?"""
     t = (term or "").strip()
@@ -78,8 +100,46 @@ def _usable(term: str, excluded: set[str]) -> bool:
     return " " in t or len(t) >= _MIN_SINGLE_WORD
 
 
+def marked_terms(conn: sqlite3.Connection, *, limit: int = 20) -> list[SearchTerm]:
+    """Concepts that appear INSIDE a passage he underlined, or in what he wrote beside it.
+
+    The distinction from `reading_terms` is not pedantry, it is the difference between a true
+    claim and a false one. `reading_terms` returns every concept in a document he annotated
+    ANYWHERE — 1,212 entities on the portfolio book against 26 actual marks — so telling him
+    "a concept you marked" about one of them is simply untrue, and it was being said. Measured
+    2026-08-01: `positive feedback investment strategies`, proposed with exactly that wording,
+    appears in none of his marks.
+
+    This tier earns the claim. A concept only counts as marked when its name occurs in the text a
+    stroke actually covered, or in the handwriting transcribed beside it — which also makes it the
+    highest-precision query source in the system, because he chose it with a pen.
+    """
+    rows = conn.execute(
+        """
+        SELECT DISTINCT e.name AS name, d.title AS title
+        FROM pdf_annotations a
+        JOIN reading_targets t
+          ON (a.doc_uuid IS NOT NULL AND a.doc_uuid = t.doc_uuid)
+          OR (a.doc_uuid IS NULL AND a.source_uri = t.device_path)
+        JOIN documents d ON d.source_uri = t.source_uri
+        JOIN entities  e ON e.doc_id = d.id
+        WHERE e.type IN ('method', 'concept', 'metric')
+          AND (
+                LOWER(COALESCE(a.covered_text, '')) LIKE '%' || LOWER(e.name) || '%'
+             OR LOWER(COALESCE(a.note, ''))         LIKE '%' || LOWER(e.name) || '%'
+          )
+        ORDER BY LENGTH(e.name) DESC
+        """
+    ).fetchall()
+    return _collect(rows, "marked", limit, _excluded_names(conn))
+
+
 def reading_terms(conn: sqlite3.Connection, *, limit: int = 40) -> list[SearchTerm]:
-    """Concepts from documents he has ANNOTATED, plus his notes about them.
+    """Concepts from documents he has ANNOTATED — the book, not the specific passage.
+
+    Weaker than `marked_terms` and labelled differently for that reason: having opened and
+    annotated a book says he cares about its subject, but it does not say he chose any particular
+    concept in it.
 
     This is the source the engine was missing, and the one he asked for by name: the concepts he
     has come across READING, as opposed to the ones his code implements. It resolves through
@@ -99,14 +159,7 @@ def reading_terms(conn: sqlite3.Connection, *, limit: int = 40) -> list[SearchTe
         ORDER BY LENGTH(e.name) DESC
         """
     ).fetchall()
-    excluded = _excluded_names(conn)
-    out: list[SearchTerm] = []
-    for r in rows:
-        if _usable(r["name"], excluded):
-            out.append(SearchTerm(r["name"].strip(), "reading", r["title"] or "your reading"))
-        if len(out) >= limit:
-            break
-    return out
+    return _collect(rows, "reading", limit, _excluded_names(conn))
 
 
 def project_terms(conn: sqlite3.Connection, *, limit: int = 30) -> list[SearchTerm]:
@@ -193,6 +246,7 @@ def all_terms(conn: sqlite3.Connection, *, per_source: int = 25) -> list[SearchT
     underlined by hand is a stronger statement of interest than one his code happens to name.
     """
     groups = [
+        marked_terms(conn, limit=per_source),
         reading_terms(conn, limit=per_source),
         project_terms(conn, limit=per_source),
         gap_terms(conn, limit=per_source),

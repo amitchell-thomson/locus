@@ -117,9 +117,10 @@ class Scored:
         """
         # A real query beats a similarity score. When the paper was found by searching a concept
         # he underlined, say so — that is a fact he can check, not a number he has to trust.
-        if self.found_term and self.found_kind in ("reading", "project", "gap"):
+        if self.found_term and self.found_kind in ("marked", "reading", "project", "gap"):
             origin = {
-                "reading": f"a concept you marked while reading {self.found_label or ''}".strip(),
+                "marked": f"a passage you underlined in {self.found_label or 'your reading'}",
+                "reading": f"a concept from {self.found_label or 'your reading'}, which you annotated",
                 "project": f"a method your {self.found_label or 'project'} work uses",
                 "gap": "a concept your work uses but has never written up",
             }[self.found_kind]
@@ -434,12 +435,14 @@ def _cap_per_profile(scored: list[Scored], *, limit: int, per_profile: int = 2) 
     # his reading currently supplies 24 search terms against ~19 from projects, so ordering
     # reading-first handed it every slot and no project appeared at all. A reading list that only
     # reflects the last book he opened is as narrow as one that only reflects his code.
-    channels: dict[str, list[str]] = {"reading": [], "project": [], "gap": [], "match": []}
+    channels: dict[str, list[str]] = {
+        "marked": [], "reading": [], "project": [], "gap": [], "match": [],
+    }
     for key in sorted(by_subject, key=lambda k: -by_subject[k][0].score):
         channels.setdefault(key.split(":", 1)[0], []).append(key)
 
     order: list[str] = []
-    queues = [q for q in (channels["reading"], channels["project"],
+    queues = [q for q in (channels["marked"], channels["reading"], channels["project"],
                           channels["gap"], channels["match"]) if q]
     for i in range(max((len(q) for q in queues), default=0)):
         for q in queues:

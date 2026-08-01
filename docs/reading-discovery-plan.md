@@ -1,6 +1,6 @@
 # Reading discovery — Phase 4
 
-**Status:** SHIPPED (Phases 1-2), 2026-08-01. Productionised on systemd timers.
+**Status:** SHIPPED, 2026-08-01 — all three steps, live on systemd timers.
 
 > This document is the DESIGN as it was reasoned out. Three rounds of measurement then overtook
 > parts of it, and the corrections are recorded in `## What measurement changed` at the end —
@@ -458,3 +458,64 @@ reached the corpus. `reading/sweep.py` (migration 0022) closes it, guarded by a 
 
 Timers (`deploy/systemd/`): `locus-discover-pull` hourly (free, local), `locus-discover-harvest`
 weekly (network + GPU). `locus status` reports proposals in flight, pool size and marks read back.
+
+
+## Addendum — what shipped after the section above was written
+
+The "What measurement changed" notes were written mid-build and eight commits landed afterwards.
+Consolidated, so this document matches the code:
+
+**Browse retired, search added.** `[discovery].browse_categories=false`. `--harvest` now means
+"search arXiv and OpenAlex for my concepts". Queries are interleaved across `marked` / `reading` /
+`project` / `gap` so a truncated request budget still covers every source — concatenating them
+meant 79 papers were harvested from ONE book and no project concept was ever searched.
+
+**A `marked` tier, because the claim was false.** Proposals said "a concept you marked while
+reading X" about concepts drawn from anywhere in an annotated document — 1,212 entities against 26
+actual marks. Now only a concept occurring inside a stroke's covered text (or the handwriting
+beside it) makes that claim; the rest say "a concept from X, which you annotated".
+
+**OpenAlex**, with the phrase QUOTED. Unquoted, `title_and_abstract.search` ANDs the words
+anywhere: "Information Ratio" returned 385,741 works led by Shannon's *Elements of Information
+Theory*; quoted, 1,071 led by "The Information Ratio". Precision first, loose as the fallback.
+
+**Citation prior centred on the pool median.** Raw log-citations scored UNKNOWN as 0.0 while the
+median known count (601) was worth +0.42 — so every arXiv preprint sat behind every journal
+article for its source alone. Centred, unknown maps to the middle of the field.
+
+**The judge is a filter, never a ranker.** Asked yes/no it rejected all 14 candidates including
+the two best; asked for a 1-5 score it binned exactly the junk. It drops the floor and leaves the
+cross-encoder's ordering alone.
+
+**Step 3 (citation mining) is built and idle.** OpenAlex holds no `referenced_works` for arXiv
+preprints, and every identifiable document in the corpus is one. It activates on the first
+accepted journal article.
+
+**`reading/sweep.py` closes the loop.** Accepting a paper used to end the system's interest in it,
+so anything written afterwards was never captured. Every delivered reading is now checked for new
+ink hourly, guarded by `rmdoc.ink_hash`.
+
+### Operational faults found by running it
+
+- `rmapi find` renders paths relative to the PARENT of what it searched and without a leading
+  slash. Prefix-matching the root matched nothing, so ten live papers read as "deleted"; and
+  passing that rendering to `rmapi get` fails. Take the file's immediate parent as the folder and
+  reconstruct absolute paths.
+- `fetch_rmdoc` inherited stdin and a 1800s timeout, so one hourly run blocked for 34 minutes
+  HOLDING THE INGEST LOCK. stdin is DEVNULL and the sweep passes 180s.
+- systemd's user PATH excludes `~/.local/bin`, where `uv`, `rmapi` and `claude` all live. Every
+  unit now declares PATH; without it `locus-maintain` failed six consecutive nights, silently
+  taking `locus link` and `locus structure` with it.
+
+### Known open
+
+Currency: retiring browse removed the only mechanism that surfaced NEW work. The fix is cheap and
+additive — `from_publication_date` is just another filter on the same relevance search, so a
+date-bounded pass can be its own channel without touching the existing one.
+
+A bibliography parser is now the ONLY route to the book's references and to any preprint's, since
+OpenAlex indexes neither. Its priority rose even though its difficulty did not: a parser aimed at
+one book faces one citation style.
+
+Eval labels have NOT grown with the corpus (§11) — still 60 queries / 17 pairs, none covering the
+four papers accepted on 2026-08-01.

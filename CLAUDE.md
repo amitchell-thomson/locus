@@ -361,11 +361,11 @@ locus/
 │   │                     #   query retrieve mcp status backup restore export-obsidian audit eval
 │   │                     #   read capture-sync capture-conversation notes-sync
 │   │                     #   structure objects evolution gaps review daily daily-pull
-│   │                     #   promote annotate                               (agent layer)
+│   │                     #   promote annotate discover                      (agent layer)
 │   ├── backup.py         # WAL-safe DB snapshot + rsync-hardlinked raw store; restore
 │   ├── status.py         # `locus status` health summary (counts, alias staleness, backups)
 │   ├── config.py         # typed config; ANTHROPIC_API_KEY via env/.env only
-│   ├── db/               # connection (sqlite-vec load), migrate.py, migrations/ (0001–0016)
+│   ├── db/               # connection (sqlite-vec load), migrate.py, migrations/ (0001–0022)
 │   ├── extract/          # base, pdf, mathocr, figures_detect, docx, pptx, textdoc, code
 │   ├── ingest/           # llm (validated I/O + repair + per-pass routing), summarize, propositions,
 │   │                     #   entities, concepts (code domain concepts), synthesis, gaps, chunk, embed, figures, llamacpp
@@ -387,7 +387,11 @@ locus/
 │   ├── learn/            # gaps.py · practice.py · review.py (SM-2, + enrolment) · reread.py
 │   ├── surface/          # grounding.py · critique.py · synthesise.py (the §8.4 MCP surface)
 │   ├── enrich/           # related.py — grounded `> [!ai] Related` owned blocks
-│   ├── reading/          # md2pdf · deliver_remarkable (`locus read`)
+│   ├── reading/          # md2pdf · deliver_remarkable (`locus read`) · proposals (lifecycle) ·
+│   │                     #   deliver (push + OA fetch) · watch (the accept signal) ·
+│   │                     #   accept (accepted -> corpus) · sweep (read the ink back)
+│   ├── discover/         # arxiv · openalex · queries (what to search for) · rank · judge ·
+│   │                     #   citations — Phase 4 reading discovery (§16)
 │   ├── vault/            # writer.py (owned blocks, atomic, provenance) · markers · sidecar
 │   ├── query.py          # retrieve → assemble → Claude (multimodal)
 │   └── mcp_server.py
@@ -553,8 +557,40 @@ the handwriting. Both on systemd timers.
   thread note on every hourly run), and promotion bookkeeping is NOT an owner edit.
 
 **Next:** turn a marked passage into an idea with a model pass (the geometry hands it a clean
-grounded input) · the discovery reading list (`docs/reading-discovery-plan.md`) · note↔note
-surface (captured notes form their own mutual cluster, shared=10 — the plan assumed notes link to
-the corpus, not to each other) · a stronger summary pass for rough notes · concept promotion tier
-(**17% of canonicals span ≥2 docs**; ~520 new cross-doc concepts measured, ~90% coursework junk,
-so a filter is needed first).
+grounded input — the `idea` type exists and nothing populates it) · note↔note surface (captured
+notes form their own mutual cluster, shared=10 — the plan assumed notes link to the corpus, not to
+each other) · a stronger summary pass for rough notes · concept promotion tier (**17% of canonicals
+span ≥2 docs**; ~520 new cross-doc concepts measured, ~90% coursework junk, so a filter is needed
+first) · **the daily page and the reading list do not know about each other** (compose_daily has
+zero references to `reading_proposals`, so read-next offers corpus re-reads while real papers sit
+on the tablet) · the system reports nothing about its own activity or failures (locus-maintain
+failed six consecutive nights unnoticed, 2026-08-01).
+
+## 16. Reading discovery — Phase 4 (SHIPPED 2026-08-01)
+
+Spec + measurement log: `docs/reading-discovery-plan.md`. Proposes reading, delivers it to the
+tablet, and ingests what the owner accepts. **The accept signal is a folder move**: out of
+`Locus/Reading/Proposed` = accepted; deleted = a firm no; left to expire = a weak no. Migrations
+**0017–0022**. Live on timers (`deploy/systemd/locus-discover-{pull,harvest}`): pull hourly (free,
+local), harvest weekly (network + GPU).
+
+- **Search, not browse.** Category browsing was RETIRED (`[discovery].browse_categories=false`):
+  it capped the pool at a rolling ~3-week window, and **methods are old** — a relevance search
+  returns the canonical treatment from 2008 or 2014 that no recency feed can reach.
+- **Queries come from HIS material**, interleaved so a truncated budget still covers every source:
+  `marked` (concepts inside a passage he underlined — the strongest signal), `reading` (other
+  concepts from annotated documents), `project` (methods his projects name), `gap`. Coursework
+  concepts are KEPT deliberately — eigenvectors in factor models vs modal analysis is exactly the
+  cross-domain transfer this exists for.
+- **arXiv + OpenAlex.** arXiv is preprints skewed to CS/physics; OpenAlex adds journals, books and
+  citation counts. OpenAlex holds **no reference lists for preprints**, so the citation channel
+  (`discover/citations.py`) is built but idle until a journal article is accepted.
+- **Ranking**: bi-encoder fit over multi-facet profiles → cross-encoder rerank (the same
+  ms-marco stage every corpus query uses) → citation prior *centred on the pool median* → a local
+  model used ONLY as a floor filter, never a ranker. Caps are on the STOCK in `Proposed` (10
+  papers / 1 book), so a full folder proposes nothing.
+- **`reading_targets`** maps a device document to its corpus `source_uri`, which is what lets the
+  marks he makes reach the ingested paper (`reading/sweep.py`, guarded by a stroke fingerprint).
+
+**Live 2026-08-01:** 4 papers proposed → accepted → ingested (papers 14→18); pool ~1,200
+candidates; 4 `kept` verdicts are the flywheel's first real data; 0 marks read back yet.

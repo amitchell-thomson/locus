@@ -761,6 +761,14 @@ def cmd_discover(args) -> None:
                     )
                     print(f"  OpenAlex {len(oa)}  (journals, books, citation counts)")
                     found = found + oa
+                if dcfg.citations_enabled:
+                    from locus.discover import citations as D_cit
+
+                    cited = D_cit.harvest(
+                        conn, mailto=dcfg.openalex_mailto, limit=dcfg.harvest_limit,
+                    )
+                    print(f"  citations {len(cited)}  (what the papers you keep point at)")
+                    found = found + cited
                 if dcfg.browse_categories:
                     # Retired by default: search superseded it (see [discovery].browse_categories).
                     from datetime import date as _d, timedelta as _td

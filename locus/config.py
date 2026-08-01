@@ -420,6 +420,12 @@ class DiscoveryConfig(BaseModel):
         "", description="Contact email for OpenAlex's polite pool (higher rate limits)."
     )
     openalex_per_term: int = Field(10, description="Works pulled per search term from OpenAlex.")
+    citations_enabled: bool = Field(
+        True,
+        description="Mine what the papers you keep CITE (OpenAlex referenced_works). A work "
+                    "cited by two or more of your own sources is consensus among references you "
+                    "have already endorsed.",
+    )
     citation_weight: float = Field(
         0.15,
         description="Weight on log-citations CENTRED on the pool median — a cheap proxy for "

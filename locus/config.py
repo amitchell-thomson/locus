@@ -334,6 +334,111 @@ class ReadingConfig(BaseModel):
     font_pt: float = Field(11.0, description="Body text size (pt).")
 
 
+class DiscoveryConfig(BaseModel):
+    """Proposed reading and the accept loop (docs/reading-discovery-plan.md, Phase 4).
+
+    `Locus/Reading/{Proposed,In-Progress,Finished}` on the device: moving a file OUT of `Proposed`
+    is the accept signal and triggers ingest; leaving it there is a rejection.
+
+    The caps are on the STOCK sitting in `Proposed`, not on a rate. A weekly quota keeps topping up
+    a folder he has not cleared, which is how a reading list turns into a guilt metric; a stock cap
+    means an untouched folder proposes nothing, and empty stays a valid state.
+    """
+
+    root_folder: str = Field(
+        "Locus/Reading", description="Device folder holding the three reading folders."
+    )
+    rmapi_binary: str = Field("rmapi", description="rmapi binary (PATH name or absolute path).")
+    paper_cap: int = Field(
+        10,
+        description="Max papers held in Proposed at once (a stock, not a rate). 3 -> 10 on "
+                    "2026-07-31: a proposal is a menu, not a demand, and rejecting one is the "
+                    "signal the flywheel tunes on — three at a time starved it.",
+    )
+    book_cap: int = Field(
+        1, description="Max books held in Proposed at once — one considered suggestion, not a feed."
+    )
+    ttl_days: int = Field(
+        21,
+        description="Days in Proposed before it reads as a no. A WEAK negative: silence is as "
+                    "likely to mean a busy fortnight as a bad suggestion.",
+    )
+    drop_folder: str = Field(
+        "paper", description="Folder under vault/incoming/ that accepted readings are ingested via."
+    )
+
+    # --- the discovery engine (step 2) ---
+    # ONLY these category tokens ever leave the machine. Not concepts, not project names — the
+    # relevance judgement happens locally against his own embeddings (locus/discover/arxiv.py).
+    arxiv_categories: list[str] = Field(
+        default_factory=lambda: [
+            "q-fin.PM", "q-fin.ST", "q-fin.TR", "q-fin.RM", "q-fin.CP",
+            "econ.EM", "stat.ML", "stat.AP", "eess.SY", "cs.RO",
+        ],
+        description="arXiv categories to harvest. Category tokens only — validated on send.",
+    )
+    per_category: int = Field(
+        60,
+        description="Max papers pulled from EACH category. A quota, not a shared pool: q-fin is "
+                    "outpublished ~10x by stat.ML/cs.LG, so one OR-query returned 2 q-fin.PM "
+                    "papers out of 200 (measured 2026-07-31).",
+    )
+    harvest_limit: int = Field(600, description="Overall cap across all categories.")
+    terms_per_source: int = Field(
+        25, description="Search terms taken from each of reading / projects / gaps."
+    )
+    per_term: int = Field(8, description="arXiv results pulled per search term.")
+    harvest_days: int = Field(
+        21,
+        description="Only harvest papers published within this many days. Paging stops at the "
+                    "cutoff, so coverage is a time window rather than an accident of publication "
+                    "volume — a flat count bought 2 days of cs.RO but a month of q-fin.PM.",
+    )
+    familiarity_weight: float = Field(
+        0.25,
+        description="Penalty on a candidate resembling material he already has. SWEPT 2026-07-31, "
+                    "1.0 -> 0.25: at 1.0 it pushed the harvest's two best portfolio papers out of "
+                    "the top 10 in favour of building-energy M&V. A tiebreaker, not a driver, "
+                    "until the corpus is dense enough for 'already have this' to be often true.",
+    )
+    gap_weight: float = Field(
+        0.6, description="Weight of a gap match relative to a project match (projects win)."
+    )
+    # RETIRED 2026-08-01, kept as a knob rather than deleted (the `rough_penalty` precedent).
+    # Browsing recent category listings was the original mechanism and targeted search superseded
+    # it: judged against real output, browse supplied the weak half of every list while capping
+    # the pool at a rolling ~3-week window. Set true to re-enable.
+    browse_categories: bool = Field(
+        False, description="Also browse recent category listings (retired; search superseded it)."
+    )
+    openalex_enabled: bool = Field(
+        True,
+        description="Search OpenAlex as well as arXiv — journals, books and chapters, plus "
+                    "citation counts. arXiv alone misses most of the finance canon.",
+    )
+    openalex_mailto: str = Field(
+        "", description="Contact email for OpenAlex's polite pool (higher rate limits)."
+    )
+    openalex_per_term: int = Field(10, description="Works pulled per search term from OpenAlex.")
+    citation_weight: float = Field(
+        0.15,
+        description="Weight on log10(1+citations) in the score — a cheap proxy for 'canonical "
+                    "treatment' rather than 'newest variant'. Unknown counts (arXiv) score 0, "
+                    "never negative, so preprints are not systematically demoted.",
+    )
+    judge_enabled: bool = Field(
+        True,
+        description="Run a local model over the shortlist and DROP clear irrelevance. A filter, "
+                    "not a ranker: measured, it scores 1-3 only, so it has no resolution at the "
+                    "top of its scale but bins junk the cross-encoder ranks 7th.",
+    )
+    judge_drop_at_or_below: int = Field(1, description="Judge score at or below which to drop.")
+
+    @property
+    def caps(self) -> dict[str, int]:
+        return {"paper": self.paper_cap, "book": self.book_cap}
+
+
 class AgentConfig(BaseModel):
     """Agent-layer orchestration (agent-layer plan §10, Phase 1). The capture/enrichment loops
     run language tasks through headless `claude -p` (the owner's subscription), metered by a
@@ -485,6 +590,8 @@ class Config(BaseModel):
     obsidian: ObsidianConfig = Field(default_factory=ObsidianConfig)
     # Optional: absent [reading] falls back to defaults (Paper Pro geometry, folder "Locus").
     reading: ReadingConfig = Field(default_factory=ReadingConfig)
+    # Optional: absent [discovery] falls back to defaults (Locus/Reading, 3 papers / 1 book, 21d).
+    discovery: DiscoveryConfig = Field(default_factory=DiscoveryConfig)
     # Optional: absent [agent] falls back to defaults (claude -p model 'haiku', $5/day cap).
     agent: AgentConfig = Field(default_factory=AgentConfig)
     # Optional: absent [capture] falls back to defaults (staging dir, built-in folder→category).

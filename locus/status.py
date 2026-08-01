@@ -43,6 +43,9 @@ class StatusReport:
     last_backup_age_days: float | None
     build_stamp: str
     warnings: list[str] = field(default_factory=list)
+    # Reading discovery (Phase 4). Optional: a database predating migration 0017 has none of
+    # these tables, and `locus status` must stay useful on one rather than raising.
+    reading: dict[str, int] | None = None
 
 
 def _build_stamp(project_root: Path) -> str:
@@ -61,6 +64,23 @@ def _build_stamp(project_root: Path) -> str:
         return f"{commit}{dirty} ({when})" if when else f"{commit}{dirty}"
     except Exception:
         return "unknown"
+
+
+def _reading_health(conn) -> "dict[str, int] | None":
+    """Reading-discovery counters, or None on a database predating migration 0017."""
+    try:
+        one = lambda sql: conn.execute(sql).fetchone()[0]
+        return {
+            "proposed": one("SELECT COUNT(*) FROM reading_proposals WHERE status='proposed'"),
+            "queued": one("SELECT COUNT(*) FROM reading_proposals WHERE status='candidate'"),
+            "pool": one("SELECT COUNT(*) FROM discovery_candidates"),
+            "accepted": one(
+                "SELECT COUNT(*) FROM reading_proposals WHERE status IN ('accepted','ingested')"),
+            "rejected": one("SELECT COUNT(*) FROM reading_proposals WHERE status='rejected'"),
+            "marks": one("SELECT COALESCE(SUM(marks), 0) FROM reading_targets"),
+        }
+    except Exception:
+        return None
 
 
 def _count(conn, table: str) -> int:
@@ -171,6 +191,7 @@ def collect_status(
         )
 
     return StatusReport(
+        reading=_reading_health(conn),
         doc_total=doc_total,
         by_category=by_category,
         by_source_type=by_source_type,
@@ -220,6 +241,16 @@ def format_status(r: StatusReport) -> str:
         )
     else:
         lines.append("alias substrate        : NOT BUILT")
+    if r.reading is not None:
+        d = r.reading
+        lines.append(
+            f"reading proposed       : {d['proposed']} on the tablet | {d['queued']} queued "
+            f"| pool {d['pool']}"
+        )
+        lines.append(
+            f"reading judged         : {d['accepted']} accepted / {d['rejected']} rejected "
+            f"| {d['marks']} mark(s) read back"
+        )
     lines.append(f"quarantine             : {r.quarantine_count} file(s)")
     lines.append(f"database               : {_fmt_bytes(r.db_bytes)}")
     if r.last_backup:

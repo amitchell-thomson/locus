@@ -699,6 +699,206 @@ def cmd_promote(args) -> None:
         print("run `locus notes-sync` to ingest them")
 
 
+def cmd_discover(args) -> None:
+    """The reading accept loop (Phase 4 step 1): propose, watch, ingest what he moved.
+
+    Free and local — no model, no network. `--pull` is the scheduled half: it reads where each
+    proposed reading now sits on the device and ingests the ones he moved out of `Proposed`.
+    """
+    from locus.reading import accept as R_accept
+    from locus.reading import proposals as P
+    from locus.reading import watch as R_watch
+
+    dcfg = load().discovery
+    conn = _open()
+    try:
+        if args.seed:
+            new_id = P.add_candidate(
+                conn, kind=args.kind, title=args.seed, why=args.why or "",
+                why_kind="manual", evidence_key=args.evidence or "manual",
+                authors=args.authors or "", url=args.url,
+            )
+            print(f"seeded #{new_id}" if new_id else "already known — not re-proposed")
+            return
+
+        if args.deliver:
+            from locus.reading.deliver import deliver_proposal
+
+            prop = next((p for p in P.list_proposals(conn, limit=500) if p.id == args.deliver), None)
+            if prop is None:
+                print(f"no proposal #{args.deliver}")
+                return
+            if not args.file:
+                print("--deliver needs --file (the PDF to push: the paper, or a stub page)")
+                return
+            free = P.slots_free(conn, prop.kind, caps=dcfg.caps)
+            if not free and not args.force:
+                print(f"no free {prop.kind} slot — {prop.kind} folder is full "
+                      f"(a full folder proposes nothing; --force overrides)")
+                return
+            out = deliver_proposal(
+                conn, prop, args.file, is_real=not args.stub,
+                root=dcfg.root_folder, rmapi_binary=dcfg.rmapi_binary,
+            )
+            print(f"delivered #{out.proposal_id} as {out.filename!r} "
+                  f"(uuid {out.device_uuid or 'unknown'}) -> Proposed")
+            return
+
+        if args.harvest or args.profiles or args.rank or args.propose:
+            from locus.discover import arxiv, profiles as D_profiles, rank as D_rank
+
+            if args.harvest:
+                from locus.discover import openalex, queries
+
+                terms = queries.all_terms(conn, per_source=dcfg.terms_per_source)
+                print(f"searching {len(terms)} concept(s) from your reading, projects and gaps")
+                found = arxiv.search(terms, per_term=dcfg.per_term, limit=dcfg.harvest_limit)
+                print(f"  arXiv    {len(found)}")
+                if dcfg.openalex_enabled:
+                    oa = openalex.search(
+                        terms, per_term=dcfg.openalex_per_term, limit=dcfg.harvest_limit,
+                        mailto=dcfg.openalex_mailto,
+                    )
+                    print(f"  OpenAlex {len(oa)}  (journals, books, citation counts)")
+                    found = found + oa
+                if dcfg.browse_categories:
+                    # Retired by default: search superseded it (see [discovery].browse_categories).
+                    from datetime import date as _d, timedelta as _td
+                    browsed = arxiv.harvest(
+                        dcfg.arxiv_categories, per_category=dcfg.per_category,
+                        limit=dcfg.harvest_limit,
+                        since=(_d.today() - _td(days=dcfg.harvest_days)).isoformat(),
+                    )
+                    print(f"  browse   {len(browsed)}")
+                    found = found + [(b, None) for b in browsed]
+                added = D_rank.store(conn, found)
+                print(f"{added} new candidate(s); embedding locally ...")
+                print(f"embedded {D_rank.embed_pending(conn)}")
+
+            if args.profiles:
+                built = D_profiles.rebuild(conn)
+                kinds = {}
+                for p in built:
+                    kinds[p.subject_kind] = kinds.get(p.subject_kind, 0) + 1
+                print(f"profiles rebuilt: " + ", ".join(f"{v} {k}" for k, v in sorted(kinds.items()))
+                      if built else "no profiles — bless a project object first")
+
+            if args.rank or args.propose:
+                judge = None
+                if dcfg.judge_enabled and not args.no_judge:
+                    cfg_all = load()
+                    judge = {"model": cfg_all.ollama.ingest_model, "host": cfg_all.ollama.host}
+                top = D_rank.rank(
+                    conn, limit=args.top,
+                    familiarity_weight=dcfg.familiarity_weight, gap_weight=dcfg.gap_weight,
+                    citation_weight=dcfg.citation_weight, judge=judge,
+                    judge_floor=dcfg.judge_drop_at_or_below,
+                )
+                if not top:
+                    print("nothing ranked — harvest and rebuild profiles first")
+                    return
+                for s in top:
+                    print(f"  {s.score:+.3f}  {s.title[:66]}")
+                    print(f"          {s.why}")
+                    print(f"          {s.url}")
+                if args.propose:
+                    free = P.slots_free(conn, "paper", caps=dcfg.caps)
+                    made = 0
+                    for s in top[:free]:
+                        if P.add_candidate(
+                            conn, kind="paper", title=s.title, why=s.why, why_kind="discovery",
+                            evidence_key=f"{s.matched_kind}:{s.matched_label}",
+                            authors=s.authors, url=s.url, abstract=s.abstract,
+                            external_id=s.external_id, oa_pdf_url=s.pdf_url, score=s.score,
+                        ):
+                            made += 1
+                    print(f"proposed {made} (free slots: {free})")
+            return
+
+        if args.push:
+            from pathlib import Path as _Path
+
+            from locus.reading.deliver import deliver_proposal, fetch_open_access
+
+            free = P.slots_free(conn, "paper", caps=dcfg.caps)
+            queued = [p for p in P.list_proposals(conn, status="candidate", kind="paper", limit=50)]
+            if not free:
+                print("no free slots — the Proposed folder is full (a full folder proposes nothing)")
+                return
+            staging = _Path(args.staging or "/tmp/locus-reading")
+            sent = 0
+            for prop in queued[:free]:
+                if not prop.oa_pdf_url:
+                    # Not open access: it stays a candidate rather than becoming a stub silently.
+                    print(f"  skip (no open-access PDF)  {prop.title[:56]}")
+                    continue
+                try:
+                    pdf = fetch_open_access(prop.oa_pdf_url, staging / f"{prop.id}.pdf")
+                    out = deliver_proposal(
+                        conn, prop, pdf, is_real=True,
+                        root=dcfg.root_folder, rmapi_binary=dcfg.rmapi_binary,
+                    )
+                except Exception as exc:            # network, rmapi, or a non-PDF payload
+                    print(f"  FAILED  {prop.title[:52]}: {exc}")
+                    continue
+                sent += 1
+                print(f"  sent  {out.filename}")
+            print(f"{sent} paper(s) now in {dcfg.root_folder}/Proposed")
+            return
+
+        if args.pull:
+            outcomes = R_watch.scan(
+                conn,
+                ttl_days=args.ttl if args.ttl is not None else dcfg.ttl_days,
+                root="/" + dcfg.root_folder.strip("/"),
+                rmapi_binary=dcfg.rmapi_binary,
+            )
+            for o in outcomes:
+                where = f" -> {o.folder}" if o.folder else ""
+                detail = f" [{o.resolution}]" if o.resolution else ""
+                print(f"  {o.action:<9} {o.title[:56]}{where}{detail}")
+            ingested = R_accept.ingest_accepted(
+                conn, drop_folder=dcfg.drop_folder, dry_run=args.dry_run
+            )
+            # THE OTHER HALF OF THE LOOP. Accepting ingests the paper's TEXT; this captures what
+            # he wrote ON it afterwards, which is the signal that seeds the next concept search.
+            # Without it a paper read and annotated end to end reaches the corpus as a clean PDF
+            # and his reading of it is thrown away (migration 0022).
+            if not args.no_sweep:
+                from locus.reading.sweep import sweep as _sweep
+
+                for r in _sweep(conn, rmapi_binary=dcfg.rmapi_binary,
+                                root="/" + dcfg.root_folder.strip("/")):
+                    if r.status == "marks":
+                        print(f"  marked        {r.marks} mark(s) on {r.title[:48]} [{r.folder}]")
+                    elif r.status == "failed":
+                        print(f"  sweep-failed  {r.title[:48]}: {r.detail}")
+            for r in ingested:
+                print(f"  {r.status:<13} {r.title[:56]}"
+                      f"{f'  doc {r.doc_id}' if r.doc_id else ''}"
+                      f"{f'  ({r.detail})' if r.detail else ''}")
+            if not outcomes and not ingested:
+                print("nothing awaiting a verdict")
+            return
+
+        # Default: what is in flight, and what the channels have learned so far.
+        for status in ("proposed", "candidate", "accepted"):
+            rows = P.list_proposals(conn, status=status, limit=20)
+            if rows:
+                print(f"{status}:")
+                for p in rows:
+                    print(f"  #{p.id:<4} [{p.kind}] {p.title[:60]}")
+                    print(f"        why: {p.why[:72]}")
+        stats = P.channel_stats(conn)
+        if stats:
+            print("channels:")
+            for kind, s in sorted(stats.items()):
+                print(f"  {kind:<12} kept {s['kept']} · ttl {s['ttl']} · "
+                      f"removed {s['removed']} · open {s['open']}")
+    finally:
+        conn.close()
+
+
 def cmd_annotate(args) -> None:
     """Loop B: pull a PDF's reMarkable annotations and record which passage each one marks.
 
@@ -1336,6 +1536,48 @@ def main(argv=None) -> None:
         help="re-read even if the file is unchanged since the last pull (spends a vision call)",
     )
     pdp.set_defaults(func=cmd_daily_pull)
+
+    pds = sub.add_parser(
+        "discover",
+        help="proposed reading: list, deliver to the tablet, and ingest what you moved (free)",
+    )
+    pds.add_argument(
+        "--pull", action="store_true",
+        help="read where each proposal now sits on the device and ingest the accepted ones",
+    )
+    pds.add_argument("--seed", metavar="TITLE", default=None,
+                     help="hand-seed a candidate (validates the loop without a source)")
+    pds.add_argument("--kind", choices=("paper", "book"), default="paper")
+    pds.add_argument("--why", default=None, help="the grounded reason (required with --seed)")
+    pds.add_argument("--evidence", default=None, help="what grounds it (doc uri / mark id)")
+    pds.add_argument("--authors", default=None)
+    pds.add_argument("--url", default=None)
+    pds.add_argument("--deliver", type=int, metavar="ID", default=None,
+                     help="push proposal ID to Locus/Reading/Proposed")
+    pds.add_argument("--file", default=None, help="the PDF to push with --deliver")
+    pds.add_argument("--stub", action="store_true",
+                     help="the pushed PDF describes the work rather than being it (never ingested)")
+    pds.add_argument("--force", action="store_true", help="deliver even with no free slot")
+    pds.add_argument("--ttl", type=int, default=None,
+                     help="days in Proposed before it reads as a no (default: [discovery].ttl_days)")
+    pds.add_argument("--dry-run", action="store_true", help="do not ingest accepted proposals")
+    pds.add_argument("--harvest", action="store_true",
+                     help="search arXiv + OpenAlex for the concepts in your reading, projects and gaps")
+    pds.add_argument("--profiles", action="store_true",
+                     help="rebuild the project/gap vectors candidates are ranked against")
+    pds.add_argument("--rank", action="store_true",
+                     help="show the best candidates for your projects right now")
+    pds.add_argument("--propose", action="store_true",
+                     help="turn the top-ranked candidates into proposals (respects the cap)")
+    pds.add_argument("--top", type=int, default=10, help="how many to rank (default 10)")
+    pds.add_argument("--no-sweep", action="store_true",
+                     help="skip reading back the marks you made on accepted papers")
+    pds.add_argument("--no-judge", action="store_true",
+                     help="skip the local relevance filter (faster; keeps clear irrelevance)")
+    pds.add_argument("--push", action="store_true",
+                     help="fetch the open-access PDFs of queued candidates and put them in Proposed")
+    pds.add_argument("--staging", default=None, help="where to download PDFs before pushing")
+    pds.set_defaults(func=cmd_discover)
 
     ppr = sub.add_parser(
         "promote",

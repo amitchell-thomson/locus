@@ -186,6 +186,54 @@ page_height_in = 9.43      # PDF page height (in) — Paper Pro screen height
 margin_in      = 0.5       # page margin (in)
 font_pt        = 11.0      # body text size (pt)
 
+[discovery]
+# Proposed reading and the accept loop (docs/reading-discovery-plan.md, Phase 4).
+# `Locus/Reading/{Proposed,In-Progress,Finished}` on the device: moving a file OUT of Proposed is
+# the accept signal and triggers ingest; leaving it there is a rejection. Free and local — the
+# accept loop calls no model and no network.
+root_folder  = "Locus/Reading"  # device folder holding the three reading folders
+rmapi_binary = "rmapi"          # rmapi binary (PATH name or absolute path)
+# Caps are on the STOCK sitting in Proposed, not on a rate: a full folder proposes nothing, so
+# falling behind produces silence rather than a backlog. Empty is a valid state.
+paper_cap    = 10               # max papers in Proposed at once — a menu to triage,
+                                # and each rejection is flywheel signal (3 -> 10, 2026-07-31)
+book_cap     = 1                # max books — one considered suggestion, not a feed
+ttl_days     = 21               # days in Proposed before it reads as a no (a WEAK negative)
+drop_folder  = "paper"          # folder under vault/incoming/ that accepted readings ingest via
+# The discovery engine (step 2). WHAT LEAVES THE MACHINE: a category token, an offset and a page
+# size — nothing else. Searching arXiv for his topics would ship his research vocabulary to a
+# third party on a timer, so relevance is judged LOCALLY instead: harvest a broad slice by
+# subject, embed the abstracts on his own GPU, rank against his own projects.
+arxiv_categories = ["q-fin.PM", "q-fin.ST", "q-fin.TR", "q-fin.RM", "q-fin.CP",
+                    "econ.EM", "stat.ML", "stat.AP", "eess.SY", "cs.RO"]
+# A quota PER CATEGORY, not a shared pool. q-fin is outpublished ~10x by stat.ML/cs.LG, so a
+# single OR-query returned just 2 q-fin.PM papers out of 200 (measured 2026-07-31).
+per_category       = 60         # max per category per run
+harvest_limit      = 600        # overall cap across all categories
+# Paging stops at this age, so coverage is a TIME WINDOW rather than an accident of
+# publication volume: a flat count of 25 bought two days of cs.RO but a month of q-fin.PM.
+harvest_days       = 21
+# THE term that makes this discovery rather than more-of-the-same: a candidate's similarity to
+# material he ALREADY has is subtracted, so the engine rewards work that is close to a project
+# but unlike anything in the corpus. Sweep it against his judgement before trusting the value.
+familiarity_weight = 0.25  # SWEPT 2026-07-31: 1.0 buried the best papers
+gap_weight         = 0.6        # a gap match counts less than a project match
+# Category browsing is RETIRED (2026-08-01): targeted search superseded it, and browse supplied
+# the weak half of every judged list while capping the pool at a rolling ~3-week window.
+browse_categories  = false
+# OpenAlex covers journals, books and chapters — arXiv is preprints and misses most of the
+# finance canon. No key needed; mailto buys the polite pool's higher rate limits.
+openalex_enabled   = true
+openalex_mailto    = ""         # e.g. "you@example.com"
+openalex_per_term  = 10
+# Cheap proxy for "the canonical treatment" over "the newest variant". Unknown counts score 0,
+# never negative, so arXiv preprints are not systematically demoted.
+citation_weight    = 0.15
+# A local model that DROPS clear irrelevance. A filter, not a ranker — measured, it uses only
+# 1-3 of its scale, so it cannot order the good papers but it bins the junk reliably.
+judge_enabled      = true
+judge_drop_at_or_below = 1
+
 [agent]
 # Agent-layer orchestration (agent-layer plan §10, Phase 1). Capture/enrichment loops run
 # language tasks through headless `claude -p` (subscription), metered by a cost ledger over the

@@ -26,6 +26,7 @@ paper link to his work in exactly the same way and the page needs no second code
 from __future__ import annotations
 
 import logging
+import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -33,6 +34,8 @@ from pathlib import Path
 from locus.discover.rank import cos_from_l2
 
 log = logging.getLogger(__name__)
+
+_DATE_PREFIX = re.compile(r"^\d{4}-\d{2}-\d{2}\s+")
 
 # Profiles are per-facet, so one project contributes many vectors; this is how many nearest
 # profile facets to consider per item. Small: we want the best-matching facet, not a survey.
@@ -66,8 +69,14 @@ def title_for(device_path: str, source_uri: str | None) -> str:
     """
     for candidate in (device_path or "", source_uri or ""):
         name = Path(candidate.rstrip("/")).name
-        if name:
-            return name[:-4] if name.lower().endswith(".pdf") else name
+        if not name:
+            continue
+        if name.lower().endswith(".pdf"):
+            name = name[:-4]
+        # `deliver.safe_filename` date-prefixes every upload so `rmapi put` cannot refuse a
+        # same-named re-upload. That prefix is a transport artifact, not part of the title, and
+        # printing it costs a whole line per item on a page that is measured in lines.
+        return _DATE_PREFIX.sub("", name).strip()
     return "(untitled)"
 
 

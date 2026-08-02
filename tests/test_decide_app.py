@@ -158,15 +158,14 @@ async def test_left_and_right_move_between_kinds(conn):
     app = build_app(conn)
 
     async with app.run_test() as pilot:
-        assert app.kind == Q.KIND_OBJECT
+        assert app.kind == Q.TUI_KINDS[0]
+        for expected in Q.TUI_KINDS[1:]:
+            await pilot.press("right")
+            assert app.kind == expected
         await pilot.press("right")
-        assert app.kind == Q.KIND_DUPLICATE
-        await pilot.press("right")
-        assert app.kind == Q.KIND_ABANDONED
-        await pilot.press("right")
-        assert app.kind == Q.KIND_OBJECT, "it wraps"
+        assert app.kind == Q.TUI_KINDS[0], "it wraps"
         await pilot.press("left")
-        assert app.kind == Q.KIND_ABANDONED
+        assert app.kind == Q.TUI_KINDS[-1]
 
 
 @pytest.mark.asyncio

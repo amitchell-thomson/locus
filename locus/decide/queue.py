@@ -33,8 +33,9 @@ from locus.agent import state
 KIND_OBJECT = "object"          # a proposed object: bless it or drop it
 KIND_DUPLICATE = "duplicate"    # two objects that look like one concept: merge or keep apart
 KIND_ABANDONED = "abandoned"    # a reading that has sat untouched: why did you stop?
+KIND_INTENT = "intent"          # a mark whose meaning the model was not sure of
 
-TUI_KINDS = (KIND_OBJECT, KIND_DUPLICATE, KIND_ABANDONED)
+TUI_KINDS = (KIND_OBJECT, KIND_DUPLICATE, KIND_INTENT, KIND_ABANDONED)
 
 # How long a reading may sit in `In-Progress` with no new ink before it is worth asking about.
 # Deliberately generous — two weeks of not opening a paper is as likely to mean a busy fortnight
@@ -243,6 +244,44 @@ def merge_objects(conn: sqlite3.Connection, keep_id: int, drop_ids: tuple[int, .
     return folded
 
 
+def uncertain_intents(conn: sqlite3.Connection, *, limit: int = 50) -> list[Decision]:
+    """Marks the intent pass was not confident about — "infer, then let me correct".
+
+    This is the correction step, and without it the floor would only mean "act on fewer marks"
+    rather than "ask about the ones I could not read". A mark held here is doing nothing until he
+    answers, which is the honest state: the system does not know what he meant.
+
+    Accept/reject is a two-way choice and intent is three-way, so the card offers the model's
+    guess as the accept and `idea` as the reject — the two that DO something. A mark that is
+    neither is left alone, which is what `important` means anyway.
+    """
+    from locus.capture import intent as I
+
+    out: list[Decision] = []
+    for mark in I.uncertain_marks(conn, limit=limit):
+        guess = mark["intent"] or ""
+        wrote = " ".join((mark["note"] or "").split())
+        passage = " ".join((mark["covered_text"] or "").split())
+        out.append(
+            Decision(
+                key=f"mark:{mark['id']}",
+                kind=KIND_INTENT,
+                title=(wrote or passage or "(an unreadable mark)")[:110],
+                detail=(
+                    f"guessed {guess} at {mark['intent_confidence']:.0%} — too low to act on"
+                ),
+                grounding=(
+                    f"{mark['doc_title'] or 'your reading'} p.{mark['pdf_page'] + 1}"
+                    + (f" — \u201c{passage[:70]}\u201d" if wrote and passage else "")
+                ),
+                accept_label=f"yes, {guess}",
+                reject_label="no, it was an idea",
+                ref=mark["id"],
+            )
+        )
+    return out
+
+
 def abandoned_readings(
     conn: sqlite3.Connection, *, days: int = DEFAULT_ABANDON_DAYS, now: datetime | None = None
 ) -> list[Decision]:
@@ -301,6 +340,9 @@ def pending(
     queue.sections[KIND_DUPLICATE] = [
         d for d in duplicate_groups(conn) if d.key not in on_the_page
     ]
+    queue.sections[KIND_INTENT] = [
+        d for d in uncertain_intents(conn) if d.key not in on_the_page
+    ]
     queue.sections[KIND_ABANDONED] = [
         d for d in abandoned_readings(conn, days=days, now=now) if d.key not in on_the_page
     ]
@@ -350,6 +392,18 @@ def resolve(
             conn, surface=SURFACE_MERGE, candidate_key=decision.key, verdict="rejected"
         )
         return "kept separate"
+
+    if decision.kind == KIND_INTENT:
+        from locus.capture import intent as I
+
+        guessed = conn.execute(
+            "SELECT intent FROM pdf_annotations WHERE id=?", (decision.ref,)
+        ).fetchone()
+        chosen = (guessed["intent"] if accept and guessed else I.IDEA)
+        I.set_owner_intent(conn, decision.ref, chosen)
+        # His answer is authoritative and durable, so acting on it now is safe.
+        I.act_on(conn, decision.ref)
+        return f"recorded as {chosen}"
 
     if decision.kind == KIND_ABANDONED:
         # The signal has to reach the thing that decides what gets proposed, or asking was theatre.

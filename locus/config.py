@@ -593,6 +593,15 @@ class CaptureConfig(BaseModel):
     notes_root: str = Field(
         "Notes", description="Device folder holding his topic folders; category keys below it."
     )
+    # Mark-intent inference (step 4). Below this the guess is recorded but NOT acted on: the mark
+    # becomes a `locus decide` item instead. His answer was "infer, then let me correct", and
+    # acting on a low-confidence guess silently is that answer with the correction removed.
+    intent_confidence_floor: float = Field(
+        0.6, description="Confidence below which a mark's intent goes to `locus decide` instead."
+    )
+    intent_settle_hours: int = Field(
+        12, description="Hours a mark's page must be untouched before its intent is inferred."
+    )
 
 
 class MCPConfig(BaseModel):

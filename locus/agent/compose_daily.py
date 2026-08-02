@@ -323,6 +323,82 @@ def build_readings(
     return out
 
 
+def build_rereads(
+    conn: sqlite3.Connection, *, limit: int = 1, seen: set[str] | None = None
+) -> list[ReadItem]:
+    """A corpus document that answers a passage he said he did not follow.
+
+    THE ONLY THING THAT EARNS A CORPUS RE-READ A SLOT. The old read-next ranked corpus documents
+    by how many open gaps a re-read would close and offered him a year-old competition manual;
+    a generic gap-closer is precisely what discredited the section. A re-read appears here only
+    when he has marked a specific passage as not understood, which is a request rather than an
+    inference — and it disappears the moment that mark is resolved, because the intent is read
+    live rather than copied into a queue.
+
+    Joins only: the passage is matched against section summaries through the ordinary retrieval
+    arm, and if nothing in the corpus covers it the slot stays empty (the discovery channel is
+    where "the corpus does not contain the answer" gets handled).
+    """
+    from locus.capture import intent as I
+
+    seen = seen if seen is not None else set()
+    out: list[ReadItem] = []
+    for mark in I.not_understood_marks(conn, limit=limit * 6):
+        question = I.reread_seed(mark)
+        if not question:
+            continue
+        item_key = f"reread:{mark['id']}"
+        if item_key in seen:
+            continue
+        target = _explains(conn, question, exclude_uri=mark["source_uri"])
+        if target is None:
+            continue
+        title, uri = target
+        out.append(
+            ReadItem(
+                anchor="",
+                title=title,
+                why=(
+                    f"you marked p.{mark['pdf_page'] + 1} of "
+                    f"{mark['doc_title'] or 'your reading'} as not following it"
+                    + (f" — \u201c{question[:90]}\u201d" if question else "")
+                ),
+                grounding="re-read · from a passage you marked",
+                shelf="re-read",
+                target_kind="doc",
+                target_key=uri,
+                item_key=item_key,
+            )
+        )
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _explains(
+    conn: sqlite3.Connection, question: str, *, exclude_uri: str
+) -> tuple[str, str] | None:
+    """The corpus document that best covers `question`, or None. Degrades silently."""
+    try:
+        from locus.retrieve.search import search
+    except ImportError:
+        return None
+    try:
+        candidates = search(conn, question)
+    except Exception:                                  # ollama down, no vectors yet
+        return None
+
+    # Best-scoring DOCUMENT, not unit: the slot offers something to read, and several strong
+    # chunks from one document say the same thing about it.
+    for cand in sorted(candidates or [], key=lambda c: -(c.rerank_score or c.score or 0.0)):
+        row = conn.execute(
+            "SELECT title, source_uri FROM documents WHERE id=?", (cand.doc_id,)
+        ).fetchone()
+        if row and row["source_uri"] != exclude_uri:
+            return row["title"] or row["source_uri"], row["source_uri"]
+    return None
+
+
 def build_reading_state(
     conn: sqlite3.Connection, *, now: datetime | None = None
 ) -> ReadingState:
@@ -437,16 +513,20 @@ def build_marked(
         passage = " ".join((row["covered_text"] or "").split())
         note = " ".join((row["note"] or "").split())
         title = row["doc_title"] or uri.rsplit("/", 1)[-1]
+        # A MARGIN NOTE COVERS NO TEXT, so there is no passage to lead with and the item rendered
+        # as a bare "T1." with his words demoted to a quote beneath it. When the passage is empty
+        # his handwriting IS the item, and repeating it as "you wrote:" underneath says it twice.
+        headline = passage or note
         out.append(
             ThreadItem(
                 anchor="",
                 section=SECTION_MARKED,
                 kind="mark",
-                headline=(passage if len(passage) <= 300 else passage[:297] + "..."),
+                headline=(headline if len(headline) <= 300 else headline[:297] + "..."),
                 context=f"{title} — p.{row['pdf_page'] + 1}",
                 # His own words, printed back with the passage they belong to. This pairing is
                 # the whole point of Loop B: the objection and the claim it objects to.
-                body=(f"you wrote: {note}",) if note else (),
+                body=(f"you wrote: {note}",) if note and passage else (),
                 target_kind="doc",
                 target_key=uri,
                 item_key=item_key,
@@ -717,6 +797,12 @@ def compose(conn: sqlite3.Connection, *, today: date | None = None) -> DailyPage
     seen = _shown_keys(conn)
     page = DailyPage(page_date=today.isoformat())
     page.readings = build_readings(conn, seen=seen)
+    # New material leads; a re-read takes a slot only if one is spare, and only ever because he
+    # marked something as not understood.
+    if len(page.readings) < _FIT["read"]:
+        page.readings += build_rereads(
+            conn, limit=_FIT["read"] - len(page.readings), seen=seen
+        )
     page.reading_state = build_reading_state(conn)
     page.threads = build_threads(conn, seen=seen)
     page.recalls = build_recalls(conn, today=today, seen=seen)
@@ -884,7 +970,8 @@ def _open_region() -> list[str]:
 def _render_read(page: DailyPage) -> str:
     lines = ["## Read", ""]
     for d in page.readings:
-        lines += [f"**{d.anchor}. {d.title}**", "", d.why]
+        tag = "  *re-read*" if d.shelf == "re-read" else ""
+        lines += [f"**{d.anchor}. {d.title}**{tag}", "", d.why]
         if d.grounding:
             lines += ["", f"`{d.grounding}`"]
         lines += ["", _rules(1)]
@@ -897,9 +984,13 @@ def _render_read(page: DailyPage) -> str:
             # `yours` marks material he chose himself. It is the interesting case: nothing in the
             # pipeline decided it was relevant, so the link is a finding rather than a restatement.
             tag = "  *yours*" if item.owner_added else ""
-            lines += [f"- **{item.title}**{link}{tag}"]
-            if item.why:
-                lines += [f"  {item.why}"]
+            lines += [f"- **{item.title[:58]}**{link}{tag}"]
+            # THE LINK IS THE POINT HERE, not the argument. This is a status list; printing the
+            # full written reason for each of five in-progress items pushed the whole section onto
+            # a second page. Only material he chose himself gets a line of it, because that is the
+            # case he asked to see, and only a line.
+            if item.why and item.owner_added:
+                lines += [f"  {item.why[:110]}"]
     if st.proposed:
         oldest = f", oldest {st.oldest_days} days" if st.oldest_days is not None else ""
         lines += ["", f"**On the shelf:** {st.proposed} waiting{oldest}"]

@@ -1164,6 +1164,43 @@ def cmd_device_migrate(args) -> None:
         print(f"\nmoved {ok}/{len(applied)}; empty source folders are left for you to delete")
 
 
+def cmd_intent(args) -> None:
+    """Decide what each marked passage MEANT: important / not understood / an idea (step 4).
+
+    Billed (`claude -p`, subscription) — one call per settled mark. `--dry-run` writes nothing,
+    which is how the three-way split gets looked at before anything acts on it.
+    """
+    from locus.capture import intent as I
+
+    cfg = load()
+    conn = _open()
+    try:
+        results = I.classify_pending(
+            conn,
+            settle_hours=args.settle_hours,
+            limit=args.limit,
+            dry_run=args.dry_run,
+            force=args.force,
+        )
+        floor = cfg.capture.intent_confidence_floor
+        for r in results:
+            if not r.ok:
+                print(f"  {r.mark_id:3d}  --  {r.error}")
+                continue
+            flag = "" if r.confidence >= floor else "   [low: goes to `locus decide`]"
+            print(f"  {r.mark_id:3d}  {r.intent:<15} {r.confidence:.2f}  {r.why[:60]}{flag}")
+        if args.act and not args.dry_run:
+            print()
+            for a in I.act_on_all(conn):
+                print(f"  {a.mark_id:3d}  {a.outcome:<18} {a.detail[:66]}")
+        tally = I.counts(results)
+        print("\n" + " · ".join(f"{k} {v}" for k, v in tally.items() if v))
+        if args.dry_run:
+            print("(dry run — nothing was written)")
+    finally:
+        conn.close()
+
+
 def cmd_decide(args) -> None:
     """Clear every pending approval in one pass (daily-use refinement plan §3).
 
@@ -1819,6 +1856,19 @@ def main(argv=None) -> None:
         help="apply without a snapshot from this run — only if you have a backup by other means",
     )
     pdm.set_defaults(func=cmd_device_migrate)
+
+    pit = sub.add_parser(
+        "intent", help="classify what each marked passage meant (billed; --dry-run is free of writes)"
+    )
+    pit.add_argument("--dry-run", action="store_true", help="show the split; write nothing")
+    pit.add_argument("--limit", type=int, default=100, help="max marks this run")
+    pit.add_argument("--settle-hours", type=int, default=12,
+                     help="a mark's page must be untouched this long first")
+    pit.add_argument("--act", action="store_true",
+                     help="also give each classified mark its fate (free; no model)")
+    pit.add_argument("--force", action="store_true",
+                     help="re-classify marks that already have a model-set intent")
+    pit.set_defaults(func=cmd_intent)
 
     pdc = sub.add_parser(
         "decide", help="clear every pending approval in one pass (terminal UI; needs the [tui] extra)"

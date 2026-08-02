@@ -361,7 +361,7 @@ locus/
 │   │                     #   query retrieve mcp status backup restore export-obsidian audit eval
 │   │                     #   read capture-sync capture-conversation notes-sync
 │   │                     #   structure objects evolution gaps review daily daily-pull
-│   │                     #   promote annotate discover device-migrate decide (agent layer)
+│   │                     #   promote annotate discover device-migrate decide intent
 │   ├── backup.py         # WAL-safe DB snapshot + rsync-hardlinked raw store; restore
 │   ├── status.py         # `locus status` health summary (counts, alias staleness, backups)
 │   ├── config.py         # typed config; ANTHROPIC_API_KEY via env/.env only
@@ -380,7 +380,7 @@ locus/
 │   │                     #   compose_daily.py (the §9 daily reMarkable page — aggregate-only) ·
 │   │                     #   pull_daily.py (annotated-page pull-back: route, five-way bless) ·
 │   │                     #   promote.py (developed threads -> vault/notes -> the corpus)
-│   ├── capture/          # remarkable · transcribe · fillin · loop_a · conversations ·
+│   ├── capture/          # remarkable · transcribe · fillin · loop_a · conversations · intent ·
 │   │                     #   rmdoc (.rmdoc stroke geometry) · annotate (Loop B text linking) ·
 │   │                     #   device_migrate (the one-off /Daily /Reading /Notes /Admin move)
 │   ├── decide/           # queue.py (what is pending + WHICH SURFACE owns it) · app.py (Textual)
@@ -569,6 +569,39 @@ first) · **the daily page and the reading list do not know about each other** (
 zero references to `reading_proposals`, so read-next offers corpus re-reads while real papers sit
 on the tablet) · the system reports nothing about its own activity or failures (locus-maintain
 failed six consecutive nights unnoticed, 2026-08-01).
+
+## 20. Mark intent — a mark becomes an idea (step 4 SHIPPED 2026-08-02)
+
+`docs/daily-use-refinement-plan.md` §4. Migration **0025**. Asked what an underline means he gave
+THREE answers — "something I think is important, something I dont understand, or an idea I have
+linking to the content of that passage" — and until now all three got one fate: search fuel. 26
+marks had accumulated and the `idea` type (migration 0016) had never once been populated.
+
+    important        stays retrieval. Nothing is pushed at him: the mark already said it matters.
+    not_understood   the ONLY thing that earns a corpus re-read a slot on the Read page. Read live
+                     from the intent, so the re-read vanishes when the confusion is resolved, and
+                     gated on a searchable seed (>=25 chars) — `take the` and `NMVSPY` were both
+                     classified not-understood live, and a re-read seeded on noise is exactly the
+                     useless suggestion that discredited the old section.
+    idea             an `idea` object linked to the passage AND (via the same profile match a
+                     book's relevance uses) the project it names. Lands `active`, not `proposed`:
+                     the TEXT is his, only the ROUTING was inferred. Returns on the Think page and
+                     reaches the corpus through `locus promote`.
+
+**Confidence is load-bearing.** His answer was "infer, then let me correct", so below
+`[capture].intent_confidence_floor` (0.6) NOTHING happens except that the mark becomes a `locus
+decide` item — acting on a low guess silently is that answer with the correction removed. An
+intent HE set (`intent_by='owner'`) is never re-guessed. The 12h settle window is his, so the pass
+never reacts to ink he is still writing. `locus intent --dry-run` writes nothing, which is how the
+whole three-way split was inspected before anything acted on it (live: 8 important, 12 not
+understood, 4 ideas, 2 with no text at all).
+
+**KNOWN GAP, and it is the important one.** This covers marks on documents in `/Reading`. An idea
+written in a NOTEBOOK (`/Notes/engineering`, a speaker session, a lecture) is transcribed by Loop A
+and ingested as a `note` — and stops there. `structure/propose.py` can only propose
+`project|concept|question|reading`; `idea` is not in its vocabulary, so nothing extracts an idea
+from his own prose. That is backwards, because rough notes are where he says the most valuable
+material is. Closing it means running the same three-way pass over newly-ingested notes.
 
 ## 19. `locus decide` — the approval surface (step 3 SHIPPED 2026-08-02)
 

@@ -70,6 +70,7 @@ Screen { layout: vertical; background: ansi_default; }
 _TAB_TITLES = {
     Q.KIND_OBJECT: "Proposed",
     Q.KIND_DUPLICATE: "Duplicates",
+    Q.KIND_INTENT: "Marks",
     Q.KIND_ABANDONED: "Reading",
 }
 

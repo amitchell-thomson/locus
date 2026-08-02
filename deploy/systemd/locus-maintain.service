@@ -39,6 +39,11 @@ ExecStart=/home/alec/.local/bin/uv run locus review --write-questions 8
 # 5a. Score what he is READING against his projects — including books he added himself, which
 #     arrived with no relevance at all. Free and local (embeddings + a cosine), so it runs before
 #     the billed step and gives the reason-writer something to explain.
+# 4b. What each marked passage MEANT (important / not understood / an idea), and the fate that
+#     follows. Billed (claude -p) for the inference; acting on it is a free join. A mark's page
+#     must have been untouched 12h first, so this never reacts to ink still being written, and a
+#     guess below the confidence floor is held for `locus decide` rather than acted on.
+ExecStart=/home/alec/.local/bin/uv run locus intent --act
 ExecStart=/home/alec/.local/bin/uv run locus discover --link-reading
 ExecStart=/home/alec/.local/bin/uv run locus discover --write-why 10
 TimeoutStartSec=7200

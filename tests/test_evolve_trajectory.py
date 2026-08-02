@@ -216,3 +216,53 @@ def test_trajectory_note_is_written_as_agent_owned(conn, tmp_path):
     text = res.path.read_text()
     assert "author: agent" in text and "generated: true" in text and "source_run: 7" in text
     assert res.path.name == "portfolio-construction.md"
+
+
+def test_a_thread_now_has_a_trajectory_at_all(conn):
+    """THE GAP THIS CLOSES. `record_position` accepts only concept/project subjects, so a THREAD
+    could not have a trajectory — the chain he builds by hand, pass by pass, on the surface he
+    touches every morning was the one chain `locus evolution` could not show him."""
+    from locus.agent import state
+
+    oid, _ = state.upsert_object(conn, type_="question", title="do regimes persist?")
+    state.set_status(conn, oid, "active")
+    state.apply_owner_edit(
+        conn, oid,
+        {"development": [
+            {"at": "2026-06-01", "text": "regimes look persistent in sample"},
+            {"at": "2026-07-15", "text": "out of sample they do not persist"},
+        ]},
+        source="daily:2026-07-15#T1",
+    )
+
+    traj = tj.build_trajectory(conn, "object", str(oid))
+    stances = [e.stance for e in traj.entries]
+    assert stances == [
+        "regimes look persistent in sample", "out of sample they do not persist"
+    ], "his own passes, oldest first"
+    assert traj.label == "do regimes persist?"
+
+
+def test_extracted_and_authored_passes_form_one_ordered_chain(conn):
+    """Different provenance, one chain — merged at READ time so neither store can drift."""
+    from locus.agent import state
+
+    oid, _ = state.upsert_object(conn, type_="project", title="regime-ml")
+    state.record_position(
+        conn, subject_kind="project", subject_key=str(oid),
+        stance="extracted: regimes look persistent", dated_at="2026-06-01", source_doc_id=None,
+    )
+    state.apply_owner_edit(
+        conn, oid,
+        {"development": [{"at": "2026-07-15", "text": "authored: they do not persist"}]},
+        source="daily:2026-07-15#T1",
+    )
+
+    stances = [e.stance for e in tj.build_trajectory(conn, "project", str(oid)).entries]
+    assert stances == ["extracted: regimes look persistent", "authored: they do not persist"]
+
+
+def test_a_concept_has_no_development_to_merge(conn):
+    from locus.agent import state
+
+    assert state.development_positions(conn, "concept", "regime\x1fconcept") == []

@@ -141,6 +141,16 @@ def cmd_link(args) -> None:
             use_cache=not args.no_cache,
             log=print,
         )
+        # Threads connect through the substrate that was just rebuilt, so this belongs here
+        # rather than on its own timer: a new canonical is exactly what makes two ideas turn out
+        # to be about the same thing. Joins only, no model, no network.
+        from locus.link.threads import link_threads
+
+        made = link_threads(conn)
+        for link in made:
+            print(f"  thread link: {link.source_id} <-> {link.target_id} via "
+                  f"{', '.join(link.shared[:3])}")
+        print(f"{len(made)} thread link(s)")
     finally:
         conn.close()
 

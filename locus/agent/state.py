@@ -393,6 +393,47 @@ def positions_for(conn, subject_kind: str, subject_key: str) -> list[Position]:
     ]
 
 
+def development_positions(conn, subject_kind: str, subject_key: str) -> list[Position]:
+    """The owner's own successive passes on a thread, read back as positions.
+
+    THE GAP THIS CLOSES, stated precisely. His thinking over time was recorded in two places:
+    `belief_positions`, written by the structurer when it EXTRACTS a stance from a note, and
+    `objects.body.development`, appended when he WRITES on a thread on the daily page. Only the
+    first had a reader — and `record_position` accepts only `concept` and `project` subjects, so
+    a THREAD (an idea or a question) could not have a trajectory at all. The chain he builds by
+    hand, pass by pass, on the surface he touches every morning, was the one chain `locus
+    evolution` could not show him.
+
+    The two stores are not redundant: they have different provenance, one extracted and one
+    authored. So the fix is one READ path rather than one write path — merged here and ordered by
+    date they are a single chain, and because nothing is copied neither store can drift from the
+    other.
+
+    `subject_kind='object'` addresses a thread by its object id. A canonical concept has no body
+    to append to, so there is nothing to merge and this returns nothing.
+    """
+    if subject_kind not in ("object", "project") or not str(subject_key).isdigit():
+        return []
+    obj = get_object(conn, int(subject_key))
+    if obj is None:
+        return []
+
+    out: list[Position] = []
+    for entry in (obj.body or {}).get("development") or []:
+        if isinstance(entry, dict):
+            text, at = str(entry.get("text", "")).strip(), str(entry.get("at", "") or "")
+        else:
+            text, at = str(entry).strip(), ""
+        if not text:
+            continue
+        out.append(Position(
+            id=0, subject_kind=subject_kind, subject_key=str(subject_key), stance=text,
+            source_doc_id=None, dated_at=at or (obj.updated_at or "")[:10],
+            source_run=None, source_uri=None,
+        ))
+    return out
+
+
 def subjects_with_positions(conn, *, limit: int = 100) -> list[tuple[str, str, int]]:
     """(subject_kind, subject_key, count) for every subject that has a trajectory."""
     return [

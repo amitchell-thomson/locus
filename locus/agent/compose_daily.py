@@ -606,7 +606,7 @@ def build_open(
                 section=SECTION_OPEN,
                 kind="open",
                 headline=obj.title,
-                context=f"{obj.type} — raised {(obj.created_at or '')[:10]}",
+                context=_thread_context(conn, obj),
                 # The last couple of passes only: the point is to continue the thought, not to
                 # reprint a transcript he has already read.
                 body=tuple(development[-2:]),
@@ -618,6 +618,33 @@ def build_open(
         if len(out) >= limit:
             break
     return out
+
+
+def _thread_context(conn: sqlite3.Connection, obj) -> str:
+    """`idea — regime-ml · also touches 2 of your threads · raised 2026-07-30`.
+
+    An idea belongs BESIDE the project it is about and the other things he has thought that touch
+    it. Both facts existed in `object_links` and neither was ever printed, so a thread came back
+    looking free-floating even when it was connected.
+    """
+    bits = [obj.type]
+    linked = [
+        link for link in obj.links
+        if link.target_kind == "object" and link.target_key.isdigit()
+    ]
+    threads = 0
+    for link in linked:
+        other = state.get_object(conn, int(link.target_key))
+        if other is None:
+            continue
+        if other.type == "project":
+            bits.append(other.title)
+        elif other.type in ("idea", "question"):
+            threads += 1
+    if threads:
+        bits.append(f"also touches {threads} of your threads")
+    bits.append(f"raised {(obj.created_at or '')[:10]}")
+    return " · ".join(bits)
 
 
 def build_connections(

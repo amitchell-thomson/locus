@@ -83,6 +83,8 @@ def subject_label(conn, subject_kind: str, subject_key: str) -> str:
     object title). Falls back to the raw key so an orphaned subject still renders."""
     if subject_kind == "concept":
         return parse_entity_key(subject_key)[0]
+    # 'object' addresses a thread (an idea or question) by id; 'project' addresses a project the
+    # same way, so one lookup serves both.
     row = conn.execute("SELECT title FROM objects WHERE id=?", (subject_key,)).fetchone()
     return row["title"] if row else subject_key
 
@@ -97,7 +99,14 @@ def build_trajectory(
 
     `with_tensions=True` additionally runs the judged tension pass over the LATEST stance — the
     one a new capture just added is the one worth warning about."""
-    positions = state.positions_for(conn, subject_kind, subject_key)
+    # ONE chain, two provenances: stances the structurer EXTRACTED from his notes, and passes he
+    # AUTHORED on the daily page. Reading only the first meant the half he typed himself never
+    # appeared in his own trajectory (see `state.development_positions`).
+    positions = sorted(
+        state.positions_for(conn, subject_kind, subject_key)
+        + state.development_positions(conn, subject_kind, subject_key),
+        key=lambda p: (p.dated_at or "", p.id),
+    )
     traj = Trajectory(
         subject_kind=subject_kind, subject_key=subject_key,
         label=subject_label(conn, subject_kind, subject_key),

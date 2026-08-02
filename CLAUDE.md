@@ -570,6 +570,36 @@ zero references to `reading_proposals`, so read-next offers corpus re-reads whil
 on the tablet) · the system reports nothing about its own activity or failures (locus-maintain
 failed six consecutive nights unnoticed, 2026-08-01).
 
+## 21. Threads: one substrate for his own thinking (2026-08-02)
+
+Asked why ideas and objects looked like two media, the answer was that `idea` IS an object type —
+but that three things around it were wrong, and all three are now fixed.
+
+- **An idea can be born anywhere.** `structure/propose.py` could only propose
+  `project|concept|question|reading`; `idea` was not in its vocabulary, so an idea jotted in a
+  lecture or a speaker session was transcribed, ingested, and died as searchable text. It is now
+  proposable, gated to **owner-authored categories only** (`[structure].belief_source_categories`)
+  on the same reasoning as belief positions: an idea is a proposal to DO something, and one found
+  in a paper is the PAPER's. The three routes in are now a mark (§20), the daily page, and a note.
+- **Threads connect to each other** (`link/threads.py`, joins-only, runs inside `locus link`).
+  Two threads are linked when they NAME THE SAME CANONICAL CONCEPT — a fact checkable by reading
+  both, not a cosine, because embedding similarity cannot separate "about the same thing" from
+  "uses the same words" and `entity_aliases` is already the system's own definition of sameness.
+  Guards: a canonical must span ≥2 documents (a name in one document is that document's
+  vocabulary), ≥5 characters (`ML`/`VaR` fire on everything), `non_topical_names` applies, and
+  only HIS text is matched — never the proposer's `why`, or two ideas would link because a model
+  repeated itself. Live: his tanker regime question ↔ his "markets are not stationary" note.
+- **A thread can have a trajectory at all.** `record_position` accepts only concept/project
+  subjects, so the chain he builds by hand pass-by-pass on the daily page — `body.development` —
+  was the one chain `locus evolution` could not show. `state.development_positions` merges it with
+  `belief_positions` at READ time: different provenance (extracted vs authored), one chain, and
+  nothing copied so neither store can drift.
+- **An idea renders beside its project** and the threads it touches (`_thread_context`). Both
+  facts were already in `object_links` and neither was ever printed, so a connected thread came
+  back looking free-floating. A related fix: `object_links.target_key` for `target_kind='object'`
+  is `str(object_id)`, and §20's first cut stored a profile LABEL there — every idea→project link
+  pointed at nothing resolvable.
+
 ## 20. Mark intent — a mark becomes an idea (step 4 SHIPPED 2026-08-02)
 
 `docs/daily-use-refinement-plan.md` §4. Migration **0025**. Asked what an underline means he gave

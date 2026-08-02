@@ -21,7 +21,14 @@ and every candidate must clear a gate that Python — not the model — enforces
      the configured rerank floor.
   4. **Hard cap per document** (`max_objects_per_doc`, default 3). Ranked in the model's own
      order — it is asked to put the most consequential first.
-  5. **Belief positions come only from owner-authored documents** (`belief_source_categories`,
+  5. **Ideas come only from owner-authored documents**, on the same reasoning as belief positions
+     (`belief_source_categories`, default `note`): an idea is a proposal to DO something, and a
+     proposal found in a paper is the PAPER's, not his. Without this gate a lecture handout would
+     generate "ideas" he never had. This is what finally lets an idea written in a NOTEBOOK become
+     a thread — before it, `idea` was not in the proposer's vocabulary at all, so the only routes
+     in were a mark on a PDF and writing on the daily page, and an idea jotted in a speaker
+     session died as searchable text.
+  6. **Belief positions come only from owner-authored documents** (`belief_source_categories`,
      default `note` — handwriting and captured conversations) AND the stance must share heavy
      distinctive vocabulary with the source text. A paper's claim is the PAPER's position, not
      the owner's, and a paraphrase that drifts into the model's voice is failure mode #1: the
@@ -89,7 +96,7 @@ class ProposedObject(BaseModel):
 
     # `kind` observed live as an alias for `type`; accepted by population alias rather than
     # spending a retry on it.
-    type: Literal["project", "concept", "question", "reading"] = Field(
+    type: Literal["project", "concept", "question", "reading", "idea"] = Field(
         validation_alias=AliasChoices("type", "kind")
     )
     title: str = ""
@@ -364,6 +371,8 @@ must be a JSON array of strings, even when it has one element:
     {{"type": "concept", "title": "regime detection", "anchor": "regime detection",
       "why": "...", "mastery": "thin"}},
     {{"type": "question", "title": "Do regimes persist out of sample?", "why": "..."}},
+    {{"type": "idea", "title": "Bin edge signals by quarter-hour phase",
+      "anchor": "repos/regime-ml", "why": "worth testing whether profitability concentrates"}},
     {{"type": "reading", "title": "Ang - Asset Management", "anchor": "papers/ang.pdf",
       "why": "...", "state": "queued"}}
   ],
@@ -380,6 +389,9 @@ CORPUS CONCEPTS listed below, copied EXACTLY. mastery is thin|working|solid.
 - "question" — an open question this document raises. anchor may be omitted.
 - "reading"  — something to read. anchor = its document path if already in the corpus. \
 state is queued|reading|done.
+- "idea"     — something the AUTHOR proposes DOING: a thing to build, try, test, or connect. \
+Only from their own writing, never a suggestion the source material makes. `why` carries the idea \
+in THEIR words; anchor may name the project it is about, or be omitted.
 
 Rules, strictly:
 - Propose AT MOST {max_objects}, most consequential first. Fewer is better than padded.
@@ -571,13 +583,41 @@ def _gate_object(
             links.append(ObjectLink("doc", doc_uri, "relates"))
         return links, None
 
+    if cand.type == "idea":
+        # Owner-authored only, for the same reason belief positions are: an idea is a proposal to
+        # DO something, and one found in a paper is the PAPER's. Without this a lecture handout
+        # would generate "ideas" he never had.
+        if doc["category"] not in _owner_categories():
+            return [], "an idea must come from your own writing, not from a source"
+        links = [ObjectLink("doc", doc_uri, "raised_by")]
+        # An idea belongs beside the project it is about. `anchor` is optional here: an idea with
+        # no project is still an idea, and pinning it to the nearest one would manufacture the
+        # connection the gate exists to prevent.
+        target = _match_uri(cand.anchor, uris) if cand.anchor else None
+        if target and target != doc_uri:
+            links.append(ObjectLink("doc", target, "relates"))
+        return links, None
+
     # question: free-standing, but always grounded in what raised it.
     return [ObjectLink("doc", doc_uri, "raised_by")], None
+
+
+def _owner_categories() -> tuple[str, ...]:
+    """Document categories that count as HIS writing. Shared with the belief-position gate, so
+    the two layers cannot drift on what "his own words" means."""
+    from locus.config import load
+
+    return tuple(load().structure.belief_source_categories)
 
 
 def _body_for(cand: ProposedObject) -> dict:
     """Type-specific body (§6.2). Empty fields are dropped so the additive merge never writes
     blanks over something the owner has filled in."""
+    if cand.type == "idea":
+        # `idea` is the field `compose_daily`/`promote` read as his own words, and `why` is the
+        # proposer's rationale — they must not be conflated, or agent prose re-enters the corpus
+        # as his when the thread is promoted (invariant 5).
+        return {k: v for k, v in {"idea": cand.why, "proposed_from": cand.anchor}.items() if v}
     if cand.type == "project":
         body = {"approach": cand.approach, "open_threads": cand.open_threads,
                 "learnings": cand.learnings, "why": cand.why}

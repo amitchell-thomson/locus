@@ -334,7 +334,10 @@ class ReadingConfig(BaseModel):
     """
 
     rmapi_binary: str = Field("rmapi", description="rmapi binary (PATH name or absolute path).")
-    target_folder: str = Field("Locus", description="Device folder that delivered docs land in.")
+    # `Daily`, not `Locus`, since the 2026-08 device reorganisation: the folder is named for the
+    # ACTIVITY it holds rather than for the system that writes it, and it doubles as the unread
+    # inbox (a page stays loose here until it has ink on it, then archives to Daily/YYYY-MM).
+    target_folder: str = Field("Daily", description="Device folder that delivered docs land in.")
     page_width_in: float = Field(7.07, description="PDF page width (in) — Paper Pro screen width.")
     page_height_in: float = Field(9.43, description="PDF page height (in) — Paper Pro screen height.")
     margin_in: float = Field(0.5, description="Page margin (in).")
@@ -353,7 +356,7 @@ class DiscoveryConfig(BaseModel):
     """
 
     root_folder: str = Field(
-        "Locus/Reading", description="Device folder holding the three reading folders."
+        "Reading", description="Device folder holding the three reading folders."
     )
     rmapi_binary: str = Field("rmapi", description="rmapi binary (PATH name or absolute path).")
     paper_cap: int = Field(
@@ -562,10 +565,19 @@ class CaptureConfig(BaseModel):
         default_factory=dict, description="reMarkable folder -> Locus category (empty = built-in)."
     )
     excluded_folders: list[str] = Field(
-        default_factory=lambda: ["trash", "Locus", "admin"],
+        default_factory=lambda: [
+            "trash", "Daily", "Reading", "Admin",
+            "Locus", "admin", "reading_list",   # pre-2026-08 names, kept so an unmigrated
+        ],                                      # device keeps behaving correctly
         description="reMarkable folders whose docs are not Loop-A capture.",
     )
     default_category: str = Field("note", description="Category for folders not in the map.")
+    # His own writing lives at `Notes/<topic>/...` after the 2026-08 reorganisation, so category
+    # is keyed on the folder BENEATH this root. Anything not under it keeps the old top-level
+    # keying, which is what lets an unmigrated device carry on unchanged.
+    notes_root: str = Field(
+        "Notes", description="Device folder holding his topic folders; category keys below it."
+    )
 
 
 class MCPConfig(BaseModel):

@@ -1,21 +1,21 @@
 """Observe the accept signal: where each proposed reading now sits on the device.
 
-The gesture is the whole design. Moving a file out of `Locus/Reading/Proposed` costs the owner
+The gesture is the whole design. Moving a file out of `Reading/Proposed` costs the owner
 nothing he was not already doing, and it is unambiguous — nobody drags a paper into `In-Progress`
 by accident. Compare the alternative of a tick box on the daily page, which asks him to judge
 something he has not read yet.
 
 WHY THIS DOES NOT REUSE `capture/remarkable.build_uuid_index()`, which looks like the right tool:
 
-  1. it EXCLUDES the `Locus` folder by default, and deliberately — that exclusion is what stops
+  1. it EXCLUDES the reading tree by default, and deliberately — that exclusion is what stops
      Loop A ingesting our own pushed pages as though they were his handwriting (invariant 5);
-  2. it keeps only the TOP-level folder (`path.split("/", 1)[0]`), so every reading would read as
-     `Locus` whether it sits in `Proposed`, `In-Progress` or `Finished`. The one field the accept
-     signal is made of is the field it discards;
+  2. it resolves a document to ONE topic folder, so every reading would read as `Reading` whether
+     it sits in `Proposed`, `In-Progress` or `Finished`. The one field the accept signal is made
+     of is the field it discards;
   3. it costs one `rmapi stat` per document in the whole account.
 
-A single `rmapi find /Locus/Reading` answers the question directly, because we control the
-filename we uploaded. That is one call per pull instead of N.
+A single `rmapi find /Reading` answers the question directly, because we control the filename we
+uploaded. That is one call per pull instead of N.
 
 MATCHING IS BY NAME, NOT UUID. `rmapi find` returns paths, not ids, and the device drops the
 `.pdf` extension from a document's display name — so a delivered `2026-07-31 Foo.pdf` appears as
@@ -43,7 +43,7 @@ READING_FOLDERS = P.READING_FOLDERS
 
 log = logging.getLogger(__name__)
 
-DEFAULT_ROOT = "/Locus/Reading"
+DEFAULT_ROOT = "/Reading"
 # How long a proposal may sit untouched in `Proposed` before it is read as a no. Deliberately
 # generous: this is the WEAK negative (see `proposals.channel_stats`), and three weeks of silence
 # is as likely to mean a busy fortnight as a bad suggestion.

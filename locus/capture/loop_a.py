@@ -139,6 +139,7 @@ def capture_sync(
             folder_category=cfg.capture.folder_category or None,
             excluded_folders=tuple(cfg.capture.excluded_folders),
             default_category=cfg.capture.default_category,
+            notes_root=cfg.capture.notes_root,
         )
     )
     transcribe_fn = transcribe_fn or transcribe_pdf

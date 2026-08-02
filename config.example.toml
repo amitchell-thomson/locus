@@ -180,7 +180,10 @@ max_per_doc = 40     # cap concepts written per repo (a runaway README is the fa
 # `[reading]` extra) and `rmapi put`s it to the tablet. Geometry defaults target the reMarkable
 # Paper Pro screen (2160x1620 @229dpi => 7.07x9.43in) so text renders at its true point size.
 rmapi_binary   = "rmapi"   # rmapi binary (PATH name or absolute path)
-target_folder  = "Locus"   # device folder that delivered docs land in
+target_folder  = "Daily"   # device folder that delivered docs land in. `Daily`, not `Locus`,
+                           # since the 2026-08 reorganisation: folders are named for the ACTIVITY
+                           # they hold, and /Daily doubles as the unread inbox (a page stays loose
+                           # there until it has ink on it, then archives to Daily/YYYY-MM).
 page_width_in  = 7.07      # PDF page width (in) — Paper Pro screen width
 page_height_in = 9.43      # PDF page height (in) — Paper Pro screen height
 margin_in      = 0.5       # page margin (in)
@@ -188,10 +191,13 @@ font_pt        = 11.0      # body text size (pt)
 
 [discovery]
 # Proposed reading and the accept loop (docs/reading-discovery-plan.md, Phase 4).
-# `Locus/Reading/{Proposed,In-Progress,Finished}` on the device: moving a file OUT of Proposed is
+# `Reading/{Proposed,In-Progress,Finished}` on the device: moving a file OUT of Proposed is
 # the accept signal and triggers ingest; leaving it there is a rejection. Free and local — the
 # accept loop calls no model and no network.
-root_folder  = "Locus/Reading"  # device folder holding the three reading folders
+root_folder  = "Reading"        # device folder holding the three reading folders. Top-level since
+                                # the 2026-08 reorganisation: it used to sit under /Locus while the
+                                # books he chose himself sat in /reading_list, so the annotation
+                                # sweep watched only half his reading. One root, both sources.
 rmapi_binary = "rmapi"          # rmapi binary (PATH name or absolute path)
 # Caps are on the STOCK sitting in Proposed, not on a rate: a full folder proposes nothing, so
 # falling behind produces silence rather than a backlog. Empty is a valid state.
@@ -262,13 +268,24 @@ rmapi_binary     = "rmapi"                          # PATH name or absolute path
 transcribe_model = "claude-sonnet-5"                # VISION model (metered SDK). Sonnet default: A/B on
                                                     # real dense handwriting beat Haiku decisively; seeds corpus
 transcribe_dpi   = 150                              # page render DPI for transcription
-excluded_folders = ["trash", "Locus", "admin", "reading_list"]     # not Loop-A handwriting capture. reading_list holds BOOKS being read: the staged PDF is
-                                                   # the device render with the published page and the owner's ink flattened
-                                                   # together, so vision transcription cannot tell his margin note from the
-                                                   # author's sentence — and note-category docs are read as HIS words by
-                                                   # belief-position extraction. Waits for Loop B (§8.2), which separates
-                                                   # highlight/margin/underline from source text.
+excluded_folders = ["trash", "Daily", "Reading", "Admin", "Locus", "admin", "reading_list"]
+                                                   # not Loop-A handwriting capture. Daily/Reading are OUR delivery targets
+                                                   # (ingesting our own pushed pages as his handwriting is invariant 5), and
+                                                   # a book being read is not handwriting at all: the staged PDF flattens the
+                                                   # published page and his ink together, so vision cannot tell his margin
+                                                   # note from the author's sentence — and note-category docs are read as HIS
+                                                   # words by belief-position extraction. Loop B (§8.2) separates them.
+                                                   # The lowercase legacy names are kept so an UNMIGRATED device behaves
+                                                   # exactly as before; drop them once `locus device-migrate` has run.
+notes_root       = "Notes"                          # his own writing lives at Notes/<topic>/...; CATEGORY IS KEYED ON THE
+                                                   # FOLDER BENEATH THIS. After the move every note's top folder is `Notes`,
+                                                   # so top-level keying would collapse every category to default_category —
+                                                   # silently, since a wrong category is not an error, just a worse corpus.
+                                                   # Paths outside this root keep the old top-level keying.
 default_category = "note"                           # category for folders not in the map
+# Built-in map (2026-08): engineering -> coursework, projects -> project, careers -> career.
+# quantum_ml is deliberately NOT coursework any more — it became a research internship, so what he
+# writes there is his own thinking, the same reading as brevan_howard.
 # folder_category = { rough_notes = "note", projects = "project", careers = "career" }
 
 [structure]

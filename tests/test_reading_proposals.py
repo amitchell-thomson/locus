@@ -292,8 +292,8 @@ def test_delivery_creates_the_three_folders_and_records_the_uuid(conn, tmp_path)
     )
 
     mkdirs = {c[1] for c in calls if c[0] == "mkdir"}
-    assert {"Locus/Reading/Proposed", "Locus/Reading/In-Progress",
-            "Locus/Reading/Finished"} <= mkdirs, "the move target must exist before he moves it"
+    assert {"Reading/Proposed", "Reading/In-Progress",
+            "Reading/Finished"} <= mkdirs, "the move target must exist before he moves it"
     assert out.device_uuid == "uuid-xyz"
 
     stored = P.list_proposals(conn, status="proposed")[0]

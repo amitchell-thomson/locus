@@ -107,3 +107,72 @@ def test_identify_carries_the_device_modified_date(tmp_path):
     (tmp_path / "uuid-jargon.pdf").write_bytes(b"%PDF-1.4\n")
     items, _ = identify_staged(tmp_path, runner=_fake_runner(), excluded_folders=("trash",))
     assert [i.modified for i in items] == ["2026-07-10T13:13:56Z"]
+
+
+# --- the 2026-08 device reorganisation: category keys BELOW the notes root --------------------
+
+_MIGRATED_FIND = "\n".join([
+    "[d] /Notes",
+    "[d] /Notes/engineering",
+    "[f] /Notes/engineering/B14 Vibrations",
+    "[d] /Notes/quantum_ml",
+    "[f] /Notes/quantum_ml/week 3 notes",
+    "[d] /Notes/careers",
+    "[f] /Notes/careers/CV thoughts",
+    "[d] /Reading/In-Progress",
+    "[f] /Reading/In-Progress/Advanced Portfolio Management",
+    "[d] /Daily",
+    "[f] /Daily/2026-08-02",
+])
+_MIGRATED_STAT = {
+    "/Notes/engineering/B14 Vibrations": {"ID": "u-eng", "Name": "B14 Vibrations"},
+    "/Notes/quantum_ml/week 3 notes": {"ID": "u-qml", "Name": "week 3 notes"},
+    "/Notes/careers/CV thoughts": {"ID": "u-car", "Name": "CV thoughts"},
+    "/Reading/In-Progress/Advanced Portfolio Management": {"ID": "u-book", "Name": "APM"},
+    "/Daily/2026-08-02": {"ID": "u-daily", "Name": "2026-08-02"},
+}
+
+
+def _migrated_runner():
+    def run(args):
+        if args[:2] == ["find", "/"]:
+            return 0, _MIGRATED_FIND, ""
+        if args[0] == "stat":
+            meta = _MIGRATED_STAT.get(args[1])
+            import json
+            return (0, json.dumps(meta), "") if meta else (1, "", "not found")
+        return 1, "", "unexpected"
+    return run
+
+
+def test_topic_folder_keys_below_the_notes_root():
+    """After the move every note's TOP folder is `Notes`, so keying on the top level would
+    collapse every category to the default — silently, since a wrong category is not an error."""
+    from locus.capture.remarkable import topic_folder
+
+    assert topic_folder("/Notes/engineering/B14 Vibrations") == "engineering"
+    assert topic_folder("/Notes/projects/oqts/design") == "projects"
+    # unmigrated device: unchanged behaviour, which is what lets capture keep running during the move
+    assert topic_folder("/engineering/B14 Vibrations") == "engineering"
+    # a document dropped directly in /Notes has no topic, so it takes default_category
+    assert topic_folder("/Notes/loose doc") == "Notes"
+
+
+def test_categories_survive_the_reorganisation(tmp_path: Path):
+    for uuid in ("u-eng", "u-qml", "u-car"):
+        (tmp_path / f"{uuid}.pdf").write_bytes(b"%PDF-1.4")
+    items, unmapped = identify_staged(tmp_path, runner=_migrated_runner())
+    by_uuid = {i.uuid: i for i in items}
+    assert by_uuid["u-eng"].category == "coursework"   # lecture annotations stay study material
+    assert by_uuid["u-qml"].category == "note"         # research internship, not coursework
+    assert by_uuid["u-car"].category == "career"       # was silently falling through to `note`
+    assert not unmapped
+
+
+def test_locus_owned_folders_are_never_captured_as_handwriting(tmp_path: Path):
+    """Invariant 5: ingesting our own delivered pages as though they were his writing."""
+    for uuid in ("u-book", "u-daily"):
+        (tmp_path / f"{uuid}.pdf").write_bytes(b"%PDF-1.4")
+    items, unmapped = identify_staged(tmp_path, runner=_migrated_runner())
+    assert items == []
+    assert sorted(unmapped) == ["u-book", "u-daily"]

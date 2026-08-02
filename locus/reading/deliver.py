@@ -34,7 +34,10 @@ from locus.reading.deliver_remarkable import (
 
 log = logging.getLogger(__name__)
 
-DEFAULT_ROOT = "Locus/Reading"
+# Top-level after the 2026-08 device reorganisation. It used to be `Locus/Reading`, nested under
+# our own delivery folder — which split reading in two, because the books he chose himself lived
+# in `/reading_list` and the annotation sweep only ever watched this tree. One root, both sources.
+DEFAULT_ROOT = "Reading"
 # Characters the device (and rmapi's path handling) are happier without.
 _UNSAFE = re.compile(r'[/\\:*?"<>|]+')
 

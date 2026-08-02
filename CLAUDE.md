@@ -361,7 +361,7 @@ locus/
 │   │                     #   query retrieve mcp status backup restore export-obsidian audit eval
 │   │                     #   read capture-sync capture-conversation notes-sync
 │   │                     #   structure objects evolution gaps review daily daily-pull
-│   │                     #   promote annotate discover                      (agent layer)
+│   │                     #   promote annotate discover device-migrate       (agent layer)
 │   ├── backup.py         # WAL-safe DB snapshot + rsync-hardlinked raw store; restore
 │   ├── status.py         # `locus status` health summary (counts, alias staleness, backups)
 │   ├── config.py         # typed config; ANTHROPIC_API_KEY via env/.env only
@@ -381,7 +381,8 @@ locus/
 │   │                     #   pull_daily.py (annotated-page pull-back: route, five-way bless) ·
 │   │                     #   promote.py (developed threads -> vault/notes -> the corpus)
 │   ├── capture/          # remarkable · transcribe · fillin · loop_a · conversations ·
-│   │                     #   rmdoc (.rmdoc stroke geometry) · annotate (Loop B text linking)
+│   │                     #   rmdoc (.rmdoc stroke geometry) · annotate (Loop B text linking) ·
+│   │                     #   device_migrate (the one-off /Daily /Reading /Notes /Admin move)
 │   ├── structure/        # propose.py — gated object + belief proposal (plan/apply split)
 │   ├── evolve/           # trajectory.py — dated position chain + advisory tension detection
 │   ├── learn/            # gaps.py · practice.py · review.py (SM-2, + enrolment) · reread.py
@@ -565,6 +566,37 @@ first) · **the daily page and the reading list do not know about each other** (
 zero references to `reading_proposals`, so read-next offers corpus re-reads while real papers sit
 on the tablet) · the system reports nothing about its own activity or failures (locus-maintain
 failed six consecutive nights unnoticed, 2026-08-01).
+
+## 17. Device layout — the reMarkable tree (step 1 SHIPPED 2026-08-02)
+
+Design + the full daily-use refinement plan: `docs/daily-use-refinement-plan.md` (nine-round
+requirements interview; §8 records where the owner overruled a proposal and why).
+
+    /Daily     Locus writes. An INBOX — a page stays loose until it has ink on it, then
+               archives to /Daily/YYYY-MM. Never ingested as a corpus document (invariant 5);
+               his INK on it is fully processed by `daily-pull`, and a developed thread
+               reaches the corpus as his words through `locus promote` -> vault/notes.
+    /Reading   Both write. Proposed (Locus only) | In-Progress | Finished. ONE lifecycle for
+               everything he reads: merging the old `/reading_list` in is what finally lets the
+               annotation sweep see the most-annotated document in the system.
+    /Notes     He writes, Locus ingests. Topic folders BENEATH it drive category.
+    /Admin     Excluded from everything.
+
+**The coupling to hold.** Device folder names drive ingest categories, so a rename silently
+changes how his writing is filed. `capture/remarkable.topic_folder()` keys category on the folder
+*beneath* `[capture].notes_root` (`Notes/engineering` -> `engineering`) and falls back to the old
+top-level keying outside it, so an UNMIGRATED device behaves exactly as before and capture never
+has to be taken down for the move. Map (2026-08): `engineering`->coursework, `projects`->project,
+`careers`->career (was silently falling through to `note`); `quantum_ml` is deliberately no longer
+coursework — it became a research internship, so it reads like `brevan_howard`.
+
+**`locus device-migrate`** (`capture/device_migrate.py`) is plan-first and item-level: `--plan`
+writes an editable `vault/device-migration.toml`, `--snapshot` pulls every document to local disk,
+`--apply` moves them and REFUSES without both a clean validation and a complete snapshot. It is
+item-level because `/reading_list` is not homogeneous — an annotated book and a handwritten
+notebook live in it, and no folder rule can tell them apart. Documents move; folders never do (an
+`rmapi mv` on a folder moves an unreviewable subtree). Anything the rules cannot decide is marked
+`review = true` and blocks `--apply` until he resolves it.
 
 ## 16. Reading discovery — Phase 4 (SHIPPED 2026-08-01)
 

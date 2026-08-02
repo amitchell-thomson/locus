@@ -1056,6 +1056,63 @@ def cmd_capture_sync(args) -> None:
               f"{r.ingest.deleted} deleted, {r.ingest.failed} failed")
 
 
+def cmd_device_migrate(args) -> None:
+    """Reorganise the reMarkable into /Daily · /Reading · /Notes · /Admin (one-off, plan-first).
+
+    Three steps, deliberately separate so the destructive one is never the first thing that runs:
+    `--plan` writes an editable TOML plan, `--snapshot` pulls every document to local disk, and
+    `--apply` moves them. Free and local except for the rmapi calls themselves.
+    """
+    from datetime import date
+
+    from locus.capture import device_migrate as DM
+
+    cfg = load()
+    vault = cfg.paths.db.parent          # vault/, sibling of the DB — as `_backup_root` resolves it
+    plan_path = Path(args.plan_file) if args.plan_file else vault / "device-migration.toml"
+    runner = None  # real subprocess runner; injectable only in tests
+
+    if args.plan or not (args.snapshot or args.apply):
+        items = DM.list_device(DM._subprocess_runner(cfg.capture.rmapi_binary))
+        moves = DM.plan(items)
+        DM.write_plan(plan_path, moves)
+        check = DM.validate(moves)
+        for m in moves:
+            flag = "  REVIEW" if m.review or not m.dest else ""
+            print(f"  {m.src}  ->  {m.dest or '(undecided)'}{flag}")
+        print(f"\n{len(moves)} move(s) planned -> {plan_path}")
+        if check.needs_review:
+            print(f"{len(check.needs_review)} need review: edit `dest` and set `review = false`")
+        for a, b in check.collisions:
+            print(f"COLLISION: {a.src} and {b.src} would both land in {a.dest}")
+        return
+
+    moves = DM.read_plan(plan_path)
+    if args.snapshot:
+        items = DM.list_device(DM._subprocess_runner(cfg.capture.rmapi_binary))
+        dest = Path(args.snapshot_dir) if args.snapshot_dir else (
+            vault / "backups" / f"device-{date.today().isoformat()}"
+        )
+        result = DM.snapshot(items, dest, rmapi_binary=cfg.capture.rmapi_binary)
+        for path, err in result.failed:
+            print(f"  FAILED  {path}: {err}")
+        print(f"snapshot: {len(result.fetched)} fetched, {len(result.failed)} failed -> {dest}")
+        if not args.apply:
+            return
+    else:
+        result = None
+
+    if args.apply:
+        applied = DM.apply(
+            moves, runner=runner, rmapi_binary=cfg.capture.rmapi_binary,
+            snapshot_result=result, require_snapshot=not args.no_snapshot,
+        )
+        for a in applied:
+            print(f"  {'ok  ' if a.ok else 'FAIL'}  {a.move.src} -> {a.move.dest}  {a.error}")
+        ok = sum(a.ok for a in applied)
+        print(f"\nmoved {ok}/{len(applied)}; empty source folders are left for you to delete")
+
+
 def cmd_structure(args) -> None:
     """Propose structured objects + belief positions from ingested documents (agent-layer §6.2-6.3).
 
@@ -1636,6 +1693,21 @@ def main(argv=None) -> None:
     pcs.add_argument("--staging", default=None, help="staging dir (default: [capture].staging_dir)")
     pcs.add_argument("--no-ingest", action="store_true", help="render notes only; skip the notes-sync ingest")
     pcs.set_defaults(func=cmd_capture_sync)
+
+    pdm = sub.add_parser(
+        "device-migrate",
+        help="one-off: reorganise the reMarkable into /Daily /Reading /Notes /Admin (plan first)",
+    )
+    pdm.add_argument("--plan", action="store_true", help="write the editable plan (the default)")
+    pdm.add_argument("--snapshot", action="store_true", help="pull every document to local disk")
+    pdm.add_argument("--apply", action="store_true", help="execute the plan (moves documents)")
+    pdm.add_argument("--plan-file", default=None, help="plan path (default: vault/device-migration.toml)")
+    pdm.add_argument("--snapshot-dir", default=None, help="snapshot dir (default: vault/backups/device-<date>)")
+    pdm.add_argument(
+        "--no-snapshot", action="store_true",
+        help="apply without a snapshot from this run — only if you have a backup by other means",
+    )
+    pdm.set_defaults(func=cmd_device_migrate)
 
     pstr = sub.add_parser(
         "structure",

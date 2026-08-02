@@ -1,25 +1,32 @@
-"""`locus decide` — clear every pending decision in one pass, in neat sections by type.
+"""`locus decide` — clear every pending decision in one pass, one tab per kind.
 
 Why this is a terminal app and not a page. Asked where blessings should live, he chose the
-terminal over the tablet and was specific about the shape: "everything pending, but in neat
-sections by type in a tui (use textual)... they should ALWAYS be two separate approval things".
-The daily page is for thinking with the source at hand; this is for yes/no with no thinking in it,
-cleared as fast as he can press a key. Until it existed the only way through 48 proposed objects
-was `locus objects --bless <id>`, one id at a time, which is why 48 had accumulated.
+terminal and was specific: "everything pending, but in neat sections by type in a tui (use
+textual)... they should ALWAYS be two separate approval things". The daily page is for thinking
+with the source at hand; this is for yes/no with no thinking in it, cleared as fast as he can
+press a key. Until it existed the only route through 48 proposed objects was `locus objects
+--bless <id>`, one id at a time, which is exactly why 48 had accumulated.
 
-The whole app is a thin shell over `decide/queue.py`: the queue decides WHAT is pending and which
-surface owns it, and this decides only how it looks and which key does what. That split is what
-lets the invariant be tested without a terminal.
+    left / right     move between kinds        y / enter   accept
+    j / k / up/down  move within a kind        n / x       reject
+    e                type a correction         u           undo the last
+    q                quit                      esc         cancel an edit (never quits mid-edit)
 
-Keys are single-press and unshifted, because the point is speed:
+THREE THINGS THIS LAYOUT IS FIXING, all of them found by him using it:
 
-    j / k / arrows   move            y / enter   accept (bless, still reading)
-    n / x            reject          e           type a correction, then accept
-    u                undo the last   q           quit
+**Tabs, not one long list.** One scroll holding every kind meant the only way to reach a reading
+decision was past forty-eight concepts. Kinds are independent judgements and now get independent
+pages; the tab bar doubles as the only place a count appears, where it is progress through work he
+is doing rather than a backlog he is reminded of.
 
-An empty queue is a valid, calm state and says so — §9's rule applies to this surface too. There
-is no count of what is left anywhere except the header, where it is a progress indicator he is
-actively working through rather than a backlog he is reminded of.
+**The edit box is DOCKED.** It used to be mounted into the scrolling body, so with 48 cards it
+appeared below the fold — he pressed `e`, saw nothing, and every subsequent key did nothing
+because `_editing` was still True with no visible way out. That is the "does nothing and freezes"
+he reported. It is now docked above the footer, always on screen, and `esc` cancels.
+
+**The background is the terminal's.** `ansi_default` everywhere, so the app inherits whatever
+transparency the terminal has rather than painting an opaque rectangle over it — the same theme
+trick the digest project uses (`digest/tui.py`).
 """
 
 from __future__ import annotations
@@ -32,19 +39,39 @@ _INSTALL_HINT = (
     "`locus decide` needs the [tui] extra: uv pip install -e '.[tui]' (installs textual)."
 )
 
+# Every surface colour is `ansi_default`, which Textual renders as "no colour at all" — the
+# terminal's own background shows through, including transparency. Setting `background` alone is
+# not enough: `surface` and `panel` are what widgets actually paint with.
+_THEME_NAME = "locus"
+_THEME_VARIABLES = {
+    "background": "ansi_default",
+    "surface": "ansi_default",
+    "panel": "ansi_default",
+    "boost": "ansi_default",
+    "block-cursor-blurred-background": "ansi_default",
+    "block-hover-background": "ansi_default",
+    "ansi-background": "ansi_default",
+    "ansi-foreground": "ansi_default",
+}
+
 _CSS = """
-Screen { layout: vertical; }
-#header { dock: top; height: 3; padding: 1 2; background: $panel; }
-#footer { dock: bottom; height: 1; padding: 0 2; color: $text-muted; }
-#body { padding: 1 2; }
-.section { margin-bottom: 1; text-style: bold; color: $accent; }
-.card { padding: 1 2; border: round $primary-background; margin-bottom: 1; }
-.card.selected { border: round $accent; background: $boost; }
-.title { text-style: bold; }
-.detail { color: $text-muted; }
-.grounding { color: $text-disabled; text-style: italic; }
-#done { padding: 2 4; }
+Screen { layout: vertical; background: ansi_default; }
+#tabs { dock: top; height: 1; padding: 0 2; background: ansi_default; }
+#body { padding: 1 2; background: ansi_default; }
+#edit { dock: bottom; height: 3; margin: 0 2; display: none; background: ansi_default; }
+#edit.open { display: block; }
+#footer { dock: bottom; height: 1; padding: 0 2; color: $text-muted; background: ansi_default; }
+.card { padding: 0 2; margin-bottom: 1; border-left: outer $primary-background;
+        background: ansi_default; }
+.card.selected { border-left: outer $accent; }
+.empty { padding: 2 4; background: ansi_default; }
 """
+
+_TAB_TITLES = {
+    Q.KIND_OBJECT: "Proposed",
+    Q.KIND_DUPLICATE: "Duplicates",
+    Q.KIND_ABANDONED: "Reading",
+}
 
 
 def _import_textual():
@@ -61,86 +88,153 @@ def build_app(conn: sqlite3.Connection):
     from textual.app import App, ComposeResult
     from textual.binding import Binding
     from textual.containers import VerticalScroll
+    from textual.theme import Theme
     from textual.widgets import Input, Label, Static
 
     class DecideApp(App):
         CSS = _CSS
         TITLE = "locus decide"
         BINDINGS = [
+            Binding("right,l", "next_tab", "next kind", show=False),
+            Binding("left,h", "prev_tab", "prev kind", show=False),
             Binding("j,down", "next", "next", show=False),
             Binding("k,up", "prev", "prev", show=False),
             Binding("y,enter", "accept", "accept"),
             Binding("n,x", "reject", "reject"),
             Binding("e", "edit", "correct"),
             Binding("u", "undo", "undo"),
-            Binding("q,escape", "quit", "quit"),
+            Binding("q", "quit", "quit"),
+            # `escape` is NOT bound to quit: it cancels an edit. Quitting out of a half-typed
+            # correction is the one thing esc must not do here.
+            Binding("escape", "cancel_edit", "cancel", show=False),
         ]
 
         def __init__(self) -> None:
             super().__init__()
             self.conn = conn
-            self.items = Q.pending(conn).flat()
+            queue = Q.pending(conn)
+            self.sections: dict[str, list[Q.Decision]] = {
+                kind: queue.sections.get(kind, []) for kind in Q.TUI_KINDS
+            }
+            self.tab = 0
             self.cursor = 0
             self.resolved: list[tuple[Q.Decision, str]] = []
             self._editing = False
 
-        # --- layout ---------------------------------------------------------------------------
+        # --- state ------------------------------------------------------------------------------
+
+        @property
+        def kind(self) -> str:
+            return Q.TUI_KINDS[self.tab]
+
+        @property
+        def items(self) -> list[Q.Decision]:
+            return self.sections[self.kind]
+
+        @property
+        def current(self) -> Q.Decision | None:
+            items = self.items
+            return items[self.cursor] if 0 <= self.cursor < len(items) else None
+
+        @property
+        def total(self) -> int:
+            return sum(len(v) for v in self.sections.values())
+
+        # --- layout -----------------------------------------------------------------------------
 
         def compose(self) -> ComposeResult:
-            yield Static("", id="header")
+            yield Static("", id="tabs")
             yield VerticalScroll(id="body")
+            yield Input(placeholder="your wording — enter to apply and accept, esc to cancel",
+                        id="edit")
             yield Label("", id="footer")
 
         def on_mount(self) -> None:
+            self.register_theme(Theme(
+                name=_THEME_NAME, primary="#ffffff", dark=True, ansi=True,
+                variables=dict(_THEME_VARIABLES),
+            ))
+            self.theme = _THEME_NAME
             self._render()
 
         def _render(self) -> None:
-            body = self.query_one("#body", VerticalScroll)
-            body.remove_children()
+            self.query_one("#tabs", Static).update(self._tab_bar())
 
-            if not self.items:
-                header = "Nothing to decide."
+            body = self.query_one("#body", VerticalScroll)
+            # `remove_children()` completes asynchronously, so a re-render that mounts a widget
+            # carrying the SAME id crashes with DuplicateIds — hit by switching tabs. The
+            # empty-state is therefore identified by CLASS, which has no such constraint.
+            body.remove_children()
+            if not self.total:
                 body.mount(Static(
                     "Nothing is waiting on you.\n\n"
                     "An empty queue is a valid state — it does not mean the system did nothing.",
-                    id="done",
+                    classes="empty",
+                ))
+            elif not self.items:
+                body.mount(Static(
+                    f"Nothing pending under {_TAB_TITLES[self.kind]}.\n\n"
+                    "Use left/right to move to another kind.", classes="empty",
                 ))
             else:
-                done = len(self.resolved)
-                header = f"{done + 1} of {done + len(self.items)}"
-                current = None
                 for i, item in enumerate(self.items):
-                    if item.kind != current:
-                        current = item.kind
-                        body.mount(Static(_section_title(current), classes="section"))
-                    body.mount(_card(Static, item, selected=(i == self.cursor)))
-            self.query_one("#header", Static).update(header)
+                    body.mount(self._card(Static, item, selected=(i == self.cursor)))
             self.query_one("#footer", Label).update(
-                "y accept · n reject · e correct · u undo · q quit"
+                "←/→ kind · j/k move · y accept · n reject · e correct · u undo · q quit"
             )
-            self._scroll_to_cursor()
-
-        def _scroll_to_cursor(self) -> None:
             cards = self.query(".card")
             if 0 <= self.cursor < len(cards):
                 cards[self.cursor].scroll_visible(animate=False)
 
-        # --- actions --------------------------------------------------------------------------
+        def _tab_bar(self) -> str:
+            parts = []
+            for i, kind in enumerate(Q.TUI_KINDS):
+                n = len(self.sections[kind])
+                label = f"{_TAB_TITLES[kind]} {n}" if n else _TAB_TITLES[kind]
+                parts.append(f"[reverse b] {label} [/]" if i == self.tab else f"[dim] {label} [/]")
+            return "  ".join(parts)
+
+        @staticmethod
+        def _card(Static, item: Q.Decision, *, selected: bool):
+            lines = [f"[b]{item.title}[/b]"]
+            if item.detail:
+                lines.append(item.detail)
+            if item.grounding:
+                lines.append(f"[dim]{item.grounding}[/dim]")
+            lines.append(f"[dim]y = {item.accept_label}   ·   n = {item.reject_label}[/dim]")
+            return Static("\n".join(lines), classes="card selected" if selected else "card")
+
+        # --- moving -----------------------------------------------------------------------------
+
+        def action_next_tab(self) -> None:
+            if not self._editing:
+                self.tab = (self.tab + 1) % len(Q.TUI_KINDS)
+                self.cursor = 0
+                self._render()
+
+        def action_prev_tab(self) -> None:
+            if not self._editing:
+                self.tab = (self.tab - 1) % len(Q.TUI_KINDS)
+                self.cursor = 0
+                self._render()
 
         def action_next(self) -> None:
-            if self.items:
+            if self.items and not self._editing:
                 self.cursor = min(self.cursor + 1, len(self.items) - 1)
                 self._render()
 
         def action_prev(self) -> None:
-            if self.items:
+            if self.items and not self._editing:
                 self.cursor = max(self.cursor - 1, 0)
                 self._render()
 
+        # --- deciding ---------------------------------------------------------------------------
+
         def _apply(self, *, accept: bool, note: str = "") -> None:
-            if not self.items:
+            item = self.current
+            if item is None:
                 return
-            item = self.items.pop(self.cursor)
+            self.items.pop(self.cursor)
             outcome = Q.resolve(self.conn, item, accept=accept, note=note)
             self.resolved.append((item, outcome))
             self.cursor = min(self.cursor, max(0, len(self.items) - 1))
@@ -155,55 +249,56 @@ def build_app(conn: sqlite3.Connection):
                 self._apply(accept=False)
 
         def action_edit(self) -> None:
-            """Type a correction. It lands whether or not the item is then blessed.
+            """Open the docked correction box.
 
-            Same asymmetry the daily page enforces: his wording replaces the agent's rationale
-            through `apply_owner_edit`, which carries a durable marker so a later agent pass
-            cannot quietly overwrite it.
+            His wording replaces the agent's through `state.apply_owner_edit`, which carries a
+            durable marker a later agent pass cannot overwrite — the same asymmetry the daily page
+            enforces.
             """
-            if self._editing or not self.items:
+            if self._editing or self.current is None:
                 return
             self._editing = True
-            box = Input(placeholder="your wording (enter to apply and bless, esc to cancel)")
-            self.query_one("#body", VerticalScroll).mount(box)
+            box = self.query_one("#edit", Input)
+            box.value = ""
+            box.add_class("open")
             box.focus()
 
-        def on_input_submitted(self, event) -> None:
+        def action_cancel_edit(self) -> None:
+            if self._editing:
+                self._close_edit()
+
+        def _close_edit(self) -> None:
             self._editing = False
-            event.input.remove()
-            self._apply(accept=True, note=event.value)
+            box = self.query_one("#edit", Input)
+            box.remove_class("open")
+            self.set_focus(None)
+
+        def on_input_submitted(self, event) -> None:
+            note = event.value
+            self._close_edit()
+            self._apply(accept=True, note=note)
 
         def action_undo(self) -> None:
-            """Put the last decision back in the queue and reverse it.
+            """Put the last decision back and reverse it in the DATABASE.
 
-            A single-key interface without an undo is a trap: `n` is next to `y`, and archiving an
-            object he meant to bless would otherwise be unrecoverable from inside the app.
+            A single-key interface where `n` sits beside `y` is a trap without one. A merge is
+            reversed by un-archiving what it folded away, which is possible only because
+            `merge_objects` archives rather than deletes.
             """
-            if not self.resolved:
+            if self._editing or not self.resolved:
                 return
+            from locus.agent import state
+
             item, _ = self.resolved.pop()
             if item.kind == Q.KIND_OBJECT:
-                from locus.agent import state
-
                 state.set_status(self.conn, item.ref, "proposed")
-            self.items.insert(self.cursor, item)
+            elif item.kind == Q.KIND_DUPLICATE:
+                for oid in item.extra:
+                    state.set_status(self.conn, oid, "active")
+            self.tab = Q.TUI_KINDS.index(item.kind)
+            self.sections[item.kind].insert(0, item)
+            self.cursor = 0
             self._render()
-
-    def _section_title(kind: str) -> str:
-        return {
-            Q.KIND_OBJECT: "Proposed — bless or drop",
-            Q.KIND_ABANDONED: "Reading you have not touched",
-        }.get(kind, kind)
-
-    def _card(Static, item: Q.Decision, *, selected: bool):
-        lines = [f"[b]{item.title}[/b]"]
-        if item.detail:
-            lines.append(item.detail)
-        if item.grounding:
-            lines.append(f"[dim]{item.grounding}[/dim]")
-        lines.append(f"[dim]y = {item.accept_label}   ·   n = {item.reject_label}[/dim]")
-        card = Static("\n".join(lines), classes="card selected" if selected else "card")
-        return card
 
     return DecideApp()
 

@@ -31,9 +31,10 @@ from locus.agent import state
 # Decision kinds the TUI owns. Each is a yes/no judgeable from a title and a line of context —
 # that is the test for belonging here rather than on the page.
 KIND_OBJECT = "object"          # a proposed object: bless it or drop it
+KIND_DUPLICATE = "duplicate"    # two objects that look like one concept: merge or keep apart
 KIND_ABANDONED = "abandoned"    # a reading that has sat untouched: why did you stop?
 
-TUI_KINDS = (KIND_OBJECT, KIND_ABANDONED)
+TUI_KINDS = (KIND_OBJECT, KIND_DUPLICATE, KIND_ABANDONED)
 
 # How long a reading may sit in `In-Progress` with no new ink before it is worth asking about.
 # Deliberately generous — two weeks of not opening a paper is as likely to mean a busy fortnight
@@ -54,6 +55,7 @@ class Decision:
     accept_label: str = "keep"
     reject_label: str = "drop"
     ref: int = 0                   # row id the actions operate on
+    extra: tuple[int, ...] = ()    # further rows (a merge folds these into `ref`)
 
 
 @dataclass
@@ -130,6 +132,117 @@ def object_decisions(conn: sqlite3.Connection, *, limit: int = 200) -> list[Deci
     return out
 
 
+def _normalise(title: str) -> str:
+    """Casefold, strip punctuation, drop a trailing plural — the cheap same-thing test.
+
+    Deliberately the same shape as the deterministic tiers in `link/aliases.py`, because the two
+    layers should agree on what counts as the same name.
+    """
+    import re
+
+    return re.sub(r"[^a-z0-9]+", " ", title.lower()).strip().rstrip("s")
+
+
+def _canonical_of(conn: sqlite3.Connection) -> dict[tuple[str, str], tuple[str, str]]:
+    """`(title, type) -> canonical` from the alias substrate, when it exists."""
+    try:
+        return {
+            (r["variant_name"].lower(), r["variant_type"]):
+                (r["canonical_name"], r["canonical_type"])
+            for r in conn.execute(
+                "SELECT variant_name, variant_type, canonical_name, canonical_type "
+                "FROM entity_aliases"
+            )
+        }
+    except sqlite3.OperationalError:
+        return {}
+
+
+def duplicate_groups(conn: sqlite3.Connection, *, limit: int = 50) -> list[Decision]:
+    """Objects that are the same concept wearing two names.
+
+    TWO TIERS, and the order matters. The alias substrate is the principled one — if `locus link`
+    has decided two surfaces share a canonical, then two objects titled with those surfaces are
+    one concept by the system's own definition of sameness, and no new notion of similarity is
+    invented here. The normalised-title tier is the cheap catch for objects whose titles never
+    entered the substrate; today it is the only one that fires, on `Bootstrap` / `bootstrap`.
+
+    A group he has said to keep apart is not asked about again: the refusal is recorded on the
+    `link` surface and filtered here, so a "no" is durable rather than a daily irritation.
+    """
+    rows = conn.execute(
+        "SELECT id, type, title, created_at FROM objects "
+        "WHERE status IN ('active','proposed') ORDER BY created_at, id"
+    ).fetchall()
+    aliases = _canonical_of(conn)
+
+    groups: dict[tuple, list[sqlite3.Row]] = {}
+    for row in rows:
+        canonical = aliases.get((row["title"].lower(), row["type"]))
+        key = canonical if canonical else (_normalise(row["title"]), row["type"])
+        groups.setdefault(key, []).append(row)
+
+    settled = {
+        key for key, counts in state.acceptance_counts(conn, surface=SURFACE_MERGE).items()
+        if counts.get("rejected")
+    }
+
+    out: list[Decision] = []
+    for key, members in groups.items():
+        if len(members) < 2:
+            continue
+        decision_key = f"objects:{key[0]}\x1f{key[1]}"
+        if decision_key in settled:
+            continue
+        keep, *rest = members            # oldest survives; it is the one with the longest history
+        out.append(
+            Decision(
+                key=decision_key,
+                kind=KIND_DUPLICATE,
+                title=" = ".join(m["title"] for m in members),
+                detail=(
+                    f"merge into \"{keep['title']}\" (the oldest), archiving "
+                    f"{len(rest)} duplicate(s)"
+                ),
+                grounding=(
+                    "the alias substrate says these share a canonical"
+                    if key in set(aliases.values())
+                    else "identical once case and punctuation are ignored"
+                ),
+                accept_label="merge",
+                reject_label="keep separate",
+                ref=keep["id"],
+                extra=tuple(m["id"] for m in rest),
+            )
+        )
+        if len(out) >= limit:
+            break
+    return out
+
+
+def merge_objects(conn: sqlite3.Connection, keep_id: int, drop_ids: tuple[int, ...]) -> int:
+    """Fold duplicates into `keep_id`. Returns how many were folded in.
+
+    ARCHIVES rather than deletes, and merges bodies additively through the same `merge_body` the
+    structurer uses — so nothing he blessed is lost, and an undo is a status change rather than a
+    resurrection. Links move across, because a duplicate's grounding is evidence for the concept,
+    not for the row that happened to hold it.
+    """
+    keep = state.get_object(conn, keep_id)
+    if keep is None:
+        return 0
+    folded = 0
+    for drop_id in drop_ids:
+        other = state.get_object(conn, drop_id)
+        if other is None:
+            continue
+        state.upsert_object(conn, type_=keep.type, title=keep.title, body=other.body or {})
+        state.add_links(conn, keep_id, other.links)
+        state.set_status(conn, drop_id, "archived")
+        folded += 1
+    return folded
+
+
 def abandoned_readings(
     conn: sqlite3.Connection, *, days: int = DEFAULT_ABANDON_DAYS, now: datetime | None = None
 ) -> list[Decision]:
@@ -185,6 +298,9 @@ def pending(
     queue.sections[KIND_OBJECT] = [
         d for d in object_decisions(conn) if d.key not in on_the_page
     ]
+    queue.sections[KIND_DUPLICATE] = [
+        d for d in duplicate_groups(conn) if d.key not in on_the_page
+    ]
     queue.sections[KIND_ABANDONED] = [
         d for d in abandoned_readings(conn, days=days, now=now) if d.key not in on_the_page
     ]
@@ -195,6 +311,11 @@ def pending(
 
 SURFACE_OBJECT = "object"
 SURFACE_DISCOVERY = "discovery"
+# A merge judgement is "are these two surfaces the same thing", which is precisely what the `link`
+# surface means — it was defined for alias adjudication and never used. Reusing it puts both
+# judgements in one history rather than two, and needs no migration to widen the CHECK. Keys are
+# prefixed `objects:` so they cannot collide with an alias cluster key.
+SURFACE_MERGE = "link"
 
 
 def resolve(
@@ -217,6 +338,18 @@ def resolve(
             verdict="kept" if accept else "rejected",
         )
         return "blessed" if accept else "archived"
+
+    if decision.kind == KIND_DUPLICATE:
+        if accept:
+            folded = merge_objects(conn, decision.ref, decision.extra)
+            state.log_acceptance(
+                conn, surface=SURFACE_MERGE, candidate_key=decision.key, verdict="kept"
+            )
+            return f"merged {folded} into one"
+        state.log_acceptance(
+            conn, surface=SURFACE_MERGE, candidate_key=decision.key, verdict="rejected"
+        )
+        return "kept separate"
 
     if decision.kind == KIND_ABANDONED:
         # The signal has to reach the thing that decides what gets proposed, or asking was theatre.

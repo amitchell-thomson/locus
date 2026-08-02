@@ -98,6 +98,97 @@ async def test_an_empty_queue_says_so_calmly(conn):
     app = build_app(conn)
     async with app.run_test():
         assert app.items == []
-        rendered = str(app.query_one("#done").render())
+        rendered = str(app.query_one(".empty").render())
         assert "Nothing is waiting on you" in rendered
         assert "does not mean the system did nothing" in rendered
+
+
+@pytest.mark.asyncio
+async def test_e_opens_a_docked_box_that_cannot_hide_below_the_fold(conn):
+    """The bug he hit: the box used to be mounted into the scrolling body, so with 48 cards it
+    rendered off-screen — `e` looked like it did nothing, and every later key was a no-op because
+    `_editing` stayed True with no visible way out."""
+    from locus.decide.app import build_app
+
+    oid = _proposed(conn, "alpha")
+    app = build_app(conn)
+
+    async with app.run_test() as pilot:
+        box = app.query_one("#edit")
+        assert not box.has_class("open"), "hidden until asked for"
+        await pilot.press("e")
+        assert app._editing and box.has_class("open")
+        assert box.styles.dock == "bottom", "docked, so it is on screen whatever the scroll"
+
+        await pilot.press("n", "e", "w")
+        assert box.value == "new", "keys reach the box, not the reject binding"
+        assert _status(conn, oid) == "proposed", "typing must not decide anything"
+
+        await pilot.press("enter")
+        assert _status(conn, oid) == "active"
+        assert state.get_object(conn, oid).body["why"] == "new"
+        assert not app._editing and not box.has_class("open")
+
+
+@pytest.mark.asyncio
+async def test_escape_cancels_an_edit_rather_than_quitting(conn):
+    """Quitting out of a half-typed correction is the one thing esc must not do."""
+    from locus.decide.app import build_app
+
+    oid = _proposed(conn, "alpha")
+    app = build_app(conn)
+
+    async with app.run_test() as pilot:
+        await pilot.press("e")
+        await pilot.press("x", "y")
+        await pilot.press("escape")
+        assert not app._editing, "the edit is cancelled"
+        assert app.is_running, "...and the app is still up"
+        assert _status(conn, oid) == "proposed", "nothing was decided"
+        await pilot.press("y")
+        assert _status(conn, oid) == "active", "keys work again afterwards"
+
+
+@pytest.mark.asyncio
+async def test_left_and_right_move_between_kinds(conn):
+    from locus.decide.app import build_app
+    from locus.decide import queue as Q
+
+    _proposed(conn, "alpha")
+    app = build_app(conn)
+
+    async with app.run_test() as pilot:
+        assert app.kind == Q.KIND_OBJECT
+        await pilot.press("right")
+        assert app.kind == Q.KIND_DUPLICATE
+        await pilot.press("right")
+        assert app.kind == Q.KIND_ABANDONED
+        await pilot.press("right")
+        assert app.kind == Q.KIND_OBJECT, "it wraps"
+        await pilot.press("left")
+        assert app.kind == Q.KIND_ABANDONED
+
+
+@pytest.mark.asyncio
+async def test_a_kind_with_nothing_pending_says_so_without_hiding_the_tabs(conn):
+    from locus.decide.app import build_app
+
+    _proposed(conn, "alpha")
+    app = build_app(conn)
+    async with app.run_test() as pilot:
+        await pilot.press("right")
+        assert "Nothing pending under Duplicates" in str(app.query_one(".empty").render())
+        assert app.query_one("#tabs"), "the tab bar stays, so he can move on"
+
+
+@pytest.mark.asyncio
+async def test_the_background_is_the_terminals_own(conn):
+    """`ansi_default` renders as no colour at all, so terminal transparency shows through."""
+    from locus.decide.app import build_app
+
+    app = build_app(conn)
+    async with app.run_test():
+        theme = app.get_theme(app.theme)
+        assert theme.ansi is True
+        for key in ("background", "surface", "panel"):
+            assert theme.variables[key] == "ansi_default", f"{key} would paint over the terminal"

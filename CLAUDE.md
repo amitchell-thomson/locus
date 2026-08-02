@@ -572,10 +572,26 @@ failed six consecutive nights unnoticed, 2026-08-01).
 
 ## 19. `locus decide` — the approval surface (step 3 SHIPPED 2026-08-02)
 
-`docs/daily-use-refinement-plan.md` §3. A Textual app (`[tui]` extra), sections by type, cleared
-with single unshifted keys: `y` accept · `n` reject · `e` type a correction · `u` undo · `q` quit.
-Free and local. Kinds today: **proposed objects** (bless/drop) and **abandoned reading** ("no marks
-in 20 days — wrong paper, or just not yet?"). Mark-intent corrections slot in at step 4.
+`docs/daily-use-refinement-plan.md` §3. A Textual app (`[tui]` extra), **one tab per kind**, moved
+between with left/right; `y` accept · `n` reject · `e` correct · `u` undo · `q` quit · `esc`
+cancels an edit. Free and local. Kinds: **proposed objects** (bless/drop), **duplicates** (two
+objects that are one concept — merge or keep apart), **abandoned reading** ("no marks in 20 days —
+wrong paper, or just not yet?"). Mark-intent corrections slot in at step 4.
+
+Duplicates use two tiers: the alias substrate first (if `locus link` gave two surfaces one
+canonical, two objects titled with them are one concept by the system's own definition of
+sameness), then normalised titles for objects the substrate never saw — which is the tier that
+fires today, on `Bootstrap`/`bootstrap`. A merge ARCHIVES rather than deletes and folds bodies
+through the same `merge_body` the structurer uses, so `u` can reverse it. "Keep separate" is
+recorded on the `link` acceptance surface (defined for alias adjudication, previously unused —
+same kind of judgement, so one history rather than two) and never asked again.
+
+Three layout facts, each found by using it: **tabs** exist because one scroll meant reaching a
+reading decision past forty-eight concepts; the **edit box is docked**, because mounted inside the
+scrolling body it rendered below the fold with 48 cards, so `e` looked like it did nothing and
+every later key was a no-op while `_editing` stayed true — the reported freeze; and the
+**background is `ansi_default`** throughout (`surface` and `panel` too, not just `background`), so
+the terminal's own transparency shows through, the theme trick taken from `digest/tui.py`.
 
 **THE INVARIANT, and it is his: no decision may ever appear on both surfaces.** "I should not be
 able to approve the same thing on the daily page and the tui." Two surfaces that can both resolve

@@ -436,6 +436,26 @@ def build_marked(
     return out
 
 
+def _format_grounding(link: state.ObjectLink) -> str:
+    """Human-readable grounding for an object link.
+
+    An entity `target_key` is `name\\x1ftype` — a unit separator, chosen because it cannot occur
+    in a real entity name. It is also INVISIBLE when printed, so the raw key renders as
+    "order processing event loopconcept". Split it back out.
+
+    No longer used by this page (it went with the blessing section, which moved to `locus decide`)
+    but still used by `agent/promote.py` when it writes a thread's grounding into a note — and it
+    will be needed again by the decisions TUI. Deleting it as "blessing-only" broke `locus
+    daily-pull` on the first thread that carried a link, a path no test covered.
+    """
+    if link.target_kind == "entity":
+        name, type_ = state.parse_entity_key(link.target_key)
+        return f"{name} ({type_})"
+    if link.target_kind == "doc":
+        return link.target_key.rsplit("/", 1)[-1]
+    return link.target_key
+
+
 DEVELOPMENT_KEY = "development"
 
 

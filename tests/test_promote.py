@@ -263,3 +263,20 @@ def test_promote_all_is_idempotent(conn):
 
     assert len(first) == 2
     assert second == [], "a second run must not rewrite anything"
+
+
+def test_a_thread_with_grounding_links_promotes(conn):
+    """The gap that broke `locus daily-pull` live: every thread in these tests was link-free, so
+    the grounding render was never exercised and deleting its helper looked safe."""
+    oid = _thread(conn, develop=[("2026-07-31", "the freight curve leads the spread")])
+    state.add_links(conn, oid, [
+        state.ObjectLink("entity", state.entity_key("freight curve", "concept"), "about"),
+        state.ObjectLink("doc", "papers/tanker.pdf", "raised_by"),
+    ])
+    out = pr.promote_thread(conn, oid, notes_dir=conn_dir(conn))
+
+    assert out is not None
+    text = out.path.read_text(encoding="utf-8")
+    assert "freight curve (concept)" in text, "the U+001F separator must be decoded, not printed"
+    assert "\x1f" not in text
+    assert "tanker.pdf" in text

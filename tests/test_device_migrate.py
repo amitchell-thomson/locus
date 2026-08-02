@@ -110,7 +110,8 @@ def test_reading_list_is_flagged_for_review_because_it_is_mixed():
 
 
 def test_unrecognised_folder_gets_no_guessed_destination():
-    listing = DEVICE_TREE + "[f] /something_new/a doc\n"
+    # The `[d]` line matters: without it the document reads as one whose NAME contains a slash.
+    listing = DEVICE_TREE + "[d] /something_new\n[f] /something_new/a doc\n"
     moves = {m.src: m for m in DM.plan(DM.list_device(fake_runner(listing)))}
     move = moves["/something_new/a doc"]
     assert move.dest == "" and move.review
@@ -229,3 +230,58 @@ def test_one_failed_move_does_not_abort_the_rest():
     applied = DM.apply(moves, runner=runner, snapshot_result=snap)
     assert [a.ok for a in applied] == [False, True]
     assert "already exists" in applied[0].error
+
+
+# ---------- a document whose NAME contains a slash ----------
+#
+# The device permits it and rmapi does not survive it: rmapi splits paths on `/`, so `stat`, `get`
+# and `mv` all report "file doesn't exist". Found live on 2026-08-02 — a note named
+# `Learn List/ Questions` sitting in `/brevan_howard`, which `rmapi find` renders exactly like a
+# document inside a `Learn List` subfolder. The tell is that no `[d]` line declares that folder.
+
+SLASH_IN_NAME = """\
+[d] /brevan_howard
+[f] /brevan_howard/Learn List/ Questions
+[f] /brevan_howard/Jargon Sheet
+"""
+
+
+def test_a_name_containing_a_slash_is_detected_and_never_planned():
+    items = DM.list_device(fake_runner(SLASH_IN_NAME))
+    assert DM.unaddressable(items) == ["/brevan_howard/Learn List/ Questions"]
+    planned = {m.src for m in DM.plan(items)}
+    assert planned == {"/brevan_howard/Jargon Sheet"}, "planning it would guarantee a failure"
+
+
+def test_a_real_subfolder_is_still_planned_normally():
+    """The detection must key on the missing `[d]` line, not on the depth of the path."""
+    listing = "[d] /brevan_howard\n[d] /brevan_howard/Brian EM Rates\n" \
+              "[f] /brevan_howard/Brian EM Rates/Dashboard\n"
+    items = DM.list_device(fake_runner(listing))
+    assert DM.unaddressable(items) == []
+    assert DM.plan(items)[0].dest == "/Notes/brevan_howard/Brian EM Rates"
+
+
+def test_an_unfetchable_document_outside_the_plan_does_not_block_the_migration():
+    """The defect this pins: `apply` demanded a snapshot of the WHOLE DEVICE, so one document
+    that was not even being moved stopped the entire migration."""
+    moves = [DM.Move("/engineering/x", "/Notes/engineering", "r")]
+    snap = DM.SnapshotResult(
+        directory=Path("/tmp"),
+        fetched=["/engineering/x"],
+        failed=[("/somewhere/else", "file doesn't exist")],
+    )
+    applied = DM.apply(moves, runner=fake_runner(), snapshot_result=snap)
+    assert [a.ok for a in applied] == [True]
+
+
+def test_a_planned_document_that_could_not_be_backed_up_still_blocks():
+    """The half that must NOT be relaxed: never move what we failed to copy."""
+    moves = [DM.Move("/engineering/x", "/Notes/engineering", "r")]
+    snap = DM.SnapshotResult(
+        directory=Path("/tmp"),
+        fetched=["/engineering/other"],
+        failed=[("/engineering/x", "timeout")],
+    )
+    with pytest.raises(RuntimeError, match="could not be backed up"):
+        DM.apply(moves, runner=fake_runner(), snapshot_result=snap)

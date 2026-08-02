@@ -72,6 +72,12 @@ class DeviceItem:
 
     path: str        # absolute, leading slash
     is_folder: bool
+    # False when the document's NAME contains a `/`, which the device allows and rmapi does not
+    # survive: it splits paths on `/`, so `stat`, `get` and `mv` all report "file doesn't exist"
+    # for such a document. Live example (2026-08-02): a note named `Learn List/ Questions` sitting
+    # in `/brevan_howard`, which `rmapi find` renders indistinguishably from a real subfolder.
+    # Detected by the absence of a `[d]` line declaring the intermediate segment.
+    addressable: bool = True
 
     @property
     def name(self) -> str:
@@ -156,16 +162,31 @@ def list_device(runner: RmapiRunner) -> list[DeviceItem]:
     code, out, err = runner(["find", "/"])
     if code != 0:
         raise RuntimeError(f"rmapi find / failed: {err.strip() or out.strip()}")
-    items: list[DeviceItem] = []
+
+    files: list[str] = []
+    folders: set[str] = {"/"}
     for line in out.splitlines():
         line = line.strip()
         if line.startswith("[f] "):
-            items.append(DeviceItem(_norm(line[4:].strip()), is_folder=False))
+            files.append(_norm(line[4:].strip()))
         elif line.startswith("[d] "):
-            items.append(DeviceItem(_norm(line[4:].strip()), is_folder=True))
+            folders.add(_norm(line[4:].strip()))
+
+    items = [DeviceItem(p, is_folder=True) for p in sorted(folders - {"/"})]
+    for path in files:
+        # A document is addressable only if its parent was DECLARED as a folder. Otherwise the
+        # `/` in its rendered path is part of its own name, and every rmapi path operation on it
+        # fails — so it must not be planned, snapshotted or moved (see DeviceItem.addressable).
+        parent = path.rsplit("/", 1)[0] or "/"
+        items.append(DeviceItem(path, is_folder=False, addressable=parent in folders))
     if not items:
         raise RuntimeError("rmapi find / returned nothing — refusing to plan against an empty tree")
     return items
+
+
+def unaddressable(items: list[DeviceItem]) -> list[str]:
+    """Documents rmapi cannot touch, so a caller can report them rather than fail mysteriously."""
+    return [i.path for i in items if not i.is_folder and not i.addressable]
 
 
 def _daily_destination(name: str) -> str | None:
@@ -211,6 +232,8 @@ def plan(items: list[DeviceItem], *, rules: tuple[Rule, ...] = DEFAULT_RULES) ->
     for item in items:
         if item.is_folder:
             continue  # folders are created at the destination, never moved (see module docstring)
+        if not item.addressable:
+            continue  # rmapi cannot move it; planning it would guarantee a failure at apply time
         move = _plan_one(item, rules)
         if move is None:
             continue
@@ -339,8 +362,8 @@ def snapshot(
     runner = runner or _snapshot_runner(rmapi_binary)
     result = SnapshotResult(directory=dest_dir)
     for item in items:
-        if item.is_folder:
-            continue
+        if item.is_folder or not item.addressable:
+            continue  # a name containing `/` cannot be fetched — reported by `unaddressable()`
         local_dir = dest_dir / item.path.strip("/").rsplit("/", 1)[0]
         local_dir.mkdir(parents=True, exist_ok=True)
         code, out, err = runner(["get", item.path], local_dir)
@@ -391,11 +414,24 @@ def apply(
             f"plan is not ready: {len(check.needs_review)} item(s) need review, "
             f"{len(check.collisions)} name collision(s)"
         )
-    if require_snapshot and not (snapshot_result and snapshot_result.complete):
-        raise RuntimeError(
-            "refusing to move anything without a complete local snapshot "
-            "(pass require_snapshot=False only if you have a backup by other means)"
-        )
+    if require_snapshot:
+        # THE SNAPSHOT MUST COVER WHAT IS BEING MOVED — not the whole device. Requiring the
+        # latter meant one unfetchable document that was not even in the plan blocked the entire
+        # migration (2026-08-02: a note whose NAME contains a `/`, which rmapi cannot address).
+        # A src we tried and failed to back up is a real blocker; a src the device never listed
+        # is not, because the move will simply fail loudly and change nothing.
+        fetched = set(snapshot_result.fetched) if snapshot_result else set()
+        failed = {path for path, _ in (snapshot_result.failed if snapshot_result else [])}
+        if not snapshot_result or not fetched:
+            raise RuntimeError(
+                "refusing to move anything without a local snapshot "
+                "(pass require_snapshot=False only if you have a backup by other means)"
+            )
+        unbacked = sorted(m.src for m in moves if m.src in failed)
+        if unbacked:
+            raise RuntimeError(
+                "refusing to move documents that could not be backed up: " + ", ".join(unbacked)
+            )
 
     runner = runner or _subprocess_runner(rmapi_binary)
     ensure_destinations(runner, moves)

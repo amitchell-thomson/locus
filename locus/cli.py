@@ -1084,6 +1084,9 @@ def cmd_device_migrate(args) -> None:
         items = DM.list_device(DM._subprocess_runner(cfg.capture.rmapi_binary))
         moves = DM.plan(items)
         DM.write_plan(plan_path, moves)
+        for path in DM.unaddressable(items):
+            print(f"  SKIPPED  {path}  — its NAME contains '/', which rmapi cannot address; "
+                  f"rename it on the device to move it")
         check = DM.validate(moves)
         for m in moves:
             flag = "  REVIEW" if m.review or not m.dest else ""

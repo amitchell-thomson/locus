@@ -620,3 +620,32 @@ def test_an_unrecognised_mark_never_becomes_an_affirmative(conn):
     page = _legacy_blessing_page(conn, [oid])
     pd.route_regions(conn, page.page_date, [R("B1", None, "", mark="scribble?")])
     assert _status(conn, oid) == "proposed"
+
+
+def test_an_archived_page_is_still_fetchable(monkeypatch, tmp_path):
+    """`/Daily` is an inbox: a page moves to `/Daily/YYYY-MM` once it has ink.
+
+    Looking only at the root stranded any ink on an archived page — not hypothetical, since the
+    2026-08-02 device migration archived every existing page including two never pulled back.
+    """
+    from locus.capture.rmdoc import RmDoc, Stroke
+
+    tried: list[str] = []
+
+    def fake_fetch(device_path, dest_dir, **kw):
+        tried.append(device_path)
+        if "/2026-06/" not in device_path:
+            raise RuntimeError("file doesn't exist")   # not loose at the root any more
+        return tmp_path / "x.rmdoc"
+
+    page = type("P", (), {"strokes": [Stroke(points=[(1.0, 1.0)])]})()
+    monkeypatch.setattr(pd, "load", lambda: _cfg(tmp_path))
+    monkeypatch.setattr("locus.capture.rmdoc.fetch_rmdoc", fake_fetch)
+    monkeypatch.setattr("locus.capture.rmdoc.read_rmdoc", lambda *a, **k: RmDoc("u", b"%PDF-1.7", [page]))
+    monkeypatch.setattr("locus.capture.rmdoc.composite_pdf", lambda *a, **k: tmp_path / "out.pdf")
+    monkeypatch.setattr("locus.capture.rmdoc.ink_hash", lambda *a, **k: "inkhash")
+
+    result = pd.fetch_annotated_page("2026-06-01")
+    assert result is not None, "an archived page he wrote on must still be readable"
+    assert tried == ["/Daily/daily-2026-06-01", "/Daily/2026-06/daily-2026-06-01"], \
+        "the loose inbox copy is tried first, the month folder second"

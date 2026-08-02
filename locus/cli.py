@@ -752,6 +752,28 @@ def cmd_discover(args) -> None:
                   f"(uuid {out.device_uuid or 'unknown'}) -> Proposed")
             return
 
+        if args.write_why:
+            # BILLED (claude -p, subscription). Deliberately its own step rather than part of
+            # `--propose`: the reason is also REWRITTEN when a proposal goes stale on the shelf,
+            # so this runs on the nightly timer, not only when something new is proposed.
+            from locus.discover import why as D_why
+
+            results = D_why.write_missing(
+                conn, limit=args.write_why,
+                # `or` would swallow 0, which is the legitimate "rewrite everything now".
+                rewrite_after_days=(
+                    D_why.DEFAULT_REWRITE_AFTER_DAYS if args.rewrite_after is None
+                    else args.rewrite_after
+                ),
+            )
+            for r in results:
+                if r.ok:
+                    print(f"  #{r.proposal_id}  {r.reason}")
+                else:
+                    print(f"  #{r.proposal_id}  kept the deterministic why — {r.detail}")
+            print(f"\n{sum(r.ok for r in results)}/{len(results)} reason(s) written")
+            return
+
         if args.harvest or args.profiles or args.rank or args.propose:
             from locus.discover import arxiv, profiles as D_profiles, rank as D_rank
 
@@ -1627,6 +1649,14 @@ def main(argv=None) -> None:
     pds = sub.add_parser(
         "discover",
         help="proposed reading: list, deliver to the tablet, and ingest what you moved (free)",
+    )
+    pds.add_argument(
+        "--write-why", type=int, nargs="?", const=10, default=None, metavar="N",
+        help="write/refresh the reason up to N proposals are on the shelf (billed: claude -p)",
+    )
+    pds.add_argument(
+        "--rewrite-after", type=int, default=None, metavar="DAYS",
+        help="rewrite a reason older than DAYS against your current threads (default 7)",
     )
     pds.add_argument(
         "--pull", action="store_true",

@@ -393,7 +393,7 @@ locus/
 │   │                     #   deliver (push + OA fetch) · watch (the accept signal) ·
 │   │                     #   accept (accepted -> corpus) · sweep (read the ink back)
 │   ├── discover/         # arxiv · openalex · queries (what to search for) · rank · judge ·
-│   │                     #   citations — Phase 4 reading discovery (§16)
+│   │                     #   citations · why (the written reason, billed) — §16
 │   ├── vault/            # writer.py (owned blocks, atomic, provenance) · markers · sidecar
 │   ├── query.py          # retrieve → assemble → Claude (multimodal)
 │   └── mcp_server.py
@@ -605,6 +605,11 @@ stored earlier. Migration **0023**.
   `[daily].rule_gap_em` 2.6). Change that gap and the budget must be recomputed —
   `scripts/analysis/render_daily_sample.py` renders a real PDF to look at, and there is a test
   asserting a full page does not overflow into a fifth.
+- **The written reason** each paper is on the shelf (`discover/why.py`, billed `claude -p`) is
+  composed at proposal time and REWRITTEN after 7 days against his current threads. The
+  deterministic `why` is a cosine distance ("fit 0.76") — a fact about the ranker, not a reason to
+  read anything. Grounded in the paper's abstract + the matched project's stored profile facets,
+  and dropped rather than stored if it fails `ingest.summarize.is_grounded` against them.
 - **The status line** sits at the foot of p1: what ran, and loudly what failed (including a run
   that opened and never closed). Systemd-level detection is step 5.
 

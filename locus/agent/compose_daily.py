@@ -60,7 +60,7 @@ from locus.link.related import related_documents
 # first cut assumed, which silently pushed Recall onto a second page and broke the whole
 # one-section-per-page layout. `read` is larger because a reading item carries one rule, not a
 # writing region: it is a decision aid, not something he answers.
-_FIT = {"read": 4, "think": 3, "recall": 4}
+_FIT = {"read": 3, "think": 3, "recall": 4}
 
 # The object types that represent an OPEN THREAD of his own — something he asked or proposed and
 # has not finished with. Concepts and projects are not threads: they are things that exist.

@@ -27,6 +27,16 @@ ExecStart=/bin/sh -c '/home/alec/.local/bin/uv run locus structure --ingested-si
 # Without this the schedule stays at zero rows and the daily page's recall section is
 # permanently empty, which is how it sat from the day the table was created.
 ExecStart=/home/alec/.local/bin/uv run locus review --enrol
+# 4. Give newly-enrolled propositions a QUESTION to ask. Billed (claude -p, subscription).
+#    Without one `resolve_prompt` returns the proposition itself as the prompt — the page shows
+#    him the answer and asks him to recall it, which is why the recall loop had no answerable
+#    step. Capped per run so a night's spend is bounded and the schedule fills gradually.
+ExecStart=/home/alec/.local/bin/uv run locus review --write-questions 8
+# 5. Write (and refresh) the reason each proposed paper is on the shelf. Billed (claude -p).
+#    The deterministic `why` is a cosine distance — "fit 0.76" — which is a fact about the
+#    ranker, not a reason to read anything. A reason older than a week is rewritten against his
+#    current threads, which is also what earns a proposal a second appearance on the Read page.
+ExecStart=/home/alec/.local/bin/uv run locus discover --write-why 10
 TimeoutStartSec=7200
 Nice=15
 IOSchedulingClass=idle

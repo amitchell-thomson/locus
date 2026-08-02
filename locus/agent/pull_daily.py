@@ -680,14 +680,25 @@ def fetch_annotated_page(
     cfg = load()
     folder = folder or cfg.reading.target_folder
     dest_dir = Path(dest_dir or cfg.paths.notes) / "_generated"
-    device_path = f"/{folder}/daily-{page_date}"
 
-    try:
-        bundle = fetch_rmdoc(
-            device_path, dest_dir, rmapi_binary=rmapi_binary or cfg.reading.rmapi_binary
-        )
-        rmdoc = read_rmdoc(bundle)
-    except (RuntimeError, ValueError, OSError):
+    # LOOSE FIRST, THEN THE MONTH FOLDER. `/Daily` is an inbox: a page sits at the root until it
+    # has ink and is then archived to `/Daily/YYYY-MM`. Looking only at the root stranded any ink
+    # on an archived page — which is not hypothetical, because the 2026-08-02 device migration
+    # archived every existing page including two that had never been pulled. A page that has been
+    # filed is still a page he may have written on.
+    candidates = [f"/{folder}/daily-{page_date}", f"/{folder}/{page_date[:7]}/daily-{page_date}"]
+
+    rmdoc = None
+    for device_path in candidates:
+        try:
+            bundle = fetch_rmdoc(
+                device_path, dest_dir, rmapi_binary=rmapi_binary or cfg.reading.rmapi_binary
+            )
+            rmdoc = read_rmdoc(bundle)
+            break
+        except (RuntimeError, ValueError, OSError):
+            continue
+    if rmdoc is None:
         return None
 
     if not any(p.strokes for p in rmdoc.pages):

@@ -34,6 +34,10 @@ class ReviewItem:
     reps: int
     last_grade: int | None = None
     last_review: str | None = None
+    # A real question about the proposition, generated once and stored (migration 0023). Without
+    # it `resolve_prompt` returns the PROPOSITION ITSELF as the prompt — i.e. it shows him the
+    # answer and asks him to recall it, which is why the recall loop had no answerable step.
+    question: str | None = None
 
 
 def _row(r) -> ReviewItem:
@@ -41,6 +45,8 @@ def _row(r) -> ReviewItem:
         id=r["id"], prompt_kind=r["prompt_kind"], prompt_ref=r["prompt_ref"], due=r["due"],
         ease=r["ease"], interval=r["interval"], reps=r["reps"], last_grade=r["last_grade"],
         last_review=r["last_review"],
+        # Tolerated absent so a DB one migration behind still reads its schedule.
+        question=(r["question"] if "question" in r.keys() else None),
     )
 
 
@@ -153,8 +159,11 @@ def resolve_prompt(conn, item: ReviewItem) -> tuple[str, str]:
 # Enrolment is deterministic and model-free. The source is the owner's BLESSED objects — the
 # things he has explicitly said he cares about — and within each, `practice.candidates_for_object`
 # orders propositions gap-first (§12.3: what he cannot yet explain in his own words comes before
-# what he can). Nothing here generates a question; a stored proposition IS the prompt and stays
-# its own reference answer, which is the §15 grounded-or-silent rule applied to learning.
+# what he can). Enrolment itself generates nothing and calls no model; the stored proposition is
+# the reference answer and always remains so, which is the §15 grounded-or-silent rule applied to
+# learning. `fill_questions` (below, billed, overnight) later gives an enrolled item a question to
+# ASK about that proposition — without one the prompt would be the proposition itself, i.e. the
+# answer.
 #
 # Deliberately GRADUAL. Enrolling every proposition of 32 blessed objects would put thousands of
 # items in the queue and produce a permanently-saturated recall section — the guilt-inducing
@@ -227,3 +236,74 @@ def enrol_from_blessed_objects(
             )
             taken += 1
     return added
+
+
+# --- question generation (billed, run overnight — never during composition) --------------------
+
+
+def items_without_questions(conn, *, limit: int = 20) -> list[ReviewItem]:
+    """Scheduled proposition items that have no stored question yet, soonest-due first.
+
+    Only `proposition` items: an `object` prompt is the owner's own question or idea title, which
+    already reads as a prompt and needs nothing generated.
+    """
+    try:
+        rows = conn.execute(
+            "SELECT * FROM review_schedule WHERE prompt_kind='proposition' "
+            "AND (question IS NULL OR TRIM(question)='') ORDER BY due, id LIMIT ?",
+            (limit,),
+        ).fetchall()
+    except Exception:  # column absent on an un-migrated DB
+        return []
+    return [_row(r) for r in rows]
+
+
+def set_question(conn, item_id: int, question: str) -> None:
+    with conn:
+        conn.execute(
+            "UPDATE review_schedule SET question=? WHERE id=?", (question.strip(), item_id)
+        )
+
+
+def fill_questions(conn, *, limit: int = 20, runner=None, model: str | None = None) -> int:
+    """Give scheduled propositions a real question to ask. Returns how many were written.
+
+    THE SPLIT THIS CREATES is what makes the recall page work: page 3 asks the question, page 4
+    carries the proposition as the reference answer. Previously both were the same string, so
+    there was nothing to attempt.
+
+    Billed (`claude -p` via `practice.generate_practice`), and deliberately NOT called from
+    `compose_daily`: the page aggregates stored state and must render whether or not this ran.
+    A proposition that gets no question keeps the old behaviour rather than blocking the page.
+
+    Generation is grounded by construction — `generate_practice` drops any question referencing a
+    proposition it was not shown, so a question can never carry an answer we cannot vouch for.
+    """
+    from locus.learn.practice import _Candidate, generate_practice
+
+    pending = items_without_questions(conn, limit=limit)
+    if not pending:
+        return 0
+
+    by_ref = {int(i.prompt_ref): i for i in pending if str(i.prompt_ref).isdigit()}
+    if not by_ref:
+        return 0
+    rows = conn.execute(
+        "SELECT p.id, p.text, d.title FROM propositions p JOIN documents d ON d.id=p.doc_id "
+        f"WHERE p.id IN ({','.join('?' * len(by_ref))})",
+        tuple(by_ref),
+    ).fetchall()
+    candidates = [
+        _Candidate(id=r["id"], text=r["text"], doc_title=r["title"], concept=None) for r in rows
+    ]
+    generated = generate_practice(
+        conn, candidates, max_items=len(candidates), runner=runner, model=model
+    )
+    written = 0
+    for practice_item in generated.items:
+        item = by_ref.get(practice_item.proposition_id)
+        if item is None:
+            continue
+        set_question(conn, item.id, practice_item.question)
+        written += 1
+    return written

@@ -41,6 +41,11 @@ class PageGeometry:
     height_in: float = 9.43
     margin_in: float = 0.5
     font_pt: float = 11.0
+    # Vertical space around a ruled line, in em. The default suits prose delivered to be READ.
+    # A page delivered to be WRITTEN ON needs far more: at 1.5em the daily page's ruled lines sat
+    # ~5mm apart, which is below the height of the owner's handwriting — the lines were decorative
+    # rather than usable. `locus daily` passes a larger value ([daily].rule_gap_em).
+    rule_gap_em: float = 1.5
 
     def typst_preamble(self) -> str:
         """Typst `#set` rules prepended to the converted body to impose the page geometry.
@@ -61,8 +66,8 @@ class PageGeometry:
             f"margin: {self.margin_in}in)\n"
             f"#set text(size: {self.font_pt}pt)\n"
             f"#set par(justify: true, leading: 0.7em)\n"
-            f"#let horizontalrule = block(width: 100%, above: 1.5em, below: 1.5em, "
-            f"line(length: 100%, stroke: 0.4pt + luma(65%)))\n\n"
+            f"#let horizontalrule = block(width: 100%, above: {self.rule_gap_em}em, "
+            f"below: {self.rule_gap_em}em, line(length: 100%, stroke: 0.4pt + luma(65%)))\n\n"
         )
 
 

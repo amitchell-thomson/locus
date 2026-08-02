@@ -596,6 +596,8 @@ def cmd_daily(args) -> None:
                 geometry=PageGeometry(
                     width_in=r.page_width_in, height_in=r.page_height_in,
                     margin_in=r.margin_in, font_pt=r.font_pt,
+                    # Wider than `locus read` uses: these lines are written on, not read.
+                    rule_gap_em=cfg.daily.rule_gap_em,
                 ),
             )
 
@@ -606,8 +608,8 @@ def cmd_daily(args) -> None:
         )
 
         counts = (
-            f"{len(page.connections)} connection(s) · {len(page.recalls)} recall · "
-            f"{len(page.readings)} read-next · {len(page.blessings)} awaiting"
+            f"{len(page.readings)} to read · {len(page.threads)} to think about · "
+            f"{len(page.recalls)} recall"
         )
         print(f"composed {page.page_date}: {counts}")
         print(f"  {md_path}")
@@ -637,12 +639,16 @@ def cmd_daily_pull(args) -> None:
     or bless an object twice. Billed — one vision call per page.
     """
     from locus.agent.promote import promote_all
-    from locus.agent.pull_daily import pull_daily
+    from locus.agent.pull_daily import archive_page, pull_daily
 
     conn = _open()
     promoted = []
+    archived = None
     try:
         result = pull_daily(conn, args.pdf, page_date=args.date, force=args.force)
+        if result.status == "routed" and not args.no_archive:
+            # It has ink on it, so it is no longer part of the inbox — see `archive_page`.
+            archived = archive_page(result.page_date)
         if result.status == "routed" and not args.no_promote:
             # Anything he DEVELOPED becomes a note, so the next `locus notes-sync` puts his own
             # thinking into the corpus. Without this the loop ends in a side table that no
@@ -665,6 +671,8 @@ def cmd_daily_pull(args) -> None:
         # Never guessed at: an anchor we did not print is not something we can route.
         print(f"  ignored unknown anchors: {', '.join(sorted(result.unknown_anchors))}")
     print(f"{result.page_date}: {result.acted} region(s) acted on of {len(result.outcomes)}")
+    if archived:
+        print(f"  archived -> reMarkable:/{archived}")
     for p in promoted:
         print(f"  promoted ({p.status}): {p.path.name}  [{p.entries} pass(es)]")
     if promoted:
@@ -1244,6 +1252,13 @@ def cmd_review(args) -> None:
             item = rv.grade_item(conn, int(ref), int(quality))
             print(f"item {ref}: next due {item.due} (interval {item.interval}d, "
                   f"ease {item.ease:.2f})" if item else f"no review item {ref}")
+        if args.write_questions is not None:
+            # Without a stored question the recall prompt IS the proposition — he would be shown
+            # the answer and asked to recall it. Billed, so it is an explicit flag and belongs on
+            # the overnight timer, never in page composition.
+            written = rv.fill_questions(conn, limit=args.write_questions)
+            print(f"wrote {written} question(s)")
+            return
         if args.enrol:
             added = rv.enrol_from_blessed_objects(
                 conn,
@@ -1597,6 +1612,10 @@ def main(argv=None) -> None:
     )
     pdp.add_argument("--date", default=None, help="page date (default: today)")
     pdp.add_argument(
+        "--no-archive", action="store_true",
+        help="leave the page loose in /Daily instead of filing it under its month",
+    )
+    pdp.add_argument(
         "--force", action="store_true",
         help="re-read even if the file is unchanged since the last pull (spends a vision call)",
     )
@@ -1735,6 +1754,10 @@ def main(argv=None) -> None:
     prv.add_argument(
         "--enrol-max", type=int, default=None,
         help="cap new items this run (default: a small, deliberately gradual number)",
+    )
+    prv.add_argument(
+        "--write-questions", type=int, nargs="?", const=20, default=None, metavar="N",
+        help="give up to N scheduled propositions a real question to ask (billed; run overnight)",
     )
     prv.set_defaults(func=cmd_review)
 

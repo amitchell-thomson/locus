@@ -344,6 +344,21 @@ class ReadingConfig(BaseModel):
     font_pt: float = Field(11.0, description="Body text size (pt).")
 
 
+class DailyConfig(BaseModel):
+    """The four-page daily reMarkable page (docs/daily-use-refinement-plan.md §2).
+
+    Geometry is inherited from `[reading]` — it is the same device — except for the ruled-line
+    spacing, which is the one place the two differ in kind: a page delivered to be READ wants
+    tight prose, and a page delivered to be WRITTEN ON wants lines far enough apart to write
+    between. At the reading default of 1.5em they sat about 5mm apart, below the height of the
+    owner's handwriting.
+    """
+
+    rule_gap_em: float = Field(
+        2.6, description="Vertical space around each ruled writing line, in em."
+    )
+
+
 class DiscoveryConfig(BaseModel):
     """Proposed reading and the accept loop (docs/reading-discovery-plan.md, Phase 4).
 
@@ -618,6 +633,7 @@ class Config(BaseModel):
     reading: ReadingConfig = Field(default_factory=ReadingConfig)
     # Optional: absent [discovery] falls back to defaults (Locus/Reading, 3 papers / 1 book, 21d).
     discovery: DiscoveryConfig = Field(default_factory=DiscoveryConfig)
+    daily: DailyConfig = Field(default_factory=DailyConfig)
     # Optional: absent [agent] falls back to defaults (claude -p model 'haiku', $5/day cap).
     agent: AgentConfig = Field(default_factory=AgentConfig)
     # Optional: absent [capture] falls back to defaults (staging dir, built-in folder→category).

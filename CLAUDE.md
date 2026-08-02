@@ -365,7 +365,7 @@ locus/
 │   ├── backup.py         # WAL-safe DB snapshot + rsync-hardlinked raw store; restore
 │   ├── status.py         # `locus status` health summary (counts, alias staleness, backups)
 │   ├── config.py         # typed config; ANTHROPIC_API_KEY via env/.env only
-│   ├── db/               # connection (sqlite-vec load), migrate.py, migrations/ (0001–0022)
+│   ├── db/               # connection (sqlite-vec load), migrate.py, migrations/ (0001–0023)
 │   ├── extract/          # base, pdf, mathocr, figures_detect, docx, pptx, textdoc, code
 │   ├── ingest/           # llm (validated I/O + repair + per-pass routing), summarize, propositions,
 │   │                     #   entities, concepts (code domain concepts), synthesis, gaps, chunk, embed, figures, llamacpp
@@ -385,7 +385,8 @@ locus/
 │   │                     #   device_migrate (the one-off /Daily /Reading /Notes /Admin move)
 │   ├── structure/        # propose.py — gated object + belief proposal (plan/apply split)
 │   ├── evolve/           # trajectory.py — dated position chain + advisory tension detection
-│   ├── learn/            # gaps.py · practice.py · review.py (SM-2, + enrolment) · reread.py
+│   ├── learn/            # gaps.py · practice.py · review.py (SM-2, enrolment, stored questions)
+│   │                     #   · reread.py
 │   ├── surface/          # grounding.py · critique.py · synthesise.py (the §8.4 MCP surface)
 │   ├── enrich/           # related.py — grounded `> [!ai] Related` owned blocks
 │   ├── reading/          # md2pdf · deliver_remarkable (`locus read`) · proposals (lifecycle) ·
@@ -431,7 +432,7 @@ stable id-suffixed slugs + sorted iteration). Manual-only, like `link`/`retitle`
   guarded integration tests where a model is unavoidable. Keep the suite green.
 - No secrets in code or committed config; key via `ANTHROPIC_API_KEY` (env or .env).
 - All tunables in `config.toml` (`[ollama] [paths] [embed] [retrieve] [generation] [mcp]
-  [mathocr] [figures] [repos] [alias] [retitle] [concepts] [obsidian] [reading] [agent]
+  [mathocr] [figures] [repos] [alias] [retitle] [concepts] [obsidian] [reading] [daily] [agent]
   [capture] [ingest] [structure]`); optional sections default cleanly.
 - Operational rules: ONE ingest process at a time (flock-enforced); math suite after any
   VRAM-choreography change; `locus link` after ingest batches; quarantines are bugs to
@@ -566,6 +567,46 @@ first) · **the daily page and the reading list do not know about each other** (
 zero references to `reading_proposals`, so read-next offers corpus re-reads while real papers sit
 on the tablet) · the system reports nothing about its own activity or failures (locus-maintain
 failed six consecutive nights unnoticed, 2026-08-01).
+
+## 18. The daily page — four pages, one section each (step 2 SHIPPED 2026-08-02)
+
+`docs/daily-use-refinement-plan.md` §2. Composition stays **aggregate-only** (no model call, so
+the page renders whether or not last night's runs succeeded); the prose it prints was written and
+stored earlier. Migration **0023**.
+
+    p1 Read     from `reading_proposals` — the WHY layer over the Reading/Proposed shelf, plus
+                what is in progress and the shelf's true state. The old section offered corpus
+                re-reads (an Optibook manual from last year) while ten real papers sat unmentioned:
+                `compose_daily` had zero references to the discovery tables.
+    p2 Think    marks + open threads + connections, ONE page and one action vocabulary, with three
+                subsections named for PROVENANCE (`From your reading` / `Still open` /
+                `Connections found`) — the missing information was never "what kind of item is
+                this" but "where did it come from". Only connections carry a tick.
+    p3 Recall   the question; answers overleaf, never beside it.
+    p4          the open region, then the answers small at the foot.
+
+- **Nothing is shown twice** (`daily_shown`). A page is built every morning regardless of whether
+  the last was read, so this is what makes a skipped day lose nothing and repeat nothing.
+  `item_key` carries the item's VERSION (`object:41:<updated_at>`), which is what makes ONE rule
+  right everywhere: a developed thread returns, an untouched one does not, a re-scheduled recall
+  still recurs (spaced repetition would otherwise have been silently disabled), and a proposal
+  returns only once its `why` has been rewritten — so a repeat always carries new text.
+- **`/Daily` is an inbox.** `read_at` is stamped the first time ink is seen and the page is then
+  moved to `/Daily/YYYY-MM`; loose pages are exactly the ones he has not been through.
+- **Recall finally has a question.** `resolve_prompt` returns the PROPOSITION as the prompt — he
+  was being shown the answer and asked to recall it. `review_schedule.question` stores a real
+  question (`learn/review.fill_questions`, billed, overnight via `locus review --write-questions`);
+  without one the page degrades to the old behaviour and prints no answer.
+- **Blessings left the page** for the terminal TUI (step 3, not yet built — `locus objects --bless`
+  carries it meanwhile). `_route_blessing` is retained so a page delivered before the change can
+  still be pulled back.
+- **Layout is a derived constraint, not a taste.** One section per PHYSICAL page; `_lines_for`
+  sizes the writing space so a section fills its page and never exceeds it (~9 ruled lines at
+  `[daily].rule_gap_em` 2.6). Change that gap and the budget must be recomputed —
+  `scripts/analysis/render_daily_sample.py` renders a real PDF to look at, and there is a test
+  asserting a full page does not overflow into a fifth.
+- **The status line** sits at the foot of p1: what ran, and loudly what failed (including a run
+  that opened and never closed). Systemd-level detection is step 5.
 
 ## 17. Device layout — the reMarkable tree (step 1 SHIPPED 2026-08-02)
 

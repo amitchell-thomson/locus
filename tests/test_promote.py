@@ -54,15 +54,15 @@ def _page(conn, today=date(2026, 8, 1)):
 def test_an_active_question_is_offered_back(conn):
     """It became an `active` object and only `proposed` ones were ever shown again."""
     oid = _thread(conn)
-    threads = cd.build_open_threads(conn)
-    assert [t.object_id for t in threads] == [oid]
-    assert threads[0].type_ == "question"
+    threads = cd.build_open(conn)
+    assert [int(t.target_key) for t in threads] == [oid]
+    assert threads[0].section == cd.SECTION_OPEN
 
 
 def test_a_resolved_thread_stops_coming_back(conn):
     oid = _thread(conn)
     state.set_status(conn, oid, "archived")
-    assert cd.build_open_threads(conn) == []
+    assert cd.build_open(conn) == []
 
 
 def test_concepts_and_projects_are_not_threads(conn):
@@ -70,7 +70,7 @@ def test_concepts_and_projects_are_not_threads(conn):
     for t in ("concept", "project", "reading"):
         oid, _ = state.upsert_object(conn, type_=t, title=f"x {t}")
         state.set_status(conn, oid, "active")
-    assert cd.build_open_threads(conn) == []
+    assert cd.build_open(conn) == []
 
 
 def test_least_recently_touched_comes_first(conn):
@@ -79,19 +79,22 @@ def test_least_recently_touched_comes_first(conn):
     new = _thread(conn, "newer question?")
     conn.execute("UPDATE objects SET updated_at='2026-01-01T00:00:00Z' WHERE id=?", (old,))
     conn.commit()
-    assert [t.object_id for t in cd.build_open_threads(conn, limit=2)] == [old, new]
+    assert [int(t.target_key) for t in cd.build_open(conn, limit=2)] == [old, new]
 
 
-def test_threads_are_capped_anchored_and_rendered(conn):
+def _open_on(page):
+    return [t for t in page.threads if t.kind == "open"]
+
+
+def test_threads_fit_the_page_and_are_anchored_and_rendered(conn):
     for i in range(5):
         _thread(conn, f"question number {i}?")
     page = _page(conn)
-    assert len(page.open_threads) <= cd.MAX_OPEN
-    assert {a.anchor for a in page.anchors if a.kind == "open"} == {
-        t.anchor for t in page.open_threads
-    }
+    threads = _open_on(page)
+    assert 0 < len(threads) <= cd._FIT["think"]
+    assert {a.anchor for a in page.anchors if a.kind == "open"} == {t.anchor for t in threads}
     body = cd.render(page)
-    for t in page.open_threads:
+    for t in threads:
         assert f"**{t.anchor}.**" in body
 
 
@@ -105,7 +108,9 @@ def test_prior_development_is_shown_so_he_can_continue(conn):
 
 
 def _route(conn, page, text="", mark="none"):
-    region = pd.ExtractedRegion("O1", mark == "tick", text, mark=mark)
+    """Write on the first OPEN-thread region, wherever it landed in the shared `T*` series."""
+    anchor = next(a.anchor for a in page.anchors if a.kind == "open")
+    region = pd.ExtractedRegion(anchor, mark == "tick", text, mark=mark)
     return pd.route_regions(conn, page.page_date, [region])
 
 
@@ -155,7 +160,7 @@ def test_an_untouched_thread_is_re_offered(conn):
     page = _page(conn)
     _route(conn, page)
     assert state.get_object(conn, oid).status == "active"
-    assert [t.object_id for t in cd.build_open_threads(conn)] == [oid]
+    assert [int(t.target_key) for t in cd.build_open(conn)] == [oid]
 
 
 # ---------- promotion into the corpus ----------
@@ -247,7 +252,7 @@ def test_promotion_does_not_reorder_the_open_queue(conn):
     conn.commit()
 
     pr.promote_all(conn, notes_dir=conn_dir(conn))
-    assert cd.build_open_threads(conn, limit=2)[0].object_id == old
+    assert cd.build_open(conn, limit=2)[0].target_key == str(old)
 
 
 def test_promote_all_is_idempotent(conn):

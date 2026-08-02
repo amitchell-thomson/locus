@@ -50,6 +50,20 @@ def _page(conn, today=date(2026, 6, 1)):
     return page
 
 
+def _legacy_blessing_page(conn, object_ids, today=date(2026, 6, 1)):
+    """A page carrying `B*` blessing regions, as pages built before 2026-08-02 did.
+
+    Blessings LEFT the daily page in the step-2 rebuild — he wants every approval at once in the
+    terminal TUI, and no decision may live on two surfaces (plan §3). The four-way routing below
+    still has to work, though, because a page delivered before the change can be annotated and
+    pulled back after it. So the regions are seeded directly rather than composed.
+    """
+    page = _page(conn, today=today)
+    for i, oid in enumerate(object_ids, 1):
+        _anchor(conn, page.page_date, f"B{i}", "blessing", "object", str(oid))
+    return page
+
+
 def _status(conn, oid):
     return conn.execute("SELECT status FROM objects WHERE id=?", (oid,)).fetchone()["status"]
 
@@ -95,7 +109,7 @@ def _cfg(tmp_path):
 
 def test_ticked_no_writing_blesses(conn):
     oid = _proposed(conn, "alpha")
-    page = _page(conn)
+    page = _legacy_blessing_page(conn, [oid])
     pd.route_regions(conn, page.page_date, [R("B1", True, "")])
     assert _status(conn, oid) == "active"
     assert _body(conn, oid)["why"] == "agent's reason"  # untouched
@@ -103,7 +117,7 @@ def test_ticked_no_writing_blesses(conn):
 
 def test_ticked_with_writing_applies_the_edit_then_blesses(conn):
     oid = _proposed(conn, "alpha")
-    page = _page(conn)
+    page = _legacy_blessing_page(conn, [oid])
     pd.route_regions(conn, page.page_date, [R("B1", True, "actually it is about fixing risk")])
     assert _status(conn, oid) == "active"
     assert _body(conn, oid)["why"] == "actually it is about fixing risk"
@@ -112,26 +126,26 @@ def test_ticked_with_writing_applies_the_edit_then_blesses(conn):
 def test_writing_without_a_tick_corrects_but_leaves_it_proposed(conn):
     """The interesting case: 'keep working on this' is neither a yes nor a no."""
     oid = _proposed(conn, "alpha")
-    page = _page(conn)
+    page = _legacy_blessing_page(conn, [oid])
     pd.route_regions(conn, page.page_date, [R("B1", False, "narrow this to EM rates only")])
     assert _status(conn, oid) == "proposed", "an untitcked correction must NOT bless"
     assert _body(conn, oid)["why"] == "narrow this to EM rates only", "the edit must still land"
 
 
-def test_neither_is_a_no_op_and_the_object_is_re_offered(conn):
+def test_neither_is_a_no_op_and_the_object_stays_pending(conn):
     oid = _proposed(conn, "alpha")
-    page = _page(conn)
+    page = _legacy_blessing_page(conn, [oid])
     pd.route_regions(conn, page.page_date, [R("B1", False, "")])
     assert _status(conn, oid) == "proposed"
     assert _body(conn, oid)["why"] == "agent's reason"
-    # Still proposed => still offered on a later page.
-    assert [b.object_id for b in cd.compose(conn, today=date(2026, 6, 2)).blessings] == [oid]
+    # Still proposed => still waiting for a decision, now in `locus decide` rather than on the
+    # page. Nothing about doing nothing may resolve it either way.
 
 
 def test_every_outcome_including_the_no_op_is_logged(conn):
     """A rejection is as much signal as an acceptance."""
     a, b = _proposed(conn, "alpha"), _proposed(conn, "beta", created_at="2026-01-02T00:00:00+00:00")
-    page = _page(conn)
+    page = _legacy_blessing_page(conn, [a, b])
     pd.route_regions(conn, page.page_date, [R("B1", True, ""), R("B2", False, "")])
 
     counts = state.acceptance_counts(conn, surface=pd.SURFACE_BLESSING)
@@ -145,7 +159,7 @@ def test_every_outcome_including_the_no_op_is_logged(conn):
 def test_owner_correction_survives_a_later_agent_re_proposal(conn):
     """Without this the correction lasts until tonight's structure run — the chore §9 forbids."""
     oid = _proposed(conn, "alpha")
-    page = _page(conn)
+    page = _legacy_blessing_page(conn, [oid])
     pd.route_regions(conn, page.page_date, [R("B1", False, "the owner's wording")])
 
     # The structure pass re-proposes the same object with its own rationale.
@@ -334,7 +348,7 @@ def test_unknown_anchor_is_ignored_not_guessed(conn):
 
 def test_re_pulling_the_same_page_updates_and_never_duplicates(conn):
     oid = _proposed(conn, "alpha")
-    page = _page(conn)
+    page = _legacy_blessing_page(conn, [oid])
 
     pd.route_regions(conn, page.page_date, [R("B1", False, "first pass")])
     pd.route_regions(conn, page.page_date, [R("B1", True, "second pass")])
@@ -498,7 +512,7 @@ def test_the_spend_guard_keys_on_ink_not_on_the_rendered_bytes(conn, tmp_path, m
 def test_unchanged_page_is_skipped_without_a_model_call(conn, tmp_path, monkeypatch):
     """A scheduled pull must cost nothing on days the owner did not write."""
     oid = _proposed(conn, "alpha")
-    page = _page(conn)
+    page = _legacy_blessing_page(conn, [oid])
     pdf = tmp_path / "daily.pdf"
     pdf.write_bytes(b"%PDF-1.7 annotated")
     monkeypatch.setattr(
@@ -544,24 +558,30 @@ def test_cross_archives_instead_of_blessing(conn):
     """The shipped bug: the prompt counted a cross as 'a mark is present, therefore ticked',
     so crossing something out BLESSED it — the exact opposite of what a person means."""
     oid = _proposed(conn, "alpha")
-    page = _page(conn)
+    page = _legacy_blessing_page(conn, [oid])
     pd.route_regions(conn, page.page_date, [R("B1", None, "", mark="cross")])
     assert _status(conn, oid) == "archived"
 
 
-def test_a_crossed_object_is_never_offered_again(conn):
-    """Without an archive path an unwanted object only rotates to the back of the queue."""
+def test_a_crossed_object_is_archived_not_merely_deprioritised(conn):
+    """Without an archive path an unwanted object only rotates to the back of the queue.
+
+    It used to be checked by re-composing and asserting the object was absent from the page's
+    blessing section. That section is gone (approvals moved to `locus decide`, plan §3), so the
+    durable fact is asserted directly: `archived` is what keeps it off EVERY pending surface."""
     oid = _proposed(conn, "alpha")
-    page = _page(conn)
+    page = _legacy_blessing_page(conn, [oid])
     pd.route_regions(conn, page.page_date, [R("B1", None, "", mark="cross")])
-    later = cd.compose(conn, today=date(2026, 6, 9))
-    assert oid not in [b.object_id for b in later.blessings]
+    assert _status(conn, oid) == "archived"
+    assert not conn.execute(
+        "SELECT 1 FROM objects WHERE id=? AND status='proposed'", (oid,)
+    ).fetchone()
 
 
 def test_a_cross_keeps_any_writing(conn):
     """Why it was wrong is worth more than the rejection itself."""
     oid = _proposed(conn, "alpha")
-    page = _page(conn)
+    page = _legacy_blessing_page(conn, [oid])
     pd.route_regions(
         conn, page.page_date, [R("B1", None, "conflates two different things", mark="cross")]
     )
@@ -571,7 +591,7 @@ def test_a_cross_keeps_any_writing(conn):
 
 def test_a_cross_is_logged_as_a_rejection(conn):
     oid = _proposed(conn, "alpha")
-    page = _page(conn)
+    page = _legacy_blessing_page(conn, [oid])
     pd.route_regions(conn, page.page_date, [R("B1", None, "", mark="cross")])
     assert state.acceptance_counts(conn, surface=pd.SURFACE_BLESSING)[str(oid)] == {"rejected": 1}
 
@@ -579,7 +599,7 @@ def test_a_cross_is_logged_as_a_rejection(conn):
 def test_an_archived_object_cannot_be_revived_by_the_agent(conn):
     """propose-never-mutate: the owner's refusal is not an agent's to undo."""
     oid = _proposed(conn, "alpha")
-    page = _page(conn)
+    page = _legacy_blessing_page(conn, [oid])
     pd.route_regions(conn, page.page_date, [R("B1", None, "", mark="cross")])
     state.upsert_object(conn, type_="concept", title="alpha", body={"why": "re-proposed"})
     assert _status(conn, oid) == "archived"
@@ -588,7 +608,7 @@ def test_an_archived_object_cannot_be_revived_by_the_agent(conn):
 def test_changing_a_tick_to_a_cross_re_routes(conn):
     """The re-pull guard keys on the mark SHAPE — a reversal must not read as 'unchanged'."""
     oid = _proposed(conn, "alpha")
-    page = _page(conn)
+    page = _legacy_blessing_page(conn, [oid])
     pd.route_regions(conn, page.page_date, [R("B1", True, "")])
     assert _status(conn, oid) == "active"
     pd.route_regions(conn, page.page_date, [R("B1", None, "", mark="cross")])
@@ -597,6 +617,6 @@ def test_changing_a_tick_to_a_cross_re_routes(conn):
 
 def test_an_unrecognised_mark_never_becomes_an_affirmative(conn):
     oid = _proposed(conn, "alpha")
-    page = _page(conn)
+    page = _legacy_blessing_page(conn, [oid])
     pd.route_regions(conn, page.page_date, [R("B1", None, "", mark="scribble?")])
     assert _status(conn, oid) == "proposed"

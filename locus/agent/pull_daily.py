@@ -757,5 +757,42 @@ def pull_daily(
 
     regions = extract_regions(pdf_path, client=client)
     result = route_regions(conn, page_date, regions, source_run=source_run)
+    # A page with ink on it has been BEEN THROUGH, which is a different fact from having been
+    # looked at (`pulled_at`, set below, records every check including the ones that found
+    # nothing). `read_at` is what moves the page out of the /Daily inbox, so it must mean
+    # "he wrote on this" and nothing looser.
+    if any(r.has_writing or r.mark != "none" for r in regions):
+        cd.mark_read(conn, page_date)
     _record_pull(conn, page_date, pdf_path, content_hash=content_hash)
     return result
+
+
+def archive_page(
+    page_date: str,
+    *,
+    runner=None,
+    rmapi_binary: str | None = None,
+    folder: str | None = None,
+) -> str | None:
+    """Move a page he has written on into its monthly folder. Returns the destination, or None.
+
+    THE /Daily FOLDER IS AN INBOX. Pages used to accumulate loose forever, so it told him nothing;
+    now a page stays at the root until it has ink and then moves to `/Daily/YYYY-MM`, which makes
+    opening the folder a true statement of what he has not been through. That is a state he can
+    see rather than an unread count we would have to print at him (§9).
+
+    Best-effort by design: a failed move is not worth failing a pull over, since the routing has
+    already happened and the next pull will try again.
+    """
+    from locus.reading.deliver_remarkable import _ensure_folder, _subprocess_runner
+
+    cfg = load()
+    folder = folder or cfg.reading.target_folder
+    runner = runner or _subprocess_runner(rmapi_binary or cfg.reading.rmapi_binary)
+    dest = f"{folder}/{page_date[:7]}"
+    try:
+        _ensure_folder(runner, dest)
+        code, out, err = runner(["mv", f"/{folder}/daily-{page_date}", f"/{dest}"])
+    except RuntimeError:
+        return None
+    return dest if code == 0 else None

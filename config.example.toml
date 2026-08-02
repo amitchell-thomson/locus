@@ -189,6 +189,14 @@ page_height_in = 9.43      # PDF page height (in) — Paper Pro screen height
 margin_in      = 0.5       # page margin (in)
 font_pt        = 11.0      # body text size (pt)
 
+[daily]
+# The four-page daily reMarkable page (docs/daily-use-refinement-plan.md §2). Geometry is
+# inherited from [reading] — same device — except the ruled-line spacing, which differs in KIND:
+# a page delivered to be read wants tight prose, one delivered to be WRITTEN ON wants lines far
+# enough apart to write between. At [reading]'s 1.5em they sat ~5mm apart, below the height of
+# real handwriting, so the lines were decorative rather than usable.
+rule_gap_em = 2.6
+
 [discovery]
 # Proposed reading and the accept loop (docs/reading-discovery-plan.md, Phase 4).
 # `Reading/{Proposed,In-Progress,Finished}` on the device: moving a file OUT of Proposed is

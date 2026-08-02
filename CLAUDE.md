@@ -594,6 +594,15 @@ but that three things around it were wrong, and all three are now fixed.
   was the one chain `locus evolution` could not show. `state.development_positions` merges it with
   `belief_positions` at READ time: different provenance (extracted vs authored), one chain, and
   nothing copied so neither store can drift.
+- **Threads reach the corpus, so `locus query` can see them.** Objects are in NO retrieval arm —
+  the only bridge is `locus promote` -> `vault/notes/threads/` -> `notes_sync` -> the ordinary
+  spine. `render_thread` required DEVELOPMENT passes, so a thread had to be written on twice
+  before it could cross; every idea born from a margin note fails that by construction (it carries
+  the sentence he wrote once, in a book, and nothing else), which left all four of the first real
+  mark-born ideas permanently unreachable by query. The bar is now HIS WORDS, not his persistence
+  — `owner_fields` still gates it, so a thread carrying only the proposer's rationale promotes
+  nothing. Live: 6 threads promoted and ingested; "what have I thought about regime detection"
+  now returns his own notes.
 - **An idea renders beside its project** and the threads it touches (`_thread_context`). Both
   facts were already in `object_links` and neither was ever printed, so a connected thread came
   back looking free-floating. A related fix: `object_links.target_key` for `target_kind='object'`

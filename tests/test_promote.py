@@ -166,10 +166,35 @@ def test_an_untouched_thread_is_re_offered(conn):
 # ---------- promotion into the corpus ----------
 
 
-def test_a_bare_thread_is_not_promoted(conn):
-    """A question with no thinking on it is a question, not a note."""
-    oid = _thread(conn)
+def test_a_thread_carrying_only_the_agents_rationale_is_not_promoted(conn):
+    """The invariant: agent prose must never re-enter the corpus as his (invariant 5).
+
+    The bar is HIS WORDS — not how many times he has written them. The first cut required
+    development passes, which made every idea born from a margin note permanently unreachable by
+    `locus query`: it carries the sentence he wrote and nothing else, because he wrote it once in
+    a book and moved on.
+    """
+    oid, _ = state.upsert_object(
+        conn, type_="idea", title="an agent guess",
+        body={"why": "AGENT RATIONALE", "idea": "AGENT WROTE THIS"},
+    )
+    state.set_status(conn, oid, "active")
     assert pr.promote_thread(conn, oid, notes_dir=conn_dir(conn)) is None
+
+
+def test_an_idea_he_wrote_once_still_reaches_the_corpus(conn):
+    """All four of the first real mark-born ideas failed the old bar by construction."""
+    oid, _ = state.upsert_object(conn, type_="idea", title="plot the reversal behaviour")
+    state.apply_owner_edit(
+        conn, oid, {"idea": "interesting, can we plot this behaviour?"}, source="mark:13"
+    )
+    state.set_status(conn, oid, "active")
+
+    out = pr.promote_thread(conn, oid, notes_dir=conn_dir(conn))
+    assert out is not None and out.status == "created"
+    text = out.path.read_text(encoding="utf-8")
+    assert "can we plot this behaviour?" in text
+    assert "## Working notes" not in text, "no empty heading when he has not written on it yet"
 
 
 def conn_dir(conn) -> Path:

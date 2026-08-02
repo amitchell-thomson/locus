@@ -83,10 +83,32 @@ def _owner_development(obj) -> list[dict]:
     return out
 
 
+def _owner_statement(obj) -> str:
+    """The opening statement he wrote, if he wrote it — a mark's idea, or a question he asked."""
+    owner = owner_fields(obj.body)
+    for key in ("question", "idea"):
+        if key in owner and str((obj.body or {}).get(key, "")).strip():
+            return str(obj.body[key]).strip()
+    return ""
+
+
 def render_thread(conn: sqlite3.Connection, obj) -> str | None:
-    """The note's markdown, or None when there is nothing of his to promote."""
+    """The note's markdown, or None when there is nothing of his to promote.
+
+    THE BAR IS HIS WORDS, NOT HIS PERSISTENCE. The first cut required DEVELOPMENT passes, which
+    meant a thread had to be written on twice before it could reach the corpus — and every idea
+    born from a margin note fails that test by construction: it carries the sentence he wrote in
+    `body["idea"]` and nothing else, because he wrote it once, in a book, and moved on. All four
+    of the first real mark-born ideas were therefore permanently unreachable by `locus query`,
+    which is the opposite of the point. An idea he had once is still an idea he had.
+
+    What has NOT changed is the invariant that matters: `owner_fields` gates everything, so a
+    thread carrying only the proposer's rationale still promotes nothing. The rule is "none of his
+    words", not "not enough of them".
+    """
     development = _owner_development(obj)
-    if not development:
+    statement = _owner_statement(obj)
+    if not development and not statement:
         return None
 
     owner = owner_fields(obj.body)
@@ -115,12 +137,13 @@ def render_thread(conn: sqlite3.Connection, obj) -> str | None:
     lines += ["---", "", f"# {obj.title}", ""]
 
     # The opening statement, when he wrote it. `question`/`idea` hold the original text.
-    for key in ("question", "idea"):
-        if key in owner and str((obj.body or {}).get(key, "")).strip():
-            lines += [str(obj.body[key]).strip(), ""]
-            break
+    if statement:
+        lines += [statement, ""]
 
-    lines += ["## Working notes", ""]
+    # Omitted entirely when he has not written on it yet: a heading with nothing under it says
+    # the thread is unfinished, which is a judgement about him rather than a fact about it.
+    if development:
+        lines += ["## Working notes", ""]
     for entry in development:
         stamp = str(entry.get("at") or "").strip()
         lines += [f"**{stamp}** — {str(entry['text']).strip()}" if stamp

@@ -38,13 +38,29 @@ class Expanded:
     figure_caption: str | None = None
     figure_kind: str | None = None  # 'raster' | 'vector' | 'slide'
     figure_page: int | None = None  # 1-based page / slide number
+    # When this document is one of HIS promoted threads, the live object behind it: the project
+    # it belongs to, the other threads it touches, and how his view moved. Joined on, never
+    # retrieved separately — see `retrieve/threads.py` for why this is not a second arm.
+    thread: object | None = None
 
 
 def expand(conn, candidates: list[Candidate]) -> list[Expanded]:
+    from locus.retrieve.threads import contexts_for
+
+    # One index scan for the whole result set rather than one per candidate.
+    uris = [
+        r["source_uri"] for r in conn.execute(
+            f"SELECT source_uri FROM documents WHERE id IN "
+            f"({','.join('?' * len({c.doc_id for c in candidates}))})",
+            tuple({c.doc_id for c in candidates}),
+        )
+    ] if candidates else []
+    threads = contexts_for(conn, uris)
+
     out: list[Expanded] = []
     for c in candidates:
         doc = conn.execute(
-            "SELECT title, thesis, method, result, limitations, section_map "
+            "SELECT title, thesis, method, result, limitations, section_map, source_uri "
             "FROM documents WHERE id=?",
             (c.doc_id,),
         ).fetchone()
@@ -94,6 +110,7 @@ def expand(conn, candidates: list[Candidate]) -> list[Expanded]:
                 method=doc["method"] if doc else None,
                 result=doc["result"] if doc else None,
                 limitations=doc["limitations"] if doc else None,
+                thread=threads.get(doc["source_uri"]) if doc else None,
                 section_id=c.section_id,
                 section_title=section_title,
                 section_summary=section_summary,

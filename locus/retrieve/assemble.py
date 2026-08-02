@@ -123,6 +123,11 @@ def assemble(expanded: list[Expanded], budget: int | None = None) -> AssembledCo
             f"    thesis: {e.thesis}\n    method: {e.method}\n"
             f"    result: {e.result}\n    limitations: {e.limitations}\n"
         )
+        # One of HIS threads: return the thread, not a flattened copy of it. The note's text was
+        # already retrieved on its merits; this is what makes it his THINKING rather than a page
+        # of prose that happens to be in the corpus.
+        if getattr(e, "thread", None) is not None:
+            header += e.thread.render() + "\n"
         if not fits(header):  # coarse content should essentially always fit
             break
         lines.append(header)

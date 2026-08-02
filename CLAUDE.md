@@ -371,7 +371,7 @@ locus/
 │   │                     #   entities, concepts (code domain concepts), synthesis, gaps, chunk, embed, figures, llamacpp
 │   ├── ingest_pipeline.py · ingest_lock.py · watcher.py · sync.py · notes_sync.py · repo_sync.py
 │   ├── retrieve/         # search (all arms), rerank+select, expand, assemble, pipeline,
-│   │                     #   figure_images
+│   │                     #   figure_images · threads (his own threads, joined on)
 │   ├── link/             # aliases (tiers+guards), adjudicate (Claude), related
 │   ├── export/           # obsidian.py — read-only vault projection (§13, joins-only)
 │   │  ── agent layer (§15) ──
@@ -603,6 +603,15 @@ but that three things around it were wrong, and all three are now fixed.
   — `owner_fields` still gates it, so a thread carrying only the proposer's rationale promotes
   nothing. Live: 6 threads promoted and ingested; "what have I thought about regime detection"
   now returns his own notes.
+- **Retrieval returns the THREAD, not a flattened copy** (`retrieve/threads.py`). Promotion made
+  the text findable; what came back was a note stripped of the thing that made it worth storing as
+  an object — the project it belongs to, the threads it touches, how his view moved. It is joined
+  on during EXPANSION, not added as a retrieval arm: every owner-authored thread is already
+  promoted, so a parallel arm would put the same text in the pool twice, competing with itself for
+  the top-k and double-counting against the per-doc diversity cap, and `Candidate` is
+  (doc_id, section_id) which an object has neither of. The join is exact — `promote` records
+  `body.promoted_path`. Live: "what have I thought about regime detection" returns his idea
+  carrying `part of: regime-ml` and the tanker thread it touches.
 - **An idea renders beside its project** and the threads it touches (`_thread_context`). Both
   facts were already in `object_links` and neither was ever printed, so a connected thread came
   back looking free-floating. A related fix: `object_links.target_key` for `target_kind='object'`

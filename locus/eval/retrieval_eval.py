@@ -319,6 +319,41 @@ LABELLED_QUERIES: list[LabelledQuery] = [
     # plus the full eval, per the standing rule not to promote on a single observation).
     LabelledQuery("Where are the mispricings in Central and Eastern European rates across tenors?",
                   ["em-rates-trading"]),
+
+    # --- 2026-08-02 re-curation: the corpus grew, the label set had not -------------------------
+    # 203 -> 218 documents since the last curation, and recall@k had reached 1.000 with ZERO
+    # misses — the state §11 warns about, where a saturated set stops being able to tell you
+    # anything. Every label below was verified live before being added (rank in the comment);
+    # the honest gate is "recall@k held on a set that GREW", never a frozen number rising.
+    #
+    # The four papers the discovery loop proposed and he accepted. These are the first labels in
+    # the set for material the SYSTEM chose rather than material he had already collected, which
+    # is the thing Phase 4 exists to do.
+    LabelledQuery("Can a reinforcement learning agent build a market-neutral portfolio "
+                  "without a factor model?",
+                  ["AlphaZeroBeta"]),                                              # rank 1
+    LabelledQuery("How do you test whether a dyadic regression model is correctly specified?",
+                  ["Specification Testing for Dyadic"]),                           # rank 1
+    LabelledQuery("Are large language models any good at reading candlestick charts and "
+                  "technical indicators?",
+                  ["AI Trading Evaluating"]),                                      # rank 1
+    LabelledQuery("Can an LLM execute a parent order by slicing it into child orders?",
+                  ["Can Large Language Models Execute"]),                          # rank 1
+    # The book he has annotated most heavily, ingested at last (finding (d) of the discovery
+    # plan: the most-engaged document in the system used to be invisible to every corpus signal).
+    LabelledQuery("What does Advanced Portfolio Management say about crowding and correlated "
+                  "hedge fund positions?",
+                  ["Advanced Portfolio Management"]),                              # rank 2
+    # HIS OWN THINKING, which the set could not measure at all before threads were promoted into
+    # the corpus. Alternatives because three threads legitimately answer the regime question and
+    # ranking between them is model choice, not retrieval quality.
+    LabelledQuery("What have I thought about regime detection for my projects?",
+                  ["for-regime-projects|what-are-the-best-methods|does-this-suggest"]),  # rank 1
+    LabelledQuery("What was my idea about a systematic strategy that shows its rationale "
+                  "for each trade?",
+                  ["i-like-the-idea-of-a-systematic"]),                            # rank 1
+    LabelledQuery("What did I want to read next about alternative data?",
+                  ["read-next-on-alt-data"]),                                      # rank 4
 ]
 
 
@@ -378,6 +413,16 @@ RELATED_PAIRS: list[tuple[str, str]] = [
     ("em-rates-trading", "em-ideas"),                # EM desk ideas / analytics        (7,  mutual #1/#1)
     ("dashboard-", "em-rates-trading"),              # fixing risk / EM curves          (6,  mutual #2/#2)
     ("jargon-sheet", "swaps-momentum-strat"),        # swap terminology <-> the strat   (7,  mutual #1/#2)
+    # 2026-08-02: the annotated book <-> the notes he made on it. Verified mutual in the live
+    # top-5 in BOTH directions at curation time.
+    #
+    # Three other candidates were TESTED AND NOT ADDED, because the layer does not currently
+    # produce them mutually and a label is an assertion about what the layer does, not a wish:
+    # AlphaZeroBeta <-> regime-conditioned-equity-ml (reverse only) and
+    # for-regime-projects <-> does-this-suggest (neither direction) — the two regime threads are
+    # linked as OBJECTS via `link/threads.py`, which is a different substrate from
+    # `related_documents` and is not what this metric measures.
+    ("Advanced Portfolio Management.pdf", "advanced-portfolio-management.md"),
 ]
 
 

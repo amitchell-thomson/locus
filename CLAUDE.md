@@ -590,6 +590,36 @@ zero references to `reading_proposals`, so read-next offers corpus re-reads whil
 on the tablet) · the system reports nothing about its own activity or failures (locus-maintain
 failed six consecutive nights unnoticed, 2026-08-01).
 
+## 23. Eval re-baseline + a PROVEN restore (2026-08-02)
+
+**Eval, re-curated at 218 documents.** No label had gone stale — the corpus grew rather than
+shrank — but recall@k had reached **1.000 with zero misses**, which is the saturated, uninformative
+state §11 warns about. Eight queries added and each verified live before being added (rank in the
+comment), plus one related pair:
+
+  - the four papers the discovery loop PROPOSED and he accepted — the first labels in the set for
+    material the system chose rather than material he had already collected;
+  - *Advanced Portfolio Management*, the most-annotated document in the system, ingested at last;
+  - **three queries over his OWN THINKING**, which the set could not measure at all until threads
+    were promoted into the corpus.
+
+Three candidate related pairs were TESTED AND NOT ADDED because the layer does not produce them
+mutually — a label asserts what the layer does, not what one wishes it did. (The two regime
+threads ARE linked, as objects via `link/threads.py`; that is a different substrate from
+`related_documents` and is not what this metric measures.)
+
+**60 -> 68 queries, 17 -> 18 pairs: recall@k 1.000 HELD, mrr 0.799 -> 0.804**, cross-domain 1.000,
+banner 0.000, file_recall 1.000, links_recall 1.000. The honest gate is recall holding on a set
+that GREW; a frozen number rising would mean nothing.
+
+**Restore is no longer a hope.** `scripts/analysis/verify_restore.py` restores the newest snapshot
+into a throwaway tree and checks it is a USABLE DATABASE rather than a file that exists:
+`PRAGMA integrity_check`, row counts, and specifically the agent state that is **not regenerable**
+(39 blessed objects, 4 carrying owner edits — lose those and no re-ingest brings them back). It
+also confirms an older snapshot MIGRATES FORWARD, which matters because every snapshot predates
+some migration: the 15:22 backup restored at schema 0022 and upgraded cleanly to 0026. The CLI's
+guard was checked too — `locus restore` without `--yes` leaves the live DB's mtime unchanged.
+
 ## 22. Reporting: does it still work, and what did it cost (2026-08-02)
 
 `locus/health.py`, migration **0026**. The failure it exists for: `locus-maintain` failed six

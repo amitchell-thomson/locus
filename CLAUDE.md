@@ -361,7 +361,7 @@ locus/
 │   │                     #   query retrieve mcp status backup restore export-obsidian audit eval
 │   │                     #   read capture-sync capture-conversation notes-sync
 │   │                     #   structure objects evolution gaps review daily daily-pull
-│   │                     #   promote annotate discover device-migrate       (agent layer)
+│   │                     #   promote annotate discover device-migrate decide (agent layer)
 │   ├── backup.py         # WAL-safe DB snapshot + rsync-hardlinked raw store; restore
 │   ├── status.py         # `locus status` health summary (counts, alias staleness, backups)
 │   ├── config.py         # typed config; ANTHROPIC_API_KEY via env/.env only
@@ -383,6 +383,7 @@ locus/
 │   ├── capture/          # remarkable · transcribe · fillin · loop_a · conversations ·
 │   │                     #   rmdoc (.rmdoc stroke geometry) · annotate (Loop B text linking) ·
 │   │                     #   device_migrate (the one-off /Daily /Reading /Notes /Admin move)
+│   ├── decide/           # queue.py (what is pending + WHICH SURFACE owns it) · app.py (Textual)
 │   ├── structure/        # propose.py — gated object + belief proposal (plan/apply split)
 │   ├── evolve/           # trajectory.py — dated position chain + advisory tension detection
 │   ├── learn/            # gaps.py · practice.py · review.py (SM-2, enrolment, stored questions)
@@ -568,6 +569,27 @@ first) · **the daily page and the reading list do not know about each other** (
 zero references to `reading_proposals`, so read-next offers corpus re-reads while real papers sit
 on the tablet) · the system reports nothing about its own activity or failures (locus-maintain
 failed six consecutive nights unnoticed, 2026-08-01).
+
+## 19. `locus decide` — the approval surface (step 3 SHIPPED 2026-08-02)
+
+`docs/daily-use-refinement-plan.md` §3. A Textual app (`[tui]` extra), sections by type, cleared
+with single unshifted keys: `y` accept · `n` reject · `e` type a correction · `u` undo · `q` quit.
+Free and local. Kinds today: **proposed objects** (bless/drop) and **abandoned reading** ("no marks
+in 20 days — wrong paper, or just not yet?"). Mark-intent corrections slot in at step 4.
+
+**THE INVARIANT, and it is his: no decision may ever appear on both surfaces.** "I should not be
+able to approve the same thing on the daily page and the tui." Two surfaces that can both resolve
+one item is how a decision gets lost — he ticks it on paper, clears it in the terminal having
+forgotten, and the second silently overwrites the first, or the flywheel learns twice from one
+judgement. The split is computed in ONE place (`decide/queue.pending`, which subtracts whatever
+`compose_daily` is currently offering) and `tests/test_decide_queue.py` asserts the two key sets
+never intersect. That matters beyond today's kinds: once mark-intent lands, a marked passage will
+be both a Think item and — when ambiguous — a TUI decision.
+
+Two things the queue must not become: `resolve()` writes an abandonment answer to
+`acceptance_log(surface='discovery')`, the per-channel prior that already tunes what gets proposed,
+because "this signal should DO something, not just be a value that sits in a table"; and `u` undoes
+against the DATABASE, not just the UI, because `n` sits beside `y` in a single-key interface.
 
 ## 18. The daily page — four pages, one section each (step 2 SHIPPED 2026-08-02)
 

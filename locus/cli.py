@@ -19,6 +19,9 @@ from locus.config import load
 from locus.db.connection import get_connection
 from locus.ingest_pipeline import ingest_paths
 
+# Imported for the `decide` parser default only; the package itself is loaded lazily.
+Q_ABANDON_DEFAULT = 14
+
 
 def _open():
     return get_connection(load().paths.db)
@@ -1161,6 +1164,39 @@ def cmd_device_migrate(args) -> None:
         print(f"\nmoved {ok}/{len(applied)}; empty source folders are left for you to delete")
 
 
+def cmd_decide(args) -> None:
+    """Clear every pending approval in one pass (daily-use refinement plan §3).
+
+    Free and local — no model, no network. Sections by type; nothing here is ever also on the
+    daily page, which is the invariant `decide/queue.pending` enforces.
+    """
+    from locus.decide import queue as Q
+
+    conn = _open()
+    try:
+        if args.list:
+            queue = Q.pending(conn, days=args.abandon_after)
+            for kind, items in queue.sections.items():
+                if not items:
+                    continue
+                print(f"\n{kind} ({len(items)})")
+                for d in items:
+                    print(f"  {d.key:<14} {d.title[:64]}")
+                    if d.detail:
+                        print(f"                 {d.detail[:70]}")
+            print(f"\n{queue.total} decision(s) pending")
+            return
+
+        from locus.decide.app import run
+
+        resolved = run(conn)
+    finally:
+        conn.close()
+    for item, outcome in resolved:
+        print(f"  {outcome:<24} {item.title[:60]}")
+    print(f"{len(resolved)} decision(s) cleared")
+
+
 def cmd_structure(args) -> None:
     """Propose structured objects + belief positions from ingested documents (agent-layer §6.2-6.3).
 
@@ -1783,6 +1819,16 @@ def main(argv=None) -> None:
         help="apply without a snapshot from this run — only if you have a backup by other means",
     )
     pdm.set_defaults(func=cmd_device_migrate)
+
+    pdc = sub.add_parser(
+        "decide", help="clear every pending approval in one pass (terminal UI; needs the [tui] extra)"
+    )
+    pdc.add_argument("--list", action="store_true", help="print the queue instead of opening the UI")
+    pdc.add_argument(
+        "--abandon-after", type=int, default=Q_ABANDON_DEFAULT,
+        help="days a reading may sit untouched before it is asked about",
+    )
+    pdc.set_defaults(func=cmd_decide)
 
     pstr = sub.add_parser(
         "structure",

@@ -33,12 +33,20 @@ mathocr = ["transformers>=4.48", "torchvision"]
 # Both bundle their own binaries (no system pandoc/typst/LaTeX needed): pypandoc-binary ships
 # the pandoc executable (md->typst, LaTeX-math-aware), typst ships the compiler (typst->PDF).
 reading = ["typst>=0.15", "pypandoc-binary>=1.15"]
+# `locus decide`: the terminal surface for pending approvals. Textual only — no torch, no models.
+tui = ["textual>=0.80"]
 
 [project.scripts]
 locus = "locus.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8.0", "ruff>=0.6"]
+# pytest-asyncio drives the Textual app headlessly (tests/test_decide_app.py).
+dev = ["pytest>=8.0", "ruff>=0.6", "pytest-asyncio>=0.24"]
+
+[tool.pytest.ini_options]
+# The Textual app tests are async; without this they are silently SKIPPED rather than failing,
+# which is the worst outcome for a test whose whole job is to prove the key bindings work.
+asyncio_mode = "auto"
 
 [tool.ruff]
 line-length = 100

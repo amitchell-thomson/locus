@@ -259,9 +259,56 @@ def format_status(r: StatusReport) -> str:
     else:
         lines.append("last backup            : (none)")
     lines.append("")
+    lines.extend(_activity_block(r))
+    lines.append("")
     if r.warnings:
         lines.append("WARNINGS")
         lines.extend(f"  ! {w}" for w in r.warnings)
     else:
         lines.append("no warnings — system healthy")
     return "\n".join(lines)
+
+
+def _activity_block(r: "StatusReport") -> list[str]:
+    """Since yesterday: what ran, what it cost, and what is broken.
+
+    Reads `locus.health`, which is the same source the daily page's status line uses — one
+    definition of "healthy", so the page and the terminal cannot disagree. Spend is broken out per
+    kind because a single total answers "how much" but never "what for", and the answer to the
+    second is what actually changes a decision about it.
+    """
+    from locus import health as H
+    from locus.config import load
+    from locus.db.connection import get_connection
+
+    try:
+        conn = get_connection(load().paths.db)
+    except Exception:                                   # status must never fail on its own report
+        return []
+    try:
+        checked = H.check(conn)
+        spend = H.spend_by_kind(conn)
+    finally:
+        conn.close()
+
+    lines = ["SINCE YESTERDAY"]
+    if checked.ran:
+        ran = " · ".join(f"{k} x{n}" if n > 1 else k for k, n in sorted(checked.ran.items()))
+        lines.append(f"  ran                  : {ran}")
+    else:
+        lines.append("  ran                  : (nothing)")
+
+    cap = getattr(load().agent, "daily_cost_cap_usd", None)
+    against = f" of ${cap:.2f} cap" if cap else ""
+    lines.append(f"  spend                : ${checked.cost_usd:.4f}{against}  "
+                 f"({checked.calls} model call(s))")
+    for kind, cost, calls in spend[:5]:
+        if cost:
+            lines.append(f"      {kind:<18} ${cost:.4f}  ({calls} call(s))")
+
+    if checked.problems:
+        lines.append(f"  PROBLEMS             : {len(checked.problems)}")
+        lines.extend(f"      ! {p.render()}" for p in checked.problems)
+    else:
+        lines.append("  problems             : none — every timer is on schedule")
+    return lines

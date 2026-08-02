@@ -6,6 +6,7 @@ Documentation=file:///home/alec/server-projects/locus/docs/reading-discovery-pla
 # and the safety rule in reading/watch.py means an empty listing changes nothing.
 After=network-online.target
 Wants=network-online.target
+OnFailure=locus-failure@%n.service
 
 [Service]
 Type=oneshot

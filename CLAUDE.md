@@ -364,8 +364,9 @@ locus/
 │   │                     #   promote annotate discover device-migrate decide intent
 │   ├── backup.py         # WAL-safe DB snapshot + rsync-hardlinked raw store; restore
 │   ├── status.py         # `locus status` health summary (counts, alias staleness, backups)
+│   ├── health.py         # did the nightly work happen, and what did it cost
 │   ├── config.py         # typed config; ANTHROPIC_API_KEY via env/.env only
-│   ├── db/               # connection (sqlite-vec load), migrate.py, migrations/ (0001–0023)
+│   ├── db/               # connection (sqlite-vec load), migrate.py, migrations/ (0001–0026)
 │   ├── extract/          # base, pdf, mathocr, figures_detect, docx, pptx, textdoc, code
 │   ├── ingest/           # llm (validated I/O + repair + per-pass routing), summarize, propositions,
 │   │                     #   entities, concepts (code domain concepts), synthesis, gaps, chunk, embed, figures, llamacpp
@@ -588,6 +589,36 @@ first) · **the daily page and the reading list do not know about each other** (
 zero references to `reading_proposals`, so read-next offers corpus re-reads while real papers sit
 on the tablet) · the system reports nothing about its own activity or failures (locus-maintain
 failed six consecutive nights unnoticed, 2026-08-01).
+
+## 22. Reporting: does it still work, and what did it cost (2026-08-02)
+
+`locus/health.py`, migration **0026**. The failure it exists for: `locus-maintain` failed six
+consecutive nights and nothing said so. The fix is not "log harder" — the logs were there — it is
+that nothing ever ASKED, so silence and success looked identical.
+
+**Almost nothing was journalled.** Only `capture` opened an `agent_runs` row, so the status line
+shipped in §18 reported on ONE of nine nightly steps and called the rest healthy. Journalling now
+happens at DISPATCH (`cli._journal_kind`): one place instead of nine, impossible to forget when a
+command is added, and it catches a crash anywhere in the command rather than only inside a block
+someone remembered to wrap.
+
+**Three failure modes need three detectors**, which is why one check was never enough:
+`error`/`degraded` (a run that broke) · a `running` row older than 2h (started and vanished — the
+process died) · and **no row at all**, which is the case that hid for six nights and which no
+amount of reading `agent_runs` can find. That last one is caught two ways: `EXPECTED_CADENCE_HOURS`
+(a kind absent for longer than 2.5x its cadence is overdue — derived, never stored, because a
+stored "next run" has to be updated by the code that is failing), and `timer_failures`, written by
+`locus record` from `OnFailure=locus-failure@%n.service` on every unit — the only detector that
+works when the process never reaches Python. `locus-maintain` also records its own completion,
+because it is nine ExecStart lines and nothing else can say the UNIT finished.
+
+**Spend needed a reader, not a store.** `claude -p` reports `total_cost_usd` in its envelope and
+`journal` already stored it; the numbers had nothing to sum because nothing was journalled.
+`locus status` now shows spend against `[agent].daily_cost_cap_usd` broken down per kind — a total
+answers "how much" but never "what for", and the second is what changes a decision.
+
+One definition of healthy: `compose_daily.build_status` delegates to the same `health.check`, so
+the page and the terminal cannot disagree.
 
 ## 21. Threads: one substrate for his own thinking (2026-08-02)
 

@@ -7,6 +7,7 @@ Documentation=file:///home/alec/server-projects/locus/docs/obsidian-agent-layer-
 # agent didn't run"). Nothing here takes the ingest lock.
 After=network-online.target locus-maintain.service
 Wants=network-online.target
+OnFailure=locus-failure@%n.service
 
 [Service]
 Type=oneshot

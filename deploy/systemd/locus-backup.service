@@ -1,6 +1,7 @@
 [Unit]
 Description=Locus backup — WAL-safe DB snapshot + hardlinked raw store
 Documentation=file:///home/alec/server-projects/locus/CLAUDE.md
+OnFailure=locus-failure@%n.service
 
 [Service]
 Type=oneshot

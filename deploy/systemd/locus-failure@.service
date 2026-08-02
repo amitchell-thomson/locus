@@ -1,0 +1,17 @@
+# Records that a locus unit failed, in the one place `locus status` and the daily page read.
+#
+# `agent_runs` is opened and closed by the code, so it cannot see a unit whose import fails, whose
+# binary is missing, or which the OOM killer takes — none of those reach Python. systemd sees all
+# of them. `locus-maintain` failed six consecutive nights (2026-08-01) and nothing said so.
+#
+# Instantiated from every locus unit with `OnFailure=locus-failure@%n.service`; `%i` is the failed
+# unit's name.
+[Unit]
+Description=Record that %i failed
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/alec/server-projects/locus
+Environment=PATH=/home/alec/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/bin/sh -c '/home/alec/.local/bin/uv run locus record "%i" --detail "$(systemctl --user show -p Result --value "%i" 2>/dev/null)"'
+Nice=19

@@ -168,12 +168,21 @@ class Status:
 
     produced: tuple[str, ...] = ()
     failures: tuple[str, ...] = ()
+    cost_usd: float = 0.0
 
     def render(self) -> str:
         made = " · ".join(self.produced) if self.produced else "nothing new"
+        # What a night cost, on the surface he actually reads. Four billed passes now run
+        # nightly and nothing reported against `[agent].daily_cost_cap_usd`; spend that is never
+        # shown is spend nobody is deciding about.
+        spend = f" · ${self.cost_usd:.2f}" if self.cost_usd else ""
         if not self.failures:
-            return f"overnight: {made} · all runs healthy"
-        return f"overnight: {made} · " + " · ".join(f.upper() for f in self.failures)
+            return f"overnight: {made}{spend} · all runs healthy"
+        # Only the first few, and loud: a status line listing eight problems is a wall he learns
+        # to skip, which is the failure this whole line exists to prevent.
+        loud = " · ".join(f.upper() for f in self.failures[:3])
+        more = f" · +{len(self.failures) - 3} more" if len(self.failures) > 3 else ""
+        return f"overnight: {made}{spend} · {loud}{more}"
 
 
 @dataclass
@@ -781,13 +790,28 @@ _REPORTED_KINDS = ("discover-harvest", "discover-pull", "capture", "daily-pull",
 
 
 def build_status(conn: sqlite3.Connection, *, now: datetime | None = None) -> Status:
-    """What the system did since yesterday, and what is broken.
+    """What the system did since yesterday, what it cost, and what is broken.
 
-    The reporting gap this closes: `locus-maintain` failed six consecutive nights (2026-08-01) and
-    nothing said so — it was found by accident. Systemd-level detection (a unit that never started
-    at all, so has no `agent_runs` row to fail) is step 5; this reports what DID run and any run
-    that ended badly, which covers everything that starts and then breaks.
+    Delegates to `locus.health`, which is also what `locus status` reads — one definition of
+    "healthy", so the page and the terminal can never disagree about whether the system is fine.
+    The page previously did its own reckoning over `agent_runs` and could only see runs that
+    started; a unit that never started leaves no row, which is exactly how `locus-maintain` failed
+    six consecutive nights (2026-08-01) without saying so.
     """
+    from locus import health as H
+
+    checked = H.check(conn, now=now)
+    return Status(
+        produced=tuple(
+            f"{k} x{n}" if n > 1 else k for k, n in sorted(checked.ran.items())
+        ),
+        failures=tuple(p.render() for p in checked.problems),
+        cost_usd=checked.cost_usd,
+    )
+
+
+def _legacy_build_status(conn: sqlite3.Connection, *, now: datetime | None = None) -> Status:
+    """Superseded by `locus.health`; kept only until the next tidy pass."""
     now = now or datetime.now(timezone.utc)
     cutoff = (now - timedelta(days=1)).isoformat()
     try:

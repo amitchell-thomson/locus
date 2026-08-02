@@ -456,11 +456,17 @@ def test_status_reports_what_ran_and_shouts_about_what_broke(conn):
 
 
 def test_a_run_that_never_finished_is_a_failure_not_a_silence(conn):
+    """...but only once it is older than any plausible run. Flagging a run that started a minute
+    ago would put a false alarm on the page every morning, which trains him to skip the line."""
     from locus.agent import journal
 
     journal.start_run(conn, "maintain")  # opened, never closed: the process died
-    st = cd.build_status(conn, now=datetime.now(timezone.utc) + timedelta(minutes=1))
-    assert any("did not finish" in f for f in st.failures)
+    now = datetime.now(timezone.utc)
+    assert not any(
+        "never finished" in f for f in cd.build_status(conn, now=now + timedelta(minutes=1)).failures
+    ), "a run in progress is not a fault"
+    later = cd.build_status(conn, now=now + timedelta(hours=3))
+    assert any("never finished" in f for f in later.failures)
 
 
 # ---------- anchors ----------

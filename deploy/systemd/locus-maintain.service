@@ -3,6 +3,7 @@ Description=Locus nightly — rebuild alias substrate, structure newly ingested 
 Documentation=file:///home/alec/server-projects/locus/docs/obsidian-agent-layer-plan.md
 After=network-online.target
 Wants=network-online.target
+OnFailure=locus-failure@%n.service
 
 [Service]
 Type=oneshot
@@ -46,6 +47,10 @@ ExecStart=/home/alec/.local/bin/uv run locus review --write-questions 8
 ExecStart=/home/alec/.local/bin/uv run locus intent --act
 ExecStart=/home/alec/.local/bin/uv run locus discover --link-reading
 ExecStart=/home/alec/.local/bin/uv run locus discover --write-why 10
+# 6. Record that the UNIT completed. It is nine ExecStart lines rather than one command, so
+#    nothing else is in a position to say it finished — and "no row" is indistinguishable from
+#    "did not run tonight", which is exactly how six consecutive failures stayed invisible.
+ExecStart=/home/alec/.local/bin/uv run locus record maintain --ok
 TimeoutStartSec=7200
 Nice=15
 IOSchedulingClass=idle

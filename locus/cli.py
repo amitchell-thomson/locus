@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 from locus.config import load
@@ -89,6 +90,44 @@ def _print_results(results) -> None:
             print(f"[skipped]   {r.path}  (already ingested, doc_id={r.doc_id})")
         else:
             print(f"[{r.status}]  {r.path}  -- {r.error}")
+
+
+# Command -> the `agent_runs` kind it is journalled under. Journalling happens at DISPATCH rather
+# than inside each command: it is one place instead of nine, it cannot be forgotten when a command
+# is added, and it records a crash that happens anywhere in the command rather than only inside a
+# block someone remembered to wrap.
+#
+# Before this, ONLY `capture` opened a row — so `locus status` and the daily page's status line
+# reported on one of nine nightly steps and called the rest healthy. A health check that can only
+# see the thing already working is not a health check.
+_JOURNAL_KINDS = {
+    "daily": "daily",
+    "daily-pull": "daily-pull",
+    "backup": "backup",
+    "link": "link",
+    "structure": "structure",
+    "intent": "intent",
+    "promote": "promote",
+    "notes-sync": "notes-sync",
+    "review": "review",
+}
+
+
+def _journal_kind(args) -> str | None:
+    """The run kind for this invocation, or None when it is an interactive read."""
+    command = getattr(args, "cmd", None)
+    if command == "discover":
+        # One command, several jobs on different timers — the kind has to say which.
+        if getattr(args, "harvest", False):
+            return "discover-harvest"
+        if getattr(args, "pull", False):
+            return "discover-pull"
+        if getattr(args, "write_why", None) is not None:
+            return "discover-why"
+        if getattr(args, "link_reading", False):
+            return "discover-link"
+        return None
+    return _JOURNAL_KINDS.get(command or "")
 
 
 def cmd_ingest(args) -> None:
@@ -1211,6 +1250,33 @@ def cmd_intent(args) -> None:
         conn.close()
 
 
+def cmd_record(args) -> None:
+    """Record what systemd saw — a unit that failed, or a multi-command unit that completed.
+
+    `agent_runs` is opened and closed by the code, so it is blind to a unit whose import fails,
+    whose binary is missing, or which the OOM killer takes: none of those reach Python, and "no
+    row" is indistinguishable from "did not run tonight". `OnFailure=` calls this, so systemd's
+    knowledge reaches the same place the health check reads.
+
+    `--ok` is the other half, for `locus-maintain`: it is nine ExecStart lines rather than one
+    command, so nothing else is in a position to say the UNIT finished.
+    """
+    from locus.agent import journal
+    from locus import health as H
+
+    conn = _open()
+    try:
+        if args.ok:
+            run_id = journal.start_run(conn, args.unit)
+            journal.finish_run(conn, run_id, "ok", stats={"via": "systemd"})
+            print(f"recorded a successful run of {args.unit}")
+        else:
+            H.record_failure(conn, args.unit, args.detail or "")
+            print(f"recorded a failure of {args.unit}")
+    finally:
+        conn.close()
+
+
 def cmd_decide(args) -> None:
     """Clear every pending approval in one pass (daily-use refinement plan §3).
 
@@ -1880,6 +1946,14 @@ def main(argv=None) -> None:
                      help="re-classify marks that already have a model-set intent")
     pit.set_defaults(func=cmd_intent)
 
+    prc = sub.add_parser(
+        "record", help="record a unit failure (systemd OnFailure) or a completed multi-step unit"
+    )
+    prc.add_argument("unit", help="the systemd unit, or the run kind for --ok")
+    prc.add_argument("--ok", action="store_true", help="record a SUCCESSFUL run of this kind")
+    prc.add_argument("--detail", default=None, help="exit status / cause, for triage")
+    prc.set_defaults(func=cmd_record)
+
     pdc = sub.add_parser(
         "decide", help="clear every pending approval in one pass (terminal UI; needs the [tui] extra)"
     )
@@ -1997,7 +2071,20 @@ def main(argv=None) -> None:
     pe.set_defaults(func=cmd_eval)
 
     args = parser.parse_args(argv)
-    args.func(args)
+    kind = _journal_kind(args)
+    if kind is None:
+        args.func(args)
+        return
+    # Journalled: the row is opened BEFORE the work and committed immediately, so a crash leaves a
+    # visible orphan rather than no evidence at all (journal.run's crash-safety contract).
+    from locus.agent import journal
+
+    conn = _open()
+    try:
+        with journal.run(conn, kind):
+            args.func(args)
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@ Description=Locus reading — search the literature for your concepts and refill
 Documentation=file:///home/alec/server-projects/locus/docs/reading-discovery-plan.md
 After=network-online.target
 Wants=network-online.target
+OnFailure=locus-failure@%n.service
 
 [Service]
 Type=oneshot

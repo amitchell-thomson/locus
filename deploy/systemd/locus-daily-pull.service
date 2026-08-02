@@ -6,6 +6,7 @@ Documentation=file:///home/alec/server-projects/locus/docs/obsidian-agent-layer-
 # missing staged file is reported as "not pushed back yet", never an error.
 After=network-online.target
 Wants=network-online.target
+OnFailure=locus-failure@%n.service
 
 [Service]
 Type=oneshot

@@ -163,6 +163,19 @@ def test_only_proposed_papers_are_offered_to_read(conn):
     assert cd.build_readings(conn) == []
 
 
+def _target(conn, *, title, subject="regime-ml", why=None, proposal_id=None, marks=0,
+            folder="In-Progress"):
+    with conn:
+        cur = conn.execute(
+            "INSERT INTO reading_targets (doc_uuid, device_path, source_uri, proposal_id, "
+            "linked_by, created_at, device_folder, marks, title, subject_kind, subject_label, "
+            "fit, why_long) VALUES (?,?,?,?,'manual','2026-08-01',?,?,?,'project',?,0.7,?)",
+            (f"u-{title}", f"/Reading/{folder}/{title}", f"raw/{title}.pdf", proposal_id,
+             folder, marks, title, subject, why),
+        )
+    return cur.lastrowid
+
+
 def test_the_shelf_state_prints_the_true_count(conn):
     """The one deliberate exception to no-guilt-metrics: 'full queue, and tell me the truth'.
 
@@ -172,16 +185,41 @@ def test_the_shelf_state_prints_the_true_count(conn):
     now = datetime(2026, 8, 2, tzinfo=timezone.utc)
     _proposal(conn, "old one", proposed_at=(now - timedelta(days=21)).isoformat())
     _proposal(conn, "new one", proposed_at=(now - timedelta(days=1)).isoformat())
-    _proposal(conn, "being read", status="accepted", folder="In-Progress")
+    _target(conn, title="being read")
 
     st = cd.build_reading_state(conn, now=now)
     assert st.proposed == 2
     assert st.oldest_days == 21
-    assert st.in_progress == ("being read",)
+    assert [i.title for i in st.in_progress] == ["being read"]
 
     body = cd.render(cd.compose(conn, today=date(2026, 8, 2)))
     assert "2 waiting" in body
     assert "being read" in body
+
+
+def test_a_book_he_added_himself_appears_with_what_it_links_to(conn):
+    """His request, and it closes a real asymmetry: a proposed paper arrived with a project link
+    and a written reason, while the book he was actually reading and annotating had neither — and
+    was the one document the section left out entirely."""
+    _target(conn, title="Advanced Portfolio Management", subject="regime-ml", marks=26,
+            why="Your factor covariance estimator is the thing this chapter attacks.")
+    st = cd.build_reading_state(conn)
+
+    item = st.in_progress[0]
+    assert item.owner_added, "nothing in the pipeline chose it — that is what makes it interesting"
+    assert item.links_to == "regime-ml"
+
+    body = cd.render(cd.compose(conn, today=date(2026, 8, 2)))
+    assert "Advanced Portfolio Management" in body
+    assert "regime-ml" in body
+    assert "factor covariance estimator" in body
+    assert "*yours*" in body
+
+
+def test_a_delivered_paper_in_progress_is_not_marked_as_his_own(conn):
+    _proposal(conn, "a delivered paper")
+    _target(conn, title="a delivered paper", proposal_id=1)
+    assert not cd.build_reading_state(conn).in_progress[0].owner_added
 
 
 def test_reading_degrades_silently_without_the_discovery_tables(conn):

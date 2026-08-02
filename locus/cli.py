@@ -752,20 +752,35 @@ def cmd_discover(args) -> None:
                   f"(uuid {out.device_uuid or 'unknown'}) -> Proposed")
             return
 
+        if args.link_reading:
+            # Free and local: embeddings + a cosine against his project profiles. Deliberately
+            # separate from --write-why, which is billed — you can see what a book links to
+            # without spending anything on prose about it.
+            from locus.reading import relevance as R
+
+            for out in R.link_all(conn, only_owner=args.owner_only):
+                if out.ok:
+                    print(f"  {out.title[:48]:<50} -> {out.subject_label} "
+                          f"(fit {out.fit:.2f}, {out.detail})")
+                else:
+                    print(f"  {out.title[:48]:<50} -- {out.detail}")
+            return
+
         if args.write_why:
             # BILLED (claude -p, subscription). Deliberately its own step rather than part of
             # `--propose`: the reason is also REWRITTEN when a proposal goes stale on the shelf,
             # so this runs on the nightly timer, not only when something new is proposed.
             from locus.discover import why as D_why
 
-            results = D_why.write_missing(
-                conn, limit=args.write_why,
+            after = (
+                D_why.DEFAULT_REWRITE_AFTER_DAYS if args.rewrite_after is None
                 # `or` would swallow 0, which is the legitimate "rewrite everything now".
-                rewrite_after_days=(
-                    D_why.DEFAULT_REWRITE_AFTER_DAYS if args.rewrite_after is None
-                    else args.rewrite_after
-                ),
+                else args.rewrite_after
             )
+            results = D_why.write_missing(conn, limit=args.write_why, rewrite_after_days=after)
+            # ...and the same reason for books he added himself, which is the case that had none.
+            for tid in D_why.targets_needing_a_reason(conn, rewrite_after_days=after):
+                results.append(D_why.write_target_reason(conn, tid))
             for r in results:
                 if r.ok:
                     print(f"  #{r.proposal_id}  {r.reason}")
@@ -1649,6 +1664,14 @@ def main(argv=None) -> None:
     pds = sub.add_parser(
         "discover",
         help="proposed reading: list, deliver to the tablet, and ingest what you moved (free)",
+    )
+    pds.add_argument(
+        "--link-reading", action="store_true",
+        help="score what you are reading against your projects (free: embeddings only)",
+    )
+    pds.add_argument(
+        "--owner-only", action="store_true",
+        help="with --link-reading: only books you added yourself",
     )
     pds.add_argument(
         "--write-why", type=int, nargs="?", const=10, default=None, metavar="N",

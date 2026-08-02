@@ -157,10 +157,51 @@ def _grounded(reason: str, label: str, facets: str) -> bool:
     return is_grounded(reason, facets)
 
 
+def compose_reason(
+    conn: sqlite3.Connection,
+    *,
+    title: str,
+    source_text: str,
+    evidence_key: str,
+    ident: int = 0,
+    runner=None,
+    model: str | None = None,
+) -> Written:
+    """Write one reason from stored text. Shared by proposed papers and books he added himself.
+
+    `source_text` is whatever describes the item: a paper's abstract, or — for a book that is not
+    in the corpus — the passages he underlined, which say more about why it matters to him than
+    an abstract would (`reading/relevance.evidence_text`).
+    """
+    label, facets = _subject_facets(conn, evidence_key)
+    if not facets:
+        return Written(ident, False, detail=f"no stored profile for {evidence_key!r}")
+
+    prompt = _PROMPT.format(
+        label=label,
+        facets=facets,
+        title=title,
+        abstract=" ".join((source_text or "").split())[:2000] or "(no description available)",
+    )
+    try:
+        reply = run_text(prompt, model=model or load().agent.model, runner=runner)
+    except ClaudeError as exc:
+        log.warning("why: generation failed for %s: %s", ident, exc)
+        return Written(ident, False, detail=str(exc))
+
+    # Markdown emphasis is noise on an e-ink page rendered through typst.
+    reason = " ".join(reply.replace("**", "").replace("*", "").split())
+    if not _grounded(reason, label, facets):
+        # Silent rather than wrong: the deterministic `why` still renders, and it is true.
+        log.info("why: dropped an ungrounded reason for %s", ident)
+        return Written(ident, False, detail="reason never named the subject")
+    return Written(ident, True, reason=_trim(reason))
+
+
 def write_reason(
     conn: sqlite3.Connection, proposal_id: int, *, runner=None, model: str | None = None
 ) -> Written:
-    """Compose and store one proposal's written reason. Degrades, never raises."""
+    """Compose and store one PROPOSAL's written reason. Degrades, never raises."""
     row = conn.execute(
         "SELECT id, title, abstract, evidence_key FROM reading_proposals WHERE id=?",
         (proposal_id,),
@@ -168,36 +209,71 @@ def write_reason(
     if row is None:
         return Written(proposal_id, False, detail="no such proposal")
 
-    label, facets = _subject_facets(conn, row["evidence_key"])
-    if not facets:
-        return Written(proposal_id, False, detail=f"no stored profile for {row['evidence_key']!r}")
-
-    prompt = _PROMPT.format(
-        label=label,
-        facets=facets,
-        title=row["title"],
-        abstract=" ".join((row["abstract"] or "").split())[:2000] or "(no abstract available)",
+    out = compose_reason(
+        conn, title=row["title"], source_text=row["abstract"] or "",
+        evidence_key=row["evidence_key"], ident=proposal_id, runner=runner, model=model,
     )
+    if out.ok:
+        with conn:
+            conn.execute(
+                "UPDATE reading_proposals SET why_long=?, why_written_at=? WHERE id=?",
+                (out.reason, datetime.now(timezone.utc).isoformat(), proposal_id),
+            )
+    return out
+
+
+def write_target_reason(
+    conn: sqlite3.Connection, target_id: int, *, runner=None, model: str | None = None
+) -> Written:
+    """The same reason, for a book he chose himself (`reading_targets`).
+
+    Its `evidence_key` is assembled from the link `reading/relevance` stored, so a book and a
+    proposed paper resolve to a project through identical machinery.
+    """
+    from locus.reading.relevance import evidence_text, title_for
+
+    row = conn.execute("SELECT * FROM reading_targets WHERE id=?", (target_id,)).fetchone()
+    if row is None:
+        return Written(target_id, False, detail="no such reading target")
+    if not (row["subject_label"] or ""):
+        return Written(target_id, False, detail="not linked to a project yet")
+
+    text, _basis = evidence_text(conn, row)
+    out = compose_reason(
+        conn,
+        title=row["title"] or title_for(row["device_path"], row["source_uri"]),
+        source_text=text,
+        evidence_key=f"{row['subject_kind']}:{row['subject_label']}",
+        ident=target_id, runner=runner, model=model,
+    )
+    if out.ok:
+        with conn:
+            conn.execute(
+                "UPDATE reading_targets SET why_long=?, why_written_at=? WHERE id=?",
+                (out.reason, datetime.now(timezone.utc).isoformat(), target_id),
+            )
+    return out
+
+
+def targets_needing_a_reason(
+    conn: sqlite3.Connection,
+    *,
+    rewrite_after_days: int = DEFAULT_REWRITE_AFTER_DAYS,
+    now: datetime | None = None,
+) -> list[int]:
+    """Linked reading targets whose reason is missing or stale."""
+    now = now or datetime.now(timezone.utc)
+    cutoff = (now - timedelta(days=rewrite_after_days)).isoformat()
     try:
-        reply = run_text(prompt, model=model or load().agent.model, runner=runner)
-    except ClaudeError as exc:
-        log.warning("why: generation failed for proposal %s: %s", proposal_id, exc)
-        return Written(proposal_id, False, detail=str(exc))
-
-    # Markdown emphasis is noise on an e-ink page rendered through typst.
-    reason = " ".join(reply.replace("**", "").replace("*", "").split())
-    if not _grounded(reason, label, facets):
-        # Silent rather than wrong: the deterministic `why` still renders, and it is true.
-        log.info("why: dropped an ungrounded reason for proposal %s", proposal_id)
-        return Written(proposal_id, False, detail="reason never named the subject")
-    reason = _trim(reason)
-
-    with conn:
-        conn.execute(
-            "UPDATE reading_proposals SET why_long=?, why_written_at=? WHERE id=?",
-            (reason, datetime.now(timezone.utc).isoformat(), proposal_id),
-        )
-    return Written(proposal_id, True, reason=reason)
+        rows = conn.execute(
+            "SELECT id FROM reading_targets WHERE COALESCE(subject_label,'') != '' "
+            "AND (why_long IS NULL OR TRIM(why_long)='' OR COALESCE(why_written_at,'') < ?) "
+            "ORDER BY COALESCE(last_swept, created_at) DESC",
+            (cutoff,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    return [r["id"] for r in rows]
 
 
 def needs_a_reason(

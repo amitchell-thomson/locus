@@ -113,10 +113,21 @@ class ReadItem:
 
 
 @dataclass
+class InProgress:
+    """Something he is actually reading, and what it links to."""
+
+    title: str
+    links_to: str = ""      # 'regime-ml' — the project it sits closest to
+    why: str = ""           # the written reason, when one has been composed
+    marks: int = 0
+    owner_added: bool = False
+
+
+@dataclass
 class ReadingState:
     """The shelf as it actually stands. The one place counts are printed, by request."""
 
-    in_progress: tuple[str, ...] = ()
+    in_progress: tuple[InProgress, ...] = ()
     proposed: int = 0
     oldest_days: int | None = None
 
@@ -322,28 +333,38 @@ def build_reading_state(
     nothing moves, that is the signal to lower the cap — which only works if the number is printed
     rather than hidden behind the principle.
     """
+    from locus.reading import relevance as R
+
     now = now or datetime.now(timezone.utc)
     try:
         rows = conn.execute(
-            "SELECT title, status, device_folder, proposed_at FROM reading_proposals "
-            "WHERE status IN ('proposed','accepted','ingested')"
+            "SELECT status, proposed_at FROM reading_proposals WHERE status='proposed'"
         ).fetchall()
     except sqlite3.OperationalError:
-        return ReadingState()
+        rows = []
 
-    in_progress: list[str] = []
-    proposed = 0
+    proposed = len(rows)
     oldest: int | None = None
     for row in rows:
-        if row["status"] == "proposed":
-            proposed += 1
-            age = _days_since(row["proposed_at"], now=now)
-            if age is not None:
-                oldest = age if oldest is None else max(oldest, age)
-        elif (row["device_folder"] or "") == "In-Progress":
-            in_progress.append(row["title"])
+        age = _days_since(row["proposed_at"], now=now)
+        if age is not None:
+            oldest = age if oldest is None else max(oldest, age)
+
+    # IN-PROGRESS COMES FROM `reading_targets`, NOT FROM PROPOSALS. The first cut read proposals,
+    # so the one document he was genuinely reading and annotating — a book he added himself, with
+    # 26 marks on it — was the single thing this section left out.
+    reading = [
+        InProgress(
+            title=t["title"] or R.title_for(t["device_path"], t["source_uri"]),
+            links_to=t["subject_label"] or "",
+            why=" ".join((t["why_long"] or "").split()),
+            marks=t["marks"] or 0,
+            owner_added=t["proposal_id"] is None,
+        )
+        for t in R.in_progress(conn)
+    ]
     return ReadingState(
-        in_progress=tuple(sorted(in_progress)), proposed=proposed, oldest_days=oldest
+        in_progress=tuple(reading), proposed=proposed, oldest_days=oldest
     )
 
 
@@ -871,7 +892,14 @@ def _render_read(page: DailyPage) -> str:
     st = page.reading_state
     if st.in_progress:
         lines += ["", "**In progress**", ""]
-        lines += [f"- {t}" for t in st.in_progress]
+        for item in st.in_progress:
+            link = f" — {item.links_to}" if item.links_to else ""
+            # `yours` marks material he chose himself. It is the interesting case: nothing in the
+            # pipeline decided it was relevant, so the link is a finding rather than a restatement.
+            tag = "  *yours*" if item.owner_added else ""
+            lines += [f"- **{item.title}**{link}{tag}"]
+            if item.why:
+                lines += [f"  {item.why}"]
     if st.proposed:
         oldest = f", oldest {st.oldest_days} days" if st.oldest_days is not None else ""
         lines += ["", f"**On the shelf:** {st.proposed} waiting{oldest}"]

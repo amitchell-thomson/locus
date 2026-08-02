@@ -391,6 +391,7 @@ locus/
 │   ├── enrich/           # related.py — grounded `> [!ai] Related` owned blocks
 │   ├── reading/          # md2pdf · deliver_remarkable (`locus read`) · proposals (lifecycle) ·
 │   │                     #   deliver (push + OA fetch) · watch (the accept signal) ·
+│   │                     #   relevance (what a book YOU added links to) ·
 │   │                     #   accept (accepted -> corpus) · sweep (read the ink back)
 │   ├── discover/         # arxiv · openalex · queries (what to search for) · rank · judge ·
 │   │                     #   citations · why (the written reason, billed) — §16
@@ -610,6 +611,15 @@ stored earlier. Migration **0023**.
   deterministic `why` is a cosine distance ("fit 0.76") — a fact about the ranker, not a reason to
   read anything. Grounded in the paper's abstract + the matched project's stored profile facets,
   and dropped rather than stored if it fails `ingest.summarize.is_grounded` against them.
+- **Books he adds himself get relevance too** (`reading/relevance.py`, migration 0024, free —
+  embeddings + a cosine against `discovery_profiles`). A proposed paper arrived with a project
+  link and a written reason; a book he bought or was recommended arrived as a bare filename, which
+  is backwards — material he sought out himself is where a cross-domain link is most interesting,
+  because no ranker decided it was relevant. Scored on **the passages he marked**, not an abstract:
+  an abstract says what the author thinks a book is about, the marks say which parts made HIM stop.
+  Live: *Advanced Portfolio Management* -> `Alpha Fund` (fit 0.75) off its 26 marks. `in_progress`
+  now reads `reading_targets`, not `reading_proposals` — which is why the one book he was actually
+  reading used to be the single thing the section left out.
 - **The status line** sits at the foot of p1: what ran, and loudly what failed (including a run
   that opened and never closed). Systemd-level detection is step 5.
 

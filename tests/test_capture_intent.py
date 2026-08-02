@@ -160,3 +160,36 @@ def test_a_mark_already_acted_on_is_not_acted_on_twice(conn):
     I.classify_pending(conn, runner=_runner("idea", 0.9), now=_now())
     I.act_on(conn, mid)
     assert I.act_on(conn, mid).outcome == "already acted on"
+
+
+def test_the_project_link_names_an_object_not_a_label(conn, monkeypatch):
+    """`target_key` for target_kind='object' is str(object_id) (state.ObjectLink).
+
+    The first cut stored the discovery PROFILE LABEL there, so every idea->project link pointed at
+    nothing resolvable and the idea never actually connected to the project it was about — the
+    exact failure of a graph that looks linked and is not.
+    """
+    project_id, _ = state.upsert_object(conn, type_="project", title="regime-ml")
+    monkeypatch.setattr(
+        "locus.reading.relevance.best_subject", lambda *a, **k: ("project", "regime-ml", 0.9)
+    )
+    mid = _mark(conn, note="try a regime detector on the tanker spread")
+    I.classify_pending(conn, runner=_runner("idea", 0.9), now=_now())
+    I.act_on(conn, mid)
+
+    obj = state.get_object(conn, _row(conn, mid)["object_id"])
+    link = next(l for l in obj.links if l.target_kind == "object")
+    assert link.target_key == str(project_id), "a link must name a row that exists"
+    assert state.get_object(conn, int(link.target_key)).title == "regime-ml"
+
+
+def test_no_project_object_means_no_link_rather_than_a_dangling_one(conn, monkeypatch):
+    monkeypatch.setattr(
+        "locus.reading.relevance.best_subject", lambda *a, **k: ("project", "never-created", 0.9)
+    )
+    mid = _mark(conn, note="an idea about something with no project object")
+    I.classify_pending(conn, runner=_runner("idea", 0.9), now=_now())
+    I.act_on(conn, mid)
+
+    obj = state.get_object(conn, _row(conn, mid)["object_id"])
+    assert not [l for l in obj.links if l.target_kind == "object"]

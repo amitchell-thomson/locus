@@ -293,16 +293,19 @@ def act_on(conn: sqlite3.Connection, mark_id: int, *, floor: float | None = None
         state.set_status(conn, object_id, "active")
 
         links = [state.ObjectLink("doc", row["source_uri"], "raised_by")]
-        subject = _project_for(conn, f"{note} {passage}")
-        if subject:
-            links.append(state.ObjectLink("object", subject, "relates"))
+        project = _project_for(conn, f"{note} {passage}")
+        if project:
+            # `target_key` for target_kind='object' is str(object_id) — see state.ObjectLink.
+            # Storing the PROFILE LABEL here instead left the link pointing at nothing
+            # resolvable, so the idea and the project it was about never actually connected.
+            links.append(state.ObjectLink("object", str(project[0]), "relates"))
         state.add_links(conn, object_id, links)
 
         with conn:
             conn.execute(
                 "UPDATE pdf_annotations SET object_id=? WHERE id=?", (object_id, mark_id)
             )
-        where = f" -> {subject}" if subject else ""
+        where = f" -> {project[1]}" if project else ""
         return Acted(mark_id, intent, "became an idea", f"{title}{where}")
 
     # NOT_UNDERSTOOD: it earns a corpus re-read a slot on the Read page — the only thing that
@@ -311,19 +314,28 @@ def act_on(conn: sqlite3.Connection, mark_id: int, *, floor: float | None = None
     return Acted(mark_id, intent, "queued a re-read", (note or passage)[:60])
 
 
-def _project_for(conn: sqlite3.Connection, text: str) -> str:
-    """The project this idea is about, via the same profile match a book's relevance uses.
+def _project_for(conn: sqlite3.Connection, text: str) -> tuple[int, str] | None:
+    """The PROJECT OBJECT this idea is about, as (object_id, title).
 
-    Returns '' when nothing matches well enough — an idea with no project link is still an idea,
-    and inventing a link to the nearest project would be exactly the manufactured connection the
-    classifier is deliberately not shown projects in order to avoid.
+    Matched via the same profile embedding a book's relevance uses, then resolved to the actual
+    `objects` row — a link must name a thing that exists, and a profile label is not one. Returns
+    None when nothing matches well enough, or when the matched project has no object: an idea with
+    no project link is still an idea, and inventing a link to the nearest project is exactly the
+    manufactured connection the classifier is deliberately not shown projects in order to avoid.
     """
     from locus.reading.relevance import best_subject
 
     if not text.strip():
-        return ""
-    kind, label, fit = best_subject(conn, text)
-    return label if label and fit >= 0.6 else ""
+        return None
+    _kind, label, fit = best_subject(conn, text)
+    if not label or fit < 0.6:
+        return None
+    row = conn.execute(
+        "SELECT id, title FROM objects WHERE type='project' AND lower(title)=lower(?) "
+        "AND status != 'archived' LIMIT 1",
+        (label,),
+    ).fetchone()
+    return (row["id"], row["title"]) if row else None
 
 
 def act_on_all(conn: sqlite3.Connection, *, limit: int = 100) -> list[Acted]:

@@ -138,11 +138,64 @@ def test_very_short_names_never_connect(conn):
     assert T.link_threads(conn) == []
 
 
-def test_a_head_word_does_not_double_count_its_own_phrase(conn):
-    """"factor covariance" having matched, "covariance" adds nothing and would inflate shared."""
-    vocabulary = {"factor covariance": "factor covariance", "covariance": "covariance"}
-    found = T.concepts_in("the factor covariance estimator", vocabulary)
-    assert found == ["factor covariance"]
+def test_a_head_word_is_kept_alongside_the_phrase_that_contains_it(conn):
+    """Suppressing it silently cost the only real link in the corpus: one thread named `regime
+    detection` and another named `regime`, and once the longer phrase won they shared nothing.
+    Two people can discuss one thing at different levels of specificity."""
+    vocabulary = {"regime detection": "regime detection", "regime": "regime"}
+    found = T.concepts_in("we want regime detection for the tanker project", vocabulary)
+    assert set(found) == {"regime detection", "regime"}
+
+
+def test_matching_is_not_capped_even_when_reporting_is(conn):
+    """Capping the MATCH scanned longest-phrase-first and stopped early, so a thread whose text
+    had grown never reached the short concepts."""
+    vocabulary = {f"concept number {i}": f"concept number {i}" for i in range(12)}
+    vocabulary["regime"] = "regime"
+    text = " ".join(vocabulary) + " regime"
+    assert "regime" in T.concepts_in(text, vocabulary)
+
+
+def test_the_passage_a_mark_was_written_beside_is_part_of_the_thread(conn):
+    """The real reason linking was sparse. "interesting, can we plot this behavior?" names NO
+    concept — the concept is in the paragraph he was reading when he wrote it."""
+    _concept_in_two_docs(conn, "mean reversion")
+    a = _thread(conn, "interesting, can we plot this behaviour?")
+    with conn:
+        conn.execute(
+            "INSERT INTO pdf_annotations (source_uri, pdf_page, kind, bbox_key, covered_text, "
+            "in_margin, captured_at, object_id) VALUES ('books/apm.pdf',70,'underline','k1',"
+            "'performance beyond a year is reverting — mean reversion',0,'2026-07-30',?)",
+            (a,),
+        )
+    b = _thread(conn, "mean reversion in the tanker spread")
+
+    assert T.concepts_in(T._idea_text(state.get_object(conn, a), conn), {"mean reversion": "mean reversion"})
+    assert len(T.link_threads(conn)) == 1, "the passage is what the idea is ABOUT"
+
+
+def test_two_ideas_from_one_book_do_not_link_merely_for_sharing_it(conn):
+    """Tried, and it produced the failure it was meant to prevent: all four ideas from *Advanced
+    Portfolio Management* formed a complete graph via the string "Advanced Portfolio Management",
+    asserting only that he read one book. Sharing a source is not sharing a thought."""
+    _concept_in_two_docs(conn, "Advanced Portfolio Management")
+    a = _thread(conn, "one idea")
+    b = _thread(conn, "an unrelated idea")
+    with conn:
+        for i, oid in enumerate((a, b)):
+            conn.execute(
+                "INSERT INTO documents (id, content_hash, source_type, source_uri, raw_path, "
+                "ingest_model, title, category) VALUES (?,?,'pdf','books/apm.pdf','raw/apm',"
+                "'test','Advanced Portfolio Management','paper')"
+                if i == 0 else "SELECT 1", (10, "hapm") if i == 0 else ()
+            ) if i == 0 else None
+            conn.execute(
+                "INSERT INTO pdf_annotations (source_uri, pdf_page, kind, bbox_key, covered_text,"
+                " in_margin, captured_at, object_id) VALUES ('books/apm.pdf',?,'underline',?,"
+                "'a passage with no shared concept in it',0,'2026-07-30',?)",
+                (i, f"k{i}", oid),
+            )
+    assert T.link_threads(conn) == [], "the document TITLE must not be part of the vocabulary"
 
 
 def test_only_his_words_are_matched_not_the_agents_rationale(conn):

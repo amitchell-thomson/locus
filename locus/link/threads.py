@@ -36,9 +36,12 @@ from locus.link.related import non_topical_names
 # half the ideas he has ever had, and a link that fires on everything is noise wearing a citation.
 _MIN_CONCEPT_CHARS = 5
 
-# An idea that names a great many concepts is usually a paragraph rather than an idea; capping
-# keeps one sprawling thread from linking to everything.
-_MAX_CONCEPTS_PER_IDEA = 8
+# How many shared concepts are REPORTED for a pair. Matching itself is uncapped: capping the
+# match meant scanning longest-phrase-first and stopping at eight, so a thread whose text had
+# grown never reached the short concepts — `regime detection` matched and plain `regime` was
+# never tried, which silently cost the only real link in the corpus. Cap the output, not the
+# search.
+_MAX_SHARED_REPORTED = 8
 
 RELATION = "relates"
 THREAD_TYPES = ("idea", "question")
@@ -51,17 +54,49 @@ class ThreadLink:
     shared: tuple[str, ...]
 
 
-def _idea_text(obj: state.AgentObject) -> str:
-    """Everything of HIS that the thread carries: the title, the idea, and every development pass.
+def _idea_text(obj: state.AgentObject, conn: sqlite3.Connection | None = None) -> str:
+    """What the thread is ABOUT — his words plus the material that provoked them.
 
     Deliberately not the agent's `why`: linking two ideas because the proposer used the same word
     in its rationale twice would be a connection between two pieces of machine prose.
+
+    THE PASSAGE MATTERS AS MUCH AS THE NOTE, and leaving it out was the real reason thread linking
+    was sparse. A mark-born idea is a sentence of handwriting — "interesting, can we plot this
+    behavior?" — which names NO concept at all, because the concept is in the paragraph he was
+    reading when he wrote it (reversal, momentum, performance beyond a year). Measured over his
+    eight live threads, the notes alone named nine concepts between them, and three threads named
+    nothing. An idea is about what it was raised on; a vocabulary that excludes that is a
+    vocabulary of pronouns.
     """
     body = obj.body or {}
     parts = [obj.title, str(body.get("idea") or ""), str(body.get("question") or "")]
     for entry in body.get("development") or []:
         parts.append(str(entry.get("text", "")) if isinstance(entry, dict) else str(entry))
+    if conn is not None:
+        parts.extend(_provoking_text(conn, obj))
     return " ".join(p for p in parts if p)
+
+
+def _provoking_text(conn: sqlite3.Connection, obj: state.AgentObject) -> list[str]:
+    """The marked passage(s) this thread was raised on, and the title of what he was reading.
+
+    ONLY THE PASSAGE UNDER HIS OWN UNDERLINE — never the document's title, and never its wider
+    text. Including the title was tried and immediately produced the failure it was supposed to
+    prevent: all four ideas born from *Advanced Portfolio Management* linked to each other via the
+    string "Advanced Portfolio Management", a complete graph asserting only that he read one book.
+    Sharing a source is not sharing a thought.
+    """
+    out: list[str] = []
+    try:
+        for row in conn.execute(
+            "SELECT covered_text FROM pdf_annotations WHERE object_id=?", (obj.id,)
+        ):
+            text = " ".join((row["covered_text"] or "").split())
+            if text:
+                out.append(text)
+    except sqlite3.OperationalError:
+        return out
+    return out
 
 
 def canonical_vocabulary(conn: sqlite3.Connection, *, min_docs: int = 2) -> dict[str, str]:
@@ -103,13 +138,14 @@ def concepts_in(text: str, vocabulary: dict[str, str]) -> list[str]:
     for key in sorted(vocabulary, key=len, reverse=True):
         needle = f" {re.sub(r'[^a-z0-9]+', ' ', key)} "
         if needle in haystack:
-            canonical = vocabulary[key]
-            # A longer phrase already matched swallows its head word: "factor covariance" having
-            # matched, "covariance" adds nothing and would inflate the shared count.
-            if not any(canonical.casefold() in f.casefold() for f in found):
-                found.append(canonical)
-        if len(found) >= _MAX_CONCEPTS_PER_IDEA:
-            break
+            # HEAD WORDS ARE KEPT, not swallowed by the longer phrase that contains them. The
+            # first cut suppressed them to stop "factor covariance" and "covariance" both
+            # counting, and it silently broke the only real link in the corpus: one thread named
+            # `regime detection` and another named `regime`, and once the longer phrase won, the
+            # two threads shared nothing. Two people can be talking about the same thing at
+            # different levels of specificity. Inflation is bounded by the per-idea cap; a missed
+            # connection is not bounded by anything.
+            found.append(vocabulary[key])
     return found
 
 
@@ -137,7 +173,7 @@ def link_threads(
         obj = state.get_object(conn, row["id"])
         if obj is None:
             continue
-        found = concepts_in(_idea_text(obj), vocabulary)
+        found = concepts_in(_idea_text(obj, conn), vocabulary)
         concepts_of[obj.id] = found
         for concept in found:
             by_concept[concept].append(obj.id)
@@ -152,7 +188,7 @@ def link_threads(
     for (a, b), shared in sorted(shared_between.items()):
         if len(shared) < min_shared:
             continue
-        names = tuple(sorted(shared))
+        names = tuple(sorted(shared)[:_MAX_SHARED_REPORTED])
         # Stored BOTH ways: `object_links` is directed, and a thread should surface from either
         # end regardless of which was written first.
         state.add_links(conn, a, [state.ObjectLink("object", str(b), RELATION)])

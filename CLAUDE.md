@@ -560,6 +560,25 @@ the handwriting. Both on systemd timers.
   content-only (a promotion timestamp in the frontmatter would re-ingest and re-embed every
   thread note on every hourly run), and promotion bookkeeping is NOT an owner edit.
 
+**Concept fragmentation is NOT the defect it looked like (measured 2026-08-02).** 16.6% of
+canonicals span ≥2 documents, and the two candidate promotion tiers both fail on evidence:
+sub-phrase promotion covers only 7.1% of singletons and is mostly wrong in both directions
+(`LLMs` ≤ `multimodal LLMs`, `Country` ≤ `country risk` — the specific is not the general);
+cross-TYPE merging (`Black-Scholes model` exists as concept/method/theorem/tool because an 8B
+model assigns type per document and is not stable) touches 162 names and yields **+16** cross-doc
+concepts, 16.6% → 16.9%. A heterogeneous 210-document corpus simply contains mostly
+document-specific vocabulary; that is what the corpus is, not a bug.
+
+What fragmentation was actually costing was measured at the CONSUMER instead, and the cause was
+different: **a thread's vocabulary was its own sentence.** "interesting, can we plot this
+behavior?" names no concept, because the concept is in the paragraph he was reading when he wrote
+it. Including the marked PASSAGE took the eight live threads from 9 concepts named to 22, and
+thread links from 1 to 2 — both of them real. Three failures found on the way, each now a test:
+the document TITLE must not be included (all four ideas from one book formed a complete graph
+asserting only that he read it); head words must NOT be swallowed by longer phrases (`regime` vs
+`regime detection` was exactly the pair that broke); and the per-idea cap must bound the REPORT,
+not the search (scanning longest-first and stopping early never reached the short concepts).
+
 **Next:** turn a marked passage into an idea with a model pass (the geometry hands it a clean
 grounded input — the `idea` type exists and nothing populates it) · note↔note surface (captured
 notes form their own mutual cluster, shared=10 — the plan assumed notes link to the corpus, not to

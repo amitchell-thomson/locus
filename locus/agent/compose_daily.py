@@ -1191,8 +1191,15 @@ def _develop_rank(conn: sqlite3.Connection, obj) -> tuple:
     has been offered and only returns it when he develops it. The ledger provides the fairness the
     old sort was trying to; this decides which of the eligible threads leads.
     """
+    # COUNT PROJECT TARGETS, NOT `target_kind='object'`. The first cut counted the latter, which
+    # ALSO matches the thread<->thread links `link/threads.py` writes — so the moment `locus link`
+    # ran, four question<->idea edges appeared and the ordering silently reverted. The key
+    # resolved; it just did not mean what it was assumed to mean, exactly like the citation the
+    # answer pass could not trust. Joining through to `objects.type` makes the intent checkable.
     linked = conn.execute(
-        "SELECT COUNT(*) AS n FROM object_links WHERE object_id=? AND target_kind='object'",
+        "SELECT COUNT(*) AS n FROM object_links ol JOIN objects p "
+        "  ON CAST(p.id AS TEXT) = ol.target_key "
+        "WHERE ol.object_id=? AND ol.target_kind='object' AND p.type='project'",
         (obj.id,),
     ).fetchone()["n"]
     return (0 if linked else 1, obj.updated_at or "")

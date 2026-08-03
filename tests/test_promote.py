@@ -95,7 +95,10 @@ def test_threads_fit_the_page_and_are_anchored_and_rendered(conn):
     assert {a.anchor for a in page.anchors if a.kind == "open"} == {t.anchor for t in threads}
     body = cd.render(page)
     for t in threads:
-        assert f"**{t.anchor}.**" in body
+        # Anchors have their own markup now (`_anchor`) rather than borrowing bold: `**` also
+        # marks "On the shelf", and the item TITLE sat inside the anchor's own `**...**` span,
+        # so styling `strong` turned all of them into accent-coloured sans.
+        assert cd._anchor(t.anchor) in body
 
 
 def test_prior_development_is_shown_so_he_can_continue(conn):

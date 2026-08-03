@@ -568,7 +568,7 @@ def cmd_read(args) -> None:
     the offline path when the device is asleep.
     """
     from locus.reading.deliver_remarkable import deliver_pdf
-    from locus.reading.md2pdf import PageGeometry, render_markdown_file
+    from locus.reading.md2pdf import PageGeometry, render_markdown_to_pdf
 
     cfg = load().reading
     geometry = PageGeometry(
@@ -616,7 +616,7 @@ def cmd_daily(args) -> None:
     """
     from locus.agent import compose_daily as cd
     from locus.reading.deliver_remarkable import deliver_pdf
-    from locus.reading.md2pdf import PageGeometry, render_markdown_file
+    from locus.reading.md2pdf import PageGeometry, render_markdown_to_pdf
     from locus.vault.writer import write_generated_note
 
     cfg = load()
@@ -643,13 +643,19 @@ def cmd_daily(args) -> None:
         pdf_path = out_dir / f"daily-{page.page_date}.pdf"
         if not args.no_render:
             r = cfg.reading
-            render_markdown_file(
-                md_path, pdf_path,
+            d = cfg.daily
+            # Rendered from the composed BODY, not from the file. `render_markdown_file` titles a
+            # document from its filename stem when the text has no leading `# ` — and the note's
+            # YAML frontmatter meant it never did, so every delivered page opened with a heading
+            # reading "home" (from `_home.md`).
+            render_markdown_to_pdf(
+                body, pdf_path,
                 geometry=PageGeometry(
                     width_in=r.page_width_in, height_in=r.page_height_in,
                     margin_in=r.margin_in, font_pt=r.font_pt,
-                    # Wider than `locus read` uses: these lines are written on, not read.
-                    rule_gap_em=cfg.daily.rule_gap_em,
+                    rule_gap_em=d.rule_gap_em,
+                    accent=d.accent, sans_font=d.sans_font,
+                    running_header=page.page_date,
                 ),
             )
 

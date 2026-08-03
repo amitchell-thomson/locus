@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from locus.agent import compose_daily as cd
+from locus.config import load
 from locus.agent import state
 from locus.db.connection import get_connection
 from locus.db.migrate import migrate
@@ -592,7 +593,9 @@ def test_each_section_gets_its_own_physical_page(conn):
     body = cd.render(cd.compose(conn, today=date(2026, 8, 1)))
     # Read | Think | Recall | back page => three breaks.
     assert body.count("#pagebreak()") == 3
-    assert body.index("## Read") < body.index("## Think") < body.index("## Recall")
+    # Sections are level-1 headings: the date moved to the running header, so the SECTION is
+    # the title of its page (see `render`).
+    assert body.index("# Read") < body.index("# Think") < body.index("# Recall")
 
 
 def test_a_quiet_day_is_a_short_document_not_four_blank_pages(conn):
@@ -609,14 +612,21 @@ def test_writable_rows_render_ascii_boxes_and_ruled_lines(conn):
     assert " " not in body, "a non-breaking space stops the next line parsing as a rule"
 
 
-def test_a_connection_tick_box_is_ascii(conn):
-    """The ballot-box glyph has no font coverage and rendered as a tofu box (2026-07-30)."""
+def test_a_connection_tick_box_is_drawn_not_a_glyph(conn):
+    """The ballot-box glyph has no font coverage and rendered as a tofu box (2026-07-30).
+
+    ASCII `[   ]` was the fallback, but three spaces in brackets do not read as something to
+    tick. It is a DRAWN square now (`#tickbox`, defined in the typst preamble), so it cannot
+    depend on font coverage at all — and the preamble always binds it, styled or not.
+    """
     item = cd.ThreadItem(
         anchor="T1", section=cd.SECTION_CONNECTION, kind="connection",
         headline="a → b", context="both develop x", tick=True,
     )
     page = cd.DailyPage(page_date="2026-08-01", threads=[item])
-    assert "[   ]" in cd.render(page)
+    body = cd.render(page)
+    assert cd._TICKBOX in body
+    assert "\u2610" not in body and "[   ]" not in body
 
 
 def test_rendered_page_has_no_nbsp_anywhere(conn):
@@ -698,9 +708,9 @@ def test_writing_space_expands_when_there_is_less_to_show(conn):
     assert cd._lines_for(3, "think") == cd._MIN_LINES["think"]
     assert cd._lines_for(1, "think") > cd._MIN_LINES["think"]
     assert cd._lines_for(1, "think") == cd._MAX_LINES
-    # Recall regions floor lower on purpose: recalling a stored claim is a sentence or two, so
-    # two lines there buys a fourth question rather than white space.
-    assert cd._lines_for(4, "recall") == cd._MIN_LINES["recall"] == 2
+    # Recall floors at three lines since `rule_gap_em` came down to 7mm: at the old 10mm spacing
+    # a third line pushed the section onto a second page, so it floored at two.
+    assert cd._lines_for(4, "recall") == cd._MIN_LINES["recall"] == 3
 
 
 def test_a_full_page_does_not_overflow_into_a_fifth(conn):
@@ -733,7 +743,7 @@ def test_a_full_page_does_not_overflow_into_a_fifth(conn):
                 marks=i,
                 why="Stop-loss cascade detection in Alpha Fund directly models synchronized "
                     "deleveraging during adverse events across correlated books.")
-    for i in range(4):
+    for i in range(cd._FIT["think"] + 2):
         _mark(conn, uri=f"books/b{i}.pdf", page=i, text=f"{_PASSAGE} number {i}")
     for i in range(cd._FIT["recall"]):
         learn_review.schedule_prompt(
@@ -742,8 +752,18 @@ def test_a_full_page_does_not_overflow_into_a_fifth(conn):
 
     page = cd.compose(conn, today=date(2026, 8, 1))
     out = Path(str(conn.execute("PRAGMA database_list").fetchone()["file"])).parent / "p.pdf"
+    # THE GEOMETRY THE DEVICE ACTUALLY GETS. This used to hardcode `rule_gap_em=2.6` and no
+    # styling, so it stopped describing the delivered page the moment either changed — and the
+    # page count is entirely a function of both (tighter rules bought a whole extra Think item).
+    cfg = load()
     render_markdown_to_pdf(
-        cd.render(page), out, geometry=PageGeometry(rule_gap_em=2.6)
+        cd.render(page), out,
+        geometry=PageGeometry(
+            width_in=cfg.reading.page_width_in, height_in=cfg.reading.page_height_in,
+            margin_in=cfg.reading.margin_in, font_pt=cfg.reading.font_pt,
+            rule_gap_em=cfg.daily.rule_gap_em, accent=cfg.daily.accent,
+            sans_font=cfg.daily.sans_font, running_header=page.page_date,
+        )
     )
     assert pymupdf.open(out).page_count == 4, "a section overflowed onto a second page"
 

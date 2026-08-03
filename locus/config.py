@@ -354,8 +354,22 @@ class DailyConfig(BaseModel):
     owner's handwriting.
     """
 
+    # MEASURED on the delivered page, not assumed: Typst collapses a block's `above` against the
+    # previous block's `below`, so consecutive rules sit ONE gap apart. At 2.6 that measured
+    # 28.6pt = 10.1mm, wider than college-ruled paper and, in the owner's words, "way too far
+    # apart". 1.8em = 19.8pt = 7.0mm, which is standard ruled-paper spacing and still clears
+    # adult handwriting. Changing this changes how many writing lines fit a page, so
+    # `compose_daily._LINE_BUDGET` is re-derived against it.
     rule_gap_em: float = Field(
-        2.6, description="Vertical space around each ruled writing line, in em."
+        1.8, description="Vertical space between ruled writing lines, in em."
+    )
+    # The daily page is styled; a delivered PAPER is not (see `md2pdf.PageGeometry`). One accent,
+    # used on section rules, anchors and tick boxes so the eye finds structure without colour
+    # becoming decoration. The Paper Pro is a colour device, so this actually renders.
+    accent: str = Field("#1B3A5F", description="Single accent colour for the daily page (hex).")
+    sans_font: str = Field(
+        "DejaVu Sans",
+        description="Display face for headings/anchors; prose stays serif. Must be installed.",
     )
 
 

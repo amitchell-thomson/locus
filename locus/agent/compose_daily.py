@@ -116,9 +116,9 @@ TEACHABLE_TYPES = ("concept", "method", "theorem", "metric")
 # Below this a canonical is an abbreviation or a label ("F1", "VaR"), not something to explain.
 _MIN_TEACHABLE_CHARS = 6
 
-SECTION_EXPLAIN = "Explain it"
-SECTION_DEVELOP = "Take it further"
-SECTION_CONNECT = "Worth connecting"
+SECTION_EXPLAIN = "Explain"
+SECTION_DEVELOP = "Develop"
+SECTION_CONNECT = "Connect"
 
 # Retained so a page delivered before this change can still be pulled back and routed: the
 # anchors on it carry the old kinds. Nothing composes them any more.

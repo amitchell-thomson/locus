@@ -462,6 +462,15 @@ def plan_for_document(
         plan.rejected.append(Rejection("object", plan.doc_title, "agent-generated source"))
         return plan
 
+    # The OTHER feedback loop, and the one that actually fired. A promoted thread is his words,
+    # so `_is_generated` does not cover it and must not — but the object it came from already
+    # exists, and re-extracting it proposes a duplicate of a thread he may have already resolved.
+    if _is_promoted_thread(doc):
+        plan.rejected.append(
+            Rejection("object", plan.doc_title, "already an object — promoted thread")
+        )
+        return plan
+
     concepts = canonical_concepts(
         conn, doc_id, min_docs=scfg.min_concept_docs,
         exclude_types=scfg.concept_exclude_entity_types,
@@ -521,6 +530,23 @@ def plan_for_document(
 def _is_generated(doc) -> bool:
     uri = (doc["source_uri"] or "").replace("\\", "/")
     return "_generated/" in uri or uri.startswith("_generated")
+
+
+def _is_promoted_thread(doc) -> bool:
+    """Is this document a thread that `locus promote` wrote back into the corpus?
+
+    Keyed on the promote destination rather than on frontmatter, because the DB has no `origin`
+    column and the path is what promote actually controls (`promote.THREADS_SUBDIR`) — importing
+    the constant means a rename cannot silently reopen the loop.
+
+    Live proof this is needed: obj 79 ("Is leetcode that important...") was answered and ARCHIVED,
+    promoted to `vault/notes/threads/`, ingested as doc 493, and re-proposed by this module as
+    obj 85 — `active`, i.e. the resolved question came back as an open one.
+    """
+    from locus.agent.promote import THREADS_SUBDIR
+
+    uri = (doc["source_uri"] or "").replace("\\", "/")
+    return f"/notes/{THREADS_SUBDIR}/" in uri or uri.startswith(f"notes/{THREADS_SUBDIR}/")
 
 
 def _uri_of(conn, doc_id: int) -> str | None:

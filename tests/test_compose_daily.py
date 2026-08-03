@@ -655,8 +655,24 @@ def test_a_full_page_does_not_overflow_into_a_fifth(conn):
     pymupdf = pytest.importorskip("pymupdf")
     from locus.reading.md2pdf import PageGeometry, render_markdown_to_pdf
 
+    # THE FIXTURE MUST BE THE WORST REALISTIC PAGE, not a comfortable one. The first version of
+    # this test seeded short reasons and no in-progress list, so it passed at every cap while the
+    # REAL page rendered five pages (measured 2026-08-02). A layout test that does not carry
+    # live-sized content is only testing the renderer.
     for i in range(cd._FIT["read"]):
-        _proposal(conn, f"paper {i}", why_long="a reason that runs to a reasonable length " * 3)
+        _proposal(
+            conn, f"Portfolio Optimization and Tail-Risk Analytics of Actively Managed ETFs {i}",
+            # 300 chars is what `_clip` allows a written reason, so it is what the page must hold.
+            why_long=("Alpha Fund's backtesting uses Mean-Variance Optimization; this paper "
+                      "compares MVO, CVaR minimization and tangency strategies for long-short "
+                      "portfolios with tail-risk diagnostics. Apply these to evaluate whether "
+                      "CVaR-optimization better handles tail-risk in your cascade portfolios.")[:300],
+        )
+    for i in range(5):
+        _target(conn, title=f"AlphaZeroBeta Deep Reinforcement Learning for Market-Neutral {i}",
+                marks=i,
+                why="Stop-loss cascade detection in Alpha Fund directly models synchronized "
+                    "deleveraging during adverse events across correlated books.")
     for i in range(4):
         _mark(conn, uri=f"books/b{i}.pdf", page=i, text=f"{_PASSAGE} number {i}")
     for i in range(cd._FIT["recall"]):

@@ -333,6 +333,25 @@ def test_agent_generated_documents_are_never_structured(conn):
     assert plan.objects == [] and plan.rejected[0].reason == "agent-generated source"
 
 
+def test_a_promoted_thread_is_never_structured_back_into_a_second_object(conn):
+    """The other feedback loop, and the one that actually fired in production.
+
+    `locus promote` writes a thread to `vault/notes/threads/` as HIS words, so the
+    `_is_generated` guard correctly does not catch it — but the object already exists. Live
+    before this guard: obj 79 was answered and ARCHIVED, promoted, ingested as doc 493, and
+    re-proposed as obj 85 `active`. The resolved question came back as an open one.
+    """
+    _doc(conn, 11, title="Is leetcode that important?",
+         uri="/home/alec/vault/notes/threads/is-leetcode-that-important-79.md",
+         category="note", text="Is leetcode that important or should we focus on codeforces?")
+    plan = propose.plan_for_document(
+        conn, 11, retrieve_fn=_no_support,
+        runner=_runner({"objects": [{"type": "question", "title": "Is leetcode that important?"}]}),
+    )
+    assert plan.objects == []
+    assert plan.rejected[0].reason == "already an object — promoted thread"
+
+
 def test_model_failure_degrades_and_proposes_nothing(conn):
     def failing(prompt, model):
         raise ClaudeError("nope")

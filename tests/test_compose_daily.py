@@ -746,3 +746,55 @@ def test_a_full_page_does_not_overflow_into_a_fifth(conn):
         cd.render(page), out, geometry=PageGeometry(rule_gap_em=2.6)
     )
     assert pymupdf.open(out).page_count == 4, "a section overflowed onto a second page"
+
+
+def test_the_think_page_refills_a_subsection_that_has_nothing(conn, monkeypatch):
+    """"Equal weighting" must not mean "a third of the page stays blank".
+
+    The old split took a fixed share from marks and open and let connections absorb the slack in
+    only ONE direction, so a day with no connections rendered a two-thirds page — on the surface
+    where space is the scarce thing and a 26-mark backlog is waiting behind it.
+    """
+    for i in range(4):
+        _mark(conn, uri=f"books/b{i}.pdf", page=i, text=f"{_PASSAGE} number {i}")
+    monkeypatch.setattr(cd, "build_connections", lambda *a, **k: [])
+    monkeypatch.setattr(cd, "build_open", lambda *a, **k: [])
+
+    items = cd.build_threads(conn, limit=3, seen=set())
+    assert len(items) == 3, "the empty subsections' seats must be taken, not wasted"
+    assert {i.section for i in items} == {cd.SECTION_MARKED}
+
+
+def test_marks_are_no_longer_capped_at_one_per_document(conn):
+    """Every mark he has is on the same book, and one-per-document was a HARD rule — so the
+    section could never offer more than one mark a day however much room there was."""
+    for i in range(4):
+        _mark(conn, uri="books/apm.pdf", page=i, text=f"{_PASSAGE} number {i}")
+    assert len(cd.build_marked(conn, limit=3, seen=set())) == 3
+
+
+def test_variety_is_still_preferred_when_there_are_several_documents(conn):
+    """Soft, not abandoned: distinct documents lead, and only then does a second come from one."""
+    _mark(conn, uri="books/a.pdf", page=1, text=f"{_PASSAGE} one")
+    _mark(conn, uri="books/a.pdf", page=2, text=f"{_PASSAGE} two")
+    _mark(conn, uri="books/b.pdf", page=3, text=f"{_PASSAGE} three")
+    items = cd.build_marked(conn, limit=3, seen=set())
+    assert len({i.context.split(" — ")[0] for i in items[:2]}) == 2
+
+
+def test_a_re_read_he_already_declined_is_not_offered_again(conn, monkeypatch):
+    """Eight refusals sat on the `reading` acceptance surface with no reader while the same
+    documents stayed eligible. A rejection is data, or it should not be written."""
+    import locus.retrieve.rerank as R
+
+    _corpus_doc(conn, 910, uri="corpus/declined.pdf", title="Declined Explainer")
+    _stub_search(monkeypatch, 910)
+    monkeypatch.setattr(R, "score_pairs", lambda _q, texts: [4.5] * len(texts))
+    assert cd._explains(conn, "a question", exclude_uri="books/apm.pdf") is not None
+
+    state.log_acceptance(
+        conn, surface="reading", candidate_key="corpus/declined.pdf", verdict="rejected"
+    )
+    assert cd._explains(
+        conn, "a question", exclude_uri="books/apm.pdf", declined=cd._declined_rereads(conn)
+    ) is None

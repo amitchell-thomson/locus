@@ -233,3 +233,35 @@ def test_position_without_a_source_uri_still_resolves_by_doc_id(conn):
     from locus.evolve.trajectory import build_trajectory
 
     assert build_trajectory(conn, "concept", key).entries[0].source_title == "Old note"
+
+
+def test_owner_authored_sql_agrees_with_the_python_predicate(conn):
+    """ONE definition of "his writing", asserted across the two expressions of it.
+
+    Three layers ask this question — the proposer, the daily page's connection source, and
+    re-read ranking — and they used to answer it three different ways, all `category='note'`.
+    """
+    from locus.structure.propose import _is_owner_authored
+
+    rows = [
+        # (uri, category, source_type, expected)
+        ("/home/alec/vault/notes/optimisation.md", "coursework", "markdown", True),
+        ("vault/incoming/projects/oxdaq.md", "project", "markdown", True),
+        ("vault/incoming/projects/optibook.pdf", "project", "pdf", False),
+        ("vault/incoming/papers/x.pdf", "paper", "pdf", False),
+        ("repos/regime-ml", "project", "code", False),
+    ]
+    for i, (uri, cat, st, _expected) in enumerate(rows, start=500):
+        with conn:
+            conn.execute(
+                "INSERT INTO documents (id, content_hash, source_type, source_uri, raw_path, "
+                "ingest_model, category) VALUES (?,?,?,?,?,'test',?)",
+                (i, f"h{i}", st, uri, f"raw{i}", cat),
+            )
+
+    clause, params = state.owner_authored_sql("d")
+    sql_ids = {r["id"] for r in conn.execute(f"SELECT d.id FROM documents d WHERE {clause}", params)}
+    py_ids = {r["id"] for r in conn.execute("SELECT * FROM documents") if _is_owner_authored(r)}
+    assert sql_ids == py_ids, "the SQL and Python definitions of owner-authored have drifted"
+    for i, (_uri, _cat, _st, expected) in enumerate(rows, start=500):
+        assert (i in sql_ids) is expected

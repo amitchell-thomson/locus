@@ -315,9 +315,15 @@ def slots_free(conn: sqlite3.Connection, kind: str, *, caps: dict[str, int] | No
 def channel_stats(conn: sqlite3.Connection) -> dict[str, dict[str, int]]:
     """Per-`why_kind` outcome counts — what the flywheel actually learns from.
 
-    Per-CHANNEL, not per-item: there are three judgments on the whole reading surface today, so an
-    item-level prior would be noise wearing the costume of evidence. "discovery 4/5, co_citation
-    0/6" is a claim that small numbers can support.
+    Per-CHANNEL, not per-item: judgments on the whole reading surface are still in single figures,
+    so an item-level prior would be noise wearing the costume of evidence. "project:regime-ml 1/2"
+    is a claim small numbers can support.
+
+    GROUPED BY `evidence_key`, NOT `why_kind`. `why_kind` says how a candidate was FOUND and is
+    `'discovery'` on every row the pipeline has ever produced — grouping by it yielded exactly one
+    bucket, so the per-channel breakdown this function exists for could not appear however much
+    evidence accumulated. `evidence_key` ("project:regime-ml") is the thing that actually varies
+    and the thing a prior would key on.
 
     Read from `reading_proposals` rather than `acceptance_log` because only this table records HOW
     a proposal ended. `ttl` and `removed` are both rejections and must not be pooled: one means he
@@ -325,7 +331,7 @@ def channel_stats(conn: sqlite3.Connection) -> dict[str, dict[str, int]]:
     """
     out: dict[str, dict[str, int]] = {}
     for r in conn.execute(
-        "SELECT why_kind AS k, status AS s, resolution AS res, COUNT(*) AS n "
+        "SELECT evidence_key AS k, status AS s, resolution AS res, COUNT(*) AS n "
         "FROM reading_proposals GROUP BY 1, 2, 3"
     ):
         bucket = out.setdefault(r["k"], {"kept": 0, "ttl": 0, "removed": 0, "open": 0})

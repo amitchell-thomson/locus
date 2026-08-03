@@ -66,7 +66,6 @@ from locus.link.projects import projects_for
 SURFACE_CONNECTION = "connection"
 SURFACE_BLESSING = "object"
 SURFACE_READING = "reading"
-SURFACE_RECALL = "recall"
 
 
 # --- vision extraction ---------------------------------------------------------------------
@@ -373,17 +372,16 @@ def _route_recall(conn, anchor, region, r: ExtractedRegion, *, page_date: str) -
     # is captured as the thought it actually is. He still engaged, so the flywheel still hears
     # about it.
     kind = classify_writing(r.text)
+    # No `acceptance_log` row here. A recall attempt is already recorded where it DOES something
+    # — `review_schedule`, via the SM-2 grade below — and the duplicate on the `recall` surface
+    # was written on every answer, read by nothing, and always `kept` so it could not even
+    # distinguish an attempt from a miss. "This signal should DO something, not just be a value
+    # that sits in a table" applies to the signals we write as much as the ones we read.
     if kind != WRITING_NOTE:
         detail = _route_writing(conn, anchor, r, page_date=page_date)
-        state.log_acceptance(
-            conn, surface=SURFACE_RECALL, candidate_key=str(item_id), verdict="kept"
-        )
         return RouteOutcome(r.anchor, "recall", "not-an-answer", detail)
 
     learn_review.grade_item(conn, item_id, grade=_ATTEMPTED_GRADE)
-    state.log_acceptance(
-        conn, surface=SURFACE_RECALL, candidate_key=str(item_id), verdict="kept"
-    )
     return RouteOutcome(r.anchor, "recall", "graded", f"item {item_id} advanced")
 
 

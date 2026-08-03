@@ -35,9 +35,6 @@ from dataclasses import dataclass
 from locus.agent import state
 from locus.learn.gaps import gaps_for_object
 
-# Categories that are the owner's own writing — never suggested as reading (see module docstring).
-_OWN_WRITING = ("note",)
-
 
 @dataclass
 class ReReadCandidate:
@@ -138,8 +135,12 @@ def reread_candidates(
     if not gaps:
         return []
 
+    from locus.agent.state import owner_authored_sql
+
     marks = ",".join("?" * len(gaps))
-    own_marks = ",".join("?" * len(_OWN_WRITING))
+    # "His own writing" by the one shared definition, so a note filed `coursework` by its device
+    # folder is still recognised as his and never suggested back to him as reading.
+    own_clause, own_params = owner_authored_sql("d")
     rows = conn.execute(
         f"""
         SELECT d.id, d.source_uri, d.title, canon.canonical_name AS concept
@@ -154,10 +155,10 @@ def reread_candidates(
                    ) AS canonical_name
             FROM entities e2
         ) canon ON canon.doc_id = e.doc_id AND canon.canonical_name IN ({marks})
-        WHERE d.category NOT IN ({own_marks})
+        WHERE NOT {own_clause}
         GROUP BY d.id, canon.canonical_name
         """,
-        (*gaps.keys(), *_OWN_WRITING),
+        (*gaps.keys(), *own_params),
     ).fetchall()
 
     docs_by_object = _docs_by_object(conn, limit=gap_limit)

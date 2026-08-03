@@ -662,6 +662,9 @@ def _is_owner_authored(doc) -> bool:
         return False
     allowed = tuple(scfg.belief_source_types)
     return not allowed or (doc["source_type"] or "") in allowed
+    # NOTE: `state.owner_authored_sql` is the same rule expressed for a query, used by the daily
+    # page's connection source and by re-read ranking. If one changes, change both — there is a
+    # test asserting they agree on every document in the corpus.
 
 
 def _body_for(cand: ProposedObject) -> dict:

@@ -317,15 +317,35 @@ def test_a_delivered_stub_records_no_local_path(conn, tmp_path):
 
 
 def test_channel_stats_separate_ttl_from_removal(conn):
-    a = _seed(conn, title="A", why_kind="discovery")
-    b = _seed(conn, title="B", why_kind="discovery")
-    c = _seed(conn, title="C", why_kind="discovery")
+    """`ttl` and `removed` are both rejections and must not be pooled: one means he left it
+    sitting, the other that he threw it away.
+
+    Grouped by `evidence_key`, not `why_kind`. `why_kind` is `'discovery'` on every row the
+    pipeline has ever produced, so grouping by it yielded a single bucket and the per-channel
+    breakdown this function exists for could never appear however much evidence accumulated.
+    """
+    a = _seed(conn, title="A", evidence_key="project:regime-ml")
+    b = _seed(conn, title="B", evidence_key="project:regime-ml")
+    c = _seed(conn, title="C", evidence_key="project:regime-ml")
     P.set_status(conn, a, "accepted", resolution="moved")
     P.set_status(conn, b, "rejected", resolution="ttl")
     P.set_status(conn, c, "rejected", resolution="removed")
 
-    stats = P.channel_stats(conn)["discovery"]
+    stats = P.channel_stats(conn)["project:regime-ml"]
     assert (stats["kept"], stats["ttl"], stats["removed"]) == (1, 1, 1)
+
+
+def test_channel_stats_distinguishes_subjects(conn):
+    """The point of the regrouping: two subjects must be two buckets, which the old key
+    (constant `why_kind`) could never produce."""
+    keep = _seed(conn, title="K", evidence_key="project:regime-ml")
+    drop = _seed(conn, title="D", evidence_key="project:python-solutions")
+    P.set_status(conn, keep, "accepted", resolution="moved")
+    P.set_status(conn, drop, "rejected", resolution="removed")
+
+    stats = P.channel_stats(conn)
+    assert stats["project:regime-ml"]["kept"] == 1
+    assert stats["project:python-solutions"]["removed"] == 1
 
 
 def test_every_rmapi_path_rendering_parses(conn):

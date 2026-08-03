@@ -116,7 +116,9 @@ def object_decisions(conn: sqlite3.Connection, *, limit: int = 200) -> list[Deci
         if obj is None:
             continue
         body = obj.body or {}
-        why = body.get("why") or body.get("summary") or body.get("rationale") or ""
+        # `why` is the only rationale key any writer produces; the old `summary`/`rationale`
+        # fallbacks were dead branches that made this look more tolerant than it was.
+        why = body.get("why") or ""
         grounding = cd._format_grounding(obj.links[0]) if obj.links else "(no grounding link)"
         out.append(
             Decision(

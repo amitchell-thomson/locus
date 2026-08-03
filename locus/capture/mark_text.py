@@ -190,5 +190,18 @@ def transcribe_marks(
                 "AND bbox_key=?",
                 (text, source_uri, mark.pdf_page, key),
             )
+            # THE EVIDENCE JUST CHANGED, so a GUESSED intent has to be guessed again. An intent
+            # inferred before the handwriting was read was inferred from the passage alone, and
+            # `intent.pending_marks` never revisits a mark that already has one — so it would
+            # keep that verdict permanently. Live: mark 25 was classified `not_understood` with
+            # no note at all; the ink says "interesting systematic portfolio construction".
+            # An intent HE set is untouched, on the same reasoning that protects it elsewhere.
+            conn.execute(
+                "UPDATE pdf_annotations SET intent=NULL, intent_confidence=NULL, "
+                "intent_by=NULL, intent_at=NULL "
+                "WHERE source_uri=? AND pdf_page=? AND bbox_key=? "
+                "AND COALESCE(intent_by,'') = 'model'",
+                (source_uri, mark.pdf_page, key),
+            )
         written += 1
     return written

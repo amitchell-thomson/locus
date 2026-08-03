@@ -28,8 +28,9 @@ supposed to tell him. A connection now has to name what both documents actually 
 it cannot name one, it does not appear.
 
 **Blessings left the page entirely.** He wants every pending approval at once, cleared fast, in a
-terminal TUI — never split across two surfaces. `build_blessings` is gone; `locus objects --bless`
-carries it until the TUI lands (step 3). No decision may appear both here and there.
+terminal TUI — never split across two surfaces. `build_blessings` is gone and `locus decide` is
+now the ONLY place an object's status changes (`locus objects --bless` was the interim carrier and
+was removed once the TUI landed). No decision may appear both here and there.
 
 **Nothing is shown twice.** A page is built every morning regardless of whether the last was read,
 so the no-repeat ledger (`daily_shown`, migration 0023) is what makes a skipped day lose nothing
@@ -90,10 +91,6 @@ _REREAD_MIN_RERANK = 2.5
 # The object types that represent an OPEN THREAD of his own — something he asked or proposed and
 # has not finished with. Concepts and projects are not threads: they are things that exist.
 _THREAD_TYPES = ("question", "idea")
-
-# Categories whose documents are the owner's OWN recent capture — the "why now" that makes a
-# connection worth surfacing today rather than any other day.
-_CAPTURE_CATEGORIES = ("note",)
 
 # A marked passage needs enough words to mean something on its own. Below this it is a stray
 # stroke or a single word, which tells him nothing when it comes back a week later.
@@ -376,6 +373,11 @@ def build_rereads(
     from locus.capture import intent as I
 
     seen = seen if seen is not None else set()
+    # A re-read he already declined must not be offered again. `pull_daily` records exactly this
+    # on the `reading` surface (the document's source_uri, verdict `rejected`), and until now
+    # nothing read it — eight refusals sitting in a table while the same documents stayed
+    # eligible. A rejection is data, or it should not be written.
+    declined = _declined_rereads(conn)
     out: list[ReadItem] = []
     for mark in I.not_understood_marks(conn, limit=limit * 6):
         question = I.reread_seed(mark)
@@ -384,7 +386,7 @@ def build_rereads(
         item_key = f"reread:{mark['id']}"
         if item_key in seen:
             continue
-        target = _explains(conn, question, exclude_uri=mark["source_uri"])
+        target = _explains(conn, question, exclude_uri=mark["source_uri"], declined=declined)
         if target is None:
             continue
         title, uri = target
@@ -409,8 +411,21 @@ def build_rereads(
     return out
 
 
+def _declined_rereads(conn: sqlite3.Connection) -> set[str]:
+    """`source_uri`s he has already turned down as a re-read, from the `reading` surface."""
+    try:
+        rows = conn.execute(
+            "SELECT candidate_key, verdict FROM acceptance_log WHERE surface='reading' "
+            "ORDER BY at, id"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return set()
+    latest: dict[str, str] = {r["candidate_key"]: r["verdict"] for r in rows}
+    return {key for key, verdict in latest.items() if verdict == "rejected"}
+
+
 def _explains(
-    conn: sqlite3.Connection, question: str, *, exclude_uri: str
+    conn: sqlite3.Connection, question: str, *, exclude_uri: str, declined: set[str] | None = None
 ) -> tuple[str, str] | None:
     """The corpus document that best covers `question`, or None. Degrades silently.
 
@@ -454,7 +469,7 @@ def _explains(
         row = conn.execute(
             "SELECT title, source_uri FROM documents WHERE id=?", (cand.doc_id,)
         ).fetchone()
-        if row and row["source_uri"] != exclude_uri:
+        if row and row["source_uri"] != exclude_uri and row["source_uri"] not in (declined or ()):
             return row["title"] or row["source_uri"], row["source_uri"]
     return None
 
@@ -514,13 +529,16 @@ def _recent_capture(conn: sqlite3.Connection, *, limit: int) -> list[sqlite3.Row
     capture fix established that as the meaningful date for handwriting, and "why now" is a claim
     about when he was thinking about something, not when a timer ran.
     """
-    marks = ",".join("?" for _ in _CAPTURE_CATEGORIES)
+    # HIS writing, by the one shared definition — not `category='note'`. Keying on category
+    # meant his own handwriting filed `coursework` or `project` by the device folder produced no
+    # connections at all, which is the same defect the proposer's gate had.
+    clause, params = state.owner_authored_sql("d")
     return list(
         conn.execute(
-            f"SELECT id, title, source_uri, source_date FROM documents "
-            f"WHERE category IN ({marks}) AND source_date IS NOT NULL "
-            f"ORDER BY source_date DESC, id DESC LIMIT ?",
-            (*_CAPTURE_CATEGORIES, limit),
+            f"SELECT d.id, d.title, d.source_uri, d.source_date FROM documents d "
+            f"WHERE {clause} AND d.source_date IS NOT NULL "
+            f"ORDER BY d.source_date DESC, d.id DESC LIMIT ?",
+            (*params, limit),
         )
     )
 
@@ -528,6 +546,23 @@ def _recent_capture(conn: sqlite3.Connection, *, limit: int) -> list[sqlite3.Row
 def _source_uri(conn: sqlite3.Connection, doc_id: int) -> str:
     row = conn.execute("SELECT source_uri FROM documents WHERE id=?", (doc_id,)).fetchone()
     return (row["source_uri"] if row else "") or str(doc_id)
+
+
+def _distinct_documents_first(rows: list) -> list:
+    """Re-order marks so one per document comes first, then the rest — variety without a cap.
+
+    Stable within each pass, so the SQL ordering (his own words first, then newest) still decides
+    which mark of a document leads.
+    """
+    first, rest, seen_docs = [], [], set()
+    for row in rows:
+        uri = row["source_uri"]
+        if uri in seen_docs:
+            rest.append(row)
+        else:
+            seen_docs.add(uri)
+            first.append(row)
+    return first + rest
 
 
 def build_marked(
@@ -558,18 +593,20 @@ def build_marked(
     except sqlite3.OperationalError:
         return []
 
+    # VARIETY IS A PREFERENCE, NOT A CAP. One passage per document was a hard rule, and since
+    # every mark he has is on the same book it meant the section could never offer more than ONE
+    # mark a day however much space there was — a 26-mark backlog moving at one a day. The worry
+    # it encoded (a single book owning the page) is now handled where it belongs, by the equal
+    # share `build_threads` allocates, so this becomes soft: distinct documents first, then fill
+    # the remaining seats from whatever is left rather than printing white space.
+    ordered = _distinct_documents_first(rows)
+
     out: list[ThreadItem] = []
-    seen_docs: set[str] = set()
-    for row in rows:
+    for row in ordered:
         item_key = f"mark:{row['id']}"
         if item_key in seen:
             continue
         uri = row["source_uri"]
-        # One passage per document: two quotes from the same chapter are one thought, and the
-        # section is small enough that a single book would otherwise own it.
-        if uri in seen_docs:
-            continue
-        seen_docs.add(uri)
         passage = " ".join((row["covered_text"] or "").split())
         note = " ".join((row["note"] or "").split())
         title = row["doc_title"] or uri.rsplit("/", 1)[-1]
@@ -740,11 +777,13 @@ def build_connections(
         if len(out) >= limit:
             break
         for rel in related_documents(conn, src["id"], top_n=5):
+            sib_clause, sib_params = state.owner_authored_sql("d")
             cat = conn.execute(
-                "SELECT category FROM documents WHERE id=?", (rel.doc_id,)
+                f"SELECT ({sib_clause}) AS own FROM documents d WHERE d.id=?",
+                (*sib_params, rel.doc_id),
             ).fetchone()
-            if cat is None or cat["category"] in _CAPTURE_CATEGORIES:
-                continue  # sibling note — see docstring
+            if cat is None or cat["own"]:
+                continue  # sibling note of his own — see docstring
             if not rel.shared_names:
                 continue  # nothing nameable to say about it
             pair = (min(src["id"], rel.doc_id), max(src["id"], rel.doc_id))
@@ -783,11 +822,28 @@ def build_threads(
     the only ones he can decline.
     """
     seen = seen if seen is not None else set()
-    per = max(1, limit // 3)
-    items = build_marked(conn, limit=per, seen=seen)
-    items += build_open(conn, limit=per, seen=seen)
-    items += build_connections(conn, limit=max(0, limit - len(items)), seen=seen)
-    return items[:limit]
+    # EQUAL SHARE FIRST, THEN REFILL. Each subsection gets the same number of seats, which is
+    # what "equal weighting" means; but a subsection with nothing to offer must not leave a third
+    # of the page blank, because the page is the scarce thing and he has a 26-mark backlog behind
+    # it. The old split took a fixed `per` from marks and open and let connections absorb the
+    # slack in only ONE direction, so a day with no connections rendered a two-thirds page.
+    pools = [
+        build_marked(conn, limit=limit, seen=seen),
+        build_open(conn, limit=limit, seen=seen),
+        build_connections(conn, limit=limit, seen=seen),
+    ]
+    per = max(1, limit // len(pools))
+    take = [min(per, len(pool)) for pool in pools]
+    # Round-robin the leftover seats so the refill stays as even as the remainder allows.
+    while sum(take) < limit and any(take[i] < len(pools[i]) for i in range(len(pools))):
+        for i, pool in enumerate(pools):
+            if sum(take) >= limit:
+                break
+            if take[i] < len(pool):
+                take[i] += 1
+    # Emitted in POOL order, not selection order: `_render_think` prints a heading whenever the
+    # section changes, so an interleaved list would repeat all three headings down the page.
+    return [item for i, pool in enumerate(pools) for item in pool[:take[i]]]
 
 
 # --- page 3: Recall ----------------------------------------------------------------------------

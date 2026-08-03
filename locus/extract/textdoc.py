@@ -20,8 +20,9 @@ small sections keep their absorbed headings visible.
 
 YAML frontmatter (markdown only): a leading `---` block is parsed for `title` and
 `date`/`created` with a deliberately minimal flat `key: value` parser — no PyYAML (§3
-build-vs-buy; this is the only YAML the pipeline reads). `tags` is recognised but unused:
-there is no extractor→tags path in the pipeline yet — wire it when one exists, don't build
+build-vs-buy; this is the only YAML the pipeline reads). A `tags:` key in frontmatter is
+PARSED AND DISCARDED: the tables that would have stored it were dropped in migration 0028
+after sitting empty since the original schema — build the path first if tagging returns,
 half of one here.
 """
 

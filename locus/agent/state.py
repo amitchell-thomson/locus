@@ -320,7 +320,12 @@ def links_for(conn, object_id: int) -> list[ObjectLink]:
 
 
 def objects_linking_to(conn, target_kind: str, target_key: str) -> list[AgentObject]:
-    """Every object grounded in one doc/entity — the reverse lookup the MCP reads use."""
+    """Every object grounded in one doc/entity — the reverse of `links_for`.
+
+    NO PRODUCTION CALLER TODAY (the docstring used to claim the MCP reads used it, and they do
+    not). Kept as the reverse accessor the tests assert the link table with; if it is still
+    unused when something else needs to change here, delete it rather than re-describing it.
+    """
     rows = conn.execute(
         "SELECT o.* FROM objects o JOIN object_links l ON l.object_id=o.id "
         "WHERE l.target_kind=? AND l.target_key=? ORDER BY o.id",
@@ -461,6 +466,37 @@ def log_acceptance(
             (surface, candidate_key, verdict, now()),
         )
     return int(cur.lastrowid)
+
+
+def owner_authored_sql(alias: str = "d") -> tuple[str, list]:
+    """SQL predicate for "this document is HIS writing" — ONE definition, several consumers.
+
+    The same rule `structure.propose._is_owner_authored` applies in Python, expressed for a query.
+    Provenance first: everything he writes lands under the notes directory whatever category the
+    DEVICE FOLDER assigned (`Notes/engineering` -> coursework), so keying on category alone
+    silently made his own handwriting not-his. Then category + format, both load-bearing, because
+    `project` also holds third-party manuals he keeps for reference.
+
+    Kept here rather than in `structure/` because three layers ask this question — the proposer,
+    the daily page's connection source, and re-read ranking — and they were answering it three
+    different ways, all of them `category = 'note'`.
+    """
+    from locus.config import load
+
+    cfg = load()
+    notes = str(cfg.paths.notes).replace("\\", "/").rstrip("/")
+    clause = f"({alias}.source_uri LIKE ? OR {alias}.source_uri LIKE ?"
+    params: list = [f"{notes}/%", "%/vault/notes/%"]
+    cats = list(cfg.structure.belief_source_categories)
+    if cats:
+        sub = f"{alias}.category IN ({','.join('?' * len(cats))})"
+        params += cats
+        types = list(cfg.structure.belief_source_types)
+        if types:
+            sub += f" AND {alias}.source_type IN ({','.join('?' * len(types))})"
+            params += types
+        clause += f" OR ({sub})"
+    return clause + ")", params
 
 
 def dropped_object_ids(conn) -> set[int]:

@@ -1022,3 +1022,27 @@ def test_an_answered_question_is_not_offered_twice(conn):
               "estimate of a population parameter, here the regression coefficients.")
     assert cd.build_answered(conn, seen=set())
     assert cd.build_answered(conn, seen={"answered:3"}) == []
+
+
+def test_develop_leads_with_a_thread_about_real_work_not_the_stalest(conn):
+    """Ordering was `updated_at` alone — a fairness rule doing a quality job.
+
+    Live it handed the head of the section to "read next on alt-data?", a 22-character to-do,
+    while a thread on regime non-stationarity linked to four projects sat behind it.
+    """
+    todo = _jotted(conn, "read next on alt-data?", created_at="2026-01-01T00:00:00+00:00")
+    plain = _jotted(conn, "a thought with enough substance to develop further one day",
+                    created_at="2026-02-01T00:00:00+00:00")
+    linked = _jotted(conn, "markets are not stationary and strategies work differently across "
+                           "regimes, so the predictor has to be regime-conditioned",
+                     created_at="2026-03-01T00:00:00+00:00")
+    proj, _ = state.upsert_object(conn, type_="project", title="regime-ml")
+    state.add_links(conn, linked, [state.ObjectLink("object", str(proj), "relates")])
+
+    items = cd.build_develop(conn, limit=3, seen=set())
+    heads = [i.headline for i in items]
+    assert heads[0].startswith("markets are not stationary")   # project-linked leads...
+    assert any(h.startswith("a thought with enough") for h in heads)  # ...but the rest still come
+    # The to-do is not EXCLUDED — a length floor was tried and rejected — but it no longer
+    # leads: ranking demotes it behind the thread that is about real work.
+    assert todo and plain

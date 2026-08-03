@@ -1160,6 +1160,44 @@ def _is_teachable(conn: sqlite3.Connection, name: str) -> bool:
     return row is not None and (row["type"] or "") in TEACHABLE_TYPES
 
 
+# A LENGTH FLOOR WAS BUILT, MEASURED AND REJECTED — twice, at 40 then 30 characters. The live
+# pool looked like it had a clean gap (the only sub-49 thread was "read next on alt-data?", 22),
+# and both settings broke existing tests whose fixtures are short but perfectly legitimate.
+#
+# The case that settled it: one fixture is "no momentum in Japan??" — 22 characters, and the SAME
+# text this codebase argues elsewhere is a real question worth answering (`learn/answers.py`
+# keeps it deliberately). A floor that drops it in one surface while another treats it as
+# valuable is not a bar, it is an inconsistency.
+#
+# Short is not worthless — the same lesson as the question-shape gate in `learn/answers.py`.
+# Nothing is excluded here; the complaint was that a to-do LED the section, and ranking fixes
+# that without throwing anything away.
+
+
+def _develop_rank(conn: sqlite3.Connection, obj) -> tuple:
+    """Sort key: threads about real work first, then least recently touched.
+
+    THE COMPLAINT THIS FIXES. Ordering was `updated_at` alone — least recently touched first —
+    which is a fairness rule, not a quality one, and it handed the head of the section to whatever
+    he had ignored longest. Live that was "read next on alt-data?", a 22-character to-do leading a
+    section named for developing ideas, while a 404-character thread on regime non-stationarity
+    linked to four projects sat behind it.
+
+    PROJECT LINKS ARE THE SIGNAL, not length. Measured over the pool, `object_links` to a project
+    separated the two strongest threads cleanly, while entity links were empty on every one of the
+    nine and carried nothing. A length floor was tried and rejected — see the note above this function.
+
+    Rotation is NOT lost by ranking on substance, because `daily_shown` retires an item once it
+    has been offered and only returns it when he develops it. The ledger provides the fairness the
+    old sort was trying to; this decides which of the eligible threads leads.
+    """
+    linked = conn.execute(
+        "SELECT COUNT(*) AS n FROM object_links WHERE object_id=? AND target_kind='object'",
+        (obj.id,),
+    ).fetchone()["n"]
+    return (0 if linked else 1, obj.updated_at or "")
+
+
 def build_develop(
     conn: sqlite3.Connection, *, limit: int = 1, seen: set[str] | None = None
 ) -> list[ThreadItem]:
@@ -1174,7 +1212,7 @@ def build_develop(
         o for t in _THREAD_TYPES
         for o in state.list_objects(conn, type_=t, status="active", limit=40)
     ]
-    threads.sort(key=lambda o: o.updated_at)          # least recently touched first
+    threads.sort(key=lambda o: _develop_rank(conn, o))
     for obj in threads:
         body = obj.body or {}
         # His own words when there are any (`body["idea"]`/`body["question"]` carry an

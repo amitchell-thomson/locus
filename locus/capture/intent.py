@@ -268,7 +268,15 @@ def act_on(conn: sqlite3.Connection, mark_id: int, *, floor: float | None = None
     intent = row["intent"] or ""
     if intent not in INTENTS:
         return Acted(mark_id, intent, "skipped", "no intent")
-    if (row["intent_confidence"] or 0.0) < floor and (row["intent_by"] != BY_OWNER):
+    from locus.observe import gates
+
+    held = (row["intent_confidence"] or 0.0) < floor and (row["intent_by"] != BY_OWNER)
+    gates.record(
+        conn, "capture.intent_confidence_floor", rejected=held,
+        value=None if not held
+        else f"conf={row['intent_confidence'] or 0.0:.2f} {intent}: {str(row['note'] or '')[:60]}",
+    )
+    if held:
         # His answer was "infer, then let me correct". Below the floor the correction step is the
         # whole point, so nothing is created and `locus decide` asks him.
         return Acted(mark_id, intent, "held", "below the confidence floor — ask in `locus decide`")

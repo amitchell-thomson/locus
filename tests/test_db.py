@@ -33,7 +33,7 @@ def test_extension_loads(db: Path):
 def test_migration_records_head_and_is_idempotent(db: Path):
     # After migrate, the DB is at the head revision Alembic knows about.
     head = head_revision(db)
-    assert current_revision(db) == head == "0030"
+    assert current_revision(db) == head == "0033"
     # Re-running is a no-op and leaves the revision unchanged.
     migrate(db)
     assert current_revision(db) == head

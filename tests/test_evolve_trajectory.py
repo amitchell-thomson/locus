@@ -266,3 +266,63 @@ def test_a_concept_has_no_development_to_merge(conn):
     from locus.agent import state
 
     assert state.development_positions(conn, "concept", "regime\x1fconcept") == []
+
+
+# --- the cached verdict, and the judge that produced it -----------------------------------------
+
+
+def test_a_cached_no_is_not_reused_when_the_judge_has_changed(conn):
+    """The trap that would have made the 2026-08-03 rebalance ship and change nothing.
+
+    `store_tensions` caches "judged, none found" so the nightly pass does not re-pay for the same
+    answer, and re-judges only when a NEW DOCUMENT has arrived. That is right about the corpus and
+    silent about the PROMPT: every position already carried a marker and the last ingest predated
+    all of them, so an improved judge would never have run — the same silent-inert failure the
+    rebalance was fixing.
+    """
+    runner = _runner({"tensions": []})
+    assert tj.store_tensions(conn, limit=5, runner=runner) == 0      # judged, nothing found
+    markers = conn.execute(
+        "SELECT judge_version FROM belief_tensions WHERE conflicts_with=''"
+    ).fetchall()
+    assert markers and all(m["judge_version"] == tj._JUDGE_VERSION for m in markers)
+
+    # Same judge, no new documents -> the cache holds and the model is never called again.
+    def _explode(prompt, model):
+        raise AssertionError("re-judged despite an unchanged judge and corpus")
+
+    assert tj.store_tensions(conn, limit=5, runner=_explode) == 0
+
+    # A different judge -> every position is re-judged, and now it finds something.
+    found = {"tensions": [{
+        "conflicts_with": "equal weight beats mean-variance out of sample",
+        "reason": "the position asserts the opposite default",
+    }]}
+    original = tj._JUDGE_VERSION
+    tj._JUDGE_VERSION = "a-different-judge"
+    try:
+        assert tj.store_tensions(conn, limit=5, runner=_runner(found)) > 0
+    finally:
+        tj._JUDGE_VERSION = original
+
+    real = conn.execute(
+        "SELECT conflicts_with FROM belief_tensions WHERE conflicts_with != ''"
+    ).fetchall()
+    assert real, "the re-judged tension was not stored"
+
+
+def test_a_stale_marker_is_upserted_not_ignored(conn):
+    """INSERT OR IGNORE would leave the old version in place, so the position re-judges nightly."""
+    runner = _runner({"tensions": []})
+    tj.store_tensions(conn, limit=5, runner=runner)
+    original = tj._JUDGE_VERSION
+    tj._JUDGE_VERSION = "second-judge"
+    try:
+        tj.store_tensions(conn, limit=5, runner=runner)
+    finally:
+        tj._JUDGE_VERSION = original
+    versions = {
+        r["judge_version"]
+        for r in conn.execute("SELECT judge_version FROM belief_tensions WHERE conflicts_with=''")
+    }
+    assert versions == {"second-judge"}, f"stale marker survived: {versions}"

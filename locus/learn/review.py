@@ -22,6 +22,8 @@ log = logging.getLogger(__name__)
 from dataclasses import dataclass
 from datetime import date, timedelta
 
+from pydantic import BaseModel
+
 # SM-2's floor: below this an item's interval barely grows and it dominates every review session.
 _MIN_EASE = 1.3
 _DEFAULT_EASE = 2.5
@@ -155,12 +157,18 @@ def resolve_prompt(conn, item: ReviewItem) -> tuple[str, str]:
     return (row["title"] if row else "(object no longer exists)"), ""
 
 
-def concept_answer(conn, name: str) -> tuple[str, str]:
-    """(reference answer, source) for a concept — the stored propositions that define it.
+def concept_evidence(conn, name: str, *, limit: int = 6) -> tuple[list[str], str]:
+    """(propositions about the concept, source title) — what the question is written FROM.
 
-    GROUNDED BY CONSTRUCTION. The question is generated, the ANSWER never is: it is corpus text
-    that names the concept, so the answer overleaf is something he actually read rather than
-    something a model asserted about a subject it was only given the name of.
+    RANKED BY RELEVANCE TO THE CONCEPT, not by length. The previous rule took the longest
+    proposition in any section that merely MENTIONS the concept, and length is not aboutness: for
+    `Bollinger bands` it returned a sentence describing a study's input format ("a sliding window
+    of 30 daily OHLCV data points, together with pre-computed RSI..."), which happened to be the
+    longest thing in the section. That sentence then had to serve as both the evidence a question
+    was written from and the answer printed overleaf.
+
+    Several propositions, not one: these are mechanism-and-trade-off questions now, and a single
+    corpus sentence rarely contains enough to answer one.
     """
     rows = conn.execute(
         """
@@ -172,15 +180,52 @@ def concept_answer(conn, name: str) -> tuple[str, str]:
             WHERE COALESCE(a.canonical_name, e.name) = ?
         )
         AND LENGTH(p.text) BETWEEN 60 AND 400
-        ORDER BY LENGTH(p.text) DESC LIMIT 1
         """,
         (name,),
     ).fetchall()
     if not rows:
+        return [], ""
+
+    texts = [r["text"] for r in rows]
+    order = list(range(len(texts)))
+    try:
+        from locus.retrieve.rerank import score_pairs
+
+        # The same cross-encoder every corpus query uses. Naming the concept as the query is the
+        # whole point: a proposition ABOUT the concept outranks one that merely sits beside it.
+        scores = score_pairs(name, texts)
+        order.sort(key=lambda i: -scores[i])
+    except Exception:                                  # the `rerank` extra is optional
+        # Deterministic fallback: propositions that actually contain the concept's words first.
+        needle = name.casefold()
+        order.sort(key=lambda i: (needle not in texts[i].casefold(), -len(texts[i])))
+    picked = order[:limit]
+    return [texts[i] for i in picked], rows[picked[0]]["title"]
+
+
+def concept_answer(conn, name: str) -> tuple[str, str]:
+    """(reference answer, source) for a concept — the STORED answer, or the old fallback.
+
+    The stored answer is written alongside the question from the same evidence, so the two cannot
+    disagree (migration 0033). This function is the read path and the degradation: a row written
+    before that change, or one whose answer failed its grounding check, still gets corpus text
+    rather than nothing.
+    """
+    row = conn.execute(
+        "SELECT answer, answer_source FROM review_schedule "
+        "WHERE prompt_kind='concept' AND prompt_ref=? AND answer IS NOT NULL AND answer != '' "
+        "LIMIT 1",
+        (name,),
+    ).fetchone()
+    if row:
+        return row["answer"], row["answer_source"] or ""
+
+    evidence, source = concept_evidence(conn, name, limit=1)
+    if not evidence:
         return f"(no stored material defines {name})", ""
     # ONE proposition, and a bounded one. The answers share page 4 with the open writing region,
     # and four unbounded answers pushed it onto a seventh page.
-    return rows[0]["text"], rows[0]["title"]
+    return evidence[0], source
 
 
 # --- enrolment ---------------------------------------------------------------------------------
@@ -283,12 +328,23 @@ def items_without_questions(
     `object` prompts are excluded by default: an object prompt is the owner's own question or
     idea title, which already reads as a prompt and needs nothing generated. `concept` prompts
     are a bare noun and need one badly — they are the whole point of the concept schedule.
+
+    A CONCEPT CARD IS BOTH HALVES, so a concept row missing its ANSWER is incomplete too and is
+    returned for rewriting. That is not only to backfill: the questions written before migration
+    0033 were generated from the longest-proposition evidence, which is the rule that produced a
+    Bollinger-bands question answered by a study's input format. The question is as suspect as
+    the answer, and both are rewritten from the better evidence.
+
+    `fill_concept_questions` always ends up storing SOME answer (the written one, or corpus text
+    when it fails its grounding check), so this cannot become a nightly re-bill loop.
     """
     try:
         rows = conn.execute(
             f"SELECT * FROM review_schedule WHERE prompt_kind IN "
             f"({','.join('?' * len(kinds))}) "
-            "AND (question IS NULL OR TRIM(question)='') ORDER BY due, id LIMIT ?",
+            "AND ((question IS NULL OR TRIM(question)='') "
+            "     OR (prompt_kind='concept' AND (answer IS NULL OR TRIM(answer)=''))) "
+            "ORDER BY due, id LIMIT ?",
             (*kinds, limit),
         ).fetchall()
     except Exception:  # column absent on an un-migrated DB
@@ -296,10 +352,19 @@ def items_without_questions(
     return [_row(r) for r in rows]
 
 
-def set_question(conn, item_id: int, question: str) -> None:
+def set_question(
+    conn, item_id: int, question: str, *, answer: str = "", source: str = ""
+) -> None:
+    """Store a question and, for concepts, the answer written WITH it from the same evidence.
+
+    Both in one statement because they are one fact: a question stored without its answer is how
+    page 3 and page 4 drifted apart in the first place.
+    """
     with conn:
         conn.execute(
-            "UPDATE review_schedule SET question=? WHERE id=?", (question.strip(), item_id)
+            "UPDATE review_schedule SET question=?, answer=?, answer_source=? WHERE id=?",
+            (question.strip(), (answer or "").strip() or None, (source or "").strip() or None,
+             item_id),
         )
 
 
@@ -422,9 +487,16 @@ def concept_candidates(conn, *, limit: int = 40) -> list[tuple[str, int]]:
         generic = non_topical_names(conn)
     except Exception:                                  # no alias substrate yet
         generic = set()
+    from locus.observe import gates
+
     out: list[tuple[str, int]] = []
     for r in rows:
-        if r["name"].lower() in generic:
+        drop = r["name"].lower() in generic
+        gates.record(
+            conn, "review.concept_non_topical", rejected=drop,
+            value=None if not drop else r["name"],
+        )
+        if drop:
             continue
         out.append((r["name"], r["props"]))
         if len(out) >= limit:
@@ -444,12 +516,60 @@ def enrol_concepts(conn, *, max_new: int = 8, today: date | None = None) -> list
     return added
 
 
-_CONCEPT_PROMPT = """You are writing ONE spaced-repetition question for a strong quant candidate
+# Below this an "answer" is a stub, not the few sentences of reasoning the card is for.
+_MIN_ANSWER_CHARS = 80
+
+
+def _answer_is_usable(answer: str, concept: str) -> bool:
+    """Is this a real answer ABOUT this concept?
+
+    NOT `ingest.summarize.is_grounded`, which was the first attempt and was measured wrong for
+    this job (2026-08-03: it rejected 5 of 9 live answers, and the fallback it forced reinstated
+    the exact defect being fixed — an answer that does not answer the question). `is_grounded`
+    asks "does this SUMMARY reuse the vocabulary of the text it summarises", which is right for a
+    summary and wrong for reasoning: the question deliberately interrogates an edge, so the
+    answer generalises past the propositions and legitimately introduces words they do not
+    contain. Rejecting that penalises exactly the answers worth having.
+
+    So the bar is aboutness plus substance, which is what actually distinguishes a usable answer
+    from the failure mode that matters — a confident reply about a different subject. It still
+    rejects "Quantum chromodynamics governs the strong nuclear interaction" for a question about
+    AIS interpolation.
+
+    THE TRADE, stated: page 4 now carries model-authored reasoning rather than corpus text only.
+    That is a §11.B judgement — it is his own self-check, he is the one who knows the material,
+    and the prompt forbids carrying over figures, tickers and model names. The rejection rate is
+    logged (`review.answer_usable`) so the choice stays visible instead of becoming folklore.
+    """
+    if not answer or len(answer) < _MIN_ANSWER_CHARS:
+        return False
+    # Stem-matched so "factor models" satisfies "factor model" and morphology does not fail it.
+    words = [w for w in concept.casefold().split() if len(w) > 3]
+    body = answer.casefold()
+    if not words:
+        return concept.casefold() in body
+    return any(w[:6] in body for w in words)
+
+
+class _ConceptCard(BaseModel):
+    """A question and the answer to THAT question — written together, from one evidence set.
+
+    Two fields in one call rather than two calls, because the failure being fixed is precisely
+    that the question and the answer were produced by different mechanisms and nothing tied them
+    together. Asked as one object, a mismatch is not a thing that can happen.
+    """
+
+    question: str
+    answer: str
+
+
+_CONCEPT_PROMPT = """You are writing ONE spaced-repetition card for a strong quant candidate
 preparing for buy-side interviews. He already knows the textbook definitions. The subject is the
-concept below; here is what his own corpus says about it, which is the reference answer:
+concept below, and here is what his own corpus says about it:
 
 CONCEPT: {name}
-WHAT HIS MATERIAL SAYS: {evidence}
+WHAT HIS MATERIAL SAYS:
+{evidence}
 
 Write a question that MAKES HIM THINK. Aim at one of these, whichever the material supports:
   - a mechanism ("why does X produce Y rather than Z?")
@@ -471,39 +591,66 @@ concept alone. Use the material to find the interesting EDGE, then ask about the
 terms.
 
 Do NOT ask about any document, project, dataset or result, and do not mention "your material" or
-"the text". One or two sentences, ending in a question mark. Reply with the question only."""
+"the text". One or two sentences, ending in a question mark.
+
+THEN ANSWER YOUR OWN QUESTION, for the back of the card. The answer must actually answer the
+question you just wrote — the reasoning, not a restatement of the definition and not a summary of
+the material. Ground it in the material above: use its substance, but state it in general terms,
+carrying over none of its particular figures, tickers, model names or sample windows. Three or
+four sentences at most; it shares a page with his own written attempt.
+
+Return ONLY JSON: {{"question": "<the question>", "answer": "<the answer to it>"}}"""
 
 
 def fill_concept_questions(conn, *, limit: int = 8, runner=None, model: str | None = None) -> int:
-    """Write the question for scheduled CONCEPTS. Billed; returns how many were written.
+    """Write the question AND its answer for scheduled CONCEPTS. Billed; returns how many.
 
     Separate from `fill_questions` because the job is different: that one turns a stored claim
-    into a question about that claim, which is exactly the regurgitation the owner rejected. This
-    one is given a concept and its corpus evidence and asked for an UNDERSTANDING question, with
-    the evidence kept as the answer rather than restated as the prompt.
+    into a question about that claim, which is exactly the regurgitation the owner rejected.
+
+    Both halves come from ONE call over ONE evidence set. Previously the question was generated
+    here and the answer was re-derived at page-composition time by a different rule, and the two
+    silently disagreed — page 3 asked why volatility undermines Bollinger-band mean reversion and
+    page 4 replied with a study's input format.
     """
-    from locus.agent.claude import ClaudeError, run_text
+    from locus.agent.claude import ClaudeError, run_structured
     from locus.config import load
+    from locus.observe import gates
 
     written = 0
     for item in items_without_questions(conn, limit=limit * 3, kinds=("concept",)):
         if written >= limit:
             break
-        evidence, _src = concept_answer(conn, item.prompt_ref)
-        if evidence.startswith("(no stored material"):
+        facts, source = concept_evidence(conn, item.prompt_ref)
+        if not facts:
             continue
+        evidence = "\n".join(f"- {f}" for f in facts)
         try:
-            text = run_text(
-                _CONCEPT_PROMPT.format(name=item.prompt_ref, evidence=evidence[:1200]),
+            verdict = run_structured(
+                _CONCEPT_PROMPT.format(name=item.prompt_ref, evidence=evidence[:2400]),
+                schema=_ConceptCard,
                 model=model or load().agent.model, runner=runner,
             )
         except ClaudeError as exc:                     # degrade, never block
             log.warning("review: concept question failed for %r: %s", item.prompt_ref, exc)
             continue
-        question = " ".join((text or "").split())
+        question = " ".join((verdict.question or "").split())
+        answer = " ".join((verdict.answer or "").split())
         # A question that is not a question, or that leaked the answer back, is not stored.
         if not question.endswith("?") or len(question) < 15:
             continue
-        set_question(conn, item.id, question[:300])
+        ok = _answer_is_usable(answer, item.prompt_ref)
+        gates.record(
+            conn, "review.answer_usable", rejected=not ok,
+            value=None if ok else f"{item.prompt_ref}: {answer[:70]}",
+        )
+        # FALL BACK TO CORPUS TEXT rather than to nothing. An empty answer would leave the row
+        # incomplete, and `items_without_questions` would offer it again every night — paying for
+        # the same rejection forever, the trap §26 found in the tension cache. The best-ranked
+        # proposition is what the old rule aimed at and is at least about the right concept.
+        if not ok:
+            log.info("review: unusable answer for %r, falling back", item.prompt_ref)
+            answer = facts[0]
+        set_question(conn, item.id, question[:300], answer=answer[:600], source=source)
         written += 1
     return written

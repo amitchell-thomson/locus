@@ -597,7 +597,7 @@ def build_marked(
     return out
 
 
-def _format_grounding(link: state.ObjectLink) -> str:
+def _format_grounding(link: state.ObjectLink, conn: sqlite3.Connection | None = None) -> str:
     """Human-readable grounding for an object link.
 
     An entity `target_key` is `name\\x1ftype` — a unit separator, chosen because it cannot occur
@@ -614,6 +614,15 @@ def _format_grounding(link: state.ObjectLink) -> str:
         return f"{name} ({type_})"
     if link.target_kind == "doc":
         return link.target_key.rsplit("/", 1)[-1]
+    if link.target_kind == "object" and conn is not None and link.target_key.isdigit():
+        # An object link's `target_key` is `str(object_id)`, so without resolving it a promoted
+        # thread reached the corpus reading "Raised against: Advanced Portfolio Management.pdf,
+        # 15, 95, 80" — three bare integers, embedded and searchable as such.
+        row = conn.execute(
+            "SELECT type, title FROM objects WHERE id=?", (int(link.target_key),)
+        ).fetchone()
+        if row is not None:
+            return f"{row['type']}: {row['title']}"
     return link.target_key
 
 

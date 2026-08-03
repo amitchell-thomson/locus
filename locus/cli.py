@@ -1376,6 +1376,13 @@ def _resolve_structure_docs(conn, args) -> list[int]:
     if args.maturity:
         clauses.append("maturity = ?")
         params.append(args.maturity)
+    if getattr(args, "unstructured", False):
+        # A LEDGER, NOT A WINDOW. `--ingested-since "2 days ago"` loses any document that arrives
+        # while the nightly run is broken — and it was broken for six consecutive nights — because
+        # the document simply falls out of the window and is never offered again. Live casualty:
+        # doc 482, his own handwritten `Optimisation` note, ingested 2026-07-29 and never
+        # structured. Selecting on `structured_at IS NULL` catches up instead of losing.
+        clauses.append("structured_at IS NULL")
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     sql = f"SELECT id FROM documents {where} ORDER BY id"
     if args.limit:
@@ -1974,6 +1981,9 @@ def main(argv=None) -> None:
     pstr.add_argument("--ingested-since", default=None,
                       help="only documents INGESTED on or after (YYYY-MM-DD) — for scheduled runs")
     pstr.add_argument("--maturity", choices=["rough", "tidy"], default=None, help="only documents of this maturity")
+    pstr.add_argument("--unstructured", action="store_true",
+                      help="only documents never structured — the scheduled run's selector, "
+                           "which catches up after a failed night instead of losing the day")
     pstr.add_argument("--limit", type=int, default=None, help="cap how many documents are processed")
     pstr.add_argument("--dry-run", action="store_true", help="run every gate and print the plan; write nothing")
     pstr.add_argument("--verbose", action="store_true", help="also show rejected candidates and why")

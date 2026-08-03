@@ -516,12 +516,28 @@ class StructureConfig(BaseModel):
         default_factory=lambda: ["tool", "author", "organization", "ticker", "other"],
         description="Entity types that may not become Concept objects (a concept is an idea).",
     )
-    # Categories whose documents may yield BELIEF POSITIONS. Default `note` only: handwriting and
-    # captured conversations are the owner's own words. A paper's claim is the paper's position;
-    # attributing it to him corrupts the headline capability (§3.4).
+    # Categories whose documents may yield BELIEF POSITIONS and IDEAS. A paper's claim is the
+    # paper's position; attributing it to him corrupts the headline capability (§3.4).
+    #
+    # `project` and `career` were added on the owner's instruction (2026-08-03): "even if claude
+    # authored them while I was writing the project they should still be treated as canonical
+    # project documents, not agent generated lower weight material. The writeups are arguably the
+    # most important documents in the project." A write-up records decisions HE made; who typed it
+    # is not the question. Excluding them meant his OXDAQ architecture note and every future note
+    # in `/Notes/projects` or `/Notes/careers` could never yield an idea — while `folder_category`
+    # files his handwriting into exactly those categories.
     belief_source_categories: list[str] = Field(
-        default_factory=lambda: ["note"],
-        description="Categories whose docs may yield belief positions (owner-authored only).",
+        default_factory=lambda: ["note", "project", "career"],
+        description="Categories whose docs may yield belief positions/ideas (owner-authored).",
+    )
+    # ...but a category alone cannot say whose words they are. `category='project'` also holds
+    # third-party material he keeps for reference — live, the two Optibook vendor manuals — and a
+    # belief extracted from a vendor PDF and attributed to him is precisely the §3.4 corruption.
+    # The discriminator is the FORMAT: what he and his agent write is markdown/text/notebook;
+    # a published manual or paper arrives as a PDF or a slide deck. Empty = no restriction.
+    belief_source_types: list[str] = Field(
+        default_factory=lambda: ["markdown", "text", "docx", "notebook"],
+        description="Source types that count as his own writing (empty = any).",
     )
     # A Concept object must touch at least one document in these categories. Measured 2026-07-29:
     # 87% of cross-document canonical entities are reachable ONLY through engineering coursework,

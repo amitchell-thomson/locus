@@ -124,26 +124,39 @@ def concepts_of_documents(
     return out
 
 
-def _owner_authored_mentions(conn, name: str, type_: str, categories: list[str]) -> list[str]:
+def _owner_authored_mentions(
+    conn, name: str, type_: str, categories: list[str], exclude_doc_ids: tuple[int, ...] = ()
+) -> list[str]:
     """Titles of OWNER-AUTHORED documents mentioning this concept — the explanation evidence.
 
     Matches through the alias substrate (any surface of the canonical counts), so writing about
-    "regime detection" covers a project that names it "regime-detection"."""
+    "regime detection" covers a project that names it "regime-detection".
+
+    `exclude_doc_ids` is the object's OWN documents, and excluding them is what keeps the signal
+    alive. The gap asks "does his project use a concept he has never explained?" — the project
+    document is the thing doing the USING, so counting it as evidence of explaining makes the
+    question answer itself. That went unnoticed while `belief_source_categories` was `note` alone
+    (a repo was never owner-authored); the moment project write-ups became his, which is correct,
+    every project concept would have been trivially "explained" by the project itself.
+    """
     if not categories:
         return []
     placeholders = ",".join("?" * len(categories))
+    excluded = ",".join("?" * len(exclude_doc_ids)) if exclude_doc_ids else ""
+    not_own = f"AND d.id NOT IN ({excluded})" if exclude_doc_ids else ""
     rows = conn.execute(
         f"""
         SELECT DISTINCT d.title
         FROM entities e
         JOIN documents d ON d.id = e.doc_id
         WHERE d.category IN ({placeholders})
+          {not_own}
           AND COALESCE(
                 (SELECT a.canonical_name FROM entity_aliases a
                   WHERE a.variant_name = e.name AND a.variant_type = e.type), e.name
               ) = ?
         """,
-        (*categories, name),
+        (*categories, *exclude_doc_ids, name),
     ).fetchall()
     return [r["title"] for r in rows]
 
@@ -209,7 +222,9 @@ def gaps_for_object(
         conn, doc_ids, exclude_types=exclude_types
     ).items():
         titles = _titles(conn, carriers)
-        mentions = _owner_authored_mentions(conn, name, type_, owner_categories)
+        mentions = _owner_authored_mentions(
+            conn, name, type_, owner_categories, exclude_doc_ids=tuple(doc_ids)
+        )
         has_position = bool(state.positions_for(conn, "concept", entity_key(name, type_)))
         if not mentions and not has_position:
             explanation.append(Gap(

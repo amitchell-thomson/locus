@@ -163,6 +163,66 @@ def test_only_proposed_papers_are_offered_to_read(conn):
     assert cd.build_readings(conn) == []
 
 
+def _corpus_doc(conn, doc_id: int, *, uri: str, title: str) -> None:
+    with conn:
+        conn.execute(
+            "INSERT INTO documents (id, content_hash, source_type, source_uri, raw_path, "
+            "ingest_model, category, title) VALUES (?,?,'pdf',?,?,'test','coursework',?)",
+            (doc_id, f"h{doc_id}", uri, f"raw/{doc_id}", title),
+        )
+
+
+def _stub_search(monkeypatch, doc_id, text="some text"):
+    """Make `_explains` see exactly one candidate, so the test is about the FLOOR."""
+    import locus.retrieve.search as S
+
+    class _C:
+        def __init__(self):
+            self.doc_id, self.text, self.score, self.rerank_score = doc_id, text, 0.9, None
+
+    monkeypatch.setattr(S, "search", lambda *_a, **_kw: [_C()])
+
+
+def test_a_re_read_below_the_rerank_bar_is_not_offered(conn, monkeypatch):
+    """The defect this pins: `_explains` took the argmax of RAW similarity with no floor, so a
+    document that merely shared a word won the slot. Live, a note asking what trading "signals"
+    meant was answered with *Sensing, Signals and Communications* (rerank 1.917), while genuine
+    answers score 4.07-4.82. A useless suggestion is what discredited the old read-next section.
+    """
+    import locus.retrieve.rerank as R
+
+    _corpus_doc(conn, 900, uri="corpus/signals-lecture.pdf", title="Signals and Communications")
+    _stub_search(monkeypatch, 900)
+    monkeypatch.setattr(R, "score_pairs", lambda _q, texts: [1.9] * len(texts))
+    assert cd._explains(conn, "what are the signals", exclude_uri="books/apm.pdf") is None
+
+    monkeypatch.setattr(R, "score_pairs", lambda _q, texts: [4.1] * len(texts))
+    assert cd._explains(conn, "what are the signals", exclude_uri="books/apm.pdf") == (
+        "Signals and Communications", "corpus/signals-lecture.pdf"
+    )
+
+
+def test_a_re_read_holds_a_reserved_slot_rather_than_the_leftovers(conn, monkeypatch):
+    """"only if a slot is spare" meant NEVER: the shelf caps at 10 and the page shows 3, so
+    `build_rereads` was unreachable and 12 not-understood marks reached nothing."""
+    import locus.retrieve.rerank as R
+
+    for i in range(cd._FIT["read"]):
+        _proposal(conn, f"paper {i}")
+    _corpus_doc(conn, 901, uri="corpus/explainer.pdf", title="The Explainer")
+    _mark(conn, uri="books/apm.pdf", page=9, text=_PASSAGE, kind="margin_note")
+    with conn:
+        conn.execute("UPDATE pdf_annotations SET intent='not_understood', intent_confidence=0.9, "
+                     "note=? WHERE id=1", ("what is a factor covariance estimator really",))
+    _stub_search(monkeypatch, 901)
+    monkeypatch.setattr(R, "score_pairs", lambda _q, texts: [4.5] * len(texts))
+
+    page = cd.compose(conn, today=date(2026, 8, 2))
+    shelves = [r.shelf for r in page.readings]
+    assert "re-read" in shelves, "a marked-as-not-understood passage must get a seat"
+    assert len(page.readings) == cd._FIT["read"], "and the page is still full"
+
+
 def _target(conn, *, title, subject="regime-ml", why=None, proposal_id=None, marks=0,
             folder="In-Progress"):
     with conn:

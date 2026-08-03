@@ -1000,10 +1000,10 @@ def test_an_answered_margin_question_gets_its_own_page(conn):
     assert page.answered[0].anchor == "A1"
 
     body = cd.render(page)
-    assert "# You asked" in body
+    assert "# Ask" in body
     assert "Variance is additive" in body
     # NOT a question put to him: no tick box and no ruled writing region on this page.
-    section = body.split("# You asked", 1)[1].split("```{=typst}", 1)[0]
+    section = body.split("# Ask", 1)[1].split("```{=typst}", 1)[0]
     assert "#tickbox" not in section
 
 

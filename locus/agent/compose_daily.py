@@ -1654,7 +1654,7 @@ def _render_answered(page: DailyPage) -> str:
     it is the one page whose length is set by what there is to say rather than by a line budget —
     `_FIT["answered"]` bounds it instead.
     """
-    lines = ["# You asked", "", "Questions you wrote while reading, answered from your own library.", ""]
+    lines = ["# Ask", "", "Questions you wrote while reading, answered from your own library.", ""]
     for a in page.answered:
         lines += [f"{_anchor(a.anchor)} {a.question}", ""]
         lines += [a.answer, ""]
@@ -1716,10 +1716,13 @@ def render(page: DailyPage) -> str:
         pages.append(_render_read(page))
     if page.threads:
         pages.append(_render_think(page))
-    if page.recalls:
-        pages.append(_render_recall(page))
+    # ORDER IS READ, THINK, ASK, RECALL — his. Ask sits next to Think because both are about
+    # what he is working out, and before Recall because being told something he flagged as not
+    # understood should come before being tested on something else.
     if page.answered:
         pages.append(_render_answered(page))
+    if page.recalls:
+        pages.append(_render_recall(page))
 
     if not pages:
         # A page with nothing on it is a valid, calm state — and it is still the only place a

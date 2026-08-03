@@ -244,6 +244,25 @@ def is_bare_acronym(concept: str) -> bool:
     return len(token) <= 6 and token.isupper() and " " not in token
 
 
+def live_projects(conn: sqlite3.Connection, objects):
+    """Filter project objects to the ones still worth proposing reading FOR.
+
+    ONE definition, used by both the profile builder and the search-term builder, because they
+    are two halves of the same question and a project that is live for one and dormant for the
+    other would propose papers it can never be matched to.
+
+    See `[discovery].live_projects` for why this exists and, more importantly, for why it gates
+    the discovery path only: a finished project still teaches concepts worth revising, it just
+    should not generate new work.
+    """
+    from locus.config import load
+
+    allowed = {t.strip().casefold() for t in (load().discovery.live_projects or []) if t.strip()}
+    if not allowed:
+        return list(objects)                          # unconfigured: every active project is live
+    return [o for o in objects if (o.title or "").strip().casefold() in allowed]
+
+
 def is_excluded_project(
     conn: sqlite3.Connection, object_id: int, prefixes: tuple[str, ...]
 ) -> bool:
@@ -280,7 +299,9 @@ def collect(conn: sqlite3.Connection, *, gap_limit: int = 40) -> list[Profile]:
     out: list[Profile] = []
 
     excluded_uris = _excluded_prefixes()
-    for obj in state.list_objects(conn, type_="project", status="active", limit=100):
+    for obj in live_projects(
+        conn, state.list_objects(conn, type_="project", status="active", limit=100)
+    ):
         if is_excluded_project(conn, obj.id, excluded_uris):
             continue
         facets, doc_ids = _project_facets(conn, obj.id, obj.title, excluded_uris)

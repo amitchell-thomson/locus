@@ -198,6 +198,12 @@ font_pt        = 11.0      # body text size (pt)
 rule_gap_em = 2.6
 
 [discovery]
+# Only these projects may PROPOSE READING (empty = every active project).
+# Measured 2026-08-03: all three Read slots went to finished work, because discovery_profiles
+# records no notion of activity and the ranker could only compare cosine fit. A dormant project
+# still contributes CONCEPTS to recall and to the coursework bridges — it just stops generating
+# new work. Titles are matched case-insensitively against the project object's title.
+# live_projects = ["tanker-flow", "regime-ml"]
 # Proposed reading and the accept loop (docs/reading-discovery-plan.md, Phase 4).
 # `Reading/{Proposed,In-Progress,Finished}` on the device: moving a file OUT of Proposed is
 # the accept signal and triggers ingest; leaving it there is a rejection. Free and local — the

@@ -94,6 +94,19 @@ _CANON_CTE = f"""
         JOIN entity_aliases a
           ON a.variant_name = e.name AND a.variant_type = e.type
         WHERE {_BARE_IDENT_FILTER}
+          -- A DOCUMENT TITLE IS NOT A SHARED CONCEPT. "Both develop Advanced Portfolio
+          -- Management" is vacuous between a book and the notes written inside it: it says only
+          -- that one came from the other. §21 established this for thread linking ("all four
+          -- ideas from one book formed a complete graph asserting only that he read it") and the
+          -- fix went into `link/threads.py` alone, so this surface reproduced it exactly — on the
+          -- first real daily page (2026-08-03) FOUR of the top five connections were a mark-born
+          -- idea paired with the book it was written in. Excluded inside `canon_docs` so RANKING
+          -- and DISPLAY agree: filtering only the rendered names would leave the vacuous pair
+          -- ranked first with its reason removed, which is worse.
+          AND LOWER(TRIM(a.canonical_name)) NOT IN (
+              SELECT LOWER(TRIM(title)) FROM documents
+              WHERE TRIM(COALESCE(title, '')) != ''
+          )
     ),
     name_freq AS (
         SELECT canonical_name, COUNT(DISTINCT doc_id) AS doc_freq
@@ -138,6 +151,17 @@ def non_topical_names(conn: sqlite3.Connection) -> set[str]:
         names.add(r["n"].lower())
     # Code symbols: single-token canonicals whose every corpus occurrence is a code-file section.
     for r in conn.execute(f"WITH {_CANON_CTE} SELECT canonical_name AS n FROM code_symbols"):
+        names.add(r["n"].lower())
+    # DOCUMENT TITLES ARE NOT CONCEPTS. A canonical equal to some document's title says only
+    # "these two texts are about that document", which is vacuous between a book and the notes
+    # written inside it. §21 established this for thread linking — "all four ideas from one book
+    # formed a complete graph asserting only that he read it" — but the fix went into
+    # `link/threads.py` alone, so the CONNECTIONS surface reproduced it exactly: on the first real
+    # page (2026-08-03) FOUR of the top five connections were a mark-born idea paired with
+    # *Advanced Portfolio Management*, sharing the "concept" Advanced Portfolio Management.
+    for r in conn.execute(
+        "SELECT DISTINCT TRIM(title) AS n FROM documents WHERE TRIM(COALESCE(title,'')) != ''"
+    ):
         names.add(r["n"].lower())
     return names
 

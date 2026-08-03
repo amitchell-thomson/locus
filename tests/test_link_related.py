@@ -187,3 +187,44 @@ def test_other_surfaces_do_not_move_related_ranking(tmp_path):
         assert acceptance_factors(conn) == {}
     finally:
         conn.close()
+
+
+def test_a_document_title_is_not_a_shared_concept(tmp_path: Path):
+    """"Both develop Advanced Portfolio Management" says only that one text came from the other.
+
+    §21 established this for thread linking — "all four ideas from one book formed a complete
+    graph asserting only that he read it" — but the fix went into `link/threads.py` alone, so this
+    surface reproduced it exactly. On the first real daily page (2026-08-03) FOUR of the top five
+    connections were a mark-born idea paired with the book it was written in.
+
+    Excluded inside `_CANON_CTE`, so ranking and display agree: filtering only the rendered names
+    would leave the vacuous pair ranked first with its reason removed.
+    """
+    db = tmp_path / "titles.db"
+    migrate(db)
+    conn = get_connection(db)
+    with conn:
+        for h, uri, title in [
+            ("h1", "books/apm.pdf", "Advanced Portfolio Management"),
+            ("h2", "notes/idea.md", "read next on alt-data?"),
+        ]:
+            conn.execute(
+                "INSERT INTO documents (content_hash, source_type, source_uri, raw_path, title, "
+                "ingest_model) VALUES (?,'pdf',?,?,?,'t')",
+                (h, uri, f"{h}.x", title),
+            )
+        for doc_id in (1, 2):
+            conn.execute(
+                "INSERT INTO sections (doc_id, position, title, summary) VALUES (?,0,'s','s')",
+                (doc_id,),
+            )
+            # Both documents name the BOOK'S TITLE, and nothing else in common.
+            conn.execute(
+                "INSERT INTO entities (doc_id, section_id, name, type) "
+                "VALUES (?,?,'Advanced Portfolio Management','concept')",
+                (doc_id, doc_id),
+            )
+    build_aliases(conn, use_llm=False)
+
+    assert related_documents(conn, 2) == [], "a shared title is not a shared concept"
+    conn.close()

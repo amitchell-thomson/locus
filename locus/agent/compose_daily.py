@@ -57,11 +57,14 @@ from locus.link.related import related_documents
 # should do — a typographic fact about the page, which is why it is expressed per section and in
 # items rather than as one global cap.
 # Derived from the geometry, not chosen: see `_lines_for`. A page holds ~9 ruled lines, and an
-# item needs 2-3 to be answerable. RE-CALIBRATED 2026-08-03 when `[daily].rule_gap_em` went
-# 2.6 -> 1.8 (10.1mm -> 7.0mm between rules, measured): tighter rules buy a whole extra item, so
-# Think went 3 -> 4 and Recall's writing regions went 2 lines -> 3. Verified by rendering, not
-# derived: 5 Think items or 4 recall lines push a fifth page.
-_FIT = {"read": 3, "think": 4, "recall": 4}
+# item needs 2-3 to be answerable. RE-CALIBRATED TWICE on 2026-08-03, both times by rendering:
+# first when `rule_gap_em` went 2.6 -> 1.8 (10.1mm -> 7.0mm between rules), which bought an extra
+# item; then when the page's CONTENT changed — the "In progress" list left page 1, freeing a
+# reading slot, while concept-based recall questions and written connection prompts are much
+# longer than the one-liners they replaced. Recall's writing regions went back to 2 lines, which
+# buys a fourth question and is the right trade because a concept answer is a sentence.
+# Verified: 5 readings, 5 recalls, or 3-line recall regions each push a fifth page.
+_FIT = {"read": 4, "think": 4, "recall": 4}
 
 # The Read page is the one section with no writing regions, so `_lines_for` does not bound it and
 # nothing else did either: three proposals plus an unbounded in-progress list overflowed onto a
@@ -98,6 +101,27 @@ _MIN_PASSAGE_CHARS = 40
 
 # Subsection headings on the Think page, in render order. Named for PROVENANCE — where the item
 # came from — because that is the distinction the old labels failed to make.
+# THE THINK PAGE ASKS FOR SOMETHING. Its first design showed three kinds of ARTEFACT — a passage
+# he marked, a question he had left open, a pair of related documents — and the owner's verdict
+# was that none of them was useful and the connections were "obscure and hard to read". They were
+# things to look at, not things to do. Each section is now a PROMPT, named for the verb it asks
+# for, and every item is answerable in the space beneath it.
+# The entity types that are a MATHEMATICAL CONCEPT OR A FINANCIAL INSTRUMENT — the only things
+# worth asking him to explain or recall, in his words. An ALLOW-list, not the deny-list
+# `concept_exclude_entity_types` uses: that one lets `dataset` through, and the first live run
+# offered "14-variable Treasury / macro panel", "FOMC minutes" and "F1" as concepts to explain.
+# A source and a symbol are not ideas.
+TEACHABLE_TYPES = ("concept", "method", "theorem", "metric")
+
+# Below this a canonical is an abbreviation or a label ("F1", "VaR"), not something to explain.
+_MIN_TEACHABLE_CHARS = 6
+
+SECTION_EXPLAIN = "Explain it"
+SECTION_DEVELOP = "Take it further"
+SECTION_CONNECT = "Worth connecting"
+
+# Retained so a page delivered before this change can still be pulled back and routed: the
+# anchors on it carry the old kinds. Nothing composes them any more.
 SECTION_MARKED = "From your reading"
 SECTION_OPEN = "Still open"
 SECTION_CONNECTION = "Connections found"
@@ -788,13 +812,15 @@ def build_connections(
     over recent capture returns sibling notes almost every time — true, but not news to the person
     who wrote both.
 
-    THE `why now` LINE IS THE PART THAT HAD TO CHANGE. It used to read "shares 3 concepts with a
-    document you have not linked it to", and the owner's response was the right one: that is a
-    fact about the database, and being unlinked is not a reason to care. It now names what the two
-    documents both develop, which is the most a joins-only builder can honestly say; the written
-    "and here is what you could do with it" needs a model pass and is step 4. A connection that
-    cannot name a single shared concept is DROPPED rather than softened — grounded or silent.
+    THE ITEM IS THE WRITTEN PROMPT, not the pair. Naming the shared concept ("both develop regime
+    detection") was as far as a joins-only builder could go, and the owner's verdict on it was
+    "obscure and hard to read and understand" — two long titles and a bare noun, stating that an
+    overlap exists and asking nothing. `link/connect.py` composes the prose overnight and stores
+    it; this prints it. A connection with NO STORED PROSE IS NOT OFFERED, because the fallback is
+    exactly the phrasing he rejected — grounded or silent, and silence is the better failure.
     """
+    from locus.link.connect import stored_note
+
     seen = seen if seen is not None else set()
     out: list[ThreadItem] = []
     seen_pairs: set[tuple[int, int]] = set()
@@ -819,14 +845,19 @@ def build_connections(
             item_key = f"conn:{src['source_uri']}|{other_uri}"
             if item_key in seen:
                 continue
-            shared = ", ".join(rel.shared_names[:3])
+            shared = rel.shared_names[0]
+            prose = stored_note(
+                conn, src_uri=src["source_uri"], other_uri=other_uri, shared=shared
+            )
+            if not prose:
+                continue  # nothing written yet — say nothing rather than say it badly
             out.append(
                 ThreadItem(
                     anchor="",
-                    section=SECTION_CONNECTION,
+                    section=SECTION_CONNECT,
                     kind="connection",
-                    headline=f"{src['title'] or src['source_uri']} → {rel.title}",
-                    context=f"both develop {shared} — you wrote yours on {src['source_date']}",
+                    headline=prose,
+                    context=f"{_clip(rel.title, 70)} · you wrote yours on {src['source_date']}",
                     tick=True,
                     target_kind="doc",
                     target_key=other_uri,
@@ -835,6 +866,158 @@ def build_connections(
             )
             break  # one connection per note, so several notes are represented, not one
     return out[:limit]
+
+
+def build_explain(
+    conn: sqlite3.Connection, *, limit: int = 1, seen: set[str] | None = None
+) -> list[ThreadItem]:
+    """A concept his own work USES that he has never written down (`learn/gaps`).
+
+    DELIBERATELY NOT THE RECALL PAGE, which was the owner's condition for having both. Recall
+    asks "do you know this?" — a closed question with the answer overleaf, drawn from a concept
+    he has READ about. This asks "can you articulate this?" — it names the PROJECT that depends
+    on the concept, there is no answer printed anywhere, and what he writes is the artefact.
+    That is the interview question he cannot revise for by reading.
+    """
+    from locus.learn.gaps import gaps_for_object
+
+    seen = seen if seen is not None else set()
+    out: list[ThreadItem] = []
+    # ONE PER PROJECT before a second from any: taking them in gap order handed every slot to
+    # whichever project happens to carry the most unexplained concepts, which is the same
+    # single-source crowding that made the recall page useless.
+    per_project: list[list[ThreadItem]] = []
+    for obj in state.list_objects(conn, type_="project", status="active", limit=40):
+        found: list[ThreadItem] = []
+        for gap in gaps_for_object(conn, obj.id, limit=8):
+            if gap.kind != "explanation" or not _is_domain_concept(conn, gap.subject):
+                continue
+            item_key = f"explain:{obj.id}:{gap.subject}"
+            if item_key in seen:
+                continue
+            found.append(
+                ThreadItem(
+                    # Routed as `question`: what he writes under it is a new thought of his,
+                    # grounded in the project it was asked about (`pull_daily._capture_thought`).
+                    anchor="", section=SECTION_EXPLAIN, kind="question",
+                    headline=f"{gap.subject} — you use it in {obj.title}, "
+                             f"but have never written it down.",
+                    context="explain it in your own words · no answer overleaf",
+                    target_kind="object", target_key=str(obj.id), item_key=item_key,
+                )
+            )
+        if found:
+            per_project.append(found)
+
+    for round_ in range(max((len(f) for f in per_project), default=0)):
+        for found in per_project:
+            if len(out) >= limit:
+                return out
+            if round_ < len(found):
+                out.append(found[round_])
+    return out
+
+
+def _is_teachable(conn: sqlite3.Connection, name: str) -> bool:
+    """Is this canonical a concept/method/theorem/metric worth explaining — not a source or symbol?"""
+    if len(name) < _MIN_TEACHABLE_CHARS:
+        return False
+    row = conn.execute(
+        "SELECT canonical_type FROM entity_aliases WHERE canonical_name=? LIMIT 1", (name,)
+    ).fetchone()
+    if row is not None:
+        return (row["canonical_type"] or "") in TEACHABLE_TYPES
+    row = conn.execute("SELECT type FROM entities WHERE name=? LIMIT 1", (name,)).fetchone()
+    return row is not None and (row["type"] or "") in TEACHABLE_TYPES
+
+
+def _is_domain_concept(conn: sqlite3.Connection, name: str) -> bool:
+    """Teachable AND attested outside code — a maths/finance idea, not a software artefact.
+
+    The owner asked for "mathematical concepts or financial instruments". Type alone does not
+    give that: a repo's narrative yields `Exchange object`, `deduplication` and `Append-Only Data
+    Storage` as `concept`s, which are true of the code and not things anyone would ask him about.
+    Requiring the canonical to appear in at least one PROSE document he reads is the same
+    reasoning `[structure].concept_require_categories` already applies to Concept objects.
+    """
+    if not _is_teachable(conn, name):
+        return False
+    row = conn.execute(
+        """
+        SELECT 1 FROM entities e
+        JOIN documents d ON d.id = e.doc_id
+        LEFT JOIN entity_aliases a ON a.variant_name = e.name AND a.variant_type = e.type
+        WHERE COALESCE(a.canonical_name, e.name) = ?
+          AND d.source_type != 'code' AND d.category IN ('paper','note','coursework','career')
+        LIMIT 1
+        """,
+        (name,),
+    ).fetchone()
+    return row is not None
+
+
+def build_develop(
+    conn: sqlite3.Connection, *, limit: int = 1, seen: set[str] | None = None
+) -> list[ThreadItem]:
+    """An idea he jotted, offered back with the passage that provoked it.
+
+    His own words lead. The old "From your reading" led with the PASSAGE and demoted his note to
+    a quote underneath, which is backwards: the passage is why the idea exists, not the idea.
+    """
+    seen = seen if seen is not None else set()
+    out: list[ThreadItem] = []
+    threads = [
+        o for t in _THREAD_TYPES
+        for o in state.list_objects(conn, type_=t, status="active", limit=40)
+    ]
+    threads.sort(key=lambda o: o.updated_at)          # least recently touched first
+    for obj in threads:
+        body = obj.body or {}
+        # His own words when there are any (`body["idea"]`/`body["question"]` carry an
+        # owner-authored thread), else the TITLE — which is what `build_open` always used. A
+        # thread the structurer proposed and he blessed has no typed body field, and requiring
+        # one dropped every such thread off the page silently.
+        text = " ".join(str(body.get(obj.type) or obj.title or "").split())
+        if not text:
+            continue
+        # `object:<id>:<updated_at>` — the SAME item_key `build_open` used, so the no-repeat
+        # ledger keeps working across this change and a developed thread still returns.
+        item_key = f"object:{obj.id}:{obj.updated_at}"
+        if item_key in seen:
+            continue
+        # HIS PRIOR PASSES COME WITH IT. Developing a thread means adding to a chain, and without
+        # the last two entries he is answering the same prompt from scratch every time.
+        development = development_entries(obj.body)
+        passage = _passage_for_idea(conn, obj.id)
+        out.append(
+            ThreadItem(
+                # `kind="open"` is load-bearing: it is what `pull_daily` routes to develop or
+                # resolve a thread. The SECTION and wording changed, the mechanism did not —
+                # removing it would have silently ended the two-way loop §21 exists for.
+                anchor="", section=SECTION_DEVELOP, kind="open",
+                headline=_clip(text, 170),
+                context="you jotted this · take it further",
+                body=(
+                    tuple(development[-2:])
+                    or ((f"beside: {_clip(passage, 190)}",) if passage else ())
+                ),
+                target_kind="object", target_key=str(obj.id), item_key=item_key,
+            )
+        )
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _passage_for_idea(conn: sqlite3.Connection, object_id: int) -> str:
+    """The marked passage an idea was raised on, so it returns with its provocation."""
+    try:
+        row = conn.execute(
+            "SELECT covered_text FROM pdf_annotations WHERE object_id=? LIMIT 1", (object_id,)
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return ""
+    return " ".join((row["covered_text"] or "").split()) if row else ""
 
 
 def build_threads(
@@ -853,8 +1036,8 @@ def build_threads(
     # it. The old split took a fixed `per` from marks and open and let connections absorb the
     # slack in only ONE direction, so a day with no connections rendered a two-thirds page.
     pools = [
-        build_marked(conn, limit=limit, seen=seen),
-        build_open(conn, limit=limit, seen=seen),
+        build_explain(conn, limit=limit, seen=seen),
+        build_develop(conn, limit=limit, seen=seen),
         build_connections(conn, limit=limit, seen=seen),
     ]
     per = max(1, limit // len(pools))
@@ -1137,7 +1320,7 @@ _MAX_LINES = 5
 # Floor per section, because the two writing pages differ in what a region is FOR. Developing an
 # idea needs room to think on paper; recalling a stored claim is a sentence or two, so two lines
 # there buys a fourth question rather than white space.
-_MIN_LINES = {"think": 3, "recall": 3}
+_MIN_LINES = {"think": 3, "recall": 2}
 
 
 def _lines_for(n_items: int, section: str = "think") -> int:
@@ -1194,7 +1377,6 @@ def _status_block(page: DailyPage) -> str:
     """
     return (
         "```{=typst}\n"
-        "#v(1fr)\n"
         "#line(length: 100%, stroke: 0.3pt + luma(85%))\n"
         "#v(0.45em)\n"
         f"#text(size: 8pt, fill: luma(45%), style: \"italic\")[{_typst_escape(page.status.render())}]\n"
@@ -1215,35 +1397,14 @@ def _render_read(page: DailyPage) -> str:
             lines += ["", f"`{d.grounding}`"]
         lines += ["", _rules(1)]
 
+    # NO "IN PROGRESS" LIST. It restated what the device already shows: the owner reads it off
+    # the `/Reading/In-Progress` folder, and a status list is not worth a third of the page he
+    # asked to fill with reading links, which he called "really good and helpful".
     st = page.reading_state
-    if st.in_progress:
-        lines += ["", "## In progress", ""]
-        # Truncating the reasons was the FIRST attempt at keeping this section on one page and it
-        # was not enough: with 3 proposals above it, five in-progress items still spilled the
-        # status line onto a second, near-empty page (measured 2026-08-02 — a real 5-page PDF).
-        # The list is a status glance, so the fix is to bound the ITEM COUNT and say what was
-        # held back; `_MAX_IN_PROGRESS` is what fits beneath a full Read section, not a taste.
-        shown = st.in_progress[:_MAX_IN_PROGRESS]
-        for item in shown:
-            link = f" — {item.links_to}" if item.links_to else ""
-            # `yours` marks material he chose himself. It is the interesting case: nothing in the
-            # pipeline decided it was relevant, so the link is a finding rather than a restatement.
-            tag = "  *yours*" if item.owner_added else ""
-            lines += [f"- **{_clip(item.title, 58)}**{link}{tag}"]
-            # THE LINK IS THE POINT HERE, not the argument. This is a status list; printing the
-            # full written reason for each of five in-progress items pushed the whole section onto
-            # a second page. Only material he chose himself gets a line of it, because that is the
-            # case he asked to see, and only a line.
-            if item.why and item.owner_added:
-                lines += [f"  {_clip(item.why, 110)}"]
-        if len(st.in_progress) > len(shown):
-            # Never silently truncate: a shorter list must not read as "this is everything".
-            lines += [f"- *…and {len(st.in_progress) - len(shown)} more in progress*"]
     if st.proposed:
         oldest = f", oldest {st.oldest_days} days" if st.oldest_days is not None else ""
         lines += ["", f"**On the shelf:** {st.proposed} waiting{oldest}"]
 
-    lines += ["", _status_block(page)]
     return "\n".join(lines)
 
 
@@ -1259,11 +1420,16 @@ def _render_think(page: DailyPage) -> str:
         # rendered as a tofu box (verified 2026-07-30 — the character was absent from the
         # extracted text while a stray rectangle was drawn in its place). A tick box he must
         # recognise cannot depend on font coverage.
-        box = f"{_TICKBOX} keep   " if t.tick else ""
-        lines += [f"{_anchor(t.anchor)} {box}{t.headline}", ""]
+        lines += [f"{_anchor(t.anchor)} {t.headline}", ""]
         for prior in t.body:
             lines += [f"> {prior}", ""]
         lines += [f"*{t.context}*", "", _rules(per_item)]
+        # SEPARATE FROM THE TEXT, like the recall page's. Inline after the anchor it sat mid-
+        # sentence and read as part of the prompt; a decision box belongs at the end of the thing
+        # it decides, where the eye lands after writing.
+        if t.tick:
+            lines += ["```{=typst}\n#align(right)[#tickbox #text(size: 9pt, fill: luma(45%))"
+                      "[keep this connection]]\n```", ""]
     return "\n".join(lines)
 
 
@@ -1290,9 +1456,13 @@ def _render_back(page: DailyPage) -> str:
     should not sit under a block of answers he has already checked.
     """
     lines = _open_region()
+    # THE STATUS LINE LIVES HERE NOW, above the answers. On page 1 it took space from the reading
+    # links, which are the thing he actually uses; it is a health readout, not a reason to pick
+    # the page up. Still on the page, because it is the only place a failure is announced.
+    lines += ["", _status_block(page)]
     answered = [r for r in page.recalls if r.answer]
     if answered:
-        lines += ["", "***", "", "*Answers*", ""]
+        lines += ["", "*Answers*", ""]
         for r in answered:
             lines += [f"*{r.anchor}. {r.answer}*", ""]
     return "\n".join(lines)

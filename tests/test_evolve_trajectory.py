@@ -116,7 +116,8 @@ def test_tension_against_an_earlier_position_is_reported(conn):
         subject_kind="concept", subject_key=KEY,
         embed_fn=lambda _t: [0.0] * 768,
         runner=_runner({"tensions": [
-            {"conflicts_with": earlier, "reason": "one prefers MVO, the other rejects it"}
+            {"conflicts_with": earlier, "reason": "one prefers MVO, the other rejects it",
+             "kind": "methodological", "changes": "stop defaulting to MVO"}
         ]}),
     )
     assert len(tensions) == 1
@@ -131,7 +132,8 @@ def test_a_tension_the_judge_was_never_shown_is_dropped(conn):
         subject_kind="concept", subject_key=KEY,
         embed_fn=lambda _t: [0.0] * 768,
         runner=_runner({"tensions": [
-            {"conflicts_with": "Markowitz proved diversification is optimal", "reason": "made up"}
+            {"conflicts_with": "Markowitz proved diversification is optimal", "reason": "made up",
+             "kind": "factual", "changes": "revisit the weighting rule"}
         ]}),
     )
     assert tensions == []
@@ -183,7 +185,8 @@ def test_embedding_failure_degrades_to_positions_only(conn):
         conn, "equal weight beats mean-variance out of sample", subject_kind="concept",
         subject_key=KEY, embed_fn=bad_embed,
         runner=_runner({"tensions": [
-            {"conflicts_with": "mean-variance optimisation is the right default", "reason": "r"}
+            {"conflicts_with": "mean-variance optimisation is the right default", "reason": "r",
+             "kind": "methodological", "changes": "switch the default"}
         ]}),
     )
     assert len(tensions) == 1  # stored positions still available without the embedder
@@ -297,6 +300,7 @@ def test_a_cached_no_is_not_reused_when_the_judge_has_changed(conn):
     found = {"tensions": [{
         "conflicts_with": "equal weight beats mean-variance out of sample",
         "reason": "the position asserts the opposite default",
+        "kind": "methodological", "changes": "change the default weighting",
     }]}
     original = tj._JUDGE_VERSION
     tj._JUDGE_VERSION = "a-different-judge"
@@ -326,3 +330,52 @@ def test_a_stale_marker_is_upserted_not_ignored(conn):
         for r in conn.execute("SELECT judge_version FROM belief_tensions WHERE conflicts_with=''")
     }
     assert versions == {"second-judge"}, f"stale marker survived: {versions}"
+
+
+def test_a_wording_disagreement_is_not_worth_showing(conn):
+    """His verdict on the first two tensions this pass ever produced: "a wording thing is not the
+    sort of thing I am looking for".
+
+    Both were real disagreements — "once it fixes it becomes a realised cashflow" against the
+    corpus's definition of realised cash flow, and "fair value discovery is the core skill"
+    against "systematic approach is as important as other factors" — and neither would change a
+    single thing he does.
+    """
+    earlier = "mean-variance optimisation is the right default"
+    for kind in ("terminological", "emphasis"):
+        out = tj.find_tensions(
+            conn, "equal weight beats mean-variance out of sample",
+            subject_kind="concept", subject_key=KEY,
+            embed_fn=lambda _t: [0.0] * 768,
+            runner=_runner({"tensions": [{
+                "conflicts_with": earlier, "reason": "they define 'default' differently",
+                "kind": kind, "changes": "nothing",
+            }]}),
+        )
+        assert out == [], f"{kind} should not reach the page"
+
+
+def test_a_conflict_with_no_consequence_is_dropped(conn):
+    """A tension that cannot say what he would do differently is a debate, not a warning."""
+    out = tj.find_tensions(
+        conn, "equal weight beats mean-variance out of sample",
+        subject_kind="concept", subject_key=KEY, embed_fn=lambda _t: [0.0] * 768,
+        runner=_runner({"tensions": [{
+            "conflicts_with": "mean-variance optimisation is the right default",
+            "reason": "they disagree", "kind": "factual", "changes": "   ",
+        }]}),
+    )
+    assert out == []
+
+
+def test_an_unclassified_tension_is_dropped_rather_than_assumed_substantive(conn):
+    """Silence on `kind` must fail closed: an unlabelled conflict is not evidence of a real one."""
+    out = tj.find_tensions(
+        conn, "equal weight beats mean-variance out of sample",
+        subject_kind="concept", subject_key=KEY, embed_fn=lambda _t: [0.0] * 768,
+        runner=_runner({"tensions": [{
+            "conflicts_with": "mean-variance optimisation is the right default",
+            "reason": "they disagree", "changes": "switch the default",
+        }]}),
+    )
+    assert out == []

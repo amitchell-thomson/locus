@@ -65,6 +65,7 @@ Screen { layout: vertical; background: ansi_default; }
         background: ansi_default; }
 .card.selected { border-left: outer $accent; }
 .empty { padding: 2 4; background: ansi_default; }
+.help { padding: 0 2; margin-bottom: 1; color: $text-muted; background: ansi_default; }
 """
 
 _TAB_TITLES = {
@@ -72,6 +73,50 @@ _TAB_TITLES = {
     Q.KIND_DUPLICATE: "Duplicates",
     Q.KIND_INTENT: "Marks",
     Q.KIND_ABANDONED: "Reading",
+}
+
+# What each tab is FOR, and what a yes or a no there actually DOES.
+#
+# The four kinds share one pair of keys and mean four different things by them: `y` on Duplicates
+# archives an object, `y` on Reading merely defers one, and `n` on Marks is not a rejection at all
+# — it records that the passage was an idea of his and builds a thread from it. The card can carry
+# the label (`y = merge`) but not the consequence, and the consequence is what he is deciding on.
+# Clearing fast (the whole point of the TUI) is only safe when a key press holds no surprise.
+#
+# Each entry is (what the tab is, an example, what yes means, what no means, a caveat or "").
+_TAB_HELP = {
+    Q.KIND_OBJECT: (
+        "Concepts, projects and questions the structurer pulled out of your documents. It only "
+        "proposes — blessing is what makes one real enough to come back to you.",
+        '"regime detection" · grounded in 3 documents that name it',
+        "bless it — a thread you genuinely think about",
+        "drop for good — boilerplate, a stray phrase, or someone else's idea",
+        "e replaces the agent's reasoning with your wording, which no later pass overwrites.",
+    ),
+    Q.KIND_DUPLICATE: (
+        "Two objects that are one concept under two names — a difference of casing, or the same "
+        "thing written down twice.",
+        '"Bootstrap" = "bootstrap" · one idea, entered twice',
+        "merge — folds the newer into the oldest, which carries the longer history",
+        "keep separate — genuinely different, and this pair is never raised again",
+        "A merge archives rather than deletes, so u puts both back.",
+    ),
+    Q.KIND_INTENT: (
+        "Passages you marked while reading, where the intent pass could not tell what you meant. "
+        "Under the confidence floor nothing happens to them until you answer.",
+        'an underline guessed "important" at 45% · important, not understood, or an idea?',
+        "take the guess — recorded as yours, and acted on now",
+        "it was an idea of yours — becomes a thread linked to that passage",
+        "Move past one to leave it alone: important is the reading where nothing need happen.",
+    ),
+    Q.KIND_ABANDONED: (
+        "Reading on the tablet you have not marked in a fortnight. The only question being asked "
+        "is whether it was the wrong paper.",
+        "a paper with no marks in 21 days · links to Alpha Fund",
+        "still reading — defers it, and asks again later",
+        "wasn't useful — tunes what the discovery loop proposes next",
+        "",
+    ),
 }
 
 
@@ -166,6 +211,9 @@ def build_app(conn: sqlite3.Connection):
             # carrying the SAME id crashes with DuplicateIds — hit by switching tabs. The
             # empty-state is therefore identified by CLASS, which has no such constraint.
             body.remove_children()
+            # Above the cards on EVERY tab, including the empty ones: a tab with nothing pending
+            # is exactly where "what would appear here?" is the open question.
+            body.mount(self._help(Static, self.kind))
             if not self.total:
                 body.mount(Static(
                     "Nothing is waiting on you.\n\n"
@@ -194,6 +242,15 @@ def build_app(conn: sqlite3.Connection):
                 label = f"{_TAB_TITLES[kind]} {n}" if n else _TAB_TITLES[kind]
                 parts.append(f"[reverse b] {label} [/]" if i == self.tab else f"[dim] {label} [/]")
             return "  ".join(parts)
+
+        @staticmethod
+        def _help(Static, kind: str):
+            """The standing description of one tab — what it holds and what y/n do to it."""
+            what, example, yes, no, caveat = _TAB_HELP[kind]
+            lines = [what, f"e.g.  {example}", f"[b]y[/b]  {yes}", f"[b]n[/b]  {no}"]
+            if caveat:
+                lines.append(caveat)
+            return Static("\n".join(lines), classes="help")
 
         @staticmethod
         def _card(Static, item: Q.Decision, *, selected: bool):

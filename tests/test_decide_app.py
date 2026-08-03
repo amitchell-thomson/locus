@@ -191,3 +191,45 @@ async def test_the_background_is_the_terminals_own(conn):
         assert theme.ansi is True
         for key in ("background", "surface", "panel"):
             assert theme.variables[key] == "ansi_default", f"{key} would paint over the terminal"
+
+
+# --- saying what the tab is for ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_every_kind_explains_itself_and_what_y_and_n_do_to_it(conn):
+    """One pair of keys means four different things across these tabs — `y` archives on
+    Duplicates, merely defers on Reading, and `n` on Marks is not a rejection but a statement that
+    the passage was an idea of his. Clearing fast is only safe when no key press holds a surprise,
+    so every kind must carry its own description: a new kind without one would ship a tab asking
+    for a judgement it never explains."""
+    from locus.decide import queue as Q
+    from locus.decide.app import _TAB_HELP, build_app
+
+    assert set(_TAB_HELP) == set(Q.TUI_KINDS), "a kind with no description is a tab that lies"
+
+    _proposed(conn, "alpha")
+    app = build_app(conn)
+    async with app.run_test() as pilot:
+        for kind in Q.TUI_KINDS:
+            assert app.kind == kind
+            shown = str(app.query_one(".help").render())
+            what, example, yes, no, _caveat = _TAB_HELP[kind]
+            assert what in shown, f"{kind} does not say what it is for"
+            assert example in shown, f"{kind} shows no example"
+            assert yes in shown and no in shown, f"{kind} does not say what y and n do"
+            await pilot.press("right")
+
+
+@pytest.mark.asyncio
+async def test_the_description_survives_a_tab_with_nothing_in_it(conn):
+    """An empty tab is exactly where "what would appear here?" is the live question, so the
+    description outlives the cards rather than vanishing with them."""
+    from locus.decide.app import build_app
+
+    _proposed(conn, "alpha")
+    app = build_app(conn)
+    async with app.run_test() as pilot:
+        await pilot.press("right")
+        assert "Nothing pending under Duplicates" in str(app.query_one(".empty").render())
+        assert "one concept under two names" in str(app.query_one(".help").render())

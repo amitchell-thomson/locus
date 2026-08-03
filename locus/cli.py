@@ -1589,6 +1589,14 @@ def cmd_evolution(args) -> None:
 
     conn = _open()
     try:
+        if args.store_tensions is not None:
+            # Overnight: judge recent positions and STORE what survives, so the daily page can
+            # offer one without making a model call during composition (§18, aggregate-only).
+            from locus.evolve.trajectory import store_tensions
+
+            n = store_tensions(conn, limit=args.store_tensions)
+            print(f"stored {n} tension(s)")
+            return
         if not args.subject:
             trajectories = all_trajectories(conn, limit=args.limit)
             if not trajectories:
@@ -2097,6 +2105,11 @@ def main(argv=None) -> None:
     pev = sub.add_parser("evolution", help="show the dated belief trajectory for a concept/project")
     pev.add_argument("subject", nargs="?", default=None, help="concept name or project title (omit to list all)")
     pev.add_argument("--tensions", action="store_true", help="also run the judged contradiction pass (billed)")
+    pev.add_argument(
+        "--store-tensions", type=int, nargs="?", const=4, default=None, metavar="N",
+        help="judge N recent positions for contradictions and store them for the daily page "
+             "(billed; this is the overnight form of --tensions)",
+    )
     pev.add_argument("--limit", type=int, default=50, help="max subjects when listing")
     pev.set_defaults(func=cmd_evolution)
 

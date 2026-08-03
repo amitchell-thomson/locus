@@ -116,7 +116,7 @@ TEACHABLE_TYPES = ("concept", "method", "theorem", "metric")
 # Below this a canonical is an abbreviation or a label ("F1", "VaR"), not something to explain.
 _MIN_TEACHABLE_CHARS = 6
 
-SECTION_EXPLAIN = "Explain"
+SECTION_CHALLENGE = "Check this"
 SECTION_DEVELOP = "Develop"
 SECTION_CONNECT = "Connect"
 
@@ -868,53 +868,41 @@ def build_connections(
     return out[:limit]
 
 
-def build_explain(
+def build_challenge(
     conn: sqlite3.Connection, *, limit: int = 1, seen: set[str] | None = None
 ) -> list[ThreadItem]:
-    """A concept his own work USES that he has never written down (`learn/gaps`).
+    """Where something he has written conflicts with something the corpus says.
 
-    DELIBERATELY NOT THE RECALL PAGE, which was the owner's condition for having both. Recall
-    asks "do you know this?" — a closed question with the answer overleaf, drawn from a concept
-    he has READ about. This asks "can you articulate this?" — it names the PROJECT that depends
-    on the concept, there is no answer printed anywhere, and what he writes is the artefact.
-    That is the interview question he cannot revise for by reading.
+    THE ONE THING NOTHING ELSE DOES. Every other surface is additive — here is more to read, to
+    develop, to connect — and a system that only ever agrees with you is a filing cabinet. This
+    is the half that can tell him he is wrong, which for interview preparation is worth more
+    than another prompt.
+
+    Reads STORED verdicts (`evolve/trajectory.store_tensions`, overnight): the judging is a model
+    call and page composition may not make one. Empty is the normal state and the section is then
+    omitted — a manufactured disagreement would be far worse than none, which is why the judge is
+    told most answers are an empty list.
     """
-    from locus.learn.gaps import gaps_for_object
+    from locus.evolve.trajectory import open_tensions
 
     seen = seen if seen is not None else set()
     out: list[ThreadItem] = []
-    # ONE PER PROJECT before a second from any: taking them in gap order handed every slot to
-    # whichever project happens to carry the most unexplained concepts, which is the same
-    # single-source crowding that made the recall page useless.
-    per_project: list[list[ThreadItem]] = []
-    for obj in state.list_objects(conn, type_="project", status="active", limit=40):
-        found: list[ThreadItem] = []
-        for gap in gaps_for_object(conn, obj.id, limit=8):
-            if gap.kind != "explanation" or not _is_domain_concept(conn, gap.subject):
-                continue
-            item_key = f"explain:{obj.id}:{gap.subject}"
-            if item_key in seen:
-                continue
-            found.append(
-                ThreadItem(
-                    # Routed as `question`: what he writes under it is a new thought of his,
-                    # grounded in the project it was asked about (`pull_daily._capture_thought`).
-                    anchor="", section=SECTION_EXPLAIN, kind="question",
-                    headline=f"{gap.subject} — you use it in {obj.title}, "
-                             f"but have never written it down.",
-                    context="explain it in your own words · no answer overleaf",
-                    target_kind="object", target_key=str(obj.id), item_key=item_key,
-                )
+    for t in open_tensions(conn, limit=limit * 4):
+        item_key = f"tension:{t['id']}"
+        if item_key in seen:
+            continue
+        out.append(
+            ThreadItem(
+                anchor="", section=SECTION_CHALLENGE, kind="question",
+                headline=f"You wrote: “{_clip(t['stance'], 150)}” — but the corpus says: "
+                         f"“{_clip(t['conflicts_with'], 150)}”",
+                context=f"{_clip(t['reason'], 130)}"
+                        + (f" · {t['source']}" if t["source"] else ""),
+                target_kind="object", target_key=str(t["position_id"]), item_key=item_key,
             )
-        if found:
-            per_project.append(found)
-
-    for round_ in range(max((len(f) for f in per_project), default=0)):
-        for found in per_project:
-            if len(out) >= limit:
-                return out
-            if round_ < len(found):
-                out.append(found[round_])
+        )
+        if len(out) >= limit:
+            break
     return out
 
 
@@ -929,31 +917,6 @@ def _is_teachable(conn: sqlite3.Connection, name: str) -> bool:
         return (row["canonical_type"] or "") in TEACHABLE_TYPES
     row = conn.execute("SELECT type FROM entities WHERE name=? LIMIT 1", (name,)).fetchone()
     return row is not None and (row["type"] or "") in TEACHABLE_TYPES
-
-
-def _is_domain_concept(conn: sqlite3.Connection, name: str) -> bool:
-    """Teachable AND attested outside code — a maths/finance idea, not a software artefact.
-
-    The owner asked for "mathematical concepts or financial instruments". Type alone does not
-    give that: a repo's narrative yields `Exchange object`, `deduplication` and `Append-Only Data
-    Storage` as `concept`s, which are true of the code and not things anyone would ask him about.
-    Requiring the canonical to appear in at least one PROSE document he reads is the same
-    reasoning `[structure].concept_require_categories` already applies to Concept objects.
-    """
-    if not _is_teachable(conn, name):
-        return False
-    row = conn.execute(
-        """
-        SELECT 1 FROM entities e
-        JOIN documents d ON d.id = e.doc_id
-        LEFT JOIN entity_aliases a ON a.variant_name = e.name AND a.variant_type = e.type
-        WHERE COALESCE(a.canonical_name, e.name) = ?
-          AND d.source_type != 'code' AND d.category IN ('paper','note','coursework','career')
-        LIMIT 1
-        """,
-        (name,),
-    ).fetchone()
-    return row is not None
 
 
 def build_develop(
@@ -1036,7 +999,7 @@ def build_threads(
     # it. The old split took a fixed `per` from marks and open and let connections absorb the
     # slack in only ONE direction, so a day with no connections rendered a two-thirds page.
     pools = [
-        build_explain(conn, limit=limit, seen=seen),
+        build_challenge(conn, limit=limit, seen=seen),
         build_develop(conn, limit=limit, seen=seen),
         build_connections(conn, limit=limit, seen=seen),
     ]

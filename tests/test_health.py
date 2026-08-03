@@ -68,11 +68,30 @@ def test_a_run_in_progress_is_not_a_fault(conn):
 
 def test_a_run_THAT_NEVER_HAPPENED_is_reported(conn):
     """THE CASE THAT HID FOR SIX NIGHTS. It leaves no row, so no amount of reading `agent_runs`
-    finds it — only comparing against the cadence does."""
+    finds it — only comparing against the cadence does.
+
+    The fixture carries WEEKS of journalling history because that is the real shape of the
+    failure: `capture` had been recording itself all along while `maintain` never appeared once.
+    Without that history "no row" is not yet evidence — see the test below.
+    """
+    _run(conn, "capture", at=NOW - timedelta(days=14))
     _run(conn, "capture", at=NOW - timedelta(minutes=5))
     problems = H.check(conn, now=NOW, cadence=CADENCE).problems
     assert [p.kind for p in problems if p.severity == "overdue"] == ["maintain"]
     assert "never run" in next(p for p in problems if p.kind == "maintain").detail
+
+
+def test_no_row_is_not_yet_evidence_on_a_freshly_journalling_system(conn):
+    """A weekly job that ran seventeen hours ago is HEALTHY, and must not be shouted about.
+
+    Live 2026-08-03: journalling at dispatch had just been introduced, so `discover-harvest` —
+    which had run that morning — had no row yet and was reported as HAS NEVER RUN. In capitals,
+    on the daily page, and it would have been every morning for the next seven days.
+    `OVERDUE_GRACE` already encodes that a daily false alarm is the failure this module exists to
+    prevent; the no-row branch simply never applied it.
+    """
+    _run(conn, "capture", at=NOW - timedelta(minutes=5))
+    assert H.check(conn, now=NOW, cadence=CADENCE).ok, "5 minutes of history proves nothing"
 
 
 def test_a_kind_that_ran_recently_enough_is_not_overdue(conn):

@@ -152,11 +152,20 @@ def check(
     # THE CASE WITH NO ROW. Everything above reads rows that exist; a unit that never started
     # leaves none, and is exactly the failure that hid for six nights.
     last = _last_run_by_kind(conn)
+    watching_since = _journalling_since(conn)
     for kind, hours in cadence.items():
         stamp = last.get(kind, (None, None))[0]
         ran_at = _parse(stamp)
         overdue_after = timedelta(hours=hours * OVERDUE_GRACE)
         if ran_at is None:
+            # "No row" only means something once we have been WATCHING for longer than the
+            # cadence. Journalling at dispatch began 2026-08-02; without this, a healthy weekly
+            # job that had run seventeen hours earlier was reported as HAS NEVER RUN, and would
+            # have been — in capitals, on the daily page — every morning for the next seven days.
+            # `OVERDUE_GRACE` already encodes that a false alarm every morning is the failure
+            # this module exists to prevent; the no-row branch simply never applied it.
+            if watching_since is None or now - watching_since < overdue_after:
+                continue
             health.problems.append(Problem(kind, "overdue", "has never run"))
         elif now - ran_at > overdue_after:
             late = now - ran_at
@@ -168,6 +177,17 @@ def check(
     health.problems += _hard_failures(conn, since=since)
     health.problems.sort(key=lambda p: (SEVERITY_ORDER.get(p.severity, 9), p.kind))
     return health
+
+
+def _journalling_since(conn: sqlite3.Connection) -> datetime | None:
+    """When this system first recorded ANY run — how long "no row" has been meaningful evidence.
+
+    Derived from the data rather than stored, for the same reason `EXPECTED_CADENCE_HOURS` is:
+    a stored "watching since" has to be written by something, and nothing can write it for a
+    history that predates it.
+    """
+    row = conn.execute("SELECT MIN(started_at) AS first FROM agent_runs").fetchone()
+    return _parse(row["first"] if row else None)
 
 
 def _is_stale(started_at: str | None, now: datetime) -> bool:

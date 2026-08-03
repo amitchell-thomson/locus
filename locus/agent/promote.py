@@ -158,7 +158,7 @@ def render_thread(conn: sqlite3.Connection, obj) -> str | None:
         # so the note carries its own grounding into the corpus.
         lines += ["## Raised against", ""]
         for link in links:
-            lines += [f"- {cd._format_grounding(link)}"]
+            lines += [f"- {cd._format_grounding(link, conn)}"]
         lines += [""]
 
     return "\n".join(lines)

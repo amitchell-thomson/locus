@@ -253,6 +253,31 @@ def test_a_question_written_under_a_connection_becomes_an_object(conn):
     )
 
 
+def test_the_pages_own_printed_words_are_not_read_back_as_his_handwriting(conn, tmp_path):
+    """Invariant 5, failing in the exact direction it exists to prevent.
+
+    Vision transcribes the ink AND the printed text under it. Live 2026-08-01: region O2 came
+    back as `"raised 2026-07-30"` — the provenance line Locus itself printed — and it was stored
+    as his DEVELOPMENT of the thread, promoted to `vault/notes/threads/`, and ingested as his
+    words. Nothing errored; the corpus simply gained a sentence he never wrote.
+    """
+    page = cd.compose(conn, today=date(2026, 6, 1))
+    md = tmp_path / "_home.md"
+    md.write_text("# 2026-06-01\n\n**T1.** a thread\n\n*question · raised 2026-07-30*\n")
+    cd.persist(conn, page, md_path=str(md))
+    _anchor(conn, page.page_date, "C1", "connection", "doc", "papers/x.pdf")
+
+    pd.route_regions(conn, page.page_date, [R("C1", None, "raised 2026-07-30")])
+    assert state.list_objects(conn, type_="question") == []
+    assert state.list_objects(conn, type_="idea") == []
+
+    # ...but a real question that merely QUOTES the page is still his, and still lands.
+    pd.route_regions(conn, page.page_date, [
+        R("C1", None, "raised 2026-07-30 — so is regime detection the way in?")
+    ])
+    assert len(state.list_objects(conn, type_="question")) == 1
+
+
 def test_an_idea_written_under_a_connection_becomes_an_idea_not_a_question(conn):
     page = _page(conn)
     _anchor(conn, page.page_date, "C1", "connection", "doc", "papers/x.pdf")

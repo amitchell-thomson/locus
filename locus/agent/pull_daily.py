@@ -47,7 +47,7 @@ import base64
 import hashlib
 import json
 import sqlite3
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -597,6 +597,42 @@ def _prior_annotations(
     return out
 
 
+def _printed_text(conn: sqlite3.Connection, page_date: str) -> str:
+    """The page's OWN printed words, whitespace-normalised. '' when the markdown is unavailable."""
+    row = conn.execute(
+        "SELECT md_path FROM daily_pages WHERE page_date=?", (page_date,)
+    ).fetchone()
+    path = Path(row["md_path"]) if row and row["md_path"] else None
+    if path is None or not path.exists():
+        return ""
+    try:
+        return " ".join(path.read_text(encoding="utf-8").split()).casefold()
+    except OSError:
+        return ""
+
+
+def _drop_printed_text(region: ExtractedRegion, printed: str) -> ExtractedRegion:
+    """Discard a "transcription" that is really the page reading itself back.
+
+    Vision transcribes the ink AND whatever printed text sits under it, and a region's own
+    subtitle is right there. Live 2026-08-01: region O2 came back as `"raised 2026-07-30"` — the
+    provenance line Locus itself had printed — which was stored as his DEVELOPMENT of the thread,
+    then promoted to `vault/notes/threads/` and ingested as his words. That is invariant 5
+    failing in the exact direction it exists to prevent: agent prose re-entering the corpus as
+    his.
+
+    The test is containment of the WHOLE transcription, so a genuine note that happens to quote
+    the page survives — only text that is *entirely* something we printed is dropped. The mark
+    (tick/cross) is untouched: a tick is his, whatever text was picked up beside it.
+    """
+    text = " ".join((region.text or "").split())
+    if not text or not printed:
+        return region
+    if text.casefold() in printed:
+        return replace(region, text="")
+    return region
+
+
 def route_regions(
     conn: sqlite3.Connection,
     page_date: str,
@@ -608,7 +644,9 @@ def route_regions(
     anchors = cd.anchors_for(conn, page_date)
     prior = _prior_annotations(conn, page_date)
     result = PullResult(page_date=page_date)
+    printed = _printed_text(conn, page_date)
 
+    regions = [_drop_printed_text(r, printed) for r in regions]
     for r in sorted(regions, key=lambda x: x.anchor):
         anchor = anchors.get(r.anchor)
         if anchor is None:

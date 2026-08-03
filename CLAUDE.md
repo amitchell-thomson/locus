@@ -599,6 +599,69 @@ failed six consecutive nights unnoticed, 2026-08-01).
 measured and is WRONG — the mitigations contain it completely, and its maths bridges are the one
 thing §16 keeps it for. The coursework<->quant connection is now routed and live.
 
+## 27. The recall answer did not answer the question (2026-08-03)
+
+Found by reading the composed page rather than the code. Page 3 asked:
+
+> Why might higher volatility — which causes Bollinger Bands to expand — simultaneously reduce
+> the reliability of using band touches as mean-reversion signals?
+
+and page 4 replied:
+
+> In Task B, a model receives a sliding window of 30 daily OHLCV data points, together with
+> pre-computed values of RSI (14-period), MACD (12/26/9)...
+
+Two different questions (R3, R4) also printed the SAME answer. `concept_answer` returned
+`ORDER BY LENGTH(p.text) DESC LIMIT 1` over any section MENTIONING the concept — the longest
+sentence nearby, chosen without ever seeing the question, and both concepts sat in one section.
+
+**The coupling is the bug, not the ranking.** In the original design the prompt WAS the
+proposition, so question and answer were one object and could not disagree. When questions became
+model-written concept questions the two were produced by different mechanisms — one at
+`fill_concept_questions` time, one at page-composition time — and silently stopped matching.
+Nothing tied them together and nothing could have noticed: the page renders, the tests pass, and
+only turning the page reveals it.
+
+- **`concept_evidence`** (NEW) replaces the length rule: several propositions, ranked by the
+  cross-encoder against the CONCEPT. Live, `Bollinger bands` went from the Task-B input-format
+  sentence to "Bollinger Bands, developed by John Bollinger, place upper and lower bands at a
+  specified number of standard deviations...". Falls back to a deterministic contains-the-concept
+  sort when the `rerank` extra is absent.
+- **Question and answer are written TOGETHER** from that one evidence set, as one structured
+  object (`_ConceptCard`), and stored together (migration **0033**, `review_schedule.answer` +
+  `answer_source`). Mismatch stops being a thing to check for and becomes a thing that cannot
+  happen.
+- **`items_without_questions` treats a concept row missing its ANSWER as incomplete**, which
+  backfills — and rewrites the pre-0033 questions too, because those were generated from the same
+  bad evidence and are as suspect as the answers.
+- **An unusable answer falls back to corpus text, never to nothing.** An empty answer would leave
+  the row incomplete and re-billed every night: the same trap §26 found in the tension cache.
+
+**`is_grounded` was the wrong guard, and measurement said so.** The first cut reused
+`ingest.summarize.is_grounded`; live it rejected **5 of 9** answers and the forced fallback
+reinstated the exact defect being fixed. That predicate asks "does this SUMMARY reuse the
+vocabulary of the text it summarises" — right for a summary, wrong for reasoning, because the
+question deliberately interrogates an edge and a good answer generalises past the propositions.
+It was rejecting precisely the answers worth having. `_answer_is_usable` asks for aboutness plus
+substance instead, which targets the failure mode that matters — a confident answer about a
+different subject — and still rejects quantum chromodynamics for a question about AIS
+interpolation.
+
+**A CALIBRATION SCRIPT THAT DOES NOT MATCH THE ARTEFACT IS WORSE THAN NONE.** Checking this change
+for overflow, the live page rendered SIX pages and the longer answers were the obvious culprit —
+but a cap sweep returned six pages at EVERY value down to 260 chars, which is the tell that the
+hypothesis was wrong. `scripts/analysis/render_daily_sample.py` still passed `rule_gap_em=2.6`
+long after the default moved to **1.8**, and that literal had been copied into the check: 44% more
+space between every ruled line than the delivered page has. At the configured geometry the page is
+**four pages**. The script now reads `[daily]` instead of hard-coding, because the next person to
+check layout will copy from it too.
+
+**THE TRADE, stated rather than buried:** page 4 now carries model-authored reasoning, not corpus
+text only. That reverses "GROUNDED BY CONSTRUCTION... the ANSWER never is", deliberately: it is
+his own self-check, he knows the material, the prompt forbids carrying over figures/tickers/model
+names, and the alternative was an answer guaranteed not to answer the question. The rejection rate
+is logged as `review.answer_usable` so the choice stays visible instead of becoming folklore.
+
 ## 26. CHECK THIS was empty because the judge said no — and the dead-gate logger (2026-08-03)
 
 The Think page's CHECK THIS section rendered nothing, every day. The stated plan was to feed it

@@ -13,6 +13,7 @@ from pathlib import Path
 
 from locus.agent import compose_daily as cd
 from locus.agent import state
+from locus.config import load
 from locus.db.connection import get_connection
 from locus.db.migrate import migrate
 from locus.learn import review as lr
@@ -60,7 +61,19 @@ page = cd.compose(c, today=date(2026, 8, 2))
 md = cd.render(page)
 out = Path("eval-artifacts/daily-page-sample.pdf")
 out.parent.mkdir(exist_ok=True)
-render_markdown_to_pdf(md, out, geometry=PageGeometry(rule_gap_em=2.6))
+# THE CONFIGURED GEOMETRY, never a literal. This line read `rule_gap_em=2.6` long after the
+# default moved to 1.8, so the sample rendered with 44% more space between every ruled line than
+# the delivered page has. On 2026-08-03 that cost a real investigation: the live page appeared to
+# overflow to SIX pages and the recall answers were blamed, when at the real geometry it is four.
+# A calibration script that does not match the artefact it calibrates is worse than none.
+_daily = load().daily
+render_markdown_to_pdf(
+    md,
+    out,
+    geometry=PageGeometry(
+        rule_gap_em=_daily.rule_gap_em, accent=_daily.accent, sans_font=_daily.sans_font
+    ),
+)
 print(md)
 print("\n=== wrote", out, "===")
 c.close()

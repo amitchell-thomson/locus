@@ -486,3 +486,75 @@ def test_concept_weight_falls_as_a_concept_spreads(conn):
 
     assert concept_weight(1) > concept_weight(13) > concept_weight(18)
     assert concept_weight(0) == concept_weight(1), "an unseen concept is not infinitely valuable"
+
+
+# --- concept cards: the question and its answer are one object ---------------------------------
+
+
+def test_the_answer_is_stored_with_the_question_it_answers(conn):
+    """THE DEFECT (2026-08-03): page 3 and page 4 were produced by different mechanisms.
+
+    The question was generated here; the answer was re-derived at page-composition time as "the
+    longest proposition in any section mentioning the concept". Live, page 3 asked why volatility
+    undermines Bollinger-band mean reversion and page 4 replied with a study's input format — and
+    two different questions printed the SAME answer, because both concepts sat in one section.
+    """
+    review.schedule_prompt(conn, prompt_kind="concept", prompt_ref="AIS interpolation",
+                           today=date(2026, 1, 1))
+
+    def runner(p, m):
+        return ClaudeResult(text=json.dumps({
+            "question": "When does resampling irregular fixes distort a derived signal?",
+            "answer": "Resampling irregular position fixes imposes an even spacing the data "
+                      "never had, so any signal derived from the interpolated leg inherits that "
+                      "assumption rather than the movement itself.",
+        }))
+
+    assert review.fill_concept_questions(conn, limit=1, runner=runner) == 1
+    answer, _src = review.concept_answer(conn, "AIS interpolation")
+    assert answer.startswith("Resampling irregular position fixes")
+
+    item = conn.execute(
+        "SELECT question, answer FROM review_schedule WHERE prompt_ref='AIS interpolation'"
+    ).fetchone()
+    assert item["question"].endswith("?")
+    assert item["answer"] == answer            # one row, both halves, cannot drift apart
+
+
+def test_an_ungrounded_answer_falls_back_to_corpus_text_not_to_nothing(conn):
+    """An empty answer would leave the row incomplete and re-billed every night forever.
+
+    That is the trap the tension cache had (§26): paying again for the same rejection. The
+    fallback is the best-ranked proposition — corpus text, and at least about the right concept.
+    """
+    review.schedule_prompt(conn, prompt_kind="concept", prompt_ref="AIS interpolation",
+                           today=date(2026, 1, 1))
+
+    def runner(p, m):
+        return ClaudeResult(text=json.dumps({
+            "question": "Why does resampling matter here?",
+            # Long enough to clear _MIN_ANSWER_CHARS, so it is ABOUTNESS that rejects this and
+            # not length — otherwise the test would pass for the wrong reason.
+            "answer": "Quantum chromodynamics governs the strong nuclear interaction between "
+                      "quarks and gluons, and the coupling constant runs with energy scale so "
+                      "that confinement emerges at low energies and asymptotic freedom at high "
+                      "energies, which is why perturbation theory works only in one regime.",
+        }))
+
+    assert review.fill_concept_questions(conn, limit=1, runner=runner) == 1
+    answer, _ = review.concept_answer(conn, "AIS interpolation")
+    assert "chromodynamics" not in answer
+    assert "AIS interpolation" in answer        # a stored proposition, not the invention
+
+    # ...and the row is now COMPLETE, so it is not offered for rewriting again.
+    pending = review.items_without_questions(conn, kinds=("concept",))
+    assert [i.prompt_ref for i in pending] == []
+
+
+def test_evidence_is_chosen_by_relevance_not_by_length(conn):
+    """`ORDER BY LENGTH(text) DESC` is what put a study's input format under a Bollinger question."""
+    _prop(conn, 3, "A" * 60 + " this very long sentence never mentions the subject at all and "
+                              "exists only to be the longest thing in the section by a margin.")
+    facts, _src = review.concept_evidence(conn, "AIS interpolation")
+    assert facts, "expected evidence"
+    assert "AIS interpolation" in facts[0], f"length won again: {facts[0][:60]!r}"

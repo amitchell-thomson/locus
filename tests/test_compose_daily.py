@@ -964,3 +964,61 @@ def test_a_single_word_overlap_is_not_a_connection(conn):
     """
     _bridge_corpus(conn)
     assert all(c.shared != "CPU" for c in cd.connection_candidates(conn))
+
+
+# ---------- "You asked": his margin questions, answered -----------------------------------------
+
+
+def _answered(conn, mark_id: int, question: str, answer: str, source="A book") -> None:
+    with conn:
+        conn.execute(
+            "INSERT INTO pdf_annotations (id, source_uri, pdf_page, kind, bbox_key, "
+            "covered_text, in_margin, captured_at, note, intent) "
+            "VALUES (?,'books/apm.pdf',7,'underline',?,'a passage',0,'2026-08-01',?, "
+            "'not_understood')",
+            (mark_id, f"k{mark_id}", question),
+        )
+        conn.execute(
+            "INSERT INTO mark_answers (mark_id, question, answer, evidence, source, written_at) "
+            "VALUES (?,?,?,'[]',?,'2026-08-03')",
+            (mark_id, question, answer, source),
+        )
+
+
+def test_an_answered_margin_question_gets_its_own_page(conn):
+    """His instruction: "questions I jot down while reading should be answered on their own page".
+
+    One section per PHYSICAL page is the §18 invariant, so this adds a page rather than crowding
+    Recall — which asks HIM, and is a different act from telling him something he said he did not
+    follow.
+    """
+    _answered(conn, 1, "what does variance physically mean here?",
+              "Variance is additive for uncorrelated returns, so the ratio is the share of "
+              "total risk that is idiosyncratic rather than systematic.")
+    page = cd.compose(conn, today=date(2026, 8, 5))
+    assert [a.question for a in page.answered] == ["what does variance physically mean here?"]
+    assert page.answered[0].anchor == "A1"
+
+    body = cd.render(page)
+    assert "# You asked" in body
+    assert "Variance is additive" in body
+    # NOT a question put to him: no tick box and no ruled writing region on this page.
+    section = body.split("# You asked", 1)[1].split("```{=typst}", 1)[0]
+    assert "#tickbox" not in section
+
+
+def test_an_answered_question_is_anchored_so_it_can_be_retired(conn):
+    _answered(conn, 2, "how are information ratio and sharpe ratio different?",
+              "Information ratio applies the Sharpe calculation to residual returns against a "
+              "benchmark rather than to excess returns over the risk-free rate.")
+    page = cd.compose(conn, today=date(2026, 8, 5))
+    anchor = next(a for a in page.anchors if a.kind == "answered")
+    assert anchor.anchor == "A1" and anchor.target_key == "2"
+
+
+def test_an_answered_question_is_not_offered_twice(conn):
+    """`daily_shown` retires it like every other item — a page built daily must not repeat."""
+    _answered(conn, 3, "what do they mean by estimator?", "An estimator maps sample data to an "
+              "estimate of a population parameter, here the regression coefficients.")
+    assert cd.build_answered(conn, seen=set())
+    assert cd.build_answered(conn, seen={"answered:3"}) == []

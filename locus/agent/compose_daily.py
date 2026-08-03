@@ -67,7 +67,7 @@ from locus.link.related import related_documents
 # back to 3 when CONNECT replaced a one-line item with ~300 characters of written prose — two of
 # those are the tallest thing the page can carry, and with CHECK THIS usually empty the refill
 # hands its seat straight to a second connection.
-_FIT = {"read": 4, "think": 3, "recall": 4}
+_FIT = {"read": 4, "think": 3, "recall": 4, "answered": 3}
 
 # The Read page is the one section with no writing regions, so `_lines_for` does not bound it and
 # nothing else did either: three proposals plus an unbounded in-progress list overflowed onto a
@@ -251,12 +251,29 @@ class Status:
 
 
 @dataclass
+class Answered:
+    """A question he wrote in the margin, with the answer written from his own library.
+
+    Its own page, on his instruction: "questions I jot down while reading should be answered on
+    their own daily page". Distinct from Recall, which asks HIM — this one tells him, because he
+    already said he did not follow it.
+    """
+
+    anchor: str
+    question: str
+    answer: str
+    source: str
+    item_key: str
+
+
+@dataclass
 class DailyPage:
     page_date: str
     readings: list[ReadItem] = field(default_factory=list)
     reading_state: ReadingState = field(default_factory=ReadingState)
     threads: list[ThreadItem] = field(default_factory=list)
     recalls: list[Recall] = field(default_factory=list)
+    answered: list[Answered] = field(default_factory=list)
     status: Status = field(default_factory=Status)
     anchors: list[Anchor] = field(default_factory=list)
 
@@ -1064,6 +1081,34 @@ def build_connections(
     return out[:limit]
 
 
+def build_answered(
+    conn: sqlite3.Connection, *, limit: int = _FIT["answered"], seen: set[str] | None = None
+) -> list[Answered]:
+    """Questions he wrote while reading, with the answer written overnight. A pure join.
+
+    No tick box and no writing region: he is not being asked anything, and an answer to a question
+    he asked needs no decision from him. That is also why it is not part of Recall — Recall tests
+    him on material he chose to learn; this closes a gap he flagged at the moment of confusion.
+    """
+    from locus.learn import answers as _answers
+
+    seen = seen if seen is not None else set()
+    out: list[Answered] = []
+    for a in _answers.open_answers(conn, limit=limit * 3):
+        item_key = f"answered:{a.mark_id}"
+        if item_key in seen:
+            continue
+        out.append(
+            Answered(
+                anchor="", question=_clip(a.question, 150), answer=a.answer,
+                source=a.source, item_key=item_key,
+            )
+        )
+        if len(out) >= limit:
+            break
+    return out
+
+
 def build_challenge(
     conn: sqlite3.Connection, *, limit: int = 1, seen: set[str] | None = None
 ) -> list[ThreadItem]:
@@ -1348,6 +1393,7 @@ def compose(conn: sqlite3.Connection, *, today: date | None = None) -> DailyPage
     page.reading_state = build_reading_state(conn)
     page.threads = build_threads(conn, seen=seen)
     page.recalls = build_recalls(conn, today=today, seen=seen)
+    page.answered = build_answered(conn, seen=seen)
     page.status = build_status(conn)
 
     for i, r in enumerate(page.readings, 1):
@@ -1366,6 +1412,15 @@ def compose(conn: sqlite3.Connection, *, today: date | None = None) -> DailyPage
         r.anchor = f"R{i}"
         page.anchors.append(
             Anchor(r.anchor, "recall", "review_item", str(r.item_id), label=r.prompt[:120])
+        )
+    # ANCHORED BUT NOT WRITABLE. An answered question carries no writing region — nothing is
+    # being asked of him — but it still needs an anchor so `daily_shown` can retire it and so a
+    # correction written beside it has somewhere to route.
+    for i, a in enumerate(page.answered, 1):
+        a.anchor = f"A{i}"
+        page.anchors.append(
+            Anchor(a.anchor, "answered", "mark", a.item_key.split(":", 1)[-1],
+                   label=a.question[:120])
         )
     # One always-present open region. An invitation, not a prompt with a right answer, so it
     # carries no count and no backlog — anything written here becomes a thread he already owns.
@@ -1592,6 +1647,24 @@ def _render_think(page: DailyPage) -> str:
     return "\n".join(lines)
 
 
+def _render_answered(page: DailyPage) -> str:
+    """The page his own margin questions come back answered on.
+
+    No ruled writing region and no tick: he asked, this answers. The whole section is content, so
+    it is the one page whose length is set by what there is to say rather than by a line budget —
+    `_FIT["answered"]` bounds it instead.
+    """
+    lines = ["# You asked", "", "Questions you wrote while reading, answered from your own library.", ""]
+    for a in page.answered:
+        lines += [f"{_anchor(a.anchor)} {a.question}", ""]
+        lines += [a.answer, ""]
+        if a.source:
+            lines += [f"*{_clip(a.source, 70)}*", ""]
+        lines.append("***")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def _render_recall(page: DailyPage) -> str:
     lines = ["# Recall", "", "Answer, then tick if you knew it. Answers overleaf.", ""]
     per_item = _lines_for(len(page.recalls), "recall")
@@ -1645,6 +1718,8 @@ def render(page: DailyPage) -> str:
         pages.append(_render_think(page))
     if page.recalls:
         pages.append(_render_recall(page))
+    if page.answered:
+        pages.append(_render_answered(page))
 
     if not pages:
         # A page with nothing on it is a valid, calm state — and it is still the only place a

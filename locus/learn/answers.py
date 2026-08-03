@@ -69,13 +69,32 @@ _INTERNAL_KEY = re.compile(r"\[[A-Z]\d+\]")
 
 @dataclass
 class MarkQuestion:
-    """One question he wrote, with the passage it was written against."""
+    """One question he wrote, with the text it was written against.
+
+    TWO FIELDS, because they are two different things and the second is usually the load-bearing
+    one. `passage` is what the ink actually covered; `line` is the whole line it sits on, which
+    `capture/annotate` has been storing all along.
+
+    Marginalia is DEICTIC — it points. "what does variance physically mean here?" carries no
+    subject at all; "here" is the entire content of the question, and it lives in the line, not in
+    the note. Live, that mark's `covered_text` was the fragment "ratio between a" (15 chars, the
+    tail of a wrapped line) while its `line_text` read "The % idio variance (which we also denote
+    p) is the ratio between a portfolio's idio variance and...". Answering from the fragment
+    produced a correct explanation of variance in general and a wrong answer to HIS question,
+    which was about percent idiosyncratic variance.
+    """
 
     mark_id: int
     question: str
-    passage: str
+    passage: str        # what the ink covered — may be a fragment, may be empty
+    line: str           # the full line it sits on — usually the real context
     source: str
     page: int | None
+
+    @property
+    def context(self) -> str:
+        """The best available text for what he was pointing AT."""
+        return self.line if len(self.line) > len(self.passage) else self.passage
 
 
 @dataclass
@@ -181,7 +200,10 @@ _SYSTEM = (
 _TEMPLATE = """He wrote this question while reading:
 {question}
 
-The passage he wrote it against:
+The line he wrote it beside — this is what "this", "here" and "they" refer to:
+{line}
+
+The words his ink actually covered:
 {passage}
 
 Evidence from his own library (cite ONE key):
@@ -212,7 +234,7 @@ def pending_questions(conn, *, limit: int = 20) -> list[MarkQuestion]:
     """Marks he flagged as not understood, that read as questions and have no answer yet."""
     rows = conn.execute(
         """
-        SELECT a.id, a.note, a.covered_text, a.pdf_page, d.title
+        SELECT a.id, a.note, a.covered_text, a.line_text, a.pdf_page, d.title
         FROM pdf_annotations a
         LEFT JOIN documents d ON d.source_uri = a.source_uri
         WHERE a.intent = 'not_understood'
@@ -232,6 +254,7 @@ def pending_questions(conn, *, limit: int = 20) -> list[MarkQuestion]:
                 mark_id=r["id"],
                 question=note,
                 passage=" ".join((r["covered_text"] or "").split()),
+                line=" ".join((r["line_text"] or "").split()),
                 source=r["title"] or "",
                 page=r["pdf_page"],
             )
@@ -242,14 +265,19 @@ def pending_questions(conn, *, limit: int = 20) -> list[MarkQuestion]:
 
 
 def _search_text(q: MarkQuestion) -> str:
-    """What to retrieve on: the question, plus the passage when it is substantial.
+    """What to retrieve on: the question plus the line he wrote it against.
 
-    The passage carries the vocabulary the question omits ("what does this mean?" names nothing),
-    but a captured FRAGMENT — "->s)", "ratio between a" — is noise that pulls retrieval off the
-    subject, so it is only added when there is enough of it to mean something.
+    The line carries the vocabulary the question omits, and omitting it is how "what does variance
+    physically mean here?" retrieved a signals-and-systems lecture on random processes instead of
+    the book's own section on percent idiosyncratic variance — the question alone names nothing
+    but "variance", so the corpus answered a different question well.
+
+    Still gated on length, because a 3-character fragment ("->s)") is noise that drags retrieval
+    off the subject; `MarkQuestion.context` prefers the full line, which usually clears it.
     """
-    if len(q.passage) >= 40:
-        return f"{q.question} {q.passage}"
+    context = q.context
+    if len(context) >= 40:
+        return f"{q.question} {context}"
     return q.question
 
 
@@ -273,7 +301,10 @@ def answer_question(
     by_key = {e.key: e for e in grounding.evidence}
     rendered = "\n".join(f"[{e.key}] ({e.source}) {e.text}" for e in grounding.evidence)
     prompt = _TEMPLATE.format(
-        question=q.question, passage=q.passage or "(not captured)", evidence=rendered
+        question=q.question,
+        line=q.line or "(not captured)",
+        passage=q.passage or "(not captured)",
+        evidence=rendered,
     )
     try:
         out = run_structured(

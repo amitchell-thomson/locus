@@ -346,10 +346,41 @@ def rank(
     ]
 
     scored.sort(key=lambda s: -s.score)
-    shortlist = _cap_per_profile(scored, limit=limit * 2 if judge else limit)
+    shortlist = _cap_per_profile(
+        scored, limit=limit * 2 if judge else limit, prior=subject_prior(conn)
+    )
     if judge:
         shortlist = _apply_judge(conn, shortlist, judge=judge, drop_at_or_below=judge_floor)
     return shortlist[:limit]
+
+
+# How many RESOLVED proposals a subject needs before its kept-rate is allowed to move the order.
+# Below this the rate is one or two coin flips, and `channel_stats` already warns that an
+# item-level prior on small numbers is "noise wearing the costume of evidence". Live 2026-08-03:
+# every subject sits at 0-1 resolved, so the prior is inert and starts working on its own once
+# the judgements accumulate — derived at read time, so nothing has to remember to switch it on.
+_MIN_PRIOR_JUDGEMENTS = 4
+
+
+def subject_prior(conn: sqlite3.Connection) -> dict[str, float]:
+    """`evidence_key` -> kept-rate, for subjects with enough resolved proposals to mean anything.
+
+    The flywheel's missing consumer. Keep/reject has been recorded since Phase 2 and reached only
+    a printed table; the ranker interleaved every channel equally regardless of whether he had
+    ever accepted anything from it.
+    """
+    from locus.reading.proposals import channel_stats
+
+    try:
+        stats = channel_stats(conn)
+    except Exception:                                  # discovery tables absent
+        return {}
+    out: dict[str, float] = {}
+    for key, s in stats.items():
+        resolved = s["kept"] + s["ttl"] + s["removed"]
+        if resolved >= _MIN_PRIOR_JUDGEMENTS:
+            out[key] = s["kept"] / resolved
+    return out
 
 
 def _citation_bonuses(counts: list) -> list[float]:
@@ -429,7 +460,9 @@ def _cross_scores(pairs: list[tuple[str, str]]) -> list[float]:
         return []
 
 
-def _cap_per_profile(scored: list[Scored], *, limit: int, per_profile: int = 2) -> list[Scored]:
+def _cap_per_profile(
+    scored: list[Scored], *, limit: int, per_profile: int = 2, prior: dict[str, float] | None = None
+) -> list[Scored]:
     """Interleave by subject, best-first, so every project gets its best paper before any gets two.
 
     A flat global sort is unfair in a way that is easy to miss, because the numbers look
@@ -465,7 +498,13 @@ def _cap_per_profile(scored: list[Scored], *, limit: int, per_profile: int = 2) 
         "marked": [], "co_citation": [], "reading": [], "project": [],
         "citation": [], "gap": [], "match": [],
     }
-    for key in sorted(by_subject, key=lambda k: -by_subject[k][0].score):
+    # A SUBJECT HE KEEPS FROM GOES FIRST. `prior` is the kept-rate per `evidence_key`, which is
+    # the same string this `key` is built from — so the flywheel finally reaches the ranker
+    # instead of stopping at a printed table. It is gated on a minimum number of RESOLVED
+    # proposals (see `subject_prior`), so today, with every subject at 0-1 judgements, it is
+    # uniformly 0.0 and this ordering is exactly the score ordering it replaced.
+    prior = prior or {}
+    for key in sorted(by_subject, key=lambda k: (-prior.get(k, 0.0), -by_subject[k][0].score)):
         channels.setdefault(key.split(":", 1)[0], []).append(key)
 
     order: list[str] = []

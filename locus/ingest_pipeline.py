@@ -12,7 +12,7 @@ Any failure quarantines that single file (logged, returned in the result) withou
 batch and without leaving a partial document (the write is transactional, and all expensive
 work happens before the write opens).
 
-Deferred (noted in §6): cross_section_deps and tags are not yet produced, so those columns
+Deferred (noted in §6): cross_section_deps is not yet produced, so that column
 are written empty / left unpopulated.
 """
 

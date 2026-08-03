@@ -1313,7 +1313,7 @@ def cmd_decide(args) -> None:
 def cmd_structure(args) -> None:
     """Propose structured objects + belief positions from ingested documents (agent-layer §6.2-6.3).
 
-    Objects land as `status=proposed`; the owner blesses them with `locus objects --bless <id>`.
+    Objects land as `status=proposed`; the owner blesses them in `locus decide`.
     `--dry-run` runs every precision gate against the real corpus and writes NOTHING — the way to
     check the proposal bar before turning this loose corpus-wide.
     """
@@ -1403,27 +1403,18 @@ def _resolve_structure_docs(conn, args) -> list[int]:
 
 
 def cmd_objects(args) -> None:
-    """List / bless / archive proposed structured objects (the human half of propose-never-mutate).
+    """READ-ONLY view of structured objects. Approving them is `locus decide`, and only that.
 
-    Blessing is the ONLY way an object becomes `active`; agents may re-propose into its body but
-    never change its status.
+    `--bless`/`--archive` lived here while the TUI was being built (§18 shipped the page without
+    blessings and left this "meanwhile"). The TUI landed in §19, and its governing invariant is
+    his: no decision may be resolvable on two surfaces, because that is how a judgement gets lost
+    or the flywheel learns twice from one act. Two commands that both set `status` are that hazard
+    with the queue's careful split bypassed entirely, so the second one is gone.
     """
     from locus.agent import state
 
     conn = _open()
     try:
-        if args.bless or args.archive:
-            for raw in args.bless or []:
-                ok = state.set_status(conn, int(raw), "active")
-                state.log_acceptance(conn, surface="object", candidate_key=str(raw),
-                                     verdict="kept" if ok else "rejected")
-                print(f"{'blessed' if ok else 'no such object'} {raw}")
-            for raw in args.archive or []:
-                ok = state.set_status(conn, int(raw), "archived")
-                state.log_acceptance(conn, surface="object", candidate_key=str(raw),
-                                     verdict="rejected")
-                print(f"{'archived' if ok else 'no such object'} {raw}")
-            return
         objects = state.list_objects(conn, type_=args.type, status=args.status, limit=args.limit)
         if not objects:
             print("No objects match.")
@@ -1435,6 +1426,17 @@ def cmd_objects(args) -> None:
                     print(f"      {key}: {obj.body[key]}")
             for thread in obj.body.get("open_threads", []):
                 print(f"      · {thread}")
+            # Provenance: written on every object and, until this view became read-only, printed
+            # nowhere. Where a thread CAME FROM is the first thing you want when auditing one.
+            origin = " ".join(
+                f"{label}={obj.body[key]}"
+                for key, label in (("from_mark", "mark"), ("from_anchor", "page"),
+                                   ("proposed_from", "proposed-from"),
+                                   ("promoted_path", "promoted"))
+                if obj.body.get(key)
+            )
+            if origin:
+                print(f"      origin: {origin}")
             for link in state.links_for(conn, obj.id):
                 print(f"      -> {link.relation} {link.target_kind}:{link.target_key}")
         print(f"\n{len(objects)} object(s)")
@@ -2030,12 +2032,10 @@ def main(argv=None) -> None:
     pev.add_argument("--limit", type=int, default=50, help="max subjects when listing")
     pev.set_defaults(func=cmd_evolution)
 
-    pobj = sub.add_parser("objects", help="list / bless / archive structured objects")
+    pobj = sub.add_parser("objects", help="list structured objects (approve them in `locus decide`)")
     pobj.add_argument("--type", choices=["project", "concept", "question", "reading"], default=None)
     pobj.add_argument("--status", choices=["proposed", "active", "archived"], default=None)
     pobj.add_argument("--limit", type=int, default=50)
-    pobj.add_argument("--bless", action="append", help="object id to mark active (repeatable)")
-    pobj.add_argument("--archive", action="append", help="object id to archive (repeatable)")
     pobj.set_defaults(func=cmd_objects)
 
     pcc = sub.add_parser(

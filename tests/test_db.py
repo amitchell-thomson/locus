@@ -33,7 +33,7 @@ def test_extension_loads(db: Path):
 def test_migration_records_head_and_is_idempotent(db: Path):
     # After migrate, the DB is at the head revision Alembic knows about.
     head = head_revision(db)
-    assert current_revision(db) == head == "0027"
+    assert current_revision(db) == head == "0028"
     # Re-running is a no-op and leaves the revision unchanged.
     migrate(db)
     assert current_revision(db) == head
@@ -47,10 +47,14 @@ def test_all_core_tables_exist(db: Path):
     }
     for expected in (
         "documents", "sections", "chunks", "propositions",
-        "entities", "tags", "doc_tags", "alembic_version",
+        "entities", "alembic_version",
         "section_vectors", "chunk_vectors", "proposition_vectors",
     ):
         assert expected in names, f"missing table: {expected}"
+    # `tags` / `doc_tags` were dropped in 0028: schema with no code on either side since the
+    # original design, 0 rows at 218 documents. Empty scaffolding is indistinguishable from a
+    # feature that is quietly broken, which is the confusion the readiness audit existed to end.
+    assert "tags" not in names and "doc_tags" not in names
     conn.close()
 
 

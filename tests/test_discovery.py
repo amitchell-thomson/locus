@@ -859,3 +859,33 @@ def test_openalex_tries_the_quoted_phrase_before_the_loose_one():
     assert "%22Information+Ratio%22" in urls[0], "first attempt is the quoted phrase"
     assert "%22" not in urls[1], "fallback drops the quotes"
     assert got, "the fallback's results are kept"
+
+
+def test_the_subject_prior_stays_inert_until_there_is_evidence(conn):
+    """The flywheel's missing consumer, and its guard.
+
+    Keep/reject has been recorded since Phase 2 and reached only a printed table — the ranker
+    interleaved every channel equally whether or not he had ever accepted anything from it. It now
+    reads a per-subject kept-rate, but only once a subject has enough RESOLVED proposals to mean
+    something: one or two judgements is a coin flip, and acting on it is the "confidently wrong"
+    behaviour this codebase keeps rejecting elsewhere.
+    """
+    from locus.discover.rank import _MIN_PRIOR_JUDGEMENTS, subject_prior
+
+    def _prop(key, status, resolution=None):
+        with conn:
+            conn.execute(
+                "INSERT INTO reading_proposals (kind, dedupe_key, title, why, why_kind, "
+                "evidence_key, status, resolution, created_at) "
+                "VALUES ('paper',?,?,'w','discovery',?,?,?,'2026-08-01')",
+                (f"k{key}{status}{resolution}{conn.total_changes}", "t", key, status, resolution),
+            )
+
+    _prop("project:regime-ml", "ingested", "moved")
+    _prop("project:regime-ml", "rejected", "removed")
+    assert subject_prior(conn) == {}, "two judgements is not evidence"
+
+    for _ in range(_MIN_PRIOR_JUDGEMENTS):
+        _prop("project:regime-ml", "ingested", "moved")
+    prior = subject_prior(conn)
+    assert "project:regime-ml" in prior and prior["project:regime-ml"] > 0.5

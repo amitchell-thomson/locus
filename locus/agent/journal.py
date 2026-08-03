@@ -73,7 +73,12 @@ def run(conn, kind: str, *, now: Callable[[], str] = _utcnow) -> Iterator[RunHan
 
 
 def recent_runs(conn, kind: str | None = None, *, limit: int = 20) -> list[dict]:
-    """Most-recent runs (optionally filtered by kind) — for `locus status` / inspection."""
+    """Most-recent runs, optionally filtered by kind.
+
+    NO PRODUCTION CALLER TODAY — `locus status` and `health.check` query `agent_runs` directly.
+    The docstring used to claim `locus status` used it. Kept as the accessor the journal tests
+    read through.
+    """
     sql = "SELECT id, kind, started_at, finished_at, status, stats FROM agent_runs"
     params: list = []
     if kind is not None:

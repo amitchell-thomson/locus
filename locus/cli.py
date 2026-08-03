@@ -1384,7 +1384,19 @@ def _resolve_structure_docs(conn, args) -> list[int]:
         # structured. Selecting on `structured_at IS NULL` catches up instead of losing.
         clauses.append("structured_at IS NULL")
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-    sql = f"SELECT id FROM documents {where} ORDER BY id"
+    order = "id"
+    if getattr(args, "unstructured", False):
+        # HIS OWN MATERIAL FIRST. A backlog drained in id order starts with coursework PDFs —
+        # the lowest-value documents for this pass, since ideas and belief positions are gated to
+        # owner-authored sources anyway — and his nine unstructured notes would have waited eight
+        # nights behind them. The backlog exists because of a bug; he should not pay for it in
+        # the order the fix runs.
+        order = (
+            "CASE WHEN source_uri LIKE '%vault/notes/%' THEN 0 "
+            "WHEN category IN ('project','career') THEN 1 "
+            "WHEN category = 'paper' THEN 2 ELSE 3 END, id"
+        )
+    sql = f"SELECT id FROM documents {where} ORDER BY {order}"
     if args.limit:
         sql += f" LIMIT {int(args.limit)}"
     return [r["id"] for r in conn.execute(sql, params)]

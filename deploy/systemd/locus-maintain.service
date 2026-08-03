@@ -50,6 +50,11 @@ ExecStart=/home/alec/.local/bin/uv run locus review --write-concept-questions 6
 #     aggregate-only, so this prose must exist BEFORE composition or the connection is not
 #     offered at all — silence beats the bare "both develop X" phrasing he called obscure.
 ExecStart=/home/alec/.local/bin/uv run locus link --connections 4
+# 5b. Where something he has written CONTRADICTS something the corpus says (billed, advisory).
+#     The one surface that is not additive — everything else offers more to read, develop or
+#     connect, and a system that only ever agrees with him is a filing cabinet. Stored, because
+#     page composition may not call a model; empty most days, and the section is then omitted.
+ExecStart=/home/alec/.local/bin/uv run locus evolution --store-tensions 4
 # 5. Write (and refresh) the reason each proposed paper is on the shelf. Billed (claude -p).
 #    The deterministic `why` is a cosine distance — "fit 0.76" — which is a fact about the
 #    ranker, not a reason to read anything. A reason older than a week is rewritten against his

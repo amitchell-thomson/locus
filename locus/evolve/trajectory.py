@@ -26,6 +26,7 @@ to judge, never an edit to a position, never an auto-archived belief.
 from __future__ import annotations
 
 import logging
+import sqlite3
 from dataclasses import dataclass, field
 
 from pydantic import BaseModel, Field
@@ -37,12 +38,28 @@ from locus.config import load
 
 log = logging.getLogger(__name__)
 
+
+def _utcnow() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()
+
 # How many near-neighbour claims to put in front of the judge. Small on purpose: the call is per
 # stance, and a long candidate list invites the model to find something rather than nothing.
-_MAX_NEIGHBOURS = 8
+_MAX_NEIGHBOURS = 14
 # Stored propositions this far (cosine distance) from the stance are not about the same thing;
 # nomic distances on genuinely related claims sit well inside this.
-_MAX_DISTANCE = 0.55
+# THE FILTER THAT MADE THIS INERT. At 0.55 the only claim close enough to survive was a
+# PARAPHRASE of the stance itself — measured 2026-08-03 on "Market has over-done pricing in the
+# easing cycle": one neighbour kept at d=0.354 (his own note, restated), and everything from 0.79
+# to 0.84 dropped, which is where a genuine counter-claim sits. So the pass could only ever
+# compare a view to its own echo, and 16 recorded positions produced zero tensions.
+#
+# It also contradicted this module's own premise: "semantic similarity ALONE cannot do this — a
+# stance and its negation are near-identical embeddings". If that is true, distance cannot be the
+# filter, and the JUDGE has to be. The window is now wide enough to contain a disagreement and the
+# prompt (which is told most answers are an empty list) does the discriminating.
+_MAX_DISTANCE = 0.92
 
 
 @dataclass
@@ -362,3 +379,80 @@ def all_trajectories(conn, *, limit: int = 50) -> list[Trajectory]:
         build_trajectory(conn, kind, key)
         for kind, key, _ in state.subjects_with_positions(conn, limit=limit)
     ]
+
+
+# --- storing tensions, so the daily page can offer one -------------------------------------------
+
+
+def store_tensions(conn, *, limit: int = 4, runner=None, model: str | None = None) -> int:
+    """Judge recent positions for contradictions and store what survives. Returns how many.
+
+    Overnight work. `compose_daily` may not call a model (§18), so the page reads `belief_tensions`
+    and prints; the thinking happens here. Positions already judged are skipped, so a re-run costs
+    nothing and the pass is safe on a timer.
+    """
+    from locus.agent import state
+
+    written = 0
+    rows = conn.execute(
+        "SELECT id, subject_kind, subject_key, stance FROM belief_positions "
+        "ORDER BY dated_at DESC, id DESC LIMIT ?",
+        (limit * 6,),
+    ).fetchall()
+    for row in rows:
+        if written >= limit:
+            break
+        # RE-JUDGE WHEN THE CORPUS HAS GROWN. A verdict is cached so the pass does not re-pay for
+        # the same "no" every night, but it is not permanent: a contradiction can only be found
+        # against material that exists, so every new document is a new chance. Skipping forever
+        # would freeze the answer at whatever the corpus happened to hold the first night.
+        seen = conn.execute(
+            "SELECT MAX(written_at) AS at FROM belief_tensions WHERE position_id=?", (row["id"],)
+        ).fetchone()
+        if seen and seen["at"]:
+            newer = conn.execute(
+                "SELECT 1 FROM documents WHERE ingested_at > ? LIMIT 1", (seen["at"],)
+            ).fetchone()
+            if not newer:
+                continue
+        try:
+            tensions = find_tensions(
+                conn, row["stance"], subject_kind=row["subject_kind"],
+                subject_key=row["subject_key"], runner=runner, model=model,
+            )
+        except Exception as exc:                      # advisory: never block the nightly run
+            log.warning("trajectory: tension pass failed for position %s: %s", row["id"], exc)
+            continue
+        if not tensions:
+            # A position with no tension still counts as JUDGED — without a marker the pass would
+            # re-pay for the same "no" every night, which is how a cached verdict earns its keep.
+            with conn:
+                conn.execute(
+                    "INSERT OR IGNORE INTO belief_tensions (position_id, stance, conflicts_with, "
+                    "reason, source, written_at, dismissed_at) VALUES (?,?,'','','',?,?)",
+                    (row["id"], row["stance"], _utcnow(), _utcnow()),
+                )
+            continue
+        for t in tensions:
+            with conn:
+                conn.execute(
+                    "INSERT OR IGNORE INTO belief_tensions (position_id, stance, conflicts_with, "
+                    "reason, source, written_at) VALUES (?,?,?,?,?,?)",
+                    (row["id"], t.stance, t.conflicts_with, t.reason, t.source, _utcnow()),
+                )
+            written += 1
+    return written
+
+
+def open_tensions(conn, *, limit: int = 5) -> list[dict]:
+    """Stored, undismissed tensions — what the daily page offers. Newest first."""
+    try:
+        rows = conn.execute(
+            "SELECT id, position_id, stance, conflicts_with, reason, source FROM belief_tensions "
+            "WHERE dismissed_at IS NULL AND TRIM(conflicts_with) != '' "
+            "ORDER BY written_at DESC, id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    return [dict(r) for r in rows]

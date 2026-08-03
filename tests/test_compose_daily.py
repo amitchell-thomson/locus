@@ -316,7 +316,7 @@ def test_the_three_subsections_are_named_for_where_the_item_came_from(conn):
     _thread(conn, "is a factor like a feature?")
     page = cd.compose(conn, today=date(2026, 7, 31))
     body = cd.render(page)
-    assert cd.SECTION_EXPLAIN in body or cd.SECTION_DEVELOP in body
+    assert cd.SECTION_CHALLENGE in body or cd.SECTION_DEVELOP in body
     assert cd.SECTION_DEVELOP in body
     # An empty subsection is omitted entirely rather than left as a bare heading.
     assert cd.SECTION_CONNECTION not in body
@@ -809,7 +809,7 @@ def test_the_think_page_refills_a_subsection_that_has_nothing(conn, monkeypatch)
         _jotted(conn, f"a thought worth developing number {i}",
                 created_at=f"2026-01-0{i + 1}T00:00:00+00:00")
     monkeypatch.setattr(cd, "build_connections", lambda *a, **k: [])
-    monkeypatch.setattr(cd, "build_explain", lambda *a, **k: [])
+    monkeypatch.setattr(cd, "build_challenge", lambda *a, **k: [])
 
     items = cd.build_threads(conn, limit=3, seen=set())
     assert len(items) == 3, "the empty subsections' seats must be taken, not wasted"
@@ -849,3 +849,45 @@ def test_a_re_read_he_already_declined_is_not_offered_again(conn, monkeypatch):
     assert cd._explains(
         conn, "a question", exclude_uri="books/apm.pdf", declined=cd._declined_rereads(conn)
     ) is None
+
+
+def test_a_stored_tension_is_offered_as_a_challenge(conn):
+    """The one surface that is not additive: where what he wrote conflicts with what he read.
+
+    Read from STORED verdicts, because judging is a model call and page composition may not make
+    one. Empty is the normal state — a manufactured disagreement is far worse than none — so the
+    section is simply omitted, which is why this asserts presence only when a row exists.
+    """
+    assert cd.build_challenge(conn, limit=2, seen=set()) == [], "silent with nothing stored"
+
+    pid = state.record_position(
+        conn, subject_kind="concept", subject_key=state.entity_key("fixing risk", "concept"),
+        stance="Once it fixes it becomes a realised cashflow, not a risk", dated_at="2026-07-16",
+    )
+    with conn:
+        conn.execute(
+            "INSERT INTO belief_tensions (position_id, stance, conflicts_with, reason, source, "
+            "written_at) VALUES (?,?,?,?,?,'2026-08-03')",
+            (pid, "Once it fixes it becomes a realised cashflow, not a risk",
+             "Realised cash flow is cash that exchanges hands when a coupon is paid.",
+             "fixing sets the amount; it is not yet realised until payment",
+             "Interest Rate Swap Terminology"),
+        )
+    items = cd.build_challenge(conn, limit=2, seen=set())
+    assert len(items) == 1
+    assert "Once it fixes" in items[0].headline and "exchanges hands" in items[0].headline
+    assert items[0].section == cd.SECTION_CHALLENGE
+
+
+def test_a_dismissed_tension_is_not_offered_again(conn):
+    pid = state.record_position(
+        conn, subject_kind="concept", subject_key=state.entity_key("x", "concept"),
+        stance="a stance", dated_at="2026-07-16",
+    )
+    with conn:
+        conn.execute(
+            "INSERT INTO belief_tensions (position_id, stance, conflicts_with, reason, source, "
+            "written_at, dismissed_at) VALUES (?,?,?,?,'','2026-08-03','2026-08-03')",
+            (pid, "a stance", "a conflicting claim", "why"),
+        )
+    assert cd.build_challenge(conn, limit=2, seen=set()) == []

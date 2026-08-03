@@ -57,9 +57,25 @@ _MAX_NEIGHBOURS = 14
 #
 # It also contradicted this module's own premise: "semantic similarity ALONE cannot do this — a
 # stance and its negation are near-identical embeddings". If that is true, distance cannot be the
-# filter, and the JUDGE has to be. The window is now wide enough to contain a disagreement and the
-# prompt (which is told most answers are an empty list) does the discriminating.
+# filter, and the JUDGE has to be. The window is now wide enough to contain a disagreement, and
+# the prompt does the discriminating.
 _MAX_DISTANCE = 0.92
+
+# THE JUDGE'S IDENTITY, and the cache key that goes with it. Widening `_MAX_DISTANCE` fixed
+# retrieval and the section stayed blank anyway: measured 2026-08-03, all 16 positions retrieved
+# 14 neighbours each and the judge returned zero, because the prompt was told "most of the time
+# the correct answer is an empty list; a false tension is far worse than a missed one". Position
+# 5's neighbours included, verbatim, "Realised cash flow is the actual cash that exchanges hands
+# when a coupon is physically paid" against his "once it fixes ... it becomes a realised cashflow,
+# not a risk" — a real disagreement, correctly retrieved, declined.
+#
+# Rebalanced to CONFLICT rather than contradiction, the same 16 positions yield 2 tensions and 14
+# still yield nothing, which is the number that matters: it did not become a topic matcher.
+#
+# BUMP THIS whenever the prompt or the neighbour rule changes. `store_tensions` re-judges any
+# position whose cached verdict carries a different version, because a cached "no" that outlives
+# the judge that said it is how a fixed pass ships and changes nothing.
+_JUDGE_VERSION = "2026-08-03-conflict"
 
 
 @dataclass
@@ -229,20 +245,49 @@ def _neighbour_propositions(conn, stance: str, *, embed_fn=None) -> list[_Neighb
     except Exception as exc:
         log.warning("trajectory: proposition neighbours unavailable for tension check: %s", exc)
         return []
-    return [
-        _Neighbour(text=r["text"], source=r["title"])
-        for r in rows
-        if r["distance"] is not None and r["distance"] <= _MAX_DISTANCE
-    ]
+    # LOGGED because this is the gate that was dead. At 0.55 it admitted only paraphrases of the
+    # owner's own stance, so the pass could never find a contradiction, and nothing said so — the
+    # rejects were the only evidence and no one kept them (`observe/gates.py`).
+    from locus.observe import gates
+
+    out: list[_Neighbour] = []
+    for r in rows:
+        ok = r["distance"] is not None and r["distance"] <= _MAX_DISTANCE
+        gates.record(
+            conn, "trajectory.max_distance", rejected=not ok,
+            value=None if ok else f"d={r['distance']:.3f} {str(r['text'])[:70]}",
+        )
+        if ok:
+            out.append(_Neighbour(text=r["text"], source=r["title"]))
+    return out
 
 
+# WHAT COUNTS AS A TENSION, and why the first bar was wrong. The original prompt asked for
+# logical CONTRADICTIONS only, and told the judge that "most of the time the correct answer is an
+# empty list". Measured 2026-08-03 over every stored position: 0 tensions from 16, while position
+# 5's own neighbour list contained the claim "Realised cash flow is the actual cash that exchanges
+# hands when a coupon is physically paid" against his stance "once it fixes ... it becomes a
+# realised cashflow, not a risk". Those two cannot both be right about when a cashflow is
+# realised — but it is not a strict logical contradiction, so the judge correctly returned
+# nothing and the section stayed blank.
+#
+# The owner asked for something that "tells you when you're wrong", and using a term differently
+# from the material he is learning it from IS that. So the ask is now conflict rather than
+# contradiction, with the three shapes named explicitly, and the thumb is off the scale. What is
+# NOT relaxed: the claim must be copied verbatim (the caller drops any that was not offered), and
+# agreement/elaboration is still excluded — which is what keeps this from becoming a topic matcher.
 _TENSION_PROMPT = """\
 Below is a position the owner of a knowledge vault holds, and claims already stored in that vault.
 
-Identify ONLY genuine CONTRADICTIONS — a stored claim that cannot be true at the same time as the \
-position, or that the position directly reverses. Do NOT report claims that merely discuss the \
-same topic, add nuance, qualify, or elaborate. Most of the time the correct answer is an empty \
-list; return one. A false tension is far worse than a missed one.
+Identify stored claims that genuinely CONFLICT with the position. A claim conflicts when:
+  - it cannot be true at the same time as the position, or the position reverses it; or
+  - it defines or uses a key term in a way incompatible with how the position uses it; or
+  - it states a condition or counter-example under which the position does not hold.
+
+Do NOT report claims that agree with the position, merely discuss the same topic, or add nuance \
+and elaboration without disagreeing. Judge the substance, not the wording: two claims that say \
+the same thing in different words do not conflict. If nothing genuinely conflicts, return an \
+empty list — but do not strain to avoid reporting a real disagreement.
 
 Return ONLY JSON: {{"tensions": [{{"conflicts_with": "<the stored claim, copied exactly>", \
 "reason": "<one line: what makes them incompatible>"}}]}}
@@ -406,10 +451,18 @@ def store_tensions(conn, *, limit: int = 4, runner=None, model: str | None = Non
         # the same "no" every night, but it is not permanent: a contradiction can only be found
         # against material that exists, so every new document is a new chance. Skipping forever
         # would freeze the answer at whatever the corpus happened to hold the first night.
+        #
+        # AND RE-JUDGE WHEN THE JUDGE HAS CHANGED. Keying the cache on the corpus alone is silent
+        # about the prompt: the 2026-08-03 rebalance would have shipped, passed its tests, and
+        # changed nothing on the page, because every position already carried a "none found"
+        # marker and the last ingest predated all of them. A verdict is only reusable if the same
+        # judge produced it.
         seen = conn.execute(
-            "SELECT MAX(written_at) AS at FROM belief_tensions WHERE position_id=?", (row["id"],)
+            "SELECT MAX(written_at) AS at, judge_version AS ver FROM belief_tensions "
+            "WHERE position_id=?",
+            (row["id"],),
         ).fetchone()
-        if seen and seen["at"]:
+        if seen and seen["at"] and (seen["ver"] or "") == _JUDGE_VERSION:
             newer = conn.execute(
                 "SELECT 1 FROM documents WHERE ingested_at > ? LIMIT 1", (seen["at"],)
             ).fetchone()
@@ -427,18 +480,25 @@ def store_tensions(conn, *, limit: int = 4, runner=None, model: str | None = Non
             # A position with no tension still counts as JUDGED — without a marker the pass would
             # re-pay for the same "no" every night, which is how a cached verdict earns its keep.
             with conn:
+                # UPSERT, not INSERT OR IGNORE: a stale marker from a previous judge already
+                # occupies (position_id, ''), so ignoring the conflict would leave the old
+                # version in place and the position would be re-judged again every night.
                 conn.execute(
-                    "INSERT OR IGNORE INTO belief_tensions (position_id, stance, conflicts_with, "
-                    "reason, source, written_at, dismissed_at) VALUES (?,?,'','','',?,?)",
-                    (row["id"], row["stance"], _utcnow(), _utcnow()),
+                    "INSERT INTO belief_tensions (position_id, stance, conflicts_with, "
+                    "reason, source, written_at, dismissed_at, judge_version) "
+                    "VALUES (?,?,'','','',?,?,?) "
+                    "ON CONFLICT(position_id, conflicts_with) DO UPDATE SET "
+                    "written_at=excluded.written_at, judge_version=excluded.judge_version",
+                    (row["id"], row["stance"], _utcnow(), _utcnow(), _JUDGE_VERSION),
                 )
             continue
         for t in tensions:
             with conn:
                 conn.execute(
                     "INSERT OR IGNORE INTO belief_tensions (position_id, stance, conflicts_with, "
-                    "reason, source, written_at) VALUES (?,?,?,?,?,?)",
-                    (row["id"], t.stance, t.conflicts_with, t.reason, t.source, _utcnow()),
+                    "reason, source, written_at, judge_version) VALUES (?,?,?,?,?,?,?)",
+                    (row["id"], t.stance, t.conflicts_with, t.reason, t.source, _utcnow(),
+                     _JUDGE_VERSION),
                 )
             written += 1
     return written

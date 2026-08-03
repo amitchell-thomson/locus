@@ -532,6 +532,22 @@ def cmd_restore(args) -> None:
     print("Restore complete. Restart any long-lived `locus mcp` server.")
 
 
+def cmd_gates(args) -> None:
+    """What each threshold rejected over the window — the dead-gate check (no API; local only).
+
+    The failure it exists for: `find_tensions` was inert for its whole life because
+    `_MAX_DISTANCE` admitted only paraphrases, and nothing anywhere said so. A gate that admits
+    nothing is indistinguishable, in every other surface, from a subject with nothing to say.
+    """
+    from locus.observe import gates
+
+    conn = _open()
+    try:
+        print(gates.render(gates.report(conn, days=args.days), days=args.days))
+    finally:
+        conn.close()
+
+
 def cmd_status(args) -> None:
     """One-screen operational health summary (no API; local only)."""
     from locus.config import PROJECT_ROOT
@@ -1833,6 +1849,12 @@ def main(argv=None) -> None:
 
     pst = sub.add_parser("status", help="one-screen operational health summary (no API)")
     pst.set_defaults(func=cmd_status)
+
+    pgt = sub.add_parser(
+        "gates", help="what each threshold rejected over the last N days (no API; dead-gate check)"
+    )
+    pgt.add_argument("--days", type=int, default=7, help="window in days (default: 7)")
+    pgt.set_defaults(func=cmd_gates)
 
     px = sub.add_parser(
         "export-obsidian",

@@ -359,7 +359,7 @@ locus/
 ├── locus/
 │   ├── cli.py            # product surface: ingest list inspect watch sync link retitle
 │   │                     #   query retrieve mcp status backup restore export-obsidian audit eval
-│   │                     #   read capture-sync capture-conversation notes-sync
+│   │                     #   read capture-sync capture-conversation notes-sync gates
 │   │                     #   structure objects evolution gaps review daily daily-pull
 │   │                     #   promote annotate discover device-migrate decide intent
 │   ├── backup.py         # WAL-safe DB snapshot + rsync-hardlinked raw store; restore
@@ -376,6 +376,7 @@ locus/
 │   ├── link/             # aliases (tiers+guards), adjudicate (Claude), related · threads ·
 │   │                     #   projects (which project a piece of his writing is about, §24) ·
 │   │                     #   connect (the written reason two documents connect; bridges, §25)
+│   ├── observe/          # gates.py — what each threshold rejected; the dead-gate check (§26)
 │   ├── export/           # obsidian.py — read-only vault projection (§13, joins-only)
 │   │  ── agent layer (§15) ──
 │   ├── agent/            # claude.py (the claude -p runner) · journal.py (agent_runs) ·
@@ -597,6 +598,63 @@ failed six consecutive nights unnoticed, 2026-08-01).
 **Superseded on 2026-08-03 (§25):** the standing "archive the coursework" recommendation was
 measured and is WRONG — the mitigations contain it completely, and its maths bridges are the one
 thing §16 keeps it for. The coursework<->quant connection is now routed and live.
+
+## 26. CHECK THIS was empty because the judge said no — and the dead-gate logger (2026-08-03)
+
+The Think page's CHECK THIS section rendered nothing, every day. The stated plan was to feed it
+more belief positions by extracting them from his marks. **That was the wrong fix, and the marks
+route already existed.**
+
+- **Marks ALREADY reach belief positions.** `reading/sweep` writes every mark and its passage into
+  `vault/notes/reading/<book>.md`, `notes_sync` ingests that as a `note`, and `structure/propose`
+  extracts positions from it like any other owner-authored document. Position 13, *"markets are
+  not stationary, and strats work differently in different regimes"*, is mark 21, and it is
+  already in `belief_positions`. A second extractor would have duplicated a working path.
+- **The bottleneck was measured instead** (`scripts/analysis/tension_probe.py`, billed, re-runs
+  `find_tensions` over every stored position). Retrieval was healthy: **14 neighbour claims for 15
+  of 16 positions**, so the `_MAX_DISTANCE` 0.55 -> 0.92 fix had worked. The **judge returned 0
+  tensions from all 16** — and position 5's own neighbour list contained, verbatim, *"Realised
+  cash flow is the actual cash that exchanges hands when a coupon is physically paid"* against his
+  *"once it fixes ... it becomes a realised cashflow, not a risk"*. A real disagreement,
+  correctly retrieved, declined.
+- **The prompt was the cause.** It asked for logical CONTRADICTIONS and told the judge *"most of
+  the time the correct answer is an empty list; a false tension is far worse than a missed one"*.
+  Rebalanced to **conflict** with three named shapes (cannot both be true · incompatible use of a
+  key term · a stated counter-example), thumb off the scale, verbatim-claim requirement kept.
+  Same 16 positions: **0 -> 2 tensions, and 14 still return nothing** — the second number is the
+  one that matters, because it shows it did not become a topic matcher. Live on the page now:
+  *"You wrote: 'Once it fixes... it becomes a realised cashflow, not a risk' — but the corpus
+  says: 'Realised cash flow is the actual cash that exchanges hands when a coupon is paid'"*.
+- **A cached "no" must not outlive the judge that said it** (migration **0032**,
+  `belief_tensions.judge_version` + `_JUDGE_VERSION`). `store_tensions` re-judged only when a NEW
+  DOCUMENT had arrived — right about the corpus, silent about the prompt. Every position already
+  carried a marker and the last ingest predated all of them, so **the rebalance would have
+  shipped, passed its tests, and changed nothing on the page**: the same silent-inert failure it
+  was fixing. Bump `_JUDGE_VERSION` whenever the prompt or the neighbour rule changes. The marker
+  write is an UPSERT, not `INSERT OR IGNORE`, or the stale row survives and the position
+  re-judges every night forever.
+
+**`locus gates` — the dead-gate check** (migration **0031**, `locus/observe/gates.py`). The
+failure class this exists for is the one above and `_MAX_DISTANCE` before it: a threshold that
+admits nothing is indistinguishable, in every other surface, from a subject with nothing to say.
+Tests cannot catch it (a fixture is built to clear the gate) and neither can reading the code (the
+number looks reasonable). The only evidence lives in the REJECTS, and nothing kept them.
+
+    gate_log(gate, day) -> rejected, passed, samples[]      # aggregate + 5 verbatim examples
+
+Aggregate by design: `retrieve.min_rerank_score` alone discards thousands of candidates a day, and
+a row each would make this the largest table in the database while making the question harder. The
+question is *"over a week, what did this gate throw away, and does that look right?"* — a count
+plus five examples answers it. `passed` sits beside `rejected` because a reject count alone cannot
+tell a gate working hard (900/1000, a retrieval floor doing its job) from a dead one (16/16), and
+**a 100% reject rate is called out in words** rather than left to be inferred. Instrumented:
+`trajectory.max_distance` · `capture.intent_confidence_floor` · `daily.reread_min_rerank` ·
+`connect.substantive_shared` · `review.concept_non_topical`. Never load-bearing — no pass reads
+the table, every write swallows its own errors, and a pre-migration DB degrades to silence.
+
+**Not done, deliberately:** the retrieval floor is not instrumented — it FLAGS rather than filters
+(§8, "flag, never filter"), and a dead floor there would show up in the eval, which is the whole
+point of having one.
 
 ## 25. The coursework question, answered by measurement (2026-08-03)
 

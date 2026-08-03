@@ -422,9 +422,16 @@ def concept_candidates(conn, *, limit: int = 40) -> list[tuple[str, int]]:
         generic = non_topical_names(conn)
     except Exception:                                  # no alias substrate yet
         generic = set()
+    from locus.observe import gates
+
     out: list[tuple[str, int]] = []
     for r in rows:
-        if r["name"].lower() in generic:
+        drop = r["name"].lower() in generic
+        gates.record(
+            conn, "review.concept_non_topical", rejected=drop,
+            value=None if not drop else r["name"],
+        )
+        if drop:
             continue
         out.append((r["name"], r["props"]))
         if len(out) >= limit:

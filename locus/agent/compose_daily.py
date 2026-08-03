@@ -503,9 +503,19 @@ def _explains(
     except Exception:                                  # the `rerank` extra is optional
         return None
 
+    from locus.observe import gates
+
     ranked = sorted(zip(pool, scores), key=lambda pair: -pair[1])
     # Best-scoring DOCUMENT, not unit: the slot offers something to read, and several strong
     # chunks from one document say the same thing about it.
+    if ranked:
+        # Only the BEST candidate is logged: the loop breaks at the first sub-floor score, so
+        # every other rejection is a consequence of the sort, not of the gate.
+        best = ranked[0][1]
+        gates.record(
+            conn, "daily.reread_min_rerank", rejected=best < _REREAD_MIN_RERANK,
+            value=f"best={best:.3f} for {question[:60]}",
+        )
     for cand, score in ranked:
         if score < _REREAD_MIN_RERANK:
             break
@@ -713,6 +723,7 @@ def connection_candidates(
     that took until Thursday to show itself is not one that has been delivered.
     """
     from locus.link.related import non_topical_names
+    from locus.observe import gates
 
     try:
         generic = non_topical_names(conn)
@@ -744,6 +755,10 @@ def connection_candidates(
                     # A sibling note of his own — true, but not news to the person who wrote both.
                     continue
                 shared = _substantive_shared(rel.shared_names, generic, teachable)
+                gates.record(
+                    conn, "connect.substantive_shared", rejected=not shared,
+                    value=None if shared else ", ".join((rel.shared_names or ["(none)"])[:3]),
+                )
                 if not shared:
                     continue
                 pair = (min(src["id"], rel.doc_id), max(src["id"], rel.doc_id))

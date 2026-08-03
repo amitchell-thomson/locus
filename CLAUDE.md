@@ -374,7 +374,8 @@ locus/
 │   ├── retrieve/         # search (all arms), rerank+select, expand, assemble, pipeline,
 │   │                     #   figure_images · threads (his own threads, joined on)
 │   ├── link/             # aliases (tiers+guards), adjudicate (Claude), related · threads ·
-│   │                     #   projects (which project a piece of his writing is about, §24)
+│   │                     #   projects (which project a piece of his writing is about, §24) ·
+│   │                     #   connect (the written reason two documents connect; bridges, §25)
 │   ├── export/           # obsidian.py — read-only vault projection (§13, joins-only)
 │   │  ── agent layer (§15) ──
 │   ├── agent/            # claude.py (the claude -p runner) · journal.py (agent_runs) ·
@@ -403,7 +404,7 @@ locus/
 │   └── mcp_server.py
 ├── scripts/              # one-off, kept: backfills/ benchmarks/ reingest/ (+ scripts/README.md)
 ├── eval-artifacts/       # benchmark results + reports (mathocr, figures)
-├── tests/                # 990 model-free-by-default tests (tests/conftest.py pins pass_routing local)
+├── tests/                # 1002 model-free-by-default tests (tests/conftest.py pins pass_routing local)
 └── vault/                # incoming/ (watched, category folders) · raw/ · notes/ · backups/ · locus.db
 ```
 
@@ -592,6 +593,88 @@ first) · **the daily page and the reading list do not know about each other** (
 zero references to `reading_proposals`, so read-next offers corpus re-reads while real papers sit
 on the tablet) · the system reports nothing about its own activity or failures (locus-maintain
 failed six consecutive nights unnoticed, 2026-08-01).
+
+**Superseded on 2026-08-03 (§25):** the standing "archive the coursework" recommendation was
+measured and is WRONG — the mitigations contain it completely, and its maths bridges are the one
+thing §16 keeps it for. The coursework<->quant connection is now routed and live.
+
+## 25. The coursework question, answered by measurement (2026-08-03)
+
+Coursework is 144 of 220 documents, 10,508 propositions (62% of the corpus) and 12,419 entities,
+and six subsystems carry a workaround for that dominance. The standing recommendation was to
+archive it into a separate corpus. **Measured, that recommendation was wrong on every count.**
+
+**The mitigations all work; coursework is contained, not distorting.** `[retrieve].category_penalty`
+is `{}` because a penalty of 2.0 was measured to change nothing (quant queries already return 0/8
+coursework survivors). `structure/propose` gate 1d holds: **3 of 82** concept objects are
+coursework-only, and all three are legitimate ML (`Mathematical Optimization`, `Stochastic Gradient
+Descent`, `learning rate`). Every `connection_note` and every `object_links` thread edge ever
+written is quant<->quant — **zero** coursework leakage. `learn/review` ranks paper/note first then
+by rarity; `link/related` boosts the high-value categories; `learn/reread` weights by rarity.
+Nothing needed loosening or tightening.
+
+**So the real defect is the opposite of the one recorded: coursework contributes NOTHING while
+costing money, and §16's founding claim had never once been delivered.** The substrate holds 2,151
+cross-doc canonicals, of which 1,424 are coursework-only, 602 touch no coursework, and **125
+BRIDGE** the two. Filtered by the system's own definition of a topical concept
+(`non_topical_names`) plus a specificity bar, **81 survive** — `eigenvalue problem` (15 docs),
+`Markov model` (20), `Bayes' theorem`, `central limit theorem`, `Frobenius norm`, `Positive
+semidefinite matrix`, `Poisson process`, `linear regression`. That is exactly the "eigenvectors in
+factor models vs modal analysis" transfer §16 keeps 144 documents for, sitting unread.
+
+**The cause was not ranking and not volume: it was that the only source of connection candidates
+was `_recent_capture`** — his twelve most recent handwritten notes, which are short ("does this
+suggest we should we macro regime predictor..."), name few entities and name no maths at all. A
+bridge could never appear however well it ranked. The bridges hang off his PAPERS and PROJECTS,
+which nothing walked. Live proof: starting from those instead, 14 of 34 papers/projects reach
+coursework through a substantive shared concept.
+
+- **`compose_daily.connection_candidates`** is now the ONE pair-finder (the page and the overnight
+  writer had drifted apart into two queries) and walks a second source: his papers and projects
+  into `category='coursework'`. `_bridge_sources` caps at 60 rather than twelve — a bridge is rare,
+  so a cap tuned like `_recent_capture`'s silently returns almost nothing.
+- **Sources INTERLEAVE.** Capture leads (a connection to what he wrote this week is more live), but
+  strict precedence buried the bridges: Connect fits ~1 item/day and three capture candidates sat
+  ahead of them, so the first bridge would not have appeared for four days. Live rotation now:
+  day 1 capture, **days 2-3 the coursework bridges**, day 4 capture.
+- **`link/connect._BRIDGE_TEMPLATE`** — a coursework connection is not "something he read" but
+  something he was TAUGHT, so the question runs the other way: not "should you adopt this" but
+  "the maths you already have notes on is the maths this rests on; can you apply it?". Reusing the
+  read template would ask whether to adopt a second-year lecture.
+- **The shared concept must be in `TEACHABLE_TYPES`** — reused, not re-derived: a thing too generic
+  to ask him to explain is too generic to connect on. It is what stopped an AUTHOR becoming the
+  shared concept (his reading notes paired with the book they are about over `A. Denev`).
+- **A refusal names the concept too**, so grounded-or-silent waved it through. Live, that stored:
+  *"I don't see \"A. Denev\" mentioned explicitly in either the reading notes or the book material
+  you've provided. Could you clarify...?"* — the system asking HIM for help, on his own page.
+  `_REFUSAL_MARKERS` catches prose written about the task rather than to him; it fired again
+  immediately on `Automatic Hedging Program`.
+
+**Live output, which is the only evidence that counts.** Two of three bridges are good and one is
+excellent: *"You learned that testing a null hypothesis involves α (Type I error) and power (1-β)
+trade-offs. In your dyadic specification test, what is the null hypothesis for linearity, and how
+does the node-multiplier bootstrap's nontrivial local power reflect your α/β choice?"*
+
+**KNOWN RESIDUAL: `while loop`.** It is compound, typed `concept`, attested in prose, and passes
+every bar — producing a true but worthless prompt about iterating Optibook market data. Nothing
+available separates a programming construct from a mathematical one at the concept level, so it is
+left rather than papered over with a name blocklist. Its real cause is that `Optibook Python
+Reference` is a VENDOR manual filed under `category='project'` (§24's data wart). Also measured and
+NOT acted on: code repos as bridge sources add only coursework-solutions<->coursework (his quant
+repos bridge to nothing), so `source_type='code'` stays excluded.
+
+**Eval, as a no-regression gate rather than a claim.** recall@k **1.000** (0 misses), cross-domain
+1.000, banner 0.000, file_recall 1.000, links_recall 1.000, mrr 0.815 over the 68-query / 18-pair
+set. Nothing here touches the retrieval pipeline, so the point is that it did not move; mrr sits
+inside its usual run-to-run spread (0.799-0.843 recorded) because multi-query expansion rephrases
+via local qwen and is not deterministic. Full suite 1002 passed, 5 skipped.
+
+**The structuring backlog is NOT waste — the opposite.** Only **6 of 144** coursework documents
+have ever been structured, and those 6 yielded `Black Scholes Model`, `geometric Brownian motion`,
+`natural frequencies`, `frequency response`, `SGD`, `Mathematical Optimization` — precisely the
+bridging concepts this section exists to surface. Letting `--unstructured --limit 20` drain the
+remaining 138 (~$4, his own material ordered first) FEEDS the capability. The earlier
+recommendation to stop paying for it would have optimised away the input.
 
 ## 24. Readiness audit — the paths that looked wired and weren't (2026-08-03)
 

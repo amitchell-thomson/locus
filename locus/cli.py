@@ -169,33 +169,24 @@ def _write_connection_notes(conn, *, limit: int) -> int:
     dropped (`build_connections` refuses the bare "both develop X" phrasing).
     """
     from locus.agent import compose_daily as cd
-    from locus.agent import state
     from locus.link.connect import stored_note, write_note
-    from locus.link.related import related_documents
 
     written = 0
-    for src in cd._recent_capture(conn, limit=12):
+    for cand in cd.connection_candidates(conn):
         if written >= limit:
             break
-        for rel in related_documents(conn, src["id"], top_n=5):
-            if written >= limit:
-                break
-            clause, params = state.owner_authored_sql("d")
-            own = conn.execute(
-                f"SELECT ({clause}) AS own FROM documents d WHERE d.id=?",
-                (*params, rel.doc_id),
-            ).fetchone()
-            if own is None or own["own"] or not rel.shared_names:
-                continue
-            other_uri = cd._source_uri(conn, rel.doc_id)
-            shared = rel.shared_names[0]
-            if stored_note(conn, src_uri=src["source_uri"], other_uri=other_uri, shared=shared):
-                continue                              # already written; re-runs cost nothing
-            if write_note(
-                conn, src_uri=src["source_uri"], other_uri=other_uri, shared=shared
-            ) is not None:
-                written += 1
-            break                                     # one per note, as the page offers
+        if stored_note(
+            conn, src_uri=cand.src_uri, other_uri=cand.other_uri, shared=cand.shared
+        ):
+            continue                                  # already written; re-runs cost nothing
+        if write_note(
+            conn,
+            src_uri=cand.src_uri,
+            other_uri=cand.other_uri,
+            shared=cand.shared,
+            bridge=cand.bridge,
+        ) is not None:
+            written += 1
     return written
 
 

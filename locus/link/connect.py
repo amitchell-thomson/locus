@@ -64,6 +64,44 @@ use it in his work. Name "{shared}" explicitly. Be specific about the method or 
 the fact that both mention it. Do not open with "This paper" boilerplate or restate the titles.
 Reply with the prompt only."""
 
+# THE BRIDGE FRAMING. A coursework connection is not "something he read" — it is something he was
+# TAUGHT, and the useful question runs the other way: not "should you adopt this method" but "the
+# maths you already have notes on is the maths this work rests on; can you apply it?". §16 keeps
+# 144 coursework documents on precisely this promise (`eigenvalue problem`, `Frobenius norm`,
+# `central limit theorem` all bridge his lecture notes into his quant papers), and until
+# 2026-08-03 it was never once delivered. Reusing the "what he read" template here would produce
+# the wrong question — asking whether to adopt a second-year linear algebra lecture.
+_BRIDGE_SYSTEM = (
+    "You connect what a person is working on now to the material they were taught earlier. You "
+    "are given stored text from two documents and the one concept they both develop. You never "
+    "invent facts about either."
+)
+
+_BRIDGE_TEMPLATE = """What he is working with now:
+{his_title}
+{his_text}
+
+What he has already studied:
+{other_title}
+{other_text}
+
+Both develop: {shared}
+
+Write ONE short prompt (2-3 sentences, under 300 characters) that reminds him what his own study
+material establishes about "{shared}", and asks a concrete question about applying that to the
+work he is doing now. Name "{shared}" explicitly. Assume he once knew this and may have
+forgotten the connection — do not explain the concept from scratch, and do not suggest he read
+the lecture notes. Be specific about the technique. Reply with the prompt only."""
+
+
+# Phrases that mark prose ABOUT THE TASK rather than about the two documents. Deliberately
+# narrow: each names the prompt-writing job or addresses the person who set it, which a genuine
+# connection never does — it is written to HIM, about texts he owns.
+_REFUSAL_MARKERS = (
+    "i don't see", "i do not see", "i cannot", "i can't", "could you clarify",
+    "you've provided", "you have provided", "i want to write", "the material provided",
+)
+
 
 @dataclass
 class ConnectionNote:
@@ -99,8 +137,12 @@ def write_note(
     shared: str,
     runner=None,
     model: str | None = None,
+    bridge: bool = False,
 ) -> ConnectionNote | None:
-    """Compose and store one connection's prose. Returns None when it cannot be grounded."""
+    """Compose and store one connection's prose. Returns None when it cannot be grounded.
+
+    `bridge=True` selects the coursework framing — what he already studied, applied forward.
+    """
     from locus.agent.claude import ClaudeError, run_text
     from locus.config import load
 
@@ -109,13 +151,16 @@ def write_note(
     if not (his_text and other_text):
         return None
 
-    prompt = _TEMPLATE.format(
+    template, system = (
+        (_BRIDGE_TEMPLATE, _BRIDGE_SYSTEM) if bridge else (_TEMPLATE, _SYSTEM)
+    )
+    prompt = template.format(
         his_title=his_title, his_text=his_text, other_title=other_title,
         other_text=other_text, shared=shared,
     )
     try:
         text = run_text(
-            f"{_SYSTEM}\n\n{prompt}", model=model or load().agent.model, runner=runner
+            f"{system}\n\n{prompt}", model=model or load().agent.model, runner=runner
         )
     except ClaudeError as exc:                       # degrade, never block (ingest §7)
         log.warning("connect: model call failed for %s <-> %s: %s", src_uri, other_uri, exc)
@@ -126,6 +171,16 @@ def write_note(
     # about the connection, so it is dropped rather than shown.
     if not prose or shared.lower() not in prose.lower():
         log.info("connect: dropped ungrounded prose for %r", shared)
+        return None
+    # A REFUSAL NAMES THE CONCEPT TOO, so the grounding check above waves it through. Live
+    # (2026-08-03), a pair sharing the author "A. Denev" produced: "I don't see \"A. Denev\"
+    # mentioned explicitly in either the reading notes or the book material you've provided.
+    # Could you clarify where this concept or author appears?" — addressed to the prompt's author,
+    # not to him, and printed on the page it would read as the system asking HIM for help. The
+    # type allow-list in `compose_daily._substantive_shared` stops most of these being asked at
+    # all; this catches the rest, because a model can decline any pair.
+    if any(m in prose.lower() for m in _REFUSAL_MARKERS):
+        log.info("connect: dropped a refusal for %r", shared)
         return None
     prose = prose[:400]
 

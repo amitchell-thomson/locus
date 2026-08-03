@@ -94,6 +94,17 @@ _REREAD_POOL = 20
 # "the corpus cannot answer this" is meant to be handled.
 _REREAD_MIN_RERANK = 2.5
 
+# The two sections whose cost is a RETRIEVAL PASS, named by the key namespaces only they produce.
+#
+# `decide.queue.page_keys` composes the page for ONE reason — to subtract its keys from the TUI
+# queue — and until now paid for both. Measured 2026-08-03: `build_rereads` 9.6s (its `_explains`
+# call is what pulls torch in and runs the CPU cross-encoder) and `build_connections` 16.0s, out
+# of a 31s `locus decide` startup that burned 77s of CPU across the reranker's thread pool to
+# surface one pending decision. Neither namespace can collide with anything that surface offers
+# (`object:<id>`, `mark:<id>`, `reading:<id>`, `objects:<title>`), so it composes with
+# `skip_retrieval=True`; `page_keys` carries the argument for why the freed seats are safe.
+RETRIEVAL_BACKED_KEY_PREFIXES = ("reread:", "conn:")
+
 # The object types that represent an OPEN THREAD of his own — something he asked or proposed and
 # has not finished with. Concepts and projects are not threads: they are things that exist.
 _THREAD_TYPES = ("question", "idea")
@@ -1165,13 +1176,18 @@ def _passage_for_idea(conn: sqlite3.Connection, object_id: int) -> str:
 
 
 def build_threads(
-    conn: sqlite3.Connection, *, limit: int = _FIT["think"], seen: set[str] | None = None
+    conn: sqlite3.Connection, *, limit: int = _FIT["think"], seen: set[str] | None = None,
+    skip_retrieval: bool = False,
 ) -> list[ThreadItem]:
     """The Think page: three provenance subsections sharing one page and one anchor series.
 
     Marks come first because they are the freshest thing of his and the one the old page never
     consumed at all; connections come last because they are the only agent-originated items and
     the only ones he can decline.
+
+    `skip_retrieval` drops the connections pool (see `RETRIEVAL_BACKED_KEY_PREFIXES`) for a caller
+    that wants the page's KEYS rather than the page. It must stay False for anything he will read:
+    a page composed with it is missing a third of the Think section.
     """
     seen = seen if seen is not None else set()
     # EQUAL SHARE FIRST, THEN REFILL. Each subsection gets the same number of seats, which is
@@ -1182,7 +1198,7 @@ def build_threads(
     pools = [
         build_challenge(conn, limit=limit, seen=seen),
         build_develop(conn, limit=limit, seen=seen),
-        build_connections(conn, limit=limit, seen=seen),
+        [] if skip_retrieval else build_connections(conn, limit=limit, seen=seen),
     ]
     per = max(1, limit // len(pools))
     take = [min(per, len(pool)) for pool in pools]
@@ -1310,8 +1326,15 @@ def _legacy_build_status(conn: sqlite3.Connection, *, now: datetime | None = Non
 # --- composition -------------------------------------------------------------------------------
 
 
-def compose(conn: sqlite3.Connection, *, today: date | None = None) -> DailyPage:
-    """Build the day's page. Pure read — persisting it is `persist()`, a separate step."""
+def compose(
+    conn: sqlite3.Connection, *, today: date | None = None, skip_retrieval: bool = False
+) -> DailyPage:
+    """Build the day's page. Pure read — persisting it is `persist()`, a separate step.
+
+    `skip_retrieval` omits the two retrieval-backed sections (`RETRIEVAL_BACKED_KEY_PREFIXES`).
+    It exists for `decide.queue.page_keys`, which wants the keys and not the page; a page composed
+    with it is incomplete and must never be rendered or persisted.
+    """
     today = today or date.today()
     seen = _shown_keys(conn)
     page = DailyPage(page_date=today.isoformat())
@@ -1320,18 +1343,18 @@ def compose(conn: sqlite3.Connection, *, today: date | None = None) -> DailyPage
     # was unreachable in every state the system is normally in — 12 passages marked "I did not
     # follow this", which §20 makes the ONLY thing that earns a corpus re-read, reached nothing.
     # New material still leads; it just cannot take every seat.
-    rereads = build_rereads(conn, limit=_REREAD_SLOTS, seen=seen)
+    rereads = [] if skip_retrieval else build_rereads(conn, limit=_REREAD_SLOTS, seen=seen)
     page.readings = build_readings(conn, limit=_FIT["read"] - len(rereads), seen=seen)
     page.readings += rereads
     # If the shelf could not fill its share, let a second re-read use the gap rather than
     # printing white space.
-    if len(page.readings) < _FIT["read"]:
+    if len(page.readings) < _FIT["read"] and not skip_retrieval:
         page.readings += build_rereads(
             conn, limit=_FIT["read"] - len(page.readings),
             seen=seen | {r.item_key for r in rereads},
         )
     page.reading_state = build_reading_state(conn)
-    page.threads = build_threads(conn, seen=seen)
+    page.threads = build_threads(conn, seen=seen, skip_retrieval=skip_retrieval)
     page.recalls = build_recalls(conn, today=today, seen=seen)
     page.status = build_status(conn)
 

@@ -114,6 +114,52 @@ def test_the_page_no_longer_offers_a_proposed_object_at_all(conn):
     assert not [a for a in page.anchors if a.kind == "blessing"]
 
 
+# --- what the subtraction is allowed to cost -----------------------------------------------------
+
+
+def test_page_keys_does_not_pay_for_a_retrieval_pass(conn, monkeypatch):
+    """Opening the TUI ran the cross-encoder once per not-understood mark and re-derived every
+    cross-corpus pair — 31s and 77s of CPU to show one decision (measured 2026-08-03). The queue
+    wants keys, and neither section produces a key it can collide with."""
+    def boom(*_a, **_k):
+        raise AssertionError("page_keys must not run a retrieval pass")
+
+    monkeypatch.setattr(cd, "build_rereads", boom)
+    monkeypatch.setattr(cd, "build_connections", boom)
+    Q.page_keys(conn)
+
+
+def test_the_skipped_sections_produce_nothing_the_tui_could_offer(conn):
+    """WHY the skip is safe, asserted rather than reasoned about: the two namespaces it gives up
+    are disjoint from every key this surface issues."""
+    _proposed(conn, "alpha")
+    _thread(conn, "a question of mine")
+    _mark(conn, _PASSAGE)
+    _target(conn, swept="2026-01-01T00:00:00+00:00")
+
+    tui = {d.key for d in Q.pending(conn).flat()}
+    assert tui, "the queue must not be trivially empty for this to mean anything"
+    assert not [k for k in tui if k.startswith(cd.RETRIEVAL_BACKED_KEY_PREFIXES)]
+
+
+def test_the_skip_never_drops_a_key_the_full_page_would_offer(conn):
+    """The direction that matters. Over-reporting only subtracts more from the queue; UNDER-
+    reporting puts one decision on both surfaces, which is the thing his rule forbids. Skipping a
+    pool frees seats and so can only ever add — asserted here rather than argued, because the next
+    person to make this faster will be tempted by a section that is not safe to drop."""
+    _proposed(conn, "alpha")
+    _thread(conn, "a question of mine")
+    _mark(conn, _PASSAGE)
+    _target(conn, swept="2026-01-01T00:00:00+00:00")
+
+    full = {k for k, _kind in cd.compose(conn).items_shown()}
+    lost = {
+        k for k in full - Q.page_keys(conn)
+        if not k.startswith(cd.RETRIEVAL_BACKED_KEY_PREFIXES)
+    }
+    assert not lost, f"the skip dropped keys the page would have offered: {lost}"
+
+
 # --- proposed objects ----------------------------------------------------------------------------
 
 

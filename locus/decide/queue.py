@@ -84,9 +84,32 @@ def page_keys(conn: sqlite3.Connection) -> set[str]:
     Composed rather than read from `daily_shown`, because the question is what the page is
     OFFERING, not what it has ever offered: an item shown last week and since resolved is not a
     live collision, and one about to appear tomorrow is.
+
+    COMPOSED WITHOUT THE RETRIEVAL SECTIONS, which is what makes composing it affordable at all.
+    The full compose cost 31s and 77s of CPU (measured 2026-08-03): `build_rereads` runs the
+    cross-encoder once per not-understood mark and `build_connections` re-derives every
+    cross-corpus pair, so opening `locus decide` sat on two and a half cores for half a minute to
+    show one decision. Both sections produce keys — `reread:` and `conn:` — that NOTHING on this
+    surface can collide with, its own keys being `object:<id>`, `mark:<id>`, `reading:<id>` and
+    `objects:<title>`. The sections that stay are the cheap ones, and they are also the only ones
+    whose namespaces could ever meet a TUI key.
+
+    None of them does TODAY: the page currently issues `proposal:`, `reread:`, `tension:`,
+    `object:<id>:<updated_at>`, `conn:` and `review:`, all disjoint from the four above — the
+    `object:` pair only look alike, the page's carrying the version suffix `_shown_keys` needs.
+    The subtraction is a guard against the collision §19 anticipates rather than one it services,
+    which is exactly why this must not be tuned by watching it find nothing.
+
+    What the skip does change is the seat allocation: `build_threads` round-robins the seats a
+    skipped pool leaves behind, so the cheap sections can return MORE keys than the real page will
+    show. That is the safe direction and the only one skipping can produce. Over-reporting
+    subtracts MORE from the queue, so "I should not be able to approve the same thing on the daily
+    page and the tui" cannot be broken by it, and an over-reported item is the one the page offers
+    next as soon as the seat above it is consumed. Under-reporting would put one decision on both
+    surfaces, and dropping a pool cannot cause it.
     """
     try:
-        page = cd.compose(conn)
+        page = cd.compose(conn, skip_retrieval=True)
     except sqlite3.OperationalError:
         return set()
     return {key for key, _kind in page.items_shown()}

@@ -161,11 +161,18 @@ def link_threads(
     if not vocabulary:
         return []
 
+    # A RESOLVED thread counts; a DROPPED one does not. `status='archived'` alone cannot tell
+    # them apart — a cross archives an object and so does a tick that answers a question — so
+    # filtering on it excluded both, and obj 78 ("what are the best methods for regime
+    # detection"), which he kept and answered, was linked to neither of the two other regime
+    # threads. `dropped_object_ids` reads the judgement he actually recorded.
+    dropped = state.dropped_object_ids(conn)
     rows = conn.execute(
-        f"SELECT id FROM objects WHERE status='active' AND type IN "
+        f"SELECT id FROM objects WHERE status IN ('active','archived') AND type IN "
         f"({','.join('?' * len(THREAD_TYPES))}) ORDER BY id LIMIT ?",
         (*THREAD_TYPES, limit),
     ).fetchall()
+    rows = [r for r in rows if r["id"] not in dropped]
 
     by_concept: dict[str, list[int]] = defaultdict(list)
     concepts_of: dict[int, list[str]] = {}

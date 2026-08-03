@@ -79,10 +79,16 @@ def _by_promoted_path(conn: sqlite3.Connection) -> dict[str, int]:
     """
     out: dict[str, int] = {}
     try:
+        # A thread he RESOLVED is still promoted and still in the corpus, so excluding every
+        # archived object did not hide it — it came back as a bare note, stripped of the project,
+        # the sibling threads and the development that are the whole reason it is an object. A
+        # question he ANSWERED is exactly the one whose answer is worth carrying back. One he
+        # threw away is not, and `status` cannot tell those apart — see `dropped_object_ids`.
         rows = conn.execute(
-            "SELECT id, body FROM objects WHERE type IN ('idea','question') "
-            "AND status != 'archived'"
+            "SELECT id, body FROM objects WHERE type IN ('idea','question')"
         ).fetchall()
+        dropped = state.dropped_object_ids(conn)
+        rows = [r for r in rows if r["id"] not in dropped]
     except sqlite3.OperationalError:
         return out
     for row in rows:

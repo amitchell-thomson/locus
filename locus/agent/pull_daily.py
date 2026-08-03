@@ -57,6 +57,7 @@ from locus.agent import compose_daily as cd
 from locus.agent import state
 from locus.config import Config, load
 from locus.learn import review as learn_review
+from locus.link.projects import projects_for
 
 # Surfaces recorded in acceptance_log. These are the vocabulary migration 0011 already fixed in
 # a CHECK constraint — deliberately reused rather than extended: a blessing decided on the page
@@ -320,11 +321,17 @@ def _capture_thought(
         source=f"daily:{page_date}#{r.anchor}",
     )
     state.set_status(conn, object_id, "active")
+    links = []
     if anchor is not None and anchor.target_kind in ("doc", "entity", "object"):
-        state.add_links(
-            conn, object_id,
-            [state.ObjectLink(anchor.target_kind, anchor.target_key, "raised_by")],
-        )
+        links.append(state.ObjectLink(anchor.target_kind, anchor.target_key, "raised_by"))
+    # AND the project it is about. Only the mark path used to do this, so a question written on
+    # the daily page never reached a project even when he named one in the sentence: obj 80 is
+    # literally "...a macro regime predictor in the tanker project?" and had no link to
+    # `tanker-flow`. Same two-tier matcher as a mark, so the two routes in cannot disagree.
+    for pid, _title in projects_for(conn, text):
+        links.append(state.ObjectLink("object", str(pid), "relates"))
+    if links:
+        state.add_links(conn, object_id, links)
     return object_id, created
 
 

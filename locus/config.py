@@ -602,6 +602,17 @@ class CaptureConfig(BaseModel):
     intent_settle_hours: int = Field(
         12, description="Hours a mark's page must be untouched before its intent is inferred."
     )
+    # How close an idea must sit to a project profile before the link is WRITTEN. Was a bare 0.6
+    # literal in `capture/intent.py`, and at that value 3 of the first 4 mark-born ideas linked to
+    # a project they were not about — "read next on alt-data?" linked to OxAI, an exam-question
+    # generator. Measured on those four: the one correct link scored 0.756, every wrong or weak
+    # one scored 0.637-0.673, and a runner-up MARGIN test does not separate them (the correct link
+    # beat its runner-up by 0.008, exactly like a wrong one). So the floor is the discriminator,
+    # and it is set above the wrong band: an unlinked idea is honest, a confidently wrong link is
+    # worse than none because retrieval states it to Claude as fact ("part of: OxAI").
+    idea_project_fit_floor: float = Field(
+        0.70, description="Cosine fit below which a mark-born idea gets NO project link."
+    )
 
 
 class MCPConfig(BaseModel):

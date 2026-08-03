@@ -57,11 +57,11 @@ from locus.link.related import related_documents
 # should do — a typographic fact about the page, which is why it is expressed per section and in
 # items rather than as one global cap.
 # Derived from the geometry, not chosen: see `_lines_for`. A page holds ~9 ruled lines, and an
-# item needs 2-3 to be answerable, so a WRITING page holds three or four items — not the six the
-# first cut assumed, which silently pushed Recall onto a second page and broke the whole
-# one-section-per-page layout. `read` is larger because a reading item carries one rule, not a
-# writing region: it is a decision aid, not something he answers.
-_FIT = {"read": 3, "think": 3, "recall": 4}
+# item needs 2-3 to be answerable. RE-CALIBRATED 2026-08-03 when `[daily].rule_gap_em` went
+# 2.6 -> 1.8 (10.1mm -> 7.0mm between rules, measured): tighter rules buy a whole extra item, so
+# Think went 3 -> 4 and Recall's writing regions went 2 lines -> 3. Verified by rendering, not
+# derived: 5 Think items or 4 recall lines push a fifth page.
+_FIT = {"read": 3, "think": 4, "recall": 4}
 
 # The Read page is the one section with no writing regions, so `_lines_for` does not bound it and
 # nothing else did either: three proposals plus an unbounded in-progress list overflowed onto a
@@ -101,6 +101,22 @@ _MIN_PASSAGE_CHARS = 40
 SECTION_MARKED = "From your reading"
 SECTION_OPEN = "Still open"
 SECTION_CONNECTION = "Connections found"
+
+# A DRAWN box, not a character. §18 found that U+2610 BALLOT BOX has no glyph in the body font
+# and rendered as tofu, so the fallback was ASCII `[   ]` — which reads as three spaces in
+# brackets rather than something to tick. Inline raw typst draws a real square, so it cannot
+# depend on font coverage at all.
+def _anchor(label: str) -> str:
+    """The printed anchor (`D1`, `T2`) as its own styled element.
+
+    Raw inline typst rather than `**bold**`: bold is also how "In progress" and "On the shelf"
+    are marked, and the item title shares the anchor's `**...**` span — so styling `strong`
+    turned all of them into accent-coloured sans.
+    """
+    return f'`#anc[{label}]`{{=typst}}'
+
+
+_TICKBOX = "`#tickbox`{=typst}"
 
 
 @dataclass
@@ -613,17 +629,26 @@ def build_marked(
         # A MARGIN NOTE COVERS NO TEXT, so there is no passage to lead with and the item rendered
         # as a bare "T1." with his words demoted to a quote beneath it. When the passage is empty
         # his handwriting IS the item, and repeating it as "you wrote:" underneath says it twice.
-        headline = passage or note
+        #
+        # The same applies to a passage too SHORT to stand alone, which the page only started
+        # showing once marks stopped being capped at one per document: an underline of "market is"
+        # led the item with a nine-character fragment while the words he actually wrote sat below
+        # it. A stub is not a headline — lead with his note and keep the fragment as the context.
+        leads_with_note = len(passage) < _MIN_PASSAGE_CHARS and bool(note)
+        headline = note if leads_with_note else (passage or note)
         out.append(
             ThreadItem(
                 anchor="",
                 section=SECTION_MARKED,
                 kind="mark",
                 headline=_clip(headline, 300),
-                context=f"{title} — p.{row['pdf_page'] + 1}",
+                context=(
+                    f"{title} — p.{row['pdf_page'] + 1}"
+                    + (f" · beside “{passage}”" if leads_with_note and passage else "")
+                ),
                 # His own words, printed back with the passage they belong to. This pairing is
                 # the whole point of Loop B: the objection and the claim it objects to.
-                body=(f"you wrote: {note}",) if note and passage else (),
+                body=(f"you wrote: {note}",) if note and passage and not leads_with_note else (),
                 target_kind="doc",
                 target_key=uri,
                 item_key=item_key,
@@ -1098,19 +1123,21 @@ def _rules(n: int) -> str:
 # construction — the exact number depends on how long each item runs — and deliberately erring
 # short, since a section that overflows onto a second page breaks the one-section-per-page rule
 # that is the whole point of the layout.
-# Derivation, so this is not a guess that drifts: the page is 9.43in tall with 0.5in margins =>
-# ~607pt of body. A ruled line at [daily].rule_gap_em = 2.6 consumes its gap above AND below,
-# ~5.2em ~= 57pt at 11pt text, so ~10 lines fit a page with no text on it at all. Each item also
-# prints a headline, sometimes his prior words, and a provenance line — call it 3 printed lines,
-# ~45pt. Eight ruled lines per page across all items leaves real margin for that, and overflowing
-# is the one failure that matters here because it breaks one-section-per-page.
+# MEASURE, DO NOT DERIVE. The previous derivation here was wrong by a factor of two: it assumed a
+# rule "consumes its gap above AND below", but Typst COLLAPSES a block's `above` against the
+# previous block's `below`, so consecutive rules sit ONE gap apart. The delivered page measured
+# 28.6pt between rules at rule_gap_em 2.6, not the ~57pt claimed. The budget below survived only
+# because printed text absorbed the difference. It is now checked by rendering a real PDF and
+# counting pages (`test_a_full_page_does_not_overflow_into_a_fifth`), which is the only method
+# that has ever caught this, and overflowing is the failure that matters because it breaks
+# one-section-per-page.
 _LINE_BUDGET = 9
 _MAX_LINES = 5
 
 # Floor per section, because the two writing pages differ in what a region is FOR. Developing an
 # idea needs room to think on paper; recalling a stored claim is a sentence or two, so two lines
 # there buys a fourth question rather than white space.
-_MIN_LINES = {"think": 3, "recall": 2}
+_MIN_LINES = {"think": 3, "recall": 3}
 
 
 def _lines_for(n_items: int, section: str = "think") -> int:
@@ -1121,12 +1148,9 @@ def _lines_for(n_items: int, section: str = "think") -> int:
     wasted paper, not restraint. Then a budget of 15 pushed Recall onto a second page, which
     breaks one-section-per-page, the constraint the entire layout rests on.
 
-    THE BUDGET IS DERIVED, so it does not drift: the page is 9.43in tall with 0.5in margins =>
-    ~607pt of body. A ruled line at `[daily].rule_gap_em` = 2.6 consumes its gap above AND below,
-    ~5.2em ~= 57pt at 11pt text, so ~10 fit a page carrying no text at all. Each item also prints
-    a headline, often his prior words, and a provenance line, so the usable budget is 9. Change
-    `rule_gap_em` and this must be recomputed — `scripts/analysis/render_daily_sample.py` and the
-    overflow test are how you check.
+    THE BUDGET IS MEASURED, not derived — see the note on `_LINE_BUDGET` for why the arithmetic
+    that used to live here was wrong by 2x. Change `rule_gap_em` and re-run the overflow test:
+    it renders a real PDF and counts pages, which is the only check that has ever caught this.
     """
     floor = _MIN_LINES.get(section, 3)
     if n_items <= 0:
@@ -1150,26 +1174,50 @@ def _clip(text: str, limit: int) -> str:
     return (spaced if len(spaced) >= limit * 0.6 else cut).rstrip(" ,;:—-") + "…"
 
 
+# Typst content-mode metacharacters. The status line carries "$0.55", and `$` OPENS MATH in
+# typst — an unescaped one silently swallows the rest of the footer into a formula.
+_TYPST_SPECIAL = "\\#$[]*_@<>`~"
+
+
+def _typst_escape(text: str) -> str:
+    for ch in _TYPST_SPECIAL:
+        text = text.replace(ch, "\\" + ch)
+    return text
+
+
 def _status_block(page: DailyPage) -> str:
-    return f"*{page.status.render()}*"
+    """The footer: pushed to the foot, separated by a hairline, and SMALLER than the page.
+
+    Raw typst rather than markdown emphasis because none of that is expressible in markdown — as
+    plain `*italics*` the status rendered at full body size, directly beneath "On the shelf", so
+    the one line that shouts when something is broken read as another entry in the reading list.
+    """
+    return (
+        "```{=typst}\n"
+        "#v(1fr)\n"
+        "#line(length: 100%, stroke: 0.3pt + luma(85%))\n"
+        "#v(0.45em)\n"
+        f"#text(size: 8pt, fill: luma(45%), style: \"italic\")[{_typst_escape(page.status.render())}]\n"
+        "```"
+    )
 
 
 def _open_region() -> list[str]:
-    return ["## Anything on your mind", "", "**Q1.**", "", _rules(4)]
+    return ["# Anything on your mind", "", _anchor("Q1"), "", _rules(4)]
 
 
 def _render_read(page: DailyPage) -> str:
-    lines = ["## Read", ""]
+    lines = ["# Read", ""]
     for d in page.readings:
         tag = "  *re-read*" if d.shelf == "re-read" else ""
-        lines += [f"**{d.anchor}. {d.title}**{tag}", "", d.why]
+        lines += [f"{_anchor(d.anchor)} **{d.title}**{tag}", "", d.why]
         if d.grounding:
             lines += ["", f"`{d.grounding}`"]
         lines += ["", _rules(1)]
 
     st = page.reading_state
     if st.in_progress:
-        lines += ["", "**In progress**", ""]
+        lines += ["", "## In progress", ""]
         # Truncating the reasons was the FIRST attempt at keeping this section on one page and it
         # was not enough: with 3 proposals above it, five in-progress items still spilled the
         # status line onto a second, near-empty page (measured 2026-08-02 — a real 5-page PDF).
@@ -1195,24 +1243,24 @@ def _render_read(page: DailyPage) -> str:
         oldest = f", oldest {st.oldest_days} days" if st.oldest_days is not None else ""
         lines += ["", f"**On the shelf:** {st.proposed} waiting{oldest}"]
 
-    lines += ["", _PUSH_TO_FOOT, "", _status_block(page)]
+    lines += ["", _status_block(page)]
     return "\n".join(lines)
 
 
 def _render_think(page: DailyPage) -> str:
-    lines = ["## Think", ""]
+    lines = ["# Think", ""]
     per_item = _lines_for(len(page.threads), "think")
     current = ""
     for t in page.threads:
         if t.section != current:
             current = t.section
-            lines += [f"### {current}", ""]
+            lines += [f"## {current}", ""]
         # ASCII brackets, not U+2610 BALLOT BOX: the Typst body font has no glyph for it and it
         # rendered as a tofu box (verified 2026-07-30 — the character was absent from the
         # extracted text while a stray rectangle was drawn in its place). A tick box he must
         # recognise cannot depend on font coverage.
-        box = "`[   ]` keep   " if t.tick else ""
-        lines += [f"**{t.anchor}.** {box}{t.headline}", ""]
+        box = f"{_TICKBOX} keep   " if t.tick else ""
+        lines += [f"{_anchor(t.anchor)} {box}{t.headline}", ""]
         for prior in t.body:
             lines += [f"> {prior}", ""]
         lines += [f"*{t.context}*", "", _rules(per_item)]
@@ -1220,13 +1268,18 @@ def _render_think(page: DailyPage) -> str:
 
 
 def _render_recall(page: DailyPage) -> str:
-    lines = ["## Recall", "", "Answer, then tick if you knew it. Answers overleaf.", ""]
+    lines = ["# Recall", "", "Answer, then tick if you knew it. Answers overleaf.", ""]
     per_item = _lines_for(len(page.recalls), "recall")
     for r in page.recalls:
-        lines += [f"**{r.anchor}.** {r.prompt}", ""]
+        lines += [f"{_anchor(r.anchor)} {r.prompt}", ""]
         if r.source:
             lines += [f"*{r.source}*", ""]
-        lines += [_rules(per_item), "`[   ]` knew it", ""]
+        # RIGHT-ALIGNED, because position is what says which item it belongs to. Set flush left
+        # it sat directly above the NEXT question and read as that question's box, when it
+        # terminates the one above it.
+        lines += [_rules(per_item),
+                  "```{=typst}\n#align(right)[#tickbox #text(size: 9pt, fill: luma(45%))[knew it]]\n```",
+                  ""]
     return "\n".join(lines)
 
 
@@ -1251,6 +1304,10 @@ def render(page: DailyPage) -> str:
     One section per PHYSICAL page, by request. An empty section is omitted entirely rather than
     rendered as a bare heading — and omitting it takes its page break with it, so a quiet day is a
     short document rather than four pages of white space.
+
+    HEADING LEVELS ARE THE PAGE'S HIERARCHY, so they moved up one when the date left: a SECTION
+    (`# Read`) is the title of its page, and the Think subsections (`## Still open`) sit under it.
+    `md2pdf` styles them by level, so this is the contract between the two modules.
     """
     pages: list[str] = []
     if page.readings or not page.reading_state.is_empty:
@@ -1263,8 +1320,11 @@ def render(page: DailyPage) -> str:
     if not pages:
         # A page with nothing on it is a valid, calm state — and it is still the only place a
         # failure would be announced, so the status line survives an empty day.
-        head = [f"# {page.page_date}", "", "Nothing to surface today.", ""]
+        head = ["Nothing to surface today.", ""]
         return "\n".join(head + _open_region() + ["", _status_block(page)])
 
-    body = _PAGEBREAK.join(pages + [_render_back(page)])
-    return f"# {page.page_date}\n\n{body}"
+    # NO DATE HEADING. It used to open the document as an `# H1`, competing with the section
+    # heading immediately beneath it for the role of page title. The date is per-DOCUMENT, not
+    # per-section, so it belongs in the running header (`PageGeometry.running_header`) where it
+    # appears on all four pages instead of only the first.
+    return _PAGEBREAK.join(pages + [_render_back(page)])

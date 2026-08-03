@@ -22,14 +22,15 @@ and every candidate must clear a gate that Python — not the model — enforces
   4. **Hard cap per document** (`max_objects_per_doc`, default 3). Ranked in the model's own
      order — it is asked to put the most consequential first.
   5. **Ideas come only from owner-authored documents**, on the same reasoning as belief positions
-     (`belief_source_categories`, default `note`): an idea is a proposal to DO something, and a
+     (`belief_source_categories` + `belief_source_types`): an idea is a proposal to DO something, and a
      proposal found in a paper is the PAPER's, not his. Without this gate a lecture handout would
      generate "ideas" he never had. This is what finally lets an idea written in a NOTEBOOK become
      a thread — before it, `idea` was not in the proposer's vocabulary at all, so the only routes
      in were a mark on a PDF and writing on the daily page, and an idea jotted in a speaker
      session died as searchable text.
-  6. **Belief positions come only from owner-authored documents** (`belief_source_categories`,
-     default `note` — handwriting and captured conversations) AND the stance must share heavy
+  6. **Belief positions come only from owner-authored documents** — handwriting, conversations,
+     and his project/career WRITE-UPS (a write-up records decisions he made; who typed it is not
+     the question), but never a published PDF sitting in the same category — AND the stance must share heavy
      distinctive vocabulary with the source text. A paper's claim is the PAPER's position, not
      the owner's, and a paraphrase that drifts into the model's voice is failure mode #1: the
      trajectory is only worth having if every stance on it is really his.
@@ -520,10 +521,7 @@ def plan_for_document(
             )
         )
 
-    _plan_positions(
-        plan, proposals.positions, doc=doc, concepts=concepts, text=text,
-        allowed=scfg.belief_source_categories,
-    )
+    _plan_positions(plan, proposals.positions, doc=doc, concepts=concepts, text=text)
     return plan
 
 
@@ -613,7 +611,7 @@ def _gate_object(
         # Owner-authored only, for the same reason belief positions are: an idea is a proposal to
         # DO something, and one found in a paper is the PAPER's. Without this a lecture handout
         # would generate "ideas" he never had.
-        if doc["category"] not in _owner_categories():
+        if not _is_owner_authored(doc):
             return [], "an idea must come from your own writing, not from a source"
         links = [ObjectLink("doc", doc_uri, "raised_by")]
         # An idea belongs beside the project it is about. `anchor` is optional here: an idea with
@@ -634,6 +632,36 @@ def _owner_categories() -> tuple[str, ...]:
     from locus.config import load
 
     return tuple(load().structure.belief_source_categories)
+
+
+def _is_owner_authored(doc) -> bool:
+    """Is this document HIS — his decisions, in his or his agent's words?
+
+    PROVENANCE FIRST. Everything he writes lands under `vault/notes/`: Loop-A handwriting
+    captures, conversation captures, notes he authors directly. Category is a topic facet applied
+    from the DEVICE FOLDER (`Notes/engineering` -> coursework), so keying eligibility on category
+    alone made his own handwriting ineligible purely because of which folder he wrote it in —
+    live, doc 482 `Optimisation` is his note, filed `coursework`, and could never yield an idea.
+    The path is the fact about authorship; the category is not.
+
+    Category+format is the fallback for everything else, and both halves are load-bearing:
+    `project` holds his architecture write-ups AND third-party manuals he keeps for reference
+    (the two Optibook PDFs), and a belief lifted from a vendor manual and attributed to him is
+    exactly the §3.4 corruption. He writes markdown; publications arrive as PDFs and decks.
+    """
+    from locus.config import load
+
+    cfg = load()
+    uri = (doc["source_uri"] or "").replace("\\", "/")
+    notes_dir = str(cfg.paths.notes).replace("\\", "/").rstrip("/")
+    if uri.startswith(f"{notes_dir}/") or "/vault/notes/" in uri or uri.startswith("vault/notes/"):
+        return True
+
+    scfg = cfg.structure
+    if (doc["category"] or "") not in tuple(scfg.belief_source_categories):
+        return False
+    allowed = tuple(scfg.belief_source_types)
+    return not allowed or (doc["source_type"] or "") in allowed
 
 
 def _body_for(cand: ProposedObject) -> dict:
@@ -663,17 +691,18 @@ def _plan_positions(
     doc,
     concepts: dict[str, tuple[str, str]],
     text: str,
-    allowed: list[str],
 ) -> None:
     """Gate 5. `dated_at` is the SOURCE date, so the trajectory is ordered by when the owner
     actually held the view — not by when capture caught up with it (§6.3)."""
     if not positions:
         return
-    if (doc["category"] or "") not in allowed:
+    if not _is_owner_authored(doc):
+        # One definition of "his words" for ideas and positions alike, so the two gates cannot
+        # drift apart on the question they are both asking.
         for p in positions:
             plan.rejected.append(
                 Rejection("position", p.subject,
-                          f"category {doc['category']!r} is not owner-authored")
+                          f"{doc['category']!r}/{doc['source_type']!r} is not owner-authored")
             )
         return
     dated_at = doc["source_date"] or (doc["ingested_at"] or "")[:10]
@@ -756,7 +785,22 @@ def propose_for_document(
     plan = plan_for_document(
         conn, doc_id, ledger=ledger, runner=runner, retrieve_fn=retrieve_fn, model=model
     )
-    return apply_plan(conn, plan, run_id=run_id, now=now)
+    result = apply_plan(conn, plan, run_id=run_id, now=now)
+    # Stamped even when the plan proposed NOTHING, and even when the document was rejected by a
+    # gate: "looked and found nothing" and "never looked" are different facts, and only the
+    # second should be retried. A ledger of successes alone would re-bill every empty document
+    # every night. Not stamped when the model call failed — that IS worth retrying.
+    if not plan.degraded:
+        _mark_structured(conn, doc_id, now=now)
+    return result
+
+
+def _mark_structured(conn, doc_id: int, *, now=None) -> None:
+    from locus.agent.state import _utcnow
+
+    stamp = (now or _utcnow)()
+    with conn:
+        conn.execute("UPDATE documents SET structured_at=? WHERE id=?", (stamp, doc_id))
 
 
 # --- batch entry point ------------------------------------------------------------------------

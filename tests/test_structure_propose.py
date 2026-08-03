@@ -37,13 +37,14 @@ class _Result:
     low_confidence: bool = False
 
 
-def _doc(conn, doc_id, *, title, uri, category="note", date="2026-05-01", text="", thesis="T"):
+def _doc(conn, doc_id, *, title, uri, category="note", date="2026-05-01", text="", thesis="T",
+         source_type="markdown"):
     with conn:
         conn.execute(
             "INSERT INTO documents (id, content_hash, source_type, source_uri, raw_path, title, "
             "source_date, category, thesis, ingested_at, ingest_model) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (doc_id, f"h{doc_id}", "markdown", uri, f"raw{doc_id}", title, date, category,
+            (doc_id, f"h{doc_id}", source_type, uri, f"raw{doc_id}", title, date, category,
              thesis, "2026-05-02T00:00:00Z", "test"),
         )
         conn.execute(
@@ -85,6 +86,10 @@ def conn(tmp_path: Path):
     _entity(c, 1, "solo idea")  # only one doc -> must not be proposable as a concept
     yield c
     c.close()
+
+
+def _row(conn, doc_id):
+    return conn.execute("SELECT * FROM documents WHERE id=?", (doc_id,)).fetchone()
 
 
 def _runner(payload: dict):
@@ -350,6 +355,48 @@ def test_a_promoted_thread_is_never_structured_back_into_a_second_object(conn):
     )
     assert plan.objects == []
     assert plan.rejected[0].reason == "already an object — promoted thread"
+
+
+def test_his_own_writing_is_owner_authored_whatever_folder_it_came_from(conn):
+    """Category is applied from the DEVICE FOLDER (`Notes/engineering` -> coursework), so gating
+    on it made his own handwriting ineligible for an idea purely because of where he wrote it.
+    Live: doc 482 `Optimisation` is his note, filed `coursework`, and could yield nothing.
+    """
+    _doc(conn, 20, title="Optimisation", uri="/home/alec/vault/notes/optimisation-abc.md",
+         category="coursework", text="anything")
+    assert propose._is_owner_authored(_row(conn, 20)) is True
+
+
+def test_a_vendor_pdf_in_his_project_folder_is_not_his_writing(conn):
+    """The owner's instruction was that project WRITE-UPS are canonical — not that everything
+    filed under `project` is his. `category='project'` also holds third-party manuals he keeps
+    for reference (live: two Optibook PDFs), and a belief lifted from one and attributed to him
+    is the §3.4 corruption the gate exists to prevent."""
+    _doc(conn, 21, title="Optibook Python Reference", uri="vault/incoming/projects/optibook.pdf",
+         category="project", source_type="pdf", text="vendor documentation")
+    assert propose._is_owner_authored(_row(conn, 21)) is False
+
+    _doc(conn, 22, title="OXDAQ architecture", uri="vault/incoming/projects/oxdaq.md",
+         category="project", source_type="markdown", text="how the exchange is built")
+    assert propose._is_owner_authored(_row(conn, 22)) is True
+
+
+def test_a_structured_document_is_stamped_even_when_it_proposes_nothing(conn):
+    """"looked and found nothing" and "never looked" are different facts. A ledger of successes
+    only would re-bill every empty document every night; no ledger at all is what let doc 482 fall
+    out of the `--ingested-since` window and be skipped forever."""
+    propose.propose_for_document(
+        conn, 1, retrieve_fn=_no_support, runner=_runner({"objects": []})
+    )
+    assert _row(conn, 1)["structured_at"]
+
+
+def test_a_degraded_run_is_NOT_stamped_so_it_is_retried(conn):
+    def failing(prompt, model):
+        raise ClaudeError("nope")
+
+    propose.propose_for_document(conn, 1, retrieve_fn=_no_support, runner=failing)
+    assert _row(conn, 1)["structured_at"] is None
 
 
 def test_model_failure_degrades_and_proposes_nothing(conn):

@@ -68,6 +68,25 @@ _FIT = {"read": 3, "think": 3, "recall": 4}
 # fits underneath a full `_FIT["read"]` set; anything held back is counted on the page.
 _MAX_IN_PROGRESS = 3
 
+# Seats on the Read page held for a passage he said he did not follow, so new material cannot
+# take all three. One, not two: the shelf is the main channel and a re-read is the exception that
+# he asked for by marking something.
+_REREAD_SLOTS = 1
+
+# How many raw search hits are handed to the cross-encoder in `_explains`. Small: this runs on
+# CPU during page composition, and the answer is either near the top of the dense arm or absent.
+_REREAD_POOL = 20
+
+# A re-read has to clear a HIGHER bar than `[retrieve].min_rerank_score` (0.22). That floor asks
+# "is this worth showing as context alongside other material"; this one asks "is this worth one
+# of three seats on the page, on its own". Measured over his ten not-understood marks
+# (2026-08-03): documents that genuinely answer the mark score 4.07 and 4.82, while the best
+# WRONG match — *Sensing, Signals and Communications* offered for a note about trading "signals"
+# — scores 1.917. Most marks correctly produce nothing at this bar, because the corpus does not
+# contain an answer, and printing nothing is the honest result: the discovery channel is where
+# "the corpus cannot answer this" is meant to be handled.
+_REREAD_MIN_RERANK = 2.5
+
 # The object types that represent an OPEN THREAD of his own — something he asked or proposed and
 # has not finished with. Concepts and projects are not threads: they are things that exist.
 _THREAD_TYPES = ("question", "idea")
@@ -393,7 +412,19 @@ def build_rereads(
 def _explains(
     conn: sqlite3.Connection, question: str, *, exclude_uri: str
 ) -> tuple[str, str] | None:
-    """The corpus document that best covers `question`, or None. Degrades silently."""
+    """The corpus document that best covers `question`, or None. Degrades silently.
+
+    IT MUST BE RERANKED, and it must clear the floor. `search()` returns raw dense/lexical
+    similarity, where everything scores 0.84-0.98 and the number is meaningless in absolute
+    terms — taking its argmax offered a document that merely shared a WORD. Measured 2026-08-03:
+    "what are the 'signals'" returned *Sampling, aliasing, modulation and spectral density*, and
+    "Momentum is a robust anomaly" returned *Dynamics — impulse-momentum*. Both are puns, and a
+    useless suggestion is exactly what discredited the old read-next section.
+
+    The cross-encoder is what makes a score comparable to a threshold, so this reuses the same
+    same cross-encoder every corpus query uses, against `_REREAD_MIN_RERANK`. Below it there is
+    no answer in the corpus, and the honest output is None — the slot goes back to new reading.
+    """
     try:
         from locus.retrieve.search import search
     except ImportError:
@@ -402,10 +433,24 @@ def _explains(
         candidates = search(conn, question)
     except Exception:                                  # ollama down, no vectors yet
         return None
+    candidates = [c for c in (candidates or []) if c.text]
+    if not candidates:
+        return None
 
+    pool = sorted(candidates, key=lambda c: -(c.score or 0.0))[:_REREAD_POOL]
+    try:
+        from locus.retrieve.rerank import score_pairs
+
+        scores = score_pairs(question, [c.text for c in pool])
+    except Exception:                                  # the `rerank` extra is optional
+        return None
+
+    ranked = sorted(zip(pool, scores), key=lambda pair: -pair[1])
     # Best-scoring DOCUMENT, not unit: the slot offers something to read, and several strong
     # chunks from one document say the same thing about it.
-    for cand in sorted(candidates or [], key=lambda c: -(c.rerank_score or c.score or 0.0)):
+    for cand, score in ranked:
+        if score < _REREAD_MIN_RERANK:
+            break
         row = conn.execute(
             "SELECT title, source_uri FROM documents WHERE id=?", (cand.doc_id,)
         ).fetchone()
@@ -853,12 +898,20 @@ def compose(conn: sqlite3.Connection, *, today: date | None = None) -> DailyPage
     today = today or date.today()
     seen = _shown_keys(conn)
     page = DailyPage(page_date=today.isoformat())
-    page.readings = build_readings(conn, seen=seen)
-    # New material leads; a re-read takes a slot only if one is spare, and only ever because he
-    # marked something as not understood.
+    # A re-read gets a RESERVED slot, not the leftovers. "Only if one is spare" sounded modest
+    # and meant never: the shelf caps at 10 proposals and the page shows 3, so `build_rereads`
+    # was unreachable in every state the system is normally in — 12 passages marked "I did not
+    # follow this", which §20 makes the ONLY thing that earns a corpus re-read, reached nothing.
+    # New material still leads; it just cannot take every seat.
+    rereads = build_rereads(conn, limit=_REREAD_SLOTS, seen=seen)
+    page.readings = build_readings(conn, limit=_FIT["read"] - len(rereads), seen=seen)
+    page.readings += rereads
+    # If the shelf could not fill its share, let a second re-read use the gap rather than
+    # printing white space.
     if len(page.readings) < _FIT["read"]:
         page.readings += build_rereads(
-            conn, limit=_FIT["read"] - len(page.readings), seen=seen
+            conn, limit=_FIT["read"] - len(page.readings),
+            seen=seen | {r.item_key for r in rereads},
         )
     page.reading_state = build_reading_state(conn)
     page.threads = build_threads(conn, seen=seen)

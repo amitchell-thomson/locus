@@ -17,11 +17,15 @@ Environment=PATH=/home/alec/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:
 # 1. link: folds new entity surfaces into entity_aliases. Verdicts are cached in pass_cache,
 #    so a run with nothing new costs ~0 API calls.
 ExecStart=/home/alec/.local/bin/uv run locus link
-# 2. structure: ONLY documents ingested in the last two days. --ingested-since (not --since,
-#    which filters on the AUTHORED date) is what makes this safe to schedule: a nightly run
-#    over the whole corpus would re-bill every document every night for no new information.
-#    Two days rather than one so a missed window does not silently skip a day's capture.
-ExecStart=/bin/sh -c '/home/alec/.local/bin/uv run locus structure --ingested-since "$(date -d "2 days ago" +%%Y-%%m-%%d)"'
+# 2. structure: documents this has NEVER looked at (`documents.structured_at IS NULL`, migration
+#    0027). It used to be `--ingested-since "2 days ago"`, and a window is not a ledger: anything
+#    arriving while this unit was broken — and it was broken for six consecutive nights — fell
+#    out of the window and was skipped FOREVER, with nothing able to say which. Live casualty:
+#    doc 482, his own handwritten `Optimisation` note. A document is stamped even when it yields
+#    nothing, so the empty ones are not re-billed every night.
+#    --limit 20 keeps a night's spend bounded while the 162-document backlog drains, the same
+#    gradual-fill reasoning as `review --write-questions` below.
+ExecStart=/home/alec/.local/bin/uv run locus structure --unstructured --limit 20
 # Enrol a few propositions from BLESSED objects into the SM-2 schedule. Deterministic and
 # free (no model), idempotent, and deliberately gradual — it adds a handful a night so the
 # recall section fills at the rate he actually answers, instead of dumping a backlog.

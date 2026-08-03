@@ -161,6 +161,52 @@ def best_subject(
     return row["subject_kind"], row["label"], cos_from_l2(best["distance"])
 
 
+def best_project(
+    conn: sqlite3.Connection, text: str, *, embed_fn=None, k: int = 40
+) -> tuple[str, float]:
+    """(project label, fit) — the nearest profile facet THAT BELONGS TO A PROJECT.
+
+    `best_subject` searches every profile, and `discovery_profiles` holds two kinds: 257 rows for
+    projects and 34 for `gap` concepts. A `gap` label is a concept ("AIS capture", "Hierarchical
+    Attention Network"), not something an idea can be "part of", and it routinely wins the
+    unrestricted search — so asking "which project is this about" through `best_subject` returned
+    a concept, the caller's exact-title lookup against `objects` found nothing, and the link was
+    silently dropped. That is why every question written on the daily page had no project.
+
+    `k` is deliberately larger than `_TOP_PROFILES`: the gap profiles crowd the head of the list,
+    so a project facet has to be reachable past them.
+    """
+    from locus.ingest.embed import embed_text
+
+    embed_fn = embed_fn or embed_text
+    try:
+        vector = embed_fn(text)
+    except Exception as exc:                       # ollama down, model missing
+        log.warning("relevance: embedding failed: %s", exc)
+        return "", 0.0
+
+    import struct
+
+    blob = struct.pack(f"{len(vector)}f", *vector)
+    try:
+        # Same standalone-KNN rule as `best_subject`: the LIMIT must be visible on this query.
+        hits = conn.execute(
+            "SELECT profile_id, distance FROM discovery_profile_vectors "
+            "WHERE embedding MATCH ? ORDER BY distance LIMIT ?",
+            (blob, k),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return "", 0.0
+
+    for hit in sorted(hits, key=lambda r: r["distance"]):
+        row = conn.execute(
+            "SELECT subject_kind, label FROM discovery_profiles WHERE id=?", (hit["profile_id"],)
+        ).fetchone()
+        if row is not None and row["subject_kind"] == "project":
+            return row["label"], cos_from_l2(hit["distance"])
+    return "", 0.0
+
+
 def targets_needing_a_link(conn: sqlite3.Connection, *, only_owner: bool = False) -> list[int]:
     """Reading targets with no project link yet, most recently touched first.
 

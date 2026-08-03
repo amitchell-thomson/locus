@@ -463,6 +463,33 @@ def log_acceptance(
     return int(cur.lastrowid)
 
 
+def dropped_object_ids(conn) -> set[int]:
+    """Objects he REJECTED, as opposed to ones he finished with.
+
+    `status='archived'` conflates two opposite judgements, which is why reading it alone gets
+    this wrong in one direction or the other. A cross on the daily page archives an object
+    ("a cross means NO"); so does a tick that RESOLVES a question. Live 2026-08-03: objs 55 and
+    67 were rejected, while 78 and 79 are archived and `kept` — he answered them.
+
+    The distinguishing fact is his own recorded judgement, so this reads the latest verdict per
+    object from `acceptance_log`. Consumers that must not resurface something he threw away
+    (thread linking, thread context) subtract this rather than filtering on `archived`.
+    """
+    latest: dict[int, str] = {}
+    try:
+        rows = conn.execute(
+            "SELECT candidate_key, verdict FROM acceptance_log WHERE surface='object' "
+            "ORDER BY at, id"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return set()
+    for row in rows:
+        key = str(row["candidate_key"])
+        if key.isdigit():
+            latest[int(key)] = row["verdict"]
+    return {oid for oid, verdict in latest.items() if verdict == "rejected"}
+
+
 def acceptance_counts(conn, surface: str | None = None) -> dict[str, dict[str, int]]:
     """candidate_key -> {kept: n, rejected: n} — what the flywheel folds into ranking."""
     sql = "SELECT candidate_key, verdict, COUNT(*) AS n FROM acceptance_log"

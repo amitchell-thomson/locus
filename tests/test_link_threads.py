@@ -210,9 +210,26 @@ def test_only_his_words_are_matched_not_the_agents_rationale(conn):
     assert T.link_threads(conn) == []
 
 
-def test_archived_threads_are_not_connected(conn):
+def test_a_thread_he_dropped_is_not_connected(conn):
+    """A cross means NO, so a rejected thread must not come back through the link graph."""
     _concept_in_two_docs(conn, "regime detection")
     a = _thread(conn, "regime detection one")
     _thread(conn, "regime detection two")
     state.set_status(conn, a, "archived")
+    state.log_acceptance(conn, surface="object", candidate_key=str(a), verdict="rejected")
     assert T.link_threads(conn) == []
+
+
+def test_a_thread_he_ANSWERED_is_still_connected(conn):
+    """`archived` means two opposite things and only one of them is "forget this".
+
+    Live: obj 78 ("what are the best methods for regime detection") was kept and answered, then
+    archived by a tick — and was linked to neither of the other two regime threads, because the
+    filter read `status` instead of his recorded judgement.
+    """
+    _concept_in_two_docs(conn, "regime detection")
+    a = _thread(conn, "regime detection one")
+    _thread(conn, "regime detection two")
+    state.set_status(conn, a, "archived")
+    state.log_acceptance(conn, surface="object", candidate_key=str(a), verdict="kept")
+    assert [link.shared for link in T.link_threads(conn)] == [("regime detection",)]

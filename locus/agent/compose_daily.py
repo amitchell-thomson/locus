@@ -62,6 +62,12 @@ from locus.link.related import related_documents
 # writing region: it is a decision aid, not something he answers.
 _FIT = {"read": 3, "think": 3, "recall": 4}
 
+# The Read page is the one section with no writing regions, so `_lines_for` does not bound it and
+# nothing else did either: three proposals plus an unbounded in-progress list overflowed onto a
+# second page, taking the `#v(1fr)` status line with it and leaving p2 ~90% white. Three is what
+# fits underneath a full `_FIT["read"]` set; anything held back is counted on the page.
+_MAX_IN_PROGRESS = 3
+
 # The object types that represent an OPEN THREAD of his own — something he asked or proposed and
 # has not finished with. Concepts and projects are not threads: they are things that exist.
 _THREAD_TYPES = ("question", "idea")
@@ -531,7 +537,7 @@ def build_marked(
                 anchor="",
                 section=SECTION_MARKED,
                 kind="mark",
-                headline=(headline if len(headline) <= 300 else headline[:297] + "..."),
+                headline=_clip(headline, 300),
                 context=f"{title} — p.{row['pdf_page'] + 1}",
                 # His own words, printed back with the passage they belong to. This pairing is
                 # the whole point of Loop B: the objection and the claim it objects to.
@@ -1010,6 +1016,22 @@ def _lines_for(n_items: int, section: str = "think") -> int:
     return max(floor, min(_MAX_LINES, _LINE_BUDGET // n_items))
 
 
+def _clip(text: str, limit: int) -> str:
+    """Truncate on a word boundary and SAY SO with an ellipsis.
+
+    A bare slice produced "AlphaZeroBeta Deep Reinforcement Learning for Market-Neutr" and
+    "...during adverse events—the " on the live page: mid-word cuts that read as corruption
+    rather than as brevity. One helper so the three call sites cannot drift apart again.
+    """
+    text = " ".join((text or "").split())
+    if len(text) <= limit:
+        return text
+    cut = text[: limit - 1]
+    spaced = cut.rsplit(" ", 1)[0]
+    # Only prefer the word boundary when it does not throw away most of the budget.
+    return (spaced if len(spaced) >= limit * 0.6 else cut).rstrip(" ,;:—-") + "…"
+
+
 def _status_block(page: DailyPage) -> str:
     return f"*{page.status.render()}*"
 
@@ -1030,18 +1052,27 @@ def _render_read(page: DailyPage) -> str:
     st = page.reading_state
     if st.in_progress:
         lines += ["", "**In progress**", ""]
-        for item in st.in_progress:
+        # Truncating the reasons was the FIRST attempt at keeping this section on one page and it
+        # was not enough: with 3 proposals above it, five in-progress items still spilled the
+        # status line onto a second, near-empty page (measured 2026-08-02 — a real 5-page PDF).
+        # The list is a status glance, so the fix is to bound the ITEM COUNT and say what was
+        # held back; `_MAX_IN_PROGRESS` is what fits beneath a full Read section, not a taste.
+        shown = st.in_progress[:_MAX_IN_PROGRESS]
+        for item in shown:
             link = f" — {item.links_to}" if item.links_to else ""
             # `yours` marks material he chose himself. It is the interesting case: nothing in the
             # pipeline decided it was relevant, so the link is a finding rather than a restatement.
             tag = "  *yours*" if item.owner_added else ""
-            lines += [f"- **{item.title[:58]}**{link}{tag}"]
+            lines += [f"- **{_clip(item.title, 58)}**{link}{tag}"]
             # THE LINK IS THE POINT HERE, not the argument. This is a status list; printing the
             # full written reason for each of five in-progress items pushed the whole section onto
             # a second page. Only material he chose himself gets a line of it, because that is the
             # case he asked to see, and only a line.
             if item.why and item.owner_added:
-                lines += [f"  {item.why[:110]}"]
+                lines += [f"  {_clip(item.why, 110)}"]
+        if len(st.in_progress) > len(shown):
+            # Never silently truncate: a shorter list must not read as "this is everything".
+            lines += [f"- *…and {len(st.in_progress) - len(shown)} more in progress*"]
     if st.proposed:
         oldest = f", oldest {st.oldest_days} days" if st.oldest_days is not None else ""
         lines += ["", f"**On the shelf:** {st.proposed} waiting{oldest}"]

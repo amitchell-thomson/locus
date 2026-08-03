@@ -217,9 +217,18 @@ def test_a_re_read_below_the_rerank_bar_is_not_offered(conn, monkeypatch):
     )
 
 
-def test_a_re_read_holds_a_reserved_slot_rather_than_the_leftovers(conn, monkeypatch):
-    """"only if a slot is spare" meant NEVER: the shelf caps at 10 and the page shows 3, so
-    `build_rereads` was unreachable and 12 not-understood marks reached nothing."""
+def test_the_read_page_no_longer_offers_a_corpus_re_read(conn, monkeypatch):
+    """Superseded by the Ask page, not recalibrated.
+
+    The re-read slot answered a `not_understood` passage by offering a whole other document that
+    might explain it. `daily.reread_min_rerank` rejected 190 of 190 candidates with a best score
+    of 1.917 against a floor of 2.5 — it never once fired. Lowering the floor would only admit the
+    known-wrong match (*Sampling, aliasing, modulation* for a note about trading "signals").
+
+    The same signal now gets a direct answer on the Ask page, citing the proposition that supports
+    it. This asserts the slot is gone even when a re-read would score WELL, because the point is
+    supersession: the reading seat goes back to new material.
+    """
     import locus.retrieve.rerank as R
 
     for i in range(cd._FIT["read"]):
@@ -234,8 +243,8 @@ def test_a_re_read_holds_a_reserved_slot_rather_than_the_leftovers(conn, monkeyp
 
     page = cd.compose(conn, today=date(2026, 8, 2))
     shelves = [r.shelf for r in page.readings]
-    assert "re-read" in shelves, "a marked-as-not-understood passage must get a seat"
-    assert len(page.readings) == cd._FIT["read"], "and the page is still full"
+    assert "re-read" not in shelves, "the re-read slot was superseded by the Ask page"
+    assert len(page.readings) == cd._FIT["read"], "and new reading fills the page"
 
 
 def _target(conn, *, title, subject="regime-ml", why=None, proposal_id=None, marks=0,

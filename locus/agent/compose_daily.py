@@ -1420,21 +1420,24 @@ def compose(conn: sqlite3.Connection, *, today: date | None = None) -> DailyPage
     today = today or date.today()
     seen = _shown_keys(conn)
     page = DailyPage(page_date=today.isoformat())
-    # A re-read gets a RESERVED slot, not the leftovers. "Only if one is spare" sounded modest
-    # and meant never: the shelf caps at 10 proposals and the page shows 3, so `build_rereads`
-    # was unreachable in every state the system is normally in — 12 passages marked "I did not
-    # follow this", which §20 makes the ONLY thing that earns a corpus re-read, reached nothing.
-    # New material still leads; it just cannot take every seat.
-    rereads = build_rereads(conn, limit=_REREAD_SLOTS, seen=seen)
-    page.readings = build_readings(conn, limit=_FIT["read"] - len(rereads), seen=seen)
-    page.readings += rereads
-    # If the shelf could not fill its share, let a second re-read use the gap rather than
-    # printing white space.
-    if len(page.readings) < _FIT["read"]:
-        page.readings += build_rereads(
-            conn, limit=_FIT["read"] - len(page.readings),
-            seen=seen | {r.item_key for r in rereads},
-        )
+    # THE RE-READ SLOT IS GONE — superseded, not recalibrated. Its job was to answer a passage he
+    # marked `not_understood` by offering a whole other document that might explain it. The gate
+    # log settled it: `daily.reread_min_rerank` rejected 190 of 190 candidates, best score ever
+    # 1.917 against a floor of 2.5. It had never once fired.
+    #
+    # Lowering the floor is the obvious fix and the wrong one: 1.917 IS the known-wrong match
+    # (*Sampling, aliasing, modulation* offered for a note about trading "signals"), so a lower
+    # bar buys only the pun that discredited this section in the first place.
+    #
+    # What changed is that the same signal now has a better answer. The Ask page takes the
+    # question he actually wrote, grounds it in the line beside it, and prints a direct answer
+    # citing the proposition that supports it — mark 12's cites *Advanced Portfolio Management* at
+    # support 4.99. Handing him another document to go and read is strictly worse than answering
+    # the question, and it was spending a reading slot he values.
+    #
+    # `build_rereads`/`_explains` are kept and still used by `learn/reread.py`; nothing on the
+    # page calls them.
+    page.readings = build_readings(conn, limit=_FIT["read"], seen=seen)
     page.reading_state = build_reading_state(conn)
     page.threads = build_threads(conn, seen=seen)
     page.recalls = build_recalls(conn, today=today, seen=seen)

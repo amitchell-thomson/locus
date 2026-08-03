@@ -1,0 +1,169 @@
+# Locus device migration plan — generated 2026-08-02
+#
+# Every line is one document and the folder it will move to. EDIT `dest` freely.
+# `review = true` means the rules could not decide; set it to false once you have.
+# `locus device-migrate --apply` refuses while any `review = true` line remains.
+#
+# Delete a block entirely to leave that document exactly where it is.
+
+[[move]]
+src    = "/Locus/Reading/In-Progress/2026-07-31 AI Trading Evaluating Large Language Models for Technical Market Analy"
+dest   = "/Reading/In-Progress"
+reason = "reading tree moves out from under /Locus"
+
+[[move]]
+src    = "/Locus/Reading/In-Progress/2026-07-31 AlphaZeroBeta Deep Reinforcement Learning for Market-Neutral Portfolio"
+dest   = "/Reading/In-Progress"
+reason = "reading tree moves out from under /Locus"
+
+[[move]]
+src    = "/Locus/Reading/In-Progress/2026-07-31 Can Large Language Models Execute Parent Orders"
+dest   = "/Reading/In-Progress"
+reason = "reading tree moves out from under /Locus"
+
+[[move]]
+src    = "/Locus/Reading/In-Progress/2026-07-31 Specification Testing for Dyadic Regression Models"
+dest   = "/Reading/In-Progress"
+reason = "reading tree moves out from under /Locus"
+
+[[move]]
+src    = "/Locus/Reading/Proposed/2026-07-31 AIM Amortized Inference for Multistate Transition Models"
+dest   = "/Reading/Proposed"
+reason = "reading tree moves out from under /Locus"
+
+[[move]]
+src    = "/Locus/Reading/Proposed/2026-07-31 Forecasting and Explaining the Phillips Curve A SHAP-Based Comparison"
+dest   = "/Reading/Proposed"
+reason = "reading tree moves out from under /Locus"
+
+[[move]]
+src    = "/Locus/Reading/Proposed/2026-07-31 LiFT-MPC Language-in-the-Loop Feedback Tuning of Cost Previews for MPC"
+dest   = "/Reading/Proposed"
+reason = "reading tree moves out from under /Locus"
+
+[[move]]
+src    = "/Locus/Reading/Proposed/2026-07-31 Numerical Spectrum Linking Identification of Governing PDE via Koopman"
+dest   = "/Reading/Proposed"
+reason = "reading tree moves out from under /Locus"
+
+[[move]]
+src    = "/Locus/Reading/Proposed/2026-07-31 Portfolio Optimization and Tail-Risk Analytics of Actively Managed ETF"
+dest   = "/Reading/Proposed"
+reason = "reading tree moves out from under /Locus"
+
+[[move]]
+src    = "/Locus/Reading/Proposed/2026-07-31 The Quarter-Hour Effect Periodic Algorithmic Trading and Return Predic"
+dest   = "/Reading/Proposed"
+reason = "reading tree moves out from under /Locus"
+
+[[move]]
+src    = "/Locus/daily-2026-07-30"
+dest   = "/Daily/2026-07"
+reason = "daily page -> monthly archive"
+
+[[move]]
+src    = "/Locus/daily-2026-07-31"
+dest   = "/Daily/2026-07"
+reason = "daily page -> monthly archive"
+
+[[move]]
+src    = "/Locus/daily-2026-08-01"
+dest   = "/Daily/2026-08"
+reason = "daily page -> monthly archive"
+
+[[move]]
+src    = "/Locus/daily-2026-08-02"
+dest   = "/Daily/2026-08"
+reason = "daily page -> monthly archive"
+
+[[move]]
+src    = "/Locus/pour-runbook"
+dest   = "/Notes/projects"
+reason = "delivered project doc"
+
+[[move]]
+src    = "/admin/Alec Mitchell-Thomson casual-letter-of-engagement June 2026 EUROP - To Sign.pdf"
+dest   = "/Admin"
+reason = "paperwork, excluded from ingest"
+
+[[move]]
+src    = "/admin/G-Research - Mutual NDA - Individual (e-version) - TEMPLATE locked (execution copy)"
+dest   = "/Admin"
+reason = "paperwork, excluded from ingest"
+
+[[move]]
+src    = "/brevan_howard/Brian EM Rates/Dashboard"
+dest   = "/Notes/brevan_howard/Brian EM Rates"
+reason = "topic folder -> /Notes (category: note)"
+
+[[move]]
+src    = "/brevan_howard/Brian EM Rates/EM Ideas"
+dest   = "/Notes/brevan_howard/Brian EM Rates"
+reason = "topic folder -> /Notes (category: note)"
+
+[[move]]
+src    = "/brevan_howard/Brian EM Rates/EM Rates Trading"
+dest   = "/Notes/brevan_howard/Brian EM Rates"
+reason = "topic folder -> /Notes (category: note)"
+
+[[move]]
+src    = "/brevan_howard/Brian EM Rates/Swaps Momentum Strat"
+dest   = "/Notes/brevan_howard/Brian EM Rates"
+reason = "topic folder -> /Notes (category: note)"
+
+[[move]]
+src    = "/brevan_howard/Jargon Sheet"
+dest   = "/Notes/brevan_howard"
+reason = "topic folder -> /Notes (category: note)"
+
+[[move]]
+src    = "/brevan_howard/Learn List"
+dest   = "/Notes/brevan_howard"
+reason = "topic folder -> /Notes (category: note)"
+
+[[move]]
+src    = "/brevan_howard/Rates Foundations"
+dest   = "/Notes/brevan_howard"
+reason = "topic folder -> /Notes (category: note)"
+
+[[move]]
+src    = "/brevan_howard/Robert Training"
+dest   = "/Notes/brevan_howard"
+reason = "topic folder -> /Notes (category: note)"
+
+[[move]]
+src    = "/brevan_howard/Speaker Sessions"
+dest   = "/Notes/brevan_howard"
+reason = "topic folder -> /Notes (category: note)"
+
+[[move]]
+src    = "/brevan_howard/Swaps"
+dest   = "/Notes/brevan_howard"
+reason = "topic folder -> /Notes (category: note)"
+
+[[move]]
+src    = "/projects/oqts/OXDAQ"
+dest   = "/Notes/projects/oqts"
+reason = "topic folder -> /Notes (category: project)"
+
+[[move]]
+src    = "/quantum_ml/optimisation"
+dest   = "/Notes/quantum_ml"
+reason = "topic folder -> /Notes (category: note)"
+
+[[move]]
+src    = "/reading_list/Advanced Portfolio Management"
+dest   = "/Reading/In-Progress"
+reason = "MIXED FOLDER: books belong here, but a handwritten notebook belongs in /Notes/<topic> — set `dest` per item"
+review = false
+
+[[move]]
+src    = "/reading_list/Recommendations"
+dest   = "/Notes/rough_notes"
+reason = "MIXED FOLDER: books belong here, but a handwritten notebook belongs in /Notes/<topic> — set `dest` per item"
+review = false
+
+[[move]]
+src    = "/rough_notes/Jane Steet Social"
+dest   = "/Notes/rough_notes"
+reason = "topic folder -> /Notes (category: note)"

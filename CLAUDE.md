@@ -366,14 +366,15 @@ locus/
 │   ├── status.py         # `locus status` health summary (counts, alias staleness, backups)
 │   ├── health.py         # did the nightly work happen, and what did it cost
 │   ├── config.py         # typed config; ANTHROPIC_API_KEY via env/.env only
-│   ├── db/               # connection (sqlite-vec load), migrate.py, migrations/ (0001–0026)
+│   ├── db/               # connection (sqlite-vec load), migrate.py, migrations/ (0001–0027)
 │   ├── extract/          # base, pdf, mathocr, figures_detect, docx, pptx, textdoc, code
 │   ├── ingest/           # llm (validated I/O + repair + per-pass routing), summarize, propositions,
 │   │                     #   entities, concepts (code domain concepts), synthesis, gaps, chunk, embed, figures, llamacpp
 │   ├── ingest_pipeline.py · ingest_lock.py · watcher.py · sync.py · notes_sync.py · repo_sync.py
 │   ├── retrieve/         # search (all arms), rerank+select, expand, assemble, pipeline,
 │   │                     #   figure_images · threads (his own threads, joined on)
-│   ├── link/             # aliases (tiers+guards), adjudicate (Claude), related
+│   ├── link/             # aliases (tiers+guards), adjudicate (Claude), related · threads ·
+│   │                     #   projects (which project a piece of his writing is about, §24)
 │   ├── export/           # obsidian.py — read-only vault projection (§13, joins-only)
 │   │  ── agent layer (§15) ──
 │   ├── agent/            # claude.py (the claude -p runner) · journal.py (agent_runs) ·
@@ -402,7 +403,7 @@ locus/
 │   └── mcp_server.py
 ├── scripts/              # one-off, kept: backfills/ benchmarks/ reingest/ (+ scripts/README.md)
 ├── eval-artifacts/       # benchmark results + reports (mathocr, figures)
-├── tests/                # 596 model-free-by-default tests (tests/conftest.py pins pass_routing local)
+├── tests/                # 990 model-free-by-default tests (tests/conftest.py pins pass_routing local)
 └── vault/                # incoming/ (watched, category folders) · raw/ · notes/ · backups/ · locus.db
 ```
 
@@ -437,6 +438,8 @@ stable id-suffixed slugs + sorted iteration). Manual-only, like `link`/`retitle`
 - All tunables in `config.toml` (`[ollama] [paths] [embed] [retrieve] [generation] [mcp]
   [mathocr] [figures] [repos] [alias] [retitle] [concepts] [obsidian] [reading] [daily] [agent]
   [capture] [ingest] [structure]`); optional sections default cleanly.
+  `[structure].belief_source_categories/_types` and `[capture].idea_project_fit_floor` decide
+  what counts as HIS writing and when an idea links to a project (§24) — change them together.
 - Operational rules: ONE ingest process at a time (flock-enforced); math suite after any
   VRAM-choreography change; `locus link` after ingest batches; quarantines are bugs to
   triage, not casualties; eval labels grow with the corpus.
@@ -589,6 +592,83 @@ first) · **the daily page and the reading list do not know about each other** (
 zero references to `reading_proposals`, so read-next offers corpus re-reads while real papers sit
 on the tablet) · the system reports nothing about its own activity or failures (locus-maintain
 failed six consecutive nights unnoticed, 2026-08-01).
+
+## 24. Readiness audit — the paths that looked wired and weren't (2026-08-03)
+
+An owner-chair audit before benching development: judged only by *when I write something, does it
+come back, and is the page good?* Every finding came from real output — the live DB, a rendered
+PDF looked at as an image, `rmapi` against the device — because the failure class here has always
+been **a path that looks wired and isn't, failing silently, with tests passing either side**.
+Eight such paths were found and closed.
+
+- **The promotion loop fed itself.** `promote` -> `vault/notes/threads/` -> `notes_sync` ->
+  `structure` proposed the thread AGAIN. Live: obj 79, answered and ARCHIVED, came back as obj 85
+  `active` — a resolved question returned as an open one, and six more were queued for that
+  night. `_is_promoted_thread` closes it (keyed on `promote.THREADS_SUBDIR`, returns before the
+  model call, $0.00). `_is_generated` did not and must not catch this: a thread is HIS words.
+- **The daily page rendered FIVE pages**, p2 ~90% white, on its first-ever run with the §18 code
+  (the rewrite landed 14:48; the last page was built 05:32 that morning). Read is the one section
+  `_lines_for` does not bound. `_MAX_IN_PROGRESS` bounds it, and the existing overflow test now
+  carries live-sized content — it had passed throughout because its fixture used short reasons
+  and an EMPTY in-progress list, the one shape that cannot fail.
+- **Idea->project links were mostly wrong**: 3 of 4 pointed at a project the idea was not about,
+  and retrieval stated it to Claude as fact (`part of: OxAI`, an exam-question generator, for a
+  note about alternative data). Two causes: `discovery_profiles` holds `gap` rows as well as
+  `project` rows, so a CONCEPT label usually won the search and the caller's title lookup then
+  found nothing and dropped the link silently — which is why every question written on the daily
+  page had no project at all; and a cosine over one handwritten line is not evidence (a leetcode
+  question scored 0.830 against "AIS capture"). NEW `link/projects.py`: deterministic tier first
+  (every distinctive token of the title present — requiring ALL of them stops `Swaps Momentum
+  Strategy` firing on "strategy"), then `best_project` above `[capture].idea_project_fit_floor`
+  (0.70; the one correct cosine link scored 0.756, every wrong one 0.637-0.673). A runner-up
+  MARGIN test was built, measured, and REJECTED: it does not separate them. Now live on the page:
+  `question · regime-ml · tanker-flow`.
+- **`archived` means two opposite things** — a cross archives an object and so does a tick that
+  resolves a question — so filtering thread linking and thread context on `status` buried both.
+  `state.dropped_object_ids` reads the judgement he actually recorded, which also gives
+  `acceptance_log(surface='object')` its first reader (94 rows, none).
+- **The `not_understood` signal reached nothing.** `build_rereads` ran only "if a slot is spare",
+  and the shelf caps at 10 against 3 slots, so never. It now holds a reserved seat — and that
+  exposed the seat being worthless: `_explains` took the argmax of RAW similarity (everything
+  scores 0.84-0.98), offering *Sampling, aliasing, modulation* for a note about trading
+  "signals". It reranks now, against `_REREAD_MIN_RERANK` 2.5 (genuine 4.07-4.82, best wrong
+  1.917); 8 of 10 marks correctly produce NOTHING, which is the honest answer.
+- **A window is not a ledger** (migration **0027**, `documents.structured_at`). `--ingested-since
+  "2 days ago"` lost anything arriving while `locus-maintain` was broken — six consecutive
+  nights — permanently and unnameably. Live casualty: doc 482, his handwritten `Optimisation`
+  note, zero objects, and a dry run proved it had two concepts to give. Stamped even when a
+  document proposes nothing (else the empty ones re-bill nightly), NOT stamped on a model
+  failure. The unit now runs `--unstructured --limit 20`, HIS material first.
+- **Owner-authored is about PROVENANCE, not category** (his instruction: project write-ups are
+  canonical, "arguably the most important documents in the project", whoever typed them).
+  Everything he writes lands under `vault/notes/`, whatever category the DEVICE FOLDER assigned
+  (`Notes/engineering` -> coursework), so category-keying made his own handwriting ineligible for
+  an idea because of which folder he wrote it in. Path decides first; category +
+  `belief_source_types` is the fallback, and both halves matter because `category='project'` also
+  holds two Optibook VENDOR manuals. **This surfaced a real dependency**: `learn/gaps.py` reused
+  the same setting for a different question, and the explanation gap ("a concept his project uses
+  that he has never explained") would have answered itself once project docs became his — the
+  object's OWN documents are now excluded, which is what the question always meant.
+- **The page was read back as his handwriting.** Vision transcribes ink AND the printed text under
+  it: region O2 returned `"raised 2026-07-30"`, a line Locus printed, which became obj 79's
+  development and resolution, was promoted, and was ingested as his words — invariant 5 failing in
+  the exact direction it exists to prevent. A transcription ENTIRELY contained in the page's own
+  markdown is now dropped. Also: `HAS NEVER RUN` had no grace at all (a healthy weekly job was
+  shouted about in capitals and would have been for seven mornings), and promoted notes printed
+  bare object ids ("Raised against: ... 15, 95, 80") into the corpus.
+
+**Verified good and left alone:** retrieval (his own thread returns at rank 1, carrying `part of:`
+and `also touches`), mark geometry + intent (26 marks, 24 classified, sensible), ink transcription
+(16 of 17 eligible; the stroke distribution confirms the threshold loses nothing), `daily_shown`,
+backup/restore, `locus status`. Quarantine is benign (8 files: `uv.lock`, `pyproject.toml`, PNGs).
+
+**Still open:** Loop C (conversation capture) has produced **0 documents ever** — wired but never
+exercised; `locus decide` opens empty and its duplicate detector would not have caught the one
+real duplicate (79/85, different titles); two blessing surfaces still exist (`locus decide` and
+`locus objects --bless`); the device root still carries case-duplicate legacy folders (`/admin`
+beside `/Admin`, `/reading_list` beside `/Reading`); 25 of 32 recall items still lack a written
+question (fills at 8/night); the Think page offers one mark/thread/connection per day against a
+26-mark backlog.
 
 ## 23. Eval re-baseline + a PROVEN restore (2026-08-02)
 

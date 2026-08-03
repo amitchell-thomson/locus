@@ -662,13 +662,39 @@ and `also touches`), mark geometry + intent (26 marks, 24 classified, sensible),
 (16 of 17 eligible; the stroke distribution confirms the threshold loses nothing), `daily_shown`,
 backup/restore, `locus status`. Quarantine is benign (8 files: `uv.lock`, `pyproject.toml`, PNGs).
 
-**Still open:** Loop C (conversation capture) has produced **0 documents ever** — wired but never
-exercised; `locus decide` opens empty and its duplicate detector would not have caught the one
-real duplicate (79/85, different titles); two blessing surfaces still exist (`locus decide` and
-`locus objects --bless`); the device root still carries case-duplicate legacy folders (`/admin`
-beside `/Admin`, `/reading_list` beside `/Reading`); 25 of 32 recall items still lack a written
-question (fills at 8/night); the Think page offers one mark/thread/connection per day against a
-26-mark backlog.
+**The open items were then closed (same day).**
+
+- **One blessing surface.** `locus objects --bless/--archive` removed; `locus decide` is the only
+  place a status changes. `locus objects` is read-only and now prints the provenance keys
+  (`from_mark`, `from_anchor`, `promoted_path`) that were written on every object and read nowhere.
+- **The Think page fills.** Equal share per subsection then round-robin refill, so a day with no
+  connections is no longer a two-thirds page; and marks are no longer capped ONE PER DOCUMENT — a
+  hard rule that, since every mark is on the same book, capped the section at one mark a day
+  forever. Measured: **3 items is what fits** (4 renders a fifth page — `_MIN_LINES["think"]` is 3
+  and 4x3 exceeds the 9-line budget). Raising it means accepting 2 writing lines per item.
+- **One definition of "his writing"** — `state.owner_authored_sql`, the query form of
+  `propose._is_owner_authored`. The daily page's connection source and re-read ranking were still
+  on `category='note'`, the same defect the proposer's gate had, in two more places. A test
+  asserts the two forms agree on every document.
+- **The flywheel has a reader.** `channel_stats` grouped by `why_kind`, which is `'discovery'` on
+  every row ever produced — one bucket, so its per-channel breakdown could never appear. Now keyed
+  on `evidence_key`, the same string `rank._cap_per_profile` uses, and `rank.subject_prior` folds
+  the kept-rate into channel order gated on 4 resolved judgements (inert today, self-starting).
+  The `reading` surface now stops a declined document being re-offered; the `recall` rows were
+  DELETED (the SM-2 grade already records the attempt, and they were always `kept`).
+- **Mark 25 recovered** — the 1 of 17 whose ink was never read: "interesting systematic portfolio
+  construction". Its intent had been guessed `not_understood` from no text and was permanent,
+  because `pending_marks` never revisits a mark that has one. Transcription now clears a
+  MODEL-set intent when it writes a note; re-inferred live as `important`.
+- **Device tree cleaned** to `/Daily /Reading /Notes /Admin` (+ the device's own `/trash`).
+  Migration **0028** drops `tags`/`doc_tags` (no code either side, 0 rows).
+
+**Still open, deliberately:** Loop C (conversation capture) has produced 0 documents — the owner
+confirmed he simply has not used it yet, not a defect. `/admin` survives because rmapi case-folds
+it onto `/Admin` (which holds his NDA), so it cannot be addressed unambiguously by path;
+`/brevan_howard` survives because it holds one file named `Learn List/ Questions` and rmapi parses
+the `/` as a path separator — both need a rename on the device first. 25 of 32 recall items lack a
+written question (fills at 8/night, self-clearing).
 
 ## 23. Eval re-baseline + a PROVEN restore (2026-08-02)
 

@@ -63,8 +63,11 @@ from locus.link.related import related_documents
 # reading slot, while concept-based recall questions and written connection prompts are much
 # longer than the one-liners they replaced. Recall's writing regions went back to 2 lines, which
 # buys a fourth question and is the right trade because a concept answer is a sentence.
-# Verified: 5 readings, 5 recalls, or 3-line recall regions each push a fifth page.
-_FIT = {"read": 4, "think": 4, "recall": 4}
+# Verified: 5 readings, 5 recalls, or 3-line recall regions each push a fifth page. Think came
+# back to 3 when CONNECT replaced a one-line item with ~300 characters of written prose — two of
+# those are the tallest thing the page can carry, and with CHECK THIS usually empty the refill
+# hands its seat straight to a second connection.
+_FIT = {"read": 4, "think": 3, "recall": 4}
 
 # The Read page is the one section with no writing regions, so `_lines_for` does not bound it and
 # nothing else did either: three proposals plus an unbounded in-progress list overflowed onto a

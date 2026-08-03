@@ -381,7 +381,8 @@ def concept_candidates(conn, *, limit: int = 40) -> list[tuple[str, int]]:
             LEFT JOIN entity_aliases a
               ON a.variant_name = e.name AND a.variant_type = e.type
         )
-        SELECT canon.cn AS name, COUNT(DISTINCT p.id) AS props
+        SELECT canon.cn AS name, COUNT(DISTINCT p.id) AS props,
+               COUNT(DISTINCT canon.doc_id) AS docs
         FROM canon
         JOIN documents d ON d.id = canon.doc_id
         JOIN propositions p ON p.section_id = canon.section_id
@@ -390,12 +391,25 @@ def concept_candidates(conn, *, limit: int = 40) -> list[tuple[str, int]]:
           AND d.source_type != 'code'
           AND d.category IN ('paper','note','coursework','career')
         GROUP BY canon.cn
-        HAVING props >= ?
+        -- AT LEAST TWO DOCUMENTS. Rarity alone is single-document vocabulary — the first run
+        -- offered "AlphaZeroBeta" (a paper's name) and six candlestick patterns from one book.
+        -- §21 encodes the same rule for thread concepts: "a name in one document is that
+        -- document's vocabulary". Two documents means someone corroborated it.
+        HAVING props >= ? AND docs >= 2
         -- CURRENT READING FIRST. Ranked on proposition count alone the list is engineering
         -- coursework (transfer function, Laplace transform, Nyquist plot), because that is 144
         -- of 218 documents — true, and not what he is revising for. A concept attested in a
         -- paper or a note is one he is working with now.
+        --
+        -- THEN RARE BEFORE COMMON. Proposition count is a POPULARITY measure and the most popular
+        -- canonicals are the most elementary ("volatility", "Sharpe ratio", "transfer function")
+        -- — exactly the questions he called "slightly too simple". A concept spanning two
+        -- documents ("idiosyncratic volatility", "factor covariance estimator") is the specific
+        -- one; §18 learned the same lesson for read-next, where ranking by raw count handed
+        -- every slot to coursework. The `props` floor already guarantees answerability, so
+        -- rarity can drive the order without producing a question nothing can answer.
         ORDER BY MAX(CASE WHEN d.category IN ('paper','note') THEN 1 ELSE 0 END) DESC,
+                 docs ASC,
                  props DESC
         LIMIT ?
         """,
@@ -430,20 +444,34 @@ def enrol_concepts(conn, *, max_new: int = 8, today: date | None = None) -> list
     return added
 
 
-_CONCEPT_PROMPT = """You are writing ONE spaced-repetition question for someone revising for quant
-interviews. The subject is the concept below. Here is what his own corpus says about it, which is
-the reference answer he will be shown:
+_CONCEPT_PROMPT = """You are writing ONE spaced-repetition question for a strong quant candidate
+preparing for buy-side interviews. He already knows the textbook definitions. The subject is the
+concept below; here is what his own corpus says about it, which is the reference answer:
 
 CONCEPT: {name}
 WHAT HIS MATERIAL SAYS: {evidence}
 
-Write a question that tests whether he UNDERSTANDS the concept — how it works, how it differs from
-a neighbouring one, or when it applies. Good questions look like "How is covariance different from
-correlation?", "What is covered interest rate parity?", "How does a hidden Markov model work?".
+Write a question that MAKES HIM THINK. Aim at one of these, whichever the material supports:
+  - a mechanism ("why does X produce Y rather than Z?")
+  - a failure mode or breaking assumption ("when does X stop being valid, and what happens?")
+  - a trade-off between two defensible choices
+  - a consequence that is not obvious from the definition
+  - a quantitative relationship worth deriving or reasoning about
 
-Do NOT ask about any document, project, dataset or result. Do NOT ask him to recall a sentence.
-Do not mention "your material" or "the text". One sentence, ending in a question mark. Reply with
-the question only."""
+Do NOT ask "what is X" or "how does X differ from Y" — those are the definitional questions he
+already knows. Assume the definition; interrogate the edge, the assumption or the consequence. It
+should be answerable in a few sentences by someone who genuinely understands it, and awkward for
+someone who has only read about it.
+
+IT MUST STAND ALONE. The material above is one study's treatment of the concept and will contain
+its particular figures, tickers, model names and sample windows. NONE of those may appear in the
+question: no percentages or multiples from it, no named model or strategy, no "with only 30 days
+of data". Someone who has never read that study must be able to answer from understanding the
+concept alone. Use the material to find the interesting EDGE, then ask about the edge in general
+terms.
+
+Do NOT ask about any document, project, dataset or result, and do not mention "your material" or
+"the text". One or two sentences, ending in a question mark. Reply with the question only."""
 
 
 def fill_concept_questions(conn, *, limit: int = 8, runner=None, model: str | None = None) -> int:

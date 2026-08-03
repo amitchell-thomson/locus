@@ -591,6 +591,192 @@ def _source_uri(conn: sqlite3.Connection, doc_id: int) -> str:
     return (row["source_uri"] if row else "") or str(doc_id)
 
 
+# --- connection candidates ---------------------------------------------------------------------
+#
+# CROSS-DOMAIN TRANSFER, WHICH HAD NEVER ONCE HAPPENED (measured 2026-08-03). §16 justifies
+# keeping 144 engineering-coursework documents on exactly one claim: that the maths he was taught
+# bridges into the quant work he does now ("eigenvectors in factor models vs modal analysis").
+# The substrate agrees — 81 coursework<->other canonicals survive `non_topical_names`, among them
+# `eigenvalue problem` (15 docs), `Frobenius norm`, `Positive semidefinite matrix`, `Bayes'
+# theorem`, `central limit theorem`, `Poisson process`. Yet every connection ever written and
+# every thread link ever made is quant<->quant.
+#
+# The cause was not ranking and not coursework's volume: it is that the ONLY source of connection
+# candidates was `_recent_capture` — his twelve most recent handwritten notes. Those are short
+# ("does this suggest we should we macro regime predictor..."), name few entities, and name no
+# maths at all, so a bridge could never appear no matter how it ranked. The bridges hang off his
+# PAPERS and PROJECTS, which nothing walked. Adding that second source is the whole fix.
+#
+# One pair-finder, used by the page AND by the overnight writer (`cli._write_connection_notes`),
+# because a note written for a pair the page never surfaces is spend with no reader, and a pair
+# surfaced with no note is silently dropped.
+
+# Categories whose documents anchor a bridge: the material he is working with NOW.
+_BRIDGE_SOURCE_CATEGORIES = ("paper", "project")
+
+# The far side of a bridge — material he has already studied.
+_BRIDGE_TARGET_CATEGORY = "coursework"
+
+
+@dataclass(frozen=True)
+class ConnectionCandidate:
+    """One (his material, other document) pair with the concept they share."""
+
+    src_id: int
+    src_uri: str
+    src_title: str
+    src_date: str | None
+    other_id: int
+    other_uri: str
+    other_title: str
+    shared: str
+    bridge: bool                 # True when the far side is coursework he has already studied
+
+
+def _teachable_canonicals(conn: sqlite3.Connection) -> set[str]:
+    """Canonicals typed as an IDEA — the same allow-list the recall page asks questions from.
+
+    Reused rather than re-derived: a thing too generic to ask him to explain is too generic to
+    build a connection on. It is what stops an AUTHOR becoming the shared "concept" — the first
+    live run paired his reading notes with the book they are about over `A. Denev`, and the model
+    dutifully replied "I don't see A. Denev mentioned explicitly ... could you clarify".
+    """
+    marks = ",".join("?" * len(TEACHABLE_TYPES))
+    return {
+        r["n"].lower()
+        for r in conn.execute(
+            f"SELECT DISTINCT canonical_name AS n FROM entity_aliases "
+            f"WHERE canonical_type IN ({marks})",
+            TEACHABLE_TYPES,
+        )
+    }
+
+
+def _substantive_shared(names, generic: set[str], teachable: set[str] | None = None) -> str | None:
+    """The first shared name specific enough to build a prompt on, or None.
+
+    A connection is only worth his attention if the thing shared is an IDEA. Without this bar the
+    bridge source offers `Optibook Python Reference` <-> `Introduction to Computer Engineering`
+    over `while loop`, and a project <-> `MIPS Architecture` over `CPU` — both true, both
+    worthless. Multi-word is the cheap discriminator that survived measurement: the genuine
+    bridges are compound terms (`eigenvalue problem`, `central limit theorem`, `Positive
+    semidefinite matrix`) while the junk is single common nouns.
+
+    KNOWN RESIDUAL: `while loop` passes every bar here — it is compound, typed `concept`, and
+    attested in prose — and produced a real but worthless prompt about iterating Optibook market
+    data. Nothing available separates a programming construct from a mathematical one at the
+    concept level, so it is left rather than papered over with a name blocklist; its true cause is
+    that `Optibook Python Reference` is a VENDOR manual filed under `category='project'`, a data
+    wart CLAUDE.md §24 already records.
+    """
+    for name in names or ():
+        n = (name or "").strip()
+        if len(n) < _MIN_TEACHABLE_CHARS or " " not in n:
+            continue
+        if n.lower() in generic:
+            continue
+        if teachable is not None and n.lower() not in teachable:
+            continue
+        return n
+    return None
+
+
+def _bridge_sources(conn: sqlite3.Connection, *, limit: int) -> list[sqlite3.Row]:
+    """His papers and projects, newest first — the anchors a coursework bridge hangs off.
+
+    The limit is deliberately generous enough to cover ALL of them (34 at the time of writing,
+    against a default of 60): a bridge is rare — measured, 14 of 34 papers/projects have one — so
+    a source cap tuned like `_recent_capture`'s twelve silently returns almost nothing. It bounds
+    the walk rather than selecting; the page's own `limit` decides what he actually sees.
+    """
+    marks = ",".join("?" * len(_BRIDGE_SOURCE_CATEGORIES))
+    return list(
+        conn.execute(
+            f"SELECT id, title, source_uri, source_date FROM documents "
+            f"WHERE category IN ({marks}) AND source_type != 'code' "
+            f"ORDER BY COALESCE(source_date, '') DESC, id DESC LIMIT ?",
+            (*_BRIDGE_SOURCE_CATEGORIES, limit),
+        )
+    )
+
+
+def connection_candidates(
+    conn: sqlite3.Connection, *, per_source: int = 5, capture_limit: int = 12,
+    bridge_limit: int = 60,
+) -> list[ConnectionCandidate]:
+    """Every connection the page would offer, capture and bridges INTERLEAVED.
+
+    Capture leads — a connection to what he wrote this week is more live than one to a lecture
+    from two years ago — but strict precedence would have buried the bridges completely: Connect
+    fits about one item a day, and with three capture candidates ahead of them the first bridge
+    would not have appeared for four days. `daily_shown` would get there eventually; a capability
+    that took until Thursday to show itself is not one that has been delivered.
+    """
+    from locus.link.related import non_topical_names
+
+    try:
+        generic = non_topical_names(conn)
+        teachable = _teachable_canonicals(conn)
+    except sqlite3.OperationalError:                 # no alias substrate yet
+        generic, teachable = set(), set()
+
+    own_clause, own_params = state.owner_authored_sql("d")
+    seen_pairs: set[tuple[int, int]] = set()
+    captures: list[ConnectionCandidate] = []
+    bridges: list[ConnectionCandidate] = []
+
+    def collect(sources, *, bridge: bool) -> None:
+        out = bridges if bridge else captures
+        for src in sources:
+            for rel in related_documents(conn, src["id"], top_n=per_source):
+                row = conn.execute(
+                    f"SELECT category, ({own_clause}) AS own FROM documents d WHERE d.id=?",
+                    (*own_params, rel.doc_id),
+                ).fetchone()
+                if row is None:
+                    continue
+                if bridge:
+                    # A bridge is specifically into material he already studied. Without this the
+                    # source set would just re-offer paper<->paper links the capture pass covers.
+                    if row["category"] != _BRIDGE_TARGET_CATEGORY:
+                        continue
+                elif row["own"]:
+                    # A sibling note of his own — true, but not news to the person who wrote both.
+                    continue
+                shared = _substantive_shared(rel.shared_names, generic, teachable)
+                if not shared:
+                    continue
+                pair = (min(src["id"], rel.doc_id), max(src["id"], rel.doc_id))
+                if pair in seen_pairs:
+                    continue
+                seen_pairs.add(pair)
+                out.append(
+                    ConnectionCandidate(
+                        src_id=src["id"],
+                        src_uri=src["source_uri"],
+                        src_title=src["title"] or "",
+                        src_date=src["source_date"],
+                        other_id=rel.doc_id,
+                        other_uri=_source_uri(conn, rel.doc_id),
+                        other_title=rel.title or "",
+                        shared=shared,
+                        bridge=bridge,
+                    )
+                )
+                break            # one per source, so several sources are represented, not one
+
+    collect(_recent_capture(conn, limit=capture_limit), bridge=False)
+    collect(_bridge_sources(conn, limit=bridge_limit), bridge=True)
+
+    out: list[ConnectionCandidate] = []
+    for i in range(max(len(captures), len(bridges))):
+        if i < len(captures):
+            out.append(captures[i])
+        if i < len(bridges):
+            out.append(bridges[i])
+    return out
+
+
 def _distinct_documents_first(rows: list) -> list:
     """Re-order marks so one per document comes first, then the rest — variety without a cap.
 
@@ -808,7 +994,10 @@ def _thread_context(conn: sqlite3.Connection, obj) -> str:
 def build_connections(
     conn: sqlite3.Connection, *, limit: int = 2, seen: set[str] | None = None
 ) -> list[ThreadItem]:
-    """Cross-corpus links out of recent capture — a pure `related_documents` join.
+    """Cross-corpus links out of recent capture AND out of his papers/projects.
+
+    Pair-finding lives in `connection_candidates` so the overnight writer offers prose for exactly
+    the pairs this surfaces; see its comment for why the bridge source exists at all.
 
     Only links that LEAVE the note cluster are surfaced. The captured notes formed their own
     mutual cluster (shared=10 among themselves, measured 2026-07-29), so a nearest-neighbour query
@@ -826,48 +1015,37 @@ def build_connections(
 
     seen = seen if seen is not None else set()
     out: list[ThreadItem] = []
-    seen_pairs: set[tuple[int, int]] = set()
-    for src in _recent_capture(conn, limit=12):
+    for cand in connection_candidates(conn):
         if len(out) >= limit:
             break
-        for rel in related_documents(conn, src["id"], top_n=5):
-            sib_clause, sib_params = state.owner_authored_sql("d")
-            cat = conn.execute(
-                f"SELECT ({sib_clause}) AS own FROM documents d WHERE d.id=?",
-                (*sib_params, rel.doc_id),
-            ).fetchone()
-            if cat is None or cat["own"]:
-                continue  # sibling note of his own — see docstring
-            if not rel.shared_names:
-                continue  # nothing nameable to say about it
-            pair = (min(src["id"], rel.doc_id), max(src["id"], rel.doc_id))
-            if pair in seen_pairs:
-                continue
-            seen_pairs.add(pair)
-            other_uri = _source_uri(conn, rel.doc_id)
-            item_key = f"conn:{src['source_uri']}|{other_uri}"
-            if item_key in seen:
-                continue
-            shared = rel.shared_names[0]
-            prose = stored_note(
-                conn, src_uri=src["source_uri"], other_uri=other_uri, shared=shared
+        item_key = f"conn:{cand.src_uri}|{cand.other_uri}"
+        if item_key in seen:
+            continue
+        prose = stored_note(
+            conn, src_uri=cand.src_uri, other_uri=cand.other_uri, shared=cand.shared
+        )
+        if not prose:
+            continue  # nothing written yet — say nothing rather than say it badly
+        # A bridge names the material he studied; a capture connection dates his own writing.
+        # Both answer "why am I being shown this", which is what the context line is for.
+        context = (
+            f"{_clip(cand.other_title, 70)} · your own notes on {cand.shared}"
+            if cand.bridge
+            else f"{_clip(cand.other_title, 70)} · you wrote yours on {cand.src_date}"
+        )
+        out.append(
+            ThreadItem(
+                anchor="",
+                section=SECTION_CONNECT,
+                kind="connection",
+                headline=prose,
+                context=context,
+                tick=True,
+                target_kind="doc",
+                target_key=cand.other_uri,
+                item_key=item_key,
             )
-            if not prose:
-                continue  # nothing written yet — say nothing rather than say it badly
-            out.append(
-                ThreadItem(
-                    anchor="",
-                    section=SECTION_CONNECT,
-                    kind="connection",
-                    headline=prose,
-                    context=f"{_clip(rel.title, 70)} · you wrote yours on {src['source_date']}",
-                    tick=True,
-                    target_kind="doc",
-                    target_key=other_uri,
-                    item_key=item_key,
-                )
-            )
-            break  # one connection per note, so several notes are represented, not one
+        )
     return out[:limit]
 
 

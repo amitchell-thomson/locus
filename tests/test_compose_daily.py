@@ -891,3 +891,76 @@ def test_a_dismissed_tension_is_not_offered_again(conn):
             (pid, "a stance", "a conflicting claim", "why"),
         )
     assert cd.build_challenge(conn, limit=2, seen=set()) == []
+
+
+# ---------- CONNECT: the coursework bridge (§16's promise, undelivered until 2026-08-03) --------
+
+
+def _bridge_corpus(conn) -> None:
+    """A quant paper and a maths lecture that share one compound concept, plus junk that must not.
+
+    Mirrors the live shape measured on 2026-08-03: `Specification Testing for Dyadic Regression`
+    shares `eigenvalue problem` with a Linear Algebra lecture, while a vendor manual shares only
+    `CPU` with a computer-architecture lecture.
+    """
+    with conn:
+        docs = [
+            ("hp", "pdf", "vault/incoming/paper/dyadic.pdf", "Specification Testing", "paper"),
+            ("hc", "pdf", "vault/incoming/coursework/linalg.pdf", "Linear Algebra", "coursework"),
+            ("hm", "pdf", "vault/incoming/project/manual.pdf", "Vendor Manual", "project"),
+            ("ha", "pdf", "vault/incoming/coursework/arch.pdf", "Computer Arch", "coursework"),
+        ]
+        for h, st, uri, title, cat in docs:
+            conn.execute(
+                "INSERT INTO documents (content_hash, source_type, source_uri, raw_path, title, "
+                "category, ingest_model, thesis, method, result) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (h, st, uri, f"{h}.x", title, cat, "t", "x", "x", "x"),
+            )
+        for doc_id in (1, 2, 3, 4):
+            conn.execute(
+                "INSERT INTO sections (doc_id, position, title, summary) VALUES (?,0,'body','s')",
+                (doc_id,),
+            )
+        ents = [
+            (1, 1, "eigenvalue problem", "concept"),   # paper  \ the real bridge
+            (2, 2, "eigenvalue problem", "concept"),   # course /
+            (3, 3, "CPU", "concept"),                  # manual \ single word: not a bridge
+            (4, 4, "CPU", "concept"),                  # course /
+        ]
+        for doc_id, sec_id, name, typ in ents:
+            conn.execute(
+                "INSERT INTO entities (doc_id, section_id, name, type) VALUES (?,?,?,?)",
+                (doc_id, sec_id, name, typ),
+            )
+    # `related_documents` ranks on canonicals, so the substrate has to exist. Deterministic
+    # tiers only — no model, like `test_link_related`.
+    from locus.link.aliases import build_aliases
+
+    build_aliases(conn, use_llm=False, use_cache=False, log=lambda _m: None)
+
+
+def test_a_paper_bridges_to_the_coursework_that_teaches_its_maths(conn):
+    """The capability §16 justifies keeping 144 coursework documents for.
+
+    Until 2026-08-03 the ONLY source of connection candidates was `_recent_capture` — his twelve
+    most recent handwritten notes — which are short and name no maths, so a bridge could never be
+    offered however well it ranked. 81 coursework<->other canonicals were sitting in the substrate
+    unused.
+    """
+    _bridge_corpus(conn)
+    cands = cd.connection_candidates(conn)
+    bridges = [c for c in cands if c.bridge]
+    assert [(c.src_title, c.other_title, c.shared) for c in bridges] == [
+        ("Specification Testing", "Linear Algebra", "eigenvalue problem")
+    ]
+
+
+def test_a_single_word_overlap_is_not_a_connection(conn):
+    """`CPU`, `while loop`, `volume` — true overlaps, worthless prompts.
+
+    The measured discriminator is compound-vs-single-word: every genuine bridge found live was a
+    compound term (`eigenvalue problem`, `central limit theorem`, `Positive semidefinite matrix`)
+    and the junk was single common nouns. Type cannot separate them — both are `concept`.
+    """
+    _bridge_corpus(conn)
+    assert all(c.shared != "CPU" for c in cd.connection_candidates(conn))

@@ -161,6 +161,44 @@ def cmd_sync(args) -> None:
         conn.close()
 
 
+def _write_connection_notes(conn, *, limit: int) -> int:
+    """Compose prose for the connections the page WOULD offer, so it can offer them.
+
+    Uses `compose_daily`'s own pair-finding rather than a second query: a note written for a pair
+    the page never surfaces is spend with no reader, and a pair surfaced with no note is silently
+    dropped (`build_connections` refuses the bare "both develop X" phrasing).
+    """
+    from locus.agent import compose_daily as cd
+    from locus.agent import state
+    from locus.link.connect import stored_note, write_note
+    from locus.link.related import related_documents
+
+    written = 0
+    for src in cd._recent_capture(conn, limit=12):
+        if written >= limit:
+            break
+        for rel in related_documents(conn, src["id"], top_n=5):
+            if written >= limit:
+                break
+            clause, params = state.owner_authored_sql("d")
+            own = conn.execute(
+                f"SELECT ({clause}) AS own FROM documents d WHERE d.id=?",
+                (*params, rel.doc_id),
+            ).fetchone()
+            if own is None or own["own"] or not rel.shared_names:
+                continue
+            other_uri = cd._source_uri(conn, rel.doc_id)
+            shared = rel.shared_names[0]
+            if stored_note(conn, src_uri=src["source_uri"], other_uri=other_uri, shared=shared):
+                continue                              # already written; re-runs cost nothing
+            if write_note(
+                conn, src_uri=src["source_uri"], other_uri=other_uri, shared=shared
+            ) is not None:
+                written += 1
+            break                                     # one per note, as the page offers
+    return written
+
+
 def cmd_link(args) -> None:
     """Rebuild the entity-alias substrate (entity_aliases) over the stored corpus.
 
@@ -173,6 +211,10 @@ def cmd_link(args) -> None:
 
     conn = _open()
     try:
+        if getattr(args, "connections", None) is not None:
+            written = _write_connection_notes(conn, limit=args.connections)
+            print(f"wrote {written} connection note(s)")
+            return
         # build_aliases logs progress + the final report through `log`.
         build_aliases(
             conn,
@@ -1468,6 +1510,14 @@ def cmd_review(args) -> None:
             item = rv.grade_item(conn, int(ref), int(quality))
             print(f"item {ref}: next due {item.due} (interval {item.interval}d, "
                   f"ease {item.ease:.2f})" if item else f"no review item {ref}")
+        if args.enrol_concepts is not None:
+            added = rv.enrol_concepts(conn, max_new=args.enrol_concepts)
+            print(f"enrolled {len(added)} concept(s)")
+            return
+        if args.write_concept_questions is not None:
+            written = rv.fill_concept_questions(conn, limit=args.write_concept_questions)
+            print(f"wrote {written} concept question(s)")
+            return
         if args.write_questions is not None:
             # Without a stored question the recall prompt IS the proposition — he would be shown
             # the answer and asked to recall it. Billed, so it is an explicit flag and belongs on
@@ -1754,6 +1804,10 @@ def main(argv=None) -> None:
         "--no-cache", action="store_true",
         help="re-adjudicate every fuzzy cluster, ignoring cached verdicts",
     )
+    pk.add_argument(
+        "--connections", type=int, nargs="?", const=4, default=None, metavar="N",
+        help="write the prose for N surfaced connections instead of rebuilding aliases (billed)",
+    )
     pk.set_defaults(func=cmd_link)
 
     pr = sub.add_parser(
@@ -2020,6 +2074,14 @@ def main(argv=None) -> None:
     prv.add_argument(
         "--enrol-max", type=int, default=None,
         help="cap new items this run (default: a small, deliberately gradual number)",
+    )
+    prv.add_argument(
+        "--enrol-concepts", type=int, nargs="?", const=6, default=None, metavar="N",
+        help="schedule N concepts for recall (free; the questions are written separately)",
+    )
+    prv.add_argument(
+        "--write-concept-questions", type=int, nargs="?", const=6, default=None, metavar="N",
+        help="write the understanding question for N scheduled concepts (billed)",
     )
     prv.add_argument(
         "--write-questions", type=int, nargs="?", const=20, default=None, metavar="N",

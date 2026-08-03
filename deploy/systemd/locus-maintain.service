@@ -32,11 +32,24 @@ ExecStart=/home/alec/.local/bin/uv run locus structure --unstructured --limit 20
 # Without this the schedule stays at zero rows and the daily page's recall section is
 # permanently empty, which is how it sat from the day the table was created.
 ExecStart=/home/alec/.local/bin/uv run locus review --enrol
+# 3b. Enrol CONCEPTS. The proposition-based schedule asked project-status questions back verbatim
+#     ("What analytical capabilities does the tanker-flow project provide?"); what he wants is the
+#     concept itself. Deterministic and free — the question for each is written below.
+ExecStart=/home/alec/.local/bin/uv run locus review --enrol-concepts 6
 # 4. Give newly-enrolled propositions a QUESTION to ask. Billed (claude -p, subscription).
 #    Without one `resolve_prompt` returns the proposition itself as the prompt — the page shows
 #    him the answer and asks him to recall it, which is why the recall loop had no answerable
 #    step. Capped per run so a night's spend is bounded and the schedule fills gradually.
 ExecStart=/home/alec/.local/bin/uv run locus review --write-questions 8
+# 4b. And the concept questions (billed, claude -p). Separate from the line above because the job
+#     is different: given a concept and its corpus evidence, ask an UNDERSTANDING question and
+#     keep the evidence as the answer, rather than turning a stored claim into a question about
+#     that claim — which is the regurgitation he rejected.
+ExecStart=/home/alec/.local/bin/uv run locus review --write-concept-questions 6
+# 4c. The written reason two documents are worth connecting (billed). The daily page is
+#     aggregate-only, so this prose must exist BEFORE composition or the connection is not
+#     offered at all — silence beats the bare "both develop X" phrasing he called obscure.
+ExecStart=/home/alec/.local/bin/uv run locus link --connections 4
 # 5. Write (and refresh) the reason each proposed paper is on the shelf. Billed (claude -p).
 #    The deterministic `why` is a cosine distance — "fit 0.76" — which is a fact about the
 #    ranker, not a reason to read anything. A reason older than a week is rewritten against his

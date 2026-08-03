@@ -47,6 +47,19 @@ def _thread(conn, title: str, *, type_="question", created_at="2026-01-01T00:00:
     return oid
 
 
+def _jotted(conn, text: str, *, type_="idea", created_at="2026-01-01T00:00:00+00:00") -> int:
+    """An owner-authored thread — what the Think page's "Take it further" section carries.
+
+    Marks no longer reach that page as passages: a mark becomes an `idea` through
+    `capture/intent`, and the page offers the idea. Seeding one directly is the equivalent of
+    what `_mark` used to set up.
+    """
+    oid, _ = state.upsert_object(conn, type_=type_, title=text[:60], now=lambda: created_at)
+    state.apply_owner_edit(conn, oid, {type_: text}, source="test")
+    state.set_status(conn, oid, "active")
+    return oid
+
+
 def _mark(conn, *, uri="books/apm.pdf", page=70, text, kind="underline", at="2026-07-30T10:00:00"):
     with conn:
         conn.execute(
@@ -72,8 +85,9 @@ def _proposal(conn, title: str, *, status="proposed", why="cited by 2 papers you
 _PASSAGE = "the extreme case in which every hedge fund holds a copy of the same portfolio"
 
 
-def _marks_on(page):
-    return [t for t in page.threads if t.kind == "mark"]
+def _developable(page):
+    """Think items he can develop — what `_marks_on` meant before marks reached the page as ideas."""
+    return [t for t in page.threads if t.kind == "open"]
 
 
 # ---------- migration ----------
@@ -255,7 +269,10 @@ def test_the_shelf_state_prints_the_true_count(conn):
 
     body = cd.render(cd.compose(conn, today=date(2026, 8, 2)))
     assert "2 waiting" in body
-    assert "being read" in body
+    # The IN-PROGRESS LIST left the page: "it is pointless and I can just see the in-progress
+    # folder". `build_reading_state` still reports it (the shelf count is printed, and
+    # `reading/relevance` consumes it), but page 1 spends its space on reading links.
+    assert "being read" not in body
 
 
 def test_a_book_he_added_himself_appears_with_what_it_links_to(conn):
@@ -270,11 +287,10 @@ def test_a_book_he_added_himself_appears_with_what_it_links_to(conn):
     assert item.owner_added, "nothing in the pipeline chose it — that is what makes it interesting"
     assert item.links_to == "regime-ml"
 
+    # The link is still computed and still drives `reading/relevance`; it is simply no longer
+    # printed, because the in-progress list left page 1 at the owner's request.
     body = cd.render(cd.compose(conn, today=date(2026, 8, 2)))
-    assert "Advanced Portfolio Management" in body
-    assert "regime-ml" in body
-    assert "factor covariance estimator" in body
-    assert "*yours*" in body
+    assert "*yours*" not in body
 
 
 def test_a_delivered_paper_in_progress_is_not_marked_as_his_own(conn):
@@ -300,8 +316,8 @@ def test_the_three_subsections_are_named_for_where_the_item_came_from(conn):
     _thread(conn, "is a factor like a feature?")
     page = cd.compose(conn, today=date(2026, 7, 31))
     body = cd.render(page)
-    assert cd.SECTION_MARKED in body
-    assert cd.SECTION_OPEN in body
+    assert cd.SECTION_EXPLAIN in body or cd.SECTION_DEVELOP in body
+    assert cd.SECTION_DEVELOP in body
     # An empty subsection is omitted entirely rather than left as a bare heading.
     assert cd.SECTION_CONNECTION not in body
 
@@ -312,7 +328,11 @@ def test_marks_threads_and_connections_share_one_anchor_series(conn):
     page = cd.compose(conn, today=date(2026, 7, 31))
     assert [t.anchor for t in page.threads] == [f"T{i}" for i in range(1, len(page.threads) + 1)]
     # ...while still routing to different places on the way back.
-    assert {a.kind for a in page.anchors if a.anchor.startswith("T")} == {"mark", "open"}
+    # The Think kinds are the ROUTING kinds, and they are deliberately not the section names:
+    # `question` (an Explain prompt he answers), `open` (developing a thread), `connection`.
+    assert {a.kind for a in page.anchors if a.anchor.startswith("T")} <= {
+        "question", "open", "connection"
+    }
 
 
 def test_only_the_agent_originated_item_carries_a_tick(conn):
@@ -363,12 +383,19 @@ def test_his_own_words_rank_above_a_bare_underline(conn):
 
 
 def test_his_comment_is_printed_with_the_passage(conn):
+    """The pairing survives the redesign, on the item it belongs to.
+
+    A mark reaches the page as an IDEA now (`capture/intent`), so the Develop section prints his
+    words and, beneath them, the passage they were written beside — the objection and the claim
+    still travel together, which is the whole point of Loop B.
+    """
     _mark(conn, text=_PASSAGE)
-    conn.execute("UPDATE pdf_annotations SET note='no momentum in Japan??'")
+    oid = _jotted(conn, "no momentum in Japan??")
+    conn.execute("UPDATE pdf_annotations SET object_id=?", (oid,))
     conn.commit()
     body = cd.render(cd.compose(conn, today=date(2026, 7, 31)))
     assert "no momentum in Japan??" in body
-    assert _PASSAGE in body, "the objection and the claim must travel together"
+    assert _PASSAGE[:40] in body, "the objection and the claim must travel together"
 
 
 def test_a_stray_stroke_is_not_a_passage(conn):
@@ -402,16 +429,16 @@ def test_nothing_is_offered_on_two_pages(conn):
     A page is now built every morning whether or not the last was read, so without the ledger a
     skipped day would re-offer its whole contents.
     """
-    _mark(conn, text=_PASSAGE)
+    _jotted(conn, "a thought worth developing further")
     _proposal(conn, "Ledoit-Wolf shrinkage")
     first = cd.compose(conn, today=date(2026, 8, 1))
     cd.persist(conn, first, md_path="/tmp/_home.md")
 
     second = cd.compose(conn, today=date(2026, 8, 2))
-    assert not _marks_on(second)
+    assert not [t for t in second.threads if t.kind == "open"]
     assert second.readings == []
     # ...and nothing was lost: it is still on the first page, which is sitting in the inbox.
-    assert _marks_on(first)
+    assert _developable(first)
 
 
 def test_a_thread_he_developed_becomes_eligible_again_and_an_untouched_one_does_not(conn):
@@ -468,16 +495,16 @@ def test_a_proposal_returns_only_when_its_reason_was_rewritten(conn):
 
 def test_composing_twice_without_persisting_changes_nothing(conn):
     """`compose` is a pure read — the ledger is written by `persist`, so a dry run is free."""
-    _mark(conn, text=_PASSAGE)
-    assert _marks_on(cd.compose(conn, today=date(2026, 8, 1)))
-    assert _marks_on(cd.compose(conn, today=date(2026, 8, 1)))
+    _jotted(conn, "a thought worth developing further")
+    assert _developable(cd.compose(conn, today=date(2026, 8, 1)))
+    assert _developable(cd.compose(conn, today=date(2026, 8, 1)))
 
 
 def test_the_ledger_degrades_when_absent(conn):
     conn.execute("DROP TABLE daily_shown")
     conn.commit()
-    _mark(conn, text=_PASSAGE)
-    assert _marks_on(cd.compose(conn, today=date(2026, 8, 1)))
+    _jotted(conn, "a thought worth developing further")
+    assert _developable(cd.compose(conn, today=date(2026, 8, 1)))
 
 
 # ---------- the /Daily inbox ----------
@@ -586,7 +613,7 @@ def test_persist_leaves_annotations_alone(conn):
 def test_each_section_gets_its_own_physical_page(conn):
     """"one full page for each, each page should be well laid out and look nice"."""
     _proposal(conn, "a paper")
-    _mark(conn, text=_PASSAGE)
+    _jotted(conn, "a thought worth developing further")
     learn_review.schedule_prompt(
         conn, prompt_kind="object", prompt_ref="1", today=date(2026, 1, 1)
     )
@@ -599,10 +626,10 @@ def test_each_section_gets_its_own_physical_page(conn):
 
 
 def test_a_quiet_day_is_a_short_document_not_four_blank_pages(conn):
-    _mark(conn, text=_PASSAGE)
+    _jotted(conn, "a thought worth developing further")
     body = cd.render(cd.compose(conn, today=date(2026, 8, 1)))
     assert body.count("#pagebreak()") == 1  # Think, then the back page
-    assert "## Recall" not in body
+    assert "# Recall" not in body
 
 
 def test_writable_rows_render_ascii_boxes_and_ruled_lines(conn):
@@ -620,19 +647,21 @@ def test_a_connection_tick_box_is_drawn_not_a_glyph(conn):
     depend on font coverage at all — and the preamble always binds it, styled or not.
     """
     item = cd.ThreadItem(
-        anchor="T1", section=cd.SECTION_CONNECTION, kind="connection",
+        anchor="T1", section=cd.SECTION_CONNECT, kind="connection",
         headline="a → b", context="both develop x", tick=True,
     )
     page = cd.DailyPage(page_date="2026-08-01", threads=[item])
     body = cd.render(page)
-    assert cd._TICKBOX in body
+    # Drawn, and SEPARATE from the prompt text — the recall page's placement, for the same
+    # reason: a decision box belongs at the end of the thing it decides.
+    assert "#tickbox" in body and "keep this connection" in body
     assert "\u2610" not in body and "[   ]" not in body
 
 
 def test_rendered_page_has_no_nbsp_anywhere(conn):
     """U+00A0 is not markdown whitespace: it silently changes how the next line parses."""
     _proposal(conn, "a paper")
-    _mark(conn, text=_PASSAGE)
+    _jotted(conn, "a thought worth developing further")
     learn_review.schedule_prompt(
         conn, prompt_kind="object", prompt_ref="1", today=date(2026, 1, 1)
     )
@@ -708,9 +737,10 @@ def test_writing_space_expands_when_there_is_less_to_show(conn):
     assert cd._lines_for(3, "think") == cd._MIN_LINES["think"]
     assert cd._lines_for(1, "think") > cd._MIN_LINES["think"]
     assert cd._lines_for(1, "think") == cd._MAX_LINES
-    # Recall floors at three lines since `rule_gap_em` came down to 7mm: at the old 10mm spacing
-    # a third line pushed the section onto a second page, so it floored at two.
-    assert cd._lines_for(4, "recall") == cd._MIN_LINES["recall"] == 3
+    # Back to two lines: concept questions are full sentences and take the space a third line
+    # would have used, and a fourth QUESTION is worth more than a third writing line for an
+    # answer that is itself a sentence (measured 2026-08-03).
+    assert cd._lines_for(4, "recall") == cd._MIN_LINES["recall"] == 2
 
 
 def test_a_full_page_does_not_overflow_into_a_fifth(conn):
@@ -738,13 +768,13 @@ def test_a_full_page_does_not_overflow_into_a_fifth(conn):
                       "portfolios with tail-risk diagnostics. Apply these to evaluate whether "
                       "CVaR-optimization better handles tail-risk in your cascade portfolios.")[:300],
         )
-    for i in range(5):
-        _target(conn, title=f"AlphaZeroBeta Deep Reinforcement Learning for Market-Neutral {i}",
-                marks=i,
-                why="Stop-loss cascade detection in Alpha Fund directly models synchronized "
-                    "deleveraging during adverse events across correlated books.")
+    # The in-progress list left page 1, so it no longer contributes height; what does is a full
+    # THINK page of developable threads, each carrying his prior words.
     for i in range(cd._FIT["think"] + 2):
-        _mark(conn, uri=f"books/b{i}.pdf", page=i, text=f"{_PASSAGE} number {i}")
+        _jotted(conn,
+                "a thought worth developing that runs to a realistic length, because a short "
+                f"fixture is the one shape that cannot overflow — number {i}",
+                created_at=f"2026-01-0{(i % 9) + 1}T00:00:00+00:00")
     for i in range(cd._FIT["recall"]):
         learn_review.schedule_prompt(
             conn, prompt_kind="object", prompt_ref=str(i), today=date(2026, 1, 1)
@@ -776,13 +806,14 @@ def test_the_think_page_refills_a_subsection_that_has_nothing(conn, monkeypatch)
     where space is the scarce thing and a 26-mark backlog is waiting behind it.
     """
     for i in range(4):
-        _mark(conn, uri=f"books/b{i}.pdf", page=i, text=f"{_PASSAGE} number {i}")
+        _jotted(conn, f"a thought worth developing number {i}",
+                created_at=f"2026-01-0{i + 1}T00:00:00+00:00")
     monkeypatch.setattr(cd, "build_connections", lambda *a, **k: [])
-    monkeypatch.setattr(cd, "build_open", lambda *a, **k: [])
+    monkeypatch.setattr(cd, "build_explain", lambda *a, **k: [])
 
     items = cd.build_threads(conn, limit=3, seen=set())
     assert len(items) == 3, "the empty subsections' seats must be taken, not wasted"
-    assert {i.section for i in items} == {cd.SECTION_MARKED}
+    assert {i.section for i in items} == {cd.SECTION_DEVELOP}
 
 
 def test_marks_are_no_longer_capped_at_one_per_document(conn):

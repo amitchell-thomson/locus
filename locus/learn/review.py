@@ -15,6 +15,10 @@ testable. `due` is a date string; the caller passes `today` so tests need no clo
 
 from __future__ import annotations
 
+import logging
+
+log = logging.getLogger(__name__)
+
 from dataclasses import dataclass
 from datetime import date, timedelta
 
@@ -56,7 +60,7 @@ def schedule_prompt(
     """Add a prompt to the schedule (idempotent — an already-scheduled prompt is returned as is).
 
     A new item is due immediately: it has never been seen, so there is nothing to wait for."""
-    if prompt_kind not in ("proposition", "object"):
+    if prompt_kind not in ("proposition", "object", "concept"):
         raise ValueError(f"unknown prompt_kind {prompt_kind!r}")
     today = today or date.today()
     existing = conn.execute(
@@ -145,8 +149,38 @@ def resolve_prompt(conn, item: ReviewItem) -> tuple[str, str]:
         if row:
             return row["text"], row["title"]
         return "(source proposition no longer in the corpus)", ""
+    if item.prompt_kind == "concept":
+        return concept_answer(conn, item.prompt_ref)
     row = conn.execute("SELECT title FROM objects WHERE id=?", (item.prompt_ref,)).fetchone()
     return (row["title"] if row else "(object no longer exists)"), ""
+
+
+def concept_answer(conn, name: str) -> tuple[str, str]:
+    """(reference answer, source) for a concept — the stored propositions that define it.
+
+    GROUNDED BY CONSTRUCTION. The question is generated, the ANSWER never is: it is corpus text
+    that names the concept, so the answer overleaf is something he actually read rather than
+    something a model asserted about a subject it was only given the name of.
+    """
+    rows = conn.execute(
+        """
+        SELECT p.text, d.title FROM propositions p
+        JOIN documents d ON d.id = p.doc_id
+        WHERE p.section_id IN (
+            SELECT e.section_id FROM entities e
+            LEFT JOIN entity_aliases a ON a.variant_name=e.name AND a.variant_type=e.type
+            WHERE COALESCE(a.canonical_name, e.name) = ?
+        )
+        AND LENGTH(p.text) BETWEEN 60 AND 400
+        ORDER BY LENGTH(p.text) DESC LIMIT 1
+        """,
+        (name,),
+    ).fetchall()
+    if not rows:
+        return f"(no stored material defines {name})", ""
+    # ONE proposition, and a bounded one. The answers share page 4 with the open writing region,
+    # and four unbounded answers pushed it onto a seventh page.
+    return rows[0]["text"], rows[0]["title"]
 
 
 # --- enrolment ---------------------------------------------------------------------------------
@@ -241,17 +275,21 @@ def enrol_from_blessed_objects(
 # --- question generation (billed, run overnight — never during composition) --------------------
 
 
-def items_without_questions(conn, *, limit: int = 20) -> list[ReviewItem]:
-    """Scheduled proposition items that have no stored question yet, soonest-due first.
+def items_without_questions(
+    conn, *, limit: int = 20, kinds: tuple[str, ...] = ("proposition", "concept")
+) -> list[ReviewItem]:
+    """Scheduled items that have no stored question yet, soonest-due first.
 
-    Only `proposition` items: an `object` prompt is the owner's own question or idea title, which
-    already reads as a prompt and needs nothing generated.
+    `object` prompts are excluded by default: an object prompt is the owner's own question or
+    idea title, which already reads as a prompt and needs nothing generated. `concept` prompts
+    are a bare noun and need one badly — they are the whole point of the concept schedule.
     """
     try:
         rows = conn.execute(
-            "SELECT * FROM review_schedule WHERE prompt_kind='proposition' "
+            f"SELECT * FROM review_schedule WHERE prompt_kind IN "
+            f"({','.join('?' * len(kinds))}) "
             "AND (question IS NULL OR TRIM(question)='') ORDER BY due, id LIMIT ?",
-            (limit,),
+            (*kinds, limit),
         ).fetchall()
     except Exception:  # column absent on an un-migrated DB
         return []
@@ -281,7 +319,7 @@ def fill_questions(conn, *, limit: int = 20, runner=None, model: str | None = No
     """
     from locus.learn.practice import _Candidate, generate_practice
 
-    pending = items_without_questions(conn, limit=limit)
+    pending = items_without_questions(conn, limit=limit, kinds=("proposition",))
     if not pending:
         return 0
 
@@ -305,5 +343,139 @@ def fill_questions(conn, *, limit: int = 20, runner=None, model: str | None = No
         if item is None:
             continue
         set_question(conn, item.id, practice_item.question)
+        written += 1
+    return written
+
+
+# --- concept enrolment: what he actually wants to be asked ---------------------------------------
+#
+# THE PROBLEM, in his words: the questions were "way too broad and just regurgitating material
+# that I may have read verbatim - not actually useful". They were generated FROM PROPOSITIONS in
+# blessed objects, and his blessed objects include a project roadmap, so the page asked "What
+# analytical capabilities does the tanker-flow project provide for vessel activity analysis?".
+# What he asked for instead: "specific questions on the mathematical concepts or financial
+# instruments introduced in what I read, like how is covariance different to correlation, or what
+# is covered interest rate parity, or how does a hidden markov model work."
+#
+# So the SUBJECT is a concept, not a document sentence. The concept must be one the corpus can
+# answer (propositions define it) and one worth asking about (a maths/finance idea attested in
+# prose, not a code artefact or a data series).
+
+# A concept needs this many defining propositions before it is worth a slot: fewer than this and
+# the answer overleaf is one stray sentence.
+_MIN_CONCEPT_PROPS = 4
+
+
+def concept_candidates(conn, *, limit: int = 40) -> list[tuple[str, int]]:
+    """[(canonical concept, propositions that define it)] — enrolment's candidate pool."""
+    from locus.agent.compose_daily import TEACHABLE_TYPES, _MIN_TEACHABLE_CHARS
+
+    marks = ",".join("?" * len(TEACHABLE_TYPES))
+    rows = conn.execute(
+        f"""
+        WITH canon AS (
+            SELECT COALESCE(a.canonical_name, e.name) AS cn,
+                   COALESCE(a.canonical_type, e.type) AS ct,
+                   e.section_id, e.doc_id
+            FROM entities e
+            LEFT JOIN entity_aliases a
+              ON a.variant_name = e.name AND a.variant_type = e.type
+        )
+        SELECT canon.cn AS name, COUNT(DISTINCT p.id) AS props
+        FROM canon
+        JOIN documents d ON d.id = canon.doc_id
+        JOIN propositions p ON p.section_id = canon.section_id
+        WHERE canon.ct IN ({marks})
+          AND LENGTH(canon.cn) >= ?
+          AND d.source_type != 'code'
+          AND d.category IN ('paper','note','coursework','career')
+        GROUP BY canon.cn
+        HAVING props >= ?
+        -- CURRENT READING FIRST. Ranked on proposition count alone the list is engineering
+        -- coursework (transfer function, Laplace transform, Nyquist plot), because that is 144
+        -- of 218 documents — true, and not what he is revising for. A concept attested in a
+        -- paper or a note is one he is working with now.
+        ORDER BY MAX(CASE WHEN d.category IN ('paper','note') THEN 1 ELSE 0 END) DESC,
+                 props DESC
+        LIMIT ?
+        """,
+        (*TEACHABLE_TYPES, _MIN_TEACHABLE_CHARS, _MIN_CONCEPT_PROPS, limit * 4),
+    ).fetchall()
+
+    from locus.link.related import non_topical_names
+
+    try:
+        generic = non_topical_names(conn)
+    except Exception:                                  # no alias substrate yet
+        generic = set()
+    out: list[tuple[str, int]] = []
+    for r in rows:
+        if r["name"].lower() in generic:
+            continue
+        out.append((r["name"], r["props"]))
+        if len(out) >= limit:
+            break
+    return out
+
+
+def enrol_concepts(conn, *, max_new: int = 8, today: date | None = None) -> list[int]:
+    """Schedule concepts for recall. Deterministic and free — no model call here."""
+    added: list[int] = []
+    for name, _props in concept_candidates(conn, limit=max_new * 4):
+        if len(added) >= max_new:
+            break
+        if _already_scheduled(conn, "concept", name):
+            continue
+        added.append(schedule_prompt(conn, prompt_kind="concept", prompt_ref=name, today=today))
+    return added
+
+
+_CONCEPT_PROMPT = """You are writing ONE spaced-repetition question for someone revising for quant
+interviews. The subject is the concept below. Here is what his own corpus says about it, which is
+the reference answer he will be shown:
+
+CONCEPT: {name}
+WHAT HIS MATERIAL SAYS: {evidence}
+
+Write a question that tests whether he UNDERSTANDS the concept — how it works, how it differs from
+a neighbouring one, or when it applies. Good questions look like "How is covariance different from
+correlation?", "What is covered interest rate parity?", "How does a hidden Markov model work?".
+
+Do NOT ask about any document, project, dataset or result. Do NOT ask him to recall a sentence.
+Do not mention "your material" or "the text". One sentence, ending in a question mark. Reply with
+the question only."""
+
+
+def fill_concept_questions(conn, *, limit: int = 8, runner=None, model: str | None = None) -> int:
+    """Write the question for scheduled CONCEPTS. Billed; returns how many were written.
+
+    Separate from `fill_questions` because the job is different: that one turns a stored claim
+    into a question about that claim, which is exactly the regurgitation the owner rejected. This
+    one is given a concept and its corpus evidence and asked for an UNDERSTANDING question, with
+    the evidence kept as the answer rather than restated as the prompt.
+    """
+    from locus.agent.claude import ClaudeError, run_text
+    from locus.config import load
+
+    written = 0
+    for item in items_without_questions(conn, limit=limit * 3, kinds=("concept",)):
+        if written >= limit:
+            break
+        evidence, _src = concept_answer(conn, item.prompt_ref)
+        if evidence.startswith("(no stored material"):
+            continue
+        try:
+            text = run_text(
+                _CONCEPT_PROMPT.format(name=item.prompt_ref, evidence=evidence[:1200]),
+                model=model or load().agent.model, runner=runner,
+            )
+        except ClaudeError as exc:                     # degrade, never block
+            log.warning("review: concept question failed for %r: %s", item.prompt_ref, exc)
+            continue
+        question = " ".join((text or "").split())
+        # A question that is not a question, or that leaked the answer back, is not stored.
+        if not question.endswith("?") or len(question) < 15:
+            continue
+        set_question(conn, item.id, question[:300])
         written += 1
     return written

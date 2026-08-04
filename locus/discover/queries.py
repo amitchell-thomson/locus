@@ -163,13 +163,23 @@ def reading_terms(conn: sqlite3.Connection, *, limit: int = 40) -> list[SearchTe
 
 
 def project_terms(conn: sqlite3.Connection, *, limit: int = 30) -> list[SearchTerm]:
-    """Method entities from the documents behind his active projects — what he builds with."""
+    """Method entities from the documents behind his LIVE projects — what he builds with.
+
+    Live, not merely active: a finished project should not spend the search budget looking for
+    ways to extend it. Filtered here as well as in `profiles.collect` because these are the two
+    halves of one question — terms decide what is harvested, profiles decide what it can be
+    matched to, and a project live for one and dormant for the other would harvest papers that
+    can never be anchored.
+    """
     from locus.agent import state
+    from locus.discover.profiles import live_projects
     from locus.learn.gaps import _doc_ids_for_object
 
     excluded = _excluded_names(conn)
     out: list[SearchTerm] = []
-    for obj in state.list_objects(conn, type_="project", status="active", limit=100):
+    for obj in live_projects(
+        conn, state.list_objects(conn, type_="project", status="active", limit=100)
+    ):
         doc_ids = _doc_ids_for_object(conn, obj.id)
         if not doc_ids:
             continue

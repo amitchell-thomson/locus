@@ -889,3 +889,44 @@ def test_the_subject_prior_stays_inert_until_there_is_evidence(conn):
         _prop("project:regime-ml", "ingested", "moved")
     prior = subject_prior(conn)
     assert "project:regime-ml" in prior and prior["project:regime-ml"] > 0.5
+
+
+# ---------- live vs dormant projects ------------------------------------------------------------
+
+
+def test_only_live_projects_propose_reading(tmp_path, monkeypatch):
+    """All three Read slots went to finished work (measured 2026-08-03).
+
+    A Koopman-PDE paper for `python-solutions`, a crypto-futures paper for `Optiver trading
+    algorithms`, a Phillips-curve paper for `Citadel Analysis` — each a well-grounded suggestion
+    to develop a project he has finished. `discovery_profiles` records no notion of activity, so
+    the ranker could only compare cosine fit and had no way to prefer live work.
+    """
+    from locus.discover.profiles import live_projects
+
+    class _Obj:
+        def __init__(self, title):
+            self.id, self.title = 1, title
+
+    everything = [_Obj("regime-ml"), _Obj("Citadel Analysis"), _Obj("tanker-flow")]
+
+    import locus.config as cfgmod
+
+    real = cfgmod.load
+
+    def _with(names):
+        cfg = real()
+        cfg.discovery.live_projects = names
+        return cfg
+
+    monkeypatch.setattr(cfgmod, "load", lambda *a, **k: _with(["regime-ml", "tanker-flow"]))
+    kept = [o.title for o in live_projects(None, everything)]
+    assert kept == ["regime-ml", "tanker-flow"]
+
+    # UNCONFIGURED MEANS EVERYTHING, so an install that never sets this behaves as before.
+    monkeypatch.setattr(cfgmod, "load", lambda *a, **k: _with([]))
+    assert len(live_projects(None, everything)) == 3
+
+    # Case-insensitive: the config is typed by hand, the titles are not.
+    monkeypatch.setattr(cfgmod, "load", lambda *a, **k: _with(["REGIME-ML"]))
+    assert [o.title for o in live_projects(None, everything)] == ["regime-ml"]

@@ -67,7 +67,7 @@ from locus.link.related import related_documents
 # back to 3 when CONNECT replaced a one-line item with ~300 characters of written prose — two of
 # those are the tallest thing the page can carry, and with CHECK THIS usually empty the refill
 # hands its seat straight to a second connection.
-_FIT = {"read": 4, "think": 3, "recall": 4}
+_FIT = {"read": 4, "think": 3, "recall": 4, "answered": 3}
 
 # The Read page is the one section with no writing regions, so `_lines_for` does not bound it and
 # nothing else did either: three proposals plus an unbounded in-progress list overflowed onto a
@@ -262,12 +262,29 @@ class Status:
 
 
 @dataclass
+class Answered:
+    """A question he wrote in the margin, with the answer written from his own library.
+
+    Its own page, on his instruction: "questions I jot down while reading should be answered on
+    their own daily page". Distinct from Recall, which asks HIM — this one tells him, because he
+    already said he did not follow it.
+    """
+
+    anchor: str
+    question: str
+    answer: str
+    source: str
+    item_key: str
+
+
+@dataclass
 class DailyPage:
     page_date: str
     readings: list[ReadItem] = field(default_factory=list)
     reading_state: ReadingState = field(default_factory=ReadingState)
     threads: list[ThreadItem] = field(default_factory=list)
     recalls: list[Recall] = field(default_factory=list)
+    answered: list[Answered] = field(default_factory=list)
     status: Status = field(default_factory=Status)
     anchors: list[Anchor] = field(default_factory=list)
 
@@ -1075,6 +1092,34 @@ def build_connections(
     return out[:limit]
 
 
+def build_answered(
+    conn: sqlite3.Connection, *, limit: int = _FIT["answered"], seen: set[str] | None = None
+) -> list[Answered]:
+    """Questions he wrote while reading, with the answer written overnight. A pure join.
+
+    No tick box and no writing region: he is not being asked anything, and an answer to a question
+    he asked needs no decision from him. That is also why it is not part of Recall — Recall tests
+    him on material he chose to learn; this closes a gap he flagged at the moment of confusion.
+    """
+    from locus.learn import answers as _answers
+
+    seen = seen if seen is not None else set()
+    out: list[Answered] = []
+    for a in _answers.open_answers(conn, limit=limit * 3):
+        item_key = f"answered:{a.mark_id}"
+        if item_key in seen:
+            continue
+        out.append(
+            Answered(
+                anchor="", question=_clip(a.question, 150), answer=a.answer,
+                source=a.source, item_key=item_key,
+            )
+        )
+        if len(out) >= limit:
+            break
+    return out
+
+
 def build_challenge(
     conn: sqlite3.Connection, *, limit: int = 1, seen: set[str] | None = None
 ) -> list[ThreadItem]:
@@ -1126,6 +1171,51 @@ def _is_teachable(conn: sqlite3.Connection, name: str) -> bool:
     return row is not None and (row["type"] or "") in TEACHABLE_TYPES
 
 
+# A LENGTH FLOOR WAS BUILT, MEASURED AND REJECTED — twice, at 40 then 30 characters. The live
+# pool looked like it had a clean gap (the only sub-49 thread was "read next on alt-data?", 22),
+# and both settings broke existing tests whose fixtures are short but perfectly legitimate.
+#
+# The case that settled it: one fixture is "no momentum in Japan??" — 22 characters, and the SAME
+# text this codebase argues elsewhere is a real question worth answering (`learn/answers.py`
+# keeps it deliberately). A floor that drops it in one surface while another treats it as
+# valuable is not a bar, it is an inconsistency.
+#
+# Short is not worthless — the same lesson as the question-shape gate in `learn/answers.py`.
+# Nothing is excluded here; the complaint was that a to-do LED the section, and ranking fixes
+# that without throwing anything away.
+
+
+def _develop_rank(conn: sqlite3.Connection, obj) -> tuple:
+    """Sort key: threads about real work first, then least recently touched.
+
+    THE COMPLAINT THIS FIXES. Ordering was `updated_at` alone — least recently touched first —
+    which is a fairness rule, not a quality one, and it handed the head of the section to whatever
+    he had ignored longest. Live that was "read next on alt-data?", a 22-character to-do leading a
+    section named for developing ideas, while a 404-character thread on regime non-stationarity
+    linked to four projects sat behind it.
+
+    PROJECT LINKS ARE THE SIGNAL, not length. Measured over the pool, `object_links` to a project
+    separated the two strongest threads cleanly, while entity links were empty on every one of the
+    nine and carried nothing. A length floor was tried and rejected — see the note above this function.
+
+    Rotation is NOT lost by ranking on substance, because `daily_shown` retires an item once it
+    has been offered and only returns it when he develops it. The ledger provides the fairness the
+    old sort was trying to; this decides which of the eligible threads leads.
+    """
+    # COUNT PROJECT TARGETS, NOT `target_kind='object'`. The first cut counted the latter, which
+    # ALSO matches the thread<->thread links `link/threads.py` writes — so the moment `locus link`
+    # ran, four question<->idea edges appeared and the ordering silently reverted. The key
+    # resolved; it just did not mean what it was assumed to mean, exactly like the citation the
+    # answer pass could not trust. Joining through to `objects.type` makes the intent checkable.
+    linked = conn.execute(
+        "SELECT COUNT(*) AS n FROM object_links ol JOIN objects p "
+        "  ON CAST(p.id AS TEXT) = ol.target_key "
+        "WHERE ol.object_id=? AND ol.target_kind='object' AND p.type='project'",
+        (obj.id,),
+    ).fetchone()["n"]
+    return (0 if linked else 1, obj.updated_at or "")
+
+
 def build_develop(
     conn: sqlite3.Connection, *, limit: int = 1, seen: set[str] | None = None
 ) -> list[ThreadItem]:
@@ -1140,7 +1230,7 @@ def build_develop(
         o for t in _THREAD_TYPES
         for o in state.list_objects(conn, type_=t, status="active", limit=40)
     ]
-    threads.sort(key=lambda o: o.updated_at)          # least recently touched first
+    threads.sort(key=lambda o: _develop_rank(conn, o))
     for obj in threads:
         body = obj.body or {}
         # His own words when there are any (`body["idea"]`/`body["question"]` carry an
@@ -1353,24 +1443,28 @@ def compose(
     today = today or date.today()
     seen = _shown_keys(conn)
     page = DailyPage(page_date=today.isoformat())
-    # A re-read gets a RESERVED slot, not the leftovers. "Only if one is spare" sounded modest
-    # and meant never: the shelf caps at 10 proposals and the page shows 3, so `build_rereads`
-    # was unreachable in every state the system is normally in — 12 passages marked "I did not
-    # follow this", which §20 makes the ONLY thing that earns a corpus re-read, reached nothing.
-    # New material still leads; it just cannot take every seat.
-    rereads = [] if skip_retrieval else build_rereads(conn, limit=_REREAD_SLOTS, seen=seen)
-    page.readings = build_readings(conn, limit=_FIT["read"] - len(rereads), seen=seen)
-    page.readings += rereads
-    # If the shelf could not fill its share, let a second re-read use the gap rather than
-    # printing white space.
-    if len(page.readings) < _FIT["read"] and not skip_retrieval:
-        page.readings += build_rereads(
-            conn, limit=_FIT["read"] - len(page.readings),
-            seen=seen | {r.item_key for r in rereads},
-        )
+    # THE RE-READ SLOT IS GONE — superseded, not recalibrated. Its job was to answer a passage he
+    # marked `not_understood` by offering a whole other document that might explain it. The gate
+    # log settled it: `daily.reread_min_rerank` rejected 190 of 190 candidates, best score ever
+    # 1.917 against a floor of 2.5. It had never once fired.
+    #
+    # Lowering the floor is the obvious fix and the wrong one: 1.917 IS the known-wrong match
+    # (*Sampling, aliasing, modulation* offered for a note about trading "signals"), so a lower
+    # bar buys only the pun that discredited this section in the first place.
+    #
+    # What changed is that the same signal now has a better answer. The Ask page takes the
+    # question he actually wrote, grounds it in the line beside it, and prints a direct answer
+    # citing the proposition that supports it — mark 12's cites *Advanced Portfolio Management* at
+    # support 4.99. Handing him another document to go and read is strictly worse than answering
+    # the question, and it was spending a reading slot he values.
+    #
+    # `build_rereads`/`_explains` are kept and still used by `learn/reread.py`; nothing on the
+    # page calls them.
+    page.readings = build_readings(conn, limit=_FIT["read"], seen=seen)
     page.reading_state = build_reading_state(conn)
     page.threads = build_threads(conn, seen=seen, skip_retrieval=skip_retrieval)
     page.recalls = build_recalls(conn, today=today, seen=seen)
+    page.answered = build_answered(conn, seen=seen)
     page.status = build_status(conn)
 
     for i, r in enumerate(page.readings, 1):
@@ -1389,6 +1483,15 @@ def compose(
         r.anchor = f"R{i}"
         page.anchors.append(
             Anchor(r.anchor, "recall", "review_item", str(r.item_id), label=r.prompt[:120])
+        )
+    # ANCHORED BUT NOT WRITABLE. An answered question carries no writing region — nothing is
+    # being asked of him — but it still needs an anchor so `daily_shown` can retire it and so a
+    # correction written beside it has somewhere to route.
+    for i, a in enumerate(page.answered, 1):
+        a.anchor = f"A{i}"
+        page.anchors.append(
+            Anchor(a.anchor, "answered", "mark", a.item_key.split(":", 1)[-1],
+                   label=a.question[:120])
         )
     # One always-present open region. An invitation, not a prompt with a right answer, so it
     # carries no count and no backlog — anything written here becomes a thread he already owns.
@@ -1615,6 +1718,24 @@ def _render_think(page: DailyPage) -> str:
     return "\n".join(lines)
 
 
+def _render_answered(page: DailyPage) -> str:
+    """The page his own margin questions come back answered on.
+
+    No ruled writing region and no tick: he asked, this answers. The whole section is content, so
+    it is the one page whose length is set by what there is to say rather than by a line budget —
+    `_FIT["answered"]` bounds it instead.
+    """
+    lines = ["# Ask", "", "Questions you wrote while reading, answered from your own library.", ""]
+    for a in page.answered:
+        lines += [f"{_anchor(a.anchor)} {a.question}", ""]
+        lines += [a.answer, ""]
+        if a.source:
+            lines += [f"*{_clip(a.source, 70)}*", ""]
+        lines.append("***")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def _render_recall(page: DailyPage) -> str:
     lines = ["# Recall", "", "Answer, then tick if you knew it. Answers overleaf.", ""]
     per_item = _lines_for(len(page.recalls), "recall")
@@ -1666,6 +1787,11 @@ def render(page: DailyPage) -> str:
         pages.append(_render_read(page))
     if page.threads:
         pages.append(_render_think(page))
+    # ORDER IS READ, THINK, ASK, RECALL — his. Ask sits next to Think because both are about
+    # what he is working out, and before Recall because being told something he flagged as not
+    # understood should come before being tested on something else.
+    if page.answered:
+        pages.append(_render_answered(page))
     if page.recalls:
         pages.append(_render_recall(page))
 

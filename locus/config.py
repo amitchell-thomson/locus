@@ -450,6 +450,25 @@ class DiscoveryConfig(BaseModel):
     browse_categories: bool = Field(
         False, description="Also browse recent category listings (retired; search superseded it)."
     )
+    # LIVE PROJECTS ONLY PROPOSE READING. Measured 2026-08-03: all three slots on the Read page
+    # went to dormant work — a Koopman-PDE paper for `python-solutions`, a crypto-futures paper
+    # for `Optiver trading algorithms`, a Phillips-curve paper for `Citadel Analysis`. Every one
+    # was a well-grounded suggestion to develop a project he has finished, and the day's whole
+    # reading budget went to them, because `discovery_profiles` records no notion of recency or
+    # activity and the ranker could only compare cosine fit.
+    #
+    # HIS DISTINCTION, and it is the important half: a dormant project should stop generating
+    # IDEAS TO DEVELOP while still contributing CONCEPTS TO LEARN. So this gates the discovery
+    # path ONLY. Recall enrolment, the coursework bridges and `related_documents` all read
+    # `entities`/`entity_aliases` and are deliberately untouched — what he built with is still
+    # worth revising whether or not he is still building it.
+    #
+    # Empty means "every active project is live", so an unconfigured install behaves as before.
+    # Matched case-insensitively against the project object's title.
+    live_projects: list[str] = Field(
+        default_factory=list,
+        description="Project titles that may propose new reading. Empty = all active projects.",
+    )
     openalex_enabled: bool = Field(
         True,
         description="Search OpenAlex as well as arXiv — journals, books and chapters, plus "

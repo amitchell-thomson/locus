@@ -217,9 +217,18 @@ def test_a_re_read_below_the_rerank_bar_is_not_offered(conn, monkeypatch):
     )
 
 
-def test_a_re_read_holds_a_reserved_slot_rather_than_the_leftovers(conn, monkeypatch):
-    """"only if a slot is spare" meant NEVER: the shelf caps at 10 and the page shows 3, so
-    `build_rereads` was unreachable and 12 not-understood marks reached nothing."""
+def test_the_read_page_no_longer_offers_a_corpus_re_read(conn, monkeypatch):
+    """Superseded by the Ask page, not recalibrated.
+
+    The re-read slot answered a `not_understood` passage by offering a whole other document that
+    might explain it. `daily.reread_min_rerank` rejected 190 of 190 candidates with a best score
+    of 1.917 against a floor of 2.5 — it never once fired. Lowering the floor would only admit the
+    known-wrong match (*Sampling, aliasing, modulation* for a note about trading "signals").
+
+    The same signal now gets a direct answer on the Ask page, citing the proposition that supports
+    it. This asserts the slot is gone even when a re-read would score WELL, because the point is
+    supersession: the reading seat goes back to new material.
+    """
     import locus.retrieve.rerank as R
 
     for i in range(cd._FIT["read"]):
@@ -234,8 +243,8 @@ def test_a_re_read_holds_a_reserved_slot_rather_than_the_leftovers(conn, monkeyp
 
     page = cd.compose(conn, today=date(2026, 8, 2))
     shelves = [r.shelf for r in page.readings]
-    assert "re-read" in shelves, "a marked-as-not-understood passage must get a seat"
-    assert len(page.readings) == cd._FIT["read"], "and the page is still full"
+    assert "re-read" not in shelves, "the re-read slot was superseded by the Ask page"
+    assert len(page.readings) == cd._FIT["read"], "and new reading fills the page"
 
 
 def _target(conn, *, title, subject="regime-ml", why=None, proposal_id=None, marks=0,
@@ -964,3 +973,85 @@ def test_a_single_word_overlap_is_not_a_connection(conn):
     """
     _bridge_corpus(conn)
     assert all(c.shared != "CPU" for c in cd.connection_candidates(conn))
+
+
+# ---------- "You asked": his margin questions, answered -----------------------------------------
+
+
+def _answered(conn, mark_id: int, question: str, answer: str, source="A book") -> None:
+    with conn:
+        conn.execute(
+            "INSERT INTO pdf_annotations (id, source_uri, pdf_page, kind, bbox_key, "
+            "covered_text, in_margin, captured_at, note, intent) "
+            "VALUES (?,'books/apm.pdf',7,'underline',?,'a passage',0,'2026-08-01',?, "
+            "'not_understood')",
+            (mark_id, f"k{mark_id}", question),
+        )
+        conn.execute(
+            "INSERT INTO mark_answers (mark_id, question, answer, evidence, source, written_at) "
+            "VALUES (?,?,?,'[]',?,'2026-08-03')",
+            (mark_id, question, answer, source),
+        )
+
+
+def test_an_answered_margin_question_gets_its_own_page(conn):
+    """His instruction: "questions I jot down while reading should be answered on their own page".
+
+    One section per PHYSICAL page is the §18 invariant, so this adds a page rather than crowding
+    Recall — which asks HIM, and is a different act from telling him something he said he did not
+    follow.
+    """
+    _answered(conn, 1, "what does variance physically mean here?",
+              "Variance is additive for uncorrelated returns, so the ratio is the share of "
+              "total risk that is idiosyncratic rather than systematic.")
+    page = cd.compose(conn, today=date(2026, 8, 5))
+    assert [a.question for a in page.answered] == ["what does variance physically mean here?"]
+    assert page.answered[0].anchor == "A1"
+
+    body = cd.render(page)
+    assert "# Ask" in body
+    assert "Variance is additive" in body
+    # NOT a question put to him: no tick box and no ruled writing region on this page.
+    section = body.split("# Ask", 1)[1].split("```{=typst}", 1)[0]
+    assert "#tickbox" not in section
+
+
+def test_an_answered_question_is_anchored_so_it_can_be_retired(conn):
+    _answered(conn, 2, "how are information ratio and sharpe ratio different?",
+              "Information ratio applies the Sharpe calculation to residual returns against a "
+              "benchmark rather than to excess returns over the risk-free rate.")
+    page = cd.compose(conn, today=date(2026, 8, 5))
+    anchor = next(a for a in page.anchors if a.kind == "answered")
+    assert anchor.anchor == "A1" and anchor.target_key == "2"
+
+
+def test_an_answered_question_is_not_offered_twice(conn):
+    """`daily_shown` retires it like every other item — a page built daily must not repeat."""
+    _answered(conn, 3, "what do they mean by estimator?", "An estimator maps sample data to an "
+              "estimate of a population parameter, here the regression coefficients.")
+    assert cd.build_answered(conn, seen=set())
+    assert cd.build_answered(conn, seen={"answered:3"}) == []
+
+
+def test_develop_leads_with_a_thread_about_real_work_not_the_stalest(conn):
+    """Ordering was `updated_at` alone — a fairness rule doing a quality job.
+
+    Live it handed the head of the section to "read next on alt-data?", a 22-character to-do,
+    while a thread on regime non-stationarity linked to four projects sat behind it.
+    """
+    todo = _jotted(conn, "read next on alt-data?", created_at="2026-01-01T00:00:00+00:00")
+    plain = _jotted(conn, "a thought with enough substance to develop further one day",
+                    created_at="2026-02-01T00:00:00+00:00")
+    linked = _jotted(conn, "markets are not stationary and strategies work differently across "
+                           "regimes, so the predictor has to be regime-conditioned",
+                     created_at="2026-03-01T00:00:00+00:00")
+    proj, _ = state.upsert_object(conn, type_="project", title="regime-ml")
+    state.add_links(conn, linked, [state.ObjectLink("object", str(proj), "relates")])
+
+    items = cd.build_develop(conn, limit=3, seen=set())
+    heads = [i.headline for i in items]
+    assert heads[0].startswith("markets are not stationary")   # project-linked leads...
+    assert any(h.startswith("a thought with enough") for h in heads)  # ...but the rest still come
+    # The to-do is not EXCLUDED — a length floor was tried and rejected — but it no longer
+    # leads: ranking demotes it behind the thread that is about real work.
+    assert todo and plain

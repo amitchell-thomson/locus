@@ -64,6 +64,30 @@ class Mark:
         return bool(self.covered_text.strip())
 
 
+# The reMarkable highlighter pens (rmscene `Pen.HIGHLIGHTER_1` / `HIGHLIGHTER_2`). The tool has
+# been parsed onto every stroke since Loop B and read by nothing — confirmed live on his
+# parent-orders paper, which carries 24 tool-18 strokes among 281 caligraphy ones.
+_HIGHLIGHTER_TOOLS = frozenset({5, 18})
+
+
+def _is_highlight(stroke: Stroke) -> bool:
+    """Was this drawn with the highlighter?
+
+    Shape cannot answer this: a highlight is wide and flat, so `classify` calls it an underline —
+    and then looks for its words in a band ABOVE the stroke, because a hand-drawn underline sits
+    below its glyphs. A highlight sits ON them, so the band reaches into the previous line.
+    """
+    tool = getattr(stroke, "tool", None)
+    return int(tool) in _HIGHLIGHTER_TOOLS if tool is not None else False
+
+
+def _split_highlights(strokes: list[Stroke]) -> tuple[list[Stroke], list[Stroke]]:
+    """(highlighter strokes, everything else)."""
+    highlights = [s for s in strokes if _is_highlight(s)]
+    pen = [s for s in strokes if not _is_highlight(s)]
+    return highlights, pen
+
+
 def _cluster(strokes: list[Stroke]) -> list[list[Stroke]]:
     """Group strokes that belong to one gesture, by vertical proximity.
 
@@ -133,7 +157,15 @@ def _covered(
     """(covered_text, line_context) for a mark."""
     x0, y0, x1, y1 = bbox
 
-    if kind == "underline":
+    if kind == "highlight":
+        # A highlight sits ON its words, so the band is the stroke itself — no upward reach, or
+        # it swallows the line above. Horizontal overlap still applies: half a line highlighted
+        # is half a line meant.
+        hits = [
+            w for w in words
+            if w[3] > y0 - 1.0 and w[1] < y1 + 1.0 and w[2] > x0 - 2 and w[0] < x1 + 2
+        ]
+    elif kind == "underline":
         # A hand-drawn underline sits below its words: search a band ABOVE the stroke.
         band_top, band_bottom = y0 - _UNDERLINE_BAND, y1 + 2.0
         hits = [
@@ -163,9 +195,22 @@ def marks_for_page(page, annotated: AnnotatedPage) -> list[Mark]:
     """
     words, lines = _words(page), _lines(page)
     out: list[Mark] = []
-    for group in _cluster(annotated.strokes):
+    # HIGHLIGHTS ARE CLUSTERED SEPARATELY, one gesture per line. `_cluster` chains strokes within
+    # `_CLUSTER_GAP` (26pt) and body text is ~12pt apart, so highlighting three consecutive lines
+    # produced ONE mark whose box spanned them all — and highlighting a whole page produced one
+    # mark spanning the page. Measured on *Can Large Language Models Execute Parent Orders*
+    # (2026-08-04): 305 strokes collapsed into 8 marks, two of which captured NOTHING (one from 65
+    # strokes) and two of which concatenated text from three unrelated places plus the vertical
+    # arXiv stamp. A pen gesture is one thing spread over many strokes; a highlighter gesture is
+    # many things, one per line, and chaining them destroys exactly the information they carry.
+    highlights, pen = _split_highlights(annotated.strokes)
+    groups = [[s] for s in highlights] + _cluster(pen)
+    for group in groups:
         bbox = _union(group)
-        kind, in_margin = classify(bbox, page_width=page.rect.width)
+        if _is_highlight(group[0]):
+            kind, in_margin = "highlight", False
+        else:
+            kind, in_margin = classify(bbox, page_width=page.rect.width)
         covered, ctx = _covered(kind, bbox, words, lines)
         out.append(
             Mark(

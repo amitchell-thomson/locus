@@ -400,3 +400,51 @@ def test_shapes_with_no_words_leave_the_note_empty(conn):
         conn, [mark], source_uri="books/apm.pdf", client=_FakeVision('{"text": ""}')
     ) == 0
     assert conn.execute("SELECT note FROM pdf_annotations").fetchone()["note"] is None
+
+
+# ---------- highlights are their own gesture ----------------------------------------------------
+
+
+def _hl(x0, y0, x1, y1, tool=18):
+    """A highlighter stroke (rmscene Pen.HIGHLIGHTER_2 = 18)."""
+    from locus.capture.rmdoc import Stroke
+
+    return Stroke(points=[(x0, y0), (x1, y1)], tool=tool)
+
+
+def test_highlights_on_consecutive_lines_stay_separate_marks(monkeypatch):
+    """`_CLUSTER_GAP` is 26pt and body text is ~12pt apart, so chaining merged them.
+
+    Measured on the live parent-orders paper: 305 strokes collapsed into 8 marks, two capturing
+    NOTHING (one from 65 strokes) and two concatenating three unrelated places. A pen gesture is
+    one thing spread over strokes; a highlighter gesture is one thing PER LINE.
+    """
+    from locus.capture import annotate as A
+
+    highlights, pen = A._split_highlights([_hl(0, 100, 200, 110), _hl(0, 112, 200, 122),
+                                           _hl(0, 124, 200, 134)])
+    assert len(highlights) == 3 and pen == []
+    # Each becomes its own group, where `_cluster` would have chained all three into one.
+    assert len(A._cluster(highlights)) == 1, "clustering would have merged them"
+
+
+def test_a_highlight_reads_the_words_under_it_not_the_line_above():
+    """A highlight sits ON its glyphs; the underline rule searches 9pt ABOVE, which at ~12pt line
+    spacing reaches into the previous line."""
+    from locus.capture.annotate import _covered
+
+    words = [
+        (0, 88, 200, 98, "the line above"),
+        (0, 100, 200, 110, "the highlighted line"),
+    ]
+    lines = [(0, 88, 200, 98, "the line above"), (0, 100, 200, 110, "the highlighted line")]
+    covered, _ctx = _covered("highlight", (0, 100, 200, 110), words, lines)
+    assert "highlighted line" in covered
+    assert "above" not in covered, "the highlight must not reach up into the previous line"
+
+
+def test_a_pen_stroke_is_not_treated_as_a_highlight():
+    from locus.capture import annotate as A
+
+    highlights, pen = A._split_highlights([_hl(0, 0, 10, 10, tool=21)])   # CALIGRAPHY
+    assert highlights == [] and len(pen) == 1

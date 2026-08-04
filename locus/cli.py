@@ -1525,6 +1525,14 @@ def cmd_review(args) -> None:
             written = rv.fill_concept_questions(conn, limit=args.write_concept_questions)
             print(f"wrote {written} concept question(s)")
             return
+        if args.answer_marks is not None:
+            # The questions he wrote in the margin, answered from his own library. Billed, and
+            # grounded-or-silent: a question the corpus cannot answer stores nothing.
+            from locus.learn import answers as ans
+
+            written = ans.write_answers(conn, limit=args.answer_marks)
+            print(f"answered {written} marked question(s)")
+            return
         if args.write_questions is not None:
             # Without a stored question the recall prompt IS the proposition — he would be shown
             # the answer and asked to recall it. Billed, so it is an explicit flag and belongs on
@@ -2107,6 +2115,10 @@ def main(argv=None) -> None:
     prv.add_argument(
         "--write-questions", type=int, nargs="?", const=20, default=None, metavar="N",
         help="give up to N scheduled propositions a real question to ask (billed; run overnight)",
+    )
+    prv.add_argument(
+        "--answer-marks", type=int, nargs="?", const=4, default=None, metavar="N",
+        help="answer N questions he wrote in the margin, from his own corpus (billed)",
     )
     prv.set_defaults(func=cmd_review)
 

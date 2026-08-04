@@ -75,7 +75,7 @@ _MAX_DISTANCE = 0.92
 # BUMP THIS whenever the prompt or the neighbour rule changes. `store_tensions` re-judges any
 # position whose cached verdict carries a different version, because a cached "no" that outlives
 # the judge that said it is how a fixed pass ships and changes nothing.
-_JUDGE_VERSION = "2026-08-03-conflict"
+_JUDGE_VERSION = "2026-08-03-substantive"
 
 
 @dataclass
@@ -191,13 +191,46 @@ def _doc_titles(conn, doc_ids: list[int]) -> dict[int, str]:
 # --- tension detection (retrieve deterministically, judge once) -----------------------------------
 
 
+# WHAT A TENSION HAS TO BE WORTH, in his words: "a wording thing is not the sort of thing I am
+# looking for". Both tensions the rebalanced judge first produced were rejected on exactly that
+# ground — "once it fixes it becomes a realised cashflow" against the corpus's definition of
+# realised cash flow, and "discovering fair value is the core skill" against "systematic approach
+# is as important as other factors". Each is a real disagreement and neither would change a single
+# thing he does.
+#
+# So the judge now CLASSIFIES what kind of conflict it found, and only the kinds that bear on
+# substance survive. Classifying is better than another instruction not to do it: an instruction
+# is invisible when ignored, whereas a label can be checked, counted, and logged when it is wrong.
+_SUBSTANTIVE_KINDS = ("factual", "methodological", "predictive")
+_WORDING_KINDS = ("terminological", "emphasis")
+
+
 class _TensionVerdict(BaseModel):
     conflicts_with: str = ""
     reason: str = ""
+    # 'factual' | 'methodological' | 'predictive' | 'terminological' | 'emphasis'
+    kind: str = ""
+    # What he would have to change if the stored claim is right. A tension that cannot name one
+    # is a debate about words.
+    changes: str = ""
 
 
 class _TensionVerdicts(BaseModel):
     tensions: list[_TensionVerdict] = Field(default_factory=list)
+
+
+def _record_gate(conn, *, rejected: bool, value) -> None:
+    """Log what the substance filter threw away, so the split can be judged after a week.
+
+    The rate matters: if nearly every tension classifies as terminological, the retrieval is
+    finding definitions rather than disagreements and the fix is upstream, not here.
+    """
+    try:
+        from locus.observe import gates
+
+        gates.record(conn, "trajectory.substantive_tension", rejected=rejected, value=value)
+    except Exception:                                # observability must never break its subject
+        pass
 
 
 @dataclass
@@ -289,8 +322,20 @@ and elaboration without disagreeing. Judge the substance, not the wording: two c
 the same thing in different words do not conflict. If nothing genuinely conflicts, return an \
 empty list — but do not strain to avoid reporting a real disagreement.
 
+For each one, CLASSIFY the conflict honestly:
+  factual         — one of them is simply wrong about how something behaves or what happened
+  methodological  — they imply different choices about how to do the work
+  predictive      — they expect different outcomes from the same conditions
+  terminological  — they use a word or definition differently, but agree on the substance
+  emphasis        — they weight or prioritise differently without contradicting
+
+and say in `changes` what he would actually have to DO differently if the stored claim is right. \
+Be honest about `terminological` and `emphasis` — labelling one of those correctly is far more \
+useful than dressing it up as factual, and nothing is lost by saying so.
+
 Return ONLY JSON: {{"tensions": [{{"conflicts_with": "<the stored claim, copied exactly>", \
-"reason": "<one line: what makes them incompatible>"}}]}}
+"reason": "<one line: what makes them incompatible>", "kind": "<one of the five>", \
+"changes": "<what he would have to do differently, or empty if nothing>"}}]}}
 
 POSITION
 {stance}
@@ -343,6 +388,26 @@ def find_tensions(
         if match is None:  # not one of the claims offered -> ungrounded, dropped
             log.debug("trajectory: dropped ungrounded tension %r", v.conflicts_with[:80])
             continue
+        # WORDING DISAGREEMENTS ARE DROPPED. His verdict on the first two this pass ever produced
+        # was that neither was worth showing: both were real, and both were about definitions
+        # rather than about anything he would do differently.
+        # FAILS CLOSED. The first cut read `kind in _WORDING_KINDS or (kind and kind not in
+        # _SUBSTANTIVE_KINDS)`, which let an EMPTY kind through — so a model that simply omitted
+        # the field got its tension published as substantive. Requiring membership instead means
+        # silence is a rejection, which is the right default for a filter whose whole job is to
+        # keep things off the page.
+        kind = (v.kind or "").strip().casefold()
+        if kind not in _SUBSTANTIVE_KINDS:
+            log.info("trajectory: dropped %s tension for %r", kind or "unclassified", stance[:60])
+            _record_gate(conn, rejected=True, value=f"{kind}: {v.reason[:60]}")
+            continue
+        # ...and so is one that cannot say what it would change. A conflict with no consequence
+        # is a debate, and the page has no room for debates.
+        if not (v.changes or "").strip():
+            log.info("trajectory: dropped consequence-free tension for %r", stance[:60])
+            _record_gate(conn, rejected=True, value=f"no consequence: {v.reason[:60]}")
+            continue
+        _record_gate(conn, rejected=False, value=None)
         out.append(Tension(stance=stance, conflicts_with=match.text, reason=v.reason,
                            source=match.source))
     return out

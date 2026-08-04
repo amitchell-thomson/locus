@@ -1,320 +1,162 @@
 # Locus
 
-**A self-hosted retrieval engine over an entire personal knowledge base — built to make
-everything I've learned, built, and written queryable, linkable, and usable as Claude's
-context.**
+A self-hosted knowledge system that holds everything its owner has read, written and built,
+and returns it when it is useful.
 
-Papers, lecture notes, code repositories, slide decks, project write-ups, notebooks, a CV:
-one heterogeneous corpus, ingested by local models on an 8 GB consumer GPU, served through
-a hierarchical hybrid-retrieval pipeline with measured, gated quality — and exposed to any
-Claude client as an MCP server over SSH.
+Locus does three things: it **answers questions** over a personal corpus with grounded citations,
+it **surfaces connections** across that corpus, and it **feeds the owner's own material to Claude**
+on demand. Corpus content never leaves the machine; the only runtime network egress is the
+generation call.
 
-```
-locus query "How do regime-switching models in finance relate to
-             state-space models in control theory?"
-```
-
-> Grounded, cited answers that bridge documents which never mention each other — a
-> quant-finance paper and control-theory lecture notes — because retrieval surfaces both
-> sides and Claude synthesises over the actual source text, attached figures included.
-
-<!-- DEMO: embed a 2–4 min walkthrough (video or GIF) here — ingest a document →
-     `locus query` with citations → a cross-domain link → the MCP server answering inside
-     Claude Code → the Obsidian graph. This is the highest-leverage portfolio artifact. -->
+It is not a note-taking application. There is no GUI. The product surfaces are a terminal, an MCP
+server, and a sheet of e-paper.
 
 ---
 
-## Why this exists
+## The daily loop
 
-Off-the-shelf RAG tools (AnythingLLM, Open WebUI, Khoj, NotebookLM, Obsidian AI plugins)
-were evaluated and rejected: none does hierarchical multi-granularity retrieval with
-reranking, none treats *figures* or *atomic claims* as first-class retrieval targets, and
-none is designed for the constraint that actually shapes this system — **the corpus must
-never leave my server, and the only GPU available has 8 GB of VRAM.**
+The system's centre of gravity is a PDF delivered to a reMarkable tablet each morning, and the
+handwriting that comes back.
 
-That constraint forces the defining architectural split:
+| Page | What it offers |
+| --- | --- |
+| **Read** | Papers proposed from the owner's live projects, each with a written reason for why it is worth reading |
+| **Think** | *Check this* — where the corpus contradicts a position he holds · *Develop* — his own open threads · *Connect* — a paper set against his work, phrased as a question |
+| **Ask** | Questions he wrote in margins while reading, answered from his own library, with the supporting passage cited |
+| **Learn** | Spaced-repetition questions on concepts he has met; answers overleaf, never beside the prompt |
+| **Open** | Unstructured space, and a status line reporting what ran overnight |
 
-- **Ingest is local and unbounded-time.** Quantised 7B models (text, vision, OCR) run
-  sequentially on the 3070 Ti under strict VRAM choreography. Ingest quality is never
-  traded for throughput — a document is ingested once and queried forever.
-- **Generation is a single Claude API call** over an assembled, token-budgeted context.
-  The only corpus content that ever leaves the machine is the retrieved context for the
-  question being asked.
+He writes on it. The next pull reads the ink back — geometry decides which region each stroke
+belongs to, and a printed anchor routes it to the right record. A tick resolves; a cross drops;
+prose **develops**, appending to a chain rather than overwriting it. Anything he develops is
+written out as a note and re-ingested, so his own thinking becomes searchable and can return to
+him later as a connection.
 
-Three equal product goals: **query** (cited answers), **link** (cross-domain connections
-through a canonicalised entity graph), and **context** (an MCP server feeding the corpus
-into Claude Code / Desktop on demand).
+The page is composed from stored data only — no model call at composition time — so it renders
+whether or not the previous night's work succeeded.
 
-## Headline results
+### Reading
 
-Measured on the live 291-document corpus — multi-year Oxford engineering coursework (246
-PDFs), 13 quant-finance and CS papers, 12 tracked code repositories, slide decks, notebooks,
-and career documents — comprising 2,986 sections, 10,082 chunks, 16,308 propositions, 3,886
-figures, and 21,173 entity mentions canonicalised into ~2,160 cross-document entities:
+Marks made while reading are read from the tablet's stroke geometry, not from a screenshot. Shape
+decides the gesture (underline, bracket, highlight, margin note) and position binds it to the
+exact passage. A written note beside a mark is transcribed and classified into one of three
+intents:
 
-| Metric | Result |
-|---|---|
-| Labelled retrieval recall@8 (53 queries incl. code, figures, alias-bridged) | **1.000** |
-| Mean reciprocal rank | **0.843** |
-| Cross-domain recall / confidence-banner misfires | **1.000 / 0** |
-| File-level recall (the *source file* surfaces, not prose about it) | **1.000** |
-| Related-document link pairs (entity-graph layer) | **13 / 13** |
-| Math extraction fidelity, Claude-judged vs page image (sampled, in band) | **~0.87** |
-| Ingest quality, LLM-as-judge, 6 dimensions (sampled) | **~4.3 / 5** |
-| Figure description throughput (GPU vision encode vs CPU) | **13× faster at judged parity** |
-| Tests (model-free by default: fake clients, injected embeddings) | **416 green** |
+- **important** — stays retrievable; nothing is pushed at him
+- **not understood** — answered on the Ask page from his own corpus
+- **an idea** — becomes a tracked thread, linked to the project it concerns
 
-Every number is reproducible: `locus eval --suite full` runs all gates; `locus audit` runs
-deterministic corpus QC with zero API calls. (Sampled metrics carry small run-to-run noise;
-the retrieval, link, and audit gates are deterministic.)
+Low-confidence classifications are not acted on; they become a decision in the terminal instead.
 
-## Key decisions
+---
 
-The choices that shaped the system, and why. Each is elaborated in the sections below.
+## Under the surface
 
-| Decision | Why |
-|---|---|
-| **Build the retrieval engine, don't buy** | No off-the-shelf RAG does hierarchical L1/L2/L3 retrieval + cross-encoder rerank with figures and atomic claims as first-class targets. The engine is the differentiator — it's the part worth owning; everything else is glue. |
-| **Local models ingest; the Claude API only generates** | The 8 GB VRAM ceiling and a *corpus-never-leaves-the-server* constraint force the split. The only content that ever leaves the machine is the retrieved context for the question being asked. |
-| **One schema for every source type** | A PDF, a git repo, and a slide deck all reduce to L1 document → L2 sections → L3 chunks, so retrieval logic never forks per format. A new format is an extraction problem, never a retrieval one. |
-| **Propositions and figures are first-class, embedded units** | The highest-signal content must be *searchable*, not merely assembled into context after a coarser unit matches. Figures additionally attach to the Claude call as images, so interpretation happens in the strongest model. |
-| **Hybrid retrieval, then rerank** | Dense embeddings blur exact symbols and tickers, so a BM25 lexical arm plus path- and entity-anchored arms run alongside four dense granularities — all merged through a CPU cross-encoder with diversity-aware selection. |
-| **Choose models by judged benchmark, on risk asymmetry** | GOT-OCR-2.0 was picked over two *higher-scoring* math-OCR engines because it degrades instead of inventing. The ingest LLM, the VLM serving path, and the mmproj quantisation were all settled by A/B against the source / page image. |
-| **Quality is eval-gated and adversarially audited** | Four eval suites plus a deterministic, API-free audit gate every change. Red-team findings become permanent audit predicates or eval labels, so a fixed bug cannot silently recur. |
-| **The model proposes, deterministic code disposes** | Every structured LLM output is schema-validated with bounded repair, grounding-checked against its source, and overridable by hard guards. One bad document quarantines; the batch continues. |
-| **Derived data is regenerable, never authoritative** | The canonical entity graph, pass caches, and the Obsidian projection are pure functions of the SQLite store — rebuilt with one command, never mutating the ingested tables. |
-| **Cross-domain links via a canonical entity substrate** | Surface variation ("LTI model" vs "Linear, Time-invariant model") fragments the very connections a knowledge graph is for; deterministic merge tiers + Claude-adjudicated fuzzy clusters (with hard guards) canonicalise them, and multi-query expansion bridges vocabulary across fields. |
+**Ingest.** PDFs, DOCX, slides, notebooks, markdown and whole code repositories reduce to one
+schema: documents → sections → chunks, plus atomic claims, typed entities and figures, all
+embedded. Mathematics is recovered by OCR where the PDF text layer has lost it. Local models do
+the extraction; ingest has no time budget, and quality is never traded for throughput.
 
-## Architecture
+**Retrieval.** Dense vector search across claims, sections, chunks and figures, combined with
+keyword search and an entity-aware arm that understands when two names mean the same thing.
+Candidates are reranked by a cross-encoder, filtered for diversity, expanded with parent context
+and assembled coarse-to-fine into a single generation call. Queries that bridge two fields are
+rephrased into each field's vocabulary, so a match written in unfamiliar terms still surfaces.
 
-```
-                         INGEST (local, unbounded time)                    
-  vault/incoming/<category>/  ───────────────────────────────────────────┐
-  tracked git repos ──────────► watcher / sync (flock: one ingest at a time)
-                                      │
-        ┌─────────────────────────────┼──────────────────────────────┐
-        ▼                             ▼                              ▼
-   EXTRACT                       LLM PASSES                      FIGURES
-   pdf/docx/pptx/md/txt/         qwen2.5:7b (Ollama)             detect (raster+vector,
-   ipynb/code(AST)               summaries · propositions        caption-paired, density-
-   ToC excision, de-hyphenation  entities · synthesis · gaps     filtered) → qwen2.5vl
-   page damage detector          pydantic-validated, bounded     describe (Ollama or
-   → GOT-OCR-2.0 math recovery   repair retries, grounding       llama-server GPU encode)
-     (QC-guarded fallback)       guards, quarantine-not-crash    QC → caption fallback
-        └─────────────────────────────┼──────────────────────────────┘
-                                      ▼
-                    EMBED (nomic-embed-text, 768-dim) + WRITE
-              one SQLite transaction per document; content-hash idempotent;
-              pass cache ⇒ re-ingests only pay for what changed
-                                      │
-   ┌──────────────────────────────────▼───────────────────────────────────┐
-   │  SQLite + sqlite-vec + FTS5                                          │
-   │  L1 documents (synthesis, date, category)                            │
-   │  L2 sections (summaries)          L3 chunks (raw text, provenance)   │
-   │  propositions (atomic claims)     figures (VLM descriptions + PNGs)  │
-   │  entities ──── entity_aliases (canonical link substrate, regenerable)│
-   └──────────────────────────────────┬───────────────────────────────────┘
-                                      │
-                         RETRIEVE (per query, local)
-   dense: propositions ─ chunks ─ sections ─ figures     lexical: FTS5/BM25
-   path-anchored (code files named in query)             entity arm (alias-aware)
-        → cross-encoder rerank (CPU) → diversity-aware selection
-        → calibrated confidence band (flag, never filter)
-        → hierarchical expansion (parent summary + doc synthesis, pure joins)
-        → coarse-to-fine assembly under token budget, deduped citations
-                                      │
-                                      ▼
-                  GENERATE: one Claude API call (multimodal —
-                  top retrieved figures attach as actual images)
-                                      │
-              ┌───────────────────────┴───────────────────────┐
-              ▼                                               ▼
-        locus CLI                                  MCP server (stdio over SSH)
-   query/retrieve/inspect/link/audit/eval     retrieve · list · inspect (+ opt-in query)
-```
+**Linking.** A derived alias layer canonicalises entity names — deterministic rules first, a
+judged pass for the ambiguous remainder. This is what allows engineering coursework to connect to
+quantitative research, and what lets separate threads of the owner's thinking find each other.
 
-### The data model: three levels, plus first-class signal units
+**Discovery.** Weekly searches of arXiv and OpenAlex, using concepts drawn from what he has marked
+and what his live projects implement. Candidates are ranked against stored profiles of his own
+work; survivors are delivered to the tablet with a written explanation. Moving a paper out of the
+proposed folder is the accept signal.
 
-Every source type — a PDF, a git repository, a slide deck — reduces to the same shape:
-**L1 document** (thesis/method/result/limitations synthesis, date, category) → **L2
-sections** (LLM summaries; files for code) → **L3 chunks** (raw text with real provenance:
-`file.py:190-218` for code, slide numbers for decks, page ranges for PDFs). Retrieval
-logic never forks per format.
+---
 
-Two unit types are deliberately promoted out of this hierarchy and embedded directly,
-because the highest-signal content must be *searchable*, not just *assembleable*:
+## Other surfaces
 
-- **Propositions** — atomic, self-contained claims extracted per section.
-- **Figures** — block diagrams, plots, schematics: detected geometrically, described by a
-  local VLM so they're *findable*, and attached to the Claude call as actual images so
-  the precise interpretation happens in the strongest model for free.
+| Command | Purpose |
+| --- | --- |
+| `locus query` | A grounded, cited answer over the whole corpus |
+| `locus mcp` | Serves the corpus to Claude over stdio; retrieval is local and free |
+| `locus decide` | The single approval surface — the only place a status changes |
+| `locus status` | One screen: corpus health, spend, timer state, staleness warnings |
+| `locus gates` | What each internal threshold rejected, so a dead one becomes visible |
+| `locus backup` / `restore` | WAL-safe snapshots with a hard-linked raw store; restore is tested |
+| `locus export-obsidian` | A read-only graph projection for visual exploration |
 
-Raw chunks are always co-assembled alongside derived units, so generation grounds on
-source text even when a summary is imperfect — LLM noise is recoverable by design;
-extraction loss and retrieval misses are not, and got the engineering budget accordingly.
+---
 
-### Math doesn't survive PDF text layers — so it's recovered
+## Design commitments
 
-The corpus is math-dense (control theory, signal processing, quantitative finance), and
-PDF text layers garble exactly that content: broken font CMaps silently *drop* ligatures,
-Colab exports lose formulas entirely. A per-page damage detector (ligature-loss
-signatures, symbol garbage like ω→`!`, math-font density, image-embedded formulas) routes
-flagged pages through an OCR-to-markup engine.
+1. **Local data ownership.** Corpus content stays on the server.
+2. **Quality over speed at ingest.** Extraction loss is unrecoverable; latency is not.
+3. **Grounded or silent.** Every claim, connection, answer and contradiction cites a real stored
+   unit, or it is not shown. Silence is the better failure.
+4. **Propose, never mutate.** The agent layer writes to its own tables and proposes; the owner
+   decides. The ingested corpus is never edited by derived layers.
+5. **Derived data is regenerable.** Aliases, caches and projections can be deleted and rebuilt;
+   the ingested tables are the only source of truth.
+6. **Nothing is shown twice**, and nothing is measured back at him. No unread counts, no streaks.
 
-The engine was chosen by benchmark, not reputation — three candidates raced on real
-corpus pages, Claude-judged against the rendered page image: Nougat scored 0.97 *but
-failed on 4/10 pages*; qwen2.5-vl scored 0.97 *but invented an equation*; **GOT-OCR-2.0
-scored 0.93 with zero hallucinations and zero failures** — and was chosen on risk
-asymmetry: it degrades, it never invents. Every replaced page passes deterministic QC
-(length, repetition-loop, residual-corruption checks) or falls back to the original with
-an audit trail.
-
-### The link layer: entity canonicalisation as a graph substrate
-
-"Linear, Time-invariant (LTI) models", "LTI model", "Bode Diagram"/"Bode diagram",
-"fourier transform" stored as concept *and* method *and* theorem — surface variation
-fragments exactly the cross-document connections a knowledge graph is for. `locus link`
-builds a **derived, regenerable** alias table over the stored entities:
-
-1. **Deterministic tiers** merge on hard evidence only: case-folding, punctuation,
-   acronym↔expansion links where both surfaces are attested in the corpus, cross-document
-   plurals that collapse onto an attested singular.
-2. **Fuzzy lookalike clusters** (embedding cosine + token-overlap blocking) go to the
-   Claude API for adjudication — judgement-quality work where a wrong merge corrupts the
-   graph and a missed merge is only fragmentation.
-3. **Hard guards override the model**: two names the author used distinctly *in the same
-   section* never merge; short homonyms ("VaR", "P2") never merge; canonical names are
-   snapped to actual corpus surfaces, never invented; code identifiers are exact and
-   excluded entirely.
-
-Verdicts are content-cached: rebuilding after new ingests re-adjudicates only changed
-clusters (measured: a full re-run costs 0 API calls). The substrate powers alias-aware
-entity retrieval (query "KL divergence", surface the document that only ever writes
-"Kullback-Leibler (KL) divergence") and a joins-only related-documents view in the CLI
-and MCP server.
-
-Two layers sit on top of it. **Code repositories are given the domain concepts they
-implement** — extracted from each repo's README, synthesis, and file summaries (never raw
-code, where an 8B model is weakest) — so a project links to the *papers and coursework on the
-same subject*, not just to other code: the regime-detection repo surfaces the Markov-switching
-papers it's built on. And a read-only **Obsidian projection** (`locus export-obsidian`) renders
-the whole corpus as a browsable graph — document notes with synthesis frontmatter, canonical
-entity hubs, and related-document edges — generated one-way from SQLite and never read back,
-so the shape of the corpus (clusters, bridges, orphans) becomes visible without leaving it.
-
-### Retrieval: hybrid, reranked, diversity-aware, calibrated
-
-Six candidate arms (four dense granularities, BM25 lexical for the exact symbols dense
-embeddings blur, plus path- and entity-anchored arms) merge into a CPU cross-encoder
-rerank. Selection enforces soft diversity caps — one section can't occupy three slots as
-proposition+chunk+summary; one document can't monopolise the top-k and break cross-domain
-synthesis; queries that name a file get the actual source file guaranteed.
-
-Confidence is calibrated, not vibes: a rerank-score floor (fit against in-corpus queries
-vs negative controls) drives a two-tier LOW CONFIDENCE banner that *flags and never
-filters* — and facet-aware scoring keeps legitimate cross-domain bridge queries from
-being mislabelled as absent. The labelled eval asserts banner misfires stay at zero.
-
-### Quality engineering
-
-The eval system is the project's spine, not an afterthought:
-
-- **`locus audit`** — deterministic, API-free corpus QC: ingest hygiene predicates
-  re-applied to stored rows, corruption signatures, unattested numbers, OCR-fallback
-  counters, figure QC, alias-substrate checks (including LLM merges with zero lexical
-  evidence, sampled for human review).
-- **`locus eval`** — four suites: an LLM-as-judge over stored extractions (also the A/B
-  harness that settled the ingest-model choice by benchmark), a math-fidelity gate that
-  judges stored text against rendered page images (doubling as the VRAM-regression
-  canary), a labelled retrieval suite (recall@8, MRR, cross-domain banner rate,
-  file-level recall, link pairs) with answer-key exclusion — the repo indexes itself, so
-  eval queries must not match their own source file — and a figure-description judge that
-  compares VLM output against the actual image.
-- **External adversarial audits** — desktop-Claude audits over the MCP server repeatedly
-  red-teamed the system; every finding was verified against the code, fixed, and
-  converted into a permanent audit predicate or eval label so it can never silently
-  recur. The most instructive: a VRAM eviction bug that made math-OCR fail on 255 pages
-  while *every headline gate stayed green* — the fix shipped with a new audit counter
-  loud enough to catch it next time.
-
-Hard rules throughout: every structured LLM output is schema-validated with bounded
-repair retries; one bad document quarantines and the batch continues; a failed re-ingest
-can never destroy the existing document; derived layers never mutate ingested data.
+---
 
 ## Stack
 
-| | |
-|---|---|
-| Extraction | PyMuPDF, python-docx, python-pptx, stdlib (md/txt/ipynb), Python `ast` |
-| Math OCR | GOT-OCR-2.0 (benchmark-selected) |
-| Vision | qwen2.5vl:7b via Ollama, or llama.cpp `llama-server` (Vulkan) for GPU vision encode |
-| Ingest LLM | qwen2.5:7b-instruct-q5_K_M via Ollama (benchmark-selected vs llama3.1:8b) |
-| Embeddings | nomic-embed-text (768-dim) |
-| Store | single SQLite file: sqlite-vec (KNN) + FTS5 (BM25) + Alembic migrations |
-| Rerank | ms-marco-MiniLM cross-encoder (CPU) |
-| Generation | Claude API, one multimodal call per query |
-| Context surface | MCP server (stdio over SSH — no open ports, no auth surface) |
-| Hardware | RTX 3070 Ti (8 GB), Ryzen 5 5600X, 32 GB RAM |
+Python 3.11+ with uv. SQLite with `sqlite-vec` for vectors and FTS5 for keyword search; Alembic
+for forward-only migrations. Local models via Ollama for extraction and embeddings, a
+cross-encoder on CPU for reranking, and the Claude API or `claude -p` for generation and
+judgement.
+
+The hardware ceiling — a single 8 GB GPU — is the constraint that shapes the design: local models
+for ingest, hosted models only where an error would corrupt durable state.
+
+---
 
 ## Usage
 
 ```bash
-# ingest
-locus ingest paper.pdf deck.pptx notes.md         # any supported format, idempotent
-locus watch                                        # auto-ingest vault/incoming/<category>/
-locus sync                                         # re-ingest tracked repos on new commits
+# ingest anything
+locus ingest path/to/file.pdf
+locus watch                       # continuous; category from the drop folder
+locus sync                        # tracked code repositories
 
-# query
-locus query "What did my Citadel deck recommend about monetary policy?"
-locus retrieve "transfer function H(omega)" --since 2025-01-01 --category coursework
-locus inspect <doc>                                # synthesis, sections, related documents
+# ask
+locus query "how do regime-switching models relate to state-space models?"
+locus retrieve "covariance estimation" --json
 
-# link + project
-locus link                                         # (re)build the entity-alias substrate
-locus retitle                                      # distinctive, collision-broken titles corpus-wide
-locus export-obsidian                              # render the corpus as a read-only Obsidian vault
+# the daily loop
+locus daily                       # compose and deliver today's page
+locus daily-pull                  # read the ink back and route it
+locus decide                      # approve what is pending
 
-# operate + quality
-locus status                                       # one-screen health: counts, alias staleness, backups
-locus backup        /  locus restore <snap>        # WAL-safe snapshot of DB + raw store + notes
-locus audit                                        # deterministic corpus QC, no API
-locus eval --suite full                            # judge + math + retrieval gates
+# maintain
+locus link                        # rebuild the alias substrate
+locus status                      # health, spend, warnings
+locus gates --days 7              # what the thresholds rejected
+locus backup
 
 # serve to Claude
-locus mcp                                          # MCP over stdio (run via ssh from client)
+locus mcp
 ```
 
-Setup: `uv sync` (extras: `[rerank]`, `[mathocr]`), copy `config.example.toml` →
-`config.toml`, `alembic upgrade head`, export `ANTHROPIC_API_KEY`. Requires a local
-[Ollama](https://ollama.com) with `qwen2.5:7b-instruct-q5_K_M` + `nomic-embed-text`
-(+ `qwen2.5vl:7b` for figures). Optional: LibreOffice (slide renders), llama.cpp
-(fast figure descriptions) — absent, the pipeline degrades gracefully and says so.
-
-## Hard-won lessons
-
-Two findings that don't fit the decision table above because they're debugging war stories,
-not choices — and they were the most expensive to learn on an 8 GB card:
-
-- **A split model produces identical output, slowly.** The hardest bug class here: a model
-  silently half-evicted to CPU passes every quality gate while running ~3× slow — or starves a
-  downstream pass of VRAM entirely. Evictions are now settle-polled and confirmed, and the
-  math-fidelity suite runs after any VRAM-choreography change as a regression canary.
-- **Quantised vision features hallucinate.** The mmproj auto-pair at Q8_0 (vs f16) *failed* the
-  figure-judge gate — the language weights quantise cleanly, the visual projector does not — a
-  failure only caught because figure description quality is itself measured against the image.
-
-## Status
-
-Build steps 1–12 complete and gated, the multi-year corpus poured (33 → 291 documents,
-deduplicated; runbook in `docs/pour-runbook.md`), and the post-pour roadmap largely shipped:
-corpus-level distinctive titling, WAL-safe backup/restore and a one-screen health command, a
-read-only Obsidian projection of the canonical entity graph, and cross-corpus code-concept
-linking so projects connect to the papers they implement. Open: an ANN index when brute-force
-KNN's count warning fires (it is fine at this scale), fuzzy concept linking to lift
-project↔paper connections into the top ranks, and transcript ingest.
+Most of this runs unattended on systemd timers; the manual commands exist for when something
+needs forcing.
 
 ---
 
-*Personal infrastructure, built for one user and one server — which is exactly why the
-quality bar is what it is: every document ingested badly is a document I'll never find
-again.*
+## Status
+
+In daily use. 225 documents, ~17,000 stored claims, ~2,200 cross-document concepts. Operating cost
+is well under a pound a day. The corpus is deliberately weighted toward study material, because
+that is where the foundations bridging into current work are found.
+
+Evaluation covers labelled retrieval recall, cross-domain bridging, link recall, mathematical
+fidelity and a deterministic per-document audit. The test suite is around a thousand tests,
+model-free by default.
+
+The recurring failure this system is built to resist is a path that *looks* wired and is not: a
+threshold that admits nothing, a cached verdict that outlives the judge that produced it, a signal
+that reaches no surface. Several such paths have been found and closed. `locus gates` exists so
+that the next one is visible rather than silent.

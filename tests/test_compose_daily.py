@@ -123,7 +123,7 @@ def test_empty_is_a_valid_calm_state(conn):
     body = cd.render(page)
     assert "Nothing to surface today." in body
     # No empty section headings, and above all no counts to feel behind on.
-    for banned in ("## Read", "## Think", "## Recall"):
+    for banned in ("## Read", "## Think", "## Learn"):
         assert banned not in body
     # ...but the status line survives an empty day: it is the only place a failure is announced.
     assert "overnight:" in body
@@ -627,18 +627,18 @@ def test_each_section_gets_its_own_physical_page(conn):
         conn, prompt_kind="object", prompt_ref="1", today=date(2026, 1, 1)
     )
     body = cd.render(cd.compose(conn, today=date(2026, 8, 1)))
-    # Read | Think | Recall | back page => three breaks.
+    # Read | Think | Learn | back page => three breaks.
     assert body.count("#pagebreak()") == 3
     # Sections are level-1 headings: the date moved to the running header, so the SECTION is
     # the title of its page (see `render`).
-    assert body.index("# Read") < body.index("# Think") < body.index("# Recall")
+    assert body.index("# Read") < body.index("# Think") < body.index("# Learn")
 
 
 def test_a_quiet_day_is_a_short_document_not_four_blank_pages(conn):
     _jotted(conn, "a thought worth developing further")
     body = cd.render(cd.compose(conn, today=date(2026, 8, 1)))
     assert body.count("#pagebreak()") == 1  # Think, then the back page
-    assert "# Recall" not in body
+    assert "# Learn" not in body
 
 
 def test_writable_rows_render_ascii_boxes_and_ruled_lines(conn):

@@ -311,7 +311,7 @@ def test_a_question_on_a_recall_line_is_not_graded_as_a_recall(conn):
     page = _page(conn)
     before = conn.execute("SELECT * FROM review_schedule WHERE id=?", (item.id,)).fetchone()
     pd.route_regions(conn, page.page_date, [
-        R("R1", None, "does this suggest we should use a macro regime predictor here?")
+        R("L1", None, "does this suggest we should use a macro regime predictor here?")
     ])
     after = conn.execute("SELECT * FROM review_schedule WHERE id=?", (item.id,)).fetchone()
 
@@ -344,7 +344,7 @@ def test_recall_answer_advances_the_schedule(conn):
     )
     page = _page(conn)
     before = conn.execute("SELECT * FROM review_schedule WHERE id=?", (item.id,)).fetchone()
-    pd.route_regions(conn, page.page_date, [R("R1", None, "because the curve was inverted")])
+    pd.route_regions(conn, page.page_date, [R("L1", None, "because the curve was inverted")])
     after = conn.execute("SELECT * FROM review_schedule WHERE id=?", (item.id,)).fetchone()
     assert after["reps"] > before["reps"]
     assert after["due"] > before["due"]
@@ -355,7 +355,7 @@ def test_untouched_recall_does_not_advance(conn):
         conn, prompt_kind="object", prompt_ref="1", today=date(2026, 1, 1)
     )
     page = _page(conn)
-    pd.route_regions(conn, page.page_date, [R("R1", None, "")])
+    pd.route_regions(conn, page.page_date, [R("L1", None, "")])
     after = conn.execute("SELECT * FROM review_schedule WHERE id=?", (item.id,)).fetchone()
     assert after["reps"] == 0
 
@@ -392,9 +392,9 @@ def test_re_pulling_does_not_double_grade_a_recall(conn):
         conn, prompt_kind="object", prompt_ref="1", today=date(2026, 1, 1)
     )
     page = _page(conn)
-    pd.route_regions(conn, page.page_date, [R("R1", None, "an answer")])
+    pd.route_regions(conn, page.page_date, [R("L1", None, "an answer")])
     once = conn.execute("SELECT * FROM review_schedule WHERE id=?", (item.id,)).fetchone()["reps"]
-    pd.route_regions(conn, page.page_date, [R("R1", None, "an answer")])
+    pd.route_regions(conn, page.page_date, [R("L1", None, "an answer")])
     twice = conn.execute("SELECT * FROM review_schedule WHERE id=?", (item.id,)).fetchone()["reps"]
     assert twice == once, "re-reading the same scan must not advance the schedule again"
 
@@ -423,11 +423,11 @@ def test_extract_regions_parses_and_uppercases(conn, monkeypatch):
     )
     client = _FakeVision(
         '{"regions":[{"anchor":"b1","mark":"tick","text":" tighten this "},'
-        '{"anchor":"R1","mark":"none","text":""}]}'
+        '{"anchor":"L1","mark":"none","text":""}]}'
     )
     got = {r.anchor: r for r in pd.extract_regions("x.pdf", client=client)}
     assert got["B1"].ticked is True and got["B1"].text == "tighten this"
-    assert got["R1"].has_writing is False
+    assert got["L1"].has_writing is False
 
 
 def test_extract_regions_drops_an_unparseable_page_rather_than_guessing(conn, monkeypatch):

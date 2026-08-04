@@ -1445,7 +1445,7 @@ def compose(conn: sqlite3.Connection, *, today: date | None = None) -> DailyPage
     page.status = build_status(conn)
 
     for i, r in enumerate(page.readings, 1):
-        r.anchor = f"D{i}"
+        r.anchor = f"R{i}"
         page.anchors.append(
             Anchor(r.anchor, "reading", r.target_kind, r.target_key, label=r.title)
         )
@@ -1457,7 +1457,7 @@ def compose(conn: sqlite3.Connection, *, today: date | None = None) -> DailyPage
             Anchor(t.anchor, t.kind, t.target_kind, t.target_key, label=t.headline[:120])
         )
     for i, r in enumerate(page.recalls, 1):
-        r.anchor = f"R{i}"
+        r.anchor = f"L{i}"
         page.anchors.append(
             Anchor(r.anchor, "recall", "review_item", str(r.item_id), label=r.prompt[:120])
         )
@@ -1657,7 +1657,7 @@ def _render_read(page: DailyPage) -> str:
         lines += [f"{_anchor(d.anchor)} **{d.title}**{tag}", "", d.why]
         if d.grounding:
             lines += ["", f"`{d.grounding}`"]
-        lines += ["", _rules(1)]
+        lines += ["", _rules(2)]
 
     # NO "IN PROGRESS" LIST. It restated what the device already shows: the owner reads it off
     # the `/Reading/In-Progress` folder, and a status list is not worth a third of the page he
@@ -1708,13 +1708,13 @@ def _render_answered(page: DailyPage) -> str:
         lines += [a.answer, ""]
         if a.source:
             lines += [f"*{_clip(a.source, 70)}*", ""]
-        lines.append("***")
+        lines.append(_rules(3))
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
 
 def _render_recall(page: DailyPage) -> str:
-    lines = ["# Recall", "", "Answer, then tick if you knew it. Answers overleaf.", ""]
+    lines = ["# Learn", "", "Answer, then tick if you knew it. Answers overleaf.", ""]
     per_item = _lines_for(len(page.recalls), "recall")
     for r in page.recalls:
         lines += [f"{_anchor(r.anchor)} {r.prompt}", ""]

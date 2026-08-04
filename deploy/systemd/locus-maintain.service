@@ -46,6 +46,14 @@ ExecStart=/home/alec/.local/bin/uv run locus review --write-questions 8
 #     keep the evidence as the answer, rather than turning a stored claim into a question about
 #     that claim — which is the regurgitation he rejected.
 ExecStart=/home/alec/.local/bin/uv run locus review --write-concept-questions 6
+# 4d. The questions he wrote in the MARGIN, answered from his own library (billed, claude -p).
+#     This feeds the Ask page, and like every other page section the prose must exist BEFORE
+#     composition — the page is aggregate-only and prints what is already stored. Without this
+#     line the Ask page answers only the marks that happened to be processed by hand once and
+#     then goes permanently stale: the "looks wired and isn't" failure the §24 audit existed to
+#     find. Four a night, and grounded-or-silent means a question the corpus cannot answer stores
+#     nothing, so the real rate is lower than the cap.
+ExecStart=/home/alec/.local/bin/uv run locus review --answer-marks 4
 # 4c. The written reason two documents are worth connecting (billed). The daily page is
 #     aggregate-only, so this prose must exist BEFORE composition or the connection is not
 #     offered at all — silence beats the bare "both develop X" phrasing he called obscure.

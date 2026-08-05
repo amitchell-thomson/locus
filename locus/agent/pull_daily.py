@@ -415,6 +415,31 @@ def _route_reading(conn, anchor, region, r: ExtractedRegion, *, page_date: str) 
     )
 
 
+def _route_answered(conn, anchor, region, r: ExtractedRegion, *, page_date: str) -> RouteOutcome:
+    """An answered margin question that he has written BACK on.
+
+    THE ASK PAGE IS A CONVERSATION, not a broadcast. It was built as terminal — here is your
+    answer, nothing is asked of you — and that is not how it gets used. Over the first two real
+    days he wrote on all six Ask regions, every one of them a follow-up:
+
+        "What are typical benchmarks that are used? (surely it is quite arbitrary - is SPY used?)"
+        "Is the meaning of variance just (volatility)^2 or is there a more nuanced meaning?"
+        "How are these buy/sell signals computed ... I have the same question as yesterday"
+
+    `answered` was missing from the dispatch, so all six routed to `error` and were discarded. An
+    answer that provokes a sharper question is the pass working, and throwing that question away
+    is the worst thing this surface could do with it.
+
+    Routed through `_route_writing` like every other written region: it becomes an owner-authored
+    question, so it survives, reaches Develop, and can be promoted into the corpus as his words.
+    """
+    if not r.has_writing:
+        return RouteOutcome(r.anchor, "answered", "untouched")
+    return RouteOutcome(
+        r.anchor, "answered", "kept", _route_writing(conn, anchor, r, page_date=page_date)
+    )
+
+
 def _route_mark(conn, anchor, region, r: ExtractedRegion, *, page_date: str) -> RouteOutcome:
     """A passage he marked while reading, resurfaced on the page (Loop B's consumer).
 
@@ -674,6 +699,8 @@ def route_regions(
             outcome = _route_blessing(conn, anchor, r.anchor, r, page_date=page_date)
         elif anchor.kind == "question":
             outcome = _route_question(conn, anchor, r.anchor, r, page_date=page_date)
+        elif anchor.kind == "answered":
+            outcome = _route_answered(conn, anchor, r.anchor, r, page_date=page_date)
         else:
             outcome = RouteOutcome(r.anchor, anchor.kind, "error", "unknown anchor kind")
         _record(conn, page_date, r, outcome.outcome, source_run=source_run)

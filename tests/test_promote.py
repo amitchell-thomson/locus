@@ -91,7 +91,7 @@ def test_threads_fit_the_page_and_are_anchored_and_rendered(conn):
         _thread(conn, f"question number {i}?")
     page = _page(conn)
     threads = _open_on(page)
-    assert 0 < len(threads) <= cd._FIT["think"]
+    assert 0 < len(threads) <= cd._FIT["ideas"] + cd._FIT["connect"]
     assert {a.anchor for a in page.anchors if a.kind == "open"} == {t.anchor for t in threads}
     body = cd.render(page)
     for t in threads:

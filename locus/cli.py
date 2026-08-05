@@ -532,6 +532,46 @@ def cmd_restore(args) -> None:
     print("Restore complete. Restart any long-lived `locus mcp` server.")
 
 
+def cmd_reading_why(args) -> None:
+    """Deliver "Why these papers" to the shelf — one document, refreshed when the shelf changes.
+
+    Replaces the daily page's Read section (see `reading/rationale.py`): the reasons are valuable,
+    the place to read them is where the choice is made. Free and local — every reason was
+    composed and stored earlier by `discover/why.py`; this renders and pushes.
+    """
+    from pathlib import Path as _P
+
+    from locus.config import load as _load
+    from locus.reading import rationale
+    from locus.reading.deliver_remarkable import deliver_pdf
+    from locus.reading.md2pdf import render_markdown_to_pdf
+    from locus.reading.proposals import FOLDER_PROPOSED
+
+    cfg = _load()
+    conn = _open()
+    try:
+        doc = rationale.render(conn)
+        out = _P(args.out or (cfg.paths.notes / "_generated" / f"{rationale.DOC_NAME}.pdf"))
+        # THE STAMP IS A FILE, not a table. It records one fact about a delivery, it is
+        # regenerable, and a schema migration to hold a single hash would be ceremony.
+        stamp_path = out.with_suffix(".fingerprint")
+        stamp = stamp_path.read_text().strip() if stamp_path.exists() else ""
+        if stamp == doc.fingerprint and not args.force:
+            print(f"shelf unchanged ({doc.count} proposal(s)) — nothing to deliver")
+            return
+        out.parent.mkdir(parents=True, exist_ok=True)
+        render_markdown_to_pdf(doc.markdown, out)
+        print(f"rendered {doc.count} proposal(s) -> {out}")
+        if not args.no_push:
+            folder = f"{cfg.discovery.root_folder}/{FOLDER_PROPOSED}"
+            deliver_pdf(out, remote_folder=folder,
+                        rmapi_binary=cfg.discovery.rmapi_binary, replace=True)
+            print(f"  delivered {rationale.DOC_NAME} -> reMarkable:/{folder}")
+        stamp_path.write_text(doc.fingerprint)
+    finally:
+        conn.close()
+
+
 def cmd_gates(args) -> None:
     """What each threshold rejected over the window — the dead-gate check (no API; local only).
 
@@ -1857,6 +1897,15 @@ def main(argv=None) -> None:
 
     pst = sub.add_parser("status", help="one-screen operational health summary (no API)")
     pst.set_defaults(func=cmd_status)
+
+    prw = sub.add_parser(
+        "reading-why",
+        help="deliver the shelf's rationale document to Reading/Proposed (no API)",
+    )
+    prw.add_argument("--force", action="store_true", help="deliver even if the shelf is unchanged")
+    prw.add_argument("--no-push", action="store_true", help="render locally only")
+    prw.add_argument("--out", default=None, help="output path (default: notes/_generated)")
+    prw.set_defaults(func=cmd_reading_why)
 
     pgt = sub.add_parser(
         "gates", help="what each threshold rejected over the last N days (no API; dead-gate check)"

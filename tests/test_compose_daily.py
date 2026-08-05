@@ -156,13 +156,18 @@ def test_recalls_fit_the_page(conn):
 # ---------- page 1: Read ----------
 
 
-def test_read_page_comes_from_the_discovery_shelf(conn):
-    """The section this replaces offered corpus re-reads — an Optibook manual from last year —
-    while ten real papers sat in Reading/Proposed and compose_daily never referenced them."""
+def test_the_daily_page_no_longer_carries_a_read_section(conn):
+    """Replaced by "Why these papers" in Reading/Proposed (`reading/rationale.py`).
+
+    Two days of real use: it duplicated the shelf folder he already browses, and he never used it
+    to decide what to read — the writing he put on it was project thinking about the papers,
+    which is the Ideas page's job. The reasons were the valuable part, so they moved to where the
+    choice is made rather than being deleted.
+    """
     _proposal(conn, "Ledoit-Wolf shrinkage", why_long="regime-ml estimates 55x55 from 250 days.")
     page = cd.compose(conn, today=date(2026, 8, 2))
-    assert [r.title for r in page.readings] == ["Ledoit-Wolf shrinkage"]
-    assert "regime-ml estimates 55x55" in cd.render(page)
+    assert page.readings == []
+    assert "# Read" not in cd.render(page)
 
 
 def test_the_written_reason_is_used_when_there_is_one_and_falls_back_when_not(conn):
@@ -217,34 +222,22 @@ def test_a_re_read_below_the_rerank_bar_is_not_offered(conn, monkeypatch):
     )
 
 
-def test_the_read_page_no_longer_offers_a_corpus_re_read(conn, monkeypatch):
-    """Superseded by the Ask page, not recalibrated.
+def test_no_reading_reaches_the_daily_page_at_all(conn):
+    """The Read section and its re-read slot are both gone.
 
-    The re-read slot answered a `not_understood` passage by offering a whole other document that
-    might explain it. `daily.reread_min_rerank` rejected 190 of 190 candidates with a best score
-    of 1.917 against a floor of 2.5 — it never once fired. Lowering the floor would only admit the
-    known-wrong match (*Sampling, aliasing, modulation* for a note about trading "signals").
-
-    The same signal now gets a direct answer on the Ask page, citing the proposition that supports
-    it. This asserts the slot is gone even when a re-read would score WELL, because the point is
-    supersession: the reading seat goes back to new material.
+    The slot was superseded by the Ask page (`daily.reread_min_rerank` rejected 190 of 190, best
+    score 1.917 against a floor of 2.5). The section itself was superseded by "Why these papers"
+    in Reading/Proposed, because he browses the shelf there and never used the page to choose.
     """
-    import locus.retrieve.rerank as R
-
-    for i in range(cd._FIT["read"]):
-        _proposal(conn, f"paper {i}")
-    _corpus_doc(conn, 901, uri="corpus/explainer.pdf", title="The Explainer")
+    _proposal(conn, "a paper")
     _mark(conn, uri="books/apm.pdf", page=9, text=_PASSAGE, kind="margin_note")
     with conn:
         conn.execute("UPDATE pdf_annotations SET intent='not_understood', intent_confidence=0.9, "
                      "note=? WHERE id=1", ("what is a factor covariance estimator really",))
-    _stub_search(monkeypatch, 901)
-    monkeypatch.setattr(R, "score_pairs", lambda _q, texts: [4.5] * len(texts))
-
     page = cd.compose(conn, today=date(2026, 8, 2))
-    shelves = [r.shelf for r in page.readings]
-    assert "re-read" not in shelves, "the re-read slot was superseded by the Ask page"
-    assert len(page.readings) == cd._FIT["read"], "and new reading fills the page"
+    assert page.readings == []
+    body = cd.render(page)
+    assert "# Read" not in body and "re-read" not in body
 
 
 def _target(conn, *, title, subject="regime-ml", why=None, proposal_id=None, marks=0,
@@ -260,28 +253,13 @@ def _target(conn, *, title, subject="regime-ml", why=None, proposal_id=None, mar
     return cur.lastrowid
 
 
-def test_the_shelf_state_prints_the_true_count(conn):
-    """The one deliberate exception to no-guilt-metrics: 'full queue, and tell me the truth'.
+def test_an_empty_shelf_says_so_rather_than_rendering_a_bare_heading(conn):
+    """The shelf count moved off the daily page with the Read section."""
+    from locus.reading import rationale
 
-    The count is the brake — if `oldest` keeps growing while nothing moves, that is the signal,
-    and it only works if the number is printed rather than hidden behind the principle.
-    """
-    now = datetime(2026, 8, 2, tzinfo=timezone.utc)
-    _proposal(conn, "old one", proposed_at=(now - timedelta(days=21)).isoformat())
-    _proposal(conn, "new one", proposed_at=(now - timedelta(days=1)).isoformat())
-    _target(conn, title="being read")
-
-    st = cd.build_reading_state(conn, now=now)
-    assert st.proposed == 2
-    assert st.oldest_days == 21
-    assert [i.title for i in st.in_progress] == ["being read"]
-
-    body = cd.render(cd.compose(conn, today=date(2026, 8, 2)))
-    assert "2 waiting" in body
-    # The IN-PROGRESS LIST left the page: "it is pointless and I can just see the in-progress
-    # folder". `build_reading_state` still reports it (the shelf count is printed, and
-    # `reading/relevance` consumes it), but page 1 spends its space on reading links.
-    assert "being read" not in body
+    doc = rationale.render(conn, today=date(2026, 8, 6))
+    assert doc.count == 0
+    assert "shelf is empty" in doc.markdown
 
 
 def test_a_book_he_added_himself_appears_with_what_it_links_to(conn):
@@ -331,17 +309,17 @@ def test_the_three_subsections_are_named_for_where_the_item_came_from(conn):
     assert cd.SECTION_CONNECTION not in body
 
 
-def test_marks_threads_and_connections_share_one_anchor_series(conn):
-    _mark(conn, text=_PASSAGE)
-    _thread(conn, "a question of mine")
-    page = cd.compose(conn, today=date(2026, 7, 31))
-    assert [t.anchor for t in page.threads] == [f"T{i}" for i in range(1, len(page.threads) + 1)]
-    # ...while still routing to different places on the way back.
-    # The Think kinds are the ROUTING kinds, and they are deliberately not the section names:
-    # `question` (an Explain prompt he answers), `open` (developing a thread), `connection`.
-    assert {a.kind for a in page.anchors if a.anchor.startswith("T")} <= {
-        "question", "open", "connection"
-    }
+def test_ideas_and_connect_carry_their_own_anchor_series(conn):
+    """Two pages, two prefixes, numbering restarting on each.
+
+    They must not collide: `annotations` is UNIQUE(page_date, anchor), so a shared prefix across
+    two pages would put two written regions on one key and silently lose one.
+    """
+    _jotted(conn, "a thought worth developing further")
+    page = cd.compose(conn, today=date(2026, 8, 6))
+    anchors = [a.anchor for a in page.anchors if a.anchor[0] in "IC"]
+    assert anchors and anchors[0] == "I1"
+    assert len(set(anchors)) == len(anchors)
 
 
 def test_only_the_agent_originated_item_carries_a_tick(conn):
@@ -487,19 +465,18 @@ def test_a_rescheduled_recall_is_offered_again(conn):
     assert [r.item_id for r in later.recalls] == [item.id]
 
 
-def test_a_proposal_returns_only_when_its_reason_was_rewritten(conn):
-    """The narrow Read-page exception: a repeat must always carry new text."""
-    pid = _proposal(conn, "Ledoit-Wolf", why_long="first reason", written="2026-08-01")
-    cd.persist(conn, cd.compose(conn, today=date(2026, 8, 1)), md_path="/tmp/_home.md")
-    assert cd.compose(conn, today=date(2026, 8, 2)).readings == []
+def test_the_shelf_rationale_lists_every_proposal_with_its_reason(conn):
+    """What the Read page used to do, now delivered to the shelf itself."""
+    from locus.reading import rationale
 
-    conn.execute(
-        "UPDATE reading_proposals SET why_long=?, why_written_at=? WHERE id=?",
-        ("rewritten against what he is thinking about now", "2026-08-08", pid),
-    )
-    conn.commit()
-    again = cd.compose(conn, today=date(2026, 8, 8))
-    assert [r.why for r in again.readings] == ["rewritten against what he is thinking about now"]
+    _proposal(conn, "Ledoit-Wolf shrinkage", why_long="regime-ml estimates 55x55 from 250 days.")
+    _proposal(conn, "Backtesting VaR")
+    doc = rationale.render(conn, today=date(2026, 8, 6))
+    assert doc.count == 2
+    assert "Ledoit-Wolf shrinkage" in doc.markdown
+    assert "regime-ml estimates 55x55" in doc.markdown
+    # And it is keyed on the shelf's CONTENT, so an unchanged shelf is not re-delivered.
+    assert rationale.render(conn, today=date(2026, 8, 7)).fingerprint == doc.fingerprint
 
 
 def test_composing_twice_without_persisting_changes_nothing(conn):
@@ -594,8 +571,8 @@ def test_persist_records_anchors_and_a_rebuild_replaces_them(conn):
 
     stored = cd.anchors_for(conn, page.page_date)
     assert {a.anchor for a in page.anchors} == set(stored)
-    assert stored["T1"].target_kind == "object"
-    assert stored["T1"].label == "alpha"
+    assert stored["I1"].target_kind == "object"
+    assert stored["I1"].label == "alpha"
     assert len(conn.execute("SELECT * FROM daily_pages").fetchall()) == 1
 
 
@@ -628,10 +605,10 @@ def test_each_section_gets_its_own_physical_page(conn):
     )
     body = cd.render(cd.compose(conn, today=date(2026, 8, 1)))
     # Read | Think | Learn | back page => three breaks.
-    assert body.count("#pagebreak()") == 3
+    assert body.count("#pagebreak()") == 2
     # Sections are level-1 headings: the date moved to the running header, so the SECTION is
     # the title of its page (see `render`).
-    assert body.index("# Read") < body.index("# Think") < body.index("# Learn")
+    assert body.index("# Ideas") < body.index("# Learn")
 
 
 def test_a_quiet_day_is_a_short_document_not_four_blank_pages(conn):
@@ -743,9 +720,9 @@ def test_without_a_stored_question_no_answer_is_printed(conn):
 def test_writing_space_expands_when_there_is_less_to_show(conn):
     """A fixed three lines per item left a two-item page 60% white. On a surface meant to be
     written on, empty space is not restraint — it is wasted paper."""
-    assert cd._lines_for(3, "think") == cd._MIN_LINES["think"]
-    assert cd._lines_for(1, "think") > cd._MIN_LINES["think"]
-    assert cd._lines_for(1, "think") == cd._MAX_LINES
+    assert cd._lines_for(cd._FIT["ideas"], "ideas") == cd._MIN_LINES["ideas"]
+    assert cd._lines_for(1, "ideas") > cd._MIN_LINES["ideas"]
+    assert cd._lines_for(1, "ideas") == cd._MAX_LINES
     # Back to two lines: concept questions are full sentences and take the space a third line
     # would have used, and a fourth QUESTION is worth more than a third writing line for an
     # answer that is itself a sentence (measured 2026-08-03).
@@ -768,7 +745,7 @@ def test_a_full_page_does_not_overflow_into_a_fifth(conn):
     # this test seeded short reasons and no in-progress list, so it passed at every cap while the
     # REAL page rendered five pages (measured 2026-08-02). A layout test that does not carry
     # live-sized content is only testing the renderer.
-    for i in range(cd._FIT["read"]):
+    for i in range(4):
         _proposal(
             conn, f"Portfolio Optimization and Tail-Risk Analytics of Actively Managed ETFs {i}",
             # 300 chars is what `_clip` allows a written reason, so it is what the page must hold.
@@ -779,7 +756,7 @@ def test_a_full_page_does_not_overflow_into_a_fifth(conn):
         )
     # The in-progress list left page 1, so it no longer contributes height; what does is a full
     # THINK page of developable threads, each carrying his prior words.
-    for i in range(cd._FIT["think"] + 2):
+    for i in range(cd._FIT["ideas"] + 2):
         _jotted(conn,
                 "a thought worth developing that runs to a realistic length, because a short "
                 f"fixture is the one shape that cannot overflow — number {i}",
@@ -804,25 +781,24 @@ def test_a_full_page_does_not_overflow_into_a_fifth(conn):
             sans_font=cfg.daily.sans_font, running_header=page.page_date,
         )
     )
-    assert pymupdf.open(out).page_count == 4, "a section overflowed onto a second page"
+    # ONE PAGE PER SECTION, whatever the fixture happens to fill. Asserting a fixed count meant
+    # editing this test every time the page gained or lost a section, which is how it came to
+    # assert a number nobody had re-measured.
+    sections = cd.render(page).count("#pagebreak()") + 1
+    assert pymupdf.open(out).page_count == sections, "a section overflowed onto a second page"
 
 
-def test_the_think_page_refills_a_subsection_that_has_nothing(conn, monkeypatch):
-    """"Equal weighting" must not mean "a third of the page stays blank".
+def test_an_empty_check_this_becomes_a_third_idea(conn):
+    """Equal-share-then-refill gave 2 develop + 1 connection on a day with no tension.
 
-    The old split took a fixed share from marks and open and let connections absorb the slack in
-    only ONE direction, so a day with no connections rendered a two-thirds page — on the surface
-    where space is the scarce thing and a 26-mark backlog is waiting behind it.
+    His verdict after two days of use: the freed seat belongs to developing an idea, which is the
+    section he writes on every day at length.
     """
-    for i in range(4):
-        _jotted(conn, f"a thought worth developing number {i}",
-                created_at=f"2026-01-0{i + 1}T00:00:00+00:00")
-    monkeypatch.setattr(cd, "build_connections", lambda *a, **k: [])
-    monkeypatch.setattr(cd, "build_challenge", lambda *a, **k: [])
-
-    items = cd.build_threads(conn, limit=3, seen=set())
-    assert len(items) == 3, "the empty subsections' seats must be taken, not wasted"
-    assert {i.section for i in items} == {cd.SECTION_DEVELOP}
+    for i in range(5):
+        _jotted(conn, f"a thought worth developing further, number {i}",
+                created_at=f"2026-07-{i + 1:02d}T00:00:00+00:00")
+    ideas = [t for t in cd.build_threads(conn, seen=set()) if t.section == cd.SECTION_DEVELOP]
+    assert len(ideas) == cd._FIT["ideas"]
 
 
 def test_marks_are_no_longer_capped_at_one_per_document(conn):

@@ -67,7 +67,7 @@ from locus.link.related import related_documents
 # back to 3 when CONNECT replaced a one-line item with ~300 characters of written prose — two of
 # those are the tallest thing the page can carry, and with CHECK THIS usually empty the refill
 # hands its seat straight to a second connection.
-_FIT = {"read": 4, "think": 3, "recall": 4, "answered": 3}
+_FIT = {"read": 4, "think": 4, "recall": 4, "answered": 3}
 
 # The Read page is the one section with no writing regions, so `_lines_for` does not bound it and
 # nothing else did either: three proposals plus an unbounded in-progress list overflowed onto a
@@ -288,6 +288,11 @@ class DailyPage:
         out = [(r.item_key, "reading") for r in self.readings]
         out += [(t.item_key, t.kind) for t in self.threads]
         out += [(r.item_key, "recall") for r in self.recalls]
+        # ANSWERED WAS MISSING HERE, so the Ask page repeated verbatim (observed on the 4th and
+        # 5th, identical). `build_answered` filters on `seen` correctly; nothing ever put its keys
+        # INTO the ledger. A section that reads the no-repeat rule but never writes to it is
+        # indistinguishable from one with nothing new to say.
+        out += [(a.item_key, "answered") for a in self.answered]
         return [(k, kind) for k, kind in out if k]
 
 
@@ -1174,6 +1179,11 @@ def _is_teachable(conn: sqlite3.Connection, name: str) -> bool:
 # that without throwing anything away.
 
 
+def _negated(ts: str) -> tuple:
+    """Sort key reversing a timestamp without reversing the rest of the key."""
+    return tuple(-ord(ch) for ch in ts)
+
+
 def _develop_rank(conn: sqlite3.Connection, obj) -> tuple:
     """Sort key: threads about real work first, then least recently touched.
 
@@ -1202,7 +1212,11 @@ def _develop_rank(conn: sqlite3.Connection, obj) -> tuple:
         "WHERE ol.object_id=? AND ol.target_kind='object' AND p.type='project'",
         (obj.id,),
     ).fetchone()["n"]
-    return (0 if linked else 1, obj.updated_at or "")
+    # NEWEST FIRST within each group. This sorted oldest-first — a fairness rule. His verdict
+    # after two days of real use: "I should be checking the most relevant things first", and the
+    # most relevant thing is what he was thinking about yesterday. `daily_shown` already prevents
+    # starvation, so recency costs nothing and staleness bought nothing.
+    return (0 if linked else 1, _negated(obj.updated_at or ""))
 
 
 def build_develop(
@@ -1289,8 +1303,15 @@ def build_threads(
         build_develop(conn, limit=limit, seen=seen),
         build_connections(conn, limit=limit, seen=seen),
     ]
-    per = max(1, limit // len(pools))
-    take = [min(per, len(pool)) for pool in pools]
+    # CAPS, NOT AN EQUAL SHARE. Equal-share-then-refill gave 2 develop + 1 connection on a day
+    # with no tension; his verdict after two days was that the freed seat should go to DEVELOPING
+    # AN IDEA — the section he actually writes on, every day, at length. A tension and a
+    # connection are worth one seat each; a second of either is not worth displacing his own
+    # thinking. Develop takes the rest, so an empty Check-this becomes a third idea.
+    caps = [1, limit, 1]
+    take = [min(caps[i], len(pool)) for i, pool in enumerate(pools)]
+    if sum(take) > limit:
+        take[1] = max(0, limit - take[0] - take[2])
     # Round-robin the leftover seats so the refill stays as even as the remainder allows.
     while sum(take) < limit and any(take[i] < len(pools[i]) for i in range(len(pools))):
         for i, pool in enumerate(pools):

@@ -67,7 +67,16 @@ from locus.link.related import related_documents
 # back to 3 when CONNECT replaced a one-line item with ~300 characters of written prose — two of
 # those are the tallest thing the page can carry, and with CHECK THIS usually empty the refill
 # hands its seat straight to a second connection.
-_FIT = {"read": 4, "think": 4, "recall": 4, "answered": 3}
+# One page each. `ideas` is his own thinking and gets the most room, because it is the section he
+# writes on every day at length. `connect` carries what the system noticed (a connection, and a
+# tension when there is one), and is capped low while connection supply is still thin — a
+# half-empty page trains him to skip it.
+# IDEAS IS THREE, MEASURED not chosen. He asked for four; four overflowed onto a second page and
+# broke one-section-per-page. His ideas are long — the Read-page writing that now feeds this
+# section runs two or three sentences — and each card also carries his prior development passes.
+# Three is what fits at two ruled lines each, and three is what he actually asked for when he
+# said the freed Check-this seat should become a third idea.
+_FIT = {"ideas": 3, "connect": 3, "recall": 4, "answered": 3}
 
 # The Read page is the one section with no writing regions, so `_lines_for` does not bound it and
 # nothing else did either: three proposals plus an unbounded in-progress list overflowed onto a
@@ -365,7 +374,7 @@ def _proposal_grounding(row: sqlite3.Row) -> str:
 
 
 def build_readings(
-    conn: sqlite3.Connection, *, limit: int = _FIT["read"], seen: set[str] | None = None
+    conn: sqlite3.Connection, *, limit: int = 4, seen: set[str] | None = None
 ) -> list[ReadItem]:
     """What to read next, from the discovery shelf — NOT from the corpus.
 
@@ -1284,7 +1293,7 @@ def _passage_for_idea(conn: sqlite3.Connection, object_id: int) -> str:
 
 
 def build_threads(
-    conn: sqlite3.Connection, *, limit: int = _FIT["think"], seen: set[str] | None = None
+    conn: sqlite3.Connection, *, limit: int | None = None, seen: set[str] | None = None
 ) -> list[ThreadItem]:
     """The Think page: three provenance subsections sharing one page and one anchor series.
 
@@ -1298,30 +1307,17 @@ def build_threads(
     # of the page blank, because the page is the scarce thing and he has a 26-mark backlog behind
     # it. The old split took a fixed `per` from marks and open and let connections absorb the
     # slack in only ONE direction, so a day with no connections rendered a two-thirds page.
-    pools = [
-        build_challenge(conn, limit=limit, seen=seen),
-        build_develop(conn, limit=limit, seen=seen),
-        build_connections(conn, limit=limit, seen=seen),
-    ]
-    # CAPS, NOT AN EQUAL SHARE. Equal-share-then-refill gave 2 develop + 1 connection on a day
-    # with no tension; his verdict after two days was that the freed seat should go to DEVELOPING
-    # AN IDEA — the section he actually writes on, every day, at length. A tension and a
-    # connection are worth one seat each; a second of either is not worth displacing his own
-    # thinking. Develop takes the rest, so an empty Check-this becomes a third idea.
-    caps = [1, limit, 1]
-    take = [min(caps[i], len(pool)) for i, pool in enumerate(pools)]
-    if sum(take) > limit:
-        take[1] = max(0, limit - take[0] - take[2])
-    # Round-robin the leftover seats so the refill stays as even as the remainder allows.
-    while sum(take) < limit and any(take[i] < len(pools[i]) for i in range(len(pools))):
-        for i, pool in enumerate(pools):
-            if sum(take) >= limit:
-                break
-            if take[i] < len(pool):
-                take[i] += 1
-    # Emitted in POOL order, not selection order: `_render_think` prints a heading whenever the
-    # section changes, so an interleaved list would repeat all three headings down the page.
-    return [item for i, pool in enumerate(pools) for item in pool[:take[i]]]
+    ideas = build_develop(conn, limit=_FIT["ideas"], seen=seen)[: _FIT["ideas"]]
+    # Check-this is capped at one seat: a tension is rare and one is plenty, and the rest of the
+    # Connect page belongs to connections, which is what he called "really good ideas".
+    challenge = build_challenge(conn, limit=1, seen=seen)[:1]
+    connections = build_connections(
+        conn, limit=_FIT["connect"] - len(challenge), seen=seen
+    )[: _FIT["connect"] - len(challenge)]
+    # Ideas first, then Connect — the render splits on section, and each list must already be in
+    # the order its page should print.
+    return ideas + connections + challenge
+
 
 
 # --- page 3: Recall ----------------------------------------------------------------------------
@@ -1458,7 +1454,10 @@ def compose(conn: sqlite3.Connection, *, today: date | None = None) -> DailyPage
     #
     # `build_rereads`/`_explains` are kept and still used by `learn/reread.py`; nothing on the
     # page calls them.
-    page.readings = build_readings(conn, limit=_FIT["read"], seen=seen)
+    # NO READ PAGE. It repeated the Reading/Proposed folder he already browses, and he never
+    # used it to decide what to read — he used it to have ideas about papers, which is the Ideas
+    # page's job. The per-proposal rationale now lives in the shelf itself (`locus reading-why`).
+    page.readings = []
     page.reading_state = build_reading_state(conn)
     page.threads = build_threads(conn, seen=seen)
     page.recalls = build_recalls(conn, today=today, seen=seen)
@@ -1472,8 +1471,15 @@ def compose(conn: sqlite3.Connection, *, today: date | None = None) -> DailyPage
         )
     # ONE printed series across all three Think subsections — he reads one list — while `kind`
     # keeps a mark, a thread and a connection routing to three different places on the way back.
-    for i, t in enumerate(page.threads, 1):
-        t.anchor = f"T{i}"
+    seq: dict[str, int] = {}
+    for t in page.threads:
+        # I for Ideas, C for Connect — the letter is what he reads and what vision reports back,
+        # so it should name the page it is on. Routing dispatches on `daily_anchors.kind`, never
+        # on the letter, but the labels must stay unique: `annotations` is UNIQUE(page_date,
+        # anchor) and two pages sharing a prefix would collide on one key.
+        prefix = "I" if t.section in _IDEAS_SECTIONS else "C"
+        seq[prefix] = seq.get(prefix, 0) + 1
+        t.anchor = f"{prefix}{seq[prefix]}"
         page.anchors.append(
             Anchor(t.anchor, t.kind, t.target_kind, t.target_key, label=t.headline[:120])
         )
@@ -1603,7 +1609,14 @@ _MAX_LINES = 5
 # Floor per section, because the two writing pages differ in what a region is FOR. Developing an
 # idea needs room to think on paper; recalling a stored claim is a sentence or two, so two lines
 # there buys a fourth question rather than white space.
-_MIN_LINES = {"think": 3, "recall": 2}
+# IDEAS gets 2, not 3. Four idea cards at three ruled lines each is 12 against a 9-line budget,
+# which overflows onto a second page and breaks one-section-per-page. He asked for four cards and
+# the page cannot have both, so the trade is two writing lines per idea — still enough for the
+# two or three sentences he actually writes, measured against his first two real pages.
+# At three idea cards the 9-line budget already gives three lines each, so the floor is not what
+# is binding — `_FIT["ideas"]` is. The floor exists for the one-item day, where a single card
+# should not sprawl over the whole page.
+_MIN_LINES = {"ideas": 3, "connect": 3, "recall": 2}
 
 
 def _lines_for(n_items: int, section: str = "think") -> int:
@@ -1691,11 +1704,39 @@ def _render_read(page: DailyPage) -> str:
     return "\n".join(lines)
 
 
-def _render_think(page: DailyPage) -> str:
-    lines = ["# Think", ""]
-    per_item = _lines_for(len(page.threads), "think")
+_IDEAS_SECTIONS = (SECTION_DEVELOP,)
+# Check-this rides with Connect: both are things the system noticed, as opposed to things he
+# wrote. He has said he may retire Check-this once Connect carries the page on its own.
+_CONNECT_SECTIONS = (SECTION_CONNECT, SECTION_CHALLENGE)
+
+
+def _on_page(page: DailyPage, sections: tuple[str, ...]) -> bool:
+    return any(t.section in sections for t in page.threads)
+
+
+def _render_ideas(page: DailyPage) -> str:
+    return _render_think(page, heading="Ideas", sections=_IDEAS_SECTIONS, budget="ideas")
+
+
+def _render_connect(page: DailyPage) -> str:
+    return _render_think(page, heading="Connect", sections=_CONNECT_SECTIONS, budget="connect")
+
+
+def _render_think(page: DailyPage, *, heading: str = "Ideas",
+                  sections: tuple[str, ...] = (SECTION_DEVELOP,), budget: str = "ideas") -> str:
+    """One thread page. IDEAS and CONNECT are the same renderer over different sections.
+
+    THE READ PAGE IS GONE and Develop became IDEAS. Two days of real use showed he never used
+    Read to make a reading decision — he used it to have ideas ABOUT papers ("will investigate if
+    we can apply these methods to optimize the ultimate portfolio construction"), which is the
+    same act as Develop. Two sections were doing one job, and the shelf's own folder is where
+    reading is actually chosen. The rationale moved there (`reading/rationale.py`).
+    """
+    items = [t for t in page.threads if t.section in sections]
+    lines = [f"# {heading}", ""]
+    per_item = _lines_for(len(items), budget)
     current = ""
-    for t in page.threads:
+    for t in items:
         if t.section != current:
             current = t.section
             lines += [f"## {current}", ""]
@@ -1781,10 +1822,10 @@ def render(page: DailyPage) -> str:
     `md2pdf` styles them by level, so this is the contract between the two modules.
     """
     pages: list[str] = []
-    if page.readings or not page.reading_state.is_empty:
-        pages.append(_render_read(page))
-    if page.threads:
-        pages.append(_render_think(page))
+    if _on_page(page, _IDEAS_SECTIONS):
+        pages.append(_render_ideas(page))
+    if _on_page(page, _CONNECT_SECTIONS):
+        pages.append(_render_connect(page))
     # ORDER IS READ, THINK, ASK, RECALL — his. Ask sits next to Think because both are about
     # what he is working out, and before Recall because being told something he flagged as not
     # understood should come before being tested on something else.

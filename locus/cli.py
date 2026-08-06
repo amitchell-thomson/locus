@@ -715,6 +715,23 @@ def cmd_daily(args) -> None:
     conn = _open()
     try:
         page = cd.compose(conn)
+        # FILL THE PAGE BY MEASURING IT (`agent/layout.py`). `compose` sizes every section from
+        # static estimates of height, which cannot be right for both a day of short cards and a
+        # day of long ones; this renders each section and grows it — more cards first, then more
+        # ruled lines — until one more would spill onto a second page. Skipped with --no-render,
+        # which is also the path with no toolchain to render with; the page then keeps the
+        # estimate, exactly as before.
+        geometry = PageGeometry(
+            width_in=cfg.reading.page_width_in, height_in=cfg.reading.page_height_in,
+            margin_in=cfg.reading.margin_in, font_pt=cfg.reading.font_pt,
+            rule_gap_em=cfg.daily.rule_gap_em, accent=cfg.daily.accent,
+            sans_font=cfg.daily.sans_font, running_header=page.page_date,
+        )
+        fits: list = []
+        if not args.no_render:
+            from locus.agent.layout import fit_page
+
+            fits = fit_page(conn, page, geometry=geometry)
         body = cd.render(page)
 
         out_dir = Path(args.out) if args.out else Path(cfg.paths.notes) / "_generated"
@@ -734,22 +751,11 @@ def cmd_daily(args) -> None:
         # day after (caught by running the systemd unit at deploy, 2026-07-30).
         pdf_path = out_dir / f"daily-{page.page_date}.pdf"
         if not args.no_render:
-            r = cfg.reading
-            d = cfg.daily
             # Rendered from the composed BODY, not from the file. `render_markdown_file` titles a
             # document from its filename stem when the text has no leading `# ` — and the note's
             # YAML frontmatter meant it never did, so every delivered page opened with a heading
             # reading "home" (from `_home.md`).
-            render_markdown_to_pdf(
-                body, pdf_path,
-                geometry=PageGeometry(
-                    width_in=r.page_width_in, height_in=r.page_height_in,
-                    margin_in=r.margin_in, font_pt=r.font_pt,
-                    rule_gap_em=d.rule_gap_em,
-                    accent=d.accent, sans_font=d.sans_font,
-                    running_header=page.page_date,
-                ),
-            )
+            render_markdown_to_pdf(body, pdf_path, geometry=geometry)
 
         cd.persist(
             conn, page,
@@ -762,6 +768,8 @@ def cmd_daily(args) -> None:
             f"{len(page.recalls)} recall"
         )
         print(f"composed {page.page_date}: {counts}")
+        for fit in fits:
+            print(f"  fit {fit.render()}")
         print(f"  {md_path}")
         if args.no_render:
             return

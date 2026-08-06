@@ -304,6 +304,22 @@ class DailyPage:
     answered: list[Answered] = field(default_factory=list)
     status: Status = field(default_factory=Status)
     anchors: list[Anchor] = field(default_factory=list)
+    # Ruled lines per item, per section budget key ("ideas"/"connect"/"recall"/"answered"), when
+    # something has MEASURED them. Empty means "use `_lines_for`", the static estimate, which is
+    # what every caller that cannot render a PDF gets. `agent/layout.py` fills this by rendering
+    # the section and counting pages, so a page with room left over grows its writing space
+    # instead of printing white paper.
+    lines: dict[str, int] = field(default_factory=dict)
+    # Candidates each section could print, beyond what it currently does. Built once by `compose`
+    # (deriving the connections costs ~39s, and the cost is in finding the pairs, not in how many
+    # are kept) so `agent/layout.py` can grow a section by measuring instead of re-deriving. Not
+    # part of the page: nothing here is printed, anchored or retired until a section takes it.
+    pool: dict[str, list] = field(default_factory=dict)
+
+    def lines_for(self, budget: str, n_items: int) -> int:
+        """Measured lines if a fit pass established them, else the static estimate."""
+        measured = self.lines.get(budget)
+        return measured if measured else _lines_for(n_items, budget)
 
     @property
     def is_empty(self) -> bool:
@@ -1411,6 +1427,33 @@ _RULES_PER_CARD = 3        # fixed cost: the ruled writing space every card gets
 _CHARS_PER_LINE = 90       # measured against the rendered body font
 
 
+# Candidates fetched per section — more than any page prints, so `agent/layout` can grow a
+# section by MEASURING it without paying for a second derivation (connections cost ~39s).
+_POOL_CARDS = 8
+
+
+def _fit_chars(items: list, *, limit: int, char_budget: int | None) -> list:
+    """As many items as fit `limit` seats and `char_budget` characters of prose.
+
+    The ONE definition of the character budget, shared by `build_connections` (which applies it
+    while walking candidates) and `build_threads` (which applies it to an already-built pool), so
+    the two cannot drift. An item too tall for what is left is SKIPPED, not stopped on: a shorter
+    one behind it still fits. The first is always admitted, so one long note cannot blank a
+    section — it is a budget, not a gate, and nothing is clipped or retired by it.
+    """
+    out: list = []
+    used = 0
+    for it in items:
+        if len(out) >= limit:
+            break
+        cost = len(getattr(it, "headline", "") or "")
+        if char_budget is not None and out and used + cost > char_budget:
+            continue
+        out.append(it)
+        used += cost
+    return out
+
+
 def _pack(items: list, budget: int = _IDEAS_LINES, *, cap: int = 4) -> list:
     """As many items as fit the page, always at least one, never more than `cap`.
 
@@ -1537,7 +1580,7 @@ def _passage_for_idea(conn: sqlite3.Connection, object_id: int) -> str:
 
 def build_threads(
     conn: sqlite3.Connection, *, limit: int | None = None, seen: set[str] | None = None,
-    skip_retrieval: bool = False,
+    skip_retrieval: bool = False, pool: dict[str, list] | None = None,
 ) -> list[ThreadItem]:
     """The two thread pages: IDEAS (his own thinking) then CONNECT (what the system noticed).
 
@@ -1555,7 +1598,8 @@ def build_threads(
     # of the page blank, because the page is the scarce thing and he has a 26-mark backlog behind
     # it. The old split took a fixed `per` from marks and open and let connections absorb the
     # slack in only ONE direction, so a day with no connections rendered a two-thirds page.
-    ideas = _pack(build_develop(conn, limit=_FIT["ideas"] + 3, seen=seen))
+    ideas_pool = build_develop(conn, limit=_POOL_CARDS, seen=seen)
+    ideas = _pack(ideas_pool)
     # CHECK THIS IS OFF THE PAGE (2026-08-06, his call: "I don't feel like it is pulling its
     # weight and it is not that useful"). Its whole seat goes to connections, which is the item
     # he does act on. `build_challenge` and its tests are kept — tensions are still judged and
@@ -1570,13 +1614,20 @@ def build_threads(
     # `daily_shown` has not retired it.
     # `skip_retrieval` drops the connections pool for a caller that wants the page's KEYS rather
     # than the page (`decide.queue.page_keys`). It must stay False for anything he will read.
-    connections = (
+    #
+    # BUILT GENEROUSLY, THEN TRIMMED, and the generous list is kept on `pool` for `agent/layout`.
+    # `connection_candidates` re-derives every cross-corpus pair and costs ~39s (measured
+    # 2026-08-06); the limit does not change that, so asking once for more than the page can hold
+    # is free, while asking a second time for the fit pass doubled the cost of composing.
+    candidates = (
         []
         if skip_retrieval
-        else build_connections(
-            conn, limit=room, seen=seen, char_budget=_CONNECT_CHAR_BUDGET
-        )[:room]
+        else build_connections(conn, limit=_POOL_CARDS, seen=seen, char_budget=None)
     )
+    if pool is not None:
+        pool["ideas"] = list(ideas_pool)
+        pool["connect"] = list(candidates)
+    connections = _fit_chars(candidates, limit=room, char_budget=_CONNECT_CHAR_BUDGET)
     # Ideas first, then Connect — the render splits on section, and each list must already be in
     # the order its page should print.
     return ideas + connections
@@ -1775,13 +1826,37 @@ def compose(
     # page's job. The per-proposal rationale now lives in the shelf itself (`locus reading-why`).
     page.readings = []
     page.reading_state = build_reading_state(conn)
-    page.threads = build_threads(conn, seen=seen, skip_retrieval=skip_retrieval)
+    # EVERY SECTION IS BUILT GENEROUSLY AND THEN TRIMMED, with the generous lists kept on
+    # `page.pool`. What the page prints is unchanged — the trims below are the same caps as
+    # before — but `agent/layout` can now grow a section to fill its sheet without re-deriving
+    # anything, and re-deriving the connections alone cost 39 seconds.
+    page.threads = build_threads(
+        conn, seen=seen, skip_retrieval=skip_retrieval, pool=page.pool
+    )
     # `skip_retrieval` marks the keys-only caller, which is also the one whose scan must not be
     # counted against the recall-supply gate (see `build_recalls`).
-    page.recalls = build_recalls(conn, today=today, seen=seen, record=not skip_retrieval)
-    page.answered = build_answered(conn, seen=seen)
+    page.pool["recall"] = build_recalls(
+        conn, today=today, limit=_POOL_CARDS, seen=seen, record=not skip_retrieval
+    )
+    page.pool["answered"] = build_answered(conn, limit=_POOL_CARDS, seen=seen)
+    page.recalls = page.pool["recall"][: _FIT["recall"]]
+    page.answered = page.pool["answered"][: _FIT["answered"]]
     page.status = build_status(conn)
 
+    assign_anchors(page)
+    return page
+
+
+def assign_anchors(page: DailyPage) -> DailyPage:
+    """Number every printed region, replacing any previous numbering.
+
+    SEPARATE FROM `compose` BECAUSE THE PAGE CAN CHANGE AFTER IT. `agent/layout.py` fits sections
+    by measuring a real render, and what it drops or adds must be renumbered before `persist`
+    writes `daily_anchors` and `record_shown` retires items — a label printed against one item and
+    stored against another silently routes his ink to the wrong record, and `daily_shown` would
+    retire cards he was never shown.
+    """
+    page.anchors = []
     for i, r in enumerate(page.readings, 1):
         r.anchor = f"R{i}"
         page.anchors.append(
@@ -1822,6 +1897,21 @@ def compose(
     # carries no count and no backlog — anything written here becomes a thread he already owns.
     page.anchors.append(Anchor("Q1", "question", "none", "open", label="open question"))
     return page
+
+
+def render_section(page: DailyPage, key: str) -> str:
+    """One section's markdown on its own, with no page break — what the fit pass measures.
+
+    Every section starts on a fresh page, so rendering one alone is a faithful stand-in for its
+    place in the document: same geometry, same running header, same first-page origin.
+    """
+    return {
+        "ideas": lambda: _render_ideas(page),
+        "connect": lambda: _render_connect(page),
+        "answered": lambda: _render_answered(page),
+        "recall": lambda: _render_recall(page),
+        "open": lambda: _render_back(page),
+    }[key]()
 
 
 def persist(
@@ -2012,8 +2102,16 @@ def _status_block(page: DailyPage) -> str:
     )
 
 
-def _open_region() -> list[str]:
-    return ["# Anything on your mind", "", _anchor("Q1"), "", _rules(4)]
+# Ruled lines the always-present open region prints when nothing has measured it. The back page
+# also carries the status line and the recall answer key, both of whose heights depend on the rest
+# of the page, so this is the one region whose spare space can only be known after the others are
+# settled — `agent/layout` fits it last.
+_OPEN_LINES = 4
+
+
+def _open_region(page: DailyPage | None = None) -> list[str]:
+    n = _OPEN_LINES if page is None else page.lines.get("open", _OPEN_LINES)
+    return ["# Anything on your mind", "", _anchor("Q1"), "", _rules(n)]
 
 
 def _render_read(page: DailyPage) -> str:
@@ -2068,7 +2166,7 @@ def _render_think(page: DailyPage, *, heading: str = "Ideas",
     """
     items = [t for t in page.threads if t.section in sections]
     lines = [f"# {heading}", ""]
-    per_item = _lines_for(len(items), budget)
+    per_item = page.lines_for(budget, len(items))
     # NO REDUNDANT SUBHEADING. The page heading just introduced the FIRST section, so labelling
     # it says the same thing twice and costs a heading of vertical space; only a LATER section
     # earns a label ("## Check this" under Consider). Keyed on position, not on the subsection
@@ -2119,14 +2217,16 @@ def _render_answered(page: DailyPage) -> str:
         lines += [a.answer, ""]
         if a.source:
             lines += [f"*{_clip(a.source, 70)}*", ""]
-        lines.append(_rules(3))
+        # Three unless something MEASURED otherwise — not `lines_for`, whose 9-line budget would
+        # hand a lone answer five rules on a page that never asked for a writing region.
+        lines.append(_rules(page.lines.get("answered", 3)))
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
 
 def _render_recall(page: DailyPage) -> str:
     lines = ["# Recall", "", "Answer, then tick if you knew it. Answers overleaf.", ""]
-    per_item = _lines_for(len(page.recalls), "recall")
+    per_item = page.lines_for("recall", len(page.recalls))
     for r in page.recalls:
         lines += [f"{_anchor(r.anchor)} {r.prompt}", ""]
         if r.source:
@@ -2146,7 +2246,7 @@ def _render_back(page: DailyPage) -> str:
     His order, and it is the right one — the blank space is for a thought he wants to keep, so it
     should not sit under a block of answers he has already checked.
     """
-    lines = _open_region()
+    lines = _open_region(page)
     # THE STATUS LINE LIVES HERE NOW, above the answers. On page 1 it took space from the reading
     # links, which are the thing he actually uses; it is a health readout, not a reason to pick
     # the page up. Still on the page, because it is the only place a failure is announced.
@@ -2187,7 +2287,7 @@ def render(page: DailyPage) -> str:
         # A page with nothing on it is a valid, calm state — and it is still the only place a
         # failure would be announced, so the status line survives an empty day.
         head = ["Nothing to surface today.", ""]
-        return "\n".join(head + _open_region() + ["", _status_block(page)])
+        return "\n".join(head + _open_region(page) + ["", _status_block(page)])
 
     # NO DATE HEADING. It used to open the document as an `# H1`, competing with the section
     # heading immediately beneath it for the role of page title. The date is per-DOCUMENT, not

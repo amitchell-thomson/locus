@@ -354,9 +354,23 @@ anything: each delivered page's own `daily_anchors` rows are what routes it.
 **DEVELOP ranks on project links, then staleness.** Ranking on `updated_at` alone put a
 22-character to-do at the head of the section.
 
-**Layout budgets are measured, never derived.** `_FIT` (3 develop · 3 consider · 4 recall ·
-3 answered) and `_CONNECT_CHAR_BUDGET` (1000 chars of item prose) were each set by rendering a
-real PDF and counting pages; a test asserts a full page does not overflow into a fifth.
+**The page is fitted by rendering it, not by estimating.** `agent/layout.py` runs between
+`compose` and `render`: for each section it renders that section alone, counts pages, and grows
+it while it still measures one page — **more cards first, then more ruled lines** on the cards it
+kept, never below the floor each section prints today (develop 3 · consider 3 · recall 2 ·
+answered 3 · open 4). A render costs ~40ms, so a whole fit is under a second; the one thing that
+must not be paid twice is `connection_candidates` (~39s), which is why `compose` leaves its
+candidates on `page.pool` for the fit to trim. The fit re-runs `assign_anchors`, because what it
+drops or adds must be numbered before `persist` and `record_shown` — a label printed against one
+card and stored against another routes his ink to the wrong record. It degrades to the static
+estimate if anything fails, and `--no-render` skips it. Live effect (2026-08-06): pages went from
+~62% to 87–94% full, develop 3 → 4 cards.
+
+**The static budgets are now the fallback, not the layout.** `_FIT`, `_lines_for`/`_LINE_BUDGET`,
+`_pack` and `_CONNECT_CHAR_BUDGET` were each set by rendering a real PDF once and then frozen,
+which cannot be right for both a day of short cards and a day of long ones; they still size the
+page for every caller that cannot render (`decide.queue.page_keys`, most tests). A test asserts a
+full page does not overflow into a fifth.
 Line *spacing* is measured the same way and only from the rendered geometry:
 `scripts/analysis/daily_rule_spacing.py` prints the gap between consecutive rules, which is how
 the keep-this line was caught sitting 30.2pt below its neighbour where every other rule sat
@@ -407,6 +421,7 @@ locus/
 │   │                       #   threads · figure_images
 │   ├── link/               # aliases · adjudicate · related · threads · projects · connect
 │   ├── agent/              # claude (the one `claude -p` runner) · journal · budget · state
+│   │                       #   layout (fits each section by rendering it)
 │   │                       #   compose_daily · pull_daily · promote
 │   ├── capture/            # remarkable · rmdoc · annotate · mark_text · intent · transcribe
 │   │                       #   loop_a (notes) · loop_b (reading) · fillin · conversations

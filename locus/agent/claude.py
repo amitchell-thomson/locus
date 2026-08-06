@@ -46,6 +46,18 @@ _CLI_TIMEOUT_S = 180
 # Env vars that reroute `claude -p` off the subscription onto metered billing — scrubbed (req 1).
 _METERED_KEYS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
 
+# C0 control characters that must not reach the prompt. The prompt is an ARGV ELEMENT, and argv
+# cannot carry a NUL — `subprocess` raises `ValueError: embedded null byte` before the process is
+# even spawned. That is not a `ClaudeError`, so it escapes every `except ClaudeError` degrade path
+# in the codebase and surfaces as whatever generic handler happens to be above it.
+# NOT HYPOTHETICAL. Maths PDFs extract symbol-font glyphs as control codes ("jx \x00 aj < \x11" is
+# |x - a| < e), so three calculus documents carried NULs in their chunk text and failed the
+# structure pass on EVERY run — 2026-08-06 was at least the second night, three documents each
+# time, and each failure marked the whole run degraded and put an alarm on the daily page.
+# Kept: \t, \n, \r, which are legitimate prompt content.
+_CONTROL_CHARS = {c: None for c in range(0x20) if c not in (0x09, 0x0A, 0x0D)}
+_CONTROL_CHARS[0x7F] = None
+
 T = TypeVar("T", bound=BaseModel)
 
 
@@ -76,13 +88,22 @@ def _scrubbed_env() -> dict[str, str]:
     return env
 
 
+def scrub_prompt(prompt: str) -> str:
+    """Drop control characters a prompt can neither carry nor mean (see `_CONTROL_CHARS`)."""
+    return (prompt or "").translate(_CONTROL_CHARS)
+
+
 def cli_runner(prompt: str, model: str | None) -> ClaudeResult:
     """Run one headless `claude -p` with a scrubbed env and return the parsed envelope.
 
     `--output-format json` wraps the reply in a stable envelope; a neutral cwd keeps the call
     from picking up this repo's CLAUDE.md / project MCP servers. Raises `ClaudeError` on any
-    failure (missing CLI, timeout, nonzero exit, non-JSON output, model-reported error)."""
-    cmd = ["claude", "-p", prompt, "--output-format", "json"]
+    failure (missing CLI, timeout, nonzero exit, non-JSON output, model-reported error).
+
+    The prompt is stripped of control characters first (`_CONTROL_CHARS`): they carry no meaning
+    to the model, and a NUL cannot go in argv at all — it raises a `ValueError` that is not a
+    `ClaudeError` and so degrades nothing gracefully."""
+    cmd = ["claude", "-p", scrub_prompt(prompt), "--output-format", "json"]
     if model:
         cmd += ["--model", model]
     try:

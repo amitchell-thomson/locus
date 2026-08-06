@@ -90,6 +90,27 @@ def test_scrubbed_env_drops_metered_keys(monkeypatch):
     assert env.get("PATH_KEEP") == "keep"  # unrelated vars survive
 
 
+def test_a_control_character_cannot_reach_argv():
+    """A NUL in the prompt raised ValueError, which no `except ClaudeError` could degrade.
+
+    Real and recurring: maths PDFs extract symbol-font glyphs as control codes, so three calculus
+    documents carried NULs in their chunk text and failed the structure pass on every run, marking
+    it degraded and putting an alarm on the daily page each morning.
+    """
+    import subprocess
+
+    raw = "jx \x00 aj < \x11 and a \x7f — keep\ttabs\nand newlines\r"
+    scrubbed = claude.scrub_prompt(raw)
+    assert "\x00" not in scrubbed and "\x11" not in scrubbed and "\x7f" not in scrubbed
+    assert "\t" in scrubbed and "\n" in scrubbed and "\r" in scrubbed, "whitespace is content"
+
+    # The actual failure mode, not a proxy for it: argv rejects the raw string and takes the
+    # scrubbed one. `/bin/true` ignores its argument, so this spawns nothing meaningful.
+    with pytest.raises(ValueError):
+        subprocess.run(["/bin/true", raw], capture_output=True, timeout=10)
+    assert subprocess.run(["/bin/true", scrubbed], capture_output=True, timeout=10).returncode == 0
+
+
 # ---------- journal.py ----------
 
 @pytest.fixture()

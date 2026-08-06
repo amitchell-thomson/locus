@@ -58,16 +58,19 @@ def _fake_transcriber(calls: list):
     return transcribe
 
 
-def _run(conn, staging, *, manifest=None, transcribe_fn=None, limit=8):
+def _run(conn, staging, *, manifest=None, transcribe_fn=None, limit=8,
+         device_path="/Reading/Finished/A Paper", ingest_fn=None, promote_fn=None):
     return annotate_sync(
         conn,
         staging_dir=staging,
         manifest=manifest if manifest is not None else {},
-        index_fn=lambda: {"uuid-1": ("/Reading/Finished/A Paper", "A Paper")},
+        index_fn=lambda: {"uuid-1": (device_path, "A Paper")},
         fetch_fn=lambda path, dest: Path(dest) / "a.rmdoc",
         read_fn=lambda p: _FakeDoc(),
         marks_fn=lambda doc: [_FakeMark()],
         transcribe_fn=transcribe_fn or _fake_transcriber([]),
+        ingest_fn=ingest_fn or (lambda conn, doc, name: None),
+        promote_fn=promote_fn or (lambda conn, uri: None),
         transcribe_limit=limit,
     )
 
@@ -96,13 +99,58 @@ def test_marks_key_to_the_corpus_document_by_content_hash(tmp_path):
     assert row["source_run"] is not None            # provenance: which run stored this ink
 
 
-def test_an_uningested_document_keys_by_device_path_and_says_so(tmp_path):
+def test_a_proposed_document_keys_by_device_path_and_never_ingests(tmp_path):
+    """`Proposed` is pre-verdict: most proposals get rejected, so nothing there auto-ingests."""
     conn = _conn(tmp_path)
-    r = _run(conn, _staged(tmp_path))
+    ingests: list = []
+
+    def ingest(conn, doc, name):
+        ingests.append(name)
+        return None
+
+    r = _run(conn, _staged(tmp_path), device_path="/Reading/Proposed/A Paper",
+             ingest_fn=ingest)
     assert r.outcomes[0].status == "annotated"
-    assert not r.outcomes[0].hash_mapped
+    assert not r.outcomes[0].hash_mapped and not r.outcomes[0].ingested
+    assert ingests == []                            # his verdict, not the system's
     row = conn.execute("SELECT source_uri FROM pdf_annotations").fetchone()
-    assert row["source_uri"] == "/Reading/Finished/A Paper"
+    assert row["source_uri"] == "/Reading/Proposed/A Paper"
+
+
+def test_a_chosen_hand_added_book_is_ingested_and_earlier_marks_rekeyed(tmp_path):
+    """Moving a document to In-Progress/Finished is the owner's one reading gesture.
+
+    A hand-added book (never a proposal) was the one reading document with no ingest path that
+    didn't need a command typed. The move triggers ingest from the bundle's own PDF bytes, and
+    marks captured while it sat un-ingested are re-keyed onto the new document.
+    """
+    conn = _conn(tmp_path)
+    staging = _staged(tmp_path)
+    # An earlier tick captured a mark while the doc was un-ingested (device-path keyed).
+    with conn:
+        conn.execute(
+            "INSERT INTO pdf_annotations (source_uri, pdf_page, kind, bbox_key, captured_at) "
+            "VALUES ('/Reading/Finished/A Paper', 3, 'underline', 'old-key', 't')"
+        )
+
+    def ingest(conn, doc, name):
+        with conn:
+            conn.execute(
+                "INSERT INTO documents (content_hash, source_type, source_uri, raw_path, "
+                "title, ingest_model) VALUES (?,'pdf','vault/incoming/paper/A Paper.pdf',"
+                "'r',?, 't')",
+                (PDF_HASH, name),
+            )
+        return "vault/incoming/paper/A Paper.pdf"
+
+    promoted: list = []
+    r = _run(conn, staging, ingest_fn=ingest,
+             promote_fn=lambda conn, uri: promoted.append(uri) or None)
+    o = r.outcomes[0]
+    assert o.status == "annotated" and o.ingested and not o.hash_mapped
+    uris = {row["source_uri"] for row in conn.execute("SELECT source_uri FROM pdf_annotations")}
+    assert uris == {"vault/incoming/paper/A Paper.pdf"}   # old mark re-keyed, new mark joined
+    assert promoted == ["vault/incoming/paper/A Paper.pdf"]  # notes promotion ran, corpus-keyed
 
 
 def test_an_unchanged_render_costs_nothing(tmp_path):

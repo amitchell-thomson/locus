@@ -27,6 +27,13 @@ live before building: the parent-orders bundle's hash equals the ingested row's 
 CHANGE DETECTION reuses Loop A's staged-render manifest with an `annotate:` key prefix — the
 device only pushes documents whose content changed, and an unchanged staged render means no new
 ink, so a no-op run costs zero rmapi downloads and zero model calls.
+
+RELATIONSHIP TO `reading/sweep.py` (which predates this and coined "Loop B"): sweep is the
+hourly CLOUD-PULL pass over `reading_targets` — geometry only, papers the system delivered —
+and survives the device push channel dying. This module is the primary: any reading-folder
+document, content-hash mapping, transcription, chosen-book ingest, and note promotion. Both
+store through the same idempotent upsert, so the overlap on delivered papers is harmless by
+construction; do not "deduplicate" them into one path, the redundancy is the resilience.
 """
 
 from __future__ import annotations
@@ -46,6 +53,14 @@ log = logging.getLogger(__name__)
 READING_FOLDERS: tuple[str, ...] = ("Reading", "reading_list")
 
 
+# Reading sub-folders whose documents the owner has CHOSEN — moving a paper here is his one
+# manual reading gesture, and it is the ingest trigger for documents that never went through
+# the proposal flow (a book he added by hand). `Proposed` deliberately never auto-ingests:
+# most proposals get rejected, and ingesting them all would pour agent-selected material into
+# the corpus ahead of his verdict.
+_CHOSEN_SUBFOLDERS: tuple[str, ...] = ("In-Progress", "Finished")
+
+
 @dataclass
 class AnnotateOutcome:
     uuid: str
@@ -53,8 +68,10 @@ class AnnotateOutcome:
     status: str                   # 'annotated' | 'unchanged' | 'failed'
     source_uri: str = ""
     hash_mapped: bool = False     # True when content-hash resolved a corpus document
+    ingested: bool = False        # True when this run ingested the document itself
     marks: int = 0
     transcribed: int = 0
+    promoted: str = ""            # promote_reading_notes status ('' = no notes to promote)
     error: str | None = None
 
 
@@ -101,6 +118,48 @@ def _corpus_uri_for(conn: sqlite3.Connection, pdf_bytes: bytes) -> str | None:
     return row["source_uri"] if row else None
 
 
+def _chosen(device_path: str) -> bool:
+    """Has the owner moved this document into a folder that says "I am reading this"?"""
+    parts = [p for p in device_path.strip("/").split("/") if p]
+    return any(p in _CHOSEN_SUBFOLDERS for p in parts[1:])
+
+
+def _ingest_from_bundle(conn: sqlite3.Connection, doc, name: str) -> str | None:
+    """Ingest a CHOSEN document straight from the bundle's PDF bytes; its source_uri, or None.
+
+    The proposal flow's `reading/accept.ingest_accepted` covers papers the SYSTEM delivered; a
+    book the owner dropped onto the device by hand was the one reading document with no ingest
+    path that didn't need a command typed. Same spine, same flock, same idempotency — the bundle
+    bytes hash to the same content_hash ingest will compute, so a concurrent accept-loop ingest
+    of the same file is a no-op, and `IngestLockHeld` degrades to retry-next-tick rather than
+    contending (one ingest at a time, §14).
+    """
+    from locus.config import load as _load
+    from locus.ingest_lock import IngestLockHeld, ingest_lock
+    from locus.ingest_pipeline import ingest_file
+
+    dest = Path(_load().paths.incoming) / "paper" / f"{name}.pdf"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if not dest.exists():
+        dest.write_bytes(doc.pdf_bytes)
+    try:
+        with ingest_lock():
+            result = ingest_file(dest, conn, category="paper")
+    except IngestLockHeld:
+        log.info("annotate-sync: ingest lock held; %s waits for the next tick", name)
+        return None
+    if result is None or result.status not in ("ingested", "skipped"):
+        log.warning(
+            "annotate-sync: ingest of %s did not land (%s)", name,
+            getattr(result, "reason", "") or getattr(result, "status", "no result"),
+        )
+        return None
+    row = conn.execute(
+        "SELECT source_uri FROM documents WHERE id=?", (result.doc_id,)
+    ).fetchone()
+    return row["source_uri"] if row else None
+
+
 def annotate_sync(
     conn: sqlite3.Connection,
     *,
@@ -111,6 +170,8 @@ def annotate_sync(
     read_fn=None,
     marks_fn=None,
     transcribe_fn=None,
+    ingest_fn=None,
+    promote_fn=None,
     transcribe_limit: int | None = None,
 ) -> AnnotateSyncResult:
     """Capture + transcribe reading annotations for every staged, changed reading document.
@@ -157,6 +218,11 @@ def annotate_sync(
                 conn, marks, source_uri=source_uri,
                 model=cfg.capture.transcribe_model, limit=limit,
             )
+    ingest_fn = ingest_fn or _ingest_from_bundle
+    if promote_fn is None:
+        from locus.agent.promote import promote_reading_notes
+
+        promote_fn = promote_reading_notes
 
     result = AnnotateSyncResult()
     staged = sorted(staging.glob("*.pdf")) if staging.exists() else []
@@ -181,11 +247,27 @@ def annotate_sync(
                 result.outcomes.append(AnnotateOutcome(uuid, name, "unchanged"))
                 continue
             try:
+                from locus.capture.annotate import rekey_marks
+
                 with tempfile.TemporaryDirectory(prefix="locus-loopb-") as tmp:
                     doc = read_fn(fetch_fn(device_path, tmp))
                     marks = marks_fn(doc)
                     uri = _corpus_uri_for(conn, doc.pdf_bytes)
                     hash_mapped = uri is not None
+                    ingested = False
+                    if uri is None and _chosen(device_path):
+                        # A document he CHOSE (moved to In-Progress/Finished) that no ingest
+                        # path ever covered — a hand-added book. Ingest it now so its marks join
+                        # the corpus; earlier ticks' device-path marks are re-keyed with it.
+                        uri = ingest_fn(conn, doc, name)
+                        if uri is not None:
+                            ingested = True
+                            moved = rekey_marks(conn, old_uri=device_path, new_uri=uri)
+                            if moved:
+                                log.info(
+                                    "annotate-sync: re-keyed %d earlier mark(s) onto %s",
+                                    moved, uri,
+                                )
                     uri = uri or device_path
                     stored = store_marks(
                         conn, marks, source_uri=uri, doc_uuid=doc.doc_uuid,
@@ -197,19 +279,29 @@ def annotate_sync(
                             conn, marks, source_uri=uri, limit=budget
                         )
                         budget -= transcribed
+                    promoted = ""
+                    if uri != device_path:
+                        # HIS margin notes become a reading-notes document automatically —
+                        # idempotent (stable path, content-compare), and `notes_sync` on the
+                        # next capture tick ingests the file, so his marginalia reaches
+                        # retrieval with no command typed. None = he wrote no notes.
+                        p = promote_fn(conn, uri)
+                        promoted = p.status if p else ""
                 manifest[key] = h
                 result.outcomes.append(
                     AnnotateOutcome(
                         uuid, name, "annotated", source_uri=uri, hash_mapped=hash_mapped,
-                        marks=stored, transcribed=transcribed,
+                        ingested=ingested, marks=stored, transcribed=transcribed,
+                        promoted=promoted,
                     )
                 )
-                if not hash_mapped:
-                    # Loud, not fatal: marks keyed by device path join to no corpus document, so
-                    # answers/links cannot see them until the doc is ingested and re-keyed.
+                if uri == device_path:
+                    # Loud, not fatal: a still-Proposed document he has marked up. Its marks
+                    # join the corpus the moment he moves it out of Proposed (the ingest above
+                    # + rekey), so nothing is lost — but until then no downstream pass sees it.
                     log.warning(
-                        "annotate-sync: %s not in the corpus (no content-hash match) — "
-                        "marks keyed by device path %r", name, device_path,
+                        "annotate-sync: %s not in the corpus (still in Proposed?) — "
+                        "marks keyed by device path %r until he chooses it", name, device_path,
                     )
             except Exception as exc:  # one doc's failure never aborts the batch
                 log.warning("annotate-sync: %s (%s) failed: %s", name, uuid[:8], exc)
@@ -220,8 +312,12 @@ def annotate_sync(
             "failed": sum(o.status == "failed" for o in result.outcomes),
             "marks": sum(o.marks for o in result.outcomes),
             "transcribed": sum(o.transcribed for o in result.outcomes),
+            "ingested": sum(o.ingested for o in result.outcomes),
+            "promoted": sum(bool(o.promoted and o.promoted != "unchanged")
+                            for o in result.outcomes),
             "unmapped_to_corpus": sum(
-                1 for o in result.outcomes if o.status == "annotated" and not o.hash_mapped
+                1 for o in result.outcomes
+                if o.status == "annotated" and not o.hash_mapped and not o.ingested
             ),
         }
     if mpath is not None:

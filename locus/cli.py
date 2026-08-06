@@ -1253,9 +1253,15 @@ def cmd_capture_sync(args) -> None:
           f"{len(r.unmapped)} unmapped   est cost ${r.cost_usd:.4f}")
     for o in b.outcomes:
         if o.status == "annotated":
-            key = "corpus" if o.hash_mapped else "DEVICE PATH (not ingested)"
+            if o.hash_mapped:
+                key = "corpus"
+            elif o.ingested:
+                key = "corpus (ingested this run)"
+            else:
+                key = "DEVICE PATH (awaiting his move out of Proposed)"
+            extra = f" · notes {o.promoted}" if o.promoted and o.promoted != "unchanged" else ""
             print(f"  annotated {o.name}  ({o.marks} marks · {o.transcribed} transcribed · "
-                  f"keyed to {key})")
+                  f"keyed to {key}{extra})")
         elif o.status == "failed":
             print(f"  ANNOTATE FAILED {o.name}: {o.error}")
     if b.outcomes:

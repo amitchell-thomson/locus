@@ -1015,6 +1015,48 @@ def test_an_archived_project_keeps_coursework_links_but_takes_no_new_ideas(conn)
     assert repo_targets() == {"Linear Algebra"}
 
 
+def test_a_shown_pair_lets_the_sources_next_pair_through(conn):
+    """One pair per source must not mean one pair per source EVER.
+
+    The break in `collect` emits a source's best pair; once `daily_shown` retired it, the source
+    went permanently dark however many qualifying pairs it still had. `skip_keys` moves the
+    retirement INSIDE the walk, so the source falls through to its next unshown pair.
+    """
+    _bridge_corpus(conn)
+    with conn:
+        conn.execute(
+            "INSERT INTO documents (content_hash, source_type, source_uri, raw_path, title, "
+            "category, ingest_model, thesis, method, result) VALUES "
+            "('hs','code','repos/liveproj','hs.x','Live Project','project','t','x','x','x')"
+        )
+        repo_id = conn.execute("SELECT last_insert_rowid() AS i").fetchone()["i"]
+        conn.execute(
+            "INSERT INTO sections (doc_id, position, title, summary) VALUES "
+            "(?,0,'README.md','Solves the eigenvalue problem for building modes.')",
+            (repo_id,),
+        )
+        sec_id = conn.execute("SELECT last_insert_rowid() AS i").fetchone()["i"]
+        conn.execute(
+            "INSERT INTO entities (doc_id, section_id, name, type) VALUES "
+            "(?,?,'eigenvalue problem','concept')",
+            (repo_id, sec_id),
+        )
+    from locus.link.aliases import build_aliases
+
+    build_aliases(conn, use_llm=False, use_cache=False, log=lambda _m: None)
+
+    def targets(skip=None):
+        return {
+            c.other_title
+            for c in cd.connection_candidates(conn, skip_keys=skip)
+            if c.kind == "project" and c.src_id == repo_id
+        }
+
+    assert targets() == {"Specification Testing"}          # best pair leads
+    shown = {"conn:repos/liveproj|vault/incoming/paper/dyadic.pdf"}
+    assert targets(skip=shown) == {"Linear Algebra"}       # retired -> next pair offers
+
+
 def test_connections_budget_height_not_just_seats(conn):
     """Three 2026-08-06-writer notes (340-500 chars) overflow the page three ~300-char notes fit.
 

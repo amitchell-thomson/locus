@@ -172,7 +172,9 @@ def _write_connection_notes(conn, *, limit: int) -> int:
     from locus.link.connect import pair_attempted, write_note
 
     written = 0
-    for cand in cd.connection_candidates(conn):
+    # Shown pairs are retired; skipping them INSIDE the walk lets each source fall through to
+    # its next unshown pair, so tonight's spend goes to what tomorrow's page can actually offer.
+    for cand in cd.connection_candidates(conn, skip_keys=cd._shown_keys(conn)):
         if written >= limit:
             break
         # `pair_attempted`, not non-empty prose: a NO_CONNECTION verdict is stored as an empty

@@ -856,7 +856,7 @@ def _project_sources(conn: sqlite3.Connection, *, limit: int) -> list[sqlite3.Ro
 
 def connection_candidates(
     conn: sqlite3.Connection, *, per_source: int = 5, capture_limit: int = 64,
-    bridge_limit: int = 60, project_limit: int = 32,
+    bridge_limit: int = 60, project_limit: int = 32, skip_keys: set[str] | None = None,
 ) -> list[ConnectionCandidate]:
     """Every connection the page would offer — project, capture and bridge arms INTERLEAVED.
 
@@ -868,6 +868,12 @@ def connection_candidates(
     `capture_limit` covers ALL his dated writing (46 docs when raised), not the 12 newest:
     measured (`connect_eligible.py`), the recency cap silently discarded 120 of the 167
     note<->paper pairs — the same shape as the bridge-source cap it replaced.
+
+    `skip_keys` (item keys, `conn:src|other`) are pairs already retired — a source whose best
+    pair has been shown FALLS THROUGH to its next unshown pair instead of re-offering the same
+    one forever. Without this the one-pair-per-source break made each source a single-shot
+    supply: once its first pair was shown, the source went permanently dark however many
+    qualifying pairs it still had (up to `per_source`).
     """
     from locus.link.related import non_topical_names
     from locus.observe import gates
@@ -943,6 +949,9 @@ def connection_candidates(
                 pair = (min(src["id"], rel.doc_id), max(src["id"], rel.doc_id))
                 if pair in seen_pairs:
                     continue
+                other_uri = _source_uri(conn, rel.doc_id)
+                if skip_keys and f"conn:{src['source_uri']}|{other_uri}" in skip_keys:
+                    continue      # retired — keep walking so the source's NEXT pair can offer
                 # Variety on the far side: without this, one hot paper owns the surface — the
                 # verified e2e run (2026-08-06) put AlphaZeroBeta in 3 of 8 notes because four of
                 # his recent thread notes all react to it. Two seats per far document across the
@@ -959,7 +968,7 @@ def connection_candidates(
                         src_title=src["title"] or "",
                         src_date=src["source_date"],
                         other_id=rel.doc_id,
-                        other_uri=_source_uri(conn, rel.doc_id),
+                        other_uri=other_uri,
                         other_title=rel.title or "",
                         shared=attested[0],
                         bridge=kind == "bridge",
@@ -1222,7 +1231,9 @@ def build_connections(
     seen = seen if seen is not None else set()
     out: list[ThreadItem] = []
     _budget_used = 0
-    for cand in connection_candidates(conn):
+    # `seen` goes INTO the pair-finder, not just over its output: a source whose best pair was
+    # shown yesterday then offers its next unshown pair, instead of going permanently dark.
+    for cand in connection_candidates(conn, skip_keys=seen):
         if len(out) >= limit:
             break
         item_key = f"conn:{cand.src_uri}|{cand.other_uri}"

@@ -296,16 +296,19 @@ def test_reading_degrades_silently_without_the_discovery_tables(conn):
 # ---------- page 2: Think ----------
 
 
-def test_the_three_subsections_are_named_for_where_the_item_came_from(conn):
-    """"I do not want all these different sections that are all very similar and confusingly
-    labelled" — one page, one action, but provenance stated."""
+def test_a_page_does_not_repeat_its_own_name_as_a_subheading(conn):
+    """"it says ideas at the top and the develop below — there should be no develop".
+
+    Each page now carries one section, so the subheading named the same thing twice and cost a
+    heading's worth of vertical space every day. It is printed only when a page carries more than
+    one section AND the subsection is not the page's own name — so on Connect a tension is still
+    labelled while connections start straight under the rule.
+    """
     _mark(conn, text=_PASSAGE)
     _thread(conn, "is a factor like a feature?")
-    page = cd.compose(conn, today=date(2026, 7, 31))
-    body = cd.render(page)
-    assert cd.SECTION_CHALLENGE in body or cd.SECTION_DEVELOP in body
-    assert cd.SECTION_DEVELOP in body
-    # An empty subsection is omitted entirely rather than left as a bare heading.
+    body = cd.render(cd.compose(conn, today=date(2026, 7, 31)))
+    assert "# Ideas" in body
+    assert f"## {cd.SECTION_DEVELOP}" not in body
     assert cd.SECTION_CONNECTION not in body
 
 
@@ -640,7 +643,7 @@ def test_a_connection_tick_box_is_drawn_not_a_glyph(conn):
     body = cd.render(page)
     # Drawn, and SEPARATE from the prompt text — the recall page's placement, for the same
     # reason: a decision box belongs at the end of the thing it decides.
-    assert "#tickbox" in body and "keep this connection" in body
+    assert "#tickbox" in body and "keep this" in body
     assert "\u2610" not in body and "[   ]" not in body
 
 
@@ -798,7 +801,9 @@ def test_an_empty_check_this_becomes_a_third_idea(conn):
         _jotted(conn, f"a thought worth developing further, number {i}",
                 created_at=f"2026-07-{i + 1:02d}T00:00:00+00:00")
     ideas = [t for t in cd.build_threads(conn, seen=set()) if t.section == cd.SECTION_DEVELOP]
-    assert len(ideas) == cd._FIT["ideas"]
+    # PACKED BY LENGTH, not a fixed count: short ideas get more cards, long ones fewer, so the
+    # page is neither a third white nor spilling. These fixtures are short, so it fills the cap.
+    assert 3 <= len(ideas) <= 4
 
 
 def test_marks_are_no_longer_capped_at_one_per_document(conn):

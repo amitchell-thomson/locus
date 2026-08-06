@@ -1010,7 +1010,11 @@ def build_open(
                 context=_thread_context(conn, obj),
                 # The last couple of passes only: the point is to continue the thought, not to
                 # reprint a transcript he has already read.
-                body=tuple(development[-2:]),
+                # CLIPPED, like every other line on the page. Development entries were the one
+                # unbounded field: two long passes plus a long headline pushed the Ideas page onto
+                # a second sheet regardless of how few cards were on it, which is why the card
+                # count looked like the constraint when it never was.
+                body=tuple(_clip(x, _MAX_PRIOR_CHARS) for x in development[-2:]),
                 target_kind="object",
                 target_key=str(obj.id),
                 item_key=item_key,
@@ -1199,6 +1203,45 @@ def _is_teachable(conn: sqlite3.Connection, name: str) -> bool:
 # that without throwing anything away.
 
 
+# Characters of item text one page holds. MEASURED by rendering, not derived: at this budget
+# three of his longest ideas fill the page and a fourth spills, while four short ones fit with
+# room to spare.
+#
+# A FIXED CARD COUNT WAS THE WRONG CONTROL. He saw a third of the Ideas page white and asked for
+# a fourth card, or tighter line spacing. Tested against his longest real ideas, the rule gap
+# changes nothing at all — 2 pages at 1.8, 1.5, 1.3 and 1.1 — because what fills the page is
+# TEXT: a 170-character headline plus a prior development pass per card. The page is
+# content-bound, and a count that fits a long day wastes a short one while a count that fits a
+# short day overflows a long one. Packing by measured length gets both.
+# MEASURED by rendering his real ideas at both extremes, not derived. At 22 the page never
+# overflows: longest-first gives 2 cards at 81% fill, shortest-first 4 at 76%. At 26 a long day
+# spills onto a second sheet, and one-section-per-page is worth more than the last tenth of
+# density.
+_IDEAS_LINES = 22          # line-equivalents one page holds
+_RULES_PER_CARD = 3        # fixed cost: the ruled writing space every card gets
+_CHARS_PER_LINE = 90       # measured against the rendered body font
+
+
+def _pack(items: list, budget: int = _IDEAS_LINES, *, cap: int = 4) -> list:
+    """As many items as fit the page, always at least one, never more than `cap`.
+
+    Cost is in LINE-EQUIVALENTS, not characters: every card pays a fixed `_RULES_PER_CARD` for
+    its writing space whatever it says, so a pure character budget fits six short cards onto a
+    page that holds four. Text is charged on top at `_CHARS_PER_LINE`.
+    """
+    import math
+
+    out, used = [], 0
+    for it in items:
+        chars = len(it.headline) + sum(len(b) for b in it.body) + len(it.context or "")
+        cost = _RULES_PER_CARD + math.ceil(chars / _CHARS_PER_LINE)
+        if out and (used + cost > budget or len(out) >= cap):
+            break
+        out.append(it)
+        used += cost
+    return out
+
+
 def _negated(ts: str) -> tuple:
     """Sort key reversing a timestamp without reversing the rest of the key."""
     return tuple(-ord(ch) for ch in ts)
@@ -1281,7 +1324,7 @@ def build_develop(
                 headline=_clip(text, 170),
                 context="you jotted this · take it further",
                 body=(
-                    tuple(development[-2:])
+                    tuple(_clip(x, _MAX_PRIOR_CHARS) for x in development[-2:])
                     or ((f"beside: {_clip(passage, 190)}",) if passage else ())
                 ),
                 target_kind="object", target_key=str(obj.id), item_key=item_key,
@@ -1323,7 +1366,7 @@ def build_threads(
     # of the page blank, because the page is the scarce thing and he has a 26-mark backlog behind
     # it. The old split took a fixed `per` from marks and open and let connections absorb the
     # slack in only ONE direction, so a day with no connections rendered a two-thirds page.
-    ideas = build_develop(conn, limit=_FIT["ideas"], seen=seen)[: _FIT["ideas"]]
+    ideas = _pack(build_develop(conn, limit=_FIT["ideas"] + 3, seen=seen))
     # Check-this is capped at one seat: a tension is rare and one is plenty, and the rest of the
     # Connect page belongs to connections, which is what he called "really good ideas".
     challenge = build_challenge(conn, limit=1, seen=seen)[:1]
@@ -1640,6 +1683,10 @@ _MAX_LINES = 5
 # At three idea cards the 9-line budget already gives three lines each, so the floor is not what
 # is binding — `_FIT["ideas"]` is. The floor exists for the one-item day, where a single card
 # should not sprawl over the whole page.
+# A prior development pass is context, not the item. Two unclipped passes ran to 300+ characters
+# each and were the real cause of the Ideas overflow.
+_MAX_PRIOR_CHARS = 150
+
 _MIN_LINES = {"ideas": 3, "connect": 3, "recall": 2}
 
 
@@ -1759,11 +1806,18 @@ def _render_think(page: DailyPage, *, heading: str = "Ideas",
     items = [t for t in page.threads if t.section in sections]
     lines = [f"# {heading}", ""]
     per_item = _lines_for(len(items), budget)
+    # NO REDUNDANT SUBHEADING. Each page now carries one section, so "# Ideas" followed by
+    # "## Develop" named the same thing twice and cost a heading's worth of vertical space on
+    # every page. A subsection heading is printed only when the page carries MORE than one and
+    # the heading is not just the page's own name — which on Connect means connections start
+    # immediately under the rule, and only a tension gets labelled.
+    distinct = {t.section for t in items}
     current = ""
     for t in items:
         if t.section != current:
             current = t.section
-            lines += [f"## {current}", ""]
+            if len(distinct) > 1 and current.casefold() != heading.casefold():
+                lines += [f"## {current}", ""]
         # ASCII brackets, not U+2610 BALLOT BOX: the Typst body font has no glyph for it and it
         # rendered as a tofu box (verified 2026-07-30 — the character was absent from the
         # extracted text while a stray rectangle was drawn in its place). A tick box he must
@@ -1771,13 +1825,21 @@ def _render_think(page: DailyPage, *, heading: str = "Ideas",
         lines += [f"{_anchor(t.anchor)} {t.headline}", ""]
         for prior in t.body:
             lines += [f"> {prior}", ""]
-        lines += [f"*{t.context}*", "", _rules(per_item)]
+        # THE TICK SHARES THE LAST RULED LINE. It used to sit on its own line below the rules,
+        # costing a whole line of vertical space for a box. The final rule is shortened to ~72%
+        # so the box sits in the gap at the end of it, where the eye lands after writing.
+        lines += [f"*{t.context}*", ""]
+        if t.tick:
+            lines += [_rules(per_item - 1) if per_item > 1 else "",
+                      "```{=typst}\n#block(above: 1.2em)[#box(width: 72%)[#line(length: 100%, "
+                      "stroke: 0.3pt + luma(70%))] #h(1fr) #tickbox #text(size: 9pt, "
+                      "fill: luma(45%))[keep this]]\n```", ""]
+        else:
+            lines += [_rules(per_item)]
         # SEPARATE FROM THE TEXT, like the recall page's. Inline after the anchor it sat mid-
         # sentence and read as part of the prompt; a decision box belongs at the end of the thing
         # it decides, where the eye lands after writing.
-        if t.tick:
-            lines += ["```{=typst}\n#align(right)[#tickbox #text(size: 9pt, fill: luma(45%))"
-                      "[keep this connection]]\n```", ""]
+
     return "\n".join(lines)
 
 

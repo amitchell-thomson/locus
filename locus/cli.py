@@ -533,7 +533,7 @@ def cmd_restore(args) -> None:
 
 
 def cmd_reading_why(args) -> None:
-    """Deliver "Why these papers" to the shelf — one document, refreshed when the shelf changes.
+    """Deliver "Proposals" to the shelf — one document, refreshed when the shelf changes.
 
     Replaces the daily page's Read section (see `reading/rationale.py`): the reasons are valuable,
     the place to read them is where the choice is made. Free and local — every reason was

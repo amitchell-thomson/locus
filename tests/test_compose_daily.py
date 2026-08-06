@@ -886,7 +886,9 @@ def _bridge_corpus(conn) -> None:
 
     Mirrors the live shape measured on 2026-08-03: `Specification Testing for Dyadic Regression`
     shares `eigenvalue problem` with a Linear Algebra lecture, while a vendor manual shares only
-    `CPU` with a computer-architecture lecture.
+    `CPU` with a computer-architecture lecture. The genuine concept appears in the section
+    summaries because that is the live shape too (23 of 24 measured sides carry the concept in
+    narrative text) — and because `_attested` now requires it on at least one side.
     """
     with conn:
         docs = [
@@ -901,10 +903,16 @@ def _bridge_corpus(conn) -> None:
                 "category, ingest_model, thesis, method, result) VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (h, st, uri, f"{h}.x", title, cat, "t", "x", "x", "x"),
             )
+        summaries = {
+            1: "Tests hinge on the eigenvalue problem of the covariance estimator.",
+            2: "Derives the eigenvalue problem for symmetric matrices.",
+            3: "Registers and the CPU instruction set.",
+            4: "How a CPU pipelines instructions.",
+        }
         for doc_id in (1, 2, 3, 4):
             conn.execute(
-                "INSERT INTO sections (doc_id, position, title, summary) VALUES (?,0,'body','s')",
-                (doc_id,),
+                "INSERT INTO sections (doc_id, position, title, summary) VALUES (?,0,'body',?)",
+                (doc_id, summaries[doc_id]),
             )
         ents = [
             (1, 1, "eigenvalue problem", "concept"),   # paper  \ the real bridge
@@ -949,6 +957,77 @@ def test_a_single_word_overlap_is_not_a_connection(conn):
     """
     _bridge_corpus(conn)
     assert all(c.shared != "CPU" for c in cd.connection_candidates(conn))
+
+
+def test_connections_budget_height_not_just_seats(conn):
+    """Three 2026-08-06-writer notes (340-500 chars) overflow the page three ~300-char notes fit.
+
+    Measured by rendering the Connect section alone and counting pages
+    (`scripts/analysis/render_connect_isolated.py`): 3x340 fits, 3x500 spills. So
+    `build_connections` takes a `char_budget`; an item that would exceed it WAITS (stored,
+    un-shown) rather than being clipped — except the first, so one long note cannot blank the
+    section.
+    """
+    _bridge_corpus(conn)
+    from locus.link.connect import _store
+
+    cands = cd.connection_candidates(conn)
+    assert cands, "fixture must yield at least one candidate"
+    long_prose = "y" * 600
+    for c in cands[:2]:
+        _store(conn, c.src_uri, c.other_uri, c.shared, long_prose)
+    # Wide open: both fit.
+    assert len(cd.build_connections(conn, limit=3, seen=set(), char_budget=2000)) == min(
+        2, len(cands)
+    )
+    # Tight: the second would exceed the budget and waits; the first is always admitted.
+    assert len(cd.build_connections(conn, limit=3, seen=set(), char_budget=700)) == 1
+
+
+def test_a_concept_no_side_narrates_is_not_a_connection(conn):
+    """A shared concept attested in NEITHER side's narrative is entity noise, not a link.
+
+    The live case (2026-08-06): `Markov model` connected a quant repo to a VLE-thermodynamics
+    section about Raoult's law — the entity pass hallucinated it on one side and it was
+    incidental on the other, so the concept string appeared in neither document's synthesis nor
+    any section summary. Haiku, prompted with that pair, confidently invented a connection
+    "inspired by Le Châtelier's Principle". The gate stops the pair before any model sees it.
+    """
+    _bridge_corpus(conn)
+    with conn:
+        # A paper<->coursework pair whose ONLY shared concept is compound and teachable but
+        # appears nowhere in either side's narrative — the summaries are about other things.
+        for h, uri, title, cat, summary in (
+            ("hq", "vault/incoming/paper/cascade.pdf", "Cascade Paper", "paper",
+             "Detects stop-loss cascades from order-flow features."),
+            ("hv", "vault/incoming/coursework/thermo.pdf", "Thermodynamics", "coursework",
+             "Raoult's law for vapour-liquid equilibrium of ideal solutions."),
+        ):
+            conn.execute(
+                "INSERT INTO documents (content_hash, source_type, source_uri, raw_path, title, "
+                "category, ingest_model, thesis, method, result) VALUES "
+                "(?,'pdf',?,?,?,?,'t','x','x','x')",
+                (h, uri, f"{h}.x", title, cat),
+            )
+            doc_id = conn.execute("SELECT last_insert_rowid() AS i").fetchone()["i"]
+            conn.execute(
+                "INSERT INTO sections (doc_id, position, title, summary) VALUES (?,0,'body',?)",
+                (doc_id, summary),
+            )
+            sec_id = conn.execute("SELECT last_insert_rowid() AS i").fetchone()["i"]
+            conn.execute(
+                "INSERT INTO entities (doc_id, section_id, name, type) VALUES "
+                "(?,?,'Markov model','concept')",
+                (doc_id, sec_id),
+            )
+    from locus.link.aliases import build_aliases
+
+    build_aliases(conn, use_llm=False, use_cache=False, log=lambda _m: None)
+    assert all(c.shared != "Markov model" for c in cd.connection_candidates(conn))
+    row = conn.execute(
+        "SELECT rejected FROM gate_log WHERE gate='connect.attested'"
+    ).fetchone()
+    assert row is not None and row["rejected"] >= 1
 
 
 # ---------- "You asked": his margin questions, answered -----------------------------------------

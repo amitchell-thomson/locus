@@ -78,6 +78,13 @@ from locus.link.related import related_documents
 # said the freed Check-this seat should become a third idea.
 _FIT = {"ideas": 3, "connect": 3, "recall": 4, "answered": 3}
 
+# The Connect page also budgets HEIGHT: total characters of item prose (connections plus the
+# challenge headline) that fit above the writing rules. MEASURED 2026-08-06 by rendering the
+# section alone (`scripts/analysis/render_connect_isolated.py`): 3x340 and challenge+2x380 fit
+# one page; 3x500 and challenge+2x500 spill onto a second. 1000 sits under the measured edge
+# (~1050-1100) with margin for natural-text wrapping variance.
+_CONNECT_CHAR_BUDGET = 1000
+
 # The Read page is the one section with no writing regions, so `_lines_for` does not bound it and
 # nothing else did either: three proposals plus an unbounded in-progress list overflowed onto a
 # second page, taking the `#v(1fr)` status line with it and leaving p2 ~90% white. Three is what
@@ -662,6 +669,14 @@ def _source_uri(conn: sqlite3.Connection, doc_id: int) -> str:
 # One pair-finder, used by the page AND by the overnight writer (`cli._write_connection_notes`),
 # because a note written for a pair the page never surfaces is spend with no reader, and a pair
 # surfaced with no note is silently dropped.
+#
+# THE PROJECT ARM (2026-08-06). The owner's stated top want is paper/note/coursework -> HIS CODE
+# REPOS — "really good ideas from papers and notes for my projects". Measured, that was the
+# largest structural hole: his repos were never a source (`_bridge_sources` filters
+# `source_type != 'code'`) and never a target (a bridge target must be coursework), so all 62
+# code<->paper and 48 code<->coursework pairs carrying a qualifying canonical were unreachable
+# by ANY ranking. `scripts/analysis/connect_eligible.py` holds the numbers: 3,784 qualifying
+# pairs, 431 reachable before this arm, 796 after.
 
 # Categories whose documents anchor a bridge: the material he is working with NOW.
 _BRIDGE_SOURCE_CATEGORIES = ("paper", "project")
@@ -672,7 +687,7 @@ _BRIDGE_TARGET_CATEGORY = "coursework"
 
 @dataclass(frozen=True)
 class ConnectionCandidate:
-    """One (his material, other document) pair with the concept they share."""
+    """One (his material, other document) pair with the concept(s) they share."""
 
     src_id: int
     src_uri: str
@@ -683,6 +698,13 @@ class ConnectionCandidate:
     other_title: str
     shared: str
     bridge: bool                 # True when the far side is coursework he has already studied
+    # 'project' | 'capture' | 'bridge' — which arm found the pair; decides the prose framing.
+    kind: str = "capture"
+    # Every qualifying shared concept (rarest first, attestation-filtered). The writer hands the
+    # model the LIST and verifies its pick against it, because the rarest shared concept is not
+    # necessarily the one a useful connection is built on (measured: rarest-first chose
+    # 'Balance Sheets' over 'Newey–West HAC t-statistic' for one pair).
+    shared_all: tuple[str, ...] = ()
 
 
 def _teachable_canonicals(conn: sqlite3.Connection) -> set[str]:
@@ -704,8 +726,8 @@ def _teachable_canonicals(conn: sqlite3.Connection) -> set[str]:
     }
 
 
-def _substantive_shared(names, generic: set[str], teachable: set[str] | None = None) -> str | None:
-    """The first shared name specific enough to build a prompt on, or None.
+def _substantive_shared(names, generic: set[str], teachable: set[str] | None = None) -> list[str]:
+    """Every shared name specific enough to build a prompt on, rarest first (input order kept).
 
     A connection is only worth his attention if the thing shared is an IDEA. Without this bar the
     bridge source offers `Optibook Python Reference` <-> `Introduction to Computer Engineering`
@@ -714,13 +736,12 @@ def _substantive_shared(names, generic: set[str], teachable: set[str] | None = N
     bridges are compound terms (`eigenvalue problem`, `central limit theorem`, `Positive
     semidefinite matrix`) while the junk is single common nouns.
 
-    KNOWN RESIDUAL: `while loop` passes every bar here — it is compound, typed `concept`, and
-    attested in prose — and produced a real but worthless prompt about iterating Optibook market
-    data. Nothing available separates a programming construct from a mathematical one at the
-    concept level, so it is left rather than papered over with a name blocklist; its true cause is
-    that `Optibook Python Reference` is a VENDOR manual filed under `category='project'`, a data
-    wart CLAUDE.md §24 already records.
+    Returns the whole qualifying list rather than the first hit because the rarest shared
+    concept is not necessarily the one a useful connection is built on: rarest-first chose
+    `Balance Sheets` over `Newey–West HAC t-statistic` for one measured pair. The writer hands
+    the model the list and verifies the pick (`link/connect.write_note`).
     """
+    out: list[str] = []
     for name in names or ():
         n = (name or "").strip()
         if len(n) < _MIN_TEACHABLE_CHARS or " " not in n:
@@ -729,8 +750,48 @@ def _substantive_shared(names, generic: set[str], teachable: set[str] | None = N
             continue
         if teachable is not None and n.lower() not in teachable:
             continue
-        return n
-    return None
+        out.append(n)
+    return out
+
+
+def _attested(conn: sqlite3.Connection, doc_id: int, name: str) -> bool:
+    """Does this document's NARRATIVE (synthesis or a section summary) actually name the concept?
+
+    The entity substrate alone cannot be trusted for this: `while loop` linked a vendor manual to
+    coursework, and `Markov model` linked a quant repo to a VLE-thermodynamics section about
+    Raoult's law — an extraction hallucination. In both junk cases the concept string appeared in
+    NEITHER side's narrative text, while 11 of the 12 connections ever written (including every
+    good one) had it in at least one side's (`scripts/analysis/connect_attest_gate.py`,
+    2026-08-06). A concept no side's prose mentions exists only in entity-extraction space, and a
+    model prompted with text that never names the concept is being asked to bluff.
+    """
+    like = f"%{name}%"
+    row = conn.execute(
+        "SELECT 1 FROM documents WHERE id=? AND "
+        "(COALESCE(thesis,'')||' '||COALESCE(method,'')||' '||COALESCE(result,'')) LIKE ?",
+        (doc_id, like),
+    ).fetchone()
+    if row is not None:
+        return True
+    return (
+        conn.execute(
+            "SELECT 1 FROM sections WHERE doc_id=? AND summary LIKE ? LIMIT 1", (doc_id, like)
+        ).fetchone()
+        is not None
+    )
+
+
+def _titles_nested(a: str | None, b: str | None) -> bool:
+    """One title contains the other — reading notes OF a book paired with the book itself.
+
+    `Reading notes — Advanced Portfolio Management` <-> `Advanced Portfolio Management` shares
+    six qualifying canonicals and is still vacuous: the note came from the book, so every overlap
+    says only "he read it" (§21's complete-graph failure at pair level). Deliberately narrow —
+    full containment only — so `alpha-fund — Lecture 5` vs the `Alpha Fund` repo (different
+    suffixes, a genuine pair) is untouched.
+    """
+    ta, tb = (a or "").strip().lower(), (b or "").strip().lower()
+    return bool(ta and tb) and (ta in tb or tb in ta)
 
 
 def _bridge_sources(conn: sqlite3.Connection, *, limit: int) -> list[sqlite3.Row]:
@@ -752,17 +813,37 @@ def _bridge_sources(conn: sqlite3.Connection, *, limit: int) -> list[sqlite3.Row
     )
 
 
-def connection_candidates(
-    conn: sqlite3.Connection, *, per_source: int = 5, capture_limit: int = 12,
-    bridge_limit: int = 60,
-) -> list[ConnectionCandidate]:
-    """Every connection the page would offer, capture and bridges INTERLEAVED.
+def _project_sources(conn: sqlite3.Connection, *, limit: int) -> list[sqlite3.Row]:
+    """His code repos — the sources of the arm the owner wants most.
 
-    Capture leads — a connection to what he wrote this week is more live than one to a lecture
-    from two years ago — but strict precedence would have buried the bridges completely: Connect
-    fits about one item a day, and with three capture candidates ahead of them the first bridge
-    would not have appeared for four days. `daily_shown` would get there eventually; a capability
-    that took until Thursday to show itself is not one that has been delivered.
+    Every repo, newest first (repos rarely carry a `source_date`, so id order — ingest order —
+    is the effective recency). Bounded like `_bridge_sources`: the limit covers all of them
+    (16 at the time of writing) and exists to bound the walk, not to select.
+    """
+    return list(
+        conn.execute(
+            "SELECT id, title, source_uri, source_date FROM documents "
+            "WHERE source_type = 'code' "
+            "ORDER BY COALESCE(source_date, '') DESC, id DESC LIMIT ?",
+            (limit,),
+        )
+    )
+
+
+def connection_candidates(
+    conn: sqlite3.Connection, *, per_source: int = 5, capture_limit: int = 64,
+    bridge_limit: int = 60, project_limit: int = 32,
+) -> list[ConnectionCandidate]:
+    """Every connection the page would offer — project, capture and bridge arms INTERLEAVED.
+
+    Projects lead: the owner's stated priority is ideas from papers/notes/coursework FOR HIS
+    REPOS. Then capture (what he wrote recently), then bridges. Round-robin rather than strict
+    precedence, for the reason the capture/bridge interleave was built: Connect fits ~3 items a
+    day, and a strictly-lower arm would take until Thursday to show itself.
+
+    `capture_limit` covers ALL his dated writing (46 docs when raised), not the 12 newest:
+    measured (`connect_eligible.py`), the recency cap silently discarded 120 of the 167
+    note<->paper pairs — the same shape as the bridge-source cap it replaced.
     """
     from locus.link.related import non_topical_names
     from locus.observe import gates
@@ -775,38 +856,71 @@ def connection_candidates(
 
     own_clause, own_params = state.owner_authored_sql("d")
     seen_pairs: set[tuple[int, int]] = set()
-    captures: list[ConnectionCandidate] = []
-    bridges: list[ConnectionCandidate] = []
+    other_count: dict[int, int] = {}
+    arms: dict[str, list[ConnectionCandidate]] = {"project": [], "capture": [], "bridge": []}
 
-    def collect(sources, *, bridge: bool) -> None:
-        out = bridges if bridge else captures
+    def collect(sources, *, kind: str) -> None:
+        out = arms[kind]
         for src in sources:
             for rel in related_documents(conn, src["id"], top_n=per_source):
                 row = conn.execute(
-                    f"SELECT category, ({own_clause}) AS own FROM documents d WHERE d.id=?",
+                    f"SELECT category, source_type, title, ({own_clause}) AS own "
+                    f"FROM documents d WHERE d.id=?",
                     (*own_params, rel.doc_id),
                 ).fetchone()
                 if row is None:
                     continue
-                if bridge:
+                if kind == "bridge":
                     # A bridge is specifically into material he already studied. Without this the
                     # source set would just re-offer paper<->paper links the capture pass covers.
                     if row["category"] != _BRIDGE_TARGET_CATEGORY:
                         continue
+                elif kind == "project":
+                    # Ideas FOR a repo come from papers, his notes, or coursework — never another
+                    # repo (a shared stack is not an idea) and never a third-party manual (the
+                    # `while loop` item traced to a vendor PDF filed `category='project'`).
+                    if row["source_type"] == "code":
+                        continue
+                    if row["category"] == "project" and not row["own"]:
+                        continue
                 elif row["own"]:
                     # A sibling note of his own — true, but not news to the person who wrote both.
                     continue
-                shared = _substantive_shared(rel.shared_names, generic, teachable)
+                if _titles_nested(src["title"], row["title"]):
+                    # Reading notes OF a document paired with that document: every shared concept
+                    # says only "one came from the other".
+                    continue
+                shared_all = _substantive_shared(rel.shared_names, generic, teachable)
                 gates.record(
-                    conn, "connect.substantive_shared", rejected=not shared,
-                    value=None if shared else ", ".join((rel.shared_names or ["(none)"])[:3]),
+                    conn, "connect.substantive_shared", rejected=not shared_all,
+                    value=None if shared_all else ", ".join((rel.shared_names or ["(none)"])[:3]),
                 )
-                if not shared:
+                if not shared_all:
+                    continue
+                # Grounded-or-bluff gate: a concept NEITHER side's narrative names cannot anchor
+                # prose the model can write honestly (see `_attested`).
+                attested = [
+                    n for n in shared_all
+                    if _attested(conn, src["id"], n) or _attested(conn, rel.doc_id, n)
+                ]
+                gates.record(
+                    conn, "connect.attested", rejected=not attested,
+                    value=None if attested else ", ".join(shared_all[:3]),
+                )
+                if not attested:
                     continue
                 pair = (min(src["id"], rel.doc_id), max(src["id"], rel.doc_id))
                 if pair in seen_pairs:
                     continue
+                # Variety on the far side: without this, one hot paper owns the surface — the
+                # verified e2e run (2026-08-06) put AlphaZeroBeta in 3 of 8 notes because four of
+                # his recent thread notes all react to it. Two seats per far document across the
+                # whole list keeps a second angle available without letting one paper become the
+                # section for a week.
+                if other_count.get(rel.doc_id, 0) >= 2:
+                    continue
                 seen_pairs.add(pair)
+                other_count[rel.doc_id] = other_count.get(rel.doc_id, 0) + 1
                 out.append(
                     ConnectionCandidate(
                         src_id=src["id"],
@@ -816,21 +930,24 @@ def connection_candidates(
                         other_id=rel.doc_id,
                         other_uri=_source_uri(conn, rel.doc_id),
                         other_title=rel.title or "",
-                        shared=shared,
-                        bridge=bridge,
+                        shared=attested[0],
+                        bridge=kind == "bridge",
+                        kind=kind,
+                        shared_all=tuple(attested[:6]),
                     )
                 )
                 break            # one per source, so several sources are represented, not one
 
-    collect(_recent_capture(conn, limit=capture_limit), bridge=False)
-    collect(_bridge_sources(conn, limit=bridge_limit), bridge=True)
+    collect(_project_sources(conn, limit=project_limit), kind="project")
+    collect(_recent_capture(conn, limit=capture_limit), kind="capture")
+    collect(_bridge_sources(conn, limit=bridge_limit), kind="bridge")
 
+    ordered = (arms["project"], arms["capture"], arms["bridge"])
     out: list[ConnectionCandidate] = []
-    for i in range(max(len(captures), len(bridges))):
-        if i < len(captures):
-            out.append(captures[i])
-        if i < len(bridges):
-            out.append(bridges[i])
+    for i in range(max(len(a) for a in ordered)):
+        for arm in ordered:
+            if i < len(arm):
+                out.append(arm[i])
     return out
 
 
@@ -1049,7 +1166,8 @@ def _thread_context(conn: sqlite3.Connection, obj) -> str:
 
 
 def build_connections(
-    conn: sqlite3.Connection, *, limit: int = 2, seen: set[str] | None = None
+    conn: sqlite3.Connection, *, limit: int = 2, seen: set[str] | None = None,
+    char_budget: int | None = None,
 ) -> list[ThreadItem]:
     """Cross-corpus links out of recent capture AND out of his papers/projects.
 
@@ -1068,28 +1186,36 @@ def build_connections(
     it; this prints it. A connection with NO STORED PROSE IS NOT OFFERED, because the fallback is
     exactly the phrasing he rejected — grounded or silent, and silence is the better failure.
     """
-    from locus.link.connect import stored_note
+    from locus.link.connect import stored_pair_note
 
     seen = seen if seen is not None else set()
     out: list[ThreadItem] = []
+    _budget_used = 0
     for cand in connection_candidates(conn):
         if len(out) >= limit:
             break
         item_key = f"conn:{cand.src_uri}|{cand.other_uri}"
         if item_key in seen:
             continue
-        prose = stored_note(
-            conn, src_uri=cand.src_uri, other_uri=cand.other_uri, shared=cand.shared
-        )
+        # Looked up by PAIR, not (pair, concept): the writer stores prose under the concept the
+        # model built it on, which need not be the candidate's first qualifying name.
+        prose = stored_pair_note(conn, src_uri=cand.src_uri, other_uri=cand.other_uri)
         if not prose:
             continue  # nothing written yet — say nothing rather than say it badly
-        # A bridge names the material he studied; a capture connection dates his own writing.
-        # Both answer "why am I being shown this", which is what the context line is for.
-        context = (
-            f"{_clip(cand.other_title, 70)} · your own notes on {cand.shared}"
-            if cand.bridge
-            else f"{_clip(cand.other_title, 70)} · you wrote yours on {cand.src_date}"
-        )
+        # HEIGHT BUDGET (see `_CONNECT_CHAR_BUDGET`). A note too tall for what remains of the
+        # page is neither clipped nor discarded: it stays stored and un-shown, so it leads a
+        # later page. Always admit at least one so a single long note cannot blank the section.
+        if char_budget is not None and out and _budget_used + len(prose) > char_budget:
+            continue
+        # The context line answers "why am I being shown this": a project idea names the repo it
+        # is for, a bridge names the material he studied, a capture connection dates his writing.
+        if cand.kind == "project":
+            context = f"{_clip(cand.other_title, 70)} · idea for {_clip(cand.src_title, 40)}"
+        elif cand.bridge:
+            context = f"{_clip(cand.other_title, 70)} · your own notes on {cand.shared}"
+        else:
+            context = f"{_clip(cand.other_title, 70)} · you wrote yours on {cand.src_date}"
+        _budget_used += len(prose)
         out.append(
             ThreadItem(
                 anchor="",
@@ -1330,7 +1456,18 @@ def build_threads(
     # `skip_retrieval` drops the connections pool for a caller that wants the page's KEYS rather
     # than the page (`decide.queue.page_keys`). It must stay False for anything he will read.
     room = _FIT["connect"] - len(challenge)
-    connections = [] if skip_retrieval else build_connections(conn, limit=room, seen=seen)[:room]
+    # HEIGHT, NOT JUST SEATS. The 2026-08-06 writer produces 340-500-char prose (measured), and
+    # three of those overflow the page that three ~300-char items fit — re-measured by rendering
+    # the Connect section alone and counting pages (`scripts/analysis/render_connect_isolated.py`):
+    # 3x340 and challenge+2x380 fit one page; 3x500 and challenge+2x500 spill. So connections
+    # also budget CHARACTERS: what does not fit today is not clipped, it simply waits — the
+    # stored note keeps its full depth and `daily_shown` has not retired it.
+    char_budget = _CONNECT_CHAR_BUDGET - sum(len(c.headline) for c in challenge)
+    connections = (
+        []
+        if skip_retrieval
+        else build_connections(conn, limit=room, seen=seen, char_budget=char_budget)[:room]
+    )
     # Ideas first, then Connect — the render splits on section, and each list must already be in
     # the order its page should print.
     return ideas + connections + challenge

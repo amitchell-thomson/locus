@@ -264,6 +264,8 @@ judge_drop_at_or_below = 1
 # language tasks through headless `claude -p` (subscription), metered by a cost ledger over the
 # claude -p envelope's total_cost_usd. Bulk work uses API Batch instead (added with hybrid routing).
 model              = "haiku"   # claude -p model for durable agent passes (Phase-0 routing choice)
+connect_model      = "sonnet"  # connection prose runs on Sonnet: on junk pairs Haiku bluffed a
+                               # connection where Sonnet answered NO_CONNECTION (measured 2026-08-06)
 daily_cost_cap_usd = 5.0       # soft daily claude -p spend cap (USD); omit/None for no cap
 
 [ingest]

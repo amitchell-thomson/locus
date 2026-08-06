@@ -513,6 +513,13 @@ class AgentConfig(BaseModel):
     # local AND Sonnet on the durable passes at 3x less cost); a CLI alias so it tracks the
     # current Haiku without pinning a dated id. Judgement-heavy passes may override per-call.
     model: str = Field("haiku", description="claude -p model alias/id for agent language tasks.")
+    # The connection-writing pass runs on Sonnet, not the Haiku default. Measured (2026-08-06,
+    # `scripts/analysis/connect_exp1.py`): on a junk pair with a spurious shared concept Haiku
+    # confidently invented a connection twice while Sonnet answered NO_CONNECTION — for this pass
+    # the stronger model is a GROUNDING property, not a fluency upgrade. ~4 calls/night.
+    connect_model: str | None = Field(
+        "sonnet", description="claude -p model for connection prose (None = [agent].model)."
+    )
     # Soft daily spend ceiling (USD) for agent-layer `claude -p`, summed from agent_runs across
     # the day (agent/budget.spent_today). None disables the cap. The foreground-yield guard is
     # not yet built (needs the live-throttle error shape, Phase-0 finding d); this cost cap is

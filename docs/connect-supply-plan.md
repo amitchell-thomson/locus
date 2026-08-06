@@ -1,5 +1,39 @@
 # CONNECT — supply, quality, depth: measurement and experiment plan
 
+> **2026-08-06 addendum — experiments ran; the redesign below is implemented.**
+> `scripts/analysis/connect_exp1.py` A/B'd 12 live pairs × {current system, deep-context
+> Haiku, deep-context Sonnet}, judged by hand; `connect_attest_gate.py` measured the
+> attestation gate; `connect_e2e.py` verified the shipped path end-to-end with live calls
+> on a snapshot DB. Results that decided the design:
+>
+> - **Deep context wins.** With entity-anchored sections + README/project-object body for
+>   repos (2800 chars/side), prose names the owner's actual functions and constants
+>   (`run_backtest_mvo`, the flat 0.02 edge threshold, `question_8b()`); the old 1400-char
+>   LIKE-matched context produced generalities.
+> - **Sonnet is a grounding property, not a fluency one.** On the junk probe (spurious
+>   `Markov model`), Haiku bluffed twice — "inspired by Le Châtelier's Principle" — while
+>   Sonnet answered NO_CONNECTION. `[agent].connect_model = "sonnet"` (~4 calls/night).
+> - **The attestation gate separates junk from good on all available labels**: concept
+>   string in ≥1 side's narrative passes 11/12 written notes and rejects `while loop` and
+>   the `Markov model` probe (both attested on ZERO sides).
+> - **Implemented** (same commit): project arm (repos as sources — the owner's top want),
+>   capture arm uncapped 12→64, attestation gate (`connect.attested` in gate_log),
+>   title-nesting guard, model-picked concept from the full list verified via a final
+>   `CONCEPT:` line, NO_CONNECTION stored as an empty verdict so pairs are never re-paid,
+>   bounded shorter-retry replacing the mid-word `prose[:400]` clip.
+> - **Invariant §8 held by measurement, not hope**: three deep notes are taller than the
+>   page three ~300-char notes fit. Re-measured by rendering the Connect section alone
+>   (`render_connect_isolated.py`): 3×340 and challenge+2×380 fit one page; 3×500 spills.
+>   `build_connections` therefore budgets characters (`_CONNECT_CHAR_BUDGET = 1000`,
+>   challenge headline included) — a note too tall for what remains WAITS un-shown at full
+>   depth rather than being clipped. Whole-document page counts were a confounded metric
+>   (clearing `daily_shown` for a worst-case test changes the other sections too); the
+>   isolated render is the honest one.
+> - **Not done, deliberately**: pair-level acceptance keys (the flywheel consumer
+>   `related.acceptance_factors` resolves keys as document URIs and silently drops
+>   unknown ones — changing the producer alone would darken the flywheel); paper↔paper
+>   arm (neither side is his; not in his stated priorities).
+
 Measured 2026-08-06 against a `VACUUM INTO` snapshot of the live `vault/locus.db`
 (225 docs, HEAD `2eda669`). Every number below traces to one of:
 

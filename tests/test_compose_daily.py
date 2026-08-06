@@ -608,14 +608,14 @@ def test_each_section_gets_its_own_physical_page(conn):
     assert body.count("#pagebreak()") == 2
     # Sections are level-1 headings: the date moved to the running header, so the SECTION is
     # the title of its page (see `render`).
-    assert body.index("# Ideas") < body.index("# Learn")
+    assert body.index("# Develop") < body.index("# Recall")
 
 
 def test_a_quiet_day_is_a_short_document_not_four_blank_pages(conn):
     _jotted(conn, "a thought worth developing further")
     body = cd.render(cd.compose(conn, today=date(2026, 8, 1)))
     assert body.count("#pagebreak()") == 1  # Think, then the back page
-    assert "# Learn" not in body
+    assert "# Recall" not in body
 
 
 def test_writable_rows_render_ascii_boxes_and_ruled_lines(conn):
@@ -1195,10 +1195,10 @@ def test_an_answered_margin_question_gets_its_own_page(conn):
     assert page.answered[0].anchor == "A1"
 
     body = cd.render(page)
-    assert "# Ask" in body
+    assert "# Answered" in body
     assert "Variance is additive" in body
     # NOT a question put to him: no tick box and no ruled writing region on this page.
-    section = body.split("# Ask", 1)[1].split("```{=typst}", 1)[0]
+    section = body.split("# Answered", 1)[1].split("```{=typst}", 1)[0]
     assert "#tickbox" not in section
 
 

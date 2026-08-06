@@ -25,7 +25,7 @@ conn = get_connection(DB)
 page = cd.compose(conn, today=date(2026, 8, 7))
 md = cd.render(page)
 
-connect_start = md.find("# Connect")
+connect_start = md.find("# Consider")
 next_h1 = md.find("\n# ", connect_start + 1)
 section = md[connect_start: next_h1 if next_h1 != -1 else None]
 print(f"Connect section: {len(section)} chars, {section.count('(C')} anchors")

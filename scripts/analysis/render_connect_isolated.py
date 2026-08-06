@@ -22,7 +22,7 @@ md = cd.render(page)
 
 # The renderer joins sections with an explicit pagebreak block; split on it and keep Connect.
 parts = md.split("```{=typst}\n#pagebreak()\n```")
-connect = next((p for p in parts if "# Connect" in p), None)
+connect = next((p for p in parts if "# Consider" in p), None)
 assert connect is not None, "no Connect section rendered"
 n_items = connect.count("`#anc[")
 print(f"connect items: {n_items}, section chars: {len(connect)}")

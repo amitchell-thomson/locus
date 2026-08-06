@@ -148,7 +148,7 @@ _MIN_TEACHABLE_CHARS = 6
 
 SECTION_CHALLENGE = "Check this"
 SECTION_DEVELOP = "Develop"
-SECTION_CONNECT = "Connect"
+SECTION_CONNECT = "Connections"
 
 # Retained so a page delivered before this change can still be pulled back and routed: the
 # anchors on it carry the old kinds. Nothing composes them any more.
@@ -1935,11 +1935,11 @@ def _on_page(page: DailyPage, sections: tuple[str, ...]) -> bool:
 
 
 def _render_ideas(page: DailyPage) -> str:
-    return _render_think(page, heading="Ideas", sections=_IDEAS_SECTIONS, budget="ideas")
+    return _render_think(page, heading="Develop", sections=_IDEAS_SECTIONS, budget="ideas")
 
 
 def _render_connect(page: DailyPage) -> str:
-    return _render_think(page, heading="Connect", sections=_CONNECT_SECTIONS, budget="connect")
+    return _render_think(page, heading="Consider", sections=_CONNECT_SECTIONS, budget="connect")
 
 
 def _render_think(page: DailyPage, *, heading: str = "Ideas",
@@ -1959,7 +1959,11 @@ def _render_think(page: DailyPage, *, heading: str = "Ideas",
     for t in items:
         if t.section != current:
             current = t.section
-            lines += [f"## {current}", ""]
+            # `## Develop` directly under `# Develop` says nothing (the 2026-08-06 rename made
+            # the page heading and its only subsection collide); a subsection heading earns its
+            # line only when it differs from the page's.
+            if current.casefold() != heading.casefold():
+                lines += [f"## {current}", ""]
         # ASCII brackets, not U+2610 BALLOT BOX: the Typst body font has no glyph for it and it
         # rendered as a tofu box (verified 2026-07-30 — the character was absent from the
         # extracted text while a stray rectangle was drawn in its place). A tick box he must
@@ -1984,7 +1988,7 @@ def _render_answered(page: DailyPage) -> str:
     it is the one page whose length is set by what there is to say rather than by a line budget —
     `_FIT["answered"]` bounds it instead.
     """
-    lines = ["# Ask", "", "Questions you wrote while reading, answered from your own library.", ""]
+    lines = ["# Answered", "", "Questions you wrote while reading, answered from your own library.", ""]
     for a in page.answered:
         lines += [f"{_anchor(a.anchor)} {a.question}", ""]
         lines += [a.answer, ""]
@@ -1996,7 +2000,7 @@ def _render_answered(page: DailyPage) -> str:
 
 
 def _render_recall(page: DailyPage) -> str:
-    lines = ["# Learn", "", "Answer, then tick if you knew it. Answers overleaf.", ""]
+    lines = ["# Recall", "", "Answer, then tick if you knew it. Answers overleaf.", ""]
     per_item = _lines_for(len(page.recalls), "recall")
     for r in page.recalls:
         lines += [f"{_anchor(r.anchor)} {r.prompt}", ""]

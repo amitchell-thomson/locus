@@ -23,8 +23,9 @@ Three co-equal uses:
 retrieval latency and answer quality are the only constraints that matter. Workflow is
 query-driven and page-driven, never browse-driven. No GUI.
 
-**Current scale (2026-08-04):** 225 documents · 3,091 sections · 11,950 chunks · 16,939
-propositions · 24,706 entities · 2,209 cross-doc canonicals · 198 MB · ~1,040 tests.
+**Current scale (2026-08-06):** 232 documents · 3,102 sections · 11,961 chunks · 16,975
+propositions · 24,778 entities · 2,422 figures · 2,216 cross-doc canonicals · 208 MB ·
+~1,057 tests. Corpus by category: coursework 144 · note 32 · project 22 · paper 18 · career 16.
 
 ---
 
@@ -217,17 +218,29 @@ the per-doc cap.
   expansion, attested cross-doc plural — same-type only), then embedding-blocked lookalike
   clusters adjudicated by a model. Guards override the model: min-merge-length 4, same-section
   co-occurrence never merges, canonical snapped to a real member surface, code docs excluded,
-  oversize clusters skipped. Verdicts cached ⇒ re-runs ≈ 0 calls.
-- **`related.py`** — docs ranked by shared canonicals, joins-only. `non_topical_names()` is the
-  shared definition of "too generic to be a concept" (boilerplate, code symbols, document
-  titles); reuse it rather than writing a second one.
+  oversize clusters **chunked, not dropped** (the cap is a cost guard, and applying it as a
+  judgement silently lost real concepts like *Fama-French factors*). One unreadable reply skips
+  its cluster; it never aborts a rebuild. Verdicts cached ⇒ re-runs ≈ 0 calls.
+- **`related.py`** — docs ranked by shared canonicals, joins-only, IDF-weighted (each shared name
+  contributes 1/doc_freq). Code symbols score only for code↔code pairs and only at a 0.1
+  tiebreak; a semantic arm (mean-pooled section vectors) is **tail-additive** — it can fill a
+  slot after every entity neighbour, never displace one. `non_topical_names()` is the shared
+  definition of "too generic to be a concept" (boilerplate, code symbols, document titles);
+  reuse it rather than writing a second one.
 - **`threads.py`** — two threads link when they name the same canonical concept, checkable by
   reading both. Guards: canonical spans ≥2 docs, ≥5 chars, `non_topical_names` applies, only his
   text is matched.
 - **`projects.py`** — which project a piece of his writing is about. Deterministic tier (every
   distinctive title token present) then a cosine floor.
 - **`connect.py`** — the written reason two documents belong together, composed overnight and
-  stored. Two framings: *what he read* and *what he already studied* (the coursework bridge).
+  stored. Three framings, one per arm: *an idea for this repo* (project), *what he read*
+  (capture), *what he already studied* (the coursework bridge). The model must name which shared
+  concept it built on and that pick is verified against the offered list; a pick that was not
+  offered is dropped. `[agent].connect_model` defaults to **sonnet while `[agent].model` stays
+  haiku** — model choice here is a safety property, not a fluency one: on a junk pair Haiku
+  bluffed confidently twice and Sonnet answered `NO_CONNECTION`. Candidate pairs come from
+  `compose_daily.connection_candidates`, so the page and the overnight writer can never disagree
+  about what a connection is.
 
 ---
 
@@ -245,12 +258,26 @@ whole chain on the half-hourly capture timer for the Reading folders Loop A excl
 document → marks stored → new handwriting transcribed (bounded per run). Marks map to corpus
 documents **by content hash of the bundle's PDF bytes** — computed, never remembered; an
 unmatched (un-ingested) document keys by device path with a loud log and an
-`unmapped_to_corpus` stat.
+`unmapped_to_corpus` stat. A document he *chose* (moved into `Reading/In-Progress` or `Finished`)
+with no corpus match is **ingested from the bundle's own bytes** in the same tick and its earlier
+device-path marks re-keyed onto the new `source_uri`; `Proposed` never auto-ingests, because most
+proposals are rejected. Once a document is corpus-mapped, his margin notes are promoted to a
+reading-notes file automatically (`agent/promote.promote_reading_notes`), which `notes-sync`
+ingests on the next tick — so marginalia reaches retrieval with no command typed.
+`reading/sweep.py` is the older, geometry-only hourly cloud pull over `reading_targets`; the
+overlap with Loop B is deliberate redundancy, not duplication — both write through the same
+idempotent upsert.
 
 **Intent.** `capture/intent.py` classifies a mark as `important` / `not_understood` / `idea`.
 Below `[capture].intent_confidence_floor` nothing happens except that it becomes a `locus decide`
 item — acting on a low guess silently is the correction step removed. An intent the owner set is
-never re-guessed.
+never re-guessed. **A mark with no covered text and no note is not pending**: `classify` rejects
+it before making a call, so it can never leave the pool, and 28 such blank marks (highlights over
+figures, §14) sat at the head of an id-ordered, 100-per-run queue on 2026-08-06 and spent the cap
+before it reached his three newest written questions. The filter is on current content, not a skip
+flag, so a mark that gains a note later re-enters by itself. `locus intent --act` also runs
+**before** `review --answer-marks` in `locus-maintain` — it writes what that step reads, and
+running after it put a two-day lag between writing a question and seeing it answered.
 
 **Structure.** `structure/propose.py` proposes objects and belief positions; the owner blesses in
 `locus decide`. The precision bar is the module: concepts must resolve through `entity_aliases` to
@@ -278,23 +305,64 @@ given.
 ## 10. The daily page
 
 `agent/compose_daily.py` composes; `reading/md2pdf.py` renders; `agent/pull_daily.py` reads ink
-back. Five sections, one per physical page:
+back. Pages are named for what he *does* on them, one section per physical page. An empty section
+is omitted entirely, and omitting it takes its page break with it:
 
-| Page | Anchors | Source |
-| --- | --- | --- |
-| Read | `R1..` | `reading_proposals` (status `proposed`) + `why_long` |
-| Think | `T1..` | `belief_tensions` · active question/idea objects · `connection_notes` |
-| Ask | `A1..` | `mark_answers` |
-| Learn | `L1..` | `review_schedule` (question on p3, answer on p4) |
-| Open | `Q1` | always present |
+| Page | Anchors | Source | Writing region |
+| --- | --- | --- | --- |
+| Develop | `D1..` | active question/idea objects (his own threads) | ruled + tick |
+| Consider | `C1..` | `connection_notes` | ruled + tick |
+| Answered | `A1..` | `mark_answers` — margin questions answered from his corpus | none |
+| Recall | `L1..` | `review_schedule` (question on its page, answer on the back) | ruled + tick |
+| back page | `Q1` | always present: open region, status line, recall answers | ruled |
+
+**There is no Read page.** Two days of use showed he never used it to make a reading decision — he
+used it to have ideas *about* papers, which is Develop's job. The per-proposal rationale moved to
+the shelf itself: `locus reading-why` renders a `Proposals` document into `Reading/Proposed`,
+fingerprinted over the proposals so an unchanged shelf costs nothing. `build_readings` /
+`build_rereads` / `_explains` still exist and are used by `learn/reread.py`; nothing on the page
+calls them. The re-read slot was **retired, not recalibrated** — the gate log recorded 190/190
+rejections with a best-ever score of 1.917 against a floor of 2.5, and 1.917 *is* the known-wrong
+match, so lowering the floor buys only the pun.
+
+**There is no Check-this section** (2026-08-06). Tensions are still judged and stored overnight
+and still readable via `locus evolution`, but after two days of live cards he judged the section
+not worth its seat, and the seat went to a third connection. `build_challenge` is kept and
+unwired; the Consider page prints one section and so carries no subsection label.
+
+**The status line is present tense.** `health.check` reports what is broken NOW: a failure a later
+run of the same kind has since recovered from moves to `Health.recovered`, which `locus status`
+prints and the page does not. Otherwise one transient break shouts in capitals all day — `review`
+died once at 03:37, ran clean eight times after, and was still on the page that afternoon along
+with the `maintain` unit it took down. Unit failures match runs by name (`locus-maintain.service`
+→ kind `maintain`), which is the contract `locus record <kind> --ok` relies on.
+
+**Recall pages the due queue, never a fixed window.** A card shown but never graded keeps its
+`due`, so it keeps both its retired `item_key` (invariant 9) and its place at the head of
+`due_items`. Seventeen of them accumulated and filled every window the page asked for, so Recall
+went 4 → 4 → 1 → 0 items over four days with forty eligible cards behind them — silently, because
+an empty section is simply omitted. `build_recalls` now scans until it has `limit` unseen items
+and records what the ledger rejected under the `daily.recall_unseen` gate.
 
 **Anchors are load-bearing.** `pull_daily` routes ink by the *printed label* — vision is asked for
 "the label exactly as printed" — and `annotations` is `UNIQUE(page_date, anchor)`. Removing or
-duplicating a label breaks the two-way loop. Routing itself dispatches on `daily_anchors.kind`,
-not on the letter.
+duplicating a label breaks the two-way loop. Letters name the page they sit on, but routing
+dispatches on `daily_anchors.kind`, never on the letter — which is why Develop's letter could be
+corrected from `I` (left over from the section's old name, Ideas) to `D` without migrating
+anything: each delivered page's own `daily_anchors` rows are what routes it.
 
 **DEVELOP ranks on project links, then staleness.** Ranking on `updated_at` alone put a
 22-character to-do at the head of the section.
+
+**Layout budgets are measured, never derived.** `_FIT` (3 develop · 3 consider · 4 recall ·
+3 answered) and `_CONNECT_CHAR_BUDGET` (1000 chars of item prose) were each set by rendering a
+real PDF and counting pages; a test asserts a full page does not overflow into a fifth.
+Line *spacing* is measured the same way and only from the rendered geometry:
+`scripts/analysis/daily_rule_spacing.py` prints the gap between consecutive rules, which is how
+the keep-this line was caught sitting 30.2pt below its neighbour where every other rule sat
+19.8pt apart. Anything drawn beside a rule belongs in `md2pdf.PageGeometry._keep_rule`, where it
+shares the one `rule_gap_em` — spelled out in the composer's markdown it silently drifts, since
+Typst collapses `above` against the previous block and a tick box makes the block ~10pt tall.
 
 `/Daily` is an inbox: a page stays loose until it has ink, then archives to `/Daily/YYYY-MM`.
 
@@ -335,18 +403,25 @@ locus/
 │   ├── ingest/             # llm · summarize · propositions · entities · concepts · synthesis
 │   │                       #   gaps · chunk · embed · figures · llamacpp
 │   ├── ingest_pipeline.py · watcher.py · sync.py · repo_sync.py · notes_sync.py
-│   ├── retrieve/           # search · rerank · expand · assemble · pipeline · threads
+│   ├── retrieve/           # search · rerank · expand · assemble · pipeline · multiquery
+│   │                       #   threads · figure_images
 │   ├── link/               # aliases · adjudicate · related · threads · projects · connect
 │   ├── agent/              # claude (the one `claude -p` runner) · journal · budget · state
 │   │                       #   compose_daily · pull_daily · promote
-│   ├── capture/            # remarkable · rmdoc · annotate · mark_text · intent · loop_a
+│   ├── capture/            # remarkable · rmdoc · annotate · mark_text · intent · transcribe
+│   │                       #   loop_a (notes) · loop_b (reading) · fillin · conversations
+│   │                       #   device_migrate
 │   ├── learn/              # answers · review · practice · gaps · reread
-│   ├── evolve/ structure/ surface/ decide/ discover/ reading/ enrich/ vault/ export/
+│   ├── reading/            # proposals · rationale · relevance · sweep · accept · deliver
+│   │                       #   deliver_remarkable · md2pdf · watch
+│   ├── discover/           # arxiv · openalex · citations · profiles · queries · rank · judge · why
+│   ├── evolve/ structure/ surface/ decide/ enrich/ vault/ export/ eval/
 │   ├── observe/gates.py    # what each threshold rejected (§3)
-│   ├── health.py · status.py · backup.py · query.py · mcp_server.py
-├── deploy/systemd/         # timers: maintain, daily, daily-pull, capture, discover-*
+│   ├── health.py · status.py · backup.py · query.py · retitle.py · mcp_server.py
+│   ├── ingest_lock.py      # the advisory flock: one ingest process at a time
+├── deploy/systemd/         # timers: maintain, daily, daily-pull, capture, discover-*, backup
 ├── scripts/analysis/       # one-off measurement scripts, kept as evidence
-├── tests/                  # ~1,040 model-free-by-default tests
+├── tests/                  # ~1,057 model-free-by-default tests
 └── vault/                  # incoming/ · raw/ · notes/ · backups/ · locus.db
 ```
 
@@ -365,7 +440,15 @@ locus/
 - All tunables in `config.toml`; optional sections default cleanly. `config.toml` is gitignored —
   document new settings in `config.example.toml`.
 - **`agent/claude.py` is the one `claude -p` runner** and is env-scrubbed so it uses subscription
-  OAuth rather than the metered key. This has been mis-wired twice.
+  OAuth rather than the metered key. This has been mis-wired twice. It also **scrubs control
+  characters from every prompt**: the prompt is an argv element, so a NUL raises `ValueError`
+  before the process spawns — not a `ClaudeError`, so no `except ClaudeError` degrade path catches
+  it. Maths PDFs extract symbol-font glyphs as control codes, and three calculus documents failed
+  the structure pass on *every* run because of it.
+- **Tests must not read the live `config.toml`.** It is gitignored, so a test that inherits it
+  passes or fails per machine: two connection tests asserting paper-vs-coursework ranking broke
+  the day `[agent].connect_idea_projects` gained entries, and nowhere else. Pin what you depend on
+  (`_no_idea_allowlist` in `tests/test_compose_daily.py` is the pattern).
 
 ### Operational rules
 
@@ -390,10 +473,12 @@ Custom GUI · cloud storage of corpus content · multi-user/auth · local models
 - **§11.B — the weakest model owns high-value passes.** 8B-quantised quality is the ceiling on
   summaries, propositions, entities and VLM descriptions. Mitigated by validation, grounding
   guards and raw-chunk co-assembly. Revisit per-pass routing only on eval evidence.
-- **The corpus is ~64% coursework, deliberately.** It was measured and the mitigations hold: the
-  retrieval penalty was inert, the proposer's gate lets through 3 of 82 coursework-only concepts,
-  and no thread link or connection is coursework-polluted. The maths bridging into quant work
-  lives there and nowhere else.
+- **The corpus is ~62% coursework (144/232), deliberately.** It was measured and the mitigations
+  hold: the retrieval penalty was inert, the proposer's gate lets through 3 of 82 coursework-only
+  concepts, and no thread link is coursework-polluted. The maths bridging into quant work lives
+  there and nowhere else — and since the CONNECT bridge arm, coursework finally *reaches* a
+  surface: a coursework connection is now deliberate output (the "you already studied this"
+  framing), not pollution.
 - **Concept fragmentation is not a defect.** ~17% of canonicals span ≥2 documents; promotion tiers
   were measured and rejected (sub-phrase promotion is wrong in both directions, cross-type merging
   yields +16). A heterogeneous corpus contains mostly document-specific vocabulary.
@@ -402,6 +487,17 @@ Custom GUI · cloud storage of corpus content · multi-user/auth · local models
 - **Model self-assessment is not a usable signal.** Asking a model which key it cited, or to grade
   its own output, produces something that looks like a filter and is not. Verify independently or
   deterministically.
+- **Familiarity is a tiebreaker, not a term.** `discover/rank` subtracts familiarity at weight
+  0.25, not 1.0: at 1.0 it destroyed the ranking, because subtracting familiarity presumes a
+  corpus dense enough for "he already has this" to be often true. Raise it as density grows.
+- **Relevance gates; novelty sorts.** Both discovery scalings of `fit - familiarity` as co-equal
+  summands failed — raw cosines are packed into a 0.65–0.75 band, and standardised, novelty
+  dominates and fills the list with papers unlike anything at all.
 - **Open:** highlights over figures capture nothing (6 of 24 on a live document); page-edge stamps
   can leak into a capture; the discovery flywheel needs ~4 resolved judgements per channel before
-  its prior activates.
+  its prior activates (live: every subject sits at 0–1, so `subject_prior` is inert); an
+  annotated document still sitting in `Reading/Proposed` keys its marks by device path until he
+  moves it; a same-day daily rebuild delivered with `replace=True` keeps the device's old
+  per-page records (`deliver_remarkable.deliver_pdf`), so a page-count change leaves the new
+  last page with no page entry — fixable only by deleting the device copy, which is safe only
+  when it carries no ink.

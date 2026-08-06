@@ -18,13 +18,14 @@ server, and a sheet of e-paper.
 The system's centre of gravity is a PDF delivered to a reMarkable tablet each morning, and the
 handwriting that comes back.
 
+Each page is named for what he does on it, and an empty one is simply not printed.
+
 | Page | What it offers |
 | --- | --- |
-| **Read** | Papers proposed from the owner's live projects, each with a written reason for why it is worth reading |
-| **Think** | *Check this* — where the corpus contradicts a position he holds · *Develop* — his own open threads · *Connect* — a paper set against his work, phrased as a question |
-| **Ask** | Questions he wrote in margins while reading, answered from his own library, with the supporting passage cited |
-| **Learn** | Spaced-repetition questions on concepts he has met; answers overleaf, never beside the prompt |
-| **Open** | Unstructured space, and a status line reporting what ran overnight |
+| **Develop** | His own open threads — ideas and questions he has raised, each with what he has already written on it |
+| **Consider** | Connections the system found, each written as a concrete proposal: how *this* paper's method bears on *that* project of his |
+| **Answered** | Questions he wrote in margins while reading, answered from his own library, with the supporting passage cited |
+| **Recall** | Spaced-repetition questions on concepts he has met; answers overleaf, never beside the prompt |
 
 He writes on it. The next pull reads the ink back — geometry decides which region each stroke
 belongs to, and a printed anchor routes it to the right record. A tick resolves; a cross drops;
@@ -32,8 +33,13 @@ prose **develops**, appending to a chain rather than overwriting it. Anything he
 written out as a note and re-ingested, so his own thinking becomes searchable and can return to
 him later as a connection.
 
+There is no reading page: it duplicated a folder he already browses, and what he actually wrote on
+it was project thinking about the papers. The written reason each proposal is on the shelf now sits
+*in* the shelf, as a document beside the papers themselves.
+
 The page is composed from stored data only — no model call at composition time — so it renders
-whether or not the previous night's work succeeded.
+whether or not the previous night's work succeeded. Every piece of prose on it was written and
+stored by an earlier pass.
 
 ### Reading
 
@@ -43,10 +49,15 @@ exact passage. A written note beside a mark is transcribed and classified into o
 intents:
 
 - **important** — stays retrievable; nothing is pushed at him
-- **not understood** — answered on the Ask page from his own corpus
+- **not understood** — answered on the Answered page from his own corpus
 - **an idea** — becomes a tracked thread, linked to the project it concerns
 
 Low-confidence classifications are not acted on; they become a decision in the terminal instead.
+
+The whole chain runs unattended, every half hour. A book he added to the tablet himself is
+recognised by the content hash of its own bytes, ingested the first time he moves it into
+*In-Progress*, and his margin notes are written out as a note and re-ingested — so material he
+chose reaches retrieval without a command being typed.
 
 ---
 
@@ -66,6 +77,11 @@ rephrased into each field's vocabulary, so a match written in unfamiliar terms s
 **Linking.** A derived alias layer canonicalises entity names — deterministic rules first, a
 judged pass for the ambiguous remainder. This is what allows engineering coursework to connect to
 quantitative research, and what lets separate threads of the owner's thinking find each other.
+Documents are then ranked against each other by the concepts they share, weighted by how rare each
+concept is corpus-wide, so a term half the library uses cannot pass for a connection. Whether a
+pair is genuinely connected is a fact about shared concepts and stays deterministic; only the
+explanation of *how* they connect is written by a model, from stored text, naming a concept it was
+given.
 
 **Discovery.** Weekly searches of arXiv and OpenAlex, using concepts drawn from what he has marked
 and what his live projects implement. Candidates are ranked against stored profiles of his own
@@ -83,6 +99,8 @@ proposed folder is the accept signal.
 | `locus decide` | The single approval surface — the only place a status changes |
 | `locus status` | One screen: corpus health, spend, timer state, staleness warnings |
 | `locus gates` | What each internal threshold rejected, so a dead one becomes visible |
+| `locus reading-why` | Delivers the shelf's own rationale document to the proposed-reading folder |
+| `locus evolution` | The dated trajectory of a position, and where the corpus contradicts it |
 | `locus backup` / `restore` | WAL-safe snapshots with a hard-linked raw store; restore is tested |
 | `locus export-obsidian` | A read-only graph projection for visual exploration |
 
@@ -130,6 +148,7 @@ locus retrieve "covariance estimation" --json
 locus daily                       # compose and deliver today's page
 locus daily-pull                  # read the ink back and route it
 locus decide                      # approve what is pending
+locus capture-sync                # pull handwriting and reading annotations off the tablet
 
 # maintain
 locus link                        # rebuild the alias substrate
@@ -148,13 +167,13 @@ needs forcing.
 
 ## Status
 
-In daily use. 225 documents, ~17,000 stored claims, ~2,200 cross-document concepts. Operating cost
-is well under a pound a day. The corpus is deliberately weighted toward study material, because
-that is where the foundations bridging into current work are found.
+In daily use. 232 documents, ~17,000 stored claims, ~25,000 typed entities, ~2,200 cross-document
+concepts. Operating cost is well under a pound a day. The corpus is deliberately weighted toward
+study material, because that is where the foundations bridging into current work are found.
 
 Evaluation covers labelled retrieval recall, cross-domain bridging, link recall, mathematical
-fidelity and a deterministic per-document audit. The test suite is around a thousand tests,
-model-free by default.
+fidelity and a deterministic per-document audit. The test suite is about 1,050 tests, model-free
+by default.
 
 The recurring failure this system is built to resist is a path that *looks* wired and is not: a
 threshold that admits nothing, a cached verdict that outlives the judge that produced it, a signal

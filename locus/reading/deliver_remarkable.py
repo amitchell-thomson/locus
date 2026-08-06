@@ -77,6 +77,21 @@ def deliver_pdf(
     Callers that must NOT clobber a page the owner may have annotated should give each
     delivery a distinct name instead (the daily page dates its filename) and use `replace`
     only for same-name rebuilds.
+
+    **`--content-only` swaps the PDF but keeps the device-side PAGE RECORDS**, and those are
+    per-page: `content.pageCount`, the `pages` UUID list, `redirectionPageMap` and `.pagedata`.
+    If the rebuild has a DIFFERENT number of pages, they no longer describe it. Observed
+    2026-08-06: a 4-page page was rebuilt to 5 (a Recall section came back), and the device
+    document still read `pageCount: 4` with four page UUIDs — the back page carrying `Q1` and the
+    recall answers had no page record at all. The daily page's length varies by design (an empty
+    section is omitted, taking its page break with it), so any same-day rebuild can hit this.
+    A fresh `put` under an unused name always produces correct records; only the replace path is
+    affected, and it is invisible unless you download the bundle and read `.content`.
+
+    Deleting first would fix the records and is what was done by hand that day — but ONLY after
+    confirming the device copy carried no ink (no `.rm` layers in the bundle) and that nothing had
+    been pulled back. Do not make that unconditional: his handwriting is worth more than clean
+    metadata, and `rm` is not recoverable.
     """
     pdf_path = Path(pdf_path)
     if not pdf_path.is_file():

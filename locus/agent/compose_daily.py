@@ -781,6 +781,30 @@ def _attested(conn: sqlite3.Connection, doc_id: int, name: str) -> bool:
     )
 
 
+def _project_archived(conn: sqlite3.Connection, source_uri: str) -> bool:
+    """Is this repo's blessed project object ARCHIVED — a project he is done developing?
+
+    Keyed on `objects.status` via the `implements` link because that is the one place the OWNER
+    says a project is finished (he archives it in `locus decide`); nothing derivable from the
+    repo itself can. `proposed` counts as live — an unblessed object means the proposer only just
+    noticed the repo, not that development stopped (Alpha Fund was `proposed` while being worked
+    on). A repo with no object at all is live for the same reason. As of 2026-08-06 every repo
+    links to a non-archived object, so this filter cuts nothing until he archives something —
+    which is exactly the control he asked for: paper/note ideas stop for archived projects,
+    coursework links continue (an old project can still teach).
+    """
+    try:
+        row = conn.execute(
+            "SELECT o.status FROM objects o JOIN object_links ol ON ol.object_id=o.id "
+            "WHERE o.type='project' AND ol.target_kind='doc' AND ol.relation='implements' "
+            "AND ol.target_key=? LIMIT 1",
+            (source_uri,),
+        ).fetchone()
+    except sqlite3.OperationalError:                 # agent tables absent (bare test DB)
+        return False
+    return bool(row) and (row["status"] or "") == "archived"
+
+
 def _titles_nested(a: str | None, b: str | None) -> bool:
     """One title contains the other — reading notes OF a book paired with the book itself.
 
@@ -882,6 +906,13 @@ def connection_candidates(
                     if row["source_type"] == "code":
                         continue
                     if row["category"] == "project" and not row["own"]:
+                        continue
+                    # An ARCHIVED project takes no new development ideas — but keeps its
+                    # coursework links, because "the maths you studied is the maths this project
+                    # used" still teaches after development stops (owner's rule, 2026-08-06).
+                    if row["category"] != _BRIDGE_TARGET_CATEGORY and _project_archived(
+                        conn, src["source_uri"]
+                    ):
                         continue
                 elif row["own"]:
                     # A sibling note of his own — true, but not news to the person who wrote both.

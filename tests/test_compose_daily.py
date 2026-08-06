@@ -959,6 +959,62 @@ def test_a_single_word_overlap_is_not_a_connection(conn):
     assert all(c.shared != "CPU" for c in cd.connection_candidates(conn))
 
 
+def test_an_archived_project_keeps_coursework_links_but_takes_no_new_ideas(conn):
+    """Owner's rule (2026-08-06): paper/note ideas stop for a project he archived; the
+
+    coursework identification ("the maths you studied is the maths this project used") still
+    teaches after development stops, so those links continue. Keyed on `objects.status` via the
+    `implements` link — the one place HE declares a project finished.
+    """
+    _bridge_corpus(conn)
+    with conn:
+        conn.execute(
+            "INSERT INTO documents (content_hash, source_type, source_uri, raw_path, title, "
+            "category, ingest_model, thesis, method, result) VALUES "
+            "('hr','code','repos/oldproj','hr.x','Old Project','project','t','x','x','x')"
+        )
+        repo_id = conn.execute("SELECT last_insert_rowid() AS i").fetchone()["i"]
+        conn.execute(
+            "INSERT INTO sections (doc_id, position, title, summary) VALUES "
+            "(?,0,'README.md','Solves the eigenvalue problem for building modes.')",
+            (repo_id,),
+        )
+        sec_id = conn.execute("SELECT last_insert_rowid() AS i").fetchone()["i"]
+        conn.execute(
+            "INSERT INTO entities (doc_id, section_id, name, type) VALUES "
+            "(?,?,'eigenvalue problem','concept')",
+            (repo_id, sec_id),
+        )
+    from locus.link.aliases import build_aliases
+
+    build_aliases(conn, use_llm=False, use_cache=False, log=lambda _m: None)
+
+    def repo_targets():
+        return {
+            c.other_title
+            for c in cd.connection_candidates(conn)
+            if c.kind == "project" and c.src_id == repo_id
+        }
+
+    # Live (no object): one pair per source, and the paper outranks — the repo takes the idea.
+    assert repo_targets() == {"Specification Testing"}
+
+    with conn:
+        conn.execute(
+            "INSERT INTO objects (type, title, status, body, created_at, updated_at) VALUES "
+            "('project','oldproj','archived','b','2026-01-01','2026-01-01')"
+        )
+        obj_id = conn.execute("SELECT last_insert_rowid() AS i").fetchone()["i"]
+        conn.execute(
+            "INSERT INTO object_links (object_id, target_kind, target_key, relation) VALUES "
+            "(?,'doc','repos/oldproj','implements')",
+            (obj_id,),
+        )
+    # Archived: the paper is skipped and the walk falls through to the coursework link —
+    # no new ideas for a finished project, but the maths still teaches.
+    assert repo_targets() == {"Linear Algebra"}
+
+
 def test_connections_budget_height_not_just_seats(conn):
     """Three 2026-08-06-writer notes (340-500 chars) overflow the page three ~300-char notes fit.
 

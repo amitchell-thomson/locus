@@ -15,8 +15,11 @@ THREE THINGS MAKE IT CHEAP ENOUGH TO RUN HOURLY:
      pass each time — the lesson the daily page learned the expensive way.
 
 Geometry does the work: `capture/annotate` decides which passage each mark covers by intersecting
-rectangles, no model involved. Transcribing the HANDWRITING beside a mark is a separate, billed
-vision pass and stays opt-in.
+rectangles, no model involved. Transcribing the HANDWRITING beside a mark is a billed vision pass
+that `capture/loop_b.py` (2026-08-06) now runs on the capture timer — that module is the primary
+for any reading-folder document (content-hash mapping, transcription, chosen-book ingest, note
+promotion); this sweep stays as the cloud-pull backstop over `reading_targets` that survives the
+device push channel dying. Same idempotent upsert, so the overlap is harmless by construction.
 """
 
 from __future__ import annotations

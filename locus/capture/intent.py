@@ -132,6 +132,18 @@ def pending_marks(
 
     An intent HE set is never revisited: `intent_by='owner'` is durable, and a nightly pass that
     quietly re-guessed over his correction would make the correction pointless.
+
+    A MARK WITH NOTHING ON IT IS NOT PENDING. `classify` rejects "nothing marked and nothing
+    written" before it makes a call, so such a mark can never leave this pool — it stays NULL,
+    stays pending, and is re-selected every night forever. They are not rare: highlights over a
+    figure capture no text (§14), and 28 of the 42 marks waiting on 2026-08-06 were blank. Because
+    the pool is ordered by id and the run is capped, those zombies sat at the FRONT and spent the
+    cap: the 2026-08-06 run classified ids up to 131 and never reached 132-144, so his three
+    newest written questions were never classified, `learn/answers.pending_questions` (which needs
+    `intent='not_understood'`) never saw them, and the Answered page went hungry with the whole
+    chain reporting success. The filter is on CURRENT content, not a durable skip flag, so a mark
+    that gains a note later — transcription is bounded per run and lags capture — re-enters the
+    pool by itself.
     """
     now = now or datetime.now(timezone.utc)
     cutoff = (now - timedelta(hours=settle_hours)).isoformat()
@@ -139,6 +151,7 @@ def pending_marks(
         "SELECT a.*, d.title AS doc_title FROM pdf_annotations a "
         "LEFT JOIN documents d ON d.source_uri = a.source_uri "
         "WHERE COALESCE(a.intent_by,'') != 'owner' AND a.captured_at <= ? "
+        "AND (TRIM(COALESCE(a.covered_text,'')) != '' OR TRIM(COALESCE(a.note,'')) != '') "
     )
     if not force:
         sql += "AND (a.intent IS NULL OR TRIM(a.intent)='') "

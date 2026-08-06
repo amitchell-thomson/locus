@@ -46,6 +46,15 @@ ExecStart=/home/alec/.local/bin/uv run locus review --write-questions 8
 #     keep the evidence as the answer, rather than turning a stored claim into a question about
 #     that claim — which is the regurgitation he rejected.
 ExecStart=/home/alec/.local/bin/uv run locus review --write-concept-questions 6
+# 4c. What each marked passage MEANT (important / not understood / an idea), and the fate that
+#     follows. Billed (claude -p) for the inference; acting on it is a free join. A mark's page
+#     must have been untouched 12h first, so this never reacts to ink still being written, and a
+#     guess below the confidence floor is held for `locus decide` rather than acted on.
+#     BEFORE `--answer-marks`, WHICH READS WHAT IT WRITES. It used to run after, so a question
+#     classified tonight could not be answered until tomorrow night and could not reach a page
+#     until the morning after that — a two-day lag on the one section made of his own questions,
+#     invisible because both steps reported success.
+ExecStart=/home/alec/.local/bin/uv run locus intent --act
 # 4d. The questions he wrote in the MARGIN, answered from his own library (billed, claude -p).
 #     This feeds the Ask page, and like every other page section the prose must exist BEFORE
 #     composition — the page is aggregate-only and prints what is already stored. Without this
@@ -70,11 +79,6 @@ ExecStart=/home/alec/.local/bin/uv run locus evolution --store-tensions 4
 # 5a. Score what he is READING against his projects — including books he added himself, which
 #     arrived with no relevance at all. Free and local (embeddings + a cosine), so it runs before
 #     the billed step and gives the reason-writer something to explain.
-# 4b. What each marked passage MEANT (important / not understood / an idea), and the fate that
-#     follows. Billed (claude -p) for the inference; acting on it is a free join. A mark's page
-#     must have been untouched 12h first, so this never reacts to ink still being written, and a
-#     guess below the confidence floor is held for `locus decide` rather than acted on.
-ExecStart=/home/alec/.local/bin/uv run locus intent --act
 ExecStart=/home/alec/.local/bin/uv run locus discover --link-reading
 ExecStart=/home/alec/.local/bin/uv run locus discover --write-why 10
 # 6. Record that the UNIT completed. It is nine ExecStart lines rather than one command, so

@@ -99,6 +99,41 @@ def test_ink_that_has_not_settled_is_left_alone(conn):
     assert I.classify_pending(conn, runner=_runner("idea", 0.9), now=_now()) == []
 
 
+def test_blank_marks_cannot_head_block_the_run(conn):
+    """A mark with nothing on it is unclassifiable forever, so it must not spend the run's cap.
+
+    `classify` rejects "nothing marked and nothing written" before it makes a call, so such a mark
+    stays NULL and stays pending — and highlights over a figure produce exactly that (§14). On
+    2026-08-06, 28 of 42 pending marks were blank; ordered by id they sat at the FRONT, the run's
+    cap of 100 was reached at id 131, and his three newest written questions (ids 140-142) were
+    never classified. Nothing failed: the run reported ok, and the Answered page just stayed thin.
+    """
+    for page in range(5):
+        _mark(conn, text="", note="", page=page)
+    asked = _mark(conn, note="where does this relationship come from?", page=9)
+
+    # The blank marks are not even offered, so a cap of one still reaches the real question.
+    pending = I.pending_marks(conn, now=_now(), limit=1)
+    assert [r["id"] for r in pending] == [asked]
+
+    results = I.classify_pending(conn, runner=_runner("not_understood", 0.9), now=_now())
+    assert [r.mark_id for r in results] == [asked]
+    assert _row(conn, asked)["intent"] == "not_understood"
+
+
+def test_a_mark_that_gains_a_note_later_re_enters_the_pool(conn):
+    """The filter is on current content, never a durable skip flag.
+
+    Transcription is bounded per run and lags capture, so today's blank mark is tomorrow's
+    question. A skip flag would have made that a permanent loss.
+    """
+    mid = _mark(conn, text="", note="")
+    assert I.pending_marks(conn, now=_now()) == []
+    with conn:
+        conn.execute("UPDATE pdf_annotations SET note='what is this term?' WHERE id=?", (mid,))
+    assert [r["id"] for r in I.pending_marks(conn, now=_now())] == [mid]
+
+
 def test_an_intent_he_set_is_never_re_guessed(conn):
     mid = _mark(conn, text="a passage")
     I.set_owner_intent(conn, mid, I.IDEA)

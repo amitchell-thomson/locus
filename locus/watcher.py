@@ -41,6 +41,13 @@ from locus.sync import sync_repos
 log = logging.getLogger(__name__)
 
 QUARANTINE_DIRNAME = ".quarantine"
+# UNSUPPORTED IS NOT QUARANTINED. Both are set aside so they are not retried every tick, but they
+# mean opposite things: quarantine is "a bug to triage" (§14), while a PNG, a `uv.lock` and a
+# `pyproject.toml` are simply not documents. Filing them together put 8 permanent files in the
+# triage pile, so `locus status` warned every single day about something that was never going to
+# be actionable — and a warning that is always on is one he learns to skip, which is the same
+# failure as the daily page shouting about a failure that had already recovered.
+UNSUPPORTED_DIRNAME = ".unsupported"
 # Directories under this category folder are repo drops (one unit), not file organization.
 REPO_DROP_CATEGORY = "projects"
 # Settle window for repo trees: newest ctime in the tree must be at least this old. Longer
@@ -155,6 +162,7 @@ def process_once(conn, *, incoming: Path | None = None, settle: float = 3.0) -> 
     """Ingest every settled file/repo-drop in incoming once; dispose per result."""
     incoming = incoming or load().paths.incoming
     quarantine = incoming / QUARANTINE_DIRNAME
+    unsupported = incoming / UNSUPPORTED_DIRNAME
     results: list[IngestResult] = []
     for tree in _repo_drops(incoming):
         results.append(_process_repo_drop(conn, tree, quarantine))
@@ -168,7 +176,8 @@ def process_once(conn, *, incoming: Path | None = None, settle: float = 3.0) -> 
         else:  # unsupported / quarantined — set aside so it is not retried every tick
             # Preserve the drop subpath: keeps category provenance visible and avoids
             # same-name collisions across category folders.
-            dest = quarantine / rel
+            home = unsupported if result.status == "unsupported" else quarantine
+            dest = home / rel
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(path), str(dest))
             _prune_empty_parents(path.parent, incoming)  # the move drained the source dir too

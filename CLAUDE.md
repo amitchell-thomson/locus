@@ -174,6 +174,12 @@ source (vault/incoming/<category>/… or a tracked repo)
 **Hard rule:** every structured LLM output is pydantic-validated with bounded repair. The pipeline
 never silently writes garbage and never aborts a batch on one bad document.
 
+Extracted PDF text is stripped of control characters (`extract/pdf._strip_controls`): maths
+PDFs encode symbols in fonts whose code points collide with C0 controls, so |x - a| < e
+extracts as `jx \x00 aj < \x11`. Invisible on every surface, and a NUL cannot go in argv —
+see `agent/claude.py`. An EMPTY file is `unsupported`, not quarantined: there is nothing to
+extract, so it is not a failed extraction.
+
 A pre-ingest content gate quarantines single-column data dumps (an English dictionary was once
 ingested and the synthesis pass hallucinated 4,129 phantom entities).
 
@@ -286,7 +292,14 @@ grounding link; ≤3 per document. **Owner-authored is about provenance, not cat
 `state.owner_authored_sql` is the one definition (path under `vault/notes/` first, category as
 fallback), and a promoted thread is excluded so the loop cannot feed itself.
 
-**Learn.** `learn/answers.py` answers margin questions from the corpus (evidence excludes the
+**Learn.** A margin question the corpus cannot ground is **parked** after
+`_MAX_ANSWER_ATTEMPTS` failures (migration 0035, `pdf_annotations.answer_attempts`) and
+named by `locus status`; without it the mark is re-offered every night forever, because
+`pending_questions` selects on the ABSENCE of a stored answer and grounded-or-silent stores
+nothing on failure — two correct rules composing into a permanent occupant of a bounded
+queue. Parking is a pause, not a verdict: `locus review --retry-parked` clears the counters,
+and it is worth running after an ingest batch, since the corpus is not what it was.
+`learn/answers.py` answers margin questions from the corpus (evidence excludes the
 reading-notes aggregation, which *contains* the question). `learn/review.py` runs SM-2 and writes
 concept cards — question and answer are generated **together from one evidence set**, because when
 they were produced by different mechanisms they silently stopped matching.
@@ -472,7 +485,11 @@ locus/
 - Run `locus link` after ingest batches.
 - **Restart `locus mcp` after any retrieval change** — a long-lived server runs code from its
   start time. Compare its build stamp with `git rev-parse --short HEAD`.
-- Quarantines are bugs to triage, not casualties.
+- Quarantines are bugs to triage, not casualties — which is only true because **unsupported
+  is filed separately** (`incoming/.unsupported/`, `watcher.UNSUPPORTED_DIRNAME`). A PNG, a
+  `uv.lock` and an empty README are not documents and never will be; filing them with real
+  failures kept 8 permanent files in the triage pile and made `locus status` warn every day
+  about something that could never be actioned.
 - Eval labels grow with the corpus.
 - **Deploying a systemd unit means copying it to `~/.config/systemd/user/` and reloading.**
   Editing the repo copy alone changes nothing.

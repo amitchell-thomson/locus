@@ -47,7 +47,9 @@ Run `locus watch` (or batched `locus ingest <files>` under the flock) and monito
 
 - [ ] **Quarantines stay at 0**: `vault/incoming/.quarantine/` — a quarantined doc is a
       bug to triage, not a casualty to accept. (Concurrent-ingest contention produces
-      *spurious* quarantines — the flock prevents it; don't bypass it.)
+      *spurious* quarantines — the flock prevents it; don't bypass it.) Files that are simply
+      not documents — images, lockfiles, empty files — land in `vault/incoming/.unsupported/`
+      instead and are expected to accumulate; only `.quarantine/` means something went wrong.
 - [ ] **GPU graph**: VRAM should cycle (text model ↔ VLM ↔ GOT) with full evictions
       between phases. GPU sitting idle while CPU is pinned across many cores = a split
       model or CPU vision encode — stop and fix before continuing (step 11.5/11.6).

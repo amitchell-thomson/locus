@@ -137,7 +137,7 @@ def extract_pdf(path: str | Path, *, mathocr: bool = False, figures: bool = Fals
         # De-hyphenate per page before anything reads or offsets the text (chunks, embeddings,
         # heading location, and assembly all see the joined words). Joins are attested against
         # the whole document's vocabulary, built from the raw text first.
-        raw_pages = [page.get_text("text") for page in doc]
+        raw_pages = [_strip_controls(page.get_text("text")) for page in doc]
         vocab = _doc_vocab(raw_pages)
         page_texts = [_dehyphenate(t, vocab) for t in raw_pages]
         # Excise printed-ToC pages before sectioning: blanking (rather than removing) keeps
@@ -201,6 +201,27 @@ _SOFT_HYPHEN = "­"
 # A word ending lowercase, a (soft) hyphen, a line break, then a lowercase word start.
 _LINE_WRAP_HYPHEN = re.compile(r"([A-Za-z]*[a-z])-\n([a-z][A-Za-z]*)")
 _SOFT_WRAP = re.compile(rf"([A-Za-z]*[a-z]){_SOFT_HYPHEN}\n([a-z][A-Za-z]*)")
+
+
+# C0 control characters that are never text. Kept: tab, newline, carriage return.
+_CONTROL_CHARS = {c: None for c in range(0x20) if c not in (0x09, 0x0A, 0x0D)} | {0x7F: None}
+
+
+def _strip_controls(text: str) -> str:
+    """Drop control characters PyMuPDF hands back for symbol-font glyphs.
+
+    Maths PDFs encode symbols in fonts whose code points collide with C0 controls, so a line
+    reading |x - a| < e extracts as "jx \x00 aj < \x11". Stored, those bytes are invisible on
+    every surface that shows the text and actively harmful in one: a NUL cannot go in argv, so a
+    prompt built from the chunk raised `ValueError: embedded null byte` before the process spawned
+    — not a `ClaudeError`, so no degrade path caught it. Three calculus documents failed the
+    structure pass on EVERY run for that reason (fixed at the boundary too, in `agent/claude.py`;
+    this stops the bytes being stored in the first place).
+
+    Dropped rather than substituted: the glyph is unrecoverable from the code point alone, and a
+    guessed symbol would be worse than a missing one in text the retrieval layer quotes verbatim.
+    """
+    return (text or "").translate(_CONTROL_CHARS)
 
 
 def _dehyphenate(text: str, vocab: set[str]) -> str:

@@ -9,6 +9,7 @@ we never offered is dropped.
 from __future__ import annotations
 
 import json
+import re
 from datetime import date
 from pathlib import Path
 
@@ -558,3 +559,110 @@ def test_evidence_is_chosen_by_relevance_not_by_length(conn):
     facts, _src = review.concept_evidence(conn, "AIS interpolation")
     assert facts, "expected evidence"
     assert "AIS interpolation" in facts[0], f"length won again: {facts[0][:60]!r}"
+
+
+# --- parking: a question the corpus cannot answer must not be retried forever -------------------
+
+
+def _asked(conn, note: str, *, mark_id: int | None = None) -> int:
+    """A transcribed margin question the answer pass will pick up."""
+    with conn:
+        cur = conn.execute(
+            "INSERT INTO pdf_annotations (source_uri, pdf_page, kind, bbox_key, covered_text, "
+            "line_text, note, intent, in_margin, captured_at) "
+            "VALUES ('books/apm.pdf',?,'underline',?,?,?,?,'not_understood',1,'2026-08-01')",
+            (mark_id or 1, f"k{note[:8]}", "a passage about factor models",
+             "a full line about factor models", note),
+        )
+    return cur.lastrowid
+
+
+def test_a_question_the_corpus_cannot_answer_is_parked_not_retried_forever(conn):
+    """Two correct rules composed into an eternal retry.
+
+    `pending_questions` selects marks with no `mark_answers` row, and grounded-or-silent stores
+    nothing when the corpus cannot ground an answer — so the same mark came back every night.
+    Mark 11 did exactly that from 2026-08-04 on, taking one of four nightly slots each time. It is
+    the same shape as the recall and intent starvations: a permanent occupant at the head of a
+    bounded queue.
+    """
+    from locus.learn import answers as A
+
+    mid = _asked(conn, "is a factor like a feature in ML, and what does that imply?")
+
+    def ungroundable(*_a, **_kw):
+        return []                                  # the corpus has nothing to offer
+
+    for attempt in range(A._MAX_ANSWER_ATTEMPTS):
+        assert [q.mark_id for q in A.pending_questions(conn)] == [mid], (
+            f"still worth trying on attempt {attempt + 1}"
+        )
+        assert A.write_answers(conn, retrieve_fn=ungroundable) == 0
+
+    assert A.pending_questions(conn) == [], "a question that keeps failing must stop occupying a slot"
+    assert [m for m, _ in A.parked_questions(conn)] == [mid], "and must be visible, not silent"
+    assert conn.execute(
+        "SELECT COUNT(*) FROM mark_answers WHERE mark_id=?", (mid,)
+    ).fetchone()[0] == 0, "grounded-or-silent: nothing invented on the way"
+
+
+def test_un_parking_lets_a_grown_corpus_try_again(conn):
+    """Parking is a pause, not a verdict — every ingest changes what can be grounded."""
+    from locus.learn import answers as A
+
+    mid = _asked(conn, "is a factor like a feature in ML, and what does that imply?")
+    for _ in range(A._MAX_ANSWER_ATTEMPTS):
+        A.write_answers(conn, retrieve_fn=lambda *_a, **_kw: [])
+    assert A.pending_questions(conn) == []
+
+    assert A.unpark_questions(conn) == 1
+    assert [q.mark_id for q in A.pending_questions(conn)] == [mid]
+    assert A.parked_questions(conn) == []
+
+
+def test_a_successful_answer_never_parks_anything(conn):
+    """The counter must only move on failure, or a working question would retire itself."""
+    from locus.learn import answers as A
+
+    from dataclasses import dataclass
+
+    @dataclass
+    class _Cite:
+        doc_id: int
+        rerank_score: float | None
+        text: str
+
+    @dataclass
+    class _Result:
+        survivors: list
+        low_confidence: bool = False
+        citation_details: list = None
+
+        def __post_init__(self):
+            self.citation_details = [
+                _Cite(c.doc_id, c.rerank_score, f"doc {c.doc_id}, provenance")
+                for c in self.survivors
+            ]
+
+    mid = _asked(conn, "what is a factor covariance estimator and how is it built?")
+    # doc ids 1-3 belong to the shared fixture; the mark points at this one by `source_uri`.
+    _doc(conn, 4, title="Advanced Portfolio Management", uri="books/apm.pdf", category="paper")
+    evidence = _Cite(4, 5.0, "The factor covariance estimator estimates the covariance matrix "
+                             "of factor returns, a separate step from the regression.")
+
+    def runner(prompt, _m):
+        # Cite the handle the prompt actually offered, so the citation verification passes for
+        # the right reason rather than by accident.
+        key = re.search(r"\[([A-Z]\d+)\]", prompt).group(1)
+        return ClaudeResult(text=json.dumps({
+            "answer": "It estimates the covariance matrix of the factor returns, which is a "
+                      "separate step from the regression that produces those returns.",
+            "citation_key": key,
+        }))
+
+    assert A.write_answers(
+        conn, runner=runner, retrieve_fn=lambda _q: _Result(survivors=[evidence])
+    ) == 1, "the fixture must actually ground an answer, or this tests nothing"
+    assert conn.execute(
+        "SELECT COALESCE(answer_attempts,0) FROM pdf_annotations WHERE id=?", (mid,)
+    ).fetchone()[0] == 0

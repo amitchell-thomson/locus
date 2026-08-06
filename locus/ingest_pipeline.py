@@ -873,6 +873,11 @@ def ingest_file(
     source_type = _source_type(path)
     if source_type is None:
         return IngestResult(str(path), "unsupported", error=f"unsupported type: {path.suffix}")
+    # AN EMPTY FILE IS NOT A FAILED EXTRACTION. It would otherwise fall through to "no extractable
+    # text", which is the same verdict a damaged scan earns — and quarantine is meant to mean "a
+    # bug to triage" (§14). A repo's empty `README.md` sat in that pile for months saying nothing.
+    if path.stat().st_size == 0:
+        return IngestResult(str(path), "unsupported", error="empty file")
     try:
         content_hash = _hash_file(path)
         existing = conn.execute(

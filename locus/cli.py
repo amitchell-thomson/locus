@@ -1596,6 +1596,14 @@ def cmd_review(args) -> None:
             written = rv.fill_concept_questions(conn, limit=args.write_concept_questions)
             print(f"wrote {written} concept question(s)")
             return
+        if args.retry_parked:
+            # Parking is a pause, not a verdict: the corpus is not what it was when the question
+            # failed, and every ingest changes what can be grounded.
+            from locus.learn import answers as ans
+
+            print(f"un-parked {ans.unpark_questions(conn)} question(s) for the next answer pass")
+            if args.answer_marks is None:
+                return
         if args.answer_marks is not None:
             # The questions he wrote in the margin, answered from his own library. Billed, and
             # grounded-or-silent: a question the corpus cannot answer stores nothing.
@@ -2199,6 +2207,11 @@ def main(argv=None) -> None:
     prv.add_argument(
         "--answer-marks", type=int, nargs="?", const=4, default=None, metavar="N",
         help="answer N questions he wrote in the margin, from his own corpus (billed)",
+    )
+    prv.add_argument(
+        "--retry-parked", action="store_true",
+        help="un-park margin questions the corpus repeatedly failed to answer, so the next "
+             "--answer-marks tries them again (free; worth it after an ingest batch)",
     )
     prv.set_defaults(func=cmd_review)
 

@@ -14,7 +14,7 @@ import pytest
 from locus import watcher as watcher_mod
 from locus.ingest_lock import IngestLockHeld
 from locus.ingest_pipeline import IngestResult
-from locus.watcher import QUARANTINE_DIRNAME, process_once
+from locus.watcher import QUARANTINE_DIRNAME, UNSUPPORTED_DIRNAME, process_once
 
 
 @pytest.fixture()
@@ -60,11 +60,35 @@ def test_quarantined_file_is_set_aside(incoming, monkeypatch):
     assert not (incoming / "bad.pdf").exists()
 
 
-def test_unsupported_file_is_set_aside(incoming, monkeypatch):
+def test_unsupported_file_is_set_aside_AWAY_FROM_quarantine(incoming, monkeypatch):
+    """Set aside like a quarantine, but somewhere else — they mean opposite things.
+
+    Quarantine is "a bug to triage" (§14) and `locus status` warns on it every day. Unsupported is
+    a PNG, a `uv.lock`, an empty README: not documents, and never going to be. Filing them
+    together left 8 permanent files in the triage pile, so the warning was always on — and a
+    warning that is always on is one he learns to skip, the same failure as the daily page
+    shouting about a run that had already recovered.
+    """
     monkeypatch.setattr(watcher_mod, "ingest_file", _fake_ingest("unsupported"))
-    _drop(incoming, "notes.txt")
+    _drop(incoming, "diagram.png")
     process_once(object(), incoming=incoming)
-    assert (incoming / QUARANTINE_DIRNAME / "notes.txt").exists()
+    assert (incoming / UNSUPPORTED_DIRNAME / "diagram.png").exists()
+    assert not (incoming / QUARANTINE_DIRNAME / "diagram.png").exists()
+    assert not (incoming / "diagram.png").exists(), "still set aside, so it is not retried"
+
+
+def test_an_empty_file_is_unsupported_not_quarantined(incoming, monkeypatch):
+    """A 0-byte file is not a failed extraction — there is nothing to extract.
+
+    It used to fall through to "no extractable text", the same verdict a damaged scan earns, and
+    a repo's empty `README.md` sat in the triage pile for months on that basis.
+    """
+    from locus.ingest_pipeline import ingest_file
+
+    empty = incoming / "README.md"
+    empty.touch()
+    result = ingest_file(empty, object())
+    assert result.status == "unsupported" and "empty" in (result.error or "")
 
 
 def test_gitkeep_and_quarantine_dir_ignored(incoming, monkeypatch):
@@ -112,7 +136,9 @@ def test_quarantining_last_file_prunes_drained_subfolder(incoming, monkeypatch):
     sub.mkdir(parents=True)
     _drop(sub, "empty.ipynb")
     process_once(object(), incoming=incoming)
-    assert (incoming / QUARANTINE_DIRNAME / "notes" / "alpha-fund" / "empty.ipynb").exists()  # set aside
+    # Either disposition drains the source folder; this one simulates `unsupported`, so the file
+    # lands in `.unsupported` (the quarantine path is covered by the sibling test below).
+    assert (incoming / UNSUPPORTED_DIRNAME / "notes" / "alpha-fund" / "empty.ipynb").exists()
     assert not sub.exists() and not (incoming / "notes").exists()  # source side pruned
     assert (incoming / ".gitkeep").exists()  # root anchor untouched
 
@@ -131,7 +157,9 @@ def test_prune_stops_at_pending_sibling(incoming, monkeypatch):
 
 
 def test_subfolder_quarantine_preserves_subpath(incoming, monkeypatch):
-    monkeypatch.setattr(watcher_mod, "ingest_file", _fake_ingest("unsupported"))
+    """The drop subpath is kept on the way out — it carries the category provenance, and two
+    files of the same name in different category folders must not collide."""
+    monkeypatch.setattr(watcher_mod, "ingest_file", _fake_ingest("quarantined"))
     (incoming / "projects").mkdir()
     _drop(incoming / "projects", "blob.bin")
     process_once(object(), incoming=incoming)

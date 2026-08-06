@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -54,6 +55,19 @@ _MIN_QUESTION_CHARS = 18
 # only test that held: is there enough here to search on? Everything else is left to
 # grounded-or-silent, which is the real protection — an answer that cannot cite the corpus is
 # never stored, so a vague note costs one retrieval and produces nothing.
+
+# Failures to ground an answer before a question is PARKED and stops being offered. Three, not
+# one: the corpus changes under it (every ingest, every `locus link`), so a single miss says
+# nothing, while a question that has missed three separate nights is not one more retrieval away.
+# Parking is a pause, never a verdict — `unpark_questions` clears every counter, and `locus status`
+# names what is parked so it cannot quietly cease to exist.
+#
+# WITHOUT THIS THE RETRY IS ETERNAL. `pending_questions` selects marks with no `mark_answers` row
+# and grounded-or-silent stores nothing when the corpus cannot answer, so the same mark returns
+# every night: mark 11 did exactly that from 2026-08-04 onward, taking one of the four nightly
+# slots each time. Two correct rules composing into a permanent occupant at the head of a bounded
+# queue — the same shape as the recall and intent starvations.
+_MAX_ANSWER_ATTEMPTS = 3
 
 # Evidence units put in front of the model. Fewer than the critique surface uses: this is one
 # question about one passage, and a wider net mostly adds neighbours of the same document.
@@ -231,18 +245,38 @@ def _has_enough_to_search(note: str) -> bool:
 
 
 def pending_questions(conn, *, limit: int = 20) -> list[MarkQuestion]:
-    """Marks he flagged as not understood, that read as questions and have no answer yet."""
-    rows = conn.execute(
-        """
-        SELECT a.id, a.note, a.covered_text, a.line_text, a.pdf_page, d.title
-        FROM pdf_annotations a
-        LEFT JOIN documents d ON d.source_uri = a.source_uri
-        WHERE a.intent = 'not_understood'
-          AND a.note IS NOT NULL AND TRIM(a.note) != ''
-          AND NOT EXISTS (SELECT 1 FROM mark_answers m WHERE m.mark_id = a.id)
-        ORDER BY a.id
-        """
-    ).fetchall()
+    """Marks he flagged as not understood, that read as questions and have no answer yet.
+
+    PARKED MARKS ARE EXCLUDED (`_MAX_ANSWER_ATTEMPTS`). A question the corpus has failed to ground
+    three times would otherwise be re-offered every night forever, because nothing is stored when
+    grounding fails and this query selects on the absence of a stored row.
+    """
+    try:
+        rows = conn.execute(
+            """
+            SELECT a.id, a.note, a.covered_text, a.line_text, a.pdf_page, d.title
+            FROM pdf_annotations a
+            LEFT JOIN documents d ON d.source_uri = a.source_uri
+            WHERE a.intent = 'not_understood'
+              AND a.note IS NOT NULL AND TRIM(a.note) != ''
+              AND COALESCE(a.answer_attempts, 0) < ?
+              AND NOT EXISTS (SELECT 1 FROM mark_answers m WHERE m.mark_id = a.id)
+            ORDER BY a.id
+            """,
+            (_MAX_ANSWER_ATTEMPTS,),
+        ).fetchall()
+    except sqlite3.OperationalError:          # pre-0035 DB: no counter, so nothing is parked
+        rows = conn.execute(
+            """
+            SELECT a.id, a.note, a.covered_text, a.line_text, a.pdf_page, d.title
+            FROM pdf_annotations a
+            LEFT JOIN documents d ON d.source_uri = a.source_uri
+            WHERE a.intent = 'not_understood'
+              AND a.note IS NOT NULL AND TRIM(a.note) != ''
+              AND NOT EXISTS (SELECT 1 FROM mark_answers m WHERE m.mark_id = a.id)
+            ORDER BY a.id
+            """
+        ).fetchall()
     out: list[MarkQuestion] = []
     for r in rows:
         note = " ".join((r["note"] or "").split())
@@ -364,7 +398,9 @@ def write_answers(
             conn, "answers.grounded", rejected=got is None,
             value=None if got else q.question[:80],
         )
-        if got is not None:
+        if got is None:
+            _record_failed_attempt(conn, q.mark_id)
+        else:
             written += 1
             # NOT a gate — nothing is rejected on this — but the log is the cheapest place to
             # accumulate the support scores a floor would have to be calibrated against.
@@ -374,6 +410,59 @@ def write_answers(
                 value=f"{support} {got.question[:60]}",
             )
     return written
+
+
+def _record_failed_attempt(conn, mark_id: int) -> None:
+    """Count one failure to ground an answer, so a question cannot be retried forever.
+
+    Silent on an un-migrated DB (the column arrives in 0035): a missing counter means every mark
+    stays eligible, which is exactly the old behaviour.
+    """
+    try:
+        with conn:
+            conn.execute(
+                "UPDATE pdf_annotations SET answer_attempts = COALESCE(answer_attempts,0) + 1 "
+                "WHERE id=?",
+                (mark_id,),
+            )
+    except sqlite3.OperationalError:
+        log.debug("answers: no answer_attempts column; not counting the failure")
+
+
+def parked_questions(conn) -> list[tuple[int, str]]:
+    """(mark_id, question) for marks the corpus has failed to answer `_MAX_ANSWER_ATTEMPTS` times.
+
+    Read by `locus status`. Parking has to be VISIBLE or it is indistinguishable from the question
+    never having been asked — which is the failure this whole surface was built to end.
+    """
+    try:
+        rows = conn.execute(
+            "SELECT id, note FROM pdf_annotations "
+            "WHERE COALESCE(answer_attempts,0) >= ? AND TRIM(COALESCE(note,'')) != '' "
+            "AND NOT EXISTS (SELECT 1 FROM mark_answers m WHERE m.mark_id = pdf_annotations.id) "
+            "ORDER BY id",
+            (_MAX_ANSWER_ATTEMPTS,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    return [(r["id"], " ".join((r["note"] or "").split())) for r in rows]
+
+
+def unpark_questions(conn) -> int:
+    """Clear every parking counter so the pass tries again. Returns how many were reset.
+
+    The corpus is not what it was when the question failed — every ingest and every `locus link`
+    changes what can be grounded — so parking is a pause, not a verdict.
+    """
+    try:
+        with conn:
+            cur = conn.execute(
+                "UPDATE pdf_annotations SET answer_attempts = 0 "
+                "WHERE COALESCE(answer_attempts,0) > 0"
+            )
+        return cur.rowcount
+    except sqlite3.OperationalError:
+        return 0
 
 
 def open_answers(conn, *, limit: int = 4) -> list[MarkAnswer]:

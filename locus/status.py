@@ -37,7 +37,7 @@ class StatusReport:
     aliases_built: bool
     alias_cross_doc_canonicals: int
     alias_uncovered_surfaces: int  # entity (name,type) not yet in entity_aliases -> link stale
-    quarantine_count: int
+    quarantine_count: int      # real ingest FAILURES — a bug to triage (§14)
     db_bytes: int
     last_backup: str | None       # snapshot dir name
     last_backup_age_days: float | None
@@ -46,6 +46,9 @@ class StatusReport:
     # Reading discovery (Phase 4). Optional: a database predating migration 0017 has none of
     # these tables, and `locus status` must stay useful on one rather than raising.
     reading: dict[str, int] | None = None
+    # Not documents (images, lockfiles, empty files): set aside so they are not retried, and
+    # deliberately NOT a warning — only `quarantine_count` means "a bug to triage".
+    unsupported_count: int = 0
 
 
 def _build_stamp(project_root: Path) -> str:
@@ -144,12 +147,18 @@ def collect_status(
             """
         ).fetchone()[0]
 
-    quarantine_count = 0
+    def _set_aside(dirname: str) -> int:
+        d = incoming / dirname
+        if not d.exists():
+            return 0
+        return sum(1 for p in d.rglob("*") if p.is_file() and not p.name.startswith("."))
+
     qdir = incoming / ".quarantine"
-    if qdir.exists():
-        quarantine_count = sum(
-            1 for p in qdir.rglob("*") if p.is_file() and not p.name.startswith(".")
-        )
+    quarantine_count = _set_aside(".quarantine")
+    # Counted apart from quarantine, and NOT a warning: a PNG or a `uv.lock` is not a document and
+    # never will be. Filing the two together kept 8 permanent files in the triage pile and made
+    # `locus status` warn every day about something that was never actionable.
+    unsupported_count = _set_aside(".unsupported")
 
     db_bytes = db_path.stat().st_size if db_path.exists() else 0
 
@@ -183,6 +192,16 @@ def collect_status(
         warnings.append(
             f"{quarantine_count} quarantined file(s) under {qdir} — triage them (§14)"
         )
+    # A question he asked that the corpus has repeatedly failed to answer is PARKED, not dropped.
+    # Saying so is the whole point: silence here is indistinguishable from never having asked.
+    from locus.learn.answers import parked_questions
+
+    parked = parked_questions(conn)
+    if parked:
+        warnings.append(
+            f"{len(parked)} margin question(s) parked after repeated ungrounded attempts "
+            f"(e.g. \"{parked[0][1][:60]}\") — `locus review --retry-parked` after new ingests"
+        )
     if last_backup is None:
         warnings.append("no backup snapshot found — run `locus backup`")
     elif last_backup_age_days is not None and last_backup_age_days > 7:
@@ -202,6 +221,7 @@ def collect_status(
         alias_cross_doc_canonicals=cross_doc,
         alias_uncovered_surfaces=uncovered,
         quarantine_count=quarantine_count,
+        unsupported_count=unsupported_count,
         db_bytes=db_bytes,
         last_backup=last_backup,
         last_backup_age_days=last_backup_age_days,
@@ -251,7 +271,8 @@ def format_status(r: StatusReport) -> str:
             f"reading judged         : {d['accepted']} accepted / {d['rejected']} rejected "
             f"| {d['marks']} mark(s) read back"
         )
-    lines.append(f"quarantine             : {r.quarantine_count} file(s)")
+    aside = f"  ({r.unsupported_count} unsupported, not documents)" if r.unsupported_count else ""
+    lines.append(f"quarantine             : {r.quarantine_count} file(s){aside}")
     lines.append(f"database               : {_fmt_bytes(r.db_bytes)}")
     if r.last_backup:
         age = f"{r.last_backup_age_days:.1f} days ago" if r.last_backup_age_days is not None else "age unknown"

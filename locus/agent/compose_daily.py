@@ -781,28 +781,39 @@ def _attested(conn: sqlite3.Connection, doc_id: int, name: str) -> bool:
     )
 
 
-def _project_archived(conn: sqlite3.Connection, source_uri: str) -> bool:
-    """Is this repo's blessed project object ARCHIVED — a project he is done developing?
+def _project_takes_ideas(
+    conn: sqlite3.Connection, source_uri: str, allowlist: frozenset[str]
+) -> bool:
+    """Does this repo take NEW DEVELOPMENT IDEAS from papers/notes?
 
-    Keyed on `objects.status` via the `implements` link because that is the one place the OWNER
-    says a project is finished (he archives it in `locus decide`); nothing derivable from the
-    repo itself can. `proposed` counts as live — an unblessed object means the proposer only just
-    noticed the repo, not that development stopped (Alpha Fund was `proposed` while being worked
-    on). A repo with no object at all is live for the same reason. As of 2026-08-06 every repo
-    links to a non-archived object, so this filter cuts nothing until he archives something —
-    which is exactly the control he asked for: paper/note ideas stop for archived projects,
-    coursework links continue (an old project can still teach).
+    Two owner controls, both read from the `implements`-linked project objects (a repo can carry
+    SEVERAL — each OQTS sub-repo links its own object AND the umbrella `oqts`, so any-match is
+    the correct quantifier):
+
+      1. `[agent].connect_idea_projects` — the projects he SAID he is actively developing
+         ("oqts and all sub-projects, tanker-flow, regime-ml, locus", 2026-08-06). When set, a
+         repo takes ideas only if ANY of its live objects is on the list. Empty list = no
+         allowlist, every live project qualifies.
+      2. `objects.status` — an ARCHIVED object never counts as live. `proposed` does: an
+         unblessed object means the proposer only just noticed the repo, not that development
+         stopped (Alpha Fund was `proposed` while being worked on). A repo with no object at all
+         is live when no allowlist is set, and cannot match one when it is.
+
+    Coursework links bypass this entirely (caller's rule): an old project can still teach.
     """
     try:
-        row = conn.execute(
-            "SELECT o.status FROM objects o JOIN object_links ol ON ol.object_id=o.id "
+        rows = conn.execute(
+            "SELECT o.title, o.status FROM objects o JOIN object_links ol ON ol.object_id=o.id "
             "WHERE o.type='project' AND ol.target_kind='doc' AND ol.relation='implements' "
-            "AND ol.target_key=? LIMIT 1",
+            "AND ol.target_key=?",
             (source_uri,),
-        ).fetchone()
+        ).fetchall()
     except sqlite3.OperationalError:                 # agent tables absent (bare test DB)
-        return False
-    return bool(row) and (row["status"] or "") == "archived"
+        return not allowlist
+    live = [r for r in rows if (r["status"] or "") != "archived"]
+    if allowlist:
+        return any((r["title"] or "").casefold() in allowlist for r in live)
+    return bool(live) or not rows
 
 
 def _titles_nested(a: str | None, b: str | None) -> bool:
@@ -884,6 +895,11 @@ def connection_candidates(
     except sqlite3.OperationalError:                 # no alias substrate yet
         generic, teachable = set(), set()
 
+    from locus.config import load
+
+    idea_allowlist = frozenset(
+        t.casefold() for t in getattr(load().agent, "connect_idea_projects", ()) if t
+    )
     own_clause, own_params = state.owner_authored_sql("d")
     seen_pairs: set[tuple[int, int]] = set()
     other_count: dict[int, int] = {}
@@ -913,11 +929,12 @@ def connection_candidates(
                         continue
                     if row["category"] == "project" and not row["own"]:
                         continue
-                    # An ARCHIVED project takes no new development ideas — but keeps its
-                    # coursework links, because "the maths you studied is the maths this project
-                    # used" still teaches after development stops (owner's rule, 2026-08-06).
-                    if row["category"] != _BRIDGE_TARGET_CATEGORY and _project_archived(
-                        conn, src["source_uri"]
+                    # Only projects he is ACTIVELY DEVELOPING take new ideas (allowlist +
+                    # archived status, `_project_takes_ideas`) — but coursework links always
+                    # pass, because "the maths you studied is the maths this project used"
+                    # still teaches after development stops (owner's rule, 2026-08-06).
+                    if row["category"] != _BRIDGE_TARGET_CATEGORY and not _project_takes_ideas(
+                        conn, src["source_uri"], idea_allowlist
                     ):
                         continue
                 elif row["own"]:

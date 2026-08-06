@@ -1015,6 +1015,39 @@ def test_an_archived_project_keeps_coursework_links_but_takes_no_new_ideas(conn)
     assert repo_targets() == {"Linear Algebra"}
 
 
+def test_idea_allowlist_matches_any_implements_link(conn):
+    """Each OQTS sub-repo links its OWN object (oqts-infra, oxdaq-ops) AND the umbrella `oqts`.
+
+    The owner names projects at umbrella level ("oqts and all sub-projects"), so the allowlist
+    must match ANY of a repo's implements-linked live objects — a LIMIT-1 lookup would see only
+    whichever link happened to come first. Archived objects never count, allowlisted or not.
+    """
+    with conn:
+        conn.execute(
+            "INSERT INTO documents (content_hash, source_type, source_uri, raw_path, title, "
+            "category, ingest_model) VALUES ('hx','code','repos/sub','hx.x','Sub Repo','project','t')"
+        )
+        for title, status in (("oqts-infra", "active"), ("oqts", "active")):
+            conn.execute(
+                "INSERT INTO objects (type, title, status, body, created_at, updated_at) VALUES "
+                "('project',?,?,'b','2026-01-01','2026-01-01')",
+                (title, status),
+            )
+            obj_id = conn.execute("SELECT last_insert_rowid() AS i").fetchone()["i"]
+            conn.execute(
+                "INSERT INTO object_links (object_id, target_kind, target_key, relation) VALUES "
+                "(?,'doc','repos/sub','implements')",
+                (obj_id,),
+            )
+    assert cd._project_takes_ideas(conn, "repos/sub", frozenset({"oqts"}))
+    assert not cd._project_takes_ideas(conn, "repos/sub", frozenset({"tanker-flow"}))
+    assert cd._project_takes_ideas(conn, "repos/sub", frozenset())      # no allowlist = live
+    with conn:
+        conn.execute("UPDATE objects SET status='archived'")
+    assert not cd._project_takes_ideas(conn, "repos/sub", frozenset({"oqts"}))
+    assert not cd._project_takes_ideas(conn, "repos/sub", frozenset())
+
+
 def test_a_shown_pair_lets_the_sources_next_pair_through(conn):
     """One pair per source must not mean one pair per source EVER.
 

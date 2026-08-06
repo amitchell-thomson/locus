@@ -240,7 +240,12 @@ the gesture; position only sets `in_margin`. Hand underlines sit *below* their g
 underline band searches *above* the stroke; highlights sit *on* their glyphs and are clustered
 one-per-line (`_split_highlights`). `capture/annotate.py` stores both `covered_text` (what the ink
 covered) and `line_text` (the full line) — **marginalia is deictic**, and for a note like "what
-does this mean here?" the line *is* the content of the question.
+does this mean here?" the line *is* the content of the question. `capture/loop_b.py` runs the
+whole chain on the half-hourly capture timer for the Reading folders Loop A excludes: changed
+document → marks stored → new handwriting transcribed (bounded per run). Marks map to corpus
+documents **by content hash of the bundle's PDF bytes** — computed, never remembered; an
+unmatched (un-ingested) document keys by device path with a loud log and an
+`unmapped_to_corpus` stat.
 
 **Intent.** `capture/intent.py` classifies a mark as `important` / `not_understood` / `idea`.
 Below `[capture].intent_confidence_floor` nothing happens except that it becomes a `locus decide`

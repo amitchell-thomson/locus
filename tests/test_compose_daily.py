@@ -157,7 +157,7 @@ def test_recalls_fit_the_page(conn):
 
 
 def test_the_daily_page_no_longer_carries_a_read_section(conn):
-    """Replaced by "Why these papers" in Reading/Proposed (`reading/rationale.py`).
+    """Replaced by "Proposals" in Reading/Proposed (`reading/rationale.py`).
 
     Two days of real use: it duplicated the shelf folder he already browses, and he never used it
     to decide what to read — the writing he put on it was project thinking about the papers,
@@ -226,7 +226,7 @@ def test_no_reading_reaches_the_daily_page_at_all(conn):
     """The Read section and its re-read slot are both gone.
 
     The slot was superseded by the Ask page (`daily.reread_min_rerank` rejected 190 of 190, best
-    score 1.917 against a floor of 2.5). The section itself was superseded by "Why these papers"
+    score 1.917 against a floor of 2.5). The section itself was superseded by "Proposals"
     in Reading/Proposed, because he browses the shelf there and never used the page to choose.
     """
     _proposal(conn, "a paper")

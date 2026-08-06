@@ -32,7 +32,7 @@ log = logging.getLogger(__name__)
 
 # The filename on the device. Stable, so a refresh replaces rather than accumulates — a shelf
 # with six "why" documents on it would be worse than none.
-DOC_NAME = "Why these papers"
+DOC_NAME = "Proposals"
 
 
 @dataclass
@@ -80,7 +80,7 @@ def render(conn: sqlite3.Connection, *, today: date | None = None) -> Rationale:
     rows = _rows(conn)
     today = today or date.today()
     lines = [
-        "# Why these papers",
+        "# Proposals",
         "",
         f"*The shelf as of {today.isoformat()}. Each entry is why it was proposed and what it "
         "connects to.*",

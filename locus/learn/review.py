@@ -85,14 +85,24 @@ def schedule_prompt(
     )
 
 
-def due_items(conn, *, today: date | None = None, limit: int = 5) -> list[ReviewItem]:
-    """Items due on or before `today`, soonest-due first. `limit` is the daily-page cap (§9)."""
+def due_items(
+    conn, *, today: date | None = None, limit: int = 5, offset: int = 0
+) -> list[ReviewItem]:
+    """Items due on or before `today`, soonest-due first. `limit` is the daily-page cap (§9).
+
+    `offset` exists so a caller that discards some of what it gets can ask for the NEXT page of
+    the queue rather than a bigger first page. `compose_daily.build_recalls` drops items already
+    retired by `daily_shown`, and a card shown but never graded keeps its `due` forever — so it
+    keeps both its retired key and its place at the head of this ordering. Seventeen such cards
+    accumulated by 2026-08-06 and filled every fixed window the page ever asked for, which is how
+    the Recall page went 4 -> 4 -> 1 -> 0 items over four days and would have stayed at 0.
+    """
     today = today or date.today()
     return [
         _row(r)
         for r in conn.execute(
-            "SELECT * FROM review_schedule WHERE due <= ? ORDER BY due, id LIMIT ?",
-            (today.isoformat(), limit),
+            "SELECT * FROM review_schedule WHERE due <= ? ORDER BY due, id LIMIT ? OFFSET ?",
+            (today.isoformat(), limit, offset),
         )
     ]
 

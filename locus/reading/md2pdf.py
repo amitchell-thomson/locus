@@ -141,7 +141,35 @@ class PageGeometry:
             "#let anc(s) = text(weight: \"bold\")[#s]\n"
             "#let tickbox = box(width: 0.95em, height: 0.95em, radius: 1pt, "
             "stroke: 0.6pt + luma(35%))\n\n"
-        ) + self._style_rules()
+        ) + self._style_rules() + self._keep_rule(rule_colour)
+
+    def _keep_rule(self, rule_colour: str) -> str:
+        """A ruled writing line whose right-hand end carries a tick box — the last line of a
+        decidable item (`compose_daily._render_think`).
+
+        DEFINED HERE, NOT SPELLED OUT IN THE MARKDOWN, and defined LAST so it closes over whatever
+        `tickbox` is finally bound to — the styled preamble rebinds it, and a `#let` captures the
+        binding that is live where it is written, so defining this any earlier would silently give
+        the daily page the grey unstyled box.
+
+        MEASURED (2026-08-06). The composer used to emit this inline as `#block(above: 1.2em)[...]`
+        and the delivered page put that rule 30.2pt below its neighbour where the other three sat
+        19.8pt apart — visibly a different line spacing on the one item that has a box. Two causes,
+        both invisible in the source: Typst collapses `above` against the previous rule's `below`,
+        so the 1.2em never applied at all (the 1.8em gap won), and the tick box then made the block
+        ~10pt TALL, pushing the stroke that far down inside it. So the box is `height: 0pt` and
+        both halves are `place`d on its horizon: placement is out-of-flow, the block keeps a rule's
+        zero height, and the stroke lands exactly one `rule_gap_em` down like every other line.
+        The gap comes from the same config value the other rules use, so they cannot drift apart.
+        """
+        return (
+            f"#let keeprule(label) = block(width: 100%, above: {self.rule_gap_em}em, "
+            f"below: {self.rule_gap_em}em, box(width: 100%, height: 0pt)[\n"
+            f"  #place(left + horizon, box(width: 72%, "
+            f"line(length: 100%, stroke: 0.3pt + {rule_colour})))\n"
+            f"  #place(right + horizon, box[#tickbox #text(size: 9pt, fill: luma(45%))[#label]])\n"
+            f"])\n\n"
+        )
 
 
 _INSTALL_HINT = (

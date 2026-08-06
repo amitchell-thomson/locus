@@ -65,12 +65,12 @@ from locus.link.related import related_documents
 # buys a fourth question and is the right trade because a concept answer is a sentence.
 # Verified: 5 readings, 5 recalls, or 3-line recall regions each push a fifth page. Think came
 # back to 3 when CONNECT replaced a one-line item with ~300 characters of written prose — two of
-# those are the tallest thing the page can carry, and with CHECK THIS usually empty the refill
-# hands its seat straight to a second connection.
+# those are the tallest thing the page can carry.
 # One page each. `ideas` is his own thinking and gets the most room, because it is the section he
-# writes on every day at length. `connect` carries what the system noticed (a connection, and a
-# tension when there is one), and is capped low while connection supply is still thin — a
-# half-empty page trains him to skip it.
+# writes on every day at length. `connect` carries what the system noticed, and is capped low
+# while connection supply is still thin — a half-empty page trains him to skip it. Since
+# 2026-08-06 all three of its seats are connections: Check-this was retired from the page, and
+# its seat went where he said it was worth more.
 # IDEAS IS THREE, MEASURED not chosen. He asked for four; four overflowed onto a second page and
 # broke one-section-per-page. His ideas are long — the Read-page writing that now feeds this
 # section runs two or three sentences — and each card also carries his prior development passes.
@@ -78,11 +78,12 @@ from locus.link.related import related_documents
 # said the freed Check-this seat should become a third idea.
 _FIT = {"ideas": 3, "connect": 3, "recall": 4, "answered": 3}
 
-# The Connect page also budgets HEIGHT: total characters of item prose (connections plus the
-# challenge headline) that fit above the writing rules. MEASURED 2026-08-06 by rendering the
-# section alone (`scripts/analysis/render_connect_isolated.py`): 3x340 and challenge+2x380 fit
-# one page; 3x500 and challenge+2x500 spill onto a second. 1000 sits under the measured edge
-# (~1050-1100) with margin for natural-text wrapping variance.
+# The Connect page also budgets HEIGHT: total characters of item prose that fit above the writing
+# rules. MEASURED 2026-08-06 by rendering the section alone
+# (`scripts/analysis/render_connect_isolated.py`): 3x340 fits one page, 3x500 spills onto a
+# second. 1000 sits under the measured edge (~1050-1100) with margin for natural-text wrapping
+# variance. It was measured while a Check-this card could take one of the three seats, so it is if
+# anything conservative now that all three carry connections.
 _CONNECT_CHAR_BUDGET = 1000
 
 # The Read page is the one section with no writing regions, so `_lines_for` does not bound it and
@@ -1328,10 +1329,13 @@ def build_challenge(
 ) -> list[ThreadItem]:
     """Where something he has written conflicts with something the corpus says.
 
-    THE ONE THING NOTHING ELSE DOES. Every other surface is additive — here is more to read, to
-    develop, to connect — and a system that only ever agrees with you is a filing cabinet. This
-    is the half that can tell him he is wrong, which for interview preparation is worth more
-    than another prompt.
+    NOT ON THE PAGE (2026-08-06). `build_threads` no longer calls this: after two days of live
+    Check-this cards he judged the section "not pulling its weight and not that useful", and its
+    seat is worth more as a third connection. Kept rather than deleted because the tensions
+    themselves are still judged and stored overnight and still readable through `locus evolution`
+    and the MCP `evolution` tool — what was retired is the daily-page surface, not the capability.
+    Wiring it back means restoring the `build_challenge` call and the `## Check this` label; the
+    Consider page currently prints one section and so deliberately carries no subsection heading.
 
     Reads STORED verdicts (`evolve/trajectory.store_tensions`, overnight): the judging is a model
     call and page composition may not make one. Empty is the normal state and the section is then
@@ -1552,27 +1556,30 @@ def build_threads(
     # it. The old split took a fixed `per` from marks and open and let connections absorb the
     # slack in only ONE direction, so a day with no connections rendered a two-thirds page.
     ideas = _pack(build_develop(conn, limit=_FIT["ideas"] + 3, seen=seen))
-    # Check-this is capped at one seat: a tension is rare and one is plenty, and the rest of the
-    # Connect page belongs to connections, which is what he called "really good ideas".
-    challenge = build_challenge(conn, limit=1, seen=seen)[:1]
-    # `skip_retrieval` drops the connections pool for a caller that wants the page's KEYS rather
-    # than the page (`decide.queue.page_keys`). It must stay False for anything he will read.
-    room = _FIT["connect"] - len(challenge)
+    # CHECK THIS IS OFF THE PAGE (2026-08-06, his call: "I don't feel like it is pulling its
+    # weight and it is not that useful"). Its whole seat goes to connections, which is the item
+    # he does act on. `build_challenge` and its tests are kept — tensions are still judged and
+    # stored overnight, and `locus evolution` still shows them — but nothing on the page calls it,
+    # so the Consider page is now connections only and needs no subsection label.
+    room = _FIT["connect"]
     # HEIGHT, NOT JUST SEATS. The 2026-08-06 writer produces 340-500-char prose (measured), and
     # three of those overflow the page that three ~300-char items fit — re-measured by rendering
     # the Connect section alone and counting pages (`scripts/analysis/render_connect_isolated.py`):
-    # 3x340 and challenge+2x380 fit one page; 3x500 and challenge+2x500 spill. So connections
-    # also budget CHARACTERS: what does not fit today is not clipped, it simply waits — the
-    # stored note keeps its full depth and `daily_shown` has not retired it.
-    char_budget = _CONNECT_CHAR_BUDGET - sum(len(c.headline) for c in challenge)
+    # 3x340 fits one page; 3x500 spills. So connections also budget CHARACTERS: what does not fit
+    # today is not clipped, it simply waits — the stored note keeps its full depth and
+    # `daily_shown` has not retired it.
+    # `skip_retrieval` drops the connections pool for a caller that wants the page's KEYS rather
+    # than the page (`decide.queue.page_keys`). It must stay False for anything he will read.
     connections = (
         []
         if skip_retrieval
-        else build_connections(conn, limit=room, seen=seen, char_budget=char_budget)[:room]
+        else build_connections(
+            conn, limit=room, seen=seen, char_budget=_CONNECT_CHAR_BUDGET
+        )[:room]
     )
     # Ideas first, then Connect — the render splits on section, and each list must already be in
     # the order its page should print.
-    return ideas + connections + challenge
+    return ideas + connections
 
 
 
@@ -1600,6 +1607,7 @@ def build_recalls(
     today: date | None = None,
     limit: int = _FIT["recall"],
     seen: set[str] | None = None,
+    record: bool = True,
 ) -> list[Recall]:
     """Due SM-2 items, soonest first, with the answer held back for page 4.
 
@@ -1607,25 +1615,70 @@ def build_recalls(
     so the attempt, the self-grade and the answer are three separate things, and the answer is
     physically on another page. Printing it under the question would mean he sees it before he has
     genuinely tried, which is the one thing that makes recall practice worthless.
+
+    PAGES THE QUEUE, NEVER A FIXED WINDOW. `seen` is applied after the fetch, so a fixed window
+    can be filled entirely by retired cards and return nothing while hundreds wait behind it —
+    which is exactly what happened. A card that was shown and never graded keeps its `due`, so it
+    keeps both its retired `item_key` and its place at the head of the due ordering: seventeen of
+    them had accumulated by 2026-08-06, more than the twelve rows the old `limit * 3` ever asked
+    for, and Recall silently went 4 -> 4 -> 1 -> 0 items over four days with 40 ungraded cards
+    sitting just past the window. Scanning until `limit` unseen items are found (or the queue
+    ends) makes the section's emptiness mean "nothing is due" and nothing else. The due queue is
+    tens of rows, so the extra reads are free.
     """
     seen = seen if seen is not None else set()
     out: list[Recall] = []
-    for item in learn_review.due_items(conn, today=today, limit=limit * 3):
-        # The `due` date is the version: a re-scheduled item is legitimately a new offering, which
-        # is what spaced repetition IS. Without it the ledger would silently disable review.
-        item_key = f"review:{item.id}:{getattr(item, 'due', '')}"
-        if item_key in seen:
-            continue
-        prompt, answer, source = _ask_and_answer(conn, item)
-        out.append(
-            Recall(
-                anchor="", prompt=prompt, source=source, item_id=item.id,
-                answer=answer, item_key=item_key,
-            )
-        )
-        if len(out) >= limit:
+    batch = max(limit * 3, 12)
+    offset = 0
+    examined = 0
+    while len(out) < limit:
+        items = learn_review.due_items(conn, today=today, limit=batch, offset=offset)
+        if not items:
             break
+        offset += len(items)
+        for item in items:
+            examined += 1
+            # The `due` date is the version: a re-scheduled item is legitimately a new offering,
+            # which is what spaced repetition IS. Without it the ledger would silently disable
+            # review.
+            item_key = f"review:{item.id}:{getattr(item, 'due', '')}"
+            if item_key in seen:
+                continue
+            prompt, answer, source = _ask_and_answer(conn, item)
+            out.append(
+                Recall(
+                    anchor="", prompt=prompt, source=source, item_id=item.id,
+                    answer=answer, item_key=item_key,
+                )
+            )
+            if len(out) >= limit:
+                break
+    # §3: the section dying is invisible from the page (an empty section is simply omitted) and
+    # invisible from the tests (a fixture is built to be offerable). What distinguishes "nothing
+    # is due" from "everything due is retired" lives only in what the filter discarded, so record
+    # it: `locus gates` calls out a gate rejecting 100%, which is what starvation looks like here.
+    # ONLY FOR A REAL PAGE (`record`). `decide.queue.page_keys` composes on every `locus decide`
+    # open purely to subtract keys, and counting those would make the gate's day read as many
+    # times worse than the one page actually composed — an observability number that moves when
+    # you LOOK at it is worse than none.
+    if record:
+        _record_recall_supply(conn, offered=len(out), scanned=examined)
     return out
+
+
+def _record_recall_supply(conn: sqlite3.Connection, *, offered: int, scanned: int) -> None:
+    """Note how much of the due queue was retired, so a starved Recall page cannot stay silent."""
+    if not scanned:
+        return
+    from locus.observe import gates
+
+    for _ in range(offered):
+        gates.record(conn, "daily.recall_unseen", rejected=False)
+    for _ in range(scanned - offered):
+        gates.record(
+            conn, "daily.recall_unseen", rejected=True,
+            value="already retired by daily_shown",
+        )
 
 
 # --- the status line ---------------------------------------------------------------------------
@@ -1723,7 +1776,9 @@ def compose(
     page.readings = []
     page.reading_state = build_reading_state(conn)
     page.threads = build_threads(conn, seen=seen, skip_retrieval=skip_retrieval)
-    page.recalls = build_recalls(conn, today=today, seen=seen)
+    # `skip_retrieval` marks the keys-only caller, which is also the one whose scan must not be
+    # counted against the recall-supply gate (see `build_recalls`).
+    page.recalls = build_recalls(conn, today=today, seen=seen, record=not skip_retrieval)
     page.answered = build_answered(conn, seen=seen)
     page.status = build_status(conn)
 
@@ -1736,11 +1791,14 @@ def compose(
     # keeps a mark, a thread and a connection routing to three different places on the way back.
     seq: dict[str, int] = {}
     for t in page.threads:
-        # I for Ideas, C for Connect — the letter is what he reads and what vision reports back,
-        # so it should name the page it is on. Routing dispatches on `daily_anchors.kind`, never
-        # on the letter, but the labels must stay unique: `annotations` is UNIQUE(page_date,
-        # anchor) and two pages sharing a prefix would collide on one key.
-        prefix = "I" if t.section in _IDEAS_SECTIONS else "C"
+        # D for Develop, C for Consider — the letter is what he reads and what vision reports
+        # back, so it names the page it is on. It was `I` (for the section's old name, Ideas) and
+        # stayed behind when the page was renamed, so the Develop page printed I1..I3.
+        # Routing dispatches on `daily_anchors.kind`, never on the letter, and each page's rows
+        # are keyed by date — so a page already delivered with `I` labels still routes, because
+        # its own `daily_anchors` rows are what `pull_daily` reads. The labels must stay unique:
+        # `annotations` is UNIQUE(page_date, anchor) and two pages sharing a prefix would collide.
+        prefix = "D" if t.section in _IDEAS_SECTIONS else "C"
         seq[prefix] = seq.get(prefix, 0) + 1
         t.anchor = f"{prefix}{seq[prefix]}"
         page.anchors.append(
@@ -1937,12 +1995,19 @@ def _status_block(page: DailyPage) -> str:
     Raw typst rather than markdown emphasis because none of that is expressible in markdown — as
     plain `*italics*` the status rendered at full body size, directly beneath "On the shelf", so
     the one line that shouts when something is broken read as another entry in the reading list.
+
+    WRAPPED IN A `#block`, which is what makes it a paragraph of its own. Bare `#text` is INLINE,
+    so whatever markdown followed the raw block joined the same paragraph: the recall answers'
+    "Answers" label rendered as the last word of the status line ("... +1 more Answers"), on the
+    delivered pages of both 2026-08-05 and 2026-08-06. It read as part of a health readout rather
+    than as the heading of the answer key on the reverse of the Recall page.
     """
     return (
         "```{=typst}\n"
         "#line(length: 100%, stroke: 0.3pt + luma(85%))\n"
         "#v(0.45em)\n"
-        f"#text(size: 8pt, fill: luma(45%), style: \"italic\")[{_typst_escape(page.status.render())}]\n"
+        "#block(width: 100%)[#text(size: 8pt, fill: luma(45%), style: \"italic\")"
+        f"[{_typst_escape(page.status.render())}]]\n"
         "```"
     )
 
@@ -1972,8 +2037,10 @@ def _render_read(page: DailyPage) -> str:
 
 
 _IDEAS_SECTIONS = (SECTION_DEVELOP,)
-# Check-this rides with Connect: both are things the system noticed, as opposed to things he
-# wrote. He has said he may retire Check-this once Connect carries the page on its own.
+# CONNECT IS NOW ONE SECTION. Check-this used to ride here — both are things the system noticed
+# rather than things he wrote — and he retired it on 2026-08-06 (see `build_challenge`).
+# `SECTION_CHALLENGE` stays listed so a page composed by older code, or a stored page being
+# re-rendered, still routes its items to the Consider page instead of dropping them silently.
 _CONNECT_SECTIONS = (SECTION_CONNECT, SECTION_CHALLENGE)
 
 
@@ -2023,12 +2090,13 @@ def _render_think(page: DailyPage, *, heading: str = "Ideas",
         # THE TICK SHARES THE LAST RULED LINE. It used to sit on its own line below the rules,
         # costing a whole line of vertical space for a box. The final rule is shortened to ~72%
         # so the box sits in the gap at the end of it, where the eye lands after writing.
+        # `keeprule` is defined in `md2pdf.PageGeometry._keep_rule`, which is what keeps this line
+        # exactly one `rule_gap_em` below its neighbour — spelled out here it measured 30.2pt
+        # against the other rules' 19.8pt and read as a different, wider line.
         lines += [f"*{t.context}*", ""]
         if t.tick:
             lines += [_rules(per_item - 1) if per_item > 1 else "",
-                      "```{=typst}\n#block(above: 1.2em)[#box(width: 72%)[#line(length: 100%, "
-                      "stroke: 0.3pt + luma(70%))] #h(1fr) #tickbox #text(size: 9pt, "
-                      "fill: luma(45%))[keep this]]\n```", ""]
+                      "```{=typst}\n#keeprule[keep this]\n```", ""]
         else:
             lines += [_rules(per_item)]
         # SEPARATE FROM THE TEXT, like the recall page's. Inline after the anchor it sat mid-

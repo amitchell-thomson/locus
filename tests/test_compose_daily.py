@@ -317,11 +317,14 @@ def test_ideas_and_connect_carry_their_own_anchor_series(conn):
 
     They must not collide: `annotations` is UNIQUE(page_date, anchor), so a shared prefix across
     two pages would put two written regions on one key and silently lose one.
+
+    The letter names the PAGE (`D` for Develop, `C` for Consider), which is the whole reason it is
+    printed — it read `I` for months after the section stopped being called Ideas.
     """
     _jotted(conn, "a thought worth developing further")
     page = cd.compose(conn, today=date(2026, 8, 6))
-    anchors = [a.anchor for a in page.anchors if a.anchor[0] in "IC"]
-    assert anchors and anchors[0] == "I1"
+    anchors = [a.anchor for a in page.anchors if a.anchor[0] in "DC"]
+    assert anchors and anchors[0] == "D1"
     assert len(set(anchors)) == len(anchors)
 
 
@@ -468,6 +471,52 @@ def test_a_rescheduled_recall_is_offered_again(conn):
     assert [r.item_id for r in later.recalls] == [item.id]
 
 
+def test_a_backlog_of_retired_cards_cannot_starve_the_recall_page(conn):
+    """The Recall page died on 2026-08-06 and nothing said so — §3's failure class exactly.
+
+    A card that is shown but never graded keeps its `due`, so it keeps both its retired
+    `item_key` and its place at the head of the due-ordered queue. `build_recalls` used to ask
+    for one fixed window (`limit * 3`) and filter afterwards, so once that many ungraded cards
+    had accumulated the section returned NOTHING while the rest of the queue waited behind them —
+    live, seventeen retired cards hid forty eligible ones and Recall went 4 -> 4 -> 1 -> 0 over
+    four days. An empty section is omitted, so the page simply lost a page with no error anywhere.
+
+    The fixture is built the way the live DB actually was: enough retired cards to fill the old
+    window several times over, and fresh ones only BEHIND them.
+    """
+    blocked = [
+        learn_review.schedule_prompt(
+            conn, prompt_kind="proposition", prompt_ref=str(i), today=date(2026, 1, 1)
+        )
+        for i in range(20)
+    ]
+    # Shown, never graded: their `due` never moves, so they stay retired and stay at the front.
+    cd.persist(conn, cd.compose(conn, today=date(2026, 8, 1)), md_path="/tmp/_home.md")
+    for item in blocked:
+        conn.execute(
+            "INSERT OR IGNORE INTO daily_shown (item_key, kind, page_date, shown_at) "
+            "VALUES (?,'recall','2026-08-01','2026-08-01T00:00:00+00:00')",
+            (f"review:{item.id}:{item.due}",),
+        )
+    conn.commit()
+    fresh = [
+        learn_review.schedule_prompt(
+            conn, prompt_kind="proposition", prompt_ref=f"fresh-{i}", today=date(2026, 1, 2)
+        )
+        for i in range(4)
+    ]
+
+    offered = cd.build_recalls(conn, today=date(2026, 8, 2), seen=cd._shown_keys(conn))
+    assert [r.item_id for r in offered] == [f.id for f in fresh]
+
+    # And the discard is now visible rather than silent: `locus gates` is what would have caught
+    # this, so the scan records what the ledger rejected (§3).
+    rejected = conn.execute(
+        "SELECT rejected FROM gate_log WHERE gate='daily.recall_unseen'"
+    ).fetchone()
+    assert rejected and rejected["rejected"] >= len(blocked)
+
+
 def test_the_shelf_rationale_lists_every_proposal_with_its_reason(conn):
     """What the Read page used to do, now delivered to the shelf itself."""
     from locus.reading import rationale
@@ -574,8 +623,8 @@ def test_persist_records_anchors_and_a_rebuild_replaces_them(conn):
 
     stored = cd.anchors_for(conn, page.page_date)
     assert {a.anchor for a in page.anchors} == set(stored)
-    assert stored["I1"].target_kind == "object"
-    assert stored["I1"].label == "alpha"
+    assert stored["D1"].target_kind == "object"
+    assert stored["D1"].label == "alpha"
     assert len(conn.execute("SELECT * FROM daily_pages").fetchall()) == 1
 
 
@@ -634,7 +683,14 @@ def test_a_connection_tick_box_is_drawn_not_a_glyph(conn):
     ASCII `[   ]` was the fallback, but three spaces in brackets do not read as something to
     tick. It is a DRAWN square now (`#tickbox`, defined in the typst preamble), so it cannot
     depend on font coverage at all — and the preamble always binds it, styled or not.
+
+    The composer calls `#keeprule`, which is defined in `md2pdf` so the line it draws stays tied
+    to the same `rule_gap_em` as every other rule (spelled out inline it drifted to 30.2pt against
+    the other rules' 19.8pt). The box being drawn is therefore a fact about the two halves
+    TOGETHER, so both are checked — the indirection must not be able to lose the box quietly.
     """
+    from locus.reading.md2pdf import PageGeometry
+
     item = cd.ThreadItem(
         anchor="T1", section=cd.SECTION_CONNECT, kind="connection",
         headline="a → b", context="both develop x", tick=True,
@@ -643,7 +699,12 @@ def test_a_connection_tick_box_is_drawn_not_a_glyph(conn):
     body = cd.render(page)
     # Drawn, and SEPARATE from the prompt text — the recall page's placement, for the same
     # reason: a decision box belongs at the end of the thing it decides.
-    assert "#tickbox" in body and "keep this" in body
+    assert "#keeprule[keep this]" in body
+    # Styled and unstyled both bind it, and it draws the real box rather than a character.
+    for geometry in (PageGeometry(), PageGeometry(accent="#1B3A5F", sans_font="DejaVu Sans")):
+        preamble = geometry.typst_preamble()
+        assert "#let tickbox" in preamble
+        assert "#tickbox" in preamble.split("#let keeprule")[1]
     assert "\u2610" not in body and "[   ]" not in body
 
 
@@ -886,6 +947,24 @@ def test_a_dismissed_tension_is_not_offered_again(conn):
 # ---------- CONNECT: the coursework bridge (§16's promise, undelivered until 2026-08-03) --------
 
 
+def _no_idea_allowlist(monkeypatch) -> None:
+    """Pin `[agent].connect_idea_projects` to empty for tests about RANKING, not the allowlist.
+
+    These tests read the developer's real `config.toml`, which is gitignored — so whether they
+    passed depended on whose machine they ran on. Once that file gained a live allowlist
+    (`["oqts", "tanker-flow", "regime-ml", "locus"]`) a fixture repo named "Live Project" could no
+    longer take a paper idea, and two tests asserting the paper-vs-coursework ORDER started
+    failing on this machine and nowhere else. Empty means "no allowlist, every live project
+    qualifies", which is the precondition they were written against — stated here rather than
+    inherited, so the assertion below tests what it claims to.
+    """
+    import locus.config as C
+
+    pinned = C.load().model_copy(deep=True)
+    pinned.agent.connect_idea_projects = []
+    monkeypatch.setattr(C, "load", lambda *_a, **_kw: pinned)
+
+
 def _bridge_corpus(conn) -> None:
     """A quant paper and a maths lecture that share one compound concept, plus junk that must not.
 
@@ -964,13 +1043,18 @@ def test_a_single_word_overlap_is_not_a_connection(conn):
     assert all(c.shared != "CPU" for c in cd.connection_candidates(conn))
 
 
-def test_an_archived_project_keeps_coursework_links_but_takes_no_new_ideas(conn):
+def test_an_archived_project_keeps_coursework_links_but_takes_no_new_ideas(conn, monkeypatch):
     """Owner's rule (2026-08-06): paper/note ideas stop for a project he archived; the
 
     coursework identification ("the maths you studied is the maths this project used") still
     teaches after development stops, so those links continue. Keyed on `objects.status` via the
     `implements` link — the one place HE declares a project finished.
+
+    The ALLOWLIST is the other half of that control and is pinned off here (`_no_idea_allowlist`):
+    this test is about `status`, and leaving the live config in place made the repo fail the
+    allowlist for a reason that has nothing to do with archiving.
     """
+    _no_idea_allowlist(monkeypatch)
     _bridge_corpus(conn)
     with conn:
         conn.execute(
@@ -1053,13 +1137,17 @@ def test_idea_allowlist_matches_any_implements_link(conn):
     assert not cd._project_takes_ideas(conn, "repos/sub", frozenset())
 
 
-def test_a_shown_pair_lets_the_sources_next_pair_through(conn):
+def test_a_shown_pair_lets_the_sources_next_pair_through(conn, monkeypatch):
     """One pair per source must not mean one pair per source EVER.
 
     The break in `collect` emits a source's best pair; once `daily_shown` retired it, the source
     went permanently dark however many qualifying pairs it still had. `skip_keys` moves the
     retirement INSIDE the walk, so the source falls through to its next unshown pair.
+
+    Needs both pairs to be ELIGIBLE for the fall-through to mean anything, hence the pinned empty
+    allowlist — with the live one, the paper pair is filtered before ranking ever applies.
     """
+    _no_idea_allowlist(monkeypatch)
     _bridge_corpus(conn)
     with conn:
         conn.execute(

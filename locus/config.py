@@ -513,6 +513,22 @@ class AgentConfig(BaseModel):
     # local AND Sonnet on the durable passes at 3x less cost); a CLI alias so it tracks the
     # current Haiku without pinning a dated id. Judgement-heavy passes may override per-call.
     model: str = Field("haiku", description="claude -p model alias/id for agent language tasks.")
+    # The connection-writing pass runs on Sonnet, not the Haiku default. Measured (2026-08-06,
+    # `scripts/analysis/connect_exp1.py`): on a junk pair with a spurious shared concept Haiku
+    # confidently invented a connection twice while Sonnet answered NO_CONNECTION — for this pass
+    # the stronger model is a GROUNDING property, not a fluency upgrade. ~4 calls/night.
+    connect_model: str | None = Field(
+        "sonnet", description="claude -p model for connection prose (None = [agent].model)."
+    )
+    # Which projects take NEW DEVELOPMENT IDEAS from papers/notes (the connect project arm).
+    # Titles of `implements`-linked project objects, matched casefold against ANY of a repo's
+    # links — the OQTS sub-repos each link both their own object (oqts-infra, oxdaq-ops) and the
+    # umbrella 'oqts', so the umbrella name covers them all. Empty = every non-archived project.
+    # Coursework links are never restricted by this: an old project can still teach.
+    connect_idea_projects: list[str] = Field(
+        default_factory=list,
+        description="Project-object titles whose repos take paper/note ideas (empty = all live).",
+    )
     # Soft daily spend ceiling (USD) for agent-layer `claude -p`, summed from agent_runs across
     # the day (agent/budget.spent_today). None disables the cap. The foreground-yield guard is
     # not yet built (needs the live-throttle error shape, Phase-0 finding d); this cost cap is

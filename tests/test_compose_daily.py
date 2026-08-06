@@ -307,7 +307,7 @@ def test_a_page_does_not_repeat_its_own_name_as_a_subheading(conn):
     _mark(conn, text=_PASSAGE)
     _thread(conn, "is a factor like a feature?")
     body = cd.render(cd.compose(conn, today=date(2026, 7, 31)))
-    assert "# Ideas" in body
+    assert "# Develop" in body
     assert f"## {cd.SECTION_DEVELOP}" not in body
     assert cd.SECTION_CONNECTION not in body
 
@@ -611,14 +611,14 @@ def test_each_section_gets_its_own_physical_page(conn):
     assert body.count("#pagebreak()") == 2
     # Sections are level-1 headings: the date moved to the running header, so the SECTION is
     # the title of its page (see `render`).
-    assert body.index("# Ideas") < body.index("# Learn")
+    assert body.index("# Develop") < body.index("# Recall")
 
 
 def test_a_quiet_day_is_a_short_document_not_four_blank_pages(conn):
     _jotted(conn, "a thought worth developing further")
     body = cd.render(cd.compose(conn, today=date(2026, 8, 1)))
     assert body.count("#pagebreak()") == 1  # Think, then the back page
-    assert "# Learn" not in body
+    assert "# Recall" not in body
 
 
 def test_writable_rows_render_ascii_boxes_and_ruled_lines(conn):
@@ -891,7 +891,9 @@ def _bridge_corpus(conn) -> None:
 
     Mirrors the live shape measured on 2026-08-03: `Specification Testing for Dyadic Regression`
     shares `eigenvalue problem` with a Linear Algebra lecture, while a vendor manual shares only
-    `CPU` with a computer-architecture lecture.
+    `CPU` with a computer-architecture lecture. The genuine concept appears in the section
+    summaries because that is the live shape too (23 of 24 measured sides carry the concept in
+    narrative text) — and because `_attested` now requires it on at least one side.
     """
     with conn:
         docs = [
@@ -906,10 +908,16 @@ def _bridge_corpus(conn) -> None:
                 "category, ingest_model, thesis, method, result) VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (h, st, uri, f"{h}.x", title, cat, "t", "x", "x", "x"),
             )
+        summaries = {
+            1: "Tests hinge on the eigenvalue problem of the covariance estimator.",
+            2: "Derives the eigenvalue problem for symmetric matrices.",
+            3: "Registers and the CPU instruction set.",
+            4: "How a CPU pipelines instructions.",
+        }
         for doc_id in (1, 2, 3, 4):
             conn.execute(
-                "INSERT INTO sections (doc_id, position, title, summary) VALUES (?,0,'body','s')",
-                (doc_id,),
+                "INSERT INTO sections (doc_id, position, title, summary) VALUES (?,0,'body',?)",
+                (doc_id, summaries[doc_id]),
             )
         ents = [
             (1, 1, "eigenvalue problem", "concept"),   # paper  \ the real bridge
@@ -956,6 +964,208 @@ def test_a_single_word_overlap_is_not_a_connection(conn):
     assert all(c.shared != "CPU" for c in cd.connection_candidates(conn))
 
 
+def test_an_archived_project_keeps_coursework_links_but_takes_no_new_ideas(conn):
+    """Owner's rule (2026-08-06): paper/note ideas stop for a project he archived; the
+
+    coursework identification ("the maths you studied is the maths this project used") still
+    teaches after development stops, so those links continue. Keyed on `objects.status` via the
+    `implements` link — the one place HE declares a project finished.
+    """
+    _bridge_corpus(conn)
+    with conn:
+        conn.execute(
+            "INSERT INTO documents (content_hash, source_type, source_uri, raw_path, title, "
+            "category, ingest_model, thesis, method, result) VALUES "
+            "('hr','code','repos/oldproj','hr.x','Old Project','project','t','x','x','x')"
+        )
+        repo_id = conn.execute("SELECT last_insert_rowid() AS i").fetchone()["i"]
+        conn.execute(
+            "INSERT INTO sections (doc_id, position, title, summary) VALUES "
+            "(?,0,'README.md','Solves the eigenvalue problem for building modes.')",
+            (repo_id,),
+        )
+        sec_id = conn.execute("SELECT last_insert_rowid() AS i").fetchone()["i"]
+        conn.execute(
+            "INSERT INTO entities (doc_id, section_id, name, type) VALUES "
+            "(?,?,'eigenvalue problem','concept')",
+            (repo_id, sec_id),
+        )
+    from locus.link.aliases import build_aliases
+
+    build_aliases(conn, use_llm=False, use_cache=False, log=lambda _m: None)
+
+    def repo_targets():
+        return {
+            c.other_title
+            for c in cd.connection_candidates(conn)
+            if c.kind == "project" and c.src_id == repo_id
+        }
+
+    # Live (no object): one pair per source, and the paper outranks — the repo takes the idea.
+    assert repo_targets() == {"Specification Testing"}
+
+    with conn:
+        conn.execute(
+            "INSERT INTO objects (type, title, status, body, created_at, updated_at) VALUES "
+            "('project','oldproj','archived','b','2026-01-01','2026-01-01')"
+        )
+        obj_id = conn.execute("SELECT last_insert_rowid() AS i").fetchone()["i"]
+        conn.execute(
+            "INSERT INTO object_links (object_id, target_kind, target_key, relation) VALUES "
+            "(?,'doc','repos/oldproj','implements')",
+            (obj_id,),
+        )
+    # Archived: the paper is skipped and the walk falls through to the coursework link —
+    # no new ideas for a finished project, but the maths still teaches.
+    assert repo_targets() == {"Linear Algebra"}
+
+
+def test_idea_allowlist_matches_any_implements_link(conn):
+    """Each OQTS sub-repo links its OWN object (oqts-infra, oxdaq-ops) AND the umbrella `oqts`.
+
+    The owner names projects at umbrella level ("oqts and all sub-projects"), so the allowlist
+    must match ANY of a repo's implements-linked live objects — a LIMIT-1 lookup would see only
+    whichever link happened to come first. Archived objects never count, allowlisted or not.
+    """
+    with conn:
+        conn.execute(
+            "INSERT INTO documents (content_hash, source_type, source_uri, raw_path, title, "
+            "category, ingest_model) VALUES ('hx','code','repos/sub','hx.x','Sub Repo','project','t')"
+        )
+        for title, status in (("oqts-infra", "active"), ("oqts", "active")):
+            conn.execute(
+                "INSERT INTO objects (type, title, status, body, created_at, updated_at) VALUES "
+                "('project',?,?,'b','2026-01-01','2026-01-01')",
+                (title, status),
+            )
+            obj_id = conn.execute("SELECT last_insert_rowid() AS i").fetchone()["i"]
+            conn.execute(
+                "INSERT INTO object_links (object_id, target_kind, target_key, relation) VALUES "
+                "(?,'doc','repos/sub','implements')",
+                (obj_id,),
+            )
+    assert cd._project_takes_ideas(conn, "repos/sub", frozenset({"oqts"}))
+    assert not cd._project_takes_ideas(conn, "repos/sub", frozenset({"tanker-flow"}))
+    assert cd._project_takes_ideas(conn, "repos/sub", frozenset())      # no allowlist = live
+    with conn:
+        conn.execute("UPDATE objects SET status='archived'")
+    assert not cd._project_takes_ideas(conn, "repos/sub", frozenset({"oqts"}))
+    assert not cd._project_takes_ideas(conn, "repos/sub", frozenset())
+
+
+def test_a_shown_pair_lets_the_sources_next_pair_through(conn):
+    """One pair per source must not mean one pair per source EVER.
+
+    The break in `collect` emits a source's best pair; once `daily_shown` retired it, the source
+    went permanently dark however many qualifying pairs it still had. `skip_keys` moves the
+    retirement INSIDE the walk, so the source falls through to its next unshown pair.
+    """
+    _bridge_corpus(conn)
+    with conn:
+        conn.execute(
+            "INSERT INTO documents (content_hash, source_type, source_uri, raw_path, title, "
+            "category, ingest_model, thesis, method, result) VALUES "
+            "('hs','code','repos/liveproj','hs.x','Live Project','project','t','x','x','x')"
+        )
+        repo_id = conn.execute("SELECT last_insert_rowid() AS i").fetchone()["i"]
+        conn.execute(
+            "INSERT INTO sections (doc_id, position, title, summary) VALUES "
+            "(?,0,'README.md','Solves the eigenvalue problem for building modes.')",
+            (repo_id,),
+        )
+        sec_id = conn.execute("SELECT last_insert_rowid() AS i").fetchone()["i"]
+        conn.execute(
+            "INSERT INTO entities (doc_id, section_id, name, type) VALUES "
+            "(?,?,'eigenvalue problem','concept')",
+            (repo_id, sec_id),
+        )
+    from locus.link.aliases import build_aliases
+
+    build_aliases(conn, use_llm=False, use_cache=False, log=lambda _m: None)
+
+    def targets(skip=None):
+        return {
+            c.other_title
+            for c in cd.connection_candidates(conn, skip_keys=skip)
+            if c.kind == "project" and c.src_id == repo_id
+        }
+
+    assert targets() == {"Specification Testing"}          # best pair leads
+    shown = {"conn:repos/liveproj|vault/incoming/paper/dyadic.pdf"}
+    assert targets(skip=shown) == {"Linear Algebra"}       # retired -> next pair offers
+
+
+def test_connections_budget_height_not_just_seats(conn):
+    """Three 2026-08-06-writer notes (340-500 chars) overflow the page three ~300-char notes fit.
+
+    Measured by rendering the Connect section alone and counting pages
+    (`scripts/analysis/render_connect_isolated.py`): 3x340 fits, 3x500 spills. So
+    `build_connections` takes a `char_budget`; an item that would exceed it WAITS (stored,
+    un-shown) rather than being clipped — except the first, so one long note cannot blank the
+    section.
+    """
+    _bridge_corpus(conn)
+    from locus.link.connect import _store
+
+    cands = cd.connection_candidates(conn)
+    assert cands, "fixture must yield at least one candidate"
+    long_prose = "y" * 600
+    for c in cands[:2]:
+        _store(conn, c.src_uri, c.other_uri, c.shared, long_prose)
+    # Wide open: both fit.
+    assert len(cd.build_connections(conn, limit=3, seen=set(), char_budget=2000)) == min(
+        2, len(cands)
+    )
+    # Tight: the second would exceed the budget and waits; the first is always admitted.
+    assert len(cd.build_connections(conn, limit=3, seen=set(), char_budget=700)) == 1
+
+
+def test_a_concept_no_side_narrates_is_not_a_connection(conn):
+    """A shared concept attested in NEITHER side's narrative is entity noise, not a link.
+
+    The live case (2026-08-06): `Markov model` connected a quant repo to a VLE-thermodynamics
+    section about Raoult's law — the entity pass hallucinated it on one side and it was
+    incidental on the other, so the concept string appeared in neither document's synthesis nor
+    any section summary. Haiku, prompted with that pair, confidently invented a connection
+    "inspired by Le Châtelier's Principle". The gate stops the pair before any model sees it.
+    """
+    _bridge_corpus(conn)
+    with conn:
+        # A paper<->coursework pair whose ONLY shared concept is compound and teachable but
+        # appears nowhere in either side's narrative — the summaries are about other things.
+        for h, uri, title, cat, summary in (
+            ("hq", "vault/incoming/paper/cascade.pdf", "Cascade Paper", "paper",
+             "Detects stop-loss cascades from order-flow features."),
+            ("hv", "vault/incoming/coursework/thermo.pdf", "Thermodynamics", "coursework",
+             "Raoult's law for vapour-liquid equilibrium of ideal solutions."),
+        ):
+            conn.execute(
+                "INSERT INTO documents (content_hash, source_type, source_uri, raw_path, title, "
+                "category, ingest_model, thesis, method, result) VALUES "
+                "(?,'pdf',?,?,?,?,'t','x','x','x')",
+                (h, uri, f"{h}.x", title, cat),
+            )
+            doc_id = conn.execute("SELECT last_insert_rowid() AS i").fetchone()["i"]
+            conn.execute(
+                "INSERT INTO sections (doc_id, position, title, summary) VALUES (?,0,'body',?)",
+                (doc_id, summary),
+            )
+            sec_id = conn.execute("SELECT last_insert_rowid() AS i").fetchone()["i"]
+            conn.execute(
+                "INSERT INTO entities (doc_id, section_id, name, type) VALUES "
+                "(?,?,'Markov model','concept')",
+                (doc_id, sec_id),
+            )
+    from locus.link.aliases import build_aliases
+
+    build_aliases(conn, use_llm=False, use_cache=False, log=lambda _m: None)
+    assert all(c.shared != "Markov model" for c in cd.connection_candidates(conn))
+    row = conn.execute(
+        "SELECT rejected FROM gate_log WHERE gate='connect.attested'"
+    ).fetchone()
+    assert row is not None and row["rejected"] >= 1
+
+
 # ---------- "You asked": his margin questions, answered -----------------------------------------
 
 
@@ -990,10 +1200,10 @@ def test_an_answered_margin_question_gets_its_own_page(conn):
     assert page.answered[0].anchor == "A1"
 
     body = cd.render(page)
-    assert "# Ask" in body
+    assert "# Answered" in body
     assert "Variance is additive" in body
     # NOT a question put to him: no tick box and no ruled writing region on this page.
-    section = body.split("# Ask", 1)[1].split("```{=typst}", 1)[0]
+    section = body.split("# Answered", 1)[1].split("```{=typst}", 1)[0]
     assert "#tickbox" not in section
 
 

@@ -264,6 +264,12 @@ judge_drop_at_or_below = 1
 # language tasks through headless `claude -p` (subscription), metered by a cost ledger over the
 # claude -p envelope's total_cost_usd. Bulk work uses API Batch instead (added with hybrid routing).
 model              = "haiku"   # claude -p model for durable agent passes (Phase-0 routing choice)
+connect_model      = "sonnet"  # connection prose runs on Sonnet: on junk pairs Haiku bluffed a
+                               # connection where Sonnet answered NO_CONNECTION (measured 2026-08-06)
+# Projects whose repos take NEW paper/note ideas on the daily page (titles of implements-linked
+# project objects, casefold, any-match — 'oqts' covers every oqts sub-repo). Empty/omitted = all
+# non-archived projects. Coursework links are never restricted: an old project can still teach.
+connect_idea_projects = ["oqts", "tanker-flow", "regime-ml", "locus"]
 daily_cost_cap_usd = 5.0       # soft daily claude -p spend cap (USD); omit/None for no cap
 
 [ingest]

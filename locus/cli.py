@@ -1230,10 +1230,15 @@ def cmd_capture_sync(args) -> None:
     render is skipped. Billed (metered vision + subscription text); the run is journaled.
     """
     from locus.capture.loop_a import capture_sync
+    from locus.capture.loop_b import annotate_sync
 
     conn = _open()
     try:
         r = capture_sync(conn, staging_dir=args.staging, ingest=not args.no_ingest)
+        # Loop B rides the same timer and the same staging dir: the folders Loop A excludes
+        # (Reading) are exactly the ones whose ink is margin annotation, and the one manual
+        # step in the ink→answer chain was transcribing it (capture/loop_b.py).
+        b = annotate_sync(conn, staging_dir=args.staging)
     finally:
         conn.close()
     for o in r.outcomes:
@@ -1246,6 +1251,15 @@ def cmd_capture_sync(args) -> None:
     n_failed = sum(o.status == "failed" for o in r.outcomes)
     print(f"\ncapture: {r.captured} captured, {n_unchanged} unchanged, {n_failed} failed, "
           f"{len(r.unmapped)} unmapped   est cost ${r.cost_usd:.4f}")
+    for o in b.outcomes:
+        if o.status == "annotated":
+            key = "corpus" if o.hash_mapped else "DEVICE PATH (not ingested)"
+            print(f"  annotated {o.name}  ({o.marks} marks · {o.transcribed} transcribed · "
+                  f"keyed to {key})")
+        elif o.status == "failed":
+            print(f"  ANNOTATE FAILED {o.name}: {o.error}")
+    if b.outcomes:
+        print(f"annotate: {b.annotated} document(s) with new ink")
     if r.ingest:
         print(f"ingest: {r.ingest.ingested} ingested, {r.ingest.skipped} unchanged, "
               f"{r.ingest.deleted} deleted, {r.ingest.failed} failed")

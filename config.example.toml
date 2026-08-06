@@ -303,6 +303,11 @@ notes_root       = "Notes"                          # his own writing lives at N
                                                    # silently, since a wrong category is not an error, just a worse corpus.
                                                    # Paths outside this root keep the old top-level keying.
 default_category = "note"                           # category for folders not in the map
+# Loop B on the same timer: reading annotations captured and their handwriting transcribed
+# automatically (capture/loop_b.py). Transcription was the ONE manual link in the ink->answer
+# chain; marks map to corpus documents by content hash of the bundle's PDF bytes.
+annotate_transcribe    = true                       # transcribe new reading-annotation ink (billed vision)
+annotate_max_transcribe = 8                         # per-run cap; the rest wait a tick (skips already-read ink)
 # Built-in map (2026-08): engineering -> coursework, projects -> project, careers -> career.
 # quantum_ml is deliberately NOT coursework any more — it became a research internship, so what he
 # writes there is his own thinking, the same reading as brevan_howard.

@@ -658,6 +658,17 @@ class CaptureConfig(BaseModel):
     notes_root: str = Field(
         "Notes", description="Device folder holding his topic folders; category keys below it."
     )
+    # Loop B on the capture timer (capture/loop_b.py): reading annotations captured and their
+    # handwriting transcribed automatically. Transcription was the ONE manual link in the
+    # ink→answer chain — 105 marks sat wordless on a paper because `locus annotate --transcribe`
+    # was never run for it (2026-08-06). The per-run bound caps billed vision spend; ink beyond
+    # it is picked up next tick, because transcription skips marks that already carry a note.
+    annotate_transcribe: bool = Field(
+        True, description="Transcribe new reading-annotation handwriting on the capture timer."
+    )
+    annotate_max_transcribe: int = Field(
+        8, description="Max billed vision transcriptions per capture run (rest wait a tick)."
+    )
     # Mark-intent inference (step 4). Below this the guess is recorded but NOT acted on: the mark
     # becomes a `locus decide` item instead. His answer was "infer, then let me correct", and
     # acting on a low-confidence guess silently is that answer with the correction removed.

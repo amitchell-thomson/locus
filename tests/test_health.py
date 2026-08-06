@@ -51,6 +51,51 @@ def test_a_run_that_broke_is_reported(conn):
     assert any(p.kind == "maintain" and p.severity == "broken" for p in problems)
 
 
+def test_a_failure_a_later_run_recovered_from_is_not_a_live_problem(conn):
+    """The status line is present tense: it says what is broken NOW.
+
+    Live on 2026-08-06: `review` broke once at 03:37 (a syntax error in a file being edited while
+    the timer fired) and ran clean eight times afterwards, yet the daily page was still shouting
+    REVIEW ERROR SINCE 03:37 that afternoon. A line that reports settled history as a live fault
+    is one he learns to skip — and then it cannot do the job it exists for. Still counted, though:
+    a job that fails and recovers repeatedly is only visible if something says so.
+    """
+    _run(conn, "review", "error", at=NOW - timedelta(hours=8))
+    _run(conn, "review", at=NOW - timedelta(hours=2))
+    checked = H.check(conn, now=NOW, cadence={})
+    assert checked.problems == []
+    assert [p.kind for p in checked.recovered] == ["review"]
+    assert checked.ran["review"] == 1
+
+
+def test_a_failure_with_no_later_success_still_shouts(conn):
+    """The other direction, which is the one that matters: recovery must be EARNED."""
+    _run(conn, "structure", at=NOW - timedelta(hours=8))
+    _run(conn, "structure", "degraded", at=NOW - timedelta(hours=2))
+    checked = H.check(conn, now=NOW, cadence={})
+    assert [p.kind for p in checked.problems] == ["structure"]
+    assert checked.recovered == []
+
+
+def test_a_unit_failure_is_recovered_by_a_later_run_of_its_kind(conn):
+    """systemd sees the unit; Python journals the kind. `locus-maintain.service` -> `maintain`.
+
+    Without that mapping the two halves of one job cannot be matched, and the hard failure at
+    03:37 outlives the clean run at 04:36 that fixed it.
+    """
+    H.record_failure(conn, "locus-maintain.service", "exit-code", now=NOW - timedelta(hours=6))
+    _run(conn, "maintain", at=NOW - timedelta(hours=5))
+    checked = H.check(conn, now=NOW, cadence={})
+    assert checked.problems == []
+    assert [p.kind for p in checked.recovered] == ["locus-maintain.service"]
+
+    # ...and a failure AFTER the last success is still live.
+    H.record_failure(conn, "locus-maintain.service", "exit-code", now=NOW - timedelta(hours=1))
+    assert [p.kind for p in H.check(conn, now=NOW, cadence={}).problems] == [
+        "locus-maintain.service"
+    ]
+
+
 def test_a_run_that_started_and_vanished_is_reported(conn):
     """Killed, OOM, rebooted mid-run: the row stays open at `running` forever."""
     _run(conn, "maintain", "running", at=NOW - timedelta(hours=6))

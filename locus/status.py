@@ -311,4 +311,10 @@ def _activity_block(r: "StatusReport") -> list[str]:
         lines.extend(f"      ! {p.render()}" for p in checked.problems)
     else:
         lines.append("  problems             : none — every timer is on schedule")
+    # Failures a later run of the same kind superseded. Off the daily page (which reports the
+    # present tense) but printed here, because "it broke and recovered" is exactly what a
+    # flapping job looks like, and it is only visible if something says so.
+    if checked.recovered:
+        lines.append(f"  recovered             : {len(checked.recovered)}")
+        lines.extend(f"      ~ {p.render()}" for p in checked.recovered)
     return lines

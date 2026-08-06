@@ -70,6 +70,11 @@ class Problem:
 class Health:
     problems: list[Problem] = field(default_factory=list)
     ran: dict[str, int] = field(default_factory=dict)      # kind -> successful runs in the window
+    # Failures a LATER run of the same kind has since superseded. Kept out of `problems` and off
+    # the page, because the status line answers "what is broken now" in the present tense — but
+    # still listed by `locus status`, since a job that fails and recovers repeatedly is worth
+    # seeing, and silently discarding a failure is how the six invisible maintain nights happened.
+    recovered: list[Problem] = field(default_factory=list)
     cost_usd: float = 0.0
     calls: int = 0
 
@@ -129,13 +134,29 @@ def check(
     except sqlite3.OperationalError:
         return health
 
+    # A failure the same kind has since RECOVERED from is not a present-tense problem. `recent` is
+    # ordered by `started_at`, so the newest success per kind is the last one seen.
+    latest_ok: dict[str, str] = {
+        r["kind"]: (r["started_at"] or "") for r in recent if r["status"] == "ok"
+    }
+
     for row in recent:
         if row["status"] == "ok":
             health.ran[row["kind"]] = health.ran.get(row["kind"], 0) + 1
         elif row["status"] in ("error", "degraded"):
-            health.problems.append(Problem(
+            problem = Problem(
                 row["kind"], "broken", row["status"], since=row["started_at"] or ""
-            ))
+            )
+            # A TRANSIENT FAILURE MUST NOT SHOUT ALL DAY. `review` broke once at 03:37 on
+            # 2026-08-06 (a syntax error in a file being edited while the timer fired), ran
+            # successfully eight times afterwards, and was still printed in capitals on the daily
+            # page that afternoon — alongside the `maintain` run it took down, which had also
+            # since succeeded. A line that reports settled history as a live fault is one he
+            # learns to skip, and then it cannot do the job it exists for.
+            if latest_ok.get(row["kind"], "") > (row["started_at"] or ""):
+                health.recovered.append(problem)
+            else:
+                health.problems.append(problem)
         elif row["status"] == "running" and _is_stale(row["started_at"], now):
             # Opened and never closed: the process died. Silence here is what made the six
             # maintain failures invisible.
@@ -174,8 +195,11 @@ def check(
                 since=stamp or "",
             ))
 
-    health.problems += _hard_failures(conn, since=since)
+    hard, hard_recovered = _hard_failures(conn, since=since, latest_ok=latest_ok)
+    health.problems += hard
+    health.recovered += hard_recovered
     health.problems.sort(key=lambda p: (SEVERITY_ORDER.get(p.severity, 9), p.kind))
+    health.recovered.sort(key=lambda p: p.since)
     return health
 
 
@@ -200,24 +224,51 @@ def _is_stale(started_at: str | None, now: datetime) -> bool:
     return started is not None and (now - started) > timedelta(hours=2)
 
 
-def _hard_failures(conn: sqlite3.Connection, *, since: str) -> list[Problem]:
-    """What systemd saw. The only detector that works when the process cannot reach Python."""
+def _unit_kind(unit: str) -> str:
+    """`locus-maintain.service` -> `maintain`, the kind that unit journals its runs under.
+
+    The naming is the contract between the unit files and `locus record <kind> --ok`; without it
+    a systemd-observed failure and the Python-observed recovery of the same job cannot be matched.
+    """
+    return unit.removeprefix("locus-").removesuffix(".service")
+
+
+def _hard_failures(
+    conn: sqlite3.Connection, *, since: str, latest_ok: dict[str, str] | None = None
+) -> tuple[list[Problem], list[Problem]]:
+    """What systemd saw, split into (live, recovered).
+
+    The only detector that works when the process cannot reach Python — and the only one that can
+    see a unit that never started. A failure the same unit has since completed successfully is
+    reported as recovered: `locus-maintain.service` died at 03:37 on 2026-08-06 and ran clean at
+    04:36, and the daily page was still shouting about the 03:37 death that afternoon.
+
+    Grouped by unit, so `since` is the FIRST failure in the window and the count carries the rest;
+    that means a unit is only recovered once its latest success is newer than its latest failure.
+    """
+    latest_ok = latest_ok or {}
     try:
         rows = conn.execute(
-            "SELECT unit, failed_at, detail, COUNT(*) AS n FROM timer_failures "
+            "SELECT unit, MIN(failed_at) AS failed_at, MAX(failed_at) AS last_failed_at, "
+            "detail, COUNT(*) AS n FROM timer_failures "
             "WHERE failed_at >= ? GROUP BY unit ORDER BY unit",
             (since,),
         ).fetchall()
     except sqlite3.OperationalError:
-        return []
-    out: list[Problem] = []
+        return [], []
+    live: list[Problem] = []
+    recovered: list[Problem] = []
     for row in rows:
         times = "" if row["n"] == 1 else f" x{row['n']}"
         cause = f": {row['detail']}" if row["detail"] else ""
-        out.append(Problem(
+        problem = Problem(
             row["unit"], "broken", f"failed to start{times}{cause}", since=row["failed_at"] or "",
-        ))
-    return out
+        )
+        if latest_ok.get(_unit_kind(row["unit"]), "") > (row["last_failed_at"] or ""):
+            recovered.append(problem)
+        else:
+            live.append(problem)
+    return live, recovered
 
 
 def _hours(hours: float) -> str:

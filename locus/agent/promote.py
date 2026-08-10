@@ -23,6 +23,24 @@ to the corpus would put a stub in retrieval that says nothing.
 Re-promotion is an UPDATE, never a second note. The file path is derived from the object id, so
 further development rewrites the same file; `notes_sync` sees a real content change and
 re-ingests, which is the ordinary edit path rather than a special case.
+
+PROJECTS PROMOTE TOO, and leaving them out was the same dead end one type over. A project's
+`open_threads` is where he writes what he might build next — and the field is under
+`apply_owner_edit`, so once he has touched it the whole list is his by the same marker that
+governs `development`. It was nonetheless unreachable: `promote_all` selected
+`type IN ('question','idea')`, so the words lived only in `objects.body` and surfaced only if
+you already knew to run `locus objects --type project` and page down to the right id. Measured
+on 2026-08-10: of the 23 objects carrying an `_owner_edits` marker, 22 were promoted and one —
+`tanker-flow`, the only project he had edited — was not, and the two threads stranded on it
+("Kalman filtering for AIS position interpolation…", "Overlay a gravity-style attraction term…")
+were exactly what `retrieve` returned LOW CONFIDENCE on. His own answer to his own question,
+held one type away from the corpus.
+
+What does NOT change is the gate: `owner_fields` still decides everything, so a project he has
+never edited promotes nothing at all and its agent-written `why`/`approach`/`learnings` never
+enter the corpus. The exposure that remains is the one `development` has always had — a list the
+owner adopted may contain a line the proposer drafted — and the `_owner_edits` marker is this
+codebase's single definition of authorship, so it is answered the same way here as there.
 """
 
 from __future__ import annotations
@@ -44,6 +62,14 @@ THREADS_SUBDIR = "threads"
 
 PROMOTED_PATH_KEY = "promoted_path"
 PROMOTED_AT_KEY = "promoted_at"
+
+# The body field a PROJECT keeps his next moves in. Promotable on the same terms as
+# `development`: only when the `_owner_edits` marker says he authored it.
+OPEN_THREADS_KEY = "open_threads"
+
+# Every object type promotion will look at. A project qualifies only through `open_threads`;
+# `why`/`approach`/`learnings` are the proposer's and stay out of the corpus.
+PROMOTABLE_TYPES = ("question", "idea", "project")
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
@@ -83,6 +109,13 @@ def _owner_development(obj) -> list[dict]:
     return out
 
 
+def _owner_open_threads(obj) -> list[str]:
+    """His open threads on a project, in his order — only if he authored the field."""
+    if OPEN_THREADS_KEY not in owner_fields(obj.body):
+        return []
+    return [str(t).strip() for t in ((obj.body or {}).get(OPEN_THREADS_KEY) or []) if str(t).strip()]
+
+
 def _owner_statement(obj) -> str:
     """The opening statement he wrote, if he wrote it — a mark's idea, or a question he asked."""
     owner = owner_fields(obj.body)
@@ -108,7 +141,8 @@ def render_thread(conn: sqlite3.Connection, obj) -> str | None:
     """
     development = _owner_development(obj)
     statement = _owner_statement(obj)
-    if not development and not statement:
+    open_threads = _owner_open_threads(obj)
+    if not development and not statement and not open_threads:
         return None
 
     owner = owner_fields(obj.body)
@@ -139,6 +173,14 @@ def render_thread(conn: sqlite3.Connection, obj) -> str | None:
     # The opening statement, when he wrote it. `question`/`idea` hold the original text.
     if statement:
         lines += [statement, ""]
+
+    # A project's threads: what he might build next, one line each. Placed before the working
+    # notes because on a project these ARE the content — there is no opening statement to sit
+    # under, and a bare list under "Working notes" would read as a log of what he did.
+    if open_threads:
+        lines += ["## Open threads", ""]
+        lines += [f"- {thread}" for thread in open_threads]
+        lines += [""]
 
     # Omitted entirely when he has not written on it yet: a heading with nothing under it says
     # the thread is unfinished, which is a judgement about him rather than a fact about it.
@@ -214,16 +256,21 @@ def _record_promotion(conn: sqlite3.Connection, obj, path: Path) -> None:
 def promote_all(
     conn: sqlite3.Connection, *, notes_dir: str | Path | None = None, limit: int = 50
 ) -> list[Promotion]:
-    """Promote every thread that has development he wrote. Idempotent.
+    """Promote every thread that has words he wrote. Idempotent.
 
     Both `active` and `archived` threads qualify: a resolved thread is exactly the one most
     worth having in the corpus, and an open one that he has worked on twice is already saying
     something retrieval should be able to find.
+
+    Projects are in the select for their `open_threads` (see the module docstring). Widening the
+    query cannot widen what reaches the corpus: `render_thread` returns None for anything with no
+    owner-marked field, so an untouched project is loaded and skipped.
     """
+    marks = ",".join("?" for _ in PROMOTABLE_TYPES)
     rows = conn.execute(
-        "SELECT id FROM objects WHERE type IN ('question','idea') "
+        f"SELECT id FROM objects WHERE type IN ({marks}) "
         "AND status IN ('active','archived') ORDER BY updated_at DESC, id LIMIT ?",
-        (limit,),
+        (*PROMOTABLE_TYPES, limit),
     ).fetchall()
 
     out: list[Promotion] = []
@@ -310,13 +357,16 @@ def unpromoted_count(conn: sqlite3.Connection) -> int:
     metric §9 forbids. An operator command is a different audience.
     """
     n = 0
+    marks = ",".join("?" for _ in PROMOTABLE_TYPES)
     for row in conn.execute(
-        "SELECT id FROM objects WHERE type IN ('question','idea') "
-        "AND status IN ('active','archived')"
+        f"SELECT id FROM objects WHERE type IN ({marks}) AND status IN ('active','archived')",
+        PROMOTABLE_TYPES,
     ):
         obj = state.get_object(conn, row["id"])
         if obj is None:
             continue
-        if _owner_development(obj) and PROMOTED_PATH_KEY not in (obj.body or {}):
+        if PROMOTED_PATH_KEY in (obj.body or {}):
+            continue
+        if _owner_development(obj) or _owner_open_threads(obj):
             n += 1
     return n

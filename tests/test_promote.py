@@ -293,6 +293,82 @@ def test_promote_all_is_idempotent(conn):
     assert second == [], "a second run must not rewrite anything"
 
 
+def _project_with_owner_threads(conn, threads, *, title="tanker-flow"):
+    """A project whose `open_threads` he has edited — the shape object 18 had live."""
+    oid, _ = state.upsert_object(
+        conn, type_="project", title=title,
+        body={"why": "AGENT RATIONALE", "approach": "AGENT APPROACH",
+              "learnings": ["AGENT LEARNING"]},
+    )
+    state.apply_owner_edit(
+        conn, oid, {pr.OPEN_THREADS_KEY: list(threads)}, source="chat 2026-07-31"
+    )
+    state.set_status(conn, oid, "active")
+    return oid
+
+
+def test_open_threads_he_wrote_on_a_project_reach_the_corpus(conn):
+    """The dead end this closes (2026-08-10).
+
+    `promote_all` selected `type IN ('question','idea')`, so a next move he wrote against a
+    project he was already building never became a note and no retrieval arm could see it. Live:
+    of 23 objects carrying an `_owner_edits` marker, 22 were promoted and `tanker-flow` — the one
+    project he had edited — was not, stranding the two threads that were the literal answer to
+    "how do I fill the gaps between AIS fixes".
+    """
+    oid = _project_with_owner_threads(conn, [
+        "Kalman filtering for AIS position interpolation, to fill gaps between fixes",
+        "Overlay a gravity-style attraction term pulling positions toward dense shipping lanes",
+    ])
+    out = pr.promote_thread(conn, oid, notes_dir=conn_dir(conn))
+
+    assert out is not None and out.status == "created"
+    text = out.path.read_text(encoding="utf-8")
+    assert "Kalman filtering for AIS position interpolation" in text
+    assert "gravity-style attraction term" in text
+    assert "category: note" in text, "notes_sync must ingest it like any other note"
+    assert out.path.parent.name == pr.THREADS_SUBDIR
+
+
+def test_a_projects_agent_rationale_still_never_reaches_the_corpus(conn):
+    """Widening the type filter must not widen what counts as his words (invariant 5)."""
+    oid = _project_with_owner_threads(conn, ["my own next move"])
+    text = pr.promote_thread(conn, oid, notes_dir=conn_dir(conn)).path.read_text(encoding="utf-8")
+
+    assert "my own next move" in text
+    assert "AGENT RATIONALE" not in text
+    assert "AGENT APPROACH" not in text
+    assert "AGENT LEARNING" not in text
+
+
+def test_a_project_he_has_never_edited_promotes_nothing(conn):
+    """The gate is the marker, not the type: an untouched project is loaded and skipped."""
+    oid, _ = state.upsert_object(
+        conn, type_="project", title="untouched",
+        body={"why": "AGENT", "open_threads": ["AGENT GUESS at what is unresolved"]},
+    )
+    state.set_status(conn, oid, "active")
+
+    assert pr.promote_thread(conn, oid, notes_dir=conn_dir(conn)) is None
+    assert [p for p in pr.promote_all(conn, notes_dir=conn_dir(conn)) if p.wrote] == []
+
+
+def test_an_unpromoted_project_thread_is_counted(conn):
+    """`locus status` reported 0 outstanding while one object was permanently stranded."""
+    oid = _project_with_owner_threads(conn, ["something I want to build"])
+    assert pr.unpromoted_count(conn) == 1
+
+    pr.promote_thread(conn, oid, notes_dir=conn_dir(conn))
+    assert pr.unpromoted_count(conn) == 0
+
+
+def test_a_promoted_project_is_not_offered_as_a_daily_thread(conn):
+    """Promotion must not leak projects into DEVELOP: a thread is a question or an idea."""
+    _project_with_owner_threads(conn, ["something I want to build"])
+    pr.promote_all(conn, notes_dir=conn_dir(conn))
+    assert cd.build_open(conn) == []
+
+
 def test_a_thread_with_grounding_links_promotes(conn):
     """The gap that broke `locus daily-pull` live: every thread in these tests was link-free, so
     the grounding render was never exercised and deleting its helper looked safe."""

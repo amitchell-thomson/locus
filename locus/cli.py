@@ -28,6 +28,18 @@ def _open():
     return get_connection(load().paths.db)
 
 
+def _object_types() -> tuple[str, ...]:
+    """The object types, from the one place that defines them.
+
+    Spelled out by hand, `--type` fell a type behind: `idea` shipped in migration 0016 and the
+    choices list did not follow, so `locus objects --type idea` was an argparse error for every
+    idea he had ever written. Cheap import — `agent.state` pulls in nothing heavy.
+    """
+    from locus.agent.state import OBJECT_TYPES
+
+    return OBJECT_TYPES
+
+
 def _facets(args):
     """Build a retrieval Facets from --since/--until/--category, validating date format.
 
@@ -2232,7 +2244,10 @@ def main(argv=None) -> None:
     pev.set_defaults(func=cmd_evolution)
 
     pobj = sub.add_parser("objects", help="list structured objects (approve them in `locus decide`)")
-    pobj.add_argument("--type", choices=["project", "concept", "question", "reading"], default=None)
+    # `idea` was missing here while being a real, populated type (state.OBJECT_TYPES), so
+    # `locus objects --type idea` was rejected by argparse — the one filter for the thing the
+    # reading loop actually produces. Sourced from OBJECT_TYPES now so it cannot drift again.
+    pobj.add_argument("--type", choices=list(_object_types()), default=None)
     pobj.add_argument("--status", choices=["proposed", "active", "archived"], default=None)
     pobj.add_argument("--limit", type=int, default=50)
     pobj.set_defaults(func=cmd_objects)

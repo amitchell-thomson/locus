@@ -307,14 +307,22 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
 
     @mcp.tool()
     def objects(type: str | None = None, status: str | None = None, limit: int = 25) -> str:
-        """List the owner's structured objects — projects, concepts, questions, readings. FREE.
+        """List the owner's structured objects — projects, concepts, questions, ideas, readings.
+        FREE.
 
         These are agent-proposed and human-blessed overlays on the corpus: a project carries its
-        approach, open threads and learnings; a concept carries mastery. `status='proposed'`
-        shows what is awaiting his blessing. Read-only — blessing happens through the CLI.
+        approach, open threads and learnings; a concept carries mastery; an IDEA is something he
+        might build, usually born from a margin note. `status='proposed'` shows what is awaiting
+        his blessing. Read-only — blessing happens through the CLI.
+
+        Asked for his IDEAS, look in two places: `type='idea'`, and the `open thread` lines on
+        `type='project'` — a next move he writes against a project he is already building is
+        recorded there, not as an idea object. This listing omitted 'idea' from its documented
+        type list until 2026-08-10, which made the whole reading-born half of his thinking
+        invisible to anything reading this docstring to decide what to ask for.
 
         Args:
-            type: Filter by 'project' | 'concept' | 'question' | 'reading'.
+            type: Filter by 'project' | 'concept' | 'question' | 'idea' | 'reading'.
             status: Filter by 'proposed' | 'active' | 'archived'.
             limit: Max objects to return.
         """

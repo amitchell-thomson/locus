@@ -710,6 +710,13 @@ class MCPConfig(BaseModel):
     include_figure_images: bool = Field(
         True, description="Attach retrieved figure images as MCP image content blocks."
     )
+    # The ceiling on annotated pages the `annotations` tool may attach, whatever the client asks
+    # for. A page renders to ~50-270KB of PNG and rides in a chat context, so the guard is on
+    # CONTEXT, not on cost: an unbounded request could hand back a whole marked-up book and
+    # crowd out the conversation it was meant to inform.
+    annotation_image_cap: int = Field(
+        4, description="Max annotated pages attached as images per `annotations` MCP reply."
+    )
 
 
 class Config(BaseModel):

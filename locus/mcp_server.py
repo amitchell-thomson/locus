@@ -32,6 +32,7 @@ TOOLS
 - inspect_document: what was ingested for one document (synthesis + sections). FREE.
 - capture        : save this conversation into the vault as a rough note (Loop C). FREE.
 - to_remarkable  : push markdown (rendered) or an existing PDF to the tablet. FREE.
+- annotations    : what he marked up on the tablet, and the inked pages as images. FREE.
 - critique       : stress-test a project/reasoning against the owner's own corpus (§8.4).
 - synthesise     : "what do I know and think about X", incl. the dated belief trajectory.
 - objects        : the structured project/concept/question/reading overlays. FREE.
@@ -87,7 +88,9 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
             "context and answer from it; use `query` to get a finished server-generated answer; "
             "use `list_documents`/`inspect_document` to see what the corpus contains; use "
             "`capture` to save this conversation's decisions into the vault as a rough note, and "
-            "`to_remarkable` to send markdown or an existing PDF to his tablet to read on paper. "
+            "`to_remarkable` to send markdown or an existing PDF to his tablet to read on paper, and "
+            "`annotations` to read back what he highlighted and wrote in the margins, "
+            "including the marked-up pages as images. "
             "For the owner's own thinking rather than raw material: `critique` stress-tests a "
             "project or argument against what he has read and concluded, `synthesise` gives what "
             "he knows and thinks about a topic including how his view has changed, `objects` "
@@ -316,6 +319,91 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
 
         pages = f"{sent.pages} page{'s' if sent.pages != 1 else ''}" if sent.pages else what
         return f"{verb} '{sent.filename}' ({pages}) to reMarkable:{sent.device_path}."
+
+    @mcp.tool()
+    def annotations(
+        document: str,
+        page: int | None = None,
+        intent: str | None = None,
+        images: bool = False,
+        max_images: int = 3,
+    ):
+        """Read back what he marked up on his reMarkable — the notes, and the pages themselves.
+
+        Every highlight, underline, bracket and margin note he has made on a document is stored
+        with the words the ink covered, the whole line it sat on, his transcribed handwriting,
+        and a classified intent (`important` / `not_understood` / `idea`). This reads that back.
+
+        Set `images=True` to also SEE the marked-up pages: the ink is composited onto the PDF
+        from the device's cloud copy and attached as image blocks. Do that whenever the text
+        alone is thin — most of all when a mark is reported as covering no text, which almost
+        always means it marks a FIGURE and the ink is the only record of what he meant. Reading
+        the image is how you answer "what is he pointing at here".
+
+        The two registers are complementary, so both come back together: images carry arrows,
+        diagrams and position; text carries margin writing that runs off the edge of the page,
+        which the composited image clips.
+
+        Images cost a live device fetch (a few seconds) and context, so they are off by default
+        and capped. Text alone is a local database read — free and instant.
+
+        Args:
+            document: Which document — a title fragment ('portfolio') or an exact source_uri.
+                Call with an empty string to list everything he has annotated.
+            page: Optional 1-based page number, as printed, to restrict to one page.
+            intent: Optional filter — 'important', 'not_understood', or 'idea'.
+            images: Attach the annotated pages as images. Default False.
+            max_images: How many pages to attach (capped by [mcp].annotation_image_cap).
+        """
+        from locus.capture import review
+
+        conn = get_connection(load().paths.db)
+        try:
+            candidates = review.resolve(conn, document)
+            if not candidates:
+                known = review.documents_with_marks(conn)
+                if not known:
+                    return "No annotations have been captured from the device yet."
+                listing = "\n".join(f"  {n:4} marks — {t}" for _, t, n in known)
+                return f"No annotated document matches {document!r}. Annotated so far:\n{listing}"
+            if len(candidates) > 1:
+                listing = "\n".join(f"  {n:4} marks — {t}" for _, t, n in candidates)
+                return (f"{document!r} matches several annotated documents — say which:\n"
+                        f"{listing}")
+
+            uri = candidates[0][0]
+            doc = review.load(conn, uri, page=page, intent=intent)
+            text = doc.render()
+            if not images or not doc.marks:
+                return text
+
+            cap = max(1, min(max_images, load().mcp.annotation_image_cap))
+            wanted = _pages_to_image(doc, cap)
+            try:
+                pngs = review.annotated_page_pngs(
+                    review.locate_device_copy(conn, doc)[0], wanted
+                )
+            except Exception as exc:
+                # LOUD, not silent. An images request that comes back as text with no
+                # explanation is indistinguishable from a document with no ink on it.
+                return (f"{text}\n\n[the pages could not be fetched from the device: {exc}. "
+                        "The marks above are from the last sweep and are still accurate.]")
+
+            from mcp.server.fastmcp import Image
+
+            out: list = [text]
+            for idx in wanted:
+                png = pngs.get(idx)
+                if png is None:
+                    continue
+                out.append(f'[p.{idx + 1} of "{doc.title}", his ink composited on]')
+                out.append(Image(data=png, format="png"))
+            if len(doc.page_indexes) > len(wanted):
+                out.append(f"({len(doc.page_indexes)} pages carry marks; the {len(wanted)} "
+                           "most informative are attached. Ask for a specific `page` for others.)")
+            return out
+        finally:
+            conn.close()
 
     # --- Phase-2 value surfaces (agent-layer §8.4) -----------------------------------------
     # critique/synthesise ground in-process (free, local) and then make ONE `claude -p` call.
@@ -679,3 +767,22 @@ def run(enable_query: bool = False) -> None:
         flush=True,
     )
     _build(enable_query=enable_query).run()
+
+
+def _pages_to_image(doc, cap: int) -> list[int]:
+    """Which 0-based pages to attach, best-first, at most `cap`.
+
+    Pages carrying a BLANK mark come first — ink that covered no text is almost always over a
+    figure, so the image is the only record of what it marks and the text register has already
+    failed on it (measured: 29 of 109 highlights on his live documents). After those, pages with
+    the most marks, since a densely worked page carries more of what he was thinking. Ties break
+    on page order so the result is stable across calls.
+    """
+    per_page: dict[int, list] = {}
+    for m in doc.marks:
+        per_page.setdefault(m.page_index, []).append(m)
+    ranked = sorted(
+        per_page.items(),
+        key=lambda kv: (-sum(m.is_blank for m in kv[1]), -len(kv[1]), kv[0]),
+    )
+    return sorted(idx for idx, _ in ranked[:cap])

@@ -47,8 +47,13 @@ def seeded_db(tmp_path: Path, monkeypatch):
     c = get_connection(db)
     _seed(c)
     c.close()
-    # Point the server's config loader at the seeded DB.
-    cfg = types.SimpleNamespace(paths=types.SimpleNamespace(db=db))
+    # Point the server's config loader at the seeded DB. `mcp` is pinned here rather than read
+    # from config.toml, which is gitignored (CLAUDE.md §13) — annotation_image_cap bounds what
+    # the `annotations` tool will attach, so a test inheriting it would assert per machine.
+    cfg = types.SimpleNamespace(
+        paths=types.SimpleNamespace(db=db),
+        mcp=types.SimpleNamespace(include_figure_images=True, annotation_image_cap=4),
+    )
     monkeypatch.setattr(mcp_server, "load", lambda *a, **k: cfg)
     return db
 
@@ -314,3 +319,60 @@ def test_to_remarkable_returns_the_guidance_when_the_path_is_unresolvable(monkey
     m = mcp_server._build()
     out = _text(asyncio.run(m.call_tool("to_remarkable", {"pdf_path": "/x.pdf"})))
     assert "Not sent" in out and "no such PDF" in out
+
+
+def _seed_marks(db_path, uri="vault/incoming/papers/book.pdf"):
+    from locus.db.connection import get_connection
+
+    c = get_connection(db_path)
+    c.execute(
+        "INSERT INTO documents (source_uri, content_hash, source_type, raw_path, title, category,"
+        " ingest_model, ingested_at) VALUES (?,?, 'pdf','raw/x.pdf','A Book','paper','test',"
+        "'2026-09-01T00:00:00+00:00')", (uri, f"h-{uri}"),
+    )
+    c.execute(
+        "INSERT INTO pdf_annotations (source_uri, doc_uuid, pdf_page, kind, bbox_key, "
+        "covered_text, line_text, note, in_margin, captured_at) "
+        "VALUES (?, 'uuid-1', 40, 'highlight', 'k1', '', '', '', 0, '2026-09-05T00:00:00+00:00')",
+        (uri,),
+    )
+    c.commit()
+    return c
+
+
+def test_annotations_lists_what_is_annotated_when_nothing_matches(seeded_db, monkeypatch):
+    _seed_marks(seeded_db)
+    m = mcp_server._build()
+    out = _text(asyncio.run(m.call_tool("annotations", {"document": "nonexistent"})))
+    assert "No annotated document matches" in out
+    assert "A Book" in out
+
+
+def test_annotations_reports_a_blank_mark_rather_than_hiding_it(seeded_db):
+    """The mark covers no text because it is over a figure. Reporting it as nothing would remove
+    the only signal that the page image is worth asking for."""
+    _seed_marks(seeded_db)
+    m = mcp_server._build()
+    out = _text(asyncio.run(m.call_tool("annotations", {"document": "A Book"})))
+    assert "p.41" in out                      # 0-based 40 printed as 41
+    assert "covering no text" in out
+
+
+def test_annotations_degrades_loudly_when_the_device_cannot_be_reached(seeded_db, monkeypatch):
+    """An images request that silently returns text is indistinguishable from a document with
+    no ink on it — the exact shape this codebase is built to resist."""
+    _seed_marks(seeded_db)
+    from locus.capture import review
+
+    monkeypatch.setattr(
+        review, "locate_device_copy",
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("rmapi get failed: offline")),
+    )
+
+    m = mcp_server._build()
+    out = _text(asyncio.run(m.call_tool(
+        "annotations", {"document": "A Book", "images": True}
+    )))
+
+    assert "could not be fetched" in out and "offline" in out
+    assert "p.41" in out                      # the text register still came back

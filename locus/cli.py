@@ -591,6 +591,58 @@ def cmd_reading_why(args) -> None:
         conn.close()
 
 
+def cmd_marks(args) -> None:
+    """Read back the annotations he made on the tablet (free, local — images cost a fetch).
+
+    The text half is a database read. `--images` composites his ink onto the PDF pages from the
+    cloud copy and writes PNGs, which is the only way to see what a mark over a FIGURE means —
+    `covered_text` is empty for those by construction (CLAUDE.md §14).
+    """
+    from locus.capture import review
+
+    conn = _open()
+    try:
+        if not args.document:
+            known = review.documents_with_marks(conn)
+            if not known:
+                print("nothing annotated yet")
+                return
+            for _, title, n in known:
+                print(f"  {n:4} marks — {title}")
+            return
+
+        candidates = review.resolve(conn, args.document)
+        if not candidates:
+            print(f"no annotated document matches {args.document!r}")
+            sys.exit(1)
+        if len(candidates) > 1:
+            print(f"{args.document!r} matches several — say which:")
+            for _, title, n in candidates:
+                print(f"  {n:4} marks — {title}")
+            sys.exit(1)
+
+        doc = review.load(conn, candidates[0][0], page=args.page, intent=args.intent)
+        print(doc.render())
+
+        if not args.images:
+            return
+        wanted = doc.page_indexes[: args.images]
+        path, repaired = review.locate_device_copy(conn, doc)
+        if repaired:
+            # Worth saying out loud: it means the cached pointer was wrong, which also breaks
+            # `reading/sweep.py` until something corrects it.
+            print(f"(the stored device path was stale; corrected to {path!r})")
+        pngs = review.annotated_page_pngs(path, wanted)
+        out_dir = Path(args.out or ".")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for idx in sorted(pngs):
+            dest = out_dir / f"p{idx + 1:04d}.png"
+            dest.write_bytes(pngs[idx])
+            print(f"  wrote {dest}")
+    finally:
+        conn.close()
+
+
 def cmd_gates(args) -> None:
     """What each threshold rejected over the window — the dead-gate check (no API; local only).
 
@@ -2072,6 +2124,20 @@ def main(argv=None) -> None:
     prd.add_argument("--out", default=None, help="write PDFs to this dir (default: beside the source)")
     prd.add_argument("--no-push", action="store_true", help="render locally only; skip the rmapi push")
     prd.set_defaults(func=cmd_read)
+
+    pmk = sub.add_parser(
+        "marks",
+        help="read back what you highlighted and wrote on the tablet (free; --images fetches)",
+    )
+    pmk.add_argument("document", nargs="?", default=None,
+                     help="title fragment or source_uri (omit to list what you have annotated)")
+    pmk.add_argument("--page", type=int, default=None, help="restrict to one 1-based page")
+    pmk.add_argument("--intent", default=None,
+                     choices=("important", "not_understood", "idea"), help="filter by intent")
+    pmk.add_argument("--images", type=int, nargs="?", const=4, default=0, metavar="N",
+                     help="also write the N most-marked pages as PNGs with your ink on them")
+    pmk.add_argument("--out", default=None, help="directory for --images (default: cwd)")
+    pmk.set_defaults(func=cmd_marks)
 
     pdy = sub.add_parser(
         "daily",

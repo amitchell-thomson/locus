@@ -270,6 +270,17 @@ device-path marks re-keyed onto the new `source_uri`; `Proposed` never auto-inge
 proposals are rejected. Once a document is corpus-mapped, his margin notes are promoted to a
 reading-notes file automatically (`agent/promote.promote_reading_notes`), which `notes-sync`
 ingests on the next tick — so marginalia reaches retrieval with no command typed.
+**Reading the marks back** is `capture/review.py` (`locus marks`, MCP `annotations`). Two
+registers, neither subsuming the other, both measured on his own pages 2026-09-05: the stored
+text carries margin writing that runs off the page edge (`composite_pdf` clips to the page rect,
+because ink beside a portrait page has no page coordinates), while only the **image** carries
+what a mark over a FIGURE means — p.54 of *Advanced Portfolio Management* stores as covering
+`"→σ)"` and is actually an arrow drawn to a box in a diagram. So a mark with no covered text and
+no note is reported and counted, never filtered, and it is what ranks a page into the image set.
+`reading_targets.device_path` is a CACHE and it goes stale — the book he reads daily was still
+recorded under `/reading_list/`, deleted by the 2026-08 reorganisation — so `locate_device_copy`
+falls back to a uuid lookup against a live listing and writes the correction back.
+
 `reading/sweep.py` is the older, geometry-only hourly cloud pull over `reading_targets`; the
 overlap with Loop B is deliberate redundancy, not duplication — both write through the same
 idempotent upsert.
@@ -437,6 +448,7 @@ locus/
 │   │                       #   layout (fits each section by rendering it)
 │   │                       #   compose_daily · pull_daily · promote
 │   ├── capture/            # remarkable · rmdoc · annotate · mark_text · intent · transcribe
+│   │                       #   review (read the marks back, with the inked pages)
 │   │                       #   loop_a (notes) · loop_b (reading) · fillin · conversations
 │   │                       #   device_migrate
 │   ├── learn/              # answers · review · practice · gaps · reread

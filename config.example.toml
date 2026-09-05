@@ -102,6 +102,11 @@ model         = "claude-opus-4-8"
 # you opt in (or pass `locus mcp --enable-query`).
 enable_query  = false
 include_figure_images = true      # attach retrieved figure images as MCP image content blocks
+# Ceiling on annotated pages the `annotations` tool attaches, whatever the client asks for. A
+# rendered page is ~50-300KB of PNG and rides in the chat context, so this guards CONTEXT rather
+# than cost: unbounded, one call could hand back a whole marked-up book and crowd out the
+# conversation it was meant to inform.
+annotation_image_cap = 4
 
 [repos]
 # Tracked code repositories (step 10). `locus watch` checks each repo's git HEAD every

@@ -338,6 +338,15 @@ class ReadingConfig(BaseModel):
     # ACTIVITY it holds rather than for the system that writes it, and it doubles as the unread
     # inbox (a page stays loose here until it has ink on it, then archives to Daily/YYYY-MM).
     target_folder: str = Field("Daily", description="Device folder that delivered docs land in.")
+    # Ad-hoc markdown sent on a human ask (the MCP `to_remarkable` tool) gets its OWN device
+    # folder, because every other candidate is already load-bearing: /Daily is the daily page's
+    # ink inbox (a loose doc there reads as an unread page); Reading/{In-Progress,Finished} is
+    # what loop_b reads as "he chose this" and auto-ingests from the bundle's bytes; and /Notes
+    # is `capture.notes_root`, whose contents Loop A ingests as HIS handwriting — agent prose
+    # landing there is invariant 5 violated by filing. See reading/send.py.
+    send_folder: str = Field(
+        "Inbox", description="Device folder for ad-hoc markdown sends (MCP `to_remarkable`)."
+    )
     page_width_in: float = Field(7.07, description="PDF page width (in) — Paper Pro screen width.")
     page_height_in: float = Field(9.43, description="PDF page height (in) — Paper Pro screen height.")
     margin_in: float = Field(0.5, description="Page margin (in).")

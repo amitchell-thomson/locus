@@ -10,3 +10,5 @@ Then call the Locus MCP `capture` tool with:
 - `project`: the relevant project tag if one clearly applies (otherwise omit)
 
 Report back the capture path the tool returns. Do not ingest or run anything else — `capture` is write-to-inbox only; the note is picked up by the next Locus note-sync.
+
+If the `capture` tool is not available, say so plainly rather than writing the note anywhere else — the Locus MCP server is not connected in this session.

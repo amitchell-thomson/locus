@@ -184,6 +184,13 @@ target_folder  = "Daily"   # device folder that delivered docs land in. `Daily`,
                            # since the 2026-08 reorganisation: folders are named for the ACTIVITY
                            # they hold, and /Daily doubles as the unread inbox (a page stays loose
                            # there until it has ink on it, then archives to Daily/YYYY-MM).
+send_folder    = "Inbox"   # device folder for ad-hoc markdown sends (the MCP `to_remarkable`
+                           # tool). Its own folder, because every other candidate is load-bearing:
+                           # not target_folder (/Daily is the ink inbox, so a loose doc there
+                           # reads as an unread daily page); not Reading/{In-Progress,Finished}
+                           # (loop_b reads those as "he chose this" and auto-ingests them); and
+                           # NOT [capture].notes_root, whose contents Loop A ingests as HIS
+                           # handwriting — agent prose filed there is invariant 5 violated.
 page_width_in  = 7.07      # PDF page width (in) — Paper Pro screen width
 page_height_in = 9.43      # PDF page height (in) — Paper Pro screen height
 margin_in      = 0.5       # page margin (in)

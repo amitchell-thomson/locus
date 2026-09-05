@@ -694,6 +694,21 @@ def cmd_read(args) -> None:
             print(f"no .md files under {src}")
             sys.exit(1)
     elif src.is_file():
+        if src.suffix.lower() == ".pdf":
+            # A PDF is already the artifact. Falling through here fed it to the markdown
+            # renderer, which does not fail — it typesets the raw bytes and pushes the result,
+            # so the device got a document full of binary noise under the right name. Push it
+            # unchanged instead; `send_pdf` also proves it really is a PDF first.
+            from locus.reading.send import send_pdf
+
+            # Check --no-push BEFORE sending, not after: `--no-push` means "render only", and
+            # for a PDF there is nothing to render, so the honest answer is to do nothing.
+            if args.no_push:
+                print(f"{src} is already a PDF — nothing to render (drop --no-push to send it)")
+                return
+            sent = send_pdf(src, title=args.title, folder=folder)
+            print(f"pushed {sent.filename} -> reMarkable:{sent.device_path}")
+            return
         md_files = [src]
     else:
         print(f"not found: {src}")
@@ -2048,9 +2063,11 @@ def main(argv=None) -> None:
 
     prd = sub.add_parser(
         "read",
-        help="render markdown -> a reMarkable-tuned PDF and push it to the tablet (rmapi)",
+        help="push to the tablet: markdown rendered to a device-tuned PDF, or a PDF as-is (rmapi)",
     )
-    prd.add_argument("path", help="a markdown file, or a directory of *.md files")
+    prd.add_argument("path", help="a markdown file, a directory of *.md files, or a PDF to push as-is")
+    prd.add_argument("--title", default=None,
+                     help="device document name for a PDF push (default: the filename)")
     prd.add_argument("--to", default=None, help="device folder (default: [reading].target_folder)")
     prd.add_argument("--out", default=None, help="write PDFs to this dir (default: beside the source)")
     prd.add_argument("--no-push", action="store_true", help="render locally only; skip the rmapi push")

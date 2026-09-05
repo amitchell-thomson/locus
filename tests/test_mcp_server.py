@@ -74,6 +74,8 @@ def test_query_tool_is_opt_in():
     assert "query" not in default_tools
     assert enabled_tools - default_tools == {"query"}  # opting in adds exactly `query`
     assert {"retrieve", "list_documents", "inspect_document"} <= default_tools
+    # The two write-side tools the desktop app / laptop reach the server FOR: both free.
+    assert {"capture", "to_remarkable"} <= default_tools
 
 
 def test_facets_validation_and_active():
@@ -229,3 +231,86 @@ def test_run_logs_build_stamp_to_stderr_not_stdout(monkeypatch, capsys):
     assert started.get("ran")  # the server was actually handed off to .run()
     assert "locus mcp starting" in captured.err and "build" in captured.err
     assert captured.out == ""  # nothing leaked onto the protocol channel
+
+
+def test_to_remarkable_passes_content_through_and_reports_the_device_path(monkeypatch):
+    """The tool takes markdown TEXT, not a path: the desktop app and the laptop have no access
+    to this filesystem, so a path-taking tool would look wired and fail on every remote call."""
+    import locus.reading.send as send_mod
+
+    seen = {}
+
+    def fake_send(markdown, *, title, folder=None):
+        seen.update(markdown=markdown, title=title, folder=folder)
+        return send_mod.SentDoc(filename="2026-08-29 Notes.pdf", remote_folder="Notes", pages=2)
+
+    monkeypatch.setattr(send_mod, "send_markdown", fake_send)
+
+    m = mcp_server._build()
+    out = _text(asyncio.run(m.call_tool(
+        "to_remarkable", {"markdown": "# Hi\n\nbody", "title": "Notes"}
+    )))
+
+    assert seen["markdown"] == "# Hi\n\nbody" and seen["title"] == "Notes"
+    assert "/Notes/2026-08-29 Notes.pdf" in out and "2 pages" in out
+
+
+def test_to_remarkable_pushes_an_existing_pdf_by_path(monkeypatch):
+    """The second mode. A PDF cannot travel as a tool argument — base64 of a 2 MB paper is
+    ~2.7 MB the client model would have to emit token by token — so this one takes a path and
+    resolves it on the server."""
+    import locus.reading.send as send_mod
+
+    seen = {}
+
+    def fake_send_pdf(pdf, *, title=None, folder=None):
+        seen.update(pdf=pdf, title=title, folder=folder)
+        return send_mod.SentDoc(filename="2026-09-05 Plan.pdf", remote_folder="Inbox", pages=3)
+
+    monkeypatch.setattr(send_mod, "send_pdf", fake_send_pdf)
+
+    m = mcp_server._build()
+    out = _text(asyncio.run(m.call_tool(
+        "to_remarkable", {"pdf_path": "docs/plan.pdf", "title": "Plan"}
+    )))
+
+    assert seen["pdf"] == "docs/plan.pdf" and seen["title"] == "Plan"
+    assert "/Inbox/2026-09-05 Plan.pdf" in out and "3 pages" in out
+
+
+def test_to_remarkable_refuses_both_modes_at_once(monkeypatch):
+    """Both modes end at the same device folder by the same push, so the only thing that can go
+    wrong is the caller meaning one and getting the other. Refuse in words rather than picking."""
+    m = mcp_server._build()
+    out = _text(asyncio.run(m.call_tool(
+        "to_remarkable", {"markdown": "# hi", "title": "X", "pdf_path": "a.pdf"}
+    )))
+    assert "not both" in out
+
+
+def test_to_remarkable_refuses_neither_mode():
+    m = mcp_server._build()
+    out = _text(asyncio.run(m.call_tool("to_remarkable", {"title": "X"})))
+    assert "Nothing to send" in out
+
+
+def test_to_remarkable_requires_a_title_for_markdown():
+    """A markdown send has no filename to fall back on; a PDF send does."""
+    m = mcp_server._build()
+    out = _text(asyncio.run(m.call_tool("to_remarkable", {"markdown": "# hi"})))
+    assert "needs a `title`" in out
+
+
+def test_to_remarkable_returns_the_guidance_when_the_path_is_unresolvable(monkeypatch):
+    """A wrong-machine call must come back as the advice, not a stack trace — that message is
+    the only thing that distinguishes 'typo' from 'this cannot work from here'."""
+    import locus.reading.send as send_mod
+
+    def boom(pdf, *, title=None, folder=None):
+        raise FileNotFoundError("no such PDF on the Locus server. Tried:\n  /x.pdf")
+
+    monkeypatch.setattr(send_mod, "send_pdf", boom)
+
+    m = mcp_server._build()
+    out = _text(asyncio.run(m.call_tool("to_remarkable", {"pdf_path": "/x.pdf"})))
+    assert "Not sent" in out and "no such PDF" in out

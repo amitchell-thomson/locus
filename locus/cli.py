@@ -23,6 +23,10 @@ from locus.ingest_pipeline import ingest_paths
 # Imported for the `decide` parser default only; the package itself is loaded lazily.
 Q_ABANDON_DEFAULT = 14
 
+# Seconds between consecutive uploads in `discover --push`. See the loop for the measurement that
+# produced it: the reMarkable cloud 429s an unpaced burst after about four files.
+PUSH_PAUSE_SECONDS = 3.0
+
 
 def _open():
     return get_connection(load().paths.db)
@@ -1018,8 +1022,14 @@ def cmd_discover(args) -> None:
                     judge_floor=dcfg.judge_drop_at_or_below,
                 )
                 if not top:
+                    # Same trap as the propose/push return below: an empty ranking is a reason
+                    # to skip PROPOSING, not a reason to abandon a `--push` in the same command.
+                    # Nothing new to suggest is the normal state of a shelf that is already
+                    # stocked, and it must not strand the candidates already queued.
                     print("nothing ranked — harvest and rebuild profiles first")
-                    return
+                    if not args.push:
+                        return
+                    top = []
                 for s in top:
                     print(f"  {s.score:+.3f}  {s.title[:66]}")
                     print(f"          {s.why}")
@@ -1036,23 +1046,67 @@ def cmd_discover(args) -> None:
                         ):
                             made += 1
                     print(f"proposed {made} (free slots: {free})")
-            return
+            # NOT an unconditional return. `--push` is a legitimate continuation of the same
+            # invocation, and the deployed weekly unit runs exactly
+            #     locus discover --harvest --profiles --propose --push
+            # An unconditional return here made that final flag unreachable for the whole life
+            # of the unit: by 2026-09-05 it had harvested 2,192 candidates, queued 10 as
+            # proposals, and delivered ZERO to the device — the reading shelf had not turned
+            # over since 2026-07-31. Section 3's failure class exactly: the unit file names the
+            # step, the step exists and works, and the path between them does not run. No test
+            # caught it because every flag is exercised alone and none in combination.
+            if not args.push:
+                return
 
         if args.push:
             from pathlib import Path as _Path
 
             from locus.reading.deliver import deliver_proposal, fetch_open_access
 
+            # EVERY outcome of this step is recorded to `gate_log` under `reading.push`, because
+            # this is the step whose silent failure emptied the shelf for five weeks. A skip and
+            # a fetch failure are rejections; a delivery is a pass. `locus gates` then says in
+            # words when the whole step admitted nothing, which no amount of reading the code or
+            # the passing tests ever would have (§3).
+            from locus.observe import gates
+
             free = P.slots_free(conn, "paper", caps=dcfg.caps)
             queued = [p for p in P.list_proposals(conn, status="candidate", kind="paper", limit=50)]
+            if not queued:
+                # Distinct from a full folder: nothing is waiting, so `--propose` is what is
+                # short, not the shelf. Saying which one is the difference between a diagnosis
+                # and a shrug.
+                print("nothing queued to push — no candidates waiting (run --harvest --propose)")
+                return
             if not free:
-                print("no free slots — the Proposed folder is full (a full folder proposes nothing)")
+                held = len(queued)
+                gates.record(conn, "reading.push", rejected=True, value=f"folder full, {held} queued")
+                print(f"no free slots — the Proposed folder is full and {held} candidate(s) are "
+                      f"waiting behind it (a full folder proposes nothing)")
                 return
             staging = _Path(args.staging or "/tmp/locus-reading")
             sent = 0
-            for prop in queued[:free]:
+            skipped: list[str] = []
+            # The reMarkable cloud rate-limits a burst of uploads. Measured 2026-09-05: four
+            # back-to-back deliveries succeeded and every one after them failed 429, first on
+            # `mkdir` and then on token creation — so the failures are not per-file, they are the
+            # account being throttled. Two responses, both needed:
+            #   * pace the uploads (PUSH_PAUSE_SECONDS), and
+            #   * STOP on the first 429 rather than spending the rest of the queue on certain
+            #     failures. The remaining candidates keep `status='candidate'` and are simply
+            #     retried next run, which is what the stock cap already makes safe.
+            # The pause is a guess, not a measurement: the cloud publishes no limit. It is cheap
+            # to raise if 429s reappear.
+            import time as _time
+
+            batch = queued[:free]
+            for tried, prop in enumerate(batch):
+                if sent:
+                    _time.sleep(PUSH_PAUSE_SECONDS)
                 if not prop.oa_pdf_url:
                     # Not open access: it stays a candidate rather than becoming a stub silently.
+                    gates.record(conn, "reading.push", rejected=True, value=f"no OA pdf: {prop.title[:70]}")
+                    skipped.append("no open-access PDF")
                     print(f"  skip (no open-access PDF)  {prop.title[:56]}")
                     continue
                 try:
@@ -1062,11 +1116,26 @@ def cmd_discover(args) -> None:
                         root=dcfg.root_folder, rmapi_binary=dcfg.rmapi_binary,
                     )
                 except Exception as exc:            # network, rmapi, or a non-PDF payload
+                    gates.record(conn, "reading.push", rejected=True, value=f"{type(exc).__name__}: {str(exc)[:70]}")
+                    skipped.append(type(exc).__name__)
                     print(f"  FAILED  {prop.title[:52]}: {exc}")
+                    if "429" in str(exc):
+                        # Count from the loop position, not from len(skipped): `skipped` also
+                        # holds this attempt and the not-open-access ones, so arithmetic on it
+                        # undercounts what is genuinely left to retry.
+                        print(f"  rate limited — stopping with {len(batch) - tried - 1} "
+                              f"still queued; they stay candidates and retry next run")
+                        break
                     continue
+                gates.record(conn, "reading.push", rejected=False)
                 sent += 1
                 print(f"  sent  {out.filename}")
             print(f"{sent} paper(s) now in {dcfg.root_folder}/Proposed")
+            if not sent:
+                # A zero here is the shape the old bug wore. Never let it print as a bare "0".
+                why = ", ".join(sorted(set(skipped))) or "no reason recorded"
+                print(f"  NOTHING DELIVERED — {len(batch)} candidate(s) queued, none delivered ({why}).")
+                print("  the reading shelf will not turn over until this clears; see `locus gates`")
             return
 
         if args.pull:

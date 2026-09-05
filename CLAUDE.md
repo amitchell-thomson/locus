@@ -441,7 +441,7 @@ locus/
 │   │                       #   device_migrate
 │   ├── learn/              # answers · review · practice · gaps · reread
 │   ├── reading/            # proposals · rationale · relevance · sweep · accept · deliver
-│   │                       #   deliver_remarkable · md2pdf · watch
+│   │                       #   deliver_remarkable · md2pdf · send · watch
 │   ├── discover/           # arxiv · openalex · citations · profiles · queries · rank · judge · why
 │   ├── evolve/ structure/ surface/ decide/ enrich/ vault/ export/ eval/
 │   ├── observe/gates.py    # what each threshold rejected (§3)
@@ -491,8 +491,31 @@ locus/
   failures kept 8 permanent files in the triage pile and made `locus status` warn every day
   about something that could never be actioned.
 - Eval labels grow with the corpus.
+- **`rmapi` is a pinned-by-accident external dependency, and the cloud API moves under it.**
+  On 2026-08-18 uploads began returning HTTP 400 to rmapi v0.0.34 and the daily page stopped
+  reaching the device — 12 consecutive days, last success 08-17, fixed by v0.0.35 (2026-08-19).
+  `mkdir` broke identically and stayed invisible for longer: every folder the system uses already
+  existed, so `_ensure_folder` never had to create one, and its exists-tolerance branch hid the
+  break. **Two reporting lessons.** (1) `locus status` DID show it — but as `daily error since
+  <today's timestamp>`, because the status line is present tense (§10). A one-morning break and a
+  twelve-day one print the same line, so the *duration* — the thing that says "this is not
+  transient" — was never on any surface. (2) The report he actually reads is the daily page, and
+  the daily page was the thing that could not be delivered: a break in the delivery channel
+  silences its own alarm. When a device push fails, check `rmapi version` against upstream and
+  read `journalctl --user -u locus-daily.service` rather than asking the page.
 - **Deploying a systemd unit means copying it to `~/.config/systemd/user/` and reloading.**
   Editing the repo copy alone changes nothing.
+- **A CLI subcommand that dispatches on flags must be tested on the flag COMBINATIONS its units
+  run, not one flag at a time.** `cmd_discover` is a chain of early-return branches, and the
+  weekly unit runs `--harvest --profiles --propose --push`. An unconditional `return` at the end
+  of the propose branch made `--push` unreachable *in exactly that combination* — for the whole
+  life of the unit. Measured 2026-09-05: 2,192 candidates harvested, 10 queued as proposals,
+  **zero ever delivered**; the reading shelf had not turned over since 2026-07-31, five weeks.
+  Every unit exited 0, every module beneath the flags was covered, and `cmd_discover` had no test
+  at all. The same shape appeared twice in one function (`if not top: return` strands a queued
+  push too). `tests/test_cli_discover.py` now asserts on the deployed combination, and
+  `reading.push` records every outcome to `gate_log` so a step that delivers nothing says so in
+  words rather than printing `0 paper(s)` and exiting clean.
 
 ### Out of scope
 

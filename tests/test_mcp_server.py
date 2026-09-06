@@ -53,9 +53,22 @@ def seeded_db(tmp_path: Path, monkeypatch):
     cfg = types.SimpleNamespace(
         paths=types.SimpleNamespace(db=db),
         mcp=types.SimpleNamespace(include_figure_images=True, annotation_image_cap=4),
+        capture=types.SimpleNamespace(rmapi_binary="rmapi"),
     )
     monkeypatch.setattr(mcp_server, "load", lambda *a, **k: cfg)
     return db
+
+
+def _blocks(call_result) -> list:
+    """The content blocks, whichever shape call_tool used.
+
+    A str-returning tool comes back as `(content, structured)`; a list-returning one (retrieve,
+    markups) comes back as the block list itself. Tests that count images need the list.
+    """
+    if isinstance(call_result, tuple):
+        first = call_result[0]
+        return first if isinstance(first, list) else [first]
+    return list(call_result)
 
 
 def _text(call_result) -> str:
@@ -340,39 +353,165 @@ def _seed_marks(db_path, uri="vault/incoming/papers/book.pdf"):
     return c
 
 
-def test_annotations_lists_what_is_annotated_when_nothing_matches(seeded_db, monkeypatch):
-    _seed_marks(seeded_db)
-    m = mcp_server._build()
-    out = _text(asyncio.run(m.call_tool("annotations", {"document": "nonexistent"})))
-    assert "No annotated document matches" in out
-    assert "A Book" in out
+def test_markups_text_only_mode_needs_no_device(seeded_db, monkeypatch):
+    """`images=False` is what `annotations` used to be: a pure DB read, no fetch, no render.
 
-
-def test_annotations_reports_a_blank_mark_rather_than_hiding_it(seeded_db):
-    """The mark covers no text because it is over a figure. Reporting it as nothing would remove
-    the only signal that the page image is worth asking for."""
-    _seed_marks(seeded_db)
-    m = mcp_server._build()
-    out = _text(asyncio.run(m.call_tool("annotations", {"document": "A Book"})))
-    assert "p.41" in out                      # 0-based 40 printed as 41
-    assert "covering no text" in out
-
-
-def test_annotations_degrades_loudly_when_the_device_cannot_be_reached(seeded_db, monkeypatch):
-    """An images request that silently returns text is indistinguishable from a document with
-    no ink on it — the exact shape this codebase is built to resist."""
+    Collapsing the two tools only holds if this path still costs nothing — so the test asserts
+    that nothing reaches the device, not merely that text comes back."""
     _seed_marks(seeded_db)
     from locus.capture import review
 
     monkeypatch.setattr(
-        review, "locate_device_copy",
+        review, "locate",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("text-only must not touch the device")),
+    )
+    monkeypatch.setattr(review, "resolve_target", lambda conn, doc, **k: [
+        review.Target(device_path="", title="A Book",
+                      source_uri="vault/incoming/papers/book.pdf", doc_uuid="uuid-1")
+    ])
+
+    out = _text(asyncio.run(mcp_server._build().call_tool(
+        "markups", {"document": "A Book", "images": False}
+    )))
+
+    assert "p.41" in out                      # 0-based 40 printed as 41
+    assert "covering no text" in out          # the blank mark is reported, not filtered
+    # Text-only keeps the "ask for the image" nudge, because the images are NOT coming.
+    assert "page image" in out
+
+
+def test_markups_reports_nothing_matching(seeded_db, monkeypatch):
+    from locus.capture import review
+
+    monkeypatch.setattr(review, "resolve_target", lambda *a, **k: [])
+    out = _text(asyncio.run(mcp_server._build().call_tool(
+        "markups", {"document": "nonexistent"}
+    )))
+    assert "Nothing on the device or in the vault matches" in out
+
+
+def test_markups_degrades_loudly_when_the_device_cannot_be_reached(seeded_db, monkeypatch):
+    """A failure that silently returns fewer images is indistinguishable from a document with
+    less ink on it — the exact shape this codebase is built to resist."""
+    from locus.capture import review
+
+    target = review.Target(device_path="/Inbox/D", title="A Book", doc_uuid="u1",
+                           source_uri="vault/incoming/papers/book.pdf")
+    monkeypatch.setattr(review, "resolve_target", lambda *a, **k: [target])
+    monkeypatch.setattr(
+        review, "markups",
         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("rmapi get failed: offline")),
     )
 
-    m = mcp_server._build()
-    out = _text(asyncio.run(m.call_tool(
-        "annotations", {"document": "A Book", "images": True}
+    out = _text(asyncio.run(mcp_server._build().call_tool(
+        "markups", {"document": "A Book"}
     )))
 
-    assert "could not be fetched" in out and "offline" in out
-    assert "p.41" in out                      # the text register still came back
+    assert "Could not read" in out and "offline" in out
+
+
+def _markups_result(monkeypatch, seeded_db, **over):
+    """Drive `markups` with a stubbed review layer — the device and renderer are covered in
+    tests/test_capture_review.py; what is under test here is the tool's result SHAPE."""
+    from locus.capture import review
+
+    target = review.Target(device_path="/Inbox/Draft", title="Draft", doc_uuid="u1",
+                           source_uri="/Inbox/Draft")
+    marks = review.DocumentMarks(
+        source_uri="/Inbox/Draft", title="Draft", doc_uuid="u1", device_path="/Inbox/Draft",
+        marks=[review.MarkRow(page=1, page_index=0, kind="underline", intent=None,
+                              covered_text="a phrase", line_text="", note="", in_margin=True)],
+    )
+    result = review.Markups(
+        target=target, marks=marks,
+        pages=over.get("pages", {0: b"\x89PNG-one", 2: b"\x89PNG-two"}),
+        inked_pages=over.get("inked", [0, 1, 2]), swept=over.get("swept", 0),
+    )
+    monkeypatch.setattr(review, "resolve_target", lambda *a, **k: over.get("candidates", [target]))
+    monkeypatch.setattr(review, "markups", lambda *a, **k: result)
+    return mcp_server._build()
+
+
+def test_markups_returns_text_first_then_one_image_per_page(seeded_db, monkeypatch):
+    m = _markups_result(monkeypatch, seeded_db)
+    blocks = _blocks(asyncio.run(m.call_tool("markups", {"document": "Draft"})))
+
+    texts = [b for b in blocks if getattr(b, "text", None)]
+    images = [b for b in blocks if type(b).__name__ == "ImageContent"]
+    assert blocks[0].text.startswith('"Draft"') or "Draft" in blocks[0].text
+    assert len(images) == 2
+    # Every image is introduced by a label naming its page, so a reader can tell them apart.
+    assert any("p.1" in t.text for t in texts) and any("p.3" in t.text for t in texts)
+
+
+def test_markups_names_the_inked_pages_it_did_not_show(seeded_db, monkeypatch):
+    """A cap that silently eats pages is the same truncation failure the margins fix undid."""
+    m = _markups_result(monkeypatch, seeded_db)
+    blocks = _blocks(asyncio.run(m.call_tool("markups", {"document": "Draft"})))
+
+    tail = [b.text for b in blocks if getattr(b, "text", None)][-1]
+    assert "not shown" in tail and "2" in tail          # page 2 (0-based 1) was inked, not shown
+
+
+def test_markups_says_when_it_swept(seeded_db, monkeypatch):
+    """And says the sweep was geometric, so a missing handwritten note is not read as a bug."""
+    m = _markups_result(monkeypatch, seeded_db, swept=27)
+    blocks = _blocks(asyncio.run(m.call_tool("markups", {"document": "Draft"})))
+
+    assert "swept 27" in blocks[0].text and "not transcribed" in blocks[0].text
+
+
+def test_markups_asks_which_when_the_fragment_is_ambiguous(seeded_db, monkeypatch):
+    from locus.capture import review
+
+    two = [review.Target(device_path=f"/Inbox/HH-TTF {n}", title=f"HH-TTF {n}", doc_uuid=f"u{n}")
+           for n in ("first", "second")]
+    m = _markups_result(monkeypatch, seeded_db, candidates=two)
+    out = _text(asyncio.run(m.call_tool("markups", {"document": "HH-TTF"})))
+
+    assert "matches several" in out and "first" in out and "second" in out
+
+
+def test_markups_reports_a_document_with_no_ink_distinctly(seeded_db, monkeypatch):
+    """"Nothing stored" and "we looked and there is no ink" must not print the same way —
+    that is how a working sweep gets mistaken for a broken one."""
+    from locus.capture import review
+
+    target = review.Target(device_path="/Inbox/Clean", title="Clean", doc_uuid="u9")
+    empty = review.Markups(
+        target=target,
+        marks=review.DocumentMarks(source_uri="", title="Clean", doc_uuid="u9", device_path=""),
+        pages={}, inked_pages=[], looked=True,       # we DID read the bundle; there is no ink
+    )
+    monkeypatch.setattr(review, "resolve_target", lambda *a, **k: [target])
+    monkeypatch.setattr(review, "markups", lambda *a, **k: empty)
+
+    out = _text(asyncio.run(mcp_server._build().call_tool("markups", {"document": "Clean"})))
+    assert "carries no ink" in out
+
+
+def test_markups_distinguishes_the_three_empty_answers(seeded_db, monkeypatch):
+    """A filter that matched nothing, a document never swept, and a document with no ink are
+    three different findings. They printed as one ("carries no ink") after the collapse, which
+    is how a working sweep gets reported as a broken one."""
+    from locus.capture import review
+
+    target = review.Target(device_path="/Inbox/D", title="D", doc_uuid="u1", source_uri="/Inbox/D")
+    monkeypatch.setattr(review, "resolve_target", lambda *a, **k: [target])
+
+    def result(**kw):
+        empty = review.DocumentMarks(source_uri="/Inbox/D", title="D", doc_uuid="u1",
+                                     device_path="/Inbox/D")
+        return review.Markups(target=target, marks=empty, pages={}, **kw)
+
+    monkeypatch.setattr(review, "markups", lambda *a, **k: result(filtered=True, looked=True))
+    assert "match that filter" in _text(asyncio.run(
+        mcp_server._build().call_tool("markups", {"document": "D", "intent": "idea"})))
+
+    monkeypatch.setattr(review, "markups", lambda *a, **k: result(looked=False))
+    assert "refresh=True" in _text(asyncio.run(
+        mcp_server._build().call_tool("markups", {"document": "D", "images": False})))
+
+    monkeypatch.setattr(review, "markups", lambda *a, **k: result(looked=True, inked_pages=[]))
+    assert "carries no ink" in _text(asyncio.run(
+        mcp_server._build().call_tool("markups", {"document": "D"})))

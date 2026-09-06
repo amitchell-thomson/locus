@@ -611,34 +611,45 @@ def cmd_marks(args) -> None:
                 print(f"  {n:4} marks — {title}")
             return
 
-        candidates = review.resolve(conn, args.document)
-        if not candidates:
-            print(f"no annotated document matches {args.document!r}")
+        targets = review.resolve_target(conn, args.document, rmapi_binary=load().capture.rmapi_binary)
+        if not targets:
+            print(f"nothing on the device or in the vault matches {args.document!r}")
             sys.exit(1)
-        if len(candidates) > 1:
+        if len(targets) > 1:
             print(f"{args.document!r} matches several — say which:")
-            for _, title, n in candidates:
-                print(f"  {n:4} marks — {title}")
+            for t in targets:
+                print(f"  {t.title}  [{t.device_path}]")
             sys.exit(1)
 
-        doc = review.load(conn, candidates[0][0], page=args.page, intent=args.intent)
-        print(doc.render())
+        target = targets[0]
+        doc = (
+            review.load(conn, target.source_uri, page=args.page, intent=args.intent)
+            if target.source_uri else None
+        )
+        if doc is not None:
+            print(doc.render(image_hint=not args.images))
 
         if not args.images:
             return
-        wanted = doc.page_indexes[: args.images]
-        path, repaired = review.locate_device_copy(conn, doc)
-        if repaired:
-            # Worth saying out loud: it means the cached pointer was wrong, which also breaks
-            # `reading/sweep.py` until something corrects it.
-            print(f"(the stored device path was stale; corrected to {path!r})")
-        pngs = review.annotated_page_pngs(path, wanted)
+        # The SAME path the MCP `markups` tool takes — whole-device resolution and the
+        # margin-preserving renderer. When the CLI and the tool disagreed about where a
+        # document lives or how wide its page is, the CLI was the one that looked right and
+        # was wrong.
+        m = review.markups(
+            conn, target, cfg=load(), pages=args.page and [args.page],
+            refresh=args.refresh, max_images=args.images, margins=not args.no_margins,
+        )
+        if m.swept:
+            print(f"(swept {m.swept} mark(s) from the device — geometric only, not transcribed)")
         out_dir = Path(args.out or ".")
         out_dir.mkdir(parents=True, exist_ok=True)
-        for idx in sorted(pngs):
+        for idx in sorted(m.pages):
             dest = out_dir / f"p{idx + 1:04d}.png"
-            dest.write_bytes(pngs[idx])
+            dest.write_bytes(m.pages[idx])
             print(f"  wrote {dest}")
+        if m.omitted:
+            print(f"  ({len(m.omitted)} inked page(s) not written: "
+                  f"{', '.join(str(p + 1) for p in m.omitted)} — raise --images or pass --page)")
     finally:
         conn.close()
 
@@ -1280,12 +1291,24 @@ def cmd_annotate(args) -> None:
 
     if args.rmdoc:
         path = Path(args.rmdoc)
+        doc = read_rmdoc(path)
     else:
-        tmp = tempfile.mkdtemp(prefix="locus-rmdoc-")
-        print(f"fetching {args.device_path!r} from the reMarkable cloud ...")
-        path = fetch_rmdoc(args.device_path, tmp)
+        # Downloaded into the VAULT CACHE, not `mkdtemp`. The old temp directory was never
+        # cleaned up (1.3MB per bundle, left behind on every run), and — more usefully — the
+        # bundle is exactly what `locus marks` and the MCP `markups` tool want next. Filed under
+        # the document's own uuid, a second look at the same ink costs no fetch at all.
+        from locus.capture.review import _cache_dir
 
-    doc = read_rmdoc(path)
+        cache = _cache_dir(load())
+        cache.mkdir(parents=True, exist_ok=True)
+        print(f"fetching {args.device_path!r} from the reMarkable cloud ...")
+        with tempfile.TemporaryDirectory(dir=cache) as staging:
+            path = fetch_rmdoc(args.device_path, staging)
+            doc = read_rmdoc(path)
+            if doc.doc_uuid:
+                kept = cache / f"{doc.doc_uuid}.rmdoc"
+                kept.write_bytes(Path(path).read_bytes())
+                path = kept
     marks = marks_for_document(doc)
     source_uri = args.source_uri or args.device_path or str(path)
 
@@ -2137,6 +2160,10 @@ def main(argv=None) -> None:
     pmk.add_argument("--images", type=int, nargs="?", const=4, default=0, metavar="N",
                      help="also write the N most-marked pages as PNGs with your ink on them")
     pmk.add_argument("--out", default=None, help="directory for --images (default: cwd)")
+    pmk.add_argument("--refresh", action="store_true",
+                     help="re-fetch from the device and re-sweep before rendering")
+    pmk.add_argument("--no-margins", action="store_true",
+                     help="render on the page rect only, clipping margin ink (the old behaviour)")
     pmk.set_defaults(func=cmd_marks)
 
     pdy = sub.add_parser(

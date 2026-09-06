@@ -24,6 +24,8 @@ vault/locus.db-*
 
 # Local corpus snapshots (`locus backup`) — regenerable, never committed
 vault/backups/
+# Cached .rmdoc bundles (derived: delete = one refetch, nothing else)
+vault/cache/
 
 # Generated Obsidian projection (derived from the DB, §14) — never committed.
 # Carve-out: keep your own Obsidian layout/plugin config if you want it tracked.

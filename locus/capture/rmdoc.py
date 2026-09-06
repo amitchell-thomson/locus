@@ -258,6 +258,78 @@ def composite_pdf(rmdoc: RmDoc, out_path: str | Path, *, width: float = 1.4) -> 
         doc.close()
 
 
+def composite_pages_with_margins(
+    rmdoc: RmDoc,
+    page_indexes: list[int] | None = None,
+    *,
+    dpi: int = 130,
+    pad: float = 12.0,
+    width: float = 1.6,
+) -> dict[int, bytes]:
+    """Render inked pages to PNG on a canvas ENLARGED to hold the margin ink. 0-based keys.
+
+    WHY THIS EXISTS BESIDE `composite_pdf`. That function draws onto the original page, and
+    pymupdf refuses to draw outside the page rect — so every stroke in the margin is silently
+    cut at the paper edge. It is invisible in the API (no error, a valid PNG comes back) and
+    devastating in practice: on the HH-TTF draft of 2026-09-06, 12 of 27 marks were margin
+    notes and most of their words fell outside an A4 page. The reader saw the first few
+    characters of each and no indication anything was missing.
+
+    Nothing is lost before the draw. `to_page_coords` centres the tablet canvas on the page, so
+    a stroke beside a 595pt-wide page legitimately carries x from about -85 to about 680; those
+    coordinates survive parsing, storage and `Stroke.bbox` intact. Only the draw clipped them.
+
+    So: build a NEW page whose rect is the union of the source page and the stroke bounding box,
+    stamp the original into it with `show_pdf_page`, and draw the strokes at the same offset. A
+    faint grey rectangle marks where the paper actually ended, because margin writing that is
+    not visibly outside the page reads as writing ON the page, in the wrong place.
+
+    `composite_pdf` is kept and unchanged: the daily page is written between ruled lines and has
+    no margin ink, and it wants one PDF rather than per-page images.
+    """
+    import pymupdf
+
+    src = pymupdf.open(stream=rmdoc.pdf_bytes, filetype="pdf")
+    try:
+        out: dict[int, bytes] = {}
+        for annotated in rmdoc.pages:
+            if annotated.pdf_page >= src.page_count or annotated.pdf_page < 0:
+                continue
+            if page_indexes is not None and annotated.pdf_page not in page_indexes:
+                continue
+            points = [pt for stroke in annotated.strokes for pt in stroke.points]
+            if not points:
+                continue
+
+            rect = src[annotated.pdf_page].rect
+            # The union of paper and ink. min(0, ...) / max(width, ...) keep the whole page
+            # visible even when every stroke sits inside it.
+            x0 = min(0.0, min(p[0] for p in points) - pad)
+            y0 = min(0.0, min(p[1] for p in points) - pad)
+            x1 = max(rect.width, max(p[0] for p in points) + pad)
+            y1 = max(rect.height, max(p[1] for p in points) + pad)
+
+            canvas = pymupdf.open()
+            try:
+                page = canvas.new_page(width=x1 - x0, height=y1 - y0)
+                where = pymupdf.Rect(-x0, -y0, -x0 + rect.width, -y0 + rect.height)
+                page.show_pdf_page(where, src, annotated.pdf_page)
+                page.draw_rect(where, color=(0.7, 0.7, 0.7), width=0.5)
+                for stroke in annotated.strokes:
+                    if len(stroke.points) < 2:
+                        continue
+                    page.draw_polyline(
+                        [pymupdf.Point(x - x0, y - y0) for x, y in stroke.points],
+                        color=(0, 0, 0), width=width,
+                    )
+                out[annotated.pdf_page] = page.get_pixmap(dpi=dpi).tobytes("png")
+            finally:
+                canvas.close()
+        return out
+    finally:
+        src.close()
+
+
 def fetch_rmdoc(
     device_path: str, dest_dir: str | Path, *, rmapi_binary: str = "rmapi",
     timeout: int = 1800,

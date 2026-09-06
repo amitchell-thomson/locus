@@ -32,7 +32,9 @@ TOOLS
 - inspect_document: what was ingested for one document (synthesis + sections). FREE.
 - capture        : save this conversation into the vault as a rough note (Loop C). FREE.
 - to_remarkable  : push markdown (rendered) or an existing PDF to the tablet. FREE.
-- annotations    : what he marked up on the tablet, and the inked pages as images. FREE.
+- markups        : ONE call — find a marked-up document anywhere on the device, sweep it,
+                   render the inked pages with margins intact, and return them as images
+                   with the text register. `images=False` for the cheap text-only read. FREE.
 - critique       : stress-test a project/reasoning against the owner's own corpus (§8.4).
 - synthesise     : "what do I know and think about X", incl. the dated belief trajectory.
 - objects        : the structured project/concept/question/reading overlays. FREE.
@@ -55,6 +57,7 @@ from __future__ import annotations
 
 import json
 from datetime import date
+from pathlib import Path
 
 from locus.config import load
 from locus.db.connection import get_connection
@@ -89,8 +92,9 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
             "use `list_documents`/`inspect_document` to see what the corpus contains; use "
             "`capture` to save this conversation's decisions into the vault as a rough note, and "
             "`to_remarkable` to send markdown or an existing PDF to his tablet to read on paper, and "
-            "`annotations` to read back what he highlighted and wrote in the margins, "
-            "including the marked-up pages as images. "
+            "`markups` to READ a document he marked up — one call finds it anywhere on the "
+            "device, sweeps it if needed, and returns the inked pages as images with his "
+            "margin writing intact, plus what each mark covered. "
             "For the owner's own thinking rather than raw material: `critique` stress-tests a "
             "project or argument against what he has read and concluded, `synthesise` gives what "
             "he knows and thinks about a topic including how his view has changed, `objects` "
@@ -321,86 +325,121 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
         return f"{verb} '{sent.filename}' ({pages}) to reMarkable:{sent.device_path}."
 
     @mcp.tool()
-    def annotations(
+    def markups(
         document: str,
-        page: int | None = None,
+        pages: list[int] | None = None,
         intent: str | None = None,
-        images: bool = False,
-        max_images: int = 3,
+        refresh: bool = False,
+        images: bool = True,
+        margins: bool = True,
+        max_images: int = 12,
+        dpi: int = 130,
+        out_dir: str | None = None,
     ):
-        """Read back what he marked up on his reMarkable — the notes, and the pages themselves.
+        """Read a document he marked up on the reMarkable — the inked pages AND the text register.
 
-        Every highlight, underline, bracket and margin note he has made on a document is stored
-        with the words the ink covered, the whole line it sat on, his transcribed handwriting,
-        and a classified intent (`important` / `not_understood` / `idea`). This reads that back.
+        ONE call does the whole thing: finds the document anywhere on the device (not just the
+        reading folders), sweeps it for marks if nothing has yet, renders the inked pages with
+        his handwriting composited on, and returns them as images with the text register first.
 
-        Set `images=True` to also SEE the marked-up pages: the ink is composited onto the PDF
-        from the device's cloud copy and attached as image blocks. Do that whenever the text
-        alone is thin — most of all when a mark is reported as covering no text, which almost
-        always means it marks a FIGURE and the ink is the only record of what he meant. Reading
-        the image is how you answer "what is he pointing at here".
+        The pages are rendered on a canvas ENLARGED to hold margin ink. His marginalia routinely
+        runs off the edge of the paper, and the older renderer clipped it at the page rect — on
+        one draft, 12 of 27 marks were margin notes whose words were mostly outside the page and
+        came back as a few stray letters. A faint grey rectangle marks where the paper ended, so
+        writing beyond it reads as margin writing rather than as text in the wrong place.
 
-        The two registers are complementary, so both come back together: images carry arrows,
-        diagrams and position; text carries margin writing that runs off the edge of the page,
-        which the composited image clips.
+        Set `images=False` for a cheap text-only read: no device fetch, no rendering, just what
+        each mark covered. That is the right call when you only need to know WHAT he marked.
 
-        Images cost a live device fetch (a few seconds) and context, so they are off by default
-        and capped. Text alone is a local database read — free and instant.
+        Sweeping is free and geometric — it never calls the billed handwriting transcription, so
+        a freshly swept document has the covered text and the line for every mark but no
+        transcribed note until Loop B or `locus annotate --transcribe` runs.
 
         Args:
-            document: Which document — a title fragment ('portfolio') or an exact source_uri.
-                Call with an empty string to list everything he has annotated.
-            page: Optional 1-based page number, as printed, to restrict to one page.
-            intent: Optional filter — 'important', 'not_understood', or 'idea'.
-            images: Attach the annotated pages as images. Default False.
-            max_images: How many pages to attach (capped by [mcp].annotation_image_cap).
+            document: Title fragment, source_uri, device path, or xochitl uuid. Ambiguous
+                fragments come back as a list of candidates rather than a guess.
+            pages: Optional 1-based page numbers. Default: every inked page, densest first,
+                up to `max_images`. Named pages are always returned, never trimmed, and they
+                narrow the text register too.
+            intent: Optional filter — 'important', 'not_understood', or 'idea'. Narrows the
+                text register AND picks the pages to render, so "what did I not understand"
+                returns those pages rather than the most heavily inked ones.
+            refresh: Re-fetch from the device and re-sweep. Use when he has just written more.
+            images: Set False for the text register alone (no device fetch, much faster).
+            margins: Keep the enlarged canvas. False reproduces the old page-clipped render.
+            max_images: Cap on pages returned when `pages` is not given.
+            dpi: Render resolution. 130 reads his handwriting; lower it for a lighter reply.
+            out_dir: Also write pNNNN.png files into this server-side directory.
         """
         from locus.capture import review
 
-        conn = get_connection(load().paths.db)
+        cfg = load()
+        conn = get_connection(cfg.paths.db)
         try:
-            candidates = review.resolve(conn, document)
+            candidates = review.resolve_target(conn, document, rmapi_binary=cfg.capture.rmapi_binary)
             if not candidates:
-                known = review.documents_with_marks(conn)
-                if not known:
-                    return "No annotations have been captured from the device yet."
-                listing = "\n".join(f"  {n:4} marks — {t}" for _, t, n in known)
-                return f"No annotated document matches {document!r}. Annotated so far:\n{listing}"
+                return (f"Nothing on the device or in the vault matches {document!r}. "
+                        "Try a shorter fragment, or the exact device path.")
             if len(candidates) > 1:
-                listing = "\n".join(f"  {n:4} marks — {t}" for _, t, n in candidates)
-                return (f"{document!r} matches several annotated documents — say which:\n"
-                        f"{listing}")
+                listing = "\n".join(f"  {c.title}  [{c.device_path}]" for c in candidates)
+                return f"{document!r} matches several documents — say which:\n{listing}"
 
-            uri = candidates[0][0]
-            doc = review.load(conn, uri, page=page, intent=intent)
-            text = doc.render()
-            if not images or not doc.marks:
-                return text
-
-            cap = max(1, min(max_images, load().mcp.annotation_image_cap))
-            wanted = _pages_to_image(doc, cap)
             try:
-                pngs = review.annotated_page_pngs(
-                    review.locate_device_copy(conn, doc)[0], wanted
+                m = review.markups(
+                    conn, candidates[0], cfg=cfg, pages=pages, intent=intent, refresh=refresh,
+                    images=images, margins=margins, max_images=max_images, dpi=dpi,
                 )
             except Exception as exc:
-                # LOUD, not silent. An images request that comes back as text with no
-                # explanation is indistinguishable from a document with no ink on it.
-                return (f"{text}\n\n[the pages could not be fetched from the device: {exc}. "
-                        "The marks above are from the last sweep and are still accurate.]")
+                return f"Could not read {document!r} from the device: {exc}"
 
-            from mcp.server.fastmcp import Image
+            if not m.marks.marks:
+                # Three different findings that used to print as one. A filter that matched
+                # nothing is not an empty document, and neither is a text-only call that never
+                # looked at the device — reporting them alike is how a working sweep gets
+                # mistaken for a broken one.
+                if m.filtered:
+                    return (f'No marks in "{m.target.title}" match that filter. '
+                            "Drop `intent`/`pages` to see everything on it.")
+                if not m.looked:
+                    return (f'No marks stored for "{m.target.title}" yet. '
+                            "Call again with `refresh=True` to sweep it from the device.")
+                if not m.inked_pages:
+                    return (f'"{m.target.title}" is on the device at {m.target.device_path} but '
+                            "carries no ink — nothing has been marked on it yet.")
 
-            out: list = [text]
-            for idx in wanted:
-                png = pngs.get(idx)
-                if png is None:
-                    continue
-                out.append(f'[p.{idx + 1} of "{doc.title}", his ink composited on]')
-                out.append(Image(data=png, format="png"))
-            if len(doc.page_indexes) > len(wanted):
-                out.append(f"({len(doc.page_indexes)} pages carry marks; the {len(wanted)} "
-                           "most informative are attached. Ask for a specific `page` for others.)")
+            head = m.marks.render(image_hint=not images)
+            if m.swept:
+                head = (f"[swept {m.swept} mark(s) from the device on this call — geometric only, "
+                        f"so handwriting is not transcribed yet]\n\n{head}")
+            out: list = [head]
+
+            written: list[str] = []
+            if out_dir:
+                target_dir = Path(out_dir)
+                target_dir.mkdir(parents=True, exist_ok=True)
+                for idx, png in sorted(m.pages.items()):
+                    dest = target_dir / f"p{idx + 1:04d}.png"
+                    dest.write_bytes(png)
+                    written.append(str(dest))
+
+            if m.pages:
+                from mcp.server.fastmcp import Image
+
+                for idx, png in sorted(m.pages.items()):
+                    out.append(f'[p.{idx + 1} of "{m.target.title}" — his ink, margins included]')
+                    out.append(Image(data=png, format="png"))
+
+            tail = []
+            if m.omitted:
+                tail.append(
+                    f"{len(m.omitted)} inked page(s) not shown: "
+                    f"{', '.join(str(p + 1) for p in m.omitted)}. "
+                    "Ask for them by number with `pages=[...]`."
+                )
+            if written:
+                tail.append(f"Also written to: {', '.join(written)}")
+            if tail:
+                out.append(" ".join(tail))
             return out
         finally:
             conn.close()
@@ -767,22 +806,3 @@ def run(enable_query: bool = False) -> None:
         flush=True,
     )
     _build(enable_query=enable_query).run()
-
-
-def _pages_to_image(doc, cap: int) -> list[int]:
-    """Which 0-based pages to attach, best-first, at most `cap`.
-
-    Pages carrying a BLANK mark come first — ink that covered no text is almost always over a
-    figure, so the image is the only record of what it marks and the text register has already
-    failed on it (measured: 29 of 109 highlights on his live documents). After those, pages with
-    the most marks, since a densely worked page carries more of what he was thinking. Ties break
-    on page order so the result is stable across calls.
-    """
-    per_page: dict[int, list] = {}
-    for m in doc.marks:
-        per_page.setdefault(m.page_index, []).append(m)
-    ranked = sorted(
-        per_page.items(),
-        key=lambda kv: (-sum(m.is_blank for m in kv[1]), -len(kv[1]), kv[0]),
-    )
-    return sorted(idx for idx, _ in ranked[:cap])

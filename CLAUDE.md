@@ -270,7 +270,30 @@ device-path marks re-keyed onto the new `source_uri`; `Proposed` never auto-inge
 proposals are rejected. Once a document is corpus-mapped, his margin notes are promoted to a
 reading-notes file automatically (`agent/promote.promote_reading_notes`), which `notes-sync`
 ingests on the next tick — so marginalia reaches retrieval with no command typed.
-**Reading the marks back** is `capture/review.py` (`locus marks`, MCP `annotations`). Two
+**Reading the marks back** is `capture/review.py` (`locus marks`, MCP `markups` — the ONE
+tool; `annotations` was folded into it as `images=False`, since two near-identical tools
+cost context in every session and made the client model choose). One call
+resolves a document ANYWHERE on the device, sweeps it geometrically if nothing has, renders the
+inked pages and returns them as images with the text register. Three things it must keep doing:
+
+- **Render on an enlarged canvas, never the page rect.** `rmdoc.composite_pdf` draws on the
+  original page and pymupdf refuses to draw outside it, so margin ink was cut at the paper edge —
+  silently, returning a valid PNG. On the HH-TTF draft (2026-09-06) 12 of 27 marks were margin
+  notes and came back as a few stray letters. `composite_pages_with_margins` unions the page rect
+  with the stroke bbox and outlines where the paper ended. `composite_pdf` stays for the daily
+  page, which has no margin ink and wants one PDF.
+- **Resolve over the whole device.** `loop_b.reading_index` walks only `Reading/`, so `/Inbox` —
+  the folder `to_remarkable` itself writes to — was the one place the renderer could not see.
+  Match names from the single cheap `rmapi find /` (0.37s over 79 files) and stat only the
+  survivors (0.14s each); stat-ing everything spends a third of the latency budget for nothing.
+- **Sweeping from a tool call is geometric only.** `capture/transcribe` is billed; a chat tool
+  must never trigger it. A freshly swept document has covered text and lines but no handwriting
+  until Loop B or `locus annotate --transcribe` runs.
+
+Bundles are cached under `vault/cache/rmdoc/<doc_uuid>.rmdoc` (derived; delete = one refetch), so
+a second look costs no fetch and renders with the cloud unreachable.
+
+The text register is the other half. Two
 registers, neither subsuming the other, both measured on his own pages 2026-09-05: the stored
 text carries margin writing that runs off the page edge (`composite_pdf` clips to the page rect,
 because ink beside a portrait page has no page coordinates), while only the **image** carries

@@ -260,6 +260,7 @@ def send_latex(
             # it — CLAUDE.md §13), and a stub written before this field existed should fall
             # through to engine autodetection rather than raising AttributeError.
             engine=getattr(cfg.reading, "latex_engine", None),
+            timeout_s=getattr(cfg.reading, "latex_timeout_s", None),
             resource_dir=resource_dir,
         )
         pages = _page_count(pdf)

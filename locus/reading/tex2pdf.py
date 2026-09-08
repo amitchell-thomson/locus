@@ -118,6 +118,26 @@ _EM_DASH = re.compile(r"---|—")
 
 _ENGINES = ("tectonic", "pdflatex")
 
+# Ceiling on ONE engine invocation. Public because `[reading].latex_timeout_s` documents this as
+# the fallback and `send_latex` passes the configured value over it.
+#
+# MEASURED (2026-09-08). The predecessor was a hardcoded 180s, and two cold-cache runs came in at
+# 201.5s and 149.7s — STRADDLING it. Note which was which: 201.5s was a ONE-LINE fragment and
+# 149.7s a document with two TikZ pictures, a pgfplots axis and an equation. The document is not
+# the variable; the ~51MB fetch of the pgf/tikz tree is, and it crosses a network. Warm, both
+# compile in ~1.2-1.3s.
+#
+# So 180s was not a limit that always failed — it sat INSIDE the natural variance of the thing it
+# was cutting off, which is the worst place for a threshold to sit and why this presented as an
+# intermittent "the server is down" rather than as a reproducible error. The tell that it was
+# never about the LaTeX: a full brief and the minimal fragment sent to isolate it failed
+# IDENTICALLY, because `_DIAGRAM_SETUP` loads tikz and pgfplots unconditionally, so document size
+# does not change what the FIRST compile must download.
+#
+# 900s is ~4.5x the slower observation, deliberately. A ceiling picked to just clear one
+# machine's timing on one day is the same mistake with a larger number.
+DEFAULT_TIMEOUT_S = 900.0
+
 _INSTALL_HINT = (
     "No LaTeX engine found. Install tectonic (preferred — it fetches its own packages: "
     "`cargo install tectonic`, or your distro's `tectonic` package) or a TeX distribution "
@@ -485,6 +505,7 @@ def render_latex_to_pdf(
     title: str | None = None,
     engine: str | None = None,
     resource_dir: Path | str | None = None,
+    timeout_s: float | None = None,
 ) -> Path:
     r"""Compile LaTeX source to a PDF at `out_pdf`. Returns the output path.
 
@@ -499,10 +520,16 @@ def render_latex_to_pdf(
     include. Absolute paths in `\includegraphics` are left alone. `send_latex` defaults this to
     the raw store so corpus figures are includable by their stored filename.
 
+    `timeout_s` caps ONE engine invocation (the pdflatex path runs two, each capped). It defaults
+    to `DEFAULT_TIMEOUT_S`, which is sized for the one-off cold-cache package fetch rather than
+    for a compile — see that constant for the measurement.
+
     Raises `RuntimeError` carrying the engine's own error lines. It raises rather than degrading
     for the reason `send_markdown` does: every caller reports to a human who can fix the source,
     and a blank PDF delivered to the tablet is the silent-failure class this codebase exists to
-    resist (CLAUDE.md §3).
+    resist (CLAUDE.md §3). A TIMEOUT is raised as `RuntimeError` too, deliberately: the native
+    `subprocess.TimeoutExpired` is a `SubprocessError` and so slipped through every caller's
+    `except RuntimeError`, arriving at the MCP client as an empty transport failure.
     """
     # ALWAYS through `available_engine`, never `engine or available_engine(engine)`. That form
     # short-circuits on any truthy name, and `[reading].latex_engine` is a non-empty string with
@@ -513,6 +540,11 @@ def render_latex_to_pdf(
     # `available_engine` already treats its argument as a PREFERENCE and falls through, which is
     # what both this module's and `config`'s docstrings promised the whole time.
     engine = available_engine(engine)
+    # Defaulted from a module constant, NOT by reading config here: this module takes `geometry`
+    # and `engine` as arguments for the same reason — `send_latex` owns the config object and
+    # passes what it holds, and a renderer that loaded `config.toml` itself would make every test
+    # that renders depend on a gitignored file (CLAUDE.md §13).
+    limit = float(DEFAULT_TIMEOUT_S if timeout_s is None else timeout_s)
     source = build_document(tex, geometry=geometry, title=title)
 
     out_pdf = Path(out_pdf)
@@ -535,14 +567,33 @@ def render_latex_to_pdf(
         # second invocation would only pay the cost twice.
         passes = 1 if engine == "tectonic" else 2
         for attempt in range(passes):
-            proc = subprocess.run(
-                _engine_argv(engine, src, tmp_dir),
-                capture_output=True,
-                text=True,
-                cwd=tmp_dir,
-                env=env,
-                timeout=180,
-            )
+            try:
+                proc = subprocess.run(
+                    _engine_argv(engine, src, tmp_dir),
+                    capture_output=True,
+                    text=True,
+                    cwd=tmp_dir,
+                    env=env,
+                    timeout=limit,
+                )
+            except subprocess.TimeoutExpired as exc:
+                # `TimeoutExpired` is a `SubprocessError`, NOT a `RuntimeError` — so before this
+                # branch existed it flew past every caller's handler, including the MCP tool's
+                # `except RuntimeError`, and reached the client as a bare transport failure with
+                # no message. That is worse than an unhelpful error: the model reading it cannot
+                # tell a timeout from a dead server, so the reported diagnosis was "Locus is
+                # down" while Locus was fine and the engine was simply still fetching packages.
+                # Re-raised as `RuntimeError` so it travels the path this module documents.
+                raise RuntimeError(
+                    f"LaTeX compile timed out ({engine}, pass {attempt + 1}) after "
+                    f"{limit:g}s. This is USUALLY NOT the document: on a cold cache "
+                    f"{engine} fetches the pgf/tikz package tree on first use, and "
+                    "`_DIAGRAM_SETUP` loads tikz and pgfplots for every document, so a "
+                    "one-line fragment pays the same fetch as a diagram-heavy one. Check the "
+                    "network, then retry — a partly-filled cache resumes rather than "
+                    "restarting — or raise `[reading].latex_timeout_s`. If the cache is "
+                    "already warm, suspect an unterminated group or a runaway loop."
+                ) from exc
             if proc.returncode != 0:
                 detail = _explain_failure(f"{proc.stdout}\n{proc.stderr}")
                 raise RuntimeError(
@@ -566,11 +617,14 @@ def render_latex_file(
     *,
     geometry: PageGeometry | None = None,
     engine: str | None = None,
+    timeout_s: float | None = None,
 ) -> Path:
     """Render a `.tex` file to a PDF, titling a fragment from the file stem.
 
     `resource_dir` defaults to the file's own directory, so a document that includes a figure
-    sitting beside it compiles the way it reads.
+    sitting beside it compiles the way it reads. `timeout_s` forwards to `render_latex_to_pdf`,
+    so `locus read x.tex` gets the same cold-cache headroom a send does — this path compiles the
+    same preamble and would otherwise have its own, stricter ceiling by accident.
     """
     tex_path = Path(tex_path)
     return render_latex_to_pdf(
@@ -579,5 +633,6 @@ def render_latex_file(
         geometry=geometry,
         title=tex_path.stem.replace("_", " "),
         engine=engine,
+        timeout_s=timeout_s,
         resource_dir=tex_path.parent,
     )

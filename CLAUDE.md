@@ -523,6 +523,13 @@ locus/
   output — and re-authoring those as LaTeX would put a model between him and his own words.
   The engine is a system binary (`tectonic`, else `pdflatex`), which is a real reproducibility
   regression against md2pdf's pip-installed pandoc+typst and the price of the language.
+  **The FIRST compile on a machine is not a compile, it is a ~51MB download**, and it is charged
+  to whatever document happens to be first: tectonic fetches the pgf/tikz tree, `_DIAGRAM_SETUP`
+  loads tikz and pgfplots unconditionally, and a one-line fragment therefore costs 201.5s cold
+  against 1.2s warm (measured 2026-09-08). That is what `[reading].latex_timeout_s` (900s) sizes
+  — a ceiling on a runaway document, never a budget for a normal one. **Do not diagnose a slow or
+  failed first send as a broken server**; the tell is that a full brief and a minimal fragment
+  fail *identically*, because document size does not change what the fetch costs.
   **The daily page is deliberately NOT part of this** — §10 still renders through Typst.
 - **Docstrings carry the decision log.** State the non-obvious assumption and the *why* — this is
   how a future change avoids re-introducing a fixed bug. Record designs that were **built,

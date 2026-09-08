@@ -360,6 +360,26 @@ class ReadingConfig(BaseModel):
     latex_engine: str = Field(
         "tectonic", description="LaTeX engine for agent-authored sends ('tectonic' | 'pdflatex')."
     )
+    # MEASURED, and the reason this is configurable rather than the 180s constant it replaces:
+    # the engine invocation pays TWO unrelated costs and only one of them is the document. A warm
+    # compile of a four-figure TikZ/pgfplots brief takes ~1.3s (2026-09-08). The FIRST compile on
+    # a machine pays a one-off package fetch instead — tectonic downloads the pgf/tikz tree from
+    # its bundle server, and `_DIAGRAM_SETUP` loads tikz and pgfplots for EVERY document, so the
+    # fetch is charged to a one-line fragment exactly as it is to a diagram-heavy one. MEASURED:
+    # two cold runs took 201.5s and 149.7s, STRADDLING the old hardcoded 180s — and the slower of
+    # the two was the one-line fragment, so the document is not the variable. That is why this
+    # presented as an intermittent "the server is down" and why a full brief and the minimal
+    # fragment sent to isolate it failed identically. The failure was never in the LaTeX.
+    #
+    # This is a CEILING on a pathological compile (a runaway `\loop`), not a budget for a normal
+    # one. Setting it near the warm time would make a first send on a new machine, or after
+    # `rm -rf ~/.cache/tectonic`, fail for a reason no error message could make actionable.
+    latex_timeout_s: float = Field(
+        900.0,
+        gt=0,
+        description="Ceiling on one LaTeX engine invocation (s). Sized for the one-off "
+        "cold-cache package fetch, not the warm compile.",
+    )
     # The LaTeX path carries its OWN body size and deliberately does not inherit `font_pt`.
     # Agent-authored documents are set TWO-COLUMN (2026-09-08), which puts ~2.9in of measure in
     # each column; 11pt across that is too few words per line to read comfortably. `font_pt`

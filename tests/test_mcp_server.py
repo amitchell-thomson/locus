@@ -358,6 +358,30 @@ def test_to_remarkable_returns_the_latex_error_as_text(monkeypatch):
     assert "Not sent" in out and "Undefined control seq" in out
 
 
+def test_to_remarkable_returns_an_unexpected_error_as_text_too(monkeypatch):
+    """The handlers enumerate the failures this tool EXPECTED, and for a year anything else
+    crossed the MCP boundary as a bare transport error carrying no message — the model could not
+    tell "your document timed out" from "the server is gone", so it reported the wrong machine
+    as broken and he debugged that one.
+
+    `TimeoutExpired` is the exact type that found the hole (2026-09-08): a `SubprocessError`,
+    matching neither `except (FileNotFoundError, ValueError)` nor `except RuntimeError`."""
+    import subprocess
+
+    import locus.reading.send as send_mod
+
+    def boom(latex, *, title, folder=None, resource_dir=None):
+        raise subprocess.TimeoutExpired(cmd="tectonic", timeout=900)
+
+    monkeypatch.setattr(send_mod, "send_latex", boom)
+
+    m = mcp_server._build()
+    out = _text(asyncio.run(m.call_tool("to_remarkable", {"latex": "x", "title": "X"})))
+    assert "Not sent" in out
+    # The CLASS is most of the diagnosis for an error nobody predicted.
+    assert "TimeoutExpired" in out
+
+
 @pytest.mark.parametrize(
     "args",
     [

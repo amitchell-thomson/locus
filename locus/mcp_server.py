@@ -409,6 +409,18 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
             # Also the caller's to fix, and specifically ACTIONABLE — it names the bad line — so
             # it must reach the model as text rather than as a transport-level exception.
             return f"Not sent — {exc}"
+        except Exception as exc:  # noqa: BLE001 — deliberate boundary guard, see below
+            # The three handlers above enumerate the failures this tool EXPECTED, and anything
+            # they missed crossed the MCP boundary as a bare transport error carrying no message.
+            # That is the §3 failure class wearing a different hat: the model on the other side
+            # cannot distinguish "your LaTeX timed out" from "the server is gone", so it
+            # misreports the cause to him and he debugs the wrong machine. It happened for real
+            # (2026-09-08) with `subprocess.TimeoutExpired`, which is a `SubprocessError` and so
+            # matched no clause here; that specific case is now a RuntimeError at its source, but
+            # the hole was the enumeration, not the one exception that found it. Name the type,
+            # because an unexpected error's CLASS is most of its diagnosis.
+            return (f"Not sent — unexpected {type(exc).__name__}: {exc}. This is a Locus bug "
+                    "rather than something wrong with the document.")
 
         pages = f"{sent.pages} page{'s' if sent.pages != 1 else ''}" if sent.pages else what
         return f"{verb} '{sent.filename}' ({pages}) to reMarkable:{sent.device_path}."

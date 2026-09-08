@@ -219,6 +219,16 @@ latex_engine   = "tectonic"  # engine for AGENT-AUTHORED sends. A document Claud
                            # provisioned TeX distribution. "pdflatex" also works. An engine named
                            # here but not installed is NOT fatal — the code falls through to
                            # whichever is present and only errors when none is.
+latex_timeout_s = 900    # ceiling on ONE engine invocation, in seconds. Sized for the one-off
+                           # COLD-CACHE package fetch, not the compile: tectonic downloads the
+                           # pgf/tikz tree on first use, and tikz+pgfplots load for every document,
+                           # so a one-line fragment pays the same fetch as a diagram-heavy brief.
+                           # MEASURED 2026-09-08 — warm 1.2s, but two COLD runs took 201.5s and
+                           # 149.7s, straddling the old hardcoded 180s (and the SLOWER one was the
+                           # one-line fragment, so the document is not the variable — the network
+                           # is). Hence the intermittent "server is down" and the fact that a full
+                           # brief and a minimal fragment failed identically. Treat this as a
+                           # ceiling on a runaway document, never a budget for a normal one.
 
 [daily]
 # The four-page daily reMarkable page (docs/daily-use-refinement-plan.md §2). Geometry is

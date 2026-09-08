@@ -596,3 +596,84 @@ def test_plots_default_to_greyscale(tmp_path: Path):
 
     coloured = [p for p in pixels if max(p[:3]) - min(p[:3]) > 24]
     assert not coloured, f"{len(coloured)} coloured pixels, e.g. {coloured[:4]} — plot is not greyscale"
+
+
+# ---------- the compile timeout (2026-09-08 regression) ----------
+
+
+def test_a_compile_timeout_raises_runtime_error_not_timeout_expired(monkeypatch, tmp_path: Path):
+    """THE BUG THIS FILE EXISTS TO KEEP FIXED. `subprocess.TimeoutExpired` is a
+    `SubprocessError`, not a `RuntimeError`, so it matched no handler in any caller — including
+    the MCP tool's `except RuntimeError` — and crossed the boundary as a bare transport failure
+    with no message. The model on the far side read "the call failed" and reported the server
+    was down; the server was fine and tectonic was still fetching packages.
+
+    Asserting `pytest.raises(RuntimeError)` is the whole point: `TimeoutExpired` would satisfy a
+    bare `except Exception` test and still be the bug."""
+    import subprocess as _sp
+
+    from locus.reading import tex2pdf
+
+    def _timeout(*_args, **kwargs):
+        raise _sp.TimeoutExpired(cmd="tectonic", timeout=kwargs.get("timeout", 900))
+
+    monkeypatch.setattr(tex2pdf.subprocess, "run", _timeout)
+    with pytest.raises(RuntimeError) as exc:
+        render_latex_to_pdf(r"\section{X}Body.", tmp_path / "out.pdf", title="T", engine="tectonic")
+
+    message = str(exc.value)
+    assert "timed out" in message
+    # It must point at the cold-cache fetch, because that is what it almost always is, and a
+    # message that only says "timed out" sends the reader to look at their LaTeX.
+    assert "cold cache" in message
+    assert "latex_timeout_s" in message
+
+
+def test_the_configured_timeout_reaches_the_engine_call(monkeypatch, tmp_path: Path):
+    """A ceiling nothing passes down is a constant with extra steps — the shape of the
+    `available_engine` bug this module already carries a comment about."""
+    import subprocess as _sp
+
+    from locus.reading import tex2pdf
+
+    seen: dict[str, float | None] = {}
+
+    def _capture(*_args, **kwargs):
+        seen["timeout"] = kwargs.get("timeout")
+        raise _sp.TimeoutExpired(cmd="tectonic", timeout=kwargs.get("timeout") or 0)
+
+    monkeypatch.setattr(tex2pdf.subprocess, "run", _capture)
+    with pytest.raises(RuntimeError):
+        render_latex_to_pdf(
+            r"\section{X}B.", tmp_path / "o.pdf", title="T", engine="tectonic", timeout_s=42.0
+        )
+    assert seen["timeout"] == 42.0
+
+
+def test_the_default_timeout_is_sized_for_a_cold_package_fetch():
+    """MEASURED 2026-09-08: a one-line fragment on a cold tectonic cache hits `TimeoutExpired`
+    at the old hardcoded 180s, while the same fragment warm compiles in 1.2s. The ceiling is
+    sized for the one-off fetch, so a value near the warm time is the regression."""
+    from locus.reading.tex2pdf import DEFAULT_TIMEOUT_S
+
+    assert DEFAULT_TIMEOUT_S >= 600
+
+
+def test_send_latex_does_not_push_when_the_compile_times_out(monkeypatch):
+    """A timeout must be as un-pushable as a compile error. Before the fix it did not merely
+    push the wrong thing — it escaped `send_latex` entirely."""
+    import subprocess as _sp
+
+    from locus.reading import tex2pdf
+    from locus.reading.send import send_latex
+
+    monkeypatch.setattr(
+        tex2pdf.subprocess,
+        "run",
+        lambda *a, **k: (_ for _ in ()).throw(_sp.TimeoutExpired(cmd="tectonic", timeout=900)),
+    )
+    fake = FakeRmapi({"mkdir": (0, "", ""), "put": (0, "", "")})
+    with pytest.raises(RuntimeError, match="timed out"):
+        send_latex(r"\section{X}B.", title="Slow", cfg=_send_cfg(), runner=fake)
+
+    assert not [c for c in fake.calls if c[0] == "put"]

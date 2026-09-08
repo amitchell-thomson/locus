@@ -7,10 +7,13 @@ never touches a device: `rmapi` is behind an injectable runner, so we assert the
 
 from __future__ import annotations
 
+import argparse
+import types
 from pathlib import Path
 
 import pytest
 
+from locus import cli
 from locus.reading.deliver_remarkable import DeliveryResult, deliver_pdf
 from locus.reading.md2pdf import PageGeometry, markdown_to_typst
 
@@ -440,3 +443,186 @@ def test_an_injected_runner_does_not_reach_the_network_to_inspect(tmp_path: Path
 
     assert result.replaced == "content-only"
     assert not any(c[0] == "rm" for c in fake.calls)
+
+
+# ---------- CLI wiring: `locus read` dispatches on the file suffix ----------
+#
+# WHY THIS SECTION EXISTS. `cmd_read` is a chain of suffix branches, and the markdown one — the
+# one the command is named for — called `render_markdown_file` while importing only
+# `render_markdown_to_pdf`, so every `locus read <x>.md` died with a NameError. The .pdf and
+# .tex branches return before reaching that line, so they worked, and nothing tested the
+# command itself. Same shape as the `cmd_discover` bug (§13): a dispatching CLI entry point
+# has to be tested on the branches its callers actually take, not on the modules beneath them.
+#
+# The renderers and the device are stubbed, so what is under test is the control flow — which
+# renderer each suffix reaches, with which arguments — not the toolchain. One toolchain-gated
+# test at the end runs the markdown branch for real, because a stub cannot catch a call that
+# hands a Path to a function expecting markdown text.
+
+
+class _FakeReadingCfg:
+    """Pinned config. NEVER `config.load()`: `config.toml` is gitignored, so a test that
+    inherits it passes or fails per machine (§13)."""
+
+    page_width_in = 7.07
+    page_height_in = 9.43
+    margin_in = 0.5
+    font_pt = 11.0
+    target_folder = "Locus/Inbox"
+    rmapi_binary = "rmapi"
+    latex_engine = "tectonic"
+
+
+class _FakeCfg:
+    reading = _FakeReadingCfg()
+
+
+def _read_args(path: Path, **kw) -> argparse.Namespace:
+    """Every flag the `read` subparser defines, defaulted as argparse would build them."""
+    base = dict(path=str(path), title=None, to=None, out=None, no_push=False)
+    base.update(kw)
+    return argparse.Namespace(**base)
+
+
+@pytest.fixture()
+def read_calls(monkeypatch):
+    """Record which renderer each suffix reaches. No toolchain, no network, no device."""
+    calls: dict[str, list] = {"markdown": [], "latex": [], "sent_pdf": [], "delivered": []}
+
+    monkeypatch.setattr(cli, "load", lambda: _FakeCfg())
+
+    def fake_render_markdown_file(md_path, out_pdf, *, geometry=None):
+        calls["markdown"].append((Path(md_path), Path(out_pdf), geometry))
+        Path(out_pdf).write_bytes(b"%PDF-1.4 stub")
+        return Path(out_pdf)
+
+    def fake_render_latex_file(tex_path, out_pdf, *, geometry=None, engine=None, timeout_s=None):
+        calls["latex"].append((Path(tex_path), Path(out_pdf), geometry, engine))
+        Path(out_pdf).write_bytes(b"%PDF-1.4 stub")
+        return Path(out_pdf)
+
+    def fake_send_pdf(pdf, *, title=None, folder=None, cfg=None, runner=None):
+        calls["sent_pdf"].append((Path(pdf), title, folder))
+        return types.SimpleNamespace(filename=Path(pdf).name, device_path=f"/{folder}")
+
+    def fake_deliver_pdf(pdf, *, remote_folder="", rmapi_binary="rmapi", **kw):
+        calls["delivered"].append((Path(pdf), remote_folder))
+        return DeliveryResult(remote_folder=remote_folder, filename=Path(pdf).name,
+                              created_folder=False)
+
+    # Patched on the modules, not on `cli`: cmd_read imports these inside the function body,
+    # so the lookup happens at call time and picks these up.
+    monkeypatch.setattr("locus.reading.md2pdf.render_markdown_file", fake_render_markdown_file)
+    monkeypatch.setattr("locus.reading.tex2pdf.render_latex_file", fake_render_latex_file)
+    monkeypatch.setattr("locus.reading.send.send_pdf", fake_send_pdf)
+    monkeypatch.setattr("locus.reading.deliver_remarkable.deliver_pdf", fake_deliver_pdf)
+    # The real one calls `config.load()` when given no cfg, which would read the live file.
+    monkeypatch.setattr(
+        "locus.reading.send.latex_geometry",
+        lambda cfg=None: PageGeometry(width_in=7.07, height_in=9.43, margin_in=0.5, font_pt=9.0),
+    )
+    return calls
+
+
+def test_read_renders_a_markdown_file(tmp_path: Path, read_calls, capsys):
+    """THE REGRESSION. The markdown branch must reach the renderer that takes a PATH.
+
+    It called `render_markdown_file` while importing `render_markdown_to_pdf`, so this branch
+    raised NameError for every caller. The two are not interchangeable — one takes a path and
+    titles from the stem, the other takes markdown text — so this asserts the file itself is
+    what gets handed over, not just that something was called."""
+    md = tmp_path / "probe.md"
+    md.write_text("# Test\n\nBody.\n", encoding="utf-8")
+
+    cli.cmd_read(_read_args(md, no_push=True))
+
+    assert [c[0] for c in read_calls["markdown"]] == [md]
+    assert read_calls["markdown"][0][1] == tmp_path / "probe.pdf"
+    assert read_calls["delivered"] == []          # --no-push means render only
+    assert "rendered probe.md" in capsys.readouterr().out
+
+
+def test_read_pushes_a_rendered_markdown_file_when_not_told_otherwise(tmp_path: Path, read_calls):
+    """The default path — render, then deliver. `--no-push` is the exception, not the shape."""
+    md = tmp_path / "note.md"
+    md.write_text("# Note\n\nBody.\n", encoding="utf-8")
+
+    cli.cmd_read(_read_args(md))
+
+    assert read_calls["delivered"] == [(tmp_path / "note.pdf", "Locus/Inbox")]
+
+
+def test_read_renders_every_markdown_file_in_a_directory(tmp_path: Path, read_calls):
+    """A directory is the other markdown entry point, and it reaches the same line."""
+    (tmp_path / "a.md").write_text("# A\n", encoding="utf-8")
+    (tmp_path / "b.md").write_text("# B\n", encoding="utf-8")
+    (tmp_path / "c.txt").write_text("not markdown\n", encoding="utf-8")
+
+    cli.cmd_read(_read_args(tmp_path, no_push=True))
+
+    assert [c[0].name for c in read_calls["markdown"]] == ["a.md", "b.md"]
+
+
+def test_read_writes_to_the_out_dir_when_given_one(tmp_path: Path, read_calls):
+    md = tmp_path / "probe.md"
+    md.write_text("# Test\n", encoding="utf-8")
+    out = tmp_path / "pdfs"
+    out.mkdir()
+
+    cli.cmd_read(_read_args(md, no_push=True, out=str(out)))
+
+    assert read_calls["markdown"][0][1] == out / "probe.pdf"
+
+
+def test_read_compiles_a_tex_file_rather_than_typesetting_its_macros(tmp_path: Path, read_calls):
+    """A .tex file goes to the LaTeX engine at the LaTeX body size, never to the markdown
+    renderer — which would not fail, it would push a document of backslashes."""
+    tex = tmp_path / "brief.tex"
+    tex.write_text(r"\section{Brief}Body.", encoding="utf-8")
+
+    cli.cmd_read(_read_args(tex, no_push=True))
+
+    assert read_calls["markdown"] == []
+    (src, out_pdf, geometry, engine) = read_calls["latex"][0]
+    assert (src, out_pdf) == (tex, tmp_path / "brief.pdf")
+    assert geometry.font_pt == 9.0        # the two-column LaTeX size, not [reading].font_pt
+    assert engine == "tectonic"
+
+
+def test_read_pushes_a_pdf_unchanged(tmp_path: Path, read_calls):
+    """A PDF is already the artifact: it is pushed as-is, never re-rendered."""
+    pdf = tmp_path / "paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4 stub")
+
+    cli.cmd_read(_read_args(pdf))
+
+    assert read_calls["sent_pdf"] == [(pdf, None, "Locus/Inbox")]
+    assert read_calls["markdown"] == [] and read_calls["latex"] == []
+
+
+def test_read_no_push_on_a_pdf_does_nothing_at_all(tmp_path: Path, read_calls, capsys):
+    """`--no-push` means "render only", and for a PDF there is nothing to render. Checking the
+    flag AFTER the send would have pushed the document the flag said not to push."""
+    pdf = tmp_path / "paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4 stub")
+
+    cli.cmd_read(_read_args(pdf, no_push=True))
+
+    assert read_calls["sent_pdf"] == []
+    assert "nothing to render" in capsys.readouterr().out
+
+
+@requires_toolchain
+def test_read_markdown_end_to_end_produces_a_real_pdf(tmp_path: Path, monkeypatch, capsys):
+    """The stubbed tests above pin which function is called; this one pins that the call is
+    ACTUALLY VALID. `render_markdown_to_pdf` has the same arity and would accept a Path as its
+    markdown text, so only a real render distinguishes the two."""
+    monkeypatch.setattr(cli, "load", lambda: _FakeCfg())
+    md = tmp_path / "probe.md"
+    md.write_text("# Test\n\nBody.\n", encoding="utf-8")
+
+    cli.cmd_read(_read_args(md, no_push=True))
+
+    out_pdf = tmp_path / "probe.pdf"
+    assert out_pdf.read_bytes()[:5] == b"%PDF-"
+    assert "rendered probe.md" in capsys.readouterr().out

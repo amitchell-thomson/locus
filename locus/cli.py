@@ -13,7 +13,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from contextlib import contextmanager
 from pathlib import Path
 
 from locus.config import load
@@ -775,7 +774,7 @@ def cmd_read(args) -> None:
     the offline path when the device is asleep.
     """
     from locus.reading.deliver_remarkable import deliver_pdf
-    from locus.reading.md2pdf import PageGeometry, render_markdown_to_pdf
+    from locus.reading.md2pdf import PageGeometry, render_markdown_file
 
     cfg = load().reading
     geometry = PageGeometry(
@@ -1141,7 +1140,7 @@ def cmd_discover(args) -> None:
                 kinds = {}
                 for p in built:
                     kinds[p.subject_kind] = kinds.get(p.subject_kind, 0) + 1
-                print(f"profiles rebuilt: " + ", ".join(f"{v} {k}" for k, v in sorted(kinds.items()))
+                print("profiles rebuilt: " + ", ".join(f"{v} {k}" for k, v in sorted(kinds.items()))
                       if built else "no profiles — bless a project object first")
 
             if args.rank or args.propose:

@@ -40,6 +40,25 @@ packages a document actually asks for, so a preamble can use `booktabs` without 
 provisioned a TeX distribution first; measured on this machine, a cold compile that downloaded
 `enumitem`/`fancyhdr` took 2.6s and every subsequent compile 0.68s.
 
+The engine name from config is a PREFERENCE, not a command: `available_engine` falls through to
+whatever is installed. This was true in the docstring and false in the code until 2026-09-08 —
+`render_latex_to_pdf` wrote `engine or available_engine(engine)`, which short-circuits on the
+non-empty configured name and never looks at PATH. Nothing surfaced it because the process that
+sends is not the process you test in: the MCP server runs under `uv run`, whose PATH lacks
+~/.local/bin where `tectonic` is installed, so every MCP send died on FileNotFoundError with
+/usr/bin/pdflatex available and unconsulted, while the same call from a login shell worked. If
+you touch engine selection, test through `render_latex_to_pdf`, not `available_engine` alone —
+a unit test of the helper passes either way, which is why one existed and caught nothing.
+
+HOUSE STYLE, AND WHICH HALF OF IT IS ENFORCED
+---------------------------------------------
+Two rules arrived with the two-column change (2026-09-08). They are enforced differently on
+purpose. **No em dashes** is checkable, so `build_document` raises on one (`_EM_DASH`). **No
+assistant register** — no throat-clearing, no "it's worth noting", no summary that restates the
+section it just ended — is a judgement, so it lives in the MCP tool docstring and the
+`remarkable` command where the authoring model reads it. A regex for the second would fire on
+honest prose, and a rule that fires wrongly gets ignored, taking the enforceable one with it.
+
 HONEST DEPARTURE FROM `md2pdf`'s "no system binaries" PROPERTY. md2pdf's toolchain installs via
 pip (`pypandoc-binary`, `typst`) and is therefore reproducible from the lockfile alone. There is
 no equivalent pip-bundled LaTeX, so this module shells out to a binary that has to exist on the
@@ -75,6 +94,28 @@ _DOCUMENTCLASS = re.compile(r"^[^%\n]*\\documentclass", re.MULTILINE)
 # and form feed are legal TeX and are kept.
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0e-\x1f\x7f]")
 
+# The body sizes the `extsizes` classes actually implement. Stock `article` implements only
+# 10/11/12 and SILENTLY typesets anything else at 10pt — `\documentclass[9.5pt]{article}`
+# compiles clean, reports nothing but "Unused global option" in the log, and renders at 10pt.
+# Measured 2026-09-08 by compiling both and reading `\f@size` out of the PDF. Hence `extarticle`
+# below, and hence `[reading].latex_font_pt` validating against this tuple at config load.
+CLASS_SIZES_PT = (8.0, 9.0, 10.0, 11.0, 12.0, 14.0, 17.0, 20.0)
+
+# Em dashes are banned outright from agent-authored documents (his instruction, 2026-09-08).
+# Enforced rather than merely documented because it is the one house-style rule that is exactly
+# checkable: `---` and U+2014 are unambiguous, so a guard here cannot be wrong about what it
+# found. The rest of the house style (no assistant register, no throat-clearing) is a judgement
+# and lives in the tool docstring and the `remarkable` command, where a human or the authoring
+# model applies it — a regex that tried would fire on legitimate prose.
+#
+# It raises rather than rewriting. Substituting a comma, a colon or parentheses changes what the
+# sentence CLAIMS, and this module never edits his documents' meaning; the author is in the loop
+# and can recast the clause. Note this only ever sees prose the AGENT wrote: his own words reach
+# the device through `send_markdown`, which does not pass through here.
+#
+# `--` (en dash, for ranges like 3--5) is deliberately untouched.
+_EM_DASH = re.compile(r"---|—")
+
 _ENGINES = ("tectonic", "pdflatex")
 
 _INSTALL_HINT = (
@@ -103,6 +144,51 @@ def is_full_document(tex: str) -> bool:
     return bool(_DOCUMENTCLASS.search(tex))
 
 
+# TikZ/pgfplots setup, kept out of `latex_preamble`'s list purely because the cycle list needs
+# literal `\\` separators and reads better as one raw block.
+#
+# The e-ink-specific part is the DEFAULTS, not the packages. The tablet is greyscale, so a plot
+# that separates its series by colour separates them by nothing: `cycle list name=eink` below
+# distinguishes them by dash pattern first and only then by grey level. Line widths are set
+# above LaTeX's defaults for the same reason a hairline rule vanishes on a reflective screen.
+#
+# `cycle list name` is set at TOP LEVEL and not folded into the `every axis` style below, which
+# is where it was first written and where it silently did nothing: pgfplots installs its own
+# default cycle list over anything `every axis` sets, so every plot came out in the stock blue
+# and red. Grepping the preamble for the key could not tell the difference, which is why
+# `test_plots_default_to_greyscale` renders a real plot and asserts on the PIXELS instead.
+#
+# `bar cycle list` is a SECOND, separate default that `ybar` installs over the first, initially
+# blue and red fills. Fixing only the line cycle list left every bar chart coloured, and the
+# first version of the pixel test missed it by plotting lines — so the test now renders one of
+# each. Bars separate by fill level, since a dash pattern on a filled rectangle reads as noise.
+_DIAGRAM_SETUP = r"""\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,fit,shapes.geometric,decorations.pathreplacing,patterns}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\tikzset{>=Stealth}
+\tikzset{every picture/.append style={line width=0.6pt,font=\footnotesize}}
+\pgfplotscreateplotcyclelist{eink}{%
+black,solid\\%
+black,dashed\\%
+black,dotted\\%
+black,dashdotted\\%
+black!55,solid\\%
+black!55,dashed\\%
+}
+\pgfplotsset{cycle list name=eink}
+\pgfplotsset{bar cycle list/.style={cycle list={%
+{black,fill=black!12},%
+{black,fill=black!42},%
+{black,fill=black!70},%
+{black,fill=white},%
+}}}
+\pgfplotsset{every axis/.append style={%
+  line width=0.5pt,tick style={line width=0.4pt},%
+  label style={font=\footnotesize},tick label style={font=\scriptsize},%
+  legend style={font=\scriptsize,draw=black!40}}}"""
+
+
 def latex_preamble(geometry: PageGeometry) -> str:
     r"""The device-tuned preamble wrapped around a FRAGMENT.
 
@@ -121,10 +207,33 @@ def latex_preamble(geometry: PageGeometry) -> str:
       nothing to click on paper.
     - No `fontspec`. It would give better faces but binds the document to XeTeX/LuaTeX, and the
       pdflatex fallback has to produce the same document rather than a near-miss.
+    - **Two columns, always** (his instruction, 2026-09-08). On a 7.07in page with 0.5in margins
+      that is two ~2.9in columns, which is close to a journal measure and is why the body size
+      drops with it: `[reading].latex_font_pt` defaults to 9pt where the markdown path stays at
+      11pt. The consequence an author has to hold in mind is that a display equation wider than
+      2.9in will overflow its column silently-looking (LaTeX logs an Overfull \hbox and renders
+      it hanging into the gutter), so wide maths wants `split`/`aligned` or the full-width
+      `equation*` inside a `figure*`. Tables and figures that need the full measure use the
+      starred floats, `table*` and `figure*`.
+    - `extarticle`, not `article`. Only so that 9pt is really 9pt: see `CLASS_SIZES_PT`.
+    - TikZ and pgfplots are loaded for every document (`_DIAGRAM_SETUP`). The tablet is for
+      LEARNING something, and a diagram drawn beside the prose is most of what makes that work
+      on paper, so the packages have to be there without the author declaring them — the same
+      contract the docstring already makes for amsmath and booktabs. Measured cost of carrying
+      them on a document that draws nothing (2026-09-08, tectonic warm, best of 3): 1.13s
+      against 0.65s without, so ~0.5s per send. The first compile after a version bump also
+      pays a one-off ~34s while tectonic fetches the pgf tree.
     """
+    if geometry.font_pt not in CLASS_SIZES_PT:
+        allowed = ", ".join(f"{s:g}" for s in CLASS_SIZES_PT)
+        raise ValueError(
+            f"font_pt={geometry.font_pt:g} is not a size the document class implements "
+            f"(allowed: {allowed}). LaTeX would accept the option and silently typeset at a "
+            "different size, so this refuses instead."
+        )
     return "\n".join(
         [
-            f"\\documentclass[{geometry.font_pt:g}pt]{{article}}",
+            f"\\documentclass[{geometry.font_pt:g}pt,twocolumn]{{extarticle}}",
             f"\\usepackage[paperwidth={geometry.width_in}in,"
             f"paperheight={geometry.height_in}in,margin={geometry.margin_in}in]{{geometry}}",
             "\\usepackage[T1]{fontenc}",
@@ -140,6 +249,7 @@ def latex_preamble(geometry: PageGeometry) -> str:
             "\\usepackage{booktabs}",
             "\\usepackage{enumitem}",
             "\\usepackage{microtype}",
+            _DIAGRAM_SETUP,
             "\\usepackage[hidelinks]{hyperref}",
             "\\usepackage{parskip}",
             "\\usepackage{ragged2e}",
@@ -152,7 +262,13 @@ def latex_preamble(geometry: PageGeometry) -> str:
             # leaves `\\` alone and hyphenates properly instead of only stretching interword
             # space, which matters more here than usual: the text column is 6.07in.
             "\\RaggedRight",
-            "\\setlength{\\emergencystretch}{2em}",
+            # 3em, not the 2em the single-column layout used. Emergency stretch is the last
+            # resort TeX reaches for before letting a line stick out, and a 2.9in column gives
+            # it far less room to break a long identifier or URL than a 6.07in one did.
+            "\\setlength{\\emergencystretch}{3em}",
+            # The gutter. Wide enough that two columns of 9pt text do not read as one, narrow
+            # enough not to spend measure that the body needs at this size.
+            "\\setlength{\\columnsep}{0.22in}",
             "\\pagestyle{plain}",
             # Lists at LaTeX's default leading eat a third of a 9.43in page. Tightened, but not
             # to `nosep` — the items still need to read as separate on a low-contrast screen.
@@ -168,8 +284,60 @@ def _title_block(title: str) -> str:
     is unidentifiable three pages in — the same reason `markdown_to_typst` prepends an H1. It is
     a plain `\section*`, not `\maketitle`: `\maketitle` on `article` spends ~1.5in of a 9.43in
     page on vertical centring and a date nobody asked for.
+
+    Wrapped in `\twocolumn[...]` since the layout went two-column: the optional argument is the
+    one place LaTeX sets material across the full measure at the top of a page. Without it the
+    title is a `\section*` sitting in the left column, which reads as the first section's
+    heading rather than as the document's name.
     """
-    return f"\\section*{{{escape_text(title)}}}"
+    return f"\\twocolumn[%\n  \\section*{{{escape_text(title)}}}%\n  \\vspace{{0.4em}}%\n]"
+
+
+# The heading a fragment opens with, if it opens with one, and its text.
+_OPENING_HEADING = re.compile(
+    r"\\(?:section|subsection|chapter|part|title)\*?\s*(?:\[[^\]]*\])?\s*\{([^}]*)\}"
+)
+
+
+def _opening_heading_repeats(body: str, title: str) -> bool:
+    """True when the fragment opens with a heading that IS the title, so printing both duplicates.
+
+    Compares the TEXT, not merely the presence of a heading. The presence test this replaces
+    suppressed the title whenever a document opened with any `\\section{...}` at all, which is how
+    a normal document opens — so a fragment beginning "1. The project in one sentence" was
+    silently delivered with no title on it. That is worse under the two-column layout than it was
+    before: `_title_block` is the only thing set across the full measure, so losing it loses the
+    one piece of the page that announces what the document is, and the tablet shows no filename
+    while a document is open.
+    """
+    match = _OPENING_HEADING.match(body)
+    if not match:
+        return False
+    normalise = lambda text: " ".join(text.split()).casefold()  # noqa: E731
+    return normalise(match.group(1)) == normalise(title)
+
+
+def _reject_em_dashes(text: str, *, where: str) -> None:
+    r"""Raise if `text` contains an em dash, in either the `---` or the U+2014 spelling.
+
+    See `_EM_DASH` for why this is enforced here and why it raises instead of substituting.
+    The message quotes the surrounding words because `---` is invisible in a wall of LaTeX and
+    "there is an em dash somewhere" is not a fixable report.
+    """
+    hits = list(_EM_DASH.finditer(text))
+    if not hits:
+        return
+    samples = []
+    for match in hits[:3]:
+        start, end = max(0, match.start() - 35), min(len(text), match.end() + 35)
+        snippet = " ".join(text[start:end].split())
+        samples.append(f"  ...{snippet}...")
+    more = f" (and {len(hits) - 3} more)" if len(hits) > 3 else ""
+    raise ValueError(
+        f"em dash in the {where}{more} — this document style does not use them. Recast the "
+        "sentence, or use a colon, a semicolon, parentheses or a full stop. An en dash (--) "
+        "for a numeric range is fine.\n" + "\n".join(samples)
+    )
 
 
 def escape_text(text: str) -> str:
@@ -194,17 +362,27 @@ def build_document(
     r"""Return compilable LaTeX source for `tex`.
 
     A full document is returned unchanged (minus control characters). A fragment is wrapped in
-    `latex_preamble` and given a `\section*{title}` when `title` is set and the body does not
+    `latex_preamble` and given a full-measure title when `title` is set and the body does not
     already open with a sectioning command of its own.
+
+    "Already opens with one" means a heading whose TEXT is the title, not merely any heading:
+    a document that opens with its first numbered section still gets titled. See
+    `_opening_heading_repeats`.
+
+    Raises `ValueError` on an em dash anywhere in the body or the title (see `_EM_DASH`).
     """
     tex = _CONTROL_CHARS.sub("", tex)
+    # Before the full-document early return: a `\documentclass` document is still something the
+    # agent wrote, and the house style is about the prose, not about who supplied the preamble.
+    _reject_em_dashes(tex, where="document body")
+    if title:
+        _reject_em_dashes(title, where="title")
     if is_full_document(tex):
         return tex
 
     geometry = geometry or PageGeometry()
     body = tex.strip()
-    opens_with_heading = re.match(r"\\(section|subsection|chapter|part|title)\*?\s*[{\[]", body)
-    if title and not opens_with_heading:
+    if title and not _opening_heading_repeats(body, title):
         body = f"{_title_block(title)}\n\n{body}"
 
     return (
@@ -232,6 +410,56 @@ def _explain_failure(output: str) -> str:
         # TeX prints its chatter first and dies last.
         hits = [ln for ln in lines if ln.strip()][-_MAX_ERROR_LINES:]
     return "\n".join(hits[:_MAX_ERROR_LINES])
+
+
+# `\includegraphics[key=val]{name}` — the optional argument is skipped, and `name` may carry a
+# subdirectory and may omit its extension (graphicx resolves that itself).
+_INCLUDEGRAPHICS = re.compile(r"\\includegraphics\s*(?:\[[^\]]*\])?\s*\{([^}]*)\}")
+
+# The extensions graphicx will try for an extensionless name, in the order it tries them.
+_GRAPHICS_SUFFIXES = (".pdf", ".png", ".jpg", ".jpeg")
+
+
+def _stage_graphics(source: str, tmp_dir: Path, resource_dir: Path) -> None:
+    r"""Copy every image the document includes into the compile directory.
+
+    WHY NOT `TEXINPUTS`, which is what this used to rely on: it does not work for graphics under
+    tectonic. Tectonic runs XeTeX behind its own I/O layer, which resolves images relative to the
+    input file rather than through the TeX search path, so `\includegraphics{fig.png}` with the
+    raw store on TEXINPUTS failed with "Unable to load picture or PDF file" while the file sat
+    exactly where the variable pointed (measured 2026-09-08 against a real corpus figure). The
+    docstring claimed the relative form worked and no test compiled a document with an image in
+    it, so the claim survived a year of being false.
+
+    Copying is engine-independent and bounded: only the handful of files a document actually
+    names get copied, into the temporary directory that is already the compile root. TEXINPUTS
+    stays set, because it still does the job it really does — finding `.sty`/`.tex` includes.
+
+    A named file that is not in `resource_dir` raises here rather than 40 lines into a TeX log.
+    """
+    for name in dict.fromkeys(_INCLUDEGRAPHICS.findall(source)):
+        name = name.strip()
+        # An absolute path needs no staging: both engines read it directly, and rewriting it
+        # would break a caller that deliberately pointed outside the resource directory.
+        if not name or Path(name).is_absolute():
+            continue
+
+        candidates = [resource_dir / name]
+        if not Path(name).suffix:
+            candidates += [resource_dir / f"{name}{suffix}" for suffix in _GRAPHICS_SUFFIXES]
+        found = next((c for c in candidates if c.is_file()), None)
+        if found is None:
+            raise RuntimeError(
+                f"the document includes '{name}' but no such image is in {resource_dir}. "
+                "Give `\\includegraphics` a filename that exists there, or an absolute path."
+            )
+
+        # Land it under the name the document used, so the reference resolves unchanged.
+        dest = tmp_dir / name
+        if found.suffix and not Path(name).suffix:
+            dest = tmp_dir / f"{name}{found.suffix}"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(found, dest)
 
 
 def _engine_argv(engine: str, src: Path, outdir: Path) -> list[str]:
@@ -264,17 +492,27 @@ def render_latex_to_pdf(
     an isolated temporary directory so the engine's write path is never the repo — the same
     containment `render_markdown_to_pdf` gets from Typst's `root`.
 
-    `resource_dir` is prepended to `TEXINPUTS`, which is what makes `\includegraphics{fig}` with
-    a RELATIVE path resolve. Without it only absolute paths work, and "images" was one of the
-    three reasons this module exists, so the relative form has to work too — a figure is
-    normally written beside the document that includes it, not addressed from `/`.
+    `resource_dir` is where relative `\includegraphics{fig}` names are resolved from: every image
+    the document names is copied into the compile directory before the engine runs (see
+    `_stage_graphics`, and note that setting TEXINPUTS alone does NOT achieve this under
+    tectonic). It is also prepended to TEXINPUTS, which is what finds a relative `.sty`/`.tex`
+    include. Absolute paths in `\includegraphics` are left alone. `send_latex` defaults this to
+    the raw store so corpus figures are includable by their stored filename.
 
     Raises `RuntimeError` carrying the engine's own error lines. It raises rather than degrading
     for the reason `send_markdown` does: every caller reports to a human who can fix the source,
     and a blank PDF delivered to the tablet is the silent-failure class this codebase exists to
     resist (CLAUDE.md §3).
     """
-    engine = engine or available_engine(engine)
+    # ALWAYS through `available_engine`, never `engine or available_engine(engine)`. That form
+    # short-circuits on any truthy name, and `[reading].latex_engine` is a non-empty string with
+    # a default — so every real send skipped the PATH check entirely and the documented
+    # fall-through was unreachable code. It failed exactly where you would least see it: the MCP
+    # server is launched `uv run`, whose PATH does not carry ~/.local/bin, so `tectonic` (which
+    # lives there) raised FileNotFoundError while /usr/bin/pdflatex sat on that same PATH unused.
+    # `available_engine` already treats its argument as a PREFERENCE and falls through, which is
+    # what both this module's and `config`'s docstrings promised the whole time.
+    engine = available_engine(engine)
     source = build_document(tex, geometry=geometry, title=title)
 
     out_pdf = Path(out_pdf)
@@ -290,6 +528,8 @@ def render_latex_to_pdf(
         tmp_dir = Path(tmp)
         src = tmp_dir / "doc.tex"
         src.write_text(source, encoding="utf-8")
+        if resource_dir:
+            _stage_graphics(source, tmp_dir, Path(resource_dir).resolve())
 
         # pdflatex needs a second pass to resolve refs/ToC; tectonic reruns internally and a
         # second invocation would only pay the cost twice.

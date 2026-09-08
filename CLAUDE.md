@@ -499,8 +499,26 @@ locus/
   `.tex` path to `locus read`. This is the system's interface with him, not a per-document
   choice — equations, layout and figure placement that markdown cannot express. Pass a
   FRAGMENT; the device preamble (page size, margins, e-ink leading, amsmath/graphicx/booktabs/
-  enumitem/hyperref/microtype) is wrapped around it, and a source carrying its own
-  `\documentclass` is compiled untouched as the escape hatch. `md2pdf`/`send_markdown` stay and
+  enumitem/hyperref/microtype/tikz/pgfplots) is wrapped around it, and a source carrying its own
+  `\documentclass` is compiled untouched as the escape hatch.
+  **Set two-column at 9pt** (2026-09-08), which is why the class is `extarticle` and why
+  `[reading].latex_font_pt` validates against a fixed set: stock `article` accepts only
+  10/11/12pt and silently typesets `[9.5pt]` at 10pt. It is a SEPARATE size from
+  `[reading].font_pt`, which still drives the single-column markdown path and, through the
+  shared geometry, the daily page. A column is ~2.9in, so wide display maths needs `split`, and
+  full-width material needs `figure*`/`table*`.
+  **Diagrams are the point, not decoration.** The tablet is where he goes to understand
+  something, so TikZ and pgfplots load for every document (measured tax: ~0.5s per compile) and
+  the authoring rule is to draw the mechanism rather than describe it. Greyscale screen: series
+  are separated by dash pattern, never colour. Corpus figures drop in by their stored
+  `figures.raw_path` name because `send_latex` defaults `resource_dir` to the raw store, and
+  `_stage_graphics` COPIES each named image into the compile dir — setting TEXINPUTS alone does
+  not work under tectonic, which resolves images relative to the input file.
+  **No em dashes in agent-authored documents**, enforced in `build_document` (it raises; it does
+  not substitute, because the replacement changes what the sentence claims). The rest of the
+  house style — no assistant register, no throat-clearing, no section that summarises itself —
+  is judgement and lives in the `to_remarkable` docstring and the `remarkable` command, since a
+  regex for it would fire on honest prose. `md2pdf`/`send_markdown` stay and
   are NOT deprecated: they carry text that was already markdown — his own notes, a stored pass
   output — and re-authoring those as LaTeX would put a model between him and his own words.
   The engine is a system binary (`tectonic`, else `pdflatex`), which is a real reproducibility

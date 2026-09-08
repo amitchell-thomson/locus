@@ -778,8 +778,12 @@ def cmd_read(args) -> None:
             # the same silent mis-render the .pdf branch above exists to prevent.
             from locus.reading.tex2pdf import render_latex_file
 
+            # NOT the `geometry` built above: that one carries `font_pt`, which sizes the
+            # single-column markdown path. LaTeX is two-column and reads at its own size.
+            from locus.reading.send import latex_geometry
+
             out_pdf = (Path(args.out) / f"{src.stem}.pdf") if args.out else src.with_suffix(".pdf")
-            render_latex_file(out_pdf=out_pdf, tex_path=src, geometry=geometry,
+            render_latex_file(out_pdf=out_pdf, tex_path=src, geometry=latex_geometry(),
                               engine=cfg.latex_engine)
             if args.no_push:
                 print(f"rendered {src.name} -> {out_pdf}")

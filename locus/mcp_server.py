@@ -274,6 +274,7 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
         markdown: str | None = None,
         pdf_path: str | None = None,
         folder: str | None = None,
+        resource_dir: str | None = None,
     ) -> str:
         r"""Send a document to the owner's reMarkable to read on paper. Three modes.
 
@@ -286,12 +287,55 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
         Writing markdown and sending it through `markdown=` instead is the wrong call even when
         the document has no maths in it.
 
-        Pass a FRAGMENT — start at `\section{...}` and write body text. It is wrapped in a
-        preamble already tuned to the device's page size, margins and reading leading, with
-        amsmath, graphicx, booktabs, enumitem, hyperref and microtype loaded. Do NOT write your
-        own `\documentclass` unless you specifically need to override the layout: if you do
-        include one, the document is compiled EXACTLY as you wrote it and the device geometry is
-        yours to get right.
+        Pass a FRAGMENT — open with body text or `\section{...}`, and pass the document's name as
+        `title` rather than writing your own heading first. It is wrapped in a preamble already
+        tuned to the device's page size, margins and reading leading, with amsmath, graphicx,
+        booktabs, enumitem, hyperref, microtype, TikZ and pgfplots loaded. Do NOT write your own
+        `\documentclass` unless you specifically need to override the layout: if you do include
+        one, the document is compiled EXACTLY as you wrote it and the device geometry is yours to
+        get right.
+
+        LAYOUT: the page is set in TWO COLUMNS at 9pt. Each column is about 2.9in, so a display
+        equation wider than that overflows into the gutter — break wide maths with `split` or
+        `aligned`, and use the starred floats `figure*` and `table*` for anything that genuinely
+        needs the full width. `\linewidth` inside a float is the column, which is what you want
+        for `\includegraphics` and for pgfplots `width=`.
+
+        DRAW THINGS. This is the main reason he reads on the tablet: he is trying to UNDERSTAND
+        something, and a diagram beside the prose is most of what makes that work on paper. TikZ
+        and pgfplots are already loaded, so draw the mechanism rather than describing it — a
+        block diagram of the pipeline, the geometry of the thing being derived, a plot of the
+        function under discussion, an annotated axis showing what a parameter does. Prefer a
+        drawn figure to a paragraph explaining what the figure would show. Two constraints: the
+        screen is GREYSCALE, so never encode meaning in colour (the default pgfplots cycle list
+        separates series by dash pattern for exactly this reason), and keep line weights at the
+        preamble's defaults or heavier, because hairlines disappear on e-ink.
+
+        FIGURES FROM HIS CORPUS are an option, not a first resort (he confirmed 2026-09-08 that
+        drawn figures are what he wants; do not open with a figure hunt, and do not treat a
+        schematic as a compromise). When a real figure from a paper he read genuinely fits,
+        `\includegraphics[width=\linewidth]{<name>}` resolves against the raw store by default,
+        so an ingested figure drops in by the filename in `figures.raw_path`. Use `resource_dir`
+        to point at some other directory instead, e.g. one holding plots you just generated with
+        matplotlib. A name that is not there comes back as an error naming the file.
+
+        SAY WHEN A FIGURE IS ILLUSTRATIVE. A schematic with invented numbers is fine and often
+        the clearest thing to draw, but a plot that looks like a result and is not must say so in
+        its caption. That distinction is what makes a drawn figure safe to read.
+
+        STYLE. Write it as a document, not as chat that has been typeset.
+          - NO EM DASHES. This is enforced: `---` or an em dash character anywhere in the body or
+            title is refused with an error, and you should rewrite the sentence rather than
+            reach for a substitute punctuation mark that keeps the same shape. Use a colon, a
+            semicolon, parentheses, or two sentences. `--` for a numeric range is fine.
+          - No assistant register. Cut "Let's dive in", "It's worth noting that", "In this
+            section we will", "I hope this helps", and any closing paragraph that summarises the
+            section it just ended. Do not open a section by announcing what the section is about.
+            State the thing itself.
+          - No hedging filler, no rhetorical questions to the reader, no bulleted restatement of
+            a paragraph that already said it. Prose carries the argument; lists carry lists.
+          - Define a term at first use and then use it. He is reading to learn, so an undefined
+            piece of jargon is a dead end, and a defined one restated three times is padding.
 
         MARKDOWN (`markdown=`): for relaying text that ALREADY EXISTS as markdown — a file you
         read, a stored note, a pass's output. Use it to send his own words unchanged. Do not use
@@ -321,6 +365,9 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
             markdown: Existing markdown to relay unchanged. Not for prose you are composing.
             pdf_path: Path on the Locus server to an existing PDF to push unchanged.
             folder: Optional device folder override (default `[reading].send_folder`).
+            resource_dir: Directory on the Locus server that relative `\includegraphics` names
+                resolve against. Defaults to the corpus raw store, so ingested figures work by
+                their stored filename; set it to point at generated plots instead.
         """
         from locus.reading.send import send_latex, send_markdown, send_pdf
 
@@ -344,7 +391,8 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
             elif latex:
                 if not title:
                     return "Sending LaTeX needs a `title` — it names the file and heads page 1."
-                sent = send_latex(latex, title=title, folder=folder)
+                sent = send_latex(latex, title=title, folder=folder,
+                                  resource_dir=resource_dir)
                 verb, what = "Sent", "typeset"
             else:
                 if not title:

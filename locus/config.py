@@ -11,7 +11,7 @@ import tomllib
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # Project root = the directory containing this package's parent (where config.toml lives).
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -360,6 +360,39 @@ class ReadingConfig(BaseModel):
     latex_engine: str = Field(
         "tectonic", description="LaTeX engine for agent-authored sends ('tectonic' | 'pdflatex')."
     )
+    # The LaTeX path carries its OWN body size and deliberately does not inherit `font_pt`.
+    # Agent-authored documents are set TWO-COLUMN (2026-09-08), which puts ~2.9in of measure in
+    # each column; 11pt across that is too few words per line to read comfortably. `font_pt`
+    # still sizes the markdown path, and through the shared geometry the daily page, which §10
+    # keeps on Typst on purpose — changing one must not silently move the other.
+    #
+    # MEASURED, and the reason this is a CONSTRAINED set rather than a free float: `article`
+    # accepts only 10/11/12pt as a class option and silently typesets anything else at 10pt.
+    # `\documentclass[9.5pt]{article}` compiles clean and renders at 10pt, announcing itself
+    # only as an "Unused global option" line buried in the log — the exact silent-substitution
+    # class this codebase exists to resist. The preamble therefore builds on `extarticle`
+    # (extsizes), whose supported sizes are these, and a value outside them fails HERE at config
+    # load rather than becoming a document typeset at a size nobody chose.
+    latex_font_pt: float = Field(
+        9.0, description="Body text size (pt) for agent-authored LaTeX sends (extsizes set)."
+    )
+
+    @field_validator("latex_font_pt")
+    @classmethod
+    def _latex_font_pt_is_a_real_class_size(cls, value: float) -> float:
+        # Imported here rather than at module scope: the set is a fact about LaTeX document
+        # classes and belongs beside the preamble that relies on it, and `config` is imported by
+        # nearly everything — it should not pull in a renderer to load a TOML file.
+        from locus.reading.tex2pdf import CLASS_SIZES_PT
+
+        if value not in CLASS_SIZES_PT:
+            allowed = ", ".join(f"{s:g}" for s in sorted(CLASS_SIZES_PT))
+            raise ValueError(
+                f"[reading].latex_font_pt must be one of {allowed} (the sizes the extsizes "
+                f"document class actually implements) — got {value:g}, which LaTeX would "
+                "silently round to a different size."
+            )
+        return value
 
 
 class DailyConfig(BaseModel):

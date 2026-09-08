@@ -199,7 +199,17 @@ send_folder    = "Inbox"   # device folder for ad-hoc markdown sends (the MCP `t
 page_width_in  = 7.07      # PDF page width (in) — Paper Pro screen width
 page_height_in = 9.43      # PDF page height (in) — Paper Pro screen height
 margin_in      = 0.5       # page margin (in)
-font_pt        = 11.0      # body text size (pt)
+font_pt        = 11.0      # body text size (pt) for the MARKDOWN path (his own relayed text),
+                           # and through the shared geometry the daily page. NOT the LaTeX size.
+latex_font_pt  = 9.0       # body text size (pt) for AGENT-AUTHORED LaTeX sends, which are set
+                           # TWO-COLUMN — ~2.9in of measure per column, where 11pt is too few
+                           # words per line. Separate from font_pt on purpose: resizing what
+                           # Claude writes must not resize his own notes or the daily page.
+                           # Must be one of 8/9/10/11/12/14/17/20 — the sizes the `extsizes`
+                           # document class implements. Anything else is refused AT LOAD rather
+                           # than silently rounded: stock `article` takes only 10/11/12 and
+                           # typesets [9.5pt] at 10pt, announcing it only as "Unused global
+                           # option" in a log nobody reads.
 latex_engine   = "tectonic"  # engine for AGENT-AUTHORED sends. A document Claude writes for the
                            # tablet is authored in LaTeX (locus/reading/tex2pdf), not markdown —
                            # equations, layout and figure placement that markdown cannot express.

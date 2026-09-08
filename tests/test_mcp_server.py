@@ -304,8 +304,8 @@ def test_to_remarkable_sends_latex(monkeypatch):
 
     seen = {}
 
-    def fake_send_latex(latex, *, title, folder=None):
-        seen.update(latex=latex, title=title, folder=folder)
+    def fake_send_latex(latex, *, title, folder=None, resource_dir=None):
+        seen.update(latex=latex, title=title, folder=folder, resource_dir=resource_dir)
         return send_mod.SentDoc(filename="2026-09-08 Factors.pdf", remote_folder="Inbox", pages=2)
 
     monkeypatch.setattr(send_mod, "send_latex", fake_send_latex)
@@ -316,7 +316,30 @@ def test_to_remarkable_sends_latex(monkeypatch):
 
     assert seen["latex"] == body            # verbatim: not escaped, not re-flowed
     assert seen["title"] == "Factors"
+    # Not given, so `send_latex` picks its own default (the corpus raw store), which is what
+    # makes `\\includegraphics{<figures.raw_path>}` resolve without the caller arranging anything.
+    assert seen["resource_dir"] is None
     assert "/Inbox/2026-09-08 Factors.pdf" in out and "2 pages" in out
+
+
+def test_to_remarkable_forwards_the_resource_dir(monkeypatch):
+    """The parameter exists so a document can include images the caller just generated. A tool
+    argument that is accepted and then dropped is the shape of bug this module keeps hitting, so
+    assert it reaches `send_latex` rather than that the call merely succeeded."""
+    import locus.reading.send as send_mod
+
+    seen = {}
+
+    def fake_send_latex(latex, *, title, folder=None, resource_dir=None):
+        seen.update(resource_dir=resource_dir)
+        return send_mod.SentDoc(filename="d.pdf", remote_folder="Inbox", pages=1)
+
+    monkeypatch.setattr(send_mod, "send_latex", fake_send_latex)
+
+    m = mcp_server._build()
+    asyncio.run(m.call_tool("to_remarkable", {
+        "latex": "\\includegraphics{plot.png}", "title": "D", "resource_dir": "/tmp/plots"}))
+    assert seen["resource_dir"] == "/tmp/plots"
 
 
 def test_to_remarkable_returns_the_latex_error_as_text(monkeypatch):
@@ -325,7 +348,7 @@ def test_to_remarkable_returns_the_latex_error_as_text(monkeypatch):
     transport error with the actionable part stripped."""
     import locus.reading.send as send_mod
 
-    def boom(latex, *, title, folder=None):
+    def boom(latex, *, title, folder=None, resource_dir=None):
         raise RuntimeError("LaTeX compile failed (tectonic, pass 1):\n! Undefined control seq.")
 
     monkeypatch.setattr(send_mod, "send_latex", boom)

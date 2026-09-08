@@ -106,6 +106,27 @@ def reading_geometry(cfg=None) -> PageGeometry:
     )
 
 
+def latex_geometry(cfg=None) -> PageGeometry:
+    """`reading_geometry` with the LaTeX body size substituted for the markdown one.
+
+    Same paper, different type size. The LaTeX path sets two columns, so it reads at 9pt where
+    the single-column markdown path reads at 11pt; sharing one `font_pt` between them would mean
+    every adjustment to a document Claude wrote also resized his own relayed notes, and through
+    the shared geometry the daily page (§10 keeps that on Typst deliberately).
+
+    `getattr`, not attribute access, for the reason the `latex_engine` lookup below gives: config
+    stubs in tests are SimpleNamespaces carrying only the fields their test needs, and one
+    written before this field existed should fall back rather than raise.
+    """
+    reading = (cfg or load()).reading
+    return PageGeometry(
+        width_in=reading.page_width_in,
+        height_in=reading.page_height_in,
+        margin_in=reading.margin_in,
+        font_pt=getattr(reading, "latex_font_pt", 9.0),
+    )
+
+
 def _ensure_folder_path(runner: RmapiRunner, folder: str) -> None:
     """mkdir every prefix of `folder`, parent first.
 
@@ -206,11 +227,25 @@ def send_latex(
     runner = runner or _subprocess_runner(cfg.reading.rmapi_binary)
     filename = safe_filename(title)
 
+    if resource_dir is None:
+        # Default the graphics search path to the raw store, so the corpus's OWN figures are
+        # includable by the name `figures.raw_path` already holds:
+        # `\includegraphics[width=\linewidth]{<hash>_fig0.png}` and nothing else to arrange.
+        # This is most of why figure support is worth having — the tablet is for learning
+        # something, and the most useful picture is usually the one from the paper he read,
+        # not one drawn from memory. 2,422 of them are sitting there with captions and VLM
+        # descriptions already. An explicit `resource_dir` still wins for generated plots.
+        #
+        # getattr, not attribute access: config stubs in tests carry only the fields their test
+        # needs, and TEXINPUTS simply keeps its default when there is no raw store to add.
+        paths = getattr(cfg, "paths", None)
+        resource_dir = getattr(paths, "raw_store", None) if paths is not None else None
+
     with tempfile.TemporaryDirectory() as tmp:
         pdf = render_latex_to_pdf(
             latex,
             Path(tmp) / filename,
-            geometry=reading_geometry(cfg),
+            geometry=latex_geometry(cfg),
             title=title,
             # getattr, not attribute access: config STUBS in tests are SimpleNamespaces pinned
             # to the fields their test needs (config.toml is gitignored, so tests must not read

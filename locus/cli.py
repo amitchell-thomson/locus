@@ -467,6 +467,74 @@ def cmd_mcp(args) -> None:
     run(enable_query=args.enable_query or cfg.mcp.enable_query)
 
 
+def cmd_mcp_log(args) -> None:
+    """What the MCP server was actually asked to do — the answer to a bare "Tool execution failed".
+
+    An MCP client reports every failed call as the same contentless string, whether the tool
+    raised, the server was gone, or the client stopped waiting while the server was still
+    working. On 2026-09-08 that ambiguity sent the debugging to Tailscale and the server while
+    the delivery path was measurably fine. This reads the server-side record instead of
+    guessing: a call with no `start` never arrived, a `start` with no `end` outlived the
+    client's patience, and an `end` carrying an error names the exception.
+    """
+    from locus.observe import mcp_log
+
+    path = mcp_log.log_path()
+    if not path.exists():
+        print(f"No MCP call log yet at {path}.")
+        print("It is written by `locus mcp`; a server started before this build writes nothing.")
+        return
+
+    from locus.config import PROJECT_ROOT
+    from locus.mcp_server import _build_stamp
+
+    head = _build_stamp()
+    live = mcp_log.live_servers()
+    if live:
+        print(f"live `locus mcp` server(s)   (checkout at {head}, {PROJECT_ROOT})")
+        for server in live:
+            build = server.get("build", "?")
+            flag = "  <-- STALE, running old code" if build != head else ""
+            print(f"  pid {server.get('pid')}  started {server.get('at')}  build {build}{flag}")
+        print()
+
+    pending = {(e.get("pid"), e.get("call")) for e in mcp_log.unanswered()}
+    events = mcp_log.read_recent(args.number, errors_only=args.errors)
+    if not events:
+        print(f"No matching events in {path}.")
+        return
+
+    print(f"{path}  (last {len(events)} event(s))")
+    print("=" * 78)
+    for event in events:
+        at = event.get("at", "?")
+        kind = event.get("event", "?")
+        pid = event.get("pid", "?")
+        if kind in ("server_start", "server_stop"):
+            print(f"{at}  pid {pid}  {kind}  build {event.get('build', '?')}")
+            continue
+        tool = event.get("tool", "?")
+        if kind == "start":
+            mark = "  <-- NEVER FINISHED" if (pid, event.get("call")) in pending else ""
+            args_txt = json.dumps(event.get("args", {}), default=str)[:100]
+            print(f"{at}  pid {pid}  ->  {tool}({args_txt}){mark}")
+        else:
+            ms = event.get("ms", "?")
+            if event.get("ok"):
+                print(f"{at}  pid {pid}  ok  {tool}  {ms}ms")
+            else:
+                print(f"{at}  pid {pid}  ERR {tool}  {ms}ms  "
+                      f"{event.get('error', '?')}: {event.get('message', '')}")
+                if args.traceback and event.get("traceback"):
+                    for line in event["traceback"].rstrip().splitlines():
+                        print(f"        {line}")
+
+    if pending:
+        print()
+        print(f"{len(pending)} call(s) arrived and never finished. That is the client giving up "
+              "while the server was still working — not a server that is down.")
+
+
 def _backup_root(args) -> Path:
     """Backup destination: --dest if given, else vault/backups (sibling of the DB)."""
     if getattr(args, "dest", None):
@@ -2119,6 +2187,15 @@ def main(argv=None) -> None:
         help="also expose the server-side `query` tool (makes billed Claude API calls)",
     )
     pm.set_defaults(func=cmd_mcp)
+
+    pml = sub.add_parser(
+        "mcp-log",
+        help="what the MCP server was asked to do, and what happened (no API; local only)",
+    )
+    pml.add_argument("-n", "--number", type=int, default=40, help="events to show (default 40)")
+    pml.add_argument("--errors", action="store_true", help="only calls that failed")
+    pml.add_argument("--traceback", action="store_true", help="print stored tracebacks in full")
+    pml.set_defaults(func=cmd_mcp_log)
 
     pk = sub.add_parser(
         "link",

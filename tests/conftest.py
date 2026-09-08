@@ -24,6 +24,7 @@ from __future__ import annotations
 import pytest
 
 from locus import config
+from locus.observe import mcp_log
 
 
 @pytest.fixture(autouse=True)
@@ -31,4 +32,16 @@ def _local_pass_routing(monkeypatch):
     """Force `[ingest].pass_routing` empty (= every pass local) for every test."""
     cfg = config.load()
     monkeypatch.setattr(cfg.ingest, "pass_routing", {}, raising=False)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _mcp_log_to_tmp(tmp_path, monkeypatch):
+    """Keep the MCP call log out of the live vault.
+
+    `mcp_server` records every tool call, and the tests that build a real server and call its
+    tools would otherwise append to `vault/logs/mcp.jsonl` — putting fake calls into the record
+    the next real investigation reads, which is a worse failure than the one the log fixes.
+    """
+    monkeypatch.setattr(mcp_log, "_resolved", tmp_path / "mcp.jsonl")
     yield

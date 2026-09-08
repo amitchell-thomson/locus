@@ -77,6 +77,7 @@ It has occurred repeatedly and in the same shape. Representative instances, all 
 | Model-supplied citation keys | The key resolved, so the check passed; the passage was irrelevant. Checking existence catches invented keys, never wrong ones. |
 | `channel_stats` per-channel breakdown | Grouped by a column that held one constant value. Could never produce more than one bucket. |
 | Highlight capture | Cluster gap 26pt vs 12pt line spacing merged every highlight on a page into one mark. |
+| An MCP tool call | Reported to the client as a bare `Tool execution failed` with no message. Three sessions concluded Locus was down while the delivery path measured 2.1s end to end. Nothing recorded whether the call had ARRIVED. |
 
 **Consequences for how you work here:**
 
@@ -85,6 +86,12 @@ It has occurred repeatedly and in the same shape. Representative instances, all 
 - **`locus gates`** (`locus/observe/gates.py`) exists for exactly this: it records what each
   threshold *rejected*, aggregated per gate per day with verbatim samples, and calls out in words
   any gate with a 100% reject rate. Instrument a new threshold when you add one.
+- **`locus mcp-log`** (`locus/observe/mcp_log.py`) is the same idea for the MCP boundary: one
+  JSON line when a call ARRIVES and another when it finishes, so the three causes behind a bare
+  client-side failure stop being indistinguishable. No `start` = it never reached the server. A
+  `start` with no `end` = the client's patience ran out while the server worked. An `end`
+  carrying an error = that tool, that exception. It also lists the live servers and flags any
+  running older code than the checkout.
 - **Verify against real output**, not against the tests. Several conclusions in this project's
   history were wrong because verification ran against the wrong checkout or a stale config.
 - When you set a threshold, prefer **recording the distribution first** over guessing a number.
@@ -481,6 +488,7 @@ locus/
 │   ├── discover/           # arxiv · openalex · citations · profiles · queries · rank · judge · why
 │   ├── evolve/ structure/ surface/ decide/ enrich/ vault/ export/ eval/
 │   ├── observe/gates.py    # what each threshold rejected (§3)
+│   ├── observe/mcp_log.py  # every MCP tool call: arrival, outcome, build (§3)
 │   ├── health.py · status.py · backup.py · query.py · retitle.py · mcp_server.py
 │   ├── ingest_lock.py      # the advisory flock: one ingest process at a time
 ├── deploy/systemd/         # timers: maintain, daily, daily-pull, capture, discover-*, backup
@@ -562,7 +570,17 @@ locus/
 - Run the math suite after any VRAM-choreography change.
 - Run `locus link` after ingest batches.
 - **Restart `locus mcp` after any retrieval change** — a long-lived server runs code from its
-  start time. Compare its build stamp with `git rev-parse --short HEAD`.
+  start time. Since 2026-09-08 it says so itself: every tool result from a process older than
+  the checkout is prefixed with a STALE banner naming both builds, and `locus mcp-log` lists the
+  live servers with the same flag. The startup stamp still goes to stderr, but stderr belongs to
+  the client and dies with it, which is why the banner had to reach the tool RESULT — the one
+  surface the model on the other side can see.
+- **A bare `Tool execution failed` is not evidence that Locus is down.** Read `locus mcp-log`
+  before touching the network: it says whether the call arrived at all. This cost most of
+  2026-09-08 — three sessions reported `to_remarkable` broken, two of them holding pre-fix
+  server processes, while the path measured 2.9s from the CLI and 2.1s through MCP. No tool can
+  answer a client that has already stopped listening, so the answer has to be written somewhere
+  the client does not own.
 - Quarantines are bugs to triage, not casualties — which is only true because **unsupported
   is filed separately** (`incoming/.unsupported/`, `watcher.UNSUPPORTED_DIRNAME`). A PNG, a
   `uv.lock` and an empty README are not documents and never will be; filing them with real

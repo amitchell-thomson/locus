@@ -59,11 +59,14 @@ advertised tool can spend against the API key.
 from __future__ import annotations
 
 import json
+import time
+import traceback
 from datetime import date
 from pathlib import Path
 
 from locus.config import load
 from locus.db.connection import get_connection
+from locus.observe import mcp_log
 from locus.query import QUERY_MODES
 from locus.query import answer as run_answer
 from locus.retrieve import Facets
@@ -72,6 +75,119 @@ from locus.retrieve import retrieve as run_retrieval
 # Bound the size of read-only listings/inspections returned to the client.
 _MAX_INSPECT_PROPS = 40
 _MAX_INSPECT_ENTITIES = 40
+
+# The build this PROCESS started with, and its pid. Set by `run()`; a server built directly
+# (tests) reports "unstarted". Both travel into the call log and into the message a failing
+# tool returns, because "which server was I even talking to" is the first question every time.
+_SERVER_BUILD = "unstarted"
+_SERVER_PID = 0
+
+# `_stale_note` re-reads the checkout's HEAD at most this often. A tool call is not a hot loop,
+# but neither should every call pay a subprocess.
+_STALE_POLL_S = 30.0
+_stale_cache: tuple[float, str] = (0.0, "")
+
+
+def _commit_of(stamp: str) -> str:
+    """The commit id out of a build stamp, dropping the `+dirty` flag and the date."""
+    return stamp.split()[0].split("+")[0] if stamp else "unknown"
+
+
+def _stale_note() -> str:
+    """A one-line warning when this process is older than the checkout it serves, else "".
+
+    A long-lived stdio server keeps running the code it started with, so a fix that has landed
+    is not a fix that is running (CLAUDE.md §13, "restart `locus mcp` after any retrieval
+    change"). That rule has been missed repeatedly, and it is missed silently: the startup
+    stamp goes to stderr, which the model on the other side never sees. On 2026-09-08 a session
+    holding a pre-fix server reported a bug that had already been fixed, twice.
+
+    So the server says it in the one place he does see — the tool result. Best effort: if git
+    cannot be read, say nothing rather than crying wolf.
+    """
+    global _stale_cache
+    if _SERVER_BUILD in ("unstarted", "unknown"):
+        return ""
+    cached_at, note = _stale_cache
+    if time.monotonic() - cached_at < _STALE_POLL_S:
+        return note
+    current = _build_stamp()
+    note = ""
+    # Compare COMMITS, not the full stamp: `_build_stamp` carries a `+dirty` flag, and during
+    # any editing session the working tree is dirty by definition. Firing on that would put the
+    # banner on every result all day and train him to skip past it — the alarm this exists to
+    # be worth reading. What it is for is commit-level: a fix landed and this process predates
+    # it.
+    if _commit_of(current) not in ("unknown", _commit_of(_SERVER_BUILD)):
+        note = (
+            f"[locus mcp is STALE — this server process started at build {_SERVER_BUILD} and "
+            f"the checkout is now at {current}. It is still running the OLD code. Restart the "
+            "MCP server (a new session, or reconnect it) before trusting this result or "
+            "reporting a bug against it.]"
+        )
+    _stale_cache = (time.monotonic(), note)
+    return note
+
+
+def _instrument(fn):
+    """Wrap one tool so no call is invisible and no failure reaches the client empty.
+
+    Two guarantees, both learned from the same day (2026-09-08):
+
+    1. ARRIVAL IS RECORDED BEFORE THE WORK STARTS. The failure that cost the day was a call the
+       client gave up on while the server was still working. An end-of-call log would have
+       recorded nothing at all for it, which is precisely the case that needs evidence. A
+       `start` with no `end` in `vault/logs/mcp.jsonl` names that case exactly.
+    2. EVERY EXCEPTION BECOMES TEXT. `to_remarkable` grew this guard alone in 1dae4ee after
+       `subprocess.TimeoutExpired` slipped past its enumerated handlers; but the hole was never
+       specific to that tool. Any tool that raises across the MCP boundary arrives as a bare
+       transport error, and the model on the far side then cannot tell a bug in one tool from a
+       dead server — so it misreports which machine is broken. Returning the exception CLASS and
+       message as the tool's own result keeps the diagnosis with the thing that failed.
+
+    Signature and docstring are preserved (`functools.wraps` + `__wrapped__`), so the schema
+    FastMCP advertises is byte-identical to the unwrapped function's.
+    """
+    import functools
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        global _call_seq
+        _call_seq += 1
+        call = _call_seq
+        digest = mcp_log.arg_digest(kwargs)
+        mcp_log.record("start", call=call, tool=fn.__name__, build=_SERVER_BUILD, args=digest)
+        started = mcp_log.now()
+        try:
+            result = fn(*args, **kwargs)
+        except Exception as exc:  # noqa: BLE001 — deliberate boundary guard, see docstring
+            mcp_log.record(
+                "end", call=call, tool=fn.__name__, ok=False,
+                ms=round((mcp_log.now() - started) * 1000),
+                error=type(exc).__name__, message=str(exc),
+                traceback=traceback.format_exc(),
+            )
+            return (
+                f"{fn.__name__} raised {type(exc).__name__}: {exc}\n\n"
+                "The call REACHED the server and this tool is what failed, so the server is "
+                "not down. If the message above does not say what to fix, it is a Locus bug "
+                f"rather than a problem with the request. Server build {_SERVER_BUILD}, pid "
+                f"{_SERVER_PID}; full traceback in {mcp_log.log_path()} "
+                "(`locus mcp-log --errors --traceback`)."
+            )
+        mcp_log.record(
+            "end", call=call, tool=fn.__name__, ok=True,
+            ms=round((mcp_log.now() - started) * 1000),
+        )
+        note = _stale_note()
+        if note and isinstance(result, str):
+            return f"{note}\n\n{result}"
+        return result
+
+    return wrapper
+
+
+_call_seq = 0
 
 
 def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp imported lazily
@@ -111,7 +227,20 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
         ),
     )
 
-    @mcp.tool()
+    def tool():
+        """Register a tool through `_instrument` — the logging and error-to-text guard.
+
+        Every tool goes through here, with no opt-out: the guarantee is only worth anything if
+        it holds for the tool that turns out to be broken, and which one that is cannot be
+        known in advance.
+        """
+
+        def deco(fn):
+            return mcp.tool()(_instrument(fn))
+
+        return deco
+
+    @tool()
     def retrieve(
         query: str,
         since: str | None = None,
@@ -179,9 +308,10 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
         return f"{_confidence_banner(result)}{result.answer}\n\n--- sources ---\n{_sources(result)}"
 
     if enable_query:
-        mcp.add_tool(query)  # opt-in: only now is the billable tool advertised to clients
+        # opt-in: only now is the billable tool advertised to clients
+        mcp.add_tool(_instrument(query))
 
-    @mcp.tool()
+    @tool()
     def list_documents(
         category: str | None = None,
         since: str | None = None,
@@ -232,7 +362,7 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
         ]
         return f"{len(rows)} document(s):\n" + "\n".join(lines)
 
-    @mcp.tool()
+    @tool()
     def inspect_document(doc: str, section: int | None = None) -> str:
         """Show what was ingested for one document: synthesis, gaps, and per-section detail.
 
@@ -246,7 +376,7 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
         finally:
             conn.close()
 
-    @mcp.tool()
+    @tool()
     def capture(content: str, title: str, project: str | None = None) -> str:
         """Save this conversation (or a decision-summary of it) into Locus as a rough note (Loop C).
 
@@ -267,7 +397,7 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
         cap = capture_conversation(content, title=title, project=project, source="claude")
         return f"Captured '{cap.title}' to {cap.path} (rough note; ingested on the next note-sync)."
 
-    @mcp.tool()
+    @tool()
     def to_remarkable(
         latex: str | None = None,
         title: str | None = None,
@@ -425,7 +555,7 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
         pages = f"{sent.pages} page{'s' if sent.pages != 1 else ''}" if sent.pages else what
         return f"{verb} '{sent.filename}' ({pages}) to reMarkable:{sent.device_path}."
 
-    @mcp.tool()
+    @tool()
     def markups(
         document: str,
         pages: list[int] | None = None,
@@ -551,7 +681,7 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
     # are advertised by default while `query` (metered) stays opt-in. The cost guard's shape is
     # unchanged: no tool here can spend against ANTHROPIC_API_KEY.
 
-    @mcp.tool()
+    @tool()
     def critique(target: str, object_id: int | None = None) -> str:
         """Stress-test a project or a piece of reasoning against the owner's OWN corpus.
 
@@ -576,7 +706,7 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
         note = "\n\n_(model call degraded; showing only the deterministic half)_" if result.degraded else ""
         return result.render() + note
 
-    @mcp.tool()
+    @tool()
     def synthesise(topic: str, with_practice: bool = False) -> str:
         """What the owner knows and THINKS about a topic, including how his view has changed.
 
@@ -599,7 +729,7 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
         note = "\n\n_(model call degraded; showing only the deterministic half)_" if result.degraded else ""
         return result.render() + note
 
-    @mcp.tool()
+    @tool()
     def objects(type: str | None = None, status: str | None = None, limit: int = 25) -> str:
         """List the owner's structured objects — projects, concepts, questions, ideas, readings.
         FREE.
@@ -643,7 +773,7 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
         finally:
             conn.close()
 
-    @mcp.tool()
+    @tool()
     def evolution(subject: str | None = None, tensions: bool = False) -> str:
         """The owner's DATED position trajectory on a concept or project. FREE unless `tensions`.
 
@@ -898,12 +1028,25 @@ def run(enable_query: bool = False) -> None:
     import os
     import sys
 
+    global _SERVER_BUILD, _SERVER_PID
+    _SERVER_BUILD = _build_stamp()
+    _SERVER_PID = os.getpid()
+
     # stderr ONLY — stdout carries the JSON-RPC protocol on the stdio transport. This is the
     # version-at-connect-time stamp; a stale server is otherwise invisible (see _build_stamp).
     print(
-        f"locus mcp starting — build {_build_stamp()} | pid {os.getpid()}"
+        f"locus mcp starting — build {_SERVER_BUILD} | pid {_SERVER_PID}"
         + (" | query ENABLED (billable)" if enable_query else ""),
         file=sys.stderr,
         flush=True,
     )
+    # The same fact, written where it OUTLIVES the process. stderr goes to the client and is
+    # gone when the client is; the question "which build was that session actually running"
+    # is always asked afterwards, about a session that has already ended.
+    mcp_log.record("server_start", build=_SERVER_BUILD, query_enabled=enable_query)
+    # No matching "stop" event, deliberately. An `atexit` hook does not run on SIGKILL or on the
+    # SIGTERM a client sends when it drops the server — which are exactly the exits worth
+    # knowing about — so it would record the ordinary case and miss every interesting one.
+    # `live_servers` decides liveness by signalling the pid instead, which needs no cooperation
+    # from a process that has already died.
     _build(enable_query=enable_query).run()

@@ -52,3 +52,6 @@ vault/title_backup*.json
 config.toml.bak-*
 scripts/benchmarks/*.log
 scripts/benchmarks/*_out.json
+
+# MCP call log (derived: one JSON line per tool call, delete = lose history only)
+vault/logs/

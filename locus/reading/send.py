@@ -31,6 +31,24 @@ different days coexist and a same-day resend replaces content rather than failin
 the device-side per-page records, which is a real hazard for the daily page and not for these:
 these carry no ink that anything pulls back, and a resend is a fresh render of the same document.
 
+THREE SOURCE FORMS, AND LATEX IS THE ONE FOR AGENT-AUTHORED DOCUMENTS
+---------------------------------------------------------------------
+`send_latex` compiles LaTeX, `send_markdown` renders markdown, `send_pdf` pushes a finished PDF.
+They reach the device by the identical push; only the typesetting differs.
+
+The owner asked (2026-09-08) that anything CLAUDE writes for the tablet be authored in LaTeX,
+for the equation, layout and figure control markdown cannot express (`reading/tex2pdf` records
+what each of those buys). So the rule is about AUTHORSHIP, not about which function is newer:
+
+  - composing a document for him to read  -> `send_latex`
+  - relaying text that was already markdown (a file, a stored note, a pass's output)
+                                          -> `send_markdown`
+  - a PDF that already exists             -> `send_pdf`
+
+`send_markdown` is not deprecated and must not be: markdown is what the corpus, the vault notes
+and every earlier pass actually hold, and re-authoring stored markdown as LaTeX in order to send
+it would put a model between him and his own words.
+
 MARKDOWN TAKES CONTENT; A PDF TAKES A PATH — AND THAT ASYMMETRY IS DELIBERATE
 -----------------------------------------------------------------------------
 Everything above argues for a content-taking surface, and `send_markdown` has one. `send_pdf`
@@ -61,6 +79,7 @@ from locus.reading.deliver_remarkable import (
     deliver_pdf,
 )
 from locus.reading.md2pdf import PageGeometry, render_markdown_to_pdf
+from locus.reading.tex2pdf import render_latex_to_pdf
 
 
 @dataclass
@@ -143,6 +162,62 @@ def send_markdown(
     with tempfile.TemporaryDirectory() as tmp:
         pdf = render_markdown_to_pdf(
             markdown, Path(tmp) / filename, geometry=reading_geometry(cfg), title=title
+        )
+        pages = _page_count(pdf)
+        _ensure_folder_path(runner, folder)
+        deliver_pdf(pdf, remote_folder=folder, replace=True, runner=runner)
+
+    return SentDoc(filename=filename, remote_folder=folder, pages=pages)
+
+
+def send_latex(
+    latex: str,
+    *,
+    title: str,
+    folder: str | None = None,
+    cfg=None,
+    runner: RmapiRunner | None = None,
+    resource_dir: Path | str | None = None,
+) -> SentDoc:
+    r"""Compile `latex` to a device-tuned PDF and push it to the reMarkable.
+
+    THE DEFAULT SHAPE FOR A DOCUMENT CLAUDE WROTE. `send_markdown` renders text that already
+    existed as markdown; this renders a document composed for him to read, which he asked
+    (2026-09-08) to be authored in LaTeX for the equation, layout and figure control markdown
+    cannot express. See `reading/tex2pdf` for what that buys and what it costs.
+
+    `latex` may be a fragment (wrapped in the device preamble) or a whole `\documentclass`
+    document (compiled untouched). Everything else — the folder rules, the date-prefixed
+    filename, the same-day replace — is `send_markdown`'s behaviour unchanged, because the
+    delivery half of this is the same act and only the typesetting differs.
+
+    Raises rather than degrading, and a compile failure raises with the engine's own error
+    lines: the caller wrote the source and is the one who can fix it. Silently pushing a
+    half-rendered document would be worse than not sending.
+    """
+    if not latex.strip():
+        raise ValueError("nothing to send: the LaTeX source is empty")
+
+    cfg = cfg or load()
+    folder = (folder or cfg.reading.send_folder).strip("/")
+    if not folder:
+        raise ValueError("no target folder: set [reading].send_folder or pass one")
+
+    runner = runner or _subprocess_runner(cfg.reading.rmapi_binary)
+    filename = safe_filename(title)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        pdf = render_latex_to_pdf(
+            latex,
+            Path(tmp) / filename,
+            geometry=reading_geometry(cfg),
+            title=title,
+            # getattr, not attribute access: config STUBS in tests are SimpleNamespaces pinned
+            # to the fields their test needs (config.toml is gitignored, so tests must not read
+            # it — CLAUDE.md §13), and a stub written before this field existed should fall
+            # through to engine autodetection rather than raising AttributeError.
+            engine=getattr(cfg.reading, "latex_engine", None),
+            resource_dir=resource_dir,
         )
         pages = _page_count(pdf)
         _ensure_folder_path(runner, folder)

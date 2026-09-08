@@ -31,7 +31,10 @@ TOOLS
 - list_documents : what is in the corpus (with date/category facets). FREE (local only).
 - inspect_document: what was ingested for one document (synthesis + sections). FREE.
 - capture        : save this conversation into the vault as a rough note (Loop C). FREE.
-- to_remarkable  : push markdown (rendered) or an existing PDF to the tablet. FREE.
+- to_remarkable  : push a document to the tablet. FREE. Anything CLAUDE writes goes as LaTeX
+                   (`latex=`, compiled by reading/tex2pdf) — his standing preference, for the
+                   equations, layout and figures markdown cannot express. `markdown=` relays
+                   text that was already markdown; `pdf_path=` pushes a finished PDF.
 - markups        : ONE call — find a marked-up document anywhere on the device, sweep it,
                    render the inked pages with margins intact, and return them as images
                    with the text register. `images=False` for the cheap text-only read. FREE.
@@ -91,7 +94,11 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
             "context and answer from it; use `query` to get a finished server-generated answer; "
             "use `list_documents`/`inspect_document` to see what the corpus contains; use "
             "`capture` to save this conversation's decisions into the vault as a rough note, and "
-            "`to_remarkable` to send markdown or an existing PDF to his tablet to read on paper, and "
+            "`to_remarkable` to send him a document to read on paper — anything YOU write for "
+            "the tablet is authored in LaTeX and passed as `latex=`, which is his standing "
+            "preference and the system's interface with him, not a per-document choice; "
+            "`markdown=` is for relaying text that was already markdown and `pdf_path=` for a "
+            "finished PDF — and "
             "`markups` to READ a document he marked up — one call finds it anywhere on the "
             "device, sweeps it if needed, and returns the inked pages as images with his "
             "margin writing intact, plus what each mark covered. "
@@ -262,54 +269,83 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
 
     @mcp.tool()
     def to_remarkable(
-        markdown: str | None = None,
+        latex: str | None = None,
         title: str | None = None,
+        markdown: str | None = None,
         pdf_path: str | None = None,
         folder: str | None = None,
     ) -> str:
-        """Send a document to the owner's reMarkable to read on paper. Two modes.
+        r"""Send a document to the owner's reMarkable to read on paper. Three modes.
 
-        MARKDOWN (`markdown=`): pass the TEXT of a document you wrote or read — a summary, a
-        plan, an answer, the contents of a file. It is rendered to a device-tuned PDF. This mode
-        works from ANY machine, because the text travels with the call. Prefer it whenever what
-        you want to send is prose you are holding.
+        LATEX (`latex=`) — **THE DEFAULT FOR ANYTHING YOU WRITE.** When he says "write this up
+        and send it to my reMarkable", "push that to the tablet", or asks for a note, summary,
+        derivation, plan or answer on paper: AUTHOR IT IN LATEX AND PASS IT HERE. He asked for
+        this specifically. It is not a stylistic preference to weigh against convenience — it is
+        how this system is meant to talk to him, because LaTeX gives real equations (`align`,
+        `cases`, numbered and referenced), real layout control, and real figure placement.
+        Writing markdown and sending it through `markdown=` instead is the wrong call even when
+        the document has no maths in it.
 
-        EXISTING PDF (`pdf_path=`): pass a path to a PDF that already exists — one you just
-        generated, or one in the repo or vault. It is pushed unchanged, not re-rendered. The
-        path is resolved ON THE LOCUS SERVER: absolute, or relative to the server's working
-        directory, or relative to the Locus checkout root ('docs/plan.pdf'). It therefore works
-        only when you are running on that machine. If you are not, the error will say so — do
-        not retry with a different path, send markdown instead.
+        Pass a FRAGMENT — start at `\section{...}` and write body text. It is wrapped in a
+        preamble already tuned to the device's page size, margins and reading leading, with
+        amsmath, graphicx, booktabs, enumitem, hyperref and microtype loaded. Do NOT write your
+        own `\documentclass` unless you specifically need to override the layout: if you do
+        include one, the document is compiled EXACTLY as you wrote it and the device geometry is
+        yours to get right.
 
-        Pass exactly one of `markdown` or `pdf_path`.
+        MARKDOWN (`markdown=`): for relaying text that ALREADY EXISTS as markdown — a file you
+        read, a stored note, a pass's output. Use it to send his own words unchanged. Do not use
+        it for prose you are composing; that is what `latex=` is for.
+
+        EXISTING PDF (`pdf_path=`): a PDF that already exists — one you just generated, or one in
+        the repo or vault. Pushed unchanged, not re-rendered. The path resolves ON THE LOCUS
+        SERVER: absolute, or relative to the server's working directory, or to the checkout root
+        ('docs/plan.pdf'). It therefore works only when you are running on that machine. If you
+        are not, the error will say so — do not retry with a different path, send `latex`.
+
+        Pass exactly one of `latex`, `markdown` or `pdf_path`.
 
         This is DELIVERY ONLY — it does not ingest, capture, or change the corpus (use `capture`
         for that). The document lands in its own device folder, deliberately not in the daily
         page's inbox and not in the reading folders whose contents are auto-ingested.
 
+        A LaTeX compile error comes back as the engine's own error lines, naming the line that
+        broke. That is a fixable failure: correct the source and call again.
+
         Args:
-            markdown: The markdown to render. Headings, lists, tables, code and LaTeX math work.
-            title: Short title — names the file on the device. Required with `markdown` (it also
-                heads page 1); optional with `pdf_path`, where it defaults to the filename.
+            latex: LaTeX source — a fragment (preferred) or a full `\documentclass` document.
+                The default mode for a document you are writing for him.
+            title: Short title — names the file on the device. Required with `latex`/`markdown`
+                (it also heads page 1); optional with `pdf_path`, where it defaults to the
+                filename.
+            markdown: Existing markdown to relay unchanged. Not for prose you are composing.
             pdf_path: Path on the Locus server to an existing PDF to push unchanged.
             folder: Optional device folder override (default `[reading].send_folder`).
         """
-        from locus.reading.send import send_markdown, send_pdf
+        from locus.reading.send import send_latex, send_markdown, send_pdf
 
-        # Both modes reach the same device folder by the same push, so the ONLY thing that can
-        # go wrong here is the caller meaning one and getting the other. Refuse the ambiguous
+        # All three modes reach the same device folder by the same push, so the ONLY thing that
+        # can go wrong here is the caller meaning one and getting another. Refuse the ambiguous
         # calls in words rather than picking a winner silently.
-        if markdown and pdf_path:
-            return ("Pass either `markdown` or `pdf_path`, not both — they are two ways to send "
-                    "one document and I cannot tell which you meant.")
-        if not markdown and not pdf_path:
-            return ("Nothing to send: pass `markdown` (the text of the document) or `pdf_path` "
-                    "(a PDF on the Locus server).")
+        given = [name for name, value in
+                 (("latex", latex), ("markdown", markdown), ("pdf_path", pdf_path)) if value]
+        if len(given) > 1:
+            return (f"Pass exactly one of `latex`, `markdown` or `pdf_path` — got {given}. They "
+                    "are three ways to send one document and I cannot tell which you meant.")
+        if not given:
+            return ("Nothing to send: pass `latex` (a document you wrote — the default), "
+                    "`markdown` (text that was already markdown), or `pdf_path` (a PDF on the "
+                    "Locus server).")
 
         try:
             if pdf_path:
                 sent = send_pdf(pdf_path, title=title, folder=folder)
                 verb, what = "Pushed", "unchanged"
+            elif latex:
+                if not title:
+                    return "Sending LaTeX needs a `title` — it names the file and heads page 1."
+                sent = send_latex(latex, title=title, folder=folder)
+                verb, what = "Sent", "typeset"
             else:
                 if not title:
                     return "Sending markdown needs a `title` — it names the file and heads page 1."
@@ -319,6 +355,11 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
             # These are the caller's to fix (wrong path, wrong machine, not a PDF, empty text),
             # and the message says which. Returning it beats raising: the client sees the
             # guidance instead of a stack trace.
+            return f"Not sent — {exc}"
+        except RuntimeError as exc:
+            # A LaTeX compile failure, carrying the engine's error lines, or a missing engine.
+            # Also the caller's to fix, and specifically ACTIONABLE — it names the bad line — so
+            # it must reach the model as text rather than as a transport-level exception.
             return f"Not sent — {exc}"
 
         pages = f"{sent.pages} page{'s' if sent.pages != 1 else ''}" if sent.pages else what

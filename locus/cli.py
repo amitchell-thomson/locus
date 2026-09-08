@@ -772,6 +772,22 @@ def cmd_read(args) -> None:
             sent = send_pdf(src, title=args.title, folder=folder)
             print(f"pushed {sent.filename} -> reMarkable:{sent.device_path}")
             return
+        if src.suffix.lower() == ".tex":
+            # A .tex file is LaTeX, and the markdown renderer would not fail on it — pandoc
+            # would typeset the macros as literal prose and push a document of backslashes,
+            # the same silent mis-render the .pdf branch above exists to prevent.
+            from locus.reading.tex2pdf import render_latex_file
+
+            out_pdf = (Path(args.out) / f"{src.stem}.pdf") if args.out else src.with_suffix(".pdf")
+            render_latex_file(out_pdf=out_pdf, tex_path=src, geometry=geometry,
+                              engine=cfg.latex_engine)
+            if args.no_push:
+                print(f"rendered {src.name} -> {out_pdf}")
+                return
+            result = deliver_pdf(out_pdf, remote_folder=folder, rmapi_binary=cfg.rmapi_binary)
+            note = " (created folder)" if result.created_folder else ""
+            print(f"delivered {result.filename} -> reMarkable:/{result.remote_folder}{note}")
+            return
         md_files = [src]
     else:
         print(f"not found: {src}")

@@ -200,6 +200,15 @@ page_width_in  = 7.07      # PDF page width (in) — Paper Pro screen width
 page_height_in = 9.43      # PDF page height (in) — Paper Pro screen height
 margin_in      = 0.5       # page margin (in)
 font_pt        = 11.0      # body text size (pt)
+latex_engine   = "tectonic"  # engine for AGENT-AUTHORED sends. A document Claude writes for the
+                           # tablet is authored in LaTeX (locus/reading/tex2pdf), not markdown —
+                           # equations, layout and figure placement that markdown cannot express.
+                           # Unlike the markdown path (pandoc+typst, both pip-installed from the
+                           # lockfile) this needs a binary on PATH; "tectonic" is preferred because
+                           # it fetches the packages a document asks for rather than needing a
+                           # provisioned TeX distribution. "pdflatex" also works. An engine named
+                           # here but not installed is NOT fatal — the code falls through to
+                           # whichever is present and only errors when none is.
 
 [daily]
 # The four-page daily reMarkable page (docs/daily-use-refinement-plan.md §2). Geometry is

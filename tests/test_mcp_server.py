@@ -296,14 +296,63 @@ def test_to_remarkable_pushes_an_existing_pdf_by_path(monkeypatch):
     assert "/Inbox/2026-09-05 Plan.pdf" in out and "3 pages" in out
 
 
-def test_to_remarkable_refuses_both_modes_at_once(monkeypatch):
-    """Both modes end at the same device folder by the same push, so the only thing that can go
-    wrong is the caller meaning one and getting the other. Refuse in words rather than picking."""
+def test_to_remarkable_sends_latex(monkeypatch):
+    """The default mode for a document Claude WROTE (2026-09-08): he asked for LaTeX, for the
+    equations, layout and figure control markdown cannot express. The source must reach
+    `send_latex` verbatim — anything that pre-processed it would defeat the point."""
+    import locus.reading.send as send_mod
+
+    seen = {}
+
+    def fake_send_latex(latex, *, title, folder=None):
+        seen.update(latex=latex, title=title, folder=folder)
+        return send_mod.SentDoc(filename="2026-09-08 Factors.pdf", remote_folder="Inbox", pages=2)
+
+    monkeypatch.setattr(send_mod, "send_latex", fake_send_latex)
+
     m = mcp_server._build()
-    out = _text(asyncio.run(m.call_tool(
-        "to_remarkable", {"markdown": "# hi", "title": "X", "pdf_path": "a.pdf"}
-    )))
-    assert "not both" in out
+    body = "\\section{Factors}\n\\begin{align} r &= Bf + \\epsilon \\end{align}"
+    out = _text(asyncio.run(m.call_tool("to_remarkable", {"latex": body, "title": "Factors"})))
+
+    assert seen["latex"] == body            # verbatim: not escaped, not re-flowed
+    assert seen["title"] == "Factors"
+    assert "/Inbox/2026-09-08 Factors.pdf" in out and "2 pages" in out
+
+
+def test_to_remarkable_returns_the_latex_error_as_text(monkeypatch):
+    """A compile failure is FIXABLE by the caller who wrote the source, so the engine's error
+    line has to arrive as tool output. Raised as an exception it would reach the model as a
+    transport error with the actionable part stripped."""
+    import locus.reading.send as send_mod
+
+    def boom(latex, *, title, folder=None):
+        raise RuntimeError("LaTeX compile failed (tectonic, pass 1):\n! Undefined control seq.")
+
+    monkeypatch.setattr(send_mod, "send_latex", boom)
+
+    m = mcp_server._build()
+    out = _text(asyncio.run(m.call_tool("to_remarkable", {"latex": "\\nope", "title": "X"})))
+    assert "Not sent" in out and "Undefined control seq" in out
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        {"latex": "x", "markdown": "# hi"},
+        {"latex": "x", "pdf_path": "a.pdf"},
+        {"markdown": "# hi", "pdf_path": "a.pdf"},
+        {"latex": "x", "markdown": "# hi", "pdf_path": "a.pdf"},
+    ],
+)
+def test_to_remarkable_refuses_more_than_one_mode(args):
+    """PARAMETRISED OVER THE COMBINATIONS, not one mode at a time. A tool that dispatches on
+    which argument is set is the `cmd_discover` shape (CLAUDE.md §13), where an unreachable
+    branch survived the whole life of the unit because every flag was only ever tested alone.
+    All three modes end at the same device folder by the same push, so the only thing that can
+    go wrong is the caller meaning one and getting another."""
+    m = mcp_server._build()
+    out = _text(asyncio.run(m.call_tool("to_remarkable", {**args, "title": "X"})))
+    assert "exactly one" in out
 
 
 def test_to_remarkable_refuses_neither_mode():
@@ -312,11 +361,25 @@ def test_to_remarkable_refuses_neither_mode():
     assert "Nothing to send" in out
 
 
-def test_to_remarkable_requires_a_title_for_markdown():
-    """A markdown send has no filename to fall back on; a PDF send does."""
+@pytest.mark.parametrize("mode,value", [("markdown", "# hi"), ("latex", "\\section{Hi}")])
+def test_to_remarkable_requires_a_title_for_rendered_modes(mode, value):
+    """A rendered send has no filename to fall back on; a PDF send does."""
     m = mcp_server._build()
-    out = _text(asyncio.run(m.call_tool("to_remarkable", {"markdown": "# hi"})))
+    out = _text(asyncio.run(m.call_tool("to_remarkable", {mode: value})))
     assert "needs a `title`" in out
+
+
+def test_to_remarkable_advertises_latex_as_the_default_for_authored_documents():
+    """The docstring IS the interface: the client model picks the mode from it, and nothing
+    server-side can correct a model that reached for markdown. If this wording erodes, the
+    feature silently reverts to markdown sends with every test still green."""
+    tools = asyncio.run(mcp_server._build().list_tools())
+    doc = next(t.description for t in tools if t.name == "to_remarkable")
+    assert "latex" in doc.lower()
+    assert "default" in doc.lower()
+    # The markdown mode must stay visibly available — it is how his OWN words get relayed
+    # unchanged, and a model that stops using it would put a rewrite between him and them.
+    assert "markdown" in doc.lower()
 
 
 def test_to_remarkable_returns_the_guidance_when_the_path_is_unresolvable(monkeypatch):

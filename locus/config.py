@@ -351,6 +351,15 @@ class ReadingConfig(BaseModel):
     page_height_in: float = Field(9.43, description="PDF page height (in) — Paper Pro screen height.")
     margin_in: float = Field(0.5, description="Page margin (in).")
     font_pt: float = Field(11.0, description="Body text size (pt).")
+    # A document Claude WRITES for the tablet is authored in LaTeX (reading/tex2pdf), which needs
+    # a system binary — unlike the markdown path, whose pandoc+typst toolchain installs from the
+    # lockfile. `tectonic` is preferred because it fetches the packages a document asks for
+    # instead of requiring a provisioned TeX distribution. An engine named here that is not on
+    # PATH does not disable the feature: `available_engine` falls through to whatever IS present
+    # and only errors when nothing is, since a stale config value should not be a hard failure.
+    latex_engine: str = Field(
+        "tectonic", description="LaTeX engine for agent-authored sends ('tectonic' | 'pdflatex')."
+    )
 
 
 class DailyConfig(BaseModel):

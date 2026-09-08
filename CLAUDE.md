@@ -476,7 +476,8 @@ locus/
 │   │                       #   device_migrate
 │   ├── learn/              # answers · review · practice · gaps · reread
 │   ├── reading/            # proposals · rationale · relevance · sweep · accept · deliver
-│   │                       #   deliver_remarkable · md2pdf · send · watch
+│   │                       #   deliver_remarkable · md2pdf (his markdown) · tex2pdf (agent
+│   │                       #   prose, LaTeX) · send · watch
 │   ├── discover/           # arxiv · openalex · citations · profiles · queries · rank · judge · why
 │   ├── evolve/ structure/ surface/ decide/ enrich/ vault/ export/ eval/
 │   ├── observe/gates.py    # what each threshold rejected (§3)
@@ -493,6 +494,18 @@ locus/
 ## 13. Conventions
 
 - Python 3.11+, uv-managed. Type hints mandatory. Small explicit functions.
+- **A document the AGENT writes for him is authored in LaTeX** (2026-09-08), compiled by
+  `reading/tex2pdf` and pushed as a PDF: MCP `to_remarkable(latex=...)`, `send_latex`, or a
+  `.tex` path to `locus read`. This is the system's interface with him, not a per-document
+  choice — equations, layout and figure placement that markdown cannot express. Pass a
+  FRAGMENT; the device preamble (page size, margins, e-ink leading, amsmath/graphicx/booktabs/
+  enumitem/hyperref/microtype) is wrapped around it, and a source carrying its own
+  `\documentclass` is compiled untouched as the escape hatch. `md2pdf`/`send_markdown` stay and
+  are NOT deprecated: they carry text that was already markdown — his own notes, a stored pass
+  output — and re-authoring those as LaTeX would put a model between him and his own words.
+  The engine is a system binary (`tectonic`, else `pdflatex`), which is a real reproducibility
+  regression against md2pdf's pip-installed pandoc+typst and the price of the language.
+  **The daily page is deliberately NOT part of this** — §10 still renders through Typst.
 - **Docstrings carry the decision log.** State the non-obvious assumption and the *why* — this is
   how a future change avoids re-introducing a fixed bug. Record designs that were **built,
   measured and rejected**, with the measurement.

@@ -730,6 +730,42 @@ def cmd_export_obsidian(args) -> None:
     )
 
 
+def cmd_warm_latex(args) -> None:
+    """Compile a throwaway document so the engine downloads its packages NOW.
+
+    WHY THIS IS A COMMAND. `tectonic` fetches the packages a document asks for on first use, and
+    the device preamble loads tikz and pgfplots for every document, so the first compile on a
+    machine downloads ~51MB of the pgf tree. Measured 2026-09-08: 201.5s and 149.7s on two cold
+    runs, against ~1.2s warm.
+
+    That cost is invisible until it lands on the worst possible caller. `to_remarkable` runs
+    inside an MCP tool call, and the MCP CLIENT has its own patience: it gives up long before a
+    cold fetch finishes and reports a bare "Tool execution failed" with no message, because the
+    server is still working and has raised nothing to report. Raising the server's own ceiling
+    (`[reading].latex_timeout_s`) cannot fix that — it only makes the server block longer after
+    the client has stopped listening. The fix has to be to pay the download OUT of band, which is
+    what this does. Run it once per machine, and after `rm -rf ~/.cache/tectonic`.
+    """
+    import tempfile
+    import time
+
+    from locus.reading.send import latex_geometry
+    from locus.reading.tex2pdf import available_engine, render_latex_to_pdf
+
+    engine = available_engine(load().reading.latex_engine)
+    # The probe must exercise the SAME preamble a real send uses, or it warms the wrong packages
+    # and reports success while the first real document still pays the download.
+    probe = r"\section{Warm}Cache probe. \begin{tikzpicture}\draw (0,0)--(1,1);\end{tikzpicture}"
+    with tempfile.TemporaryDirectory() as tmp:
+        started = time.time()
+        print(f"warming {engine} (first run downloads ~51MB; later runs are ~1s)...")
+        render_latex_to_pdf(probe, Path(tmp) / "warm.pdf", geometry=latex_geometry(), title="Warm")
+        elapsed = time.time() - started
+    print(f"{engine} ready in {elapsed:.1f}s.")
+    if elapsed > 20:
+        print("That was the cold download; it is cached now, so sends will be fast.")
+
+
 def cmd_read(args) -> None:
     """Render markdown -> a device-tuned PDF and push it to the reMarkable (agent-layer §8.5).
 
@@ -2167,6 +2203,12 @@ def main(argv=None) -> None:
     prd.add_argument("--out", default=None, help="write PDFs to this dir (default: beside the source)")
     prd.add_argument("--no-push", action="store_true", help="render locally only; skip the rmapi push")
     prd.set_defaults(func=cmd_read)
+
+    pwl = sub.add_parser(
+        "warm-latex",
+        help="pay the one-off LaTeX package download now, so the first send to the tablet is fast",
+    )
+    pwl.set_defaults(func=cmd_warm_latex)
 
     pmk = sub.add_parser(
         "marks",

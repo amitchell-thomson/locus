@@ -589,10 +589,11 @@ def render_latex_to_pdf(
                     f"{limit:g}s. This is USUALLY NOT the document: on a cold cache "
                     f"{engine} fetches the pgf/tikz package tree on first use, and "
                     "`_DIAGRAM_SETUP` loads tikz and pgfplots for every document, so a "
-                    "one-line fragment pays the same fetch as a diagram-heavy one. Check the "
-                    "network, then retry — a partly-filled cache resumes rather than "
-                    "restarting — or raise `[reading].latex_timeout_s`. If the cache is "
-                    "already warm, suspect an unterminated group or a runaway loop."
+                    "one-line fragment pays the same fetch as a diagram-heavy one. Run "
+                    "`locus warm-latex` once to pay it out of band (a partly-filled cache "
+                    "resumes rather than restarting), or raise `[reading].latex_timeout_s`. "
+                    "If the cache is already warm, suspect an unterminated group or a "
+                    "runaway loop."
                 ) from exc
             if proc.returncode != 0:
                 detail = _explain_failure(f"{proc.stdout}\n{proc.stderr}")

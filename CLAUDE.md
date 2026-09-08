@@ -530,6 +530,11 @@ locus/
   — a ceiling on a runaway document, never a budget for a normal one. **Do not diagnose a slow or
   failed first send as a broken server**; the tell is that a full brief and a minimal fragment
   fail *identically*, because document size does not change what the fetch costs.
+  **Run `locus warm-latex` once per machine** (and after `rm -rf ~/.cache/tectonic`). It is the
+  only fix that works for the MCP path: `to_remarkable` runs inside a tool call whose CLIENT has
+  its own patience, and when the client gives up first it reports a bare "Tool execution failed"
+  with no message — the server has raised nothing, it is still compiling. Raising
+  `latex_timeout_s` cannot help there; it only makes the server block after nobody is listening.
   **The daily page is deliberately NOT part of this** — §10 still renders through Typst.
 - **Docstrings carry the decision log.** State the non-obvious assumption and the *why* — this is
   how a future change avoids re-introducing a fixed bug. Record designs that were **built,

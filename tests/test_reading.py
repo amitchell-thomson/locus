@@ -342,3 +342,101 @@ def test_send_pdf_refuses_something_absurdly_large(tmp_path: Path, monkeypatch):
     src = _a_pdf(tmp_path / "big.pdf")
     with pytest.raises(ValueError, match="send guard"):
         S.send_pdf(src, cfg=_send_cfg(), runner=FakeRmapi({}))
+
+
+# ---------- replace: keeping the device's page records honest ----------
+
+def _stale_pdf(tmp_path: Path, pages: int = 2) -> Path:
+    """A real multi-page PDF, so `_pdf_page_count` returns a number rather than None."""
+    fitz = pytest.importorskip("fitz")
+    path = tmp_path / "rebuilt.pdf"
+    with fitz.open() as doc:
+        for _ in range(pages):
+            doc.new_page(width=200, height=300)
+        doc.save(path)
+    return path
+
+
+def _replacing_runner():
+    from tests.test_reading import SequencedRmapi
+
+    return SequencedRmapi(
+        {"mkdir": (1, "", "entry already exists"), "rm": (0, "", "")},
+        put_sequence=[(1, "", "entry already exists"), (0, "replaced", "")],
+    )
+
+
+def _remote(*, ok: bool, page_count, has_ink: bool):
+    from locus.reading.deliver_remarkable import RemoteDoc
+
+    return lambda _p: RemoteDoc(ok=ok, page_count=page_count, has_ink=has_ink)
+
+
+def test_a_page_count_change_with_no_ink_is_deleted_and_reput(tmp_path: Path):
+    """REGRESSION (2026-09-08). `--content-only` swaps the PDF and KEEPS the device's per-page
+    records, so a rebuild with a different length leaves them describing a document that no
+    longer exists. Observed live: a 9-page brief rebuilt to 6 left `.content` reading
+    `pageCount: 9`, and `rmapi geta` then refused the document with "page count too short".
+    Nothing reports this; you find it by trying to read the document back."""
+    pdf = _stale_pdf(tmp_path, pages=2)
+    fake = _replacing_runner()
+
+    result = deliver_pdf(pdf, remote_folder="Inbox", replace=True, runner=fake,
+                         inspect=_remote(ok=True, page_count=9, has_ink=False))
+
+    assert result.replaced == "delete+put"
+    assert ["rm", "Inbox/rebuilt.pdf"] in fake.calls
+    assert not any("--content-only" in c for c in fake.calls)
+
+
+def test_ink_is_never_deleted_even_when_the_records_are_stale(tmp_path: Path):
+    """The one rule that outranks correct metadata. Stale page records are recoverable; his
+    handwriting is not, and `rm` does not come back."""
+    pdf = _stale_pdf(tmp_path, pages=2)
+    fake = _replacing_runner()
+
+    result = deliver_pdf(pdf, remote_folder="Inbox", replace=True, runner=fake,
+                         inspect=_remote(ok=True, page_count=9, has_ink=True))
+
+    assert result.replaced == "content-only"
+    assert not any(c[0] == "rm" for c in fake.calls)
+
+
+def test_a_remote_that_cannot_be_inspected_is_not_deleted(tmp_path: Path):
+    """`ok=False` is why `RemoteDoc` carries it separately from `has_ink`: a fetch that failed
+    must not read as "no ink", because deletion is the only thing that flag gates. Under the
+    reMarkable cloud's 429 rate limiting this is a live case, not a hypothetical."""
+    pdf = _stale_pdf(tmp_path, pages=2)
+    fake = _replacing_runner()
+
+    result = deliver_pdf(pdf, remote_folder="Inbox", replace=True, runner=fake,
+                         inspect=_remote(ok=False, page_count=None, has_ink=False))
+
+    assert result.replaced == "content-only"
+    assert not any(c[0] == "rm" for c in fake.calls)
+
+
+def test_a_matching_page_count_keeps_the_cheap_path(tmp_path: Path):
+    """Same length means the records still describe the document, so there is nothing to repair
+    and no reason to spend a delete plus a fresh upload."""
+    pdf = _stale_pdf(tmp_path, pages=2)
+    fake = _replacing_runner()
+
+    result = deliver_pdf(pdf, remote_folder="Inbox", replace=True, runner=fake,
+                         inspect=_remote(ok=True, page_count=2, has_ink=False))
+
+    assert result.replaced == "content-only"
+    assert not any(c[0] == "rm" for c in fake.calls)
+
+
+def test_an_injected_runner_does_not_reach_the_network_to_inspect(tmp_path: Path):
+    """A caller that injected a transport injected the transport it wants used. Defaulting to the
+    real inspector here would make every replace test shell out to `rmapi get` and hit the
+    device — which it did, until the default was made conditional."""
+    pdf = _stale_pdf(tmp_path, pages=2)
+    fake = _replacing_runner()
+
+    result = deliver_pdf(pdf, remote_folder="Inbox", replace=True, runner=fake)
+
+    assert result.replaced == "content-only"
+    assert not any(c[0] == "rm" for c in fake.calls)

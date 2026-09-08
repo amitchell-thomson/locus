@@ -618,7 +618,15 @@ Custom GUI · cloud storage of corpus content · multi-user/auth · local models
   can leak into a capture; the discovery flywheel needs ~4 resolved judgements per channel before
   its prior activates (live: every subject sits at 0–1, so `subject_prior` is inert); an
   annotated document still sitting in `Reading/Proposed` keys its marks by device path until he
-  moves it; a same-day daily rebuild delivered with `replace=True` keeps the device's old
-  per-page records (`deliver_remarkable.deliver_pdf`), so a page-count change leaves the new
-  last page with no page entry — fixable only by deleting the device copy, which is safe only
-  when it carries no ink.
+  moves it.
+- **The `replace=True` page-record hazard is CLOSED** (2026-09-08). `deliver_pdf` now inspects
+  the device bundle on the replace path and deletes+re-puts only when it was read successfully,
+  carries no `.rm` ink, and its page count actually differs; everything else, including any
+  failure to inspect, keeps `--content-only`. Do not make deletion unconditional. Observed
+  before the fix: a 9-page brief rebuilt to 6 left `.content` at `pageCount: 9` and `rmapi geta`
+  refused the document outright.
+- **The reMarkable cloud rate-limits (HTTP 429).** Seen 2026-09-08 during a burst of manual
+  `ls`/`get`/`rm`/`put` alongside `locus-capture`: `rmapi` fails with "failed to build documents
+  tree" or "failed to create user token", and a partial tree build makes `ls` UNDER-REPORT — a
+  document that is really there simply does not appear. Do not read a missing entry as a
+  deletion, and back off rather than retrying in a loop.

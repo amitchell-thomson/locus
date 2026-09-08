@@ -75,6 +75,7 @@ from locus.reading.deliver import safe_filename
 from locus.reading.deliver_remarkable import (
     RmapiRunner,
     _ensure_folder,
+    _rmapi_inspector,
     _subprocess_runner,
     deliver_pdf,
 )
@@ -177,6 +178,9 @@ def send_markdown(
     if not folder:
         raise ValueError("no target folder: set [reading].send_folder or pass one")
 
+    # An injected runner means the caller supplied the transport, so the remote inspector must
+    # not go behind it to the network (see `deliver_pdf`). Built here, passed down explicitly.
+    inspector = None if runner is not None else _rmapi_inspector(cfg.reading.rmapi_binary)
     runner = runner or _subprocess_runner(cfg.reading.rmapi_binary)
     filename = safe_filename(title)
 
@@ -186,7 +190,8 @@ def send_markdown(
         )
         pages = _page_count(pdf)
         _ensure_folder_path(runner, folder)
-        deliver_pdf(pdf, remote_folder=folder, replace=True, runner=runner)
+        deliver_pdf(pdf, remote_folder=folder, replace=True, runner=runner,
+                    inspect=inspector)
 
     return SentDoc(filename=filename, remote_folder=folder, pages=pages)
 
@@ -224,6 +229,9 @@ def send_latex(
     if not folder:
         raise ValueError("no target folder: set [reading].send_folder or pass one")
 
+    # An injected runner means the caller supplied the transport, so the remote inspector must
+    # not go behind it to the network (see `deliver_pdf`). Built here, passed down explicitly.
+    inspector = None if runner is not None else _rmapi_inspector(cfg.reading.rmapi_binary)
     runner = runner or _subprocess_runner(cfg.reading.rmapi_binary)
     filename = safe_filename(title)
 
@@ -256,7 +264,8 @@ def send_latex(
         )
         pages = _page_count(pdf)
         _ensure_folder_path(runner, folder)
-        deliver_pdf(pdf, remote_folder=folder, replace=True, runner=runner)
+        deliver_pdf(pdf, remote_folder=folder, replace=True, runner=runner,
+                    inspect=inspector)
 
     return SentDoc(filename=filename, remote_folder=folder, pages=pages)
 
@@ -362,6 +371,9 @@ def send_pdf(
         raise ValueError("no target folder: set [reading].send_folder or pass one")
 
     src = resolve_pdf(pdf)
+    # An injected runner means the caller supplied the transport, so the remote inspector must
+    # not go behind it to the network (see `deliver_pdf`). Built here, passed down explicitly.
+    inspector = None if runner is not None else _rmapi_inspector(cfg.reading.rmapi_binary)
     runner = runner or _subprocess_runner(cfg.reading.rmapi_binary)
     filename = safe_filename(title or src.stem)
     pages = _page_count(src)
@@ -370,6 +382,7 @@ def send_pdf(
         staged = Path(tmp) / filename
         staged.write_bytes(src.read_bytes())
         _ensure_folder_path(runner, folder)
-        deliver_pdf(staged, remote_folder=folder, replace=True, runner=runner)
+        deliver_pdf(staged, remote_folder=folder, replace=True, runner=runner,
+                    inspect=inspector)
 
     return SentDoc(filename=filename, remote_folder=folder, pages=pages)

@@ -586,12 +586,21 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
         a freshly swept document has the covered text and the line for every mark but no
         transcribed note until Loop B or `locus annotate --transcribe` runs.
 
+        PAGES HE ADDED ON THE TABLET come back like any other page. He inserts blank pages into
+        a document to answer on, and those pages have no PDF behind them, so every mark on one
+        has an empty `covered_text` by construction — the register labels them `added page` and
+        the image is the only place the writing exists until it is transcribed. Read the images
+        for those; do not report the document as unmarked because the text register is thin.
+
         Args:
             document: Title fragment, source_uri, device path, or xochitl uuid. Ambiguous
                 fragments come back as a list of candidates rather than a guess.
             pages: Optional 1-based page numbers. Default: every inked page, densest first,
-                up to `max_images`. Named pages are always returned, never trimmed, and they
-                narrow the text register too.
+                and then the rest of the document if it is short enough to fit under
+                `max_images` — a short document comes back WHOLE, because an answer he wrote
+                on a page he added is unreadable without the printed question before it, and
+                that page carries no ink. Named pages are always returned, never trimmed, and
+                they narrow the text register too.
             intent: Optional filter — 'important', 'not_understood', or 'idea'. Narrows the
                 text register AND picks the pages to render, so "what did I not understand"
                 returns those pages rather than the most heavily inked ones.
@@ -656,8 +665,16 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
             if m.pages:
                 from mcp.server.fastmcp import Image
 
+                inked, added = set(m.inked_pages), set(m.added_pages)
                 for idx, png in sorted(m.pages.items()):
-                    out.append(f'[p.{idx + 1} of "{m.target.title}" — his ink, margins included]')
+                    # The label has to say WHICH page this is, because a short document now
+                    # comes back whole: an answer written on a page he added means nothing
+                    # without the printed question two pages earlier, and a reader told every
+                    # image is "his ink" would look for handwriting on the question sheet.
+                    what = "his ink, margins included" if idx in inked else "no ink on this page"
+                    if idx in added:
+                        what += "; a page he ADDED on the tablet, so all of it is his writing"
+                    out.append(f'[p.{idx + 1} of "{m.target.title}" — {what}]')
                     out.append(Image(data=png, format="png"))
 
             tail = []

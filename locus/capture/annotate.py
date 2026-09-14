@@ -20,6 +20,11 @@ MARK KINDS, and why they are separated:
     belongs to is the text at the same height. Often the most valuable annotation on the page.
   - `mark`       — anything else (circles, arrows, ticks). Covered text is whatever it overlaps.
 
+A page he INSERTED on the tablet gets none of this treatment (`marks_for_inserted_page`): there
+is no text under the ink, so there is no gesture to read and nothing to cover. Those marks carry
+`inserted=True`, which is the only thing that distinguishes a page of handwritten answers from a
+highlight drawn over a figure once both have stored an empty `covered_text`.
+
 The nearest-line rule matters more than it looks. An underline drawn by hand sits slightly BELOW
 the glyph boxes it refers to, so a naive `intersects` test returns nothing at all, or the line
 underneath. Words are therefore matched against a band around the stroke, and a stroke that is
@@ -30,7 +35,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from locus.capture.rmdoc import AnnotatedPage, Stroke
+from locus.capture.rmdoc import INSERTED_PAGE_WIDTH, AnnotatedPage, Stroke
 
 # A stroke wider than this multiple of its height is a rule, not a shape.
 _FLAT_RATIO = 4.0
@@ -48,13 +53,17 @@ class Mark:
     """One annotation: a cluster of strokes, and the text it covers."""
 
     kind: str                       # 'underline' | 'bracket' | 'margin_note' | 'mark'
-    pdf_page: int                   # 0-based
+    pdf_page: int                   # 0-based DOCUMENT position (rmdoc.AnnotatedPage.pdf_page)
     bbox: tuple[float, float, float, float]
     covered_text: str = ""
     line_text: str = ""             # the full line(s) the mark sits on, for context
     in_margin: bool = False
     stroke_count: int = 1
     point_count: int = 0
+    # Written on a page he ADDED on the tablet. There is no document text under it and there
+    # never will be, so `covered_text` being empty says nothing about the mark — which is
+    # exactly the wrong conclusion for a reader to draw from a blank one (see `review.MarkRow`).
+    inserted: bool = False
     # The strokes themselves, kept in memory and never persisted — `capture/mark_text.py`
     # renders them to transcribe the handwriting. A Mark rebuilt from the DB has none.
     strokes: list = field(default_factory=list)
@@ -191,9 +200,32 @@ def _covered(
 def marks_for_page(page, annotated: AnnotatedPage) -> list[Mark]:
     """Every annotation on one page, with the text each covers.
 
-    `page` is the pymupdf page for `annotated.pdf_page`.
+    `page` is the pymupdf page for `annotated.source_page`.
     """
-    words, lines = _words(page), _lines(page)
+    return _marks(annotated, _words(page), _lines(page), page_width=page.rect.width)
+
+
+def marks_for_inserted_page(
+    annotated: AnnotatedPage, *, page_width: float = INSERTED_PAGE_WIDTH
+) -> list[Mark]:
+    """Every annotation on a page he ADDED on the tablet. There is no text to cover.
+
+    The geometry that makes `marks_for_page` work is calibrated against printed lines: an
+    underline is flat because it runs under words, a bracket is tall because it spans them, a
+    margin note is out at the edge because the text is in the middle. On a blank inserted page
+    none of that holds — there is no text, so there is no margin either, and every cluster is
+    simply writing. Classifying it anyway would file a page of answers as `margin_note`.
+
+    So the marks come back as `mark`, flagged `inserted`, with empty covered and line text. They
+    are still marks: `mark_text.render_ink` transcribes STROKES, not the page under them, so the
+    writing on an inserted page reaches `note` by exactly the same path as marginalia does.
+    """
+    return _marks(annotated, [], [], page_width=page_width, inserted=True)
+
+
+def _marks(
+    annotated: AnnotatedPage, words, lines, *, page_width: float, inserted: bool = False
+) -> list[Mark]:
     out: list[Mark] = []
     # HIGHLIGHTS ARE CLUSTERED SEPARATELY, one gesture per line. `_cluster` chains strokes within
     # `_CLUSTER_GAP` (26pt) and body text is ~12pt apart, so highlighting three consecutive lines
@@ -209,8 +241,10 @@ def marks_for_page(page, annotated: AnnotatedPage) -> list[Mark]:
         bbox = _union(group)
         if _is_highlight(group[0]):
             kind, in_margin = "highlight", False
+        elif inserted:
+            kind, in_margin = "mark", False
         else:
-            kind, in_margin = classify(bbox, page_width=page.rect.width)
+            kind, in_margin = classify(bbox, page_width=page_width)
         covered, ctx = _covered(kind, bbox, words, lines)
         out.append(
             Mark(
@@ -222,6 +256,7 @@ def marks_for_page(page, annotated: AnnotatedPage) -> list[Mark]:
                 in_margin=in_margin,
                 stroke_count=len(group),
                 point_count=sum(len(s.points) for s in group),
+                inserted=inserted,
                 strokes=list(group),
             )
         )
@@ -236,8 +271,11 @@ def marks_for_document(rmdoc) -> list[Mark]:
     try:
         out: list[Mark] = []
         for annotated in rmdoc.pages:
-            if annotated.pdf_page < doc.page_count:
-                out.extend(marks_for_page(doc[annotated.pdf_page], annotated))
+            source = annotated.source_page
+            if source is None:
+                out.extend(marks_for_inserted_page(annotated))
+            elif source < doc.page_count:
+                out.extend(marks_for_page(doc[source], annotated))
         return out
     finally:
         doc.close()
@@ -296,15 +334,17 @@ def store_marks(conn, marks, *, source_uri: str, doc_uuid: str = "", source_run=
             conn.execute(
                 "INSERT INTO pdf_annotations (source_uri, doc_uuid, pdf_page, kind, bbox_key, "
                 "bbox, covered_text, line_text, in_margin, stroke_count, point_count, "
-                "source_run, captured_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) "
+                "inserted, source_run, captured_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
                 "ON CONFLICT(source_uri, pdf_page, bbox_key) DO UPDATE SET "
                 "kind=excluded.kind, covered_text=excluded.covered_text, "
                 "line_text=excluded.line_text, in_margin=excluded.in_margin, "
-                "stroke_count=excluded.stroke_count, point_count=excluded.point_count",
+                "stroke_count=excluded.stroke_count, point_count=excluded.point_count, "
+                "inserted=excluded.inserted",
                 (
                     source_uri, doc_uuid, m.pdf_page, m.kind, bbox_key(m.bbox),
                     json.dumps([round(v, 2) for v in m.bbox]), m.covered_text, m.line_text,
-                    int(m.in_margin), m.stroke_count, m.point_count, source_run, stamp,
+                    int(m.in_margin), m.stroke_count, m.point_count,
+                    int(getattr(m, "inserted", False)), source_run, stamp,
                 ),
             )
             written += 1

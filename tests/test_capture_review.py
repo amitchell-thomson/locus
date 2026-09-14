@@ -302,11 +302,127 @@ def test_ink_entirely_inside_the_page_still_shows_the_whole_page(tmp_path: Path)
     img.close()
 
 
-def test_pages_without_ink_are_not_rendered(tmp_path: Path):
+def test_a_page_the_document_does_not_have_is_not_rendered(tmp_path: Path):
     from locus.capture.rmdoc import composite_pages_with_margins
 
     rmdoc = _rmdoc_with_margin_ink(tmp_path)
     assert composite_pages_with_margins(rmdoc, [5], dpi=72) == {}
+
+
+def test_an_un_inked_page_is_rendered_when_it_is_asked_for_by_number(tmp_path: Path):
+    """An answer on an inserted page is unreadable without the question on the page before it,
+    and that page carries no ink. Asked for by number, it comes back."""
+    import pymupdf
+
+    from locus.capture.rmdoc import AnnotatedPage, RmDoc, Stroke, composite_pages_with_margins
+
+    doc = pymupdf.open()
+    doc.new_page(width=595, height=842)
+    doc.new_page(width=595, height=842)
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    rmdoc = RmDoc(
+        doc_uuid="u", pdf_bytes=pdf_bytes, page_map=[0, 1],
+        pages=[AnnotatedPage(pdf_page=1, page_uuid="p1",
+                             strokes=[Stroke(points=[(100.0, 100.0), (300.0, 140.0)])])],
+    )
+    # page 0 has no ink at all; it is still rendered, and omitting it is still the default.
+    assert set(composite_pages_with_margins(rmdoc, [0, 1], dpi=72)) == {0, 1}
+    assert set(composite_pages_with_margins(rmdoc, dpi=72)) == {1}
+
+
+def test_an_inserted_page_renders_on_a_blank_canvas(tmp_path: Path):
+    """THE BUG. A page he added has no PDF page behind it, so the renderer had nothing to draw
+    on and dropped it — silently, returning a valid, unmarked-looking document."""
+    import pymupdf
+
+    from locus.capture.rmdoc import (
+        INSERTED_PAGE_WIDTH,
+        AnnotatedPage,
+        RmDoc,
+        Stroke,
+        composite_pages_with_margins,
+    )
+
+    doc = pymupdf.open()
+    doc.new_page(width=595, height=842)
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    rmdoc = RmDoc(
+        doc_uuid="u", pdf_bytes=pdf_bytes, page_map=[0, None],
+        pages=[AnnotatedPage(pdf_page=1, page_uuid="added", source_page=None,
+                             strokes=[Stroke(points=[(100.0, 200.0), (400.0, 260.0)])])],
+    )
+    pngs = composite_pages_with_margins(rmdoc, dpi=72)
+
+    assert set(pngs) == {1}, "the ink on the page he added was dropped again"
+    img = pymupdf.open(stream=pngs[1], filetype="png")
+    assert img[0].rect.width >= INSERTED_PAGE_WIDTH
+    img.close()
+
+
+def test_composite_pdf_appends_a_sheet_for_each_inserted_page(tmp_path: Path):
+    """The daily-page path. Backed pages are drawn by SOURCE index first, because that index
+    is only valid while nothing has been inserted into the document being written."""
+    import pymupdf
+
+    from locus.capture.rmdoc import AnnotatedPage, RmDoc, Stroke, composite_pdf
+
+    doc = pymupdf.open()
+    doc.new_page(width=595, height=842)
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    rmdoc = RmDoc(
+        doc_uuid="u", pdf_bytes=pdf_bytes, page_map=[0, None],
+        pages=[
+            AnnotatedPage(pdf_page=0, page_uuid="p0",
+                          strokes=[Stroke(points=[(80.0, 100.0), (300.0, 104.0)])]),
+            AnnotatedPage(pdf_page=1, page_uuid="added", source_page=None,
+                          strokes=[Stroke(points=[(80.0, 200.0), (300.0, 260.0)])]),
+        ],
+    )
+    out = composite_pdf(rmdoc, tmp_path / "flat.pdf")
+    got = pymupdf.open(str(out))
+    try:
+        assert got.page_count == 2
+    finally:
+        got.close()
+
+
+def test_a_short_document_comes_back_whole(tmp_path: Path):
+    """His ask, and the reason it matters: the question and its answer are on different pages,
+    and only one of them has ink on it."""
+    from locus.capture.review import pages_to_render
+    from locus.capture.rmdoc import AnnotatedPage, RmDoc, Stroke
+
+    rmdoc = RmDoc(
+        doc_uuid="u", pdf_bytes=b"", page_map=[0, 1, None, None],
+        pages=[AnnotatedPage(pdf_page=2, page_uuid="a", source_page=None,
+                             strokes=[Stroke(points=[(1.0, 1.0), (2.0, 2.0)])])],
+    )
+    assert pages_to_render(rmdoc, 12) == [0, 1, 2, 3]
+
+
+def test_a_long_document_still_only_shows_the_inked_pages(tmp_path: Path):
+    """A 211-page book must not try to return 211 images."""
+    from locus.capture.review import pages_to_render
+    from locus.capture.rmdoc import AnnotatedPage, RmDoc, Stroke
+
+    rmdoc = RmDoc(
+        doc_uuid="u", pdf_bytes=b"", page_map=list(range(211)),
+        pages=[
+            AnnotatedPage(pdf_page=i, page_uuid=f"p{i}",
+                          strokes=[Stroke(points=[(0.0, 0.0)] * (i + 2))])
+            for i in (5, 40, 90, 150)
+        ],
+    )
+    # The cap binds on the inked pages alone — the densest three, in reading order — so no
+    # un-inked filler is ever reached.
+    assert pages_to_render(rmdoc, 3) == [40, 90, 150]
+    assert pages_to_render(rmdoc, 4) == [5, 40, 90, 150]
 
 
 # ---------- whole-device resolution ----------

@@ -116,7 +116,7 @@ VRAM change.**
 
 ## 5. Data model
 
-Source of truth: Alembic migrations in `locus/db/migrations/versions/` (currently **0034**).
+Source of truth: Alembic migrations in `locus/db/migrations/versions/` (currently **0036**).
 `locus/db/schema.sql` is a human-readable summary. Never `ALTER` a live DB ad hoc; never force a
 re-ingest for a schema change — migrate forward.
 
@@ -296,6 +296,22 @@ inked pages and returns them as images with the text register. Three things it m
 - **Sweeping from a tool call is geometric only.** `capture/transcribe` is billed; a chat tool
   must never trigger it. A freshly swept document has covered text and lines but no handwriting
   until Loop B or `locus annotate --transcribe` runs.
+- **A page he ADDED on the tablet is part of the document** (2026-09-14). He inserts blank pages
+  to write answers on, and `.content` records them with no `redir` (or `-1`). `_page_order` used
+  to drop every stroke layer it could not place on a PDF page, so a two-page question sheet with
+  four appended answer pages parsed as ZERO annotated pages while carrying 3,334 strokes: the
+  tool reported an unmarked document, in confident detail, and three people believed it.
+  `AnnotatedPage.pdf_page` is therefore a position in the DOCUMENT and `source_page` is the PDF
+  page behind it (None = inserted); the two differ only once he has inserted something, which is
+  why no stored mark changed meaning. Such a mark covers no text BY CONSTRUCTION, so
+  `pdf_annotations.inserted` (migration 0036) is what stops the register explaining a sheet of
+  his answers as "ink over a figure". It cannot be inferred later: only the device's `.content`
+  knows, and that is a cloud bundle, not a column.
+- **A short document is rendered WHOLE, not just its inked pages** (2026-09-14, his call). The
+  answer is on a page he added; the question it answers is on a printed page with no ink on it,
+  which an inked-pages-only renderer never showed. `review.pages_to_render` fills the remaining
+  image slots with un-inked pages, and the byte budget still drops them first. A 211-page book is
+  unchanged — the cap binds on the inked pages long before it reaches the rest.
 
 Bundles are cached under `vault/cache/rmdoc/<doc_uuid>.rmdoc` (derived; delete = one refetch), so
 a second look costs no fetch and renders with the cloud unreachable.
@@ -466,7 +482,7 @@ locus/
 ├── locus/
 │   ├── cli.py              # the product surface (all commands)
 │   ├── config.py           # typed config; API key via env/.env only
-│   ├── db/                 # connection, migrate, migrations/ (0001–0034)
+│   ├── db/                 # connection, migrate, migrations/ (0001–0036)
 │   ├── extract/            # pdf · mathocr · figures_detect · docx · pptx · textdoc · code
 │   ├── ingest/             # llm · summarize · propositions · entities · concepts · synthesis
 │   │                       #   gaps · chunk · embed · figures · llamacpp

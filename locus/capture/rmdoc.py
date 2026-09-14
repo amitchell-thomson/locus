@@ -19,6 +19,20 @@ Three earlier approaches failed, and it is worth recording why so nobody retries
   - rendering `.rm` v6 to an image (rmscene as a renderer) was the documented dead end. Loop B
     does not need pixels.
 
+PAGES HE ADDED ON THE TABLET ARE PART OF THE DOCUMENT (2026-09-14). The tablet lets him insert
+blank pages into a PDF, and it records them in `.content` with no `redir` at all (or `-1`). They
+carry `.rm` files like any other page. This module used to drop every stroke layer it could not
+place on a PDF page, so a two-page question sheet with four appended answer pages parsed as
+ZERO annotated pages: 3,334 strokes and 80,358 points of his handwriting, reported to him as an
+unmarked document. Silence, not an error — the failure class of CLAUDE.md §3 exactly. An
+inserted page now parses with `source_page=None` and renders on a blank canvas.
+
+`AnnotatedPage.pdf_page` is therefore the page's position in the DOCUMENT as the tablet
+paginates it, and `source_page` is the PDF page behind it. For every document without inserted
+pages the two are identical, which is why no stored mark changed meaning when this landed (the
+three annotated documents in the corpus on 2026-09-14 were checked). Position is the number he
+reads off the tablet, so it is the number to key a mark by and the number to print.
+
 COORDINATE MAPPING (established empirically 2026-07-30 by overlaying strokes on the page and
 looking at the result; a width-fit assumption put an underline a full line too high):
 
@@ -43,6 +57,19 @@ from pathlib import Path
 # reMarkable Paper Pro panel, in the units `.rm` stroke coordinates use.
 SCREEN_W = 1620.0
 SCREEN_H = 2160.0
+
+# A page he INSERTED has no PDF behind it and so has no page rectangle, but the coordinate
+# transform needs one. The tablet's own canvas is the honest choice: the same aspect ratio as
+# the screen, sized to A4's width, so `to_page_coords` maps the whole writing surface onto the
+# page with no distortion and nothing is pushed into a notional margin that does not exist.
+INSERTED_PAGE_WIDTH = 595.0
+INSERTED_PAGE_HEIGHT = SCREEN_H * (INSERTED_PAGE_WIDTH / SCREEN_W)
+
+# `AnnotatedPage.source_page` default: "this page IS its PDF page". Distinct from None, which
+# means the page was inserted on the tablet and has no PDF page at all. A sentinel rather than a
+# plain default because a dataclass cannot otherwise tell "not given" from "given as None", and
+# the two mean opposite things here.
+SAME_AS_PAGE = -1
 
 
 @dataclass
@@ -72,11 +99,24 @@ class Stroke:
 
 @dataclass
 class AnnotatedPage:
-    """The strokes on one PDF page."""
+    """The strokes on one page of the document, as the tablet paginates it."""
 
-    pdf_page: int                 # 0-based index into the source PDF
+    pdf_page: int                 # 0-based position in the DOCUMENT (see the module docstring)
     page_uuid: str
     strokes: list[Stroke] = field(default_factory=list)
+    # 0-based index into the source PDF, or None for a page he INSERTED on the tablet. The
+    # sentinel default means "the same page", which is what every page of an un-inserted-into
+    # document is and what a directly-constructed page has always meant.
+    source_page: int | None = SAME_AS_PAGE
+
+    def __post_init__(self) -> None:
+        if self.source_page == SAME_AS_PAGE:
+            self.source_page = self.pdf_page
+
+    @property
+    def inserted(self) -> bool:
+        """Was this page added on the tablet, with no PDF page behind it?"""
+        return self.source_page is None
 
     @property
     def total_points(self) -> int:
@@ -88,10 +128,26 @@ class RmDoc:
     doc_uuid: str
     pdf_bytes: bytes
     pages: list[AnnotatedPage] = field(default_factory=list)
+    # Document position -> source PDF page (None = inserted). EVERY page, not just the inked
+    # ones: a renderer asked for the whole document needs to know what is behind a page it has
+    # no strokes for, and an empty list means the manifest was unreadable rather than that the
+    # document is empty.
+    page_map: list[int | None] = field(default_factory=list)
+
+    @property
+    def page_count(self) -> int:
+        """Pages as the TABLET counts them, inserted ones included."""
+        return len(self.page_map)
+
+    def source_page_for(self, position: int) -> int | None:
+        """The PDF page behind a document position, or None when there is none."""
+        if 0 <= position < len(self.page_map):
+            return self.page_map[position]
+        return position if position >= 0 else None
 
 
-def _page_index(content: dict) -> dict[str, int]:
-    """page uuid -> 0-based PDF page index, from `.content`.
+def _page_order(content: dict) -> list[tuple[str, int | None]]:
+    """`(page uuid, source PDF page or None)` for every page, in the tablet's page order.
 
     TWO SCHEMAS, both live on the same account (found 2026-07-30 when the daily page returned
     zero annotated pages while visibly covered in ink):
@@ -102,24 +158,39 @@ def _page_index(content: dict) -> dict[str, int]:
         of PDF page indices. Older documents, and anything uploaded by a client that still
         writes v1 (which is what `rmapi put` produces, so every Locus-delivered PDF lands here).
 
-    A page mapped to -1 is an INSERTED page with no PDF behind it; it is left out rather than
-    guessed onto page 0.
+    A page with no `redir`, or one mapped to -1, is one he INSERTED on the tablet. It is kept,
+    at its place in the order, with no PDF page behind it — NOT dropped, and never guessed onto
+    page 0. Dropping it is what made a sheet of handwritten answers read as an unmarked
+    two-page document (see the module docstring). `redir` absent entirely is the shape his own
+    device writes; -1 is the shape the v1 schema uses, and both occur.
+
+    A page carrying a `deleted` marker is left out: he removed it, its `.rm` may still be in
+    the bundle, and rendering it would put ink back into a document he had cleared it from.
+
+    ORDER IS THE RETURN VALUE. A dict keyed by uuid cannot express where an inserted page sits,
+    and position is the page number he reads off the tablet.
     """
-    out: dict[str, int] = {}
-    for page in (content.get("cPages") or {}).get("pages") or []:
-        pid = page.get("id")
-        redir = (page.get("redir") or {}).get("value")
-        if pid is not None and isinstance(redir, int) and redir >= 0:
-            out[pid] = redir
-    if out:
+    out: list[tuple[str, int | None]] = []
+
+    pages_v2 = (content.get("cPages") or {}).get("pages") or []
+    if pages_v2:
+        for page in pages_v2:
+            pid = page.get("id")
+            if not isinstance(pid, str) or page.get("deleted"):
+                continue
+            redir = (page.get("redir") or {}).get("value")
+            out.append((pid, redir if isinstance(redir, int) and redir >= 0 else None))
         return out
 
     pages = content.get("pages") or []
     redirect = content.get("redirectionPageMap") or []
     for i, pid in enumerate(pages):
+        if not isinstance(pid, str):
+            continue
+        # No map at all means a straight PDF: page i IS page i. That is the identity fallback,
+        # not a guess about an inserted page, which the map states explicitly when it exists.
         idx = redirect[i] if i < len(redirect) else i
-        if isinstance(pid, str) and isinstance(idx, int) and idx >= 0:
-            out[pid] = idx
+        out.append((pid, idx if isinstance(idx, int) and idx >= 0 else None))
     return out
 
 
@@ -172,17 +243,30 @@ def read_rmdoc(path: str | Path) -> RmDoc:
 
         doc_uuid = Path(pdf_name).stem
         pdf_bytes = z.read(pdf_name)
-        pagemap = _page_index(json.loads(z.read(content_name)))
+        order = _page_order(json.loads(z.read(content_name)))
 
         doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
         try:
+            # position -> source page, and uuid -> position. A source page the PDF does not have
+            # is treated as INSERTED rather than dropped: a manifest that disagrees with its own
+            # PDF is a reason to render the ink on a blank sheet, never a reason to lose it.
+            page_map: list[int | None] = [
+                src if src is not None and 0 <= src < doc.page_count else None
+                for _, src in order
+            ]
+            position_of = {pid: i for i, (pid, _) in enumerate(order)}
+
             pages: list[AnnotatedPage] = []
             for name in sorted(n for n in names if n.endswith(".rm")):
                 page_uuid = Path(name).stem
-                idx = pagemap.get(page_uuid)
-                if idx is None or idx >= doc.page_count:
-                    continue  # a stroke layer we cannot place is dropped, never guessed onto a page
-                rect = doc[idx].rect
+                position = position_of.get(page_uuid)
+                if position is None:
+                    continue  # a stroke layer the manifest does not list: a page he deleted
+                source = page_map[position]
+                rect = (
+                    doc[source].rect if source is not None
+                    else pymupdf.Rect(0, 0, INSERTED_PAGE_WIDTH, INSERTED_PAGE_HEIGHT)
+                )
                 strokes = [
                     Stroke(
                         to_page_coords(pts, page_width=rect.width, page_height=rect.height),
@@ -192,12 +276,12 @@ def read_rmdoc(path: str | Path) -> RmDoc:
                     for pts, tool, color in _parse_rm(z.read(name))
                 ]
                 if strokes:
-                    pages.append(AnnotatedPage(idx, page_uuid, strokes))
+                    pages.append(AnnotatedPage(position, page_uuid, strokes, source_page=source))
         finally:
             doc.close()
 
     pages.sort(key=lambda p: p.pdf_page)
-    return RmDoc(doc_uuid=doc_uuid, pdf_bytes=pdf_bytes, pages=pages)
+    return RmDoc(doc_uuid=doc_uuid, pdf_bytes=pdf_bytes, pages=pages, page_map=page_map)
 
 
 def ink_hash(rmdoc: RmDoc) -> str:
@@ -234,22 +318,41 @@ def composite_pdf(rmdoc: RmDoc, out_path: str | Path, *, width: float = 1.4) -> 
     """
     import pymupdf
 
+    def _draw(page, strokes) -> None:
+        for stroke in strokes:
+            if len(stroke.points) < 2:
+                continue
+            # Clipped to the page: ink written beside a portrait page has no page
+            # coordinates, and pymupdf refuses to draw outside the rect.
+            pts = [pymupdf.Point(x, y) for x, y in stroke.points]
+            try:
+                page.draw_polyline(pts, color=(0, 0, 0), width=width)
+            except (ValueError, RuntimeError):
+                continue
+
     doc = pymupdf.open(stream=rmdoc.pdf_bytes, filetype="pdf")
     try:
+        # PDF-backed pages FIRST, indexed by their source page, because that index is only
+        # valid while nothing has been inserted into `doc`. Ink drawn on the wrong page is the
+        # one outcome worse than ink not drawn at all.
         for annotated in rmdoc.pages:
-            if annotated.pdf_page >= doc.page_count:
+            if annotated.source_page is None or annotated.source_page >= doc.page_count:
                 continue
-            page = doc[annotated.pdf_page]
-            for stroke in annotated.strokes:
-                if len(stroke.points) < 2:
-                    continue
-                # Clipped to the page: ink written beside a portrait page has no page
-                # coordinates, and pymupdf refuses to draw outside the rect.
-                pts = [pymupdf.Point(x, y) for x, y in stroke.points]
-                try:
-                    page.draw_polyline(pts, color=(0, 0, 0), width=width)
-                except (ValueError, RuntimeError):
-                    continue
+            _draw(doc[annotated.source_page], annotated.strokes)
+
+        # ...then the pages he added on the tablet, which have nothing to draw on until one is
+        # made for them. Placed at their document position so the result reads in his order.
+        for annotated in sorted(
+            (pg for pg in rmdoc.pages if pg.inserted), key=lambda pg: pg.pdf_page
+        ):
+            _draw(
+                doc.new_page(
+                    pno=min(annotated.pdf_page, doc.page_count),
+                    width=INSERTED_PAGE_WIDTH,
+                    height=INSERTED_PAGE_HEIGHT,
+                ),
+                annotated.strokes,
+            )
         out_path = Path(out_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         doc.save(str(out_path))
@@ -286,43 +389,66 @@ def composite_pages_with_margins(
 
     `composite_pdf` is kept and unchanged: the daily page is written between ruled lines and has
     no margin ink, and it wants one PDF rather than per-page images.
+
+    WHAT `page_indexes` MEANS. Omitted, it renders the inked pages and only those — the cheap
+    default for a 211-page book of which he marked nine. NAMED, it renders exactly those pages
+    whether they carry ink or not, because a page he asked for by number and did not get back
+    is the silent-omission failure again, and because an answer written on an inserted page is
+    unreadable without the question on the page before it. Positions are DOCUMENT positions,
+    so an inserted page is addressable like any other; one the document does not have is
+    skipped.
     """
     import pymupdf
 
     src = pymupdf.open(stream=rmdoc.pdf_bytes, filetype="pdf")
     try:
+        inked = {pg.pdf_page: pg for pg in rmdoc.pages}
+        explicit = page_indexes is not None
+        wanted = (
+            [i for i in dict.fromkeys(page_indexes) if i >= 0] if explicit
+            else sorted(inked)
+        )
+
         out: dict[int, bytes] = {}
-        for annotated in rmdoc.pages:
-            if annotated.pdf_page >= src.page_count or annotated.pdf_page < 0:
-                continue
-            if page_indexes is not None and annotated.pdf_page not in page_indexes:
-                continue
-            points = [pt for stroke in annotated.strokes for pt in stroke.points]
-            if not points:
+        for position in wanted:
+            annotated = inked.get(position)
+            source = (
+                annotated.source_page if annotated is not None
+                else rmdoc.source_page_for(position)
+            )
+            if source is not None and not 0 <= source < src.page_count:
+                continue                    # a position this document does not have
+            strokes = annotated.strokes if annotated is not None else []
+            points = [pt for stroke in strokes for pt in stroke.points]
+            if not points and not explicit:
                 continue
 
-            rect = src[annotated.pdf_page].rect
+            rect = (
+                src[source].rect if source is not None
+                else pymupdf.Rect(0, 0, INSERTED_PAGE_WIDTH, INSERTED_PAGE_HEIGHT)
+            )
             # The union of paper and ink. min(0, ...) / max(width, ...) keep the whole page
             # visible even when every stroke sits inside it.
-            x0 = min(0.0, min(p[0] for p in points) - pad)
-            y0 = min(0.0, min(p[1] for p in points) - pad)
-            x1 = max(rect.width, max(p[0] for p in points) + pad)
-            y1 = max(rect.height, max(p[1] for p in points) + pad)
+            x0 = min(0.0, min((p[0] for p in points), default=0.0) - pad)
+            y0 = min(0.0, min((p[1] for p in points), default=0.0) - pad)
+            x1 = max(rect.width, max((p[0] for p in points), default=0.0) + pad)
+            y1 = max(rect.height, max((p[1] for p in points), default=0.0) + pad)
 
             canvas = pymupdf.open()
             try:
                 page = canvas.new_page(width=x1 - x0, height=y1 - y0)
                 where = pymupdf.Rect(-x0, -y0, -x0 + rect.width, -y0 + rect.height)
-                page.show_pdf_page(where, src, annotated.pdf_page)
+                if source is not None:
+                    page.show_pdf_page(where, src, source)
                 page.draw_rect(where, color=(0.7, 0.7, 0.7), width=0.5)
-                for stroke in annotated.strokes:
+                for stroke in strokes:
                     if len(stroke.points) < 2:
                         continue
                     page.draw_polyline(
                         [pymupdf.Point(x - x0, y - y0) for x, y in stroke.points],
                         color=(0, 0, 0), width=width,
                     )
-                out[annotated.pdf_page] = page.get_pixmap(dpi=dpi).tobytes("png")
+                out[position] = page.get_pixmap(dpi=dpi).tobytes("png")
             finally:
                 canvas.close()
         return out

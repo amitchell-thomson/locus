@@ -28,10 +28,13 @@ the page as he sees it, ink and all, instead of reading a lossy description of i
 
 PAGE NUMBERS ARE 0-BASED IN THE DATABASE AND 1-BASED ON A PAGE
 ---------------------------------------------------------------
-`pdf_annotations.pdf_page` is 0-based (`annotate.Mark.pdf_page`, and `composite_pdf` indexes
-`doc[...]` with it directly). Every number a human types or reads is 1-based. `MarkRow` carries
-BOTH — `page` to print and `page_index` to render with — because a silent off-by-one here shows
-the wrong page with total confidence, which is worse than showing none.
+`pdf_annotations.pdf_page` is 0-based. Every number a human types or reads is 1-based. `MarkRow`
+carries BOTH — `page` to print and `page_index` to render with — because a silent off-by-one
+here shows the wrong page with total confidence, which is worse than showing none.
+
+It is a position in the DOCUMENT, not an index into the PDF (`rmdoc.AnnotatedPage`): the two
+differ exactly when he has inserted pages on the tablet, and the document position is the number
+printed on his screen, so it is the one to store and the one to print.
 
 WHAT EACH REGISTER IS ACTUALLY BETTER AT (measured 2026-09-05 on his own pages)
 -------------------------------------------------------------------------------
@@ -95,13 +98,16 @@ class MarkRow:
     line_text: str
     note: str
     in_margin: bool
+    inserted: bool = False   # written on a page he ADDED on the tablet; nothing under the ink
 
     @property
     def is_blank(self) -> bool:
-        """Covered nothing and says nothing — almost always a highlight over a figure.
+        """Covered nothing and says nothing — a highlight over a figure, or an added page.
 
         These are not noise to be filtered: they are exactly the marks whose meaning is only
-        visible in the image, so they are reported and counted rather than dropped.
+        visible in the image, so they are reported and counted rather than dropped. `inserted`
+        is what separates the two causes, and they want opposite reactions: ink over a figure
+        means look at the figure, ink on a page he added IS the content and wants transcribing.
         """
         return not self.covered_text.strip() and not self.note.strip()
 
@@ -123,6 +129,11 @@ class DocumentMarks:
     @property
     def blank_count(self) -> int:
         return sum(m.is_blank for m in self.marks)
+
+    @property
+    def inserted_pages(self) -> list[int]:
+        """0-based positions of pages he added on the tablet, in reading order."""
+        return sorted({m.page_index for m in self.marks if m.inserted})
 
     def render(self, *, image_hint: bool = False) -> str:
         """The text register: every mark, grouped by page, in reading order.
@@ -146,6 +157,8 @@ class DocumentMarks:
                     bits.append(m.intent)
                 if m.in_margin:
                     bits.append("margin")
+                if m.inserted:
+                    bits.append("added page")
                 lines.append(f"p.{m.page}  {' · '.join(bits)}")
                 if m.covered_text.strip():
                     lines.append(f'      marked: "{_clip(m.covered_text)}"')
@@ -153,15 +166,27 @@ class DocumentMarks:
                     lines.append(f'      line:   "{_clip(m.line_text)}"')
                 if m.note.strip():
                     lines.append(f'      wrote:  "{_clip(m.note)}"')
-                if m.is_blank:
+                if m.is_blank and m.inserted:
+                    pass        # said once, in the footer — not thirteen times, once per mark
+                elif m.is_blank:
                     lines.append(
                         "      (ink covering no text — usually a figure or a bracket"
                         + ("; ask for the page image to see what it marks)" if image_hint else ")")
                     )
                 lines.append("")
-        if self.blank_count and image_hint:
+        if self.inserted_pages:
+            pages = ", ".join(f"p.{i + 1}" for i in self.inserted_pages)
             lines.append(
-                f"{self.blank_count} of {len(self.marks)} mark(s) covered no text. Their meaning "
+                f"{pages} were ADDED on the tablet and have no document text behind them, so "
+                "nothing on them covers anything. Everything there is his own handwriting, and "
+                "it is readable only in the page images or once it has been transcribed."
+            )
+        # Counted WITHOUT the added pages: those are explained above, and folding them in here
+        # would report a sheet of answers as ink that happened to land on a figure.
+        unexplained = sum(m.is_blank and not m.inserted for m in self.marks)
+        if unexplained and image_hint:
+            lines.append(
+                f"{unexplained} of {len(self.marks)} mark(s) covered no text. Their meaning "
                 "is only in the ink — request the page images to read them."
             )
         return "\n".join(lines).rstrip() + "\n"
@@ -245,7 +270,7 @@ def load(
 
     sql = [
         "SELECT pdf_page, kind, intent, COALESCE(covered_text,'') ct, COALESCE(line_text,'') lt,",
-        "       COALESCE(note,'') note, in_margin, doc_uuid",
+        "       COALESCE(note,'') note, in_margin, COALESCE(inserted,0) inserted, doc_uuid",
         "FROM pdf_annotations WHERE source_uri = ?",
     ]
     args: list = [source_uri]
@@ -268,6 +293,7 @@ def load(
             line_text=r["lt"],
             note=r["note"],
             in_margin=bool(r["in_margin"]),
+            inserted=bool(r["inserted"]),
         )
         for r in rows
     ]
@@ -631,6 +657,28 @@ def pages_by_ink(rmdoc, cap: int | None = None) -> list[int]:
     return sorted(p.pdf_page for p in kept)
 
 
+def pages_to_render(rmdoc, cap: int) -> list[int]:
+    """Which pages one call should SHOW: the inked ones first, then the rest, up to `cap`.
+
+    Inked-only was right while every mark sat on top of the document's own text, because the
+    text register carried the page and the image only had to carry the ink. A page he ADDED on
+    the tablet breaks that: it has no text at all, so the answer written on it arrives as an
+    image of handwriting with nothing to read it against — the question it answers is on the
+    printed page before it, which carries no ink and was therefore never rendered.
+
+    So a short document comes back whole. It is what he asked for ("can we just serve the whole
+    thing"), it costs nothing a six-page document cannot afford, and `_within_budget` still
+    trims by ink density, which drops the un-inked filler first. A 211-page book is unchanged:
+    the cap binds long before the un-inked pages are reached.
+    """
+    inked = pages_by_ink(rmdoc, cap=cap)
+    if len(inked) >= cap:
+        return inked
+    seen = set(inked)
+    rest = [i for i in range(getattr(rmdoc, "page_count", 0)) if i not in seen]
+    return sorted(inked + rest[: cap - len(inked)])
+
+
 def locate(
     conn: sqlite3.Connection,
     target: Target,
@@ -690,6 +738,7 @@ class Markups:
     marks: DocumentMarks
     pages: dict[int, bytes] = field(default_factory=dict)   # 0-based page -> PNG
     inked_pages: list[int] = field(default_factory=list)    # every page with ink
+    added_pages: list[int] = field(default_factory=list)    # pages he INSERTED on the tablet
     swept: int = 0                                          # marks stored by THIS call
     fetched: bool = False                                   # did it hit the CLOUD
     looked: bool = False                                    # did it read the bundle at all
@@ -755,6 +804,12 @@ def markups(
         # what he called it.
         marks = replace(marks, title=target.title)
     inked = pages_by_ink(doc) if doc is not None else marks.page_indexes
+    # From the BUNDLE when we read one, because the manifest knows about a page he added and
+    # left blank; from the stored marks otherwise, which is all a text-only call can see.
+    added = (
+        [i for i, src in enumerate(doc.page_map) if src is None] if doc is not None
+        else marks.inserted_pages
+    )
 
     rendered: dict[int, bytes] = {}
     if images and doc is not None:
@@ -765,7 +820,7 @@ def markups(
             # marks are ON rather than the busiest pages in the document.
             wanted = marks.page_indexes[:max_images]
         else:
-            wanted = pages_by_ink(doc, cap=max_images)
+            wanted = pages_to_render(doc, max_images)
         if margins:
             rendered = composite_pages_with_margins(doc, wanted, dpi=dpi)
         else:
@@ -776,7 +831,7 @@ def markups(
 
     return Markups(
         target=target, marks=marks, pages=rendered,
-        inked_pages=inked, swept=swept, fetched=fetched,
+        inked_pages=inked, added_pages=added, swept=swept, fetched=fetched,
         looked=doc is not None, filtered=bool(pages or intent),
     )
 

@@ -74,12 +74,12 @@ def test_strokes_outside_the_page_are_not_clipped():
 
 
 def test_new_format_pagemap_is_read_from_cpages():
-    from locus.capture.rmdoc import _page_index
+    from locus.capture.rmdoc import _page_order
 
-    assert _page_index(
+    assert _page_order(
         {"cPages": {"pages": [{"id": "a", "redir": {"value": 0}},
                               {"id": "b", "redir": {"value": 3}}]}}
-    ) == {"a": 0, "b": 3}
+    ) == [("a", 0), ("b", 3)]
 
 
 def test_old_format_pagemap_is_read_from_the_parallel_lists():
@@ -88,20 +88,91 @@ def test_old_format_pagemap_is_read_from_the_parallel_lists():
     Missing this schema made the daily page report "not pushed back yet" while carrying 183
     strokes (2026-07-30); every stroke layer was dropped as unplaceable.
     """
-    from locus.capture.rmdoc import _page_index
+    from locus.capture.rmdoc import _page_order
 
-    assert _page_index(
+    assert _page_order(
         {"formatVersion": 1, "pages": ["a", "b", "c"], "redirectionPageMap": [0, 1, 2]}
-    ) == {"a": 0, "b": 1, "c": 2}
+    ) == [("a", 0), ("b", 1), ("c", 2)]
 
 
-def test_an_inserted_page_has_no_pdf_page_and_is_dropped():
-    """-1 means a page the owner ADDED; it must not be guessed onto page 0."""
-    from locus.capture.rmdoc import _page_index
+def test_an_inserted_page_is_kept_in_place_with_no_pdf_page_behind_it():
+    """A page the owner ADDED. It must not be guessed onto page 0 — and never dropped.
 
-    assert _page_index(
+    Dropping it is what made his answers invisible (2026-09-14): a two-page question sheet
+    with four appended answer pages parsed as ZERO annotated pages while carrying 80,358
+    points of handwriting, and `markups` reported an unmarked document.
+    """
+    from locus.capture.rmdoc import _page_order
+
+    assert _page_order(
         {"pages": ["a", "ins", "b"], "redirectionPageMap": [0, -1, 1]}
-    ) == {"a": 0, "b": 1}
+    ) == [("a", 0), ("ins", None), ("b", 1)]
+
+
+def test_a_page_with_no_redir_at_all_is_inserted():
+    """The shape his own device writes: `redir` absent, not -1. Both mean the same thing."""
+    from locus.capture.rmdoc import _page_order
+
+    assert _page_order(
+        {"cPages": {"pages": [{"id": "a", "redir": {"value": 0}},
+                              {"id": "added"},
+                              {"id": "added2", "redir": None}]}}
+    ) == [("a", 0), ("added", None), ("added2", None)]
+
+
+def test_a_deleted_page_is_left_out_of_the_order():
+    """Its `.rm` may still be in the bundle; rendering it would put back ink he cleared."""
+    from locus.capture.rmdoc import _page_order
+
+    assert _page_order(
+        {"cPages": {"pages": [{"id": "a", "redir": {"value": 0}},
+                              {"id": "gone", "redir": {"value": 1},
+                               "deleted": {"timestamp": "1:2", "value": 1}}]}}
+    ) == [("a", 0)]
+
+
+# ---------- marks on a page he added ----------
+
+
+def test_marks_on_an_inserted_page_are_kept_flagged_and_carry_no_text():
+    """No text under the ink, so no gesture to read: every cluster is simply writing.
+
+    `classify` is calibrated against printed lines, and left to itself it files a page of
+    answers written down the right-hand side as `margin_note` — a margin needs a text column
+    to be beside, and an inserted page has none.
+    """
+    from locus.capture.annotate import marks_for_inserted_page
+    from locus.capture.rmdoc import AnnotatedPage, Stroke
+
+    page = AnnotatedPage(
+        pdf_page=3, page_uuid="added", source_page=None,
+        strokes=[Stroke(points=[(400.0, 100.0), (560.0, 104.0)]),
+                 Stroke(points=[(400.0, 400.0), (560.0, 404.0)])],
+    )
+    marks = marks_for_inserted_page(page)
+
+    assert [m.kind for m in marks] == ["mark", "mark"]
+    assert all(m.inserted and not m.in_margin for m in marks)
+    assert all(m.covered_text == "" and m.line_text == "" for m in marks)
+    assert all(m.pdf_page == 3 for m in marks)
+
+
+def test_the_inserted_flag_is_stored_and_survives_a_re_sweep(conn):
+    """It cannot be recomputed later: only the device's `.content` knows, and that is a cloud
+    bundle, not a column. Inferring it from an empty `covered_text` is the guess it prevents."""
+    import locus.capture.annotate as ann
+    from locus.capture.rmdoc import AnnotatedPage, Stroke
+
+    page = AnnotatedPage(pdf_page=2, page_uuid="added", source_page=None,
+                         strokes=[Stroke(points=[(100.0, 100.0), (300.0, 140.0)])])
+    marks = ann.marks_for_inserted_page(page)
+    ann.store_marks(conn, marks, source_uri="/Inbox/questions")
+    ann.store_marks(conn, marks, source_uri="/Inbox/questions")
+
+    rows = conn.execute(
+        "SELECT pdf_page, inserted FROM pdf_annotations WHERE source_uri='/Inbox/questions'"
+    ).fetchall()
+    assert [(r[0], r[1]) for r in rows] == [(2, 1)]
 
 
 # ---------- the spend guard's key ----------

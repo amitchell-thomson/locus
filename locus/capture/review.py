@@ -73,12 +73,32 @@ from pathlib import Path
 # marginal page competes with the conversation for room.
 DEFAULT_DPI = 140
 
-# Total PNG bytes one call may return. Twelve inked pages of a marked-up A4 draft came to
-# 3.5MB at 130dpi (measured on the HH-TTF draft), which is ~4.7MB once base64-encoded into a
-# tool result — enough to risk a hard transport failure rather than a slow one. So pages are
-# kept in ink-density order until the budget is spent and the rest are REPORTED as omitted.
-# A caller that wants a specific page asks for it by number and always gets it.
-DEFAULT_MAX_PNG_BYTES = 6 * 1024 * 1024
+# THE TRANSPORT CEILING IS 1MB PER TOOL RESULT, and images ride base64-encoded, which costs 4
+# bytes for every 3. The old budget here was 6MB — set from a measurement of what a big render
+# WEIGHS with no reference to what the transport ACCEPTS, and the comment even did the base64
+# arithmetic (4.7MB) without noticing that the answer was already five times over the limit. It
+# could never bind before the transport did, so the failure it was written to prevent is exactly
+# the one that happened: `markups` returned six pages and the client rejected the whole result
+# with "Tool result is too large", losing the text register along with the images.
+#
+# So the budget is derived from the limit rather than guessed, and it is measured on the ENCODED
+# size. The headroom covers the text register and the JSON framing around it.
+TOOL_RESULT_LIMIT = 1024 * 1024
+_BASE64_GROWTH = 4 / 3
+_RESULT_HEADROOM = 128 * 1024
+DEFAULT_MAX_PNG_BYTES = int((TOOL_RESULT_LIMIT - _RESULT_HEADROOM) / _BASE64_GROWTH)
+
+# How a render that does not fit is made to fit, in the order that loses least. Greyscale comes
+# FIRST because on his pages it costs nothing real (ink and print are black) and saves ~47%,
+# where dropping dpi blurs handwriting and dropping pages loses them outright. Every lever that
+# fires is reported in words — a page quietly returned at half resolution, or not returned at
+# all, is the silent truncation this module exists to undo.
+_DPI_LADDER = (110, 90, 72)
+
+
+def encoded_size(pngs: dict[int, bytes]) -> int:
+    """What these images will actually WEIGH in a tool result, base64 included."""
+    return int(sum(len(v) for v in pngs.values()) * _BASE64_GROWTH)
 
 # rmapi `get` defaults to a 1800s timeout, sized for pulling a large notebook interactively. A
 # tool call answering a person in a chat must fail fast and say so instead: three minutes is
@@ -307,7 +327,9 @@ def load(
     )
 
 
-def _render_pages(pdf_path: Path, page_indexes: list[int], *, dpi: int) -> dict[int, bytes]:
+def _render_pages(
+    pdf_path: Path, page_indexes: list[int], *, dpi: int, gray: bool = False
+) -> dict[int, bytes]:
     """Rasterise ONLY the named 0-based pages.
 
     `transcribe.render_pdf_pages` does the whole document, which is right for a 4-page daily
@@ -317,8 +339,9 @@ def _render_pages(pdf_path: Path, page_indexes: list[int], *, dpi: int) -> dict[
 
     doc = pymupdf.open(str(pdf_path))
     try:
+        pixmap_args = {"colorspace": pymupdf.csGRAY} if gray else {}
         return {
-            i: doc[i].get_pixmap(dpi=dpi).tobytes("png")
+            i: doc[i].get_pixmap(dpi=dpi, **pixmap_args).tobytes("png")
             for i in page_indexes
             if 0 <= i < doc.page_count
         }
@@ -743,6 +766,7 @@ class Markups:
     fetched: bool = False                                   # did it hit the CLOUD
     looked: bool = False                                    # did it read the bundle at all
     filtered: bool = False                                  # was a page/intent filter applied
+    fit_note: str = ""                                      # what the 1MB ceiling forced, in words
 
     @property
     def omitted(self) -> list[int]:
@@ -761,7 +785,7 @@ def markups(
     margins: bool = True,
     max_images: int = 12,
     dpi: int = 130,
-    max_bytes: int = DEFAULT_MAX_PNG_BYTES,
+    max_bytes: int | None = DEFAULT_MAX_PNG_BYTES,
     fetch=None,
     read=None,
 ) -> Markups:
@@ -812,6 +836,7 @@ def markups(
     )
 
     rendered: dict[int, bytes] = {}
+    fit_note = ""
     if images and doc is not None:
         if pages:
             wanted = [p - 1 for p in pages]
@@ -821,33 +846,82 @@ def markups(
             wanted = marks.page_indexes[:max_images]
         else:
             wanted = pages_to_render(doc, max_images)
-        if margins:
-            rendered = composite_pages_with_margins(doc, wanted, dpi=dpi)
-        else:
-            with tempfile.TemporaryDirectory() as tmp:
-                flat = composite_pdf(doc, Path(tmp) / "flat.pdf")
-                rendered = _render_pages(flat, wanted, dpi=dpi)
-        rendered = _within_budget(rendered, doc, max_bytes=max_bytes, explicit=bool(pages))
+        rendered, fit_note = _render_fitted(
+            doc, wanted, dpi=dpi, margins=margins, max_bytes=max_bytes
+        )
 
     return Markups(
         target=target, marks=marks, pages=rendered,
         inked_pages=inked, added_pages=added, swept=swept, fetched=fetched,
-        looked=doc is not None, filtered=bool(pages or intent),
+        looked=doc is not None, filtered=bool(pages or intent), fit_note=fit_note,
     )
 
 
-def _within_budget(
-    rendered: dict[int, bytes], rmdoc, *, max_bytes: int, explicit: bool
-) -> dict[int, bytes]:
-    """Trim to `max_bytes`, dropping the least-inked pages first.
+def _render_fitted(
+    rmdoc, wanted: list[int], *, dpi: int, margins: bool, max_bytes: int | None
+) -> tuple[dict[int, bytes], str]:
+    """Render `wanted`, then make it fit the transport, losing as little as possible.
 
-    Never applied when the caller named the pages: an explicit request for page 9 that silently
-    returns page 3 instead is worse than a large reply. Whatever is dropped reappears in
-    `Markups.omitted`, which the callers print — an image budget that quietly eats pages is the
-    same silent-truncation failure this module exists to undo.
+    The ladder, cheapest loss first: full colour at the asked-for dpi; then GREYSCALE at that
+    same dpi, which on his pages loses nothing because there is no colour on them; then the same
+    in greyscale at successively lower resolutions; and only then, having exhausted every way of
+    keeping all the pages, dropping the least-inked ones.
+
+    `max_bytes=None` turns the whole thing off, which is what the CLI passes: it writes PNGs to
+    a directory and no 1MB ceiling applies to a file. Returning downscaled images to a caller
+    that asked for files would be a silent quality regression with no cause a reader could see.
+
+    THERE IS NO OPT-OUT FOR A NAMED PAGE any more. The old budget exempted an explicit `pages`
+    request on the reasoning that a page asked for by number must always come back — right in
+    spirit, and it produced a reply the transport rejected WHOLE, so the caller got neither the
+    page nor the text register. Degrading a named page still returns it; exempting it returned
+    nothing. Dropping one remains the last resort and is still named in the note.
+
+    The second return value says in words what was spent, and the callers print it. A page
+    returned at 72dpi that claims to be a 130dpi render is the same class of lie as a page not
+    returned at all.
     """
-    if explicit or sum(len(v) for v in rendered.values()) <= max_bytes:
-        return rendered
+    from locus.capture.rmdoc import composite_pages_with_margins, composite_pdf
+
+    def render(at_dpi: int, gray: bool, pages: list[int]) -> dict[int, bytes]:
+        if margins:
+            return composite_pages_with_margins(rmdoc, pages, dpi=at_dpi, gray=gray)
+        with tempfile.TemporaryDirectory() as tmp:
+            flat = composite_pdf(rmdoc, Path(tmp) / "flat.pdf")
+            return _render_pages(flat, pages, dpi=at_dpi, gray=gray)
+
+    rendered = render(dpi, False, wanted)
+    if max_bytes is None or sum(len(v) for v in rendered.values()) <= max_bytes:
+        return rendered, ""
+
+    attempts: list[tuple[int, bool]] = [(dpi, True)]
+    attempts += [(d, True) for d in _DPI_LADDER if d < dpi]
+    for at_dpi, gray in attempts:
+        rendered = render(at_dpi, gray, wanted)
+        if sum(len(v) for v in rendered.values()) <= max_bytes:
+            note = "greyscale" if at_dpi == dpi else f"greyscale at {at_dpi}dpi"
+            return rendered, (
+                f"Rendered in {note} to fit the {TOOL_RESULT_LIMIT // 1024}KB tool-result "
+                "limit. Ask for fewer pages to get them at full resolution and in colour."
+            )
+
+    # Every page kept at the floor is still too heavy: now, and only now, pages are dropped.
+    kept = _drop_to_budget(rendered, rmdoc, max_bytes=max_bytes)
+    lost = sorted(set(rendered) - set(kept))
+    return kept, (
+        f"Rendered in greyscale at {_DPI_LADDER[-1]}dpi and STILL over the "
+        f"{TOOL_RESULT_LIMIT // 1024}KB tool-result limit, so "
+        f"{len(lost)} page(s) were dropped: {', '.join(str(p + 1) for p in lost)}. "
+        "Ask for them by number, a few at a time."
+    ) if lost else ""
+
+
+def _drop_to_budget(rendered: dict[int, bytes], rmdoc, *, max_bytes: int) -> dict[int, bytes]:
+    """Keep the most-inked pages that fit. The last resort, never the first.
+
+    Whatever goes reappears in `Markups.omitted` and in the fit note, which the callers print —
+    an image budget that quietly eats pages is the failure this module exists to undo.
+    """
     density = {p.pdf_page: p.total_points for p in rmdoc.pages}
     kept: dict[int, bytes] = {}
     spent = 0

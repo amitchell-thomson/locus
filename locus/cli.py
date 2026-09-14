@@ -702,9 +702,13 @@ def cmd_marks(args) -> None:
         # margin-preserving renderer. When the CLI and the tool disagreed about where a
         # document lives or how wide its page is, the CLI was the one that looked right and
         # was wrong.
+        # max_bytes=None: this writes PNGs to a directory, and no 1MB tool-result ceiling
+        # applies to a file. Handing back a silently downscaled image to a caller that asked
+        # for files would be a quality regression with no visible cause.
         m = review.markups(
             conn, target, cfg=load(), pages=args.page and [args.page],
             refresh=args.refresh, max_images=args.images, margins=not args.no_margins,
+            max_bytes=None,
         )
         if m.swept:
             print(f"(swept {m.swept} mark(s) from the device — geometric only, not transcribed)")

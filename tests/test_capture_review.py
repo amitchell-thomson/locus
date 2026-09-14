@@ -576,19 +576,82 @@ def test_pages_are_ranked_by_ink_then_returned_in_reading_order(tmp_path):
     assert review.pages_by_ink(rmdoc, cap=2) == [2, 4]      # the two busiest, still in order
 
 
-def test_the_byte_budget_never_drops_a_page_that_was_asked_for(tmp_path):
-    """An explicit request for page 9 that quietly returns page 3 is worse than a large reply."""
+def _two_page_rmdoc():
+    """A real 2-page PDF with ink on both, so the budget ladder renders something real."""
+    import pymupdf
+
+    from locus.capture.rmdoc import AnnotatedPage, RmDoc, Stroke
+
+    doc = pymupdf.open()
+    for _ in range(2):
+        page = doc.new_page(width=595, height=842)
+        page.insert_text((72, 100), "Momentum is a persistent anomaly across markets.")
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    return RmDoc(
+        doc_uuid="u", pdf_bytes=pdf_bytes, page_map=[0, 1],
+        pages=[
+            AnnotatedPage(pdf_page=i, page_uuid=f"p{i}", strokes=[
+                Stroke(points=[(80.0 + j, 100.0 + j * 3) for j in range(60)]) for _ in range(i + 1)
+            ])
+            for i in range(2)
+        ],
+    )
+
+
+def test_no_budget_means_no_degradation():
+    """The CLI writes files, and no 1MB tool-result ceiling applies to a file."""
+    rendered, note = review._render_fitted(
+        _two_page_rmdoc(), [0, 1], dpi=130, margins=True, max_bytes=None
+    )
+    assert set(rendered) == {0, 1}
+    assert note == ""
+
+
+def test_pages_are_degraded_before_any_is_dropped():
+    """THE FIX. The old budget dropped pages as its only lever and exempted named ones, so a
+    reply that was over the limit came back over the limit and the client rejected the WHOLE
+    result — text register included. Greyscale costs nothing real on an inked page."""
+    rmdoc = _two_page_rmdoc()
+    full, _ = review._render_fitted(rmdoc, [0, 1], dpi=130, margins=True, max_bytes=None)
+    tight = sum(len(v) for v in full.values()) - 1        # one byte under what colour needs
+
+    rendered, note = review._render_fitted(
+        rmdoc, [0, 1], dpi=130, margins=True, max_bytes=tight
+    )
+    assert set(rendered) == {0, 1}, "a page was dropped before greyscale was even tried"
+    assert sum(len(v) for v in rendered.values()) <= tight
+    assert "greyscale" in note
+
+
+def test_dropping_is_the_last_resort_and_names_what_went():
+    """A budget no render can meet still has to say what it ate."""
+    rendered, note = review._render_fitted(
+        _two_page_rmdoc(), [0, 1], dpi=130, margins=True, max_bytes=200
+    )
+    assert len(rendered) < 2
+    assert "dropped" in note and ("p.1" in note or "1," in note or note.rstrip().endswith("1."))
+
+
+def test_the_drop_keeps_the_most_inked_pages():
+    """When it must choose, it keeps the pages he worked hardest on."""
     from locus.capture.rmdoc import AnnotatedPage, RmDoc, Stroke
 
     rmdoc = RmDoc(doc_uuid="u", pdf_bytes=b"", pages=[
-        AnnotatedPage(pdf_page=i, page_uuid=f"p{i}", strokes=[Stroke(points=[(0.0, 0.0)] * (i + 1))])
+        AnnotatedPage(pdf_page=i, page_uuid=f"p{i}",
+                      strokes=[Stroke(points=[(0.0, 0.0)] * (i + 1))])
         for i in range(3)
     ])
     rendered = {0: b"x" * 900, 1: b"x" * 900, 2: b"x" * 900}
+    kept = review._drop_to_budget(rendered, rmdoc, max_bytes=1000)
+    assert set(kept) == {2}, "kept the least-inked page instead of the most-inked"
 
-    assert review._within_budget(rendered, rmdoc, max_bytes=1000, explicit=True) == rendered
-    trimmed = review._within_budget(rendered, rmdoc, max_bytes=1000, explicit=False)
-    assert list(trimmed) == [2]         # the densest page survives
+
+def test_the_budget_is_derived_from_the_transport_limit_not_guessed():
+    """The 6MB budget could never bind before the 1MB transport did, which is how a reply that
+    was five times over the limit was produced by a function written to prevent exactly that."""
+    assert review.DEFAULT_MAX_PNG_BYTES * 4 / 3 < review.TOOL_RESULT_LIMIT
 
 
 def test_a_bundle_with_no_uuid_is_never_served_from_cache(conn, tmp_path):

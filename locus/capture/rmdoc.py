@@ -368,6 +368,7 @@ def composite_pages_with_margins(
     dpi: int = 130,
     pad: float = 12.0,
     width: float = 1.6,
+    gray: bool = False,
 ) -> dict[int, bytes]:
     """Render inked pages to PNG on a canvas ENLARGED to hold the margin ink. 0-based keys.
 
@@ -389,6 +390,12 @@ def composite_pages_with_margins(
 
     `composite_pdf` is kept and unchanged: the daily page is written between ruled lines and has
     no margin ink, and it wants one PDF rather than per-page images.
+
+    `gray` renders one channel instead of three. On his own pages that is not a compromise at
+    all — black ink, black print, a grey paper outline, no colour anywhere — and it halves the
+    payload: six pages of the question sheet measure 1,161KB in colour and 620KB in grey at the
+    SAME 130dpi (2026-09-14). It is a real loss only for a source page with a colour figure, so
+    the caller turns it on as a budget lever rather than it being the default here.
 
     WHAT `page_indexes` MEANS. Omitted, it renders the inked pages and only those — the cheap
     default for a 211-page book of which he marked nine. NAMED, it renders exactly those pages
@@ -448,7 +455,8 @@ def composite_pages_with_margins(
                         [pymupdf.Point(x - x0, y - y0) for x, y in stroke.points],
                         color=(0, 0, 0), width=width,
                     )
-                out[position] = page.get_pixmap(dpi=dpi).tobytes("png")
+                pixmap_args = {"colorspace": pymupdf.csGRAY} if gray else {}
+                out[position] = page.get_pixmap(dpi=dpi, **pixmap_args).tobytes("png")
             finally:
                 canvas.close()
         return out

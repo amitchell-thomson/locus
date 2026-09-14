@@ -609,6 +609,10 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
             margins: Keep the enlarged canvas. False reproduces the old page-clipped render.
             max_images: Cap on pages returned when `pages` is not given.
             dpi: Render resolution. 130 reads his handwriting; lower it for a lighter reply.
+                A tool result is capped at 1MB, so a render over that is degraded to fit —
+                greyscale first (no real loss on inked pages), then lower dpi, then dropping
+                the least-inked pages — and whatever that cost is stated in the reply. Asking
+                for fewer pages is how you get full resolution and colour back.
             out_dir: Also write pNNNN.png files into this server-side directory.
         """
         from locus.capture import review
@@ -678,6 +682,8 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
                     out.append(Image(data=png, format="png"))
 
             tail = []
+            if m.fit_note:
+                tail.append(m.fit_note)
             if m.omitted:
                 tail.append(
                     f"{len(m.omitted)} inked page(s) not shown: "

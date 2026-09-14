@@ -307,6 +307,17 @@ inked pages and returns them as images with the text register. Three things it m
   `pdf_annotations.inserted` (migration 0036) is what stops the register explaining a sheet of
   his answers as "ink over a figure". It cannot be inferred later: only the device's `.content`
   knows, and that is a cloud bundle, not a column.
+- **The image budget is derived from the 1MB TOOL-RESULT limit, not from what a render weighs**
+  (2026-09-14). `DEFAULT_MAX_PNG_BYTES` was 6MB, set by measuring a big render and never
+  compared against what the transport accepts — its own comment worked out the base64 size
+  (4.7MB) without noticing that was already five times over. It could not bind before the
+  transport did, so the whole reply was rejected with "Tool result is too large" and the text
+  register went with the images. It is now `(1MB - headroom) / (4/3)` and measured on the
+  ENCODED size. Degrade in the order that loses least: **greyscale first** (1,161KB -> 620KB on
+  six of his pages at the same 130dpi, and ink and print are black so nothing is lost), then
+  lower dpi, then drop pages. Every lever that fires is named in `Markups.fit_note`, which both
+  callers print. There is no opt-out for a named page any more — degrading one still returns it,
+  exempting it returned nothing at all. `max_bytes=None` (the CLI, which writes files) skips it.
 - **A short document is rendered WHOLE, not just its inked pages** (2026-09-14, his call). The
   answer is on a page he added; the question it answers is on a printed page with no ink on it,
   which an inked-pages-only renderer never showed. `review.pages_to_render` fills the remaining
@@ -591,6 +602,15 @@ locus/
   live servers with the same flag. The startup stamp still goes to stderr, but stderr belongs to
   the client and dies with it, which is why the banner had to reach the tool RESULT — the one
   surface the model on the other side can see.
+- **Restarting `locus mcp` is NOT a server restart — there is no server to restart.** There is
+  one stdio child per client SESSION, spawned from `.mcp.json`, and a session never respawns a
+  dead one. Killing them to force new code in (2026-09-14) took out three sessions that were not
+  mine, including the one the owner was using, and each reported a bare `Tool execution failed`
+  with no `start` line in `mcp-log` — the "never arrived" case, client-side, nothing wrong with
+  the server. The desktop app runs one backing process per WINDOW, so a new chat in the same
+  window inherits the dead handle; only reopening the window helps. `claude-rc@<name>.service`
+  is a systemd user unit and restarts cleanly. The STALE banner exists precisely so a session
+  running old code says so itself instead of being killed from outside.
 - **A bare `Tool execution failed` is not evidence that Locus is down.** Read `locus mcp-log`
   before touching the network: it says whether the call arrived at all. This cost most of
   2026-09-08 — three sessions reported `to_remarkable` broken, two of them holding pre-fix

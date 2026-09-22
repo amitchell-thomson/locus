@@ -110,7 +110,11 @@ def _corpus_uri_for(conn: sqlite3.Connection, pdf_bytes: bytes) -> str | None:
     `documents.content_hash` is sha256 of the ingested file's bytes and the `.rmdoc` bundle
     carries the original PDF unmodified, so equality here IS document identity — the same
     idempotency key ingest uses, pointed the other way.
+
+    A native notebook has NO PDF bytes, and the hash of nothing is not a document identity.
     """
+    if not pdf_bytes:
+        return None
     h = hashlib.sha256(pdf_bytes).hexdigest()
     row = conn.execute(
         "SELECT source_uri FROM documents WHERE content_hash=?", (h,)
@@ -255,10 +259,12 @@ def annotate_sync(
                     uri = _corpus_uri_for(conn, doc.pdf_bytes)
                     hash_mapped = uri is not None
                     ingested = False
-                    if uri is None and _chosen(device_path):
+                    if uri is None and _chosen(device_path) and doc.pdf_bytes:
                         # A document he CHOSE (moved to In-Progress/Finished) that no ingest
                         # path ever covered — a hand-added book. Ingest it now so its marks join
                         # the corpus; earlier ticks' device-path marks are re-keyed with it.
+                        # Never a native notebook: it has no PDF, and ingesting its empty bytes
+                        # would file a zero-byte `.pdf` in the incoming folder.
                         uri = ingest_fn(conn, doc, name)
                         if uri is not None:
                             ingested = True

@@ -592,6 +592,11 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
         the image is the only place the writing exists until it is transcribed. Read the images
         for those; do not report the document as unmarked because the text register is thin.
 
+        HANDWRITTEN NOTEBOOKS WORK TOO, from any folder. A notebook he wrote in from scratch on
+        the tablet (call notes, rough notes) has no PDF at all; every page comes back as an image
+        of his handwriting on the blank tablet canvas, and the text register has nothing but
+        positions. Read the images and transcribe them yourself; that IS the content.
+
         Args:
             document: Title fragment, source_uri, device path, or xochitl uuid. Ambiguous
                 fragments come back as a list of candidates rather than a guess.
@@ -651,7 +656,7 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
                     return (f'"{m.target.title}" is on the device at {m.target.device_path} but '
                             "carries no ink — nothing has been marked on it yet.")
 
-            head = m.marks.render(image_hint=not images)
+            head = m.marks.render(image_hint=not images, notebook=m.notebook)
             if m.swept:
                 head = (f"[swept {m.swept} mark(s) from the device on this call — geometric only, "
                         f"so handwriting is not transcribed yet]\n\n{head}")
@@ -676,7 +681,9 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
                     # without the printed question two pages earlier, and a reader told every
                     # image is "his ink" would look for handwriting on the question sheet.
                     what = "his ink, margins included" if idx in inked else "no ink on this page"
-                    if idx in added:
+                    if m.notebook:
+                        what += "; a page of his handwritten notebook (no PDF underneath)"
+                    elif idx in added:
                         what += "; a page he ADDED on the tablet, so all of it is his writing"
                     out.append(f'[p.{idx + 1} of "{m.target.title}" — {what}]')
                     out.append(Image(data=png, format="png"))

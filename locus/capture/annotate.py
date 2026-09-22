@@ -35,7 +35,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from locus.capture.rmdoc import INSERTED_PAGE_WIDTH, AnnotatedPage, Stroke
+from locus.capture.rmdoc import INSERTED_PAGE_WIDTH, AnnotatedPage, Stroke, open_source
 
 # A stroke wider than this multiple of its height is a rule, not a shape.
 _FLAT_RATIO = 4.0
@@ -265,9 +265,7 @@ def _marks(
 
 def marks_for_document(rmdoc) -> list[Mark]:
     """Every annotation in a parsed `.rmdoc`, page order."""
-    import pymupdf
-
-    doc = pymupdf.open(stream=rmdoc.pdf_bytes, filetype="pdf")
+    doc = open_source(rmdoc)
     try:
         out: list[Mark] = []
         for annotated in rmdoc.pages:

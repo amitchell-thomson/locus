@@ -323,6 +323,14 @@ inked pages and returns them as images with the text register. Three things it m
   which an inked-pages-only renderer never showed. `review.pages_to_render` fills the remaining
   image slots with un-inked pages, and the byte budget still drops them first. A 211-page book is
   unchanged — the cap binds on the inked pages long before it reaches the rest.
+- **A native notebook is a document with no PDF** (2026-09-22). A notebook written on the tablet
+  from scratch (his call notes, `Notes/rough_notes/`) is a bundle of `.content` + `.rm` and
+  nothing else; `read_rmdoc` refused it as "not a PDF-backed rmdoc", so the documents that are
+  ALL his handwriting were the ones `markups` could not open. It is the inserted-page case with
+  every page inserted: `RmDoc.is_notebook`, empty `pdf_bytes`, blank-canvas renders. Open the
+  source through `rmdoc.open_source`, never `pymupdf.open(stream=pdf_bytes)`, which rejects
+  empty bytes; and nothing may INGEST a notebook's bytes (Loop B and `annotate --ingest` guard
+  it), since that would file a zero-byte `.pdf`.
 
 Bundles are cached under `vault/cache/rmdoc/<doc_uuid>.rmdoc` (derived; delete = one refetch), so
 a second look costs no fetch and renders with the cloud unreachable.

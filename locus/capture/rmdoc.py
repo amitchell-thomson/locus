@@ -44,6 +44,16 @@ The page is fit to the screen, so the constraining dimension sets the scale. Str
 OUTSIDE the page rectangle and that is not an error: the screen is wider than a portrait page,
 so marginalia written beside the page has no page coordinates. Those strokes are kept and
 flagged rather than clipped — a margin note is often the most valuable annotation on the page.
+
+A NATIVE NOTEBOOK IS A DOCUMENT WITH NO PDF AT ALL (2026-09-22). A notebook he opened on the
+tablet and wrote in from scratch ("Jump call", in `Rough notes/`) ships as a bundle with a
+`.content` manifest and `.rm` layers and no `.pdf`. `read_rmdoc` used to raise
+"not a PDF-backed rmdoc" on it, so the one kind of document that is ALL his handwriting was the
+one kind the reader could not open, and a session asked to read his call notes had nothing to
+read. It is the inserted-page case with every page inserted: each page parses with
+`source_page=None`, renders on the blank tablet canvas, and `pdf_bytes` is empty. `is_notebook`
+says so, and `open_source` is the one way to open the source document, so no caller hands
+empty bytes to pymupdf, which rejects them.
 """
 
 from __future__ import annotations
@@ -135,6 +145,11 @@ class RmDoc:
     page_map: list[int | None] = field(default_factory=list)
 
     @property
+    def is_notebook(self) -> bool:
+        """A native notebook: written on the tablet from scratch, no PDF underneath."""
+        return not self.pdf_bytes
+
+    @property
     def page_count(self) -> int:
         """Pages as the TABLET counts them, inserted ones included."""
         return len(self.page_map)
@@ -221,6 +236,19 @@ def _parse_rm(data: bytes) -> list[tuple[list[tuple[float, float]], int | None, 
     return out
 
 
+def open_source(rmdoc: RmDoc):
+    """The document behind the ink as a pymupdf doc — an EMPTY one for a native notebook.
+
+    Every page of a notebook has `source_page=None`, so nothing ever indexes into the empty
+    document; it exists so the callers keep one code path. The caller closes it.
+    """
+    import pymupdf
+
+    if rmdoc.is_notebook:
+        return pymupdf.open()
+    return pymupdf.open(stream=rmdoc.pdf_bytes, filetype="pdf")
+
+
 def to_page_coords(
     points: list[tuple[float, float]], *, page_width: float, page_height: float
 ) -> list[tuple[float, float]]:
@@ -230,7 +258,12 @@ def to_page_coords(
 
 
 def read_rmdoc(path: str | Path) -> RmDoc:
-    """Parse a `.rmdoc` into its source PDF plus per-page strokes in PDF coordinates."""
+    """Parse a `.rmdoc` into its source PDF plus per-page strokes in PDF coordinates.
+
+    A bundle with a manifest and no PDF is a native notebook (see the module docstring): every
+    page is a blank tablet page and `pdf_bytes` is empty. Only a bundle with no manifest at all
+    is unreadable, because without it there is no page order to put the ink in.
+    """
     import pymupdf
 
     path = Path(path)
@@ -238,18 +271,21 @@ def read_rmdoc(path: str | Path) -> RmDoc:
         names = z.namelist()
         pdf_name = next((n for n in names if n.endswith(".pdf")), None)
         content_name = next((n for n in names if n.endswith(".content")), None)
-        if pdf_name is None or content_name is None:
-            raise ValueError(f"{path.name}: not a PDF-backed rmdoc (no .pdf/.content)")
+        if content_name is None:
+            raise ValueError(f"{path.name}: not a reMarkable document (no .content manifest)")
 
-        doc_uuid = Path(pdf_name).stem
-        pdf_bytes = z.read(pdf_name)
+        doc_uuid = Path(pdf_name or content_name).stem
+        pdf_bytes = z.read(pdf_name) if pdf_name else b""
         order = _page_order(json.loads(z.read(content_name)))
 
-        doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+        doc = (
+            pymupdf.open(stream=pdf_bytes, filetype="pdf") if pdf_bytes else pymupdf.open()
+        )
         try:
             # position -> source page, and uuid -> position. A source page the PDF does not have
             # is treated as INSERTED rather than dropped: a manifest that disagrees with its own
-            # PDF is a reason to render the ink on a blank sheet, never a reason to lose it.
+            # PDF is a reason to render the ink on a blank sheet, never a reason to lose it. For
+            # a notebook the PDF has no pages, so this makes every page a blank one.
             page_map: list[int | None] = [
                 src if src is not None and 0 <= src < doc.page_count else None
                 for _, src in order
@@ -330,7 +366,7 @@ def composite_pdf(rmdoc: RmDoc, out_path: str | Path, *, width: float = 1.4) -> 
             except (ValueError, RuntimeError):
                 continue
 
-    doc = pymupdf.open(stream=rmdoc.pdf_bytes, filetype="pdf")
+    doc = open_source(rmdoc)
     try:
         # PDF-backed pages FIRST, indexed by their source page, because that index is only
         # valid while nothing has been inserted into `doc`. Ink drawn on the wrong page is the
@@ -407,7 +443,7 @@ def composite_pages_with_margins(
     """
     import pymupdf
 
-    src = pymupdf.open(stream=rmdoc.pdf_bytes, filetype="pdf")
+    src = open_source(rmdoc)
     try:
         inked = {pg.pdf_page: pg for pg in rmdoc.pages}
         explicit = page_indexes is not None

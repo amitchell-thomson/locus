@@ -1448,6 +1448,13 @@ def cmd_annotate(args) -> None:
         from locus.config import load as _load
         from locus.ingest_pipeline import ingest_file
 
+        if doc.is_notebook:
+            print(
+                "--ingest needs a PDF, and this is a native notebook (handwriting only, no PDF "
+                "underneath). Read it with `locus marks <name> --images` instead.",
+                file=sys.stderr,
+            )
+            return 1
         name = (args.device_path or path.stem).rstrip("/").rsplit("/", 1)[-1]
         dest = Path(_load().paths.incoming) / args.category / f"{name}.pdf"
         dest.parent.mkdir(parents=True, exist_ok=True)

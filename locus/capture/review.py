@@ -155,12 +155,16 @@ class DocumentMarks:
         """0-based positions of pages he added on the tablet, in reading order."""
         return sorted({m.page_index for m in self.marks if m.inserted})
 
-    def render(self, *, image_hint: bool = False) -> str:
+    def render(self, *, image_hint: bool = False, notebook: bool = False) -> str:
         """The text register: every mark, grouped by page, in reading order.
 
         `image_hint` adds "ask for the page image" to a mark that covered nothing. It is OFF by
         default because `markups` returns the images alongside, and telling a reader to ask for
         what it has already been given is noise. Text-only callers pass True.
+
+        `notebook` is a native notebook (no PDF at all). Every page is then "inserted", and the
+        footer saying which pages he ADDED would list the whole document as additions to a PDF
+        that does not exist, so it says what the document actually is instead.
         """
         if not self.marks:
             return f'No stored annotations for "{self.title}".'
@@ -194,7 +198,13 @@ class DocumentMarks:
                         + ("; ask for the page image to see what it marks)" if image_hint else ")")
                     )
                 lines.append("")
-        if self.inserted_pages:
+        if notebook:
+            lines.append(
+                "This is a handwritten NOTEBOOK: there is no PDF underneath, so every page is "
+                "his own writing and nothing on it covers any text. It is readable only in the "
+                "page images or once it has been transcribed."
+            )
+        elif self.inserted_pages:
             pages = ", ".join(f"p.{i + 1}" for i in self.inserted_pages)
             lines.append(
                 f"{pages} were ADDED on the tablet and have no document text behind them, so "
@@ -767,6 +777,7 @@ class Markups:
     looked: bool = False                                    # did it read the bundle at all
     filtered: bool = False                                  # was a page/intent filter applied
     fit_note: str = ""                                      # what the 1MB ceiling forced, in words
+    notebook: bool = False                                  # native notebook: no PDF, all his ink
 
     @property
     def omitted(self) -> list[int]:
@@ -854,6 +865,7 @@ def markups(
         target=target, marks=marks, pages=rendered,
         inked_pages=inked, added_pages=added, swept=swept, fetched=fetched,
         looked=doc is not None, filtered=bool(pages or intent), fit_note=fit_note,
+        notebook=bool(doc is not None and doc.is_notebook),
     )
 
 

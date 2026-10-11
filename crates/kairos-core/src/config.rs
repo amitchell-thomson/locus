@@ -435,6 +435,11 @@ impl Config {
         self.keys.iter().find(|k| k.name.eq_ignore_ascii_case(name))
     }
 
+    /// The inbox: key 1, where events without an explicit key land.
+    pub fn default_key(&self) -> Option<&KeyDef> {
+        self.keys.iter().min_by_key(|k| k.index)
+    }
+
     pub fn source(&self, id: &str) -> Option<&Source> {
         self.sources.iter().find(|s| s.id == id)
     }

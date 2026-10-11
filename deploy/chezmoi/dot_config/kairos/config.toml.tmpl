@@ -46,7 +46,7 @@ background_colour = "overlay1"
 imported_colour = "overlay0"
 
 [[keys]]
-name = "Personal"
+name = "Inbox"
 index = 1
 colour = "lavender"
 calendar = "personal"
@@ -87,7 +87,7 @@ index = 7
 colour = "pink"
 calendar = "social"
 
-{{- range $id, $name := dict "personal" "Personal" "engineering" "Engineering" "careers" "Careers" "sport" "Sport" "travel" "Travel" "oqts" "OQTS" "social" "Social" }}
+{{- range $id, $name := dict "personal" "Inbox" "engineering" "Engineering" "careers" "Careers" "sport" "Sport" "travel" "Travel" "oqts" "OQTS" "social" "Social" }}
 
 [[sources]]
 id = "{{ $id }}"
@@ -110,7 +110,7 @@ id = "test"
 kind = "icloud"
 calendar = "ZZ-kairos-test"
 overlay = "personal"
-key = "Personal"
+key = "Inbox"
 writable = true
 
 {{- if eq .chezmoi.os "darwin" }}

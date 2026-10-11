@@ -16,16 +16,16 @@ Tick these off in order. Nothing here needs kairos running. Steps marked 📱 ar
 - [ ] After step 4 has the new key calendars, move those future events (drag in Calendar.app, or open each → *Calendar* → pick the key).
 - [ ] 💻 System Settings → Internet Accounts → Oxford (Exchange) → turn **Calendars** off. 📱 Settings → Apps → Calendar → Calendar Accounts → Oxford → **Calendars** off. (Mail can stay on.)
 
-## 3. Personal = inbox
+## 3. Inbox (default calendar)
 
-- [ ] 💻 Calendar.app → right-click **Privat** → *Get Info* → rename to **Personal**.
-- [ ] 💻 Calendar → Settings → General → **Default calendar: Personal**.
-- [ ] 📱 Settings → Apps → Calendar → **Default Calendar: Personal**.
+- [ ] 💻 Calendar.app → right-click **Privat** → *Get Info* → rename to **Inbox**.
+- [ ] 💻 Calendar → Settings → General → **Default calendar: Inbox**.
+- [ ] 📱 Settings → Apps → Calendar → **Default Calendar: Inbox**.
 
 ## 4. Create the key calendars (iCloud)
 
 - [ ] 💻 File → New Calendar → **iCloud**, one each: `Engineering`, `Careers`, `Sport`, `Travel`, `OQTS`, `Social`, and **`ZZ-kairos-test`** (exact spelling — it's where kairos writes until you flip `live = true`).
-- [ ] (Optional) give them the kairos colours so the phone matches the TUI: Personal lavender `#b4befe`, Engineering blue `#89b4fa`, Careers peach `#fab387`, Sport green `#a6e3a1`, Travel sapphire `#74c7ec`, OQTS mauve `#cba6f7`, Social pink `#f5c2e7`, Family yellow `#f9e2af`.
+- [ ] (Optional) give them the kairos colours so the phone matches the TUI: Inbox lavender `#b4befe`, Engineering blue `#89b4fa`, Careers peach `#fab387`, Sport green `#a6e3a1`, Travel sapphire `#74c7ec`, OQTS mauve `#cba6f7`, Social pink `#f5c2e7`, Family yellow `#f9e2af`.
 - [ ] 💻 Back to step 2: move the future Extracurriculars events into the right keys.
 
 ## 5. Secrets (never in the repo)
@@ -77,7 +77,7 @@ security add-generic-password -U -s kairos-api-token -a "$USER" -w "$(ssh comput
 
 ## 7. Golden fixtures from your real calendars
 
-- [ ] 💻 Calendar.app → select a calendar → File → Export → Export… → save into `~/local-projects/kairos/fixtures/raw/` (git-ignored). Good candidates: Personal, Family, one Google calendar, last term's timetable.
+- [ ] 💻 Calendar.app → select a calendar → File → Export → Export… → save into `~/local-projects/kairos/fixtures/raw/` (git-ignored). Good candidates: Inbox, Family, one Google calendar, last term's timetable.
 - [ ] Then:
   ```sh
   cd ~/local-projects/kairos

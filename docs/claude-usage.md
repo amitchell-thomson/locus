@@ -31,7 +31,7 @@ claude mcp list   # kairos: … ✓ Connected
 
 ### Weekly review (Sunday)
 1. `list_events {from: today, to: +7d}` — skim the week.
-2. **Triage the Personal inbox:** events in `Personal` that belong elsewhere → suggest keys; on Alec's OK, `move_event` (his own events → pending; that's expected).
+2. **Triage the Inbox:** events in `Inbox` that belong elsewhere → suggest keys; on Alec's OK, `move_event` (his own events → pending; that's expected).
 3. **Imported:** `list_events {overlays: ["imported"]}` → suggest anything worth adopting (bookings, travel) → `kairos adopt <uid> --key Travel` (via Bash, after OK).
 4. **Deadlines:** `list_tasks` → check dates/estimates are still right; `update_task` as needed.
 5. `plan` → summarise blocks, moved count, shortfalls.

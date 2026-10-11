@@ -42,7 +42,7 @@ show_imported = false
 
 # Keys: one iCloud calendar each. `index` is the TUI toggle key (1–7).
 [[keys]]
-name = "Personal"
+name = "Inbox"
 index = 1
 colour = "lavender"
 calendar = "personal"
@@ -87,9 +87,9 @@ calendar = "social"
 [[sources]]
 id = "personal"
 kind = "icloud"
-calendar = "Personal"
+calendar = "Inbox"
 overlay = "personal"
-key = "Personal"
+key = "Inbox"
 writable = true
 
 [[sources]]
@@ -153,7 +153,7 @@ id = "test"
 kind = "icloud"
 calendar = "ZZ-kairos-test"
 overlay = "personal"
-key = "Personal"
+key = "Inbox"
 writable = true
 
 # --- read-only Google feeds (secret iCal addresses) ---

@@ -33,7 +33,7 @@ type = "filesystem"
 path = "$tmp/vdir/"
 fileext = ".ics"
 CFG
-  yes | vdirsyncer -c "$tmp/config" discover check >/dev/null 2>&1 || true
+  { yes || true; } | vdirsyncer -c "$tmp/config" discover check >/dev/null 2>&1 || true
   vdirsyncer -c "$tmp/config" sync >/dev/null 2>&1 || true
   echo "$tmp"
 }
@@ -50,7 +50,7 @@ if [[ "${1:-}" == "--after-phone-edit" ]]; then
 fi
 
 echo "== discover + sync"
-yes | vdirsyncer discover icloud
+{ yes || true; } | vdirsyncer discover icloud
 vdirsyncer sync
 vdirsyncer metasync
 echo "== collections"
@@ -66,7 +66,7 @@ kairos doctor || true
 echo "== X-KAIROS round-trip via ZZ-kairos-test"
 start="$(date -u -d 'tomorrow 12:00' +%Y-%m-%dT%H:%M:00Z)"
 resp="$(curl -sf -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
-  -d "{\"title\":\"kairos round-trip test\",\"start\":\"$start\",\"duration_min\":15,\"key\":\"Personal\"}" "$API/api/events")"
+  -d "{\"title\":\"kairos round-trip test\",\"start\":\"$start\",\"duration_min\":15}" "$API/api/events")"
 id="$(python3 -c 'import json,sys;print(json.loads(sys.argv[1])["changeset_id"])' "$resp")"
 uid="$(curl -sf -H "Authorization: Bearer $TOKEN" "$API/api/changesets/$id" | python3 -c 'import json,sys;print(json.load(sys.stdin)["ops"][0]["uid"])')"
 echo "$uid" > "$STATE"

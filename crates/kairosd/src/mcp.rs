@@ -28,7 +28,7 @@ deterministic scheduler places blocks in free time and reports shortfalls (\"2.5
 options — relay those honestly. Only create a specific block when Alec asks for a specific slot (create_event with \
 task_id makes a pinned block).\n\
 TIMES: ISO 8601 ('2026-10-16T17:00', with or without offset; Europe/London assumed) or plain dates for all-day; \
-natural forms like 'fri 17:00' also work but ambiguous input is rejected. Keys: Personal (inbox), Engineering, \
+natural forms like 'fri 17:00' also work but ambiguous input is rejected. Keys: Inbox (default), Engineering, \
 Careers, Sport, Travel, OQTS, Social.";
 
 #[derive(Clone)]

@@ -65,7 +65,7 @@ pub struct CreateEventReq {
     pub end: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_min: Option<u32>,
-    /// Key name; default `Personal` (the inbox).
+    /// Key name; default: key 1 (the inbox).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

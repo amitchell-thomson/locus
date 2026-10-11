@@ -787,7 +787,14 @@ impl Engine {
             return Err(EngineError::BadRequest("empty title".into()));
         }
         let world = self.world(60)?;
-        let key = req.key.clone().unwrap_or_else(|| "Personal".into());
+        let key = match &req.key {
+            Some(k) => k.clone(),
+            None => self
+                .cfg
+                .default_key()
+                .map(|k| k.name.clone())
+                .ok_or_else(|| EngineError::BadRequest("no keys configured".into()))?,
+        };
         let (target, origin_key) = self.target_for_key(&key)?;
         let time = self.parse_span(&req.start, req.end.as_deref(), req.duration_min)?;
         let mut meta = self.author_meta(author);

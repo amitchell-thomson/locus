@@ -390,60 +390,107 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
         }
     }
 
-    // All-day strip (incl. all-day deadlines and multi-day spans).
-    let strip_rows = per_day
-        .iter()
-        .map(|v| {
-            v.iter()
-                .filter(|c| c.primary.span.is_all_day() && c.primary.overlay != Overlay::Background)
-                .count()
-        })
-        .max()
-        .unwrap_or(0)
-        .min(if single { 4 } else { 2 });
-    for (k, d) in days.iter().enumerate() {
-        let x = col_x(k);
-        let col_w = col_w_of(k);
-        let all: Vec<&Cluster> = per_day[k]
-            .iter()
-            .filter(|c| c.primary.span.is_all_day() && c.primary.overlay != Overlay::Background)
-            .collect();
-        for (r, cl) in all.iter().enumerate().take(strip_rows) {
-            let i = &cl.primary;
-            let more = all.len() > strip_rows && r + 1 == strip_rows;
-            let mut text = if more {
-                format!("+{} more", all.len() - r)
-            } else {
-                label(i)
-            };
-            if cl.is_merged() && !more {
-                text.push_str(" ⧉");
+    // All-day strip. An event spanning several visible days is ONE bar across
+    // them (not its title repeated per day); bars are packed into rows.
+    let ad = |c: &Cluster| c.primary.span.is_all_day() && c.primary.overlay != Overlay::Background;
+    let key_of = |c: &Cluster| {
+        (
+            c.primary.source.clone(),
+            c.primary.uid.clone(),
+            c.primary.recurrence_id.clone(),
+        )
+    };
+    struct Bar<'a> {
+        k0: usize,
+        k1: usize,
+        cl: &'a Cluster,
+        key: (String, String, Option<String>),
+    }
+    let mut bars: Vec<Bar> = Vec::new();
+    for (k, v) in per_day.iter().enumerate() {
+        for cl in v.iter().filter(|c| ad(c)) {
+            let key = key_of(cl);
+            match bars.iter_mut().find(|b| b.key == key && b.k1 + 1 == k) {
+                Some(b) => b.k1 = k,
+                None => bars.push(Bar { k0: k, k1: k, cl, key }),
             }
-            let selected = *d == app.cursor
-                && app.view != View::Agenda
-                && per_day[k].iter().position(|x| std::ptr::eq(x, *cl)) == Some(app.sel);
-            let base_col = if is_deadline(i) { c("red") } else { colour_of(app, i) };
-            let mut style = Style::default().fg(if *d < today {
-                fade(base_col, PAST_FADE)
-            } else {
-                base_col
+        }
+    }
+    bars.sort_by_key(|b| (b.k0, std::cmp::Reverse(b.k1 - b.k0)));
+    let cap = if single { 4 } else { 2 };
+    let mut occupied: Vec<Vec<bool>> = Vec::new();
+    let mut placed: Vec<(usize, &Bar)> = Vec::new();
+    let mut hidden = vec![0usize; ndays];
+    for b in &bars {
+        let row = (0..)
+            .find(|&r| occupied.get(r).is_none_or(|o: &Vec<bool>| (b.k0..=b.k1).all(|k| !o[k])))
+            .unwrap_or(0);
+        if row >= cap {
+            for h in &mut hidden[b.k0..=b.k1] {
+                *h += 1;
+            }
+            continue;
+        }
+        if occupied.len() <= row {
+            occupied.resize(row + 1, vec![false; ndays]);
+        }
+        for k in b.k0..=b.k1 {
+            occupied[row][k] = true;
+        }
+        placed.push((row, b));
+    }
+    let strip_rows = occupied.len().min(cap);
+    // Days with hidden bars give up their last row to "+N more".
+    let more_row = strip_rows.saturating_sub(1);
+    for (row, b) in &placed {
+        let i = &b.cl.primary;
+        let x0 = col_x(b.k0);
+        let x1 = col_x(b.k1 + 1).saturating_sub(1);
+        let width = x1.saturating_sub(x0);
+        let cursor_k = days.iter().position(|d| *d == app.cursor);
+        let selected = app.view != View::Agenda
+            && cursor_k.is_some_and(|ck| {
+                (b.k0..=b.k1).contains(&ck) && per_day[ck].iter().position(|c| key_of(c) == b.key) == Some(app.sel)
             });
-            if is_dimmed(i) {
-                style = style.add_modifier(Modifier::DIM);
+        let base_col = if is_deadline(i) { c("red") } else { colour_of(app, i) };
+        let past = days[b.k1] < today;
+        let mut style = Style::default().fg(if past { fade(base_col, PAST_FADE) } else { base_col });
+        if is_dimmed(i) {
+            style = style.add_modifier(Modifier::DIM);
+        }
+        if selected {
+            style = Style::default()
+                .fg(c("base"))
+                .bg(c("blue"))
+                .add_modifier(Modifier::BOLD);
+        }
+        let mut text = label(i);
+        if b.cl.is_merged() {
+            text.push_str(" ⧉");
+        }
+        let mut s = format!("▎{text}");
+        if b.k1 > b.k0 {
+            // Fill the rest of a multi-day bar with a thin line to its end.
+            let used = s.width() + 1;
+            if (width as usize) > used {
+                s = format!("{s} {}", "─".repeat(width as usize - used));
             }
-            if selected {
-                style = Style::default()
-                    .fg(c("base"))
-                    .bg(c("blue"))
-                    .add_modifier(Modifier::BOLD);
-            }
+        }
+        put(buf, x0, y + 1 + *row as u16, width, &s, style);
+    }
+    for (k, n) in hidden.iter().enumerate() {
+        if *n > 0 && strip_rows > 0 {
+            let x = col_x(k);
+            let w = col_w_of(k).saturating_sub(1);
+            let blank = " ".repeat(w as usize);
+            put(buf, x, y + 1 + more_row as u16, w, &blank, Style::default());
             put(
                 buf,
                 x,
-                y + 1 + r as u16,
-                col_w.saturating_sub(1),
-                &format!("▎{text}"),
-                style,
+                y + 1 + more_row as u16,
+                w,
+                &format!("▎+{} more", n + usize::from(occupied[more_row][k])),
+                Style::default().fg(c("overlay1")),
             );
         }
     }

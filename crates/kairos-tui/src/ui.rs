@@ -454,7 +454,10 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             });
         let base_col = if is_deadline(i) { c("red") } else { colour_of(app, i) };
         let past = days[b.k1] < today;
-        let mut style = Style::default().fg(if past { fade(base_col, PAST_FADE) } else { base_col });
+        let col = if past { fade(base_col, PAST_FADE) } else { base_col };
+        // A soft tint of the event's colour across every day it covers, with
+        // the title on the same tint: a span, not a line.
+        let mut style = Style::default().fg(col).bg(fade(col, 0.7));
         if is_dimmed(i) {
             style = style.add_modifier(Modifier::DIM);
         }
@@ -468,14 +471,9 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
         if b.cl.is_merged() {
             text.push_str(" ⧉");
         }
-        let mut s = format!("▎{text}");
-        if b.k1 > b.k0 {
-            // Fill the rest of a multi-day bar with a thin line to its end.
-            let used = s.width() + 1;
-            if (width as usize) > used {
-                s = format!("{s} {}", "─".repeat(width as usize - used));
-            }
-        }
+        let mut s = format!("▌{text}");
+        let pad = (width as usize).saturating_sub(s.width());
+        s.push_str(&" ".repeat(pad));
         put(buf, x0, y + 1 + *row as u16, width, &s, style);
     }
     for (k, n) in hidden.iter().enumerate() {

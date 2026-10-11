@@ -394,7 +394,7 @@ impl App {
                 let msg = match w.status {
                     Status::Applied => format!("✓ {}", w.summary.lines().next().unwrap_or("")),
                     Status::Pending => format!(
-                        "⏳ needs approval: {} (A to review)",
+                        "◌ needs approval: {} (A to review)",
                         w.summary.lines().next().unwrap_or("")
                     ),
                     s => format!("{} {}", s.as_str(), w.summary),

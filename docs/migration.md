@@ -1,38 +1,38 @@
 # Migration checklist (Phase 0, Alec)
 
-Tick these off in order. Nothing here needs kairos running. Steps marked 📱 are on the iPhone, 💻 on the Mac.
+Tick these off in order. Nothing here needs kairos running. Each step says where it happens (iPhone, Mac or Web).
 
 ## 1. Remove the clutter
 
-- [ ] 💻 Calendar.app → right-click **timetable_MT24_1st_Year** → *Delete*; same for **timetable_HT25_1st_Year**. (If Exchange won't let you delete them, delete them in Outlook on the web, `outlook.office.com` → Calendar → right-click → *Remove*.)
-- [ ] 📱 Settings → Apps → Calendar → **Siri** (or *Siri & Search*) → turn off *Learn from this App*, *Show in App*, *Suggest App*, and **Show Siri Suggestions in App**. Settings → Siri → *Suggestions* → turn off *Suggest when sharing* / *Show suggestions* for Calendar.
-- [ ] 💻 Calendar → Settings → **General** → untick *Show Birthdays calendar*; **Accounts** → *On My Mac* / Siri Suggestions → uncheck **Show Siri Suggestions calendar**; in the sidebar untick **Scheduled Reminders**.
-- [ ] 📱 Calendar → *Calendars* (bottom) → untick **Birthdays**, **Siri Suggestions**, **Scheduled Reminders**.
-- [ ] 🌐 **Holidays in Austria** comes from the Google account, so Apple Calendar can't unsubscribe it. At calendar.google.com → ⚙ Settings → *Add calendar* → *Browse calendars of interest* → *Regional holidays* → untick **Austria**. If that doesn't remove it, hide it from Apple devices instead: open <https://calendar.google.com/calendar/syncselect>, untick it and save. 📱/💻 then refresh. kairos ignores it either way, because it only reads the calendars named in its config.
+- [ ] Mac: Calendar.app → right-click **timetable_MT24_1st_Year** → *Delete*; same for **timetable_HT25_1st_Year**. (If Exchange won't let you delete them, delete them in Outlook on the web, `outlook.office.com` → Calendar → right-click → *Remove*.)
+- [ ] iPhone: Settings → Apps → Calendar → **Siri** (or *Siri & Search*) → turn off *Learn from this App*, *Show in App*, *Suggest App*, and **Show Siri Suggestions in App**. Settings → Siri → *Suggestions* → turn off *Suggest when sharing* / *Show suggestions* for Calendar.
+- [ ] Mac: Calendar → Settings → **General** → untick *Show Birthdays calendar*; **Accounts** → *On My Mac* / Siri Suggestions → uncheck **Show Siri Suggestions calendar**; in the sidebar untick **Scheduled Reminders**.
+- [ ] iPhone: Calendar → *Calendars* (bottom) → untick **Birthdays**, **Siri Suggestions**, **Scheduled Reminders**.
+- [ ] Web: **Holidays in Austria** comes from the Google account, so Apple Calendar can't unsubscribe it. At calendar.google.com → ⚙ Settings → *Add calendar* → *Browse calendars of interest* → *Regional holidays* → untick **Austria**. If that doesn't remove it, hide it from Apple devices instead: open <https://calendar.google.com/calendar/syncselect>, untick it and save. iPhone/Mac: then refresh. kairos ignores it either way, because it only reads the calendars named in its config.
 
 ## 2. Oxford Exchange account
 
-- [ ] 💻 Open the **Extracurriculars** calendar. Note anything dated from today on (keep the list for step 4).
+- [ ] Mac: Open the **Extracurriculars** calendar. Note anything dated from today on (keep the list for step 4).
 - [ ] After step 4 has the new key calendars, move those future events (drag in Calendar.app, or open each → *Calendar* → pick the key).
-- [ ] 💻 System Settings → Internet Accounts → Oxford (Exchange) → turn **Calendars** off. 📱 Settings → Apps → Calendar → Calendar Accounts → Oxford → **Calendars** off. (Mail can stay on.)
+- [ ] Mac: System Settings → Internet Accounts → Oxford (Exchange) → turn **Calendars** off. iPhone: Settings → Apps → Calendar → Calendar Accounts → Oxford → **Calendars** off. (Mail can stay on.)
 
 ## 3. Inbox (default calendar)
 
-- [ ] 💻 Calendar.app → right-click **Privat** → *Get Info* → rename to **Inbox**.
-- [ ] 💻 Calendar → Settings → General → **Default calendar: Inbox**.
-- [ ] 📱 Settings → Apps → Calendar → **Default Calendar: Inbox**.
+- [ ] Mac: Calendar.app → right-click **Privat** → *Get Info* → rename to **Inbox**.
+- [ ] Mac: Calendar → Settings → General → **Default calendar: Inbox**.
+- [ ] iPhone: Settings → Apps → Calendar → **Default Calendar: Inbox**.
 
 ## 4. Create the key calendars (iCloud)
 
-- [ ] 💻 File → New Calendar → **iCloud**, one each: `Engineering`, `Careers`, `Sport`, `Travel`, `OQTS`, `Social`, and **`ZZ-kairos-test`** (exact spelling — it's where kairos writes until you flip `live = true`).
+- [ ] Mac: File → New Calendar → **iCloud**, one each: `Engineering`, `Careers`, `Sport`, `Travel`, `OQTS`, `Social`, and **`ZZ-kairos-test`** (exact spelling — it's where kairos writes until you flip `live = true`).
 - [ ] (Optional) give them the kairos colours so the phone matches the TUI: Inbox lavender `#b4befe`, Engineering blue `#89b4fa`, Careers peach `#fab387`, Sport green `#a6e3a1`, Travel sapphire `#74c7ec`, OQTS mauve `#cba6f7`, Social pink `#f5c2e7`, Family yellow `#f9e2af`.
-- [ ] 💻 Back to step 2: move the future Extracurriculars events into the right keys.
+- [ ] Mac: Back to step 2: move the future Extracurriculars events into the right keys.
 
 ## 5. Secrets (never in the repo)
 
 ### iCloud app-specific password
 - [ ] appleid.apple.com → Sign-In and Security → **App-Specific Passwords** → `+` → name it `kairos`. Copy it.
-- [ ] 💻 Mac Keychain (for the read-only pull):
+- [ ] Mac: Mac Keychain (for the read-only pull):
   ```sh
   security add-generic-password -U -s kairos-icloud -a "$USER" -w 'xxxx-xxxx-xxxx-xxxx'
   security add-generic-password -U -s kairos-apple-id -a "$USER" -w 'you@icloud.com'   # your Apple ID email
@@ -65,7 +65,7 @@ security add-generic-password -U -s kairos-api-token -a "$USER" -w "$(ssh comput
 
 ## 7. Golden fixtures from your real calendars
 
-- [ ] 💻 Calendar.app → select a calendar → File → Export → Export… → save into `~/local-projects/kairos/fixtures/raw/` (git-ignored). Good candidates: Inbox, Family, one Google calendar, last term's timetable.
+- [ ] Mac: Calendar.app → select a calendar → File → Export → Export… → save into `~/local-projects/kairos/fixtures/raw/` (git-ignored). Good candidates: Inbox, Family, one Google calendar, last term's timetable.
 - [ ] Then:
   ```sh
   cd ~/local-projects/kairos

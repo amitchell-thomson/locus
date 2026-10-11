@@ -660,7 +660,7 @@ fn report(p: &Paint, d: &Daemon, r: std::result::Result<WriteResult, Rejected>) 
         Status::Pending => {
             println!(
                 "{} {}",
-                p.fg(Rgb::mocha("peach"), "⏳ needs approval:"),
+                p.fg(Rgb::mocha("peach"), "◌ needs approval:"),
                 w.summary.lines().next().unwrap_or("")
             );
             for r in &w.reasons {

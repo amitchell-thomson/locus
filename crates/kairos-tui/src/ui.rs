@@ -1517,7 +1517,7 @@ fn status_bar(f: &mut Frame, app: &App, area: Rect) {
         None => {
             let mut parts = Vec::new();
             if !app.pending.is_empty() {
-                parts.push(format!("⏳ {} pending", app.pending.len()));
+                parts.push(format!("◌ {} pending", app.pending.len()));
             }
             if app.daemon_error.is_some() {
                 parts.push("kairosd offline".into());

@@ -1,6 +1,5 @@
 ---
 source: crates/kairos-tui/tests/snapshots.rs
-assertion_line: 248
 expression: "render_to_string(&a, 100, 30)"
 ---
 ╭──────────────────────────────────── Week 43 · 19 Oct–25 Oct ─────────────────────────────────────╮
@@ -13,7 +12,7 @@ expression: "render_to_string(&a, 100, 30)"
 │09:00 ┊          │       Tab  week → day → agenda                               │   ┊             │
 │      ┊          │     Enter  details / expand duplicates ⧉                     │   ┊             │
 │10:00 ┊          │         w  week: Mon–Sun ↔ Mon–Fri (wider)                   │   ┊             │
-│11:00 ┊          │   p f b i  show/hide: Mine, Family, holidays, Gmail          │   ┊             │
+│11:00 ┊          │   p f b i  show/hide: Personal, Family, Holidays, Gmail      │   ┊             │
 │      ┊          │       1–7  show/hide one calendar (see the bar below)        │   ┊             │
 │12:00 ┊          │         a  add event (a form; Tab between fields)            │   ┊             │
 │13:00 ┊          │       e K  edit event (K jumps to its calendar)              │   ┊             │
@@ -32,4 +31,4 @@ expression: "render_to_string(&a, 100, 30)"
 │22:00 ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 │      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 ╰ ● 19:00–20:00 · Squash · Personal ───────────────────────────────────────────────────────────────╯
- WEEK  p Mine  f Family  │ 1 Personal  6 OQTS                                              ? help
+ WEEK  p Personal  f Family  │ 1 Personal  6 OQTS                                          ? help

@@ -988,7 +988,7 @@ fn help(f: &mut Frame, area: Rect) {
         ("Tab", "week → day → agenda"),
         ("Enter", "details / expand duplicates ⧉"),
         ("w", "week: Mon–Sun ↔ Mon–Fri (wider)"),
-        ("p f b i", "show/hide: Mine, Family, holidays, Gmail"),
+        ("p f b i", "show/hide: Personal, Family, Holidays, Gmail"),
         ("1–7", "show/hide one calendar (see the bar below)"),
         ("a", "add event (a form; Tab between fields)"),
         ("e K", "edit event (K jumps to its calendar)"),

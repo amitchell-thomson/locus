@@ -931,7 +931,7 @@ pub fn overlay_flags(app: &App) -> Vec<(String, String, bool, kairos_core::colou
     let mut v = vec![
         (
             "p".to_string(),
-            "Mine".to_string(),
+            "Personal".to_string(),
             app.filter.personal,
             kairos_core::colour::Rgb::mocha("lavender"),
             0,

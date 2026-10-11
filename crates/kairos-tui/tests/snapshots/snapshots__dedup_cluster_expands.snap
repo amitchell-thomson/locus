@@ -1,6 +1,5 @@
 ---
 source: crates/kairos-tui/tests/snapshots.rs
-assertion_line: 137
 expression: s
 ---
 ╭──────────────────────────────────── Week 42 · 12 Oct–18 Oct ─────────────────────────────────────╮
@@ -32,4 +31,4 @@ expression: s
 │22:00 ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 │      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 ╰ ● 19:05–20:00 · OQTS speaker event · Family · ⧉ 3 ───────────────────────────────────────────────╯
- WEEK  p Mine  f Family  │ 1 Personal  6 OQTS                                              ? help
+ WEEK  p Personal  f Family  │ 1 Personal  6 OQTS                                          ? help

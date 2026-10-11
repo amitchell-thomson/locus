@@ -285,3 +285,28 @@ fn work_week_shows_five_wider_days() {
     let s = render_to_string(&a, 140, 34);
     assert!(s.contains("Fri 23") && !s.contains("Sat 24"), "{s}");
 }
+
+#[test]
+fn local_patches_survive_a_stale_reload() {
+    let (mut a, _t) = app("2026-10-22T08:00:00+01:00");
+    let squash = a
+        .index
+        .instances
+        .iter()
+        .find(|i| i.title == "Squash" && !i.recurring)
+        .cloned()
+        .expect("fixture has a one-off Squash");
+    let mut moved = squash.clone();
+    moved.key = Some("OQTS".into());
+    a.patches.push(kairos_tui::app::LocalPatch {
+        uid: squash.uid.clone(),
+        inst: Some(moved),
+        until: chrono::Utc::now() + chrono::Duration::seconds(90),
+    });
+    // A reload that still has the old copy (iCloud not caught up yet).
+    let stale = a.index.clone();
+    a.set_index(stale);
+    let now: Vec<_> = a.index.instances.iter().filter(|i| i.uid == squash.uid).collect();
+    assert_eq!(now.len(), 1);
+    assert_eq!(now[0].key.as_deref(), Some("OQTS"));
+}

@@ -120,7 +120,7 @@ pub fn run(cfg: Config, path: PathBuf) -> Result<(), String> {
                 if let Ok((idx, rebuilt)) = cache::get(&app.cfg, Some(&path), app.now, from, to)
                     && rebuilt
                 {
-                    app.index = idx;
+                    app.set_index(idx);
                 }
                 last_reload = Instant::now();
             }

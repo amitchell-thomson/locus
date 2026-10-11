@@ -79,8 +79,20 @@ pub struct Ghost {
     pub span: Span,
 }
 
+/// A change kairosd has applied that the local copy (pulled from iCloud)
+/// may not show yet. Re-applied over every reload until it expires, so the
+/// view doesn't flicker back or lose the event mid-move.
+#[derive(Debug, Clone)]
+pub struct LocalPatch {
+    pub uid: String,
+    /// `None` = deleted.
+    pub inst: Option<Instance>,
+    pub until: DateTime<Utc>,
+}
+
 pub struct App {
     pub cfg: Config,
+    pub patches: Vec<LocalPatch>,
     pub tz: Tz,
     pub now: DateTime<Utc>,
     pub index: Index,
@@ -132,6 +144,7 @@ impl App {
             quit: false,
             wants_sync: false,
             work_week: false,
+            patches: Vec::new(),
             cfg,
         }
     }
@@ -271,9 +284,61 @@ impl App {
         }
     }
 
-    fn write_result(&mut self, r: Result<Result<WriteResult, Rejected>, kairos_store::StoreError>) {
+    /// Replace the index (after a reload) and re-apply recent local patches.
+    pub fn set_index(&mut self, idx: Index) {
+        self.index = idx;
+        let now = Utc::now();
+        self.patches.retain(|p| p.until > now);
+        for p in self.patches.clone() {
+            self.index.instances.retain(|i| i.uid != p.uid);
+            if let Some(i) = p.inst {
+                let at = self
+                    .index
+                    .instances
+                    .partition_point(|x| x.start(self.tz) <= i.start(self.tz));
+                self.index.instances.insert(at, i);
+            }
+        }
+    }
+
+    /// Show an applied change straight away (one-off events only; series
+    /// wait for the sync).
+    fn patch_local(&mut self, uid: &str, f: impl Fn(&mut Instance) -> bool) {
+        let Some(cur) = self.index.instances.iter().find(|i| i.uid == uid).cloned() else {
+            return;
+        };
+        if cur.recurring {
+            return;
+        }
+        let mut next = cur;
+        let keep = f(&mut next);
+        self.patches.retain(|p| p.uid != uid);
+        self.patches.push(LocalPatch {
+            uid: uid.to_string(),
+            inst: keep.then_some(next),
+            until: Utc::now() + Duration::seconds(90),
+        });
+        let idx = self.index.clone();
+        self.set_index(idx);
+    }
+
+    /// Where a key's events live (source id), for local patches.
+    fn source_for_key(&self, key: &str) -> Option<String> {
+        self.cfg
+            .sources
+            .iter()
+            .find(|s| {
+                s.overlay == Overlay::Personal
+                    && s.key.as_deref().is_some_and(|k| k.eq_ignore_ascii_case(key))
+                    && s.id != "test"
+            })
+            .map(|s| s.id.clone())
+    }
+
+    fn write_result(&mut self, r: Result<Result<WriteResult, Rejected>, kairos_store::StoreError>) -> bool {
         match r {
             Ok(Ok(w)) => {
+                let applied = w.status == Status::Applied;
                 let msg = match w.status {
                     Status::Applied => format!("✓ {}", w.summary.lines().next().unwrap_or("")),
                     Status::Pending => format!(
@@ -285,9 +350,16 @@ impl App {
                 self.set_message(msg, false);
                 self.wants_sync = true;
                 self.refresh_remote();
+                applied
             }
-            Ok(Err(e)) => self.set_message(e.to_string().replace('\n', " · "), true),
-            Err(e) => self.set_message(e.to_string(), true),
+            Ok(Err(e)) => {
+                self.set_message(e.to_string().replace('\n', " · "), true);
+                false
+            }
+            Err(e) => {
+                self.set_message(e.to_string(), true);
+                false
+            }
         }
     }
 
@@ -588,8 +660,10 @@ impl App {
             Confirm::Delete => {
                 if let Some(cl) = self.selected() {
                     let i = cl.primary;
-                    if let Some(r) = self.with_daemon(|d| d.delete_event(&i.source, &i.uid)) {
-                        self.write_result(r);
+                    if let Some(r) = self.with_daemon(|d| d.delete_event(&i.source, &i.uid))
+                        && self.write_result(r)
+                    {
+                        self.patch_local(&i.uid, |_| false);
                     }
                 }
             }
@@ -641,18 +715,23 @@ impl App {
             PromptKind::Move => {
                 let Some(cl) = self.selected() else { return };
                 let i = cl.primary;
-                let r = match self.when_str(&buf) {
-                    Ok(start) => {
-                        let req = api::UpdateEventReq {
-                            start: Some(start),
-                            ..Default::default()
-                        };
-                        self.with_daemon(|d| d.update_event(&i.source, &i.uid, &req).map(|r| r.map(to_write)))
-                    }
+                let start = match self.when_str(&buf) {
+                    Ok(s) => s,
                     Err(e) => return self.set_message(e, true),
                 };
-                if let Some(r) = r {
-                    self.write_result(r);
+                let req = api::UpdateEventReq {
+                    start: Some(start.clone()),
+                    ..Default::default()
+                };
+                let r = self.with_daemon(|d| d.update_event(&i.source, &i.uid, &req).map(|r| r.map(to_write)));
+                if let Some(r) = r
+                    && self.write_result(r)
+                {
+                    let tz = self.tz;
+                    self.patch_local(&i.uid, |x| {
+                        retime(x, &start, None, tz);
+                        true
+                    });
                 }
             }
         }
@@ -761,13 +840,37 @@ impl App {
                 }
                 if req != api::UpdateEventReq::default()
                     && let Some(r) = self.with_daemon(|d| d.update_event(&source, &uid, &req).map(|r| r.map(to_write)))
+                    && self.write_result(r)
                 {
-                    self.write_result(r);
+                    let tz = self.tz;
+                    self.patch_local(&uid, |x| {
+                        if let Some(t) = &req.title {
+                            x.title = t.clone();
+                        }
+                        if let Some(l) = &req.location {
+                            x.location = (!l.is_empty()).then(|| l.clone());
+                        }
+                        if let Some(d) = &req.description {
+                            x.description = (!d.is_empty()).then(|| d.clone());
+                        }
+                        if let Some(st) = &req.start {
+                            retime(x, st, req.duration_min, tz);
+                        }
+                        true
+                    });
                 }
                 if let Some(k) = rekey
                     && let Some(r) = self.with_daemon(|d| d.move_event(&source, &uid, &k))
+                    && self.write_result(r)
                 {
-                    self.write_result(r);
+                    let target = self.source_for_key(&k);
+                    self.patch_local(&uid, |x| {
+                        x.key = Some(k.clone());
+                        if let Some(t) = &target {
+                            x.source = t.clone();
+                        }
+                        true
+                    });
                 }
             }
             FormKind::AddTask => {
@@ -843,6 +946,21 @@ impl App {
         if self.checkins.iter().any(|c| c.outcome.is_none()) {
             self.mode = Mode::Checkin(0);
         }
+    }
+}
+
+/// Apply a new start (RFC 3339 or a date) and optional duration to a local copy.
+fn retime(x: &mut Instance, start: &str, dur: Option<u32>, tz: Tz) {
+    let (s0, e0) = x.span.bounds(tz);
+    let len = dur.map_or(e0 - s0, |m| Duration::minutes(i64::from(m)));
+    if let Ok(t) = DateTime::parse_from_rfc3339(start) {
+        let s = t.with_timezone(&Utc);
+        x.span = Span::Timed { start: s, end: s + len };
+    } else if let Ok(d) = NaiveDate::parse_from_str(start, "%Y-%m-%d") {
+        x.span = Span::AllDay {
+            start: d,
+            end: d + Duration::days(1),
+        };
     }
 }
 

@@ -434,8 +434,8 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
         if occupied.len() <= row {
             occupied.resize(row + 1, vec![false; ndays]);
         }
-        for k in b.k0..=b.k1 {
-            occupied[row][k] = true;
+        for o in &mut occupied[row][b.k0..=b.k1] {
+            *o = true;
         }
         placed.push((row, b));
     }

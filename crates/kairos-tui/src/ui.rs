@@ -428,7 +428,14 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
         let holiday = per_day[k]
             .iter()
             .find(|c| c.primary.overlay == Overlay::Background && c.primary.span.is_all_day());
-        let style = if *d == today {
+        let style = if *d == today && *d == app.cursor {
+            // Today and selected: the blue block plus the selection's mauve underline.
+            Style::default()
+                .fg(c("base"))
+                .bg(c("blue"))
+                .underline_color(c("mauve"))
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+        } else if *d == today {
             Style::default()
                 .fg(c("base"))
                 .bg(c("blue"))

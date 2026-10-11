@@ -29,7 +29,11 @@ options — relay those honestly. Only create a specific block when Alec asks fo
 task_id makes a pinned block).\n\
 TIMES: ISO 8601 ('2026-10-16T17:00', with or without offset; Europe/London assumed) or plain dates for all-day; \
 natural forms like 'fri 17:00' also work but ambiguous input is rejected. Keys: Inbox (default), Engineering, \
-Careers, Sport, Travel, OQTS, Social.";
+Careers, Sport, Travel, OQTS, Social.\n\
+BULK: for more than one event, find them with search_events, then make ONE update_events / delete_events / \
+move_events call with a plain-English summary — never loop the single-event tools (each would be a separate \
+approval). For deletions or large/ambiguous batches, show Alec the plan (counts + a few before/after examples) \
+first unless he already said exactly what to do. A batch is one approval and one undo.";
 
 #[derive(Clone)]
 pub struct KairosMcp {
@@ -172,6 +176,105 @@ pub struct MoveEventArgs {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema, Default)]
+pub struct SearchEventsArgs {
+    /// Words that must all appear in the title (case-insensitive), e.g. "B10 lecture".
+    pub query: Option<String>,
+    /// Text that must appear in the location.
+    pub location: Option<String>,
+    /// Only these keys (e.g. ["Engineering"]). Default: all of Alec's keys.
+    pub keys: Option<Vec<String>>,
+    /// Also search the shared Family calendar (read-only except share). Default false.
+    pub include_family: Option<bool>,
+    /// Window start (default today).
+    pub from: Option<String>,
+    /// Window end (default from + 180 days).
+    pub to: Option<String>,
+    /// Max rows (default 300, max 1000).
+    pub limit: Option<usize>,
+    /// Skip this many rows (paging).
+    pub offset: Option<usize>,
+}
+
+/// One row per event (a recurring series is one row with its occurrence count).
+#[derive(Debug, Serialize)]
+pub struct SearchRow {
+    pub uid: String,
+    pub source: String,
+    pub key: Option<String>,
+    pub title: String,
+    pub location: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+    /// First occurrence in the window (local time, or a date for all-day).
+    pub start: String,
+    pub end: String,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub recurring: bool,
+    #[serde(skip_serializing_if = "is_one")]
+    pub occurrences: usize,
+    /// "alec", "claude", "scheduler", or absent = made outside kairos (phone/Calendar.app/import).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_by: Option<String>,
+}
+
+fn is_one(n: &usize) -> bool {
+    *n == 1
+}
+
+#[derive(Debug, Serialize)]
+pub struct SearchResp {
+    pub total: usize,
+    pub offset: usize,
+    pub rows: Vec<SearchRow>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct EventRefArg {
+    pub uid: String,
+    /// Source id from search_events (optional; the UID usually suffices).
+    pub source: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct EventEditArg {
+    pub uid: String,
+    pub source: Option<String>,
+    pub title: Option<String>,
+    /// New start (ISO local time, or a date for all-day).
+    pub start: Option<String>,
+    pub end: Option<String>,
+    pub duration_min: Option<u32>,
+    /// Empty string clears it.
+    pub location: Option<String>,
+    /// Notes (DESCRIPTION). Empty string clears them.
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UpdateEventsArgs {
+    /// One entry per event; only the fields given change.
+    pub updates: Vec<EventEditArg>,
+    /// What the batch does, in Alec's words, shown in his approval list
+    /// (e.g. "Move room codes from titles into location").
+    pub summary: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct DeleteEventsArgs {
+    pub events: Vec<EventRefArg>,
+    /// What the batch does (e.g. "Remove lectures for modules Alec doesn't take: B12, B18").
+    pub summary: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct MoveEventsArgs {
+    pub events: Vec<EventRefArg>,
+    /// Destination key.
+    pub key: String,
+    pub summary: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema, Default)]
 pub struct ListTasksArgs {
     /// open (default) | done | dropped | all
     pub status: Option<String>,
@@ -267,6 +370,139 @@ impl KairosMcp {
                 })
                 .collect();
             Ok(api::EventsResp { from, to, events: evs })
+        })
+        .await
+    }
+
+    #[tool(
+        description = "Search Alec's events: title words, location, keys, date window (default today → +180 days). Returns compact rows (uid, source, key, title, location, start, end), one per event; recurring series appear once with an occurrence count. Use this before bulk edits. Read-only."
+    )]
+    async fn search_events(&self, Parameters(a): Parameters<SearchEventsArgs>) -> Result<CallToolResult, ErrorData> {
+        self.run(move |e| {
+            let today = e.now().with_timezone(&e.tz()).date_naive().to_string();
+            let from = a.from.clone().unwrap_or(today);
+            let (from, to) = window(e, Some(&from), a.to.as_deref(), 180)?;
+            let tz = e.tz();
+            let words: Vec<String> = a
+                .query
+                .as_deref()
+                .unwrap_or("")
+                .split_whitespace()
+                .map(str::to_lowercase)
+                .collect();
+            let loc = a.location.as_deref().map(str::to_lowercase);
+            let keys = a.keys.map(|k| k.iter().map(|x| x.to_lowercase()).collect::<Vec<_>>());
+            let family = a.include_family.unwrap_or(false);
+            let mut rows: Vec<SearchRow> = Vec::new();
+            let mut seen: std::collections::HashMap<(String, String), usize> = Default::default();
+            for i in e.events(from, to)? {
+                let ok_overlay = match i.overlay {
+                    kairos_core::config::Overlay::Personal => true,
+                    kairos_core::config::Overlay::Family => family,
+                    _ => false,
+                };
+                if !ok_overlay || i.source == "test" {
+                    continue;
+                }
+                let t = i.title.to_lowercase();
+                if !words.iter().all(|w| t.contains(w.as_str())) {
+                    continue;
+                }
+                if let Some(l) = &loc
+                    && !i
+                        .location
+                        .as_deref()
+                        .is_some_and(|x| x.to_lowercase().contains(l.as_str()))
+                {
+                    continue;
+                }
+                if let Some(k) = &keys
+                    && !i.colour_key().is_some_and(|ck| k.contains(&ck.to_lowercase()))
+                {
+                    continue;
+                }
+                let id = (i.source.clone(), i.uid.clone());
+                if let Some(&n) = seen.get(&id) {
+                    rows[n].occurrences += 1;
+                    continue;
+                }
+                let fmt = |t: DateTime<Utc>| t.with_timezone(&tz).format("%Y-%m-%dT%H:%M").to_string();
+                let (start, end) = match i.span {
+                    kairos_core::model::Span::AllDay { start, end } => (start.to_string(), end.to_string()),
+                    kairos_core::model::Span::Timed { start, end } => (fmt(start), fmt(end)),
+                };
+                seen.insert(id, rows.len());
+                rows.push(SearchRow {
+                    uid: i.uid.clone(),
+                    source: i.source.clone(),
+                    key: i.colour_key().map(String::from),
+                    title: i.title.clone(),
+                    location: i.location.clone(),
+                    notes: i.description.clone(),
+                    start,
+                    end,
+                    recurring: i.recurring,
+                    occurrences: 1,
+                    created_by: i.meta.created_by.map(|a| a.as_str().to_string()),
+                });
+            }
+            let total = rows.len();
+            let offset = a.offset.unwrap_or(0);
+            let limit = a.limit.unwrap_or(300).min(1000);
+            let rows = rows.into_iter().skip(offset).take(limit).collect();
+            Ok(SearchResp { total, offset, rows })
+        })
+        .await
+    }
+
+    #[tool(
+        description = "Edit many events in ONE changeset (one approval for Alec, one undo). Use for any change to more than one event, e.g. moving room codes from titles into the location field. Give each event's uid (from search_events) and only the fields that change. Changes to events Alec made himself, recurring series, or > 8 events are queued for his approval — tell him what is pending and how many events."
+    )]
+    async fn update_events(&self, Parameters(a): Parameters<UpdateEventsArgs>) -> Result<CallToolResult, ErrorData> {
+        let updates: Vec<api::EventUpdate> = a
+            .updates
+            .into_iter()
+            .map(|u| api::EventUpdate {
+                uid: u.uid,
+                source: u.source,
+                change: api::UpdateEventReq {
+                    title: u.title,
+                    start: u.start,
+                    end: u.end,
+                    duration_min: u.duration_min,
+                    location: u.location,
+                    description: u.description,
+                    blocking: None,
+                },
+            })
+            .collect();
+        self.run(move |e| {
+            e.update_events(Author::Claude, &updates, Some(&a.summary))
+                .map(|c| WriteResult::from(&c))
+        })
+        .await
+    }
+
+    #[tool(
+        description = "Delete many events in ONE changeset (one approval, one undo restores all). E.g. remove lectures for modules Alec doesn't take. Deleting events Alec made himself is queued for his approval."
+    )]
+    async fn delete_events(&self, Parameters(a): Parameters<DeleteEventsArgs>) -> Result<CallToolResult, ErrorData> {
+        let evs: Vec<(Option<String>, String)> = a.events.into_iter().map(|r| (r.source, r.uid)).collect();
+        self.run(move |e| {
+            e.delete_events(Author::Claude, &evs, Some(&a.summary))
+                .map(|c| WriteResult::from(&c))
+        })
+        .await
+    }
+
+    #[tool(
+        description = "Re-key many events (move them to another key's calendar) in ONE changeset (one approval, one undo)."
+    )]
+    async fn move_events(&self, Parameters(a): Parameters<MoveEventsArgs>) -> Result<CallToolResult, ErrorData> {
+        let evs: Vec<(Option<String>, String)> = a.events.into_iter().map(|r| (r.source, r.uid)).collect();
+        self.run(move |e| {
+            e.move_events_labelled(Author::Claude, &evs, &a.key, Some(&a.summary))
+                .map(|c| WriteResult::from(&c))
         })
         .await
     }

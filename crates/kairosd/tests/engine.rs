@@ -107,6 +107,61 @@ fn stale_source_from_a_lagging_client_still_finds_the_event() {
 }
 
 #[test]
+fn claude_batch_edit_and_delete_are_single_changesets() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let mut uids = Vec::new();
+    for k in 0..10 {
+        let cs = e
+            .create_event(
+                Author::Claude,
+                &ev(
+                    &format!("B{k} Lecture LR2"),
+                    &format!("2026-10-{:02} 10:00", 13 + k),
+                    "Engineering",
+                ),
+            )
+            .unwrap();
+        match &cs.ops[0] {
+            kairos_core::changeset::Op::CreateEvent { uid, .. } => uids.push(uid.clone()),
+            _ => unreachable!(),
+        }
+    }
+    let updates: Vec<kairos_core::api::EventUpdate> = uids
+        .iter()
+        .enumerate()
+        .map(|(k, u)| kairos_core::api::EventUpdate {
+            uid: u.clone(),
+            source: None,
+            change: kairos_core::api::UpdateEventReq {
+                title: Some(format!("B{k} Lecture")),
+                location: Some("LR2".into()),
+                ..Default::default()
+            },
+        })
+        .collect();
+    let cs = e
+        .update_events(Author::Claude, &updates, Some("Move room codes into location"))
+        .unwrap();
+    assert_eq!(cs.ops.len(), 10);
+    assert_eq!(cs.status, Status::Pending, "Claude, > 8 ops");
+    assert_eq!(cs.summary, "Move room codes into location (10 events)");
+    e.approve(&cs.id).unwrap();
+    let all = env.read_all("Engineering");
+    assert!(all.contains("SUMMARY:B3 Lecture\r\n") || all.contains("SUMMARY:B3 Lecture\n"));
+    assert!(all.contains("LOCATION:LR2"));
+    let refs: Vec<(Option<String>, String)> = uids.iter().map(|u| (None, u.clone())).collect();
+    let del = e.delete_events(Author::Claude, &refs[..3], Some("Drop B0–B2")).unwrap();
+    assert_eq!(del.ops.len(), 3);
+    if del.status == Status::Pending {
+        e.approve(&del.id).unwrap();
+    }
+    assert_eq!(env.items("Engineering").len(), 7);
+    e.undo(&del.id).unwrap();
+    assert_eq!(env.items("Engineering").len(), 10);
+}
+
+#[test]
 fn rekeying_many_events_is_one_changeset_with_one_undo() {
     let env = Env::new(true);
     let mut e = env.engine();

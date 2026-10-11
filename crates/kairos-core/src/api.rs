@@ -122,6 +122,16 @@ pub struct EventRef {
     pub uid: String,
 }
 
+/// One edit in a batch.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EventUpdate {
+    pub uid: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(flatten)]
+    pub change: UpdateEventReq,
+}
+
 /// Re-key several events in one changeset (one approval, one undo).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MoveManyReq {

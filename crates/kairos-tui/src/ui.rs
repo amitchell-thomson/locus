@@ -928,7 +928,32 @@ fn approvals(f: &mut Frame, app: &App, area: Rect) {
         )));
     }
     lines.push(Line::raw(""));
-    for op in &cs.ops {
+    // Big batches: counts by kind, then a few examples.
+    const SHOW: usize = 4;
+    if cs.ops.len() > SHOW + 2 {
+        let mut kinds: std::collections::BTreeMap<&str, usize> = Default::default();
+        for op in &cs.ops {
+            let k = match op {
+                kairos_core::changeset::Op::CreateEvent { .. } => "create",
+                kairos_core::changeset::Op::UpdateEvent { .. } => "edit",
+                kairos_core::changeset::Op::DeleteEvent { .. } => "delete",
+                kairos_core::changeset::Op::MoveEvent { .. } => "move",
+                _ => "other",
+            };
+            *kinds.entry(k).or_default() += 1;
+        }
+        let parts: Vec<String> = kinds.iter().map(|(k, n)| format!("{n} {k}")).collect();
+        lines.push(Line::from(TSpan::styled(
+            format!("{} changes: {} · first {SHOW} shown", cs.ops.len(), parts.join(" · ")),
+            Style::default().fg(c("blue")).add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::raw(""));
+    }
+    for op in cs
+        .ops
+        .iter()
+        .take(if cs.ops.len() > SHOW + 2 { SHOW } else { usize::MAX })
+    {
         lines.push(Line::from(TSpan::styled(
             format!("• {}", op.describe()),
             Style::default().fg(c("mauve")),
@@ -969,6 +994,16 @@ fn approvals(f: &mut Frame, app: &App, area: Rect) {
                 )));
             }
         }
+    }
+    if cs.ops.len() > SHOW + 2 {
+        lines.push(Line::from(TSpan::styled(
+            format!(
+                "… and {} more — `kairos show {}` lists every one",
+                cs.ops.len() - SHOW,
+                cs.id
+            ),
+            Style::default().fg(c("overlay1")),
+        )));
     }
     lines.push(Line::raw(""));
     lines.push(Line::from(TSpan::styled(

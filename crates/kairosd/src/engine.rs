@@ -58,6 +58,18 @@ impl From<kairos_core::api::TimeParseError> for EngineError {
 
 pub type Result<T> = std::result::Result<T, EngineError>;
 
+/// Upper bound on one batch (a term of lectures is ~200).
+pub const MAX_BATCH: usize = 1000;
+
+fn check_batch(n: usize) -> Result<()> {
+    if n > MAX_BATCH {
+        return Err(EngineError::BadRequest(format!(
+            "{n} events in one batch; split it (max {MAX_BATCH})"
+        )));
+    }
+    Ok(())
+}
+
 /// A collection to push after a write.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SyncTarget {
@@ -876,7 +888,50 @@ impl Engine {
         req: &api::UpdateEventReq,
     ) -> Result<Option<Changeset>> {
         let world = self.world(60)?;
-        let loc = self.locate(&world, source, uid)?;
+        let Some((op, summary)) = self.update_op(&world, source, uid, req)? else {
+            return Ok(None);
+        };
+        self.propose(&world, author, vec![op], summary).map(Some)
+    }
+
+    /// Several edits as one changeset: one approval, one undo. `label` is a
+    /// human description of the batch (e.g. "Move room codes into location").
+    pub fn update_events(
+        &mut self,
+        author: Author,
+        updates: &[api::EventUpdate],
+        label: Option<&str>,
+    ) -> Result<Changeset> {
+        check_batch(updates.len())?;
+        let world = self.world(60)?;
+        let mut ops = Vec::new();
+        let mut first = String::new();
+        for u in updates {
+            if let Some((op, s)) = self.update_op(&world, u.source.as_deref(), &u.uid, &u.change)? {
+                if first.is_empty() {
+                    first = s;
+                }
+                ops.push(op);
+            }
+        }
+        let summary = match (ops.len(), label) {
+            (0, _) => return Err(EngineError::BadRequest("nothing to change".into())),
+            (1, None) => first,
+            (n, Some(l)) => format!("{l} ({n} events)"),
+            (n, None) => format!("Update {n} events ({first} …)"),
+        };
+        self.propose(&world, author, ops, summary)
+    }
+
+    /// The op for one edit (`None` if it only touched the sidecar `blocking` flag).
+    fn update_op(
+        &mut self,
+        world: &World,
+        source: Option<&str>,
+        uid: &str,
+        req: &api::UpdateEventReq,
+    ) -> Result<Option<(Op, String)>> {
+        let loc = self.locate(world, source, uid)?;
         if let Some(b) = req.blocking {
             // Sidecar-only flag (no iCloud write): Family events opting in to block the scheduler.
             let mut m = self.db.meta_get(&loc.source.id, uid)?.unwrap_or_default();
@@ -938,32 +993,51 @@ impl Engine {
             before: loc.text,
             after,
         };
-        self.propose(&world, author, vec![op], summary).map(Some)
+        Ok(Some((op, summary)))
     }
 
     pub fn delete_event(&mut self, author: Author, source: Option<&str>, uid: &str) -> Result<Changeset> {
+        self.delete_events(author, &[(source.map(str::to_string), uid.to_string())], None)
+    }
+
+    /// Delete several events as one changeset (one approval, one undo).
+    pub fn delete_events(
+        &mut self,
+        author: Author,
+        events: &[(Option<String>, String)],
+        label: Option<&str>,
+    ) -> Result<Changeset> {
+        check_batch(events.len())?;
         let world = self.world(60)?;
-        let loc = self.locate(&world, source, uid)?;
-        let title = loc
-            .series
-            .master
-            .as_ref()
-            .map(|m| m.summary.clone())
-            .unwrap_or_default();
-        let op = Op::DeleteEvent {
-            item: Item {
-                source: loc.source.id.clone(),
-                href: loc.href.clone(),
-            },
-            uid: uid.into(),
-            before: loc.text,
+        let mut ops = Vec::new();
+        let mut first = String::new();
+        for (source, uid) in events {
+            let loc = self.locate(&world, source.as_deref(), uid)?;
+            if first.is_empty() {
+                let title = loc
+                    .series
+                    .master
+                    .as_ref()
+                    .map(|m| m.summary.clone())
+                    .unwrap_or_default();
+                first = format!("Delete {title:?} from {}", loc.source.id);
+            }
+            ops.push(Op::DeleteEvent {
+                item: Item {
+                    source: loc.source.id.clone(),
+                    href: loc.href.clone(),
+                },
+                uid: uid.clone(),
+                before: loc.text,
+            });
+        }
+        let summary = match (ops.len(), label) {
+            (0, _) => return Err(EngineError::BadRequest("no events given".into())),
+            (1, None) => first,
+            (n, Some(l)) => format!("{l} ({n} events)"),
+            (n, None) => format!("Delete {n} events ({first} …)"),
         };
-        self.propose(
-            &world,
-            author,
-            vec![op],
-            format!("Delete {title:?} from {}", loc.source.id),
-        )
+        self.propose(&world, author, ops, summary)
     }
 
     /// Re-key: move to another key's calendar (keeps UID).
@@ -973,6 +1047,17 @@ impl Engine {
 
     /// Re-key several events as one changeset. Events already in `key` are skipped.
     pub fn move_events(&mut self, author: Author, events: &[(Option<String>, String)], key: &str) -> Result<Changeset> {
+        self.move_events_labelled(author, events, key, None)
+    }
+
+    pub fn move_events_labelled(
+        &mut self,
+        author: Author,
+        events: &[(Option<String>, String)],
+        key: &str,
+        label: Option<&str>,
+    ) -> Result<Changeset> {
+        check_batch(events.len())?;
         let world = self.world(60)?;
         let (target, _) = self.target_for_key(key)?;
         let mut ops = Vec::new();
@@ -1005,10 +1090,11 @@ impl Engine {
                 share_to_family: false,
             });
         }
-        let summary = match ops.len() {
-            0 => return Err(EngineError::BadRequest(format!("already in {key}"))),
-            1 => format!("Re-key {first_title:?} → {key}"),
-            n => format!("Re-key {n} events ({first_title:?} …) → {key}"),
+        let summary = match (ops.len(), label) {
+            (0, _) => return Err(EngineError::BadRequest(format!("already in {key}"))),
+            (1, None) => format!("Re-key {first_title:?} → {key}"),
+            (n, Some(l)) => format!("{l} ({n} events → {key})"),
+            (n, None) => format!("Re-key {n} events ({first_title:?} …) → {key}"),
         };
         self.propose(&world, author, ops, summary)
     }

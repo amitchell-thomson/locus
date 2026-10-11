@@ -26,17 +26,27 @@ claude mcp list   # kairos: … ✓ Connected
 2. The response includes the ⚑ deadline changeset and the plan: blocks placed (and any shortfall).
 3. Reply with the blocks ("Mon 14:00–16:00, Tue 09:00–11:00") or the shortfall and options.
 
+### Bulk edits ("move the room codes in the lecture titles into the location field")
+1. `search_events {keys: ["Engineering"], query: "LR"}` (and `"Software Lab"` etc.) → rows with uid/title/location.
+2. Build each new title/location; `update_events {summary: "Move room codes from lecture titles into location", updates: [{uid, title, location}, …]}`.
+3. Response `pending` (his events, > 8 ops) → "185 lectures queued as cs-…; approve with A in kairos or on your phone". One `undo` reverts all.
+
+### "Delete the lectures for modules I don't take" (+ a document/screenshot)
+1. Read the document; list the modules he takes.
+2. `search_events {keys: ["Engineering"]}` → group rows by module code (B1, B10, …).
+3. Show: "Keeping B1, B2, B10…; removing B12 (8), B18 (8)… = 40 events." Wait for OK unless he was explicit.
+4. `delete_events {summary: "Remove lectures for modules not taken: B12, B18, …", events: [{uid}, …]}` → one approval, one undo.
+
 ### Moving one of Alec's events
 `update_event {uid, start: "…"}` → `pending` with reasons. Tell Alec it's queued and where to approve.
 
 ### Weekly review (Sunday)
 1. `list_events {from: today, to: +7d}` — skim the week.
-2. **Triage the Inbox:** events in `Inbox` that belong elsewhere → suggest keys; on Alec's OK, `move_event` (his own events → pending; that's expected).
-3. **Imported:** `list_events {overlays: ["imported"]}` → suggest anything worth adopting (bookings, travel) → `kairos adopt <uid> --key Travel` (via Bash, after OK).
-4. **Deadlines:** `list_tasks` → check dates/estimates are still right; `update_task` as needed.
-5. `plan` → summarise blocks, moved count, shortfalls.
-6. `list_changesets {status: "pending"}` → remind Alec what's waiting.
-7. One-paragraph summary of the week ahead.
+2. **Triage the Inbox:** `search_events {keys: ["Inbox"], to: +14d}` → suggest keys; on Alec's OK, one `move_events` batch.
+3. **Deadlines:** `list_tasks` → check dates/estimates are still right; `update_task` as needed.
+4. `plan` → summarise blocks, moved count, shortfalls.
+5. `list_changesets {status: "pending"}` → remind Alec what's waiting.
+6. One-paragraph summary of the week ahead.
 
 ### Daily
 1. `list_events` for today + `list_tasks` → "Today: … ; work blocks: …; due soon: ⚑ …".

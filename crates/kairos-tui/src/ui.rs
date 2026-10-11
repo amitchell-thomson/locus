@@ -527,7 +527,9 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             if p.cl.is_merged() {
                 title.push_str(" ⧉");
             }
-            let mut text = if lane_w >= 12 {
+            // The grid already says the hour; only off-the-hour starts (12:30)
+            // need spelling out. Exact times are on the bottom edge anyway.
+            let mut text = if lane_w >= 12 && t.minute() != 0 {
                 format!("{} {title}", t.format("%H:%M"))
             } else {
                 title

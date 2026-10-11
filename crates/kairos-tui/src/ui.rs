@@ -539,9 +539,11 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
     };
     for r in 0..nrows {
         if divider_rows.contains(&(r as i64)) {
+            // One continuous line, straight through the column guides.
             for xx in inner.x + gutter..inner.x + inner.width {
                 buf.set_string(xx, grid_y + r as u16, "┄", Style::default().fg(c("surface2")));
             }
+            continue;
         }
         for k in 0..ndays {
             let x = col_x(k);
@@ -588,6 +590,11 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
                     let y = grid_y + dr as u16;
                     for xx in x0..col_x(k + 1) {
                         buf.set_string(xx, y, " ", Style::default());
+                    }
+                    // Keep the column guides either side.
+                    buf.set_string(col_x(k), y, "┊", Style::default().fg(c("surface0")));
+                    if k + 1 < ndays {
+                        buf.set_string(col_x(k + 1), y, "┊", Style::default().fg(c("surface0")));
                     }
                 }
             }

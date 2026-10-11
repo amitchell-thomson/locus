@@ -13,19 +13,19 @@ expression: "render_to_string(&a, 100, 30)"
 │09:00 ┊          │     Enter  details / expand duplicates ⧉                     │   ┊             │
 │10:00 ┊          │         w  week: Mon–Sun ↔ Mon–Fri (wider)                   │   ┊             │
 │11:00 ┊          │   p f b i  show/hide: Personal, Family, Holidays, Gmail      │   ┊             │
-│      ┊┄┄┄┄┄┄┄┄┄┄│       1–7  show/hide one calendar (see the bar below)        │┄┄┄┊┄┄┄┄┄┄┄┄┄┄┄┄┄│
+│      ┄┄┄┄┄┄┄┄┄┄┄│       1–7  show/hide one calendar (see the bar below)        │┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄│
 │12:00 ┊          │         a  add event (a form; Tab between fields)            │   ┊             │
 │13:00 ┊          │       e K  edit event (K jumps to its calendar)              │   ┊             │
 │14:00 ┊          │         m  move to another time                              │   ┊             │
 │15:00 ┊          │       d s  delete, share to Family                           │   ┊             │
 │16:00 ┊          │         B  Family event: block / unblock my time             │   ┊             │
 │17:00 ┊          │         P  run the scheduler                                 │   ┊             │
-│      ┊┄┄┄┄┄┄┄┄┄┄│       T A  tasks, approvals                                  │┄┄┄┊┄┄┄┄┄┄┄┄┄┄┄┄┄│
+│      ┄┄┄┄┄┄┄┄┄┄┄│       T A  tasks, approvals                                  │┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄│
 │18:00 ┊          │         C  check in today's work blocks                      │   ┊             │
 │19:00 ┊▌Squash   │         u  undo the last applied change                      │   ┊▌Sunday Sq…  │
 │20:00 ┊          │         /  search                                            │   ┊             │
 │21:00 ┊          │         r  sync now                                          │   ┊             │
-│      ┊┄┄┄┄┄┄┄┄┄┄│         q  quit                                              │┄┄┄┊┄┄┄┄┄┄┄┄┄┄┄┄┄│
+│      ┄┄┄┄┄┄┄┄┄┄┄│         q  quit                                              │┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄│
 │22:00 ┊          ╰──────────────────────────────────────────────────────────────╯   ┊             │
 │23:00 ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 │      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │

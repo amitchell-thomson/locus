@@ -45,8 +45,8 @@ cargo run -p kairos-tui --example frame -- <config> <rfc3339-now> <w> <h> [keys]
 
 ## Deployment state (2026-10-11)
 
-- compute-node: repo at `~/server-projects/kairos`; `kairosd` + `kairos` in `~/.cargo/bin`; `systemctl --user` unit `kairosd` **running with live = true since 2026-10-11**, bound to `100.117.10.28:7420` (Tailscale only; the server's own CLI uses that IP because `compute-node` resolves to 127.0.1.1 there). vdirsyncer 0.21 in `~/.local/share/kairos/venv` (symlinked into `~/.local/bin`), read-write. Secrets in `~/.config/kairos/secrets/` (api-token, ntfy-topic, apple-id, icloud-app-password, ics-gmail).
-- Mac: `kairos` via `cargo install`; vdirsyncer (brew), remote `read_only = true`; launchd agent `com.kairos.sync` (`~/Library/LaunchAgents`, rendered from the chezmoi template by hand, every 180 s, log `~/Library/Logs/kairos-sync.log`). Keychain: kairos-api-token, kairos-icloud, kairos-apple-id, kairos-ics-gmail. chezmoi, tmux and zsh snippets NOT applied (Alec's call).
+- compute-node: repo at `~/server-projects/kairos`; `kairosd` + `kairos` in `~/.cargo/bin`; `systemctl --user` unit `kairosd` **running with live = true since 2026-10-11**, bound to `100.117.10.28:7420` (Tailscale only; the server's own CLI uses that IP because `compute-node` resolves to 127.0.1.1 there). vdirsyncer 0.21 in `~/.local/share/kairos/venv` (symlinked into `~/.local/bin`), read-write. Secrets in `~/.config/kairos/secrets/` (api-token, ntfy-topic, apple-id, icloud-app-password).
+- Mac: `kairos` via `cargo install`; vdirsyncer (brew), remote `read_only = true`; launchd agent `com.kairos.sync` (`~/Library/LaunchAgents`, rendered from the chezmoi template by hand, every 180 s, log `~/Library/Logs/kairos-sync.log`). Keychain: kairos-api-token, kairos-icloud, kairos-apple-id. chezmoi, tmux and zsh snippets NOT applied (Alec's call).
 - Update the server: `cd ~/server-projects/kairos && git pull && cargo install --locked --path crates/kairosd && cargo install --locked --path crates/kairos-cli && systemctl --user restart kairosd`.
 
 ## Phase status
@@ -74,6 +74,7 @@ cargo run -p kairos-tui --example frame -- <config> <rfc3339-now> <w> <h> [keys]
 ## Decisions log
 
 - Catch-all key renamed `Personal` → **`Inbox`** (Alec's iCloud calendar is named Inbox, CalDAV id `home`). Events without a key go to key 1 (`Config::default_key`), not a hard-coded name. "personal" remains the *overlay* name.
+- Gmail and UK-holidays feeds removed too (Alec, 2026-10-11): nothing upcoming in Gmail; holidays not wanted. No `ics_readonly` sources are configured now; the feature stays.
 - OQTS Google Workspace feeds dropped: secret iCal addresses are disabled by the Workspace admin and the calendars were empty. OQTS work lives in the iCloud `OQTS` key.
 
 - Own lossless iCalendar parser instead of the `icalendar` crate: round-trip fidelity (unknown props, param quoting) matters for writing back to iCloud.

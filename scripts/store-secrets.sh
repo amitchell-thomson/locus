@@ -10,7 +10,6 @@ HOST="${KAIROS_HOST:-compute-node}"
 SECRETS=(
   "apple-id|kairos-apple-id|Apple ID email"
   "icloud-app-password|kairos-icloud|iCloud app-specific password (xxxx-xxxx-xxxx-xxxx)"
-  "ics-gmail|kairos-ics-gmail|Secret iCal address: alec.mitchellthomson@gmail.com"
 )
 
 ssh "$HOST" 'mkdir -p ~/.config/kairos/secrets && chmod 700 ~/.config/kairos/secrets'

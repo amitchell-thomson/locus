@@ -113,27 +113,5 @@ overlay = "personal"
 key = "Inbox"
 writable = true
 
-{{- if eq .chezmoi.os "darwin" }}
-{{-   $cmd := "security find-generic-password -w -s kairos-ics-%s" }}
-
-[[sources]]
-id = "gmail"
-name = "Gmail"
-kind = "ics_readonly"
-url_cmd = "{{ printf $cmd "gmail" }}"
-overlay = "imported"
-{{- else }}
-
-[[sources]]
-id = "gmail"
-kind = "ics_readonly"
-url_cmd = "cat ~/.config/kairos/secrets/ics-gmail"
-overlay = "imported"
-{{- end }}
-
-[[sources]]
-id = "uk-holidays"
-name = "Holidays"
-kind = "ics_readonly"
-url = "https://calendar.google.com/calendar/ical/en.uk%23holiday%40group.v.calendar.google.com/public/basic.ics"
-overlay = "background"
+# Read-only .ics feeds (kind = "ics_readonly", overlay = "background" or
+# "imported") can be added here; none are in use.

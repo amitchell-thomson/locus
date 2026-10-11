@@ -90,9 +90,14 @@ pub struct LocalPatch {
     pub until: DateTime<Utc>,
 }
 
+/// Work to run right after the next frame is drawn (server round trips), so
+/// the screen shows the change before the network answers.
+pub type Deferred = Box<dyn FnOnce(&mut App)>;
+
 pub struct App {
     pub cfg: Config,
     pub patches: Vec<LocalPatch>,
+    pub deferred: Vec<Deferred>,
     pub tz: Tz,
     pub now: DateTime<Utc>,
     pub index: Index,
@@ -145,6 +150,7 @@ impl App {
             wants_sync: false,
             work_week: false,
             patches: Vec::new(),
+            deferred: Vec::new(),
             cfg,
         }
     }
@@ -301,8 +307,27 @@ impl App {
         }
     }
 
-    /// Show an applied change straight away (one-off events only; series
-    /// wait for the sync).
+    pub fn run_deferred(&mut self) {
+        for f in std::mem::take(&mut self.deferred) {
+            f(self);
+        }
+    }
+
+    /// Undo an optimistic patch the server refused.
+    fn unpatch(&mut self, orig: Option<Instance>, uid: &str) {
+        self.patches.retain(|p| p.uid != uid);
+        self.index.instances.retain(|i| i.uid != uid);
+        if let Some(i) = orig {
+            let at = self
+                .index
+                .instances
+                .partition_point(|x| x.start(self.tz) <= i.start(self.tz));
+            self.index.instances.insert(at, i);
+        }
+    }
+
+    /// Show a change straight away (one-off events only; series wait for the
+    /// sync). Optimistic: callers roll back with [`App::unpatch`] on failure.
     fn patch_local(&mut self, uid: &str, f: impl Fn(&mut Instance) -> bool) {
         let Some(cur) = self.index.instances.iter().find(|i| i.uid == uid).cloned() else {
             return;
@@ -333,6 +358,13 @@ impl App {
                     && s.id != "test"
             })
             .map(|s| s.id.clone())
+    }
+
+    /// Like `write_result`, but true only if the change was applied (an
+    /// optimistic patch must roll back if it was refused or queued).
+    fn write_applied(&mut self, r: Result<Result<WriteResult, Rejected>, kairos_store::StoreError>) -> bool {
+        let pending = matches!(&r, Ok(Ok(w)) if w.status != Status::Applied);
+        self.write_result(r) && !pending
     }
 
     fn write_result(&mut self, r: Result<Result<WriteResult, Rejected>, kairos_store::StoreError>) -> bool {
@@ -660,11 +692,17 @@ impl App {
             Confirm::Delete => {
                 if let Some(cl) = self.selected() {
                     let i = cl.primary;
-                    if let Some(r) = self.with_daemon(|d| d.delete_event(&i.source, &i.uid))
-                        && self.write_result(r)
-                    {
-                        self.patch_local(&i.uid, |_| false);
+                    if self.daemon.is_none() {
+                        return self.set_message("kairosd not configured — writes unavailable", true);
                     }
+                    self.patch_local(&i.uid, |_| false);
+                    self.deferred.push(Box::new(move |app: &mut App| {
+                        if let Some(r) = app.with_daemon(|d| d.delete_event(&i.source, &i.uid))
+                            && !app.write_applied(r)
+                        {
+                            app.unpatch(Some(i.clone()), &i.uid);
+                        }
+                    }));
                 }
             }
             Confirm::Share => {
@@ -723,16 +761,22 @@ impl App {
                     start: Some(start.clone()),
                     ..Default::default()
                 };
-                let r = self.with_daemon(|d| d.update_event(&i.source, &i.uid, &req).map(|r| r.map(to_write)));
-                if let Some(r) = r
-                    && self.write_result(r)
-                {
-                    let tz = self.tz;
-                    self.patch_local(&i.uid, |x| {
-                        retime(x, &start, None, tz);
-                        true
-                    });
+                if self.daemon.is_none() {
+                    return self.set_message("kairosd not configured — writes unavailable", true);
                 }
+                let tz = self.tz;
+                self.patch_local(&i.uid, |x| {
+                    retime(x, &start, None, tz);
+                    true
+                });
+                self.deferred.push(Box::new(move |app: &mut App| {
+                    if let Some(r) =
+                        app.with_daemon(|d| d.update_event(&i.source, &i.uid, &req).map(|r| r.map(to_write)))
+                        && !app.write_applied(r)
+                    {
+                        app.unpatch(Some(i.clone()), &i.uid);
+                    }
+                }));
             }
         }
     }
@@ -838,12 +882,16 @@ impl App {
                 if req == api::UpdateEventReq::default() && rekey.is_none() {
                     return self.set_message("no changes", false);
                 }
-                if req != api::UpdateEventReq::default()
-                    && let Some(r) = self.with_daemon(|d| d.update_event(&source, &uid, &req).map(|r| r.map(to_write)))
-                    && self.write_result(r)
+                if self.daemon.is_none() {
+                    return self.set_message("kairosd not configured — writes unavailable", true);
+                }
+                // Show it now; the server round trip runs after the next frame.
+                let orig = self.index.instances.iter().find(|i| i.uid == uid).cloned();
+                let tz = self.tz;
+                let target = rekey.as_deref().and_then(|k| self.source_for_key(k));
                 {
-                    let tz = self.tz;
-                    self.patch_local(&uid, |x| {
+                    let (req, rekey) = (req.clone(), rekey.clone());
+                    self.patch_local(&uid, move |x| {
                         if let Some(t) = &req.title {
                             x.title = t.clone();
                         }
@@ -856,22 +904,34 @@ impl App {
                         if let Some(st) = &req.start {
                             retime(x, st, req.duration_min, tz);
                         }
-                        true
-                    });
-                }
-                if let Some(k) = rekey
-                    && let Some(r) = self.with_daemon(|d| d.move_event(&source, &uid, &k))
-                    && self.write_result(r)
-                {
-                    let target = self.source_for_key(&k);
-                    self.patch_local(&uid, |x| {
-                        x.key = Some(k.clone());
-                        if let Some(t) = &target {
-                            x.source = t.clone();
+                        if let Some(k) = &rekey {
+                            x.key = Some(k.clone());
+                            if let Some(t) = &target {
+                                x.source = t.clone();
+                            }
                         }
                         true
                     });
                 }
+                self.set_message("saving…", false);
+                self.deferred.push(Box::new(move |app: &mut App| {
+                    let mut ok = true;
+                    if req != api::UpdateEventReq::default()
+                        && let Some(r) =
+                            app.with_daemon(|d| d.update_event(&source, &uid, &req).map(|r| r.map(to_write)))
+                    {
+                        ok = app.write_applied(r);
+                    }
+                    if ok
+                        && let Some(k) = rekey
+                        && let Some(r) = app.with_daemon(|d| d.move_event(&source, &uid, &k))
+                    {
+                        ok = app.write_applied(r);
+                    }
+                    if !ok {
+                        app.unpatch(orig, &uid);
+                    }
+                }));
             }
             FormKind::AddTask => {
                 let due = match opt(f.get("Due")).map(|d| self.when_str(&d)).transpose() {

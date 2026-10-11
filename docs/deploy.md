@@ -26,7 +26,7 @@ cp deploy/chezmoi/dot_config/systemd/user/kairosd.service ~/.config/systemd/user
 systemctl --user daemon-reload && systemctl --user enable --now kairosd   # lingering is already on
 ```
 
-**Still needed (Alec):** `~/.config/kairos/secrets/{apple-id,icloud-app-password,ics-gmail}` (see docs/migration.md §5), then:
+**Still needed (Alec):** `~/.config/kairos/secrets/{apple-id,icloud-app-password}` (see docs/migration.md §5), then:
 
 ```sh
 cd ~/server-projects/kairos && scripts/verify-icloud.sh     # discover, sync, Family check, X-KAIROS round-trip

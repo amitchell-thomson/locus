@@ -156,7 +156,7 @@ overlay = "personal"
 key = "Inbox"
 writable = true
 
-# --- read-only Google feeds (secret iCal addresses) ---
+# --- read-only .ics feeds (examples; Alec's live config uses none) ---
 [[sources]]
 id = "uk-holidays"
 name = "Holidays"

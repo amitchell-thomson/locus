@@ -45,20 +45,8 @@ Tick these off in order. Nothing here needs kairos running. Steps marked 📱 ar
   chmod 600 ~/.config/kairos/secrets/*
   ```
 
-### Google secret iCal addresses (read-only imports)
-For each calendar: calendar.google.com → ⚙ Settings → (left) the calendar → **Integrate calendar** → **Secret address in iCal format**. (The OQTS Workspace calendars aren't used: the Workspace admin has secret addresses turned off and they were empty. OQTS work lives in the iCloud **OQTS** key calendar instead.) Easiest: `scripts/store-secrets.sh` prompts for every secret and stores it on both machines.
-
-| kairos source | Google calendar | Keychain service / server file |
-|---|---|---|
-| `gmail` | `alec.mitchellthomson@gmail.com` | `kairos-ics-gmail` / `ics-gmail` |
-| `uk-holidays` | Holidays in the UK | public URL, already in config |
-
-```sh
-# Mac
-security add-generic-password -U -s kairos-ics-gmail -a "$USER" -w 'https://calendar.google.com/calendar/ical/…/basic.ics'
-# compute-node
-printf '%s' '…' > ~/.config/kairos/secrets/ics-gmail   # chmod 600
-```
+### Google calendars
+Not used (decided 2026-10-11): the OQTS Workspace feeds are disabled by the admin, the Gmail calendar had nothing upcoming, and the holiday feed wasn't wanted. Read-only `.ics` feeds can be added back as `kind = "ics_readonly"` sources (secret URL via `url_cmd`).
 
 ### kairos API token
 Already generated on compute-node at `~/.config/kairos/secrets/api-token` (see docs/deploy.md). Copy it to the Mac Keychain:

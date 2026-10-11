@@ -135,6 +135,11 @@ pub fn run(cfg: Config, path: PathBuf) -> Result<(), String> {
                 if app.quit {
                     return Ok(());
                 }
+                if !app.deferred.is_empty() {
+                    // Draw the optimistic change first, then do the round trip.
+                    terminal.draw(|f| ui::draw(f, &app)).map_err(|e| e.to_string())?;
+                    app.run_deferred();
+                }
             }
         }
     })();

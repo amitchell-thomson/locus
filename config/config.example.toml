@@ -43,6 +43,12 @@ show_imported = false
 [tui]
 # Section dividers in the week/day grid: morning | afternoon | evening | night.
 section_hours = [12, 18, 22]
+# Oxford terms: `start` = Sunday of 1st week (shown as "1st week MT" in the title bar).
+terms = [
+  { name = "MT", start = "2026-10-11" },
+  { name = "HT", start = "2027-01-17" },
+  { name = "TT", start = "2027-04-25" },
+]
 
 # Keys: one iCloud calendar each. `index` is the TUI toggle key (1–7).
 [[keys]]

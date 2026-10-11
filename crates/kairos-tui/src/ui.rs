@@ -290,7 +290,7 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
         _ => app.cursor,
     };
     let last = first + Duration::days(ndays as i64 - 1);
-    let title = if single {
+    let mut title = if single {
         app.cursor.format("%A %-d %B").to_string()
     } else {
         format!(
@@ -300,6 +300,10 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             last.format("%-d %b")
         )
     };
+    // Oxford week (Sun–Sat) of the selected day.
+    if let Some(w) = app.cfg.tui.term_week(app.cursor) {
+        title.push_str(&format!(" · {w}"));
+    }
     let mut block = panel(&title, true);
     if let Some(cl) = app.selected() {
         let text = fit(&peek(app, &cl), area.width.saturating_sub(6) as usize);

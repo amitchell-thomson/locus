@@ -109,6 +109,36 @@ pub struct TuiSettings {
     /// (default: afternoon 12, evening 18, night 22).
     #[serde(default = "default_section_hours")]
     pub section_hours: Vec<u32>,
+    /// University terms, for "1st week MT" in the title bar. `start` is the
+    /// Sunday of 1st week (Oxford weeks run Sunday–Saturday).
+    #[serde(default)]
+    pub terms: Vec<Term>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Term {
+    pub name: String,
+    pub start: chrono::NaiveDate,
+}
+
+impl TuiSettings {
+    /// Oxford-style week label for `day`: "1st week MT", "0th week HT" …
+    /// Covers 0th–9th week of each term; `None` outside.
+    pub fn term_week(&self, day: chrono::NaiveDate) -> Option<String> {
+        self.terms.iter().find_map(|t| {
+            let wk = (day - t.start).num_days().div_euclid(7) + 1;
+            (0..=9).contains(&wk).then(|| {
+                let suffix = match wk {
+                    1 => "st",
+                    2 => "nd",
+                    3 => "rd",
+                    _ => "th",
+                };
+                format!("{wk}{suffix} week {}", t.name)
+            })
+        })
+    }
 }
 
 fn default_section_hours() -> Vec<u32> {
@@ -119,6 +149,7 @@ impl Default for TuiSettings {
     fn default() -> Self {
         TuiSettings {
             section_hours: default_section_hours(),
+            terms: Vec::new(),
         }
     }
 }
@@ -529,6 +560,30 @@ pub fn expand_home(p: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn oxford_term_weeks() {
+        let t = TuiSettings {
+            terms: vec![Term {
+                name: "MT".into(),
+                start: chrono::NaiveDate::from_ymd_opt(2026, 10, 11).unwrap(),
+            }],
+            ..TuiSettings::default()
+        };
+        let d = |m, day| chrono::NaiveDate::from_ymd_opt(2026, m, day).unwrap();
+        assert_eq!(t.term_week(d(10, 4)).as_deref(), Some("0th week MT"));
+        assert_eq!(
+            t.term_week(d(10, 11)).as_deref(),
+            Some("1st week MT"),
+            "Sunday starts the week"
+        );
+        assert_eq!(t.term_week(d(10, 17)).as_deref(), Some("1st week MT"));
+        assert_eq!(t.term_week(d(10, 18)).as_deref(), Some("2nd week MT"));
+        assert_eq!(t.term_week(d(12, 5)).as_deref(), Some("8th week MT"));
+        assert_eq!(t.term_week(d(12, 12)).as_deref(), Some("9th week MT"));
+        assert_eq!(t.term_week(d(12, 20)), None);
+        assert_eq!(t.term_week(d(9, 30)), None);
+    }
 
     const EXAMPLE: &str = include_str!("../../../config/config.example.toml");
 

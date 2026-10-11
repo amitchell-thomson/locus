@@ -67,7 +67,7 @@ cargo run -p kairos-tui --example frame -- <config> <rfc3339-now> <w> <h> [keys]
 
 - Family calendar discoverable over CalDAV: **yes** (collection id is a 64-hex hash; 225 items). Also discovered: `Erinnerungen ⚠️` (legacy reminders, VTODO only, ignored).
 - `X-KAIROS-*` survives iCloud round-trip: **yes**
-- `X-KAIROS-*` survives an iPhone edit: _unknown yet_ (sidecar is authoritative either way)
+- `X-KAIROS-*` survives an iPhone edit: **yes** (title edit on iOS; iOS adds TRANSP:OPAQUE). Undo of the edited event correctly refused as a conflict.
 - Tailscale: Mac ↔ compute-node ✓ (API reachable at http://compute-node:7420); iPhone is on the tailnet (`phone`), reachability to be confirmed from the phone.
 
 ## Decisions log

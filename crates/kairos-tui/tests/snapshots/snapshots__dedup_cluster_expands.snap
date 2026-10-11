@@ -9,7 +9,7 @@ expression: s
 │      ┊            ┊▌Lecture    ┊            ┊            ┊▌Ma… ▌El…   ┊            ┊             │
 │11:00 ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 │      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
-│      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
+│      ┊┄┄┄┄┄┄┄┄┄┄┄┄┊┄┄┄┄┄┄┄┄┄┄┄┄┊┄┄┄┄┄┄┄┄┄┄┄┄┊┄┄┄┄┄┄┄┄┄┄┄┄┊┄┄┄┄┄┄┄┄┄┄┄┄┊┄┄┄┄┄┄┄┄┄┄┄┄┊┄┄┄┄┄┄┄┄┄┄┄┄┄│
 │12:00 ┊          ╭─────────────────────────── event ────────────────────────────╮   ┊             │
 │      ┊          │OQTS speaker event                                            │   ┊             │
 │13:00 ┊          │Thu 15 Oct 19:05 – 20:00                                      │   ┊             │
@@ -18,17 +18,17 @@ expression: s
 │      ┊          │⧉ 3 copies (showing the highest-precedence one)               │   ┊             │
 │15:00 ┊          │● family family · OQTS speaker event                          │   ┊             │
 │      ┊          │● personal personal · OQTS Speaker Event                      │   ┊             │
-│      ┊          │● oqts personal · OQTS Speaker Event                          │   ┊             │
-│16:00 ┊          │                                                              │   ┊             │
-│      ┊          │uid family-dentist@kairos.test                                │   ┊             │
-│17:00 ┊          ╰──────────────────────────────────────────────────────────────╯   ┊             │
-│      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
+│16:00 ┊          │● oqts personal · OQTS Speaker Event                          │   ┊             │
+│      ┊          │                                                              │   ┊             │
+│17:00 ┊          │uid family-dentist@kairos.test                                │   ┊             │
+│      ┊          ╰──────────────────────────────────────────────────────────────╯   ┊             │
+│      ┊┄┄┄┄┄┄┄┄┄┄┄┄┊┄┄┄┄┄┄┄┄┄┄┄┄┊┄┄┄┄┄┄┄┄┄┄┄┄┊┄┄┄┄┄┄┄┄┄┄┄┄┊┄┄┄┄┄┄┄┄┄┄┄┄┊┄┄┄┄┄┄┄┄┄┄┄┄┊┄┄┄┄┄┄┄┄┄┄┄┄┄│
 │18:00 ┊            ┊            ┊            ┊            ┊▌OQTS       ┊            ┊             │
 │      ┊            ┊            ┊            ┊            ┊▌committe…  ┊            ┊             │
 │19:00 ┊            ┊            ┊            ┊▌OQTS       ┊            ┊            ┊▌Sunday      │
 │      ┊            ┊            ┊            ┊▌speaker …  ┊            ┊            ┊▌Squash      │
-│      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 │20:00 ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
+│      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 │      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 ╰ ● 19:05–20:00 · OQTS speaker event · Family · ⧉ 3 ───────────────────────────────────────────────╯
  WEEK  p Personal ▸ 1 Personal  6 OQTS  │ f Family                                         ? help

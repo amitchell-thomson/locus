@@ -101,6 +101,28 @@ fn default_imported_colour() -> Rgb {
     Rgb::mocha("overlay0")
 }
 
+/// Full-screen calendar layout.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TuiSettings {
+    /// Hours where the week/day grid draws a section divider
+    /// (default: afternoon 12, evening 18, night 22).
+    #[serde(default = "default_section_hours")]
+    pub section_hours: Vec<u32>,
+}
+
+fn default_section_hours() -> Vec<u32> {
+    vec![12, 18, 22]
+}
+
+impl Default for TuiSettings {
+    fn default() -> Self {
+        TuiSettings {
+            section_hours: default_section_hours(),
+        }
+    }
+}
+
 impl Default for OverlaySettings {
     fn default() -> Self {
         OverlaySettings {
@@ -305,6 +327,8 @@ pub struct Config {
     pub deadlines: DeadlineSettings,
     #[serde(default)]
     pub overlays: OverlaySettings,
+    #[serde(default)]
+    pub tui: TuiSettings,
     #[serde(default)]
     pub keys: Vec<KeyDef>,
     #[serde(default)]

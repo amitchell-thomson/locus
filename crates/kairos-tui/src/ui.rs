@@ -442,17 +442,22 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
         }
     }
     let nrows = rows as i64;
-    // Layout: 2 rows per hour (1 if space is short), hours grouped into
-    // 4-hour blocks (00–04, 04–08, 08–12, 12–16, 16–20, 20–24) with one blank
-    // row between blocks. Events crossing a block boundary run through it;
-    // events ending exactly on it stop above it.
-    const BLOCK: i64 = 4 * 60;
+    // Layout: 2 rows per hour (1 if space is short), with a divider row at
+    // each section boundary (config `tui.section_hours`, default 12/18/22:
+    // morning, afternoon, evening, night). Events crossing a boundary run
+    // through it; events ending exactly on it stop above it.
+    let sections: Vec<i64> = app
+        .cfg
+        .tui
+        .section_hours
+        .iter()
+        .filter(|h| (1..24).contains(*h))
+        .map(|h| i64::from(*h) * 60)
+        .collect();
+    let is_boundary = |m: i64| sections.contains(&m);
     let gaps_between = |a: i64, b: i64| -> i64 {
-        // Boundaries strictly inside (a, b).
-        if b <= a {
-            return 0;
-        }
-        (b - 1).div_euclid(BLOCK) - a.div_euclid(BLOCK)
+        // Section boundaries strictly inside (a, b).
+        sections.iter().filter(|&&x| a < x && x < b).count() as i64
     };
     let needed = |a: i64, b: i64, rph: i64| (b - a) / 60 * rph + gaps_between(a, b);
     let usual = if e0 <= e1 {
@@ -512,13 +517,28 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
         let r0 = row_of(s, d);
         let em = mins_of(e, d);
         let mut r1 = row_of_min(em);
-        if rph > 0 && em.rem_euclid(BLOCK) == 0 && em > h0 && em < h1 && r1 - 1 > r0 {
+        if rph > 0 && is_boundary(em) && em > h0 && em < h1 && r1 - 1 > r0 {
             r1 -= 1;
         }
         r1.max(r0 + 1)
     };
     let mut last_label: i64 = -2;
+    // Divider rows: the row just above each section boundary's hour.
+    let divider_rows: Vec<i64> = if rph > 0 {
+        sections
+            .iter()
+            .filter(|&&m| m > h0 && m < h1)
+            .map(|&m| row_of_min(m) - 1)
+            .collect()
+    } else {
+        Vec::new()
+    };
     for r in 0..nrows {
+        if divider_rows.contains(&(r as i64)) {
+            for xx in inner.x + gutter..inner.x + inner.width {
+                buf.set_string(xx, grid_y + r as u16, "┄", Style::default().fg(c("surface0")));
+            }
+        }
         for k in 0..ndays {
             let x = col_x(k);
             buf.set_string(x, grid_y + r as u16, "┊", Style::default().fg(c("surface0")));
@@ -557,6 +577,17 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             .collect();
         let deadlines_first: Vec<(usize, usize, &Cluster)> =
             timed.iter().copied().filter(|t| !is_deadline(&t.2.primary)).collect();
+        // An event running through a divider hides the divider in this column.
+        for &(r0, r1, _) in &deadlines_first {
+            for &dr in &divider_rows {
+                if (r0 as i64) <= dr && dr < r1 as i64 {
+                    let y = grid_y + dr as u16;
+                    for xx in x0..col_x(k + 1) {
+                        buf.set_string(xx, y, " ", Style::default());
+                    }
+                }
+            }
+        }
         for p in lanes(&deadlines_first) {
             let lane_w = (w / p.lanes as u16).max(1);
             let x = x0 + lane_w * p.lane as u16;
@@ -620,7 +651,10 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
                 } else {
                     Style::default().fg(col).add_modifier(Modifier::DIM)
                 };
-                put(buf, x, grid_y + r as u16, lane_w.saturating_sub(1), &body, st);
+                // Pad to the lane so divider dots don't show through the event.
+                let lw = lane_w.saturating_sub(1) as usize;
+                let padded = format!("{}{}", body, " ".repeat(lw.saturating_sub(body.width())));
+                put(buf, x, grid_y + r as u16, lane_w.saturating_sub(1), &padded, st);
             }
         }
         // Timed deadlines: a ⚑ marker line across the column.
@@ -667,9 +701,15 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
         if *d == today {
             let r = row_of(app.now, *d);
             if (0..nrows as i64).contains(&r) {
+                // Now: a peach line across today's column, under any event text.
                 let y = grid_y + r as u16;
-                let xx = col_x(k);
-                buf.set_string(xx, y, "●", Style::default().fg(c("peach")));
+                let st = Style::default().fg(c("peach"));
+                buf.set_string(col_x(k), y, "●", st);
+                for xx in col_x(k) + 1..col_x(k) + col_w_of(k).saturating_sub(1) {
+                    if buf[(xx, y)].symbol().trim().is_empty() || buf[(xx, y)].symbol() == "┄" {
+                        buf.set_string(xx, y, "─", st);
+                    }
+                }
             }
         }
     }

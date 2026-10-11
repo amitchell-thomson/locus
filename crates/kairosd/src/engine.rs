@@ -127,6 +127,9 @@ pub struct Engine {
     pub db: Db,
     pub clock: Clock,
     pub syncer: Box<dyn Syncer>,
+    /// The current request comes from Alec at a keyboard (set per request by
+    /// the HTTP layer; never by MCP). His own edits then skip approval.
+    pub direct: bool,
     pub notifier: Box<dyn Notifier>,
 }
 
@@ -488,7 +491,12 @@ impl Engine {
             .map(|o| self.op_facts(world, o))
             .collect::<Result<Vec<_>>>()?;
         let now = self.now();
-        let (risk, reasons) = match risk::assess(&facts, now) {
+        let assessed = if self.direct && author == Author::Alec {
+            risk::assess_direct(&facts)
+        } else {
+            risk::assess(&facts, now)
+        };
+        let (risk, reasons) = match assessed {
             Assessment::Forbidden { reasons } => return Err(EngineError::Forbidden(reasons)),
             Assessment::Allowed { risk, reasons } => (risk, reasons),
         };
@@ -866,6 +874,7 @@ impl Engine {
                 && req.start.is_none()
                 && req.end.is_none()
                 && req.location.is_none()
+                && req.description.is_none()
                 && req.duration_min.is_none()
             {
                 return Ok(None);
@@ -895,6 +904,10 @@ impl Engine {
             title: req.title.clone(),
             time,
             location: req.location.clone().map(|l| if l.is_empty() { None } else { Some(l) }),
+            description: req
+                .description
+                .clone()
+                .map(|d| if d.is_empty() { None } else { Some(d) }),
             meta: None,
         };
         let after = build::edit_file(&loc.text, uid, &edit, tz, self.now())

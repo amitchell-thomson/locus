@@ -99,6 +99,9 @@ enum Cmd {
         end: Option<String>,
         #[arg(long = "loc")]
         location: Option<String>,
+        /// Notes (shown as the event's notes on the phone).
+        #[arg(long)]
+        notes: Option<String>,
     },
     /// Edit an event.
     Edit {
@@ -113,6 +116,9 @@ enum Cmd {
         dur: Option<String>,
         #[arg(long = "loc")]
         location: Option<String>,
+        /// Notes; "" clears them.
+        #[arg(long)]
+        notes: Option<String>,
         /// Family events: block the scheduler (true/false).
         #[arg(long)]
         blocking: Option<bool>,
@@ -279,7 +285,11 @@ impl Ctx {
         Ok(cache::get(&self.cfg, Some(&self.path), self.now, from, to)?.0)
     }
     fn daemon(&self) -> Result<Daemon> {
-        Ok(Daemon::from_config(&self.cfg)?)
+        // Typed by a person on a terminal → their own edits apply directly.
+        // Scripts and agents (no TTY) still go through the approval policy.
+        let tty =
+            std::io::IsTerminal::is_terminal(&std::io::stdin()) && std::io::IsTerminal::is_terminal(&std::io::stdout());
+        Ok(Daemon::from_config(&self.cfg)?.interactive(tty))
     }
     fn filter(&self, v: &ViewOpts) -> Filter {
         let mut f = Filter::from_config(&self.cfg);
@@ -383,6 +393,7 @@ fn run() -> Result<()> {
             dur,
             end,
             location,
+            notes,
         } => {
             let req = api::CreateEventReq {
                 title,
@@ -394,6 +405,7 @@ fn run() -> Result<()> {
                     .map_err(|e| anyhow!("{e}"))?,
                 key,
                 location,
+                description: notes,
                 ..Default::default()
             };
             let d = ctx.daemon()?;
@@ -405,6 +417,7 @@ fn run() -> Result<()> {
             when,
             dur,
             location,
+            notes,
             blocking,
         } => {
             let (inst, _) = resolve_uid(&ctx, &uid)?;
@@ -417,6 +430,7 @@ fn run() -> Result<()> {
                     .transpose()
                     .map_err(|e| anyhow!("{e}"))?,
                 location,
+                description: notes,
                 blocking,
             };
             let d = ctx.daemon()?;

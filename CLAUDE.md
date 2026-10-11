@@ -20,6 +20,7 @@ Data flow: iCloud ⇄ vdirsyncer (rw on compute-node, **read-only** on the Mac) 
 - **Single writer**: only kairosd writes to iCloud. The Mac's vdirsyncer remote storage is `read_only = true`.
 - **`live = false` by default**: new events are redirected into `test_calendar` (`ZZ-kairos-test`, intended key kept as `X-KAIROS-ORIGIN-KEY`); ops touching any other calendar are refused (`EngineError::LiveDisabled`). Checked at propose *and* apply.
 - **Risk is computed, never supplied** (`risk::assess` over facts the engine gathers). Order: forbidden → high triggers → low. No approve tool in MCP.
+- **Alec's own interactive edits skip approval** (Alec's request, 2026-10-11): the TUI and the CLI *on a TTY* send `x-kairos-interactive: 1`; kairosd then uses `risk::assess_direct` (forbidden rules only). Non-interactive callers (scripts, Claude via Bash — no TTY) and MCP (always `Author::Claude`, never direct) get the full policy. The header is trusted like the bearer token: it guards against agents, not against someone holding the token.
 - **Every write is a changeset** with full pre/post images. Apply checks preconditions (item unchanged since proposal, semantic comparison); undo refuses with a diff if edited elsewhere. Semantic comparison ignores DTSTAMP/LAST-MODIFIED/SEQUENCE/X-* so iCloud's cosmetic rewrites don't block undo.
 - **Dedup is view-only.** Never deletes; `dedup_never_drops_instances` test.
 - **All-day DTEND is exclusive.** Ambiguous local times = first occurrence; non-existent = pre-gap offset (RFC 5545 §3.3.5, `time::resolve_local`).
@@ -80,4 +81,4 @@ cargo run -p kairos-tui --example frame -- <config> <rfc3339-now> <w> <h> [keys]
 - The CLI parses natural dates locally (good errors), sends RFC 3339 to the daemon.
 - `next --tmux` is an inline segment for after the date in `status-right` (thin `U+E0B3` separator, like starship).
 - Writes always go through kairosd, even on compute-node, so there's one changeset log.
-- Changesets with > 8 ops are high-risk per spec; a big initial plan therefore needs one approval.
+- Changesets with > 8 ops are high-risk per spec; a big initial plan therefore needs one approval (unless Alec typed it interactively).

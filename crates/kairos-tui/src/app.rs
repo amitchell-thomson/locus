@@ -15,6 +15,8 @@ use kairos_core::view::{Filter, view_with};
 use kairos_store::cache::Index;
 use kairos_store::client::{Daemon, Rejected};
 
+use crate::form::{Form, FormAction, FormKind, describe_span, when_prefill};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
     Week,
@@ -38,23 +40,15 @@ impl View {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PromptKind {
-    Add,
-    Edit,
     Move,
-    Rekey,
     Search,
-    TaskAdd,
 }
 
 impl PromptKind {
     pub fn label(&self) -> &'static str {
         match self {
-            PromptKind::Add => "add (title @ when [#key] [for 90m])",
-            PromptKind::Edit => "rename",
             PromptKind::Move => "move to (when)",
-            PromptKind::Rekey => "key",
             PromptKind::Search => "/",
-            PromptKind::TaskAdd => "task (title #key ~4h [due fri 17:00])",
         }
     }
 }
@@ -71,6 +65,7 @@ pub enum Confirm {
 pub enum Mode {
     Normal,
     Prompt(PromptKind, String),
+    Form(Form),
     Confirm(Confirm),
     Help,
     Checkin(usize),
@@ -106,6 +101,8 @@ pub struct App {
     pub quit: bool,
     /// Set after a write so the runner kicks a sync + reload.
     pub wants_sync: bool,
+    /// Week view shows Mon–Fri only (wider columns).
+    pub work_week: bool,
 }
 
 pub fn midnight(d: NaiveDate, tz: Tz) -> DateTime<Utc> {
@@ -134,6 +131,7 @@ impl App {
             daemon_error: None,
             quit: false,
             wants_sync: false,
+            work_week: false,
             cfg,
         }
     }
@@ -309,6 +307,11 @@ impl App {
         let mode = std::mem::replace(&mut self.mode, Mode::Normal);
         match mode {
             Mode::Help => {}
+            Mode::Form(mut form) => match form.key(k) {
+                FormAction::Continue => self.mode = Mode::Form(form),
+                FormAction::Cancel => self.message = None,
+                FormAction::Submit => self.submit_form(form),
+            },
             Mode::Prompt(kind, mut buf) => match k {
                 Key::Esc => {
                     if kind == PromptKind::Search {
@@ -417,14 +420,25 @@ impl App {
                 self.set_message("syncing…", false);
             }
             Key::Char('a') => {
-                self.mode = Mode::Prompt(
-                    if self.view == View::Tasks {
-                        PromptKind::TaskAdd
+                let keys = self.key_names();
+                let default = self.cfg.default_key().map(|k| k.name.clone()).unwrap_or_default();
+                self.message = None;
+                self.mode = Mode::Form(if self.view == View::Tasks {
+                    Form::add_task(keys, &default)
+                } else {
+                    Form::add_event(keys, &default, when_prefill(self.cursor, self.today()))
+                });
+            }
+            Key::Char('w') => {
+                self.work_week = !self.work_week;
+                self.set_message(
+                    if self.work_week {
+                        "week: Mon–Fri"
                     } else {
-                        PromptKind::Add
+                        "week: Mon–Sun"
                     },
-                    String::new(),
-                )
+                    false,
+                );
             }
             Key::Char('u') => {
                 if let Some(d) = &self.daemon
@@ -492,9 +506,15 @@ impl App {
                 let Some(c) = self.selected() else { return };
                 let i = c.primary.clone();
                 match k {
-                    Key::Char('e') => self.mode = Mode::Prompt(PromptKind::Edit, i.title.clone()),
+                    Key::Char('e') | Key::Char('K') => {
+                        let mut f = Form::edit_event(self.key_names(), &i, self.tz);
+                        if k == Key::Char('K') {
+                            f.focus_on("Calendar");
+                        }
+                        self.message = None;
+                        self.mode = Mode::Form(f);
+                    }
                     Key::Char('m') => self.mode = Mode::Prompt(PromptKind::Move, String::new()),
-                    Key::Char('K') => self.mode = Mode::Prompt(PromptKind::Rekey, String::new()),
                     Key::Char('d') => {
                         self.mode = Mode::Confirm(Confirm::Delete);
                         self.set_message(format!("delete “{}”? y/N", i.title), false);
@@ -522,10 +542,7 @@ impl App {
                     }
                     Key::Char('s') => {
                         self.mode = Mode::Confirm(Confirm::Share);
-                        self.set_message(
-                            format!("share “{}” to Family (moves it; needs approval)? y/N", i.title),
-                            false,
-                        );
+                        self.set_message(format!("share “{}” to Family (moves it)? y/N", i.title), false);
                     }
                     _ => {}
                 }
@@ -621,84 +638,168 @@ impl App {
             PromptKind::Search => {
                 self.search = if buf.is_empty() { None } else { Some(buf) };
             }
-            PromptKind::Add => match parse_add(&buf) {
-                Some((title, when, key, dur)) => match self.when_str(&when) {
-                    Ok(start) => {
-                        let req = api::CreateEventReq {
-                            title,
-                            start,
-                            duration_min: dur,
-                            key,
-                            ..Default::default()
-                        };
-                        if let Some(r) = self.with_daemon(|d| d.create_event(&req)) {
-                            self.write_result(r);
-                        }
-                    }
-                    Err(e) => self.set_message(e, true),
-                },
-                None => self.set_message("format: title @ when [#key] [for 90m]", true),
-            },
-            PromptKind::TaskAdd => match parse_task(&buf) {
-                Some((title, key, est, due)) => {
-                    let due = match due.map(|d| self.when_str(&d)).transpose() {
-                        Ok(d) => d,
-                        Err(e) => return self.set_message(e, true),
-                    };
-                    let req = api::CreateTaskReq {
-                        title,
-                        key,
-                        estimate_min: est,
-                        due,
-                        ..Default::default()
-                    };
-                    if let Some(r) = self.with_daemon(|d| d.create_task(&req)) {
-                        match r {
-                            Ok(Ok(t)) => {
-                                let short = t
-                                    .plan
-                                    .as_ref()
-                                    .and_then(|p| p.shortfalls.first())
-                                    .map(|s| format!(" · ! {}", s.message));
-                                self.set_message(
-                                    format!("✓ task {}{}", t.task.title, short.clone().unwrap_or_default()),
-                                    short.is_some(),
-                                );
-                                self.wants_sync = true;
-                                self.refresh_remote();
-                            }
-                            Ok(Err(e)) => self.set_message(e.to_string(), true),
-                            Err(e) => self.set_message(e.to_string(), true),
-                        }
-                    }
-                }
-                None => self.set_message("format: title #key ~4h [due fri 17:00]", true),
-            },
-            PromptKind::Edit | PromptKind::Move | PromptKind::Rekey => {
+            PromptKind::Move => {
                 let Some(cl) = self.selected() else { return };
                 let i = cl.primary;
-                let r = match kind {
-                    PromptKind::Rekey => self.with_daemon(|d| d.move_event(&i.source, &i.uid, &buf)),
-                    PromptKind::Edit => {
+                let r = match self.when_str(&buf) {
+                    Ok(start) => {
                         let req = api::UpdateEventReq {
-                            title: Some(buf.clone()),
+                            start: Some(start),
                             ..Default::default()
                         };
                         self.with_daemon(|d| d.update_event(&i.source, &i.uid, &req).map(|r| r.map(to_write)))
                     }
-                    _ => match self.when_str(&buf) {
-                        Ok(start) => {
-                            let req = api::UpdateEventReq {
-                                start: Some(start),
-                                ..Default::default()
-                            };
-                            self.with_daemon(|d| d.update_event(&i.source, &i.uid, &req).map(|r| r.map(to_write)))
-                        }
-                        Err(e) => return self.set_message(e, true),
-                    },
+                    Err(e) => return self.set_message(e, true),
                 };
                 if let Some(r) = r {
                     self.write_result(r);
+                }
+            }
+        }
+    }
+
+    pub fn key_names(&self) -> Vec<String> {
+        let mut keys = self.cfg.keys.clone();
+        keys.sort_by_key(|k| k.index);
+        keys.into_iter().map(|k| k.name).collect()
+    }
+
+    /// How the form's time fields were understood, or why they weren't.
+    pub fn form_preview(&self, f: &Form) -> Result<String, String> {
+        let key = f.get("Calendar");
+        match f.kind {
+            FormKind::AddTask => {
+                let est =
+                    dates::parse_minutes(f.get("Estimate")).map_err(|_| "Estimate: e.g. 4h or 90m".to_string())?;
+                let due = match f.get("Due") {
+                    "" => "no deadline".to_string(),
+                    d => match dates::parse_when(d, self.today()).map_err(|e| e.to_string())? {
+                        When::Date(d) => format!("due {}", d.format("%a %-d %b")),
+                        When::DateTime(n) => format!("due {}", n.format("%a %-d %b %H:%M")),
+                    },
+                };
+                Ok(format!(
+                    "{} of work · {due} · {key}",
+                    crate::form::fmt_minutes(i64::from(est))
+                ))
+            }
+            _ => {
+                let when = f.get("When");
+                if when.is_empty() {
+                    return Err("When: e.g. tue 19:00".into());
+                }
+                match dates::parse_when(when, self.today()).map_err(|e| e.to_string())? {
+                    When::Date(d) => Ok(format!("{} · all day · {key}", d.format("%a %-d %b"))),
+                    When::DateTime(n) => {
+                        let dur = match f.get("Duration") {
+                            "" => 60,
+                            d => dates::parse_minutes(d).map_err(|_| "Duration: e.g. 90m, 1h30, 2h".to_string())?,
+                        };
+                        let s = resolve_local(n, self.tz);
+                        let e = s + Duration::minutes(i64::from(dur));
+                        Ok(format!("{} · {key}", describe_span(s, e, self.tz)))
+                    }
+                }
+            }
+        }
+    }
+
+    fn submit_form(&mut self, f: Form) {
+        if f.get("Title").is_empty() {
+            self.set_message("Title is empty", true);
+            self.mode = Mode::Form(f);
+            return;
+        }
+        if let Err(e) = self.form_preview(&f) {
+            self.set_message(e, true);
+            self.mode = Mode::Form(f);
+            return;
+        }
+        let opt = |s: &str| (!s.is_empty()).then(|| s.to_string());
+        let dur = |s: &str| dates::parse_minutes(s).ok();
+        match f.kind.clone() {
+            FormKind::AddEvent => {
+                let start = match self.when_str(f.get("When")) {
+                    Ok(s) => s,
+                    Err(e) => return self.set_message(e, true),
+                };
+                let req = api::CreateEventReq {
+                    title: f.get("Title").to_string(),
+                    start,
+                    duration_min: dur(f.get("Duration")),
+                    key: opt(f.get("Calendar")),
+                    location: opt(f.get("Location")),
+                    description: opt(f.get("Notes")),
+                    ..Default::default()
+                };
+                if let Some(r) = self.with_daemon(|d| d.create_event(&req)) {
+                    self.write_result(r);
+                }
+            }
+            FormKind::EditEvent { source, uid } => {
+                let time_changed = f.changed("When") || f.changed("Duration");
+                let start = if time_changed {
+                    match self.when_str(f.get("When")) {
+                        Ok(s) => Some(s),
+                        Err(e) => return self.set_message(e, true),
+                    }
+                } else {
+                    None
+                };
+                let changed = |l: &str| f.changed(l).then(|| f.get(l).to_string());
+                let req = api::UpdateEventReq {
+                    title: changed("Title"),
+                    start,
+                    duration_min: if time_changed { dur(f.get("Duration")) } else { None },
+                    location: changed("Location"),
+                    description: changed("Notes"),
+                    ..Default::default()
+                };
+                let rekey = f.changed("Calendar").then(|| f.get("Calendar").to_string());
+                if req == api::UpdateEventReq::default() && rekey.is_none() {
+                    return self.set_message("no changes", false);
+                }
+                if req != api::UpdateEventReq::default()
+                    && let Some(r) = self.with_daemon(|d| d.update_event(&source, &uid, &req).map(|r| r.map(to_write)))
+                {
+                    self.write_result(r);
+                }
+                if let Some(k) = rekey
+                    && let Some(r) = self.with_daemon(|d| d.move_event(&source, &uid, &k))
+                {
+                    self.write_result(r);
+                }
+            }
+            FormKind::AddTask => {
+                let due = match opt(f.get("Due")).map(|d| self.when_str(&d)).transpose() {
+                    Ok(d) => d,
+                    Err(e) => return self.set_message(e, true),
+                };
+                let req = api::CreateTaskReq {
+                    title: f.get("Title").to_string(),
+                    key: f.get("Calendar").to_string(),
+                    estimate_min: dur(f.get("Estimate")).unwrap_or(60),
+                    due,
+                    ..Default::default()
+                };
+                if let Some(r) = self.with_daemon(|d| d.create_task(&req)) {
+                    match r {
+                        Ok(Ok(t)) => {
+                            let short = t
+                                .plan
+                                .as_ref()
+                                .and_then(|p| p.shortfalls.first())
+                                .map(|s| format!(" · ! {}", s.message));
+                            self.set_message(
+                                format!("✓ task {}{}", t.task.title, short.clone().unwrap_or_default()),
+                                short.is_some(),
+                            );
+                            self.wants_sync = true;
+                            self.refresh_remote();
+                        }
+                        Ok(Err(e)) => self.set_message(e.to_string(), true),
+                        Err(e) => self.set_message(e.to_string(), true),
+                    }
                 }
             }
         }
@@ -803,6 +904,7 @@ pub enum Key {
     Enter,
     Esc,
     Tab,
+    BackTab,
     Backspace,
     Up,
     Down,
@@ -810,29 +912,65 @@ pub enum Key {
     Right,
 }
 
-/// What overlays/keys look like in the status bar.
-pub fn overlay_flags(app: &App) -> Vec<(String, bool, kairos_core::colour::Rgb)> {
+/// Status-bar legend: (toggle key, name, shown?, colour, group).
+pub fn overlay_flags(app: &App) -> Vec<(String, String, bool, kairos_core::colour::Rgb, u8)> {
+    let name_of = |o: Overlay, fallback: &str| {
+        let names: Vec<String> = app
+            .cfg
+            .sources
+            .iter()
+            .filter(|s| s.overlay == o)
+            .map(|s| s.name.clone().unwrap_or_else(|| s.id.clone()))
+            .collect();
+        if names.is_empty() {
+            fallback.to_string()
+        } else {
+            names.join("+")
+        }
+    };
     let mut v = vec![
         (
-            "P".to_string(),
+            "p".to_string(),
+            "Mine".to_string(),
             app.filter.personal,
             kairos_core::colour::Rgb::mocha("lavender"),
+            0,
         ),
-        ("F".to_string(), app.filter.family, app.cfg.overlays.family_colour),
         (
-            "b".to_string(),
-            app.filter.background,
-            app.cfg.overlays.background_colour,
+            "f".to_string(),
+            "Family".to_string(),
+            app.filter.family,
+            app.cfg.overlays.family_colour,
+            0,
         ),
-        ("i".to_string(), app.filter.imported, app.cfg.overlays.imported_colour),
     ];
+    if app.cfg.sources.iter().any(|s| s.overlay == Overlay::Background) {
+        v.push((
+            "b".to_string(),
+            name_of(Overlay::Background, "holidays"),
+            app.filter.background,
+            kairos_core::colour::Rgb::mocha("peach"),
+            0,
+        ));
+    }
+    if app.cfg.sources.iter().any(|s| s.overlay == Overlay::Imported) {
+        v.push((
+            "i".to_string(),
+            name_of(Overlay::Imported, "imported"),
+            app.filter.imported,
+            app.cfg.overlays.imported_colour,
+            0,
+        ));
+    }
     let mut keys = app.cfg.keys.clone();
     keys.sort_by_key(|k| k.index);
     for k in keys {
         v.push((
             k.index.to_string(),
+            k.name.clone(),
             !app.filter.hidden_keys.contains(&k.name.to_lowercase()),
             k.colour,
+            1,
         ));
     }
     v

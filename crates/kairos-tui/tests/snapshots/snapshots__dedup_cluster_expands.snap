@@ -1,34 +1,35 @@
 ---
 source: crates/kairos-tui/tests/snapshots.rs
+assertion_line: 137
 expression: s
 ---
 ╭──────────────────────────────────── Week 42 · 12 Oct–18 Oct ─────────────────────────────────────╮
 │       Mon 12       Tue 13       Wed 14       Thu 15       Fri 16       Sat 17       Sun 18       │
 │──────────────────────────────────────────────────────────────────────────────────────────────────│
 │07:00 ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
-│      ┊            ┊            ┊            ●            ┊            ┊            ┊             │
+│08:00 ┊            ┊            ┊            ●            ┊            ┊            ┊             │
 │      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 │09:00 ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
-│      ┊            ┊▌B4 Lectu…  ┊            ┊            ┊▌A1… ▌A2…   ┊            ┊             │
+│10:00 ┊            ┊▌B4         ┊            ┊            ┊▌A1  ▌A2    ┊            ┊             │
 │      ┊          ╭─────────────────────────── event ────────────────────────────╮   ┊             │
 │11:00 ┊          │OQTS speaker event                                            │   ┊             │
-│      ┊          │Thu 15 Oct 19:05 – 20:00                                      │   ┊             │
+│12:00 ┊          │Thu 15 Oct 19:05 – 20:00                                      │   ┊             │
 │      ┊          │family · —                                                    │   ┊             │
 │13:00 ┊          │                                                              │   ┊             │
-│      ┊          │⧉ 3 copies (showing the highest-precedence one)               │   ┊             │
+│14:00 ┊          │⧉ 3 copies (showing the highest-precedence one)               │   ┊             │
 │      ┊          │● family family · OQTS speaker event                          │   ┊             │
 │15:00 ┊          │● personal personal · OQTS Speaker Event                      │   ┊             │
 │      ┊          │● oqts personal · OQTS Speaker Event                          │   ┊             │
 │16:00 ┊          │                                                              │   ┊             │
-│      ┊          │uid family-dentist@kairos.test                                │   ┊             │
+│17:00 ┊          │uid family-dentist@kairos.test                                │   ┊             │
 │      ┊          ╰──────────────────────────────────────────────────────────────╯   ┊             │
 │18:00 ┊            ┊            ┊            ┊            ┊▌OQTS com…  ┊            ┊             │
-│      ┊            ┊            ┊            ┊▌OQTS spe…  ┊▌           ┊            ┊▌Sunday S…   │
-│      ┊            ┊            ┊            ┊▌           ┊            ┊            ┊▌            │
-│20:00 ┊            ┊            ┊            ┊▌           ┊            ┊            ┊▌            │
-│      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
+│19:00 ┊            ┊            ┊            ┊▌OQTS       ┊            ┊            ┊▌19:00       │
+│      ┊            ┊            ┊            ┊▌speaker …  ┊            ┊            ┊▌Sunday Sq…  │
+│20:00 ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
+│21:00 ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 │      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 │22:00 ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 │      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
- WEEK  P F b i 1 6                                                                         ? help
+╰ ● 19:05–20:00 · OQTS speaker event · Family · ⧉ 3 ───────────────────────────────────────────────╯
+ WEEK  p Mine  f Family  │ 1 Personal  6 OQTS                                              ? help

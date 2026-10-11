@@ -41,6 +41,9 @@ pub enum SourceKind {
 #[serde(deny_unknown_fields)]
 pub struct Source {
     pub id: String,
+    /// Display name (status-bar legend); defaults to the id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     pub kind: SourceKind,
     /// iCloud: the calendar's display name (matched against vdir `displayname` files).
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -110,6 +110,30 @@ fn author(h: &HeaderMap) -> Author {
         .unwrap_or(Author::Alec)
 }
 
+/// Alec typing in the TUI / on a terminal (see `Daemon::interactive`).
+fn direct(h: &HeaderMap) -> bool {
+    author(h) == Author::Alec
+        && h.get("x-kairos-interactive")
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v.trim() == "1")
+}
+
+/// [`with_engine`] for writes: marks Alec's interactive requests as direct.
+pub async fn with_engine_as<T: Send + 'static>(
+    st: &AppState,
+    h: &HeaderMap,
+    f: impl FnOnce(&mut Engine) -> Result<T, EngineError> + Send + 'static,
+) -> Result<T, HttpError> {
+    let d = direct(h);
+    with_engine(st, move |e| {
+        e.direct = d;
+        let r = f(e);
+        e.direct = false;
+        r
+    })
+    .await
+}
+
 async fn auth(State(st): State<AppState>, req: Request, next: Next) -> Response {
     let ok = req
         .headers()
@@ -234,7 +258,7 @@ async fn create_event(
     Json(req): Json<api::CreateEventReq>,
 ) -> HResult<WriteResult> {
     let a = author(&h);
-    let cs = with_engine(&st, move |e| e.create_event(a, &req)).await?;
+    let cs = with_engine_as(&st, &h, move |e| e.create_event(a, &req)).await?;
     Ok(Json(WriteResult::from(&cs)))
 }
 
@@ -245,7 +269,7 @@ async fn update_event(
     Json(req): Json<api::UpdateEventReq>,
 ) -> Result<Response, HttpError> {
     let a = author(&h);
-    let cs = with_engine(&st, move |e| e.update_event(a, Some(&source), &uid, &req)).await?;
+    let cs = with_engine_as(&st, &h, move |e| e.update_event(a, Some(&source), &uid, &req)).await?;
     Ok(match cs {
         Some(cs) => Json(WriteResult::from(&cs)).into_response(),
         None => Json(serde_json::json!({"ok": true, "summary": "sidecar flag updated"})).into_response(),
@@ -258,7 +282,7 @@ async fn delete_event(
     Path((source, uid)): Path<(String, String)>,
 ) -> HResult<WriteResult> {
     let a = author(&h);
-    let cs = with_engine(&st, move |e| e.delete_event(a, Some(&source), &uid)).await?;
+    let cs = with_engine_as(&st, &h, move |e| e.delete_event(a, Some(&source), &uid)).await?;
     Ok(Json(WriteResult::from(&cs)))
 }
 
@@ -269,7 +293,7 @@ async fn move_event(
     Json(req): Json<api::KeyReq>,
 ) -> HResult<WriteResult> {
     let a = author(&h);
-    let cs = with_engine(&st, move |e| e.move_event(a, Some(&source), &uid, &req.key)).await?;
+    let cs = with_engine_as(&st, &h, move |e| e.move_event(a, Some(&source), &uid, &req.key)).await?;
     Ok(Json(WriteResult::from(&cs)))
 }
 
@@ -280,7 +304,7 @@ async fn move_events(
 ) -> HResult<WriteResult> {
     let a = author(&h);
     let evs: Vec<(Option<String>, String)> = req.events.into_iter().map(|r| (Some(r.source), r.uid)).collect();
-    let cs = with_engine(&st, move |e| e.move_events(a, &evs, &req.key)).await?;
+    let cs = with_engine_as(&st, &h, move |e| e.move_events(a, &evs, &req.key)).await?;
     Ok(Json(WriteResult::from(&cs)))
 }
 
@@ -290,7 +314,7 @@ async fn share_family(
     Path((source, uid)): Path<(String, String)>,
 ) -> HResult<WriteResult> {
     let a = author(&h);
-    let cs = with_engine(&st, move |e| e.share_to_family(a, Some(&source), &uid)).await?;
+    let cs = with_engine_as(&st, &h, move |e| e.share_to_family(a, Some(&source), &uid)).await?;
     Ok(Json(WriteResult::from(&cs)))
 }
 
@@ -301,13 +325,13 @@ async fn adopt(
     Json(req): Json<api::KeyReq>,
 ) -> HResult<WriteResult> {
     let a = author(&h);
-    let cs = with_engine(&st, move |e| e.adopt(a, &uid, &req.key)).await?;
+    let cs = with_engine_as(&st, &h, move |e| e.adopt(a, &uid, &req.key)).await?;
     Ok(Json(WriteResult::from(&cs)))
 }
 
 async fn import(State(st): State<AppState>, h: HeaderMap, Json(req): Json<api::ImportReq>) -> HResult<WriteResult> {
     let a = author(&h);
-    let cs = with_engine(&st, move |e| e.import_ics(a, &req.ics, &req.key, &req.name)).await?;
+    let cs = with_engine_as(&st, &h, move |e| e.import_ics(a, &req.ics, &req.key, &req.name)).await?;
     Ok(Json(WriteResult::from(&cs)))
 }
 
@@ -341,7 +365,7 @@ async fn create_task(
     Json(req): Json<api::CreateTaskReq>,
 ) -> HResult<api::TaskResp> {
     let a = author(&h);
-    Ok(Json(with_engine(&st, move |e| e.create_task(a, &req)).await?))
+    Ok(Json(with_engine_as(&st, &h, move |e| e.create_task(a, &req)).await?))
 }
 
 async fn update_task(
@@ -351,7 +375,9 @@ async fn update_task(
     Json(req): Json<api::UpdateTaskReq>,
 ) -> HResult<api::TaskResp> {
     let a = author(&h);
-    Ok(Json(with_engine(&st, move |e| e.update_task(a, &id, &req)).await?))
+    Ok(Json(
+        with_engine_as(&st, &h, move |e| e.update_task(a, &id, &req)).await?,
+    ))
 }
 
 async fn complete_task(
@@ -362,12 +388,14 @@ async fn complete_task(
 ) -> HResult<api::TaskResp> {
     let a = author(&h);
     let actual = body.and_then(|b| b.0.actual_min);
-    Ok(Json(with_engine(&st, move |e| e.complete_task(a, &id, actual)).await?))
+    Ok(Json(
+        with_engine_as(&st, &h, move |e| e.complete_task(a, &id, actual)).await?,
+    ))
 }
 
 async fn drop_task(State(st): State<AppState>, h: HeaderMap, Path(id): Path<String>) -> HResult<api::TaskResp> {
     let a = author(&h);
-    Ok(Json(with_engine(&st, move |e| e.drop_task(a, &id)).await?))
+    Ok(Json(with_engine_as(&st, &h, move |e| e.drop_task(a, &id)).await?))
 }
 
 async fn create_deadline(
@@ -376,7 +404,7 @@ async fn create_deadline(
     Json(req): Json<api::DeadlineReq>,
 ) -> HResult<WriteResult> {
     let a = author(&h);
-    let cs = with_engine(&st, move |e| e.create_deadline(a, &req)).await?;
+    let cs = with_engine_as(&st, &h, move |e| e.create_deadline(a, &req)).await?;
     Ok(Json(WriteResult::from(&cs)))
 }
 

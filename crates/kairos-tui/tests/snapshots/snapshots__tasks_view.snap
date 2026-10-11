@@ -1,5 +1,6 @@
 ---
 source: crates/kairos-tui/tests/snapshots.rs
+assertion_line: 241
 expression: "render_to_string(&a, 110, 12)"
 ---
 ╭────────────────────────────────────────────────── Tasks ───────────────────────────────────────────────────╮
@@ -13,4 +14,4 @@ expression: "render_to_string(&a, 110, 12)"
 │                                                                                                            │
 │                                                                                                            │
 ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- TASKS  P F b i 1 6                                                                                  ? help
+ TASKS  p Mine  f Family  │ 1 Personal  6 OQTS                                                       ? help

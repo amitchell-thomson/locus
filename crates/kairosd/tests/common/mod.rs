@@ -160,6 +160,7 @@ overlay = "imported"
             clock: Arc::new(move || *now.lock().unwrap()),
             syncer: Box::new(self.rec.clone()),
             notifier: Box::new(self.rec.clone()),
+            direct: false,
         }
     }
 

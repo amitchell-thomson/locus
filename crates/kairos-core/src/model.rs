@@ -252,6 +252,9 @@ pub struct Instance {
     pub title: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
+    /// DESCRIPTION (notes).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     pub span: Span,
     pub recurring: bool,
     /// TRANSP:TRANSPARENT (doesn't block time).
@@ -298,6 +301,7 @@ pub struct EventData {
     pub uid: String,
     pub summary: String,
     pub location: Option<String>,
+    pub description: Option<String>,
     pub start: DtValue,
     /// Exclusive end, already computed from DTEND / DURATION / defaults.
     pub end: DtValue,

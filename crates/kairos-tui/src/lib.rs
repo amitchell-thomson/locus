@@ -2,6 +2,7 @@
 //! start, works offline); writes go to kairosd.
 
 pub mod app;
+pub mod form;
 pub mod ui;
 
 use app::{App, Key, Mode};
@@ -59,6 +60,7 @@ fn map_key(k: event::KeyEvent) -> Option<Key> {
         KeyCode::Enter => Key::Enter,
         KeyCode::Esc => Key::Esc,
         KeyCode::Tab => Key::Tab,
+        KeyCode::BackTab => Key::BackTab,
         KeyCode::Backspace => Key::Backspace,
         KeyCode::Up => Key::Up,
         KeyCode::Down => Key::Down,
@@ -81,7 +83,7 @@ fn spawn_sync(cfg: &Config, done: mpsc::Sender<()>) {
 pub fn run(cfg: Config, path: PathBuf) -> Result<(), String> {
     let now = Utc::now();
     let mut app = load(cfg.clone(), &path, now)?;
-    app.daemon = Daemon::from_config(&cfg).ok();
+    app.daemon = Daemon::from_config(&cfg).ok().map(|d| d.interactive(true));
     let (tx, rx) = mpsc::channel::<()>();
     let mut terminal = ratatui::try_init().map_err(|e| e.to_string())?;
     let result = (|| -> Result<(), String> {

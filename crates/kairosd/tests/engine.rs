@@ -57,6 +57,37 @@ fn not_live_refuses_to_touch_real_calendars() {
 // ------------------------------------------------------------ low risk
 
 #[test]
+fn alecs_own_interactive_edits_skip_approval_but_not_the_hard_rules() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let mut evs = Vec::new();
+    for k in 0..10 {
+        let cs = e
+            .create_event(
+                Author::Claude,
+                &ev("Squash", &format!("2026-10-{:02} 19:00", 13 + k), "Sport"),
+            )
+            .unwrap();
+        match &cs.ops[0] {
+            kairos_core::changeset::Op::CreateEvent { uid, .. } => evs.push((None, uid.clone())),
+            _ => unreachable!(),
+        }
+    }
+    // Same 10-op move: pending for a script / Claude, applied when Alec typed it.
+    let cs = e.move_events(Author::Alec, &evs, "Engineering").unwrap();
+    assert_eq!(cs.status, Status::Pending);
+    e.reject(&cs.id).unwrap();
+    e.direct = true;
+    let cs = e.move_events(Author::Alec, &evs, "Engineering").unwrap();
+    assert_eq!(cs.status, Status::Applied);
+    assert!(cs.reasons.is_empty());
+    // Direct never applies to Claude.
+    let cs = e.move_events(Author::Claude, &evs, "Sport").unwrap();
+    assert_eq!(cs.status, Status::Pending);
+    e.direct = false;
+}
+
+#[test]
 fn rekeying_many_events_is_one_changeset_with_one_undo() {
     let env = Env::new(true);
     let mut e = env.engine();

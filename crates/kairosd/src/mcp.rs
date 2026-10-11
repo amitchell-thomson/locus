@@ -153,6 +153,8 @@ pub struct UpdateEventArgs {
     pub duration_min: Option<u32>,
     /// Empty string clears it.
     pub location: Option<String>,
+    /// Notes (DESCRIPTION). Empty string clears them.
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -300,7 +302,7 @@ impl KairosMcp {
     }
 
     #[tool(
-        description = "Change an event's title/time/location. Events Alec created himself (phone/Calendar.app), recurring events and imminent events are queued for his approval."
+        description = "Change an event's title/time/location/notes. Events Alec created himself (phone/Calendar.app), recurring events and imminent events are queued for his approval."
     )]
     async fn update_event(&self, Parameters(a): Parameters<UpdateEventArgs>) -> Result<CallToolResult, ErrorData> {
         let req = api::UpdateEventReq {
@@ -309,6 +311,7 @@ impl KairosMcp {
             end: a.end,
             duration_min: a.duration_min,
             location: a.location,
+            description: a.description,
             blocking: None,
         };
         self.run(move |e| {

@@ -161,6 +161,20 @@ fn high_reasons(op: &OpFacts, now: DateTime<Utc>) -> Vec<String> {
     r
 }
 
+/// Alec's own edits, typed by him (TUI or CLI on a terminal): only the
+/// hard rules apply. Approval exists to check *other* actors' changes;
+/// asking him to approve what he just typed would be noise.
+pub fn assess_direct(ops: &[OpFacts]) -> Assessment {
+    let forb: Vec<String> = ops.iter().filter_map(forbidden).collect();
+    if !forb.is_empty() {
+        return Assessment::Forbidden { reasons: forb };
+    }
+    Assessment::Allowed {
+        risk: Risk::Low,
+        reasons: Vec::new(),
+    }
+}
+
 /// Assess a whole changeset.
 pub fn assess(ops: &[OpFacts], now: DateTime<Utc>) -> Assessment {
     let forb: Vec<String> = ops.iter().filter_map(forbidden).collect();

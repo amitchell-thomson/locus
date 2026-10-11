@@ -259,3 +259,29 @@ fn writes_without_daemon_explain_themselves() {
     let (m, err) = a.message.clone().unwrap();
     assert!(err && m.contains("kairosd"), "{m}");
 }
+
+#[test]
+fn add_form_with_live_preview() {
+    let (mut a, _t) = app("2026-10-19T08:00:00+01:00");
+    a.key(Key::Char('a'));
+    for ch in "Squash".chars() {
+        a.key(Key::Char(ch));
+    }
+    a.key(Key::Tab);
+    for ch in "19:00".chars() {
+        a.key(Key::Char(ch));
+    }
+    a.key(Key::Tab);
+    for ch in "90m".chars() {
+        a.key(Key::Char(ch));
+    }
+    insta::assert_snapshot!(render_to_string(&a, 100, 30));
+}
+
+#[test]
+fn work_week_shows_five_wider_days() {
+    let (mut a, _t) = app("2026-10-22T08:00:00+01:00");
+    a.key(Key::Char('w'));
+    let s = render_to_string(&a, 140, 34);
+    assert!(s.contains("Fri 23") && !s.contains("Sat 24"), "{s}");
+}

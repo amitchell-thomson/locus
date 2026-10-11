@@ -87,6 +87,7 @@ pub fn event_data(c: &Component, source: &str, warnings: &mut Vec<Warning>) -> O
         uid,
         summary: c.text("SUMMARY").unwrap_or_default(),
         location: c.text("LOCATION").filter(|l| !l.trim().is_empty()),
+        description: c.text("DESCRIPTION").filter(|l| !l.trim().is_empty()),
         start,
         end,
         rrules: c.props_named("RRULE").map(|p| p.value.clone()).collect(),

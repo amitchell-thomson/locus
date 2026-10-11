@@ -1,5 +1,6 @@
 ---
 source: crates/kairos-tui/tests/snapshots.rs
+assertion_line: 127
 expression: "render_to_string(&a, 100, 40)"
 ---
 ╭───────────────────────────────────── Agenda · 15 Oct–28 Oct ─────────────────────────────────────╮
@@ -41,4 +42,4 @@ expression: "render_to_string(&a, 100, 40)"
 │ 19:00–20:00 ● Sunday Squash  · Iffley Road · Personal                                            │
 │                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
- AGENDA  P F b i 1 6                                                                       ? help
+ AGENDA  p Mine  f Family  │ 1 Personal  6 OQTS                                            ? help

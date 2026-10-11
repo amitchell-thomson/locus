@@ -1,34 +1,35 @@
 ---
 source: crates/kairos-tui/tests/snapshots.rs
+assertion_line: 248
 expression: "render_to_string(&a, 100, 30)"
 ---
 ╭──────────────────────────────────── Week 43 · 19 Oct–25 Oct ─────────────────────────────────────╮
 │       Mon 19       Tue 20       Wed 21       Thu 22       Fri 23       Sat 24       Sun 25       │
-│                                                          ▎Collections ▎Lake Distr… ▎Lake Distr…  │
-│                                                          ▎+2 more                                │
-│─────────────────╭──────────────────────────── keys ────────────────────────────╮─────────────────│
-│07:00 ┊          │ h l / H L  day / week back, forward                          │   ┊             │
-│      ●          │         t  today                                             │   ┊             │
-│09:00 ┊          │       j k  select event                                      │   ┊             │
-│      ┊          │       Tab  week → day → agenda                               │   ┊             │
-│10:00 ┊          │     Enter  details / expand duplicates ⧉                     │   ┊             │
-│      ┊          │   p f b i  toggle Personal, Family, background, imported     │   ┊             │
-│      ┊          │       1–7  toggle keys                                       │   ┊             │
-│12:00 ┊          │         a  add (title @ when [#key] [for 90m])               │   ┊             │
-│      ┊          │     e m K  rename, move, re-key                              │   ┊             │
-│      ┊          │       d s  delete, share to Family                           │   ┊             │
-│14:00 ┊          │         B  Family event: block / unblock my time             │   ┊             │
-│      ┊          │         P  run the scheduler                                 │   ┊             │
-│16:00 ┊          │       T A  tasks, approvals                                  │   ┊             │
-│      ┊          │         C  check in today's work blocks                      │   ┊             │
-│17:00 ┊          │         u  undo the last applied change                      │   ┊             │
+│                                                          ▎Collections ▎Lake Distr… ▎Lake Distri… │
+│                 ╭──────────────────────────── keys ────────────────────────────╮                 │
+│─────────────────│ h l / H L  day / week back, forward                          │─────────────────│
+│07:00 ┊          │         t  today                                             │   ┊             │
+│08:00 ●          │       j k  select event                                      │   ┊             │
+│09:00 ┊          │       Tab  week → day → agenda                               │   ┊             │
+│      ┊          │     Enter  details / expand duplicates ⧉                     │   ┊             │
+│10:00 ┊          │         w  week: Mon–Sun ↔ Mon–Fri (wider)                   │   ┊             │
+│11:00 ┊          │   p f b i  show/hide: Mine, Family, holidays, Gmail          │   ┊             │
+│      ┊          │       1–7  show/hide one calendar (see the bar below)        │   ┊             │
+│12:00 ┊          │         a  add event (a form; Tab between fields)            │   ┊             │
+│13:00 ┊          │       e K  edit event (K jumps to its calendar)              │   ┊             │
+│      ┊          │         m  move to another time                              │   ┊             │
+│14:00 ┊          │       d s  delete, share to Family                           │   ┊             │
+│15:00 ┊          │         B  Family event: block / unblock my time             │   ┊             │
+│16:00 ┊          │         P  run the scheduler                                 │   ┊             │
+│      ┊          │       T A  tasks, approvals                                  │   ┊             │
+│17:00 ┊          │         C  check in today's work blocks                      │   ┊             │
+│18:00 ┊          │         u  undo the last applied change                      │   ┊             │
 │      ┊          │         /  search                                            │   ┊             │
-│      ┊          │         r  sync now                                          │   ┊             │
-│19:00 ┊▌Squash   │         q  quit                                              │   ┊▌Sunday S…   │
-│      ┊▌         ╰──────────────────────────────────────────────────────────────╯   ┊▌            │
-│      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
+│19:00 ┊▌Squash   │         r  sync now                                          │   ┊▌19:00 Sun…  │
+│20:00 ┊          │         q  quit                                              │   ┊             │
+│      ┊          ╰──────────────────────────────────────────────────────────────╯   ┊             │
 │21:00 ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
+│22:00 ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 │      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
-│      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
- WEEK  P F b i 1 6                                                                         ? help
+╰ ● 19:00–20:00 · Squash · Personal ───────────────────────────────────────────────────────────────╯
+ WEEK  p Mine  f Family  │ 1 Personal  6 OQTS                                              ? help

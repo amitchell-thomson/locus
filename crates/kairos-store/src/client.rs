@@ -17,6 +17,9 @@ pub struct Daemon {
     base: String,
     token: String,
     http: reqwest::blocking::Client,
+    /// A person is at the keyboard (TUI, or the CLI on a terminal): kairosd
+    /// applies their own edits directly instead of asking them to approve.
+    interactive: bool,
 }
 
 /// An API error with the server's reasons (forbidden / conflict diff…).
@@ -62,7 +65,13 @@ impl Daemon {
                 .connect_timeout(Duration::from_secs(3))
                 .build()
                 .map_err(|e| StoreError::Http(e.to_string()))?,
+            interactive: false,
         })
+    }
+
+    pub fn interactive(mut self, yes: bool) -> Daemon {
+        self.interactive = yes;
+        self
     }
 
     pub fn base(&self) -> &str {
@@ -76,6 +85,7 @@ impl Daemon {
         let resp = req
             .bearer_auth(&self.token)
             .header("x-kairos-author", "alec")
+            .header("x-kairos-interactive", if self.interactive { "1" } else { "0" })
             .send()
             .map_err(|e| {
                 StoreError::Http(format!(

@@ -159,12 +159,14 @@ writable = true
 # --- read-only Google feeds (secret iCal addresses) ---
 [[sources]]
 id = "uk-holidays"
+name = "Holidays"
 kind = "ics_readonly"
 url = "https://calendar.google.com/calendar/ical/en.uk%23holiday%40group.v.calendar.google.com/public/basic.ics"
 overlay = "background"
 
 [[sources]]
 id = "gmail"
+name = "Gmail"
 kind = "ics_readonly"
 url_cmd = "security find-generic-password -w -s kairos-ics-gmail"
 overlay = "imported"

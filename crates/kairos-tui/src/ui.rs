@@ -2,6 +2,7 @@
 //! rounded borders, blue focus / mauve popups, ` · ` separators, `…` truncation.
 
 use crate::app::{App, Confirm, Mode, PromptKind, View, is_deadline, is_dimmed, overlay_flags};
+use crate::form::{FieldKind, Form};
 use chrono::{DateTime, Datelike, Duration, NaiveDate, Timelike, Utc};
 use kairos_core::colour::Rgb;
 use kairos_core::config::Overlay;
@@ -108,6 +109,88 @@ fn label(i: &Instance) -> String {
     }
 }
 
+/// Title without the parts that matter least when space is short:
+/// bracketed asides and `#n` counters ("B10 Basic Soil Mechanics #1 (Knappett) LR2"
+/// → "B10 Basic Soil Mechanics LR2").
+pub fn compact(title: &str) -> String {
+    let mut out = String::new();
+    let mut depth = 0usize;
+    for ch in title.chars() {
+        match ch {
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth = depth.saturating_sub(1),
+            _ if depth == 0 => out.push(ch),
+            _ => {}
+        }
+    }
+    out.split_whitespace()
+        .filter(|w| !(w.starts_with('#') && w[1..].chars().all(|c| c.is_ascii_digit()) && w.len() > 1))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Word-wrap into at most `rows` lines of width `w`; the last line ends in `…` if cut.
+pub fn wrap_lines(s: &str, w: usize, rows: usize) -> Vec<String> {
+    if w == 0 || rows == 0 {
+        return Vec::new();
+    }
+    let mut lines: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    for word in s.split_whitespace() {
+        let candidate = if cur.is_empty() {
+            word.to_string()
+        } else {
+            format!("{cur} {word}")
+        };
+        if candidate.width() <= w {
+            cur = candidate;
+            continue;
+        }
+        if !cur.is_empty() {
+            lines.push(std::mem::take(&mut cur));
+        }
+        // A word longer than the line is truncated, not split mid-word.
+        cur = fit(word, w);
+    }
+    if !cur.is_empty() {
+        lines.push(cur);
+    }
+    if lines.len() > rows {
+        let rest = lines[rows - 1..].join(" ");
+        lines.truncate(rows - 1);
+        lines.push(fit(&rest, w));
+    }
+    lines
+}
+
+/// One line describing an event, for the week view's bottom edge.
+fn peek(app: &App, cl: &Cluster) -> String {
+    let i = &cl.primary;
+    let tz = app.tz;
+    let when = match i.span {
+        Span::AllDay { .. } => "all day".to_string(),
+        Span::Timed { start, end } if start == end => start.with_timezone(&tz).format("%H:%M").to_string(),
+        Span::Timed { start, end } => format!(
+            "{}–{}",
+            start.with_timezone(&tz).format("%H:%M"),
+            end.with_timezone(&tz).format("%H:%M")
+        ),
+    };
+    let mut parts = vec![when, label(i)];
+    if let Some(l) = &i.location {
+        parts.push(l.clone());
+    }
+    match (i.colour_key(), i.overlay) {
+        (Some(k), _) => parts.push(k.to_string()),
+        (None, Overlay::Family) => parts.push("Family".into()),
+        (None, o) => parts.push(o.as_str().to_string()),
+    }
+    if cl.is_merged() {
+        parts.push(format!("⧉ {}", cl.others.len() + 1));
+    }
+    parts.join(" · ")
+}
+
 pub fn draw(f: &mut Frame, app: &App) {
     let area = f.area();
     if area.height < 4 || area.width < 20 {
@@ -131,6 +214,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     match &app.mode {
         Mode::Help => help(f, main),
         Mode::Checkin(i) => checkin(f, app, main, *i),
+        Mode::Form(form) => form_popup(f, app, main, form),
         _ => {}
     }
     status_bar(f, app, status);
@@ -187,6 +271,8 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
     let gutter: u16 = 6;
     let ndays: usize = if single {
         1
+    } else if app.work_week && inner_w >= gutter + 5 * 13 {
+        5
     } else if inner_w >= gutter + 7 * 13 {
         7
     } else if inner_w >= gutter + 3 * 12 {
@@ -194,8 +280,12 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
     } else {
         1
     };
+    let monday = app.cursor - Duration::days(i64::from(app.cursor.weekday().num_days_from_monday()));
     let first = match ndays {
-        7 => app.cursor - Duration::days(i64::from(app.cursor.weekday().num_days_from_monday())),
+        7 => monday,
+        // Mon–Fri; on a weekend show the coming week.
+        5 if app.cursor.weekday().num_days_from_monday() >= 5 => monday + Duration::days(7),
+        5 => monday,
         3 => app.cursor - Duration::days(1),
         _ => app.cursor,
     };
@@ -210,14 +300,25 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             last.format("%-d %b")
         )
     };
-    let block = panel(&title, true);
+    let mut block = panel(&title, true);
+    if let Some(cl) = app.selected() {
+        let text = fit(&peek(app, &cl), area.width.saturating_sub(6) as usize);
+        block = block.title_bottom(Line::from(vec![
+            TSpan::styled(" ", Style::default()),
+            TSpan::styled("● ", Style::default().fg(colour_of(app, &cl.primary))),
+            TSpan::styled(format!("{text} "), Style::default().fg(c("text"))),
+        ]));
+    }
     let inner = block.inner(area);
     f.render_widget(block, area);
     if inner.height < 4 || inner.width <= gutter {
         return;
     }
     let buf = f.buffer_mut();
-    let col_w = ((inner.width - gutter) as usize / ndays).max(1) as u16;
+    // Column k spans [col_x(k), col_x(k+1)): the remainder is spread, not dumped on the last day.
+    let avail = (inner.width - gutter) as usize;
+    let col_x = |k: usize| inner.x + gutter + (avail * k / ndays) as u16;
+    let col_w_of = |k: usize| (col_x(k + 1) - col_x(k)).max(1);
     let days: Vec<NaiveDate> = (0..ndays).map(|k| first + Duration::days(k as i64)).collect();
     let per_day: Vec<Vec<Cluster>> = days.iter().map(|d| app.day_clusters(*d)).collect();
     let ghosts = app.ghosts();
@@ -226,12 +327,16 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
     // Header.
     let y = inner.y;
     for (k, d) in days.iter().enumerate() {
-        let x = inner.x + gutter + col_w * k as u16;
-        let label = if col_w >= 10 {
+        let x = col_x(k);
+        let col_w = col_w_of(k);
+        let mut label = if col_w >= 10 {
             d.format("%a %-d").to_string()
         } else {
             d.format("%-d").to_string()
         };
+        let holiday = per_day[k]
+            .iter()
+            .find(|c| c.primary.overlay == Overlay::Background && c.primary.span.is_all_day());
         let style = if *d == today {
             Style::default()
                 .fg(c("base"))
@@ -244,19 +349,39 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
         } else {
             Style::default().fg(c("subtext0"))
         };
-        put(buf, x, y, col_w.saturating_sub(1), &format!(" {label} "), style);
+        label = format!(" {label} ");
+        put(buf, x, y, col_w.saturating_sub(1), &label, style);
+        if let Some(h) = holiday {
+            let used = label.width() as u16;
+            put(
+                buf,
+                x + used,
+                y,
+                col_w.saturating_sub(1 + used),
+                &format!("· {}", h.primary.title.trim()),
+                Style::default().fg(c("peach")).add_modifier(Modifier::ITALIC),
+            );
+        }
     }
 
     // All-day strip (incl. all-day deadlines and multi-day spans).
     let strip_rows = per_day
         .iter()
-        .map(|v| v.iter().filter(|c| c.primary.span.is_all_day()).count())
+        .map(|v| {
+            v.iter()
+                .filter(|c| c.primary.span.is_all_day() && c.primary.overlay != Overlay::Background)
+                .count()
+        })
         .max()
         .unwrap_or(0)
         .min(if single { 4 } else { 2 });
     for (k, d) in days.iter().enumerate() {
-        let x = inner.x + gutter + col_w * k as u16;
-        let all: Vec<&Cluster> = per_day[k].iter().filter(|c| c.primary.span.is_all_day()).collect();
+        let x = col_x(k);
+        let col_w = col_w_of(k);
+        let all: Vec<&Cluster> = per_day[k]
+            .iter()
+            .filter(|c| c.primary.span.is_all_day() && c.primary.overlay != Overlay::Background)
+            .collect();
         for (r, cl) in all.iter().enumerate().take(strip_rows) {
             let i = &cl.primary;
             let more = all.len() > strip_rows && r + 1 == strip_rows;
@@ -316,8 +441,8 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             }
         }
     }
-    let span = (h1 - h0).max(60);
     let nrows = rows as usize;
+    let span = (h1 - h0).max(60);
     // Continuous mapping: minutes → row, using every available row.
     let row_of_min = |m: i64| -> i64 { ((m - h0) * nrows as i64).div_euclid(span) };
     let row_of = |t: DateTime<Utc>, d: NaiveDate| -> i64 {
@@ -334,14 +459,14 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
     let mut last_label: i64 = -2;
     for r in 0..nrows {
         for k in 0..ndays {
-            let x = inner.x + gutter + col_w * k as u16;
+            let x = col_x(k);
             buf.set_string(x, grid_y + r as u16, "┊", Style::default().fg(c("surface0")));
         }
     }
     let mut hour = (h0 + 59) / 60 * 60;
     while hour < h1 {
         let r = row_of_min(hour);
-        if r > last_label + 1 && (0..nrows as i64).contains(&r) {
+        if r > last_label && (0..nrows as i64).contains(&r) {
             put(
                 buf,
                 inner.x,
@@ -355,15 +480,17 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
         hour += 60;
     }
     for (k, d) in days.iter().enumerate() {
-        let x0 = inner.x + gutter + col_w * k as u16 + 1;
-        let w = col_w.saturating_sub(2);
+        let x0 = col_x(k) + 1;
+        let w = col_w_of(k).saturating_sub(2);
         let timed: Vec<(usize, usize, &Cluster)> = per_day[k]
             .iter()
             .filter(|c| !c.primary.span.is_all_day())
             .filter_map(|cl| {
                 let (s, e) = cl.primary.span.bounds(tz);
                 let r0 = row_of(s, *d).clamp(0, nrows as i64 - 1) as usize;
-                let r1 = (row_of(e - Duration::seconds(1), *d) + 1).clamp(r0 as i64 + 1, nrows as i64) as usize;
+                // End row rounds down like the start, so back-to-back events never
+                // share a row (which would split them into side-by-side lanes).
+                let r1 = row_of(e, *d).clamp(r0 as i64 + 1, nrows as i64) as usize;
                 (row_of(s, *d) < nrows as i64).then_some((r0, r1, cl))
             })
             .collect();
@@ -387,32 +514,46 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
                     .add_modifier(Modifier::BOLD);
             }
             let t = i.start(tz).with_timezone(&tz);
-            let mut first_line = if lane_w >= 12 {
-                format!("{} {}", t.format("%H:%M"), label(i))
+            // Text area: lane minus the ▌ bar and a gap column.
+            let tw = lane_w.saturating_sub(2) as usize;
+            let rows_avail = p.r1 - p.r0;
+            let full = label(i);
+            // Prefer the full title; fall back to the compact one if it won't fit.
+            let mut title = if full.width() > tw * rows_avail {
+                compact(&full)
             } else {
-                label(i)
+                full
             };
             if p.cl.is_merged() {
-                first_line.push_str(" ⧉");
+                title.push_str(" ⧉");
             }
-            put(
-                buf,
-                x,
-                grid_y + p.r0 as u16,
-                lane_w.saturating_sub(1),
-                &format!("▌{first_line}"),
-                style,
-            );
-            for r in p.r0 + 1..p.r1 {
-                let body = if i.meta.kind == EventKind::TaskBlock {
-                    format!("▌{}", "░".repeat(lane_w.saturating_sub(2) as usize))
-                } else if r == p.r0 + 1 && single {
-                    format!("▌{}", i.location.clone().unwrap_or_default())
-                } else {
-                    "▌".to_string()
+            let mut text = if lane_w >= 12 {
+                format!("{} {title}", t.format("%H:%M"))
+            } else {
+                title
+            };
+            let loc = i.location.clone().unwrap_or_default();
+            let mut lines = wrap_lines(&text, tw, rows_avail);
+            if !loc.is_empty() && lines.len() < rows_avail && (single || rows_avail - lines.len() >= 1) {
+                lines.push(fit(&loc, tw));
+            }
+            if lines.is_empty() {
+                text = String::new();
+                lines.push(text);
+            }
+            for r in p.r0..p.r1 {
+                let k = r - p.r0;
+                let body = match lines.get(k) {
+                    Some(l) => format!("▌{l}"),
+                    None if i.meta.kind == EventKind::TaskBlock => {
+                        format!("▌{}", "░".repeat(tw))
+                    }
+                    None => "▌".to_string(),
                 };
-                let st = if selected {
+                let st = if selected || k == 0 {
                     style
+                } else if k < lines.len() {
+                    style.remove_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(col).add_modifier(Modifier::DIM)
                 };
@@ -464,7 +605,7 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             let r = row_of(app.now, *d);
             if (0..nrows as i64).contains(&r) {
                 let y = grid_y + r as u16;
-                let xx = inner.x + gutter + col_w * k as u16;
+                let xx = col_x(k);
                 buf.set_string(xx, y, "●", Style::default().fg(c("peach")));
             }
         }
@@ -846,10 +987,12 @@ fn help(f: &mut Frame, area: Rect) {
         ("j k", "select event"),
         ("Tab", "week → day → agenda"),
         ("Enter", "details / expand duplicates ⧉"),
-        ("p f b i", "toggle Personal, Family, background, imported"),
-        ("1–7", "toggle keys"),
-        ("a", "add (title @ when [#key] [for 90m])"),
-        ("e m K", "rename, move, re-key"),
+        ("w", "week: Mon–Sun ↔ Mon–Fri (wider)"),
+        ("p f b i", "show/hide: Mine, Family, holidays, Gmail"),
+        ("1–7", "show/hide one calendar (see the bar below)"),
+        ("a", "add event (a form; Tab between fields)"),
+        ("e K", "edit event (K jumps to its calendar)"),
+        ("m", "move to another time"),
         ("d s", "delete, share to Family"),
         ("B", "Family event: block / unblock my time"),
         ("P", "run the scheduler"),
@@ -915,6 +1058,84 @@ fn checkin(f: &mut Frame, app: &App, area: Rect, i: usize) {
     f.render_widget(Paragraph::new(lines).block(popup_block("check-in")), r);
 }
 
+fn form_popup(f: &mut Frame, app: &App, area: Rect, form: &Form) {
+    let w = 72.min(area.width.saturating_sub(2));
+    let label_w = 10usize;
+    let val_w = (w as usize).saturating_sub(label_w + 6);
+    let mut lines: Vec<Line> = vec![Line::raw("")];
+    for (k, fld) in form.fields.iter().enumerate() {
+        let focus = k == form.focus;
+        let lab = TSpan::styled(
+            format!("{:>label_w$}  ", fld.label),
+            if focus {
+                Style::default().fg(c("mauve")).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(c("overlay1"))
+            },
+        );
+        let mut spans = vec![lab];
+        match fld.kind {
+            FieldKind::Key => {
+                let col = app.cfg.key(&fld.value).map_or(c("text"), |k| rgb(k.colour));
+                let arrow = Style::default().fg(if focus { c("mauve") } else { c("surface2") });
+                spans.push(TSpan::styled("◀ ", arrow));
+                spans.push(TSpan::styled("● ", Style::default().fg(col)));
+                spans.push(TSpan::styled(
+                    fld.value.clone(),
+                    Style::default()
+                        .fg(c("text"))
+                        .add_modifier(if focus { Modifier::BOLD } else { Modifier::empty() }),
+                ));
+                spans.push(TSpan::styled(" ▶", arrow));
+            }
+            _ => {
+                let v = if focus {
+                    // Keep the end (where typing happens) visible.
+                    let chars: Vec<char> = fld.value.chars().collect();
+                    let mut start = 0;
+                    while chars[start..].iter().collect::<String>().width() + 1 > val_w && start < chars.len() {
+                        start += 1;
+                    }
+                    chars[start..].iter().collect::<String>()
+                } else {
+                    fit(&fld.value, val_w)
+                };
+                spans.push(TSpan::styled(v, Style::default().fg(c("text"))));
+                if focus {
+                    spans.push(TSpan::styled("█", Style::default().fg(c("mauve"))));
+                }
+            }
+        }
+        lines.push(Line::from(spans));
+        if focus && !fld.hint.is_empty() {
+            lines.push(Line::from(TSpan::styled(
+                format!("{:>label_w$}  {}", "", fit(fld.hint, val_w)),
+                Style::default().fg(c("overlay0")).add_modifier(Modifier::ITALIC),
+            )));
+        }
+    }
+    lines.push(Line::raw(""));
+    let preview = match app.form_preview(form) {
+        Ok(p) => TSpan::styled(format!("  → {p}"), Style::default().fg(c("green"))),
+        Err(e) => TSpan::styled(format!("  ✗ {e}"), Style::default().fg(c("peach"))),
+    };
+    lines.push(Line::from(preview));
+    lines.push(Line::raw(""));
+    lines.push(Line::from(TSpan::styled(
+        "  Tab next · ⇧Tab back · Enter save · Esc cancel",
+        Style::default().fg(c("overlay0")),
+    )));
+    let h = (lines.len() as u16 + 2).min(area.height);
+    let r = centred(area, w, h);
+    f.render_widget(Clear, r);
+    f.render_widget(
+        Paragraph::new(lines)
+            .block(popup_block(form.title()))
+            .wrap(Wrap { trim: false }),
+        r,
+    );
+}
+
 // ---------------------------------------------------------------- status bar
 
 fn status_bar(f: &mut Frame, app: &App, area: Rect) {
@@ -948,6 +1169,27 @@ fn status_bar(f: &mut Frame, app: &App, area: Rect) {
             );
             push(buf, &mut x, "\u{e0b0}", Style::default().fg(c("mauve")));
             push(buf, &mut x, &format!(" {b}█"), Style::default().fg(c("text")));
+            return;
+        }
+        Mode::Form(form) => {
+            push(
+                buf,
+                &mut x,
+                &format!(" {} ", form.title()),
+                Style::default()
+                    .fg(c("base"))
+                    .bg(c("mauve"))
+                    .add_modifier(Modifier::BOLD),
+            );
+            push(buf, &mut x, "\u{e0b0}", Style::default().fg(c("mauve")));
+            if let Some((m, err)) = &app.message {
+                push(
+                    buf,
+                    &mut x,
+                    &format!(" {m}"),
+                    Style::default().fg(if *err { c("red") } else { c("text") }),
+                );
+            }
             return;
         }
         Mode::Confirm(cf) => {
@@ -989,18 +1231,56 @@ fn status_bar(f: &mut Frame, app: &App, area: Rect) {
         "\u{e0b0}",
         Style::default().fg(c("blue")).bg(c("surface0")),
     );
-    push(buf, &mut x, " ", Style::default().bg(c("surface0")));
-    for (name, on, col) in overlay_flags(app) {
+    // Legend: toggle key + name; hidden ones are struck through. Names shrink to fit.
+    let flags = overlay_flags(app);
+    let room = (area.x + area.width).saturating_sub(x + 12) as usize;
+    let full: usize = flags.iter().map(|f| f.0.width() + f.1.width() + 3).sum::<usize>() + 2;
+    let short_len = |n: &str| n.chars().take(3).collect::<String>();
+    let shortw: usize = flags
+        .iter()
+        .map(|f| f.0.width() + short_len(&f.1).width() + 3)
+        .sum::<usize>()
+        + 2;
+    let mode = if full <= room {
+        0
+    } else if shortw <= room {
+        1
+    } else {
+        2
+    };
+    let bg = Style::default().bg(c("surface0"));
+    push(buf, &mut x, " ", bg);
+    let mut prev_group = None;
+    for (key, name, on, col, group) in flags {
+        if prev_group.is_some() && prev_group != Some(group) {
+            push(buf, &mut x, "│ ", Style::default().fg(c("surface2")).bg(c("surface0")));
+        }
+        prev_group = Some(group);
+        push(buf, &mut x, &key, Style::default().fg(c("overlay1")).bg(c("surface0")));
+        let shown = match mode {
+            0 => format!(" {name}"),
+            1 => format!(" {}", short_len(&name)),
+            _ => String::new(),
+        };
         let st = if on {
             Style::default()
                 .fg(rgb(col))
                 .bg(c("surface0"))
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(c("surface2")).bg(c("surface0"))
+            Style::default()
+                .fg(c("surface2"))
+                .bg(c("surface0"))
+                .add_modifier(Modifier::CROSSED_OUT)
         };
-        push(buf, &mut x, &name, st);
-        push(buf, &mut x, " ", Style::default().bg(c("surface0")));
+        if mode == 2 {
+            // Letters only: colour the key itself.
+            x -= key.width() as u16;
+            push(buf, &mut x, &key, st);
+        } else {
+            push(buf, &mut x, &shown, st);
+        }
+        push(buf, &mut x, "  ", bg);
     }
     if let Some(q) = &app.search {
         push(

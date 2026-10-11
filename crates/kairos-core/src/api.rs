@@ -93,6 +93,9 @@ pub struct UpdateEventReq {
     /// `""` clears the location.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
+    /// Notes (DESCRIPTION); `""` clears them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     /// Family events only: whether it blocks the scheduler (sidecar flag; not an iCloud write).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blocking: Option<bool>,

@@ -8,7 +8,7 @@ description: Manage Alec's calendar and tasks through the kairos MCP server (iCl
 Tools come from the `kairos` MCP server (see docs/claude-usage.md for registration).
 
 Rules:
-1. The server computes risk. Low → applied (undoable). High → `pending`; tell Alec what's pending and how to approve (TUI `A`, `kairos approve <id>`, phone notification). **Never approve on his behalf** unless he explicitly says yes in this conversation — then run `kairos approve <id>` via Bash.
+1. The server computes risk. (Alec's own edits typed in the TUI/terminal apply directly; anything you do — MCP or `kairos` via Bash — goes through the policy.) Low → applied (undoable). High → `pending`; tell Alec what's pending and how to approve (TUI `A`, `kairos approve <id>`, phone notification). **Never approve on his behalf** unless he explicitly says yes in this conversation — then run `kairos approve <id>` via Bash.
 2. Work blocks come from the scheduler: create/update tasks (estimate + deadline) and call `plan`. Pinned blocks (`create_event` with `task_id`) only when Alec names a slot.
 3. Relay `shortfalls` verbatim with their options; never pretend work fits.
 4. Times: ISO `2026-10-16T17:00` (Europe/London) or a date for all-day. Keys: Inbox (default), Engineering, Careers, Sport, Travel, OQTS, Social.

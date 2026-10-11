@@ -187,6 +187,7 @@ pub struct Edit {
     pub title: Option<String>,
     pub time: Option<NewTime>,
     pub location: Option<Option<String>>,
+    pub description: Option<Option<String>>,
     pub meta: Option<Meta>,
 }
 
@@ -218,6 +219,11 @@ pub fn edit_file(text: &str, uid: &str, edit: &Edit, tz: Tz, now: DateTime<Utc>)
             match &edit.location {
                 Some(Some(l)) => ev.set(Property::text("LOCATION", l)),
                 Some(None) => ev.remove("LOCATION"),
+                None => {}
+            }
+            match &edit.description {
+                Some(Some(d)) => ev.set(Property::text("DESCRIPTION", d)),
+                Some(None) => ev.remove("DESCRIPTION"),
                 None => {}
             }
             if let Some(m) = &edit.meta {

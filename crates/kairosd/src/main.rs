@@ -164,6 +164,7 @@ async fn main() -> Result<()> {
         db,
         clock: Arc::new(chrono::Utc::now),
         notifier,
+        direct: false,
     };
     let st = AppState {
         engine: Arc::new(Mutex::new(engine)),

@@ -1127,12 +1127,14 @@ impl Engine {
         t.due = req
             .due
             .as_deref()
+            .filter(|d| !d.trim().is_empty())
             .map(|d| api::parse_time(d, tz, now))
             .transpose()?
             .map(TimeIn::as_due);
         t.earliest_start = req
             .earliest_start
             .as_deref()
+            .filter(|d| !d.trim().is_empty())
             .map(|d| api::parse_time(d, tz, now))
             .transpose()?
             .map(|x| match x {

@@ -851,6 +851,7 @@ fn help(f: &mut Frame, area: Rect) {
         ("a", "add (title @ when [#key] [for 90m])"),
         ("e m K", "rename, move, re-key"),
         ("d s", "delete, share to Family"),
+        ("B", "Family event: block / unblock my time"),
         ("P", "run the scheduler"),
         ("T A", "tasks, approvals"),
         ("C", "check in today's work blocks"),

@@ -574,6 +574,7 @@ fn report(p: &Paint, d: &Daemon, r: std::result::Result<WriteResult, Rejected>) 
     let w = r.map_err(|e| anyhow!("{e}"))?;
     match w.status {
         Status::Applied => {
+            background_pull();
             println!(
                 "{} {}",
                 p.fg(Rgb::mocha("green"), "✓"),
@@ -612,6 +613,19 @@ fn report(p: &Paint, d: &Daemon, r: std::result::Result<WriteResult, Rejected>) 
         other => println!("{} {}", other.as_str(), w.summary),
     }
     Ok(())
+}
+
+/// After a write, pull from iCloud in the background so `today`/the TUI show it
+/// without waiting for the next scheduled sync.
+fn background_pull() {
+    if let Ok(exe) = std::env::current_exe() {
+        let _ = std::process::Command::new(exe)
+            .arg("sync")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+    }
 }
 
 fn decide(ctx: &Ctx, p: &Paint, id: &str, action: &str) -> Result<()> {

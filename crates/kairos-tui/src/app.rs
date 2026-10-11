@@ -499,6 +499,27 @@ impl App {
                         self.mode = Mode::Confirm(Confirm::Delete);
                         self.set_message(format!("delete “{}”? y/N", i.title), false);
                     }
+                    Key::Char('B') if i.overlay == Overlay::Family => {
+                        let req = api::UpdateEventReq {
+                            blocking: Some(!i.meta.blocking),
+                            ..Default::default()
+                        };
+                        if let Some(r) = self.with_daemon(|d| d.update_event(&i.source, &i.uid, &req)) {
+                            match r {
+                                Ok(Ok(_)) => {
+                                    let msg = if i.meta.blocking {
+                                        "no longer blocks your time"
+                                    } else {
+                                        "now blocks your time for scheduling"
+                                    };
+                                    self.set_message(msg, false);
+                                    self.wants_sync = true;
+                                }
+                                Ok(Err(e)) => self.set_message(e.to_string(), true),
+                                Err(e) => self.set_message(e.to_string(), true),
+                            }
+                        }
+                    }
                     Key::Char('s') => {
                         self.mode = Mode::Confirm(Confirm::Share);
                         self.set_message(

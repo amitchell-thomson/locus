@@ -1,0 +1,4 @@
+# kairos: one-line day summary at shell start (fast: served from the cache index).
+if command -v kairos >/dev/null 2>&1 && [[ -o interactive ]] && [[ -z "$TMUX_PANE" || "$(tmux display -p '#{window_panes}' 2>/dev/null)" == 1 ]]; then
+  kairos today --compact 2>/dev/null
+fi

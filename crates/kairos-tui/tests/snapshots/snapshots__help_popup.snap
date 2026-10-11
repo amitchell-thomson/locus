@@ -6,18 +6,18 @@ expression: "render_to_string(&a, 100, 30)"
 │       Mon 19       Tue 20       Wed 21       Thu 22       Fri 23       Sat 24       Sun 25       │
 │                                                          ▎Collections ▎Lake Distr… ▎Lake Distr…  │
 │                                                          ▎+2 more                                │
-│──────────────────────────────────────────────────────────────────────────────────────────────────│
-│07:00 ┊          ╭──────────────────────────── keys ────────────────────────────╮   ┊             │
-│      ●          │ h l / H L  day / week back, forward                          │   ┊             │
-│09:00 ┊          │         t  today                                             │   ┊             │
-│      ┊          │       j k  select event                                      │   ┊             │
-│10:00 ┊          │       Tab  week → day → agenda                               │   ┊             │
-│      ┊          │     Enter  details / expand duplicates ⧉                     │   ┊             │
+│─────────────────╭──────────────────────────── keys ────────────────────────────╮─────────────────│
+│07:00 ┊          │ h l / H L  day / week back, forward                          │   ┊             │
+│      ●          │         t  today                                             │   ┊             │
+│09:00 ┊          │       j k  select event                                      │   ┊             │
+│      ┊          │       Tab  week → day → agenda                               │   ┊             │
+│10:00 ┊          │     Enter  details / expand duplicates ⧉                     │   ┊             │
 │      ┊          │   p f b i  toggle Personal, Family, background, imported     │   ┊             │
-│12:00 ┊          │       1–7  toggle keys                                       │   ┊             │
-│      ┊          │         a  add (title @ when [#key] [for 90m])               │   ┊             │
+│      ┊          │       1–7  toggle keys                                       │   ┊             │
+│12:00 ┊          │         a  add (title @ when [#key] [for 90m])               │   ┊             │
 │      ┊          │     e m K  rename, move, re-key                              │   ┊             │
-│14:00 ┊          │       d s  delete, share to Family                           │   ┊             │
+│      ┊          │       d s  delete, share to Family                           │   ┊             │
+│14:00 ┊          │         B  Family event: block / unblock my time             │   ┊             │
 │      ┊          │         P  run the scheduler                                 │   ┊             │
 │16:00 ┊          │       T A  tasks, approvals                                  │   ┊             │
 │      ┊          │         C  check in today's work blocks                      │   ┊             │

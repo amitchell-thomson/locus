@@ -588,3 +588,22 @@ fn find_free_respects_events_and_day_window() {
     assert_eq!(slots[1].start, at("2026-10-13 11:00"));
     assert_eq!(slots.last().unwrap().end, at("2026-10-13 22:00"));
 }
+
+#[test]
+fn empty_due_means_no_deadline() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e
+        .create_task(
+            Author::Alec,
+            &CreateTaskReq {
+                title: "Read paper".into(),
+                key: "Personal".into(),
+                estimate_min: 60,
+                due: Some(String::new()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(r.task.due.is_none() && r.task.deadline_uid.is_none());
+}

@@ -1,0 +1,6 @@
+# kairos: next event / urgent deadline, inline after the date segment.
+# Replace the status-right in ~/.config/tmux/tmux.conf with:
+set -g status-right "\
+#[bg=default,fg=#313244]#[bg=#313244,fg=#cdd6f4] %a %d %b \
+#(~/.cargo/bin/kairos next --tmux)\
+#[bg=#313244,fg=#89b4fa]#[bg=#89b4fa,fg=#1e1e2e,bold] #(if [ -n \"$SSH_CLIENT\" ] || [ -n \"$SSH_TTY\" ]; then echo server; else echo local; fi) "

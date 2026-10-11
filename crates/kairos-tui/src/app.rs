@@ -928,29 +928,40 @@ pub fn overlay_flags(app: &App) -> Vec<(String, String, bool, kairos_core::colou
             names.join("+")
         }
     };
-    let mut v = vec![
-        (
-            "p".to_string(),
-            "Personal".to_string(),
-            app.filter.personal,
-            kairos_core::colour::Rgb::mocha("lavender"),
+    // Personal and its keys form group 0 (drawn as "p Personal ▸ 1 Inbox …"),
+    // Family group 1, read-only feeds group 2.
+    let mut v = vec![(
+        "p".to_string(),
+        "Personal".to_string(),
+        app.filter.personal,
+        kairos_core::colour::Rgb::mocha("lavender"),
+        0,
+    )];
+    let mut keys = app.cfg.keys.clone();
+    keys.sort_by_key(|k| k.index);
+    for k in keys {
+        v.push((
+            k.index.to_string(),
+            k.name.clone(),
+            app.filter.personal && !app.filter.hidden_keys.contains(&k.name.to_lowercase()),
+            k.colour,
             0,
-        ),
-        (
-            "f".to_string(),
-            "Family".to_string(),
-            app.filter.family,
-            app.cfg.overlays.family_colour,
-            0,
-        ),
-    ];
+        ));
+    }
+    v.push((
+        "f".to_string(),
+        "Family".to_string(),
+        app.filter.family,
+        app.cfg.overlays.family_colour,
+        1,
+    ));
     if app.cfg.sources.iter().any(|s| s.overlay == Overlay::Background) {
         v.push((
             "b".to_string(),
             name_of(Overlay::Background, "holidays"),
             app.filter.background,
             kairos_core::colour::Rgb::mocha("peach"),
-            0,
+            2,
         ));
     }
     if app.cfg.sources.iter().any(|s| s.overlay == Overlay::Imported) {
@@ -959,18 +970,7 @@ pub fn overlay_flags(app: &App) -> Vec<(String, String, bool, kairos_core::colou
             name_of(Overlay::Imported, "imported"),
             app.filter.imported,
             app.cfg.overlays.imported_colour,
-            0,
-        ));
-    }
-    let mut keys = app.cfg.keys.clone();
-    keys.sort_by_key(|k| k.index);
-    for k in keys {
-        v.push((
-            k.index.to_string(),
-            k.name.clone(),
-            !app.filter.hidden_keys.contains(&k.name.to_lowercase()),
-            k.colour,
-            1,
+            2,
         ));
     }
     v

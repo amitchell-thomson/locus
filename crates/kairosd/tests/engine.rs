@@ -88,6 +88,25 @@ fn alecs_own_interactive_edits_skip_approval_but_not_the_hard_rules() {
 }
 
 #[test]
+fn stale_source_from_a_lagging_client_still_finds_the_event() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let cs = e
+        .create_event(Author::Claude, &ev("Squash", "2026-10-13 19:00", "Sport"))
+        .unwrap();
+    let uid = match &cs.ops[0] {
+        kairos_core::changeset::Op::CreateEvent { uid, .. } => uid.clone(),
+        _ => unreachable!(),
+    };
+    e.direct = true;
+    e.move_event(Author::Alec, Some("sport"), &uid, "Engineering").unwrap();
+    // The TUI still thinks it's in Sport.
+    let cs = e.move_event(Author::Alec, Some("sport"), &uid, "Sport").unwrap();
+    assert_eq!(cs.status, Status::Applied);
+    assert_eq!(env.items("Sport").len(), 1);
+}
+
+#[test]
 fn rekeying_many_events_is_one_changeset_with_one_undo() {
     let env = Env::new(true);
     let mut e = env.engine();

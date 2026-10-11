@@ -75,8 +75,13 @@ fn map_key(k: event::KeyEvent) -> Option<Key> {
 fn spawn_sync(cfg: &Config, done: mpsc::Sender<()>) {
     let cfg = cfg.clone();
     std::thread::spawn(move || {
-        let _ = kairos_store::sync::run_full(&cfg);
-        let _ = done.send(());
+        // kairosd pushes to iCloud in the background after a write; pulling at
+        // once would usually miss it, so pull a little later and once more.
+        for wait in [4, 11] {
+            std::thread::sleep(Duration::from_secs(wait));
+            let _ = kairos_store::sync::run_full(&cfg);
+            let _ = done.send(());
+        }
     });
 }
 

@@ -1252,11 +1252,12 @@ fn status_bar(f: &mut Frame, app: &App, area: Rect) {
     push(buf, &mut x, " ", bg);
     let mut prev_group = None;
     for (key, name, on, col, group) in flags {
+        let key = key.as_str();
         if prev_group.is_some() && prev_group != Some(group) {
             push(buf, &mut x, "│ ", Style::default().fg(c("surface2")).bg(c("surface0")));
         }
         prev_group = Some(group);
-        push(buf, &mut x, &key, Style::default().fg(c("overlay1")).bg(c("surface0")));
+        push(buf, &mut x, key, Style::default().fg(c("overlay1")).bg(c("surface0")));
         let shown = match mode {
             0 => format!(" {name}"),
             1 => format!(" {}", short_len(&name)),
@@ -1276,11 +1277,15 @@ fn status_bar(f: &mut Frame, app: &App, area: Rect) {
         if mode == 2 {
             // Letters only: colour the key itself.
             x -= key.width() as u16;
-            push(buf, &mut x, &key, st);
+            push(buf, &mut x, key, st);
         } else {
             push(buf, &mut x, &shown, st);
         }
-        push(buf, &mut x, "  ", bg);
+        if key == "p" {
+            push(buf, &mut x, " ▸ ", Style::default().fg(c("overlay1")).bg(c("surface0")));
+        } else {
+            push(buf, &mut x, "  ", bg);
+        }
     }
     if let Some(q) = &app.search {
         push(

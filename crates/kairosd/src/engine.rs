@@ -318,6 +318,18 @@ impl Engine {
             .filter(|s| source.is_none_or(|x| x == s.id))
             .flat_map(|s| s.series.iter().filter(|e| e.uid == uid).map(move |e| (s, e)))
             .collect();
+        // A client's view can lag a move it just made (the Mac pulls from iCloud
+        // after the server pushes). The UID still identifies the event.
+        let hits = if hits.is_empty() && source.is_some() {
+            world
+                .loaded
+                .sources
+                .iter()
+                .flat_map(|s| s.series.iter().filter(|e| e.uid == uid).map(move |e| (s, e)))
+                .collect()
+        } else {
+            hits
+        };
         let (ls, series) = match hits.as_slice() {
             [] => return Err(EngineError::NotFound(format!("event {uid:?}"))),
             [one] => *one,

@@ -583,22 +583,6 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             .collect();
         let deadlines_first: Vec<(usize, usize, &Cluster)> =
             timed.iter().copied().filter(|t| !is_deadline(&t.2.primary)).collect();
-        // An event running through a divider hides the divider in this column.
-        for &(r0, r1, _) in &deadlines_first {
-            for &dr in &divider_rows {
-                if (r0 as i64) <= dr && dr < r1 as i64 {
-                    let y = grid_y + dr as u16;
-                    for xx in x0..col_x(k + 1) {
-                        buf.set_string(xx, y, " ", Style::default());
-                    }
-                    // Keep the column guides either side.
-                    buf.set_string(col_x(k), y, "┊", Style::default().fg(c("surface0")));
-                    if k + 1 < ndays {
-                        buf.set_string(col_x(k + 1), y, "┊", Style::default().fg(c("surface0")));
-                    }
-                }
-            }
-        }
         for p in lanes(&deadlines_first) {
             let lane_w = (w / p.lanes as u16).max(1);
             let x = x0 + lane_w * p.lane as u16;
@@ -661,10 +645,17 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
                 } else {
                     Style::default().fg(col).add_modifier(Modifier::DIM)
                 };
-                // Pad to the lane so divider dots don't show through the event.
+                // On a divider row only the bar (and any text) interrupts the
+                // line; elsewhere pad so the event reads as one block. The
+                // selected event stays a solid highlight.
                 let lw = lane_w.saturating_sub(1) as usize;
-                let padded = format!("{}{}", body, " ".repeat(lw.saturating_sub(body.width())));
-                put(buf, x, grid_y + r as u16, lane_w.saturating_sub(1), &padded, st);
+                let on_divider = divider_rows.contains(&(r as i64));
+                let body = if on_divider && !selected {
+                    body
+                } else {
+                    format!("{}{}", body, " ".repeat(lw.saturating_sub(body.width())))
+                };
+                put(buf, x, grid_y + r as u16, lane_w.saturating_sub(1), &body, st);
             }
         }
         // Timed deadlines: a ⚑ marker line across the column.

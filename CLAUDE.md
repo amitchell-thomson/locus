@@ -44,16 +44,16 @@ cargo run -p kairos-tui --example frame -- <config> <rfc3339-now> <w> <h> [keys]
 
 ## Deployment state (2026-10-11)
 
-- compute-node: repo at `~/server-projects/kairos`; `kairosd` + `kairos` in `~/.cargo/bin`; `systemctl --user` unit `kairosd` **running with live = false**, bound to `100.117.10.28:7420` (Tailscale only). vdirsyncer 0.21 in `~/.local/share/kairos/venv` (symlinked into `~/.local/bin`). Secrets in `~/.config/kairos/secrets/` (api-token and ntfy-topic generated; iCloud + Google secrets still needed from Alec).
-- Mac: nothing installed yet (templates in `deploy/chezmoi`, steps in `docs/deploy.md`).
+- compute-node: repo at `~/server-projects/kairos`; `kairosd` + `kairos` in `~/.cargo/bin`; `systemctl --user` unit `kairosd` **running with live = true since 2026-10-11**, bound to `100.117.10.28:7420` (Tailscale only; the server's own CLI uses that IP because `compute-node` resolves to 127.0.1.1 there). vdirsyncer 0.21 in `~/.local/share/kairos/venv` (symlinked into `~/.local/bin`), read-write. Secrets in `~/.config/kairos/secrets/` (api-token, ntfy-topic, apple-id, icloud-app-password, ics-gmail).
+- Mac: `kairos` via `cargo install`; vdirsyncer (brew), remote `read_only = true`; launchd agent `com.kairos.sync` (`~/Library/LaunchAgents`, rendered from the chezmoi template by hand, every 180 s, log `~/Library/Logs/kairos-sync.log`). Keychain: kairos-api-token, kairos-icloud, kairos-apple-id, kairos-ics-gmail. chezmoi, tmux and zsh snippets NOT applied (Alec's call).
 - Update the server: `cd ~/server-projects/kairos && git pull && cargo install --locked --path crates/kairosd && cargo install --locked --path crates/kairos-cli && systemctl --user restart kairosd`.
 
 ## Phase status
 
 | Phase | Status |
 |---|---|
-| 0 Cleanup & scaffolding | Code done. Alec: `docs/migration.md`; real exports → golden fixtures. |
-| 1 Sync plumbing | Configs/units/templates done, daemon deployed. Needs iCloud creds; then `scripts/verify-icloud.sh` (Family discoverability, X-KAIROS round-trip, phone-edit check). |
+| 0 Cleanup & scaffolding | Done; migration done by Alec 2026-10-11. Golden fixtures from real exports still to do. |
+| 1 Sync plumbing | Done and verified (see findings). Emptied collections handled: kairos's own deletes push with `--force-delete` for that collection; collections emptied on iCloud are followed (`kairos_store::sync`). |
 | 2 Core read path | Done (25 fixture-based semantic tests + unit tests). |
 | 3 CLI + tmux/shell | Done; budgets met (5k events: next 8.5 ms, today 8.9 ms, TUI first frame 4.6 ms on M-series, release). |
 | 4 TUI | Done (all views, toggles, dedup expansion, ghost blocks, check-in, snapshots). |

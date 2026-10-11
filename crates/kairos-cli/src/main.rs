@@ -1134,14 +1134,13 @@ fn sync(ctx: &Ctx, p: &Paint, local: bool) -> Result<()> {
     if !local {
         let cmd = ctx.cfg.sync.full_cmd.trim();
         if !cmd.is_empty() {
-            let out = std::process::Command::new("sh").arg("-c").arg(cmd).output();
-            match out {
-                Ok(o) if o.status.success() => println!("{ok} {cmd}"),
-                Ok(o) => println!(
-                    "{warn} {cmd} failed: {}",
-                    String::from_utf8_lossy(&o.stderr).lines().last().unwrap_or("")
-                ),
-                Err(e) => println!("{warn} {cmd}: {e}"),
+            let r = kairos_store::sync::run_full(&ctx.cfg);
+            for pc in &r.followed_empty {
+                println!("{ok} {pc} was emptied on iCloud; local copy emptied too");
+            }
+            match r.error {
+                None => println!("{ok} {cmd}"),
+                Some(e) => println!("{warn} {cmd} failed: {e}"),
             }
         }
         for (id, r) in kairos_store::feeds::fetch_all(&ctx.cfg) {

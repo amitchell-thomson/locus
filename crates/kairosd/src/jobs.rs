@@ -158,13 +158,12 @@ impl Jobs {
 
 /// Full sync, then replan if a fixed event now collides with a future block.
 fn tick_sync(e: &mut Engine) -> Result<(), String> {
-    let cmd = e.cfg.sync.full_cmd.clone();
-    if !cmd.trim().is_empty() {
-        match std::process::Command::new("sh").arg("-c").arg(&cmd).output() {
-            Ok(o) if o.status.success() => {}
-            Ok(o) => tracing::warn!("sync failed: {}", String::from_utf8_lossy(&o.stderr)),
-            Err(err) => tracing::warn!("sync: {err}"),
-        }
+    let r = kairos_store::sync::run_full(&e.cfg);
+    for pc in &r.followed_empty {
+        tracing::info!(collection = %pc, "emptied on iCloud; followed with --force-delete");
+    }
+    if let Some(err) = r.error {
+        tracing::warn!("sync failed: {err}");
     }
     if e.db
         .tasks(Some(TaskStatus::Open))

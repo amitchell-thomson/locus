@@ -71,11 +71,9 @@ fn map_key(k: event::KeyEvent) -> Option<Key> {
 /// Background: run the configured sync command (vdirsyncer pull on the Mac)
 /// so writes made through kairosd show up quickly.
 fn spawn_sync(cfg: &Config, done: mpsc::Sender<()>) {
-    let cmd = cfg.sync.full_cmd.clone();
+    let cfg = cfg.clone();
     std::thread::spawn(move || {
-        if !cmd.trim().is_empty() {
-            let _ = std::process::Command::new("sh").arg("-c").arg(&cmd).output();
-        }
+        let _ = kairos_store::sync::run_full(&cfg);
         let _ = done.send(());
     });
 }

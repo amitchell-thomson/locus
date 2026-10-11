@@ -4,13 +4,15 @@
 //! - [`load`]: config sources → [`kairos_core::view::LoadedSource`];
 //! - [`cache`]: the precomputed instance index behind `next`/`today`/TUI;
 //! - [`db`]: SQLite (sidecar metadata, tasks, changesets, check-ins);
-//! - [`feeds`]: read-only `.ics` URL fetcher with conditional GET.
+//! - [`feeds`]: read-only `.ics` URL fetcher with conditional GET;
+//! - [`sync`]: running `sync.full_cmd` (follows collections emptied on iCloud).
 
 pub mod cache;
 pub mod client;
 pub mod db;
 pub mod feeds;
 pub mod load;
+pub mod sync;
 pub mod vdir;
 
 use std::path::{Path, PathBuf};

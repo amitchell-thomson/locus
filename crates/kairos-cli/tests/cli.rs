@@ -211,3 +211,14 @@ fn doctor_reports_missing_sources() {
         "{s}"
     );
 }
+
+#[test]
+fn next_within_stays_empty_until_something_is_close() {
+    let t = tempfile::tempdir().unwrap();
+    setup(t.path());
+    let now = "2026-10-19T06:00:00+01:00";
+    let far = out(&kairos(t.path(), now, &["next", "--tmux", "--within", "30m"]));
+    assert_eq!(far.trim(), "", "nothing within 30 min");
+    let all = out(&kairos(t.path(), now, &["next", "--tmux"]));
+    assert!(!all.trim().is_empty());
+}

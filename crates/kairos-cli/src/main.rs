@@ -76,6 +76,11 @@ enum Cmd {
         tmux: bool,
         #[arg(long)]
         json: bool,
+        /// Only an event starting within this long (e.g. 60m); otherwise print
+        /// nothing — a deadline due within 24 h still shows. Keeps a tmux
+        /// segment empty until it's worth a glance.
+        #[arg(long)]
+        within: Option<String>,
     },
     /// Find events by title (shows UIDs for edit/rm/rekey).
     Find {
@@ -390,7 +395,13 @@ fn run() -> Result<()> {
             }
             agenda(&ctx, &p, from, to, &v)
         }
-        Cmd::Next { tmux, json } => next(&ctx, tmux, json),
+        Cmd::Next { tmux, json, within } => {
+            let within = within
+                .map(|w| dates::parse_minutes(&w).map(|m| Duration::minutes(i64::from(m))))
+                .transpose()
+                .map_err(|e| anyhow!("--within: {e}"))?;
+            next(&ctx, tmux, json, within)
+        }
         Cmd::Find { text, json } => find(&ctx, &p, &text, json),
         Cmd::Add {
             title,
@@ -885,7 +896,7 @@ fn agenda(ctx: &Ctx, p: &Paint, from: DateTime<Utc>, to: DateTime<Utc>, v: &View
 }
 
 /// `next --tmux`: one status segment matching the tmux theme, or nothing.
-fn next(ctx: &Ctx, tmux: bool, json: bool) -> Result<()> {
+fn next(ctx: &Ctx, tmux: bool, json: bool, within: Option<Duration>) -> Result<()> {
     let from = ctx.now - Duration::hours(12);
     let to = ctx.now + Duration::hours(36);
     let mut f = Filter::from_config(&ctx.cfg);
@@ -905,12 +916,21 @@ fn next(ctx: &Ctx, tmux: bool, json: bool) -> Result<()> {
             i.meta.kind == EventKind::Deadline && due_of(i) >= ctx.now && due_of(i) <= ctx.now + Duration::hours(24)
         })
         .min_by_key(|i| due_of(i));
-    let event = cl.iter().map(|c| &c.primary).find(|i| {
+    // Family-only events count once you're attending (TUI `B`); a Family
+    // event that's also in one of your calendars (⧉) always counts.
+    let yours = |c: &Cluster| {
+        c.all()
+            .any(|i| i.overlay != kairos_core::config::Overlay::Family || i.meta.blocking)
+    };
+    let event = cl.iter().filter(|c| yours(c)).map(|c| &c.primary).find(|i| {
         matches!(i.span, Span::Timed { .. })
             && i.meta.kind != EventKind::Deadline
             && !i.transparent
-            && i.end(tz) > ctx.now
-            && i.start(tz) <= ctx.now + Duration::hours(24)
+            && match within {
+                // Only something about to start (not one already under way).
+                Some(w) => i.start(tz) > ctx.now && i.start(tz) <= ctx.now + w,
+                None => i.end(tz) > ctx.now && i.start(tz) <= ctx.now + Duration::hours(24),
+            }
     });
     let (text, urgent, kind, inst) = if let Some(d) = deadline {
         let when = match d.span {

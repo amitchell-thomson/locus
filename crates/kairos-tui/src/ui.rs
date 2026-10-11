@@ -536,7 +536,7 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
     for r in 0..nrows {
         if divider_rows.contains(&(r as i64)) {
             for xx in inner.x + gutter..inner.x + inner.width {
-                buf.set_string(xx, grid_y + r as u16, "┄", Style::default().fg(c("surface0")));
+                buf.set_string(xx, grid_y + r as u16, "┄", Style::default().fg(c("surface2")));
             }
         }
         for k in 0..ndays {
@@ -610,12 +610,8 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             let tw = lane_w.saturating_sub(2) as usize;
             let rows_avail = p.r1 - p.r0;
             let full = label(i);
-            // Prefer the full title; fall back to the compact one if it won't fit.
-            let mut title = if full.width() > tw * rows_avail {
-                compact(&full)
-            } else {
-                full
-            };
+            // The real title, wrapped; `…` marks where it's cut (details on the bottom edge).
+            let mut title = full;
             if p.cl.is_merged() {
                 title.push_str(" ⧉");
             }
@@ -644,8 +640,11 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
                     }
                     None => "▌".to_string(),
                 };
-                let st = if selected || k == 0 {
+                let st = if selected {
                     style
+                } else if k == 0 {
+                    // Bold first line: back-to-back events stay distinguishable.
+                    style.add_modifier(Modifier::BOLD)
                 } else if k < lines.len() {
                     style.remove_modifier(Modifier::BOLD)
                 } else {
@@ -705,8 +704,10 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
                 let y = grid_y + r as u16;
                 let st = Style::default().fg(c("peach"));
                 buf.set_string(col_x(k), y, "●", st);
-                for xx in col_x(k) + 1..col_x(k) + col_w_of(k).saturating_sub(1) {
-                    if buf[(xx, y)].symbol().trim().is_empty() || buf[(xx, y)].symbol() == "┄" {
+                // The line only runs through free time, never across an event.
+                let busy = timed.iter().any(|&(r0, r1, _)| (r0 as i64) <= r && r < r1 as i64);
+                if !busy {
+                    for xx in col_x(k) + 1..col_x(k) + col_w_of(k).saturating_sub(1) {
                         buf.set_string(xx, y, "─", st);
                     }
                 }

@@ -5,7 +5,7 @@ use chrono_tz::Europe::London;
 use kairos_core::changeset::Changeset;
 use kairos_core::config::Config;
 use kairos_core::constraints::Constraints;
-use kairosd::engine::{Engine, Notifier, Syncer};
+use kairosd::engine::{Engine, Notifier, SyncTarget, Syncer, collection_cmd};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -22,8 +22,11 @@ pub struct Recorder {
 }
 
 impl Syncer for Recorder {
-    fn sync_collections(&self, c: &[String]) {
-        self.synced.lock().unwrap().extend(c.iter().cloned());
+    fn sync_collections(&self, c: &[SyncTarget]) {
+        self.synced
+            .lock()
+            .unwrap()
+            .extend(c.iter().map(|t| collection_cmd("{collection}", t)));
     }
 }
 impl Notifier for Recorder {

@@ -159,6 +159,17 @@ pub fn delete_item(dir: &Path, href: &str) -> Result<()> {
     }
 }
 
+/// True if `dir` holds no `.ics` items (missing dir counts as non-empty:
+/// we only want to report emptiness we can see).
+pub fn is_empty(dir: &Path) -> bool {
+    match fs::read_dir(dir) {
+        Ok(rd) => !rd
+            .filter_map(|e| e.ok())
+            .any(|e| e.path().extension().is_some_and(|x| x == "ics")),
+        Err(_) => false,
+    }
+}
+
 /// Modification time in nanoseconds since the epoch (0 if missing).
 pub fn mtime_ns(p: &Path) -> i64 {
     fs::metadata(p)

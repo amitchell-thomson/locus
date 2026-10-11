@@ -58,9 +58,20 @@ impl From<kairos_core::api::TimeParseError> for EngineError {
 
 pub type Result<T> = std::result::Result<T, EngineError>;
 
+/// A collection to push after a write.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyncTarget {
+    /// vdirsyncer `pair/collection`.
+    pub name: String,
+    /// The write removed the collection's last item. vdirsyncer refuses to
+    /// sync a "completely emptied" storage unless told the emptying was
+    /// deliberate; it was, because kairos just did it.
+    pub emptied: bool,
+}
+
 /// Runs vdirsyncer after writes. Tests use a recording fake.
 pub trait Syncer: Send {
-    fn sync_collections(&self, collections: &[String]);
+    fn sync_collections(&self, collections: &[SyncTarget]);
 }
 
 /// Sends approval requests etc. Tests use a recording fake.
@@ -73,15 +84,12 @@ pub struct ShellSyncer {
 }
 
 impl Syncer for ShellSyncer {
-    fn sync_collections(&self, collections: &[String]) {
+    fn sync_collections(&self, collections: &[SyncTarget]) {
         if self.cmd.trim().is_empty() {
             return;
         }
         // Order matters for moves: the source collection (delete) first.
-        let cmds: Vec<String> = collections
-            .iter()
-            .map(|c| self.cmd.replace("{collection}", c))
-            .collect();
+        let cmds: Vec<String> = collections.iter().map(|t| collection_cmd(&self.cmd, t)).collect();
         std::thread::spawn(move || {
             for c in cmds {
                 match std::process::Command::new("sh").arg("-c").arg(&c).output() {
@@ -94,6 +102,17 @@ impl Syncer for ShellSyncer {
             }
         });
     }
+}
+
+/// `{collection}` → `pair/coll`, prefixed with `--force-delete` when the
+/// write emptied it (scoped to that one collection).
+pub fn collection_cmd(template: &str, t: &SyncTarget) -> String {
+    let arg = if t.emptied {
+        format!("--force-delete {}", t.name)
+    } else {
+        t.name.clone()
+    };
+    template.replace("{collection}", &arg)
 }
 
 pub struct NoNotifier;
@@ -600,7 +619,7 @@ impl Engine {
     }
 
     fn sync_after(&self, sources: &[String], cols: &[Collection]) {
-        let mut names = Vec::new();
+        let mut names: Vec<SyncTarget> = Vec::new();
         for s in sources {
             let Ok(src) = self.source(s) else { continue };
             let Ok(dir) = self.dir_of(&src, cols) else { continue };
@@ -609,8 +628,9 @@ impl Engine {
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
             let name = format!("{}/{}", self.cfg.sync.pair, coll);
-            if !names.contains(&name) {
-                names.push(name);
+            if !names.iter().any(|t| t.name == name) {
+                let emptied = vdir::is_empty(&dir);
+                names.push(SyncTarget { name, emptied });
             }
         }
         if !names.is_empty() {

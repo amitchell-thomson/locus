@@ -57,6 +57,32 @@ fn not_live_refuses_to_touch_real_calendars() {
 // ------------------------------------------------------------ low risk
 
 #[test]
+fn deleting_the_last_item_force_syncs_only_that_collection() {
+    // vdirsyncer refuses to sync a "completely emptied" collection; when kairos
+    // emptied it on purpose the push must say so, or the delete never reaches iCloud.
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let a = e
+        .create_event(Author::Claude, &ev("Squash", "2026-10-13 19:00", "Sport"))
+        .unwrap();
+    let b = e
+        .create_event(Author::Claude, &ev("Gym", "2026-10-14 19:00", "Sport"))
+        .unwrap();
+    let uid = |cs: &kairos_core::changeset::Changeset| match &cs.ops[0] {
+        kairos_core::changeset::Op::CreateEvent { uid, .. } => uid.clone(),
+        _ => unreachable!(),
+    };
+    env.rec.synced.lock().unwrap().clear();
+    e.delete_event(Author::Alec, None, &uid(&a)).unwrap();
+    e.delete_event(Author::Alec, None, &uid(&b)).unwrap();
+    assert!(env.items("Sport").is_empty());
+    assert_eq!(
+        *env.rec.synced.lock().unwrap(),
+        vec!["icloud/s-2222".to_string(), "--force-delete icloud/s-2222".to_string()]
+    );
+}
+
+#[test]
 fn live_low_risk_create_is_applied_and_synced() {
     let env = Env::new(true);
     let mut e = env.engine();
@@ -274,8 +300,8 @@ fn share_to_family_moves_and_keeps_origin_key() {
     let synced = env.rec.synced.lock().unwrap().clone();
     assert_eq!(
         synced,
-        vec!["icloud/s-2222".to_string(), "icloud/f-4444".to_string()],
-        "delete side syncs first"
+        vec!["--force-delete icloud/s-2222".to_string(), "icloud/f-4444".to_string()],
+        "delete side syncs first; Sport is now empty"
     );
     e.undo(&cs.id).unwrap();
     assert!(env.items("Family").is_empty());

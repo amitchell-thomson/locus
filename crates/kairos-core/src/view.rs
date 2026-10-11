@@ -82,7 +82,10 @@ impl Filter {
 /// Display precedence: Family > iCloud personal > read-only personal import
 /// (OQTS) > Imported > Background.
 pub fn rank(i: &Instance, sources: &[LoadedSource]) -> u8 {
-    let kind = sources.iter().find(|s| s.id == i.source).map(|s| s.kind);
+    rank_for(i, sources.iter().find(|s| s.id == i.source).map(|s| s.kind))
+}
+
+pub fn rank_for(i: &Instance, kind: Option<SourceKind>) -> u8 {
     match (i.overlay, kind) {
         (Overlay::Family, _) => 0,
         (Overlay::Personal, Some(SourceKind::Icloud)) => 1,
@@ -128,6 +131,21 @@ pub fn view(
 }
 
 pub fn view_of(all: Vec<Instance>, sources: &[LoadedSource], filter: &Filter, tz: Tz) -> Vec<Cluster> {
+    view_with(
+        all,
+        |id| sources.iter().find(|s| s.id == id).map(|s| s.kind),
+        filter,
+        tz,
+    )
+}
+
+/// Like [`view_of`] but with a source-kind lookup (for cached instances).
+pub fn view_with(
+    all: Vec<Instance>,
+    kind_of: impl Fn(&str) -> Option<SourceKind>,
+    filter: &Filter,
+    tz: Tz,
+) -> Vec<Cluster> {
     let visible: Vec<Instance> = all.into_iter().filter(|i| filter.allows(i)).collect();
-    cluster(visible, tz, |i| rank(i, sources))
+    cluster(visible, tz, |i| rank_for(i, kind_of(&i.source)))
 }

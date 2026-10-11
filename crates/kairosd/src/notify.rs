@@ -43,7 +43,6 @@ impl Ntfy {
             "title": format!("kairos · {} wants to change your calendar", cs.author.as_str()),
             "message": msg,
             "priority": 4,
-            "tags": ["calendar"],
             "actions": [
                 {"action": "http", "label": "Approve", "url": self.signed(&cs.id, "approve"), "method": "POST", "clear": true},
                 {"action": "http", "label": "Reject", "url": self.signed(&cs.id, "reject"), "method": "POST", "clear": true},
@@ -71,7 +70,7 @@ impl Ntfy {
     }
 
     pub fn simple(&self, title: &str, message: &str, view: Option<(&str, String)>) -> Value {
-        let mut v = json!({"topic": self.topic, "title": title, "message": message, "tags": ["calendar"]});
+        let mut v = json!({"topic": self.topic, "title": title, "message": message});
         if let Some((label, url)) = view {
             v["actions"] = json!([{"action": "view", "label": label, "url": url}]);
         }

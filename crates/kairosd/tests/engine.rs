@@ -607,3 +607,31 @@ fn empty_due_means_no_deadline() {
         .unwrap();
     assert!(r.task.due.is_none() && r.task.deadline_uid.is_none());
 }
+
+#[test]
+fn import_timetable_is_one_undoable_changeset() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let text = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../fixtures/edge/recur_count_until_exdate.ics"
+    ))
+    .unwrap();
+    let cs = e
+        .import_ics(Author::Alec, &text, "Engineering", "timetable.ics")
+        .unwrap();
+    // Recurring events → needs approval.
+    assert_eq!(cs.status, Status::Pending);
+    assert!(cs.reasons.iter().any(|r| r.contains("recurring")));
+    e.approve(&cs.id).unwrap();
+    assert_eq!(env.items("Engineering").len(), 2);
+    let t = env.read_all("Engineering");
+    assert!(t.contains("X-KAIROS-ADOPTED-FROM:import:timetable.ics") && t.contains("BEGIN:VTIMEZONE"));
+    // Re-importing skips what's there.
+    assert!(matches!(
+        e.import_ics(Author::Alec, &text, "Engineering", "timetable.ics"),
+        Err(EngineError::BadRequest(_))
+    ));
+    e.undo(&cs.id).unwrap();
+    assert!(env.items("Engineering").is_empty());
+}

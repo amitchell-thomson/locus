@@ -99,6 +99,15 @@ pub struct UpdateEventReq {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ImportReq {
+    pub key: String,
+    /// File name (for the changeset summary / provenance).
+    pub name: String,
+    /// The `.ics` text.
+    pub ics: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct KeyReq {
     pub key: String,
 }

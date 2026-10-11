@@ -168,6 +168,12 @@ enum Cmd {
         #[arg(long)]
         key: String,
     },
+    /// Import an .ics file into a key calendar (one undoable changeset).
+    Import {
+        file: PathBuf,
+        #[arg(long)]
+        key: String,
+    },
     /// Evening check-in for today's task blocks.
     Checkin,
     /// Sync: vdirsyncer, read-only feeds, sidecar from kairosd, cache rebuild.
@@ -527,6 +533,15 @@ fn run() -> Result<()> {
         Cmd::Approve { id } => decide(&ctx, &p, &id, "approve"),
         Cmd::Reject { id } => decide(&ctx, &p, &id, "reject"),
         Cmd::Undo { id } => decide(&ctx, &p, &id, "undo"),
+        Cmd::Import { file, key } => {
+            let ics = std::fs::read_to_string(&file).with_context(|| format!("reading {}", file.display()))?;
+            let name = file
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let d = ctx.daemon()?;
+            report(&p, &d, d.import(&api::ImportReq { key, name, ics })?)
+        }
         Cmd::Checkin => checkin(&ctx, &p),
         Cmd::Sync { local } => sync(&ctx, &p, local),
         Cmd::Doctor => doctor(&ctx, &p),
@@ -798,8 +813,16 @@ fn agenda(ctx: &Ctx, p: &Paint, from: DateTime<Utc>, to: DateTime<Utc>, v: &View
     if !printed_any {
         println!("{}", p.dim("Nothing scheduled."));
     }
-    for (id, why) in &idx.missing {
-        eprintln!("{}", p.dim(&format!("(not loaded: {id} — {why})")));
+    if !idx.missing.is_empty() {
+        let ids: Vec<&str> = idx.missing.iter().map(|(id, _)| id.as_str()).collect();
+        eprintln!(
+            "{}",
+            p.dim(&format!(
+                "({} source(s) not loaded: {} — see kairos doctor)",
+                ids.len(),
+                ids.join(", ")
+            ))
+        );
     }
     Ok(())
 }

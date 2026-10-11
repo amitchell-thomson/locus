@@ -142,6 +142,7 @@ pub fn router(st: AppState, mcp: Option<Router<AppState>>) -> Router {
         .route("/api/events/{source}/{uid}/share-family", post(share_family))
         .route("/api/events/{source}/{uid}/adopt", post(adopt))
         .route("/api/free", get(find_free))
+        .route("/api/import", post(import))
         .route("/api/tasks", get(list_tasks).post(create_task))
         .route("/api/tasks/{id}", axum::routing::patch(update_task).get(get_task))
         .route("/api/tasks/{id}/complete", post(complete_task))
@@ -289,6 +290,12 @@ async fn adopt(
 ) -> HResult<WriteResult> {
     let a = author(&h);
     let cs = with_engine(&st, move |e| e.adopt(a, &uid, &req.key)).await?;
+    Ok(Json(WriteResult::from(&cs)))
+}
+
+async fn import(State(st): State<AppState>, h: HeaderMap, Json(req): Json<api::ImportReq>) -> HResult<WriteResult> {
+    let a = author(&h);
+    let cs = with_engine(&st, move |e| e.import_ics(a, &req.ics, &req.key, &req.name)).await?;
     Ok(Json(WriteResult::from(&cs)))
 }
 

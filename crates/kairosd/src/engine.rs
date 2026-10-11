@@ -1051,6 +1051,84 @@ impl Engine {
         self.propose(&world, author, vec![op], format!("Adopt {title:?} into {key}"))
     }
 
+    /// Import an `.ics` file into a key calendar as one changeset (one item per
+    /// UID; invitations stripped; UIDs already present in the target skipped).
+    pub fn import_ics(&mut self, author: Author, text: &str, key: &str, name: &str) -> Result<Changeset> {
+        let world = self.world(60)?;
+        let (target, origin_key) = self.target_for_key(key)?;
+        let cals = ics::parse(text).map_err(|e| EngineError::BadRequest(format!("not valid iCalendar: {e}")))?;
+        let existing: std::collections::HashSet<&str> = world
+            .loaded
+            .sources
+            .iter()
+            .filter(|s| s.id == target.id)
+            .flat_map(|s| s.series.iter().map(|e| e.uid.as_str()))
+            .collect();
+        let mut tzs: Vec<ics::Component> = Vec::new();
+        let mut by_uid: std::collections::BTreeMap<String, Vec<ics::Component>> = Default::default();
+        for cal in &cals {
+            for c in &cal.children {
+                match c.name.as_str() {
+                    "VTIMEZONE" if !tzs.iter().any(|t| t.value("TZID") == c.value("TZID")) => tzs.push(c.clone()),
+                    "VEVENT" => {
+                        let uid = c.text("UID").unwrap_or_else(build::new_uid);
+                        by_uid.entry(uid).or_default().push(c.clone());
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let meta = Meta {
+            created_by: Some(author),
+            adopted_from: Some(format!("import:{name}")),
+            origin_key,
+            ..Default::default()
+        };
+        let mut ops = Vec::new();
+        let mut skipped = 0;
+        for (uid, evs) in by_uid {
+            if existing.contains(uid.as_str()) {
+                skipped += 1;
+                continue;
+            }
+            let mut out = ics::Component::new("VCALENDAR");
+            out.push(ics::Property::new("VERSION", "2.0"));
+            out.push(ics::Property::new("PRODID", build::PRODID));
+            out.children.extend(tzs.iter().cloned());
+            for mut ev in evs {
+                for p in ["ATTENDEE", "ORGANIZER", "METHOD"] {
+                    ev.remove(p);
+                }
+                ev.set(ics::Property::text("UID", &uid));
+                meta.apply_to(&mut ev);
+                out.children.push(ev);
+            }
+            ops.push(Op::CreateEvent {
+                item: Item {
+                    source: target.id.clone(),
+                    href: vdir::href_for_uid(&uid),
+                },
+                uid,
+                after: out.to_ics(),
+            });
+        }
+        if ops.is_empty() {
+            return Err(EngineError::BadRequest(format!(
+                "nothing to import ({skipped} already present)"
+            )));
+        }
+        let summary = format!(
+            "Import {} event(s) from {name} into {key}{}",
+            ops.len(),
+            if skipped > 0 {
+                format!(" ({skipped} already present)")
+            } else {
+                String::new()
+            }
+        );
+        self.propose(&world, author, ops, summary)
+    }
+
     // ------------------------------------------------------------ deadlines & tasks
 
     fn deadline_op(

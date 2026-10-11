@@ -166,6 +166,9 @@ impl Daemon {
             &api::KeyReq { key: key.into() },
         )
     }
+    pub fn import(&self, r: &api::ImportReq) -> Result<std::result::Result<WriteResult, Rejected>> {
+        self.post("/api/import", r)
+    }
     pub fn tasks(&self, status: &str) -> Result<std::result::Result<Vec<Task>, Rejected>> {
         self.get(&format!("/api/tasks?status={status}"))
     }

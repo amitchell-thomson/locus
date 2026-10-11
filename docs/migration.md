@@ -73,7 +73,11 @@ security add-generic-password -U -s kairos-api-token -a "$USER" -w "$(ssh comput
 ## 6. Engineering timetable
 
 - [ ] Get this year's timetable as `.ics` (Engineering Science timetable page / Oxford "My Timetable" export, or the department's calendar subscription link).
-- [ ] Put it in `~/local-projects/kairos/fixtures/raw/timetable.ics` and tell Claude: it gets imported into **Engineering** (one-off import through kairosd, so it's logged and undoable) and an anonymised copy becomes a golden fixture.
+- [ ] Put it in `~/local-projects/kairos/fixtures/raw/timetable.ics`, then (after go-live, or while `live = false` to trial it in ZZ-kairos-test):
+  ```sh
+  kairos import fixtures/raw/timetable.ics --key Engineering   # one changeset; recurring → approve it; `kairos undo <id>` reverts all
+  cargo xtask anonymise fixtures/raw/timetable.ics fixtures/golden/timetable.ics --salt "$(openssl rand -hex 8)"
+  ```
 
 ## 7. Golden fixtures from your real calendars
 

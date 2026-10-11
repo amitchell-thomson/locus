@@ -87,7 +87,14 @@ fn spawn_sync(cfg: &Config, done: mpsc::Sender<()>) {
 }
 
 pub fn run(cfg: Config, path: PathBuf) -> Result<(), String> {
-    let now = Utc::now();
+    // KAIROS_NOW=2026-10-12T09:40:00+01:00 previews the TUI at another time
+    // (the clock keeps running from there). Display only; writes are real.
+    let skew = std::env::var("KAIROS_NOW")
+        .ok()
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+        .map(|t| t.with_timezone(&Utc) - Utc::now())
+        .unwrap_or_else(chrono::Duration::zero);
+    let now = Utc::now() + skew;
     let mut app = load(cfg.clone(), &path, now)?;
     app.daemon = Daemon::from_config(&cfg).ok().map(|d| d.interactive(true));
     let (tx, rx) = mpsc::channel::<()>();
@@ -98,7 +105,7 @@ pub fn run(cfg: Config, path: PathBuf) -> Result<(), String> {
         let mut syncing = false;
         let mut last_pull = Instant::now();
         loop {
-            app.now = Utc::now();
+            app.now = Utc::now() + skew;
             terminal.draw(|f| ui::draw(f, &app)).map_err(|e| e.to_string())?;
             // Remote state (pending approvals, tasks) every 30 s; first time right after the first frame.
             if last_remote.elapsed() > Duration::from_secs(30) {

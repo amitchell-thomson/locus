@@ -768,9 +768,9 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             } else {
                 title
             };
-            let loc = i.location.clone().unwrap_or_default();
             // Soon: "in 25m" at the end of the first line (peach, like the
             // now-line); the title wraps around it rather than being cut.
+            // (Location isn't drawn in blocks; it's on the bottom edge.)
             let soon_tag = match ph {
                 Phase::Soon(m) if lively && lane_w >= 14 => Some(in_text(m)),
                 _ => None,
@@ -779,9 +779,6 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
                 Some(tag) => wrap_first_narrow(&text, tw.saturating_sub(tag.width() + 1), tw, rows_avail),
                 None => wrap_lines(&text, tw, rows_avail),
             };
-            if !loc.is_empty() && lines.len() < rows_avail && (single || rows_avail - lines.len() >= 1) {
-                lines.push(fit(&loc, tw));
-            }
             if lines.is_empty() {
                 text = String::new();
                 lines.push(text);

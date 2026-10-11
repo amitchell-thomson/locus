@@ -429,12 +429,11 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             .iter()
             .find(|c| c.primary.overlay == Overlay::Background && c.primary.span.is_all_day());
         let style = if *d == today && *d == app.cursor {
-            // Today and selected: the blue block plus the selection's mauve underline.
+            // Block = today; mauve = selected. Today and selected: a mauve block.
             Style::default()
                 .fg(c("base"))
-                .bg(c("blue"))
-                .underline_color(c("mauve"))
-                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+                .bg(c("mauve"))
+                .add_modifier(Modifier::BOLD)
         } else if *d == today {
             Style::default()
                 .fg(c("base"))

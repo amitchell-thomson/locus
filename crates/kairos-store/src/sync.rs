@@ -8,7 +8,9 @@
 //! `--force-delete`. A *locally* emptied collection is left alone: that would
 //! delete from iCloud, and only kairosd's own writes may decide that.
 
+use chrono::{DateTime, Utc};
 use kairos_core::config::Config;
+use std::path::PathBuf;
 
 #[derive(Debug, Default)]
 pub struct FullSync {
@@ -44,6 +46,27 @@ pub fn remote_emptied(stderr: &str) -> Vec<String> {
         }
     }
     out
+}
+
+fn stamp_path(cfg: &Config) -> PathBuf {
+    cfg.data_dir().join("last-sync")
+}
+
+/// When `run_full` last succeeded (calendars that just haven't changed are
+/// not stale; a sync that hasn't succeeded is).
+pub fn last_success(cfg: &Config) -> Option<DateTime<Utc>> {
+    let s = std::fs::read_to_string(stamp_path(cfg)).ok()?;
+    DateTime::parse_from_rfc3339(s.trim())
+        .ok()
+        .map(|t| t.with_timezone(&Utc))
+}
+
+fn record_success(cfg: &Config) {
+    let p = stamp_path(cfg);
+    if let Some(d) = p.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    let _ = std::fs::write(p, Utc::now().to_rfc3339());
 }
 
 fn sh(cmd: &str) -> std::io::Result<std::process::Output> {
@@ -87,6 +110,9 @@ pub fn run_full(cfg: &Config) -> FullSync {
             }
         }
         Err(e) => res.error = Some(e.to_string()),
+    }
+    if res.ok {
+        record_success(cfg);
     }
     res
 }

@@ -1233,6 +1233,17 @@ fn doctor(ctx: &Ctx, p: &Paint) -> Result<()> {
         cols.len()
     );
     let stale = Duration::minutes(i64::from(ctx.cfg.sync.stale_after_minutes));
+    if ctx.cfg.sources.iter().any(|s| s.kind != SourceKind::IcsReadonly) {
+        match kairos_store::sync::last_success(&ctx.cfg) {
+            Some(t) if ctx.now - t <= stale => println!("{ok} iCloud synced {} ago", fmt_age(ctx.now - t)),
+            Some(t) => println!(
+                "{warn} iCloud last synced {} ago {}",
+                fmt_age(ctx.now - t),
+                p.dim("(check vdirsyncer / the sync job)")
+            ),
+            None => println!("{warn} iCloud never synced by kairos {}", p.dim("(run kairos sync)")),
+        }
+    }
     for s in &ctx.cfg.sources {
         match kairos_store::vdir::source_path(&ctx.cfg, s, &cols) {
             Ok(path) if path.exists() => {
@@ -1245,7 +1256,8 @@ fn doctor(ctx: &Ctx, p: &Paint) -> Result<()> {
                         .map(DateTime::<Utc>::from)
                 };
                 let age = newest.map(|t| ctx.now - t);
-                let mark = if age.is_some_and(|a| a > stale * 4) {
+                // Calendars that simply haven't changed aren't stale; only feeds are judged by age.
+                let mark = if s.kind == SourceKind::IcsReadonly && age.is_some_and(|a| a > stale * 4) {
                     warn.clone()
                 } else {
                     ok.clone()

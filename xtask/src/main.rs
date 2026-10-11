@@ -152,6 +152,9 @@ fn fold(line: &str) -> String {
 }
 
 fn ics_files(p: &Path) -> Vec<PathBuf> {
+    if !p.exists() {
+        return Vec::new();
+    }
     if p.is_dir() {
         let mut v: Vec<PathBuf> = fs::read_dir(p)
             .map(|rd| rd.filter_map(|e| e.ok()).map(|e| e.path()).collect())

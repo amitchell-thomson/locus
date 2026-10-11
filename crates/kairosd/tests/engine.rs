@@ -790,3 +790,27 @@ fn import_timetable_is_one_undoable_changeset() {
     e.undo(&cs.id).unwrap();
     assert!(env.items("Engineering").is_empty());
 }
+
+#[test]
+fn family_events_do_not_block_time_unless_marked() {
+    let env = Env::new(true);
+    env.phone_event(
+        "Family",
+        "fam-day",
+        "Family lunch",
+        "2026-10-12 09:00",
+        "2026-10-12 18:00",
+    );
+    let mut e = env.engine();
+    let (from, to) = (at("2026-10-12 09:00"), at("2026-10-12 18:00"));
+    let free = e.find_free(from, to, 60).unwrap();
+    assert!(!free.is_empty(), "Family time is free for planning by default");
+    // Opting this one event in (TUI `B`) makes it block.
+    let req = kairos_core::api::UpdateEventReq {
+        blocking: Some(true),
+        ..Default::default()
+    };
+    assert!(e.update_event(Author::Alec, None, "fam-day", &req).unwrap().is_none());
+    let free = e.find_free(from, to, 60).unwrap();
+    assert!(free.is_empty(), "{free:?}");
+}

@@ -1932,7 +1932,16 @@ impl Engine {
 
     pub fn events(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<Instance>> {
         let (idx, _) = cache::get(&self.cfg, self.cfg_path.as_deref(), self.now(), from, to)?;
-        Ok(idx.between(from, to, self.tz()))
+        // The cache can predate sidecar-only changes (e.g. a Family event's
+        // `blocking` flag); the database is authoritative.
+        let side = self.db.meta_all()?;
+        let mut evs = idx.between(from, to, self.tz());
+        for i in &mut evs {
+            if let Some(m) = side.get(&(i.source.clone(), i.uid.clone())) {
+                i.meta = i.meta.merged_with(m);
+            }
+        }
+        Ok(evs)
     }
 
     /// Free slots of at least `minutes` in `[from, to)` (respecting the day window).

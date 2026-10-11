@@ -113,6 +113,13 @@ pub struct TuiSettings {
     /// Sunday of 1st week (Oxford weeks run Sunday–Saturday).
     #[serde(default)]
     pub terms: Vec<Term>,
+    /// Events starting within this many minutes get an "in 25m" marker.
+    #[serde(default = "default_soon_minutes")]
+    pub soon_minutes: u32,
+}
+
+fn default_soon_minutes() -> u32 {
+    60
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -150,6 +157,7 @@ impl Default for TuiSettings {
         TuiSettings {
             section_hours: default_section_hours(),
             terms: Vec::new(),
+            soon_minutes: default_soon_minutes(),
         }
     }
 }

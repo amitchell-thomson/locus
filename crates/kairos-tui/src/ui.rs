@@ -183,6 +183,66 @@ pub fn wrap_lines(s: &str, w: usize, rows: usize) -> Vec<String> {
     lines
 }
 
+/// Where an event sits relative to now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Phase {
+    Past,
+    Now,
+    /// Starts within `tui.soon_minutes`; minutes until it starts.
+    Soon(i64),
+    Later,
+}
+
+/// Family events you're not attending (TUI `B`) never get now/soon emphasis.
+fn attending(i: &Instance) -> bool {
+    i.overlay != Overlay::Family || i.meta.origin_key.is_some() || i.meta.blocking
+}
+
+pub fn phase(app: &App, i: &Instance) -> Phase {
+    let (s, e) = i.span.bounds(app.tz);
+    let now = app.now;
+    if e <= now && !(s == e && s > now) {
+        return Phase::Past;
+    }
+    if s <= now {
+        return Phase::Now;
+    }
+    let mins = (s - now).num_minutes();
+    if mins <= i64::from(app.cfg.tui.soon_minutes) {
+        Phase::Soon(mins.max(1))
+    } else {
+        Phase::Later
+    }
+}
+
+fn in_text(mins: i64) -> String {
+    format!("in {}", crate::form::fmt_minutes(mins))
+}
+
+/// Like [`wrap_lines`], but the first line is only `w0` wide (room for a tag).
+pub fn wrap_first_narrow(s: &str, w0: usize, w: usize, rows: usize) -> Vec<String> {
+    let mut first = String::new();
+    let mut rest = Vec::new();
+    for word in s.split_whitespace() {
+        let cand = if first.is_empty() {
+            word.to_string()
+        } else {
+            format!("{first} {word}")
+        };
+        if rest.is_empty() && cand.width() <= w0 {
+            first = cand;
+        } else {
+            rest.push(word);
+        }
+    }
+    if first.is_empty() && !rest.is_empty() {
+        first = fit(rest.remove(0), w0);
+    }
+    let mut out = vec![first];
+    out.extend(wrap_lines(&rest.join(" "), w, rows.saturating_sub(1)));
+    out
+}
+
 /// One line describing an event, for the week view's bottom edge.
 fn peek(app: &App, cl: &Cluster) -> String {
     let i = &cl.primary;
@@ -207,6 +267,13 @@ fn peek(app: &App, cl: &Cluster) -> String {
     }
     if cl.is_merged() {
         parts.push(format!("⧉ {}", cl.others.len() + 1));
+    }
+    match phase(app, i) {
+        Phase::Now if !i.span.is_all_day() => {
+            parts.push(format!("now, until {}", i.end(tz).with_timezone(&tz).format("%H:%M")))
+        }
+        Phase::Soon(m) => parts.push(in_text(m)),
+        _ => {}
     }
     parts.join(" · ")
 }
@@ -661,9 +728,20 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             let i = &p.cl.primary;
             let idx = per_day[k].iter().position(|x| std::ptr::eq(x, p.cl));
             let selected = *d == app.cursor && idx == Some(app.sel);
+            let ph = phase(app, i);
+            let lively = attending(i);
             let col = colour_of(app, i);
-            let col = if *d < today { fade(col, PAST_FADE) } else { col };
+            let col = if *d < today || ph == Phase::Past {
+                fade(col, PAST_FADE)
+            } else {
+                col
+            };
+            // Now: the whole block tinted in its colour.
+            let now_block = ph == Phase::Now && lively && !selected;
             let mut style = Style::default().fg(col);
+            if now_block {
+                style = style.bg(fade(col, 0.7));
+            }
             if is_dimmed(i) {
                 style = style.add_modifier(Modifier::DIM);
             }
@@ -691,7 +769,16 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
                 title
             };
             let loc = i.location.clone().unwrap_or_default();
-            let mut lines = wrap_lines(&text, tw, rows_avail);
+            // Soon: "in 25m" at the end of the first line (peach, like the
+            // now-line); the title wraps around it rather than being cut.
+            let soon_tag = match ph {
+                Phase::Soon(m) if lively && lane_w >= 14 => Some(in_text(m)),
+                _ => None,
+            };
+            let mut lines = match &soon_tag {
+                Some(tag) => wrap_first_narrow(&text, tw.saturating_sub(tag.width() + 1), tw, rows_avail),
+                None => wrap_lines(&text, tw, rows_avail),
+            };
             if !loc.is_empty() && lines.len() < rows_avail && (single || rows_avail - lines.len() >= 1) {
                 lines.push(fit(&loc, tw));
             }
@@ -713,7 +800,7 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
                 } else if k == 0 {
                     // Bold first line: back-to-back events stay distinguishable.
                     style.add_modifier(Modifier::BOLD)
-                } else if k < lines.len() {
+                } else if k < lines.len() || now_block {
                     style.remove_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(col).add_modifier(Modifier::DIM)
@@ -723,28 +810,56 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
                 // selected event stays a solid highlight.
                 let lw = lane_w.saturating_sub(1) as usize;
                 let on_divider = divider_rows.contains(&(r as i64));
-                let body = if on_divider && !selected {
+                let body = if on_divider && !selected && !now_block {
                     body
                 } else {
                     format!("{}{}", body, " ".repeat(lw.saturating_sub(body.width())))
                 };
                 put(buf, x, grid_y + r as u16, lane_w.saturating_sub(1), &body, st);
+                if k == 0
+                    && let Some(tag) = &soon_tag
+                {
+                    let tx = x + lane_w.saturating_sub(1 + tag.width() as u16);
+                    let tag_style = if selected {
+                        st
+                    } else {
+                        Style::default().fg(c("peach")).add_modifier(Modifier::BOLD)
+                    };
+                    put(buf, tx, grid_y + r as u16, tag.width() as u16, tag, tag_style);
+                }
             }
         }
         // Timed deadlines: a ⚑ marker line across the column.
+        // Bold (with "in 5h") only when due within 24 h; past ones fade.
         for (r0, _, cl) in timed.iter().filter(|t| is_deadline(&t.2.primary)) {
             let i = &cl.primary;
-            let t = i.start(tz).with_timezone(&tz).format("%H:%M");
+            let due = i.start(tz);
+            let t = due.with_timezone(&tz).format("%H:%M");
+            let left = due - app.now;
+            let urgent = left > Duration::zero() && left <= Duration::hours(24);
+            let when = if urgent {
+                format!(" ({})", in_text(left.num_minutes().max(1)))
+            } else {
+                String::new()
+            };
+            let mut st = Style::default().fg(if due <= app.now {
+                fade(c("red"), PAST_FADE)
+            } else {
+                c("red")
+            });
+            if urgent {
+                st = st.add_modifier(Modifier::BOLD);
+            }
             put(
                 buf,
                 x0,
                 grid_y + *r0 as u16,
                 w,
                 &format!(
-                    "⚑ {t} {}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                    "⚑ {t} {}{when} ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
                     i.title.trim_start_matches('⚑').trim()
                 ),
-                Style::default().fg(c("red")).add_modifier(Modifier::BOLD),
+                st,
             );
         }
         // Ghost blocks (pending changes).

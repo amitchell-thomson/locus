@@ -441,50 +441,57 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             }
         }
     }
-    let nrows = rows as usize;
-    let (mut h0, mut h1) = if e0 <= e1 {
+    let nrows = rows as i64;
+    // Layout: 2 rows per hour (1 if space is short), hours grouped into
+    // 4-hour blocks (00–04, 04–08, 08–12, 12–16, 16–20, 20–24) with one blank
+    // row between blocks. Events crossing a block boundary run through it;
+    // events ending exactly on it stop above it.
+    const BLOCK: i64 = 4 * 60;
+    let gaps_between = |a: i64, b: i64| -> i64 {
+        // Boundaries strictly inside (a, b).
+        if b <= a {
+            return 0;
+        }
+        (b - 1).div_euclid(BLOCK) - a.div_euclid(BLOCK)
+    };
+    let needed = |a: i64, b: i64, rph: i64| (b - a) / 60 * rph + gaps_between(a, b);
+    let usual = if e0 <= e1 {
         (e0.min(8 * 60), e1.max(22 * 60))
     } else {
         (8 * 60, 22 * 60)
     };
-    // Not room for 2 rows per hour over the usual day? Show just the hours
-    // with events (then grow back outwards with whatever rows are spare).
-    if ((h1 - h0) / 60) * 2 > nrows as i64 && e0 <= e1 && ((e1 - e0) / 60).max(1) * 2 <= nrows as i64 {
-        (h0, h1) = (e0, e1.max(e0 + 60));
+    let tight = if e0 <= e1 { (e0, e1.max(e0 + 60)) } else { usual };
+    let mut layout = None;
+    'pick: for rph in [2, 1] {
+        for (a, b) in [usual, tight] {
+            if needed(a, b, rph) <= nrows {
+                layout = Some((rph, a, b));
+                break 'pick;
+            }
+        }
     }
-    // Every hour gets the same rows: an hour row plus a blank gap row (2 per
-    // hour), or just the hour row when space is short. Spare rows show more
-    // hours (later first) instead of stretching some hours to 3 rows.
-    let hours = ((h1 - h0) / 60).max(1);
-    let rph: i64 = if nrows as i64 >= hours * 2 {
-        2
-    } else if nrows as i64 >= hours {
-        1
-    } else {
-        0
-    };
+    let (rph, mut h0, mut h1) = layout.unwrap_or((0, tight.0, tight.1));
     if rph > 0 {
-        // Grow towards the usual day first, then to 06:00–24:00.
-        let mut spare = nrows as i64 / rph - hours;
+        // Spare rows add hours: towards the usual day, then 06:00–24:00.
         for (lo, hi) in [(8 * 60, 22 * 60), (6 * 60, 24 * 60)] {
-            while spare > 0 && (h1 < hi || h0 > lo) {
-                if h1 < hi {
+            loop {
+                if h1 < hi && needed(h0, h1 + 60, rph) <= nrows {
                     h1 += 60;
-                    spare -= 1;
-                }
-                if spare > 0 && h0 > lo {
+                } else if h0 > lo && needed(h0 - 60, h1, rph) <= nrows {
                     h0 -= 60;
-                    spare -= 1;
+                } else {
+                    break;
                 }
             }
         }
     }
     let span = (h1 - h0).max(60);
+    let nrows = nrows as usize;
     let row_of_min = |m: i64| -> i64 {
         if rph > 0 {
-            ((m - h0) * rph).div_euclid(60)
+            ((m - h0) * rph).div_euclid(60) + gaps_between(h0, m.min(h1) + 1)
         } else {
-            // Too short for one row per hour: squeeze.
+            // Too short even for one row per hour: squeeze, no gaps.
             ((m - h0) * nrows as i64).div_euclid(span)
         }
     };
@@ -499,14 +506,13 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
         }
     };
     let row_of = |t: DateTime<Utc>, d: NaiveDate| -> i64 { row_of_min(mins_of(t, d)) };
-    // Exclusive end row. An event ending on the hour stops before that hour's
-    // gap row, so back-to-back hourly events keep the blank line between them;
-    // only events running past the hour reach into the gap.
+    // Exclusive end row; an event ending exactly on a block boundary stops
+    // above the blank row.
     let end_row = |s: DateTime<Utc>, e: DateTime<Utc>, d: NaiveDate| -> i64 {
         let r0 = row_of(s, d);
         let em = mins_of(e, d);
         let mut r1 = row_of_min(em);
-        if rph == 2 && (em - h0).rem_euclid(60) == 0 && r1 - 1 > r0 {
+        if rph > 0 && em.rem_euclid(BLOCK) == 0 && em > h0 && em < h1 && r1 - 1 > r0 {
             r1 -= 1;
         }
         r1.max(r0 + 1)

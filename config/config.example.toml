@@ -158,20 +158,6 @@ writable = true
 
 # --- read-only Google feeds (secret iCal addresses) ---
 [[sources]]
-id = "oqts-shared"
-kind = "ics_readonly"
-url_cmd = "security find-generic-password -w -s kairos-ics-oqts-shared"
-overlay = "personal"
-key = "OQTS"
-
-[[sources]]
-id = "oqts-alec"
-kind = "ics_readonly"
-url_cmd = "security find-generic-password -w -s kairos-ics-oqts-alec"
-overlay = "personal"
-key = "OQTS"
-
-[[sources]]
 id = "uk-holidays"
 kind = "ics_readonly"
 url = "https://calendar.google.com/calendar/ical/en.uk%23holiday%40group.v.calendar.google.com/public/basic.ics"

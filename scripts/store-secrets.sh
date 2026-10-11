@@ -11,8 +11,6 @@ SECRETS=(
   "apple-id|kairos-apple-id|Apple ID email"
   "icloud-app-password|kairos-icloud|iCloud app-specific password (xxxx-xxxx-xxxx-xxxx)"
   "ics-gmail|kairos-ics-gmail|Secret iCal address: alec.mitchellthomson@gmail.com"
-  "ics-oqts-alec|kairos-ics-oqts-alec|Secret iCal address: alec@oqts.org"
-  "ics-oqts-shared|kairos-ics-oqts-shared|Secret iCal address: oqts@oqts.org"
 )
 
 ssh "$HOST" 'mkdir -p ~/.config/kairos/secrets && chmod 700 ~/.config/kairos/secrets'
@@ -24,6 +22,10 @@ for entry in "${SECRETS[@]}"; do
   echo
   if [[ -z "$value" ]]; then
     echo "  skipped"
+    continue
+  fi
+  if [[ "$file" == icloud-app-password && ! "$value" =~ ^[a-z]{4}-[a-z]{4}-[a-z]{4}-[a-z]{4}$ ]]; then
+    echo "  not an app-specific password (should be 19 characters: xxxx-xxxx-xxxx-xxxx, lowercase letters); skipped" >&2
     continue
   fi
   if [[ "$file" == ics-* && ! "$value" =~ ^https://calendar\.google\.com/calendar/ical/.+\.ics$ ]]; then

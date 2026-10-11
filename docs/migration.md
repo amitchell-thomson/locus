@@ -46,22 +46,18 @@ Tick these off in order. Nothing here needs kairos running. Steps marked 📱 ar
   ```
 
 ### Google secret iCal addresses (read-only imports)
-For each calendar: calendar.google.com → ⚙ Settings → (left) the calendar → **Integrate calendar** → **Secret address in iCal format**. (For the OQTS Workspace calendars, sign in as the Workspace account; if the secret address is hidden, a Workspace admin has disabled it — tell Claude and we'll use the public address or another route.)
+For each calendar: calendar.google.com → ⚙ Settings → (left) the calendar → **Integrate calendar** → **Secret address in iCal format**. (The OQTS Workspace calendars aren't used: the Workspace admin has secret addresses turned off and they were empty. OQTS work lives in the iCloud **OQTS** key calendar instead.) Easiest: `scripts/store-secrets.sh` prompts for every secret and stores it on both machines.
 
 | kairos source | Google calendar | Keychain service / server file |
 |---|---|---|
-| `oqts-shared` | `oqts@oqts.org` | `kairos-ics-oqts-shared` / `ics-oqts-shared` |
-| `oqts-alec` | `alec@oqts.org` | `kairos-ics-oqts-alec` / `ics-oqts-alec` |
 | `gmail` | `alec.mitchellthomson@gmail.com` | `kairos-ics-gmail` / `ics-gmail` |
 | `uk-holidays` | Holidays in the UK | public URL, already in config |
 
 ```sh
 # Mac
-security add-generic-password -U -s kairos-ics-oqts-shared -a "$USER" -w 'https://calendar.google.com/calendar/ical/…/basic.ics'
-security add-generic-password -U -s kairos-ics-oqts-alec   -a "$USER" -w '…'
-security add-generic-password -U -s kairos-ics-gmail       -a "$USER" -w '…'
+security add-generic-password -U -s kairos-ics-gmail -a "$USER" -w 'https://calendar.google.com/calendar/ical/…/basic.ics'
 # compute-node
-printf '%s' '…' > ~/.config/kairos/secrets/ics-oqts-shared   # etc., chmod 600
+printf '%s' '…' > ~/.config/kairos/secrets/ics-gmail   # chmod 600
 ```
 
 ### kairos API token

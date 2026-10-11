@@ -117,39 +117,11 @@ writable = true
 {{-   $cmd := "security find-generic-password -w -s kairos-ics-%s" }}
 
 [[sources]]
-id = "oqts-shared"
-kind = "ics_readonly"
-url_cmd = "{{ printf $cmd "oqts-shared" }}"
-overlay = "personal"
-key = "OQTS"
-
-[[sources]]
-id = "oqts-alec"
-kind = "ics_readonly"
-url_cmd = "{{ printf $cmd "oqts-alec" }}"
-overlay = "personal"
-key = "OQTS"
-
-[[sources]]
 id = "gmail"
 kind = "ics_readonly"
 url_cmd = "{{ printf $cmd "gmail" }}"
 overlay = "imported"
 {{- else }}
-
-[[sources]]
-id = "oqts-shared"
-kind = "ics_readonly"
-url_cmd = "cat ~/.config/kairos/secrets/ics-oqts-shared"
-overlay = "personal"
-key = "OQTS"
-
-[[sources]]
-id = "oqts-alec"
-kind = "ics_readonly"
-url_cmd = "cat ~/.config/kairos/secrets/ics-oqts-alec"
-overlay = "personal"
-key = "OQTS"
 
 [[sources]]
 id = "gmail"

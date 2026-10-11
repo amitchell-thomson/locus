@@ -337,10 +337,16 @@ fn run() -> Result<()> {
         path,
     };
     let p = Paint::auto();
-    match cli.cmd.unwrap_or(Cmd::Today {
-        compact: false,
-        v: ViewOpts::default(),
-    }) {
+    // Bare `kairos` in a terminal opens the calendar; piped, it prints today.
+    let default_cmd = if std::io::IsTerminal::is_terminal(&std::io::stdout()) {
+        Cmd::Tui
+    } else {
+        Cmd::Today {
+            compact: false,
+            v: ViewOpts::default(),
+        }
+    };
+    match cli.cmd.unwrap_or(default_cmd) {
         Cmd::Today { compact, v } => today(&ctx, &p, compact, &v),
         Cmd::Week { v } => {
             let from = ctx.midnight(ctx.today());

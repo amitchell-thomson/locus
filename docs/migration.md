@@ -8,7 +8,7 @@ Tick these off in order. Nothing here needs kairos running. Steps marked 📱 ar
 - [ ] 📱 Settings → Apps → Calendar → **Siri** (or *Siri & Search*) → turn off *Learn from this App*, *Show in App*, *Suggest App*, and **Show Siri Suggestions in App**. Settings → Siri → *Suggestions* → turn off *Suggest when sharing* / *Show suggestions* for Calendar.
 - [ ] 💻 Calendar → Settings → **General** → untick *Show Birthdays calendar*; **Accounts** → *On My Mac* / Siri Suggestions → uncheck **Show Siri Suggestions calendar**; in the sidebar untick **Scheduled Reminders**.
 - [ ] 📱 Calendar → *Calendars* (bottom) → untick **Birthdays**, **Siri Suggestions**, **Scheduled Reminders**.
-- [ ] 💻 Calendar sidebar → Google (personal) → right-click **Holidays in Austria** → *Unsubscribe*, or at calendar.google.com → Settings → *Holidays in Austria* → *Remove calendar*.
+- [ ] 🌐 **Holidays in Austria** comes from the Google account, so Apple Calendar can't unsubscribe it. At calendar.google.com → ⚙ Settings → *Add calendar* → *Browse calendars of interest* → *Regional holidays* → untick **Austria**. If that doesn't remove it, hide it from Apple devices instead: open <https://calendar.google.com/calendar/syncselect>, untick it and save. 📱/💻 then refresh. kairos ignores it either way, because it only reads the calendars named in its config.
 
 ## 2. Oxford Exchange account
 

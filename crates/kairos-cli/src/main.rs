@@ -799,16 +799,18 @@ fn next(ctx: &Ctx, tmux: bool, json: bool) -> Result<()> {
     f.imported = false;
     let (cl, _) = ctx.clusters(from, to, &f)?;
     let tz = ctx.tz;
-    // A deadline within 24 h wins.
-    let deadline = cl.iter().map(|c| &c.primary).find(|i| {
-        i.meta.kind == EventKind::Deadline && {
-            let due = match i.span {
-                Span::Timed { start, .. } => start,
-                Span::AllDay { end, .. } => ctx.midnight(end),
-            };
-            due >= ctx.now && due <= ctx.now + Duration::hours(24)
-        }
-    });
+    // A deadline within 24 h wins (the soonest-due one; all-day = end of that day).
+    let due_of = |i: &Instance| match i.span {
+        Span::Timed { start, .. } => start,
+        Span::AllDay { end, .. } => ctx.midnight(end),
+    };
+    let deadline = cl
+        .iter()
+        .map(|c| &c.primary)
+        .filter(|i| {
+            i.meta.kind == EventKind::Deadline && due_of(i) >= ctx.now && due_of(i) <= ctx.now + Duration::hours(24)
+        })
+        .min_by_key(|i| due_of(i));
     let event = cl.iter().map(|c| &c.primary).find(|i| {
         matches!(i.span, Span::Timed { .. })
             && i.meta.kind != EventKind::Deadline
@@ -865,14 +867,11 @@ fn next(ctx: &Ctx, tmux: bool, json: bool) -> Result<()> {
         return Ok(());
     }
     if tmux {
-        // Matches ~/.config/tmux/tmux.conf: surface0 segment entered with U+E0B2;
-        // urgent deadlines use a filled red badge with base-coloured bold text.
-        let (bg, fg, bold) = if urgent {
-            ("#f38ba8", "#1e1e2e", ",bold")
-        } else {
-            ("#313244", "#cdd6f4", "")
-        };
-        println!("#[bg=default,fg={bg}]\u{e0b2}#[bg={bg},fg={fg}{bold}] {text} #[default]");
+        // Inline segment for ~/.config/tmux/tmux.conf status-right, placed right
+        // after the surface0 date segment: a thin U+E0B3 separator in surface2,
+        // like starship's bar. Urgent deadlines are red and bold.
+        let fg = if urgent { "#f38ba8,bold" } else { "#cdd6f4" };
+        println!("#[bg=#313244,fg=#585b70]\u{e0b3}#[bg=#313244,fg={fg}] {text} #[nobold]");
     } else {
         println!("{text}");
     }

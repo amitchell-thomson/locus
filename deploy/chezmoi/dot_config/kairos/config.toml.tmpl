@@ -1,0 +1,165 @@
+# kairos config — managed by chezmoi (source: kairos/deploy/chezmoi).
+# Secrets never live here: *_cmd fields print them at runtime.
+
+timezone = "Europe/London"
+# Flip to true only after the ZZ-kairos-test round-trip checks in docs/deploy.md.
+live = false
+test_calendar = "ZZ-kairos-test"
+
+[paths]
+vdir = "~/.local/share/kairos/vdir"
+data = "~/.local/share/kairos"
+cache = "~/.cache/kairos"
+
+[daemon]
+url = "http://compute-node:7420"
+{{- if eq .chezmoi.os "darwin" }}
+token_cmd = "security find-generic-password -w -s kairos-api-token"
+{{- else }}
+token_cmd = "cat ~/.config/kairos/secrets/api-token"
+# kairosd listens on the Tailscale interface only.
+bind = "100.117.10.28:7420"
+{{- end }}
+
+[sync]
+# vdirsyncer pair/collection after each write (server) …
+collection_cmd = "vdirsyncer sync {collection}"
+# … and the periodic full sync (server: read-write; Mac: read-only pull).
+full_cmd = "vdirsyncer sync && vdirsyncer metasync"
+pair = "icloud"
+stale_after_minutes = 15
+
+[notify]
+server = "https://ntfy.sh"
+topic_cmd = "cat ~/.config/kairos/secrets/ntfy-topic"
+public_url = "http://compute-node:7420"
+morning_summary = "07:30"
+evening_checkin = "21:30"
+autodone_at = "09:00"
+
+[deadlines]
+alarms_minutes_before = [1440, 120]
+
+[overlays]
+family_colour = "yellow"
+background_colour = "overlay1"
+imported_colour = "overlay0"
+
+[[keys]]
+name = "Personal"
+index = 1
+colour = "lavender"
+calendar = "personal"
+
+[[keys]]
+name = "Engineering"
+index = 2
+colour = "blue"
+calendar = "engineering"
+
+[[keys]]
+name = "Careers"
+index = 3
+colour = "peach"
+calendar = "careers"
+
+[[keys]]
+name = "Sport"
+index = 4
+colour = "green"
+calendar = "sport"
+
+[[keys]]
+name = "Travel"
+index = 5
+colour = "sapphire"
+calendar = "travel"
+
+[[keys]]
+name = "OQTS"
+index = 6
+colour = "mauve"
+calendar = "oqts"
+
+[[keys]]
+name = "Social"
+index = 7
+colour = "pink"
+calendar = "social"
+
+{{- range $id, $name := dict "personal" "Personal" "engineering" "Engineering" "careers" "Careers" "sport" "Sport" "travel" "Travel" "oqts" "OQTS" "social" "Social" }}
+
+[[sources]]
+id = "{{ $id }}"
+kind = "icloud"
+calendar = "{{ $name }}"
+overlay = "personal"
+key = "{{ $name }}"
+writable = true
+{{- end }}
+
+[[sources]]
+id = "family"
+kind = "icloud"
+calendar = "Family"
+overlay = "family"
+writable = true
+
+[[sources]]
+id = "test"
+kind = "icloud"
+calendar = "ZZ-kairos-test"
+overlay = "personal"
+key = "Personal"
+writable = true
+
+{{- if eq .chezmoi.os "darwin" }}
+{{-   $cmd := "security find-generic-password -w -s kairos-ics-%s" }}
+
+[[sources]]
+id = "oqts-shared"
+kind = "ics_readonly"
+url_cmd = "{{ printf $cmd "oqts-shared" }}"
+overlay = "personal"
+key = "OQTS"
+
+[[sources]]
+id = "oqts-alec"
+kind = "ics_readonly"
+url_cmd = "{{ printf $cmd "oqts-alec" }}"
+overlay = "personal"
+key = "OQTS"
+
+[[sources]]
+id = "gmail"
+kind = "ics_readonly"
+url_cmd = "{{ printf $cmd "gmail" }}"
+overlay = "imported"
+{{- else }}
+
+[[sources]]
+id = "oqts-shared"
+kind = "ics_readonly"
+url_cmd = "cat ~/.config/kairos/secrets/ics-oqts-shared"
+overlay = "personal"
+key = "OQTS"
+
+[[sources]]
+id = "oqts-alec"
+kind = "ics_readonly"
+url_cmd = "cat ~/.config/kairos/secrets/ics-oqts-alec"
+overlay = "personal"
+key = "OQTS"
+
+[[sources]]
+id = "gmail"
+kind = "ics_readonly"
+url_cmd = "cat ~/.config/kairos/secrets/ics-gmail"
+overlay = "imported"
+{{- end }}
+
+[[sources]]
+id = "uk-holidays"
+kind = "ics_readonly"
+url = "https://calendar.google.com/calendar/ical/en.uk%23holiday%40group.v.calendar.google.com/public/basic.ics"
+overlay = "background"

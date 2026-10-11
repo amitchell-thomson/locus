@@ -427,34 +427,89 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
     if rows == 0 {
         return;
     }
-    let mut h0 = 7 * 60;
-    let mut h1 = 23 * 60;
+    // Hours the events need, and the usual day (08–22) around them.
+    let (mut e0, mut e1) = (i64::MAX, i64::MIN);
     for v in &per_day {
         for cl in v {
             if let Span::Timed { start, end } = cl.primary.span {
                 let s = start.with_timezone(&tz);
                 let e = end.with_timezone(&tz);
                 if s.date_naive() == e.date_naive() {
-                    h0 = h0.min(s.hour() as i64 * 60);
-                    h1 = h1.max((e.hour() as i64 * 60 + i64::from(e.minute() > 0) * 60).min(24 * 60));
+                    e0 = e0.min(s.hour() as i64 * 60);
+                    e1 = e1.max((e.hour() as i64 * 60 + i64::from(e.minute() > 0) * 60).min(24 * 60));
                 }
             }
         }
     }
     let nrows = rows as usize;
+    let (mut h0, mut h1) = if e0 <= e1 {
+        (e0.min(8 * 60), e1.max(22 * 60))
+    } else {
+        (8 * 60, 22 * 60)
+    };
+    // Not room for 2 rows per hour over the usual day? Show just the hours
+    // with events (then grow back outwards with whatever rows are spare).
+    if ((h1 - h0) / 60) * 2 > nrows as i64 && e0 <= e1 && ((e1 - e0) / 60).max(1) * 2 <= nrows as i64 {
+        (h0, h1) = (e0, e1.max(e0 + 60));
+    }
+    // Every hour gets the same rows: an hour row plus a blank gap row (2 per
+    // hour), or just the hour row when space is short. Spare rows show more
+    // hours (later first) instead of stretching some hours to 3 rows.
+    let hours = ((h1 - h0) / 60).max(1);
+    let rph: i64 = if nrows as i64 >= hours * 2 {
+        2
+    } else if nrows as i64 >= hours {
+        1
+    } else {
+        0
+    };
+    if rph > 0 {
+        // Grow towards the usual day first, then to 06:00–24:00.
+        let mut spare = nrows as i64 / rph - hours;
+        for (lo, hi) in [(8 * 60, 22 * 60), (6 * 60, 24 * 60)] {
+            while spare > 0 && (h1 < hi || h0 > lo) {
+                if h1 < hi {
+                    h1 += 60;
+                    spare -= 1;
+                }
+                if spare > 0 && h0 > lo {
+                    h0 -= 60;
+                    spare -= 1;
+                }
+            }
+        }
+    }
     let span = (h1 - h0).max(60);
-    // Continuous mapping: minutes → row, using every available row.
-    let row_of_min = |m: i64| -> i64 { ((m - h0) * nrows as i64).div_euclid(span) };
-    let row_of = |t: DateTime<Utc>, d: NaiveDate| -> i64 {
+    let row_of_min = |m: i64| -> i64 {
+        if rph > 0 {
+            ((m - h0) * rph).div_euclid(60)
+        } else {
+            // Too short for one row per hour: squeeze.
+            ((m - h0) * nrows as i64).div_euclid(span)
+        }
+    };
+    let mins_of = |t: DateTime<Utc>, d: NaiveDate| -> i64 {
         let l = t.with_timezone(&tz);
-        let mins = if l.date_naive() < d {
+        if l.date_naive() < d {
             0
         } else if l.date_naive() > d {
             24 * 60
         } else {
             l.hour() as i64 * 60 + l.minute() as i64
-        };
-        row_of_min(mins)
+        }
+    };
+    let row_of = |t: DateTime<Utc>, d: NaiveDate| -> i64 { row_of_min(mins_of(t, d)) };
+    // Exclusive end row. An event ending on the hour stops before that hour's
+    // gap row, so back-to-back hourly events keep the blank line between them;
+    // only events running past the hour reach into the gap.
+    let end_row = |s: DateTime<Utc>, e: DateTime<Utc>, d: NaiveDate| -> i64 {
+        let r0 = row_of(s, d);
+        let em = mins_of(e, d);
+        let mut r1 = row_of_min(em);
+        if rph == 2 && (em - h0).rem_euclid(60) == 0 && r1 - 1 > r0 {
+            r1 -= 1;
+        }
+        r1.max(r0 + 1)
     };
     let mut last_label: i64 = -2;
     for r in 0..nrows {
@@ -490,7 +545,7 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
                 let r0 = row_of(s, *d).clamp(0, nrows as i64 - 1) as usize;
                 // End row rounds down like the start, so back-to-back events never
                 // share a row (which would split them into side-by-side lanes).
-                let r1 = row_of(e, *d).clamp(r0 as i64 + 1, nrows as i64) as usize;
+                let r1 = end_row(s, e, *d).clamp(r0 as i64 + 1, nrows as i64) as usize;
                 (row_of(s, *d) < nrows as i64).then_some((r0, r1, cl))
             })
             .collect();
@@ -588,7 +643,7 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             if r0 < 0 || r0 >= nrows as i64 {
                 continue;
             }
-            let r1 = (row_of(e - Duration::seconds(1), *d) + 1).clamp(r0 + 1, nrows as i64);
+            let r1 = end_row(s, e, *d).clamp(r0 + 1, nrows as i64);
             let st = Style::default().fg(c("overlay1")).add_modifier(Modifier::ITALIC);
             put(
                 buf,

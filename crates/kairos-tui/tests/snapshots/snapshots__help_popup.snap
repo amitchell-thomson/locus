@@ -7,28 +7,28 @@ expression: "render_to_string(&a, 100, 30)"
 │                                                          ▎Collections ▎Lake Distr… ▎Lake Distri… │
 │                 ╭──────────────────────────── keys ────────────────────────────╮                 │
 │─────────────────│ h l / H L  day / week back, forward                          │─────────────────│
-│07:00 ┊          │         t  today                                             │   ┊             │
-│08:00 ●          │       j k  select event                                      │   ┊             │
-│09:00 ┊          │       Tab  week → day → agenda                               │   ┊             │
+│09:00 ┊          │         t  today                                             │   ┊             │
+│      ┊          │       j k  select event                                      │   ┊             │
+│10:00 ┊          │       Tab  week → day → agenda                               │   ┊             │
 │      ┊          │     Enter  details / expand duplicates ⧉                     │   ┊             │
-│10:00 ┊          │         w  week: Mon–Sun ↔ Mon–Fri (wider)                   │   ┊             │
-│11:00 ┊          │   p f b i  show/hide: Personal, Family, Holidays, Gmail      │   ┊             │
-│      ┊          │       1–7  show/hide one calendar (see the bar below)        │   ┊             │
-│12:00 ┊          │         a  add event (a form; Tab between fields)            │   ┊             │
+│11:00 ┊          │         w  week: Mon–Sun ↔ Mon–Fri (wider)                   │   ┊             │
+│      ┊          │   p f b i  show/hide: Personal, Family, Holidays, Gmail      │   ┊             │
+│12:00 ┊          │       1–7  show/hide one calendar (see the bar below)        │   ┊             │
+│      ┊          │         a  add event (a form; Tab between fields)            │   ┊             │
 │13:00 ┊          │       e K  edit event (K jumps to its calendar)              │   ┊             │
 │      ┊          │         m  move to another time                              │   ┊             │
 │14:00 ┊          │       d s  delete, share to Family                           │   ┊             │
-│15:00 ┊          │         B  Family event: block / unblock my time             │   ┊             │
-│16:00 ┊          │         P  run the scheduler                                 │   ┊             │
+│      ┊          │         B  Family event: block / unblock my time             │   ┊             │
+│15:00 ┊          │         P  run the scheduler                                 │   ┊             │
 │      ┊          │       T A  tasks, approvals                                  │   ┊             │
-│17:00 ┊          │         C  check in today's work blocks                      │   ┊             │
-│18:00 ┊          │         u  undo the last applied change                      │   ┊             │
-│      ┊          │         /  search                                            │   ┊             │
-│19:00 ┊▌Squash   │         r  sync now                                          │   ┊▌Sunday Sq…  │
-│20:00 ┊          │         q  quit                                              │   ┊             │
+│16:00 ┊          │         C  check in today's work blocks                      │   ┊             │
+│      ┊          │         u  undo the last applied change                      │   ┊             │
+│17:00 ┊          │         /  search                                            │   ┊             │
+│      ┊          │         r  sync now                                          │   ┊             │
+│18:00 ┊          │         q  quit                                              │   ┊             │
 │      ┊          ╰──────────────────────────────────────────────────────────────╯   ┊             │
-│21:00 ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
-│22:00 ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
+│19:00 ┊▌Squash     ┊            ┊▌Squash     ┊            ┊            ┊            ┊▌Sunday Sq…  │
+│      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 │      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 ╰ ● 19:00–20:00 · Squash · Personal ───────────────────────────────────────────────────────────────╯
  WEEK  p Personal ▸ 1 Personal  6 OQTS  │ f Family                                         ? help

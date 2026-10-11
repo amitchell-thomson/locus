@@ -177,6 +177,14 @@ pub struct SyncSettings {
     /// Warn in `doctor` if the vdir is older than this.
     #[serde(default = "default_stale_minutes")]
     pub stale_after_minutes: u32,
+    /// kairosd: run `full_cmd` this often (iCloud ⇄ server). Phone edits reach
+    /// kairos within this; the Mac then copies from the server.
+    #[serde(default = "default_every_minutes")]
+    pub every_minutes: u64,
+}
+
+fn default_every_minutes() -> u64 {
+    2
 }
 
 fn default_sync_cmd() -> String {
@@ -199,6 +207,7 @@ impl Default for SyncSettings {
             full_cmd: default_full_sync_cmd(),
             pair: default_pair(),
             stale_after_minutes: default_stale_minutes(),
+            every_minutes: default_every_minutes(),
         }
     }
 }

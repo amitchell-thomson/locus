@@ -177,7 +177,7 @@ async fn main() -> Result<()> {
             Jobs {
                 engine: st.engine.clone(),
                 ntfy,
-                sync_every_min: 5,
+                sync_every_min: cfg.sync.every_minutes,
                 feeds_every_min: 10,
             }
             .run(),

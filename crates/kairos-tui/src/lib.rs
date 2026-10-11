@@ -77,7 +77,7 @@ fn spawn_sync(cfg: &Config, done: mpsc::Sender<()>) {
     std::thread::spawn(move || {
         // kairosd pushes to iCloud in the background after a write; pulling at
         // once would usually miss it, so pull a little later and once more.
-        for wait in [4, 11] {
+        for wait in [1, 4, 10] {
             std::thread::sleep(Duration::from_secs(wait));
             let _ = kairos_store::sync::run_full(&cfg);
             let _ = done.send(());
@@ -95,6 +95,7 @@ pub fn run(cfg: Config, path: PathBuf) -> Result<(), String> {
         let mut last_remote = Instant::now() - Duration::from_secs(3600);
         let mut last_reload = Instant::now();
         let mut syncing = false;
+        let mut last_pull = Instant::now();
         loop {
             app.now = Utc::now();
             terminal.draw(|f| ui::draw(f, &app)).map_err(|e| e.to_string())?;
@@ -105,7 +106,12 @@ pub fn run(cfg: Config, path: PathBuf) -> Result<(), String> {
                 maybe_prompt_checkin(&mut app);
                 continue;
             }
+            // Pick up changes made elsewhere (Claude, approvals on the phone).
+            if !syncing && last_pull.elapsed() > Duration::from_secs(20) {
+                app.wants_sync = true;
+            }
             if app.wants_sync && !syncing {
+                last_pull = Instant::now();
                 app.wants_sync = false;
                 syncing = true;
                 spawn_sync(&app.cfg, tx.clone());

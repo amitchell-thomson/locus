@@ -22,10 +22,17 @@ bind = "100.117.10.28:7420"
 {{- end }}
 
 [sync]
-# vdirsyncer pair/collection after each write (server) …
+{{- if eq .chezmoi.os "darwin" }}
+# The Mac never writes to iCloud. It copies the server's calendar files (fresh
+# the moment kairosd applies a change) over Tailscale.
+collection_cmd = ""
+full_cmd = "rsync -a --delete compute-node:.local/share/kairos/vdir/ ~/.local/share/kairos/vdir/"
+{{- else }}
+# Push one collection after each write; full two-way sync every `every_minutes`.
 collection_cmd = "vdirsyncer sync {collection}"
-# … and the periodic full sync (server: read-write; Mac: read-only pull).
 full_cmd = "vdirsyncer sync && vdirsyncer metasync"
+every_minutes = 2
+{{- end }}
 pair = "icloud"
 stale_after_minutes = 15
 

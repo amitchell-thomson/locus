@@ -23,10 +23,30 @@ pub fn rgb(r: Rgb) -> Color {
     Color::Rgb(r.0, r.1, r.2)
 }
 
+/// Blend a colour towards the Mocha base (0 = unchanged, 1 = base).
+pub fn fade(col: Color, t: f32) -> Color {
+    let Rgb(br, bg, bb) = Rgb::mocha("base");
+    match col {
+        Color::Rgb(r, g, b) => {
+            let m = |a: u8, z: u8| (f32::from(a) + (f32::from(z) - f32::from(a)) * t).round() as u8;
+            Color::Rgb(m(r, br), m(g, bg), m(b, bb))
+        }
+        c => c,
+    }
+}
+
+/// How much past days and not-attending Family events recede.
+const PAST_FADE: f32 = 0.35;
+const FAMILY_FADE: f32 = 0.45;
+
 fn colour_of(app: &App, i: &Instance) -> Color {
     let r = match i.overlay {
         Overlay::Background => app.cfg.overlays.background_colour,
         Overlay::Imported => app.cfg.overlays.imported_colour,
+        // Family events you're attending (blocking, TUI `B`) stay bright.
+        Overlay::Family if i.meta.origin_key.is_none() && !i.meta.blocking => {
+            return fade(rgb(app.cfg.overlays.family_colour), FAMILY_FADE);
+        }
         Overlay::Family if i.meta.origin_key.is_none() => app.cfg.overlays.family_colour,
         _ => i
             .colour_key()
@@ -350,6 +370,8 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             Style::default()
                 .fg(c("mauve"))
                 .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+        } else if *d < today {
+            Style::default().fg(c("overlay0"))
         } else {
             Style::default().fg(c("subtext0"))
         };
@@ -400,7 +422,12 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             let selected = *d == app.cursor
                 && app.view != View::Agenda
                 && per_day[k].iter().position(|x| std::ptr::eq(x, *cl)) == Some(app.sel);
-            let mut style = Style::default().fg(if is_deadline(i) { c("red") } else { colour_of(app, i) });
+            let base_col = if is_deadline(i) { c("red") } else { colour_of(app, i) };
+            let mut style = Style::default().fg(if *d < today {
+                fade(base_col, PAST_FADE)
+            } else {
+                base_col
+            });
             if is_dimmed(i) {
                 style = style.add_modifier(Modifier::DIM);
             }
@@ -590,6 +617,7 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             let idx = per_day[k].iter().position(|x| std::ptr::eq(x, p.cl));
             let selected = *d == app.cursor && idx == Some(app.sel);
             let col = colour_of(app, i);
+            let col = if *d < today { fade(col, PAST_FADE) } else { col };
             let mut style = Style::default().fg(col);
             if is_dimmed(i) {
                 style = style.add_modifier(Modifier::DIM);

@@ -97,6 +97,8 @@ pub type Deferred = Box<dyn FnOnce(&mut App)>;
 pub struct App {
     pub cfg: Config,
     pub patches: Vec<LocalPatch>,
+    /// (uid, blocking, until): Family "block my time" flags set from the TUI.
+    pub blocking_overrides: Vec<(String, bool, DateTime<Utc>)>,
     pub deferred: Vec<Deferred>,
     pub tz: Tz,
     pub now: DateTime<Utc>,
@@ -150,6 +152,7 @@ impl App {
             wants_sync: false,
             work_week: false,
             patches: Vec::new(),
+            blocking_overrides: Vec::new(),
             deferred: Vec::new(),
             cfg,
         }
@@ -294,6 +297,12 @@ impl App {
     pub fn set_index(&mut self, idx: Index) {
         self.index = idx;
         let now = Utc::now();
+        self.blocking_overrides.retain(|(_, _, until)| *until > now);
+        for (uid, on, _) in &self.blocking_overrides {
+            for i in self.index.instances.iter_mut().filter(|i| &i.uid == uid) {
+                i.meta.blocking = *on;
+            }
+        }
         self.patches.retain(|p| p.until > now);
         for p in self.patches.clone() {
             self.index.instances.retain(|i| i.uid != p.uid);
@@ -304,6 +313,17 @@ impl App {
                     .partition_point(|x| x.start(self.tz) <= i.start(self.tz));
                 self.index.instances.insert(at, i);
             }
+        }
+    }
+
+    /// Show a Family event's "blocks my time" flag at once (all occurrences),
+    /// and keep it over reloads until the server's copy has caught up.
+    fn set_blocking_local(&mut self, uid: &str, on: bool) {
+        self.blocking_overrides.retain(|(u, _, _)| u != uid);
+        self.blocking_overrides
+            .push((uid.to_string(), on, Utc::now() + Duration::seconds(90)));
+        for i in self.index.instances.iter_mut().filter(|i| i.uid == uid) {
+            i.meta.blocking = on;
         }
     }
 
@@ -624,25 +644,38 @@ impl App {
                         self.set_message(format!("delete “{}”? y/N", i.title), false);
                     }
                     Key::Char('B') if i.overlay == Overlay::Family => {
-                        let req = api::UpdateEventReq {
-                            blocking: Some(!i.meta.blocking),
-                            ..Default::default()
-                        };
-                        if let Some(r) = self.with_daemon(|d| d.update_event(&i.source, &i.uid, &req)) {
-                            match r {
-                                Ok(Ok(_)) => {
-                                    let msg = if i.meta.blocking {
-                                        "no longer blocks your time"
-                                    } else {
-                                        "now blocks your time for scheduling"
-                                    };
-                                    self.set_message(msg, false);
-                                    self.wants_sync = true;
-                                }
-                                Ok(Err(e)) => self.set_message(e.to_string(), true),
-                                Err(e) => self.set_message(e.to_string(), true),
-                            }
+                        if self.daemon.is_none() {
+                            return self.set_message("kairosd not configured — writes unavailable", true);
                         }
+                        let now_blocking = !i.meta.blocking;
+                        self.set_blocking_local(&i.uid, now_blocking);
+                        self.set_message(
+                            if now_blocking {
+                                format!("“{}” now blocks your time (B again to undo)", i.title)
+                            } else {
+                                format!("“{}” no longer blocks your time", i.title)
+                            },
+                            false,
+                        );
+                        self.deferred.push(Box::new(move |app: &mut App| {
+                            let req = api::UpdateEventReq {
+                                blocking: Some(now_blocking),
+                                ..Default::default()
+                            };
+                            let failed = match app.with_daemon(|d| d.update_event(&i.source, &i.uid, &req)) {
+                                Some(Ok(Ok(_))) => None,
+                                Some(Ok(Err(e))) => Some(e.to_string()),
+                                Some(Err(e)) => Some(e.to_string()),
+                                None => Some("kairosd not configured".into()),
+                            };
+                            match failed {
+                                None => app.wants_sync = true,
+                                Some(e) => {
+                                    app.set_blocking_local(&i.uid, !now_blocking);
+                                    app.set_message(e, true);
+                                }
+                            }
+                        }));
                     }
                     Key::Char('s') => {
                         self.mode = Mode::Confirm(Confirm::Share);

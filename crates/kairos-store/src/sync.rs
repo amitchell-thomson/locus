@@ -77,6 +77,23 @@ fn last_line(b: &[u8]) -> String {
     String::from_utf8_lossy(b).lines().last().unwrap_or("").to_string()
 }
 
+/// Fetch kairosd's sidecar (e.g. Family `blocking` flags) into the local
+/// copy the cache reads. Writes only when it changed, so the cache isn't
+/// rebuilt for nothing.
+pub fn pull_sidecar(cfg: &Config) -> bool {
+    let Ok(d) = crate::client::Daemon::from_config(cfg) else {
+        return false;
+    };
+    let Ok(Ok(rows)) = d.sidecar() else {
+        return false;
+    };
+    let side: crate::load::Sidecar = rows.into_iter().map(|(s, u, m)| ((s, u), m)).collect();
+    if crate::load::read_sidecar_json(cfg) == side {
+        return true;
+    }
+    crate::load::write_sidecar_json(cfg, &side).is_ok()
+}
+
 pub fn run_full(cfg: &Config) -> FullSync {
     let cmd = cfg.sync.full_cmd.trim();
     if cmd.is_empty() {

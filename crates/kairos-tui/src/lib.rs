@@ -80,6 +80,7 @@ fn spawn_sync(cfg: &Config, done: mpsc::Sender<()>) {
         for wait in [1, 4, 10] {
             std::thread::sleep(Duration::from_secs(wait));
             let _ = kairos_store::sync::run_full(&cfg);
+            kairos_store::sync::pull_sidecar(&cfg);
             let _ = done.send(());
         }
     });

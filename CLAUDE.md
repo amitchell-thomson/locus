@@ -63,14 +63,17 @@ cargo run -p kairos-tui --example frame -- <config> <rfc3339-now> <w> <h> [keys]
 | 8 Phone | ntfy approvals/summaries/check-in page done; Shortcut steps in `docs/shortcut.md`. Needs ntfy app subscribed. |
 | 9 Remote MCP (optional) | Not started (needs OAuth). |
 
-## Phase 1 findings (fill in after `scripts/verify-icloud.sh`)
+## Phase 1 findings (`scripts/verify-icloud.sh`, 2026-10-11)
 
-- Family calendar discoverable over CalDAV: _unknown yet_
-- `X-KAIROS-*` survives iCloud round-trip: _unknown yet_
+- Family calendar discoverable over CalDAV: **yes** (collection id is a 64-hex hash; 225 items). Also discovered: `Erinnerungen ⚠️` (legacy reminders, VTODO only, ignored).
+- `X-KAIROS-*` survives iCloud round-trip: **yes**
 - `X-KAIROS-*` survives an iPhone edit: _unknown yet_ (sidecar is authoritative either way)
 - Tailscale: Mac ↔ compute-node ✓ (API reachable at http://compute-node:7420); iPhone is on the tailnet (`phone`), reachability to be confirmed from the phone.
 
 ## Decisions log
+
+- Catch-all key renamed `Personal` → **`Inbox`** (Alec's iCloud calendar is named Inbox, CalDAV id `home`). Events without a key go to key 1 (`Config::default_key`), not a hard-coded name. "personal" remains the *overlay* name.
+- OQTS Google Workspace feeds dropped: secret iCal addresses are disabled by the Workspace admin and the calendars were empty. OQTS work lives in the iCloud `OQTS` key.
 
 - Own lossless iCalendar parser instead of the `icalendar` crate: round-trip fidelity (unknown props, param quoting) matters for writing back to iCloud.
 - Recurrence via `rrule` on naive wall-clock times (UTC pseudo-zone), resolved with our RFC rule — deterministic DST behaviour independent of the crate.

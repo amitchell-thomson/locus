@@ -139,6 +139,7 @@ pub fn router(st: AppState, mcp: Option<Router<AppState>>) -> Router {
             axum::routing::patch(update_event).delete(delete_event),
         )
         .route("/api/events/{source}/{uid}/move", post(move_event))
+        .route("/api/events/move", post(move_events))
         .route("/api/events/{source}/{uid}/share-family", post(share_family))
         .route("/api/events/{source}/{uid}/adopt", post(adopt))
         .route("/api/free", get(find_free))
@@ -269,6 +270,17 @@ async fn move_event(
 ) -> HResult<WriteResult> {
     let a = author(&h);
     let cs = with_engine(&st, move |e| e.move_event(a, Some(&source), &uid, &req.key)).await?;
+    Ok(Json(WriteResult::from(&cs)))
+}
+
+async fn move_events(
+    State(st): State<AppState>,
+    h: HeaderMap,
+    Json(req): Json<api::MoveManyReq>,
+) -> HResult<WriteResult> {
+    let a = author(&h);
+    let evs: Vec<(Option<String>, String)> = req.events.into_iter().map(|r| (Some(r.source), r.uid)).collect();
+    let cs = with_engine(&st, move |e| e.move_events(a, &evs, &req.key)).await?;
     Ok(Json(WriteResult::from(&cs)))
 }
 

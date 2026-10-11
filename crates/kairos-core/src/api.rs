@@ -112,6 +112,20 @@ pub struct KeyReq {
     pub key: String,
 }
 
+/// One event, addressed by source id + UID.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EventRef {
+    pub source: String,
+    pub uid: String,
+}
+
+/// Re-key several events in one changeset (one approval, one undo).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MoveManyReq {
+    pub key: String,
+    pub events: Vec<EventRef>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct CreateTaskReq {
     pub title: String,

@@ -119,8 +119,16 @@ enum Cmd {
     },
     /// Delete an event.
     Rm { uid: String },
-    /// Move an event to another key's calendar.
-    Rekey { uid: String, key: String },
+    /// Move events to another key's calendar: kairos rekey <uid>... <KEY>.
+    /// Several events (or --matching) become one changeset: one approval, one undo.
+    Rekey {
+        /// UIDs (or unique prefixes/titles), then the key.
+        #[arg(required = true, num_args = 1..)]
+        args: Vec<String>,
+        /// Also every event in the default window whose title contains this text.
+        #[arg(long)]
+        matching: Option<String>,
+    },
     /// Add a ⚑ deadline: kairos deadline "B4 sheet" fri 17:00 --key Engineering
     Deadline {
         title: String,
@@ -432,10 +440,33 @@ fn run() -> Result<()> {
             let d = ctx.daemon()?;
             report(&p, &d, d.delete_event(&inst.source, &inst.uid)?)
         }
-        Cmd::Rekey { uid, key } => {
-            let (inst, _) = resolve_uid(&ctx, &uid)?;
+        Cmd::Rekey { mut args, matching } => {
+            let key = args.pop().ok_or_else(|| anyhow!("missing KEY"))?;
+            let mut evs: Vec<(String, String)> = Vec::new();
+            for q in &args {
+                let (inst, _) = resolve_uid(&ctx, q)?;
+                evs.push((inst.source, inst.uid));
+            }
+            if let Some(m) = matching {
+                let (from, to) = cache::default_window(&ctx.cfg, ctx.now);
+                let ml = m.to_lowercase();
+                for i in ctx.index(from, to)?.instances {
+                    if i.title.to_lowercase().contains(&ml) {
+                        evs.push((i.source, i.uid));
+                    }
+                }
+            }
+            evs.sort();
+            evs.dedup();
+            if evs.is_empty() {
+                bail!("no events to re-key");
+            }
             let d = ctx.daemon()?;
-            report(&p, &d, d.move_event(&inst.source, &inst.uid, &key)?)
+            if evs.len() == 1 {
+                report(&p, &d, d.move_event(&evs[0].0, &evs[0].1, &key)?)
+            } else {
+                report(&p, &d, d.move_events(&evs, &key)?)
+            }
         }
         Cmd::ShareFamily { uid } => {
             let (inst, _) = resolve_uid(&ctx, &uid)?;

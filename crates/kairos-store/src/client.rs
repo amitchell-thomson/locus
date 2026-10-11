@@ -154,6 +154,26 @@ impl Daemon {
             &api::KeyReq { key: key.into() },
         )
     }
+    pub fn move_events(
+        &self,
+        events: &[(String, String)],
+        key: &str,
+    ) -> Result<std::result::Result<WriteResult, Rejected>> {
+        let events = events
+            .iter()
+            .map(|(source, uid)| api::EventRef {
+                source: source.clone(),
+                uid: uid.clone(),
+            })
+            .collect();
+        self.post(
+            "/api/events/move",
+            &api::MoveManyReq {
+                key: key.into(),
+                events,
+            },
+        )
+    }
     pub fn share_family(&self, source: &str, uid: &str) -> Result<std::result::Result<WriteResult, Rejected>> {
         self.post(
             &format!("/api/events/{}/{}/share-family", enc(source), enc(uid)),

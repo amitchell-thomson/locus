@@ -57,6 +57,30 @@ fn not_live_refuses_to_touch_real_calendars() {
 // ------------------------------------------------------------ low risk
 
 #[test]
+fn rekeying_many_events_is_one_changeset_with_one_undo() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let mut evs = Vec::new();
+    for (t, w) in [("Squash", "2026-10-13 19:00"), ("Gym", "2026-10-14 19:00")] {
+        let cs = e.create_event(Author::Claude, &ev(t, w, "Sport")).unwrap();
+        match &cs.ops[0] {
+            kairos_core::changeset::Op::CreateEvent { uid, .. } => evs.push((None, uid.clone())),
+            _ => unreachable!(),
+        }
+    }
+    let cs = e.move_events(Author::Alec, &evs, "Engineering").unwrap();
+    assert_eq!(cs.ops.len(), 2);
+    if cs.status == Status::Pending {
+        e.approve(&cs.id).unwrap();
+    }
+    assert!(env.items("Sport").is_empty());
+    assert_eq!(env.items("Engineering").len(), 2);
+    e.undo(&cs.id).unwrap();
+    assert_eq!(env.items("Sport").len(), 2);
+    assert!(env.items("Engineering").is_empty());
+}
+
+#[test]
 fn deleting_the_last_item_force_syncs_only_that_collection() {
     // vdirsyncer refuses to sync a "completely emptied" collection; when kairos
     // emptied it on purpose the push must say so, or the delete never reaches iCloud.

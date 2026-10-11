@@ -943,33 +943,49 @@ impl Engine {
 
     /// Re-key: move to another key's calendar (keeps UID).
     pub fn move_event(&mut self, author: Author, source: Option<&str>, uid: &str, key: &str) -> Result<Changeset> {
+        self.move_events(author, &[(source.map(str::to_string), uid.to_string())], key)
+    }
+
+    /// Re-key several events as one changeset. Events already in `key` are skipped.
+    pub fn move_events(&mut self, author: Author, events: &[(Option<String>, String)], key: &str) -> Result<Changeset> {
         let world = self.world(60)?;
-        let loc = self.locate(&world, source, uid)?;
         let (target, _) = self.target_for_key(key)?;
-        if target.id == loc.source.id {
-            return Err(EngineError::BadRequest(format!("already in {key}")));
+        let mut ops = Vec::new();
+        let mut first_title = String::new();
+        for (source, uid) in events {
+            let loc = self.locate(&world, source.as_deref(), uid)?;
+            if target.id == loc.source.id {
+                continue;
+            }
+            if first_title.is_empty() {
+                first_title = loc
+                    .series
+                    .master
+                    .as_ref()
+                    .map(|m| m.summary.clone())
+                    .unwrap_or_default();
+            }
+            ops.push(Op::MoveEvent {
+                from: Item {
+                    source: loc.source.id.clone(),
+                    href: loc.href.clone(),
+                },
+                to: Item {
+                    source: target.id.clone(),
+                    href: loc.href.clone(),
+                },
+                uid: uid.clone(),
+                before: loc.text.clone(),
+                after: loc.text,
+                share_to_family: false,
+            });
         }
-        let title = loc
-            .series
-            .master
-            .as_ref()
-            .map(|m| m.summary.clone())
-            .unwrap_or_default();
-        let op = Op::MoveEvent {
-            from: Item {
-                source: loc.source.id.clone(),
-                href: loc.href.clone(),
-            },
-            to: Item {
-                source: target.id.clone(),
-                href: loc.href.clone(),
-            },
-            uid: uid.into(),
-            before: loc.text.clone(),
-            after: loc.text,
-            share_to_family: false,
+        let summary = match ops.len() {
+            0 => return Err(EngineError::BadRequest(format!("already in {key}"))),
+            1 => format!("Re-key {first_title:?} → {key}"),
+            n => format!("Re-key {n} events ({first_title:?} …) → {key}"),
         };
-        self.propose(&world, author, vec![op], format!("Re-key {title:?} → {key}"))
+        self.propose(&world, author, ops, summary)
     }
 
     pub fn share_to_family(&mut self, author: Author, source: Option<&str>, uid: &str) -> Result<Changeset> {

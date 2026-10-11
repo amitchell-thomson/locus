@@ -7,6 +7,7 @@
 //! - [`feeds`]: read-only `.ics` URL fetcher with conditional GET.
 
 pub mod cache;
+pub mod client;
 pub mod db;
 pub mod feeds;
 pub mod load;

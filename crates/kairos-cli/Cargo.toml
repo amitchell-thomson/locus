@@ -1,11 +1,29 @@
 [package]
 name = "kairos-cli"
+description = "kairos command line"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
+[[bin]]
+name = "kairos"
+path = "src/main.rs"
+
 [dependencies]
+kairos-core.workspace = true
+kairos-store.workspace = true
+kairos-tui.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+chrono-tz.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+kairos-tui.workspace = true
 
 [lints]
 workspace = true

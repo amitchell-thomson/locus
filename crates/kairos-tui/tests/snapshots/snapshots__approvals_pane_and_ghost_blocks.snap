@@ -1,0 +1,28 @@
+---
+source: crates/kairos-tui/tests/snapshots.rs
+expression: s
+---
+╭─────────────── Approvals · 1 ────────────────╮╭──────────────────────────────── diff ────────────────────────────────╮
+│◌ Update "Squash" → Tue 20 Oct 18:30–19:30    ││Update "Squash" → Tue 20 Oct 18:30–19:30                              │
+│                                              ││cs-ghost · by claude · Sun 18 Oct 10:00                               │
+│                                              ││! changes an event not created by kairos                              │
+│                                              ││                                                                      │
+│                                              ││• update event in personal                                            │
+│                                              ││  - DTSTART;TZID=Europe/London:20261019T190000                        │
+│                                              ││  - DTEND;TZID=Europe/London:20261019T200000                          │
+│                                              ││  + DTSTART;TZID=Europe/London:20261020T183000                        │
+│                                              ││  + DTEND;TZID=Europe/London:20261020T193000                          │
+│                                              ││                                                                      │
+│                                              ││y approve · n reject · j/k select · Esc back                          │
+│                                              ││                                                                      │
+│                                              ││                                                                      │
+│                                              ││                                                                      │
+│                                              ││                                                                      │
+│                                              ││                                                                      │
+│                                              ││                                                                      │
+│                                              ││                                                                      │
+│                                              ││                                                                      │
+│                                              ││                                                                      │
+│                                              ││                                                                      │
+╰──────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────────────────╯
+ APPROVALS  P F b i 1 6                                                                         ⏳ 1 pending · ? help

@@ -1,0 +1,34 @@
+---
+source: crates/kairos-tui/tests/snapshots.rs
+expression: "render_to_string(&a, 100, 30)"
+---
+╭──────────────────────────────────── Week 43 · 19 Oct–25 Oct ─────────────────────────────────────╮
+│       Mon 19       Tue 20       Wed 21       Thu 22       Fri 23       Sat 24       Sun 25       │
+│                                                          ▎Collections ▎Lake Distr… ▎Lake Distr…  │
+│                                                          ▎+2 more                                │
+│──────────────────────────────────────────────────────────────────────────────────────────────────│
+│07:00 ┊          ╭──────────────────────────── keys ────────────────────────────╮   ┊             │
+│      ●          │ h l / H L  day / week back, forward                          │   ┊             │
+│09:00 ┊          │         t  today                                             │   ┊             │
+│      ┊          │       j k  select event                                      │   ┊             │
+│10:00 ┊          │       Tab  week → day → agenda                               │   ┊             │
+│      ┊          │     Enter  details / expand duplicates ⧉                     │   ┊             │
+│      ┊          │   p f b i  toggle Personal, Family, background, imported     │   ┊             │
+│12:00 ┊          │       1–7  toggle keys                                       │   ┊             │
+│      ┊          │         a  add (title @ when [#key] [for 90m])               │   ┊             │
+│      ┊          │     e m K  rename, move, re-key                              │   ┊             │
+│14:00 ┊          │       d s  delete, share to Family                           │   ┊             │
+│      ┊          │         P  run the scheduler                                 │   ┊             │
+│16:00 ┊          │       T A  tasks, approvals                                  │   ┊             │
+│      ┊          │         C  check in today's work blocks                      │   ┊             │
+│17:00 ┊          │         u  undo the last applied change                      │   ┊             │
+│      ┊          │         /  search                                            │   ┊             │
+│      ┊          │         r  sync now                                          │   ┊             │
+│19:00 ┊▌Squash   │         q  quit                                              │   ┊▌Sunday S…   │
+│      ┊▌         ╰──────────────────────────────────────────────────────────────╯   ┊▌            │
+│      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
+│21:00 ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
+│      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
+│      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+ WEEK  P F b i 1 6                                                                         ? help

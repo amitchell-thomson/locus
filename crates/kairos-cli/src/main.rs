@@ -301,6 +301,12 @@ impl Ctx {
             f.imported = has("imported");
         }
         if !v.keys.is_empty() {
+            // Keys are Personal calendars: `--key Engineering` alone means just those.
+            if v.overlays.is_empty() {
+                f.family = false;
+                f.background = false;
+                f.imported = false;
+            }
             for k in &self.cfg.keys {
                 if !v.keys.iter().any(|x| x.eq_ignore_ascii_case(&k.name)) {
                     f.hidden_keys.insert(k.name.to_lowercase());

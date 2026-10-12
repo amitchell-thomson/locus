@@ -354,8 +354,8 @@ fn lanes<'a>(items: &'a [(usize, usize, &'a Cluster)]) -> Vec<Placed<'a>> {
 
 fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
     let tz = app.tz;
-    // A selected work block lights up its task's deadline(s), and a selected
-    // deadline its task's work blocks (red, like the deadline itself).
+    // A selected work block lights up its task's deadline(s) (red), and a
+    // selected deadline its task's work blocks (blue, like a selected block).
     let sel = app.selected().map(|c| c.primary);
     let linked_task = sel.as_ref().and_then(|i| i.meta.task_id.clone());
     let sel_kind = sel.as_ref().map(|i| i.meta.kind);
@@ -748,14 +748,8 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             let x = x0 + lane_w * p.lane as u16;
             let i = &p.cl.primary;
             let idx = per_day[k].iter().position(|x| std::ptr::eq(x, p.cl));
-            // Solid highlight: blue when selected, red when linked to the selected deadline.
-            let hl = if *d == app.cursor && idx == Some(app.sel) {
-                Some(c("blue"))
-            } else if linked(i) {
-                Some(c("red"))
-            } else {
-                None
-            };
+            // Solid blue highlight when selected or linked to the selected deadline.
+            let hl = (*d == app.cursor && idx == Some(app.sel) || linked(i)).then(|| c("blue"));
             let selected = hl.is_some();
             let ph = phase(app, i);
             let lively = attending(i);

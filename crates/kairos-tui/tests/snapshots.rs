@@ -419,7 +419,7 @@ fn selected_work_block_highlights_its_deadline() {
 #[test]
 fn selected_deadline_highlights_its_work_blocks() {
     use ratatui::{Terminal, backend::TestBackend};
-    // Week view: select the ⚑ B4 deadline (Fri 23); its block (Wed 21 09:00) turns red.
+    // Week view: select the ⚑ B4 deadline (Fri 23); its block (Wed 21 09:00) turns blue.
     let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
     let block_bg = |a: &App| {
         let mut term = Terminal::new(TestBackend::new(160, 40)).unwrap();
@@ -434,14 +434,15 @@ fn selected_deadline_highlights_its_work_blocks() {
             .expect("B4 block drawn");
         buf[(at.0 + 1, at.1)].bg
     };
-    let red = kairos_tui::ui::c("red");
-    assert_ne!(block_bg(&a), red);
+    let blue = kairos_tui::ui::c("blue");
+    // Off Wednesday (where the block itself would be selected) and off the deadline.
     a.key(Key::Char('l'));
+    assert_ne!(block_bg(&a), blue);
     a.key(Key::Char('l'));
     a.sel = a
         .day_clusters(a.cursor)
         .iter()
         .position(|c| c.primary.title.contains("B4 sheet"))
         .expect("B4 deadline on Fri");
-    assert_eq!(block_bg(&a), red, "the deadline's work block lights up");
+    assert_eq!(block_bg(&a), blue, "the deadline's work block lights up");
 }

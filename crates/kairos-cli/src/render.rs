@@ -75,7 +75,8 @@ pub fn title_of(i: &Instance) -> String {
     let t = i.title.trim();
     match i.meta.kind {
         EventKind::Deadline => format!("{FLAG} {}", t.trim_start_matches(FLAG).trim()),
-        EventKind::TaskBlock => format!("~ {t}"),
+        // Work blocks are marked by `┆` in place of the dot (see `line`).
+        EventKind::TaskBlock => t.to_string(),
         EventKind::Event => t.to_string(),
         EventKind::Proposal => format!("◌ {t}?"),
     }
@@ -97,7 +98,13 @@ pub fn line(cfg: &Config, p: &Paint, c: &Cluster, tz: Tz) -> String {
     } else {
         title
     };
-    let mut s = format!(" {} {} {}", p.dim(&time_range(i, tz)), p.fg(col, "●"), title);
+    // `┆` = a scheduler slot (a work block kairos may move), as in the TUI.
+    let mark = if i.meta.kind == EventKind::TaskBlock && !i.meta.pinned {
+        "┆"
+    } else {
+        "●"
+    };
+    let mut s = format!(" {} {} {}", p.dim(&time_range(i, tz)), p.fg(col, mark), title);
     let mut extra = Vec::new();
     if let Some(l) = &i.location {
         extra.push(l.clone());

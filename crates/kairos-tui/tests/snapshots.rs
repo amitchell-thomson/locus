@@ -425,11 +425,11 @@ fn selected_deadline_highlights_its_work_blocks() {
         let mut term = Terminal::new(TestBackend::new(160, 40)).unwrap();
         term.draw(|f| kairos_tui::ui::draw(f, a)).unwrap();
         let buf = term.backend().buffer().clone();
-        // The block's label: "~ B4 sheet" (`~` marks a flexible work block).
+        // The block: "┆B4 sheet" (the dashed edge marks a scheduler slot).
         let at = (0..40u16)
             .flat_map(|y| (0..158u16).map(move |x| (x, y)))
             .find(|&(x, y)| {
-                buf[(x, y)].symbol() == "▌" && buf[(x + 1, y)].symbol() == "~" && buf[(x + 3, y)].symbol() == "B"
+                buf[(x, y)].symbol() == "┆" && buf[(x + 1, y)].symbol() == "B" && buf[(x + 2, y)].symbol() == "4"
             })
             .expect("B4 block drawn");
         buf[(at.0 + 1, at.1)].bg
@@ -499,7 +499,7 @@ fn squeezed_work_blocks_carry_a_warning() {
         .position(|c| c.primary.meta.task_id.as_deref() == Some("task-b4"))
         .unwrap();
     let s = render_to_string(&a, 100, 30);
-    assert!(s.contains("⚠ ~ B4 sheet"), "{s}");
+    assert!(s.contains("┆⚠ B4 sheet"), "{s}");
     assert!(s.contains("⚠ squeezed into a short gap"), "{s}");
 }
 
@@ -550,4 +550,23 @@ fn tasks_view_lists_completed_tasks_and_edits_a_task() {
     let Mode::Form(f) = &a.mode else { panic!("no form") };
     assert_eq!(f.get("Due"), "");
     assert!(a.form_preview(f).unwrap().contains("no deadline"));
+}
+
+#[test]
+fn scheduler_slots_have_a_dashed_edge_blocks_alec_placed_a_solid_one() {
+    let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
+    a.key(Key::Tab);
+    let s = render_to_string(&a, 100, 30);
+    assert!(s.contains("┆B4 sheet"), "scheduler slot: dashed\n{s}");
+    // Pinned (Alec moved it / started it now): solid like an event.
+    for i in a
+        .index
+        .instances
+        .iter_mut()
+        .filter(|i| i.meta.task_id.as_deref() == Some("task-b4"))
+    {
+        i.meta.pinned = true;
+    }
+    let s = render_to_string(&a, 100, 30);
+    assert!(s.contains("▌B4 sheet") && !s.contains("┆B4 sheet"), "{s}");
 }

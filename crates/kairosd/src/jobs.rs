@@ -56,7 +56,7 @@ pub fn morning_text(e: &Engine) -> String {
             };
             let mark = match i.meta.kind {
                 EventKind::Deadline => "⚑ ",
-                EventKind::TaskBlock => "~ ",
+                EventKind::TaskBlock => "┆ ",
                 EventKind::Event | EventKind::Proposal => "",
             };
             lines.push(format!("{when} {mark}{}", i.title.trim_start_matches("⚑ ")));

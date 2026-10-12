@@ -127,10 +127,26 @@ fn label(i: &Instance) -> String {
     let t = i.title.trim();
     match i.meta.kind {
         EventKind::Deadline => format!("⚑ {}", t.trim_start_matches('⚑').trim()),
-        EventKind::TaskBlock => format!("~ {t}"),
-        EventKind::Event => t.to_string(),
+        // Work blocks are marked by their dashed edge (see `edge`), not text.
+        EventKind::TaskBlock | EventKind::Event => t.to_string(),
         EventKind::Proposal => format!("◌ {t}?"),
     }
+}
+
+/// A scheduler slot: a work block kairos placed and may move (not one Alec
+/// placed himself, which is pinned).
+pub fn is_slot(i: &Instance) -> bool {
+    i.meta.kind == EventKind::TaskBlock && !i.meta.pinned
+}
+
+/// The marker before an item in lists and the bottom edge.
+fn dot(i: &Instance) -> &'static str {
+    if is_slot(i) { "┆ " } else { "● " }
+}
+
+/// The left edge of a block: dashed for scheduler slots, solid otherwise.
+fn edge(i: &Instance) -> &'static str {
+    if is_slot(i) { "┆" } else { "▌" }
 }
 
 /// Title without the parts that matter least when space is short:
@@ -420,7 +436,7 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
         let text = fit(&peek(app, &cl), area.width.saturating_sub(6) as usize);
         block = block.title_bottom(Line::from(vec![
             TSpan::styled(" ", Style::default()),
-            TSpan::styled("● ", Style::default().fg(colour_of(app, &cl.primary))),
+            TSpan::styled(dot(&cl.primary), Style::default().fg(colour_of(app, &cl.primary))),
             TSpan::styled(format!("{text} "), Style::default().fg(c("text"))),
         ]));
     }
@@ -821,12 +837,10 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             }
             for r in p.r0..p.r1 {
                 let k = r - p.r0;
+                let bar = edge(i);
                 let body = match lines.get(k) {
-                    Some(l) => format!("▌{l}"),
-                    None if i.meta.kind == EventKind::TaskBlock => {
-                        format!("▌{}", "░".repeat(tw))
-                    }
-                    None => "▌".to_string(),
+                    Some(l) => format!("{bar}{l}"),
+                    None => bar.to_string(),
                 };
                 let st = if selected {
                     style
@@ -1037,7 +1051,7 @@ fn event_line(app: &App, cl: &Cluster, selected: bool, width: usize) -> Line<'st
                 Style::default().fg(c("overlay1"))
             },
         ),
-        TSpan::styled("● ", if selected { base } else { Style::default().fg(col) }),
+        TSpan::styled(dot(i), if selected { base } else { Style::default().fg(col) }),
         TSpan::styled(fit(&title, room.max(8)), base),
         TSpan::styled(
             meta,

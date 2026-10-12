@@ -19,13 +19,16 @@ pub const INSTRUCTIONS: &str = "kairos manages Alec's calendar (iCloud is the so
 RISK POLICY (decided by the server, never by you): low-risk changes are applied immediately and can be undone \
 (task blocks, tasks, deadlines, new one-off events that don't clash, re-keying events kairos created). High-risk \
 changes are QUEUED FOR ALEC'S APPROVAL (status=pending): editing/moving/deleting events Alec created himself, \
-anything recurring, anything starting within 2 hours, events that clash with fixed events, sharing to Family, \
-deleting deadlines, dropping tasks, or more than 8 operations at once. Writes to Family (except share_to_family) and \
+anything recurring, anything starting within 2 hours (except the scheduler's own work blocks), events that clash with fixed events, sharing to Family, \
+deleting deadlines, dropping tasks, or more than 8 operations at once (the scheduler's own blocks don't count). Writes to Family (except share_to_family) and \
 to read-only imports (Google feeds, holidays) are refused. You cannot approve changes: tell Alec what is pending and \
 let him approve in the TUI, CLI or on his phone. Every write returns {changeset_id, risk, status, summary}.\n\
-SCHEDULING: don't hand-place work blocks. Create/update tasks with an estimate and deadline and call plan; the \
-deterministic scheduler places blocks in free time and reports shortfalls (\"2.5 h short before Fri 17:00\") with \
-options, and squeezes (\"1 h squeezed into the last 2 h before Fri 17:00\": fits, but only just) — relay those honestly. Only create a specific block when Alec asks for a specific slot (create_event with \
+SCHEDULING: don't hand-place work blocks. Create/update tasks with a type (sheet = problem sheet, ~5 h in 2–3 h \
+blocks; coursework = estimate required, revised at check-ins; admin = admin/errands, one 30–60 min go), an estimate \
+and a deadline, then call plan; the deterministic scheduler spreads work over the days before the deadline, moves it \
+out of the way of new events by itself, and reports shortfalls (\"2.5 h short before Fri 17:00\") with options and \
+squeezes (\"40 min squeezed into a short gap\", \"…into the last 2 h before Fri 17:00\": fits, but only just) and \
+learned estimates (\"planning 6 h for 4 h left\") — relay those honestly. Only create a specific block when Alec asks for a specific slot (create_event with \
 task_id makes a pinned block).\n\
 TIMES: ISO 8601 ('2026-10-16T17:00', with or without offset; Europe/London assumed) or plain dates for all-day; \
 natural forms like 'fri 17:00' also work but ambiguous input is rejected. Keys: Inbox (default), Engineering, \
@@ -284,8 +287,12 @@ pub struct ListTasksArgs {
 pub struct CreateTaskArgs {
     pub title: String,
     pub key: String,
-    /// Estimated minutes of work.
-    pub estimate_min: u32,
+    /// Task type: sheet (problem sheets, ~5 h), coursework (estimate required;
+    /// revised at check-ins), admin (admin/errands, one 30–60 min go). Sets
+    /// block sizes. Default: admin up to 1 h, else sheet.
+    pub kind: Option<String>,
+    /// Estimated minutes of work (omit to use the type's default).
+    pub estimate_min: Option<u32>,
     /// Deadline: date (all-day) or time. Creates a ⚑ deadline event too.
     pub due: Option<String>,
     pub earliest_start: Option<String>,
@@ -304,6 +311,8 @@ pub struct UpdateTaskArgs {
     /// Task id or unique title prefix.
     pub id: String,
     pub title: Option<String>,
+    /// Task type (sheet | coursework | admin): resets block sizes.
+    pub kind: Option<String>,
     pub key: Option<String>,
     pub estimate_min: Option<u32>,
     pub remaining_min: Option<u32>,
@@ -611,7 +620,8 @@ impl KairosMcp {
         let req = api::CreateTaskReq {
             title: a.title,
             key: a.key,
-            estimate_min: a.estimate_min,
+            estimate_min: a.estimate_min.unwrap_or(0),
+            kind: a.kind,
             due: a.due,
             earliest_start: a.earliest_start,
             priority: a.priority,
@@ -632,6 +642,7 @@ impl KairosMcp {
     async fn update_task(&self, Parameters(a): Parameters<UpdateTaskArgs>) -> Result<CallToolResult, ErrorData> {
         let req = api::UpdateTaskReq {
             title: a.title,
+            kind: a.kind,
             key: a.key,
             estimate_min: a.estimate_min,
             remaining_min: a.remaining_min,

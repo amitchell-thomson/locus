@@ -109,6 +109,116 @@ pub struct Profile {
     pub no_schedule: Vec<NoSchedule>,
     #[serde(default = "default_lead")]
     pub deadline_lead_hours: u16,
+    /// Comfort: at most this long of back-to-back commitments (events and
+    /// work, gaps under `break_minutes` don't count as a break)…
+    #[serde(default = "default_continuous")]
+    pub max_continuous_minutes: u16,
+    #[serde(default = "default_break")]
+    pub break_minutes: u16,
+    /// Comfort: events + work per day.
+    #[serde(default = "default_day_load")]
+    pub max_day_load_hours: f32,
+}
+
+fn default_continuous() -> u16 {
+    180
+}
+fn default_break() -> u16 {
+    30
+}
+fn default_day_load() -> f32 {
+    10.0
+}
+
+/// No work for `minutes` after an event in calendar `key` (e.g. after sport:
+/// tired, showering).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Recovery {
+    pub key: String,
+    pub minutes: u16,
+}
+
+/// Defaults for a kind of task (`sheet`, `coursework`, `admin`, …).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TaskType {
+    pub name: String,
+    /// Default estimate when none is given (`None` = must be given).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimate_minutes: Option<u32>,
+    /// Preferred block length range.
+    pub ideal_min_minutes: u32,
+    pub ideal_max_minutes: u32,
+    /// Shortest block that's still worth it outside a squeeze.
+    pub min_block_minutes: u32,
+    #[serde(default = "yes")]
+    pub splittable: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+fn default_task_types() -> Vec<TaskType> {
+    let t = |name: &str, est: Option<u32>, lo: u32, hi: u32, min: u32, split: bool| TaskType {
+        name: name.into(),
+        estimate_minutes: est,
+        ideal_min_minutes: lo,
+        ideal_max_minutes: hi,
+        min_block_minutes: min,
+        splittable: split,
+    };
+    vec![
+        t("sheet", Some(300), 120, 180, 60, true),
+        t("coursework", None, 120, 180, 60, true),
+        t("admin", Some(45), 30, 60, 30, false),
+    ]
+}
+
+/// Proposed project time: free gaps offered (greyed) for Alec to accept or drop.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Projects {
+    #[serde(default = "yes")]
+    pub enabled: bool,
+    #[serde(default = "default_project_title")]
+    pub title: String,
+    /// Calendar key accepted project time goes to (default: the default key).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    #[serde(default = "default_project_min")]
+    pub min_minutes: u32,
+    #[serde(default = "default_project_max")]
+    pub max_minutes: u32,
+    #[serde(default = "default_project_days")]
+    pub days_ahead: u16,
+}
+
+impl Default for Projects {
+    fn default() -> Projects {
+        Projects {
+            enabled: true,
+            title: default_project_title(),
+            key: None,
+            min_minutes: default_project_min(),
+            max_minutes: default_project_max(),
+            days_ahead: default_project_days(),
+        }
+    }
+}
+
+fn default_project_title() -> String {
+    "Project time".into()
+}
+fn default_project_min() -> u32 {
+    60
+}
+fn default_project_max() -> u32 {
+    180
+}
+fn default_project_days() -> u16 {
+    7
 }
 
 fn default_buffer() -> u16 {
@@ -136,17 +246,31 @@ pub struct Constraints {
     /// Never schedule within this many minutes of now.
     #[serde(default = "default_min_lead")]
     pub min_lead_minutes: u16,
+    /// Shortest block allowed when squeezing work into a gap (a 1 h gap
+    /// minus 10 min travel/setup each side).
+    #[serde(default = "default_squeeze_block")]
+    pub squeeze_block_minutes: u16,
+    #[serde(default)]
+    pub recovery: Vec<Recovery>,
+    #[serde(default = "default_task_types")]
+    pub task_types: Vec<TaskType>,
+    #[serde(default)]
+    pub projects: Projects,
     pub profiles: Vec<Profile>,
 }
 
+fn default_squeeze_block() -> u16 {
+    40
+}
+
 fn default_slot() -> u16 {
-    15
+    10
 }
 fn default_horizon() -> u16 {
     14
 }
 fn default_min_lead() -> u16 {
-    30
+    15
 }
 
 fn default_windows() -> Vec<NamedWindow> {
@@ -240,6 +364,20 @@ impl Constraints {
             .iter()
             .find(|p| p.dates.iter().any(|r| r.contains(d)))
             .or_else(|| self.profiles.iter().find(|p| p.dates.is_empty()))
+    }
+
+    pub fn task_type(&self, name: &str) -> Option<&TaskType> {
+        self.task_types.iter().find(|t| t.name.eq_ignore_ascii_case(name))
+    }
+
+    /// Minutes of rest after an event in `key`.
+    pub fn recovery_after(&self, key: &str) -> u16 {
+        self.recovery
+            .iter()
+            .filter(|r| r.key.eq_ignore_ascii_case(key))
+            .map(|r| r.minutes)
+            .max()
+            .unwrap_or(0)
     }
 
     pub fn window(&self, name: &str) -> Option<&NamedWindow> {

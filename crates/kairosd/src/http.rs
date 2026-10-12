@@ -87,7 +87,19 @@ pub async fn with_engine<T: Send + 'static>(
         let mut g = eng
             .lock()
             .map_err(|_| EngineError::BadRequest("engine lock poisoned; restart kairosd".into()))?;
-        f(&mut g)
+        let r = f(&mut g);
+        if g.replan_soon {
+            // An event changed: move work out of its way right after answering.
+            let eng = eng.clone();
+            tokio::task::spawn_blocking(move || {
+                if let Ok(mut e) = eng.lock()
+                    && let Err(err) = e.replan_if_needed()
+                {
+                    tracing::warn!("replan after write: {err}");
+                }
+            });
+        }
+        r
     })
     .await
     .map_err(|e| {
@@ -174,6 +186,9 @@ pub fn router(st: AppState, mcp: Option<Router<AppState>>) -> Router {
         .route("/api/tasks/{id}/drop", post(drop_task))
         .route("/api/deadlines", post(create_deadline))
         .route("/api/plan", post(plan))
+        .route("/api/proposals", get(list_proposals))
+        .route("/api/proposals/{id}/accept", post(accept_proposal))
+        .route("/api/proposals/{id}/reject", post(reject_proposal))
         .route("/api/changesets", get(list_changesets))
         .route("/api/changesets/{id}", get(get_changeset))
         .route("/api/changesets/{id}/approve", post(approve))
@@ -411,6 +426,30 @@ async fn create_deadline(
 async fn plan(State(st): State<AppState>, body: Option<Json<api::PlanReq>>) -> HResult<api::PlanResp> {
     let dry = body.is_some_and(|b| b.0.dry_run);
     Ok(Json(with_engine(&st, move |e| e.plan(dry, Author::Scheduler)).await?))
+}
+
+// ---------------------------------------------------------------- proposed project time
+
+async fn list_proposals(State(st): State<AppState>) -> HResult<Vec<api::ProposalItem>> {
+    Ok(Json(with_engine(&st, move |e| e.proposals()).await?))
+}
+
+async fn accept_proposal(
+    State(st): State<AppState>,
+    h: HeaderMap,
+    Path(id): Path<String>,
+    body: Option<Json<api::AcceptProposalReq>>,
+) -> HResult<WriteResult> {
+    let req = body.map(|b| b.0).unwrap_or_default();
+    let a = author(&h);
+    Ok(Json(
+        with_engine_as(&st, &h, move |e| e.accept_proposal(a, &id, &req)).await?,
+    ))
+}
+
+async fn reject_proposal(State(st): State<AppState>, Path(id): Path<String>) -> HResult<serde_json::Value> {
+    with_engine(&st, move |e| e.reject_proposal(&id)).await?;
+    Ok(Json(serde_json::json!({"ok": true})))
 }
 
 // ---------------------------------------------------------------- changesets
@@ -692,6 +731,7 @@ async fn checkin_signed(
         block_uid: uid,
         outcome,
         actual_min: None,
+        remaining_min: None,
     };
     with_engine(&st, move |e| e.checkin(&req)).await?;
     let to = format!("/checkin?day={}&sig={}", q.day, q.sig);

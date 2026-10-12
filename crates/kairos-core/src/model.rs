@@ -14,6 +14,9 @@ pub enum EventKind {
     Event,
     Deadline,
     TaskBlock,
+    /// Proposed project time (kairosd only, never written to a calendar;
+    /// shown greyed in the TUI to accept or drop).
+    Proposal,
 }
 
 impl EventKind {
@@ -22,6 +25,7 @@ impl EventKind {
             EventKind::Event => "event",
             EventKind::Deadline => "deadline",
             EventKind::TaskBlock => "task_block",
+            EventKind::Proposal => "proposal",
         }
     }
     pub fn parse(s: &str) -> Option<EventKind> {
@@ -29,6 +33,7 @@ impl EventKind {
             "event" => Some(EventKind::Event),
             "deadline" => Some(EventKind::Deadline),
             "task_block" | "task-block" => Some(EventKind::TaskBlock),
+            "proposal" => Some(EventKind::Proposal),
             _ => None,
         }
     }

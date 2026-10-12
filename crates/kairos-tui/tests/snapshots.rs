@@ -446,3 +446,59 @@ fn selected_deadline_highlights_its_work_blocks() {
         .expect("B4 deadline on Fri");
     assert_eq!(block_bg(&a), blue, "the deadline's work block lights up");
 }
+
+#[test]
+fn proposed_project_time_is_grey_selectable_and_asks_what_to_work_on() {
+    use kairos_tui::app::{Mode, PromptKind};
+    use ratatui::{Terminal, backend::TestBackend};
+    let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
+    a.key(Key::Tab); // day view
+    a.proposals = vec![kairos_core::api::ProposalItem {
+        id: "p1".into(),
+        start: now("2026-10-21T14:00:00+01:00"),
+        end: now("2026-10-21T16:00:00+01:00"),
+        title: "Project time".into(),
+    }];
+    let s = render_to_string(&a, 100, 30);
+    assert!(s.contains("◌ Project time?"), "{s}");
+    // Grey, never the key colours.
+    let mut term = Terminal::new(TestBackend::new(100, 30)).unwrap();
+    term.draw(|f| kairos_tui::ui::draw(f, &a)).unwrap();
+    let buf = term.backend().buffer().clone();
+    let at = (0..30u16)
+        .flat_map(|y| (0..99u16).map(move |x| (x, y)))
+        .find(|&(x, y)| buf[(x, y)].symbol() == "◌" && buf[(x + 2, y)].symbol() == "P")
+        .unwrap();
+    assert_eq!(buf[at].fg, kairos_tui::ui::c("overlay1"));
+    // Select it: y asks what to work on; Esc leaves it.
+    a.sel = a
+        .day_clusters(a.cursor)
+        .iter()
+        .position(|c| c.primary.uid == "p1")
+        .unwrap();
+    let s = render_to_string(&a, 100, 30);
+    assert!(s.contains("proposed project time: y accept · d drop"), "{s}");
+    a.key(Key::Char('y'));
+    assert!(matches!(&a.mode, Mode::Prompt(PromptKind::Project { id, .. }, _) if id == "p1"));
+    a.key(Key::Esc);
+    assert_eq!(a.proposals.len(), 1);
+}
+
+#[test]
+fn squeezed_work_blocks_carry_a_warning() {
+    let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
+    a.key(Key::Tab);
+    a.squeezed = vec![(
+        "task-b4".into(),
+        now("2026-10-21T09:00:00+01:00"),
+        vec!["into a short gap".into()],
+    )];
+    a.sel = a
+        .day_clusters(a.cursor)
+        .iter()
+        .position(|c| c.primary.meta.task_id.as_deref() == Some("task-b4"))
+        .unwrap();
+    let s = render_to_string(&a, 100, 30);
+    assert!(s.contains("⚠ ~ B4 sheet"), "{s}");
+    assert!(s.contains("⚠ squeezed into a short gap"), "{s}");
+}

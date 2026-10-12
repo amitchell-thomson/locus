@@ -2,31 +2,40 @@
 //!
 //! Model: time from `now + min_lead` (rounded up to a slot) to the horizon is
 //! cut into `slot_minutes` slots. A slot is *usable* if it lies inside the
-//! day's profile window, outside sleep, meals and no-schedule periods, and
-//! clear of busy events plus buffers. Blocks also get a `buffer_minutes` gap
-//! after them, chunks of the same task are ≥ 60 min apart, and each day's
-//! task-block total stays ≤ `max_focus_hours_per_day`.
+//! day's profile window, outside sleep, meals and no-schedule periods, clear
+//! of busy events plus buffers (`buffer_minutes` either side, more before a
+//! location change) and of the rest after a recovery event (sport). Blocks
+//! keep `buffer_minutes` from each other, chunks of the same task are ≥ 60 min
+//! apart, and each day's work stays ≤ `max_focus_hours_per_day`.
 //!
-//! `deadline_lead_hours` (default 2) is a preference, not a wall: every task
-//! is first placed to finish that long before its deadline; only what doesn't
-//! fit there falls back to the time up to the deadline itself (after all tasks
-//! have had their lead-respecting turn), and the plan carries a [`Squeeze`]
-//! warning for it. Nothing is placed after a deadline.
+//! **Tiers.** Work is placed in the best tier it fits, a lower tier only for
+//! what's left over:
+//! 1. *Ideal*: blocks of the task type's ideal length (e.g. 2–3 h), finishing
+//!    `deadline_lead_hours` (2 h) before the deadline, and *comfortable*: no
+//!    more than `max_continuous_minutes` of back-to-back commitments without a
+//!    `break_minutes` break, and ≤ `max_day_load_hours` of events + work a day.
+//! 2. *Shorter*: blocks down to the type's `min_block` (e.g. 60 min), same rules.
+//! 3. *Squeeze*: blocks down to `squeeze_block_minutes` (a 1 h gap between
+//!    lectures), up to the deadline itself — first within the comfort rules,
+//!    then past them. Every squeezed block is reported as a [`Squeeze`]
+//!    warning.
 //!
-//! Algorithm:
-//! 1. **Stable pass** — keep every existing future block that is still
-//!    feasible and still needed (pinned blocks always stay), then place what's
-//!    missing, tasks in earliest-deadline-first order (slack, then priority,
-//!    as tiebreaks).
-//! 2. If anything is short or squeezed, alternatives are tried — deadline-order fallback
-//!    (see `deadline_lead_hours` below) and a **fresh pass** from scratch
-//!    (keeping only pinned blocks) — and used only if they strictly reduce the
-//!    total shortfall (then squeezed minutes). So blocks move only when that's
-//!    required.
-//! 3. Each chunk goes on the earliest day with room; within that day the
-//!    start with the best preferred-window fit wins (earliest on ties).
+//! What still doesn't fit is a [`Shortfall`] — never silently overbooked.
 //!
-//! Infeasibility is reported per task, never silently overbooked.
+//! **Spreading.** A task's hours are shared across the days before its
+//! deadline in proportion to each day's free time: a sheet due Friday becomes
+//! a block on two or three days; with one free day it all goes there (cram).
+//! Each chunk goes on the day furthest below its share (earliest on ties);
+//! within the day, the best preferred-window / deep-work fit wins.
+//!
+//! **Stability.** Existing future blocks that are still feasible and needed
+//! stay (pinned ones always). If the result is short or squeezed, alternatives
+//! — deadline-order fallback and a fresh pass from scratch — are tried, and
+//! used only if strictly better on (shortfall, squeezed minutes). So blocks
+//! move only when an event displaced them or a squeeze can be undone.
+//!
+//! **Proposals.** [`propose`] fills the free gaps left after task work with
+//! proposed project time (comfort rules on, same daily cap).
 
 use crate::constraints::{Constraints, Hm, Profile};
 use crate::task::{Due, Task, TaskStatus};
@@ -44,6 +53,9 @@ pub struct Busy {
     pub end: DateTime<Utc>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
+    /// No work for this long after it ends (recovery after sport).
+    #[serde(default)]
+    pub rest_after_min: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,6 +68,9 @@ pub struct Block {
     pub end: DateTime<Utc>,
     #[serde(default)]
     pub pinned: bool,
+    /// Why this placement (new blocks only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub why: Option<String>,
 }
 
 impl Block {
@@ -75,17 +90,26 @@ pub struct Shortfall {
     pub options: Vec<String>,
 }
 
-/// A task with work planned inside its deadline lead (the last
-/// `deadline_lead_hours` before it's due): it fits, but only just.
+/// A task with squeezed work: blocks in a short gap, in the last
+/// `deadline_lead_hours` before the deadline, or past the comfort limits.
+/// It fits, but only just.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Squeeze {
     pub task_id: String,
     pub title: String,
-    pub due: Due,
-    /// Minutes of work planned inside the lead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub due: Option<Due>,
     pub squeezed_min: u32,
-    pub lead_hours: u16,
+    /// The squeezed blocks.
+    pub blocks: Vec<SqueezedBlock>,
     pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SqueezedBlock {
+    pub start: DateTime<Utc>,
+    pub end: DateTime<Utc>,
+    pub reasons: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -97,7 +121,6 @@ pub struct Plan {
     /// Existing blocks to delete.
     pub delete: Vec<Block>,
     pub shortfalls: Vec<Shortfall>,
-    /// Tasks whose (non-pinned) blocks run into their deadline lead.
     #[serde(default)]
     pub squeezed: Vec<Squeeze>,
     /// Existing blocks whose time changed (deleted and not replaced 1:1).
@@ -120,6 +143,10 @@ struct Grid<'a> {
     slot: i64,
     n: usize,
     usable: Vec<bool>,
+    /// Slots covered by a busy event itself (no buffers): continuity.
+    busy_occ: Vec<bool>,
+    /// Busy minutes per local day (whole day, also before `t0`): day load.
+    busy_load: BTreeMap<NaiveDate, i64>,
     /// Local date of each slot.
     date: Vec<NaiveDate>,
     tz: Tz,
@@ -160,6 +187,8 @@ impl<'a> Grid<'a> {
             slot,
             n,
             usable,
+            busy_occ: vec![false; n],
+            busy_load: BTreeMap::new(),
             date,
             tz: input.tz,
             c,
@@ -178,7 +207,14 @@ impl<'a> Grid<'a> {
                 (Some((pl, pd)), Some(l)) if pd == d && !pl.eq_ignore_ascii_case(l) => loc_buf,
                 _ => base,
             };
-            g.block_out(b.start - Duration::minutes(before), b.end + Duration::minutes(base));
+            let after = base.max(i64::from(b.rest_after_min));
+            g.block_out(b.start - Duration::minutes(before), b.end + Duration::minutes(after));
+            let i0 = g.idx(b.start).max(0);
+            let i1 = g.idx_ceil(b.end).min(g.n as i64);
+            for i in i0..i1 {
+                g.busy_occ[i as usize] = true;
+            }
+            *g.busy_load.entry(d).or_default() += (b.end - b.start).num_minutes().max(0);
             if let Some(l) = b.location.as_deref() {
                 prev_loc = Some((l, d));
             }
@@ -199,6 +235,10 @@ impl<'a> Grid<'a> {
         self.t0 + Duration::minutes(i as i64 * self.slot)
     }
 
+    fn slots(&self, minutes: i64) -> usize {
+        ((minutes + self.slot - 1) / self.slot).max(0) as usize
+    }
+
     /// Mark `[a, b)` unusable (partial slots count).
     fn block_out(&mut self, a: DateTime<Utc>, b: DateTime<Utc>) {
         let i0 = self.idx(a).max(0);
@@ -206,6 +246,10 @@ impl<'a> Grid<'a> {
         for i in i0..i1 {
             self.usable[i as usize] = false;
         }
+    }
+
+    fn profile(&self, i: usize) -> Option<&Profile> {
+        self.c.profile_for(self.date[i])
     }
 }
 
@@ -234,6 +278,18 @@ fn slot_allowed(p: &Profile, m: u16, slot: u16, wd: chrono::Weekday) -> bool {
     true
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Tier {
+    Ideal,
+    Shorter,
+    /// Short gaps / the deadline lead, still within the comfort rules…
+    Squeeze,
+    /// …and only then past them.
+    Overload,
+}
+
+const TIERS: [Tier; 4] = [Tier::Ideal, Tier::Shorter, Tier::Squeeze, Tier::Overload];
+
 struct Need<'t> {
     task: &'t Task,
     need_slots: usize,
@@ -242,6 +298,33 @@ struct Need<'t> {
     /// Exclusive latest slot index (the deadline itself), clipped to grid.
     hard_idx: usize,
     earliest_idx: usize,
+    ideal_min: usize,
+    ideal_max: usize,
+    short_min: usize,
+    squeeze_min: usize,
+}
+
+impl Need<'_> {
+    /// (shortest block, latest end, comfort rules on) for a tier.
+    fn tier(&self, t: Tier, remaining: usize) -> (usize, usize, bool) {
+        let (min, limit, comfort) = match t {
+            Tier::Ideal => (self.ideal_min, self.deadline_idx, true),
+            Tier::Shorter => (self.short_min, self.deadline_idx, true),
+            Tier::Squeeze => (self.squeeze_min, self.hard_idx, true),
+            Tier::Overload => (self.squeeze_min, self.hard_idx, false),
+        };
+        let min = if self.task.splittable { min } else { remaining };
+        (min.clamp(1, remaining.max(1)), limit, comfort)
+    }
+
+    /// Target block length: the remainder split evenly into ideal-sized blocks.
+    fn target_len(&self, remaining: usize) -> usize {
+        if !self.task.splittable {
+            return remaining;
+        }
+        let blocks = remaining.div_ceil(self.ideal_max.max(1)).max(1);
+        remaining.div_ceil(blocks)
+    }
 }
 
 fn ordered_needs<'t>(input: &PlanInput<'_>, tasks: &'t [Task], g: &Grid<'_>, horizon_idx: usize) -> Vec<Need<'t>> {
@@ -252,21 +335,23 @@ fn ordered_needs<'t>(input: &PlanInput<'_>, tasks: &'t [Task], g: &Grid<'_>, hor
             let due = t.due.map(|d| d.instant(input.tz));
             let lead = due.map(|due| {
                 let p = g.c.profile_for(due.with_timezone(&g.tz).date_naive());
-                due - Duration::hours(i64::from(p.map_or(12, |p| p.deadline_lead_hours)))
+                due - Duration::hours(i64::from(p.map_or(2, |p| p.deadline_lead_hours)))
             });
             let clip = |x: DateTime<Utc>| g.idx(x).clamp(0, horizon_idx as i64) as usize;
-            let deadline_idx = lead.map_or(horizon_idx, clip);
-            let hard_idx = due.map_or(horizon_idx, clip);
             let earliest_idx = t
                 .earliest_start
                 .map_or(0, |e| g.idx_ceil(e).clamp(0, g.n as i64) as usize);
-            let slot = g.slot as u32;
+            let short_min = g.slots(i64::from(t.min_chunk_min)).max(1);
             Need {
                 task: t,
-                need_slots: t.remaining_min.div_ceil(slot) as usize,
-                deadline_idx,
-                hard_idx,
+                need_slots: g.slots(i64::from(t.remaining_min)),
+                deadline_idx: lead.map_or(horizon_idx, clip),
+                hard_idx: due.map_or(horizon_idx, clip),
                 earliest_idx,
+                ideal_min: g.slots(i64::from(t.ideal_min())).max(short_min),
+                ideal_max: g.slots(i64::from(t.max_chunk_min)).max(1),
+                short_min,
+                squeeze_min: g.slots(i64::from(g.c.squeeze_block_minutes)).clamp(1, short_min),
             }
         })
         .collect();
@@ -314,24 +399,70 @@ fn score(g: &Grid<'_>, t: &Task, i: usize, len: usize) -> i64 {
 
 /// `buffer_minutes` of slot `i`'s day, in whole slots.
 fn buf_slots(g: &Grid<'_>, i: usize) -> usize {
-    let buf = g.c.profile_for(g.date[i]).map_or(10, |p| i64::from(p.buffer_minutes));
-    ((buf + g.slot - 1) / g.slot) as usize
+    g.slots(g.profile(i).map_or(10, |p| i64::from(p.buffer_minutes)))
 }
 
+#[derive(Clone)]
 struct State {
     usable: Vec<bool>,
     /// Slots holding a task block. Kept apart from `usable` so the buffer
     /// between two blocks holds on both sides, whichever was placed first
     /// (otherwise a replan that keeps blocks in another order would move one).
     taken: Vec<bool>,
+    /// Busy events + task blocks (continuity).
+    occ: Vec<bool>,
     focus: BTreeMap<NaiveDate, i64>,
     /// Per task: slot ranges already allocated.
     chunks: BTreeMap<String, Vec<(usize, usize)>>,
 }
 
 impl State {
-    fn can_place(&self, g: &Grid<'_>, task: &str, i: usize, len: usize) -> bool {
-        if i + len > g.n || !self.usable[i..i + len].iter().all(|&u| u) {
+    fn new(g: &Grid<'_>) -> State {
+        State {
+            usable: g.usable.clone(),
+            taken: vec![false; g.n],
+            occ: g.busy_occ.clone(),
+            focus: BTreeMap::new(),
+            chunks: BTreeMap::new(),
+        }
+    }
+
+    /// Length (slots) of the back-to-back run `[i, i+len)` would sit in:
+    /// occupied slots joined by gaps shorter than the break.
+    fn run_len(&self, g: &Grid<'_>, i: usize, len: usize) -> usize {
+        let brk = g.slots(g.profile(i).map_or(30, |p| i64::from(p.break_minutes)));
+        let mut a = i;
+        while let Some(k) = (a.saturating_sub(brk)..a).find(|&k| self.occ[k]) {
+            let mut k = k;
+            while k > 0 && self.occ[k - 1] {
+                k -= 1;
+            }
+            a = k;
+        }
+        let mut b = (i + len).min(g.n);
+        while let Some(k) = (b..(b + brk).min(g.n)).rev().find(|&k| self.occ[k]) {
+            let mut k = k + 1;
+            while k < g.n && self.occ[k] {
+                k += 1;
+            }
+            b = k;
+        }
+        b - a
+    }
+
+    fn comfortable(&self, g: &Grid<'_>, i: usize, len: usize, extra_load: i64) -> bool {
+        let Some(p) = g.profile(i) else { return false };
+        let max_run = g.slots(i64::from(p.max_continuous_minutes));
+        if self.run_len(g, i, len) > max_run {
+            return false;
+        }
+        let d = g.date[i];
+        let load = g.busy_load.get(&d).copied().unwrap_or(0) + self.focus.get(&d).copied().unwrap_or(0) + extra_load;
+        load <= (p.max_day_load_hours * 60.0) as i64
+    }
+
+    fn can_place(&self, g: &Grid<'_>, task: &str, i: usize, len: usize, comfort: bool) -> bool {
+        if len == 0 || i + len > g.n || !self.usable[i..i + len].iter().all(|&u| u) {
             return false;
         }
         let buf = buf_slots(g, i);
@@ -352,78 +483,153 @@ impl State {
         for k in i..i + len {
             *per_day.entry(g.date[k]).or_default() += g.slot;
         }
-        per_day.iter().all(|(d, add)| {
+        let capped = per_day.iter().all(|(d, add)| {
             let cap = g.c.profile_for(*d).map_or(0.0, |p| p.max_focus_hours_per_day * 60.0) as i64;
             self.focus.get(d).copied().unwrap_or(0) + add <= cap
-        })
+        });
+        capped && (!comfort || self.comfortable(g, i, len, len as i64 * g.slot))
+    }
+
+    /// Grow the task's chunk `[a, b)` to end at `b + add` (absorbing a crumb).
+    fn can_extend(&self, g: &Grid<'_>, task: &str, b: usize, add: usize) -> bool {
+        let e = b + add;
+        if e > g.n || !self.usable[b..e].iter().all(|&u| u) {
+            return false;
+        }
+        let buf = buf_slots(g, b);
+        if self.taken[b..(e + buf).min(g.n)].iter().any(|&t| t) || g.date[b] != g.date[e - 1] {
+            return false;
+        }
+        let gap = (SAME_TASK_GAP_MIN / g.slot) as usize;
+        if let Some(cs) = self.chunks.get(task)
+            && cs.iter().any(|&(x, _)| x > b && x < e + gap)
+        {
+            return false;
+        }
+        let d = g.date[b];
+        let cap = g.c.profile_for(d).map_or(0.0, |p| p.max_focus_hours_per_day * 60.0) as i64;
+        self.focus.get(&d).copied().unwrap_or(0) + add as i64 * g.slot <= cap
+    }
+
+    fn extend(&mut self, g: &Grid<'_>, task: &str, b: usize, add: usize) {
+        for k in b..b + add {
+            self.usable[k] = false;
+            self.taken[k] = true;
+            self.occ[k] = true;
+            *self.focus.entry(g.date[k]).or_default() += g.slot;
+        }
+        if let Some(c) = self
+            .chunks
+            .get_mut(task)
+            .and_then(|cs| cs.iter_mut().find(|c| c.1 == b))
+        {
+            c.1 = b + add;
+        }
     }
 
     fn place(&mut self, g: &Grid<'_>, task: &str, i: usize, len: usize) {
         for k in i..(i + len).min(g.n) {
             self.usable[k] = false;
             self.taken[k] = true;
-        }
-        for k in i..i + len {
+            self.occ[k] = true;
             *self.focus.entry(g.date[k]).or_default() += g.slot;
         }
         self.chunks.entry(task.to_string()).or_default().push((i, i + len));
     }
 }
 
-/// A chunk for `n` ending by slot `limit` (exclusive).
-fn find_chunk(g: &Grid<'_>, st: &State, n: &Need<'_>, remaining: usize, limit: usize) -> Option<(usize, usize)> {
+/// The next chunk for `n` in `tier`: (start, len, why).
+fn find_chunk(g: &Grid<'_>, st: &State, n: &Need<'_>, remaining: usize, tier: Tier) -> Option<(usize, usize, String)> {
     let t = n.task;
-    let slot = g.slot as u32;
-    let min_len = if t.splittable {
-        (t.min_chunk_min.div_ceil(slot) as usize).max(1).min(remaining)
-    } else {
-        remaining
-    };
-    let max_len = if t.splittable {
-        (t.max_chunk_min / slot).max(min_len as u32) as usize
-    } else {
-        remaining
-    }
-    .min(remaining);
+    let (min_len, limit, comfort) = n.tier(tier, remaining);
+    let target = n.target_len(remaining).max(min_len);
+    let lo = n.earliest_idx;
     let hi = limit.min(g.n);
-    let mut i = n.earliest_idx;
-    while i < hi {
-        if !st.can_place(g, &t.id, i, min_len) || i + min_len > hi {
-            i += 1;
-            continue;
+    if lo >= hi {
+        return None;
+    }
+    // Free time per day, and this task's work already there.
+    let mut days: BTreeMap<NaiveDate, (i64, i64)> = BTreeMap::new(); // date → (free slots, placed slots)
+    for k in lo..hi {
+        let e = days.entry(g.date[k]).or_default();
+        if st.usable[k] && !st.taken[k] {
+            e.0 += 1;
         }
-        // Earliest feasible day found: choose the best start on that day.
-        let day = g.date[i];
-        let mut best: Option<(i64, usize, usize)> = None; // (score, start, len)
-        let mut j = i;
-        while j < hi && g.date[j] == day {
-            if j + min_len <= hi && st.can_place(g, &t.id, j, min_len) {
-                let mut len = min_len;
-                while len < max_len && j + len < hi && st.can_place(g, &t.id, j, len + 1) {
-                    len += 1;
-                }
-                let sc = score(g, t, j, len) * 1000 + len as i64; // prefer fit, then longer chunks
-                if best.is_none_or(|(bs, _, _)| sc > bs) {
-                    best = Some((sc, j, len));
-                }
+    }
+    for &(a, b) in st.chunks.get(&t.id).map(Vec::as_slice).unwrap_or(&[]) {
+        if let Some(e) = days.get_mut(&g.date[a]) {
+            e.1 += (b - a) as i64;
+        }
+    }
+    let total_free: i64 = days.values().map(|v| v.0).sum();
+    if total_free == 0 {
+        return None;
+    }
+    let total = remaining as i64 + days.values().map(|v| v.1).sum::<i64>();
+    let with_room = days.values().filter(|v| v.0 >= min_len as i64).count();
+    // Furthest below its share first (placed/total vs free/total_free), earliest on ties.
+    let mut order: Vec<(i64, NaiveDate)> = days
+        .iter()
+        .filter(|(_, v)| v.0 > 0)
+        .map(|(d, v)| (v.1 * total_free - total * v.0, *d))
+        .collect();
+    order.sort();
+    let first_day = order.iter().map(|o| o.1).min();
+    for (_, day) in order {
+        let mut best: Option<(usize, i64, usize, usize)> = None; // (len, score, start, len)
+        for j in lo..hi {
+            if g.date[j] != day {
+                continue;
             }
-            j += 1;
+            if !st.can_place(g, &t.id, j, min_len, comfort) || j + min_len > hi {
+                continue;
+            }
+            let mut len = min_len;
+            while len < target && j + len < hi && st.can_place(g, &t.id, j, len + 1, comfort) {
+                len += 1;
+            }
+            // Don't leave a crumb (shorter than any block): absorb it if
+            // there's room, else leave a remainder that can stand alone.
+            let rest = remaining - len.min(remaining);
+            let crumb = n.squeeze_min.min(min_len);
+            if rest > 0 && rest < crumb && j + len + rest <= hi && st.can_place(g, &t.id, j, len + rest, comfort) {
+                len += rest;
+            } else if rest > 0 && rest < min_len && len >= 2 * min_len - rest {
+                len -= min_len - rest;
+            } else if rest > 0 && rest < crumb && len >= crumb + (crumb - rest) {
+                len -= crumb - rest;
+            }
+            let sc = score(g, t, j, len);
+            // Longest (up to target) first, then fit, then earliest.
+            if best.is_none_or(|(bl, bs, _, _)| (len, sc) > (bl, bs)) {
+                best = Some((len, sc, j, len));
+            }
         }
-        return best.map(|(_, s, l)| (s, l));
+        if let Some((_, _, s, l)) = best {
+            let what = match tier {
+                Tier::Ideal => "full-length block",
+                Tier::Shorter => "shorter block (no room for a full one)",
+                Tier::Squeeze => "squeezed in (no room otherwise)",
+                Tier::Overload => "squeezed in past the comfort limits (no room otherwise)",
+            };
+            let where_ = if with_room <= 1 {
+                "the only day with room"
+            } else if Some(day) == first_day {
+                "earliest day with room"
+            } else {
+                "spreads the work across the days before it's due"
+            };
+            return Some((s, l, format!("{what}; {where_}")));
+        }
     }
     None
 }
 
-/// `lead_first`: every task's lead-respecting turn before any fallback
-/// (fewest squeezes); otherwise each task falls back right after its own turn,
-/// in deadline order (urgent work first, which can avoid a shortfall).
+/// `lead_first`: every task's best-tier turn before anyone drops a tier
+/// (fewest squeezes); otherwise each task goes down the tiers right after its
+/// own turn, in deadline order (urgent work first, which can avoid a shortfall).
 fn run(input: &PlanInput<'_>, g: &Grid<'_>, horizon_idx: usize, keep_existing: bool, lead_first: bool) -> (Plan, u32) {
-    let mut st = State {
-        usable: g.usable.clone(),
-        taken: vec![false; g.n],
-        focus: BTreeMap::new(),
-        chunks: BTreeMap::new(),
-    };
+    let mut st = State::new(g);
     let mut plan = Plan::default();
     let needs = ordered_needs(input, input.tasks, g, horizon_idx);
     let mut remaining: BTreeMap<&str, usize> = needs.iter().map(|n| (n.task.id.as_str(), n.need_slots)).collect();
@@ -436,6 +642,12 @@ fn run(input: &PlanInput<'_>, g: &Grid<'_>, horizon_idx: usize, keep_existing: b
         if let Some(r) = remaining.get_mut(b.task_id.as_str()) {
             let used = (b.end.min(g.t0) - b.start).num_minutes().max(0) / g.slot;
             *r = r.saturating_sub(used as usize);
+        }
+        let i1 = g.idx_ceil(b.end).clamp(0, g.n as i64) as usize;
+        for k in 0..i1 {
+            st.taken[k] = true;
+            st.usable[k] = false;
+            st.occ[k] = true;
         }
         plan.keep.push(b.clone());
     }
@@ -463,6 +675,7 @@ fn run(input: &PlanInput<'_>, g: &Grid<'_>, horizon_idx: usize, keep_existing: b
             for k in i..(i + len).min(g.n) {
                 st.usable[k] = false;
                 st.taken[k] = true;
+                st.occ[k] = true;
                 *st.focus.entry(g.date[k]).or_default() += g.slot;
             }
             st.chunks.entry(b.task_id.clone()).or_default().push((i, i + len));
@@ -470,7 +683,12 @@ fn run(input: &PlanInput<'_>, g: &Grid<'_>, horizon_idx: usize, keep_existing: b
                 *r = r.saturating_sub(len);
             }
             plan.keep.push(b.clone());
-        } else if keep_existing && need > 0 && len > 0 && aligned && deadline_ok && st.can_place(g, &b.task_id, i, len)
+        } else if keep_existing
+            && need > 0
+            && len > 0
+            && aligned
+            && deadline_ok
+            && st.can_place(g, &b.task_id, i, len, false)
         {
             st.place(g, &b.task_id, i, len);
             if let Some(r) = remaining.get_mut(b.task_id.as_str()) {
@@ -482,26 +700,38 @@ fn run(input: &PlanInput<'_>, g: &Grid<'_>, horizon_idx: usize, keep_existing: b
         }
     }
 
-    // Each task gets a turn honouring its deadline lead (soft) and one that
-    // may run up to the deadline itself; `lead_first` decides the order.
-    let turns: Vec<(usize, bool)> = if lead_first {
-        [true, false]
+    let turns: Vec<(usize, Tier)> = if lead_first {
+        TIERS
             .into_iter()
-            .flat_map(|soft| (0..needs.len()).map(move |k| (k, soft)))
+            .flat_map(|t| (0..needs.len()).map(move |k| (k, t)))
             .collect()
     } else {
-        (0..needs.len()).flat_map(|k| [(k, true), (k, false)]).collect()
+        (0..needs.len()).flat_map(|k| TIERS.map(|t| (k, t))).collect()
     };
-    let mut total_short = 0u32;
-    for (k, soft) in turns {
+    for (k, tier) in turns {
         let n = &needs[k];
-        let limit = if soft { n.deadline_idx } else { n.hard_idx };
         let Some(rem) = remaining.get_mut(n.task.id.as_str()) else {
             continue;
         };
         while *rem > 0 {
-            match find_chunk(g, &st, n, *rem, limit) {
-                Some((i, len)) => {
+            // A crumb (shorter than any block) is added onto one of the task's
+            // new blocks, never a block of its own; if it can't be, it's short.
+            if *rem < n.squeeze_min && (*rem as i64) * g.slot < i64::from(n.task.remaining_min) {
+                let limit = n.tier(tier, *rem).1;
+                let grow = plan.create.iter_mut().filter(|b| b.task_id == n.task.id).find(|b| {
+                    let e = g.idx(b.end).max(0) as usize;
+                    e + *rem <= limit && st.can_extend(g, &n.task.id, e, *rem)
+                });
+                if let Some(b) = grow {
+                    let e = g.idx(b.end).max(0) as usize;
+                    st.extend(g, &n.task.id, e, *rem);
+                    b.end = g.at(e + *rem);
+                    *rem = 0;
+                }
+                break;
+            }
+            match find_chunk(g, &st, n, *rem, tier) {
+                Some((i, len, why)) => {
                     st.place(g, &n.task.id, i, len);
                     plan.create.push(Block {
                         uid: None,
@@ -509,13 +739,15 @@ fn run(input: &PlanInput<'_>, g: &Grid<'_>, horizon_idx: usize, keep_existing: b
                         start: g.at(i),
                         end: g.at(i + len),
                         pinned: false,
+                        why: Some(why),
                     });
-                    *rem -= len;
+                    *rem = rem.saturating_sub(len);
                 }
                 None => break,
             }
         }
     }
+    let mut total_short = 0u32;
     for n in &needs {
         let rem = remaining.get(n.task.id.as_str()).copied().unwrap_or(0);
         if rem > 0 {
@@ -532,8 +764,10 @@ fn run(input: &PlanInput<'_>, g: &Grid<'_>, horizon_idx: usize, keep_existing: b
             .iter()
             .position(|c| c.uid.is_none() && c.task_id == d.task_id && c.start == d.start && c.end == d.end)
         {
-            plan.create[pos].uid = d.uid.clone();
-            plan.keep.push(plan.create.remove(pos));
+            let mut b = plan.create.remove(pos);
+            b.uid = d.uid.clone();
+            b.why = None;
+            plan.keep.push(b);
         } else {
             moved += 1;
         }
@@ -548,38 +782,93 @@ fn run(input: &PlanInput<'_>, g: &Grid<'_>, horizon_idx: usize, keep_existing: b
     (plan, total_short)
 }
 
-/// Warn about every task with future, non-pinned work inside its deadline lead.
+/// A state holding `blocks` (and the grid's busy events).
+fn state_with(g: &Grid<'_>, blocks: &[&Block]) -> State {
+    let mut st = State::new(g);
+    for b in blocks {
+        let i = g.idx(b.start).clamp(0, g.n as i64) as usize;
+        let j = g.idx_ceil(b.end).clamp(0, g.n as i64) as usize;
+        if j > i {
+            st.place(g, &b.task_id, i, j - i);
+        }
+    }
+    st
+}
+
+/// Every task's squeezed future blocks (not pinned): in a short gap, in the
+/// deadline lead, or past the comfort limits.
 fn squeezes(input: &PlanInput<'_>, g: &Grid<'_>, needs: &[Need<'_>], plan: &Plan) -> Vec<Squeeze> {
+    let all: Vec<&Block> = plan.keep.iter().chain(&plan.create).collect();
+    let st = state_with(g, &all);
     let mut out = Vec::new();
     for n in needs {
-        let Some(due) = n.task.due else { continue };
-        let lead_from = g.at(n.deadline_idx);
-        let mins: i64 = plan
-            .keep
-            .iter()
-            .chain(&plan.create)
-            .filter(|b| b.task_id == n.task.id && !b.pinned && b.end > input.now && b.end > lead_from)
-            .map(|b| (b.end - b.start.max(lead_from)).num_minutes().max(0))
-            .sum();
-        if mins == 0 {
+        let t = n.task;
+        let lead_from = (n.deadline_idx < n.hard_idx).then(|| g.at(n.deadline_idx));
+        let lead_hours = t.due.map_or(2, |d| {
+            g.c.profile_for(d.instant(input.tz).with_timezone(&input.tz).date_naive())
+                .map_or(2, |p| p.deadline_lead_hours)
+        });
+        let mut blocks = Vec::new();
+        let mut mins = 0i64;
+        for b in all.iter().filter(|b| b.task_id == t.id && !b.pinned && b.start >= g.t0) {
+            let i = g.idx(b.start).clamp(0, g.n as i64) as usize;
+            let len = (b.minutes() / g.slot).max(0) as usize;
+            if len == 0 || i + len > g.n {
+                continue;
+            }
+            let mut reasons = Vec::new();
+            let mut counted = 0;
+            if let (Some(lf), Some(due)) = (lead_from, t.due)
+                && b.end > lf
+            {
+                reasons.push(format!(
+                    "into the last {lead_hours} h before {}",
+                    due.describe(input.tz)
+                ));
+                counted = (b.end - b.start.max(lf)).num_minutes();
+            }
+            if t.splittable && len < n.short_min && (len as u32) * (g.slot as u32) < t.remaining_min {
+                reasons.push("into a short gap".to_string());
+                counted = b.minutes();
+            }
+            let run_ok = g
+                .profile(i)
+                .is_some_and(|p| st.run_len(g, i, len) <= g.slots(i64::from(p.max_continuous_minutes)));
+            if !run_ok {
+                reasons.push("back-to-back with other commitments".to_string());
+                counted = b.minutes();
+            } else if !st.comfortable(g, i, len, 0) {
+                reasons.push("onto an overloaded day".to_string());
+                counted = b.minutes();
+            }
+            if !reasons.is_empty() {
+                mins += counted.max(0);
+                blocks.push(SqueezedBlock {
+                    start: b.start,
+                    end: b.end,
+                    reasons,
+                });
+            }
+        }
+        if blocks.is_empty() {
             continue;
         }
-        let instant = due.instant(input.tz);
-        let lead_hours =
-            g.c.profile_for(instant.with_timezone(&input.tz).date_naive())
-                .map_or(2, |p| p.deadline_lead_hours);
+        let mut reasons: Vec<String> = blocks.iter().flat_map(|b| b.reasons.clone()).collect();
+        reasons.dedup();
+        let mut seen = std::collections::BTreeSet::new();
+        reasons.retain(|r| seen.insert(r.clone()));
         out.push(Squeeze {
-            task_id: n.task.id.clone(),
-            title: n.task.title.clone(),
-            due,
+            task_id: t.id.clone(),
+            title: t.title.clone(),
+            due: t.due,
             squeezed_min: mins as u32,
-            lead_hours,
             message: format!(
-                "{}: {} squeezed into the last {lead_hours} h before {} (no room earlier)",
-                n.task.title,
+                "{}: {} squeezed {} (no room otherwise)",
+                t.title,
                 fmt_hours(mins as u32),
-                due.describe(input.tz)
+                reasons.join(", ")
             ),
+            blocks,
         });
     }
     out
@@ -591,7 +880,7 @@ fn fmt_hours(min: u32) -> String {
     } else if min < 60 {
         format!("{min} min")
     } else {
-        format!("{:.1} h", f64::from(min) / 60.0)
+        format!("{} h {:02} m", min / 60, min % 60)
     }
 }
 
@@ -663,6 +952,53 @@ pub fn plan(input: &PlanInput<'_>) -> Plan {
         }
     }
     best
+}
+
+/// A proposed stretch of project time.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Proposal {
+    pub start: DateTime<Utc>,
+    pub end: DateTime<Utc>,
+}
+
+/// Proposed project time: comfortable gaps of `projects.min_minutes` or more
+/// (up to `max_minutes` each) over the next `projects.days_ahead` days, in
+/// the time `plan`'s task work leaves free, within the daily work cap.
+/// `avoid`: spans Alec rejected (or already accepted) — never proposed again.
+pub fn propose(input: &PlanInput<'_>, plan: &Plan, avoid: &[(DateTime<Utc>, DateTime<Utc>)]) -> Vec<Proposal> {
+    let pc = &input.constraints.projects;
+    if !pc.enabled {
+        return Vec::new();
+    }
+    let horizon = input.now + Duration::days(i64::from(pc.days_ahead));
+    let mut g = Grid::build(input, horizon);
+    for (a, b) in avoid {
+        g.block_out(*a, *b);
+    }
+    let blocks: Vec<&Block> = plan.keep.iter().chain(&plan.create).collect();
+    let mut st = state_with(&g, &blocks);
+    let min = g.slots(i64::from(pc.min_minutes)).max(1);
+    let max = g.slots(i64::from(pc.max_minutes)).max(min);
+    let id = "\u{0}project";
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < g.n {
+        if !st.can_place(&g, id, i, min, true) {
+            i += 1;
+            continue;
+        }
+        let mut len = min;
+        while len < max && st.can_place(&g, id, i, len + 1, true) {
+            len += 1;
+        }
+        st.place(&g, id, i, len);
+        out.push(Proposal {
+            start: g.at(i),
+            end: g.at(i + len),
+        });
+        i += len;
+    }
+    out
 }
 
 #[cfg(test)]

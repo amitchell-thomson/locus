@@ -1,12 +1,11 @@
 //! Background jobs: feed fetches, periodic sync + replan on collisions,
 //! morning summary, evening check-in, auto-done settlement.
 
-use crate::engine::{Engine, is_busy};
+use crate::engine::Engine;
 use crate::notify::Ntfy;
 use chrono::{DateTime, Duration, NaiveTime, Utc};
 use kairos_core::constraints::Hm;
 use kairos_core::model::{Author, EventKind, Span};
-use kairos_core::task::TaskStatus;
 use std::sync::{Arc, Mutex};
 
 pub struct Jobs {
@@ -58,7 +57,7 @@ pub fn morning_text(e: &Engine) -> String {
             let mark = match i.meta.kind {
                 EventKind::Deadline => "⚑ ",
                 EventKind::TaskBlock => "~ ",
-                EventKind::Event => "",
+                EventKind::Event | EventKind::Proposal => "",
             };
             lines.push(format!("{when} {mark}{}", i.title.trim_start_matches("⚑ ")));
         }
@@ -110,6 +109,11 @@ impl Jobs {
                 if do_sync {
                     tick_sync(&mut e)?;
                 }
+                match e.replan_if_needed() {
+                    Ok(Some(p)) if p.changeset.is_some() => tracing::info!("replanned: {}", p.summary),
+                    Ok(_) => {}
+                    Err(err) => tracing::warn!("replan: {err}"),
+                }
                 if daily(&e, "settle", &e.cfg.notify.autodone_at.clone()) {
                     match e.settle() {
                         Ok(n) if n > 0 => tracing::info!("auto-done {n} unanswered block(s)"),
@@ -156,7 +160,10 @@ impl Jobs {
     }
 }
 
-/// Full sync, then replan if a fixed event now collides with a future block.
+/// Full sync, then replan: events may have changed on iCloud (phone,
+/// Calendar.app, Family). The plan is stable, so this only moves work an
+/// event now displaces (or that can come out of a squeeze), and refreshes
+/// proposed project time.
 fn tick_sync(e: &mut Engine) -> Result<(), String> {
     let r = kairos_store::sync::run_full(&e.cfg);
     for pc in &r.followed_empty {
@@ -165,29 +172,6 @@ fn tick_sync(e: &mut Engine) -> Result<(), String> {
     if let Some(err) = r.error {
         tracing::warn!("sync failed: {err}");
     }
-    if e.db
-        .tasks(Some(TaskStatus::Open))
-        .map_err(|x| x.to_string())?
-        .is_empty()
-    {
-        return Ok(());
-    }
-    let w = e.world(30).map_err(|x| x.to_string())?;
-    let tz = e.tz();
-    let now = e.now();
-    let blocks: Vec<_> = w
-        .instances
-        .iter()
-        .filter(|i| i.meta.kind == EventKind::TaskBlock && i.start(tz) > now)
-        .collect();
-    let collides = blocks.iter().any(|b| {
-        w.instances
-            .iter()
-            .any(|i| i.uid != b.uid && is_busy(i) && i.span.overlaps(&b.span, tz))
-    });
-    if collides {
-        tracing::info!("fixed event collides with a task block; replanning");
-        e.plan(false, Author::Scheduler).map_err(|x| x.to_string())?;
-    }
+    e.replan_soon = true;
     Ok(())
 }

@@ -40,6 +40,9 @@ const PAST_FADE: f32 = 0.35;
 const FAMILY_FADE: f32 = 0.45;
 
 fn colour_of(app: &App, i: &Instance) -> Color {
+    if i.meta.kind == EventKind::Proposal {
+        return c("overlay1");
+    }
     let r = match i.overlay {
         Overlay::Background => app.cfg.overlays.background_colour,
         Overlay::Imported => app.cfg.overlays.imported_colour,
@@ -126,6 +129,7 @@ fn label(i: &Instance) -> String {
         EventKind::Deadline => format!("⚑ {}", t.trim_start_matches('⚑').trim()),
         EventKind::TaskBlock => format!("~ {t}"),
         EventKind::Event => t.to_string(),
+        EventKind::Proposal => format!("◌ {t}?"),
     }
 }
 
@@ -195,7 +199,8 @@ pub enum Phase {
 
 /// Family events you're not attending (TUI `B`) never get now/soon emphasis.
 fn attending(i: &Instance) -> bool {
-    i.overlay != Overlay::Family || i.meta.origin_key.is_some() || i.meta.blocking
+    i.meta.kind != EventKind::Proposal
+        && (i.overlay != Overlay::Family || i.meta.origin_key.is_some() || i.meta.blocking)
 }
 
 pub fn phase(app: &App, i: &Instance) -> Phase {
@@ -257,8 +262,15 @@ fn peek(app: &App, cl: &Cluster) -> String {
         ),
     };
     let mut parts = vec![when, label(i)];
+    if i.meta.kind == EventKind::Proposal {
+        parts.push("proposed project time: y accept · d drop".into());
+        return parts.join(" · ");
+    }
     if let Some(l) = &i.location {
         parts.push(l.clone());
+    }
+    if let Some(r) = app.squeeze_of(i) {
+        parts.push(format!("⚠ squeezed {}", r.join(", ")));
     }
     match (i.colour_key(), i.overlay) {
         (Some(k), _) => parts.push(k.to_string()),
@@ -777,7 +789,11 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             let rows_avail = p.r1 - p.r0;
             let full = label(i);
             // The real title, wrapped; `…` marks where it's cut (details on the bottom edge).
-            let mut title = full;
+            let mut title = if app.squeeze_of(i).is_some() {
+                format!("⚠ {full}")
+            } else {
+                full
+            };
             if p.cl.is_merged() {
                 title.push_str(" ⧉");
             }
@@ -1346,6 +1362,7 @@ fn help(f: &mut Frame, area: Rect) {
         ("m", "move to another time"),
         ("d s", "delete, share to Family"),
         ("B", "Family event: block / unblock my time"),
+        ("y d", "proposed project time ◌: accept (say what) / drop"),
         ("P", "run the scheduler"),
         ("T A", "tasks, approvals"),
         ("C", "check in today's work blocks"),
@@ -1426,7 +1443,7 @@ fn form_popup(f: &mut Frame, app: &App, area: Rect, form: &Form) {
         );
         let mut spans = vec![lab];
         match fld.kind {
-            FieldKind::Key => {
+            FieldKind::Key | FieldKind::Type => {
                 let col = app.cfg.key(&fld.value).map_or(c("text"), |k| rgb(k.colour));
                 let arrow = Style::default().fg(if focus { c("mauve") } else { c("surface2") });
                 spans.push(TSpan::styled("◀ ", arrow));

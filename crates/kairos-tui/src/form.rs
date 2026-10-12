@@ -20,6 +20,8 @@ pub enum FieldKind {
     Duration,
     /// Picks one of the configured keys (←/→ or first letter).
     Key,
+    /// Picks a task type (←/→ or first letter).
+    Type,
     /// Optional time (task due).
     OptWhen,
 }
@@ -132,7 +134,18 @@ impl Form {
             vec![
                 field("Title", "", FieldKind::Text, "what needs doing"),
                 field("Calendar", default_key, FieldKind::Key, KEY_HINT),
-                field("Estimate", "", FieldKind::Duration, "how long in total: 4h · 90m"),
+                field(
+                    "Type",
+                    "sheet",
+                    FieldKind::Type,
+                    "sheet (2–3 h blocks) · coursework · admin (one go) — ←/→",
+                ),
+                field(
+                    "Estimate",
+                    "",
+                    FieldKind::Duration,
+                    "how long in total: 4h · 90m · empty = the type's default",
+                ),
                 field(
                     "Due",
                     "",
@@ -200,31 +213,39 @@ impl Form {
         true
     }
 
+    /// The choices of the focused picker field.
+    fn options(&self) -> Vec<String> {
+        match self.fields[self.focus].kind {
+            FieldKind::Type => TASK_TYPES.iter().map(|s| s.to_string()).collect(),
+            _ => self.keys.clone(),
+        }
+    }
+
     fn cycle_key(&mut self, step: isize) {
-        if self.keys.is_empty() {
+        let opts = self.options();
+        if opts.is_empty() {
             return;
         }
         let f = &mut self.fields[self.focus];
-        let n = self.keys.len() as isize;
-        let cur = self
-            .keys
+        let n = opts.len() as isize;
+        let cur = opts
             .iter()
             .position(|k| k.eq_ignore_ascii_case(&f.value))
             .map_or(if step > 0 { -1 } else { 0 }, |p| p as isize);
-        f.value = self.keys[(cur + step).rem_euclid(n) as usize].clone();
+        f.value = opts[(cur + step).rem_euclid(n) as usize].clone();
     }
 
     fn jump_key(&mut self, c: char) {
+        let opts = self.options();
         let c = c.to_ascii_lowercase();
         let f = &self.fields[self.focus];
-        let start = self
-            .keys
+        let start = opts
             .iter()
             .position(|k| k.eq_ignore_ascii_case(&f.value))
             .map_or(0, |p| p + 1);
-        let n = self.keys.len();
+        let n = opts.len();
         if let Some(k) = (0..n)
-            .map(|o| &self.keys[(start + o) % n])
+            .map(|o| &opts[(start + o) % n])
             .find(|k| k.to_ascii_lowercase().starts_with(c))
         {
             self.fields[self.focus].value = k.clone();
@@ -249,16 +270,25 @@ impl Form {
                 self.focus = (self.focus + 1) % n;
             }
             Key::BackTab | Key::Up => self.focus = (self.focus + n - 1) % n,
-            Key::Left if kind == FieldKind::Key => self.cycle_key(-1),
-            Key::Right if kind == FieldKind::Key => self.cycle_key(1),
-            Key::Char(c) if kind == FieldKind::Key => self.jump_key(c),
+            Key::Left if kind.is_picker() => self.cycle_key(-1),
+            Key::Right if kind.is_picker() => self.cycle_key(1),
+            Key::Char(c) if kind.is_picker() => self.jump_key(c),
             Key::Char(c) => self.fields[self.focus].value.push(c),
-            Key::Backspace if kind != FieldKind::Key => {
+            Key::Backspace if !kind.is_picker() => {
                 self.fields[self.focus].value.pop();
             }
             _ => {}
         }
         FormAction::Continue
+    }
+}
+
+/// Task types the form offers (the built-in ones in constraints.toml).
+pub const TASK_TYPES: [&str; 3] = ["sheet", "coursework", "admin"];
+
+impl FieldKind {
+    pub fn is_picker(self) -> bool {
+        matches!(self, FieldKind::Key | FieldKind::Type)
     }
 }
 

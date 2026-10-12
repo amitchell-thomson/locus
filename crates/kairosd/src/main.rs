@@ -165,6 +165,7 @@ async fn main() -> Result<()> {
         clock: Arc::new(chrono::Utc::now),
         notifier,
         direct: false,
+        replan_soon: true,
     };
     let st = AppState {
         engine: Arc::new(Mutex::new(engine)),

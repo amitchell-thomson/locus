@@ -54,11 +54,20 @@ CREATE TABLE IF NOT EXISTS estimate_log (
     actual_min   INTEGER NOT NULL,
     completed_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS proposals (
+    id     TEXT PRIMARY KEY,
+    start  TEXT NOT NULL,
+    end    TEXT NOT NULL,
+    status TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS kv (
     k TEXT PRIMARY KEY,
     v TEXT NOT NULL
 );
 "#;
+
+/// Proposed project time: `(id, start, end, status)`.
+pub type ProposalRow = (String, DateTime<Utc>, DateTime<Utc>, String);
 
 /// Outcome of a planned block, from the evening check-in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -386,6 +395,66 @@ impl Db {
             });
         }
         Ok(out)
+    }
+
+    // ---------------------------------------------------------------- proposals
+
+    /// Status `proposed` | `rejected`.
+    pub fn proposals(&self) -> Result<Vec<ProposalRow>> {
+        let mut st = self
+            .conn
+            .prepare("SELECT id, start, end, status FROM proposals ORDER BY start")?;
+        let rows = st.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        })?;
+        let parse = |s: &str| {
+            DateTime::parse_from_rfc3339(s)
+                .map(|t| t.with_timezone(&Utc))
+                .unwrap_or_default()
+        };
+        let mut out = Vec::new();
+        for r in rows {
+            let (id, a, b, s) = r?;
+            out.push((id, parse(&a), parse(&b), s));
+        }
+        Ok(out)
+    }
+
+    /// Replace the open proposals with `spans`, keeping rejected ones (and
+    /// never re-proposing a rejected id); forget anything that has ended.
+    pub fn proposals_replace(
+        &self,
+        spans: &[(String, DateTime<Utc>, DateTime<Utc>)],
+        now: DateTime<Utc>,
+    ) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM proposals WHERE status = 'proposed'", [])?;
+        self.conn
+            .execute("DELETE FROM proposals WHERE end <= ?1", params![now.to_rfc3339()])?;
+        for (id, a, b) in spans {
+            self.conn.execute(
+                "INSERT OR IGNORE INTO proposals(id, start, end, status) VALUES (?1, ?2, ?3, 'proposed')",
+                params![id, a.to_rfc3339(), b.to_rfc3339()],
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn proposal_set_status(&self, id: &str, status: &str) -> Result<bool> {
+        let n = self
+            .conn
+            .execute("UPDATE proposals SET status = ?2 WHERE id = ?1", params![id, status])?;
+        Ok(n > 0)
+    }
+
+    pub fn proposal_delete(&self, id: &str) -> Result<()> {
+        self.conn.execute("DELETE FROM proposals WHERE id = ?1", params![id])?;
+        Ok(())
     }
 
     // ---------------------------------------------------------------- kv

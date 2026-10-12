@@ -143,6 +143,9 @@ pub struct Engine {
     /// the HTTP layer; never by MCP). His own edits then skip approval.
     pub direct: bool,
     pub notifier: Box<dyn Notifier>,
+    /// An event changed under the plan: replan as soon as the current
+    /// request is done (see [`Engine::replan_if_needed`]).
+    pub replan_soon: bool,
 }
 
 /// A loaded snapshot of all calendars.
@@ -632,7 +635,27 @@ impl Engine {
         cs.decided_at = Some(self.now());
         self.db.cs_put(cs)?;
         self.sync_after(&touched, &cols);
+        // Someone else's event change: work blocks may need to move.
+        if cs.author != Author::Scheduler
+            && cs.ops.iter().any(|o| {
+                matches!(
+                    o,
+                    Op::CreateEvent { .. } | Op::UpdateEvent { .. } | Op::DeleteEvent { .. } | Op::MoveEvent { .. }
+                )
+            })
+        {
+            self.replan_soon = true;
+        }
         Ok(())
+    }
+
+    /// Replan if an event changed since the last plan (after a write, after
+    /// a sync). Stable: work only moves where it has to.
+    pub fn replan_if_needed(&mut self) -> Result<Option<api::PlanResp>> {
+        if !std::mem::take(&mut self.replan_soon) {
+            return Ok(None);
+        }
+        self.plan(false, Author::Scheduler).map(Some)
     }
 
     fn store_meta(&self, source: &str, uid: &str, text: &str) -> Result<()> {
@@ -967,6 +990,13 @@ impl Engine {
                 Some(self.parse_span(&start, e.as_deref(), d)?)
             }
         };
+        // Moving a work block by hand pins it: the scheduler won't move it back.
+        let meta = (time.is_some() && master.meta.kind == EventKind::TaskBlock).then(|| {
+            let mut m = master.meta.clone();
+            m.pinned = true;
+            m.flex = false;
+            m
+        });
         let edit = Edit {
             title: req.title.clone(),
             time,
@@ -975,7 +1005,7 @@ impl Engine {
                 .description
                 .clone()
                 .map(|d| if d.is_empty() { None } else { Some(d) }),
-            meta: None,
+            meta,
         };
         let after = build::edit_file(&loc.text, uid, &edit, tz, self.now())
             .map_err(|e| EngineError::BadRequest(e.to_string()))?;
@@ -1347,12 +1377,22 @@ impl Engine {
         if self.cfg.key(&req.key).is_none() {
             return Err(EngineError::BadRequest(format!("unknown key {:?}", req.key)));
         }
-        if req.estimate_min == 0 {
-            return Err(EngineError::BadRequest("estimate must be > 0".into()));
-        }
         let now = self.now();
         let tz = self.tz();
         let mut t = Task::new(req.title.trim(), &req.key, req.estimate_min, author, now);
+        let ty = match &req.kind {
+            Some(k) => self.task_type(k)?,
+            None => self.inferred_type(req.estimate_min),
+        };
+        if let Some(ty) = &ty {
+            t.apply_type(ty);
+        }
+        if t.estimate_min == 0 {
+            return Err(EngineError::BadRequest(format!(
+                "estimate required{}",
+                ty.map(|t| format!(" for {}", t.name)).unwrap_or_default()
+            )));
+        }
         if let Some(k) = self.cfg.key(&req.key) {
             t.key = k.name.clone();
         }
@@ -1430,6 +1470,11 @@ impl Engine {
         let mut t = before.clone();
         if let Some(x) = &req.title {
             t.title = x.clone();
+        }
+        if let Some(k) = &req.kind
+            && let Some(ty) = self.task_type(k)?
+        {
+            t.apply_type(&ty);
         }
         if let Some(k) = &req.key {
             t.key = self
@@ -1538,6 +1583,148 @@ impl Engine {
             resp.plan = Some(self.plan(false, Author::Scheduler)?);
         }
         Ok(resp)
+    }
+
+    // ------------------------------------------------------------ proposed project time
+
+    /// Recompute proposed project time around `p`'s task work (rejected
+    /// spans are never proposed again).
+    fn refresh_proposals(&mut self, input: &PlanInput<'_>, p: &sched::Plan) -> Result<()> {
+        let avoid: Vec<(DateTime<Utc>, DateTime<Utc>)> = self
+            .db
+            .proposals()?
+            .into_iter()
+            .filter(|r| r.3 == "rejected")
+            .map(|r| (r.1, r.2))
+            .collect();
+        let spans: Vec<(String, DateTime<Utc>, DateTime<Utc>)> = sched::propose(input, p, &avoid)
+            .into_iter()
+            .map(|x| {
+                (
+                    format!("p{}-{}", x.start.timestamp() / 60, (x.end - x.start).num_minutes()),
+                    x.start,
+                    x.end,
+                )
+            })
+            .collect();
+        self.db.proposals_replace(&spans, input.now)?;
+        Ok(())
+    }
+
+    /// Open proposals, soonest first.
+    pub fn proposals(&self) -> Result<Vec<api::ProposalItem>> {
+        let now = self.now();
+        let title = self.constraints.projects.title.clone();
+        Ok(self
+            .db
+            .proposals()?
+            .into_iter()
+            .filter(|r| r.3 == "proposed" && r.2 > now)
+            .map(|(id, start, end, _)| api::ProposalItem {
+                id,
+                start,
+                end,
+                title: title.clone(),
+            })
+            .collect())
+    }
+
+    /// Accept proposed project time: it becomes an event (titled with what
+    /// to work on) in the projects key.
+    pub fn accept_proposal(&mut self, author: Author, id: &str, req: &api::AcceptProposalReq) -> Result<WriteResult> {
+        let p = self
+            .proposals()?
+            .into_iter()
+            .find(|p| p.id == id)
+            .ok_or_else(|| EngineError::NotFound(format!("proposal {id}")))?;
+        let title = req
+            .title
+            .as_deref()
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+            .unwrap_or(&p.title)
+            .to_string();
+        let cs = self.create_event(
+            author,
+            &api::CreateEventReq {
+                title,
+                start: p.start.to_rfc3339(),
+                end: Some(p.end.to_rfc3339()),
+                key: self.constraints.projects.key.clone(),
+                description: Some("Project time (accepted kairos proposal)".into()),
+                ..Default::default()
+            },
+        )?;
+        self.db.proposal_delete(id)?;
+        self.replan_soon = true;
+        Ok(WriteResult::from(&cs))
+    }
+
+    /// Drop proposed project time; that span isn't proposed again.
+    pub fn reject_proposal(&mut self, id: &str) -> Result<()> {
+        if !self.db.proposal_set_status(id, "rejected")? {
+            return Err(EngineError::NotFound(format!("proposal {id}")));
+        }
+        Ok(())
+    }
+
+    fn task_type(&self, name: &str) -> Result<Option<kairos_core::constraints::TaskType>> {
+        match self.constraints.task_type(name) {
+            Some(t) => Ok(Some(t.clone())),
+            None => Err(EngineError::BadRequest(format!(
+                "unknown task type {name:?} (have: {})",
+                self.constraints
+                    .task_types
+                    .iter()
+                    .map(|t| t.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))),
+        }
+    }
+
+    /// Type for a task given none: up to an hour is admin, longer is a sheet.
+    fn inferred_type(&self, estimate_min: u32) -> Option<kairos_core::constraints::TaskType> {
+        let name = if estimate_min > 0 && estimate_min <= 60 {
+            "admin"
+        } else {
+            "sheet"
+        };
+        self.constraints.task_type(name).cloned()
+    }
+
+    /// Learned estimate ratios per task type: median actual/estimate of
+    /// finished tasks (≥ 3), clamped to ×0.7–×2.
+    fn estimate_ratios(&self) -> Result<std::collections::BTreeMap<String, (f32, usize)>> {
+        let mut by: std::collections::BTreeMap<String, Vec<f32>> = std::collections::BTreeMap::new();
+        for r in self.db.estimates()? {
+            if r.estimate_min == 0 {
+                continue;
+            }
+            let kind = match self.db.task_get(&r.task_id)? {
+                Some(t) => t.kind.or_else(|| self.inferred_type(t.estimate_min).map(|x| x.name)),
+                None => None,
+            };
+            if let Some(k) = kind {
+                by.entry(k)
+                    .or_default()
+                    .push(r.actual_min as f32 / r.estimate_min as f32);
+            }
+        }
+        Ok(by
+            .into_iter()
+            .filter(|(_, v)| v.len() >= 3)
+            .map(|(k, mut v)| {
+                v.sort_by(|a, b| a.total_cmp(b));
+                let n = v.len();
+                let med = if n % 2 == 1 {
+                    v[n / 2]
+                } else {
+                    (v[n / 2 - 1] + v[n / 2]) / 2.0
+                };
+                (k, (med.clamp(0.7, 2.0), n))
+            })
+            .collect())
     }
 
     pub fn find_task(&self, q: &str) -> Result<Task> {
@@ -1670,6 +1857,7 @@ impl Engine {
                         start,
                         end,
                         pinned: i.meta.pinned,
+                        why: None,
                     },
                     i.clone(),
                 )),
@@ -1771,6 +1959,7 @@ impl Engine {
                 .iter()
                 .find(|r| r.block_uid == uid)
                 .and_then(|r| r.outcome.map(|o| o.as_str().to_string()));
+            let task = self.db.task_get(&b.task_id)?;
             out.push(api::CheckinItem {
                 block_uid: uid,
                 task_id: b.task_id.clone(),
@@ -1779,6 +1968,8 @@ impl Engine {
                 end: b.end,
                 planned_min: b.minutes().max(0) as u32,
                 outcome,
+                ask_remaining: task.as_ref().is_some_and(|t| t.kind.as_deref() == Some("coursework")),
+                remaining_min: task.as_ref().map_or(0, |t| t.remaining_min),
             });
         }
         out.sort_by_key(|c| c.start);
@@ -1796,6 +1987,26 @@ impl Engine {
             .find(|(b, _)| b.uid.as_deref() == Some(req.block_uid.as_str()))
             .ok_or_else(|| EngineError::NotFound(format!("block {}", req.block_uid)))?;
         self.answer_checkin(&req.block_uid, &b, outcome, req.actual_min)?;
+        // "How much is left?": the new remaining estimate (coursework).
+        if let Some(r) = req.remaining_min
+            && let Some(mut t) = self.db.task_get(&b.task_id)?
+            && t.status == TaskStatus::Open
+        {
+            t.remaining_min = r;
+            t.updated_at = self.now();
+            if r == 0 {
+                t.status = TaskStatus::Done;
+                let total = self.actual_minutes(&t.id).unwrap_or(t.estimate_min);
+                self.db.estimate_log(&EstimateRow {
+                    task_id: t.id.clone(),
+                    title: t.title.clone(),
+                    estimate_min: t.estimate_min,
+                    actual_min: total,
+                    completed_at: self.now(),
+                })?;
+            }
+            self.db.task_put(&t)?;
+        }
         self.plan(false, Author::Scheduler)
     }
 
@@ -1825,6 +2036,36 @@ impl Engine {
                 t.remaining_min = t.remaining_min.saturating_sub(b.minutes().max(0) as u32);
             }
         }
+        // Tasks from before task types get one (in memory), for block sizes.
+        for t in tasks.iter_mut().filter(|t| t.kind.is_none()) {
+            if let Some(ty) = self.inferred_type(t.estimate_min) {
+                let (e, r) = (t.estimate_min, t.remaining_min);
+                t.apply_type(&ty);
+                (t.estimate_min, t.remaining_min) = (e, r);
+            }
+        }
+        // Learned estimates: plan remaining × how long this type usually takes.
+        let ratios = self.estimate_ratios()?;
+        let mut adjusted = Vec::new();
+        for t in tasks.iter_mut() {
+            let Some(k) = t.kind.clone() else { continue };
+            if let Some(&(ratio, samples)) = ratios.get(&k)
+                && (ratio - 1.0).abs() >= 0.05
+                && t.remaining_min > 0
+            {
+                let planned = (t.remaining_min as f32 * ratio).round() as u32;
+                adjusted.push(api::Adjusted {
+                    task_id: t.id.clone(),
+                    title: t.title.clone(),
+                    kind: k,
+                    remaining_min: t.remaining_min,
+                    planned_min: planned,
+                    ratio,
+                    samples,
+                });
+                t.remaining_min = planned;
+            }
+        }
         // Blocks of tasks that are no longer open must go too.
         let open_ids: std::collections::HashSet<&str> = tasks.iter().map(|t| t.id.as_str()).collect();
         let existing: Vec<Block> = blocks.iter().map(|(b, _)| b.clone()).collect();
@@ -1837,22 +2078,26 @@ impl Engine {
                     start,
                     end,
                     location: i.location.clone(),
+                    rest_after_min: i.colour_key().map_or(0, |k| self.constraints.recovery_after(k)),
                 }),
                 _ => None,
             })
             .collect();
-        // New blocks go beyond the policy's "imminent" horizon so replans
-        // auto-apply; blocks already inside it are kept (counted as in progress).
-        let mut cons = self.constraints.clone();
-        cons.min_lead_minutes = cons.min_lead_minutes.max((risk::IMMINENT.num_minutes() + 5) as u16);
-        let p = sched::plan(&PlanInput {
+        // Scheduler-owned blocks are low-risk at any time (risk policy), so
+        // new work can start `min_lead_minutes` (15) from now.
+        let cons = self.constraints.clone();
+        let input = PlanInput {
             now,
             tz,
             constraints: &cons,
             tasks: &tasks,
             busy: &busy,
             existing: &existing,
-        });
+        };
+        let p = sched::plan(&input);
+        if !dry_run {
+            self.refresh_proposals(&input, &p)?;
+        }
         let mut delete: Vec<Block> = p.delete.clone();
         for (b, _) in &blocks {
             if b.start >= now
@@ -1881,6 +2126,7 @@ impl Engine {
                     title: title_of(&b.task_id),
                     start: b.start,
                     end: b.end,
+                    why: b.why.clone(),
                 })
                 .collect(),
             deleted: delete
@@ -1890,12 +2136,14 @@ impl Engine {
                     title: title_of(&b.task_id),
                     start: b.start,
                     end: b.end,
+                    why: None,
                 })
                 .collect(),
             kept: p.keep.len(),
             moved: p.moved,
             shortfalls: p.shortfalls.clone(),
             squeezed: p.squeezed.clone(),
+            adjusted,
             changeset: None,
             summary: String::new(),
         };
@@ -2084,5 +2332,23 @@ fn plan_summary(r: &api::PlanResp, tz: Tz) -> String {
     for sq in &r.squeezed {
         s.push_str(&format!("\n  ⚠ {}", sq.message));
     }
+    for a in &r.adjusted {
+        s.push_str(&format!(
+            "\n  ≈ {}: planning {} for {} left ({} tasks usually take ×{:.2})",
+            a.title,
+            fmt_min(a.planned_min),
+            fmt_min(a.remaining_min),
+            a.kind,
+            a.ratio
+        ));
+    }
     s
+}
+
+fn fmt_min(m: u32) -> String {
+    match (m / 60, m % 60) {
+        (0, m) => format!("{m} m"),
+        (h, 0) => format!("{h} h"),
+        (h, m) => format!("{h} h {m:02} m"),
+    }
 }

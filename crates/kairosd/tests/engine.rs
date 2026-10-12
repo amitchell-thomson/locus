@@ -540,10 +540,11 @@ fn b4_sheet_that_does_not_fit_reports_shortfall() {
 
 #[test]
 fn task_squeezed_into_the_last_two_hours_is_planned_with_a_warning() {
-    // Busy until 17:30; due 20:00. Before the 2 h lead (18:00) there are only
-    // 20 minutes, so the hour runs into the lead: planned, but warned about.
+    // Busy 08:00–17:30; due 20:00. Before the 2 h lead (18:00) there's no
+    // room for the hour (and a break is due after 9.5 h of labs), so it runs
+    // into the lead: planned, but warned about.
     let env = Env::new(true);
-    env.phone_event("Engineering", "busy", "Labs", "2026-10-12 10:00", "2026-10-12 17:30");
+    env.phone_event("Engineering", "busy", "Labs", "2026-10-12 08:00", "2026-10-12 17:30");
     let mut e = env.engine();
     let r = e.create_task(Author::Claude, &b4(60, "today 20:00")).unwrap();
     let plan = r.plan.unwrap();
@@ -558,7 +559,7 @@ fn task_squeezed_into_the_last_two_hours_is_planned_with_a_warning() {
     assert_eq!(plan.squeezed.len(), 1, "{plan:?}");
     assert!(
         plan.summary
-            .contains("⚠ B4 problem sheet: 45 min squeezed into the last 2 h before Mon 12 Oct 20:00"),
+            .contains("⚠ B4 problem sheet: 1 h squeezed into the last 2 h before Mon 12 Oct 20:00"),
         "{}",
         plan.summary
     );
@@ -688,7 +689,8 @@ fn dropping_a_task_removes_all_its_blocks_at_once() {
 }
 
 #[test]
-fn big_replans_are_pending() {
+fn big_replans_of_work_blocks_apply_without_approval() {
+    // Scheduler-owned blocks are exempt from the 8-op limit (2026-10-12).
     let env = Env::new(true);
     let mut e = env.engine();
     // 12 h in 1 h chunks → ≥ 9 blocks → more than 8 ops.
@@ -705,9 +707,10 @@ fn big_replans_are_pending() {
             },
         )
         .unwrap();
-    let cs = r.plan.unwrap().changeset.unwrap();
-    assert_eq!(cs.status, Status::Pending);
-    assert!(cs.reasons.iter().any(|x| x.contains("more than 8")));
+    let plan = r.plan.unwrap();
+    assert!(plan.created.len() > 8, "{}", plan.created.len());
+    let cs = plan.changeset.unwrap();
+    assert_eq!(cs.status, Status::Applied, "{:?}", cs.reasons);
 }
 
 #[test]
@@ -727,6 +730,7 @@ fn checkin_missed_returns_time_and_done_consumes_it() {
             block_uid: uid,
             outcome: "missed".into(),
             actual_min: None,
+            remaining_min: None,
         })
         .unwrap();
     let t = e.db.task_get(&r.task.id).unwrap().unwrap();
@@ -752,6 +756,7 @@ fn checkin_missed_returns_time_and_done_consumes_it() {
         block_uid: next.uid.clone(),
         outcome: "done".into(),
         actual_min: None,
+        remaining_min: None,
     })
     .unwrap();
     let t = e.db.task_get(&r.task.id).unwrap().unwrap();
@@ -887,4 +892,264 @@ fn family_events_do_not_block_time_unless_marked() {
     assert!(e.update_event(Author::Alec, None, "fam-day", &req).unwrap().is_none());
     let free = e.find_free(from, to, 60).unwrap();
     assert!(free.is_empty(), "{free:?}");
+}
+
+// ------------------------------------------------------------ 2026-10-12 scheme
+
+fn london(t: chrono::DateTime<chrono::Utc>) -> String {
+    t.with_timezone(&chrono_tz::Europe::London)
+        .format("%Y-%m-%d %H:%M")
+        .to_string()
+}
+
+#[test]
+fn task_types_set_block_sizes_and_default_estimates() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let req = |kind: &str, est: u32| CreateTaskReq {
+        title: format!("a {kind}"),
+        key: "Engineering".into(),
+        estimate_min: est,
+        kind: Some(kind.into()),
+        due: Some("fri 17:00".into()),
+        ..Default::default()
+    };
+    // A sheet with no estimate: 5 h, in 2–3 h blocks.
+    let r = e.create_task(Author::Claude, &req("sheet", 0)).unwrap();
+    assert_eq!(r.task.kind.as_deref(), Some("sheet"));
+    assert_eq!(r.task.estimate_min, 300);
+    for b in &r.plan.unwrap().created {
+        assert!((120..=180).contains(&(b.end - b.start).num_minutes()), "{b:?}");
+    }
+    // Admin: one go.
+    let r = e.create_task(Author::Claude, &req("admin", 0)).unwrap();
+    assert_eq!((r.task.estimate_min, r.task.splittable), (45, false));
+    // Coursework needs an estimate; unknown types are refused with the list.
+    assert!(matches!(
+        e.create_task(Author::Claude, &req("coursework", 0)),
+        Err(EngineError::BadRequest(m)) if m.contains("estimate required for coursework")
+    ));
+    assert!(matches!(
+        e.create_task(Author::Claude, &req("essay", 60)),
+        Err(EngineError::BadRequest(m)) if m.contains("sheet, coursework, admin")
+    ));
+    // No type: up to an hour is admin, longer is a sheet.
+    let mut r0 = req("x", 30);
+    r0.kind = None;
+    assert_eq!(
+        e.create_task(Author::Claude, &r0).unwrap().task.kind.as_deref(),
+        Some("admin")
+    );
+}
+
+#[test]
+fn estimates_are_learned_per_type() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    // Three sheets that each took 1.5× the estimate.
+    for i in 0..3 {
+        let r = e
+            .create_task(
+                Author::Claude,
+                &CreateTaskReq {
+                    title: format!("old sheet {i}"),
+                    key: "Engineering".into(),
+                    estimate_min: 240,
+                    kind: Some("sheet".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        e.complete_task(Author::Claude, &r.task.id, Some(360)).unwrap();
+    }
+    let r = e
+        .create_task(
+            Author::Claude,
+            &CreateTaskReq {
+                title: "B4 sheet".into(),
+                key: "Engineering".into(),
+                estimate_min: 240,
+                kind: Some("sheet".into()),
+                due: Some("2026-10-23".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let plan = r.plan.unwrap();
+    let a = plan.adjusted.iter().find(|a| a.title == "B4 sheet").expect("adjusted");
+    assert_eq!((a.remaining_min, a.planned_min, a.samples), (240, 360, 3));
+    assert!(
+        plan.summary
+            .contains("≈ B4 sheet: planning 6 h for 4 h left (sheet tasks usually take ×1.50)"),
+        "{}",
+        plan.summary
+    );
+    let planned: i64 = plan
+        .created
+        .iter()
+        .filter(|b| b.title == "B4 sheet")
+        .map(|b| (b.end - b.start).num_minutes())
+        .sum();
+    assert_eq!(planned, 360);
+}
+
+#[test]
+fn coursework_checkin_asks_and_takes_what_is_left() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e
+        .create_task(
+            Author::Claude,
+            &CreateTaskReq {
+                title: "3YP report".into(),
+                key: "Engineering".into(),
+                estimate_min: 360,
+                kind: Some("coursework".into()),
+                due: Some("2026-10-23".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let first = r.plan.unwrap().created[0].clone();
+    *env.now.lock().unwrap() = first.end + Duration::minutes(5);
+    let items = e.checkin_items().unwrap();
+    assert!(items[0].ask_remaining);
+    // Done, and it turns out 8 h are left (it grew).
+    e.checkin(&CheckinReq {
+        block_uid: items[0].block_uid.clone(),
+        outcome: "done".into(),
+        actual_min: None,
+        remaining_min: Some(480),
+    })
+    .unwrap();
+    let t = e.db.task_get(&r.task.id).unwrap().unwrap();
+    assert_eq!(t.remaining_min, 480);
+    let world = e.world(30).unwrap();
+    let ahead: i64 = world
+        .instances
+        .iter()
+        .filter(|i| i.meta.task_id.as_deref() == Some(r.task.id.as_str()) && i.meta.kind == EventKind::TaskBlock)
+        .filter(|i| i.start(chrono_tz::Europe::London) > first.end)
+        .map(|i| (i.end(chrono_tz::Europe::London) - i.start(chrono_tz::Europe::London)).num_minutes())
+        .sum();
+    assert_eq!(ahead, 480, "the replan places what's left");
+}
+
+#[test]
+fn a_new_event_moves_work_out_of_the_way_without_approval() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e.create_task(Author::Claude, &b4(240, "fri 17:00")).unwrap();
+    let first = r.plan.unwrap().created[0].clone();
+    // Alec adds a social on top of it (through kairos), starting in 30 min:
+    // replanning is flagged and the work moves right away, no approval.
+    *env.now.lock().unwrap() = first.start - Duration::minutes(30);
+    e.direct = true;
+    let w = e
+        .create_event(
+            Author::Alec,
+            &CreateEventReq {
+                title: "Drinks".into(),
+                start: first.start.to_rfc3339(),
+                end: Some(first.end.to_rfc3339()),
+                key: Some("Personal".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    e.direct = false;
+    assert_eq!(w.status, Status::Applied);
+    assert!(e.replan_soon);
+    let p = e.replan_if_needed().unwrap().unwrap();
+    assert_eq!(p.moved, 1, "{}", p.summary);
+    assert_eq!(p.changeset.unwrap().status, Status::Applied);
+    assert!(!e.replan_soon);
+    assert!(e.replan_if_needed().unwrap().is_none());
+}
+
+#[test]
+fn moving_a_work_block_by_hand_pins_it() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e.create_task(Author::Claude, &b4(120, "fri 17:00")).unwrap();
+    let b = r.plan.unwrap().created[0].clone();
+    let world = e.world(14).unwrap();
+    let inst = world
+        .instances
+        .iter()
+        .find(|i| i.meta.kind == EventKind::TaskBlock && i.start(chrono_tz::Europe::London) == b.start)
+        .unwrap()
+        .clone();
+    e.direct = true;
+    let to = at("2026-10-15 20:00");
+    e.update_event(
+        Author::Alec,
+        Some(&inst.source),
+        &inst.uid,
+        &UpdateEventReq {
+            start: Some(to.to_rfc3339()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    e.direct = false;
+    let m = e.db.meta_get(&inst.source, &inst.uid).unwrap().unwrap();
+    assert!(m.pinned && !m.flex, "{m:?}");
+    // A replan leaves it where Alec put it.
+    let p = e.plan(false, Author::Scheduler).unwrap();
+    assert_eq!(p.moved, 0, "{}", p.summary);
+    let world = e.world(14).unwrap();
+    let now_at = world.instances.iter().find(|i| i.uid == inst.uid).unwrap();
+    assert_eq!(london(now_at.start(chrono_tz::Europe::London)), "2026-10-15 20:00");
+}
+
+#[test]
+fn project_time_is_proposed_accepted_and_dropped() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    env.phone_event("Sport", "rowing", "Rowing", "2026-10-13 17:00", "2026-10-13 18:00");
+    e.plan(false, Author::Scheduler).unwrap();
+    let props = e.proposals().unwrap();
+    assert!(!props.is_empty());
+    for p in &props {
+        let m = (p.end - p.start).num_minutes();
+        assert!((60..=180).contains(&m), "{m}");
+        assert_eq!(p.title, "Project time");
+        // Never in the hour after sport.
+        assert!(
+            p.end <= at("2026-10-13 17:00") || p.start >= at("2026-10-13 19:00"),
+            "{} – {}",
+            london(p.start),
+            london(p.end)
+        );
+    }
+    // Dry runs don't touch proposals; a replan with nothing new keeps them.
+    e.plan(true, Author::Scheduler).unwrap();
+    e.plan(false, Author::Scheduler).unwrap();
+    assert_eq!(e.proposals().unwrap(), props);
+    // Accept the first as "kairos TUI work": an event in the default key.
+    e.direct = true;
+    let w = e
+        .accept_proposal(
+            Author::Alec,
+            &props[0].id,
+            &kairos_core::api::AcceptProposalReq {
+                title: Some("kairos TUI work".into()),
+            },
+        )
+        .unwrap();
+    e.direct = false;
+    assert_eq!(w.status, Status::Applied);
+    assert!(env.read_all("Personal").contains("SUMMARY:kairos TUI work"));
+    // Drop the second: it isn't proposed again.
+    e.reject_proposal(&props[1].id).unwrap();
+    e.replan_if_needed().unwrap();
+    e.plan(false, Author::Scheduler).unwrap();
+    let after = e.proposals().unwrap();
+    assert!(after.iter().all(|p| p.id != props[0].id && p.id != props[1].id));
+    assert!(
+        after.iter().all(|p| p.end <= props[1].start || p.start >= props[1].end),
+        "re-proposed over a dropped span"
+    );
+    assert!(matches!(e.reject_proposal("nope"), Err(EngineError::NotFound(_))));
 }

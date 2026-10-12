@@ -227,6 +227,23 @@ impl Daemon {
     pub fn plan(&self, dry_run: bool) -> Result<std::result::Result<api::PlanResp, Rejected>> {
         self.post("/api/plan", &api::PlanReq { dry_run })
     }
+    pub fn proposals(&self) -> Result<std::result::Result<Vec<api::ProposalItem>, Rejected>> {
+        self.get("/api/proposals")
+    }
+
+    pub fn accept_proposal(&self, id: &str, title: &str) -> Result<std::result::Result<WriteResult, Rejected>> {
+        self.post(
+            &format!("/api/proposals/{id}/accept"),
+            &api::AcceptProposalReq {
+                title: Some(title.to_string()),
+            },
+        )
+    }
+
+    pub fn reject_proposal(&self, id: &str) -> Result<std::result::Result<serde_json::Value, Rejected>> {
+        self.post(&format!("/api/proposals/{id}/reject"), &serde_json::json!({}))
+    }
+
     pub fn changesets(
         &self,
         status: Option<&str>,

@@ -143,7 +143,12 @@ pub struct MoveManyReq {
 pub struct CreateTaskReq {
     pub title: String,
     pub key: String,
+    /// 0 = the task type's default estimate.
+    #[serde(default)]
     pub estimate_min: u32,
+    /// Task type (`sheet`, `coursework`, `admin`, … from constraints.toml).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub due: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -172,6 +177,9 @@ pub struct CreateTaskReq {
 pub struct UpdateTaskReq {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// Change the task type (resets block sizes to the type's).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -224,6 +232,23 @@ pub struct PlannedBlock {
     pub title: String,
     pub start: DateTime<Utc>,
     pub end: DateTime<Utc>,
+    /// Why the scheduler put it there (new blocks).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub why: Option<String>,
+}
+
+/// A task planned with a learned estimate: your estimates for this type
+/// usually run ×`ratio`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Adjusted {
+    pub task_id: String,
+    pub title: String,
+    pub kind: String,
+    pub remaining_min: u32,
+    pub planned_min: u32,
+    pub ratio: f32,
+    /// Finished tasks the ratio is based on.
+    pub samples: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -234,9 +259,11 @@ pub struct PlanResp {
     pub kept: usize,
     pub moved: usize,
     pub shortfalls: Vec<Shortfall>,
-    /// Tasks that fit only by running into their deadline lead.
+    /// Tasks that fit only by squeezing (short gaps, the deadline lead, past the comfort limits).
     #[serde(default)]
     pub squeezed: Vec<Squeeze>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub adjusted: Vec<Adjusted>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub changeset: Option<WriteResult>,
     pub summary: String,
@@ -258,6 +285,9 @@ pub struct CheckinReq {
     pub outcome: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub actual_min: Option<u32>,
+    /// "How much is left?" (coursework): the task's new remaining time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remaining_min: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -270,6 +300,29 @@ pub struct CheckinItem {
     pub planned_min: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcome: Option<String>,
+    /// Ask "how much is left?" (coursework, whose estimates move a lot).
+    #[serde(default)]
+    pub ask_remaining: bool,
+    /// The task's remaining minutes now.
+    #[serde(default)]
+    pub remaining_min: u32,
+}
+
+/// Proposed project time, waiting for Alec to accept or drop it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProposalItem {
+    pub id: String,
+    pub start: DateTime<Utc>,
+    pub end: DateTime<Utc>,
+    /// Default title for the event if accepted ("Project time").
+    pub title: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct AcceptProposalReq {
+    /// What to work on (default: the proposal's title).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

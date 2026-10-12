@@ -116,8 +116,25 @@ fn forbidden(op: &OpFacts) -> Option<String> {
     None
 }
 
+/// The scheduler rearranging its own work: creating, moving or deleting
+/// flex task blocks it made (not pinned ones, not anyone's events). Low-risk
+/// at any time and exempt from the op-count limit (Alec, 2026-10-12), so
+/// work can move out of the way of new events and start 15 min from now.
+pub fn is_scheduler_block_op(op: &OpFacts) -> bool {
+    let imgs: Vec<&EventFacts> = [&op.before, &op.after].into_iter().flatten().collect();
+    matches!(op.action, Action::Create | Action::Update | Action::Delete)
+        && !imgs.is_empty()
+        && imgs.iter().all(|e| {
+            e.kind == EventKind::TaskBlock && e.created_by == Some(Author::Scheduler) && e.flex && !e.recurring
+        })
+        && !op.overlaps_fixed
+}
+
 fn high_reasons(op: &OpFacts, now: DateTime<Utc>) -> Vec<String> {
     let mut r = Vec::new();
+    if is_scheduler_block_op(op) {
+        return r;
+    }
     let imgs: Vec<&EventFacts> = [&op.before, &op.after].into_iter().flatten().collect();
     match op.action {
         Action::TaskDrop => r.push("dropping a task".into()),
@@ -182,8 +199,9 @@ pub fn assess(ops: &[OpFacts], now: DateTime<Utc>) -> Assessment {
         return Assessment::Forbidden { reasons: forb };
     }
     let mut reasons: Vec<String> = ops.iter().flat_map(|o| high_reasons(o, now)).collect();
-    if ops.len() > MAX_LOW_RISK_OPS {
-        reasons.push(format!("more than {MAX_LOW_RISK_OPS} operations ({})", ops.len()));
+    let counted = ops.iter().filter(|o| !is_scheduler_block_op(o)).count();
+    if counted > MAX_LOW_RISK_OPS {
+        reasons.push(format!("more than {MAX_LOW_RISK_OPS} operations ({counted})"));
     }
     reasons.sort();
     reasons.dedup();
@@ -636,13 +654,26 @@ mod tests {
                 Want::High("dropping"),
             ),
             (
-                "block within 60 min",
+                // Scheduler-owned flex blocks are low-risk at any time (2026-10-12).
+                "scheduler block starting now",
                 op(
                     Create,
                     personal(),
                     None,
                     None,
                     ev(TaskBlock, SCHED, true, false, 0),
+                    false,
+                ),
+                Want::Low,
+            ),
+            (
+                "claude flex block within 60 min",
+                op(
+                    Create,
+                    personal(),
+                    None,
+                    None,
+                    ev(TaskBlock, CLAUDE, true, false, 0),
                     false,
                 ),
                 Want::High("2 h"),
@@ -700,9 +731,39 @@ mod tests {
     }
 
     #[test]
-    fn block_between_60_and_120_min_is_high_because_imminent() {
+    fn scheduler_moving_its_own_blocks_is_low_at_any_time() {
+        // Create in 15 min, move one that starts in 30 min, delete one in 90 min.
+        let soon = |mins: i64| {
+            let mut e = ev(TaskBlock, SCHED, true, false, 0).unwrap();
+            e.start = now() + Duration::minutes(mins);
+            e.end = e.start + Duration::minutes(60);
+            Some(e)
+        };
+        let ops = [
+            op(Create, personal(), None, None, soon(15), false),
+            op(Update, personal(), None, soon(30), soon(200), false),
+            op(Delete, personal(), None, soon(90), None, false),
+        ];
+        assert_eq!(assess(&ops, now()).risk(), Some(Risk::Low));
+        // …and any number of them (a big replan after a new event).
+        let many = vec![op(Create, personal(), None, None, soon(600), false); 30];
+        assert_eq!(assess(&many, now()).risk(), Some(Risk::Low));
+        // A pinned (non-flex) block is Alec's: the normal rules apply.
+        let mut pinned = soon(30);
+        if let Some(p) = pinned.as_mut() {
+            p.flex = false;
+        }
+        let a = assess(&[op(Update, personal(), None, pinned, soon(300), false)], now());
+        assert_eq!(a.risk(), Some(Risk::High));
+        // Overlapping a fixed event is never the scheduler's own business.
+        let a = assess(&[op(Create, personal(), None, None, soon(300), true)], now());
+        assert_eq!(a.risk(), Some(Risk::High));
+    }
+
+    #[test]
+    fn claude_block_between_60_and_120_min_is_high_because_imminent() {
         // start > now+60 satisfies the block rule, but "starts within 2 h" still applies.
-        let mut e = ev(TaskBlock, SCHED, true, false, 0).unwrap();
+        let mut e = ev(TaskBlock, CLAUDE, true, false, 0).unwrap();
         e.start = now() + Duration::minutes(90);
         e.end = e.start + Duration::minutes(30);
         let a = assess(&[op(Create, personal(), None, None, Some(e), false)], now());
@@ -711,12 +772,13 @@ mod tests {
 
     #[test]
     fn more_than_eight_ops_is_high() {
+        // Scheduler block ops don't count (they're exempt); Claude's events do.
         let one = op(
             Create,
             personal(),
             None,
             None,
-            ev(TaskBlock, SCHED, true, false, 24),
+            ev(Event, CLAUDE, false, false, 24),
             false,
         );
         let eight = vec![one.clone(); 8];

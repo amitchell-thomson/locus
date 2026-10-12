@@ -209,14 +209,17 @@ enum Cmd {
 
 #[derive(Subcommand)]
 enum TaskCmd {
-    /// Add: kairos task add "B4 sheet" --key Engineering --est 4h --due "fri 17:00"
+    /// Add: kairos task add "B4 sheet" --key Engineering --type sheet --due "fri 17:00"
     Add {
         title: String,
         #[arg(long)]
         key: String,
-        /// Estimate (90m, 4h, 1h30).
+        /// sheet | coursework | admin (block sizes; default: admin up to 1 h, else sheet).
+        #[arg(long = "type")]
+        kind: Option<String>,
+        /// Estimate (90m, 4h, 1h30); default: the type's.
         #[arg(long)]
-        est: String,
+        est: Option<String>,
         #[arg(long)]
         due: Option<String>,
         /// 1 high … 3 low.
@@ -1004,11 +1007,12 @@ fn print_plan(p: &Paint, r: &api::PlanResp, tz: Tz) {
     );
     for b in &r.created {
         println!(
-            "  {} {} {}–{}",
+            "  {} {} {}–{}{}",
             p.fg(Rgb::mocha("green"), "+"),
             b.title,
             b.start.with_timezone(&tz).format("%a %-d %b %H:%M"),
-            b.end.with_timezone(&tz).format("%H:%M")
+            b.end.with_timezone(&tz).format("%H:%M"),
+            b.why.as_deref().map(|w| p.dim(&format!("  ({w})"))).unwrap_or_default()
         );
     }
     for b in &r.deleted {
@@ -1029,6 +1033,19 @@ fn print_plan(p: &Paint, r: &api::PlanResp, tz: Tz) {
     for s in &r.squeezed {
         println!("  {} {}", p.bold(Rgb::mocha("yellow"), "⚠"), s.message);
     }
+    for a in &r.adjusted {
+        println!(
+            "  {} {}: planning {} for {} left {}",
+            p.fg(Rgb::mocha("sky"), "≈"),
+            a.title,
+            fmt_min(a.planned_min),
+            fmt_min(a.remaining_min),
+            p.dim(&format!(
+                "({} tasks usually take ×{:.2}, from {})",
+                a.kind, a.ratio, a.samples
+            ))
+        );
+    }
 }
 
 fn task(ctx: &Ctx, p: &Paint, cmd: TaskCmd) -> Result<()> {
@@ -1038,6 +1055,7 @@ fn task(ctx: &Ctx, p: &Paint, cmd: TaskCmd) -> Result<()> {
         TaskCmd::Add {
             title,
             key,
+            kind,
             est,
             due,
             prio,
@@ -1050,7 +1068,8 @@ fn task(ctx: &Ctx, p: &Paint, cmd: TaskCmd) -> Result<()> {
             let req = api::CreateTaskReq {
                 title,
                 key,
-                estimate_min: mins(&est)?,
+                estimate_min: est.map(|x| mins(&x)).transpose()?.unwrap_or(0),
+                kind,
                 due: due.map(|x| ctx.when(&x)).transpose()?,
                 priority: prio,
                 preferred_window: window,
@@ -1194,11 +1213,30 @@ fn checkin(ctx: &Ctx, p: &Paint) -> Result<()> {
         } else {
             None
         };
+        // Coursework: its estimate moves, so ask what's left.
+        let remaining = if it.ask_remaining && outcome != "missed" {
+            print!(
+                "  how much of the task is left? (now {} — Enter keeps the plan, 0 = finished) ",
+                fmt_min(it.remaining_min)
+            );
+            std::io::stdout().flush()?;
+            let mut l = String::new();
+            stdin.lock().read_line(&mut l)?;
+            let l = l.trim();
+            if l.is_empty() {
+                None
+            } else {
+                dates::parse_minutes(l).ok()
+            }
+        } else {
+            None
+        };
         let r = d
             .checkin(&api::CheckinReq {
                 block_uid: it.block_uid.clone(),
                 outcome: outcome.into(),
                 actual_min: actual,
+                remaining_min: remaining,
             })?
             .map_err(|e| anyhow!("{e}"))?;
         if !r.created.is_empty() || !r.shortfalls.is_empty() || !r.squeezed.is_empty() {
@@ -1433,5 +1471,13 @@ fn fmt_age(d: Duration) -> String {
         format!("{} h", m / 60)
     } else {
         format!("{} days", m / 1440)
+    }
+}
+
+fn fmt_min(m: u32) -> String {
+    match (m / 60, m % 60) {
+        (0, m) => format!("{m}m"),
+        (h, 0) => format!("{h}h"),
+        (h, m) => format!("{h}h{m:02}"),
     }
 }

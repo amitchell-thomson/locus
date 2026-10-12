@@ -77,8 +77,15 @@ pub struct Task {
     /// 1 (high) – 3 (low).
     pub priority: u8,
     pub splittable: bool,
+    /// Shortest block outside a squeeze.
     pub min_chunk_min: u32,
+    /// Preferred block length range (`ideal_chunk_min` 0 = `min_chunk_min`).
     pub max_chunk_min: u32,
+    #[serde(default)]
+    pub ideal_chunk_min: u32,
+    /// Task type (`constraints.toml` `task_types`), e.g. `sheet`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preferred_window: Option<String>,
     pub status: TaskStatus,
@@ -90,6 +97,32 @@ pub struct Task {
 }
 
 impl Task {
+    /// Apply a task type's block sizes (and default estimate if `estimate_min` is 0).
+    pub fn apply_type(&mut self, ty: &crate::constraints::TaskType) {
+        self.kind = Some(ty.name.clone());
+        self.ideal_chunk_min = ty.ideal_min_minutes;
+        self.max_chunk_min = ty.ideal_max_minutes;
+        self.min_chunk_min = ty.min_block_minutes;
+        self.splittable = ty.splittable;
+        if self.estimate_min == 0
+            && let Some(e) = ty.estimate_minutes
+        {
+            self.estimate_min = e;
+            self.remaining_min = e;
+        }
+    }
+
+    /// Preferred shortest block (never above the longest).
+    pub fn ideal_min(&self) -> u32 {
+        if self.ideal_chunk_min == 0 {
+            self.min_chunk_min
+        } else {
+            self.ideal_chunk_min
+                .max(self.min_chunk_min)
+                .min(self.max_chunk_min.max(self.min_chunk_min))
+        }
+    }
+
     pub fn new(title: &str, key: &str, estimate_min: u32, created_by: Author, now: DateTime<Utc>) -> Task {
         Task {
             id: format!("t-{}", &uuid::Uuid::new_v4().simple().to_string()[..8]),
@@ -104,6 +137,8 @@ impl Task {
             splittable: true,
             min_chunk_min: 30,
             max_chunk_min: 120,
+            ideal_chunk_min: 0,
+            kind: None,
             preferred_window: None,
             status: TaskStatus::Open,
             notes: String::new(),

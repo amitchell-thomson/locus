@@ -7,7 +7,7 @@ use kairos_core::changeset::{Changeset, Op, Status, WriteResult};
 use kairos_core::config::{Config, Overlay};
 use kairos_core::dates::{self, When};
 use kairos_core::dedup::Cluster;
-use kairos_core::model::{EventKind, Instance, Span};
+use kairos_core::model::{EventKind, Instance, Meta, Span};
 use kairos_core::normalize::series_from_calendars;
 use kairos_core::task::Task;
 use kairos_core::time::resolve_local;
@@ -42,6 +42,17 @@ impl View {
 pub enum PromptKind {
     Move,
     Search,
+    /// Check-in of a coursework block: how much of the task is left?
+    Remaining {
+        uid: String,
+        title: String,
+        outcome: String,
+    },
+    /// Accepting proposed project time: what to work on.
+    Project {
+        id: String,
+        title: String,
+    },
 }
 
 impl PromptKind {
@@ -49,6 +60,8 @@ impl PromptKind {
         match self {
             PromptKind::Move => "move to (when)",
             PromptKind::Search => "/",
+            PromptKind::Remaining { .. } => "how much is left? (e.g. 3h, 0 = finished)",
+            PromptKind::Project { .. } => "work on (Enter = Project time)",
         }
     }
 }
@@ -115,6 +128,10 @@ pub struct App {
     pub tasks: Vec<Task>,
     pub pending: Vec<Changeset>,
     pub checkins: Vec<api::CheckinItem>,
+    /// Proposed project time (greyed; accept or drop).
+    pub proposals: Vec<api::ProposalItem>,
+    /// Squeezed work blocks (from a dry-run plan): (task id, start, reasons).
+    pub squeezed: Vec<(String, DateTime<Utc>, Vec<String>)>,
     pub daemon: Option<Daemon>,
     pub daemon_error: Option<String>,
     pub quit: bool,
@@ -146,6 +163,8 @@ impl App {
             tasks: Vec::new(),
             pending: Vec::new(),
             checkins: Vec::new(),
+            proposals: Vec::new(),
+            squeezed: Vec::new(),
             daemon,
             daemon_error: None,
             quit: false,
@@ -178,10 +197,51 @@ impl App {
         v
     }
 
+    /// Proposed project time in `[from, to)` as (greyed, selectable) events.
+    fn proposal_clusters(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<Cluster> {
+        if !self.filter.personal {
+            return Vec::new();
+        }
+        let q = self.search.as_deref().map(str::to_lowercase).filter(|q| !q.is_empty());
+        self.proposals
+            .iter()
+            .filter(|p| p.start < to && p.end > from)
+            .filter(|p| q.as_ref().is_none_or(|q| p.title.to_lowercase().contains(q)))
+            .map(|p| Cluster {
+                primary: Instance {
+                    uid: p.id.clone(),
+                    recurrence_id: None,
+                    source: "proposal".into(),
+                    overlay: Overlay::Personal,
+                    key: None,
+                    title: p.title.clone(),
+                    location: None,
+                    description: Some("proposed project time — y accept · d drop".into()),
+                    span: Span::Timed {
+                        start: p.start,
+                        end: p.end,
+                    },
+                    recurring: false,
+                    transparent: true,
+                    tentative: false,
+                    meta: Meta {
+                        kind: EventKind::Proposal,
+                        ..Default::default()
+                    },
+                    href: None,
+                    alarms: Vec::new(),
+                },
+                others: Vec::new(),
+            })
+            .collect()
+    }
+
     pub fn day_clusters(&self, d: NaiveDate) -> Vec<Cluster> {
+        let (from, to) = (midnight(d, self.tz), midnight(d + Duration::days(1), self.tz));
         let mut v: Vec<Cluster> = self
-            .clusters(midnight(d, self.tz), midnight(d + Duration::days(1), self.tz))
+            .clusters(from, to)
             .into_iter()
+            .chain(self.proposal_clusters(from, to))
             .filter(|c| c.primary.span.local_dates(self.tz).contains(&d))
             .collect();
         v.sort_by_key(|c| (!c.primary.span.is_all_day(), c.primary.start(self.tz)));
@@ -291,6 +351,26 @@ impl App {
         if let Ok(Ok(c)) = d.checkin_items() {
             self.checkins = c;
         }
+        if let Ok(Ok(p)) = d.proposals() {
+            self.proposals = p;
+        }
+        if let Ok(Ok(p)) = d.plan(true) {
+            self.squeezed = p
+                .squeezed
+                .iter()
+                .flat_map(|s| s.blocks.iter().map(|b| (s.task_id.clone(), b.start, b.reasons.clone())))
+                .collect();
+        }
+    }
+
+    /// Why a work block is squeezed, if it is.
+    pub fn squeeze_of(&self, i: &Instance) -> Option<&[String]> {
+        let task = i.meta.task_id.as_deref()?;
+        let start = i.start(self.tz);
+        self.squeezed
+            .iter()
+            .find(|(t, s, _)| t == task && *s == start)
+            .map(|(_, _, r)| r.as_slice())
     }
 
     /// Replace the index (after a reload) and re-apply recent local patches.
@@ -304,6 +384,17 @@ impl App {
             }
         }
         self.patches.retain(|p| p.until > now);
+        // An accepted proposal's stand-in goes once the real event has synced.
+        let idx = &self.index;
+        let tz = self.tz;
+        self.patches.retain(|p| {
+            !p.uid.starts_with("accepted:")
+                || !p.inst.as_ref().is_some_and(|a| {
+                    idx.instances
+                        .iter()
+                        .any(|i| i.title == a.title && i.start(tz) == a.start(tz))
+                })
+        });
         for p in self.patches.clone() {
             self.index.instances.retain(|i| i.uid != p.uid);
             if let Some(i) = p.inst {
@@ -645,6 +736,24 @@ impl App {
                 }
                 let Some(c) = self.selected() else { return };
                 let i = c.primary.clone();
+                if i.meta.kind == EventKind::Proposal {
+                    // Proposed project time: accept (then say what to work on) or drop.
+                    match k {
+                        Key::Char('y') | Key::Char('B') => {
+                            self.message = None;
+                            self.mode = Mode::Prompt(
+                                PromptKind::Project {
+                                    id: i.uid.clone(),
+                                    title: i.title.clone(),
+                                },
+                                String::new(),
+                            );
+                        }
+                        Key::Char('n') | Key::Char('d') | Key::Char('x') => self.reject_proposal(&i.uid),
+                        _ => {}
+                    }
+                    return;
+                }
                 match k {
                     Key::Char('e') | Key::Char('K') => {
                         let mut f = Form::edit_event(self.key_names(), &i, self.tz);
@@ -820,10 +929,30 @@ impl App {
 
     fn submit(&mut self, kind: PromptKind, buf: String) {
         let buf = buf.trim().to_string();
+        if let PromptKind::Remaining { uid, title, outcome } = &kind {
+            let left = if buf.is_empty() {
+                None
+            } else {
+                match dates::parse_minutes(&buf) {
+                    Ok(m) => Some(m),
+                    Err(_) => {
+                        self.set_message("how much is left: e.g. 3h, 90m, 0", true);
+                        self.mode = Mode::Prompt(kind.clone(), buf);
+                        return;
+                    }
+                }
+            };
+            return self.send_checkin(uid.clone(), &title.clone(), &outcome.clone(), left);
+        }
+        if let PromptKind::Project { id, title } = &kind {
+            let title = if buf.is_empty() { title.clone() } else { buf };
+            return self.accept_proposal(id.clone(), title);
+        }
         if buf.is_empty() && kind != PromptKind::Search {
             return;
         }
         match kind {
+            PromptKind::Remaining { .. } | PromptKind::Project { .. } => {}
             PromptKind::Search => {
                 self.search = if buf.is_empty() { None } else { Some(buf) };
             }
@@ -869,8 +998,15 @@ impl App {
         let key = f.get("Calendar");
         match f.kind {
             FormKind::AddTask => {
-                let est =
-                    dates::parse_minutes(f.get("Estimate")).map_err(|_| "Estimate: e.g. 4h or 90m".to_string())?;
+                let ty = f.get("Type");
+                let est = match f.get("Estimate") {
+                    "" => match ty {
+                        "sheet" => 300,
+                        "admin" => 45,
+                        _ => return Err("Estimate: coursework needs one (e.g. 6h)".into()),
+                    },
+                    e => dates::parse_minutes(e).map_err(|_| "Estimate: e.g. 4h or 90m".to_string())?,
+                };
                 let due = match f.get("Due") {
                     "" => "no deadline".to_string(),
                     d => match dates::parse_when(d, self.today()).map_err(|e| e.to_string())? {
@@ -879,7 +1015,7 @@ impl App {
                     },
                 };
                 Ok(format!(
-                    "{} of work · {due} · {key}",
+                    "{} of {ty} · {due} · {key}",
                     crate::form::fmt_minutes(i64::from(est))
                 ))
             }
@@ -1018,7 +1154,8 @@ impl App {
                 let req = api::CreateTaskReq {
                     title: f.get("Title").to_string(),
                     key: f.get("Calendar").to_string(),
-                    estimate_min: dur(f.get("Estimate")).unwrap_or(60),
+                    estimate_min: dur(f.get("Estimate")).unwrap_or(0),
+                    kind: Some(f.get("Type").to_string()).filter(|k| !k.is_empty()),
                     due,
                     ..Default::default()
                 };
@@ -1060,15 +1197,136 @@ impl App {
                 return;
             }
         };
+        if item.ask_remaining && outcome != "missed" {
+            // Coursework: its estimate moves, so ask what's left.
+            let guess = if outcome == "done" {
+                item.remaining_min.saturating_sub(item.planned_min)
+            } else {
+                item.remaining_min.saturating_sub(item.planned_min / 2)
+            };
+            self.mode = Mode::Prompt(
+                PromptKind::Remaining {
+                    uid: item.block_uid.clone(),
+                    title: item.title.clone(),
+                    outcome: outcome.into(),
+                },
+                crate::form::fmt_minutes(i64::from(guess)),
+            );
+            return;
+        }
+        let (uid, title) = (item.block_uid.clone(), item.title.clone());
+        self.send_checkin(uid, &title, outcome, None);
+    }
+
+    fn accept_proposal(&mut self, id: String, title: String) {
+        if self.daemon.is_none() {
+            return self.set_message("kairosd not configured — writes unavailable", true);
+        }
+        let Some(p) = self.proposals.iter().find(|p| p.id == id).cloned() else {
+            return;
+        };
+        self.proposals.retain(|x| x.id != id);
+        // Stand-in until the real event syncs back.
+        let key = self.cfg.default_key().map(|k| k.name.clone());
+        let source = key.as_deref().and_then(|k| self.source_for_key(k)).unwrap_or_default();
+        self.patches.push(LocalPatch {
+            uid: format!("accepted:{id}"),
+            inst: Some(Instance {
+                uid: format!("accepted:{id}"),
+                recurrence_id: None,
+                source,
+                overlay: Overlay::Personal,
+                key,
+                title: title.clone(),
+                location: None,
+                description: None,
+                span: Span::Timed {
+                    start: p.start,
+                    end: p.end,
+                },
+                recurring: false,
+                transparent: false,
+                tentative: false,
+                meta: Meta::default(),
+                href: None,
+                alarms: Vec::new(),
+            }),
+            until: Utc::now() + Duration::seconds(120),
+        });
+        let idx = self.index.clone();
+        self.set_index(idx);
+        let tz = self.tz;
+        self.set_message(
+            format!(
+                "✓ {title} {}–{}",
+                p.start.with_timezone(&tz).format("%a %H:%M"),
+                p.end.with_timezone(&tz).format("%H:%M")
+            ),
+            false,
+        );
+        self.deferred.push(Box::new(move |app: &mut App| {
+            let failed = match app.with_daemon(|d| d.accept_proposal(&id, &title)) {
+                Some(Ok(Ok(_))) => None,
+                Some(Ok(Err(e))) => Some(e.to_string()),
+                Some(Err(e)) => Some(e.to_string()),
+                None => Some("kairosd not configured".into()),
+            };
+            match failed {
+                None => app.wants_sync = true,
+                Some(e) => {
+                    app.patches.retain(|x| x.uid != format!("accepted:{id}"));
+                    app.proposals.push(p);
+                    app.proposals.sort_by_key(|x| x.start);
+                    let idx = app.index.clone();
+                    app.set_index(idx);
+                    app.set_message(e, true);
+                }
+            }
+        }));
+    }
+
+    fn reject_proposal(&mut self, id: &str) {
+        if self.daemon.is_none() {
+            return self.set_message("kairosd not configured — writes unavailable", true);
+        }
+        let Some(p) = self.proposals.iter().find(|p| p.id == id).cloned() else {
+            return;
+        };
+        self.proposals.retain(|x| x.id != id);
+        self.sel = self.sel.saturating_sub(1);
+        self.set_message("dropped proposed project time", false);
+        let id = id.to_string();
+        self.deferred.push(Box::new(move |app: &mut App| {
+            let failed = match app.with_daemon(|d| d.reject_proposal(&id)) {
+                Some(Ok(Ok(_))) => None,
+                Some(Ok(Err(e))) => Some(e.to_string()),
+                Some(Err(e)) => Some(e.to_string()),
+                None => Some("kairosd not configured".into()),
+            };
+            if let Some(e) = failed {
+                app.proposals.push(p);
+                app.proposals.sort_by_key(|x| x.start);
+                app.set_message(e, true);
+            }
+        }));
+    }
+
+    fn send_checkin(&mut self, uid: String, title: &str, outcome: &str, remaining: Option<u32>) {
         let req = api::CheckinReq {
-            block_uid: item.block_uid.clone(),
+            block_uid: uid,
             outcome: outcome.into(),
             actual_min: None,
+            remaining_min: remaining,
         };
         if let Some(r) = self.with_daemon(|d| d.checkin(&req)) {
             match r {
-                Ok(Ok(_)) => {
-                    self.set_message(format!("{}: {outcome}", item.title), false);
+                Ok(Ok(p)) => {
+                    let left = remaining.map(|m| format!(" · {} left", crate::form::fmt_minutes(i64::from(m))));
+                    let warn = plan_warning(&p).unwrap_or_default();
+                    self.set_message(
+                        format!("{title}: {outcome}{}{warn}", left.unwrap_or_default()),
+                        !warn.is_empty(),
+                    );
                     self.wants_sync = true;
                 }
                 Ok(Err(e)) => self.set_message(e.to_string(), true),
@@ -1228,7 +1486,7 @@ pub fn overlay_flags(app: &App) -> Vec<(String, String, bool, kairos_core::colou
 }
 
 pub fn is_dimmed(i: &Instance) -> bool {
-    matches!(i.overlay, Overlay::Imported | Overlay::Background) || i.tentative
+    matches!(i.overlay, Overlay::Imported | Overlay::Background) || i.tentative || i.meta.kind == EventKind::Proposal
 }
 
 /// The most important thing a plan has to say: a shortfall, else a squeeze.

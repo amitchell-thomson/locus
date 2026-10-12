@@ -27,6 +27,7 @@ fn busy(a: &str, b: &str) -> Busy {
         start: at(a),
         end: at(b),
         location: None,
+        rest_after_min: 0,
     }
 }
 
@@ -76,13 +77,21 @@ fn check_invariants(now: DateTime<Utc>, tasks: &[Task], busy: &[Busy], p: &Plan)
     blocks.sort_by_key(|b| b.start);
     let mut per_day: BTreeMap<NaiveDate, i64> = BTreeMap::new();
     for b in &blocks {
-        if b.start < now + Duration::minutes(30) {
-            return Err(format!("block at {} within 30 min of now", local(b.start)));
+        if b.start < now + Duration::minutes(15) {
+            return Err(format!("block at {} within 15 min of now", local(b.start)));
         }
         if b.end <= b.start {
             return Err("empty block".into());
         }
         for bz in busy {
+            let rest = bz.end + Duration::minutes(i64::from(bz.rest_after_min));
+            if bz.rest_after_min > 0 && b.start < rest && bz.end < b.end {
+                return Err(format!(
+                    "block {} in recovery after {}",
+                    local(b.start),
+                    local(bz.start)
+                ));
+            }
             if b.start < bz.end && bz.start < b.end {
                 return Err(format!(
                     "block {}–{} overlaps busy {}",
@@ -104,6 +113,18 @@ fn check_invariants(now: DateTime<Utc>, tasks: &[Task], busy: &[Busy], p: &Plan)
             t += Duration::minutes(i64::from(c.slot_minutes));
         }
         let task = tasks.iter().find(|t| t.id == b.task_id).ok_or("unknown task")?;
+        let floor = i64::from(
+            c.squeeze_block_minutes
+                .min(10 * (task.remaining_min.div_ceil(10) as u16).min(u16::MAX / 20)),
+        );
+        if task.splittable && b.minutes() < floor.min(i64::from(task.min_chunk_min)) {
+            return Err(format!(
+                "{} min block for {} at {}",
+                b.minutes(),
+                task.id,
+                local(b.start)
+            ));
+        }
         if let Some(d) = task.due
             && b.end > d.instant(London)
         {
@@ -126,7 +147,7 @@ fn check_invariants(now: DateTime<Utc>, tasks: &[Task], busy: &[Busy], p: &Plan)
         }
     }
     for t in tasks {
-        if total(p, &t.id) > i64::from(t.remaining_min.div_ceil(15) * 15) {
+        if total(p, &t.id) > i64::from(t.remaining_min.div_ceil(10) * 10) {
             return Err(format!("{} over-allocated", t.id));
         }
     }
@@ -228,7 +249,6 @@ fn squeeze_into_the_lead_is_warned() {
     assert_eq!(p.squeezed.len(), 1, "{p:?}");
     let s = &p.squeezed[0];
     assert_eq!(s.task_id, "essay");
-    assert_eq!(s.lead_hours, 2);
     assert!(s.squeezed_min > 0);
     assert!(
         s.message.starts_with("Essay: ") && s.message.contains("squeezed into the last 2 h before Mon 12 Oct 20:00"),
@@ -306,12 +326,12 @@ fn nothing_after_the_deadline() {
 
 #[test]
 fn deadline_inside_planning_margin_says_so() {
-    let tasks = [task("now", 30, Some("2026-10-12 08:20"))];
+    let tasks = [task("now", 30, Some("2026-10-12 08:10"))];
     let p = run_plan("2026-10-12 08:00", &tasks, &[], &[]);
     assert!(p.create.is_empty());
     let s = &p.shortfalls[0];
     assert!(
-        s.message.contains("nothing can be planned before 08:30"),
+        s.message.contains("nothing can be planned before 08:20"),
         "{}",
         s.message
     );
@@ -352,11 +372,13 @@ fn location_change_gets_30_min_buffer() {
             start: at("2026-10-12 09:00"),
             end: at("2026-10-12 10:00"),
             location: Some("Thom Building".into()),
+            rest_after_min: 0,
         },
         Busy {
             start: at("2026-10-12 12:00"),
             end: at("2026-10-12 12:30"),
             location: Some("Iffley Road".into()),
+            rest_after_min: 0,
         },
     ];
     let mut t = task("t", 60, Some("2026-10-13 12:00"));
@@ -414,10 +436,11 @@ fn preferred_window_is_used() {
 }
 
 #[test]
-fn never_within_30_min() {
-    let tasks = [task("t", 60, Some("2026-10-13 23:00"))];
+fn starts_15_min_from_now_at_the_earliest() {
+    let tasks = [task("t", 60, Some("2026-10-12 23:00"))];
     let p = run_plan("2026-10-12 10:05", &tasks, &[], &[]);
-    assert!(p.create[0].start >= at("2026-10-12 10:35"));
+    // 10:05 + 15 = 10:20, already on a 10-min slot; deep work (to 12:30) suits it.
+    assert_eq!(local(p.create[0].start), "Mon 12 10:20");
 }
 
 fn as_existing(p: &Plan) -> Vec<Block> {
@@ -467,6 +490,7 @@ fn collision_moves_only_the_affected_block() {
         start: victim.start,
         end: victim.end,
         location: None,
+        rest_after_min: 0,
     });
     let p2 = run_plan("2026-10-12 08:00", &tasks, &b, &existing);
     assert_eq!(p2.moved, 1, "{p2:#?}");
@@ -484,6 +508,7 @@ fn pinned_block_is_never_moved() {
         start: at("2026-10-13 20:00"),
         end: at("2026-10-13 21:00"),
         pinned: true,
+        why: None,
     };
     let p = run_plan("2026-10-12 08:00", &tasks, &lectures(), std::slice::from_ref(&pinned));
     assert!(p.keep.contains(&pinned));
@@ -514,14 +539,15 @@ fn deterministic() {
 }
 
 fn arb_busy() -> impl Strategy<Value = Vec<Busy>> {
-    prop::collection::vec((0i64..5 * 24 * 4, 1i64..16), 0..20).prop_map(|v| {
+    prop::collection::vec((0i64..5 * 24 * 4, 1i64..16, prop::bool::weighted(0.2)), 0..20).prop_map(|v| {
         v.into_iter()
-            .map(|(q, len)| {
+            .map(|(q, len, sport)| {
                 let s = at("2026-10-12 00:00") + Duration::minutes(q * 15);
                 Busy {
                     start: s,
                     end: s + Duration::minutes(len * 15),
                     location: None,
+                    rest_after_min: if sport { 60 } else { 0 },
                 }
             })
             .collect()
@@ -561,7 +587,7 @@ proptest! {
         for t in &tasks {
             let got = total(&p, &t.id);
             let short: i64 = p.shortfalls.iter().filter(|s| s.task_id == t.id).map(|s| i64::from(s.short_min)).sum();
-            prop_assert_eq!(got + short, i64::from(t.remaining_min.div_ceil(15) * 15));
+            prop_assert_eq!(got + short, i64::from(t.remaining_min.div_ceil(10) * 10));
         }
     }
 
@@ -573,4 +599,318 @@ proptest! {
         prop_assert_eq!(p2.moved, 0);
         prop_assert!(p2.create.is_empty());
     }
+}
+
+// ------------------------------------------------------------ 2026-10-12 scheme: types, tiers, spreading, comfort
+
+/// A task of a type from the example constraints (`sheet`, `admin`, …).
+fn typed(id: &str, kind: &str, mins: u32, due: Option<&str>) -> Task {
+    let mut t = task(id, mins, due);
+    t.apply_type(constraints().task_type(kind).unwrap());
+    t
+}
+
+fn days_of(p: &Plan, task: &str) -> Vec<String> {
+    let mut d: Vec<String> = p
+        .create
+        .iter()
+        .chain(&p.keep)
+        .filter(|b| b.task_id == task)
+        .map(|b| b.start.with_timezone(&London).format("%a").to_string())
+        .collect();
+    d.dedup();
+    d
+}
+
+#[test]
+fn sheet_is_spread_over_days_in_two_to_three_hour_blocks() {
+    // 5 h sheet due Fri 17:00, lectures every weekday morning and afternoon.
+    let tasks = [typed("b4", "sheet", 300, Some("2026-10-16 17:00"))];
+    let p = run_plan("2026-10-12 08:00", &tasks, &lectures(), &[]);
+    assert!(p.shortfalls.is_empty() && p.squeezed.is_empty(), "{p:#?}");
+    assert_eq!(total(&p, "b4"), 300);
+    for b in &p.create {
+        assert!(
+            (120..=180).contains(&b.minutes()),
+            "{} min at {}",
+            b.minutes(),
+            local(b.start)
+        );
+        assert!(
+            b.why.as_deref().is_some_and(|w| w.starts_with("full-length block")),
+            "{:?}",
+            b.why
+        );
+    }
+    // 5 h = two 2.5 h blocks, on different days.
+    assert_eq!(
+        p.create.len(),
+        2,
+        "{:?}",
+        p.create.iter().map(|b| local(b.start)).collect::<Vec<_>>()
+    );
+    let d = days_of(&p, "b4");
+    assert_eq!(d.len(), 2, "{d:?}");
+    check_invariants(at("2026-10-12 08:00"), &tasks, &lectures(), &p).unwrap();
+}
+
+#[test]
+fn busy_week_crams_into_the_one_free_day() {
+    // Everything Mon–Thu is taken except Wednesday: the sheet all goes on Wednesday.
+    let mut b = Vec::new();
+    for d in [12, 13, 15] {
+        b.push(busy(&format!("2026-10-{d} 08:00"), &format!("2026-10-{d} 22:00")));
+    }
+    let tasks = [typed("b4", "sheet", 300, Some("2026-10-16 08:00"))];
+    let p = run_plan("2026-10-12 07:00", &tasks, &b, &[]);
+    assert!(p.shortfalls.is_empty(), "{:?}", p.shortfalls);
+    assert_eq!(days_of(&p, "b4"), ["Wed"]);
+    assert!(
+        p.create
+            .iter()
+            .all(|b| b.why.as_deref().is_some_and(|w| w.contains("only day with room")))
+    );
+    check_invariants(at("2026-10-12 07:00"), &tasks, &b, &p).unwrap();
+}
+
+#[test]
+fn spreading_weighs_days_by_free_time() {
+    // 6 h due Thu night; Monday has room for ~2 h, Tuesday and Wednesday are free.
+    let b = vec![
+        busy("2026-10-12 08:00", "2026-10-12 17:00"),
+        busy("2026-10-15 08:00", "2026-10-15 22:00"),
+    ];
+    let tasks = [typed("cw", "coursework", 360, Some("2026-10-15 23:00"))];
+    let p = run_plan("2026-10-12 07:00", &tasks, &b, &[]);
+    assert!(p.shortfalls.is_empty() && p.squeezed.is_empty(), "{p:#?}");
+    let tue_wed: i64 = p
+        .create
+        .iter()
+        .filter(|x| ["Tue", "Wed"].contains(&x.start.with_timezone(&London).format("%a").to_string().as_str()))
+        .map(Block::minutes)
+        .sum();
+    assert!(tue_wed >= 240, "most of it on the free days: {tue_wed} min");
+}
+
+#[test]
+fn admin_is_one_block_and_fits_an_hour_gap() {
+    // Lectures 09–10 and 11–12: the gap leaves 40 min after travel. A 30-min
+    // errand fits it (admin's normal size: no warning); a 45-min one doesn't,
+    // and goes elsewhere in one piece.
+    let b = vec![
+        busy("2026-10-12 09:00", "2026-10-12 10:00"),
+        busy("2026-10-12 11:00", "2026-10-12 12:00"),
+    ];
+    let tasks = [typed("call", "admin", 30, Some("2026-10-12 18:00"))];
+    let p = run_plan("2026-10-12 08:30", &tasks, &b, &[]);
+    assert!(p.shortfalls.is_empty() && p.squeezed.is_empty(), "{p:#?}");
+    assert_eq!(local(p.create[0].start), "Mon 12 10:10");
+    let tasks = [typed("post", "admin", 45, Some("2026-10-12 18:00"))];
+    let p = run_plan("2026-10-12 08:30", &tasks, &b, &[]);
+    assert!(p.shortfalls.is_empty() && p.squeezed.is_empty(), "{p:#?}");
+    assert_eq!(p.create.len(), 1);
+    assert_eq!(total(&p, "post"), 50, "45 min rounds up to 10-min slots");
+    assert!(
+        p.create[0].start >= at("2026-10-12 12:10"),
+        "{}",
+        local(p.create[0].start)
+    );
+}
+
+#[test]
+fn shorter_blocks_only_when_full_ones_dont_fit() {
+    // Before the deadline's 2 h lead (19:00) only a 90-min window
+    // (14:40–16:10) and an 85-min one after a proper break (17:20–18:45)
+    // exist: blocks of 60–90 min, no warning.
+    let b = vec![
+        busy("2026-10-12 07:00", "2026-10-12 12:00"),
+        busy("2026-10-12 14:00", "2026-10-12 14:30"),
+        busy("2026-10-12 16:20", "2026-10-12 16:50"),
+    ];
+    let tasks = [typed("cw", "coursework", 150, Some("2026-10-12 21:00"))];
+    let p = run_plan("2026-10-12 06:00", &tasks, &b, &[]);
+    assert!(p.shortfalls.is_empty() && p.squeezed.is_empty(), "{p:#?}");
+    assert_eq!(total(&p, "cw"), 150);
+    for x in &p.create {
+        assert!((60..=90).contains(&x.minutes()), "{}", x.minutes());
+        assert!(
+            x.why.as_deref().is_some_and(|w| w.starts_with("shorter block")),
+            "{:?}",
+            x.why
+        );
+    }
+}
+
+#[test]
+fn hour_gaps_between_lectures_are_a_warned_last_resort() {
+    // Lectures 09–10, 11–12, 13–14 (+ meals) and nothing else free before the
+    // deadline: 40-min blocks in the gaps, each warned about.
+    let mut b = Vec::new();
+    for (s, e) in [
+        ("07:00", "09:00"),
+        ("10:00", "11:00"),
+        ("12:00", "12:45"),
+        ("13:30", "14:30"),
+        ("15:30", "23:00"),
+    ] {
+        b.push(busy(&format!("2026-10-12 {s}"), &format!("2026-10-12 {e}")));
+    }
+    let tasks = [typed("b4", "sheet", 80, Some("2026-10-12 23:00"))];
+    let p = run_plan("2026-10-12 06:00", &tasks, &b, &[]);
+    assert!(p.shortfalls.is_empty(), "{:?}", p.shortfalls);
+    assert_eq!(total(&p, "b4"), 80);
+    for x in &p.create {
+        assert_eq!(x.minutes(), 40, "{}", local(x.start));
+    }
+    assert_eq!(p.squeezed.len(), 1);
+    assert!(
+        p.squeezed[0].message.contains("into a short gap"),
+        "{}",
+        p.squeezed[0].message
+    );
+    check_invariants(at("2026-10-12 06:00"), &tasks, &b, &p).unwrap();
+}
+
+#[test]
+fn no_work_straight_after_sport() {
+    // Sport 17:00–18:00 with an hour's recovery: nothing 18:00–19:00, even
+    // as a squeeze; the work lands after dinner.
+    let mut b = vec![busy("2026-10-12 07:00", "2026-10-12 17:00")];
+    b.push(Busy {
+        rest_after_min: 60,
+        ..busy("2026-10-12 17:00", "2026-10-12 18:00")
+    });
+    let tasks = [typed("b4", "sheet", 60, Some("2026-10-12 23:00"))];
+    let p = run_plan("2026-10-12 06:00", &tasks, &b, &[]);
+    assert!(p.shortfalls.is_empty(), "{:?}", p.shortfalls);
+    for x in &p.create {
+        assert!(x.start >= at("2026-10-12 19:00"), "{}", local(x.start));
+    }
+}
+
+#[test]
+fn three_hours_back_to_back_needs_a_break() {
+    // Lectures 09:00–12:00: a full block can't follow straight on (10-min
+    // buffer isn't a break); it starts after a 30-min gap at the earliest.
+    let b = vec![busy("2026-10-12 09:00", "2026-10-12 12:00")];
+    let mut t = typed("b4", "sheet", 120, Some("2026-10-12 18:00"));
+    t.priority = 3; // no deep-work pull
+    let p = run_plan("2026-10-12 08:00", &[t], &b, &[]);
+    assert!(p.shortfalls.is_empty() && p.squeezed.is_empty(), "{p:#?}");
+    assert!(
+        p.create[0].start >= at("2026-10-12 12:30"),
+        "{}",
+        local(p.create[0].start)
+    );
+}
+
+#[test]
+fn long_day_caps_events_plus_work() {
+    // 9 h of events on Monday: at most 1 h of work there (10 h day load);
+    // the rest of a 4 h sheet goes to Tuesday.
+    let b = vec![
+        busy("2026-10-12 08:30", "2026-10-12 12:30"),
+        busy("2026-10-12 13:30", "2026-10-12 18:30"),
+    ];
+    let tasks = [typed("b4", "sheet", 240, Some("2026-10-13 23:00"))];
+    let p = run_plan("2026-10-12 07:00", &tasks, &b, &[]);
+    assert!(p.shortfalls.is_empty() && p.squeezed.is_empty(), "{p:#?}");
+    let monday: i64 = p
+        .create
+        .iter()
+        .filter(|x| x.start.with_timezone(&London).day() == 12)
+        .map(Block::minutes)
+        .sum();
+    assert!(monday <= 60, "{monday} min on the 9 h day");
+}
+
+#[test]
+fn new_event_moves_only_the_displaced_work() {
+    // Work planned on Tuesday afternoon; a social lands on it. It moves
+    // (earlier or later, wherever is best) and nothing else does.
+    let b0 = vec![
+        busy("2026-10-12 07:00", "2026-10-12 22:00"),
+        busy("2026-10-13 07:00", "2026-10-13 12:00"),
+        busy("2026-10-14 07:00", "2026-10-14 12:00"),
+    ];
+    let tasks = [
+        typed("b4", "sheet", 150, Some("2026-10-15 12:00")),
+        typed("post", "admin", 30, Some("2026-10-15 12:00")),
+    ];
+    let p1 = run_plan("2026-10-12 06:00", &tasks, &b0, &[]);
+    assert!(p1.shortfalls.is_empty() && p1.squeezed.is_empty(), "{p1:#?}");
+    let existing = as_existing(&p1);
+    let victim = existing.iter().find(|b| b.task_id == "b4").unwrap().clone();
+    let mut b1 = b0.clone();
+    b1.push(Busy {
+        start: victim.start,
+        end: victim.end,
+        location: None,
+        rest_after_min: 0,
+    });
+    let p2 = run_plan("2026-10-12 06:00", &tasks, &b1, &existing);
+    assert_eq!(p2.moved, 1, "{p2:#?}");
+    assert_eq!(p2.delete[0].uid, victim.uid);
+    assert_eq!(total(&p2, "b4"), 150);
+    assert!(p2.shortfalls.is_empty() && p2.squeezed.is_empty(), "{p2:#?}");
+    check_invariants(at("2026-10-12 06:00"), &tasks, &b1, &p2).unwrap();
+}
+
+#[test]
+fn proposals_fill_comfortable_gaps_after_task_work() {
+    let c = constraints();
+    let tasks = [typed("b4", "sheet", 180, Some("2026-10-13 23:00"))];
+    let b = lectures();
+    let input = PlanInput {
+        now: at("2026-10-12 08:00"),
+        tz: London,
+        constraints: &c,
+        tasks: &tasks,
+        busy: &b,
+        existing: &[],
+    };
+    let p = plan(&input);
+    let props = propose(&input, &p, &[]);
+    assert!(!props.is_empty());
+    let horizon = at("2026-10-12 08:00") + Duration::days(7);
+    let mut per_day: BTreeMap<NaiveDate, i64> = BTreeMap::new();
+    for x in &p.create {
+        *per_day.entry(x.start.with_timezone(&London).date_naive()).or_default() += x.minutes();
+    }
+    for x in &props {
+        let m = (x.end - x.start).num_minutes();
+        assert!((60..=180).contains(&m), "{m}");
+        assert!(x.end <= horizon);
+        for y in b
+            .iter()
+            .map(|z| (z.start, z.end))
+            .chain(p.create.iter().map(|z| (z.start, z.end)))
+        {
+            assert!(x.end <= y.0 || x.start >= y.1, "proposal {} overlaps", local(x.start));
+        }
+        *per_day.entry(x.start.with_timezone(&London).date_naive()).or_default() += m;
+    }
+    for (d, m) in per_day {
+        assert!(m <= 6 * 60, "{d}: {m} min of work incl. proposals");
+    }
+    // Deterministic, and a rejected span is never proposed again.
+    assert_eq!(propose(&input, &p, &[]), props);
+    let gone = (props[0].start, props[0].end);
+    let again = propose(&input, &p, &[gone]);
+    assert!(again.iter().all(|x| x.end <= gone.0 || x.start >= gone.1));
+}
+
+#[test]
+fn no_proposals_when_disabled() {
+    let mut c = constraints();
+    c.projects.enabled = false;
+    let input = PlanInput {
+        now: at("2026-10-12 08:00"),
+        tz: London,
+        constraints: &c,
+        tasks: &[],
+        busy: &[],
+        existing: &[],
+    };
+    assert!(propose(&input, &plan(&input), &[]).is_empty());
 }

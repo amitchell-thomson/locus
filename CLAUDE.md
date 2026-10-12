@@ -20,6 +20,7 @@ Data flow: iCloud ⇄ vdirsyncer (rw on compute-node, **read-only** on the Mac) 
 - **Single writer**: only kairosd writes to iCloud. The Mac's vdirsyncer remote storage is `read_only = true`.
 - **`live = false` by default**: new events are redirected into `test_calendar` (`ZZ-kairos-test`, intended key kept as `X-KAIROS-ORIGIN-KEY`); ops touching any other calendar are refused (`EngineError::LiveDisabled`). Checked at propose *and* apply.
 - **Risk is computed, never supplied** (`risk::assess` over facts the engine gathers). Order: forbidden → high triggers → low. No approve tool in MCP.
+- **The scheduler's own work blocks are low-risk at any time and in any number** (Alec, 2026-10-12; `risk::is_scheduler_block_op`: scheduler-created, flex, unpinned, no fixed overlap). That's what lets work move out of the way of new events at once and start 15 min from now. Pinned blocks (hand-moved ones) and everything else keep the normal rules.
 - **Alec's own interactive edits skip approval** (Alec's request, 2026-10-11): the TUI and the CLI *on a TTY* send `x-kairos-interactive: 1`; kairosd then uses `risk::assess_direct` (forbidden rules only). Non-interactive callers (scripts, Claude via Bash — no TTY) and MCP (always `Author::Claude`, never direct) get the full policy. The header is trusted like the bearer token: it guards against agents, not against someone holding the token.
 - **Every write is a changeset** with full pre/post images. Apply checks preconditions (item unchanged since proposal, semantic comparison); undo refuses with a diff if edited elsewhere. Semantic comparison ignores DTSTAMP/LAST-MODIFIED/SEQUENCE/X-* so iCloud's cosmetic rewrites don't block undo.
 - **Dedup is view-only.** Never deletes; `dedup_never_drops_instances` test.
@@ -27,7 +28,9 @@ Data flow: iCloud ⇄ vdirsyncer (rw on compute-node, **read-only** on the Mac) 
 - **Recurrence is evaluated in wall-clock time of the master's zone**, then resolved — 19:00 stays 19:00 across DST.
 - **Lossless edits**: `build::edit_file` keeps unknown props (X-APPLE-*, attendees, alarms). Adopt strips ATTENDEE/ORGANIZER (iCloud would email invites).
 - **Sidecar is authoritative** for kairos metadata; `X-KAIROS-*` is a mirror. `blocking` (Family events blocking the scheduler) is sidecar-only and preserved on rewrites.
-- **Scheduler never overbooks**: shortfalls are reported per task. The engine plans new blocks ≥ 2 h 05 m ahead (the policy's "imminent" horizon) so normal replans auto-apply; blocks already inside that horizon are kept and counted as in progress.
+- **Scheduler never overbooks**: shortfalls are reported per task; squeezes (short gaps, deadline lead, past the 3 h / 10 h comfort limits) are reported per block. Tiers ideal → shorter → squeeze; spread across days by free time; no work in `[[recovery]]` time after Sport. New blocks start ≥ `min_lead_minutes` (15) ahead.
+- **Replan on event changes**: `apply` sets `replan_soon` for any non-scheduler event write; the HTTP layer replans right after answering, the jobs loop on every tick (and after every sync). Stable, so it's a no-op unless work is displaced.
+- **Proposed project time is kairosd-only** (`proposals` table): never written to a calendar until Alec accepts (`y` in the TUI → an event). Dropped spans are never re-proposed.
 - No `unwrap()`/`expect()` outside tests (workspace clippy lints deny them). `thiserror` in libs, `anyhow` in bins.
 
 ## Running things

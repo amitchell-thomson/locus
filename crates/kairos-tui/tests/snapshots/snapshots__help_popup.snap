@@ -19,15 +19,15 @@ expression: "render_to_string(&a, 100, 30)"
 │14:00 ┊          │         m  move to another time                              │   ┊             │
 │15:00 ┊          │       d s  delete, share to Family                           │   ┊             │
 │16:00 ┊          │         B  Family event: block / unblock my time             │   ┊             │
-│17:00 ┊          │         P  run the scheduler                                 │   ┊             │
-│      ┄┄┄┄┄┄┄┄┄┄┄│       T A  tasks, approvals                                  │┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄│
-│18:00 ┊          │         C  check in today's work blocks                      │   ┊             │
-│19:00 ┊▌Squash   │         u  undo the last applied change                      │   ┊▌Sunday Sq…  │
-│20:00 ┊          │         /  search                                            │   ┊             │
-│21:00 ┊          │         r  sync now                                          │   ┊             │
-│      ┄┄┄┄┄┄┄┄┄┄┄│         q  quit                                              │┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄│
-│22:00 ┊          ╰──────────────────────────────────────────────────────────────╯   ┊             │
-│23:00 ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
+│17:00 ┊          │       y d  proposed project time ◌: accept (say what) / drop │   ┊             │
+│      ┄┄┄┄┄┄┄┄┄┄┄│         P  run the scheduler                                 │┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄│
+│18:00 ┊          │       T A  tasks, approvals                                  │   ┊             │
+│19:00 ┊▌Squash   │         C  check in today's work blocks                      │   ┊▌Sunday Sq…  │
+│20:00 ┊          │         u  undo the last applied change                      │   ┊             │
+│21:00 ┊          │         /  search                                            │   ┊             │
+│      ┄┄┄┄┄┄┄┄┄┄┄│         r  sync now                                          │┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄│
+│22:00 ┊          │         q  quit                                              │   ┊             │
+│23:00 ┊          ╰──────────────────────────────────────────────────────────────╯   ┊             │
 │      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 │      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 ╰ ● 19:00–20:00 · Squash · Personal ───────────────────────────────────────────────────────────────╯

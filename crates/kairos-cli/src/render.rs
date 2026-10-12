@@ -77,6 +77,7 @@ pub fn title_of(i: &Instance) -> String {
         EventKind::Deadline => format!("{FLAG} {}", t.trim_start_matches(FLAG).trim()),
         EventKind::TaskBlock => format!("~ {t}"),
         EventKind::Event => t.to_string(),
+        EventKind::Proposal => format!("◌ {t}?"),
     }
 }
 

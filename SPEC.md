@@ -132,7 +132,8 @@ The policy lives in `kairos-core`, is evaluated by `kairosd` on every changeset,
 **Forbidden (rejected outright):** any write to a read-only source (Google imports, holidays); any write to Family except `share_to_family`.
 
 **Low risk → auto-applied, logged, undoable, included in the daily summary:**
-- creating/updating/deleting **task blocks** (`created_by ∈ {scheduler, claude}`, `flex`), where start > now + 60 min;
+- the scheduler creating/moving/deleting **its own work blocks** (`created_by = scheduler`, `flex`, not pinned, no overlap with a fixed event) — **at any time and in any number** (Alec, 2026-10-12: work must move out of the way of new events at once, and can start 15 min from now; these ops are exempt from the 2 h and > 8 ops rules below);
+- creating/updating/deleting Claude's flex task blocks where start > now + 60 min;
 - creating a single (non-recurring) event in a personal key calendar that doesn't overlap a non-flex event;
 - creating/updating tasks and deadlines;
 - re-keying an event that Claude/scheduler created.
@@ -141,9 +142,9 @@ The policy lives in `kairos-core`, is evaluated by `kairosd` on every changeset,
 - modifying, moving or deleting any event **not** created by kairos (i.e. created by Alec on phone/Calendar.app, or pre-existing);
 - `share_to_family` (always);
 - any recurring-series change (whole series or `THISANDFUTURE`);
-- any op touching an event that starts within the next 2 h;
+- any op touching an event that starts within the next 2 h (except the scheduler's own work blocks);
 - creating an event overlapping a non-flex event;
-- changesets with > 8 ops;
+- changesets with > 8 ops (the scheduler's own work-block ops don't count);
 - deleting a deadline or dropping a task.
 
 **Approval channels:** TUI approvals pane, CLI (`kairos approve <id>` / `kairos reject <id>`), and ntfy push with Accept/Reject action buttons (Phase 8). **The MCP server has no approve tool.** In Claude Code, Claude may run `kairos approve` via Bash only after Alec says yes, and Claude Code's own permission prompt is the second gate.
@@ -167,15 +168,21 @@ Deterministic Rust code. Claude's job is to interpret intent, create and update 
   - preferred deep-work windows;
   - buffers around fixed events (default 10 min; 30 min if the location differs from the previous event's);
   - no-schedule periods (e.g. Saturday evening);
-  - preferred lead time before a deadline (`deadline_lead_hours`, default 2 h: aim to finish ≥ 2 h before). A soft preference: when there is no room, work falls back to the time up to the deadline itself (never past it) and the plan warns that the task is *squeezed* into the last 2 h.
+  - preferred lead time before a deadline (`deadline_lead_hours`, default 2 h: aim to finish ≥ 2 h before). A soft preference: when there is no room, work falls back to the time up to the deadline itself (never past it) and the plan warns that the task is *squeezed* into the last 2 h;
+  - comfort: at most `max_continuous_minutes` (3 h) of back-to-back events + work without a `break_minutes` (30 min) break, and at most `max_day_load_hours` (10 h) of events + work a day;
+- recovery: no work for `minutes` after events in a `[[recovery]]` key (Sport: 60 min — tired, showering), not even squeezed;
+- task types (`[[task_types]]`): `sheet` (5 h default, 2–3 h blocks, ≥ 1 h), `coursework` (estimate required, 2–3 h blocks, revised at check-ins), `admin` (45 min default, one 30–60 min go);
+- `squeeze_block_minutes` (40): the shortest squeezed block (a 1 h gap between lectures minus 10 min travel each side).
 
-**Algorithm (v1):**
+**Algorithm (2026-10-12 scheme):**
 1. Earliest-deadline-first with slack ordering, priority as tiebreak.
-2. Split splittable tasks into chunks in `[min_chunk, max_chunk]`.
-3. Place each chunk in the earliest feasible slot, scored by preferred-window fit.
-4. Never schedule within the next 30 min.
-5. **Stability:** on replan, keep already-placed future blocks that remain feasible; only move a block when required. Report how many blocks moved.
+2. **Tiers:** place work in the best tier it fits, a lower one only for what's left: *ideal* (the type's 2–3 h blocks, ≥ 2 h before the deadline, comfortable) → *shorter* (down to the type's minimum block) → *squeeze* (down to 40 min, up to the deadline, first within then past the comfort rules). Every squeezed block is reported with its reasons ("into a short gap", "into the last 2 h before …", "back-to-back with other commitments", "onto an overloaded day").
+3. **Spreading:** a task's hours are shared across the days before its deadline in proportion to each day's free time (a sheet due Friday → blocks on two or three days; one free day → all there). Within a day, the best preferred-window / deep-work fit wins, then the earliest. No crumbs: a remainder shorter than any block is absorbed or the split adjusted.
+4. Never schedule within the next 15 min (`min_lead_minutes`).
+5. **Stability:** on replan, keep already-placed future blocks that remain feasible; only move a block when required (or when a squeeze can be undone). Report how many blocks moved. A block Alec moves by hand becomes pinned.
 6. **Infeasibility is a first-class output:** if work doesn't fit, report per-task shortfall ("B4 sheet: 2.5 h short before Fri 17:00") and the options (extend window, drop/lower priority, cut estimate). Never silently overbook.
+7. **Learned estimates:** once a type has ≥ 3 finished tasks, remaining time is planned × the median actual/estimate ratio (clamped ×0.7–×2), shown in the plan ("≈ B4 sheet: planning 6 h for 4 h left (sheet tasks usually take ×1.50)").
+8. **Proposed project time:** after task work, comfortable free gaps (1–3 h, within the daily work cap, next 7 days) are offered as greyed "Project time?" blocks in the TUI (kairosd only — nothing written to iCloud). Alec accepts one (`y`, then says what to work on → an event) or drops it (`d`, never proposed there again).
 
 **Completion tracking:**
 - Evening check-in (ntfy, Phase 8; TUI prompt before then) lists today's blocks with done / partial / missed.
@@ -183,7 +190,7 @@ Deterministic Rust code. Claude's job is to interpret intent, create and update 
 - Missed or partial time returns to `remaining` and triggers a replan.
 - Log estimate vs. actual per task for later calibration.
 
-**Triggers:** task created/updated, a fixed event added that collides with a block (via sync diff), check-in results, manual `kairos plan`. Replans produce a changeset; the risk policy decides whether it auto-applies (normally yes — flex blocks only).
+**Triggers:** task created/updated, any event write through kairosd (right after the request), every sync (phone / Calendar.app / Family changes), check-in results, manual `kairos plan`. Replans produce a changeset; the scheduler's own block ops are always low-risk, so they auto-apply. Coursework check-ins also ask "how much is left?" and replan with the answer.
 
 **Tests:**
 - property tests that no block overlaps a busy interval or violates constraints;

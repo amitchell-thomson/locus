@@ -1,9 +1,47 @@
 # kairos scheduler constraints — copy to ~/.config/kairos/constraints.toml on compute-node.
 # Times are local (Europe/London), HH:MM.
 
-slot_minutes = 15        # placement granularity
-horizon_days = 14        # look-ahead for tasks without a deadline
-min_lead_minutes = 30    # never schedule within the next 30 min
+slot_minutes = 10           # placement granularity
+horizon_days = 14           # look-ahead for tasks without a deadline
+min_lead_minutes = 15       # never schedule within the next 15 min
+squeeze_block_minutes = 40  # shortest block when squeezing into a gap (1 h gap − 10 min travel each side)
+
+# No work for a while after these calendars' events (tired, showering).
+[[recovery]]
+key = "Sport"
+minutes = 60
+
+# Kinds of task. Blocks aim for ideal_min..ideal_max; shorter (down to
+# min_block) only when the ideal doesn't fit; shorter still (down to
+# squeeze_block_minutes) only as a warned-about squeeze.
+[[task_types]]
+name = "sheet"              # problem sheets
+estimate_minutes = 300
+ideal_min_minutes = 120
+ideal_max_minutes = 180
+min_block_minutes = 60
+
+[[task_types]]
+name = "coursework"         # estimate required; revised at check-ins
+ideal_min_minutes = 120
+ideal_max_minutes = 180
+min_block_minutes = 60
+
+[[task_types]]
+name = "admin"              # admin and errands: one go
+estimate_minutes = 45
+ideal_min_minutes = 30
+ideal_max_minutes = 60
+min_block_minutes = 30
+splittable = false
+
+# Proposed project time: free gaps offered (greyed out in the TUI) to accept or drop.
+[projects]
+enabled = true
+title = "Project time"
+min_minutes = 60
+max_minutes = 180
+days_ahead = 7
 
 # Named windows tasks can prefer via `preferred_window`.
 [[windows]]
@@ -43,6 +81,9 @@ no_schedule = [
   { days = ["sat"], start = "18:00", end = "24:00" },
 ]
 deadline_lead_hours = 2   # aim to finish this early; work squeezed into the last 2 h is allowed but warned about
+max_continuous_minutes = 180  # comfort: back-to-back events + work at most 3 h…
+break_minutes = 30            # …without a break of at least 30 min
+max_day_load_hours = 10.0     # comfort: events + work per day
 
 # Fallback (no dates): everything outside term.
 [[profiles]]
@@ -61,3 +102,6 @@ no_schedule = [
   { days = ["sat", "sun"], start = "00:00", end = "24:00" },
 ]
 deadline_lead_hours = 2   # aim to finish this early; work squeezed into the last 2 h is allowed but warned about
+max_continuous_minutes = 180  # comfort: back-to-back events + work at most 3 h…
+break_minutes = 30            # …without a break of at least 30 min
+max_day_load_hours = 10.0     # comfort: events + work per day

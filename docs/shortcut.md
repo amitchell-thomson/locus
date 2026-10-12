@@ -7,7 +7,7 @@ Posts a task to kairosd over Tailscale. The scheduler places work blocks; they a
 Shortcuts app → `+` → name it **Add task**, then add these actions:
 
 1. **Ask for Input** — Prompt: `Task`, Input type: *Text* → rename variable **Title**.
-2. **Choose from Menu** — Prompt: `Key`; items: `Personal`, `Engineering`, `Careers`, `Sport`, `Travel`, `OQTS`, `Social`. In each branch add **Text** with the same word. After the menu, rename *Menu Result* → **Key**.
+2. **Choose from Menu** — Prompt: `Key`; items: `Personal`, `Engineering`, `Careers`, `Projects`, `Sport`, `Social`. In each branch add **Text** with the same word. After the menu, rename *Menu Result* → **Key**.
 3. **Ask for Input** — Prompt: `Estimate (minutes)`, Input type: *Number*, default `60` → **Estimate**.
 4. **Choose from Menu** — Prompt: `Deadline?`, items `Yes`, `No`.
    - *Yes*: **Ask for Input** — Prompt `Due`, Input type *Date and Time* → then **Format Date** → *Custom* format `yyyy-MM-dd'T'HH:mm` → **Text** with the formatted date.

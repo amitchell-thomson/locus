@@ -54,7 +54,7 @@ terms = [
 
 # Keys: one iCloud calendar each. `index` is the TUI toggle key (1–7).
 [[keys]]
-name = "Inbox"
+name = "Personal"
 index = 1
 colour = "lavender"
 calendar = "personal"
@@ -72,36 +72,37 @@ colour = "peach"
 calendar = "careers"
 
 [[keys]]
-name = "Sport"
+name = "Projects"
 index = 4
+colour = "maroon"
+calendar = "projects"
+
+[[keys]]
+name = "Sport"
+index = 5
 colour = "green"
 calendar = "sport"
 
 [[keys]]
-name = "Travel"
-index = 5
-colour = "sapphire"
-calendar = "travel"
-
-[[keys]]
-name = "OQTS"
-index = 6
-colour = "mauve"
-calendar = "oqts"
-
-[[keys]]
 name = "Social"
-index = 7
+index = 6
 colour = "pink"
 calendar = "social"
 
-# --- iCloud calendars (vdirsyncer) ---
 [[sources]]
 id = "personal"
 kind = "icloud"
-calendar = "Inbox"
+calendar = "Personal"
 overlay = "personal"
-key = "Inbox"
+key = "Personal"
+writable = true
+
+[[sources]]
+id = "projects"
+kind = "icloud"
+calendar = "Projects"
+overlay = "personal"
+key = "Projects"
 writable = true
 
 [[sources]]
@@ -129,22 +130,6 @@ key = "Sport"
 writable = true
 
 [[sources]]
-id = "travel"
-kind = "icloud"
-calendar = "Travel"
-overlay = "personal"
-key = "Travel"
-writable = true
-
-[[sources]]
-id = "oqts"
-kind = "icloud"
-calendar = "OQTS"
-overlay = "personal"
-key = "OQTS"
-writable = true
-
-[[sources]]
 id = "social"
 kind = "icloud"
 calendar = "Social"
@@ -165,7 +150,7 @@ id = "test"
 kind = "icloud"
 calendar = "ZZ-kairos-test"
 overlay = "personal"
-key = "Inbox"
+key = "Personal"
 writable = true
 
 # --- read-only .ics feeds (examples; Alec's live config uses none) ---

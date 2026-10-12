@@ -78,9 +78,9 @@ cargo run -p kairos-tui --example frame -- <config> <rfc3339-now> <w> <h> [keys]
 
 ## Decisions log
 
-- Catch-all key renamed `Personal` → **`Inbox`** (Alec's iCloud calendar is named Inbox, CalDAV id `home`). Events without a key go to key 1 (`Config::default_key`), not a hard-coded name. "personal" remains the *overlay* name.
+- Keys (2026-10-12): **Personal** (1, default, lavender; iCloud calendar renamed from Inbox, CalDAV id `home`), Engineering (2), Careers (3, includes OQTS), **Projects** (4, maroon `#eba0ac`; accepted project time — `[projects] key`), Sport (5), Social (6). Travel and OQTS were deleted on iCloud (empty), and ZZ-kairos-test is gone from iCloud too (only used when `live = false`). Events without a key go to key 1 (`Config::default_key`), not a hard-coded name. "personal" is also the *overlay* name. MCP instructions list the keys from config.
 - Gmail and UK-holidays feeds removed too (Alec, 2026-10-11): nothing upcoming in Gmail; holidays not wanted. No `ics_readonly` sources are configured now; the feature stays.
-- OQTS Google Workspace feeds dropped: secret iCal addresses are disabled by the Workspace admin and the calendars were empty. OQTS work lives in the iCloud `OQTS` key.
+- OQTS Google Workspace feeds dropped: secret iCal addresses are disabled by the Workspace admin and the calendars were empty. OQTS work goes in Careers.
 
 - Own lossless iCalendar parser instead of the `icalendar` crate: round-trip fidelity (unknown props, param quoting) matters for writing back to iCloud.
 - Recurrence via `rrule` on naive wall-clock times (UTC pseudo-zone), resolved with our RFC rule — deterministic DST behaviour independent of the crate.

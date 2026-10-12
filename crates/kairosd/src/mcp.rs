@@ -33,8 +33,7 @@ themselves: an open task with remaining_min 0 has used its planned time — ask 
 (complete_task) or how much more it needs (update_task remaining_min). Only create a specific block when Alec asks for a specific slot (create_event with \
 task_id makes a pinned block).\n\
 TIMES: ISO 8601 ('2026-10-16T17:00', with or without offset; Europe/London assumed) or plain dates for all-day; \
-natural forms like 'fri 17:00' also work but ambiguous input is rejected. Keys: Inbox (default), Engineering, \
-Careers, Sport, Travel, OQTS, Social.\n\
+natural forms like 'fri 17:00' also work but ambiguous input is rejected. Keys: {KEYS}.\n\
 BULK: for more than one event, find them with search_events, then make ONE update_events / delete_events / \
 move_events call with a plain-English summary — never loop the single-event tools (each would be a separate \
 approval). For deletions or large/ambiguous batches, show Alec the plan (counts + a few before/after examples) \
@@ -44,6 +43,26 @@ first unless he already said exactly what to do. A batch is one approval and one
 pub struct KairosMcp {
     st: AppState,
     tool_router: ToolRouter<Self>,
+    /// INSTRUCTIONS with the configured keys filled in.
+    instructions: String,
+}
+
+/// The instructions with the configured keys ("Personal (default), Engineering, …").
+pub fn instructions(cfg: &kairos_core::config::Config) -> String {
+    let mut keys = cfg.keys.clone();
+    keys.sort_by_key(|k| k.index);
+    let list: Vec<String> = keys
+        .iter()
+        .enumerate()
+        .map(|(n, k)| {
+            if n == 0 {
+                format!("{} (default)", k.name)
+            } else {
+                k.name.clone()
+            }
+        })
+        .collect();
+    INSTRUCTIONS.replace("{KEYS}", &list.join(", "))
 }
 
 fn ok_json<T: Serialize>(v: &T) -> Result<CallToolResult, ErrorData> {
@@ -64,9 +83,11 @@ fn tool_err(e: EngineError) -> CallToolResult {
 
 impl KairosMcp {
     pub fn new(st: AppState) -> Self {
+        let instructions = st.engine.lock().map(|e| instructions(&e.cfg)).unwrap_or_default();
         KairosMcp {
             st,
             tool_router: Self::tool_router(),
+            instructions,
         }
     }
 
@@ -748,7 +769,7 @@ impl ServerHandler for KairosMcp {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(rmcp::model::Implementation::new("kairos", env!("CARGO_PKG_VERSION")))
-            .with_instructions(INSTRUCTIONS)
+            .with_instructions(&self.instructions)
     }
 }
 

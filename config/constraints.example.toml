@@ -43,6 +43,7 @@ splittable = false
 [projects]
 enabled = true
 title = "Project time"
+key = "Projects"      # accepted sessions go to this calendar
 min_minutes = 60
 max_minutes = 180
 days_ahead = 7

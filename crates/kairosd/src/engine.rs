@@ -1783,7 +1783,14 @@ impl Engine {
                 title,
                 start: p.start.to_rfc3339(),
                 end: Some(p.end.to_rfc3339()),
-                key: self.constraints.projects.key.clone(),
+                // The projects key, if it exists (else the default key).
+                key: self.constraints.projects.key.clone().filter(|k| {
+                    let known = self.cfg.key(k).is_some();
+                    if !known {
+                        tracing::warn!("[projects] key {k:?} isn't a configured key; using the default");
+                    }
+                    known
+                }),
                 description: Some(PROJECT_MARK.into()),
                 ..Default::default()
             },

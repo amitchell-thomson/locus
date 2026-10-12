@@ -605,7 +605,7 @@ mod tests {
         assert_eq!(c.validate(), vec![]);
         assert!(!c.live, "example must not be live");
         assert_eq!(c.test_calendar, "ZZ-kairos-test");
-        assert_eq!(c.keys.len(), 7);
+        assert_eq!(c.keys.len(), 6);
         assert_eq!(c.tz(), chrono_tz::Europe::London);
         assert_eq!(c.source_for_key("sport").unwrap().id, "sport");
         assert_eq!(c.family_source().unwrap().id, "family");
@@ -683,10 +683,12 @@ mod tests {
     #[test]
     fn rejects_too_many_keys() {
         let e = with(|c| {
-            let mut k = c.keys[0].clone();
-            k.name = "Eighth".into();
-            k.index = 7;
-            c.keys.push(k);
+            while c.keys.len() < 8 {
+                let mut k = c.keys[0].clone();
+                k.index = c.keys.len() as u8 + 1;
+                k.name = format!("Extra{}", k.index);
+                c.keys.push(k);
+            }
         });
         assert!(e.iter().any(|x| matches!(x, ConfigError::TooManyKeys(8))), "{e:?}");
     }

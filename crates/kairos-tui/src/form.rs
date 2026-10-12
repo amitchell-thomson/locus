@@ -11,6 +11,7 @@ pub enum FormKind {
     AddEvent,
     EditEvent { source: String, uid: String },
     AddTask,
+    EditTask { id: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -136,6 +137,40 @@ impl Form {
         )
     }
 
+    pub fn edit_task(keys: Vec<String>, t: &kairos_core::task::Task, tz: Tz) -> Form {
+        let due = match t.due {
+            None => String::new(),
+            Some(kairos_core::task::Due::Date(d)) => d.format("%Y-%m-%d").to_string(),
+            Some(kairos_core::task::Due::At(a)) => a.with_timezone(&tz).format("%Y-%m-%d %H:%M").to_string(),
+        };
+        Form::new(
+            FormKind::EditTask { id: t.id.clone() },
+            vec![
+                field("Title", t.title.clone(), FieldKind::Text, ""),
+                field("Calendar", t.key.clone(), FieldKind::Key, KEY_HINT),
+                field(
+                    "Type",
+                    t.kind.clone().unwrap_or_else(|| "sheet".into()),
+                    FieldKind::Type,
+                    "sheet · coursework · admin — ←/→ (resets block sizes)",
+                ),
+                field(
+                    "Left",
+                    fmt_minutes(i64::from(t.remaining_min)),
+                    FieldKind::Duration,
+                    "work still to do: 3h · 90m",
+                ),
+                field(
+                    "Due",
+                    due,
+                    FieldKind::OptWhen,
+                    "fri 17:00 · 23 oct · empty = no deadline",
+                ),
+            ],
+            keys,
+        )
+    }
+
     pub fn add_task(keys: Vec<String>, default_key: &str) -> Form {
         Form::new(
             FormKind::AddTask,
@@ -170,6 +205,7 @@ impl Form {
             FormKind::AddEvent => "new event",
             FormKind::EditEvent { .. } => "edit event",
             FormKind::AddTask => "new task",
+            FormKind::EditTask { .. } => "edit task",
         }
     }
 

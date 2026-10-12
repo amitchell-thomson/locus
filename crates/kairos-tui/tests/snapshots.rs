@@ -502,3 +502,52 @@ fn squeezed_work_blocks_carry_a_warning() {
     assert!(s.contains("⚠ ~ B4 sheet"), "{s}");
     assert!(s.contains("⚠ squeezed into a short gap"), "{s}");
 }
+
+#[test]
+fn tasks_view_lists_completed_tasks_and_edits_a_task() {
+    use kairos_tui::app::Mode;
+    let (mut a, _t) = app("2026-10-19T08:00:00+01:00");
+    let mut t = Task::new(
+        "Purchase furniture",
+        "Personal",
+        60,
+        Author::Alec,
+        now("2026-10-12T08:00:00Z"),
+    );
+    t.id = "t-1".into();
+    t.due = Some(Due::At(now("2026-10-12T22:59:00Z")));
+    let mut done = Task::new(
+        "Populate calendar",
+        "Personal",
+        30,
+        Author::Alec,
+        now("2026-10-12T08:00:00Z"),
+    );
+    done.id = "t-0".into();
+    done.status = kairos_core::task::TaskStatus::Done;
+    done.remaining_min = 0;
+    done.updated_at = now("2026-10-12T21:46:00Z");
+    a.tasks = vec![t];
+    a.done_tasks = vec![done];
+    a.view = kairos_tui::app::View::Tasks;
+    let s = render_to_string(&a, 110, 14);
+    assert!(s.contains("Completed · 1"), "{s}");
+    assert!(
+        s.contains("✓ Populate calendar") && s.contains("finished Mon 12 Oct · 30m of 30m planned"),
+        "{s}"
+    );
+    // e edits the task; clearing Due means no deadline.
+    a.key(Key::Char('e'));
+    let Mode::Form(f) = &a.mode else { panic!("no form") };
+    assert_eq!(f.get("Due"), "2026-10-12 23:59");
+    assert_eq!(f.get("Left"), "1h");
+    for _ in 0..4 {
+        a.key(Key::Tab); // → Due
+    }
+    for _ in 0..16 {
+        a.key(Key::Backspace);
+    }
+    let Mode::Form(f) = &a.mode else { panic!("no form") };
+    assert_eq!(f.get("Due"), "");
+    assert!(a.form_preview(f).unwrap().contains("no deadline"));
+}

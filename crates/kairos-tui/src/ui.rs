@@ -1196,9 +1196,37 @@ fn tasks(f: &mut Frame, app: &App, area: Rect) {
             ),
         ]));
     }
+    // Completed: the most recent finished tasks (not selectable).
+    if !app.done_tasks.is_empty() {
+        lines.push(Line::raw(""));
+        lines.push(Line::from(TSpan::styled(
+            format!("Completed · {}", app.done_tasks.len()),
+            Style::default().fg(c("overlay1")).add_modifier(Modifier::BOLD),
+        )));
+        for t in app.done_tasks.iter().take(12) {
+            let col = app.cfg.key(&t.key).map_or(c("overlay1"), |k| rgb(k.colour));
+            let done = t.estimate_min.saturating_sub(t.remaining_min);
+            lines.push(Line::from(vec![
+                TSpan::styled("✓ ", Style::default().fg(fade(col, PAST_FADE))),
+                TSpan::styled(
+                    format!("{:<28} ", fit(&t.title, 28)),
+                    Style::default().fg(c("overlay1")),
+                ),
+                TSpan::styled(
+                    format!(
+                        "finished {} · {} of {} planned",
+                        t.updated_at.with_timezone(&app.tz).format("%a %-d %b"),
+                        crate::form::fmt_minutes(i64::from(done)),
+                        crate::form::fmt_minutes(i64::from(t.estimate_min))
+                    ),
+                    Style::default().fg(c("overlay0")),
+                ),
+            ]));
+        }
+    }
     lines.push(Line::raw(""));
     lines.push(Line::from(TSpan::styled(
-        "a add · d done · + more time · n start now · x drop · P plan · Esc back",
+        "a add · e edit · d done · + more time · n start now · x drop · P plan · Esc back",
         Style::default().fg(c("overlay0")),
     )));
     f.render_widget(Paragraph::new(lines), inner);

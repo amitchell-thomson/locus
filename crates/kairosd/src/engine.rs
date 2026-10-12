@@ -2041,10 +2041,25 @@ impl Engine {
         }];
         ops.extend(self.block_deletes(&world, &t.id, |b| b.end > now)?);
         let n = ops.len() - 1;
+        // Its ⚑ deadline goes too (a dropped task has no deadline).
+        let deadline = t
+            .deadline_uid
+            .as_deref()
+            .and_then(|u| self.locate(&world, None, u).ok())
+            .map(|loc| Op::DeleteEvent {
+                item: Item {
+                    source: loc.source.id.clone(),
+                    href: loc.href.clone(),
+                },
+                uid: loc.series.uid.clone(),
+                before: loc.text,
+            });
+        let and_deadline = if deadline.is_some() { " and its deadline" } else { "" };
+        ops.extend(deadline);
         let summary = match n {
-            0 => format!("Drop task {:?}", t.title),
-            1 => format!("Drop task {:?} and its scheduled block", t.title),
-            n => format!("Drop task {:?} and its {n} scheduled blocks", t.title),
+            0 => format!("Drop task {:?}{and_deadline}", t.title),
+            1 => format!("Drop task {:?}, its scheduled block{and_deadline}", t.title),
+            n => format!("Drop task {:?}, its {n} scheduled blocks{and_deadline}", t.title),
         };
         let cs = self.propose(&world, author, ops, summary)?;
         let plan = if cs.status == Status::Applied {

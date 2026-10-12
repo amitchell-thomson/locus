@@ -136,6 +136,8 @@ pub struct App {
     pub checkins: Vec<api::CheckinItem>,
     /// Proposed project time (greyed; accept or drop).
     pub proposals: Vec<api::ProposalItem>,
+    /// Finished tasks, most recent first (the tasks view's Completed section).
+    pub done_tasks: Vec<Task>,
     /// Squeezed work blocks (from a dry-run plan): (task id, start, reasons).
     pub squeezed: Vec<(String, DateTime<Utc>, Vec<String>)>,
     pub daemon: Option<Daemon>,
@@ -170,6 +172,7 @@ impl App {
             pending: Vec::new(),
             checkins: Vec::new(),
             proposals: Vec::new(),
+            done_tasks: Vec::new(),
             squeezed: Vec::new(),
             daemon,
             daemon_error: None,
@@ -353,6 +356,10 @@ impl App {
         }
         if let Ok(Ok(t)) = d.tasks("open") {
             self.tasks = t;
+        }
+        if let Ok(Ok(mut t)) = d.tasks("done") {
+            t.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+            self.done_tasks = t;
         }
         if let Ok(Ok(c)) = d.checkin_items() {
             self.checkins = c;
@@ -728,6 +735,10 @@ impl App {
                         }
                     }
                     Key::Char('n') => self.start_now(t.id.clone(), t.title.clone()),
+                    Key::Char('e') => {
+                        self.message = None;
+                        self.mode = Mode::Form(Form::edit_task(self.key_names(), &t, self.tz));
+                    }
                     Key::Char('+') => {
                         self.message = None;
                         self.mode = Mode::Prompt(
@@ -1056,6 +1067,21 @@ impl App {
     pub fn form_preview(&self, f: &Form) -> Result<String, String> {
         let key = f.get("Calendar");
         match f.kind {
+            FormKind::EditTask { .. } => {
+                let left = dates::parse_minutes(f.get("Left")).map_err(|_| "Left: e.g. 3h or 90m".to_string())?;
+                let due = match f.get("Due") {
+                    "" => "no deadline".to_string(),
+                    d => match dates::parse_when(d, self.today()).map_err(|e| e.to_string())? {
+                        When::Date(d) => format!("due {}", d.format("%a %-d %b")),
+                        When::DateTime(n) => format!("due {}", n.format("%a %-d %b %H:%M")),
+                    },
+                };
+                Ok(format!(
+                    "{} left · {} · {due} · {key}",
+                    crate::form::fmt_minutes(i64::from(left)),
+                    f.get("Type")
+                ))
+            }
             FormKind::AddTask => {
                 let ty = f.get("Type");
                 let est = match f.get("Estimate") {
@@ -1209,6 +1235,51 @@ impl App {
                         app.unpatch(orig, &uid);
                     }
                 }));
+            }
+            FormKind::EditTask { id } => {
+                let changed = |l: &str| f.changed(l).then(|| f.get(l).to_string());
+                let due = if f.changed("Due") {
+                    match f.get("Due") {
+                        "" => Some(String::new()), // clears the deadline (and its ⚑)
+                        d => match self.when_str(d) {
+                            Ok(s) => Some(s),
+                            Err(e) => return self.set_message(e, true),
+                        },
+                    }
+                } else {
+                    None
+                };
+                let req = api::UpdateTaskReq {
+                    title: changed("Title"),
+                    key: changed("Calendar"),
+                    kind: changed("Type"),
+                    remaining_min: if f.changed("Left") { dur(f.get("Left")) } else { None },
+                    due,
+                    ..Default::default()
+                };
+                if req == api::UpdateTaskReq::default() {
+                    return self.set_message("no changes", false);
+                }
+                if let Some(r) = self.with_daemon(|d| d.update_task(&id, &req)) {
+                    match r {
+                        Ok(Ok(t)) => {
+                            let pending = t.changesets.iter().any(|c| c.status == Status::Pending);
+                            let warn = t.plan.as_ref().and_then(plan_warning).unwrap_or_default();
+                            self.set_message(
+                                if pending {
+                                    format!("{}: waiting for approval (A)", t.task.title)
+                                } else {
+                                    format!("✓ {}{warn}", t.task.title)
+                                },
+                                !warn.is_empty(),
+                            );
+                            self.wants_sync = true;
+                            self.refresh_remote();
+                        }
+                        Ok(Err(e)) => self.set_message(e.to_string(), true),
+                        Err(e) => self.set_message(e.to_string(), true),
+                    }
+                }
             }
             FormKind::AddTask => {
                 let due = match opt(f.get("Due")).map(|d| self.when_str(&d)).transpose() {

@@ -677,15 +677,22 @@ fn dropping_a_task_removes_all_its_blocks_at_once() {
     assert_eq!(d.changesets.len(), 1);
     assert_eq!(d.changesets[0].status, Status::Applied);
     assert!(
-        d.changesets[0].summary.contains(&format!("{n} scheduled blocks")),
+        d.changesets[0]
+            .summary
+            .contains(&format!("{n} scheduled blocks and its deadline")),
         "{}",
         d.changesets[0].summary
     );
     assert_eq!(blocks_of(&mut e, &id), 0);
-    // One undo brings the task and every block back.
+    assert!(
+        !env.read_all("Engineering").contains("SUMMARY:⚑ B4 problem sheet"),
+        "deadline dropped too"
+    );
+    // One undo brings the task, every block and the deadline back.
     e.undo(&d.changesets[0].changeset_id).unwrap();
     assert_eq!(e.db.task_get(&id).unwrap().unwrap().status, TaskStatus::Open);
     assert_eq!(blocks_of(&mut e, &id), n);
+    assert!(env.read_all("Engineering").contains("SUMMARY:⚑ B4 problem sheet"));
 }
 
 #[test]

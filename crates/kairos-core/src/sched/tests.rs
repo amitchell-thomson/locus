@@ -279,6 +279,21 @@ fn urgent_task_is_not_left_short_to_spare_another_a_squeeze() {
 }
 
 #[test]
+fn replan_unsqueezes_when_room_opens_up() {
+    // Squeezed into the lead because 08:00–17:30 was busy; once that event is
+    // gone, a replan moves the block out of the lead.
+    let mut t = task("essay", 60, Some("2026-10-12 20:00"));
+    t.splittable = false;
+    let tasks = [t];
+    let busy = [busy("2026-10-12 08:00", "2026-10-12 17:30")];
+    let p = run_plan("2026-10-12 08:00", &tasks, &busy, &[]);
+    assert_eq!(p.squeezed.len(), 1);
+    let p2 = run_plan("2026-10-12 08:00", &tasks, &[], &as_existing(&p));
+    assert!(p2.squeezed.is_empty(), "{p2:?}");
+    assert_eq!(p2.moved, 1);
+}
+
+#[test]
 fn nothing_after_the_deadline() {
     // Only 30 min free before 12:00 (08:30–09:00 + lead ignored); the rest is short.
     let tasks = [task("late", 60, Some("2026-10-12 12:00"))];

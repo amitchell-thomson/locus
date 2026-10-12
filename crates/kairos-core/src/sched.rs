@@ -18,7 +18,7 @@
 //!    feasible and still needed (pinned blocks always stay), then place what's
 //!    missing, tasks in earliest-deadline-first order (slack, then priority,
 //!    as tiebreaks).
-//! 2. If anything is short, alternatives are tried — deadline-order fallback
+//! 2. If anything is short or squeezed, alternatives are tried — deadline-order fallback
 //!    (see `deadline_lead_hours` below) and a **fresh pass** from scratch
 //!    (keeping only pinned blocks) — and used only if they strictly reduce the
 //!    total shortfall (then squeezed minutes). So blocks move only when that's
@@ -644,15 +644,15 @@ pub fn plan(input: &PlanInput<'_>) -> Plan {
     let g = Grid::build(input, horizon_end);
     let horizon_idx = g.idx(horizon).clamp(0, g.n as i64) as usize;
     let horizon_idx = horizon_idx.max(latest_due.map(|d| g.idx(d).clamp(0, g.n as i64) as usize).unwrap_or(0));
+    let squeeze = |p: &Plan| p.squeezed.iter().map(|s| s.squeezed_min).sum::<u32>();
     let (stable, short) = run(input, &g, horizon_idx, true, true);
-    if short == 0 {
+    let mut best_key = (short, squeeze(&stable));
+    if best_key == (0, 0) {
         return stable;
     }
-    // Short: try deadline-order fallback and/or a fresh start; a candidate
-    // wins only if strictly better on (shortfall, squeezed minutes), so the
-    // stable plan stays on ties.
-    let squeeze = |p: &Plan| p.squeezed.iter().map(|s| s.squeezed_min).sum::<u32>();
-    let mut best_key = (short, squeeze(&stable));
+    // Short or squeezed: try deadline-order fallback and/or a fresh start; a
+    // candidate wins only if strictly better on (shortfall, squeezed minutes),
+    // so the stable plan stays on ties.
     let mut best = stable;
     for (keep, lead_first) in [(true, false), (false, true), (false, false)] {
         let (p, short) = run(input, &g, horizon_idx, keep, lead_first);

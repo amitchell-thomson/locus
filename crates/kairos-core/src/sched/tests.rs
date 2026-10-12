@@ -989,3 +989,24 @@ fn social_and_sport_dont_count_toward_the_day_load() {
     let p = run_plan("2026-10-12 07:00", &tasks, &b, &[]);
     assert!(!p.shortfalls.is_empty() || !p.squeezed.is_empty(), "{p:#?}");
 }
+
+#[test]
+fn proposals_start_at_nine_at_the_earliest() {
+    let c = constraints();
+    let input = PlanInput {
+        now: at("2026-10-12 07:00"),
+        tz: London,
+        constraints: &c,
+        tasks: &[],
+        busy: &[],
+        existing: &[],
+    };
+    let props = propose(&input, &plan(&input), &[], &[]);
+    assert_eq!(props.len(), 7);
+    for x in &props {
+        let l = x.start.with_timezone(&London);
+        assert!(l.hour() >= 9, "{}", local(x.start));
+    }
+    // An empty day: 09:00–12:00 (the first longest gap).
+    assert_eq!(local(props[0].start), "Mon 12 09:00");
+}

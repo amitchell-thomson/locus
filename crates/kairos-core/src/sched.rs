@@ -970,7 +970,7 @@ pub struct Proposal {
     pub end: DateTime<Utc>,
 }
 
-/// Proposed project time: on each of the next `projects.days_ahead` days,
+/// Proposed project time: from `projects.earliest` (09:00) on each of the next `projects.days_ahead` days,
 /// up to `projects.max_per_day` sessions (the longest comfortable gaps, up to
 /// `max_minutes`, at least `min_minutes`; earliest on ties) in the time
 /// `plan`'s task work leaves free, within the daily work cap.
@@ -990,6 +990,13 @@ pub fn propose(
     let mut g = Grid::build(input, horizon);
     for (a, b) in avoid {
         g.block_out(*a, *b);
+    }
+    // Not before `projects.earliest` (09:00) local time.
+    for i in 0..g.n {
+        let l = g.at(i).with_timezone(&g.tz);
+        if (l.hour() * 60 + l.minute()) < u32::from(pc.earliest.minutes()) {
+            g.usable[i] = false;
+        }
     }
     let blocks: Vec<&Block> = plan.keep.iter().chain(&plan.create).collect();
     let mut st = state_with(&g, &blocks);

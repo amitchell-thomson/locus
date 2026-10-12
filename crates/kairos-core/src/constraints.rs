@@ -197,6 +197,13 @@ pub struct Projects {
     /// Proposed sessions per day (days with an accepted one get no more).
     #[serde(default = "default_project_per_day")]
     pub max_per_day: u32,
+    /// Proposed sessions start no earlier than this.
+    #[serde(default = "default_project_earliest")]
+    pub earliest: Hm,
+}
+
+fn default_project_earliest() -> Hm {
+    Hm(9 * 60)
 }
 
 fn default_project_per_day() -> u32 {
@@ -213,6 +220,7 @@ impl Default for Projects {
             max_minutes: default_project_max(),
             days_ahead: default_project_days(),
             max_per_day: default_project_per_day(),
+            earliest: default_project_earliest(),
         }
     }
 }

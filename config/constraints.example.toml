@@ -47,6 +47,7 @@ min_minutes = 60
 max_minutes = 180
 days_ahead = 7
 max_per_day = 1       # days with an accepted session get no more proposals
+earliest = "09:00"    # proposed sessions start no earlier
 
 # Named windows tasks can prefer via `preferred_window`.
 [[windows]]

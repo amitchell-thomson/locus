@@ -1864,6 +1864,7 @@ impl Engine {
             kept: p.keep.len(),
             moved: p.moved,
             shortfalls: p.shortfalls.clone(),
+            squeezed: p.squeezed.clone(),
             changeset: None,
             summary: String::new(),
         };
@@ -2048,6 +2049,9 @@ fn plan_summary(r: &api::PlanResp, tz: Tz) -> String {
     }
     for sh in &r.shortfalls {
         s.push_str(&format!("\n  ! {}", sh.message));
+    }
+    for sq in &r.squeezed {
+        s.push_str(&format!("\n  ⚠ {}", sq.message));
     }
     s
 }

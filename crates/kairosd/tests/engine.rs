@@ -501,7 +501,7 @@ fn b4_sheet_due_friday_gets_deadline_and_blocks() {
     assert!(eng.contains("DTSTART;TZID=Europe/London:20261016T170000\r\nDTEND;TZID=Europe/London:20261016T170000"));
     assert!(eng.contains("TRIGGER:-P1D") && eng.contains("TRIGGER:-PT2H"));
     assert!(eng.contains(&format!("X-KAIROS-TASK-ID:{}", r.task.id)));
-    // Blocks: 240 min total, all before Fri 05:00 (12 h lead), none during the lecture.
+    // Blocks: 240 min total, all before Fri 15:00 (2 h lead), none during the lecture.
     let world = e.world(14).unwrap();
     let blocks: Vec<_> = world
         .instances
@@ -514,7 +514,7 @@ fn b4_sheet_due_friday_gets_deadline_and_blocks() {
         .sum();
     assert_eq!(total, 240);
     for b in &blocks {
-        assert!(b.end(chrono_tz::Europe::London) <= at("2026-10-16 05:00"));
+        assert!(b.end(chrono_tz::Europe::London) <= at("2026-10-16 15:00"));
         assert!(
             b.start(chrono_tz::Europe::London) >= at("2026-10-12 13:10")
                 || b.end(chrono_tz::Europe::London) <= at("2026-10-12 08:50")
@@ -536,6 +536,32 @@ fn b4_sheet_that_does_not_fit_reports_shortfall() {
         plan.shortfalls[0].message
     );
     assert!(plan.summary.contains("! B4 problem sheet"));
+}
+
+#[test]
+fn task_squeezed_into_the_last_two_hours_is_planned_with_a_warning() {
+    // Busy until 17:30; due 20:00. Before the 2 h lead (18:00) there are only
+    // 20 minutes, so the hour runs into the lead: planned, but warned about.
+    let env = Env::new(true);
+    env.phone_event("Engineering", "busy", "Labs", "2026-10-12 10:00", "2026-10-12 17:30");
+    let mut e = env.engine();
+    let r = e.create_task(Author::Claude, &b4(60, "today 20:00")).unwrap();
+    let plan = r.plan.unwrap();
+    assert!(plan.shortfalls.is_empty(), "{:?}", plan.shortfalls);
+    assert_eq!(
+        plan.created
+            .iter()
+            .map(|b| (b.end - b.start).num_minutes())
+            .sum::<i64>(),
+        60
+    );
+    assert_eq!(plan.squeezed.len(), 1, "{plan:?}");
+    assert!(
+        plan.summary
+            .contains("⚠ B4 problem sheet: 45 min squeezed into the last 2 h before Mon 12 Oct 20:00"),
+        "{}",
+        plan.summary
+    );
 }
 
 #[test]

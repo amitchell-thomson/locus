@@ -7,19 +7,22 @@
 //! after them, chunks of the same task are ≥ 60 min apart, and each day's
 //! task-block total stays ≤ `max_focus_hours_per_day`.
 //!
-//! `deadline_lead_hours` is a preference, not a wall: every task is first
-//! placed to finish that long before its deadline; only what doesn't fit
-//! there falls back to the time up to the deadline itself (after all tasks
-//! have had their lead-respecting turn). Nothing is placed after a deadline.
+//! `deadline_lead_hours` (default 2) is a preference, not a wall: every task
+//! is first placed to finish that long before its deadline; only what doesn't
+//! fit there falls back to the time up to the deadline itself (after all tasks
+//! have had their lead-respecting turn), and the plan carries a [`Squeeze`]
+//! warning for it. Nothing is placed after a deadline.
 //!
 //! Algorithm:
 //! 1. **Stable pass** — keep every existing future block that is still
 //!    feasible and still needed (pinned blocks always stay), then place what's
 //!    missing, tasks in earliest-deadline-first order (slack, then priority,
 //!    as tiebreaks).
-//! 2. If anything is short, a **fresh pass** replans from scratch (keeping
-//!    only pinned blocks); it's used only if it strictly reduces the total
-//!    shortfall. So blocks move only when that's required.
+//! 2. If anything is short, alternatives are tried — deadline-order fallback
+//!    (see `deadline_lead_hours` below) and a **fresh pass** from scratch
+//!    (keeping only pinned blocks) — and used only if they strictly reduce the
+//!    total shortfall (then squeezed minutes). So blocks move only when that's
+//!    required.
 //! 3. Each chunk goes on the earliest day with room; within that day the
 //!    start with the best preferred-window fit wins (earliest on ties).
 //!
@@ -72,6 +75,19 @@ pub struct Shortfall {
     pub options: Vec<String>,
 }
 
+/// A task with work planned inside its deadline lead (the last
+/// `deadline_lead_hours` before it's due): it fits, but only just.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Squeeze {
+    pub task_id: String,
+    pub title: String,
+    pub due: Due,
+    /// Minutes of work planned inside the lead.
+    pub squeezed_min: u32,
+    pub lead_hours: u16,
+    pub message: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct Plan {
     /// Existing blocks that stay where they are.
@@ -81,6 +97,9 @@ pub struct Plan {
     /// Existing blocks to delete.
     pub delete: Vec<Block>,
     pub shortfalls: Vec<Shortfall>,
+    /// Tasks whose (non-pinned) blocks run into their deadline lead.
+    #[serde(default)]
+    pub squeezed: Vec<Squeeze>,
     /// Existing blocks whose time changed (deleted and not replaced 1:1).
     pub moved: usize,
 }
@@ -395,7 +414,10 @@ fn find_chunk(g: &Grid<'_>, st: &State, n: &Need<'_>, remaining: usize, limit: u
     None
 }
 
-fn run(input: &PlanInput<'_>, g: &Grid<'_>, horizon_idx: usize, keep_existing: bool) -> (Plan, u32) {
+/// `lead_first`: every task's lead-respecting turn before any fallback
+/// (fewest squeezes); otherwise each task falls back right after its own turn,
+/// in deadline order (urgent work first, which can avoid a shortfall).
+fn run(input: &PlanInput<'_>, g: &Grid<'_>, horizon_idx: usize, keep_existing: bool, lead_first: bool) -> (Plan, u32) {
     let mut st = State {
         usable: g.usable.clone(),
         taken: vec![false; g.n],
@@ -460,30 +482,37 @@ fn run(input: &PlanInput<'_>, g: &Grid<'_>, horizon_idx: usize, keep_existing: b
         }
     }
 
-    // Pass 1 honours each task's deadline lead; pass 2 lets what's left run
-    // up to the deadline itself.
+    // Each task gets a turn honouring its deadline lead (soft) and one that
+    // may run up to the deadline itself; `lead_first` decides the order.
+    let turns: Vec<(usize, bool)> = if lead_first {
+        [true, false]
+            .into_iter()
+            .flat_map(|soft| (0..needs.len()).map(move |k| (k, soft)))
+            .collect()
+    } else {
+        (0..needs.len()).flat_map(|k| [(k, true), (k, false)]).collect()
+    };
     let mut total_short = 0u32;
-    for soft in [true, false] {
-        for n in &needs {
-            let limit = if soft { n.deadline_idx } else { n.hard_idx };
-            let Some(rem) = remaining.get_mut(n.task.id.as_str()) else {
-                continue;
-            };
-            while *rem > 0 {
-                match find_chunk(g, &st, n, *rem, limit) {
-                    Some((i, len)) => {
-                        st.place(g, &n.task.id, i, len);
-                        plan.create.push(Block {
-                            uid: None,
-                            task_id: n.task.id.clone(),
-                            start: g.at(i),
-                            end: g.at(i + len),
-                            pinned: false,
-                        });
-                        *rem -= len;
-                    }
-                    None => break,
+    for (k, soft) in turns {
+        let n = &needs[k];
+        let limit = if soft { n.deadline_idx } else { n.hard_idx };
+        let Some(rem) = remaining.get_mut(n.task.id.as_str()) else {
+            continue;
+        };
+        while *rem > 0 {
+            match find_chunk(g, &st, n, *rem, limit) {
+                Some((i, len)) => {
+                    st.place(g, &n.task.id, i, len);
+                    plan.create.push(Block {
+                        uid: None,
+                        task_id: n.task.id.clone(),
+                        start: g.at(i),
+                        end: g.at(i + len),
+                        pinned: false,
+                    });
+                    *rem -= len;
                 }
+                None => break,
             }
         }
     }
@@ -515,7 +544,45 @@ fn run(input: &PlanInput<'_>, g: &Grid<'_>, horizon_idx: usize, keep_existing: b
     plan.keep.sort_by_key(|b| b.start);
     plan.create.sort_by_key(|b| b.start);
     plan.delete.sort_by_key(|b| b.start);
+    plan.squeezed = squeezes(input, g, &needs, &plan);
     (plan, total_short)
+}
+
+/// Warn about every task with future, non-pinned work inside its deadline lead.
+fn squeezes(input: &PlanInput<'_>, g: &Grid<'_>, needs: &[Need<'_>], plan: &Plan) -> Vec<Squeeze> {
+    let mut out = Vec::new();
+    for n in needs {
+        let Some(due) = n.task.due else { continue };
+        let lead_from = g.at(n.deadline_idx);
+        let mins: i64 = plan
+            .keep
+            .iter()
+            .chain(&plan.create)
+            .filter(|b| b.task_id == n.task.id && !b.pinned && b.end > input.now && b.end > lead_from)
+            .map(|b| (b.end - b.start.max(lead_from)).num_minutes().max(0))
+            .sum();
+        if mins == 0 {
+            continue;
+        }
+        let instant = due.instant(input.tz);
+        let lead_hours =
+            g.c.profile_for(instant.with_timezone(&input.tz).date_naive())
+                .map_or(2, |p| p.deadline_lead_hours);
+        out.push(Squeeze {
+            task_id: n.task.id.clone(),
+            title: n.task.title.clone(),
+            due,
+            squeezed_min: mins as u32,
+            lead_hours,
+            message: format!(
+                "{}: {} squeezed into the last {lead_hours} h before {} (no room earlier)",
+                n.task.title,
+                fmt_hours(mins as u32),
+                due.describe(input.tz)
+            ),
+        });
+    }
+    out
 }
 
 fn fmt_hours(min: u32) -> String {
@@ -577,12 +644,25 @@ pub fn plan(input: &PlanInput<'_>) -> Plan {
     let g = Grid::build(input, horizon_end);
     let horizon_idx = g.idx(horizon).clamp(0, g.n as i64) as usize;
     let horizon_idx = horizon_idx.max(latest_due.map(|d| g.idx(d).clamp(0, g.n as i64) as usize).unwrap_or(0));
-    let (stable, short_a) = run(input, &g, horizon_idx, true);
-    if short_a == 0 {
+    let (stable, short) = run(input, &g, horizon_idx, true, true);
+    if short == 0 {
         return stable;
     }
-    let (fresh, short_b) = run(input, &g, horizon_idx, false);
-    if short_b < short_a { fresh } else { stable }
+    // Short: try deadline-order fallback and/or a fresh start; a candidate
+    // wins only if strictly better on (shortfall, squeezed minutes), so the
+    // stable plan stays on ties.
+    let squeeze = |p: &Plan| p.squeezed.iter().map(|s| s.squeezed_min).sum::<u32>();
+    let mut best_key = (short, squeeze(&stable));
+    let mut best = stable;
+    for (keep, lead_first) in [(true, false), (false, true), (false, false)] {
+        let (p, short) = run(input, &g, horizon_idx, keep, lead_first);
+        let key = (short, squeeze(&p));
+        if key < best_key {
+            best_key = key;
+            best = p;
+        }
+    }
+    best
 }
 
 #[cfg(test)]

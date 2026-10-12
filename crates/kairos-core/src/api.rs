@@ -4,7 +4,7 @@
 use crate::changeset::WriteResult;
 use crate::dates::{self, When};
 use crate::model::Instance;
-use crate::sched::Shortfall;
+use crate::sched::{Shortfall, Squeeze};
 use crate::task::{Due, Task};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use chrono_tz::Tz;
@@ -234,6 +234,9 @@ pub struct PlanResp {
     pub kept: usize,
     pub moved: usize,
     pub shortfalls: Vec<Shortfall>,
+    /// Tasks that fit only by running into their deadline lead.
+    #[serde(default)]
+    pub squeezed: Vec<Squeeze>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub changeset: Option<WriteResult>,
     pub summary: String,

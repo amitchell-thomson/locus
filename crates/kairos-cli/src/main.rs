@@ -1026,6 +1026,9 @@ fn print_plan(p: &Paint, r: &api::PlanResp, tz: Tz) {
             println!("      {}", p.dim(&format!("· {o}")));
         }
     }
+    for s in &r.squeezed {
+        println!("  {} {}", p.bold(Rgb::mocha("yellow"), "⚠"), s.message);
+    }
 }
 
 fn task(ctx: &Ctx, p: &Paint, cmd: TaskCmd) -> Result<()> {
@@ -1198,7 +1201,7 @@ fn checkin(ctx: &Ctx, p: &Paint) -> Result<()> {
                 actual_min: actual,
             })?
             .map_err(|e| anyhow!("{e}"))?;
-        if !r.created.is_empty() || !r.shortfalls.is_empty() {
+        if !r.created.is_empty() || !r.shortfalls.is_empty() || !r.squeezed.is_empty() {
             print_plan(p, &r, ctx.tz);
         }
     }

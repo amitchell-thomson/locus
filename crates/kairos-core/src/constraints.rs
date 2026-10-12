@@ -118,7 +118,7 @@ fn default_buffer_loc() -> u16 {
     30
 }
 fn default_lead() -> u16 {
-    12
+    2
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

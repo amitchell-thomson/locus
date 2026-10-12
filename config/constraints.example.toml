@@ -42,7 +42,7 @@ buffer_location_change_minutes = 30
 no_schedule = [
   { days = ["sat"], start = "18:00", end = "24:00" },
 ]
-deadline_lead_hours = 12   # aim to finish this early; falls back to the deadline itself if there is no room
+deadline_lead_hours = 2   # aim to finish this early; work squeezed into the last 2 h is allowed but warned about
 
 # Fallback (no dates): everything outside term.
 [[profiles]]
@@ -60,4 +60,4 @@ buffer_location_change_minutes = 30
 no_schedule = [
   { days = ["sat", "sun"], start = "00:00", end = "24:00" },
 ]
-deadline_lead_hours = 12   # aim to finish this early; falls back to the deadline itself if there is no room
+deadline_lead_hours = 2   # aim to finish this early; work squeezed into the last 2 h is allowed but warned about

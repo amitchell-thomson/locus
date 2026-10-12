@@ -166,27 +166,24 @@ fn infeasible_reports_shortfall_never_overbooks() {
 
 #[test]
 fn deadline_today() {
-    // Due 23:00 today, 12 h lead → aim to finish by 11:00. Without lectures
-    // that fits in the morning, preferring the 09:00 deep-work window.
+    // Due 23:00 today, 2 h lead → aim to finish by 21:00. Placed the same
+    // morning, preferring the 09:00 deep-work window; no squeeze.
     let tasks = [task("today", 60, Some("2026-10-12 23:00"))];
     let p = run_plan("2026-10-12 08:00", &tasks, &[], &[]);
-    assert!(p.shortfalls.is_empty(), "{:?}", p.shortfalls);
+    assert!(p.shortfalls.is_empty() && p.squeezed.is_empty(), "{p:?}");
     assert_eq!(local(p.create[0].start), "Mon 12 09:00");
-    assert!(p.create[0].end <= at("2026-10-12 11:00"));
-    // With lectures the morning is gone (08:30–08:50 is too short after the
-    // buffer), so it falls back past the lead to the first free afternoon slot.
+    // With lectures it still fits well before 21:00.
     let p = run_plan("2026-10-12 08:00", &tasks, &lectures(), &[]);
-    assert!(p.shortfalls.is_empty(), "{:?}", p.shortfalls);
+    assert!(p.shortfalls.is_empty() && p.squeezed.is_empty(), "{p:?}");
     assert_eq!(total(&p, "today"), 60);
-    assert_eq!(local(p.create[0].start), "Mon 12 11:15");
     check_invariants(at("2026-10-12 08:00"), &tasks, &lectures(), &p).unwrap();
 }
 
 #[test]
 fn lead_is_a_preference_not_a_wall() {
     // The 2026-10-12 case: tasks made at 13:43 for 20:00 and 23:59 the same
-    // day. The 12 h lead (08:00 / 11:59) had already passed, which used to
-    // mean "short" despite a free evening.
+    // day. A 12 h lead (08:00 / 11:59) had already passed, which used to mean
+    // "short" despite a free evening.
     let tasks = [
         task("populate", 30, Some("2026-10-12 20:00")),
         task("furniture", 60, Some("2026-10-12 23:59")),
@@ -196,6 +193,8 @@ fn lead_is_a_preference_not_a_wall() {
     assert!(p.shortfalls.is_empty(), "{:?}", p.shortfalls);
     assert_eq!(total(&p, "populate"), 30);
     assert_eq!(total(&p, "furniture"), 60);
+    // Both fit outside their 2 h leads (by 18:00 / 21:45): no warning.
+    assert!(p.squeezed.is_empty(), "{:?}", p.squeezed);
     for b in &p.create {
         assert!(b.start >= at("2026-10-12 16:10"), "{}", local(b.start));
     }
@@ -204,31 +203,78 @@ fn lead_is_a_preference_not_a_wall() {
 
 #[test]
 fn lead_still_preferred_when_there_is_room() {
-    // Due Wed 17:00: Mon and Tue are free, so nothing lands in the last 12 h.
+    // Due Wed 17:00: nothing lands in the last 2 h (from 15:00).
     let tasks = [task("t", 4 * 60, Some("2026-10-14 17:00"))];
     let p = run_plan("2026-10-12 08:00", &tasks, &lectures(), &[]);
-    assert!(p.shortfalls.is_empty(), "{:?}", p.shortfalls);
+    assert!(p.shortfalls.is_empty() && p.squeezed.is_empty(), "{p:?}");
     for b in &p.create {
-        assert!(b.end <= at("2026-10-14 05:00"), "{}", local(b.end));
+        assert!(b.end <= at("2026-10-14 15:00"), "{}", local(b.end));
     }
 }
 
 #[test]
+fn squeeze_into_the_lead_is_warned() {
+    // Due 20:00; busy until 17:30, then dinner 18:45–19:30. Before the lead
+    // (18:00) there's only 17:40–18:00, too short for an unsplittable hour, so
+    // it lands in the last 2 h and the plan says so.
+    let mut t = task("essay", 60, Some("2026-10-12 20:00"));
+    t.title = "Essay".into();
+    t.splittable = false;
+    let tasks = [t];
+    let busy = [busy("2026-10-12 08:00", "2026-10-12 17:30")];
+    let p = run_plan("2026-10-12 08:00", &tasks, &busy, &[]);
+    assert!(p.shortfalls.is_empty(), "{:?}", p.shortfalls);
+    assert_eq!(total(&p, "essay"), 60);
+    assert_eq!(p.squeezed.len(), 1, "{p:?}");
+    let s = &p.squeezed[0];
+    assert_eq!(s.task_id, "essay");
+    assert_eq!(s.lead_hours, 2);
+    assert!(s.squeezed_min > 0);
+    assert!(
+        s.message.starts_with("Essay: ") && s.message.contains("squeezed into the last 2 h before Mon 12 Oct 20:00"),
+        "{}",
+        s.message
+    );
+    check_invariants(at("2026-10-12 08:00"), &tasks, &busy, &p).unwrap();
+    // The warning persists on a replan that keeps the block.
+    let p2 = run_plan("2026-10-12 08:00", &tasks, &busy, &as_existing(&p));
+    assert_eq!(p2.squeezed, p.squeezed);
+}
+
+#[test]
 fn lead_fallback_never_displaces_a_lead_respecting_task() {
-    // "a" (due Tue 17:00) only fits in Tue's last 12 h; "b" (due Tue 23:00)
-    // fits Mon. Fallback for "a" happens after everyone's lead pass, so "b"
-    // keeps its lead-respecting place.
-    // Monday is free only 08:30–12:30 (four hours); everything else Mon is busy.
-    let busy = vec![self::busy("2026-10-12 12:30", "2026-10-12 22:00")];
+    // "a" (due Mon 18:00, 3 h) runs into its lead; "b" (due Mon 23:00, 1 h)
+    // has the evening. The fallback for "a" doesn't push "b" into its own
+    // lead, and only "a" is warned about.
+    let busy = vec![self::busy("2026-10-12 08:00", "2026-10-12 13:30")];
     let tasks = [
-        task("a", 6 * 60, Some("2026-10-13 17:00")),
-        task("b", 2 * 60, Some("2026-10-13 23:00")),
+        task("a", 3 * 60, Some("2026-10-12 18:00")),
+        task("b", 60, Some("2026-10-12 23:00")),
     ];
     let p = run_plan("2026-10-12 08:00", &tasks, &busy, &[]);
     assert!(p.shortfalls.is_empty(), "{:?}", p.shortfalls);
     for b in p.create.iter().filter(|b| b.task_id == "b") {
-        assert!(b.end <= at("2026-10-13 11:00"), "b at {}", local(b.start));
+        assert!(b.end <= at("2026-10-12 21:00"), "b at {}", local(b.start));
     }
+    let warned: Vec<&str> = p.squeezed.iter().map(|s| s.task_id.as_str()).collect();
+    assert_eq!(warned, ["a"]);
+    check_invariants(at("2026-10-12 08:00"), &tasks, &busy, &p).unwrap();
+}
+
+#[test]
+fn urgent_task_is_not_left_short_to_spare_another_a_squeeze() {
+    // "a": 2 h unsplittable, due 18:00, free from 15:10 → only 15:15–17:15
+    // (inside its lead) works. "b": 1 h, due 22:00. Lead-first would give b
+    // 15:15 (earliest) and leave a short; the deadline-order fallback wins.
+    let mut a = task("a", 120, Some("2026-10-12 18:00"));
+    a.splittable = false;
+    let tasks = [a, task("b", 60, Some("2026-10-12 22:00"))];
+    let busy = vec![self::busy("2026-10-12 08:00", "2026-10-12 15:00")];
+    let p = run_plan("2026-10-12 08:00", &tasks, &busy, &[]);
+    assert!(p.shortfalls.is_empty(), "{:?}", p.shortfalls);
+    assert_eq!(total(&p, "a"), 120);
+    assert_eq!(total(&p, "b"), 60);
+    assert!(p.squeezed.iter().any(|s| s.task_id == "a"));
     check_invariants(at("2026-10-12 08:00"), &tasks, &busy, &p).unwrap();
 }
 

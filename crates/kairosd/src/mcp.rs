@@ -25,7 +25,7 @@ to read-only imports (Google feeds, holidays) are refused. You cannot approve ch
 let him approve in the TUI, CLI or on his phone. Every write returns {changeset_id, risk, status, summary}.\n\
 SCHEDULING: don't hand-place work blocks. Create/update tasks with an estimate and deadline and call plan; the \
 deterministic scheduler places blocks in free time and reports shortfalls (\"2.5 h short before Fri 17:00\") with \
-options — relay those honestly. Only create a specific block when Alec asks for a specific slot (create_event with \
+options, and squeezes (\"1 h squeezed into the last 2 h before Fri 17:00\": fits, but only just) — relay those honestly. Only create a specific block when Alec asks for a specific slot (create_event with \
 task_id makes a pinned block).\n\
 TIMES: ISO 8601 ('2026-10-16T17:00', with or without offset; Europe/London assumed) or plain dates for all-day; \
 natural forms like 'fri 17:00' also work but ambiguous input is rejected. Keys: Inbox (default), Engineering, \
@@ -668,7 +668,7 @@ impl KairosMcp {
     }
 
     #[tool(
-        description = "Run the scheduler over open tasks. Keeps existing blocks where possible; reports blocks moved and per-task shortfalls with options. dry_run previews without writing."
+        description = "Run the scheduler over open tasks. Keeps existing blocks where possible; reports blocks moved, per-task shortfalls with options, and tasks squeezed into the last hours before their deadline (deadline_lead_hours, default 2). dry_run previews without writing."
     )]
     async fn plan(&self, Parameters(a): Parameters<PlanArgs>) -> Result<CallToolResult, ErrorData> {
         self.run(move |e| e.plan(a.dry_run.unwrap_or(false), Author::Scheduler))

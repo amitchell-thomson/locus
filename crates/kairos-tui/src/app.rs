@@ -691,19 +691,16 @@ impl App {
         if let Some(r) = self.with_daemon(|d| d.plan(false)) {
             match r {
                 Ok(Ok(p)) => {
-                    let short = p
-                        .shortfalls
-                        .first()
-                        .map(|s| format!(" · ! {}", s.message))
-                        .unwrap_or_default();
+                    let warn = plan_warning(&p);
                     self.set_message(
                         format!(
-                            "plan: +{} −{} ({} moved){short}",
+                            "plan: +{} −{} ({} moved){}",
                             p.created.len(),
                             p.deleted.len(),
-                            p.moved
+                            p.moved,
+                            warn.clone().unwrap_or_default()
                         ),
-                        !p.shortfalls.is_empty(),
+                        warn.is_some(),
                     );
                     self.wants_sync = true;
                     self.refresh_remote();
@@ -981,11 +978,7 @@ impl App {
                 if let Some(r) = self.with_daemon(|d| d.create_task(&req)) {
                     match r {
                         Ok(Ok(t)) => {
-                            let short = t
-                                .plan
-                                .as_ref()
-                                .and_then(|p| p.shortfalls.first())
-                                .map(|s| format!(" · ! {}", s.message));
+                            let short = t.plan.as_ref().and_then(plan_warning);
                             self.set_message(
                                 format!("✓ task {}{}", t.task.title, short.clone().unwrap_or_default()),
                                 short.is_some(),
@@ -1189,6 +1182,14 @@ pub fn overlay_flags(app: &App) -> Vec<(String, String, bool, kairos_core::colou
 
 pub fn is_dimmed(i: &Instance) -> bool {
     matches!(i.overlay, Overlay::Imported | Overlay::Background) || i.tentative
+}
+
+/// The most important thing a plan has to say: a shortfall, else a squeeze.
+fn plan_warning(p: &api::PlanResp) -> Option<String> {
+    p.shortfalls
+        .first()
+        .map(|s| format!(" · ! {}", s.message))
+        .or_else(|| p.squeezed.first().map(|s| format!(" · ⚠ {}", s.message)))
 }
 
 pub fn is_deadline(i: &Instance) -> bool {

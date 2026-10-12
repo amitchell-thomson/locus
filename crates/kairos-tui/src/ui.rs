@@ -845,7 +845,10 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             } else {
                 String::new()
             };
-            let mut st = Style::default().fg(if due <= app.now {
+            // `Style::reset()`: the line is drawn over any event block in its
+            // row, and must not inherit that block's background (e.g. the blue
+            // of a selected event) or its bold.
+            let mut st = Style::reset().fg(if due <= app.now {
                 fade(c("red"), PAST_FADE)
             } else {
                 c("red")

@@ -341,3 +341,50 @@ fn selected_timed_deadline_is_a_red_block() {
     let s = render_to_string(&a, 100, 30);
     assert!(s.contains("⚑ 17:00 B4 sheet") && !s.contains("B4 sheet ━"), "{s}");
 }
+
+#[test]
+fn deadline_over_a_selected_event_stays_unhighlighted() {
+    use ratatui::{Terminal, backend::TestBackend};
+    // An event 16:30–17:30 under the 17:00 B4 deadline (the 2026-10-12 bug:
+    // selecting the event painted the deadline line blue too).
+    let t = tempfile::tempdir().unwrap();
+    let cfg = setup(t.path());
+    let ics = fixture("deadline_and_block.ics");
+    let head = &ics[..ics.find("BEGIN:VEVENT").unwrap()];
+    fs::write(
+        t.path().join("vdir/p1/under.ics"),
+        format!(
+            "{head}BEGIN:VEVENT\r\nUID:under@kairos.test\r\nDTSTAMP:20261001T000000Z\r\n\
+             DTSTART;TZID=Europe/London:20261023T163000\r\nDTEND;TZID=Europe/London:20261023T173000\r\n\
+             SUMMARY:Under\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+        ),
+    )
+    .unwrap();
+    let mut a = load(cfg, &t.path().join("config.toml"), now("2026-10-21T08:00:00+01:00")).unwrap();
+    a.key(Key::Tab);
+    a.key(Key::Char('l'));
+    a.key(Key::Char('l'));
+    a.sel = a
+        .day_clusters(a.cursor)
+        .iter()
+        .position(|c| c.primary.title == "Under")
+        .expect("Under on the day");
+    let mut term = Terminal::new(TestBackend::new(100, 30)).unwrap();
+    term.draw(|f| kairos_tui::ui::draw(f, &a)).unwrap();
+    let buf = term.backend().buffer();
+    let flag = (0..30u16)
+        .flat_map(|y| (0..100u16).map(move |x| (x, y)))
+        .find(|&(x, y)| buf[(x, y)].symbol() == "⚑" && buf[(x + 2, y)].symbol() == "1")
+        .expect("timed deadline drawn");
+    assert_ne!(
+        buf[flag].bg,
+        kairos_tui::ui::c("blue"),
+        "deadline took the selection's blue"
+    );
+    // The selected event itself is still blue.
+    let under = (0..30u16)
+        .flat_map(|y| (0..100u16).map(move |x| (x, y)))
+        .find(|&(x, y)| buf[(x, y)].symbol() == "U" && buf[(x + 1, y)].symbol() == "n")
+        .expect("event drawn");
+    assert_eq!(buf[under].bg, kairos_tui::ui::c("blue"));
+}

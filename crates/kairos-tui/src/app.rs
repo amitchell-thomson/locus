@@ -1529,11 +1529,12 @@ pub fn overlay_flags(app: &App) -> Vec<(String, String, bool, kairos_core::colou
             names.join("+")
         }
     };
-    // Personal and its keys form group 0 (drawn as "p Personal ▸ 1 Inbox …"),
-    // Family group 1, read-only feeds group 2.
+    // Alec's own calendars form group 0, "Private" (drawn as "p Private ▸
+    // 1 Personal …"; not "Personal", which is also key 1's name), Family
+    // group 1, read-only feeds group 2.
     let mut v = vec![(
         "p".to_string(),
-        "Personal".to_string(),
+        "Private".to_string(),
         app.filter.personal,
         kairos_core::colour::Rgb::mocha("lavender"),
         0,

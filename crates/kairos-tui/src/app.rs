@@ -604,7 +604,23 @@ impl App {
                     Key::Char('d') => {
                         if let Some(r) = self.with_daemon(|d| d.complete_task(&t.id, None)) {
                             match r {
-                                Ok(Ok(_)) => {
+                                Ok(Ok(r)) => {
+                                    if r.changesets.first().is_some_and(|w| w.status == Status::Applied) {
+                                        let now = self.now;
+                                        let gone: Vec<String> = self
+                                            .index
+                                            .instances
+                                            .iter()
+                                            .filter(|i| {
+                                                i.meta.task_id.as_deref() == Some(t.id.as_str())
+                                                    && i.start(self.tz) >= now
+                                            })
+                                            .map(|i| i.uid.clone())
+                                            .collect();
+                                        for uid in gone {
+                                            self.patch_local(&uid, |_| false);
+                                        }
+                                    }
                                     self.set_message(format!("✓ done: {}", t.title), false);
                                     self.wants_sync = true;
                                     self.refresh_remote();
@@ -749,17 +765,48 @@ impl App {
                 }
             }
             Confirm::DropTask(id) => {
-                if let Some(r) = self.with_daemon(|d| d.drop_task(&id)) {
-                    match r {
-                        Ok(Ok(t)) => {
-                            if let Some(w) = t.changesets.into_iter().next() {
-                                self.write_result(Ok(Ok(w)));
-                            }
-                        }
-                        Ok(Err(e)) => self.set_message(e.to_string(), true),
-                        Err(e) => self.set_message(e.to_string(), true),
-                    }
+                if self.daemon.is_none() {
+                    return self.set_message("kairosd not configured — writes unavailable", true);
                 }
+                // Its blocks leave the grid at once; back they come if the
+                // drop is refused or waits for approval.
+                let now = self.now;
+                let blocks: Vec<Instance> = self
+                    .index
+                    .instances
+                    .iter()
+                    .filter(|i| i.meta.task_id.as_deref() == Some(id.as_str()) && i.end(self.tz) > now)
+                    .cloned()
+                    .collect();
+                for b in &blocks {
+                    self.patch_local(&b.uid, |_| false);
+                }
+                self.deferred.push(Box::new(move |app: &mut App| {
+                    let Some(r) = app.with_daemon(|d| d.drop_task(&id)) else {
+                        return;
+                    };
+                    let applied = match r {
+                        Ok(Ok(t)) => t
+                            .changesets
+                            .into_iter()
+                            .next()
+                            .is_some_and(|w| app.write_result(Ok(Ok(w)))),
+                        Ok(Err(e)) => {
+                            app.set_message(e.to_string(), true);
+                            false
+                        }
+                        Err(e) => {
+                            app.set_message(e.to_string(), true);
+                            false
+                        }
+                    };
+                    if !applied {
+                        for b in blocks {
+                            let uid = b.uid.clone();
+                            app.unpatch(Some(b), &uid);
+                        }
+                    }
+                }));
             }
         }
     }

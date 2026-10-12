@@ -1561,16 +1561,15 @@ impl Engine {
         t.status = TaskStatus::Done;
         t.remaining_min = 0;
         t.updated_at = self.now();
-        let world = self.world(60)?;
-        let cs = self.propose(
-            &world,
-            author,
-            vec![Op::UpdateTask {
-                before: Box::new(before.clone()),
-                after: Box::new(t.clone()),
-            }],
-            format!("Complete {:?}", t.title),
-        )?;
+        let world = self.world(i64::from(self.constraints.horizon_days) + 60)?;
+        // Blocks not started yet (pinned too) are no longer needed.
+        let now = self.now();
+        let mut ops = vec![Op::UpdateTask {
+            before: Box::new(before.clone()),
+            after: Box::new(t.clone()),
+        }];
+        ops.extend(self.block_deletes(&world, &t.id, |b| b.start >= now)?);
+        let cs = self.propose(&world, author, ops, format!("Complete {:?}", t.title))?;
         let actual = actual_min.unwrap_or_else(|| self.actual_minutes(&t.id).unwrap_or(t.estimate_min));
         self.db.estimate_log(&EstimateRow {
             task_id: t.id.clone(),
@@ -1606,21 +1605,53 @@ impl Engine {
         let mut t = before.clone();
         t.status = TaskStatus::Dropped;
         t.updated_at = self.now();
-        let world = self.world(60)?;
-        let cs = self.propose(
-            &world,
-            author,
-            vec![Op::UpdateTask {
-                before: Box::new(before),
-                after: Box::new(t.clone()),
-            }],
-            format!("Drop task {:?}", t.title),
-        )?;
+        let world = self.world(i64::from(self.constraints.horizon_days) + 60)?;
+        // The task and every block still ahead of it (pinned and in-progress
+        // ones too) go in one changeset: one approval, one undo.
+        let now = self.now();
+        let mut ops = vec![Op::UpdateTask {
+            before: Box::new(before),
+            after: Box::new(t.clone()),
+        }];
+        ops.extend(self.block_deletes(&world, &t.id, |b| b.end > now)?);
+        let n = ops.len() - 1;
+        let summary = match n {
+            0 => format!("Drop task {:?}", t.title),
+            1 => format!("Drop task {:?} and its scheduled block", t.title),
+            n => format!("Drop task {:?} and its {n} scheduled blocks", t.title),
+        };
+        let cs = self.propose(&world, author, ops, summary)?;
+        let plan = if cs.status == Status::Applied {
+            Some(self.plan(false, Author::Scheduler)?)
+        } else {
+            None
+        };
         Ok(api::TaskResp {
             task: t,
             changesets: vec![WriteResult::from(&cs)],
-            plan: None,
+            plan,
         })
+    }
+
+    /// Delete ops for a task's blocks that match `want`.
+    fn block_deletes(&self, world: &World, task_id: &str, want: impl Fn(&Block) -> bool) -> Result<Vec<Op>> {
+        let mut ops = Vec::new();
+        for (b, _) in self.blocks(world) {
+            if b.task_id != task_id || !want(&b) {
+                continue;
+            }
+            let Some(uid) = &b.uid else { continue };
+            let loc = self.locate(world, None, uid)?;
+            ops.push(Op::DeleteEvent {
+                item: Item {
+                    source: loc.source.id.clone(),
+                    href: loc.href.clone(),
+                },
+                uid: uid.clone(),
+                before: loc.text,
+            });
+        }
+        Ok(ops)
     }
 
     // ------------------------------------------------------------ scheduling

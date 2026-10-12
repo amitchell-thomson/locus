@@ -616,11 +616,12 @@ fn complete_task_removes_future_blocks() {
     let env = Env::new(true);
     let mut e = env.engine();
     let r = e.create_task(Author::Claude, &b4(240, "fri 17:00")).unwrap();
-    let n = r.plan.unwrap().created.len();
+    assert!(blocks_of(&mut e, &r.task.id) > 0);
     let done = e.complete_task(Author::Alec, &r.task.id, Some(200)).unwrap();
     assert_eq!(done.task.status, TaskStatus::Done);
-    let p = done.plan.unwrap();
-    assert_eq!(p.deleted.len(), n);
+    assert_eq!(done.changesets[0].status, Status::Applied);
+    // The blocks go with the completion itself (one undo restores them).
+    assert_eq!(blocks_of(&mut e, &r.task.id), 0);
     assert_eq!(e.db.estimates().unwrap()[0].actual_min, 200);
 }
 
@@ -634,9 +635,56 @@ fn dropping_a_task_needs_approval() {
     assert_eq!(e.db.task_get(&r.task.id).unwrap().unwrap().status, TaskStatus::Open);
     e.approve(&d.changesets[0].changeset_id).unwrap();
     assert_eq!(e.db.task_get(&r.task.id).unwrap().unwrap().status, TaskStatus::Dropped);
-    // Approval replans: the dropped task's blocks are gone.
-    let world = e.world(14).unwrap();
-    assert!(!world.instances.iter().any(|i| i.meta.kind == EventKind::TaskBlock && i.start(chrono_tz::Europe::London) > at("2026-10-12 09:00")));
+    // Approving removes every one of its blocks.
+    assert_eq!(blocks_of(&mut e, &r.task.id), 0);
+}
+
+fn blocks_of(e: &mut kairosd::engine::Engine, task_id: &str) -> usize {
+    e.world(30)
+        .unwrap()
+        .instances
+        .iter()
+        .filter(|i| i.meta.kind == EventKind::TaskBlock && i.meta.task_id.as_deref() == Some(task_id))
+        .count()
+}
+
+#[test]
+fn dropping_a_task_removes_all_its_blocks_at_once() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e.create_task(Author::Claude, &b4(240, "fri 17:00")).unwrap();
+    let id = r.task.id.clone();
+    // A pinned block Alec placed himself goes too.
+    e.create_event(
+        Author::Alec,
+        &CreateEventReq {
+            title: "B4 problem sheet".into(),
+            start: "2026-10-15T19:00".into(),
+            duration_min: Some(60),
+            key: Some("Engineering".into()),
+            task_id: Some(id.clone()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let n = blocks_of(&mut e, &id);
+    assert!(n >= 2, "{n}");
+    // Alec drops it in the TUI: applies directly, one changeset.
+    e.direct = true;
+    let d = e.drop_task(Author::Alec, &id).unwrap();
+    e.direct = false;
+    assert_eq!(d.changesets.len(), 1);
+    assert_eq!(d.changesets[0].status, Status::Applied);
+    assert!(
+        d.changesets[0].summary.contains(&format!("{n} scheduled blocks")),
+        "{}",
+        d.changesets[0].summary
+    );
+    assert_eq!(blocks_of(&mut e, &id), 0);
+    // One undo brings the task and every block back.
+    e.undo(&d.changesets[0].changeset_id).unwrap();
+    assert_eq!(e.db.task_get(&id).unwrap().unwrap().status, TaskStatus::Open);
+    assert_eq!(blocks_of(&mut e, &id), n);
 }
 
 #[test]

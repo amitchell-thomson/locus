@@ -281,6 +281,32 @@ pub fn wrap_first_narrow(s: &str, w0: usize, w: usize, rows: usize) -> Vec<Strin
     out
 }
 
+/// "task: 30m of 1h done · 30m left · no deadline" for a work block's task.
+fn task_progress(app: &App, i: &Instance) -> Option<String> {
+    let id = i.meta.task_id.as_deref()?;
+    if let Some(t) = app.tasks.iter().find(|t| t.id == id) {
+        let done = t.estimate_min.saturating_sub(t.remaining_min);
+        let f = |m: u32| crate::form::fmt_minutes(i64::from(m));
+        let due = t
+            .due
+            .map_or_else(|| "no deadline".to_string(), |d| format!("due {}", d.describe(app.tz)));
+        let left = if t.remaining_min == 0 {
+            "planned time used up".to_string()
+        } else {
+            format!("{} left", f(t.remaining_min))
+        };
+        return Some(format!(
+            "task: {} of {} done · {left} · {due}",
+            f(done),
+            f(t.estimate_min)
+        ));
+    }
+    app.done_tasks
+        .iter()
+        .find(|t| t.id == id)
+        .map(|_| "task finished ✓".to_string())
+}
+
 /// One line describing an event, for the week view's bottom edge.
 fn peek(app: &App, cl: &Cluster) -> String {
     let i = &cl.primary;
@@ -295,6 +321,16 @@ fn peek(app: &App, cl: &Cluster) -> String {
         ),
     };
     let mut parts = vec![when, label(i)];
+    // Work for a task: where the task stands, not just this block.
+    if i.meta.kind == EventKind::TaskBlock
+        && let Some(info) = task_progress(app, i)
+    {
+        parts.push(info);
+        if let Some(r) = app.squeeze_of(i) {
+            parts.push(format!("⚠ squeezed {}", r.join(", ")));
+        }
+        return parts.join(" · ");
+    }
     if i.meta.kind == EventKind::Proposal {
         parts.push("proposed project time: y accept · d drop".into());
         return parts.join(" · ");
@@ -823,6 +859,10 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             if let Some(bg) = hl {
                 style = Style::default().fg(c("base")).bg(bg).add_modifier(Modifier::BOLD);
             }
+            // Work for a task: italic (and a dashed edge while kairos may move it).
+            if i.meta.kind == EventKind::TaskBlock {
+                style = style.add_modifier(Modifier::ITALIC);
+            }
             let t = i.start(tz).with_timezone(&tz);
             // Text area: lane minus the ▌ bar and a gap column.
             let tw = lane_w.saturating_sub(2) as usize;
@@ -1109,6 +1149,11 @@ fn month(f: &mut Frame, app: &App, area: Rect) {
                 } else {
                     Style::default().fg(col)
                 };
+                let st = if i.meta.kind == EventKind::TaskBlock {
+                    st.add_modifier(Modifier::ITALIC)
+                } else {
+                    st
+                };
                 put(
                     buf,
                     x,
@@ -1216,6 +1261,11 @@ fn event_line(app: &App, cl: &Cluster, selected: bool, width: usize) -> Line<'st
         Style::default().fg(c("overlay1"))
     } else {
         Style::default().fg(c("text"))
+    };
+    let base = if i.meta.kind == EventKind::TaskBlock {
+        base.add_modifier(Modifier::ITALIC)
+    } else {
+        base
     };
     let room = width.saturating_sub(when.width() + 4 + meta.width());
     Line::from(vec![

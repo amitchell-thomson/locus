@@ -668,3 +668,30 @@ fn month_view_cycles_in_with_tab() {
     a.key(Key::Tab);
     assert_eq!(a.view, View::Week);
 }
+
+#[test]
+fn work_blocks_are_italic_and_say_where_their_task_stands() {
+    use ratatui::{Terminal, backend::TestBackend, style::Modifier};
+    let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
+    a.key(Key::Tab); // day view
+    let mut t = Task::new("B4 sheet", "Personal", 240, Author::Claude, now("2026-10-12T08:00:00Z"));
+    t.id = "task-b4".into();
+    t.remaining_min = 150;
+    a.tasks = vec![t];
+    a.sel = a
+        .day_clusters(a.cursor)
+        .iter()
+        .position(|c| c.primary.meta.task_id.as_deref() == Some("task-b4"))
+        .unwrap();
+    let s = render_to_string(&a, 130, 30);
+    assert!(s.contains("task: 1h30 of 4h done · 2h30 left · no deadline"), "{s}");
+    a.sel = usize::from(a.sel == 0); // something else selected, so the block isn't highlighted
+    let mut term = Terminal::new(TestBackend::new(130, 30)).unwrap();
+    term.draw(|f| kairos_tui::ui::draw(f, &a)).unwrap();
+    let buf = term.backend().buffer().clone();
+    let at = (0..30u16)
+        .flat_map(|y| (0..129u16).map(move |x| (x, y)))
+        .find(|&(x, y)| buf[(x, y)].symbol() == "┆" && buf[(x + 1, y)].symbol() == "B")
+        .unwrap();
+    assert!(buf[(at.0 + 1, at.1)].modifier.contains(Modifier::ITALIC));
+}

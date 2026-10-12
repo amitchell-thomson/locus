@@ -193,6 +193,7 @@ Deterministic Rust code. Claude's job is to interpret intent, create and update 
 - Evening check-in (ntfy, Phase 8; TUI prompt before then) lists today's blocks with done / partial / missed.
 - With no answer by 09:00 the next day, blocks count as done (configurable).
 - Missed or partial time returns to `remaining` and triggers a replan.
+- The calendar shows what happened (2026-10-13): a done block gets `✓` in its title, a partial one is trimmed to the time actually done (and ticked), a missed one is removed. Written to the event (the phone sees it too); low-risk record keeping (`risk::is_checkin_record_op`). A work block that has started can't be moved — check in instead.
 - Done time uses up the estimate at the learned rate (with sheets at ×1.5, 90 min of work uses 60 min of the estimate).
 - **Tasks never finish by themselves** (2026-10-12): at 0 remaining a task stays open; the check-in on the block that uses it up (and every coursework block) asks "how much is left? (0 = finished)", the TUI tasks view shows "planned time used up — d finished · + more time", the morning summary lists it, and Claude is told to ask.
 - Log estimate vs. actual per task (only for tasks Alec finished — not guesses) for the learned estimates.
@@ -244,7 +245,7 @@ Requirements:
   - `u` undoes Alec's (or Claude's) last change together with the replan it caused; `/` search, `?` help.
 - **Rendering:**
   - deadlines: all-day ones in the top strip; timed ones as a `⚑` marker line at their time;
-  - work blocks: a dashed left edge `┆` = a scheduler slot (kairos may move it); solid `▌` = an event or a block Alec placed himself;
+  - work blocks: italic titles; a dashed left edge `┆` = a scheduler slot (kairos may move it); solid `▌` = an event or a block Alec placed himself. The bottom edge of a selected work block says where its task stands ("task: 30m of 1h done · 30m left · no deadline");
   - duplicate badge `⧉`; proposed project time greyed `◌ …?`;
   - pending changes shown as ghost blocks with a diff in the approvals pane.
 - Task edits carry through: a renamed / re-keyed task renames / moves its blocks and ⚑; finishing a task removes its ⚑ (if still ahead), dropping removes it always.

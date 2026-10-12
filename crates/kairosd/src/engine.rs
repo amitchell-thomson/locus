@@ -1176,6 +1176,12 @@ impl Engine {
                 Some(self.parse_span(&start, e.as_deref(), d)?)
             }
         };
+        // A work block that has started is history: check in instead.
+        if time.is_some() && master.meta.kind == EventKind::TaskBlock && master.start.instant(tz) <= self.now() {
+            return Err(EngineError::BadRequest(
+                "that work block has already started — check in on it (C) instead of moving it".into(),
+            ));
+        }
         // Moving a work block by hand pins it: the scheduler won't move it back.
         let meta = (time.is_some() && master.meta.kind == EventKind::TaskBlock).then(|| {
             let mut m = master.meta.clone();
@@ -2365,6 +2371,69 @@ impl Engine {
             t.updated_at = self.now();
             self.db.task_put(&t)?;
         }
+        self.record_checkin(uid, b, outcome, actual)?;
+        Ok(())
+    }
+
+    /// Make the calendar show what happened to a checked-in block: `✓` in
+    /// its title (trimmed to the time actually done), or gone if missed (that
+    /// time is planned again elsewhere).
+    fn record_checkin(&mut self, uid: &str, b: &Block, outcome: Outcome, actual: u32) -> Result<()> {
+        let world = self.world(2)?;
+        let Ok(loc) = self.locate(&world, None, uid) else {
+            return Ok(());
+        };
+        let title = loc
+            .series
+            .master
+            .as_ref()
+            .map(|m| m.summary.clone())
+            .unwrap_or_default();
+        let item = Item {
+            source: loc.source.id.clone(),
+            href: loc.href.clone(),
+        };
+        let (op, what) = match outcome {
+            Outcome::Missed => (
+                Op::DeleteEvent {
+                    item,
+                    uid: uid.into(),
+                    before: loc.text,
+                },
+                "missed",
+            ),
+            Outcome::Done | Outcome::Partial => {
+                let planned = b.minutes().max(0);
+                let edit = Edit {
+                    title: (!title.starts_with('✓')).then(|| format!("✓ {title}")),
+                    time: (actual > 0 && i64::from(actual) < planned).then(|| NewTime::Timed {
+                        start: b.start,
+                        end: b.start + Duration::minutes(i64::from(actual)),
+                    }),
+                    ..Default::default()
+                };
+                if edit.title.is_none() && edit.time.is_none() {
+                    return Ok(());
+                }
+                let after = build::edit_file(&loc.text, uid, &edit, self.tz(), self.now())
+                    .map_err(|e| EngineError::BadRequest(e.to_string()))?;
+                (
+                    Op::UpdateEvent {
+                        item,
+                        uid: uid.into(),
+                        before: loc.text,
+                        after,
+                    },
+                    if outcome == Outcome::Done {
+                        "done"
+                    } else {
+                        "partly done"
+                    },
+                )
+            }
+        };
+        let summary = format!("Check-in: {:?} {what}", title.trim_start_matches("✓ "));
+        self.propose(&world, Author::Scheduler, vec![op], summary)?;
         Ok(())
     }
 

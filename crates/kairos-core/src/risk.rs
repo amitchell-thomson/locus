@@ -135,9 +135,24 @@ pub fn is_scheduler_block_op(op: &OpFacts) -> bool {
 
 /// `finishing`: the changeset completes or drops a task, so deleting a
 /// deadline in it is that task's own ⚑ going (not a deadline being lost).
+/// Recording a check-in on a work block that has started: ✓ in its title,
+/// trimmed to the time actually done, or removed if missed. History, not a
+/// plan — low-risk (the block itself was kairos's).
+pub fn is_checkin_record_op(op: &OpFacts, now: DateTime<Utc>) -> bool {
+    matches!(op.action, Action::Update | Action::Delete)
+        && op
+            .before
+            .as_ref()
+            .is_some_and(|b| b.kind == EventKind::TaskBlock && b.created_by.is_some() && !b.recurring && b.start <= now)
+        && op
+            .after
+            .as_ref()
+            .is_none_or(|a| a.kind == EventKind::TaskBlock && a.start <= now && !op.overlaps_fixed)
+}
+
 fn high_reasons(op: &OpFacts, now: DateTime<Utc>, finishing: bool) -> Vec<String> {
     let mut r = Vec::new();
-    if is_scheduler_block_op(op) {
+    if is_scheduler_block_op(op) || is_checkin_record_op(op, now) {
         return r;
     }
     let imgs: Vec<&EventFacts> = [&op.before, &op.after].into_iter().flatten().collect();

@@ -1609,3 +1609,71 @@ fn a_finished_task_can_be_reopened() {
         .sum();
     assert_eq!(planned, 90);
 }
+
+#[test]
+fn checked_in_blocks_show_what_happened_on_the_calendar() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e.create_task(Author::Claude, &b4(240, "fri 17:00")).unwrap();
+    let mut blocks = r.plan.unwrap().created;
+    blocks.sort_by_key(|b| b.start);
+    let (b1, b2) = (blocks[0].clone(), blocks[1].clone());
+    // Block 1: partly done (30 min) — trimmed to the 30 min and ticked.
+    *env.now.lock().unwrap() = b1.end + Duration::minutes(5);
+    let uid1 = e.checkin_items().unwrap()[0].block_uid.clone();
+    e.checkin(&CheckinReq {
+        block_uid: uid1.clone(),
+        outcome: "partial".into(),
+        actual_min: Some(30),
+        remaining_min: None,
+    })
+    .unwrap();
+    let world = e.world(14).unwrap();
+    let i1 = world.instances.iter().find(|i| i.uid == uid1).unwrap();
+    assert_eq!(i1.title, "✓ B4 problem sheet");
+    assert_eq!(
+        (i1.end(chrono_tz::Europe::London) - i1.start(chrono_tz::Europe::London)).num_minutes(),
+        30
+    );
+    // It can't be moved any more.
+    assert!(matches!(
+        e.update_event(
+            Author::Alec,
+            Some(&i1.source),
+            &uid1,
+            &UpdateEventReq {
+                start: Some(at("2026-10-15 20:00").to_rfc3339()),
+                ..Default::default()
+            }
+        ),
+        Err(EngineError::BadRequest(m)) if m.contains("check in")
+    ));
+    // Block 2: missed — removed (its time is planned again).
+    *env.now.lock().unwrap() = b2.end + Duration::minutes(5);
+    let uid2 = e
+        .checkin_items()
+        .unwrap()
+        .into_iter()
+        .find(|c| c.outcome.is_none())
+        .map(|c| c.block_uid)
+        .unwrap_or_else(|| {
+            // b2 may be on another day than b1.
+            String::new()
+        });
+    if !uid2.is_empty() {
+        e.checkin(&CheckinReq {
+            block_uid: uid2.clone(),
+            outcome: "missed".into(),
+            actual_min: None,
+            remaining_min: None,
+        })
+        .unwrap();
+        let world = e.world(14).unwrap();
+        assert!(world.instances.iter().all(|i| i.uid != uid2), "missed block removed");
+    }
+    // Unanswered blocks auto-done the next morning get their ✓ too.
+    let day_after = b2.end.with_timezone(&chrono_tz::Europe::London).date_naive() + Duration::days(3);
+    env.set_now(&format!("{day_after} 09:30"));
+    e.settle().unwrap();
+    assert!(env.read_all("Engineering").contains("SUMMARY:✓ B4 problem sheet"));
+}

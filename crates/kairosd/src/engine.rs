@@ -1589,7 +1589,12 @@ impl Engine {
 
     /// Recompute proposed project time around `p`'s task work (rejected
     /// spans are never proposed again).
-    fn refresh_proposals(&mut self, input: &PlanInput<'_>, p: &sched::Plan) -> Result<()> {
+    fn refresh_proposals(
+        &mut self,
+        input: &PlanInput<'_>,
+        p: &sched::Plan,
+        session_days: &[chrono::NaiveDate],
+    ) -> Result<()> {
         let rows = self.db.proposals()?;
         let avoid: Vec<(DateTime<Utc>, DateTime<Utc>)> =
             rows.iter().filter(|r| r.3 == "rejected").map(|r| (r.1, r.2)).collect();
@@ -1598,6 +1603,7 @@ impl Engine {
             .iter()
             .filter(|r| r.3 == "accepted")
             .map(|r| r.1.with_timezone(&input.tz).date_naive())
+            .chain(session_days.iter().copied())
             .collect();
         let spans: Vec<(String, DateTime<Utc>, DateTime<Utc>)> = sched::propose(input, p, &avoid, &taken)
             .into_iter()
@@ -1653,7 +1659,7 @@ impl Engine {
                 start: p.start.to_rfc3339(),
                 end: Some(p.end.to_rfc3339()),
                 key: self.constraints.projects.key.clone(),
-                description: Some("Project time (accepted kairos proposal)".into()),
+                description: Some(PROJECT_MARK.into()),
                 ..Default::default()
             },
         )?;
@@ -2099,7 +2105,15 @@ impl Engine {
         };
         let p = sched::plan(&input);
         if !dry_run {
-            self.refresh_proposals(&input, &p)?;
+            // Days that already have an accepted session (also ones accepted
+            // before accepted proposals were recorded): marked by the description.
+            let session_days: Vec<chrono::NaiveDate> = world
+                .instances
+                .iter()
+                .filter(|i| i.description.as_deref() == Some(PROJECT_MARK))
+                .map(|i| i.start(tz).with_timezone(&tz).date_naive())
+                .collect();
+            self.refresh_proposals(&input, &p, &session_days)?;
         }
         let mut delete: Vec<Block> = p.delete.clone();
         for (b, _) in &blocks {
@@ -2347,6 +2361,9 @@ fn plan_summary(r: &api::PlanResp, tz: Tz) -> String {
     }
     s
 }
+
+/// Description of an accepted project session (how a day is known to have one).
+const PROJECT_MARK: &str = "Project time (accepted kairos proposal)";
 
 fn fmt_min(m: u32) -> String {
     match (m / 60, m % 60) {

@@ -1153,6 +1153,17 @@ fn project_time_is_proposed_accepted_and_dropped() {
     assert!(after.iter().all(|p| p.id != props[0].id && p.id != props[1].id));
     // The accepted day gets no more; the dropped day may get another slot.
     assert!(after.iter().all(|p| day(p.start) != day(props[0].start)));
+    // Also when the proposals table has forgotten the acceptance (sessions
+    // accepted before it was recorded): the event itself marks the day.
+    e.db.proposals_replace(&[], at("2026-10-12 08:00")).unwrap();
+    e.db.proposal_set_status(&props[0].id, "gone").unwrap();
+    e.plan(false, Author::Scheduler).unwrap();
+    assert!(
+        e.proposals()
+            .unwrap()
+            .iter()
+            .all(|p| day(p.start) != day(props[0].start))
+    );
     assert!(
         after.iter().all(|p| p.end <= props[1].start || p.start >= props[1].end),
         "re-proposed over a dropped span"

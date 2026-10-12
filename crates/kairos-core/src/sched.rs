@@ -56,6 +56,13 @@ pub struct Busy {
     /// No work for this long after it ends (recovery after sport).
     #[serde(default)]
     pub rest_after_min: u16,
+    /// Counts toward the day's load (`max_day_load_hours`); not Social / Sport.
+    #[serde(default = "yes")]
+    pub counts_for_load: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -214,7 +221,9 @@ impl<'a> Grid<'a> {
             for i in i0..i1 {
                 g.busy_occ[i as usize] = true;
             }
-            *g.busy_load.entry(d).or_default() += (b.end - b.start).num_minutes().max(0);
+            if b.counts_for_load {
+                *g.busy_load.entry(d).or_default() += (b.end - b.start).num_minutes().max(0);
+            }
             if let Some(l) = b.location.as_deref() {
                 prev_loc = Some((l, d));
             }
@@ -961,11 +970,18 @@ pub struct Proposal {
     pub end: DateTime<Utc>,
 }
 
-/// Proposed project time: comfortable gaps of `projects.min_minutes` or more
-/// (up to `max_minutes` each) over the next `projects.days_ahead` days, in
-/// the time `plan`'s task work leaves free, within the daily work cap.
-/// `avoid`: spans Alec rejected (or already accepted) — never proposed again.
-pub fn propose(input: &PlanInput<'_>, plan: &Plan, avoid: &[(DateTime<Utc>, DateTime<Utc>)]) -> Vec<Proposal> {
+/// Proposed project time: on each of the next `projects.days_ahead` days,
+/// up to `projects.max_per_day` sessions (the longest comfortable gaps, up to
+/// `max_minutes`, at least `min_minutes`; earliest on ties) in the time
+/// `plan`'s task work leaves free, within the daily work cap.
+/// `avoid`: spans Alec dropped — never proposed again. `taken_days`: days
+/// that already have an accepted session (no more proposals there).
+pub fn propose(
+    input: &PlanInput<'_>,
+    plan: &Plan,
+    avoid: &[(DateTime<Utc>, DateTime<Utc>)],
+    taken_days: &[NaiveDate],
+) -> Vec<Proposal> {
     let pc = &input.constraints.projects;
     if !pc.enabled {
         return Vec::new();
@@ -981,23 +997,36 @@ pub fn propose(input: &PlanInput<'_>, plan: &Plan, avoid: &[(DateTime<Utc>, Date
     let max = g.slots(i64::from(pc.max_minutes)).max(min);
     let id = "\u{0}project";
     let mut out = Vec::new();
-    let mut i = 0;
-    while i < g.n {
-        if !st.can_place(&g, id, i, min, true) {
-            i += 1;
+    let mut days: Vec<NaiveDate> = g.date.clone();
+    days.dedup();
+    for day in days {
+        if taken_days.contains(&day) {
             continue;
         }
-        let mut len = min;
-        while len < max && st.can_place(&g, id, i, len + 1, true) {
-            len += 1;
+        for _ in 0..pc.max_per_day {
+            // The day's longest comfortable gap (capped), earliest on ties.
+            let mut best: Option<(usize, usize)> = None; // (len, start)
+            for i in (0..g.n).filter(|&i| g.date[i] == day) {
+                if !st.can_place(&g, id, i, min, true) {
+                    continue;
+                }
+                let mut len = min;
+                while len < max && g.date[(i + len).min(g.n - 1)] == day && st.can_place(&g, id, i, len + 1, true) {
+                    len += 1;
+                }
+                if best.is_none_or(|(bl, _)| len > bl) {
+                    best = Some((len, i));
+                }
+            }
+            let Some((len, i)) = best else { break };
+            st.place(&g, id, i, len);
+            out.push(Proposal {
+                start: g.at(i),
+                end: g.at(i + len),
+            });
         }
-        st.place(&g, id, i, len);
-        out.push(Proposal {
-            start: g.at(i),
-            end: g.at(i + len),
-        });
-        i += len;
     }
+    out.sort_by_key(|p| p.start);
     out
 }
 

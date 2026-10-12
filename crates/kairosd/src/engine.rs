@@ -1590,14 +1590,16 @@ impl Engine {
     /// Recompute proposed project time around `p`'s task work (rejected
     /// spans are never proposed again).
     fn refresh_proposals(&mut self, input: &PlanInput<'_>, p: &sched::Plan) -> Result<()> {
-        let avoid: Vec<(DateTime<Utc>, DateTime<Utc>)> = self
-            .db
-            .proposals()?
-            .into_iter()
-            .filter(|r| r.3 == "rejected")
-            .map(|r| (r.1, r.2))
+        let rows = self.db.proposals()?;
+        let avoid: Vec<(DateTime<Utc>, DateTime<Utc>)> =
+            rows.iter().filter(|r| r.3 == "rejected").map(|r| (r.1, r.2)).collect();
+        // One project session a day: days with an accepted one get no more.
+        let taken: Vec<chrono::NaiveDate> = rows
+            .iter()
+            .filter(|r| r.3 == "accepted")
+            .map(|r| r.1.with_timezone(&input.tz).date_naive())
             .collect();
-        let spans: Vec<(String, DateTime<Utc>, DateTime<Utc>)> = sched::propose(input, p, &avoid)
+        let spans: Vec<(String, DateTime<Utc>, DateTime<Utc>)> = sched::propose(input, p, &avoid, &taken)
             .into_iter()
             .map(|x| {
                 (
@@ -1655,7 +1657,7 @@ impl Engine {
                 ..Default::default()
             },
         )?;
-        self.db.proposal_delete(id)?;
+        self.db.proposal_set_status(id, "accepted")?;
         self.replan_soon = true;
         Ok(WriteResult::from(&cs))
     }
@@ -2079,6 +2081,7 @@ impl Engine {
                     end,
                     location: i.location.clone(),
                     rest_after_min: i.colour_key().map_or(0, |k| self.constraints.recovery_after(k)),
+                    counts_for_load: i.colour_key().is_none_or(|k| self.constraints.counts_for_load(k)),
                 }),
                 _ => None,
             })

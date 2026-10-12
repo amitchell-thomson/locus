@@ -6,7 +6,11 @@ horizon_days = 14           # look-ahead for tasks without a deadline
 min_lead_minutes = 15       # never schedule within the next 15 min
 squeeze_block_minutes = 40  # shortest block when squeezing into a gap (1 h gap − 10 min travel each side)
 
+# Events in these calendars don't count toward max_day_load_hours.
+day_load_excludes = ["Social", "Sport"]
+
 # No work for a while after these calendars' events (tired, showering).
+# Only the scheduler's own work is kept out; fixed events (lectures) stay put.
 [[recovery]]
 key = "Sport"
 minutes = 60
@@ -42,6 +46,7 @@ title = "Project time"
 min_minutes = 60
 max_minutes = 180
 days_ahead = 7
+max_per_day = 1       # days with an accepted session get no more proposals
 
 # Named windows tasks can prefer via `preferred_window`.
 [[windows]]
@@ -83,7 +88,7 @@ no_schedule = [
 deadline_lead_hours = 2   # aim to finish this early; work squeezed into the last 2 h is allowed but warned about
 max_continuous_minutes = 180  # comfort: back-to-back events + work at most 3 h…
 break_minutes = 30            # …without a break of at least 30 min
-max_day_load_hours = 10.0     # comfort: events + work per day
+max_day_load_hours = 10.0     # comfort: events + work per day (not day_load_excludes)
 
 # Fallback (no dates): everything outside term.
 [[profiles]]
@@ -104,4 +109,4 @@ no_schedule = [
 deadline_lead_hours = 2   # aim to finish this early; work squeezed into the last 2 h is allowed but warned about
 max_continuous_minutes = 180  # comfort: back-to-back events + work at most 3 h…
 break_minutes = 30            # …without a break of at least 30 min
-max_day_load_hours = 10.0     # comfort: events + work per day
+max_day_load_hours = 10.0     # comfort: events + work per day (not day_load_excludes)

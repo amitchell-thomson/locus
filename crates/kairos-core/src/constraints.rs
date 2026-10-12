@@ -115,7 +115,8 @@ pub struct Profile {
     pub max_continuous_minutes: u16,
     #[serde(default = "default_break")]
     pub break_minutes: u16,
-    /// Comfort: events + work per day.
+    /// Comfort: events + work per day (events in `day_load_excludes`
+    /// calendars, e.g. Social and Sport, don't count).
     #[serde(default = "default_day_load")]
     pub max_day_load_hours: f32,
 }
@@ -193,6 +194,13 @@ pub struct Projects {
     pub max_minutes: u32,
     #[serde(default = "default_project_days")]
     pub days_ahead: u16,
+    /// Proposed sessions per day (days with an accepted one get no more).
+    #[serde(default = "default_project_per_day")]
+    pub max_per_day: u32,
+}
+
+fn default_project_per_day() -> u32 {
+    1
 }
 
 impl Default for Projects {
@@ -204,6 +212,7 @@ impl Default for Projects {
             min_minutes: default_project_min(),
             max_minutes: default_project_max(),
             days_ahead: default_project_days(),
+            max_per_day: default_project_per_day(),
         }
     }
 }
@@ -252,6 +261,9 @@ pub struct Constraints {
     pub squeeze_block_minutes: u16,
     #[serde(default)]
     pub recovery: Vec<Recovery>,
+    /// Calendars whose events don't count toward `max_day_load_hours`.
+    #[serde(default)]
+    pub day_load_excludes: Vec<String>,
     #[serde(default = "default_task_types")]
     pub task_types: Vec<TaskType>,
     #[serde(default)]
@@ -378,6 +390,11 @@ impl Constraints {
             .map(|r| r.minutes)
             .max()
             .unwrap_or(0)
+    }
+
+    /// Do events in `key` count toward the day load?
+    pub fn counts_for_load(&self, key: &str) -> bool {
+        !self.day_load_excludes.iter().any(|k| k.eq_ignore_ascii_case(key))
     }
 
     pub fn window(&self, name: &str) -> Option<&NamedWindow> {

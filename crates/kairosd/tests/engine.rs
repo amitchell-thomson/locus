@@ -1111,6 +1111,10 @@ fn project_time_is_proposed_accepted_and_dropped() {
     e.plan(false, Author::Scheduler).unwrap();
     let props = e.proposals().unwrap();
     assert!(!props.is_empty());
+    let day = |t: chrono::DateTime<chrono::Utc>| t.with_timezone(&chrono_tz::Europe::London).date_naive();
+    let mut days: Vec<_> = props.iter().map(|p| day(p.start)).collect();
+    days.dedup();
+    assert_eq!(days.len(), props.len(), "at most one a day");
     for p in &props {
         let m = (p.end - p.start).num_minutes();
         assert!((60..=180).contains(&m), "{m}");
@@ -1147,6 +1151,8 @@ fn project_time_is_proposed_accepted_and_dropped() {
     e.plan(false, Author::Scheduler).unwrap();
     let after = e.proposals().unwrap();
     assert!(after.iter().all(|p| p.id != props[0].id && p.id != props[1].id));
+    // The accepted day gets no more; the dropped day may get another slot.
+    assert!(after.iter().all(|p| day(p.start) != day(props[0].start)));
     assert!(
         after.iter().all(|p| p.end <= props[1].start || p.start >= props[1].end),
         "re-proposed over a dropped span"

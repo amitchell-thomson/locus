@@ -30,7 +30,8 @@ Data flow: iCloud ⇄ vdirsyncer (rw on compute-node, **read-only** on the Mac) 
 - **Sidecar is authoritative** for kairos metadata; `X-KAIROS-*` is a mirror. `blocking` (Family events blocking the scheduler) is sidecar-only and preserved on rewrites.
 - **Scheduler never overbooks**: shortfalls are reported per task; squeezes (short gaps, deadline lead, past the 3 h / 10 h comfort limits) are reported per block. Tiers ideal → shorter → squeeze; spread across days by free time; no work in `[[recovery]]` time after Sport. New blocks start ≥ `min_lead_minutes` (15) ahead.
 - **Replan on event changes**: `apply` sets `replan_soon` for any non-scheduler event write; the HTTP layer replans right after answering, the jobs loop on every tick (and after every sync). Stable, so it's a no-op unless work is displaced.
-- **Proposed project time is kairosd-only** (`proposals` table): never written to a calendar until Alec accepts (`y` in the TUI → an event). Dropped spans are never re-proposed.
+- **Proposed project time is kairosd-only** (`proposals` table): never written to a calendar until Alec accepts (`y` in the TUI → an event). One a day (longest comfortable gap), none on a day with an accepted one; dropped spans are never re-proposed.
+- **Day load (10 h) excludes Social and Sport** (`day_load_excludes`); the 3 h continuity rule counts everything.
 - No `unwrap()`/`expect()` outside tests (workspace clippy lints deny them). `thiserror` in libs, `anyhow` in bins.
 
 ## Running things

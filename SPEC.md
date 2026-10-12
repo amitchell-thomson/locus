@@ -169,8 +169,8 @@ Deterministic Rust code. Claude's job is to interpret intent, create and update 
   - buffers around fixed events (default 10 min; 30 min if the location differs from the previous event's);
   - no-schedule periods (e.g. Saturday evening);
   - preferred lead time before a deadline (`deadline_lead_hours`, default 2 h: aim to finish ≥ 2 h before). A soft preference: when there is no room, work falls back to the time up to the deadline itself (never past it) and the plan warns that the task is *squeezed* into the last 2 h;
-  - comfort: at most `max_continuous_minutes` (3 h) of back-to-back events + work without a `break_minutes` (30 min) break, and at most `max_day_load_hours` (10 h) of events + work a day;
-- recovery: no work for `minutes` after events in a `[[recovery]]` key (Sport: 60 min — tired, showering), not even squeezed;
+  - comfort: at most `max_continuous_minutes` (3 h) of back-to-back events + work without a `break_minutes` (30 min) break, and at most `max_day_load_hours` (10 h) of events + work a day (events in `day_load_excludes` — Social, Sport — don't count);
+- recovery: no work for `minutes` after events in a `[[recovery]]` key (Sport: 60 min — tired, showering), not even squeezed. Only the scheduler's work is kept out: fixed events (compulsory lectures) stay where they are;
 - task types (`[[task_types]]`): `sheet` (5 h default, 2–3 h blocks, ≥ 1 h), `coursework` (estimate required, 2–3 h blocks, revised at check-ins), `admin` (45 min default, one 30–60 min go);
 - `squeeze_block_minutes` (40): the shortest squeezed block (a 1 h gap between lectures minus 10 min travel each side).
 
@@ -182,7 +182,7 @@ Deterministic Rust code. Claude's job is to interpret intent, create and update 
 5. **Stability:** on replan, keep already-placed future blocks that remain feasible; only move a block when required (or when a squeeze can be undone). Report how many blocks moved. A block Alec moves by hand becomes pinned.
 6. **Infeasibility is a first-class output:** if work doesn't fit, report per-task shortfall ("B4 sheet: 2.5 h short before Fri 17:00") and the options (extend window, drop/lower priority, cut estimate). Never silently overbook.
 7. **Learned estimates:** once a type has ≥ 3 finished tasks, remaining time is planned × the median actual/estimate ratio (clamped ×0.7–×2), shown in the plan ("≈ B4 sheet: planning 6 h for 4 h left (sheet tasks usually take ×1.50)").
-8. **Proposed project time:** after task work, comfortable free gaps (1–3 h, within the daily work cap, next 7 days) are offered as greyed "Project time?" blocks in the TUI (kairosd only — nothing written to iCloud). Alec accepts one (`y`, then says what to work on → an event) or drops it (`d`, never proposed there again).
+8. **Proposed project time:** after task work, one session a day (`max_per_day`) in the day's longest comfortable free gap (1–3 h, within the daily work cap, next 7 days; none on a day with an accepted session — Alec can still add more himself) is offered as greyed "Project time?" blocks in the TUI (kairosd only — nothing written to iCloud). Alec accepts one (`y`, then says what to work on → an event) or drops it (`d`, never proposed there again).
 
 **Completion tracking:**
 - Evening check-in (ntfy, Phase 8; TUI prompt before then) lists today's blocks with done / partial / missed.

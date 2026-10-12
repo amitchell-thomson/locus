@@ -399,7 +399,7 @@ impl Db {
 
     // ---------------------------------------------------------------- proposals
 
-    /// Status `proposed` | `rejected`.
+    /// Status `proposed` | `rejected` | `accepted`.
     pub fn proposals(&self) -> Result<Vec<ProposalRow>> {
         let mut st = self
             .conn
@@ -425,8 +425,8 @@ impl Db {
         Ok(out)
     }
 
-    /// Replace the open proposals with `spans`, keeping rejected ones (and
-    /// never re-proposing a rejected id); forget anything that has ended.
+    /// Replace the open proposals with `spans`, keeping rejected and accepted
+    /// ones (never re-proposed); forget anything that has ended.
     pub fn proposals_replace(
         &self,
         spans: &[(String, DateTime<Utc>, DateTime<Utc>)],
@@ -450,11 +450,6 @@ impl Db {
             .conn
             .execute("UPDATE proposals SET status = ?2 WHERE id = ?1", params![id, status])?;
         Ok(n > 0)
-    }
-
-    pub fn proposal_delete(&self, id: &str) -> Result<()> {
-        self.conn.execute("DELETE FROM proposals WHERE id = ?1", params![id])?;
-        Ok(())
     }
 
     // ---------------------------------------------------------------- kv

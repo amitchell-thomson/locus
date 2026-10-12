@@ -28,6 +28,7 @@ fn busy(a: &str, b: &str) -> Busy {
         end: at(b),
         location: None,
         rest_after_min: 0,
+        counts_for_load: true,
     }
 }
 
@@ -373,12 +374,14 @@ fn location_change_gets_30_min_buffer() {
             end: at("2026-10-12 10:00"),
             location: Some("Thom Building".into()),
             rest_after_min: 0,
+            counts_for_load: true,
         },
         Busy {
             start: at("2026-10-12 12:00"),
             end: at("2026-10-12 12:30"),
             location: Some("Iffley Road".into()),
             rest_after_min: 0,
+            counts_for_load: true,
         },
     ];
     let mut t = task("t", 60, Some("2026-10-13 12:00"));
@@ -491,6 +494,7 @@ fn collision_moves_only_the_affected_block() {
         end: victim.end,
         location: None,
         rest_after_min: 0,
+        counts_for_load: true,
     });
     let p2 = run_plan("2026-10-12 08:00", &tasks, &b, &existing);
     assert_eq!(p2.moved, 1, "{p2:#?}");
@@ -548,6 +552,7 @@ fn arb_busy() -> impl Strategy<Value = Vec<Busy>> {
                     end: s + Duration::minutes(len * 15),
                     location: None,
                     rest_after_min: if sport { 60 } else { 0 },
+                    counts_for_load: true,
                 }
             })
             .collect()
@@ -847,6 +852,7 @@ fn new_event_moves_only_the_displaced_work() {
         end: victim.end,
         location: None,
         rest_after_min: 0,
+        counts_for_load: true,
     });
     let p2 = run_plan("2026-10-12 06:00", &tasks, &b1, &existing);
     assert_eq!(p2.moved, 1, "{p2:#?}");
@@ -870,7 +876,7 @@ fn proposals_fill_comfortable_gaps_after_task_work() {
         existing: &[],
     };
     let p = plan(&input);
-    let props = propose(&input, &p, &[]);
+    let props = propose(&input, &p, &[], &[]);
     assert!(!props.is_empty());
     let horizon = at("2026-10-12 08:00") + Duration::days(7);
     let mut per_day: BTreeMap<NaiveDate, i64> = BTreeMap::new();
@@ -894,9 +900,9 @@ fn proposals_fill_comfortable_gaps_after_task_work() {
         assert!(m <= 6 * 60, "{d}: {m} min of work incl. proposals");
     }
     // Deterministic, and a rejected span is never proposed again.
-    assert_eq!(propose(&input, &p, &[]), props);
+    assert_eq!(propose(&input, &p, &[], &[]), props);
     let gone = (props[0].start, props[0].end);
-    let again = propose(&input, &p, &[gone]);
+    let again = propose(&input, &p, &[gone], &[]);
     assert!(again.iter().all(|x| x.end <= gone.0 || x.start >= gone.1));
 }
 
@@ -912,5 +918,74 @@ fn no_proposals_when_disabled() {
         busy: &[],
         existing: &[],
     };
-    assert!(propose(&input, &plan(&input), &[]).is_empty());
+    assert!(propose(&input, &plan(&input), &[], &[]).is_empty());
+}
+
+#[test]
+fn one_project_session_a_day_in_its_longest_gap() {
+    let c = constraints();
+    let b = lectures();
+    let input = PlanInput {
+        now: at("2026-10-12 07:00"),
+        tz: London,
+        constraints: &c,
+        tasks: &[],
+        busy: &b,
+        existing: &[],
+    };
+    let p = plan(&input);
+    let props = propose(&input, &p, &[], &[]);
+    let mut days: Vec<NaiveDate> = props
+        .iter()
+        .map(|x| x.start.with_timezone(&London).date_naive())
+        .collect();
+    let n = days.len();
+    days.dedup();
+    assert_eq!(
+        days.len(),
+        n,
+        "one a day: {:?}",
+        props.iter().map(|x| local(x.start)).collect::<Vec<_>>()
+    );
+    assert_eq!(n, 7);
+    // Lecture days (09–11, 14–16): the longest comfortable gap is after dinner.
+    let mon = &props[0];
+    assert_eq!(
+        (local(mon.start), (mon.end - mon.start).num_minutes()),
+        ("Mon 12 19:30".to_string(), 150)
+    );
+    // A day with an accepted session gets none.
+    let mon_day = mon.start.with_timezone(&London).date_naive();
+    let again = propose(&input, &p, &[], &[mon_day]);
+    assert!(
+        again
+            .iter()
+            .all(|x| x.start.with_timezone(&London).date_naive() != mon_day)
+    );
+    assert_eq!(again.len(), 6);
+}
+
+#[test]
+fn social_and_sport_dont_count_toward_the_day_load() {
+    // 9 h of social on Monday wouldn't leave room under the 10 h load if it
+    // counted; it doesn't, so a 2 h block still fits around it that day.
+    let mut b = vec![
+        Busy {
+            counts_for_load: false,
+            ..busy("2026-10-12 08:30", "2026-10-12 12:30")
+        },
+        Busy {
+            counts_for_load: false,
+            ..busy("2026-10-12 13:30", "2026-10-12 18:30")
+        },
+    ];
+    let tasks = [typed("b4", "sheet", 120, Some("2026-10-12 23:59"))];
+    let p = run_plan("2026-10-12 07:00", &tasks, &b, &[]);
+    assert!(p.shortfalls.is_empty() && p.squeezed.is_empty(), "{p:#?}");
+    // Counting (a lecture day), only 1 h fits under the 10 h load.
+    for x in &mut b {
+        x.counts_for_load = true;
+    }
+    let p = run_plan("2026-10-12 07:00", &tasks, &b, &[]);
+    assert!(!p.shortfalls.is_empty() || !p.squeezed.is_empty(), "{p:#?}");
 }

@@ -232,7 +232,7 @@ Requirements:
 
 ### TUI `kairos tui`
 
-- **Views:** week (default) ↔ day on `Tab`, agenda on `g`, tasks `T`, approvals `A`.
+- **Views:** week (default) → day → month on `Tab`, agenda on `g`, tasks `T`, approvals `A`. Month: Monday-first weeks, each day listing its items (`┆` work, `⚑` deadlines, `+N more`); `h/l`, `H/L`, `j/k` as elsewhere.
 - **Keys** (the ones that apply to the selection are shown on the bottom-right edge; `?` lists all):
   - `h/l` day, `H/L` week, `t` today, `j/k` select;
   - `p` Private (all Alec's calendars) / `f` Family, `1–6` one calendar (`b`/`i` only when holiday / imported layers exist);

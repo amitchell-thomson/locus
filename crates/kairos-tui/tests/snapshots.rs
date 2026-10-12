@@ -612,10 +612,12 @@ fn keys_do_what_the_hints_say_for_each_kind_of_item() {
     let Mode::Form(f) = &a.mode else { panic!("no form") };
     assert_eq!(f.title(), "new task");
     a.key(Key::Esc);
-    // Tab: week ↔ day; g: agenda.
+    // Tab: week → day → month → week; g: agenda.
     a.view = View::Week;
     a.key(Key::Tab);
     assert_eq!(a.view, View::Day);
+    a.key(Key::Tab);
+    assert_eq!(a.view, View::Month);
     a.key(Key::Tab);
     assert_eq!(a.view, View::Week);
     a.key(Key::Char('g'));
@@ -644,4 +646,25 @@ fn tasks_view_keys_d_drops_capital_d_finishes_o_reopens() {
     assert_eq!(a.key_hints(), "o reopen");
     a.key(Key::Char('o'));
     assert!(matches!(&a.mode, Mode::Prompt(PromptKind::Reopen { id, .. }, _) if id == "t-0"));
+}
+
+#[test]
+fn month_view_cycles_in_with_tab() {
+    use kairos_tui::app::View;
+    let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
+    a.key(Key::Tab);
+    a.key(Key::Tab);
+    assert_eq!(a.view, View::Month);
+    let s = render_to_string(&a, 120, 34);
+    assert!(s.contains("October 2026"), "{s}");
+    assert!(
+        s.contains("┆09:00 B4 sheet"),
+        "work blocks keep their dashed mark:\n{s}"
+    );
+    insta::assert_snapshot!(s);
+    // j/k/h/l work as elsewhere; Tab goes back to the week.
+    a.key(Key::Char('l'));
+    assert_eq!(a.cursor.to_string(), "2026-10-22");
+    a.key(Key::Tab);
+    assert_eq!(a.view, View::Week);
 }

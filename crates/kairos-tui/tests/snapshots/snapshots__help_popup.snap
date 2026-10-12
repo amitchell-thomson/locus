@@ -10,7 +10,7 @@ expression: "render_to_string(&a, 100, 30)"
 │06:00 ┊  │ h l / H L  day / week back, forward                                          │         │
 │07:00 ┊  │         t  today                                                             │         │
 │08:00 ●──│       j k  select                                                            │         │
-│09:00 ┊  │   Tab · g  week ↔ day · agenda                                               │         │
+│09:00 ┊  │   Tab · g  week → day → month · agenda                                       │         │
 │10:00 ┊  │     Enter  details / expand duplicates ⧉                                     │         │
 │11:00 ┊  │         w  week: Mon–Sun ↔ Mon–Fri (wider)                                   │         │
 │      ┄┄┄│       p f  show/hide: Private (all yours), Family                            │┄┄┄┄┄┄┄┄┄│

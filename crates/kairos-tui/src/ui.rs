@@ -333,12 +333,13 @@ pub fn draw(f: &mut Frame, app: &App) {
     match app.view {
         View::Week => week(f, app, main, false),
         View::Day => week(f, app, main, true),
+        View::Month => month(f, app, main),
         View::Agenda => agenda(f, app, main),
         View::Tasks => tasks(f, app, main),
         View::Approvals => approvals(f, app, main),
     }
     if app.expanded
-        && matches!(app.view, View::Week | View::Day | View::Agenda)
+        && matches!(app.view, View::Week | View::Day | View::Month | View::Agenda)
         && let Some(cl) = app.selected()
     {
         details(f, app, main, &cl);
@@ -983,6 +984,154 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
 
 // ---------------------------------------------------------------- agenda
 
+/// Month view: Monday-first weeks covering the cursor's month; each day lists
+/// what's on (time + title, coloured by calendar; `┆` work, `⚑` deadlines),
+/// with "+N" when it doesn't fit. The cursor day is mauve, today blue.
+fn month(f: &mut Frame, app: &App, area: Rect) {
+    let tz = app.tz;
+    let today = app.today();
+    let cur = app.cursor;
+    let first = cur.with_day(1).unwrap_or(cur);
+    let start = first - Duration::days(i64::from(first.weekday().num_days_from_monday()));
+    let next_month = if first.month() == 12 {
+        NaiveDate::from_ymd_opt(first.year() + 1, 1, 1)
+    } else {
+        NaiveDate::from_ymd_opt(first.year(), first.month() + 1, 1)
+    }
+    .unwrap_or(first + Duration::days(31));
+    let weeks = ((next_month - start).num_days() + 6) / 7;
+    let mut title = first.format("%B %Y").to_string();
+    if let Some(w) = app.cfg.tui.term_week(cur) {
+        title.push_str(&format!(" · {w}"));
+    }
+    let mut block = with_hints(panel(&title, true), app, area.width);
+    if let Some(cl) = app.selected() {
+        let h = app.key_hints().width() as u16;
+        let room = if area.width >= h + 48 {
+            area.width.saturating_sub(8 + h)
+        } else {
+            area.width.saturating_sub(6)
+        };
+        block = block.title_bottom(Line::from(vec![
+            TSpan::styled(" ", Style::default()),
+            TSpan::styled(dot(&cl.primary), Style::default().fg(colour_of(app, &cl.primary))),
+            TSpan::styled(
+                format!("{} ", fit(&peek(app, &cl), room as usize)),
+                Style::default().fg(c("text")),
+            ),
+        ]));
+    }
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    if inner.height < 4 || inner.width < 21 {
+        return;
+    }
+    let buf = f.buffer_mut();
+    // Weekday header.
+    let col_x = |k: u16| inner.x + inner.width * k / 7;
+    let col_w = |k: u16| col_x(k + 1) - col_x(k);
+    for (k, d) in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].iter().enumerate() {
+        put(
+            buf,
+            col_x(k as u16),
+            inner.y,
+            col_w(k as u16),
+            &format!(" {d}"),
+            Style::default().fg(c("overlay1")),
+        );
+    }
+    let top = inner.y + 1;
+    let avail = inner.height - 1;
+    let row_y = |r: u16| top + avail * r / weeks as u16;
+    let row_h = |r: u16| row_y(r + 1) - row_y(r);
+    for r in 0..weeks as u16 {
+        for k in 0..7u16 {
+            let d = start + Duration::days(i64::from(r * 7 + k));
+            let (x, y, w, h) = (col_x(k), row_y(r), col_w(k), row_h(r));
+            let inside = d.month() == first.month();
+            // Cell rule on top, date in its corner.
+            let rule_st = Style::default().fg(c("surface1"));
+            put(buf, x, y, w, &"─".repeat(w as usize), rule_st);
+            let date_st = if d == today && d == cur {
+                Style::default()
+                    .fg(c("base"))
+                    .bg(c("mauve"))
+                    .add_modifier(Modifier::BOLD)
+            } else if d == today {
+                Style::default()
+                    .fg(c("base"))
+                    .bg(c("blue"))
+                    .add_modifier(Modifier::BOLD)
+            } else if d == cur {
+                Style::default()
+                    .fg(c("mauve"))
+                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+            } else if !inside || d < today {
+                Style::default().fg(c("overlay0"))
+            } else {
+                Style::default().fg(c("subtext0"))
+            };
+            put(buf, x, y, 4.min(w), &format!("{:>3} ", d.day()), date_st);
+            if h < 2 {
+                continue;
+            }
+            let items = app.day_clusters(d);
+            let lines = (h - 1) as usize;
+            let shown = if items.len() > lines {
+                lines.saturating_sub(1)
+            } else {
+                items.len()
+            };
+            for (n, cl) in items.iter().take(shown).enumerate() {
+                let i = &cl.primary;
+                let selected = d == cur && n == app.sel;
+                let when = match i.span {
+                    Span::Timed { start, .. } if !i.span.is_all_day() => {
+                        format!("{} ", start.with_timezone(&tz).format("%H:%M"))
+                    }
+                    _ => String::new(),
+                };
+                let mark = if is_slot(i) { "┆" } else { " " };
+                let text = format!("{mark}{when}{}", label(i));
+                let col = if is_deadline(i) { c("red") } else { colour_of(app, i) };
+                let col = if d < today || !inside {
+                    fade(col, PAST_FADE)
+                } else {
+                    col
+                };
+                let st = if selected {
+                    Style::default()
+                        .fg(c("base"))
+                        .bg(c("blue"))
+                        .add_modifier(Modifier::BOLD)
+                } else if is_dimmed(i) {
+                    Style::default().fg(col).add_modifier(Modifier::DIM)
+                } else {
+                    Style::default().fg(col)
+                };
+                put(
+                    buf,
+                    x,
+                    y + 1 + n as u16,
+                    w.saturating_sub(1),
+                    &fit(&text, w.saturating_sub(1) as usize),
+                    st,
+                );
+            }
+            if items.len() > shown {
+                put(
+                    buf,
+                    x,
+                    y + 1 + shown as u16,
+                    w.saturating_sub(1),
+                    &format!(" +{} more", items.len() - shown),
+                    Style::default().fg(c("overlay1")),
+                );
+            }
+        }
+    }
+}
+
 fn agenda(f: &mut Frame, app: &App, area: Rect) {
     let (a, b) = app.agenda_days();
     let block = with_hints(
@@ -1445,7 +1594,7 @@ fn help(f: &mut Frame, app: &App, area: Rect) {
         ("h l / H L", "day / week back, forward"),
         ("t", "today"),
         ("j k", "select"),
-        ("Tab · g", "week ↔ day · agenda"),
+        ("Tab · g", "week → day → month · agenda"),
         ("Enter", "details / expand duplicates ⧉"),
         ("w", "week: Mon–Sun ↔ Mon–Fri (wider)"),
         toggles,

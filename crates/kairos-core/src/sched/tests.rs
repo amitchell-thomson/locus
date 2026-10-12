@@ -1048,3 +1048,17 @@ fn weekends_start_at_ten() {
         assert!(x.start.with_timezone(&London).hour() >= 10, "{}", local(x.start));
     }
 }
+
+#[test]
+fn a_block_longer_than_whats_left_is_replaced() {
+    // A 60-min block was planned; a check-in left only 30 min: the replan
+    // swaps it for a 30-min one instead of keeping the hour.
+    let t = typed("furniture", "admin", 60, None);
+    let p1 = run_plan("2026-10-12 08:00", std::slice::from_ref(&t), &[], &[]);
+    assert_eq!(total(&p1, "furniture"), 60);
+    let mut t2 = t.clone();
+    t2.remaining_min = 30;
+    let p2 = run_plan("2026-10-12 08:00", &[t2.clone()], &[], &as_existing(&p1));
+    assert_eq!(total(&p2, "furniture"), 30, "{p2:#?}");
+    check_invariants(at("2026-10-12 08:00"), &[t2], &[], &p2).unwrap();
+}

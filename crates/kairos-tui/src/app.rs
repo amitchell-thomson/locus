@@ -21,6 +21,7 @@ use crate::form::{Form, FormAction, FormKind, describe_span, when_prefill};
 pub enum View {
     Week,
     Day,
+    Month,
     Agenda,
     Tasks,
     Approvals,
@@ -31,6 +32,7 @@ impl View {
         match self {
             View::Week => "week",
             View::Day => "day",
+            View::Month => "month",
             View::Agenda => "agenda",
             View::Tasks => "tasks",
             View::Approvals => "approvals",
@@ -299,7 +301,7 @@ impl App {
     pub fn selected(&self) -> Option<Cluster> {
         match self.view {
             View::Agenda => self.agenda_rows().into_iter().nth(self.sel).map(|(_, c)| c),
-            View::Week | View::Day => self.day_clusters(self.cursor).into_iter().nth(self.sel),
+            View::Week | View::Day | View::Month => self.day_clusters(self.cursor).into_iter().nth(self.sel),
             _ => None,
         }
     }
@@ -307,7 +309,7 @@ impl App {
     fn list_len(&self) -> usize {
         match self.view {
             View::Agenda => self.agenda_rows().len(),
-            View::Week | View::Day => self.day_clusters(self.cursor).len(),
+            View::Week | View::Day | View::Month => self.day_clusters(self.cursor).len(),
             View::Tasks => self.tasks.len() + self.done_tasks.len().min(DONE_SHOWN),
             View::Approvals => self.pending.len(),
         }
@@ -630,8 +632,10 @@ impl App {
             }
             Key::Char('k') | Key::Up => self.sel = self.sel.saturating_sub(1),
             Key::Tab => {
+                // week → day → month → week
                 self.view = match self.view {
                     View::Week => View::Day,
+                    View::Day => View::Month,
                     _ => View::Week,
                 };
                 self.sel = 0;
@@ -806,7 +810,7 @@ impl App {
                     _ => {}
                 }
             }
-            View::Week | View::Day | View::Agenda => {
+            View::Week | View::Day | View::Month | View::Agenda => {
                 if k == Key::Char('P') {
                     self.plan();
                     return;
@@ -1515,7 +1519,7 @@ impl App {
                     &["y approve", "n reject"]
                 }
             }
-            View::Week | View::Day | View::Agenda => match self.selected().map(|c| c.primary) {
+            View::Week | View::Day | View::Month | View::Agenda => match self.selected().map(|c| c.primary) {
                 None => &["a add"],
                 Some(i) => match (i.meta.kind, i.overlay) {
                     (EventKind::Proposal, _) => &["y accept", "d drop"],

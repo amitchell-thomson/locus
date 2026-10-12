@@ -707,6 +707,8 @@ fn run(input: &PlanInput<'_>, g: &Grid<'_>, horizon_idx: usize, keep_existing: b
         } else if keep_existing
             && need > 0
             && len > 0
+            // Not longer than what's left (the task shrank: replace it).
+            && len <= need
             && aligned
             && deadline_ok
             && st.can_place(g, &b.task_id, i, len, false)

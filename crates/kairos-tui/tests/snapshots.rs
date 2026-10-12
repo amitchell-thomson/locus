@@ -310,3 +310,34 @@ fn local_patches_survive_a_stale_reload() {
     assert_eq!(now.len(), 1);
     assert_eq!(now[0].key.as_deref(), Some("OQTS"));
 }
+
+#[test]
+fn selected_timed_deadline_is_a_red_block() {
+    use ratatui::{Terminal, backend::TestBackend};
+    let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
+    a.key(Key::Tab);
+    a.key(Key::Char('l'));
+    a.key(Key::Char('l'));
+    let red = kairos_tui::ui::c("red");
+    // Background of the cell holding the timed deadline's ⚑, if drawn.
+    let flag_bg = |a: &App| {
+        let mut term = Terminal::new(TestBackend::new(100, 30)).unwrap();
+        term.draw(|f| kairos_tui::ui::draw(f, a)).unwrap();
+        let buf = term.backend().buffer().clone();
+        (0..30u16)
+            .flat_map(|y| (0..100u16).map(move |x| (x, y)))
+            .find(|&(x, y)| buf[(x, y)].symbol() == "⚑" && buf[(x + 2, y)].symbol() == "1")
+            .map(|p| buf[p].bg)
+    };
+    let idx = a
+        .day_clusters(a.cursor)
+        .iter()
+        .position(|c| c.primary.title.contains("B4 sheet"))
+        .expect("B4 deadline on the day");
+    a.sel = usize::from(idx == 0); // something else selected
+    assert_ne!(flag_bg(&a), Some(red), "unselected deadline is a line, not a block");
+    a.sel = idx;
+    assert_eq!(flag_bg(&a), Some(red), "selected deadline is a red block");
+    let s = render_to_string(&a, 100, 30);
+    assert!(s.contains("⚑ 17:00 B4 sheet") && !s.contains("B4 sheet ━"), "{s}");
+}

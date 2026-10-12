@@ -167,7 +167,7 @@ Deterministic Rust code. Claude's job is to interpret intent, create and update 
   - preferred deep-work windows;
   - buffers around fixed events (default 10 min; 30 min if the location differs from the previous event's);
   - no-schedule periods (e.g. Saturday evening);
-  - minimum lead time before a deadline (default: finish ≥ 12 h before).
+  - preferred lead time before a deadline (default: aim to finish ≥ 12 h before; a soft preference — when there is no room, work falls back to the time up to the deadline itself, never past it).
 
 **Algorithm (v1):**
 1. Earliest-deadline-first with slack ordering, priority as tiebreak.

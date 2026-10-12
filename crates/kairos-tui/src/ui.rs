@@ -853,17 +853,18 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             if urgent {
                 st = st.add_modifier(Modifier::BOLD);
             }
-            put(
-                buf,
-                x0,
-                grid_y + *r0 as u16,
-                w,
-                &format!(
-                    "⚑ {t} {}{when} ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                    i.title.trim_start_matches('⚑').trim()
-                ),
-                st,
-            );
+            // Selected: a solid red block (like the blue one for events), padded across the column.
+            let idx = per_day[k].iter().position(|x| std::ptr::eq(x, *cl));
+            let selected = *d == app.cursor && idx == Some(app.sel);
+            let title = i.title.trim_start_matches('⚑').trim();
+            let text = if selected {
+                st = Style::default().fg(c("base")).bg(c("red")).add_modifier(Modifier::BOLD);
+                let s = format!("⚑ {t} {title}{when}");
+                format!("{s}{}", " ".repeat((w as usize).saturating_sub(s.width())))
+            } else {
+                format!("⚑ {t} {title}{when} ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            };
+            put(buf, x0, grid_y + *r0 as u16, w, &text, st);
         }
         // Ghost blocks (pending changes).
         for g in ghosts

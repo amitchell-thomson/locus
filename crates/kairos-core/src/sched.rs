@@ -7,6 +7,11 @@
 //! after them, chunks of the same task are ≥ 60 min apart, and each day's
 //! task-block total stays ≤ `max_focus_hours_per_day`.
 //!
+//! `deadline_lead_hours` is a preference, not a wall: every task is first
+//! placed to finish that long before its deadline; only what doesn't fit
+//! there falls back to the time up to the deadline itself (after all tasks
+//! have had their lead-respecting turn). Nothing is placed after a deadline.
+//!
 //! Algorithm:
 //! 1. **Stable pass** — keep every existing future block that is still
 //!    feasible and still needed (pinned blocks always stay), then place what's
@@ -215,6 +220,8 @@ struct Need<'t> {
     need_slots: usize,
     /// Exclusive latest slot index (deadline minus lead), clipped to grid.
     deadline_idx: usize,
+    /// Exclusive latest slot index (the deadline itself), clipped to grid.
+    hard_idx: usize,
     earliest_idx: usize,
 }
 
@@ -223,11 +230,14 @@ fn ordered_needs<'t>(input: &PlanInput<'_>, tasks: &'t [Task], g: &Grid<'_>, hor
         .iter()
         .filter(|t| t.status == TaskStatus::Open && t.remaining_min > 0)
         .map(|t| {
-            let lead = t.due.map(|d| d.instant(input.tz)).map(|due| {
+            let due = t.due.map(|d| d.instant(input.tz));
+            let lead = due.map(|due| {
                 let p = g.c.profile_for(due.with_timezone(&g.tz).date_naive());
                 due - Duration::hours(i64::from(p.map_or(12, |p| p.deadline_lead_hours)))
             });
-            let deadline_idx = lead.map_or(horizon_idx, |l| g.idx(l).clamp(0, horizon_idx as i64) as usize);
+            let clip = |x: DateTime<Utc>| g.idx(x).clamp(0, horizon_idx as i64) as usize;
+            let deadline_idx = lead.map_or(horizon_idx, clip);
+            let hard_idx = due.map_or(horizon_idx, clip);
             let earliest_idx = t
                 .earliest_start
                 .map_or(0, |e| g.idx_ceil(e).clamp(0, g.n as i64) as usize);
@@ -236,6 +246,7 @@ fn ordered_needs<'t>(input: &PlanInput<'_>, tasks: &'t [Task], g: &Grid<'_>, hor
                 task: t,
                 need_slots: t.remaining_min.div_ceil(slot) as usize,
                 deadline_idx,
+                hard_idx,
                 earliest_idx,
             }
         })
@@ -282,8 +293,18 @@ fn score(g: &Grid<'_>, t: &Task, i: usize, len: usize) -> i64 {
     sc
 }
 
+/// `buffer_minutes` of slot `i`'s day, in whole slots.
+fn buf_slots(g: &Grid<'_>, i: usize) -> usize {
+    let buf = g.c.profile_for(g.date[i]).map_or(10, |p| i64::from(p.buffer_minutes));
+    ((buf + g.slot - 1) / g.slot) as usize
+}
+
 struct State {
     usable: Vec<bool>,
+    /// Slots holding a task block. Kept apart from `usable` so the buffer
+    /// between two blocks holds on both sides, whichever was placed first
+    /// (otherwise a replan that keeps blocks in another order would move one).
+    taken: Vec<bool>,
     focus: BTreeMap<NaiveDate, i64>,
     /// Per task: slot ranges already allocated.
     chunks: BTreeMap<String, Vec<(usize, usize)>>,
@@ -292,6 +313,13 @@ struct State {
 impl State {
     fn can_place(&self, g: &Grid<'_>, task: &str, i: usize, len: usize) -> bool {
         if i + len > g.n || !self.usable[i..i + len].iter().all(|&u| u) {
+            return false;
+        }
+        let buf = buf_slots(g, i);
+        if self.taken[i.saturating_sub(buf)..(i + len + buf).min(g.n)]
+            .iter()
+            .any(|&t| t)
+        {
             return false;
         }
         let gap = (SAME_TASK_GAP_MIN / g.slot) as usize;
@@ -312,10 +340,9 @@ impl State {
     }
 
     fn place(&mut self, g: &Grid<'_>, task: &str, i: usize, len: usize) {
-        let buf = g.c.profile_for(g.date[i]).map_or(10, |p| i64::from(p.buffer_minutes));
-        let buf_slots = ((buf + g.slot - 1) / g.slot) as usize;
-        for k in i..(i + len + buf_slots).min(g.n) {
+        for k in i..(i + len).min(g.n) {
             self.usable[k] = false;
+            self.taken[k] = true;
         }
         for k in i..i + len {
             *self.focus.entry(g.date[k]).or_default() += g.slot;
@@ -324,7 +351,8 @@ impl State {
     }
 }
 
-fn find_chunk(g: &Grid<'_>, st: &State, n: &Need<'_>, remaining: usize) -> Option<(usize, usize)> {
+/// A chunk for `n` ending by slot `limit` (exclusive).
+fn find_chunk(g: &Grid<'_>, st: &State, n: &Need<'_>, remaining: usize, limit: usize) -> Option<(usize, usize)> {
     let t = n.task;
     let slot = g.slot as u32;
     let min_len = if t.splittable {
@@ -338,7 +366,7 @@ fn find_chunk(g: &Grid<'_>, st: &State, n: &Need<'_>, remaining: usize) -> Optio
         remaining
     }
     .min(remaining);
-    let hi = n.deadline_idx.min(g.n);
+    let hi = limit.min(g.n);
     let mut i = n.earliest_idx;
     while i < hi {
         if !st.can_place(g, &t.id, i, min_len) || i + min_len > hi {
@@ -370,6 +398,7 @@ fn find_chunk(g: &Grid<'_>, st: &State, n: &Need<'_>, remaining: usize) -> Optio
 fn run(input: &PlanInput<'_>, g: &Grid<'_>, horizon_idx: usize, keep_existing: bool) -> (Plan, u32) {
     let mut st = State {
         usable: g.usable.clone(),
+        taken: vec![false; g.n],
         focus: BTreeMap::new(),
         chunks: BTreeMap::new(),
     };
@@ -406,11 +435,12 @@ fn run(input: &PlanInput<'_>, g: &Grid<'_>, horizon_idx: usize, keep_existing: b
         let deadline_ok = needs
             .iter()
             .find(|n| n.task.id == b.task_id)
-            .is_some_and(|n| i + len <= n.deadline_idx);
+            .is_some_and(|n| i + len <= n.hard_idx);
         let aligned = (b.start - g.t0).num_minutes() % g.slot == 0;
         if b.pinned {
             for k in i..(i + len).min(g.n) {
                 st.usable[k] = false;
+                st.taken[k] = true;
                 *st.focus.entry(g.date[k]).or_default() += g.slot;
             }
             st.chunks.entry(b.task_id.clone()).or_default().push((i, i + len));
@@ -430,29 +460,39 @@ fn run(input: &PlanInput<'_>, g: &Grid<'_>, horizon_idx: usize, keep_existing: b
         }
     }
 
+    // Pass 1 honours each task's deadline lead; pass 2 lets what's left run
+    // up to the deadline itself.
     let mut total_short = 0u32;
-    for n in &needs {
-        let mut rem = remaining.get(n.task.id.as_str()).copied().unwrap_or(0);
-        while rem > 0 {
-            match find_chunk(g, &st, n, rem) {
-                Some((i, len)) => {
-                    st.place(g, &n.task.id, i, len);
-                    plan.create.push(Block {
-                        uid: None,
-                        task_id: n.task.id.clone(),
-                        start: g.at(i),
-                        end: g.at(i + len),
-                        pinned: false,
-                    });
-                    rem -= len;
+    for soft in [true, false] {
+        for n in &needs {
+            let limit = if soft { n.deadline_idx } else { n.hard_idx };
+            let Some(rem) = remaining.get_mut(n.task.id.as_str()) else {
+                continue;
+            };
+            while *rem > 0 {
+                match find_chunk(g, &st, n, *rem, limit) {
+                    Some((i, len)) => {
+                        st.place(g, &n.task.id, i, len);
+                        plan.create.push(Block {
+                            uid: None,
+                            task_id: n.task.id.clone(),
+                            start: g.at(i),
+                            end: g.at(i + len),
+                            pinned: false,
+                        });
+                        *rem -= len;
+                    }
+                    None => break,
                 }
-                None => break,
             }
         }
+    }
+    for n in &needs {
+        let rem = remaining.get(n.task.id.as_str()).copied().unwrap_or(0);
         if rem > 0 {
             let short = (rem as u32) * g.slot as u32;
             total_short += short;
-            plan.shortfalls.push(shortfall(n.task, short, input.tz));
+            plan.shortfalls.push(shortfall(n.task, short, g.t0, input.tz));
         }
     }
     // A deleted block re-created at the same time for the same task isn't a move.
@@ -488,13 +528,25 @@ fn fmt_hours(min: u32) -> String {
     }
 }
 
-fn shortfall(t: &Task, short: u32, tz: Tz) -> Shortfall {
-    let when = t.due.map(|d| format!(" before {}", d.describe(tz))).unwrap_or_default();
-    let mut options = vec![
-        "extend the day window or reduce buffers in constraints.toml".to_string(),
+/// `first` is the earliest time the scheduler may place anything.
+fn shortfall(t: &Task, short: u32, first: DateTime<Utc>, tz: Tz) -> Shortfall {
+    let mut when = t.due.map(|d| format!(" before {}", d.describe(tz))).unwrap_or_default();
+    let too_soon = t.due.is_some_and(|d| d.instant(tz) <= first);
+    let mut options = Vec::new();
+    if too_soon {
+        // No amount of free time helps: the deadline is inside the planning margin.
+        when.push_str(&format!(
+            " (nothing can be planned before {})",
+            first.with_timezone(&tz).format("%H:%M")
+        ));
+        options.push("put a block in yourself (the scheduler keeps a margin before now)".to_string());
+    } else {
+        options.push("extend the day window or reduce buffers in constraints.toml".to_string());
+    }
+    options.extend([
         format!("cut the estimate (currently {})", fmt_hours(t.remaining_min)),
         "lower the priority of (or drop) another task due earlier".to_string(),
-    ];
+    ]);
     if t.due.is_some() {
         options.push("move the deadline".into());
     }

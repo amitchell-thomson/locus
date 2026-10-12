@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 6646ba8677a3c982c55d52e28eaec275f37deb09ecad963d8f2b4cac99b43149 # shrinks to busy = [], tasks = [Task { id: "t0", title: "t0", key: "Engineering", estimate_min: 45, remaining_min: 45, due: Some(At(2026-10-12T11:00:00Z)), deadline_uid: None, earliest_start: None, priority: 1, splittable: false, min_chunk_min: 15, max_chunk_min: 75, preferred_window: None, status: Open, notes: "", created_by: Claude, created_at: 2026-09-30T23:00:00Z, updated_at: 2026-09-30T23:00:00Z }, Task { id: "t1", title: "t1", key: "Engineering", estimate_min: 120, remaining_min: 120, due: None, deadline_uid: None, earliest_start: None, priority: 1, splittable: true, min_chunk_min: 15, max_chunk_min: 75, preferred_window: None, status: Open, notes: "", created_by: Claude, created_at: 2026-09-30T23:00:00Z, updated_at: 2026-09-30T23:00:00Z }]

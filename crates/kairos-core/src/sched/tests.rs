@@ -104,15 +104,14 @@ fn check_invariants(now: DateTime<Utc>, tasks: &[Task], busy: &[Busy], p: &Plan)
             t += Duration::minutes(i64::from(c.slot_minutes));
         }
         let task = tasks.iter().find(|t| t.id == b.task_id).ok_or("unknown task")?;
-        if let Some(d) = task.due {
-            let lead = d.instant(London) - Duration::hours(12);
-            if b.end > lead {
-                return Err(format!(
-                    "block for {} ends {} after deadline lead",
-                    task.id,
-                    local(b.end)
-                ));
-            }
+        if let Some(d) = task.due
+            && b.end > d.instant(London)
+        {
+            return Err(format!(
+                "block for {} ends {} after its deadline",
+                task.id,
+                local(b.end)
+            ));
         }
     }
     for w in blocks.windows(2) {
@@ -167,29 +166,95 @@ fn infeasible_reports_shortfall_never_overbooks() {
 
 #[test]
 fn deadline_today() {
-    // Due 23:00 today, 12 h lead → must finish by 11:00; 08:30–11:00 minus lectures (09–11) leaves 30 min.
+    // Due 23:00 today, 12 h lead → aim to finish by 11:00. Without lectures
+    // that fits in the morning, preferring the 09:00 deep-work window.
     let tasks = [task("today", 60, Some("2026-10-12 23:00"))];
-    let p = run_plan("2026-10-12 08:00", &tasks, &lectures(), &[]);
-    assert_eq!(
-        total(&p, "today"),
-        0,
-        "08:30–08:50 is too short after the 10-min lecture buffer"
-    );
-    assert_eq!(p.shortfalls[0].short_min, 60);
-    // Without lectures it fits in the morning.
     let p = run_plan("2026-10-12 08:00", &tasks, &[], &[]);
     assert!(p.shortfalls.is_empty(), "{:?}", p.shortfalls);
-    // Placed on the same morning, preferring the 09:00 deep-work window.
     assert_eq!(local(p.create[0].start), "Mon 12 09:00");
     assert!(p.create[0].end <= at("2026-10-12 11:00"));
+    // With lectures the morning is gone (08:30–08:50 is too short after the
+    // buffer), so it falls back past the lead to the first free afternoon slot.
+    let p = run_plan("2026-10-12 08:00", &tasks, &lectures(), &[]);
+    assert!(p.shortfalls.is_empty(), "{:?}", p.shortfalls);
+    assert_eq!(total(&p, "today"), 60);
+    assert_eq!(local(p.create[0].start), "Mon 12 11:15");
+    check_invariants(at("2026-10-12 08:00"), &tasks, &lectures(), &p).unwrap();
 }
 
 #[test]
-fn deadline_already_past_lead_is_full_shortfall() {
+fn lead_is_a_preference_not_a_wall() {
+    // The 2026-10-12 case: tasks made at 13:43 for 20:00 and 23:59 the same
+    // day. The 12 h lead (08:00 / 11:59) had already passed, which used to
+    // mean "short" despite a free evening.
+    let tasks = [
+        task("populate", 30, Some("2026-10-12 20:00")),
+        task("furniture", 60, Some("2026-10-12 23:59")),
+    ];
+    let busy = [busy("2026-10-12 14:00", "2026-10-12 16:00")];
+    let p = run_plan("2026-10-12 13:43", &tasks, &busy, &[]);
+    assert!(p.shortfalls.is_empty(), "{:?}", p.shortfalls);
+    assert_eq!(total(&p, "populate"), 30);
+    assert_eq!(total(&p, "furniture"), 60);
+    for b in &p.create {
+        assert!(b.start >= at("2026-10-12 16:10"), "{}", local(b.start));
+    }
+    check_invariants(at("2026-10-12 13:43"), &tasks, &busy, &p).unwrap();
+}
+
+#[test]
+fn lead_still_preferred_when_there_is_room() {
+    // Due Wed 17:00: Mon and Tue are free, so nothing lands in the last 12 h.
+    let tasks = [task("t", 4 * 60, Some("2026-10-14 17:00"))];
+    let p = run_plan("2026-10-12 08:00", &tasks, &lectures(), &[]);
+    assert!(p.shortfalls.is_empty(), "{:?}", p.shortfalls);
+    for b in &p.create {
+        assert!(b.end <= at("2026-10-14 05:00"), "{}", local(b.end));
+    }
+}
+
+#[test]
+fn lead_fallback_never_displaces_a_lead_respecting_task() {
+    // "a" (due Tue 17:00) only fits in Tue's last 12 h; "b" (due Tue 23:00)
+    // fits Mon. Fallback for "a" happens after everyone's lead pass, so "b"
+    // keeps its lead-respecting place.
+    // Monday is free only 08:30–12:30 (four hours); everything else Mon is busy.
+    let busy = vec![self::busy("2026-10-12 12:30", "2026-10-12 22:00")];
+    let tasks = [
+        task("a", 6 * 60, Some("2026-10-13 17:00")),
+        task("b", 2 * 60, Some("2026-10-13 23:00")),
+    ];
+    let p = run_plan("2026-10-12 08:00", &tasks, &busy, &[]);
+    assert!(p.shortfalls.is_empty(), "{:?}", p.shortfalls);
+    for b in p.create.iter().filter(|b| b.task_id == "b") {
+        assert!(b.end <= at("2026-10-13 11:00"), "b at {}", local(b.start));
+    }
+    check_invariants(at("2026-10-12 08:00"), &tasks, &busy, &p).unwrap();
+}
+
+#[test]
+fn nothing_after_the_deadline() {
+    // Only 30 min free before 12:00 (08:30–09:00 + lead ignored); the rest is short.
     let tasks = [task("late", 60, Some("2026-10-12 12:00"))];
+    let busy = [busy("2026-10-12 09:10", "2026-10-12 23:00")];
+    let p = run_plan("2026-10-12 08:00", &tasks, &busy, &[]);
+    assert_eq!(total(&p, "late"), 30);
+    assert_eq!(p.shortfalls[0].short_min, 30);
+    assert!(p.create.iter().all(|b| b.end <= at("2026-10-12 12:00")));
+}
+
+#[test]
+fn deadline_inside_planning_margin_says_so() {
+    let tasks = [task("now", 30, Some("2026-10-12 08:20"))];
     let p = run_plan("2026-10-12 08:00", &tasks, &[], &[]);
     assert!(p.create.is_empty());
-    assert_eq!(p.shortfalls[0].short_min, 60);
+    let s = &p.shortfalls[0];
+    assert!(
+        s.message.contains("nothing can be planned before 08:30"),
+        "{}",
+        s.message
+    );
+    assert!(s.options[0].contains("block in yourself"), "{:?}", s.options);
 }
 
 #[test]

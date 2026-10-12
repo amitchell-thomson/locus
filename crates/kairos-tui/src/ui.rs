@@ -123,76 +123,6 @@ fn centred(area: Rect, w: u16, h: u16) -> Rect {
     Rect::new(area.x + (area.width - w) / 2, area.y + (area.height - h) / 2, w, h)
 }
 
-/// Minutes of events + work on `d` (timed, not transparent, personal or
-/// attending Family; not proposals or `load_excludes` keys), clipped to the day.
-pub fn day_load(app: &App, d: NaiveDate, clusters: &[Cluster]) -> i64 {
-    let tz = app.tz;
-    let (d0, d1) = (
-        crate::app::midnight(d, tz),
-        crate::app::midnight(d + Duration::days(1), tz),
-    );
-    let excluded = |i: &Instance| {
-        i.colour_key()
-            .is_some_and(|k| app.cfg.tui.load_excludes.iter().any(|x| x.eq_ignore_ascii_case(k)))
-    };
-    clusters
-        .iter()
-        .map(|c| &c.primary)
-        .filter(|i| !i.span.is_all_day() && i.meta.kind != EventKind::Proposal && i.meta.kind != EventKind::Deadline)
-        .filter(|i| !i.transparent && attending(i) && !excluded(i))
-        .filter(|i| matches!(i.overlay, Overlay::Personal | Overlay::Family))
-        .map(|i| {
-            let (s, e) = i.span.bounds(tz);
-            (e.min(d1) - s.max(d0)).num_minutes().max(0)
-        })
-        .sum()
-}
-
-/// A small bar (and "7h" when there's room) of the day's load, coloured
-/// green → yellow → peach → red as it fills. `None` when there's no room.
-fn load_bar(app: &App, d: NaiveDate, clusters: &[Cluster], room: u16) -> Option<Vec<(String, Style)>> {
-    let cells: u16 = if room >= 9 {
-        5
-    } else if room >= 5 {
-        3
-    } else {
-        return None;
-    };
-    let mins = day_load(app, d, clusters);
-    if mins == 0 {
-        return None;
-    }
-    let cap = (app.cfg.tui.day_load_hours * 60.0).max(1.0);
-    let frac = mins as f32 / cap;
-    let filled = ((frac * f32::from(cells)).round() as u16).clamp(1, cells);
-    let col = if frac > 1.0 {
-        c("red")
-    } else if frac >= 0.85 {
-        c("peach")
-    } else if frac >= 0.6 {
-        c("yellow")
-    } else {
-        c("green")
-    };
-    let mut out = vec![
-        ("▰".repeat(filled as usize), Style::default().fg(col)),
-        (
-            "▱".repeat((cells - filled) as usize),
-            Style::default().fg(c("surface2")),
-        ),
-    ];
-    if room >= 9 + 4 {
-        let h = mins as f32 / 60.0;
-        let t = if (h - h.round()).abs() < 0.05 {
-            format!(" {}h", h.round())
-        } else {
-            format!(" {h:.1}h")
-        };
-        out.push((t, Style::default().fg(c("overlay1"))));
-    }
-    Some(out)
-}
-
 fn label(i: &Instance) -> String {
     let t = i.title.trim();
     match i.meta.kind {
@@ -511,18 +441,6 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
 
     // Header.
     let y = inner.y;
-    // Room for the load bar: the narrowest column decides, so bars line up.
-    let bar_room = (0..ndays)
-        .map(|k| {
-            let lw = if col_w_of(k) >= 10 {
-                days[k].format(" %a %-d ").to_string().width()
-            } else {
-                4
-            };
-            col_w_of(k).saturating_sub(lw as u16 + 2)
-        })
-        .min()
-        .unwrap_or(0);
     for (k, d) in days.iter().enumerate() {
         let x = col_x(k);
         let col_w = col_w_of(k);
@@ -556,26 +474,13 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
         };
         label = format!(" {label} ");
         put(buf, x, y, col_w.saturating_sub(1), &label, style);
-        // Day load (events + work, not Social/Sport) against the 10 h day, right-aligned.
-        let used = label.width() as u16;
-        let bar = load_bar(app, *d, &per_day[k], bar_room.min(col_w.saturating_sub(used + 2)));
-        let bar_w = bar
-            .as_ref()
-            .map_or(0, |b| b.iter().map(|(s, _)| s.width() as u16).sum::<u16>() + 1);
-        if let Some(parts) = bar {
-            let mut bx = x + col_w.saturating_sub(1 + bar_w);
-            for (s, st) in parts {
-                let w = s.width() as u16;
-                put(buf, bx, y, w, &s, st);
-                bx += w;
-            }
-        }
         if let Some(h) = holiday {
+            let used = label.width() as u16;
             put(
                 buf,
                 x + used,
                 y,
-                col_w.saturating_sub(1 + used + bar_w),
+                col_w.saturating_sub(1 + used),
                 &format!("· {}", h.primary.title.trim()),
                 Style::default().fg(c("peach")).add_modifier(Modifier::ITALIC),
             );

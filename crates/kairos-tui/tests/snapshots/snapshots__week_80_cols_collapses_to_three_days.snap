@@ -3,7 +3,7 @@ source: crates/kairos-tui/tests/snapshots.rs
 expression: s
 ---
 ╭────────────────────────── Week 43 · 21 Oct–23 Oct ───────────────────────────╮
-│       Wed 21     ▰▱▱▱▱ 2.5h   Thu 22       ▰▱▱▱▱ 1h   Fri 23                 │
+│       Wed 21                  Thu 22                  Fri 23                 │
 │                                                      ▌Collections            │
 │                                                      ▎+2 more                │
 │──────────────────────────────────────────────────────────────────────────────│

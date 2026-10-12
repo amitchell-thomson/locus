@@ -189,8 +189,6 @@ Deterministic Rust code. Claude's job is to interpret intent, create and update 
 
 **Repeating events:** `create_event` takes `repeat` (`every` week|day, `term_only`, `until`). Term-time repeats are one series per term from the `term` profile's dates (RRULE … UNTIL the term's last day), so the vacation is empty and iPhone/iCloud see plain weekly series. Recurring → needs approval unless Alec typed it.
 
-**Day load bars:** the week/day header shows each day's events + work (not Social/Sport, not proposals) against `tui.day_load_hours` (10 h), green → yellow → peach → red.
-
 **Completion tracking:**
 - Evening check-in (ntfy, Phase 8; TUI prompt before then) lists today's blocks with done / partial / missed.
 - With no answer by 09:00 the next day, blocks count as done (configurable).

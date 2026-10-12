@@ -94,6 +94,9 @@ pub struct Profile {
     #[serde(default)]
     pub dates: Vec<DateRange>,
     pub day_window: Window,
+    /// Saturdays and Sundays start this late (nothing is scheduled earlier).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weekend_start: Option<Hm>,
     /// Protected sleep; nothing is scheduled inside it even if day_window says so.
     pub sleep: Window,
     #[serde(default)]

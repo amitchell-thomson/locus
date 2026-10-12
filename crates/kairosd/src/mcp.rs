@@ -147,6 +147,12 @@ pub struct CreateEventArgs {
     pub alarms: Option<Vec<i64>>,
     /// Make this a pinned work block for this task (only when Alec asked for this exact slot).
     pub task_id: Option<String>,
+    /// Repeat: "week" or "day" (from start; weekly keeps the start's weekday).
+    pub repeat_every: Option<String>,
+    /// With repeat_every: only during term time (one series per term, from constraints.toml).
+    pub term_only: Option<bool>,
+    /// With repeat_every: last date (inclusive); omit for no end (or the end of the last term).
+    pub repeat_until: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -528,7 +534,7 @@ impl KairosMcp {
     }
 
     #[tool(
-        description = "Create a one-off event in a key calendar. Low risk (applied) if it doesn't clash with a fixed event and starts >2 h from now; otherwise queued for Alec's approval."
+        description = "Create an event in a key calendar — one-off, or repeating (repeat_every week|day, optionally term_only for term time, or until a date). One-offs are low risk (applied) if they don't clash with a fixed event and start >2 h from now; repeating events and anything else are queued for Alec's approval."
     )]
     async fn create_event(&self, Parameters(a): Parameters<CreateEventArgs>) -> Result<CallToolResult, ErrorData> {
         let req = api::CreateEventReq {
@@ -541,6 +547,11 @@ impl KairosMcp {
             description: a.description,
             alarms: a.alarms,
             task_id: a.task_id,
+            repeat: a.repeat_every.map(|every| api::Repeat {
+                every: Some(every),
+                term_only: a.term_only.unwrap_or(false),
+                until: a.repeat_until,
+            }),
         };
         self.run(move |e| e.create_event(Author::Claude, &req).map(|c| WriteResult::from(&c)))
             .await

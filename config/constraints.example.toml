@@ -74,6 +74,7 @@ dates = [
   { from = "2027-04-18", to = "2027-06-19" },
 ]
 day_window = { start = "08:30", end = "22:00" }
+weekend_start = "10:00"   # Saturdays and Sundays start later
 sleep = { start = "23:30", end = "07:30" }
 meals = [
   { name = "lunch", start = "12:45", end = "13:30" },
@@ -95,6 +96,7 @@ max_day_load_hours = 10.0     # comfort: events + work per day (not day_load_exc
 [[profiles]]
 name = "vacation"
 day_window = { start = "09:30", end = "21:00" }
+weekend_start = "10:00"   # Saturdays and Sundays start later
 sleep = { start = "00:00", end = "08:30" }
 meals = [
   { name = "lunch", start = "13:00", end = "14:00" },

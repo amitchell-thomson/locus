@@ -883,24 +883,149 @@ impl Engine {
             meta.flex = true;
             meta.pinned = true;
         }
-        let uid = build::new_uid();
-        let ev = NewEvent {
-            uid: uid.clone(),
-            title: req.title.trim().to_string(),
-            time,
-            location: req.location.clone().filter(|l| !l.is_empty()),
-            description: req.description.clone(),
-            meta,
-            alarms: req.alarms.clone().unwrap_or_default(),
-            transparent: false,
+        let series = match &req.repeat {
+            None => vec![(time, None)],
+            Some(r) => self.repeat_series(time, r)?,
         };
-        let after = build::event_file(&ev, self.tz(), self.now());
-        let item = Item {
-            source: target.id.clone(),
-            href: vdir::href_for_uid(&uid),
+        let tz = self.tz();
+        let mut ops = Vec::new();
+        for (time, rrule) in &series {
+            let uid = build::new_uid();
+            let ev = NewEvent {
+                uid: uid.clone(),
+                title: req.title.trim().to_string(),
+                time: *time,
+                location: req.location.clone().filter(|l| !l.is_empty()),
+                description: req.description.clone(),
+                meta: meta.clone(),
+                alarms: req.alarms.clone().unwrap_or_default(),
+                transparent: false,
+                rrule: rrule.clone(),
+            };
+            let after = build::event_file(&ev, tz, self.now());
+            let item = Item {
+                source: target.id.clone(),
+                href: vdir::href_for_uid(&uid),
+            };
+            ops.push(Op::CreateEvent { item, uid, after });
+        }
+        let title = req.title.trim();
+        let summary = match &req.repeat {
+            None => format!("Add {title:?} {} to {key}", describe_time(time, tz)),
+            Some(r) => {
+                let every = if r.every.as_deref() == Some("day") {
+                    "daily"
+                } else {
+                    "weekly"
+                };
+                let first = series.first().map_or(time, |s| s.0);
+                let scope = if r.term_only {
+                    format!(
+                        ", term time ({} term{})",
+                        series.len(),
+                        if series.len() == 1 { "" } else { "s" }
+                    )
+                } else {
+                    r.until.as_deref().map(|u| format!(" until {u}")).unwrap_or_default()
+                };
+                format!(
+                    "Add {every} {title:?} from {}{scope} to {key}",
+                    describe_time(first, tz)
+                )
+            }
         };
-        let summary = format!("Add {:?} {} to {}", ev.title, describe_time(time, self.tz()), key);
-        self.propose(&world, author, vec![Op::CreateEvent { item, uid, after }], summary)
+        self.propose(&world, author, ops, summary)
+    }
+
+    /// The series for a repeating event: one per term (term time only) or one
+    /// from the start until a date (or forever). Each starts on the first
+    /// matching day in its range.
+    fn repeat_series(&self, time: NewTime, r: &api::Repeat) -> Result<Vec<(NewTime, Option<String>)>> {
+        let tz = self.tz();
+        let daily = match r.every.as_deref().unwrap_or("week") {
+            "day" | "daily" => true,
+            "week" | "weekly" => false,
+            x => return Err(EngineError::BadRequest(format!("repeat every {x:?}: day or week"))),
+        };
+        let (d0, at_day) = match time {
+            NewTime::Timed { start, end } => {
+                let l = start.with_timezone(&tz);
+                let len = end - start;
+                let t = l.time();
+                (
+                    l.date_naive(),
+                    Box::new(move |d: chrono::NaiveDate| {
+                        let s = kairos_core::time::resolve_local(d.and_time(t), tz);
+                        NewTime::Timed { start: s, end: s + len }
+                    }) as Box<dyn Fn(chrono::NaiveDate) -> NewTime>,
+                )
+            }
+            NewTime::AllDay { start, end } => {
+                let len = end - start;
+                (
+                    start,
+                    Box::new(move |d: chrono::NaiveDate| NewTime::AllDay { start: d, end: d + len })
+                        as Box<dyn Fn(chrono::NaiveDate) -> NewTime>,
+                )
+            }
+        };
+        let until_of = |d: chrono::NaiveDate| match time {
+            NewTime::Timed { .. } => kairos_core::time::resolve_local(
+                d.and_time(NaiveTime::from_hms_opt(23, 59, 59).unwrap_or(NaiveTime::MIN)),
+                tz,
+            )
+            .format("%Y%m%dT%H%M%SZ")
+            .to_string(),
+            NewTime::AllDay { .. } => d.format("%Y%m%d").to_string(),
+        };
+        let freq = if daily { "DAILY" } else { "WEEKLY" };
+        // First day ≥ `from` on the start's weekday (any day if daily).
+        let first_from = |from: chrono::NaiveDate| {
+            let mut d = from.max(d0);
+            while !daily && chrono::Datelike::weekday(&d) != chrono::Datelike::weekday(&d0) {
+                d += Duration::days(1);
+            }
+            d
+        };
+        let mut out = Vec::new();
+        if r.term_only {
+            let term = self
+                .constraints
+                .profiles
+                .iter()
+                .find(|p| p.name.eq_ignore_ascii_case("term"))
+                .ok_or_else(|| EngineError::BadRequest("no `term` profile in constraints.toml".into()))?;
+            let limit = match &r.until {
+                Some(u) => Some(self.date_of(u)?),
+                None => None,
+            };
+            for range in &term.dates {
+                let to = limit.map_or(range.to, |l| l.min(range.to));
+                let first = first_from(range.from);
+                if first > to {
+                    continue;
+                }
+                out.push((at_day(first), Some(format!("FREQ={freq};UNTIL={}", until_of(to)))));
+            }
+            if out.is_empty() {
+                return Err(EngineError::BadRequest("no term time left in that range".into()));
+            }
+        } else {
+            let rule = match &r.until {
+                Some(u) => format!("FREQ={freq};UNTIL={}", until_of(self.date_of(u)?)),
+                None => format!("FREQ={freq}"),
+            };
+            out.push((time, Some(rule)));
+        }
+        Ok(out)
+    }
+
+    fn date_of(&self, s: &str) -> Result<chrono::NaiveDate> {
+        let tz = self.tz();
+        Ok(match api::parse_time(s, tz, self.now())? {
+            TimeIn::Date(d) => d,
+            TimeIn::At(t) => t.with_timezone(&tz).date_naive(),
+        })
     }
 
     pub fn update_event(
@@ -1750,6 +1875,93 @@ impl Engine {
         }
     }
 
+    /// Start working on a task right now: a pinned block from now (a full
+    /// block, or `minutes`; never past the next fixed event or the deadline),
+    /// then a replan, so later blocks shrink or go.
+    pub fn start_task(&mut self, author: Author, id: &str, minutes: Option<u32>) -> Result<api::TaskResp> {
+        let t = self.find_task(id)?;
+        if t.status != TaskStatus::Open {
+            return Err(EngineError::BadRequest(format!("{:?} isn't open", t.title)));
+        }
+        let tz = self.tz();
+        let now = self.now();
+        // Now, rounded down to the scheduler's slot (so the plan adds up exactly).
+        let slot = i64::from(self.constraints.slot_minutes.max(1)) * 60;
+        let start = DateTime::from_timestamp(now.timestamp() / slot * slot, 0).unwrap_or(now);
+        let want = minutes.unwrap_or_else(|| t.remaining_min.min(t.max_chunk_min.max(t.min_chunk_min)));
+        let mut end = start + Duration::minutes(i64::from(want.max(10)));
+        let mut why = String::new();
+        let world = self.world(2)?;
+        if let Some(next) = world
+            .instances
+            .iter()
+            .filter(|i| is_busy(i))
+            .map(|i| i.start(tz))
+            .filter(|s| *s > start)
+            .min()
+            && next < end
+        {
+            end = next;
+            why = format!(
+                " (until {} — something starts then)",
+                next.with_timezone(&tz).format("%H:%M")
+            );
+        }
+        if let Some(d) = t.due.map(|d| d.instant(tz))
+            && d < end
+        {
+            end = d;
+            why = " (until the deadline)".into();
+        }
+        if end - now < Duration::minutes(15) {
+            return Err(EngineError::BadRequest(format!(
+                "no time now: something starts at {}",
+                end.with_timezone(&tz).format("%H:%M")
+            )));
+        }
+        // This replaces the task's own (unpinned) blocks it overlaps, e.g. one
+        // that was planned to have started already.
+        let mut changesets = Vec::new();
+        let overlapped: Vec<(Option<String>, String)> = self
+            .blocks(&world)
+            .into_iter()
+            .filter(|(b, _)| b.task_id == t.id && !b.pinned && b.start < end && b.end > start)
+            .map(|(_, i)| (Some(i.source.clone()), i.uid.clone()))
+            .collect();
+        if !overlapped.is_empty() {
+            let d = self.delete_events(
+                author,
+                &overlapped,
+                Some(&format!("Make room to start {:?} now", t.title)),
+            )?;
+            changesets.push(WriteResult::from(&d));
+        }
+        let cs = self.create_event(
+            author,
+            &api::CreateEventReq {
+                title: t.title.clone(),
+                start: start.to_rfc3339(),
+                end: Some(end.to_rfc3339()),
+                key: Some(t.key.clone()),
+                description: Some(format!("Started now{why}")),
+                task_id: Some(t.id.clone()),
+                ..Default::default()
+            },
+        )?;
+        let plan = if cs.status == Status::Applied {
+            self.replan_soon = false;
+            Some(self.plan(false, Author::Scheduler)?)
+        } else {
+            None
+        };
+        changesets.push(WriteResult::from(&cs));
+        Ok(api::TaskResp {
+            task: self.find_task(&t.id)?,
+            changesets,
+            plan,
+        })
+    }
+
     pub fn complete_task(&mut self, author: Author, id: &str, actual_min: Option<u32>) -> Result<api::TaskResp> {
         let before = self.find_task(id)?;
         let mut t = before.clone();
@@ -2210,6 +2422,7 @@ impl Engine {
                 },
                 alarms: vec![],
                 transparent: false,
+                rrule: None,
             };
             ops.push(Op::CreateEvent {
                 item: Item {

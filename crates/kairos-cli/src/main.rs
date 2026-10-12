@@ -107,6 +107,18 @@ enum Cmd {
         /// Notes (shown as the event's notes on the phone).
         #[arg(long)]
         notes: Option<String>,
+        /// Repeat every week (same weekday).
+        #[arg(long)]
+        weekly: bool,
+        /// Repeat every day.
+        #[arg(long, conflicts_with = "weekly")]
+        daily: bool,
+        /// With --weekly/--daily: only during term time (one series per term).
+        #[arg(long)]
+        term: bool,
+        /// With --weekly/--daily: last date.
+        #[arg(long)]
+        until: Option<String>,
     },
     /// Edit an event.
     Edit {
@@ -414,8 +426,21 @@ fn run() -> Result<()> {
             end,
             location,
             notes,
+            weekly,
+            daily,
+            term,
+            until,
         } => {
+            if (term || until.is_some()) && !(weekly || daily) {
+                return Err(anyhow!("--term / --until need --weekly or --daily"));
+            }
+            let repeat = (weekly || daily).then(|| api::Repeat {
+                every: Some(if daily { "day" } else { "week" }.into()),
+                term_only: term,
+                until,
+            });
             let req = api::CreateEventReq {
+                repeat,
                 title,
                 start: ctx.when(&when.join(" "))?,
                 end: end.map(|e| ctx.when(&e)).transpose()?,

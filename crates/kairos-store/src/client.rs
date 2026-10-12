@@ -227,6 +227,10 @@ impl Daemon {
     pub fn plan(&self, dry_run: bool) -> Result<std::result::Result<api::PlanResp, Rejected>> {
         self.post("/api/plan", &api::PlanReq { dry_run })
     }
+    pub fn start_task(&self, id: &str, minutes: Option<u32>) -> Result<std::result::Result<api::TaskResp, Rejected>> {
+        self.post(&format!("/api/tasks/{id}/start"), &api::StartTaskReq { minutes })
+    }
+
     pub fn proposals(&self) -> Result<std::result::Result<Vec<api::ProposalItem>, Rejected>> {
         self.get("/api/proposals")
     }

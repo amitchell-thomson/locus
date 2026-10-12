@@ -1010,3 +1010,35 @@ fn proposals_start_at_nine_at_the_earliest() {
     // An empty day: 09:00–12:00 (the first longest gap).
     assert_eq!(local(props[0].start), "Mon 12 09:00");
 }
+
+#[test]
+fn weekends_start_at_ten() {
+    // Friday night: the sheet's blocks and the weekend's proposals start ≥ 10:00.
+    let c = constraints();
+    let tasks = [typed("b4", "sheet", 300, Some("2026-10-19 12:00"))];
+    let input = PlanInput {
+        now: at("2026-10-16 22:00"),
+        tz: London,
+        constraints: &c,
+        tasks: &tasks,
+        busy: &[],
+        existing: &[],
+    };
+    let p = plan(&input);
+    assert!(p.shortfalls.is_empty(), "{:?}", p.shortfalls);
+    let weekend = |t: DateTime<Utc>| {
+        matches!(
+            t.with_timezone(&London).weekday(),
+            chrono::Weekday::Sat | chrono::Weekday::Sun
+        )
+    };
+    let blocks: Vec<&Block> = p.create.iter().filter(|b| weekend(b.start)).collect();
+    assert!(!blocks.is_empty());
+    for b in blocks {
+        assert!(b.start.with_timezone(&London).hour() >= 10, "{}", local(b.start));
+    }
+    assert_eq!(local(p.create[0].start), "Sat 17 10:00");
+    for x in propose(&input, &p, &[], &[]).iter().filter(|x| weekend(x.start)) {
+        assert!(x.start.with_timezone(&London).hour() >= 10, "{}", local(x.start));
+    }
+}

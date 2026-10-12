@@ -183,6 +183,7 @@ pub fn router(st: AppState, mcp: Option<Router<AppState>>) -> Router {
         .route("/api/tasks", get(list_tasks).post(create_task))
         .route("/api/tasks/{id}", axum::routing::patch(update_task).get(get_task))
         .route("/api/tasks/{id}/complete", post(complete_task))
+        .route("/api/tasks/{id}/start", post(start_task))
         .route("/api/tasks/{id}/drop", post(drop_task))
         .route("/api/deadlines", post(create_deadline))
         .route("/api/plan", post(plan))
@@ -405,6 +406,19 @@ async fn complete_task(
     let actual = body.and_then(|b| b.0.actual_min);
     Ok(Json(
         with_engine_as(&st, &h, move |e| e.complete_task(a, &id, actual)).await?,
+    ))
+}
+
+async fn start_task(
+    State(st): State<AppState>,
+    h: HeaderMap,
+    Path(id): Path<String>,
+    body: Option<Json<api::StartTaskReq>>,
+) -> HResult<api::TaskResp> {
+    let minutes = body.and_then(|b| b.0.minutes);
+    let a = author(&h);
+    Ok(Json(
+        with_engine_as(&st, &h, move |e| e.start_task(a, &id, minutes)).await?,
     ))
 }
 

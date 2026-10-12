@@ -116,10 +116,23 @@ pub struct TuiSettings {
     /// Events starting within this many minutes get an "in 25m" marker.
     #[serde(default = "default_soon_minutes")]
     pub soon_minutes: u32,
+    /// The header's day-load bar: events + work against this many hours
+    /// (match constraints.toml's `max_day_load_hours`)…
+    #[serde(default = "default_day_hours")]
+    pub day_load_hours: f32,
+    /// …not counting events in these keys (`day_load_excludes`).
+    #[serde(default = "default_load_excludes")]
+    pub load_excludes: Vec<String>,
 }
 
 fn default_soon_minutes() -> u32 {
     60
+}
+fn default_day_hours() -> f32 {
+    10.0
+}
+fn default_load_excludes() -> Vec<String> {
+    vec!["Social".into(), "Sport".into()]
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -158,6 +171,8 @@ impl Default for TuiSettings {
             section_hours: default_section_hours(),
             terms: Vec::new(),
             soon_minutes: default_soon_minutes(),
+            day_load_hours: default_day_hours(),
+            load_excludes: default_load_excludes(),
         }
     }
 }

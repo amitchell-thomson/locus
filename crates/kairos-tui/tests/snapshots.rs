@@ -502,3 +502,24 @@ fn squeezed_work_blocks_carry_a_warning() {
     assert!(s.contains("⚠ ~ B4 sheet"), "{s}");
     assert!(s.contains("⚠ squeezed into a short gap"), "{s}");
 }
+
+#[test]
+fn day_load_counts_events_and_work_but_not_excluded_keys() {
+    let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
+    let d = a.cursor;
+    let c = a.day_clusters(d);
+    let all = kairos_tui::ui::day_load(&a, d, &c);
+    assert_eq!(all, 150, "B4 block 1.5 h + 1 h of events");
+    a.cfg.tui.load_excludes.push("Personal".into());
+    assert!(kairos_tui::ui::day_load(&a, d, &c) < all, "excluded keys don't count");
+    // Proposals never count.
+    a.cfg.tui.load_excludes.clear();
+    a.proposals = vec![kairos_core::api::ProposalItem {
+        id: "p".into(),
+        start: now("2026-10-21T14:00:00+01:00"),
+        end: now("2026-10-21T17:00:00+01:00"),
+        title: "Project time".into(),
+    }];
+    let c = a.day_clusters(d);
+    assert_eq!(kairos_tui::ui::day_load(&a, d, &c), all);
+}

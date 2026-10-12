@@ -22,6 +22,8 @@ pub enum FieldKind {
     Key,
     /// Picks a task type (←/→ or first letter).
     Type,
+    /// Picks how an event repeats (←/→).
+    Repeat,
     /// Optional time (task due).
     OptWhen,
 }
@@ -88,6 +90,12 @@ impl Form {
                 field("Calendar", default_key, FieldKind::Key, KEY_HINT),
                 field("Location", "", FieldKind::Text, "optional"),
                 field("Notes", "", FieldKind::Text, "optional"),
+                field(
+                    "Repeat",
+                    "no",
+                    FieldKind::Repeat,
+                    "no · weekly · weekly in term (each term in constraints.toml) · daily — ←/→",
+                ),
             ],
             keys,
         )
@@ -217,6 +225,7 @@ impl Form {
     fn options(&self) -> Vec<String> {
         match self.fields[self.focus].kind {
             FieldKind::Type => TASK_TYPES.iter().map(|s| s.to_string()).collect(),
+            FieldKind::Repeat => REPEATS.iter().map(|s| s.to_string()).collect(),
             _ => self.keys.clone(),
         }
     }
@@ -286,9 +295,27 @@ impl Form {
 /// Task types the form offers (the built-in ones in constraints.toml).
 pub const TASK_TYPES: [&str; 3] = ["sheet", "coursework", "admin"];
 
+/// How a new event can repeat.
+pub const REPEATS: [&str; 4] = ["no", "weekly", "weekly in term", "daily"];
+
+/// The API repeat for a Repeat field value.
+pub fn repeat_of(v: &str) -> Option<kairos_core::api::Repeat> {
+    let (every, term_only) = match v {
+        "weekly" => ("week", false),
+        "weekly in term" => ("week", true),
+        "daily" => ("day", false),
+        _ => return None,
+    };
+    Some(kairos_core::api::Repeat {
+        every: Some(every.into()),
+        term_only,
+        until: None,
+    })
+}
+
 impl FieldKind {
     pub fn is_picker(self) -> bool {
-        matches!(self, FieldKind::Key | FieldKind::Type)
+        matches!(self, FieldKind::Key | FieldKind::Type | FieldKind::Repeat)
     }
 }
 

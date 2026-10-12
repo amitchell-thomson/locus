@@ -78,6 +78,24 @@ pub struct CreateEventReq {
     /// Make this a pinned work block for the given task.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_id: Option<String>,
+    /// Repeat (e.g. weekly during term).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repeat: Option<Repeat>,
+}
+
+/// A repeating event: every day or week from the start, either during term
+/// time only (one series per term, from constraints.toml's `term` profile)
+/// or until a date (or forever).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct Repeat {
+    /// `week` (default) or `day`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub every: Option<String>,
+    #[serde(default)]
+    pub term_only: bool,
+    /// Last date (inclusive).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub until: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -306,6 +324,13 @@ pub struct CheckinItem {
     /// The task's remaining minutes now.
     #[serde(default)]
     pub remaining_min: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct StartTaskReq {
+    /// How long (default: a full block of the task's type).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub minutes: Option<u32>,
 }
 
 /// Proposed project time, waiting for Alec to accept or drop it.

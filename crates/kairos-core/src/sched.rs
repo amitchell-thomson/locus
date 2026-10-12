@@ -265,7 +265,12 @@ impl<'a> Grid<'a> {
 fn slot_allowed(p: &Profile, m: u16, slot: u16, wd: chrono::Weekday) -> bool {
     let end = m + slot; // slot must fit entirely
     let inside = |s: Hm, e: Hm| m >= s.minutes() && end <= e.minutes();
-    if !inside(p.day_window.start, p.day_window.end) {
+    let weekend = matches!(wd, chrono::Weekday::Sat | chrono::Weekday::Sun);
+    let day_start = match p.weekend_start {
+        Some(w) if weekend => w.max(p.day_window.start),
+        _ => p.day_window.start,
+    };
+    if !inside(day_start, p.day_window.end) {
         return false;
     }
     let hits = |s: Hm, e: Hm| {
@@ -646,11 +651,12 @@ fn run(input: &PlanInput<'_>, g: &Grid<'_>, horizon_idx: usize, keep_existing: b
     // Existing future blocks, by task then start.
     let mut existing: Vec<&Block> = input.existing.iter().filter(|b| b.end > g.t0).collect();
     existing.sort_by(|a, b| (a.task_id.as_str(), a.start).cmp(&(b.task_id.as_str(), b.start)));
-    // Blocks that already started (but aren't checked in) count as in progress.
+    // Blocks already under way (or starting inside the planning margin) count
+    // in full: that work is happening.
     for b in input.existing.iter().filter(|b| b.start < g.t0 && b.end > input.now) {
         if let Some(r) = remaining.get_mut(b.task_id.as_str()) {
-            let used = (b.end.min(g.t0) - b.start).num_minutes().max(0) / g.slot;
-            *r = r.saturating_sub(used as usize);
+            let used = g.slots(b.minutes().max(0));
+            *r = r.saturating_sub(used);
         }
         let i1 = g.idx_ceil(b.end).clamp(0, g.n as i64) as usize;
         for k in 0..i1 {

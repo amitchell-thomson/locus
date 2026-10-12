@@ -172,6 +172,7 @@ Deterministic Rust code. Claude's job is to interpret intent, create and update 
   - comfort: at most `max_continuous_minutes` (3 h) of back-to-back events + work without a `break_minutes` (30 min) break, and at most `max_day_load_hours` (10 h) of events + work a day (events in `day_load_excludes` — Social, Sport — don't count);
 - recovery: no work for `minutes` after events in a `[[recovery]]` key (Sport: 60 min — tired, showering), not even squeezed. Only the scheduler's work is kept out: fixed events (compulsory lectures) stay where they are;
 - task types (`[[task_types]]`): `sheet` (5 h default, 2–3 h blocks, ≥ 1 h), `coursework` (estimate required, 2–3 h blocks, revised at check-ins), `admin` (45 min default, one 30–60 min go);
+- `weekend_start` (10:00): Saturdays and Sundays start later (task work and proposals);
 - `squeeze_block_minutes` (40): the shortest squeezed block (a 1 h gap between lectures minus 10 min travel each side).
 
 **Algorithm (2026-10-12 scheme):**
@@ -183,6 +184,12 @@ Deterministic Rust code. Claude's job is to interpret intent, create and update 
 6. **Infeasibility is a first-class output:** if work doesn't fit, report per-task shortfall ("B4 sheet: 2.5 h short before Fri 17:00") and the options (extend window, drop/lower priority, cut estimate). Never silently overbook.
 7. **Learned estimates:** once a type has ≥ 3 finished tasks, remaining time is planned × the median actual/estimate ratio (clamped ×0.7–×2), shown in the plan ("≈ B4 sheet: planning 6 h for 4 h left (sheet tasks usually take ×1.50)").
 8. **Proposed project time:** after task work, one session a day (`max_per_day`), from 09:00 (`earliest`), in the day's longest comfortable free gap (1–3 h, within the daily work cap, next 7 days; none on a day with an accepted session — Alec can still add more himself) is offered as greyed "Project time?" blocks in the TUI (kairosd only — nothing written to iCloud). Alec accepts one (`y`, then says what to work on → an event) or drops it (`d`, never proposed there again).
+
+**Start now:** `n` in the TUI on a task (tasks view) or on one of its blocks / its ⚑ (week/day view) puts a pinned block from now (rounded down to the slot) for a full block of the task's type, stopping at the next fixed event or the deadline; it replaces the task's unpinned blocks it overlaps, and the plan reflows.
+
+**Repeating events:** `create_event` takes `repeat` (`every` week|day, `term_only`, `until`). Term-time repeats are one series per term from the `term` profile's dates (RRULE … UNTIL the term's last day), so the vacation is empty and iPhone/iCloud see plain weekly series. Recurring → needs approval unless Alec typed it.
+
+**Day load bars:** the week/day header shows each day's events + work (not Social/Sport, not proposals) against `tui.day_load_hours` (10 h), green → yellow → peach → red.
 
 **Completion tracking:**
 - Evening check-in (ntfy, Phase 8; TUI prompt before then) lists today's blocks with done / partial / missed.

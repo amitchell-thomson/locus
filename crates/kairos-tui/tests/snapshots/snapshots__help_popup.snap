@@ -4,22 +4,22 @@ expression: "render_to_string(&a, 100, 30)"
 ---
 ╭──────────────────────────────────── Week 43 · 19 Oct–25 Oct ─────────────────────────────────────╮
 │       Mon 19       Tue 20       Wed 21       Thu 22       Fri 23       Sat 24       Sun 25       │
-│                                                          ▌Lake District trip                     │
 │                 ╭──────────────────────────── keys ────────────────────────────╮                 │
-│─────────────────│ h l / H L  day / week back, forward                          │─────────────────│
-│06:00 ┊          │         t  today                                             │   ┊             │
-│07:00 ┊          │       j k  select event                                      │   ┊             │
-│08:00 ●──────────│       Tab  week → day → agenda                               │   ┊             │
-│09:00 ┊          │     Enter  details / expand duplicates ⧉                     │   ┊             │
-│10:00 ┊          │         w  week: Mon–Sun ↔ Mon–Fri (wider)                   │   ┊             │
-│11:00 ┊          │   p f b i  show/hide: Personal, Family, Holidays, Gmail      │   ┊             │
-│      ┄┄┄┄┄┄┄┄┄┄┄│       1–7  show/hide one calendar (see the bar below)        │┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄│
-│12:00 ┊          │         a  add event (a form; Tab between fields)            │   ┊             │
-│13:00 ┊          │       e K  edit event (K jumps to its calendar)              │   ┊             │
-│14:00 ┊          │         m  move to another time                              │   ┊             │
-│15:00 ┊          │       d s  delete, share to Family                           │   ┊             │
-│16:00 ┊          │         B  Family event: block / unblock my time             │   ┊             │
-│17:00 ┊          │       y d  proposed project time ◌: accept (say what) / drop │   ┊             │
+│                 │ h l / H L  day / week back, forward                          │                 │
+│─────────────────│         t  today                                             │─────────────────│
+│06:00 ┊          │       j k  select event                                      │   ┊             │
+│07:00 ┊          │       Tab  week → day → agenda                               │   ┊             │
+│08:00 ●──────────│     Enter  details / expand duplicates ⧉                     │   ┊             │
+│09:00 ┊          │         w  week: Mon–Sun ↔ Mon–Fri (wider)                   │   ┊             │
+│10:00 ┊          │   p f b i  show/hide: Personal, Family, Holidays, Gmail      │   ┊             │
+│11:00 ┊          │       1–7  show/hide one calendar (see the bar below)        │   ┊             │
+│      ┄┄┄┄┄┄┄┄┄┄┄│         a  add event (a form; Tab between fields)            │┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄│
+│12:00 ┊          │       e K  edit event (K jumps to its calendar)              │   ┊             │
+│13:00 ┊          │         m  move to another time                              │   ┊             │
+│14:00 ┊          │       d s  delete, share to Family                           │   ┊             │
+│15:00 ┊          │         B  Family event: block / unblock my time             │   ┊             │
+│16:00 ┊          │       y d  proposed project time ◌: accept (say what) / drop │   ┊             │
+│17:00 ┊          │         n  start the selected task now (block from now; plan │   ┊             │
 │      ┄┄┄┄┄┄┄┄┄┄┄│         P  run the scheduler                                 │┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄│
 │18:00 ┊          │       T A  tasks, approvals                                  │   ┊             │
 │19:00 ┊▌Squash   │         C  check in today's work blocks                      │   ┊▌Sunday Sq…  │

@@ -721,6 +721,7 @@ impl App {
                             }
                         }
                     }
+                    Key::Char('n') => self.start_now(t.id.clone(), t.title.clone()),
                     Key::Char('x') => {
                         self.mode = Mode::Confirm(Confirm::DropTask(t.id.clone()));
                         self.set_message(format!("drop “{}”? y/N", t.title), false);
@@ -749,8 +750,19 @@ impl App {
                                 String::new(),
                             );
                         }
-                        Key::Char('n') | Key::Char('d') | Key::Char('x') => self.reject_proposal(&i.uid),
+                        Key::Char('d') | Key::Char('x') => self.reject_proposal(&i.uid),
                         _ => {}
+                    }
+                    return;
+                }
+                if k == Key::Char('n') {
+                    // Start this block's (or deadline's) task now.
+                    match i.meta.task_id.clone() {
+                        Some(id) => {
+                            let title = i.title.trim_start_matches('⚑').trim().to_string();
+                            self.start_now(id, title);
+                        }
+                        None => self.set_message("n starts a task now: select one of its blocks or its ⚑", true),
                     }
                     return;
                 }
@@ -1024,8 +1036,12 @@ impl App {
                 if when.is_empty() {
                     return Err("When: e.g. tue 19:00".into());
                 }
+                let rep = match f.get("Repeat") {
+                    "" | "no" => String::new(),
+                    r => format!(" · {r}"),
+                };
                 match dates::parse_when(when, self.today()).map_err(|e| e.to_string())? {
-                    When::Date(d) => Ok(format!("{} · all day · {key}", d.format("%a %-d %b"))),
+                    When::Date(d) => Ok(format!("{} · all day{rep} · {key}", d.format("%a %-d %b"))),
                     When::DateTime(n) => {
                         let dur = match f.get("Duration") {
                             "" => 60,
@@ -1033,7 +1049,7 @@ impl App {
                         };
                         let s = resolve_local(n, self.tz);
                         let e = s + Duration::minutes(i64::from(dur));
-                        Ok(format!("{} · {key}", describe_span(s, e, self.tz)))
+                        Ok(format!("{}{rep} · {key}", describe_span(s, e, self.tz)))
                     }
                 }
             }
@@ -1066,6 +1082,7 @@ impl App {
                     key: opt(f.get("Calendar")),
                     location: opt(f.get("Location")),
                     description: opt(f.get("Notes")),
+                    repeat: crate::form::repeat_of(f.get("Repeat")),
                     ..Default::default()
                 };
                 if let Some(r) = self.with_daemon(|d| d.create_event(&req)) {
@@ -1216,6 +1233,34 @@ impl App {
         }
         let (uid, title) = (item.block_uid.clone(), item.title.clone());
         self.send_checkin(uid, &title, outcome, None);
+    }
+
+    /// Start a task now: a block from now, the rest of the plan reflows.
+    fn start_now(&mut self, id: String, title: String) {
+        if self.daemon.is_none() {
+            return self.set_message("kairosd not configured — writes unavailable", true);
+        }
+        self.set_message(format!("▶ starting {title}…"), false);
+        self.deferred.push(Box::new(move |app: &mut App| {
+            match app.with_daemon(|d| d.start_task(&id, None)) {
+                Some(Ok(Ok(r))) => {
+                    let warn = r.plan.as_ref().and_then(plan_warning).unwrap_or_default();
+                    // The summary reads "Add "…" Mon 12 Oct 10:05–11:30 to …".
+                    let until = r
+                        .changesets
+                        .last()
+                        .and_then(|c| c.summary.split('–').nth(1).and_then(|x| x.split_whitespace().next()))
+                        .unwrap_or("")
+                        .to_string();
+                    app.set_message(format!("▶ {title} now, until {until}{warn}"), !warn.is_empty());
+                    app.wants_sync = true;
+                    app.refresh_remote();
+                }
+                Some(Ok(Err(e))) => app.set_message(e.to_string(), true),
+                Some(Err(e)) => app.set_message(e.to_string(), true),
+                None => {}
+            }
+        }));
     }
 
     fn accept_proposal(&mut self, id: String, title: String) {

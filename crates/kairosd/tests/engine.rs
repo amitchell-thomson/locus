@@ -1170,3 +1170,115 @@ fn project_time_is_proposed_accepted_and_dropped() {
     );
     assert!(matches!(e.reject_proposal("nope"), Err(EngineError::NotFound(_))));
 }
+
+#[test]
+fn weekly_term_time_event_is_one_series_per_term() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let req = CreateEventReq {
+        title: "Futsal training".into(),
+        start: "2026-10-15T07:00".into(),
+        end: Some("2026-10-15T09:00".into()),
+        key: Some("Sport".into()),
+        repeat: Some(kairos_core::api::Repeat {
+            every: Some("week".into()),
+            term_only: true,
+            until: None,
+        }),
+        ..Default::default()
+    };
+    // From Claude: recurring → Alec approves.
+    let cs = e.create_event(Author::Claude, &req).unwrap();
+    assert_eq!(cs.status, Status::Pending);
+    assert!(cs.reasons.iter().any(|r| r.contains("recurring")), "{:?}", cs.reasons);
+    e.reject(&cs.id).unwrap();
+    // Alec at the keyboard: applied, three series (Michaelmas, Hilary, Trinity).
+    e.direct = true;
+    let cs = e.create_event(Author::Alec, &req).unwrap();
+    e.direct = false;
+    assert_eq!(cs.status, Status::Applied);
+    assert_eq!(cs.ops.len(), 3);
+    assert!(
+        cs.summary.contains("weekly \"Futsal training\"") && cs.summary.contains("term time (3 terms)"),
+        "{}",
+        cs.summary
+    );
+    let all = env.read_all("Sport");
+    assert!(all.contains("RRULE:FREQ=WEEKLY;UNTIL=20261205T235959Z"), "{all}");
+    assert!(
+        all.contains("DTSTART;TZID=Europe/London:20270114T070000"),
+        "first Thursday of Hilary"
+    );
+    assert!(
+        all.contains("DTSTART;TZID=Europe/London:20270422T070000"),
+        "first Thursday of Trinity"
+    );
+    // Expanded: Thursdays in term at 07:00 local (DST-safe), none in the vacation.
+    let world = e.world(400).unwrap();
+    let starts: Vec<String> = world
+        .instances
+        .iter()
+        .filter(|i| i.title == "Futsal training")
+        .map(|i| london(i.start(chrono_tz::Europe::London)))
+        .collect();
+    assert!(starts.contains(&"2026-10-15 07:00".to_string()));
+    assert!(
+        starts.contains(&"2026-10-29 07:00".to_string()),
+        "after the clocks change"
+    );
+    assert!(starts.contains(&"2026-12-03 07:00".to_string()));
+    assert!(
+        !starts
+            .iter()
+            .any(|s| s.starts_with("2026-12-10") || s.starts_with("2026-12-31"))
+    );
+    assert!(starts.contains(&"2027-01-14 07:00".to_string()));
+}
+
+#[test]
+fn start_now_puts_a_block_from_now_and_reflows_the_rest() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e.create_task(Author::Claude, &b4(240, "fri 17:00")).unwrap();
+    assert!(r.plan.unwrap().created.len() >= 2);
+    // A lecture at 11:00; it's 10:02 and Alec wants to start now.
+    env.phone_event("Engineering", "lec", "Lecture", "2026-10-12 11:00", "2026-10-12 12:00");
+    env.set_now("2026-10-12 10:02");
+    e.direct = true;
+    let s = e.start_task(Author::Alec, &r.task.id, None).unwrap();
+    e.direct = false;
+    assert_eq!(s.changesets[0].status, Status::Applied);
+    let world = e.world(14).unwrap();
+    let blocks: Vec<_> = world
+        .instances
+        .iter()
+        .filter(|i| i.meta.task_id.as_deref() == Some(r.task.id.as_str()) && i.meta.kind == EventKind::TaskBlock)
+        .collect();
+    let now_block = blocks
+        .iter()
+        .find(|i| london(i.start(chrono_tz::Europe::London)) == "2026-10-12 10:00")
+        .expect("a block from now (rounded down to the 10-min slot)");
+    // Stops when the lecture starts; pinned so the scheduler leaves it.
+    assert_eq!(london(now_block.end(chrono_tz::Europe::London)), "2026-10-12 11:00");
+    assert!(now_block.meta.pinned);
+    // The rest still adds up to the estimate (no double counting).
+    let total: i64 = blocks
+        .iter()
+        .map(|i| (i.end(chrono_tz::Europe::London) - i.start(chrono_tz::Europe::London)).num_minutes())
+        .sum();
+    assert_eq!(
+        total,
+        240,
+        "{:?}",
+        blocks
+            .iter()
+            .map(|i| london(i.start(chrono_tz::Europe::London)))
+            .collect::<Vec<_>>()
+    );
+    // No room at all: a clear refusal.
+    env.set_now("2026-10-12 10:55");
+    assert!(matches!(
+        e.start_task(Author::Alec, &r.task.id, None),
+        Err(EngineError::BadRequest(m)) if m.contains("no time now")
+    ));
+}

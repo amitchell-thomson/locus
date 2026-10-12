@@ -34,6 +34,8 @@ pub struct NewEvent {
     /// Minutes before start.
     pub alarms: Vec<i64>,
     pub transparent: bool,
+    /// RRULE value (e.g. `FREQ=WEEKLY;UNTIL=20261205T235959Z`).
+    pub rrule: Option<String>,
 }
 
 pub fn new_uid() -> String {
@@ -122,6 +124,9 @@ pub fn event_file(e: &NewEvent, tz: Tz, now: DateTime<Utc>) -> String {
     ev.push(Property::new("CREATED", &now.format("%Y%m%dT%H%M%SZ").to_string()));
     ev.push(Property::new("SEQUENCE", "0"));
     set_time(&mut ev, e.time, tz);
+    if let Some(r) = &e.rrule {
+        ev.push(Property::new("RRULE", r));
+    }
     ev.push(Property::text("SUMMARY", &e.title));
     if let Some(l) = &e.location {
         ev.push(Property::text("LOCATION", l));
@@ -170,6 +175,7 @@ pub fn deadline(uid: &str, title: &str, due: crate::task::Due, meta: Meta, alarm
         },
         alarms,
         transparent: true,
+        rrule: None,
     }
 }
 
@@ -292,6 +298,7 @@ mod tests {
             },
             location: Some("Missing Bean".into()),
             description: None,
+            rrule: None,
             meta: Meta {
                 created_by: Some(crate::model::Author::Claude),
                 ..Default::default()

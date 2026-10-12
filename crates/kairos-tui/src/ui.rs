@@ -354,12 +354,18 @@ fn lanes<'a>(items: &'a [(usize, usize, &'a Cluster)]) -> Vec<Placed<'a>> {
 
 fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
     let tz = app.tz;
-    // A selected work block lights up its task's deadline(s) too.
-    let linked_task = app
-        .selected()
-        .filter(|c| c.primary.meta.kind == EventKind::TaskBlock)
-        .and_then(|c| c.primary.meta.task_id);
-    let linked = |i: &Instance| is_deadline(i) && i.meta.task_id.is_some() && i.meta.task_id == linked_task;
+    // A selected work block lights up its task's deadline(s), and a selected
+    // deadline its task's work blocks (red, like the deadline itself).
+    let sel = app.selected().map(|c| c.primary);
+    let linked_task = sel.as_ref().and_then(|i| i.meta.task_id.clone());
+    let sel_kind = sel.as_ref().map(|i| i.meta.kind);
+    let linked = |i: &Instance| {
+        let pair = matches!(
+            (sel_kind, i.meta.kind),
+            (Some(EventKind::TaskBlock), EventKind::Deadline) | (Some(EventKind::Deadline), EventKind::TaskBlock)
+        );
+        pair && i.meta.task_id.is_some() && i.meta.task_id == linked_task
+    };
     let inner_w = area.width.saturating_sub(2);
     let gutter: u16 = 6;
     let ndays: usize = if single {
@@ -742,7 +748,15 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             let x = x0 + lane_w * p.lane as u16;
             let i = &p.cl.primary;
             let idx = per_day[k].iter().position(|x| std::ptr::eq(x, p.cl));
-            let selected = *d == app.cursor && idx == Some(app.sel);
+            // Solid highlight: blue when selected, red when linked to the selected deadline.
+            let hl = if *d == app.cursor && idx == Some(app.sel) {
+                Some(c("blue"))
+            } else if linked(i) {
+                Some(c("red"))
+            } else {
+                None
+            };
+            let selected = hl.is_some();
             let ph = phase(app, i);
             let lively = attending(i);
             let col = colour_of(app, i);
@@ -760,11 +774,8 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             if is_dimmed(i) {
                 style = style.add_modifier(Modifier::DIM);
             }
-            if selected {
-                style = Style::default()
-                    .fg(c("base"))
-                    .bg(c("blue"))
-                    .add_modifier(Modifier::BOLD);
+            if let Some(bg) = hl {
+                style = Style::default().fg(c("base")).bg(bg).add_modifier(Modifier::BOLD);
             }
             let t = i.start(tz).with_timezone(&tz);
             // Text area: lane minus the ▌ bar and a gap column.

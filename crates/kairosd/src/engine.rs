@@ -816,7 +816,68 @@ impl Engine {
         cs.status = Status::Undone;
         cs.decided_at = Some(self.now());
         self.db.cs_put(&cs)?;
+        // A skipped slot comes back with its block.
+        self.db.skips_forget(&cs.id)?;
         self.sync_after(&touched, &cols);
+        Ok(cs)
+    }
+
+    /// Undo `id` together with the scheduler's replans applied after it
+    /// (newest first), so "undo" puts things back as they were before that
+    /// change — not just the change with the work it displaced left moved.
+    pub fn undo_with_replans(&mut self, id: &str) -> Result<Changeset> {
+        let target = self
+            .db
+            .cs_get(id)?
+            .ok_or_else(|| EngineError::NotFound(format!("changeset {id}")))?;
+        let later: Vec<Changeset> = self
+            .db
+            .cs_since(target.created_at)?
+            .into_iter()
+            .filter(|c| c.id != target.id && c.status == Status::Applied && c.author == Author::Scheduler)
+            .collect();
+        let mut later = later;
+        later.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        for c in later {
+            // A replan that can't be undone (edited since) is left as it is.
+            if let Err(e) = self.undo(&c.id) {
+                tracing::info!("undo: leaving replan {}: {e}", c.id);
+            }
+        }
+        self.undo(id)
+    }
+
+    /// Skip a work block: it's removed and no work goes in that time (the
+    /// task's work is planned elsewhere). Undo brings it back.
+    pub fn skip_block(&mut self, author: Author, source: Option<&str>, uid: &str) -> Result<Changeset> {
+        let world = self.world(2)?;
+        let loc = self.locate(&world, source, uid)?;
+        let tz = self.tz();
+        let (start, end) = match world.instances.iter().find(|i| i.uid == uid).map(|i| i.span) {
+            Some(Span::Timed { start, end }) => (start, end),
+            _ => return Err(EngineError::BadRequest("not a timed work block".into())),
+        };
+        if loc
+            .series
+            .master
+            .as_ref()
+            .is_none_or(|m| m.meta.kind != EventKind::TaskBlock)
+        {
+            return Err(EngineError::BadRequest("only work blocks can be skipped".into()));
+        }
+        let cs = self.delete_events(
+            author,
+            &[(Some(loc.source.id.clone()), uid.to_string())],
+            Some(&format!(
+                "Skip work block {}–{} (planned elsewhere)",
+                start.with_timezone(&tz).format("%a %H:%M"),
+                end.with_timezone(&tz).format("%H:%M")
+            )),
+        )?;
+        self.db.skip_add(&cs.id, start, end)?;
+        if cs.status == Status::Applied {
+            self.replan_soon = true;
+        }
         Ok(cs)
     }
 
@@ -1189,6 +1250,7 @@ impl Engine {
         let summary = match (ops.len(), label) {
             (0, _) => return Err(EngineError::BadRequest("no events given".into())),
             (1, None) => first,
+            (1, Some(l)) => l.to_string(),
             (n, Some(l)) => format!("{l} ({n} events)"),
             (n, None) => format!("Delete {n} events ({first} …)"),
         };
@@ -1593,6 +1655,22 @@ impl Engine {
         let now = self.now();
         let tz = self.tz();
         let mut t = before.clone();
+        if req.reopen == Some(true) && t.status != TaskStatus::Open {
+            if req.remaining_min.is_none() {
+                return Err(EngineError::BadRequest(
+                    "reopening needs how much is left (remaining_min)".into(),
+                ));
+            }
+            t.status = TaskStatus::Open;
+            // It wasn't finished after all: don't learn from that run.
+            self.db.estimate_unlog(&t.id)?;
+        } else if t.status != TaskStatus::Open {
+            return Err(EngineError::BadRequest(format!(
+                "{:?} is {} (reopen it first)",
+                t.title,
+                t.status.as_str()
+            )));
+        }
         if let Some(x) = &req.title {
             t.title = x.clone();
         }
@@ -1658,6 +1736,7 @@ impl Engine {
                     let ev = build::deadline(&loc.series.uid, &t.title, due, Meta::default(), &[]);
                     let edit = Edit {
                         time: Some(ev.time),
+                        title: Some(ev.title),
                         ..Default::default()
                     };
                     let after = build::edit_file(&loc.text, &loc.series.uid, &edit, tz, now)
@@ -1690,6 +1769,11 @@ impl Engine {
                 }
                 (None, None) => {}
             }
+        }
+        // A new title or calendar carries through to the task's future blocks
+        // and its ⚑ (one changeset, one undo).
+        if t.title != before.title || t.key != before.key {
+            ops.extend(self.follow_task_ops(&world, &t, &before, &ops)?);
         }
         ops.insert(
             0,
@@ -1995,7 +2079,11 @@ impl Engine {
             after: Box::new(t.clone()),
         }];
         ops.extend(self.block_deletes(&world, &t.id, |b| b.start >= now)?);
-        let cs = self.propose(&world, author, ops, format!("Complete {:?}", t.title))?;
+        // A finished task's ⚑ still ahead goes too (nothing is due any more).
+        let deadline = self.deadline_delete(&world, &t, true);
+        let and_deadline = if deadline.is_some() { " (and its deadline)" } else { "" };
+        ops.extend(deadline);
+        let cs = self.propose(&world, author, ops, format!("Complete {:?}{and_deadline}", t.title))?;
         let actual = actual_min.unwrap_or_else(|| self.actual_minutes(&t.id).unwrap_or(t.estimate_min));
         self.db.estimate_log(&EstimateRow {
             task_id: t.id.clone(),
@@ -2042,18 +2130,7 @@ impl Engine {
         ops.extend(self.block_deletes(&world, &t.id, |b| b.end > now)?);
         let n = ops.len() - 1;
         // Its ⚑ deadline goes too (a dropped task has no deadline).
-        let deadline = t
-            .deadline_uid
-            .as_deref()
-            .and_then(|u| self.locate(&world, None, u).ok())
-            .map(|loc| Op::DeleteEvent {
-                item: Item {
-                    source: loc.source.id.clone(),
-                    href: loc.href.clone(),
-                },
-                uid: loc.series.uid.clone(),
-                before: loc.text,
-            });
+        let deadline = self.deadline_delete(&world, &t, false);
         let and_deadline = if deadline.is_some() { " and its deadline" } else { "" };
         ops.extend(deadline);
         let summary = match n {
@@ -2071,6 +2148,106 @@ impl Engine {
             task: t,
             changesets: vec![WriteResult::from(&cs)],
             plan,
+        })
+    }
+
+    /// Retitle / re-key a task's future blocks and its ⚑ after the task's
+    /// title or calendar changed (skipping events `already` touches).
+    fn follow_task_ops(&self, world: &World, t: &Task, before: &Task, already: &[Op]) -> Result<Vec<Op>> {
+        let tz = self.tz();
+        let now = self.now();
+        let touched: Vec<&str> = already
+            .iter()
+            .filter_map(|o| match o {
+                Op::UpdateEvent { uid, .. } | Op::DeleteEvent { uid, .. } | Op::CreateEvent { uid, .. } => {
+                    Some(uid.as_str())
+                }
+                _ => None,
+            })
+            .collect();
+        let (target, _) = self.target_for_key(&t.key)?;
+        let mut uids: Vec<(String, bool)> = self
+            .blocks(world)
+            .into_iter()
+            .filter(|(b, _)| b.task_id == t.id && b.end > now)
+            .filter_map(|(b, _)| b.uid.map(|u| (u, false)))
+            .collect();
+        if let Some(d) = &t.deadline_uid {
+            uids.push((d.clone(), true));
+        }
+        let mut ops = Vec::new();
+        for (uid, is_deadline) in uids {
+            if touched.contains(&uid.as_str()) {
+                continue;
+            }
+            let Ok(loc) = self.locate(world, None, &uid) else {
+                continue;
+            };
+            let after = if t.title != before.title {
+                let title = if is_deadline {
+                    build::deadline(
+                        &uid,
+                        &t.title,
+                        t.due.unwrap_or(api::TimeIn::At(now).as_due()),
+                        Meta::default(),
+                        &[],
+                    )
+                    .title
+                } else {
+                    t.title.clone()
+                };
+                let edit = Edit {
+                    title: Some(title),
+                    ..Default::default()
+                };
+                build::edit_file(&loc.text, &uid, &edit, tz, now).map_err(|e| EngineError::BadRequest(e.to_string()))?
+            } else {
+                loc.text.clone()
+            };
+            let from = Item {
+                source: loc.source.id.clone(),
+                href: loc.href.clone(),
+            };
+            if t.key != before.key && loc.source.id != target.id {
+                ops.push(Op::MoveEvent {
+                    from,
+                    to: Item {
+                        source: target.id.clone(),
+                        href: loc.href.clone(),
+                    },
+                    uid,
+                    before: loc.text,
+                    after,
+                    share_to_family: false,
+                });
+            } else if after != loc.text {
+                ops.push(Op::UpdateEvent {
+                    item: from,
+                    uid,
+                    before: loc.text,
+                    after,
+                });
+            }
+        }
+        Ok(ops)
+    }
+
+    /// The op deleting a task's ⚑ (only if it's still ahead, when `future_only`).
+    fn deadline_delete(&self, world: &World, t: &Task, future_only: bool) -> Option<Op> {
+        let loc = t
+            .deadline_uid
+            .as_deref()
+            .and_then(|u| self.locate(world, None, u).ok())?;
+        if future_only && t.due.is_some_and(|d| d.instant(self.tz()) <= self.now()) {
+            return None;
+        }
+        Some(Op::DeleteEvent {
+            item: Item {
+                source: loc.source.id.clone(),
+                href: loc.href.clone(),
+            },
+            uid: loc.series.uid.clone(),
+            before: loc.text,
         })
     }
 
@@ -2249,19 +2426,12 @@ impl Engine {
             && let Some(mut t) = self.db.task_get(&b.task_id)?
             && t.status == TaskStatus::Open
         {
+            if r == 0 {
+                // "0 left" = finished: the same as completing it.
+                return Ok(self.complete_task(Author::Alec, &t.id, None)?.plan.unwrap_or_default());
+            }
             t.remaining_min = r;
             t.updated_at = self.now();
-            if r == 0 {
-                t.status = TaskStatus::Done;
-                let total = self.actual_minutes(&t.id).unwrap_or(t.estimate_min);
-                self.db.estimate_log(&EstimateRow {
-                    task_id: t.id.clone(),
-                    title: t.title.clone(),
-                    estimate_min: t.estimate_min,
-                    actual_min: total,
-                    completed_at: self.now(),
-                })?;
-            }
             self.db.task_put(&t)?;
         }
         self.plan(false, Author::Scheduler)
@@ -2346,6 +2516,13 @@ impl Engine {
         // Scheduler-owned blocks are low-risk at any time (risk policy), so
         // new work can start `min_lead_minutes` (15) from now.
         let cons = self.constraints.clone();
+        let skips: Vec<(DateTime<Utc>, DateTime<Utc>)> = self
+            .db
+            .skips()?
+            .into_iter()
+            .filter(|s| s.2 > now)
+            .map(|s| (s.1, s.2))
+            .collect();
         let input = PlanInput {
             now,
             tz,
@@ -2353,6 +2530,7 @@ impl Engine {
             tasks: &tasks,
             busy: &busy,
             existing: &existing,
+            unavailable: &skips,
         };
         let p = sched::plan(&input);
         if !dry_run {

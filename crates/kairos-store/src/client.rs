@@ -231,6 +231,22 @@ impl Daemon {
         self.post(&format!("/api/tasks/{id}/start"), &api::StartTaskReq { minutes })
     }
 
+    /// Skip a work block (removed; that time stays free of work).
+    pub fn skip_event(&self, source: &str, uid: &str) -> Result<std::result::Result<WriteResult, Rejected>> {
+        self.post(
+            &format!("/api/events/{}/{}/skip", enc(source), enc(uid)),
+            &serde_json::json!({}),
+        )
+    }
+
+    /// Undo a change and the scheduler's replans after it.
+    pub fn undo_with_replans(&self, id: &str) -> Result<std::result::Result<WriteResult, Rejected>> {
+        self.post(
+            &format!("/api/changesets/{}/undo?with_replans=true", enc(id)),
+            &serde_json::json!({}),
+        )
+    }
+
     pub fn proposals(&self) -> Result<std::result::Result<Vec<api::ProposalItem>, Rejected>> {
         self.get("/api/proposals")
     }

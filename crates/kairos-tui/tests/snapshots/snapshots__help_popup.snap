@@ -4,31 +4,31 @@ expression: "render_to_string(&a, 100, 30)"
 ---
 ╭──────────────────────────────────── Week 43 · 19 Oct–25 Oct ─────────────────────────────────────╮
 │       Mon 19       Tue 20       Wed 21       Thu 22       Fri 23       Sat 24       Sun 25       │
-│                 ╭──────────────────────────── keys ────────────────────────────╮                 │
-│                 │ h l / H L  day / week back, forward                          │                 │
-│─────────────────│         t  today                                             │─────────────────│
-│06:00 ┊          │       j k  select event                                      │   ┊             │
-│07:00 ┊          │       Tab  week → day → agenda                               │   ┊             │
-│08:00 ●──────────│     Enter  details / expand duplicates ⧉                     │   ┊             │
-│09:00 ┊          │         w  week: Mon–Sun ↔ Mon–Fri (wider)                   │   ┊             │
-│10:00 ┊          │   p f b i  show/hide: Private (all yours), Family, Holidays, │   ┊             │
-│11:00 ┊          │       1–7  show/hide one calendar (see the bar below)        │   ┊             │
-│      ┄┄┄┄┄┄┄┄┄┄┄│         a  add event (a form; Tab between fields)            │┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄│
-│12:00 ┊          │       e K  edit event (K jumps to its calendar)              │   ┊             │
-│13:00 ┊          │         m  move to another time                              │   ┊             │
-│14:00 ┊          │       d s  delete, share to Family                           │   ┊             │
-│15:00 ┊          │         B  Family event: block / unblock my time             │   ┊             │
-│16:00 ┊          │       y d  proposed project time ◌: accept (say what) / drop │   ┊             │
-│17:00 ┊          │         n  start the selected task now (block from now; plan │   ┊             │
-│      ┄┄┄┄┄┄┄┄┄┄┄│         P  run the scheduler                                 │┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄│
-│18:00 ┊          │       T A  tasks, approvals                                  │   ┊             │
-│19:00 ┊▌Squash   │         C  check in today's work blocks                      │   ┊▌Sunday Sq…  │
-│20:00 ┊          │         u  undo the last applied change                      │   ┊             │
-│21:00 ┊          │         /  search                                            │   ┊             │
-│      ┄┄┄┄┄┄┄┄┄┄┄│         r  sync now                                          │┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄│
-│22:00 ┊          │         q  quit                                              │   ┊             │
-│23:00 ┊          ╰──────────────────────────────────────────────────────────────╯   ┊             │
+│                                                          ▌Lake District trip                     │
+│                                                          ▎+2 more                                │
+│─────────╭──────────────────────────────────── keys ────────────────────────────────────╮─────────│
+│06:00 ┊  │ h l / H L  day / week back, forward                                          │         │
+│07:00 ┊  │         t  today                                                             │         │
+│08:00 ●──│       j k  select                                                            │         │
+│09:00 ┊  │   Tab · g  week ↔ day · agenda                                               │         │
+│10:00 ┊  │     Enter  details / expand duplicates ⧉                                     │         │
+│11:00 ┊  │         w  week: Mon–Sun ↔ Mon–Fri (wider)                                   │         │
+│      ┄┄┄│       p f  show/hide: Private (all yours), Family                            │┄┄┄┄┄┄┄┄┄│
+│12:00 ┊  │       1–2  show/hide one calendar (see the bar below)                        │         │
+│13:00 ┊  │         a  add: e event · t task (a form; Tab between fields)                │         │
+│14:00 ┊  │     e K m  edit (K: its calendar) · move — on a ⚑: the task's deadline       │         │
+│15:00 ┊  │         d  remove: delete event · skip work block · remove deadline · drop   │         │
+│16:00 ┊  │         s  share an event to Family                                          │         │
+│17:00 ┊  │         B  Family event: attending / not                                     │         │
+│      ┄┄┄│         y  accept proposed project time ◌ (say what) · approve               │┄┄┄┄┄┄┄┄┄│
+│18:00 ┊  │         n  start the selected task now (plan reflows)                        │         │
+│19:00 ┊▌S│       T A  tasks (D done · + more · o reopen) · approvals                    │day Sq…  │
+│20:00 ┊  │       P C  run the scheduler · check in today's blocks                       │         │
+│21:00 ┊  │         u  undo your last change (and the replan after it)                   │         │
+│      ┄┄┄│     / r q  search · sync now · quit                                          │┄┄┄┄┄┄┄┄┄│
+│22:00 ┊  ╰──────────────────────────────────────────────────────────────────────────────╯         │
+│23:00 ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 │      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 │      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
-╰ ● 19:00–20:00 · Squash · Personal ───────────────────────────────────────────────────────────────╯
+╰ ● 19:00–20:00 · Squash · Personal ───────────────────────── e edit · m move · d delete · s share ╯
  WEEK  p Private ▸ 1 Personal  6 OQTS  │ f Family                                          ? help

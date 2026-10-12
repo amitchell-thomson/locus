@@ -122,15 +122,20 @@ fn forbidden(op: &OpFacts) -> Option<String> {
 /// work can move out of the way of new events and start 15 min from now.
 pub fn is_scheduler_block_op(op: &OpFacts) -> bool {
     let imgs: Vec<&EventFacts> = [&op.before, &op.after].into_iter().flatten().collect();
-    matches!(op.action, Action::Create | Action::Update | Action::Delete)
-        && !imgs.is_empty()
+    // Move = re-key between Alec's calendars (the task's calendar changed).
+    matches!(
+        op.action,
+        Action::Create | Action::Update | Action::Delete | Action::Move
+    ) && !imgs.is_empty()
         && imgs.iter().all(|e| {
             e.kind == EventKind::TaskBlock && e.created_by == Some(Author::Scheduler) && e.flex && !e.recurring
         })
         && !op.overlaps_fixed
 }
 
-fn high_reasons(op: &OpFacts, now: DateTime<Utc>) -> Vec<String> {
+/// `finishing`: the changeset completes or drops a task, so deleting a
+/// deadline in it is that task's own ⚑ going (not a deadline being lost).
+fn high_reasons(op: &OpFacts, now: DateTime<Utc>, finishing: bool) -> Vec<String> {
     let mut r = Vec::new();
     if is_scheduler_block_op(op) {
         return r;
@@ -144,7 +149,10 @@ fn high_reasons(op: &OpFacts, now: DateTime<Utc>) -> Vec<String> {
             if op.before.as_ref().is_some_and(|b| b.created_by.is_none()) {
                 r.push("changes an event not created by kairos".into());
             }
-            if op.action == Action::Delete && op.before.as_ref().is_some_and(|b| b.kind == EventKind::Deadline) {
+            if op.action == Action::Delete
+                && !finishing
+                && op.before.as_ref().is_some_and(|b| b.kind == EventKind::Deadline)
+            {
                 r.push("deletes a deadline".into());
             }
         }
@@ -198,7 +206,10 @@ pub fn assess(ops: &[OpFacts], now: DateTime<Utc>) -> Assessment {
     if !forb.is_empty() {
         return Assessment::Forbidden { reasons: forb };
     }
-    let mut reasons: Vec<String> = ops.iter().flat_map(|o| high_reasons(o, now)).collect();
+    let finishing = ops
+        .iter()
+        .any(|o| matches!(o.action, Action::TaskComplete | Action::TaskDrop));
+    let mut reasons: Vec<String> = ops.iter().flat_map(|o| high_reasons(o, now, finishing)).collect();
     let counted = ops.iter().filter(|o| !is_scheduler_block_op(o)).count();
     if counted > MAX_LOW_RISK_OPS {
         reasons.push(format!("more than {MAX_LOW_RISK_OPS} operations ({counted})"));

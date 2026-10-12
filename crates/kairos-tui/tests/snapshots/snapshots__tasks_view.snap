@@ -3,14 +3,14 @@ source: crates/kairos-tui/tests/snapshots.rs
 expression: "render_to_string(&a, 110, 12)"
 ---
 ╭────────────────────────────────────────────────── Tasks ───────────────────────────────────────────────────╮
-│● B4 problem sheet             P2 ━━━━━━━●──── 150/240 min · due Fri 23 Oct 17:00                           │
-│● Careers essay                P2 ●─────────── 0/120 min · no deadline                                      │
-│                                                                                                            │
-│a add · e edit · d done · + more time · n start now · x drop · P plan · Esc back                            │
+│● B4 problem sheet             ━━━━━━━●──── 150/240 min · due Fri 23 Oct 17:00                              │
+│● Careers essay                ●─────────── 0/120 min · no deadline                                         │
 │                                                                                                            │
 │                                                                                                            │
 │                                                                                                            │
 │                                                                                                            │
 │                                                                                                            │
-╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+│                                                                                                            │
+│                                                                                                            │
+╰─────────────────────────────────────────────────────────────── e edit · D done · + time · n start · d drop ╯
  TASKS  p Private ▸ 1 Personal  6 OQTS  │ f Family                                                   ? help

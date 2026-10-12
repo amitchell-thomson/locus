@@ -58,6 +58,15 @@ pub enum PromptKind {
         id: String,
         title: String,
     },
+    /// Move a task's deadline (from its ⚑).
+    MoveDeadline {
+        task_id: String,
+    },
+    /// Reopen a finished task: how much is left?
+    Reopen {
+        id: String,
+        title: String,
+    },
 }
 
 impl PromptKind {
@@ -68,6 +77,8 @@ impl PromptKind {
             PromptKind::Remaining { .. } => "how much is left? (e.g. 3h, 0 = finished)",
             PromptKind::Project { .. } => "work on (Enter = Project time)",
             PromptKind::MoreTime { .. } => "how much more time? (e.g. 2h)",
+            PromptKind::MoveDeadline { .. } => "deadline (when, e.g. fri 17:00)",
+            PromptKind::Reopen { .. } => "reopen — how much is left? (e.g. 2h)",
         }
     }
 }
@@ -76,8 +87,13 @@ impl PromptKind {
 pub enum Confirm {
     Delete,
     Share,
+    /// Undo a change (and the scheduler's replans after it).
     Undo(String),
     DropTask(String),
+    /// Skip the selected work block (work planned elsewhere).
+    Skip,
+    /// Remove a task's deadline (the task stays, with no deadline).
+    ClearDue(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,7 +104,12 @@ pub enum Mode {
     Confirm(Confirm),
     Help,
     Checkin(usize),
+    /// `a` in the calendar: an event or a task?
+    AddChoice,
 }
+
+/// Finished tasks listed (and selectable) in the tasks view.
+pub const DONE_SHOWN: usize = 12;
 
 /// A pending change drawn as a ghost block.
 #[derive(Debug, Clone, PartialEq)]
@@ -287,7 +308,7 @@ impl App {
         match self.view {
             View::Agenda => self.agenda_rows().len(),
             View::Week | View::Day => self.day_clusters(self.cursor).len(),
-            View::Tasks => self.tasks.len(),
+            View::Tasks => self.tasks.len() + self.done_tasks.len().min(DONE_SHOWN),
             View::Approvals => self.pending.len(),
         }
     }
@@ -572,6 +593,11 @@ impl App {
                 }
             }
             Mode::Checkin(i) => self.checkin_key(i, k),
+            Mode::AddChoice => match k {
+                Key::Char('e') => self.open_add(false),
+                Key::Char('t') => self.open_add(true),
+                _ => self.message = None,
+            },
             Mode::Normal => self.normal(k),
         }
     }
@@ -606,8 +632,15 @@ impl App {
             Key::Tab => {
                 self.view = match self.view {
                     View::Week => View::Day,
-                    View::Day => View::Agenda,
                     _ => View::Week,
+                };
+                self.sel = 0;
+            }
+            Key::Char('g') => {
+                self.view = if self.view == View::Agenda {
+                    View::Week
+                } else {
+                    View::Agenda
                 };
                 self.sel = 0;
             }
@@ -648,14 +681,12 @@ impl App {
                 self.set_message("syncing…", false);
             }
             Key::Char('a') => {
-                let keys = self.key_names();
-                let default = self.cfg.default_key().map(|k| k.name.clone()).unwrap_or_default();
-                self.message = None;
-                self.mode = Mode::Form(if self.view == View::Tasks {
-                    Form::add_task(keys, &default)
+                if self.view == View::Tasks {
+                    self.open_add(true);
                 } else {
-                    Form::add_event(keys, &default, when_prefill(self.cursor, self.today()))
-                });
+                    self.mode = Mode::AddChoice;
+                    self.set_message("add: e event · t task (Esc cancels)", false);
+                }
             }
             Key::Char('w') => {
                 self.work_week = !self.work_week;
@@ -669,9 +700,11 @@ impl App {
                 );
             }
             Key::Char('u') => {
+                // Your (or Claude's) last change — not the scheduler's replan
+                // that followed it; undoing it undoes that replan too.
                 if let Some(d) = &self.daemon
-                    && let Ok(Ok(v)) = d.changesets(Some("applied"), 1)
-                    && let Some(c) = v.first()
+                    && let Ok(Ok(v)) = d.changesets(Some("applied"), 50)
+                    && let Some(c) = v.iter().find(|c| c.author != kairos_core::model::Author::Scheduler)
                 {
                     self.mode = Mode::Confirm(Confirm::Undo(c.id.clone()));
                     self.set_message(format!("undo “{}”? y/N", c.summary.lines().next().unwrap_or("")), false);
@@ -701,11 +734,27 @@ impl App {
                 }
             }
             View::Tasks => {
+                // Finished tasks (listed after the open ones): o reopens.
+                if self.sel >= self.tasks.len() {
+                    if let Some(t) = self.done_tasks.get(self.sel - self.tasks.len()).cloned()
+                        && k == Key::Char('o')
+                    {
+                        self.message = None;
+                        self.mode = Mode::Prompt(
+                            PromptKind::Reopen {
+                                id: t.id,
+                                title: t.title,
+                            },
+                            String::new(),
+                        );
+                    }
+                    return;
+                }
                 let Some(t) = self.tasks.get(self.sel).cloned() else {
                     return;
                 };
                 match k {
-                    Key::Char('d') => {
+                    Key::Char('D') => {
                         if let Some(r) = self.with_daemon(|d| d.complete_task(&t.id, None)) {
                             match r {
                                 Ok(Ok(r)) => {
@@ -749,7 +798,7 @@ impl App {
                             String::new(),
                         );
                     }
-                    Key::Char('x') => {
+                    Key::Char('d') => {
                         self.mode = Mode::Confirm(Confirm::DropTask(t.id.clone()));
                         self.set_message(format!("drop “{}”? y/N", t.title), false);
                     }
@@ -767,7 +816,7 @@ impl App {
                 if i.meta.kind == EventKind::Proposal {
                     // Proposed project time: accept (then say what to work on) or drop.
                     match k {
-                        Key::Char('y') | Key::Char('B') => {
+                        Key::Char('y') => {
                             self.message = None;
                             self.mode = Mode::Prompt(
                                 PromptKind::Project {
@@ -777,7 +826,7 @@ impl App {
                                 String::new(),
                             );
                         }
-                        Key::Char('d') | Key::Char('x') => self.reject_proposal(&i.uid),
+                        Key::Char('d') => self.reject_proposal(&i.uid),
                         _ => {}
                     }
                     return;
@@ -791,6 +840,42 @@ impl App {
                         }
                         None => self.set_message("n starts a task now: select one of its blocks or its ⚑", true),
                     }
+                    return;
+                }
+                // A task's ⚑ edits the task's deadline, not just the event.
+                if i.meta.kind == EventKind::Deadline
+                    && let Some(tid) = i.meta.task_id.clone()
+                {
+                    let title = i.title.trim_start_matches('⚑').trim().to_string();
+                    match k {
+                        Key::Char('e') | Key::Char('K') => match self.tasks.iter().find(|t| t.id == tid).cloned() {
+                            Some(t) => {
+                                let mut f = Form::edit_task(self.key_names(), &t, self.tz);
+                                f.focus_on(if k == Key::Char('K') { "Calendar" } else { "Due" });
+                                self.message = None;
+                                self.mode = Mode::Form(f);
+                            }
+                            None => self.set_message(format!("“{title}” is finished — reopen it in T first"), true),
+                        },
+                        Key::Char('m') => {
+                            self.message = None;
+                            self.mode = Mode::Prompt(PromptKind::MoveDeadline { task_id: tid }, String::new());
+                        }
+                        Key::Char('d') => {
+                            self.mode = Mode::Confirm(Confirm::ClearDue(tid));
+                            self.set_message(format!("remove the deadline of “{title}”? (the task stays) y/N"), false);
+                        }
+                        _ => {}
+                    }
+                    return;
+                }
+                // `d` on a work block skips it: the work is planned elsewhere.
+                if i.meta.kind == EventKind::TaskBlock && k == Key::Char('d') {
+                    self.mode = Mode::Confirm(Confirm::Skip);
+                    self.set_message(
+                        format!("skip this “{}” block? (the work is planned elsewhere) y/N", i.title),
+                        false,
+                    );
                     return;
                 }
                 match k {
@@ -908,9 +993,32 @@ impl App {
                 }
             }
             Confirm::Undo(id) => {
-                if let Some(r) = self.with_daemon(|d| d.decide(&id, "undo")) {
+                if let Some(r) = self.with_daemon(|d| d.undo_with_replans(&id)) {
                     self.write_result(r);
                 }
+            }
+            Confirm::Skip => {
+                if let Some(cl) = self.selected() {
+                    let i = cl.primary;
+                    if self.daemon.is_none() {
+                        return self.set_message("kairosd not configured — writes unavailable", true);
+                    }
+                    self.patch_local(&i.uid, |_| false);
+                    self.deferred.push(Box::new(move |app: &mut App| {
+                        if let Some(r) = app.with_daemon(|d| d.skip_event(&i.source, &i.uid))
+                            && !app.write_applied(r)
+                        {
+                            app.unpatch(Some(i.clone()), &i.uid);
+                        }
+                    }));
+                }
+            }
+            Confirm::ClearDue(tid) => {
+                let req = api::UpdateTaskReq {
+                    due: Some(String::new()),
+                    ..Default::default()
+                };
+                self.update_task_and_report(&tid, &req);
             }
             Confirm::DropTask(id) => {
                 if self.daemon.is_none() {
@@ -983,6 +1091,36 @@ impl App {
             };
             return self.send_checkin(uid.clone(), &title.clone(), &outcome.clone(), left);
         }
+        if let PromptKind::MoveDeadline { task_id } = &kind {
+            let due = match self.when_str(&buf) {
+                Ok(s) => s,
+                Err(e) => {
+                    self.set_message(e, true);
+                    self.mode = Mode::Prompt(kind.clone(), buf);
+                    return;
+                }
+            };
+            let req = api::UpdateTaskReq {
+                due: Some(due),
+                ..Default::default()
+            };
+            return self.update_task_and_report(&task_id.clone(), &req);
+        }
+        if let PromptKind::Reopen { id, .. } = &kind {
+            let Ok(left) = dates::parse_minutes(&buf) else {
+                self.set_message("how much is left: e.g. 2h, 90m", true);
+                self.mode = Mode::Prompt(kind.clone(), buf);
+                return;
+            };
+            let req = api::UpdateTaskReq {
+                reopen: Some(true),
+                remaining_min: Some(left),
+                ..Default::default()
+            };
+            self.update_task_and_report(&id.clone(), &req);
+            self.sel = 0;
+            return;
+        }
         if let PromptKind::MoreTime { id, title } = &kind {
             let Ok(more) = dates::parse_minutes(&buf) else {
                 self.set_message("more time: e.g. 2h, 90m", true);
@@ -1022,7 +1160,11 @@ impl App {
             return;
         }
         match kind {
-            PromptKind::Remaining { .. } | PromptKind::Project { .. } | PromptKind::MoreTime { .. } => {}
+            PromptKind::Remaining { .. }
+            | PromptKind::Project { .. }
+            | PromptKind::MoreTime { .. }
+            | PromptKind::MoveDeadline { .. }
+            | PromptKind::Reopen { .. } => {}
             PromptKind::Search => {
                 self.search = if buf.is_empty() { None } else { Some(buf) };
             }
@@ -1351,6 +1493,84 @@ impl App {
         }
         let (uid, title) = (item.block_uid.clone(), item.title.clone());
         self.send_checkin(uid, &title, outcome, None);
+    }
+
+    /// The keys that do something for what's selected, for the bottom-right
+    /// edge ("e edit · m move · d delete").
+    pub fn key_hints(&self) -> String {
+        let h: &[&str] = match self.view {
+            View::Tasks => {
+                if self.sel < self.tasks.len() {
+                    &["e edit", "D done", "+ time", "n start", "d drop"]
+                } else if self.sel < self.tasks.len() + self.done_tasks.len().min(DONE_SHOWN) {
+                    &["o reopen"]
+                } else {
+                    &["a add task"]
+                }
+            }
+            View::Approvals => {
+                if self.pending.is_empty() {
+                    &[]
+                } else {
+                    &["y approve", "n reject"]
+                }
+            }
+            View::Week | View::Day | View::Agenda => match self.selected().map(|c| c.primary) {
+                None => &["a add"],
+                Some(i) => match (i.meta.kind, i.overlay) {
+                    (EventKind::Proposal, _) => &["y accept", "d drop"],
+                    (EventKind::Deadline, _) if i.meta.task_id.is_some() => {
+                        &["e edit", "m move", "d remove", "n start"]
+                    }
+                    (EventKind::TaskBlock, _) => &["n start", "m move", "d skip", "e edit"],
+                    (_, Overlay::Family) if i.meta.origin_key.is_none() => {
+                        if i.meta.blocking {
+                            &["B not attending"]
+                        } else {
+                            &["B attending"]
+                        }
+                    }
+                    (_, Overlay::Background | Overlay::Imported) => &[],
+                    _ => &["e edit", "m move", "d delete", "s share"],
+                },
+            },
+        };
+        h.join(" · ")
+    }
+
+    /// Open the add form: a task, or an event (prefilled with the cursor day).
+    fn open_add(&mut self, task: bool) {
+        let keys = self.key_names();
+        let default = self.cfg.default_key().map(|k| k.name.clone()).unwrap_or_default();
+        self.message = None;
+        self.mode = Mode::Form(if task {
+            Form::add_task(keys, &default)
+        } else {
+            Form::add_event(keys, &default, when_prefill(self.cursor, self.today()))
+        });
+    }
+
+    /// Send a task update and say how it went (with any plan warning).
+    fn update_task_and_report(&mut self, id: &str, req: &api::UpdateTaskReq) {
+        match self.with_daemon(|d| d.update_task(id, req)) {
+            Some(Ok(Ok(t))) => {
+                let pending = t.changesets.iter().any(|c| c.status == Status::Pending);
+                let warn = t.plan.as_ref().and_then(plan_warning).unwrap_or_default();
+                self.set_message(
+                    if pending {
+                        format!("{}: waiting for approval (A)", t.task.title)
+                    } else {
+                        format!("✓ {}{warn}", t.task.title)
+                    },
+                    !warn.is_empty(),
+                );
+                self.wants_sync = true;
+                self.refresh_remote();
+            }
+            Some(Ok(Err(e))) => self.set_message(e.to_string(), true),
+            Some(Err(e)) => self.set_message(e.to_string(), true),
+            None => {}
+        }
     }
 
     /// Start a task now: a block from now, the rest of the plan reflows.

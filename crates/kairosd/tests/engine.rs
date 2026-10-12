@@ -1440,3 +1440,172 @@ fn done_blocks_use_up_the_estimate_at_the_learned_rate() {
         .sum();
     assert_eq!(ahead + len, 360);
 }
+
+// ------------------------------------------------------------ 2026-10-13 gap fixes
+
+fn block_starts(e: &mut kairosd::engine::Engine, task: &str) -> Vec<String> {
+    let world = e.world(30).unwrap();
+    let mut v: Vec<String> = world
+        .instances
+        .iter()
+        .filter(|i| i.meta.task_id.as_deref() == Some(task) && i.meta.kind == EventKind::TaskBlock)
+        .map(|i| london(i.start(chrono_tz::Europe::London)))
+        .collect();
+    v.sort();
+    v
+}
+
+#[test]
+fn undo_puts_back_the_change_and_the_replan_it_caused() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e.create_task(Author::Claude, &b4(240, "fri 17:00")).unwrap();
+    let before = block_starts(&mut e, &r.task.id);
+    let first = r.plan.unwrap().created.iter().min_by_key(|b| b.start).unwrap().clone();
+    e.direct = true;
+    let cs = e
+        .create_event(
+            Author::Alec,
+            &CreateEventReq {
+                title: "Drinks".into(),
+                start: first.start.to_rfc3339(),
+                end: Some(first.end.to_rfc3339()),
+                key: Some("Personal".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    e.direct = false;
+    e.replan_if_needed().unwrap();
+    assert_ne!(
+        block_starts(&mut e, &r.task.id),
+        before,
+        "the block moved out of the way"
+    );
+    e.undo_with_replans(&cs.id).unwrap();
+    assert!(!env.read_all("Personal").contains("SUMMARY:Drinks"));
+    assert_eq!(block_starts(&mut e, &r.task.id), before, "and came back");
+}
+
+#[test]
+fn renaming_or_rekeying_a_task_carries_to_its_blocks_and_deadline() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e.create_task(Author::Claude, &b4(240, "fri 17:00")).unwrap();
+    let u = e
+        .update_task(
+            Author::Alec,
+            &r.task.id,
+            &kairos_core::api::UpdateTaskReq {
+                title: Some("B4 sheet 3".into()),
+                key: Some("Personal".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(u.changesets[0].status, Status::Applied);
+    let eng = env.read_all("Engineering");
+    assert!(
+        !eng.contains("B4 problem sheet"),
+        "nothing left behind in Engineering:\n{eng}"
+    );
+    let per = env.read_all("Personal");
+    assert!(per.contains("SUMMARY:⚑ B4 sheet 3"), "{per}");
+    assert!(per.matches("SUMMARY:B4 sheet 3").count() >= 2, "{per}");
+}
+
+#[test]
+fn skipping_a_work_block_keeps_work_out_of_that_slot() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e.create_task(Author::Claude, &b4(180, "fri 17:00")).unwrap();
+    let world = e.world(14).unwrap();
+    let b = world
+        .instances
+        .iter()
+        .filter(|i| i.meta.task_id.as_deref() == Some(r.task.id.as_str()) && i.meta.kind == EventKind::TaskBlock)
+        .min_by_key(|i| i.start(chrono_tz::Europe::London))
+        .unwrap()
+        .clone();
+    let (s, en) = b.span.bounds(chrono_tz::Europe::London);
+    e.direct = true;
+    let cs = e.skip_block(Author::Alec, Some(&b.source), &b.uid).unwrap();
+    e.direct = false;
+    assert_eq!(cs.status, Status::Applied);
+    e.replan_if_needed().unwrap();
+    let world = e.world(14).unwrap();
+    let blocks: Vec<_> = world
+        .instances
+        .iter()
+        .filter(|i| i.meta.task_id.as_deref() == Some(r.task.id.as_str()) && i.meta.kind == EventKind::TaskBlock)
+        .collect();
+    let total: i64 = blocks
+        .iter()
+        .map(|i| (i.end(chrono_tz::Europe::London) - i.start(chrono_tz::Europe::London)).num_minutes())
+        .sum();
+    assert_eq!(total, 180, "the work is planned elsewhere");
+    assert!(
+        blocks
+            .iter()
+            .all(|i| i.end(chrono_tz::Europe::London) <= s || i.start(chrono_tz::Europe::London) >= en),
+        "not back in the skipped slot"
+    );
+    // Undo: the block is back (and the slot no longer skipped).
+    e.undo_with_replans(&cs.id).unwrap();
+    assert!(e.db.skips().unwrap().is_empty());
+    assert!(block_starts(&mut e, &r.task.id).contains(&london(s)));
+}
+
+#[test]
+fn finishing_a_task_clears_its_deadline_even_from_the_phone() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e.create_task(Author::Claude, &b4(60, "fri 17:00")).unwrap();
+    let first = r.plan.unwrap().created[0].clone();
+    *env.now.lock().unwrap() = first.end + Duration::minutes(5);
+    let uid = e.checkin_items().unwrap()[0].block_uid.clone();
+    // Not direct (a phone link): "0 left" finishes it, ⚑ and all, no approval.
+    e.checkin(&CheckinReq {
+        block_uid: uid,
+        outcome: "done".into(),
+        actual_min: None,
+        remaining_min: Some(0),
+    })
+    .unwrap();
+    let t = e.db.task_get(&r.task.id).unwrap().unwrap();
+    assert_eq!(t.status, TaskStatus::Done);
+    assert!(!env.read_all("Engineering").contains("SUMMARY:⚑ B4 problem sheet"));
+}
+
+#[test]
+fn a_finished_task_can_be_reopened() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e.create_task(Author::Claude, &b4(60, "")).unwrap();
+    e.complete_task(Author::Alec, &r.task.id, Some(60)).unwrap();
+    assert_eq!(e.db.estimates().unwrap().len(), 1);
+    let req = |reopen: Option<bool>, left: Option<u32>| kairos_core::api::UpdateTaskReq {
+        reopen,
+        remaining_min: left,
+        ..Default::default()
+    };
+    // Editing a finished task without reopening is refused; reopening needs "how much".
+    assert!(e.update_task(Author::Alec, &r.task.id, &req(None, Some(30))).is_err());
+    assert!(e.update_task(Author::Alec, &r.task.id, &req(Some(true), None)).is_err());
+    let u = e
+        .update_task(Author::Alec, &r.task.id, &req(Some(true), Some(90)))
+        .unwrap();
+    assert_eq!((u.task.status, u.task.remaining_min), (TaskStatus::Open, 90));
+    assert!(
+        e.db.estimates().unwrap().is_empty(),
+        "the finished run isn't learned from"
+    );
+    let planned: i64 = u
+        .plan
+        .unwrap()
+        .created
+        .iter()
+        .map(|b| (b.end - b.start).num_minutes())
+        .sum();
+    assert_eq!(planned, 90);
+}

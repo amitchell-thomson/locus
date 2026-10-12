@@ -89,6 +89,23 @@ fn put(buf: &mut Buffer, x: u16, y: u16, w: u16, s: &str, style: Style) {
     buf.set_stringn(x, y, &s, w as usize, style);
 }
 
+/// The keys for what's selected, on the bottom-right edge — unless the
+/// window is too narrow to keep ~40 columns for the details on the left.
+fn with_hints<'a>(block: Block<'a>, app: &App, width: u16) -> Block<'a> {
+    let h = app.key_hints();
+    if h.is_empty() || (width as usize) < h.width() + 48 {
+        return block;
+    }
+    block.title_bottom(
+        Line::from(vec![
+            TSpan::styled(" ", Style::default()),
+            TSpan::styled(h, Style::default().fg(c("overlay1"))),
+            TSpan::styled(" ", Style::default()),
+        ])
+        .right_aligned(),
+    )
+}
+
 fn panel(title: &str, focus: bool) -> Block<'static> {
     Block::default()
         .borders(Borders::ALL)
@@ -327,7 +344,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         details(f, app, main, &cl);
     }
     match &app.mode {
-        Mode::Help => help(f, main),
+        Mode::Help => help(f, app, main),
         Mode::Checkin(i) => checkin(f, app, main, *i),
         Mode::Form(form) => form_popup(f, app, main, form),
         _ => {}
@@ -431,9 +448,15 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
     if let Some(w) = app.cfg.tui.term_week(app.cursor) {
         title.push_str(&format!(" · {w}"));
     }
-    let mut block = panel(&title, true);
+    let mut block = with_hints(panel(&title, true), app, area.width);
     if let Some(cl) = app.selected() {
-        let text = fit(&peek(app, &cl), area.width.saturating_sub(6) as usize);
+        let h = app.key_hints().width() as u16;
+        let room = if area.width >= h + 48 {
+            area.width.saturating_sub(8 + h)
+        } else {
+            area.width.saturating_sub(6)
+        };
+        let text = fit(&peek(app, &cl), room as usize);
         block = block.title_bottom(Line::from(vec![
             TSpan::styled(" ", Style::default()),
             TSpan::styled(dot(&cl.primary), Style::default().fg(colour_of(app, &cl.primary))),
@@ -962,7 +985,11 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
 
 fn agenda(f: &mut Frame, app: &App, area: Rect) {
     let (a, b) = app.agenda_days();
-    let block = panel(&format!("Agenda · {}–{}", a.format("%-d %b"), b.format("%-d %b")), true);
+    let block = with_hints(
+        panel(&format!("Agenda · {}–{}", a.format("%-d %b"), b.format("%-d %b")), true),
+        app,
+        area.width,
+    );
     let inner = block.inner(area);
     f.render_widget(block, area);
     let rows = app.agenda_rows();
@@ -1147,7 +1174,7 @@ fn details(f: &mut Frame, app: &App, area: Rect, cl: &Cluster) {
 // ---------------------------------------------------------------- tasks / approvals
 
 fn tasks(f: &mut Frame, app: &App, area: Rect) {
-    let block = panel("Tasks", true);
+    let block = with_hints(panel("Tasks", true), app, area.width);
     let inner = block.inner(area);
     f.render_widget(block, area);
     let mut lines: Vec<Line> = Vec::new();
@@ -1159,7 +1186,7 @@ fn tasks(f: &mut Frame, app: &App, area: Rect) {
     }
     if app.tasks.is_empty() {
         lines.push(Line::from(TSpan::styled(
-            "No open tasks. a to add (title #key ~4h due fri 17:00).",
+            "No open tasks. a adds one (title, type, estimate, optional deadline).",
             Style::default().fg(c("overlay1")),
         )));
     }
@@ -1191,10 +1218,6 @@ fn tasks(f: &mut Frame, app: &App, area: Rect) {
         lines.push(Line::from(vec![
             TSpan::styled("● ", if sel { base } else { Style::default().fg(col) }),
             TSpan::styled(format!("{:<28} ", fit(&t.title, 28)), base),
-            TSpan::styled(
-                format!("P{} ", t.priority),
-                if sel { base } else { Style::default().fg(c("overlay1")) },
-            ),
             TSpan::styled(bar, if sel { base } else { Style::default().fg(c("blue")) }),
             TSpan::styled(
                 format!(" {}/{} min · {due}", done, t.estimate_min),
@@ -1210,21 +1233,32 @@ fn tasks(f: &mut Frame, app: &App, area: Rect) {
             ),
         ]));
     }
-    // Completed: the most recent finished tasks (not selectable).
+    // Completed: the most recent finished tasks (selectable: o reopens).
     if !app.done_tasks.is_empty() {
         lines.push(Line::raw(""));
         lines.push(Line::from(TSpan::styled(
             format!("Completed · {}", app.done_tasks.len()),
             Style::default().fg(c("overlay1")).add_modifier(Modifier::BOLD),
         )));
-        for t in app.done_tasks.iter().take(12) {
+        for (k, t) in app.done_tasks.iter().take(crate::app::DONE_SHOWN).enumerate() {
+            let sel = app.tasks.len() + k == app.sel;
             let col = app.cfg.key(&t.key).map_or(c("overlay1"), |k| rgb(k.colour));
             let done = t.estimate_min.saturating_sub(t.remaining_min);
+            let st = |dflt: Style| {
+                if sel {
+                    Style::default()
+                        .fg(c("base"))
+                        .bg(c("blue"))
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    dflt
+                }
+            };
             lines.push(Line::from(vec![
-                TSpan::styled("✓ ", Style::default().fg(fade(col, PAST_FADE))),
+                TSpan::styled("✓ ", st(Style::default().fg(fade(col, PAST_FADE)))),
                 TSpan::styled(
                     format!("{:<28} ", fit(&t.title, 28)),
-                    Style::default().fg(c("overlay1")),
+                    st(Style::default().fg(c("overlay1"))),
                 ),
                 TSpan::styled(
                     format!(
@@ -1233,16 +1267,11 @@ fn tasks(f: &mut Frame, app: &App, area: Rect) {
                         crate::form::fmt_minutes(i64::from(done)),
                         crate::form::fmt_minutes(i64::from(t.estimate_min))
                     ),
-                    Style::default().fg(c("overlay0")),
+                    st(Style::default().fg(c("overlay0"))),
                 ),
             ]));
         }
     }
-    lines.push(Line::raw(""));
-    lines.push(Line::from(TSpan::styled(
-        "a add · e edit · d done · + more time · n start now · x drop · P plan · Esc back",
-        Style::default().fg(c("overlay0")),
-    )));
     f.render_widget(Paragraph::new(lines), inner);
 }
 
@@ -1250,7 +1279,11 @@ fn approvals(f: &mut Frame, app: &App, area: Rect) {
     let left_w = (area.width * 2 / 5).max(24).min(area.width);
     let left = Rect::new(area.x, area.y, left_w, area.height);
     let right = Rect::new(area.x + left_w, area.y, area.width - left_w, area.height);
-    let block = panel(&format!("Approvals · {}", app.pending.len()), true);
+    let block = with_hints(
+        panel(&format!("Approvals · {}", app.pending.len()), true),
+        app,
+        area.width + 48,
+    );
     let inner = block.inner(left);
     f.render_widget(block, left);
     let mut lines: Vec<Line> = Vec::new();
@@ -1398,30 +1431,36 @@ fn approvals(f: &mut Frame, app: &App, area: Rect) {
 
 // ---------------------------------------------------------------- popups
 
-fn help(f: &mut Frame, area: Rect) {
+fn help(f: &mut Frame, app: &App, area: Rect) {
+    let has = |o: Overlay| app.cfg.sources.iter().any(|s| s.overlay == o);
+    let toggles = match (has(Overlay::Background), has(Overlay::Imported)) {
+        (true, true) => ("p f b i", "show/hide: Private (all yours), Family, holidays, imported"),
+        (true, false) => ("p f b", "show/hide: Private (all yours), Family, holidays"),
+        (false, true) => ("p f i", "show/hide: Private (all yours), Family, imported"),
+        (false, false) => ("p f", "show/hide: Private (all yours), Family"),
+    };
+    let n = app.cfg.keys.len();
+    let calendars = format!("1–{n}");
     let rows = [
         ("h l / H L", "day / week back, forward"),
         ("t", "today"),
-        ("j k", "select event"),
-        ("Tab", "week → day → agenda"),
+        ("j k", "select"),
+        ("Tab · g", "week ↔ day · agenda"),
         ("Enter", "details / expand duplicates ⧉"),
         ("w", "week: Mon–Sun ↔ Mon–Fri (wider)"),
-        ("p f b i", "show/hide: Private (all yours), Family, Holidays, Imported"),
-        ("1–7", "show/hide one calendar (see the bar below)"),
-        ("a", "add event (a form; Tab between fields)"),
-        ("e K", "edit event (K jumps to its calendar)"),
-        ("m", "move to another time"),
-        ("d s", "delete, share to Family"),
-        ("B", "Family event: block / unblock my time"),
-        ("y d", "proposed project time ◌: accept (say what) / drop"),
-        ("n", "start the selected task now (block from now; plan reflows)"),
-        ("P", "run the scheduler"),
-        ("T A", "tasks, approvals"),
-        ("C", "check in today's work blocks"),
-        ("u", "undo the last applied change"),
-        ("/", "search"),
-        ("r", "sync now"),
-        ("q", "quit"),
+        toggles,
+        (calendars.as_str(), "show/hide one calendar (see the bar below)"),
+        ("a", "add: e event · t task (a form; Tab between fields)"),
+        ("e K m", "edit (K: its calendar) · move — on a ⚑: the task's deadline"),
+        ("d", "remove: delete event · skip work block · remove deadline · drop"),
+        ("s", "share an event to Family"),
+        ("B", "Family event: attending / not"),
+        ("y", "accept proposed project time ◌ (say what) · approve"),
+        ("n", "start the selected task now (plan reflows)"),
+        ("T A", "tasks (D done · + more · o reopen) · approvals"),
+        ("P C", "run the scheduler · check in today's blocks"),
+        ("u", "undo your last change (and the replan after it)"),
+        ("/ r q", "search · sync now · quit"),
     ];
     let lines: Vec<Line> = rows
         .iter()
@@ -1435,7 +1474,7 @@ fn help(f: &mut Frame, area: Rect) {
             ])
         })
         .collect();
-    let r = centred(area, 64, rows.len() as u16 + 2);
+    let r = centred(area, 80, rows.len() as u16 + 2);
     f.render_widget(Clear, r);
     f.render_widget(Paragraph::new(lines).block(popup_block("keys")), r);
 }
@@ -1620,6 +1659,8 @@ fn status_bar(f: &mut Frame, app: &App, area: Rect) {
                 Confirm::Share => "share to Family?",
                 Confirm::Undo(_) => "undo?",
                 Confirm::DropTask(_) => "drop task?",
+                Confirm::Skip => "skip block?",
+                Confirm::ClearDue(_) => "remove deadline?",
             };
             push(
                 buf,

@@ -122,8 +122,7 @@ fn day_view_with_deadline_marker_and_task_block() {
 #[test]
 fn agenda_view() {
     let (mut a, _t) = app("2026-10-15T08:00:00+01:00");
-    a.key(Key::Tab);
-    a.key(Key::Tab);
+    a.key(Key::Char('g'));
     insta::assert_snapshot!(render_to_string(&a, 100, 40));
 }
 
@@ -264,6 +263,7 @@ fn writes_without_daemon_explain_themselves() {
 fn add_form_with_live_preview() {
     let (mut a, _t) = app("2026-10-19T08:00:00+01:00");
     a.key(Key::Char('a'));
+    a.key(Key::Char('e'));
     for ch in "Squash".chars() {
         a.key(Key::Char(ch));
     }
@@ -498,7 +498,7 @@ fn squeezed_work_blocks_carry_a_warning() {
         .iter()
         .position(|c| c.primary.meta.task_id.as_deref() == Some("task-b4"))
         .unwrap();
-    let s = render_to_string(&a, 100, 30);
+    let s = render_to_string(&a, 160, 30);
     assert!(s.contains("┆⚠ B4 sheet"), "{s}");
     assert!(s.contains("⚠ squeezed into a short gap"), "{s}");
 }
@@ -569,4 +569,79 @@ fn scheduler_slots_have_a_dashed_edge_blocks_alec_placed_a_solid_one() {
     }
     let s = render_to_string(&a, 100, 30);
     assert!(s.contains("▌B4 sheet") && !s.contains("┆B4 sheet"), "{s}");
+}
+
+#[test]
+fn keys_do_what_the_hints_say_for_each_kind_of_item() {
+    use kairos_tui::app::{Confirm, Mode, PromptKind, View};
+    let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
+    // The B4 task is open (so its ⚑ can edit it).
+    let mut t = Task::new("B4 sheet", "Personal", 240, Author::Claude, now("2026-10-12T08:00:00Z"));
+    t.id = "task-b4".into();
+    t.due = Some(Due::At(now("2026-10-23T16:00:00Z")));
+    a.tasks = vec![t];
+    let pick = |a: &mut App, pred: &dyn Fn(&kairos_core::model::Instance) -> bool| {
+        a.sel = a.day_clusters(a.cursor).iter().position(|c| pred(&c.primary)).unwrap();
+    };
+    // Work block (Wed 21): hints, and d = skip.
+    pick(&mut a, &|i| i.meta.kind == kairos_core::model::EventKind::TaskBlock);
+    assert_eq!(a.key_hints(), "n start · m move · d skip · e edit");
+    a.key(Key::Char('d'));
+    assert!(matches!(a.mode, Mode::Confirm(Confirm::Skip)));
+    a.key(Key::Char('n')); // cancel
+    // Its ⚑ (Fri 23): e opens the task's form at Due; m moves the deadline; d removes it.
+    a.key(Key::Char('l'));
+    a.key(Key::Char('l'));
+    pick(&mut a, &|i| i.title.contains("B4 sheet"));
+    assert_eq!(a.key_hints(), "e edit · m move · d remove · n start");
+    a.key(Key::Char('e'));
+    let Mode::Form(f) = &a.mode else { panic!("no form") };
+    assert_eq!(f.title(), "edit task");
+    assert_eq!(f.fields[f.focus].label, "Due");
+    a.key(Key::Esc);
+    a.key(Key::Char('m'));
+    assert!(matches!(&a.mode, Mode::Prompt(PromptKind::MoveDeadline { task_id }, _) if task_id == "task-b4"));
+    a.key(Key::Esc);
+    a.key(Key::Char('d'));
+    assert!(matches!(&a.mode, Mode::Confirm(Confirm::ClearDue(id)) if id == "task-b4"));
+    a.key(Key::Char('n'));
+    // a: event or task?
+    a.key(Key::Char('a'));
+    assert!(matches!(a.mode, Mode::AddChoice));
+    a.key(Key::Char('t'));
+    let Mode::Form(f) = &a.mode else { panic!("no form") };
+    assert_eq!(f.title(), "new task");
+    a.key(Key::Esc);
+    // Tab: week ↔ day; g: agenda.
+    a.view = View::Week;
+    a.key(Key::Tab);
+    assert_eq!(a.view, View::Day);
+    a.key(Key::Tab);
+    assert_eq!(a.view, View::Week);
+    a.key(Key::Char('g'));
+    assert_eq!(a.view, View::Agenda);
+}
+
+#[test]
+fn tasks_view_keys_d_drops_capital_d_finishes_o_reopens() {
+    use kairos_tui::app::{Confirm, Mode, PromptKind, View};
+    let (mut a, _t) = app("2026-10-19T08:00:00+01:00");
+    let mut t = Task::new("Open one", "Personal", 60, Author::Alec, now("2026-10-12T08:00:00Z"));
+    t.id = "t-1".into();
+    let mut done = Task::new("Done one", "Personal", 30, Author::Alec, now("2026-10-12T08:00:00Z"));
+    done.id = "t-0".into();
+    done.status = kairos_core::task::TaskStatus::Done;
+    a.tasks = vec![t];
+    a.done_tasks = vec![done];
+    a.view = View::Tasks;
+    a.sel = 0;
+    assert_eq!(a.key_hints(), "e edit · D done · + time · n start · d drop");
+    a.key(Key::Char('d'));
+    assert!(matches!(&a.mode, Mode::Confirm(Confirm::DropTask(id)) if id == "t-1"));
+    a.key(Key::Char('n'));
+    a.key(Key::Char('j')); // onto the finished one
+    assert_eq!(a.sel, 1);
+    assert_eq!(a.key_hints(), "o reopen");
+    a.key(Key::Char('o'));
+    assert!(matches!(&a.mode, Mode::Prompt(PromptKind::Reopen { id, .. }, _) if id == "t-0"));
 }

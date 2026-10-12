@@ -175,6 +175,7 @@ pub fn router(st: AppState, mcp: Option<Router<AppState>>) -> Router {
             axum::routing::patch(update_event).delete(delete_event),
         )
         .route("/api/events/{source}/{uid}/move", post(move_event))
+        .route("/api/events/{source}/{uid}/skip", post(skip_event))
         .route("/api/events/move", post(move_events))
         .route("/api/events/{source}/{uid}/share-family", post(share_family))
         .route("/api/events/{source}/{uid}/adopt", post(adopt))
@@ -506,8 +507,31 @@ async fn reject(State(st): State<AppState>, Path(id): Path<String>) -> HResult<W
     Ok(Json(WriteResult::from(&cs)))
 }
 
-async fn undo(State(st): State<AppState>, Path(id): Path<String>) -> HResult<WriteResult> {
-    let cs = with_engine(&st, move |e| e.undo(&id)).await?;
+#[derive(Deserialize)]
+struct UndoQ {
+    /// Also undo the scheduler's replans applied after it.
+    with_replans: Option<bool>,
+}
+
+async fn undo(State(st): State<AppState>, Path(id): Path<String>, Query(q): Query<UndoQ>) -> HResult<WriteResult> {
+    let cs = with_engine(&st, move |e| {
+        if q.with_replans == Some(true) {
+            e.undo_with_replans(&id)
+        } else {
+            e.undo(&id)
+        }
+    })
+    .await?;
+    Ok(Json(WriteResult::from(&cs)))
+}
+
+async fn skip_event(
+    State(st): State<AppState>,
+    h: HeaderMap,
+    Path((source, uid)): Path<(String, String)>,
+) -> HResult<WriteResult> {
+    let a = author(&h);
+    let cs = with_engine_as(&st, &h, move |e| e.skip_block(a, Some(&source), &uid)).await?;
     Ok(Json(WriteResult::from(&cs)))
 }
 

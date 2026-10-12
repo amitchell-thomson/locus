@@ -60,11 +60,19 @@ CREATE TABLE IF NOT EXISTS proposals (
     end    TEXT NOT NULL,
     status TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS skips (
+    changeset TEXT NOT NULL,
+    start     TEXT NOT NULL,
+    end       TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS kv (
     k TEXT PRIMARY KEY,
     v TEXT NOT NULL
 );
 "#;
+
+/// A skipped work-block slot: `(changeset, start, end)`.
+pub type SkipRow = (String, DateTime<Utc>, DateTime<Utc>);
 
 /// Proposed project time: `(id, start, end, status)`.
 pub type ProposalRow = (String, DateTime<Utc>, DateTime<Utc>, String);
@@ -368,6 +376,13 @@ impl Db {
         Ok(())
     }
 
+    /// Forget a task's estimate-log rows (it was reopened).
+    pub fn estimate_unlog(&self, task_id: &str) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM estimate_log WHERE task_id = ?1", params![task_id])?;
+        Ok(())
+    }
+
     pub fn estimates(&self) -> Result<Vec<EstimateRow>> {
         let mut st = self.conn.prepare(
             "SELECT task_id, title, estimate_min, actual_min, completed_at FROM estimate_log ORDER BY completed_at",
@@ -450,6 +465,42 @@ impl Db {
             .conn
             .execute("UPDATE proposals SET status = ?2 WHERE id = ?1", params![id, status])?;
         Ok(n > 0)
+    }
+
+    // ---------------------------------------------------------------- skips
+
+    /// Times Alec skipped a work block: `(changeset, start, end)`.
+    pub fn skips(&self) -> Result<Vec<SkipRow>> {
+        let mut st = self.conn.prepare("SELECT changeset, start, end FROM skips")?;
+        let rows = st.query_map([], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+        })?;
+        let parse = |s: &str| {
+            DateTime::parse_from_rfc3339(s)
+                .map(|t| t.with_timezone(&Utc))
+                .unwrap_or_default()
+        };
+        let mut out = Vec::new();
+        for r in rows {
+            let (c, a, b) = r?;
+            out.push((c, parse(&a), parse(&b)));
+        }
+        Ok(out)
+    }
+
+    pub fn skip_add(&self, changeset: &str, start: DateTime<Utc>, end: DateTime<Utc>) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO skips(changeset, start, end) VALUES (?1, ?2, ?3)",
+            params![changeset, start.to_rfc3339(), end.to_rfc3339()],
+        )?;
+        Ok(())
+    }
+
+    /// Forget the skips a changeset made (it was undone).
+    pub fn skips_forget(&self, changeset: &str) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM skips WHERE changeset = ?1", params![changeset])?;
+        Ok(())
     }
 
     // ---------------------------------------------------------------- kv

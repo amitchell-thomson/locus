@@ -232,17 +232,22 @@ Requirements:
 
 ### TUI `kairos tui`
 
-- **Views:** week (default), day, agenda, tasks, approvals.
-- **Vim keys:**
-  - `h/l` day, `H/L` week, `t` today;
-  - `p` / `f` toggle Personal/Family, `1–7` toggle keys, `b` background, `i` imported;
-  - `a` add, `e` edit, `d` delete, `m` move, `K` re-key, `s` share to family;
-  - `T` tasks, `A` approvals, `u` undo, `/` search, `?` help.
+- **Views:** week (default) ↔ day on `Tab`, agenda on `g`, tasks `T`, approvals `A`.
+- **Keys** (the ones that apply to the selection are shown on the bottom-right edge; `?` lists all):
+  - `h/l` day, `H/L` week, `t` today, `j/k` select;
+  - `p` Private (all Alec's calendars) / `f` Family, `1–6` one calendar (`b`/`i` only when holiday / imported layers exist);
+  - `a` add → `e` event / `t` task; `e` edit, `m` move, `K` re-key, `s` share to Family;
+  - `d` = remove, whatever it is: delete an event · skip a work block (the work goes elsewhere, never back into that slot) · remove a task's deadline (from its ⚑) · drop a proposal · drop a task;
+  - on a ⚑: `e`/`m`/`d` change the *task's* deadline (not just the event);
+  - `y` accept (proposals) / approve; `n` reject — or, on a task / block / ⚑, start it now; `B` Family: attending;
+  - tasks view: `e` edit (title, calendar, type, time left, due — empty = no deadline), `D` done, `+` more time, `d` drop, `o` reopen a finished one;
+  - `u` undoes Alec's (or Claude's) last change together with the replan it caused; `/` search, `?` help.
 - **Rendering:**
   - deadlines: all-day ones in the top strip; timed ones as a `⚑` marker line at their time;
-  - task blocks: hatched or `~` prefix;
-  - duplicate badge `⧉`;
+  - work blocks: a dashed left edge `┆` = a scheduler slot (kairos may move it); solid `▌` = an event or a block Alec placed himself;
+  - duplicate badge `⧉`; proposed project time greyed `◌ …?`;
   - pending changes shown as ghost blocks with a diff in the approvals pane.
+- Task edits carry through: a renamed / re-keyed task renames / moves its blocks and ⚑; finishing a task removes its ⚑ (if still ahead), dropping removes it always.
 - Works at 80 cols (collapse to 3-day view) and scales up.
 - Snapshot tests with `insta` for layouts.
 

@@ -143,6 +143,9 @@ pub struct PlanInput<'a> {
     pub busy: &'a [Busy],
     /// Existing task blocks (future and past).
     pub existing: &'a [Block],
+    /// Times Alec skipped (deleted a work block there): no work, but not an
+    /// event either (no buffers, no load, not "back-to-back").
+    pub unavailable: &'a [(DateTime<Utc>, DateTime<Utc>)],
 }
 
 struct Grid<'a> {
@@ -200,6 +203,9 @@ impl<'a> Grid<'a> {
             tz: input.tz,
             c,
         };
+        for (a, b) in input.unavailable {
+            g.block_out(*a, *b);
+        }
         // Busy events + buffers. Location-change buffer applies before an event
         // whose location differs from the previous event's that day.
         let mut busy: Vec<&Busy> = input.busy.iter().collect();

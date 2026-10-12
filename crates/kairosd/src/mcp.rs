@@ -677,6 +677,7 @@ impl KairosMcp {
         let req = api::UpdateTaskReq {
             title: a.title,
             kind: a.kind,
+            reopen: None,
             key: a.key,
             estimate_min: a.estimate_min,
             remaining_min: a.remaining_min,

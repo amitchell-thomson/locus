@@ -64,6 +64,7 @@ fn run_plan(now: &str, tasks: &[Task], busy: &[Busy], existing: &[Block]) -> Pla
         tasks,
         busy,
         existing,
+        unavailable: &[],
     })
 }
 
@@ -874,6 +875,7 @@ fn proposals_fill_comfortable_gaps_after_task_work() {
         tasks: &tasks,
         busy: &b,
         existing: &[],
+        unavailable: &[],
     };
     let p = plan(&input);
     let props = propose(&input, &p, &[], &[]);
@@ -917,6 +919,7 @@ fn no_proposals_when_disabled() {
         tasks: &[],
         busy: &[],
         existing: &[],
+        unavailable: &[],
     };
     assert!(propose(&input, &plan(&input), &[], &[]).is_empty());
 }
@@ -932,6 +935,7 @@ fn one_project_session_a_day_in_its_longest_gap() {
         tasks: &[],
         busy: &b,
         existing: &[],
+        unavailable: &[],
     };
     let p = plan(&input);
     let props = propose(&input, &p, &[], &[]);
@@ -1000,6 +1004,7 @@ fn proposals_start_at_nine_at_the_earliest() {
         tasks: &[],
         busy: &[],
         existing: &[],
+        unavailable: &[],
     };
     let props = propose(&input, &plan(&input), &[], &[]);
     assert_eq!(props.len(), 7);
@@ -1023,6 +1028,7 @@ fn weekends_start_at_ten() {
         tasks: &tasks,
         busy: &[],
         existing: &[],
+        unavailable: &[],
     };
     let p = plan(&input);
     assert!(p.shortfalls.is_empty(), "{:?}", p.shortfalls);

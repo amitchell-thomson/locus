@@ -388,3 +388,30 @@ fn deadline_over_a_selected_event_stays_unhighlighted() {
         .expect("event drawn");
     assert_eq!(buf[under].bg, kairos_tui::ui::c("blue"));
 }
+
+#[test]
+fn selected_work_block_highlights_its_deadline() {
+    use ratatui::{Terminal, backend::TestBackend};
+    // Week view: the B4 block (Wed 21 09:00) and its ⚑ deadline (Fri 23 17:00) are both visible.
+    let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
+    let flag_bg = |a: &App| {
+        let mut term = Terminal::new(TestBackend::new(160, 40)).unwrap();
+        term.draw(|f| kairos_tui::ui::draw(f, a)).unwrap();
+        let buf = term.backend().buffer().clone();
+        let flag = (0..40u16)
+            .flat_map(|y| (0..160u16).map(move |x| (x, y)))
+            .find(|&(x, y)| buf[(x, y)].symbol() == "⚑" && buf[(x + 2, y)].symbol() == "1")
+            .expect("timed deadline drawn");
+        buf[flag].bg
+    };
+    let red = kairos_tui::ui::c("red");
+    let block = a
+        .day_clusters(a.cursor)
+        .iter()
+        .position(|c| c.primary.meta.task_id.as_deref() == Some("task-b4"))
+        .expect("B4 block on Wed");
+    a.sel = usize::from(block == 0);
+    assert_ne!(flag_bg(&a), red, "nothing linked selected");
+    a.sel = block;
+    assert_eq!(flag_bg(&a), red, "the block's deadline lights up");
+}

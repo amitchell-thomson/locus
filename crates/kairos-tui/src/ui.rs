@@ -354,6 +354,12 @@ fn lanes<'a>(items: &'a [(usize, usize, &'a Cluster)]) -> Vec<Placed<'a>> {
 
 fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
     let tz = app.tz;
+    // A selected work block lights up its task's deadline(s) too.
+    let linked_task = app
+        .selected()
+        .filter(|c| c.primary.meta.kind == EventKind::TaskBlock)
+        .and_then(|c| c.primary.meta.task_id);
+    let linked = |i: &Instance| is_deadline(i) && i.meta.task_id.is_some() && i.meta.task_id == linked_task;
     let inner_w = area.width.saturating_sub(2);
     let gutter: u16 = 6;
     let ndays: usize = if single {
@@ -534,7 +540,10 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
         if is_dimmed(i) {
             style = style.add_modifier(Modifier::DIM);
         }
-        if selected {
+        if is_deadline(i) && (selected || linked(i)) {
+            // Deadlines highlight red, like the timed ⚑ line.
+            style = Style::default().fg(c("base")).bg(c("red")).add_modifier(Modifier::BOLD);
+        } else if selected {
             style = Style::default()
                 .fg(c("base"))
                 .bg(c("blue"))
@@ -856,9 +865,10 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             if urgent {
                 st = st.add_modifier(Modifier::BOLD);
             }
-            // Selected: a solid red block (like the blue one for events), padded across the column.
+            // Selected (or its work block is): a solid red block (like the
+            // blue one for events), padded across the column.
             let idx = per_day[k].iter().position(|x| std::ptr::eq(x, *cl));
-            let selected = *d == app.cursor && idx == Some(app.sel);
+            let selected = (*d == app.cursor && idx == Some(app.sel)) || linked(i);
             let title = i.title.trim_start_matches('⚑').trim();
             let text = if selected {
                 st = Style::default().fg(c("base")).bg(c("red")).add_modifier(Modifier::BOLD);

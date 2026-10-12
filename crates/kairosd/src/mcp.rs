@@ -28,7 +28,9 @@ blocks; coursework = estimate required, revised at check-ins; admin = admin/erra
 and a deadline, then call plan; the deterministic scheduler spreads work over the days before the deadline, moves it \
 out of the way of new events by itself, and reports shortfalls (\"2.5 h short before Fri 17:00\") with options and \
 squeezes (\"40 min squeezed into a short gap\", \"…into the last 2 h before Fri 17:00\": fits, but only just) and \
-learned estimates (\"planning 6 h for 4 h left\") — relay those honestly. Only create a specific block when Alec asks for a specific slot (create_event with \
+learned estimates (\"planning 6 h for 4 h left\") — relay those honestly. Tasks never finish by \
+themselves: an open task with remaining_min 0 has used its planned time — ask Alec whether it's finished \
+(complete_task) or how much more it needs (update_task remaining_min). Only create a specific block when Alec asks for a specific slot (create_event with \
 task_id makes a pinned block).\n\
 TIMES: ISO 8601 ('2026-10-16T17:00', with or without offset; Europe/London assumed) or plain dates for all-day; \
 natural forms like 'fri 17:00' also work but ambiguous input is rejected. Keys: Inbox (default), Engineering, \

@@ -1282,3 +1282,154 @@ fn start_now_puts_a_block_from_now_and_reflows_the_rest() {
         Err(EngineError::BadRequest(m)) if m.contains("no time now")
     ));
 }
+
+#[test]
+fn tasks_never_finish_by_themselves() {
+    // All of a 2 h task's blocks pass unanswered: they count as done, but the
+    // task stays open (0 left) and asks — it's not silently dropped.
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e.create_task(Author::Claude, &b4(120, "fri 17:00")).unwrap();
+    let last = r.plan.unwrap().created.iter().map(|b| b.end).max().unwrap();
+    let day_after = last.with_timezone(&chrono_tz::Europe::London).date_naive() + Duration::days(1);
+    env.set_now(&format!("{day_after} 09:30"));
+    e.settle().unwrap();
+    let t = e.db.task_get(&r.task.id).unwrap().unwrap();
+    assert_eq!((t.status, t.remaining_min), (TaskStatus::Open, 0));
+    assert!(e.db.estimates().unwrap().is_empty(), "nothing learned from a guess");
+    assert!(
+        kairosd::jobs::morning_text(&e)
+            .contains("B4 problem sheet: planned time used up — finished, or how much more?")
+    );
+    // Alec says it needs 2 h more: planned again.
+    let u = e
+        .update_task(
+            Author::Alec,
+            &r.task.id,
+            &kairos_core::api::UpdateTaskReq {
+                remaining_min: Some(120),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let more: i64 = u
+        .plan
+        .unwrap()
+        .created
+        .iter()
+        .map(|b| (b.end - b.start).num_minutes())
+        .sum();
+    assert_eq!(more, 120);
+}
+
+#[test]
+fn last_block_checkin_asks_finished_and_learned_time_isnt_dropped() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    // Sheets take 1.5× the estimate.
+    for i in 0..3 {
+        let r = e
+            .create_task(
+                Author::Claude,
+                &CreateTaskReq {
+                    title: format!("old {i}"),
+                    key: "Engineering".into(),
+                    estimate_min: 240,
+                    kind: Some("sheet".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        e.complete_task(Author::Claude, &r.task.id, Some(360)).unwrap();
+    }
+    let r = e
+        .create_task(
+            Author::Claude,
+            &CreateTaskReq {
+                title: "B4 sheet".into(),
+                key: "Engineering".into(),
+                estimate_min: 120,
+                kind: Some("sheet".into()),
+                due: Some("2026-10-23".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let blocks = r.plan.unwrap().created;
+    let planned: i64 = blocks.iter().map(|b| (b.end - b.start).num_minutes()).sum();
+    assert_eq!(planned, 180, "2 h × 1.5");
+    let first = blocks.iter().min_by_key(|b| b.start).unwrap().clone();
+    // One 3 h block: doing it uses up the 2 h estimate → the check-in asks.
+    *env.now.lock().unwrap() = first.end + Duration::minutes(1);
+    let items = e.checkin_items().unwrap();
+    let it = items.iter().find(|i| i.title == "B4 sheet").unwrap();
+    assert!(it.ask_remaining);
+    // "Done, and that's it": finished, and learned from.
+    e.checkin(&CheckinReq {
+        block_uid: it.block_uid.clone(),
+        outcome: "done".into(),
+        actual_min: None,
+        remaining_min: Some(0),
+    })
+    .unwrap();
+    let t = e.db.task_get(&r.task.id).unwrap().unwrap();
+    assert_eq!(t.status, TaskStatus::Done);
+    assert!(e.db.estimates().unwrap().iter().any(|x| x.title == "B4 sheet"));
+}
+
+#[test]
+fn done_blocks_use_up_the_estimate_at_the_learned_rate() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    for i in 0..3 {
+        let r = e
+            .create_task(
+                Author::Claude,
+                &CreateTaskReq {
+                    title: format!("old {i}"),
+                    key: "Engineering".into(),
+                    estimate_min: 240,
+                    kind: Some("sheet".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        e.complete_task(Author::Claude, &r.task.id, Some(360)).unwrap();
+    }
+    let r = e
+        .create_task(
+            Author::Claude,
+            &CreateTaskReq {
+                title: "B4 sheet".into(),
+                key: "Engineering".into(),
+                estimate_min: 240,
+                kind: Some("sheet".into()),
+                due: Some("2026-10-23".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let first = r.plan.unwrap().created.iter().min_by_key(|b| b.start).unwrap().clone();
+    let len = (first.end - first.start).num_minutes();
+    *env.now.lock().unwrap() = first.end + Duration::minutes(1);
+    let uid = e.checkin_items().unwrap()[0].block_uid.clone();
+    e.checkin(&CheckinReq {
+        block_uid: uid,
+        outcome: "done".into(),
+        actual_min: None,
+        remaining_min: None,
+    })
+    .unwrap();
+    let t = e.db.task_get(&r.task.id).unwrap().unwrap();
+    assert_eq!(i64::from(t.remaining_min), 240 - (len as f64 / 1.5).round() as i64);
+    // The rest of the 6 h is still planned (not dropped early).
+    let world = e.world(30).unwrap();
+    let ahead: i64 = world
+        .instances
+        .iter()
+        .filter(|i| i.meta.task_id.as_deref() == Some(r.task.id.as_str()) && i.meta.kind == EventKind::TaskBlock)
+        .filter(|i| i.start(chrono_tz::Europe::London) > first.end)
+        .map(|i| (i.end(chrono_tz::Europe::London) - i.start(chrono_tz::Europe::London)).num_minutes())
+        .sum();
+    assert_eq!(ahead + len, 360);
+}

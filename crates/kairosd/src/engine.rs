@@ -1826,6 +1826,18 @@ impl Engine {
         self.constraints.task_type(name).cloned()
     }
 
+    /// The learned ratio for a task's type (1 when there's none yet).
+    fn ratio_for(&self, t: &Task) -> Result<f32> {
+        let kind = t
+            .kind
+            .clone()
+            .or_else(|| self.inferred_type(t.estimate_min).map(|x| x.name));
+        let r = kind
+            .and_then(|k| self.estimate_ratios().ok()?.get(&k).map(|x| x.0))
+            .filter(|r| (r - 1.0).abs() >= 0.05);
+        Ok(r.unwrap_or(1.0))
+    }
+
     /// Learned estimate ratios per task type: median actual/estimate of
     /// finished tasks (≥ 3), clamped to ×0.7–×2.
     fn estimate_ratios(&self) -> Result<std::collections::BTreeMap<String, (f32, usize)>> {
@@ -2144,19 +2156,14 @@ impl Engine {
         if let Some(mut t) = self.db.task_get(&b.task_id)?
             && t.status == TaskStatus::Open
         {
-            t.remaining_min = t.remaining_min.saturating_sub(actual);
+            // Remaining is in estimate units: with a learned ratio (sheets take
+            // ×1.5), 90 min of work uses up 60 min of the estimate. A task
+            // never finishes by itself when it reaches 0 — only when Alec says
+            // so (it then asks "finished, or how much more?").
+            let ratio = self.ratio_for(&t)?;
+            let used = (actual as f32 / ratio).round() as u32;
+            t.remaining_min = t.remaining_min.saturating_sub(used);
             t.updated_at = self.now();
-            if t.remaining_min == 0 {
-                t.status = TaskStatus::Done;
-                let total = self.actual_minutes(&t.id).unwrap_or(t.estimate_min);
-                self.db.estimate_log(&EstimateRow {
-                    task_id: t.id.clone(),
-                    title: t.title.clone(),
-                    estimate_min: t.estimate_min,
-                    actual_min: total,
-                    completed_at: self.now(),
-                })?;
-            }
             self.db.task_put(&t)?;
         }
         Ok(())
@@ -2188,7 +2195,15 @@ impl Engine {
                 end: b.end,
                 planned_min: b.minutes().max(0) as u32,
                 outcome,
-                ask_remaining: task.as_ref().is_some_and(|t| t.kind.as_deref() == Some("coursework")),
+                // Coursework (estimates move), or this block uses up what's
+                // left: "finished, or how much more?".
+                ask_remaining: match &task {
+                    Some(t) => {
+                        let used = (b.minutes().max(0) as f32 / self.ratio_for(t)?).round() as u32;
+                        t.kind.as_deref() == Some("coursework") || used >= t.remaining_min
+                    }
+                    None => false,
+                },
                 remaining_min: task.as_ref().map_or(0, |t| t.remaining_min),
             });
         }
@@ -2248,14 +2263,6 @@ impl Engine {
             .filter(|c| c.outcome.is_some())
             .map(|c| c.block_uid)
             .collect();
-        for (b, _) in &blocks {
-            if b.end <= now
-                && !b.uid.as_ref().is_some_and(|u| answered.contains(u))
-                && let Some(t) = tasks.iter_mut().find(|t| t.id == b.task_id)
-            {
-                t.remaining_min = t.remaining_min.saturating_sub(b.minutes().max(0) as u32);
-            }
-        }
         // Tasks from before task types get one (in memory), for block sizes.
         for t in tasks.iter_mut().filter(|t| t.kind.is_none()) {
             if let Some(ty) = self.inferred_type(t.estimate_min) {
@@ -2284,6 +2291,16 @@ impl Engine {
                     samples,
                 });
                 t.remaining_min = planned;
+            }
+        }
+        // …then the past blocks not checked in yet (presumed done), in real
+        // minutes, now that remaining is in real minutes too.
+        for (b, _) in &blocks {
+            if b.end <= now
+                && !b.uid.as_ref().is_some_and(|u| answered.contains(u))
+                && let Some(t) = tasks.iter_mut().find(|t| t.id == b.task_id)
+            {
+                t.remaining_min = t.remaining_min.saturating_sub(b.minutes().max(0) as u32);
             }
         }
         // Blocks of tasks that are no longer open must go too.

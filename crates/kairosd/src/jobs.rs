@@ -62,6 +62,15 @@ pub fn morning_text(e: &Engine) -> String {
             lines.push(format!("{when} {mark}{}", i.title.trim_start_matches("⚑ ")));
         }
     }
+    // Tasks whose planned time is used up: finished, or how much more?
+    if let Ok(open) = e.db.tasks(Some(kairos_core::task::TaskStatus::Open)) {
+        for t in open.iter().filter(|t| t.remaining_min == 0) {
+            lines.push(format!(
+                "{}: planned time used up — finished, or how much more?",
+                t.title
+            ));
+        }
+    }
     if let Ok(pending) = e.db.cs_list(Some(kairos_core::changeset::Status::Pending), 50)
         && !pending.is_empty()
     {

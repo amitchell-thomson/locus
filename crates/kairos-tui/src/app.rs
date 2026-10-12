@@ -53,6 +53,11 @@ pub enum PromptKind {
         id: String,
         title: String,
     },
+    /// More time for a task (its planned time is used up, or it grew).
+    MoreTime {
+        id: String,
+        title: String,
+    },
 }
 
 impl PromptKind {
@@ -62,6 +67,7 @@ impl PromptKind {
             PromptKind::Search => "/",
             PromptKind::Remaining { .. } => "how much is left? (e.g. 3h, 0 = finished)",
             PromptKind::Project { .. } => "work on (Enter = Project time)",
+            PromptKind::MoreTime { .. } => "how much more time? (e.g. 2h)",
         }
     }
 }
@@ -722,6 +728,16 @@ impl App {
                         }
                     }
                     Key::Char('n') => self.start_now(t.id.clone(), t.title.clone()),
+                    Key::Char('+') => {
+                        self.message = None;
+                        self.mode = Mode::Prompt(
+                            PromptKind::MoreTime {
+                                id: t.id.clone(),
+                                title: t.title.clone(),
+                            },
+                            String::new(),
+                        );
+                    }
                     Key::Char('x') => {
                         self.mode = Mode::Confirm(Confirm::DropTask(t.id.clone()));
                         self.set_message(format!("drop “{}”? y/N", t.title), false);
@@ -956,6 +972,37 @@ impl App {
             };
             return self.send_checkin(uid.clone(), &title.clone(), &outcome.clone(), left);
         }
+        if let PromptKind::MoreTime { id, title } = &kind {
+            let Ok(more) = dates::parse_minutes(&buf) else {
+                self.set_message("more time: e.g. 2h, 90m", true);
+                self.mode = Mode::Prompt(kind.clone(), buf);
+                return;
+            };
+            let cur = self.tasks.iter().find(|t| &t.id == id).map_or(0, |t| t.remaining_min);
+            let req = api::UpdateTaskReq {
+                remaining_min: Some(cur + more),
+                ..Default::default()
+            };
+            let title = title.clone();
+            match self.with_daemon(|d| d.update_task(id, &req)) {
+                Some(Ok(Ok(r))) => {
+                    let warn = r.plan.as_ref().and_then(plan_warning).unwrap_or_default();
+                    self.set_message(
+                        format!(
+                            "✓ {title}: +{} planned{warn}",
+                            crate::form::fmt_minutes(i64::from(more))
+                        ),
+                        !warn.is_empty(),
+                    );
+                    self.wants_sync = true;
+                    self.refresh_remote();
+                }
+                Some(Ok(Err(e))) => self.set_message(e.to_string(), true),
+                Some(Err(e)) => self.set_message(e.to_string(), true),
+                None => {}
+            }
+            return;
+        }
         if let PromptKind::Project { id, title } = &kind {
             let title = if buf.is_empty() { title.clone() } else { buf };
             return self.accept_proposal(id.clone(), title);
@@ -964,7 +1011,7 @@ impl App {
             return;
         }
         match kind {
-            PromptKind::Remaining { .. } | PromptKind::Project { .. } => {}
+            PromptKind::Remaining { .. } | PromptKind::Project { .. } | PromptKind::MoreTime { .. } => {}
             PromptKind::Search => {
                 self.search = if buf.is_empty() { None } else { Some(buf) };
             }

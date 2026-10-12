@@ -193,7 +193,9 @@ Deterministic Rust code. Claude's job is to interpret intent, create and update 
 - Evening check-in (ntfy, Phase 8; TUI prompt before then) lists today's blocks with done / partial / missed.
 - With no answer by 09:00 the next day, blocks count as done (configurable).
 - Missed or partial time returns to `remaining` and triggers a replan.
-- Log estimate vs. actual per task for later calibration.
+- Done time uses up the estimate at the learned rate (with sheets at ×1.5, 90 min of work uses 60 min of the estimate).
+- **Tasks never finish by themselves** (2026-10-12): at 0 remaining a task stays open; the check-in on the block that uses it up (and every coursework block) asks "how much is left? (0 = finished)", the TUI tasks view shows "planned time used up — d finished · + more time", the morning summary lists it, and Claude is told to ask.
+- Log estimate vs. actual per task (only for tasks Alec finished — not guesses) for the learned estimates.
 
 **Triggers:** task created/updated, any event write through kairosd (right after the request), every sync (phone / Calendar.app / Family changes), check-in results, manual `kairos plan`. Replans produce a changeset; the scheduler's own block ops are always low-risk, so they auto-apply. Coursework check-ins also ask "how much is left?" and replan with the answer.
 

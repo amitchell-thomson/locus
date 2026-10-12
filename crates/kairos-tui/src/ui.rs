@@ -1173,6 +1173,7 @@ fn tasks(f: &mut Frame, app: &App, area: Rect) {
         } else {
             Style::default().fg(c("text"))
         };
+        let used_up = t.remaining_min == 0;
         lines.push(Line::from(vec![
             TSpan::styled("● ", if sel { base } else { Style::default().fg(col) }),
             TSpan::styled(format!("{:<28} ", fit(&t.title, 28)), base),
@@ -1185,11 +1186,19 @@ fn tasks(f: &mut Frame, app: &App, area: Rect) {
                 format!(" {}/{} min · {due}", done, t.estimate_min),
                 if sel { base } else { Style::default().fg(c("overlay1")) },
             ),
+            TSpan::styled(
+                if used_up {
+                    "  planned time used up — d finished · + more time"
+                } else {
+                    ""
+                },
+                if sel { base } else { Style::default().fg(c("peach")) },
+            ),
         ]));
     }
     lines.push(Line::raw(""));
     lines.push(Line::from(TSpan::styled(
-        "a add · d done · x drop · P plan · Esc back",
+        "a add · d done · + more time · n start now · x drop · P plan · Esc back",
         Style::default().fg(c("overlay0")),
     )));
     f.render_widget(Paragraph::new(lines), inner);

@@ -1734,6 +1734,11 @@ impl App {
 
 /// Apply a new start (RFC 3339 or a date) and optional duration to a local copy.
 fn retime(x: &mut Instance, start: &str, dur: Option<u32>, tz: Tz) {
+    // A work block moved by hand is pinned (as kairosd records it): solid at once.
+    if x.meta.kind == EventKind::TaskBlock {
+        x.meta.pinned = true;
+        x.meta.flex = false;
+    }
     let (s0, e0) = x.span.bounds(tz);
     let len = dur.map_or(e0 - s0, |m| Duration::minutes(i64::from(m)));
     if let Ok(t) = DateTime::parse_from_rfc3339(start) {
@@ -1897,6 +1902,36 @@ pub fn is_deadline(i: &Instance) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn moving_a_work_block_pins_it_locally() {
+        let mut i = Instance {
+            uid: "b".into(),
+            recurrence_id: None,
+            source: "personal".into(),
+            overlay: Overlay::Personal,
+            key: None,
+            title: "Purchase Furniture".into(),
+            location: None,
+            description: None,
+            span: Span::Timed {
+                start: Utc::now(),
+                end: Utc::now() + Duration::minutes(30),
+            },
+            recurring: false,
+            transparent: false,
+            tentative: false,
+            meta: Meta {
+                kind: EventKind::TaskBlock,
+                flex: true,
+                ..Default::default()
+            },
+            href: None,
+            alarms: Vec::new(),
+        };
+        retime(&mut i, "2026-10-13T18:00:00+01:00", None, chrono_tz::Europe::London);
+        assert!(i.meta.pinned && !i.meta.flex);
+    }
 
     #[test]
     fn add_syntax() {

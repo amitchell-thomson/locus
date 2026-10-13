@@ -1,5 +1,7 @@
 # Migration checklist (Phase 0, Alec)
 
+**Done (2026-10-11); kept as a record.** Since then: Inbox was renamed back to **Personal**, Travel and OQTS were deleted and **Projects** (maroon `#eba0ac`) added — see the decisions log in CLAUDE.md.
+
 Tick these off in order. Nothing here needs kairos running. Each step says where it happens (iPhone, Mac or Web).
 
 ## 1. Remove the clutter

@@ -30,7 +30,9 @@ out of the way of new events by itself, and reports shortfalls (\"2.5 h short be
 squeezes (\"40 min squeezed into a short gap\", \"…into the last 2 h before Fri 17:00\": fits, but only just) and \
 learned estimates (\"planning 6 h for 4 h left\") — relay those honestly. Tasks never finish by \
 themselves: an open task with remaining_min 0 has used its planned time — ask Alec whether it's finished \
-(complete_task) or how much more it needs (update_task remaining_min). Only create a specific block when Alec asks for a specific slot (create_event with \
+(complete_task) or how much more it needs (update_task remaining_min). CHECK-INS: when Alec says how a block went \
+(\"only managed 20 min of furniture\"), find it with list_checkins and record it with checkin; work outside a block is \
+log_work. Unanswered blocks wait, and count as done after a week. Only create a specific block when Alec asks for a specific slot (create_event with \
 task_id makes a pinned block).\n\
 TIMES: ISO 8601 ('2026-10-16T17:00', with or without offset; Europe/London assumed) or plain dates for all-day; \
 natural forms like 'fri 17:00' also work but ambiguous input is rejected. Keys: {KEYS}.\n\
@@ -347,6 +349,8 @@ pub struct UpdateTaskArgs {
     pub remaining_min: Option<u32>,
     /// Empty string clears the deadline.
     pub due: Option<String>,
+    /// Reopen a finished task (Alec says it wasn't finished); give remaining_min too.
+    pub reopen: Option<bool>,
     pub priority: Option<u8>,
     pub splittable: Option<bool>,
     pub min_chunk_min: Option<u32>,
@@ -381,6 +385,42 @@ pub struct ListChangesetsArgs {
     /// pending | applied | rejected | undone | failed
     pub status: Option<String>,
     pub limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CheckinArgs {
+    /// The work block's uid (from list_checkins).
+    pub block_uid: String,
+    /// done | partial | missed | finished (done, and the whole task is finished).
+    pub outcome: String,
+    /// Minutes actually worked (partial: required; done: if not the planned time).
+    pub actual_min: Option<u32>,
+    /// What's left of the task now, if Alec says (0 = finished).
+    pub remaining_min: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct LogWorkArgs {
+    /// Task id or unique title prefix.
+    pub id: String,
+    /// Minutes Alec worked on it outside a planned block (ending now).
+    pub minutes: u32,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct StartTaskArgs {
+    /// Task id or unique title prefix.
+    pub id: String,
+    /// How long (default: a full block of the task's type).
+    pub minutes: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct AcceptProposalArgs {
+    /// Proposal id (from list_proposals).
+    pub id: String,
+    /// What Alec will work on (default "Project time").
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -677,7 +717,7 @@ impl KairosMcp {
         let req = api::UpdateTaskReq {
             title: a.title,
             kind: a.kind,
-            reopen: None,
+            reopen: a.reopen,
             key: a.key,
             estimate_min: a.estimate_min,
             remaining_min: a.remaining_min,
@@ -696,6 +736,64 @@ impl KairosMcp {
     #[tool(description = "Mark a task done (logs estimate vs actual); its future blocks are removed by the replan.")]
     async fn complete_task(&self, Parameters(a): Parameters<CompleteTaskArgs>) -> Result<CallToolResult, ErrorData> {
         self.run(move |e| e.complete_task(Author::Claude, &a.id, a.actual_min))
+            .await
+    }
+
+    #[tool(
+        description = "Work blocks waiting for a check-in (every unanswered past block, plus today's), with planned minutes and the task's remaining time. ask_remaining = ask Alec how much is left. Read-only."
+    )]
+    async fn list_checkins(&self) -> Result<CallToolResult, ErrorData> {
+        self.run(|e| e.checkin_items()).await
+    }
+
+    #[tool(
+        description = "Record what Alec says happened in a past work block: done, partial (with actual_min — the rest is planned again), missed (the block is removed and its time planned again), or finished (done and the task is finished). Only record what Alec told you. Returns the replan."
+    )]
+    async fn checkin(&self, Parameters(a): Parameters<CheckinArgs>) -> Result<CallToolResult, ErrorData> {
+        let req = api::CheckinReq {
+            block_uid: a.block_uid,
+            outcome: a.outcome,
+            actual_min: a.actual_min,
+            remaining_min: a.remaining_min,
+        };
+        self.run(move |e| e.checkin(&req)).await
+    }
+
+    #[tool(
+        description = "Log work Alec did on a task outside a planned block (a ✓ block ending now); the rest is replanned."
+    )]
+    async fn log_work(&self, Parameters(a): Parameters<LogWorkArgs>) -> Result<CallToolResult, ErrorData> {
+        self.run(move |e| e.log_work(Author::Claude, &a.id, a.minutes)).await
+    }
+
+    #[tool(
+        description = "Alec is starting a task now: puts a block from now and moves the task's other blocks to fit."
+    )]
+    async fn start_task(&self, Parameters(a): Parameters<StartTaskArgs>) -> Result<CallToolResult, ErrorData> {
+        self.run(move |e| e.start_task(Author::Claude, &a.id, a.minutes)).await
+    }
+
+    #[tool(
+        description = "Proposed project time (kept by kairos only, not on the calendar until Alec accepts). Read-only."
+    )]
+    async fn list_proposals(&self) -> Result<CallToolResult, ErrorData> {
+        self.run(|e| e.proposals()).await
+    }
+
+    #[tool(
+        description = "Accept a project-time proposal when Alec says so: it becomes an event in the Projects calendar (normal risk rules)."
+    )]
+    async fn accept_proposal(
+        &self,
+        Parameters(a): Parameters<AcceptProposalArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let req = api::AcceptProposalReq { title: a.title };
+        self.run(move |e| e.accept_proposal(Author::Claude, &a.id, &req)).await
+    }
+
+    #[tool(description = "Drop a project-time proposal (that time isn't proposed again).")]
+    async fn reject_proposal(&self, Parameters(a): Parameters<IdArgs>) -> Result<CallToolResult, ErrorData> {
+        self.run(move |e| e.reject_proposal(&a.id).map(|()| serde_json::json!({"ok": true})))
             .await
     }
 

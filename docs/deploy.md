@@ -26,7 +26,7 @@ cp deploy/chezmoi/dot_config/systemd/user/kairosd.service ~/.config/systemd/user
 systemctl --user daemon-reload && systemctl --user enable --now kairosd   # lingering is already on
 ```
 
-**Still needed (Alec):** `~/.config/kairos/secrets/{apple-id,icloud-app-password}` (see docs/migration.md §5), then:
+iCloud secrets `~/.config/kairos/secrets/{apple-id,icloud-app-password}` (docs/migration.md §5) are in place; to re-check:
 
 ```sh
 cd ~/server-projects/kairos && scripts/verify-icloud.sh     # discover, sync, Family check, X-KAIROS round-trip
@@ -48,19 +48,22 @@ yes | vdirsyncer discover icloud && vdirsyncer sync && vdirsyncer metasync
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kairos.sync.plist
 kairos sync && kairos doctor
 ```
-Then the tmux segment (`deploy/tmux.conf.snippet`) and shell summary (`deploy/zshrc.snippet`, add to `dot_zshrc.tmpl`).
+Done on Alec's Mac 2026-10-11, except chezmoi itself: the launchd agent and config were rendered from the templates by hand (`chezmoi execute-template < …tmpl` reproduces `~/.config/kairos/config.toml`). The tmux segment (`deploy/tmux.conf.snippet`) and shell summary (`deploy/zshrc.snippet`) are optional and not applied.
 
-## Going live
+## Going live (done 2026-10-11)
 
 1. `scripts/verify-icloud.sh` passes, including `--after-phone-edit`; record results in CLAUDE.md.
 2. Try a few writes from the CLI and Claude while `live = false` — they appear in **ZZ-kairos-test** on the phone.
 3. Set `live = true` in the server config (`~/.config/kairos/config.toml`, or the chezmoi template) and `systemctl --user restart kairosd`. (`kairosd --live` does the same for one run.)
+4. Once live, the `test` source can go (ZZ-kairos-test was deleted on iCloud); keep it only while `live = false`.
 
 ## Claude Code
 
 `docs/claude-usage.md` (one `claude mcp add` command). The repo skill is `.claude/skills/kairos/SKILL.md`.
 
 ## Phone
+
+Both done (ntfy subscribed; iPhone on the tailnet and reaching kairosd).
 
 - ntfy app → subscribe to the topic in `~/.config/kairos/secrets/ntfy-topic` on `https://ntfy.sh` (the topic name is the secret — keep it unguessable). Approve/Reject buttons hit signed one-shot URLs on kairosd over Tailscale; the evening check-in opens a small page there.
 - Shortcut: `docs/shortcut.md`.

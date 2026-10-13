@@ -17,7 +17,19 @@ claude mcp list   # kairos: … ✓ Connected
 - **There is no approve tool.** Claude says what's pending and how to approve it: TUI `A`, `kairos approve <id>`, or the ntfy notification on the phone. In Claude Code, Claude may run `kairos approve <id>` via Bash **only after Alec says yes** — Claude Code's own permission prompt is the second gate.
 - **Don't hand-place work.** Create/update tasks with estimates and deadlines and let `plan` place blocks. Only use `create_event` with `task_id` (a pinned block) when Alec asks for a specific slot.
 - **Report shortfalls honestly.** If `plan` returns `shortfalls`, say e.g. "B4 sheet: 2.5 h short before Fri 17:00" and list the options it gives.
-- While `live = false`, everything lands in `ZZ-kairos-test` (intended key kept for colour) and anything touching other calendars is refused.
+- **Only record what Alec says.** Check-ins (`checkin`), logged work (`log_work`), finishing (`complete_task`) and accepting project time (`accept_proposal`) are his answers relayed — never guess them.
+- kairos is live (since 2026-10-11): writes go to the real iCloud calendars. (With `live = false`, everything would land in `ZZ-kairos-test` and anything touching other calendars is refused.)
+
+## Tools
+
+| | |
+|---|---|
+| Read | `list_events`, `search_events`, `find_free`, `list_tasks`, `list_checkins`, `list_proposals`, `list_changesets`, `get_changeset` |
+| Events | `create_event`, `update_event`, `delete_event`, `move_event`, `share_to_family`; batches: `update_events`, `delete_events`, `move_events` |
+| Tasks | `create_task`, `update_task` (incl. `reopen`), `complete_task`, `create_deadline`, `start_task`, `log_work`, `plan` |
+| Check-ins | `list_checkins`, `checkin` (done / partial + `actual_min` / missed / finished) |
+| Project time | `list_proposals`, `accept_proposal`, `reject_proposal` |
+| Undo | `undo` |
 
 ## Workflows
 
@@ -42,7 +54,7 @@ claude mcp list   # kairos: … ✓ Connected
 
 ### Weekly review (Sunday)
 1. `list_events {from: today, to: +7d}` — skim the week.
-2. **Triage the Inbox:** `search_events {keys: ["Inbox"], to: +14d}` → suggest keys; on Alec's OK, one `move_events` batch.
+2. **Triage Personal:** `search_events {keys: ["Personal"], to: +14d}` → suggest keys; on Alec's OK, one `move_events` batch.
 3. **Deadlines:** `list_tasks` → check dates/estimates are still right; `update_task` as needed.
 4. `plan` → summarise blocks, moved count, shortfalls.
 5. `list_changesets {status: "pending"}` → remind Alec what's waiting.
@@ -50,7 +62,18 @@ claude mcp list   # kairos: … ✓ Connected
 
 ### Daily
 1. `list_events` for today + `list_tasks` → "Today: … ; work blocks: …; due soon: ⚑ …".
-2. If Alec reports how blocks went, the check-in lives in the CLI/TUI/phone (`kairos checkin`), or adjust with `update_task {remaining_min}` and `plan`.
+2. `list_checkins` → mention blocks still waiting ("Mon 19:30 Purchase Furniture hasn't been checked in").
+
+### "I only managed 20 minutes of the furniture last night"
+1. `list_checkins` → the block (Mon 19:30–20:30 Purchase Furniture).
+2. `checkin {block_uid, outcome: "partial", actual_min: 20}` → the block is trimmed to 20 min with ✓, and the 40 min left are planned again; reply with where they went.
+3. Missed entirely → `outcome: "missed"`. Did it and the task is done → `outcome: "finished"`. Worked on something with no block → `log_work {id, minutes}`.
+
+### "I'm starting the B4 sheet now"
+`start_task {id: "B4"}` → a block from now; the task's other blocks reflow.
+
+### Project time
+`list_proposals` → offer them; on Alec's word `accept_proposal {id, title: "kairos MCP"}` (an event in Projects) or `reject_proposal {id}`.
 
 ### Undo
 `list_changesets {status: "applied"}` → `undo {id}`. If the event was edited elsewhere since, undo refuses with a diff — show it to Alec.

@@ -269,7 +269,10 @@ Requirements:
 - **MCP tools:**
   - `list_events(window, overlays?, keys?)`, `find_free(window, duration, constraints?)`
   - `create_event`, `update_event`, `delete_event`, `move_event`, `share_to_family`
-  - `list_tasks`, `create_task`, `update_task`, `complete_task`, `create_deadline`
+  - `list_tasks`, `create_task`, `update_task` (incl. reopen), `complete_task`, `create_deadline`, `start_task`, `log_work`
+  - `list_checkins`, `checkin(block, done|partial|missed|finished, actual_min?, remaining_min?)` (2026-10-13: Alec can check in by telling Claude)
+  - `list_proposals`, `accept_proposal`, `reject_proposal` (project time)
+  - `search_events`, `update_events`, `delete_events`, `move_events` (batches: one approval, one undo)
   - `plan(dry_run)`, `list_changesets(status?)`, `get_changeset(id)`, `undo(id)`
 - Every write tool returns `{changeset_id, risk, status, summary}`. There is **no** approve tool.
 - Tool descriptions must explain the risk policy so Claude sets expectations ("queued for your approval").

@@ -29,6 +29,7 @@ Data flow: iCloud ⇄ vdirsyncer (rw on compute-node, **read-only** on the Mac) 
 - **Lossless edits**: `build::edit_file` keeps unknown props (X-APPLE-*, attendees, alarms). Adopt strips ATTENDEE/ORGANIZER (iCloud would email invites).
 - **Sidecar is authoritative** for kairos metadata; `X-KAIROS-*` is a mirror. `blocking` (Family events blocking the scheduler) is sidecar-only and preserved on rewrites.
 - **Scheduler never overbooks**: shortfalls are reported per task; squeezes (short gaps, deadline lead, past the 3 h / 10 h comfort limits) are reported per block. Tiers ideal → shorter → squeeze; spread across days by free time; no work in `[[recovery]]` time after Sport. New blocks start ≥ `min_lead_minutes` (15) ahead.
+- **Check-ins wait for Alec** (2026-10-13): nothing is decided the next morning; unanswered blocks are presumed done by the scheduler and only *recorded* as done after `notify.autodone_after_days` (7). Partly done = block trimmed with ✓, the rest replanned; missed = block removed, time replanned.
 - **Tasks finish only when Alec says so** (complete, or "0 left" at a check-in). Remaining is in estimate units; done time is divided by the learned ratio. Auto-done blocks never close a task or feed the estimate log.
 - **Replan on event changes**: `apply` sets `replan_soon` for any non-scheduler event write; the HTTP layer replans right after answering, the jobs loop on every tick (and after every sync). Stable, so it's a no-op unless work is displaced.
 - **Proposed project time is kairosd-only** (`proposals` table): never written to a calendar until Alec accepts (`y` in the TUI → an event). One a day (longest comfortable gap), none on a day with an accepted one; dropped spans are never re-proposed.
@@ -48,10 +49,11 @@ cargo run -p kairos-tui --example frame -- <config> <rfc3339-now> <w> <h> [keys]
 ```
 `KAIROS_NOW=<rfc3339>` fixes "now" for the CLI (tests, screenshots). `KAIROS_CONFIG` overrides the config path.
 
-## Deployment state (2026-10-11)
+## Deployment state (2026-10-13)
 
-- compute-node: repo at `~/server-projects/kairos`; `kairosd` + `kairos` in `~/.cargo/bin`; `systemctl --user` unit `kairosd` **running with live = true since 2026-10-11**, bound to `100.117.10.28:7420` (Tailscale only; the server's own CLI uses that IP because `compute-node` resolves to 127.0.1.1 there). vdirsyncer 0.21 in `~/.local/share/kairos/venv` (symlinked into `~/.local/bin`), read-write. Secrets in `~/.config/kairos/secrets/` (api-token, ntfy-topic, apple-id, icloud-app-password).
-- Mac: `kairos` via `cargo install`; vdirsyncer (brew), remote `read_only = true`; launchd agent `com.kairos.sync` (`~/Library/LaunchAgents`, rendered from the chezmoi template by hand, every 180 s, log `~/Library/Logs/kairos-sync.log`). Keychain: kairos-api-token, kairos-icloud, kairos-apple-id. chezmoi, tmux and zsh snippets NOT applied (Alec's call).
+- compute-node: repo at `~/server-projects/kairos`; `kairosd` + `kairos` in `~/.cargo/bin`; `systemctl --user` unit `kairosd` **running with live = true since 2026-10-11**, bound to `100.117.10.28:7420` (Tailscale only; the server's own CLI uses that IP because `compute-node` resolves to 127.0.1.1 there). vdirsyncer 0.21 in `~/.local/share/kairos/venv` (symlinked into `~/.local/bin`), read-write. Secrets in `~/.config/kairos/secrets/` (api-token, ntfy-topic, apple-id, icloud-app-password). The `test` (ZZ-kairos-test) source was removed from the live configs 2026-10-13 (backup `config.toml.bak-2026-10-13`); re-add it before ever setting `live = false`.
+- Mac: `kairos` via `cargo install`; vdirsyncer (brew), remote `read_only = true`; launchd agent `com.kairos.sync` (`~/Library/LaunchAgents`, rendered from the chezmoi template by hand, every 180 s, log `~/Library/Logs/kairos-sync.log`). Keychain: kairos-api-token, kairos-icloud, kairos-apple-id. chezmoi, tmux and zsh snippets NOT applied (Alec's call); `deploy/chezmoi/…/config.toml.tmpl` renders to the Mac's live config.
+- Phone: ntfy app subscribed, iPhone reaches kairosd over Tailscale (Alec, 2026-10-13).
 - Update the server: `cd ~/server-projects/kairos && git pull && cargo install --locked --path crates/kairosd && cargo install --locked --path crates/kairos-cli && systemctl --user restart kairosd`.
 
 ## Phase status
@@ -65,8 +67,8 @@ cargo run -p kairos-tui --example frame -- <config> <rfc3339-now> <w> <h> [keys]
 | 4 TUI | Done (all views, toggles, dedup expansion, ghost blocks, check-in, snapshots). |
 | 5 Write path | Done (risk table tests, changesets, undo, live guard, approvals in CLI/TUI/phone links). |
 | 6 Tasks & scheduler | Done (EDF+slack, chunking, stability, shortfalls, check-ins, auto-done, estimate log). |
-| 7 MCP | Done (stateless Streamable HTTP; restart-mid-session test). Registration: `docs/claude-usage.md`. |
-| 8 Phone | ntfy approvals/summaries/check-in page done; Shortcut steps in `docs/shortcut.md`. Needs ntfy app subscribed. |
+| 7 MCP | Done (stateless Streamable HTTP; restart-mid-session test). Check-ins, log work, start, reopen and project-time tools added 2026-10-13. Registration: `docs/claude-usage.md`. |
+| 8 Phone | Done: ntfy approvals/summaries/check-in page; Shortcut steps in `docs/shortcut.md`; ntfy subscribed and Tailscale reachability confirmed. |
 | 9 Remote MCP (optional) | Not started (needs OAuth). |
 
 ## Phase 1 findings (`scripts/verify-icloud.sh`, 2026-10-11)
@@ -74,7 +76,7 @@ cargo run -p kairos-tui --example frame -- <config> <rfc3339-now> <w> <h> [keys]
 - Family calendar discoverable over CalDAV: **yes** (collection id is a 64-hex hash; 225 items). Also discovered: `Erinnerungen ⚠️` (legacy reminders, VTODO only, ignored).
 - `X-KAIROS-*` survives iCloud round-trip: **yes**
 - `X-KAIROS-*` survives an iPhone edit: **yes** (title edit on iOS; iOS adds TRANSP:OPAQUE). Undo of the edited event correctly refused as a conflict.
-- Tailscale: Mac ↔ compute-node ✓ (API reachable at http://compute-node:7420); iPhone is on the tailnet (`phone`), reachability to be confirmed from the phone.
+- Tailscale: Mac ↔ compute-node ✓ (API reachable at http://compute-node:7420); iPhone (`phone`) ✓ (confirmed by Alec 2026-10-13).
 
 ## Decisions log
 

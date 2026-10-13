@@ -2,8 +2,9 @@
 # Secrets never live here: *_cmd fields print them at runtime.
 
 timezone = "Europe/London"
-# Flip to true only after the ZZ-kairos-test round-trip checks in docs/deploy.md.
-live = false
+# Live since 2026-10-11. With live = false kairosd writes only to
+# `test_calendar` — re-add a source for it first (see config/config.example.toml).
+live = true
 test_calendar = "ZZ-kairos-test"
 
 [paths]
@@ -65,7 +66,7 @@ terms = [
 ]
 
 [[keys]]
-name = "Inbox"
+name = "Personal"
 index = 1
 colour = "lavender"
 calendar = "personal"
@@ -83,30 +84,24 @@ colour = "peach"
 calendar = "careers"
 
 [[keys]]
-name = "Sport"
+name = "Projects"
 index = 4
+colour = "maroon"
+calendar = "projects"
+
+[[keys]]
+name = "Sport"
+index = 5
 colour = "green"
 calendar = "sport"
 
 [[keys]]
-name = "Travel"
-index = 5
-colour = "sapphire"
-calendar = "travel"
-
-[[keys]]
-name = "OQTS"
-index = 6
-colour = "mauve"
-calendar = "oqts"
-
-[[keys]]
 name = "Social"
-index = 7
+index = 6
 colour = "pink"
 calendar = "social"
 
-{{- range $id, $name := dict "personal" "Inbox" "engineering" "Engineering" "careers" "Careers" "sport" "Sport" "travel" "Travel" "oqts" "OQTS" "social" "Social" }}
+{{- range $id, $name := dict "personal" "Personal" "engineering" "Engineering" "careers" "Careers" "projects" "Projects" "sport" "Sport" "social" "Social" }}
 
 [[sources]]
 id = "{{ $id }}"
@@ -122,14 +117,6 @@ id = "family"
 kind = "icloud"
 calendar = "Family"
 overlay = "family"
-writable = true
-
-[[sources]]
-id = "test"
-kind = "icloud"
-calendar = "ZZ-kairos-test"
-overlay = "personal"
-key = "Inbox"
 writable = true
 
 # Read-only .ics feeds (kind = "ics_readonly", overlay = "background" or

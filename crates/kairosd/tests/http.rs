@@ -291,6 +291,13 @@ async fn mcp_tools_and_no_approve_tool() {
         "list_changesets",
         "get_changeset",
         "undo",
+        "list_checkins",
+        "checkin",
+        "log_work",
+        "start_task",
+        "list_proposals",
+        "accept_proposal",
+        "reject_proposal",
     ] {
         assert!(names.contains(&want), "missing tool {want}: {names:?}");
     }
@@ -323,6 +330,56 @@ async fn mcp_tools_and_no_approve_tool() {
     )
     .await;
     assert_eq!(r["result"]["isError"], true);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn mcp_checkin_partly_done_plans_the_rest_again() {
+    // "I only managed 20 min of the furniture" — told to Claude.
+    let env = Env::new(true);
+    let (base, _h, _) = start(&env).await;
+    let c = client();
+    initialize(&c, &base).await;
+    let r = rpc(
+        &c,
+        &base,
+        2,
+        "tools/call",
+        json!({"name": "create_task", "arguments": {"title": "Purchase Furniture", "key": "Personal", "estimate_min": 60, "due": "fri 17:00"}}),
+    )
+    .await;
+    let v = tool_text(&r);
+    let end: chrono::DateTime<chrono::Utc> = v["plan"]["created"][0]["end"].as_str().unwrap().parse().unwrap();
+    *env.now.lock().unwrap() = end + chrono::Duration::minutes(5);
+    let r = rpc(
+        &c,
+        &base,
+        3,
+        "tools/call",
+        json!({"name": "list_checkins", "arguments": {}}),
+    )
+    .await;
+    let items = tool_text(&r);
+    let uid = items[0]["block_uid"].as_str().unwrap().to_string();
+    let r = rpc(
+        &c,
+        &base,
+        4,
+        "tools/call",
+        json!({"name": "checkin", "arguments": {"block_uid": uid, "outcome": "partial", "actual_min": 20}}),
+    )
+    .await;
+    let p = tool_text(&r);
+    let again: i64 = p["created"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| {
+            let s: chrono::DateTime<chrono::Utc> = b["start"].as_str().unwrap().parse().unwrap();
+            let e: chrono::DateTime<chrono::Utc> = b["end"].as_str().unwrap().parse().unwrap();
+            (e - s).num_minutes()
+        })
+        .sum();
+    assert_eq!(again, 40, "{p}");
 }
 
 #[tokio::test(flavor = "multi_thread")]

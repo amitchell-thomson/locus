@@ -569,6 +569,18 @@ fn scheduler_slots_have_a_dashed_edge_blocks_alec_placed_a_solid_one() {
     }
     let s = render_to_string(&a, 100, 30);
     assert!(s.contains("▌B4 sheet") && !s.contains("┆B4 sheet"), "{s}");
+    // Once it has started it's history: solid too, even if kairos placed it.
+    for i in a
+        .index
+        .instances
+        .iter_mut()
+        .filter(|i| i.meta.task_id.as_deref() == Some("task-b4"))
+    {
+        i.meta.pinned = false;
+    }
+    a.now = now("2026-10-21T11:00:00+01:00");
+    let s = render_to_string(&a, 100, 30);
+    assert!(s.contains("▌B4 sheet") && !s.contains("┆B4 sheet"), "{s}");
 }
 
 #[test]

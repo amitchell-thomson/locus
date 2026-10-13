@@ -594,6 +594,11 @@ fn find_chunk(g: &Grid<'_>, st: &State, n: &Need<'_>, remaining: usize, tier: Ti
         .map(|(d, v)| (v.1 * total_free - total * v.0, *d))
         .collect();
     order.sort();
+    // Work that's one block anyway (a 30-min errand) isn't spread: the
+    // earliest day with room.
+    if total <= target as i64 {
+        order.sort_by_key(|o| o.1);
+    }
     let first_day = order.iter().map(|o| o.1).min();
     for (_, day) in order {
         let mut best: Option<(usize, i64, usize, usize)> = None; // (len, score, start, len)

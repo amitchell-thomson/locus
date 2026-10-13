@@ -945,16 +945,21 @@ impl App {
             match r {
                 Ok(Ok(p)) => {
                     let warn = plan_warning(&p);
-                    self.set_message(
+                    let what = if p.created.is_empty() && p.deleted.is_empty() {
                         format!(
-                            "plan: +{} −{} ({} moved){}",
+                            "plan is up to date: {} block{} kept, nothing to change",
+                            p.kept,
+                            if p.kept == 1 { "" } else { "s" }
+                        )
+                    } else {
+                        format!(
+                            "plan: {} new, {} removed ({} moved)",
                             p.created.len(),
                             p.deleted.len(),
-                            p.moved,
-                            warn.clone().unwrap_or_default()
-                        ),
-                        warn.is_some(),
-                    );
+                            p.moved
+                        )
+                    };
+                    self.set_message(format!("{what}{}", warn.clone().unwrap_or_default()), warn.is_some());
                     self.wants_sync = true;
                     self.refresh_remote();
                 }

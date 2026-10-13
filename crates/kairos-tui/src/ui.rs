@@ -150,20 +150,21 @@ fn label(i: &Instance) -> String {
     }
 }
 
-/// A scheduler slot: a work block kairos placed and may move (not one Alec
-/// placed himself, which is pinned).
-pub fn is_slot(i: &Instance) -> bool {
-    i.meta.kind == EventKind::TaskBlock && !i.meta.pinned
+/// A scheduler slot: a work block kairos placed and may still move — not
+/// one Alec placed himself (pinned), and not one that has started (history:
+/// done work shows ✓, solid like everything else in the past).
+pub fn is_slot(i: &Instance, now: DateTime<Utc>) -> bool {
+    i.meta.kind == EventKind::TaskBlock && !i.meta.pinned && i.span.bounds(chrono_tz::UTC).0 > now
 }
 
 /// The marker before an item in lists and the bottom edge.
-fn dot(i: &Instance) -> &'static str {
-    if is_slot(i) { "┆ " } else { "● " }
+fn dot(i: &Instance, now: DateTime<Utc>) -> &'static str {
+    if is_slot(i, now) { "┆ " } else { "● " }
 }
 
 /// The left edge of a block: dashed for scheduler slots, solid otherwise.
-fn edge(i: &Instance) -> &'static str {
-    if is_slot(i) { "┆" } else { "▌" }
+fn edge(i: &Instance, now: DateTime<Utc>) -> &'static str {
+    if is_slot(i, now) { "┆" } else { "▌" }
 }
 
 /// Title without the parts that matter least when space is short:
@@ -496,7 +497,10 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
         let text = fit(&peek(app, &cl), room as usize);
         block = block.title_bottom(Line::from(vec![
             TSpan::styled(" ", Style::default()),
-            TSpan::styled(dot(&cl.primary), Style::default().fg(colour_of(app, &cl.primary))),
+            TSpan::styled(
+                dot(&cl.primary, app.now),
+                Style::default().fg(colour_of(app, &cl.primary)),
+            ),
             TSpan::styled(format!("{text} "), Style::default().fg(c("text"))),
         ]));
     }
@@ -901,7 +905,7 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             }
             for r in p.r0..p.r1 {
                 let k = r - p.r0;
-                let bar = edge(i);
+                let bar = edge(i, app.now);
                 let body = match lines.get(k) {
                     Some(l) => format!("{bar}{l}"),
                     None => bar.to_string(),
@@ -1054,7 +1058,10 @@ fn month(f: &mut Frame, app: &App, area: Rect) {
         };
         block = block.title_bottom(Line::from(vec![
             TSpan::styled(" ", Style::default()),
-            TSpan::styled(dot(&cl.primary), Style::default().fg(colour_of(app, &cl.primary))),
+            TSpan::styled(
+                dot(&cl.primary, app.now),
+                Style::default().fg(colour_of(app, &cl.primary)),
+            ),
             TSpan::styled(
                 format!("{} ", fit(&peek(app, &cl), room as usize)),
                 Style::default().fg(c("text")),
@@ -1131,7 +1138,7 @@ fn month(f: &mut Frame, app: &App, area: Rect) {
                     }
                     _ => String::new(),
                 };
-                let mark = if is_slot(i) { "┆" } else { " " };
+                let mark = if is_slot(i, app.now) { "┆" } else { " " };
                 let text = format!("{mark}{when}{}", label(i));
                 let col = if is_deadline(i) { c("red") } else { colour_of(app, i) };
                 let col = if d < today || !inside {
@@ -1277,7 +1284,7 @@ fn event_line(app: &App, cl: &Cluster, selected: bool, width: usize) -> Line<'st
                 Style::default().fg(c("overlay1"))
             },
         ),
-        TSpan::styled(dot(i), if selected { base } else { Style::default().fg(col) }),
+        TSpan::styled(dot(i, app.now), if selected { base } else { Style::default().fg(col) }),
         TSpan::styled(fit(&title, room.max(8)), base),
         TSpan::styled(
             meta,

@@ -58,6 +58,9 @@ pub struct OpFacts {
     pub after: Option<EventFacts>,
     /// The post-image overlaps a non-flex, opaque event.
     pub overlaps_fixed: bool,
+    /// Deleting the ⚑ of a task that's already finished or dropped (not
+    /// losing a deadline that still matters).
+    pub finished_task_deadline: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -166,6 +169,7 @@ fn high_reasons(op: &OpFacts, now: DateTime<Utc>, finishing: bool) -> Vec<String
             }
             if op.action == Action::Delete
                 && !finishing
+                && !op.finished_task_deadline
                 && op.before.as_ref().is_some_and(|b| b.kind == EventKind::Deadline)
             {
                 r.push("deletes a deadline".into());
@@ -301,6 +305,7 @@ mod tests {
             before,
             after,
             overlaps_fixed: overlaps,
+            finished_task_deadline: false,
         }
     }
 

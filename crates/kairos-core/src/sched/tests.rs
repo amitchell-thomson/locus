@@ -839,10 +839,9 @@ fn new_event_moves_only_the_displaced_work() {
         busy("2026-10-13 07:00", "2026-10-13 12:00"),
         busy("2026-10-14 07:00", "2026-10-14 12:00"),
     ];
-    let tasks = [
-        typed("b4", "sheet", 150, Some("2026-10-15 12:00")),
-        typed("post", "admin", 30, Some("2026-10-15 12:00")),
-    ];
+    let mut post = typed("post", "admin", 30, Some("2026-10-15 12:00"));
+    post.earliest_start = Some(at("2026-10-14 08:00")); // a different day from the sheet
+    let tasks = [typed("b4", "sheet", 150, Some("2026-10-15 12:00")), post];
     let p1 = run_plan("2026-10-12 06:00", &tasks, &b0, &[]);
     assert!(p1.shortfalls.is_empty() && p1.squeezed.is_empty(), "{p1:#?}");
     let existing = as_existing(&p1);
@@ -1061,4 +1060,18 @@ fn a_block_longer_than_whats_left_is_replaced() {
     let p2 = run_plan("2026-10-12 08:00", &[t2.clone()], &[], &as_existing(&p1));
     assert_eq!(total(&p2, "furniture"), 30, "{p2:#?}");
     check_invariants(at("2026-10-12 08:00"), &[t2], &[], &p2).unwrap();
+}
+
+#[test]
+fn a_one_block_task_goes_on_the_earliest_day_with_room() {
+    // A 30-min errand with no deadline: today if there's room, not the
+    // emptiest day in the next fortnight.
+    let tasks = [typed("furniture", "admin", 30, None)];
+    let p = run_plan("2026-10-13 08:00", &tasks, &lectures(), &[]);
+    assert!(p.shortfalls.is_empty(), "{:?}", p.shortfalls);
+    assert!(
+        local(p.create[0].start).starts_with("Tue 13"),
+        "{}",
+        local(p.create[0].start)
+    );
 }

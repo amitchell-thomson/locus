@@ -413,6 +413,21 @@ impl Engine {
 
     // ------------------------------------------------------------ propose / apply
 
+    /// Is this event the ⚑ of a task that's already done or dropped?
+    fn finished_task_deadline(&self, text: &str, source: &str) -> Result<bool> {
+        let Ok(s) = first_series(text, source) else {
+            return Ok(false);
+        };
+        let Some(m) = s.master.as_ref() else { return Ok(false) };
+        if m.meta.kind != EventKind::Deadline {
+            return Ok(false);
+        }
+        Ok(match m.meta.task_id.as_deref() {
+            Some(id) => self.db.task_get(id)?.is_some_and(|t| t.status != TaskStatus::Open),
+            None => false,
+        })
+    }
+
     fn op_facts(&self, world: &World, op: &Op) -> Result<OpFacts> {
         let src = |id: &str| -> Result<CalendarFacts> { Ok(cal_facts(&self.source(id)?)) };
         Ok(match op {
@@ -425,6 +440,7 @@ impl Engine {
                     overlaps_fixed: after_f.as_ref().is_some_and(|f| self.overlaps_fixed(world, uid, f)),
                     before: None,
                     after: after_f,
+                    finished_task_deadline: false,
                 }
             }
             Op::UpdateEvent {
@@ -441,6 +457,7 @@ impl Engine {
                     overlaps_fixed: after_f.as_ref().is_some_and(|f| self.overlaps_fixed(world, uid, f)),
                     before: self.facts_from_text(before, &item.source)?,
                     after: after_f,
+                    finished_task_deadline: false,
                 }
             }
             Op::DeleteEvent { item, before, .. } => OpFacts {
@@ -448,6 +465,7 @@ impl Engine {
                 target: Some(src(&item.source)?),
                 origin: None,
                 overlaps_fixed: false,
+                finished_task_deadline: self.finished_task_deadline(before, &item.source)?,
                 before: self.facts_from_text(before, &item.source)?,
                 after: None,
             },
@@ -469,6 +487,7 @@ impl Engine {
                 overlaps_fixed: false,
                 before: self.facts_from_text(before, &from.source)?,
                 after: self.facts_from_text(after, &from.source)?,
+                finished_task_deadline: false,
             },
             Op::CreateTask { .. } => OpFacts {
                 action: Action::TaskCreate,
@@ -477,6 +496,7 @@ impl Engine {
                 before: None,
                 after: None,
                 overlaps_fixed: false,
+                finished_task_deadline: false,
             },
             Op::UpdateTask { before, after } => OpFacts {
                 action: match (before.status, after.status) {
@@ -489,6 +509,7 @@ impl Engine {
                 before: None,
                 after: None,
                 overlaps_fixed: false,
+                finished_task_deadline: false,
             },
         })
     }

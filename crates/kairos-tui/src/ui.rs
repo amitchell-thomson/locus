@@ -144,9 +144,8 @@ fn label(i: &Instance) -> String {
     let t = i.title.trim();
     match i.meta.kind {
         EventKind::Deadline => format!("⚑ {}", t.trim_start_matches('⚑').trim()),
-        // Work: a box — ☐ to do (also past, until checked in), ✓ done.
-        EventKind::TaskBlock if t.starts_with('✓') => t.to_string(),
-        EventKind::TaskBlock => kairos_core::build::todo_block_title(t),
+        // Work: a box — 󰄱 to do (also past, until checked in), 󰄵 done.
+        EventKind::TaskBlock => kairos_core::build::block_label(t),
         EventKind::Event => t.to_string(),
         EventKind::Proposal => format!("◌ {t}?"),
     }
@@ -893,10 +892,10 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             let rows_avail = p.r1 - p.r0;
             let full = label(i);
             // The real title, wrapped; `…` marks where it's cut (details on the bottom edge).
-            // Squeezed: ⚠ after the box ("☐ ⚠ B4 sheet").
+            // Squeezed: ⚠ after the box ("󰄱 ⚠ B4 sheet").
             let mut title = if app.squeeze_of(i).is_some() {
                 match full.split_once(' ') {
-                    Some(("☐", rest)) => format!("☐ ⚠ {rest}"),
+                    Some((b, rest)) if b == kairos_core::build::TODO_ICON => format!("{b} ⚠ {rest}"),
                     _ => format!("⚠ {full}"),
                 }
             } else {
@@ -1491,7 +1490,10 @@ fn tasks(f: &mut Frame, app: &App, area: Rect) {
                 }
             };
             lines.push(Line::from(vec![
-                TSpan::styled("✓ ", st(Style::default().fg(fade(col, PAST_FADE)))),
+                TSpan::styled(
+                    format!("{} ", kairos_core::build::DONE_ICON),
+                    st(Style::default().fg(fade(col, PAST_FADE))),
+                ),
                 TSpan::styled(
                     format!("{:<28} ", fit(&t.title, 28)),
                     st(Style::default().fg(c("overlay1"))),

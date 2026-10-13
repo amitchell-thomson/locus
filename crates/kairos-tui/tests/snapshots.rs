@@ -425,11 +425,11 @@ fn selected_deadline_highlights_its_work_blocks() {
         let mut term = Terminal::new(TestBackend::new(160, 40)).unwrap();
         term.draw(|f| kairos_tui::ui::draw(f, a)).unwrap();
         let buf = term.backend().buffer().clone();
-        // The block: "┆☐ B4 sheet" (dashed edge: a scheduler slot; ☐: work to do).
+        // The block: "┆󰄱 B4 sheet" (dashed edge: a scheduler slot; the box: work to do).
         let at = (0..40u16)
             .flat_map(|y| (0..158u16).map(move |x| (x, y)))
             .find(|&(x, y)| {
-                buf[(x, y)].symbol() == "┆" && buf[(x + 1, y)].symbol() == "☐" && buf[(x + 3, y)].symbol() == "B"
+                buf[(x, y)].symbol() == "┆" && buf[(x + 1, y)].symbol() == "󰄱" && buf[(x + 3, y)].symbol() == "B"
             })
             .expect("B4 block drawn");
         buf[(at.0 + 1, at.1)].bg
@@ -499,7 +499,7 @@ fn squeezed_work_blocks_carry_a_warning() {
         .position(|c| c.primary.meta.task_id.as_deref() == Some("task-b4"))
         .unwrap();
     let s = render_to_string(&a, 160, 30);
-    assert!(s.contains("┆☐ ⚠ B4 sheet"), "{s}");
+    assert!(s.contains("┆󰄱 ⚠ B4 sheet"), "{s}");
     assert!(s.contains("⚠ squeezed into a short gap"), "{s}");
 }
 
@@ -533,7 +533,7 @@ fn tasks_view_lists_completed_tasks_and_edits_a_task() {
     let s = render_to_string(&a, 110, 14);
     assert!(s.contains("Completed · 1"), "{s}");
     assert!(
-        s.contains("✓ Populate calendar") && s.contains("finished Mon 12 Oct · 30m of 30m planned"),
+        s.contains("󰄵 Populate calendar") && s.contains("finished Mon 12 Oct · 30m of 30m planned"),
         "{s}"
     );
     // e edits the task; clearing Due means no deadline.
@@ -557,7 +557,7 @@ fn work_block_edges_say_who_controls_them_and_boxes_say_their_state() {
     let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
     a.key(Key::Tab);
     let s = render_to_string(&a, 100, 30);
-    assert!(s.contains("┆☐ B4 sheet"), "kairos's slot: thin dashed, to do\n{s}");
+    assert!(s.contains("┆󰄱 B4 sheet"), "kairos's slot: thin dashed, to do\n{s}");
     // Alec placed it (moved by hand / started now): heavy dashed, stays put.
     for i in a
         .index
@@ -568,11 +568,11 @@ fn work_block_edges_say_who_controls_them_and_boxes_say_their_state() {
         i.meta.pinned = true;
     }
     let s = render_to_string(&a, 100, 30);
-    assert!(s.contains("╏☐ B4 sheet"), "{s}");
-    // Once it has started it's history: solid; still ☐ until checked in…
+    assert!(s.contains("╏󰄱 B4 sheet"), "{s}");
+    // Once it has started it's history: solid; still an open box until checked in…
     a.now = now("2026-10-21T11:00:00+01:00");
     let s = render_to_string(&a, 100, 30);
-    assert!(s.contains("▌☐ B4 sheet"), "{s}");
+    assert!(s.contains("▌󰄱 B4 sheet"), "{s}");
     // …and ✓ once it is.
     for i in a
         .index
@@ -583,7 +583,7 @@ fn work_block_edges_say_who_controls_them_and_boxes_say_their_state() {
         i.title = "✓ B4 sheet".into();
     }
     let s = render_to_string(&a, 100, 30);
-    assert!(s.contains("▌✓ B4 sheet") && !s.contains("☐ ✓"), "{s}");
+    assert!(s.contains("▌󰄵 B4 sheet") && !s.contains("󰄱 ✓"), "{s}");
 }
 
 #[test]
@@ -673,7 +673,7 @@ fn month_view_cycles_in_with_tab() {
     let s = render_to_string(&a, 120, 34);
     assert!(s.contains("October 2026"), "{s}");
     assert!(
-        s.contains("┆09:00 ☐ B4 sh"),
+        s.contains("┆09:00 󰄱 B4 sh"),
         "work blocks keep their dashed mark and box:\n{s}"
     );
     insta::assert_snapshot!(s);
@@ -706,7 +706,7 @@ fn work_blocks_are_italic_and_say_where_their_task_stands() {
     let buf = term.backend().buffer().clone();
     let at = (0..30u16)
         .flat_map(|y| (0..129u16).map(move |x| (x, y)))
-        .find(|&(x, y)| buf[(x, y)].symbol() == "┆" && buf[(x + 1, y)].symbol() == "☐")
+        .find(|&(x, y)| buf[(x, y)].symbol() == "┆" && buf[(x + 1, y)].symbol() == "󰄱")
         .unwrap();
     assert!(buf[(at.0 + 1, at.1)].modifier.contains(Modifier::ITALIC));
 }
@@ -730,8 +730,8 @@ fn off_grid_starts_get_a_minutes_tag_not_a_time_in_the_title() {
     let s = render_to_string(&a, 100, 40);
     let line = s.lines().find(|l| l.contains("B4 sheet") && l.contains('┆')).unwrap();
     assert!(
-        line.contains("☐ B4 sheet") && line.trim_end().trim_end_matches('│').trim_end().ends_with(":15"),
+        line.contains("󰄱 B4 sheet") && line.trim_end().trim_end_matches('│').trim_end().ends_with(":15"),
         "{line}"
     );
-    assert!(!s.contains("09:15 ☐"), "no time in front of the title:\n{s}");
+    assert!(!s.contains("09:15 󰄱"), "no time in front of the title:\n{s}");
 }

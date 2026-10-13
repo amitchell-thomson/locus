@@ -23,7 +23,7 @@ expression: s
 │                                                                                                                      │
 │                                                                                                                      │
 │ 19 ──────────── 20 ───────────── 21 ───────────── 22 ───────────── 23 ───────────── 24 ───────────── 25 ─────────────│
-│ 19:00 Squash    10:00 B4 Lectu… ┆09:00 ☐ B4 she…  14:00 B4 Lectu…  Collections      Lake District …  Lake District … │
+│ 19:00 Squash    10:00 B4 Lectu… ┆09:00 󰄱 B4 she…  14:00 B4 Lectu…  Collections      Lake District …  Lake District … │
 │                                  19:00 Squash                      Lake District …                   19:00 Sunday S… │
 │                                                                    ⚑ Lab report                                      │
 │                                                                    17:00 ⚑ B4 she…                                   │
@@ -34,5 +34,5 @@ expression: s
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-╰ ┆ 09:00–10:30 · ☐ B4 sheet · Personal · in 1h ─────────────────────────────────── n start · m move · d skip · e edit ╯
+╰ ┆ 09:00–10:30 · 󰄱 B4 sheet · Personal · in 1h ─────────────────────────────────── n start · m move · d skip · e edit ╯
  MONTH  p Private ▸ 1 Personal  6 OQTS  │ f Family                                                             ? help

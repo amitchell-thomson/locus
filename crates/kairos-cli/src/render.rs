@@ -75,9 +75,8 @@ pub fn title_of(i: &Instance) -> String {
     let t = i.title.trim();
     match i.meta.kind {
         EventKind::Deadline => format!("{FLAG} {}", t.trim_start_matches(FLAG).trim()),
-        // Work: ☐ to do, ✓ done (the line's marker says who placed it).
-        EventKind::TaskBlock if t.starts_with('✓') => t.to_string(),
-        EventKind::TaskBlock => kairos_core::build::todo_block_title(t),
+        // Work: 󰄱 to do, 󰄵 done (the line's marker says who placed it).
+        EventKind::TaskBlock => kairos_core::build::block_label(t),
         EventKind::Event => t.to_string(),
         EventKind::Proposal => format!("◌ {t}?"),
     }

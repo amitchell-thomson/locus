@@ -46,6 +46,21 @@ pub fn bare_block_title(t: &str) -> &str {
         .trim()
 }
 
+/// Terminal boxes (Nerd Font checkboxes: same size, centred) for work blocks;
+/// the stored titles keep ☐ / ✓ so the phone (no Nerd Font) shows a box too.
+pub const TODO_ICON: &str = "\u{f0131}"; // nf-md-checkbox_blank_outline
+pub const DONE_ICON: &str = "\u{f0135}"; // nf-md-checkbox_marked
+
+/// A work block's title as the TUI/CLI draw it: "󰄱 B4 sheet" / "󰄵 B4 sheet".
+pub fn block_label(stored: &str) -> String {
+    let icon = if stored.trim_start().starts_with('✓') {
+        DONE_ICON
+    } else {
+        TODO_ICON
+    };
+    format!("{icon} {}", bare_block_title(stored))
+}
+
 /// A work block still to do: "☐ B4 sheet" (the box shows on the phone too).
 pub fn todo_block_title(t: &str) -> String {
     format!("☐ {}", bare_block_title(t))

@@ -5,7 +5,7 @@ expression: "render_to_string(&a, 100, 30)"
 ╭────────────────────────────────────── Wednesday 21 October ──────────────────────────────────────╮
 │       Wed 21                                                                                     │
 │──────────────────────────────────────────────────────────────────────────────────────────────────│
-│09:00 ┊┆☐ B4 sheet                                                                         in 1h  │
+│09:00 ┊┆󰄱 B4 sheet                                                                         in 1h  │
 │      ┊┆                                                                                          │
 │10:00 ┊┆                                                                                          │
 │      ┊                                                                                           │
@@ -30,5 +30,5 @@ expression: "render_to_string(&a, 100, 30)"
 │19:00 ┊▌Squash                                                                                    │
 │      ┊▌                                                                                          │
 │      ┊                                                                                           │
-╰ ┆ 09:00–10:30 · ☐ B4 sheet · Personal · in 1h ─────────────── n start · m move · d skip · e edit ╯
+╰ ┆ 09:00–10:30 · 󰄱 B4 sheet · Personal · in 1h ─────────────── n start · m move · d skip · e edit ╯
  DAY  p Private ▸ 1 Personal  6 OQTS  │ f Family                                           ? help

@@ -165,7 +165,7 @@ fn today_compact_and_week() {
         "{s}"
     );
     assert!(
-        s.contains("┆ ☐ B4 sheet"),
+        s.contains("┆ 󰄱 B4 sheet"),
         "scheduler slots are marked ┆ and boxed:\n{s}"
     );
 }

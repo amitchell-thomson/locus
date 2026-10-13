@@ -38,6 +38,24 @@ pub struct NewEvent {
     pub rrule: Option<String>,
 }
 
+/// The bare task title of a work block ("☐ B4 sheet" / "✓ B4 sheet" → "B4 sheet").
+pub fn bare_block_title(t: &str) -> &str {
+    t.trim_start_matches("☐ ")
+        .trim_start_matches("✓ ")
+        .trim_start_matches(['☐', '✓'])
+        .trim()
+}
+
+/// A work block still to do: "☐ B4 sheet" (the box shows on the phone too).
+pub fn todo_block_title(t: &str) -> String {
+    format!("☐ {}", bare_block_title(t))
+}
+
+/// A work block done (checked in): "✓ B4 sheet".
+pub fn done_block_title(t: &str) -> String {
+    format!("✓ {}", bare_block_title(t))
+}
+
 pub fn new_uid() -> String {
     format!("{}@kairos", uuid::Uuid::new_v4())
 }

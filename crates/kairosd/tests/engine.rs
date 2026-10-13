@@ -1511,7 +1511,7 @@ fn renaming_or_rekeying_a_task_carries_to_its_blocks_and_deadline() {
     );
     let per = env.read_all("Personal");
     assert!(per.contains("SUMMARY:⚑ B4 sheet 3"), "{per}");
-    assert!(per.matches("SUMMARY:B4 sheet 3").count() >= 2, "{per}");
+    assert!(per.matches("SUMMARY:☐ B4 sheet 3").count() >= 2, "{per}");
 }
 
 #[test]

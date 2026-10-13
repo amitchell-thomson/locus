@@ -164,7 +164,10 @@ fn today_compact_and_week() {
             .any(|l| l.contains("14:00–15:00") && l.contains("B4 Lecture") && l.contains("⧉")),
         "{s}"
     );
-    assert!(s.contains("┆ B4 sheet"), "scheduler slots are marked ┆:\n{s}");
+    assert!(
+        s.contains("┆ ☐ B4 sheet"),
+        "scheduler slots are marked ┆ and boxed:\n{s}"
+    );
 }
 
 #[test]

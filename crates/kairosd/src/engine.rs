@@ -975,7 +975,12 @@ impl Engine {
             let uid = build::new_uid();
             let ev = NewEvent {
                 uid: uid.clone(),
-                title: req.title.trim().to_string(),
+                // A work block's title carries its box: "☐ B4 sheet".
+                title: if req.task_id.is_some() {
+                    build::todo_block_title(req.title.trim())
+                } else {
+                    req.title.trim().to_string()
+                },
                 time: *time,
                 location: req.location.clone().filter(|l| !l.is_empty()),
                 description: req.description.clone(),
@@ -2221,7 +2226,7 @@ impl Engine {
                     )
                     .title
                 } else {
-                    t.title.clone()
+                    build::todo_block_title(&t.title)
                 };
                 let edit = Edit {
                     title: Some(title),
@@ -2426,7 +2431,7 @@ impl Engine {
             Outcome::Done | Outcome::Partial => {
                 let planned = b.minutes().max(0);
                 let edit = Edit {
-                    title: (!title.starts_with('✓')).then(|| format!("✓ {title}")),
+                    title: (!title.starts_with('✓')).then(|| build::done_block_title(&title)),
                     time: (actual > 0 && i64::from(actual) < planned).then(|| NewTime::Timed {
                         start: b.start,
                         end: b.start + Duration::minutes(i64::from(actual)),
@@ -2453,7 +2458,7 @@ impl Engine {
                 )
             }
         };
-        let summary = format!("Check-in: {:?} {what}", title.trim_start_matches("✓ "));
+        let summary = format!("Check-in: {:?} {what}", build::bare_block_title(&title));
         self.propose(&world, Author::Scheduler, vec![op], summary)?;
         Ok(())
     }
@@ -2479,7 +2484,7 @@ impl Engine {
             out.push(api::CheckinItem {
                 block_uid: uid,
                 task_id: b.task_id.clone(),
-                title: inst.title.clone(),
+                title: build::bare_block_title(&inst.title).to_string(),
                 start: b.start,
                 end: b.end,
                 planned_min: b.minutes().max(0) as u32,
@@ -2709,7 +2714,7 @@ impl Engine {
             let uid = build::new_uid();
             let ev = NewEvent {
                 uid: uid.clone(),
-                title: task.title.clone(),
+                title: build::todo_block_title(&task.title),
                 time: NewTime::Timed {
                     start: b.start,
                     end: b.end,

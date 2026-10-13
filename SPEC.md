@@ -245,7 +245,7 @@ Requirements:
   - `u` undoes Alec's (or Claude's) last change together with the replan it caused; `/` search, `?` help.
 - **Rendering:**
   - deadlines: all-day ones in the top strip; timed ones as a `⚑` marker line at their time;
-  - work blocks: italic titles; a dashed left edge `┆` = a scheduler slot (kairos may move it); solid `▌` = an event or a block Alec placed himself. The bottom edge of a selected work block says where its task stands ("task: 30m of 1h done · 30m left · no deadline");
+  - work blocks: italic titles with a box — `☐` to do (also past, until checked in), `✓` done (the box is in the stored title, so the phone shows it); the left edge says who controls it — `┆` kairos may move it, `╏` Alec placed it (moved by hand / started now; stays), `▌` events and anything that has started. Squeezed: `☐ ⚠ Title`. The bottom edge of a selected work block says where its task stands ("task: 30m of 1h done · 30m left · no deadline");
   - duplicate badge `⧉`; proposed project time greyed `◌ …?`;
   - pending changes shown as ghost blocks with a diff in the approvals pane.
 - Task edits carry through: a renamed / re-keyed task renames / moves its blocks and ⚑; finishing a task removes its ⚑ (if still ahead), dropping removes it always.

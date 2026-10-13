@@ -144,8 +144,10 @@ fn label(i: &Instance) -> String {
     let t = i.title.trim();
     match i.meta.kind {
         EventKind::Deadline => format!("⚑ {}", t.trim_start_matches('⚑').trim()),
-        // Work blocks are marked by their dashed edge (see `edge`), not text.
-        EventKind::TaskBlock | EventKind::Event => t.to_string(),
+        // Work: a box — ☐ to do (also past, until checked in), ✓ done.
+        EventKind::TaskBlock if t.starts_with('✓') => t.to_string(),
+        EventKind::TaskBlock => kairos_core::build::todo_block_title(t),
+        EventKind::Event => t.to_string(),
         EventKind::Proposal => format!("◌ {t}?"),
     }
 }
@@ -157,14 +159,32 @@ pub fn is_slot(i: &Instance, now: DateTime<Utc>) -> bool {
     i.meta.kind == EventKind::TaskBlock && !i.meta.pinned && i.span.bounds(chrono_tz::UTC).0 > now
 }
 
-/// The marker before an item in lists and the bottom edge.
-fn dot(i: &Instance, now: DateTime<Utc>) -> &'static str {
-    if is_slot(i, now) { "┆ " } else { "● " }
+/// A future work block Alec placed (moved by hand, started now): stays put.
+pub fn is_placed(i: &Instance, now: DateTime<Utc>) -> bool {
+    i.meta.kind == EventKind::TaskBlock && i.meta.pinned && i.span.bounds(chrono_tz::UTC).0 > now
 }
 
-/// The left edge of a block: dashed for scheduler slots, solid otherwise.
+/// The marker before an item in lists and the bottom edge (matches `edge`).
+fn dot(i: &Instance, now: DateTime<Utc>) -> &'static str {
+    if is_slot(i, now) {
+        "┆ "
+    } else if is_placed(i, now) {
+        "╏ "
+    } else {
+        "● "
+    }
+}
+
+/// The left edge of a block: who controls it. `┆` kairos may move it, `╏`
+/// Alec placed it (stays), `▌` events and anything that has started.
 fn edge(i: &Instance, now: DateTime<Utc>) -> &'static str {
-    if is_slot(i, now) { "┆" } else { "▌" }
+    if is_slot(i, now) {
+        "┆"
+    } else if is_placed(i, now) {
+        "╏"
+    } else {
+        "▌"
+    }
 }
 
 /// Title without the parts that matter least when space is short:
@@ -873,8 +893,12 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             let rows_avail = p.r1 - p.r0;
             let full = label(i);
             // The real title, wrapped; `…` marks where it's cut (details on the bottom edge).
+            // Squeezed: ⚠ after the box ("☐ ⚠ B4 sheet").
             let mut title = if app.squeeze_of(i).is_some() {
-                format!("⚠ {full}")
+                match full.split_once(' ') {
+                    Some(("☐", rest)) => format!("☐ ⚠ {rest}"),
+                    _ => format!("⚠ {full}"),
+                }
             } else {
                 full
             };
@@ -1138,7 +1162,10 @@ fn month(f: &mut Frame, app: &App, area: Rect) {
                     }
                     _ => String::new(),
                 };
-                let mark = if is_slot(i, app.now) { "┆" } else { " " };
+                let mark = match edge(i, app.now) {
+                    "▌" => " ",
+                    e => e,
+                };
                 let text = format!("{mark}{when}{}", label(i));
                 let col = if is_deadline(i) { c("red") } else { colour_of(app, i) };
                 let col = if d < today || !inside {

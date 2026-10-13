@@ -227,6 +227,11 @@ impl Daemon {
     pub fn plan(&self, dry_run: bool) -> Result<std::result::Result<api::PlanResp, Rejected>> {
         self.post("/api/plan", &api::PlanReq { dry_run })
     }
+    /// Log work done outside a block (a done block ending now).
+    pub fn log_work(&self, id: &str, minutes: u32) -> Result<std::result::Result<api::TaskResp, Rejected>> {
+        self.post(&format!("/api/tasks/{id}/log"), &api::LogWorkReq { minutes })
+    }
+
     pub fn start_task(&self, id: &str, minutes: Option<u32>) -> Result<std::result::Result<api::TaskResp, Rejected>> {
         self.post(&format!("/api/tasks/{id}/start"), &api::StartTaskReq { minutes })
     }

@@ -71,12 +71,20 @@ pub fn time_range(i: &Instance, tz: Tz) -> String {
     }
 }
 
+/// "Now" for marks (KAIROS_NOW in tests and screenshots).
+fn now() -> DateTime<Utc> {
+    std::env::var("KAIROS_NOW")
+        .ok()
+        .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
+        .map_or_else(Utc::now, |t| t.with_timezone(&Utc))
+}
+
 pub fn title_of(i: &Instance) -> String {
     let t = i.title.trim();
     match i.meta.kind {
         EventKind::Deadline => format!("{FLAG} {}", t.trim_start_matches(FLAG).trim()),
         // Work: 󰄱 to do, 󰄵 done (the line's marker says who placed it).
-        EventKind::TaskBlock => kairos_core::build::block_label(t),
+        EventKind::TaskBlock => kairos_core::build::block_label(t, i.span.bounds(chrono_tz::UTC).1 <= now()),
         EventKind::Event => t.to_string(),
         EventKind::Proposal => format!("◌ {t}?"),
     }

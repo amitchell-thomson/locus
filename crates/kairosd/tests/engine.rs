@@ -1677,3 +1677,53 @@ fn checked_in_blocks_show_what_happened_on_the_calendar() {
     e.settle().unwrap();
     assert!(env.read_all("Engineering").contains("SUMMARY:✓ B4 problem sheet"));
 }
+
+// ------------------------------------------------------------ check-ins (2026-10-13)
+
+#[test]
+fn logging_work_outside_a_block_shows_on_the_calendar_and_counts() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e.create_task(Author::Claude, &b4(240, "fri 17:00")).unwrap();
+    env.set_now("2026-10-12 16:40");
+    // Not interactive (e.g. Claude via MCP / the phone): still low-risk — it's history.
+    let l = e.log_work(Author::Claude, &r.task.id, 40).unwrap();
+    assert_eq!(l.changesets[0].status, Status::Applied, "{:?}", l.changesets[0]);
+    assert!(env.read_all("Engineering").contains("SUMMARY:✓ B4 problem sheet"));
+    let t = e.db.task_get(&r.task.id).unwrap().unwrap();
+    assert_eq!(t.remaining_min, 200);
+    let planned: i64 = l
+        .plan
+        .unwrap()
+        .created
+        .iter()
+        .map(|b| (b.end - b.start).num_minutes())
+        .sum();
+    assert!(planned <= 200, "the rest replans around the logged work");
+}
+
+#[test]
+fn finished_at_checkin_completes_the_task_and_earlier_blocks_wait_to_be_checked_in() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e.create_task(Author::Claude, &b4(240, "fri 17:00")).unwrap();
+    let mut blocks = r.plan.unwrap().created;
+    blocks.sort_by_key(|b| b.start);
+    // A day later (before 09:00, so not auto-done yet), the first block still waits.
+    let next_day = blocks[0].start.with_timezone(&chrono_tz::Europe::London).date_naive() + Duration::days(1);
+    env.set_now(&format!("{next_day} 08:00"));
+    let items = e.checkin_items().unwrap();
+    let it = items
+        .iter()
+        .find(|i| i.outcome.is_none())
+        .expect("yesterday's block is still listed");
+    // "Finished" = done, and the whole task is.
+    e.checkin(&CheckinReq {
+        block_uid: it.block_uid.clone(),
+        outcome: "finished".into(),
+        actual_min: None,
+        remaining_min: None,
+    })
+    .unwrap();
+    assert_eq!(e.db.task_get(&r.task.id).unwrap().unwrap().status, TaskStatus::Done);
+}

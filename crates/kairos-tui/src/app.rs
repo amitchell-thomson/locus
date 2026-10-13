@@ -44,11 +44,21 @@ impl View {
 pub enum PromptKind {
     Move,
     Search,
-    /// Check-in of a coursework block: how much of the task is left?
+    /// Check-in: how long did you work on it (partly done)?
+    Partial {
+        t: CheckinTarget,
+    },
+    /// Check-in (coursework, or a block that uses up the task): how much of
+    /// the task is left?
     Remaining {
-        uid: String,
-        title: String,
+        t: CheckinTarget,
         outcome: String,
+        actual: Option<u32>,
+    },
+    /// Log work done outside a block: how long (ending now)?
+    LogWork {
+        task_id: String,
+        title: String,
     },
     /// Accepting proposed project time: what to work on.
     Project {
@@ -76,7 +86,9 @@ impl PromptKind {
         match self {
             PromptKind::Move => "move to (when)",
             PromptKind::Search => "/",
+            PromptKind::Partial { .. } => "partly done — how long did you work? (e.g. 45m)",
             PromptKind::Remaining { .. } => "how much is left? (e.g. 3h, 0 = finished)",
+            PromptKind::LogWork { .. } => "log work — how long, ending now? (e.g. 40m)",
             PromptKind::Project { .. } => "work on (Enter = Project time)",
             PromptKind::MoreTime { .. } => "how much more time? (e.g. 2h)",
             PromptKind::MoveDeadline { .. } => "deadline (when, e.g. fri 17:00)",
@@ -108,6 +120,31 @@ pub enum Mode {
     Checkin(usize),
     /// `a` in the calendar: an event or a task?
     AddChoice,
+}
+
+/// A block being checked in (from the C list or the calendar).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheckinTarget {
+    pub uid: String,
+    pub title: String,
+    pub planned_min: u32,
+    pub ask_remaining: bool,
+    pub remaining_min: u32,
+    /// Opened from the C list: go back to it afterwards.
+    pub from_list: bool,
+}
+
+impl CheckinTarget {
+    fn of(item: &api::CheckinItem, from_list: bool) -> CheckinTarget {
+        CheckinTarget {
+            uid: item.block_uid.clone(),
+            title: item.title.clone(),
+            planned_min: item.planned_min,
+            ask_remaining: item.ask_remaining,
+            remaining_min: item.remaining_min,
+            from_list,
+        }
+    }
 }
 
 /// Finished tasks listed (and selectable) in the tasks view.
@@ -788,6 +825,16 @@ impl App {
                         }
                     }
                     Key::Char('n') => self.start_now(t.id.clone(), t.title.clone()),
+                    Key::Char('W') => {
+                        self.message = None;
+                        self.mode = Mode::Prompt(
+                            PromptKind::LogWork {
+                                task_id: t.id.clone(),
+                                title: t.title.clone(),
+                            },
+                            String::new(),
+                        );
+                    }
                     Key::Char('e') => {
                         self.message = None;
                         self.mode = Mode::Form(Form::edit_task(self.key_names(), &t, self.tz));
@@ -832,6 +879,32 @@ impl App {
                         }
                         Key::Char('d') => self.reject_proposal(&i.uid),
                         _ => {}
+                    }
+                    return;
+                }
+                // A work block that has started and isn't checked in: check it
+                // in right here (y done · c partly · x/d missed · F finished).
+                if i.meta.kind == EventKind::TaskBlock
+                    && i.start(self.tz) <= self.now
+                    && !i.title.trim_start().starts_with('✓')
+                    && matches!(k, Key::Char('y' | 'c' | 'x' | 'd' | 'F'))
+                {
+                    let t = self.checkin_target(&i);
+                    let outcome = match k {
+                        Key::Char('y') => "done",
+                        Key::Char('c') => "partial",
+                        Key::Char('F') => "finished",
+                        _ => "missed",
+                    };
+                    return self.check_in(t, outcome);
+                }
+                // W: log work on this block's (or ⚑'s) task, ending now.
+                if k == Key::Char('W') {
+                    if let Some(id) = i.meta.task_id.clone() {
+                        let title =
+                            kairos_core::build::bare_block_title(i.title.trim_start_matches('⚑').trim()).to_string();
+                        self.message = None;
+                        self.mode = Mode::Prompt(PromptKind::LogWork { task_id: id, title }, String::new());
                     }
                     return;
                 }
@@ -1094,7 +1167,7 @@ impl App {
 
     fn submit(&mut self, kind: PromptKind, buf: String) {
         let buf = buf.trim().to_string();
-        if let PromptKind::Remaining { uid, title, outcome } = &kind {
+        if let PromptKind::Remaining { t, outcome, actual } = &kind {
             let left = if buf.is_empty() {
                 None
             } else {
@@ -1107,7 +1180,38 @@ impl App {
                     }
                 }
             };
-            return self.send_checkin(uid.clone(), &title.clone(), &outcome.clone(), left);
+            return self.send_checkin(&t.clone(), &outcome.clone(), *actual, left);
+        }
+        if let PromptKind::Partial { t } = &kind {
+            let Ok(actual) = dates::parse_minutes(&buf) else {
+                self.set_message("how long: e.g. 45m, 1h30", true);
+                self.mode = Mode::Prompt(kind.clone(), buf);
+                return;
+            };
+            return self.check_in_after(t.clone(), "partial", Some(actual));
+        }
+        if let PromptKind::LogWork { task_id, title } = &kind {
+            let Ok(m) = dates::parse_minutes(&buf) else {
+                self.set_message("how long: e.g. 40m, 1h", true);
+                self.mode = Mode::Prompt(kind.clone(), buf);
+                return;
+            };
+            let (task_id, title) = (task_id.clone(), title.clone());
+            match self.with_daemon(|d| d.log_work(&task_id, m)) {
+                Some(Ok(Ok(r))) => {
+                    let warn = r.plan.as_ref().and_then(plan_warning).unwrap_or_default();
+                    self.set_message(
+                        format!("✓ logged {} on {title}{warn}", crate::form::fmt_minutes(i64::from(m))),
+                        !warn.is_empty(),
+                    );
+                    self.wants_sync = true;
+                    self.refresh_remote();
+                }
+                Some(Ok(Err(e))) => self.set_message(e.to_string(), true),
+                Some(Err(e)) => self.set_message(e.to_string(), true),
+                None => {}
+            }
+            return;
         }
         if let PromptKind::MoveDeadline { task_id } = &kind {
             let due = match self.when_str(&buf) {
@@ -1179,6 +1283,8 @@ impl App {
         }
         match kind {
             PromptKind::Remaining { .. }
+            | PromptKind::Partial { .. }
+            | PromptKind::LogWork { .. }
             | PromptKind::Project { .. }
             | PromptKind::MoreTime { .. }
             | PromptKind::MoveDeadline { .. }
@@ -1476,41 +1582,20 @@ impl App {
     fn checkin_key(&mut self, i: usize, k: Key) {
         let open: Vec<api::CheckinItem> = self.checkins.iter().filter(|c| c.outcome.is_none()).cloned().collect();
         let Some(item) = open.get(i) else { return };
-        let outcome = match k {
-            Key::Char('d') => "done",
-            Key::Char('p') => "partial",
-            Key::Char('m') => "missed",
-            Key::Char('s') | Key::Char('j') => {
-                if i + 1 < open.len() {
-                    self.mode = Mode::Checkin(i + 1);
-                }
-                return;
+        let t = CheckinTarget::of(item, true);
+        match k {
+            // Same keys as on a block in the calendar (p is the Private toggle there).
+            Key::Char('y') | Key::Char('d') => self.check_in(t, "done"),
+            Key::Char('c') | Key::Char('p') => self.check_in(t, "partial"),
+            Key::Char('x') | Key::Char('m') => self.check_in(t, "missed"),
+            Key::Char('F') | Key::Char('f') => self.check_in(t, "finished"),
+            Key::Char('s') | Key::Char('j') | Key::Down => {
+                self.mode = Mode::Checkin((i + 1).min(open.len().saturating_sub(1)));
             }
-            Key::Esc | Key::Char('q') => return,
-            _ => {
-                self.mode = Mode::Checkin(i);
-                return;
-            }
-        };
-        if item.ask_remaining && outcome != "missed" {
-            // Coursework: its estimate moves, so ask what's left.
-            let guess = if outcome == "done" {
-                item.remaining_min.saturating_sub(item.planned_min)
-            } else {
-                item.remaining_min.saturating_sub(item.planned_min / 2)
-            };
-            self.mode = Mode::Prompt(
-                PromptKind::Remaining {
-                    uid: item.block_uid.clone(),
-                    title: item.title.clone(),
-                    outcome: outcome.into(),
-                },
-                crate::form::fmt_minutes(i64::from(guess)),
-            );
-            return;
+            Key::Char('k') | Key::Up => self.mode = Mode::Checkin(i.saturating_sub(1)),
+            Key::Esc | Key::Char('q') => {}
+            _ => self.mode = Mode::Checkin(i),
         }
-        let (uid, title) = (item.block_uid.clone(), item.title.clone());
-        self.send_checkin(uid, &title, outcome, None);
     }
 
     /// The keys that do something for what's selected, for the bottom-right
@@ -1519,7 +1604,7 @@ impl App {
         let h: &[&str] = match self.view {
             View::Tasks => {
                 if self.sel < self.tasks.len() {
-                    &["e edit", "D done", "+ time", "n start", "d drop"]
+                    &["e edit", "D done", "W log work", "+ time", "n start", "d drop"]
                 } else if self.sel < self.tasks.len() + self.done_tasks.len().min(DONE_SHOWN) {
                     &["o reopen"]
                 } else {
@@ -1539,6 +1624,10 @@ impl App {
                     (EventKind::Proposal, _) => &["y accept", "d drop"],
                     (EventKind::Deadline, _) if i.meta.task_id.is_some() => {
                         &["e edit", "m move", "d remove", "n start"]
+                    }
+                    (EventKind::TaskBlock, _) if i.title.trim_start().starts_with('✓') => &["W log more work"],
+                    (EventKind::TaskBlock, _) if i.start(self.tz) <= self.now => {
+                        &["y done", "c partly", "x missed", "F finished"]
                     }
                     (EventKind::TaskBlock, _) => &["n start", "m move", "d skip", "e edit"],
                     (_, Overlay::Family) if i.meta.origin_key.is_none() => {
@@ -1712,20 +1801,84 @@ impl App {
         }));
     }
 
-    fn send_checkin(&mut self, uid: String, title: &str, outcome: &str, remaining: Option<u32>) {
+    /// What a check-in needs about a block (from the C list's data if it's
+    /// there, else from the block and its task).
+    fn checkin_target(&self, i: &Instance) -> CheckinTarget {
+        if let Some(item) = self.checkins.iter().find(|c| c.block_uid == i.uid) {
+            return CheckinTarget::of(item, false);
+        }
+        let task = i
+            .meta
+            .task_id
+            .as_deref()
+            .and_then(|id| self.tasks.iter().find(|t| t.id == id));
+        let (s, e) = i.span.bounds(self.tz);
+        let planned = (e - s).num_minutes().max(0) as u32;
+        CheckinTarget {
+            uid: i.uid.clone(),
+            title: kairos_core::build::bare_block_title(&i.title).to_string(),
+            planned_min: planned,
+            ask_remaining: task.is_some_and(|t| t.kind.as_deref() == Some("coursework") || planned >= t.remaining_min),
+            remaining_min: task.map_or(0, |t| t.remaining_min),
+            from_list: false,
+        }
+    }
+
+    /// How many blocks are waiting for a check-in (the status bar's nudge).
+    pub fn to_check_in(&self) -> usize {
+        self.checkins.iter().filter(|c| c.outcome.is_none()).count()
+    }
+
+    /// Check a block in: done / partial (asks how long) / missed / finished
+    /// (done, and the task is finished). Coursework, and a block that uses up
+    /// the task, also ask how much is left.
+    pub fn check_in(&mut self, t: CheckinTarget, outcome: &str) {
+        if outcome == "partial" {
+            self.message = None;
+            let guess = crate::form::fmt_minutes(i64::from(t.planned_min / 2));
+            self.mode = Mode::Prompt(PromptKind::Partial { t }, guess);
+            return;
+        }
+        self.check_in_after(t, outcome, None);
+    }
+
+    fn check_in_after(&mut self, t: CheckinTarget, outcome: &str, actual: Option<u32>) {
+        if t.ask_remaining && (outcome == "done" || outcome == "partial") {
+            let did = actual.unwrap_or(t.planned_min);
+            let guess = t.remaining_min.saturating_sub(did);
+            self.message = None;
+            self.mode = Mode::Prompt(
+                PromptKind::Remaining {
+                    t,
+                    outcome: outcome.into(),
+                    actual,
+                },
+                crate::form::fmt_minutes(i64::from(guess)),
+            );
+            return;
+        }
+        self.send_checkin(&t, outcome, actual, None);
+    }
+
+    fn send_checkin(&mut self, t: &CheckinTarget, outcome: &str, actual: Option<u32>, remaining: Option<u32>) {
         let req = api::CheckinReq {
-            block_uid: uid,
+            block_uid: t.uid.clone(),
             outcome: outcome.into(),
-            actual_min: None,
+            actual_min: actual,
             remaining_min: remaining,
         };
         if let Some(r) = self.with_daemon(|d| d.checkin(&req)) {
             match r {
                 Ok(Ok(p)) => {
+                    let what = match (outcome, actual) {
+                        ("partial", Some(m)) => format!("{} done", crate::form::fmt_minutes(i64::from(m))),
+                        ("finished", _) => "finished ✓".to_string(),
+                        (o, _) => o.to_string(),
+                    };
                     let left = remaining.map(|m| format!(" · {} left", crate::form::fmt_minutes(i64::from(m))));
                     let warn = plan_warning(&p).unwrap_or_default();
                     self.set_message(
-                        format!("{title}: {outcome}{}{warn}", left.unwrap_or_default()),
+                        format!("{}: {what}{}{warn}", t.title, left.unwrap_or_default()),
                         !warn.is_empty(),
                     );
                     self.wants_sync = true;
@@ -1735,7 +1888,7 @@ impl App {
             }
         }
         self.refresh_remote();
-        if self.checkins.iter().any(|c| c.outcome.is_none()) {
+        if t.from_list && self.checkins.iter().any(|c| c.outcome.is_none()) {
             self.mode = Mode::Checkin(0);
         }
     }

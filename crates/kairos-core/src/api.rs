@@ -329,6 +329,12 @@ pub struct CheckinItem {
     pub remaining_min: u32,
 }
 
+/// Work done on a task outside a block, ending now.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct LogWorkReq {
+    pub minutes: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct StartTaskReq {
     /// How long (default: a full block of the task's type).

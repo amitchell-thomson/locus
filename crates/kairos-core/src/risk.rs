@@ -142,6 +142,13 @@ pub fn is_scheduler_block_op(op: &OpFacts) -> bool {
 /// trimmed to the time actually done, or removed if missed. History, not a
 /// plan — low-risk (the block itself was kairos's).
 pub fn is_checkin_record_op(op: &OpFacts, now: DateTime<Utc>) -> bool {
+    // Logging work already done: a work block that's already over.
+    if op.action == Action::Create {
+        return op
+            .after
+            .as_ref()
+            .is_some_and(|a| a.kind == EventKind::TaskBlock && a.end <= now && !a.recurring);
+    }
     matches!(op.action, Action::Update | Action::Delete)
         && op
             .before

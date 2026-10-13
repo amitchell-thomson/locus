@@ -2010,6 +2010,85 @@ impl Engine {
         }
     }
 
+    /// Log work done on a task that wasn't in a block ("did 40 min just now"):
+    /// a done block ending now (✓, pinned), counted like a check-in.
+    pub fn log_work(&mut self, author: Author, id: &str, minutes: u32) -> Result<api::TaskResp> {
+        let t = self.find_task(id)?;
+        if t.status != TaskStatus::Open {
+            return Err(EngineError::BadRequest(format!("{:?} isn't open", t.title)));
+        }
+        if minutes == 0 {
+            return Err(EngineError::BadRequest("how long? (minutes > 0)".into()));
+        }
+        let tz = self.tz();
+        let now = self.now();
+        let end = DateTime::from_timestamp(now.timestamp() / 60 * 60, 0).unwrap_or(now);
+        let start = end - Duration::minutes(i64::from(minutes));
+        let world = self.world(1)?;
+        let (target, origin_key) = self.target_for_key(&t.key)?;
+        let uid = build::new_uid();
+        let mut meta = self.author_meta(author);
+        meta.origin_key = origin_key;
+        meta.kind = EventKind::TaskBlock;
+        meta.task_id = Some(t.id.clone());
+        meta.pinned = true;
+        let ev = NewEvent {
+            uid: uid.clone(),
+            title: build::done_block_title(&t.title),
+            time: NewTime::Timed { start, end },
+            location: None,
+            description: Some("Logged work (wasn't a planned block)".into()),
+            meta,
+            alarms: vec![],
+            transparent: false,
+            rrule: None,
+        };
+        let after = build::event_file(&ev, tz, now);
+        let item = Item {
+            source: target.id.clone(),
+            href: vdir::href_for_uid(&uid),
+        };
+        let summary = format!(
+            "Log {} on {:?} ({}–{})",
+            fmt_min(minutes),
+            t.title,
+            start.with_timezone(&tz).format("%H:%M"),
+            end.with_timezone(&tz).format("%H:%M")
+        );
+        let cs = self.propose(
+            &world,
+            author,
+            vec![Op::CreateEvent {
+                item,
+                uid: uid.clone(),
+                after,
+            }],
+            summary,
+        )?;
+        if cs.status == Status::Applied {
+            let b = Block {
+                uid: Some(uid.clone()),
+                task_id: t.id.clone(),
+                start,
+                end,
+                pinned: true,
+                why: None,
+            };
+            self.answer_checkin(&uid, &b, Outcome::Done, Some(minutes))?;
+        }
+        let plan = if cs.status == Status::Applied {
+            self.replan_soon = false;
+            Some(self.plan(false, Author::Scheduler)?)
+        } else {
+            None
+        };
+        Ok(api::TaskResp {
+            task: self.find_task(&t.id)?,
+            changesets: vec![WriteResult::from(&cs)],
+            plan,
+        })
+    }
+
     /// Start working on a task right now: a pinned block from now (a full
     /// block, or `minutes`; never past the next fixed event or the deadline),
     /// then a replan, so later blocks shrink or go.
@@ -2471,8 +2550,10 @@ impl Engine {
         let world = self.world(1)?;
         let rows = self.db.checkins(false)?;
         let mut out = Vec::new();
+        // Today's started blocks (answered or not), and every earlier block
+        // still unanswered (the last week; older ones were auto-done).
         for (b, inst) in self.blocks(&world) {
-            if b.start.with_timezone(&tz).date_naive() != today || b.start > now {
+            if b.start > now {
                 continue;
             }
             let uid = b.uid.clone().unwrap_or_default();
@@ -2480,6 +2561,10 @@ impl Engine {
                 .iter()
                 .find(|r| r.block_uid == uid)
                 .and_then(|r| r.outcome.map(|o| o.as_str().to_string()));
+            let day = b.start.with_timezone(&tz).date_naive();
+            if day != today && (outcome.is_some() || inst.title.trim_start().starts_with('✓')) {
+                continue;
+            }
             let task = self.db.task_get(&b.task_id)?;
             out.push(api::CheckinItem {
                 block_uid: uid,
@@ -2506,8 +2591,19 @@ impl Engine {
     }
 
     pub fn checkin(&mut self, req: &api::CheckinReq) -> Result<api::PlanResp> {
+        // "finished" = done, and the whole task is finished.
+        let finished = req.outcome == "finished";
+        let mut req = req.clone();
+        if finished {
+            req.outcome = "done".into();
+            req.remaining_min = Some(0);
+        }
+        let req = &req;
         let outcome = Outcome::parse(&req.outcome).ok_or_else(|| {
-            EngineError::BadRequest(format!("outcome must be done|partial|missed, got {:?}", req.outcome))
+            EngineError::BadRequest(format!(
+                "outcome must be done|partial|missed|finished, got {:?}",
+                req.outcome
+            ))
         })?;
         let world = self.world(1)?;
         let (b, _) = self

@@ -106,6 +106,25 @@ fn with_hints<'a>(block: Block<'a>, app: &App, width: u16) -> Block<'a> {
     )
 }
 
+/// The selected item: a solid fill in its own colour, softened a little so
+/// it isn't glaring, with dark bold text — the strongest thing on screen, and
+/// never a different calendar's colour.
+pub fn selected_style(col: Color) -> Style {
+    Style::default()
+        .fg(c("base"))
+        .bg(fade(col, 0.15))
+        .add_modifier(Modifier::BOLD)
+}
+
+/// Linked to the selection (a task's ⚑ ↔ its work blocks): a medium tint of
+/// its own colour, bold.
+pub fn linked_style(col: Color) -> Style {
+    Style::default()
+        .fg(c("text"))
+        .bg(fade(col, 0.55))
+        .add_modifier(Modifier::BOLD)
+}
+
 fn panel(title: &str, focus: bool) -> Block<'static> {
     Block::default()
         .borders(Borders::ALL)
@@ -140,12 +159,12 @@ fn centred(area: Rect, w: u16, h: u16) -> Rect {
     Rect::new(area.x + (area.width - w) / 2, area.y + (area.height - h) / 2, w, h)
 }
 
-fn label(i: &Instance) -> String {
+fn label(app: &App, i: &Instance) -> String {
     let t = i.title.trim();
     match i.meta.kind {
         EventKind::Deadline => format!("⚑ {}", t.trim_start_matches('⚑').trim()),
         // Work: a box — 󰄱 to do (also past, until checked in), 󰄵 done.
-        EventKind::TaskBlock => kairos_core::build::block_label(t),
+        EventKind::TaskBlock => kairos_core::build::block_label(t, i.end(app.tz) <= app.now),
         EventKind::Event => t.to_string(),
         EventKind::Proposal => format!("◌ {t}?"),
     }
@@ -373,7 +392,7 @@ fn peek(app: &App, cl: &Cluster) -> String {
             end.with_timezone(&tz).format("%H:%M")
         ),
     };
-    let mut parts = vec![when, label(i)];
+    let mut parts = vec![when, label(app, i)];
     // Work for a task: where the task stands, not just this block.
     if i.meta.kind == EventKind::TaskBlock
         && let Some(info) = task_progress(app, i)
@@ -690,16 +709,12 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
         if is_dimmed(i) {
             style = style.add_modifier(Modifier::DIM);
         }
-        if is_deadline(i) && (selected || linked(i)) {
-            // Deadlines highlight red, like the timed ⚑ line.
-            style = Style::default().fg(c("base")).bg(c("red")).add_modifier(Modifier::BOLD);
-        } else if selected {
-            style = Style::default()
-                .fg(c("base"))
-                .bg(c("blue"))
-                .add_modifier(Modifier::BOLD);
+        if selected {
+            style = selected_style(base_col);
+        } else if linked(i) {
+            style = linked_style(base_col);
         }
-        let mut text = label(i);
+        let mut text = label(app, i);
         if b.cl.is_merged() {
             text.push_str(" ⧉");
         }
@@ -893,7 +908,15 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             let i = &p.cl.primary;
             let idx = per_day[k].iter().position(|x| std::ptr::eq(x, p.cl));
             // Solid blue highlight when selected or linked to the selected deadline.
-            let hl = (*d == app.cursor && idx == Some(app.sel) || linked(i)).then(|| c("blue"));
+            // Selected: a solid fill in its own colour; linked: a medium tint.
+            let own = colour_of(app, i);
+            let hl = if *d == app.cursor && idx == Some(app.sel) {
+                Some(selected_style(own))
+            } else if linked(i) {
+                Some(linked_style(own))
+            } else {
+                None
+            };
             let selected = hl.is_some();
             let ph = phase(app, i);
             let lively = attending(i);
@@ -912,8 +935,8 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             if is_dimmed(i) {
                 style = style.add_modifier(Modifier::DIM);
             }
-            if let Some(bg) = hl {
-                style = Style::default().fg(c("base")).bg(bg).add_modifier(Modifier::BOLD);
+            if let Some(h) = hl {
+                style = h;
             }
             // Work for a task: italic (and a dashed edge while kairos may move it).
             if i.meta.kind == EventKind::TaskBlock {
@@ -923,7 +946,7 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             // Text area: lane minus the ▌ bar and a gap column.
             let tw = lane_w.saturating_sub(2) as usize;
             let rows_avail = p.r1 - p.r0;
-            let full = label(i);
+            let full = label(app, i);
             // The real title, wrapped; `…` marks where it's cut (details on the bottom edge).
             // Squeezed: ⚠ after the box ("󰄱 ⚠ B4 sheet").
             let mut title = if app.squeeze_of(i).is_some() {
@@ -1030,10 +1053,15 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             // Selected (or its work block is): a solid red block (like the
             // blue one for events), padded across the column.
             let idx = per_day[k].iter().position(|x| std::ptr::eq(x, *cl));
-            let selected = (*d == app.cursor && idx == Some(app.sel)) || linked(i);
+            let is_sel = *d == app.cursor && idx == Some(app.sel);
+            let selected = is_sel || linked(i);
             let title = i.title.trim_start_matches('⚑').trim();
             let text = if selected {
-                st = Style::default().fg(c("base")).bg(c("red")).add_modifier(Modifier::BOLD);
+                st = if is_sel {
+                    selected_style(c("red"))
+                } else {
+                    linked_style(c("red"))
+                };
                 let s = format!("⚑ {t} {title}{when}");
                 format!("{s}{}", " ".repeat((w as usize).saturating_sub(s.width())))
             } else {
@@ -1201,7 +1229,7 @@ fn month(f: &mut Frame, app: &App, area: Rect) {
                     "▌" => " ",
                     e => e,
                 };
-                let text = format!("{mark}{when}{}", label(i));
+                let text = format!("{mark}{when}{}", label(app, i));
                 let col = if is_deadline(i) { c("red") } else { colour_of(app, i) };
                 let col = if d < today || !inside {
                     fade(col, PAST_FADE)
@@ -1209,10 +1237,7 @@ fn month(f: &mut Frame, app: &App, area: Rect) {
                     col
                 };
                 let st = if selected {
-                    Style::default()
-                        .fg(c("base"))
-                        .bg(c("blue"))
-                        .add_modifier(Modifier::BOLD)
+                    selected_style(if is_deadline(i) { c("red") } else { colour_of(app, i) })
                 } else if is_dimmed(i) {
                     Style::default().fg(col).add_modifier(Modifier::DIM)
                 } else {
@@ -1306,7 +1331,7 @@ fn event_line(app: &App, cl: &Cluster, selected: bool, width: usize) -> Line<'st
             end.with_timezone(&tz).format("%H:%M")
         ),
     };
-    let mut title = label(i);
+    let mut title = label(app, i);
     if cl.is_merged() {
         title.push_str(" ⧉");
     }
@@ -1322,10 +1347,7 @@ fn event_line(app: &App, cl: &Cluster, selected: bool, width: usize) -> Line<'st
     let meta = format!("  · {}", meta.join(" · "));
     let col = if is_deadline(i) { c("red") } else { colour_of(app, i) };
     let base = if selected {
-        Style::default()
-            .fg(c("base"))
-            .bg(c("blue"))
-            .add_modifier(Modifier::BOLD)
+        selected_style(col)
     } else if is_dimmed(i) {
         Style::default().fg(c("overlay1"))
     } else {
@@ -1365,7 +1387,7 @@ fn details(f: &mut Frame, app: &App, area: Rect, cl: &Cluster) {
     let i = &cl.primary;
     let tz = app.tz;
     let mut lines = vec![Line::from(TSpan::styled(
-        label(i),
+        label(app, i),
         Style::default().fg(colour_of(app, i)).add_modifier(Modifier::BOLD),
     ))];
     let when = match i.span {
@@ -1475,10 +1497,7 @@ fn tasks(f: &mut Frame, app: &App, area: Rect) {
             .map(|d| format!("due {}", d.describe(app.tz)))
             .unwrap_or_else(|| "no deadline".into());
         let base = if sel {
-            Style::default()
-                .fg(c("base"))
-                .bg(c("blue"))
-                .add_modifier(Modifier::BOLD)
+            selected_style(col)
         } else {
             Style::default().fg(c("text"))
         };
@@ -1513,14 +1532,7 @@ fn tasks(f: &mut Frame, app: &App, area: Rect) {
             let col = app.cfg.key(&t.key).map_or(c("overlay1"), |k| rgb(k.colour));
             let done = t.estimate_min.saturating_sub(t.remaining_min);
             let st = |dflt: Style| {
-                if sel {
-                    Style::default()
-                        .fg(c("base"))
-                        .bg(c("blue"))
-                        .add_modifier(Modifier::BOLD)
-                } else {
-                    dflt
-                }
+                if sel { selected_style(col) } else { dflt }
             };
             lines.push(Line::from(vec![
                 TSpan::styled(
@@ -1728,8 +1740,13 @@ fn help(f: &mut Frame, app: &App, area: Rect) {
         ("B", "Family event: attending / not"),
         ("y", "accept proposed project time ◌ (say what) · approve"),
         ("n", "start the selected task now (plan reflows)"),
-        ("T A", "tasks (D done · + more · o reopen) · approvals"),
-        ("P C", "run the scheduler · check in today's blocks"),
+        ("T A", "tasks (D done · W log work · + more · o reopen) · approvals"),
+        (
+            "y c x F",
+            "past block: done · partly (how long?) · missed · task finished",
+        ),
+        ("W", "log work on a task (ending now) — for work that wasn't in a block"),
+        ("P C", "run the scheduler · check in on everything waiting"),
         ("u", "undo your last change (and the replan after it)"),
         ("/ r q", "search · sync now · quit"),
     ];
@@ -1754,7 +1771,7 @@ fn checkin(f: &mut Frame, app: &App, area: Rect, i: usize) {
     let open: Vec<_> = app.checkins.iter().filter(|c| c.outcome.is_none()).collect();
     let mut lines = vec![
         Line::from(TSpan::styled(
-            "How did today's blocks go?",
+            "How did these go?",
             Style::default().fg(c("text")).add_modifier(Modifier::BOLD),
         )),
         Line::raw(""),
@@ -1770,7 +1787,8 @@ fn checkin(f: &mut Frame, app: &App, area: Rect, i: usize) {
         };
         lines.push(Line::from(TSpan::styled(
             format!(
-                "{}–{}  {}",
+                "{} {}–{}  {}",
+                it.start.with_timezone(&app.tz).format("%a"),
                 it.start.with_timezone(&app.tz).format("%H:%M"),
                 it.end.with_timezone(&app.tz).format("%H:%M"),
                 it.title
@@ -1780,7 +1798,7 @@ fn checkin(f: &mut Frame, app: &App, area: Rect, i: usize) {
     }
     lines.push(Line::raw(""));
     lines.push(Line::from(TSpan::styled(
-        "d done · p partial · m missed · s skip · Esc later",
+        "y done · c partly (how long?) · x missed · F finished task · j next · Esc later",
         Style::default().fg(c("overlay0")),
     )));
     let r = centred(area, 60, lines.len() as u16 + 2);
@@ -2036,6 +2054,10 @@ fn status_bar(f: &mut Frame, app: &App, area: Rect) {
         Some((m, false)) => (format!(" {m} "), Style::default().fg(c("green"))),
         None => {
             let mut parts = Vec::new();
+            let n = app.to_check_in();
+            if n > 0 {
+                parts.push(format!("{n} to check in · C"));
+            }
             if !app.pending.is_empty() {
                 parts.push(format!("◌ {} pending", app.pending.len()));
             }

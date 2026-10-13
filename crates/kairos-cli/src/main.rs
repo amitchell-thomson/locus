@@ -1216,7 +1216,7 @@ fn checkin(ctx: &Ctx, p: &Paint) -> Result<()> {
             continue;
         }
         print!(
-            "{} {} — [d]one / [p]artial / [m]issed / [s]kip? ",
+            "{} {} — [d]one / [p]artial / [m]issed / [f]inished task / [s]kip? ",
             p.dim(&when),
             it.title
         );
@@ -1227,6 +1227,7 @@ fn checkin(ctx: &Ctx, p: &Paint) -> Result<()> {
             Some('d') => "done",
             Some('p') => "partial",
             Some('m') => "missed",
+            Some('f') => "finished",
             _ => continue,
         };
         let actual = if outcome == "partial" {
@@ -1239,7 +1240,7 @@ fn checkin(ctx: &Ctx, p: &Paint) -> Result<()> {
             None
         };
         // Coursework: its estimate moves, so ask what's left.
-        let remaining = if it.ask_remaining && outcome != "missed" {
+        let remaining = if it.ask_remaining && (outcome == "done" || outcome == "partial") {
             print!(
                 "  how much of the task is left? (now {} — Enter keeps the plan, 0 = finished) ",
                 fmt_min(it.remaining_min)

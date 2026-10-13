@@ -185,6 +185,7 @@ pub fn router(st: AppState, mcp: Option<Router<AppState>>) -> Router {
         .route("/api/tasks/{id}", axum::routing::patch(update_task).get(get_task))
         .route("/api/tasks/{id}/complete", post(complete_task))
         .route("/api/tasks/{id}/start", post(start_task))
+        .route("/api/tasks/{id}/log", post(log_work))
         .route("/api/tasks/{id}/drop", post(drop_task))
         .route("/api/deadlines", post(create_deadline))
         .route("/api/plan", post(plan))
@@ -209,6 +210,7 @@ pub fn router(st: AppState, mcp: Option<Router<AppState>>) -> Router {
         .route("/a/{id}/{action}", get(signed_page).post(signed_action))
         .route("/checkin", get(checkin_page))
         .route("/checkin/{uid}/{outcome}", post(checkin_signed))
+        .route("/checkin/{uid}", post(checkin_form))
         .merge(protected)
         .with_state(st)
 }
@@ -420,6 +422,18 @@ async fn start_task(
     let a = author(&h);
     Ok(Json(
         with_engine_as(&st, &h, move |e| e.start_task(a, &id, minutes)).await?,
+    ))
+}
+
+async fn log_work(
+    State(st): State<AppState>,
+    h: HeaderMap,
+    Path(id): Path<String>,
+    Json(req): Json<api::LogWorkReq>,
+) -> HResult<api::TaskResp> {
+    let a = author(&h);
+    Ok(Json(
+        with_engine_as(&st, &h, move |e| e.log_work(a, &id, req.minutes)).await?,
     ))
 }
 
@@ -719,36 +733,88 @@ async fn checkin_page(State(st): State<AppState>, Query(q): Query<DaySig>) -> Re
         ));
     }
     let (items, tz) = with_engine(&st, move |e| Ok((e.checkin_items()?, e.tz()))).await?;
-    let mut body = String::from("<h1>How did today go?</h1>");
+    let mut body = String::from("<h1>How did it go?</h1>");
     if items.is_empty() {
-        body.push_str("<div class=card class=muted>No task blocks today.</div>");
+        body.push_str("<div class=card class=muted>Nothing to check in.</div>");
     }
     for it in items {
         let when = format!(
-            "{}–{}",
+            "{} {}–{}",
+            it.start.with_timezone(&tz).format("%a"),
             it.start.with_timezone(&tz).format("%H:%M"),
             it.end.with_timezone(&tz).format("%H:%M")
         );
-        let state = it.outcome.clone().map(|o| format!(" · <b>{o}</b>")).unwrap_or_default();
-        let link = |o: &str, class: &str, label: &str| {
-            format!(
-                "<form style=display:inline method=post action=\"/checkin/{}/{}?day={}&sig={}\"><button class={class}>{label}</button></form>",
-                esc(&it.block_uid),
-                o,
-                esc(&q.day),
-                esc(&q.sig)
-            )
+        if let Some(o) = &it.outcome {
+            body.push_str(&format!(
+                "<div class=card><b>{}</b><div class=muted>{when} · <b>{o}</b></div></div>",
+                esc(&it.title)
+            ));
+            continue;
+        }
+        // One form per block: done / finished / missed, or partly with how long;
+        // coursework (and a block that uses up the task) also asks what's left.
+        let left = if it.ask_remaining {
+            "<div class=muted>Left on the task: <input name=left placeholder=\"e.g. 3h (0 = finished)\" size=14></div>"
+        } else {
+            ""
         };
         body.push_str(&format!(
-            "<div class=card><b>{}</b><div class=muted>{when} · {} min{state}</div>{}{}{}</div>",
+            "<div class=card><b>{}</b><div class=muted>{when} · {} min</div>\
+             <form method=post action=\"/checkin/{}?day={}&sig={}\">\
+             <button name=outcome value=done class=ok>Done</button> \
+             <button name=outcome value=finished class=ok>Finished task</button> \
+             <button name=outcome value=missed class=no>Missed</button>\
+             <div class=muted>Partly: <input name=minutes inputmode=numeric placeholder=\"how long, e.g. 45m\" size=14> \
+             <button name=outcome value=partial class=mid>Save</button></div>{left}</form></div>",
             esc(&it.title),
             it.planned_min,
-            link("done", "ok", "Done"),
-            link("partial", "mid", "Half"),
-            link("missed", "no", "Missed")
+            esc(&it.block_uid),
+            esc(&q.day),
+            esc(&q.sig)
         ));
     }
     Ok(page("kairos check-in", &body))
+}
+
+#[derive(Deserialize)]
+struct CheckinForm {
+    outcome: String,
+    minutes: Option<String>,
+    left: Option<String>,
+}
+
+/// The phone page's form: done / finished / missed, partly with minutes,
+/// and what's left (coursework).
+async fn checkin_form(
+    State(st): State<AppState>,
+    Path(uid): Path<String>,
+    Query(q): Query<DaySig>,
+    axum::Form(f): axum::Form<CheckinForm>,
+) -> Result<Response, HttpError> {
+    if !ct_eq(&q.sig, &checkin_sig(&st, &q.day)) {
+        return Err(HttpError(
+            StatusCode::FORBIDDEN,
+            ApiError {
+                error: "bad link".into(),
+                reasons: vec![],
+            },
+        ));
+    }
+    let mins = |s: &Option<String>| {
+        s.as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .and_then(|s| kairos_core::dates::parse_minutes(s).ok())
+    };
+    let req = api::CheckinReq {
+        block_uid: uid,
+        outcome: f.outcome.clone(),
+        actual_min: if f.outcome == "partial" { mins(&f.minutes) } else { None },
+        remaining_min: mins(&f.left),
+    };
+    with_engine(&st, move |e| e.checkin(&req)).await?;
+    let to = format!("/checkin?day={}&sig={}", q.day, q.sig);
+    Ok((StatusCode::SEE_OTHER, [(header::LOCATION, to)]).into_response())
 }
 
 async fn checkin_signed(

@@ -318,7 +318,7 @@ fn selected_timed_deadline_is_a_red_block() {
     a.key(Key::Tab);
     a.key(Key::Char('l'));
     a.key(Key::Char('l'));
-    let red = kairos_tui::ui::c("red");
+    let red = kairos_tui::ui::selected_style(kairos_tui::ui::c("red")).bg.unwrap();
     // Background of the cell holding the timed deadline's ⚑, if drawn.
     let flag_bg = |a: &App| {
         let mut term = Terminal::new(TestBackend::new(100, 30)).unwrap();
@@ -378,15 +378,20 @@ fn deadline_over_a_selected_event_stays_unhighlighted() {
         .expect("timed deadline drawn");
     assert_ne!(
         buf[flag].bg,
-        kairos_tui::ui::c("blue"),
-        "deadline took the selection's blue"
+        kairos_tui::ui::selected_style(kairos_tui::ui::c("lavender"))
+            .bg
+            .unwrap(),
+        "deadline took the selection's highlight"
     );
-    // The selected event itself is still blue.
+    // The selected event itself is highlighted in its own colour (Personal: lavender).
     let under = (0..30u16)
         .flat_map(|y| (0..100u16).map(move |x| (x, y)))
         .find(|&(x, y)| buf[(x, y)].symbol() == "U" && buf[(x + 1, y)].symbol() == "n")
         .expect("event drawn");
-    assert_eq!(buf[under].bg, kairos_tui::ui::c("blue"));
+    assert_eq!(
+        Some(buf[under].bg),
+        kairos_tui::ui::selected_style(kairos_tui::ui::c("lavender")).bg
+    );
 }
 
 #[test]
@@ -404,7 +409,7 @@ fn selected_work_block_highlights_its_deadline() {
             .expect("timed deadline drawn");
         buf[flag].bg
     };
-    let red = kairos_tui::ui::c("red");
+    let red = kairos_tui::ui::linked_style(kairos_tui::ui::c("red")).bg.unwrap();
     let block = a
         .day_clusters(a.cursor)
         .iter()
@@ -434,7 +439,7 @@ fn selected_deadline_highlights_its_work_blocks() {
             .expect("B4 block drawn");
         buf[(at.0 + 1, at.1)].bg
     };
-    let blue = kairos_tui::ui::c("blue");
+    let blue = kairos_tui::ui::linked_style(kairos_tui::ui::c("lavender")).bg.unwrap(); // linked: a tint of its own colour
     // Off Wednesday (where the block itself would be selected) and off the deadline.
     a.key(Key::Char('l'));
     assert_ne!(block_bg(&a), blue);
@@ -569,10 +574,10 @@ fn work_block_edges_say_who_controls_them_and_boxes_say_their_state() {
     }
     let s = render_to_string(&a, 100, 30);
     assert!(s.contains("╏󰄱 B4 sheet"), "{s}");
-    // Once it has started it's history: solid; still an open box until checked in…
+    // Once it's over it's history: solid; a waiting box until checked in…
     a.now = now("2026-10-21T11:00:00+01:00");
     let s = render_to_string(&a, 100, 30);
-    assert!(s.contains("▌󰄱 B4 sheet"), "{s}");
+    assert!(s.contains("▌󰡖 B4 sheet"), "{s}");
     // …and ✓ once it is.
     for i in a
         .index
@@ -652,7 +657,10 @@ fn tasks_view_keys_d_drops_capital_d_finishes_o_reopens() {
     a.done_tasks = vec![done];
     a.view = View::Tasks;
     a.sel = 0;
-    assert_eq!(a.key_hints(), "e edit · D done · + time · n start · d drop");
+    assert_eq!(
+        a.key_hints(),
+        "e edit · D done · W log work · + time · n start · d drop"
+    );
     a.key(Key::Char('d'));
     assert!(matches!(&a.mode, Mode::Confirm(Confirm::DropTask(id)) if id == "t-1"));
     a.key(Key::Char('n'));
@@ -759,4 +767,46 @@ fn off_grid_starts_get_a_minutes_tag_not_a_time_in_the_title() {
         "{line}"
     );
     assert!(!s.contains("09:15 󰄱"), "no time in front of the title:\n{s}");
+}
+
+#[test]
+fn past_blocks_wait_for_a_check_in_right_on_the_calendar() {
+    use kairos_tui::app::{Mode, PromptKind};
+    let (mut a, _t) = app("2026-10-21T11:00:00+01:00"); // after the 09:00–10:30 block
+    a.key(Key::Tab);
+    a.sel = a
+        .day_clusters(a.cursor)
+        .iter()
+        .position(|c| c.primary.meta.task_id.as_deref() == Some("task-b4"))
+        .unwrap();
+    // Waiting box (not a tick yet), and the check-in keys as hints.
+    let s = render_to_string(&a, 130, 30);
+    assert!(
+        s.contains(&format!("▌{} B4 sheet", kairos_core::build::WAITING_ICON)),
+        "{s}"
+    );
+    assert_eq!(a.key_hints(), "y done · c partly · x missed · F finished");
+    // c asks how long (prefilled with half the block).
+    a.key(Key::Char('c'));
+    assert!(matches!(&a.mode, Mode::Prompt(PromptKind::Partial { t }, b) if t.title == "B4 sheet" && b == "45m"));
+    a.key(Key::Esc);
+    // W logs work on its task.
+    a.key(Key::Char('W'));
+    assert!(matches!(&a.mode, Mode::Prompt(PromptKind::LogWork { task_id, .. }, _) if task_id == "task-b4"));
+    a.key(Key::Esc);
+    // The status bar nudges when something waits.
+    a.checkins = vec![kairos_core::api::CheckinItem {
+        block_uid: "x".into(),
+        task_id: "task-b4".into(),
+        title: "B4 sheet".into(),
+        start: now("2026-10-21T09:00:00+01:00"),
+        end: now("2026-10-21T10:30:00+01:00"),
+        planned_min: 90,
+        outcome: None,
+        ask_remaining: false,
+        remaining_min: 90,
+    }];
+    a.message = None;
+    let s = render_to_string(&a, 130, 30);
+    assert!(s.contains("1 to check in · C"), "{s}");
 }

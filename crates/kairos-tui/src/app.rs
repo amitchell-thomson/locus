@@ -1003,7 +1003,16 @@ impl App {
             }
             Confirm::Undo(id) => {
                 if let Some(r) = self.with_daemon(|d| d.undo_with_replans(&id)) {
+                    let ok = matches!(&r, Ok(Ok(_)));
                     self.write_result(r);
+                    if ok {
+                        // The local copies of what was undone (e.g. a moved
+                        // block shown at its new time) would hide the undo
+                        // until they expire: drop them; the reload brings
+                        // the calendar as it really is.
+                        self.patches.clear();
+                        self.blocking_overrides.clear();
+                    }
                 }
             }
             Confirm::Skip => {

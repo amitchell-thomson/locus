@@ -301,7 +301,10 @@ pub fn wrap_first_narrow(s: &str, w0: usize, w: usize, rows: usize) -> Vec<Strin
     out
 }
 
-/// "task: 30m of 1h done · 30m left · no deadline" for a work block's task.
+/// Where a work block's task stands: now ("task: 30m/1h done · 30m left")
+/// for blocks under way or past; for a future block, as it will be when that
+/// block starts, counting the task's blocks planned before it ("task: 2h50 of
+/// 6h done by then · 1h10 left after this").
 fn task_progress(app: &App, i: &Instance) -> Option<String> {
     let id = i.meta.task_id.as_deref()?;
     if let Some(t) = app.tasks.iter().find(|t| t.id == id) {
@@ -310,16 +313,46 @@ fn task_progress(app: &App, i: &Instance) -> Option<String> {
         let due = t
             .due
             .map_or_else(|| "no deadline".to_string(), |d| format!("due {}", d.describe(app.tz)));
+        let (s, e) = i.span.bounds(app.tz);
+        if s > app.now {
+            // This task's work before this block that isn't counted yet:
+            // planned blocks, and past ones not checked in (they count as done).
+            let before: i64 = app
+                .index
+                .instances
+                .iter()
+                .filter(|b| {
+                    b.meta.task_id.as_deref() == Some(id)
+                        && b.meta.kind == EventKind::TaskBlock
+                        && !b.title.trim_start().starts_with('✓')
+                        && b.uid != i.uid
+                        && b.span.bounds(app.tz).1 <= s
+                })
+                .map(|b| {
+                    let (bs, be) = b.span.bounds(app.tz);
+                    (be - bs).num_minutes().max(0)
+                })
+                .sum();
+            let by_then = (i64::from(done) + before).min(i64::from(t.estimate_min)) as u32;
+            let this = (e - s).num_minutes().max(0);
+            let after = (i64::from(t.remaining_min) - before - this).max(0) as u32;
+            let after = if after == 0 {
+                "done after this".to_string()
+            } else {
+                format!("{} left after", f(after))
+            };
+            return Some(format!(
+                "task: {}/{} done by then · {after} · {due}",
+                f(by_then),
+                f(t.estimate_min)
+            ));
+        }
         let left = if t.remaining_min == 0 {
             "planned time used up".to_string()
         } else {
             format!("{} left", f(t.remaining_min))
         };
-        return Some(format!(
-            "task: {} of {} done · {left} · {due}",
-            f(done),
-            f(t.estimate_min)
-        ));
+        return Some(format!("task: {}/{} done · {left} · {due}", f(done), f(t.estimate_min)));
     }
     app.done_tasks
         .iter()

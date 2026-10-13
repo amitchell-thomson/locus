@@ -245,7 +245,7 @@ Requirements:
   - `u` undoes Alec's (or Claude's) last change together with the replan it caused; `/` search, `?` help.
 - **Rendering:**
   - deadlines: all-day ones in the top strip; timed ones as a `⚑` marker line at their time;
-  - work blocks: italic titles with a box — 󰄱 to do (also past, until checked in), 󰄵 done (Nerd Font checkboxes in the TUI/CLI; the stored title carries `☐`/`✓`, so the phone shows a box too); the left edge says who controls it — `┆` kairos may move it, `╏` Alec placed it (moved by hand / started now; stays), `▌` events and anything that has started. Squeezed: `☐ ⚠ Title`. The bottom edge of a selected work block says where its task stands ("task: 30m of 1h done · 30m left · no deadline");
+  - work blocks: italic titles with a box — 󰄱 to do (also past, until checked in), 󰄵 done (Nerd Font checkboxes in the TUI/CLI; the stored title carries `☐`/`✓`, so the phone shows a box too); the left edge says who controls it — `┆` kairos may move it, `╏` Alec placed it (moved by hand / started now; stays), `▌` events and anything that has started. Squeezed: `☐ ⚠ Title`. The bottom edge of a selected work block says where its task stands — now for blocks under way or past ("task: 30m/1h done · 30m left · no deadline"), and for a future block as it will be when that block starts ("task: 2h50/6h done by then · 1h10 left after");
   - duplicate badge `⧉`; proposed project time greyed `◌ …?`;
   - pending changes shown as ghost blocks with a diff in the approvals pane.
 - Task edits carry through: a renamed / re-keyed task renames / moves its blocks and ⚑; finishing a task removes its ⚑ (if still ahead), dropping removes it always.

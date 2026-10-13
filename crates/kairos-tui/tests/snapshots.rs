@@ -699,7 +699,32 @@ fn work_blocks_are_italic_and_say_where_their_task_stands() {
         .position(|c| c.primary.meta.task_id.as_deref() == Some("task-b4"))
         .unwrap();
     let s = render_to_string(&a, 130, 30);
-    assert!(s.contains("task: 1h30 of 4h done · 2h30 left · no deadline"), "{s}");
+    // A future block: where the task will stand when it starts.
+    assert!(
+        s.contains("task: 1h30/4h done by then · 1h left after · no deadline"),
+        "{s}"
+    );
+    // With another of its blocks earlier (1 h), that counts too.
+    let mut earlier = a
+        .index
+        .instances
+        .iter()
+        .find(|i| {
+            i.meta.task_id.as_deref() == Some("task-b4") && i.meta.kind == kairos_core::model::EventKind::TaskBlock
+        })
+        .unwrap()
+        .clone();
+    earlier.uid = "earlier".into();
+    earlier.span = kairos_core::model::Span::Timed {
+        start: now("2026-10-20T19:00:00+01:00"),
+        end: now("2026-10-20T20:00:00+01:00"),
+    };
+    a.index.instances.push(earlier);
+    let s = render_to_string(&a, 130, 30);
+    assert!(
+        s.contains("task: 2h30/4h done by then · done after this · no deadline"),
+        "{s}"
+    );
     a.sel = usize::from(a.sel == 0); // something else selected, so the block isn't highlighted
     let mut term = Terminal::new(TestBackend::new(130, 30)).unwrap();
     term.draw(|f| kairos_tui::ui::draw(f, &a)).unwrap();

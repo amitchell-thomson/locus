@@ -1075,3 +1075,49 @@ fn a_one_block_task_goes_on_the_earliest_day_with_room() {
         local(p.create[0].start)
     );
 }
+
+#[test]
+fn a_long_free_evening_beats_a_short_gap_for_the_second_block() {
+    // Alec's real week (2026-10-13): a 6 h Tute Sheet due Fri 21:00, planned
+    // at Tue 01:40. The spreading order is Wed, Thu, Tue; Thursday's longest
+    // stretch is 2 h 10 (futsal recovery, B14, lunch). The old code went Wed
+    // 3 h → Thu 2 h 10 → a 50-min leftover in Tuesday's free evening, called
+    // "squeezed into a short gap".
+    let sport = |a: &str, b: &str| Busy {
+        rest_after_min: 60,
+        counts_for_load: false,
+        ..busy(a, b)
+    };
+    let b = vec![
+        busy("2026-10-13 09:30", "2026-10-13 12:30"), // Quantum Research
+        busy("2026-10-13 13:00", "2026-10-13 16:00"),
+        sport("2026-10-13 15:00", "2026-10-13 17:00"), // football
+        sport("2026-10-13 16:00", "2026-10-13 17:00"), // futsal
+        busy("2026-10-13 18:00", "2026-10-13 18:30"),  // (a pinned block)
+        busy("2026-10-14 09:30", "2026-10-14 12:30"),
+        busy("2026-10-14 14:00", "2026-10-14 15:00"), // B3
+        sport("2026-10-15 07:00", "2026-10-15 09:00"),
+        busy("2026-10-15 09:00", "2026-10-15 10:00"), // B14
+        busy("2026-10-15 13:30", "2026-10-15 16:30"),
+        busy("2026-10-15 17:30", "2026-10-15 21:00"),
+        busy("2026-10-16 09:00", "2026-10-16 10:00"),
+        busy("2026-10-16 11:00", "2026-10-16 13:00"),
+        busy("2026-10-16 13:30", "2026-10-16 16:30"),
+        busy("2026-10-16 17:30", "2026-10-16 23:59"),
+    ];
+    let tasks = [typed("tute", "coursework", 360, Some("2026-10-16 21:00"))];
+    let p = run_plan("2026-10-13 01:40", &tasks, &b, &[]);
+    let blocks: Vec<(String, i64)> = p.create.iter().map(|x| (local(x.start), x.minutes())).collect();
+    assert!(
+        p.create.iter().all(|x| x.minutes() >= 60),
+        "no leftovers under an hour: {blocks:?}"
+    );
+    assert!(
+        p.create
+            .iter()
+            .any(|x| local(x.start).starts_with("Tue 13 19:30") && x.minutes() >= 120),
+        "Tuesday evening gets a real block: {blocks:?}"
+    );
+    assert!(p.squeezed.is_empty(), "{:?}", p.squeezed);
+    assert_eq!(total(&p, "tute"), 360);
+}

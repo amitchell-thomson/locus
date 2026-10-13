@@ -600,8 +600,12 @@ fn find_chunk(g: &Grid<'_>, st: &State, n: &Need<'_>, remaining: usize, tier: Ti
         order.sort_by_key(|o| o.1);
     }
     let first_day = order.iter().map(|o| o.1).min();
+    // The first day (in spreading order) that fits a full-size block wins;
+    // if none does, the day that fits the longest one (not merely the first
+    // that fits any) — so a long free evening beats a short morning gap.
+    let mut partial: Option<(usize, usize, usize, NaiveDate)> = None; // (fits, start, len, day)
     for (_, day) in order {
-        let mut best: Option<(usize, i64, usize, usize)> = None; // (len, score, start, len)
+        let mut best: Option<(usize, i64, usize, usize)> = None; // (fits, score, start, len)
         for j in lo..hi {
             if g.date[j] != day {
                 continue;
@@ -613,6 +617,7 @@ fn find_chunk(g: &Grid<'_>, st: &State, n: &Need<'_>, remaining: usize, tier: Ti
             while len < target && j + len < hi && st.can_place(g, &t.id, j, len + 1, comfort) {
                 len += 1;
             }
+            let fits = len;
             // Don't leave a crumb (shorter than any block): absorb it if
             // there's room, else leave a remainder that can stand alone.
             let rest = remaining - len.min(remaining);
@@ -621,33 +626,54 @@ fn find_chunk(g: &Grid<'_>, st: &State, n: &Need<'_>, remaining: usize, tier: Ti
                 len += rest;
             } else if rest > 0 && rest < min_len && len >= 2 * min_len - rest {
                 len -= min_len - rest;
+            } else if rest > 0 && rest < n.short_min && len >= n.short_min + (n.short_min - rest) {
+                // Leave at least a proper (if short) block, not a squeeze.
+                len -= n.short_min - rest;
             } else if rest > 0 && rest < crumb && len >= crumb + (crumb - rest) {
                 len -= crumb - rest;
             }
             let sc = score(g, t, j, len);
             // Longest (up to target) first, then fit, then earliest.
-            if best.is_none_or(|(bl, bs, _, _)| (len, sc) > (bl, bs)) {
-                best = Some((len, sc, j, len));
+            if best.is_none_or(|(bf, bs, _, _)| (fits, sc) > (bf, bs)) {
+                best = Some((fits, sc, j, len));
             }
         }
-        if let Some((_, _, s, l)) = best {
-            let what = match tier {
-                Tier::Ideal => "full-length block",
-                Tier::Shorter => "shorter block (no room for a full one)",
-                Tier::Squeeze => "squeezed in (no room otherwise)",
-                Tier::Overload => "squeezed in past the comfort limits (no room otherwise)",
-            };
-            let where_ = if with_room <= 1 {
-                "the only day with room"
-            } else if Some(day) == first_day {
-                "earliest day with room"
-            } else {
-                "spreads the work across the days before it's due"
-            };
-            return Some((s, l, format!("{what}; {where_}")));
+        let Some((fits, _, s, l)) = best else { continue };
+        if fits < target {
+            if partial.is_none_or(|(pf, ..)| fits > pf) {
+                partial = Some((fits, s, l, day));
+            }
+            continue;
         }
+        let where_ = if with_room <= 1 {
+            "the only day with room"
+        } else if Some(day) == first_day {
+            "earliest day with room"
+        } else {
+            "spreads the work across the days before it's due"
+        };
+        return Some((s, l, why(tier, where_)));
     }
-    None
+    let (_, s, l, day) = partial?;
+    let where_ = if with_room <= 1 {
+        "the only day with room"
+    } else if Some(day) == first_day {
+        "earliest day with room"
+    } else {
+        "the day with the most room for it"
+    };
+    Some((s, l, why(tier, where_)))
+}
+
+/// The "why" of a placement: its tier and how its day was chosen.
+fn why(tier: Tier, where_: &str) -> String {
+    let what = match tier {
+        Tier::Ideal => "full-length block",
+        Tier::Shorter => "shorter block (no room for a full one)",
+        Tier::Squeeze => "squeezed in (no room otherwise)",
+        Tier::Overload => "squeezed in past the comfort limits (no room otherwise)",
+    };
+    format!("{what}; {where_}")
 }
 
 /// `lead_first`: every task's best-tier turn before anyone drops a tier

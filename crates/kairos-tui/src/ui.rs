@@ -905,21 +905,28 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             if p.cl.is_merged() {
                 title.push_str(" ⧉");
             }
-            // The grid already says the hour; only off-the-hour starts (12:30)
-            // need spelling out. Exact times are on the bottom edge anyway.
-            let mut text = if lane_w >= 12 && t.minute() != 0 {
-                format!("{} {title}", t.format("%H:%M"))
+            let mut text = title;
+            // A tag at the end of the first line (the title wraps around it):
+            // "in 25m" when it starts soon (peach, like the now-line), else
+            // the minutes when the start falls between grid rows — ":15" for
+            // 18:15, dim — since the block is drawn from the row above. On a
+            // grid row the position says the time. (Location and exact times
+            // are on the bottom edge.)
+            let off_grid = if rph > 0 {
+                (i64::from(t.minute()) * rph) % 60 != 0
             } else {
-                title
+                t.minute() != 0
             };
-            // Soon: "in 25m" at the end of the first line (peach, like the
-            // now-line); the title wraps around it rather than being cut.
-            // (Location isn't drawn in blocks; it's on the bottom edge.)
-            let soon_tag = match ph {
-                Phase::Soon(m) if lively && lane_w >= 14 => Some(in_text(m)),
+            let soon_tag: Option<(String, Style)> = match ph {
+                Phase::Soon(m) if lively && lane_w >= 14 => {
+                    Some((in_text(m), Style::default().fg(c("peach")).add_modifier(Modifier::BOLD)))
+                }
+                _ if off_grid && lane_w >= 10 => {
+                    Some((format!(":{:02}", t.minute()), Style::default().fg(c("overlay1"))))
+                }
                 _ => None,
             };
-            let mut lines = match &soon_tag {
+            let mut lines = match soon_tag.as_ref().map(|t| &t.0) {
                 Some(tag) => wrap_first_narrow(&text, tw.saturating_sub(tag.width() + 1), tw, rows_avail),
                 None => wrap_lines(&text, tw, rows_avail),
             };
@@ -956,14 +963,10 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
                 };
                 put(buf, x, grid_y + r as u16, lane_w.saturating_sub(1), &body, st);
                 if k == 0
-                    && let Some(tag) = &soon_tag
+                    && let Some((tag, tag_st)) = &soon_tag
                 {
                     let tx = x + lane_w.saturating_sub(1 + tag.width() as u16);
-                    let tag_style = if selected {
-                        st
-                    } else {
-                        Style::default().fg(c("peach")).add_modifier(Modifier::BOLD)
-                    };
+                    let tag_style = if selected { st } else { *tag_st };
                     put(buf, tx, grid_y + r as u16, tag.width() as u16, tag, tag_style);
                 }
             }

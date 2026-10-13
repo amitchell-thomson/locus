@@ -710,3 +710,28 @@ fn work_blocks_are_italic_and_say_where_their_task_stands() {
         .unwrap();
     assert!(buf[(at.0 + 1, at.1)].modifier.contains(Modifier::ITALIC));
 }
+
+#[test]
+fn off_grid_starts_get_a_minutes_tag_not_a_time_in_the_title() {
+    let (mut a, _t) = app("2026-10-21T07:00:00+01:00");
+    a.key(Key::Tab); // day view (half-hour rows)
+    // Move the B4 block to 09:15 (between rows) and the lecture-free day stays.
+    for i in a
+        .index
+        .instances
+        .iter_mut()
+        .filter(|i| i.meta.task_id.as_deref() == Some("task-b4"))
+    {
+        if let kairos_core::model::Span::Timed { start, end } = &mut i.span {
+            *start += chrono::Duration::minutes(15);
+            *end += chrono::Duration::minutes(15);
+        }
+    }
+    let s = render_to_string(&a, 100, 40);
+    let line = s.lines().find(|l| l.contains("B4 sheet") && l.contains('┆')).unwrap();
+    assert!(
+        line.contains("☐ B4 sheet") && line.trim_end().trim_end_matches('│').trim_end().ends_with(":15"),
+        "{line}"
+    );
+    assert!(!s.contains("09:15 ☐"), "no time in front of the title:\n{s}");
+}

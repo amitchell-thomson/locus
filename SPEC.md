@@ -191,7 +191,7 @@ Deterministic Rust code. Claude's job is to interpret intent, create and update 
 
 **Completion tracking:**
 - Evening check-in (ntfy, Phase 8; TUI prompt before then) lists today's blocks with done / partial / missed.
-- With no answer by 09:00 the next day, blocks count as done (configurable).
+- No answer is never decided for Alec straight away (2026-10-13): unanswered blocks wait in the `C` list as long as he likes and only count as done after a week (`notify.autodone_after_days`, default 7; the tidy-up runs daily at `autodone_at`). Until then the scheduler presumes they happened.
 - Missed or partial time returns to `remaining` and triggers a replan.
 - Check in anywhere (2026-10-13): on a past work block in the calendar (`y` done · `c` partly — asks how long · `x`/`d` missed · `F` task finished), the `C` list (every unanswered block, any day, until auto-done), the phone page (done / finished / missed / partly with minutes / what's left), or `kairos checkin`. `W` logs work that wasn't in a block (a ✓ block ending now). The status bar says "N to check in · C" while anything waits. Past blocks not yet checked in show a waiting box (󰡖) until they get their tick.
 - The calendar shows what happened (2026-10-13): a done block gets `✓` in its title, a partial one is trimmed to the time actually done (and ticked), a missed one is removed. Written to the event (the phone sees it too); low-risk record keeping (`risk::is_checkin_record_op`). A work block that has started can't be moved — check in instead.

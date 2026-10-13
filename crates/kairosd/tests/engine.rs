@@ -772,15 +772,19 @@ fn checkin_missed_returns_time_and_done_consumes_it() {
 }
 
 #[test]
-fn unanswered_blocks_auto_done_next_morning() {
+fn unanswered_blocks_wait_for_a_check_in_then_count_after_a_week() {
     let env = Env::new(true);
     let mut e = env.engine();
     let r = e.create_task(Author::Claude, &b4(120, "fri 17:00")).unwrap();
     let first = r.plan.unwrap().created[0].clone();
     let day_after = first.start.with_timezone(&chrono_tz::Europe::London).date_naive() + Duration::days(1);
-    env.set_now(&format!("{day_after} 09:30"));
-    let n = e.settle().unwrap();
-    assert!(n >= 1);
+    // 10:00 the next morning: nothing was decided for Alec — it's still waiting.
+    env.set_now(&format!("{day_after} 10:00"));
+    assert_eq!(e.settle().unwrap(), 0);
+    assert!(e.checkin_items().unwrap().iter().any(|i| i.outcome.is_none()));
+    // A week on, it counts as done.
+    env.set_now(&format!("{} 10:00", day_after + Duration::days(7)));
+    assert!(e.settle().unwrap() >= 1);
     let t = e.db.task_get(&r.task.id).unwrap().unwrap();
     assert!(t.remaining_min < 120);
 }
@@ -1298,7 +1302,7 @@ fn tasks_never_finish_by_themselves() {
     let mut e = env.engine();
     let r = e.create_task(Author::Claude, &b4(120, "fri 17:00")).unwrap();
     let last = r.plan.unwrap().created.iter().map(|b| b.end).max().unwrap();
-    let day_after = last.with_timezone(&chrono_tz::Europe::London).date_naive() + Duration::days(1);
+    let day_after = last.with_timezone(&chrono_tz::Europe::London).date_naive() + Duration::days(8);
     env.set_now(&format!("{day_after} 09:30"));
     e.settle().unwrap();
     let t = e.db.task_get(&r.task.id).unwrap().unwrap();
@@ -1308,13 +1312,14 @@ fn tasks_never_finish_by_themselves() {
         kairosd::jobs::morning_text(&e)
             .contains("B4 problem sheet: planned time used up — finished, or how much more?")
     );
-    // Alec says it needs 2 h more: planned again.
+    // Alec says it needs 2 h more (deadline moved on, the old one is past): planned again.
     let u = e
         .update_task(
             Author::Alec,
             &r.task.id,
             &kairos_core::api::UpdateTaskReq {
                 remaining_min: Some(120),
+                due: Some(format!("{} 17:00", day_after + Duration::days(7))),
                 ..Default::default()
             },
         )
@@ -1608,6 +1613,41 @@ fn a_finished_task_can_be_reopened() {
         .map(|b| (b.end - b.start).num_minutes())
         .sum();
     assert_eq!(planned, 90);
+}
+
+#[test]
+fn partly_done_block_gets_the_rest_planned_again() {
+    // Alec's example: a 1 h block, only 20 min managed — 40 min go back in the plan.
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e
+        .create_task(
+            Author::Alec,
+            &CreateTaskReq {
+                title: "Purchase Furniture".into(),
+                key: "Personal".into(),
+                estimate_min: 60,
+                due: Some("fri 17:00".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let created = r.plan.unwrap().created;
+    assert_eq!(created.len(), 1);
+    *env.now.lock().unwrap() = created[0].end + Duration::minutes(5);
+    let uid = e.checkin_items().unwrap()[0].block_uid.clone();
+    let p = e
+        .checkin(&CheckinReq {
+            block_uid: uid,
+            outcome: "partial".into(),
+            actual_min: Some(20),
+            remaining_min: None,
+        })
+        .unwrap();
+    let again: i64 = p.created.iter().map(|b| (b.end - b.start).num_minutes()).sum();
+    assert_eq!(again, 40, "{p:?}");
+    assert!(p.created.iter().all(|b| b.start > created[0].end));
+    assert_eq!(e.db.task_get(&r.task.id).unwrap().unwrap().remaining_min, 40);
 }
 
 #[test]

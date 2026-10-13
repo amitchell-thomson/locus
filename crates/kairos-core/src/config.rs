@@ -292,9 +292,19 @@ pub struct NotifySettings {
     pub morning_summary: String,
     #[serde(default = "default_checkin")]
     pub evening_checkin: String,
-    /// Unanswered check-ins count blocks as done at this time next day.
+    /// When the daily tidy-up runs that counts week-old unanswered blocks
+    /// as done (see `autodone_after_days`).
     #[serde(default = "default_autodone")]
     pub autodone_at: String,
+    /// A work block nobody checked in on counts as done after this many
+    /// days (Alec checks in when it suits him — yesterday's at 10:00 is
+    /// fine). Until then the scheduler assumes it's done, and it waits (󰡖).
+    #[serde(default = "default_autodone_days")]
+    pub autodone_after_days: u32,
+}
+
+fn default_autodone_days() -> u32 {
+    7
 }
 
 fn default_ntfy_server() -> String {
@@ -320,6 +330,7 @@ impl Default for NotifySettings {
             morning_summary: default_morning(),
             evening_checkin: default_checkin(),
             autodone_at: default_autodone(),
+            autodone_after_days: default_autodone_days(),
         }
     }
 }

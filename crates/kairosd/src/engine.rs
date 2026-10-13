@@ -265,9 +265,11 @@ impl Engine {
         let cols = vdir::collections(&self.cfg.vdir())?;
         let now = self.now();
         let mut w = Vec::new();
+        // Back far enough to see every block still waiting for a check-in.
+        let back = i64::from(self.cfg.notify.autodone_after_days.max(6)) + 1;
         let instances = kairos_core::view::instances(
             &loaded.sources,
-            now - Duration::days(7),
+            now - Duration::days(back),
             now + Duration::days(horizon_days.max(1)),
             self.tz(),
             &mut w,
@@ -2415,17 +2417,10 @@ impl Engine {
         let tz = self.tz();
         let world = self.world(1)?;
         let today = now.with_timezone(&tz).date_naive();
-        let cutoff_time = kairos_core::constraints::Hm::parse(&self.cfg.notify.autodone_at)
-            .map_or(NaiveTime::from_hms_opt(9, 0, 0).unwrap_or(NaiveTime::MIN), |h| {
-                h.to_time()
-            });
-        let cutoff = kairos_core::time::resolve_local(today.and_time(cutoff_time), tz);
-        // Blocks from before today are auto-done once we're past today's cutoff.
-        let boundary = if now >= cutoff {
-            kairos_core::time::resolve_local(today.and_time(NaiveTime::MIN), tz)
-        } else {
-            cutoff - Duration::days(1)
-        };
+        // Only blocks that have waited `autodone_after_days` (a week) count as
+        // done by themselves; anything newer waits for Alec's check-in.
+        let days = i64::from(self.cfg.notify.autodone_after_days);
+        let boundary = kairos_core::time::resolve_local((today - Duration::days(days)).and_time(NaiveTime::MIN), tz);
         let answered: std::collections::HashSet<String> = self
             .db
             .checkins(false)?
@@ -2543,7 +2538,7 @@ impl Engine {
     }
 
     /// Today's blocks for the check-in.
-    pub fn checkin_items(&mut self) -> Result<Vec<api::CheckinItem>> {
+    pub fn checkin_items(&self) -> Result<Vec<api::CheckinItem>> {
         let now = self.now();
         let tz = self.tz();
         let today = now.with_timezone(&tz).date_naive();

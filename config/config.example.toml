@@ -28,7 +28,8 @@ topic_cmd = "cat ~/.config/kairos/secrets/ntfy-topic"
 public_url = "http://compute-node:7420"
 morning_summary = "07:30"
 evening_checkin = "21:30"
-autodone_at = "09:00"
+autodone_at = "09:00"        # when the daily tidy-up runs…
+autodone_after_days = 7       # …counting blocks nobody checked in on as done after a week
 
 [deadlines]
 alarms_minutes_before = [1440, 120]

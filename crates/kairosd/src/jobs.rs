@@ -62,6 +62,13 @@ pub fn morning_text(e: &Engine) -> String {
             lines.push(format!("{when} {mark}{}", i.title.trim_start_matches("⚑ ")));
         }
     }
+    // Blocks waiting for a check-in.
+    if let Ok(items) = e.checkin_items() {
+        let n = items.iter().filter(|i| i.outcome.is_none()).count();
+        if n > 0 {
+            lines.push(format!("{n} block{} to check in", if n == 1 { "" } else { "s" }));
+        }
+    }
     // Tasks whose planned time is used up: finished, or how much more?
     if let Ok(open) = e.db.tasks(Some(kairos_core::task::TaskStatus::Open)) {
         for t in open.iter().filter(|t| t.remaining_min == 0) {
@@ -125,7 +132,7 @@ impl Jobs {
                 }
                 if daily(&e, "settle", &e.cfg.notify.autodone_at.clone()) {
                     match e.settle() {
-                        Ok(n) if n > 0 => tracing::info!("auto-done {n} unanswered block(s)"),
+                        Ok(n) if n > 0 => tracing::info!("auto-done {n} week-old unanswered block(s)"),
                         Ok(_) => {}
                         Err(err) => tracing::warn!("settle: {err}"),
                     }
@@ -146,9 +153,9 @@ impl Jobs {
                                 .map(|i| format!("• {} ({} min)", i.title, i.planned_min))
                                 .collect();
                             let msg = format!(
-                                "{}\nUnanswered blocks count as done at {} tomorrow.",
+                                "{}\nNo rush: they wait until you check in (counted as done after {} days).",
                                 list.join("\n"),
-                                e.cfg.notify.autodone_at
+                                e.cfg.notify.autodone_after_days
                             );
                             let body = n.simple("kairos · check-in", &msg, Some(("Check in", n.checkin_url(&day))));
                             if let Err(err) = n.send(&body) {

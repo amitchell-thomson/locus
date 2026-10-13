@@ -25,7 +25,7 @@ Your own edits here apply straight away (no approval); `u` undoes the last one, 
 |---|---|
 | `a` | add: `e` event · `t` task (a form; `Tab` between fields) |
 | `e` · `K` · `m` | edit · change calendar · move. On a ⚑ deadline these act on the task's deadline |
-| `d` | remove: delete an event · skip a work block (kairos plans that time elsewhere) · remove a deadline |
+| `d` | remove: delete an event · skip a work block (kairos plans that time elsewhere) · on a task's ⚑, remove the task with its deadline and all its planned time (past, checked-in blocks stay) |
 | `s` | share an event to Family (asks first) |
 | `B` | Family event: whether you're attending (blocks the scheduler or not) |
 | `y` | accept proposed project time ◌ (asks what you'll work on) · approve a pending change |

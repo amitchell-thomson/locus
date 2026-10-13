@@ -609,7 +609,8 @@ fn keys_do_what_the_hints_say_for_each_kind_of_item() {
     a.key(Key::Char('d'));
     assert!(matches!(a.mode, Mode::Confirm(Confirm::Skip)));
     a.key(Key::Char('n')); // cancel
-    // Its ⚑ (Fri 23): e opens the task's form at Due; m moves the deadline; d removes it.
+    // Its ⚑ (Fri 23): e opens the task's form at Due; m moves the deadline; d removes
+    // it with all the task's planned time (drops the task).
     a.key(Key::Char('l'));
     a.key(Key::Char('l'));
     pick(&mut a, &|i| i.title.contains("B4 sheet"));
@@ -623,7 +624,7 @@ fn keys_do_what_the_hints_say_for_each_kind_of_item() {
     assert!(matches!(&a.mode, Mode::Prompt(PromptKind::MoveDeadline { task_id }, _) if task_id == "task-b4"));
     a.key(Key::Esc);
     a.key(Key::Char('d'));
-    assert!(matches!(&a.mode, Mode::Confirm(Confirm::ClearDue(id)) if id == "task-b4"));
+    assert!(matches!(&a.mode, Mode::Confirm(Confirm::DropTask(id)) if id == "task-b4"));
     a.key(Key::Char('n'));
     // a: event or task?
     a.key(Key::Char('a'));

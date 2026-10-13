@@ -1740,7 +1740,7 @@ fn help(f: &mut Frame, app: &App, area: Rect) {
         (calendars.as_str(), "show/hide one calendar (see the bar below)"),
         ("a", "add: e event · t task (a form; Tab between fields)"),
         ("e K m", "edit (K: its calendar) · move — on a ⚑: the task's deadline"),
-        ("d", "remove: delete event · skip work block · remove deadline · drop"),
+        ("d", "remove: event · skip work block · ⚑ with all its work · drop"),
         ("s", "share an event to Family"),
         ("B", "Family event: attending / not"),
         ("y", "accept proposed project time ◌ (say what) · approve"),

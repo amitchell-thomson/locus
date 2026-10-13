@@ -938,9 +938,19 @@ impl App {
                             self.message = None;
                             self.mode = Mode::Prompt(PromptKind::MoveDeadline { task_id: tid }, String::new());
                         }
+                        // Removing an open task's deadline removes the task and
+                        // all its planned time (Alec, 2026-10-13); a finished
+                        // task just loses its ⚑.
+                        Key::Char('d') if self.tasks.iter().any(|t| t.id == tid) => {
+                            self.mode = Mode::Confirm(Confirm::DropTask(tid));
+                            self.set_message(
+                                format!("remove “{title}”: its deadline and all its planned time? y/N"),
+                                false,
+                            );
+                        }
                         Key::Char('d') => {
                             self.mode = Mode::Confirm(Confirm::ClearDue(tid));
-                            self.set_message(format!("remove the deadline of “{title}”? (the task stays) y/N"), false);
+                            self.set_message(format!("remove the deadline of finished “{title}”? y/N"), false);
                         }
                         _ => {}
                     }

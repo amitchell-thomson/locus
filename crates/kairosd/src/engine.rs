@@ -1281,7 +1281,37 @@ impl Engine {
                 before: loc.text,
             });
         }
-        let summary = match (ops.len(), label) {
+        // Deleting an open task's ⚑ deadline drops the task and all its
+        // planned time with it (Alec, 2026-10-13): same changeset, one undo.
+        let deadlines: Vec<String> = ops
+            .iter()
+            .filter_map(|o| match o {
+                Op::DeleteEvent { uid, .. } => Some(uid.clone()),
+                _ => None,
+            })
+            .collect();
+        let now = self.now();
+        let mut dropped = Vec::new();
+        for t in self.db.tasks(Some(TaskStatus::Open))? {
+            if !t.deadline_uid.as_ref().is_some_and(|d| deadlines.contains(d)) {
+                continue;
+            }
+            let mut after = t.clone();
+            after.status = TaskStatus::Dropped;
+            after.updated_at = now;
+            ops.extend(self.block_deletes(&world, &t.id, |b| b.end > now)?);
+            dropped.push(t.title.clone());
+            ops.push(Op::UpdateTask {
+                before: Box::new(t),
+                after: Box::new(after),
+            });
+        }
+        if events.len() == 1
+            && let [title] = dropped.as_slice()
+        {
+            first = format!("Remove deadline of {title:?} with the task and its planned time");
+        }
+        let summary = match (events.len(), label) {
             (0, _) => return Err(EngineError::BadRequest("no events given".into())),
             (1, None) => first,
             (1, Some(l)) => l.to_string(),

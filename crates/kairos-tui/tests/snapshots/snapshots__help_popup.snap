@@ -16,7 +16,7 @@ expression: "render_to_string(&a, 100, 30)"
 │      ┄┄┄│       1–2  show/hide one calendar (see the bar below)                        │┄┄┄┄┄┄┄┄┄│
 │12:00 ┊  │         a  add: e event · t task (a form; Tab between fields)                │         │
 │13:00 ┊  │     e K m  edit (K: its calendar) · move — on a ⚑: the task's deadline       │         │
-│14:00 ┊  │         d  remove: delete event · skip work block · remove deadline · drop   │         │
+│14:00 ┊  │         d  remove: event · skip work block · ⚑ with all its work · drop      │         │
 │15:00 ┊  │         s  share an event to Family                                          │         │
 │16:00 ┊  │         B  Family event: attending / not                                     │         │
 │17:00 ┊  │         y  accept proposed project time ◌ (say what) · approve               │         │

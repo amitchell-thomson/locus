@@ -239,7 +239,7 @@ Requirements:
   - `h/l` day, `H/L` week, `t` today, `j/k` select;
   - `p` Private (all Alec's calendars) / `f` Family, `1–6` one calendar (`b`/`i` only when holiday / imported layers exist);
   - `a` add → `e` event / `t` task; `e` edit, `m` move, `K` re-key, `s` share to Family;
-  - `d` = remove, whatever it is: delete an event · skip a work block (the work goes elsewhere, never back into that slot) · remove a task's deadline (from its ⚑) · drop a proposal · drop a task;
+  - `d` = remove, whatever it is: delete an event · skip a work block (the work goes elsewhere, never back into that slot) · remove a task's ⚑ deadline, which removes the task and all its planned time with it (2026-10-13; past checked-in blocks stay; a finished task just loses its ⚑; clearing "due" in the task form keeps the task) · drop a proposal · drop a task;
   - on a ⚑: `e`/`m`/`d` change the *task's* deadline (not just the event);
   - `y` accept (proposals) / approve; `n` reject — or, on a task / block / ⚑, start it now; `B` Family: attending;
   - tasks view: `e` edit (title, calendar, type, time left, due — empty = no deadline), `D` done, `+` more time, `d` drop, `o` reopen a finished one;

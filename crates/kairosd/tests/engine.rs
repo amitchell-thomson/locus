@@ -696,6 +696,36 @@ fn dropping_a_task_removes_all_its_blocks_at_once() {
 }
 
 #[test]
+fn deleting_a_deadline_removes_its_task_and_planned_time() {
+    // Alec deleted a test Tute Sheet ⚑ and its blocks stayed (2026-10-13).
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e.create_task(Author::Claude, &b4(240, "fri 17:00")).unwrap();
+    let id = r.task.id.clone();
+    let n = blocks_of(&mut e, &id);
+    assert!(n >= 2, "{n}");
+    let deadline = r.task.deadline_uid.clone().unwrap();
+    e.direct = true;
+    let cs = e.delete_event(Author::Alec, None, &deadline).unwrap();
+    e.direct = false;
+    assert_eq!(cs.status, Status::Applied);
+    assert!(
+        cs.summary.contains("with the task and its planned time"),
+        "{}",
+        cs.summary
+    );
+    assert_eq!(e.db.task_get(&id).unwrap().unwrap().status, TaskStatus::Dropped);
+    assert_eq!(blocks_of(&mut e, &id), 0);
+    // Nothing is planned for it again.
+    let p = e.plan(false, Author::Scheduler).unwrap();
+    assert!(p.created.iter().all(|b| b.task_id != id));
+    // One undo brings the deadline, the task and its blocks back.
+    e.undo(&cs.id).unwrap();
+    assert_eq!(e.db.task_get(&id).unwrap().unwrap().status, TaskStatus::Open);
+    assert_eq!(blocks_of(&mut e, &id), n);
+}
+
+#[test]
 fn big_replans_of_work_blocks_apply_without_approval() {
     // Scheduler-owned blocks are exempt from the 8-op limit (2026-10-12).
     let env = Env::new(true);
@@ -797,7 +827,13 @@ fn deadline_deletion_needs_approval() {
     let uid = r.task.deadline_uid.clone().unwrap();
     let cs = e.delete_event(Author::Claude, None, &uid).unwrap();
     assert_eq!(cs.status, Status::Pending);
-    assert!(cs.reasons.iter().any(|x| x.contains("deadline")));
+    // A task's ⚑ takes the task with it, so it's a task drop (still Alec's call).
+    assert!(
+        cs.reasons.iter().any(|x| x.contains("dropping a task")),
+        "{:?}",
+        cs.reasons
+    );
+    assert_eq!(e.db.task_get(&r.task.id).unwrap().unwrap().status, TaskStatus::Open);
 }
 
 #[test]

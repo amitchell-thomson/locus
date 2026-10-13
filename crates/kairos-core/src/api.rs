@@ -309,6 +309,9 @@ pub struct CheckinReq {
     /// "How much is left?" (coursework): the task's new remaining time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remaining_min: Option<u32>,
+    /// "Took longer": plan what's left no earlier than this (a date or time).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub not_before: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

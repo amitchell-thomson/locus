@@ -27,7 +27,7 @@ claude mcp list   # kairos: … ✓ Connected
 | Read | `list_events`, `search_events`, `find_free`, `list_tasks`, `list_checkins`, `list_proposals`, `list_changesets`, `get_changeset` |
 | Events | `create_event`, `update_event`, `delete_event`, `move_event`, `share_to_family`; batches: `update_events`, `delete_events`, `move_events` |
 | Tasks | `create_task`, `update_task` (incl. `reopen`), `complete_task`, `create_deadline`, `start_task`, `log_work`, `plan` |
-| Check-ins | `list_checkins`, `checkin` (done / partial + `actual_min` / missed / finished) |
+| Check-ins | `list_checkins`, `checkin` (done / partial + `actual_min` / longer + `actual_min`, `remaining_min`, `not_before` / missed / finished) |
 | Project time | `list_proposals`, `accept_proposal`, `reject_proposal` |
 | Undo | `undo` |
 
@@ -67,7 +67,8 @@ claude mcp list   # kairos: … ✓ Connected
 ### "I only managed 20 minutes of the furniture last night"
 1. `list_checkins` → the block (Mon 19:30–20:30 Purchase Furniture).
 2. `checkin {block_uid, outcome: "partial", actual_min: 20}` → the block is trimmed to 20 min with ✓, and the 40 min left are planned again; reply with where they went.
-3. Missed entirely → `outcome: "missed"`. Did it and the task is done → `outcome: "finished"`. Worked on something with no block → `log_work {id, minutes}`.
+3. "That took 3 h, not 2, and I need about another hour — but not before Saturday" → `checkin {block_uid, outcome: "longer", actual_min: 180, remaining_min: 60, not_before: "sat"}`.
+4. Missed entirely → `outcome: "missed"`. Did it and the task is done → `outcome: "finished"`. Worked on something with no block → `log_work {id, minutes}`.
 
 ### "I'm starting the B4 sheet now"
 `start_task {id: "B4"}` → a block from now; the task's other blocks reflow.

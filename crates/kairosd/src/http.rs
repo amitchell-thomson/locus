@@ -765,7 +765,11 @@ async fn checkin_page(State(st): State<AppState>, Query(q): Query<DaySig>) -> Re
              <button name=outcome value=finished class=ok>Finished task</button> \
              <button name=outcome value=missed class=no>Missed</button>\
              <div class=muted>Partly: <input name=minutes inputmode=numeric placeholder=\"how long, e.g. 45m\" size=14> \
-             <button name=outcome value=partial class=mid>Save</button></div>{left}</form></div>",
+             <button name=outcome value=partial class=mid>Save</button></div>{left}\
+             <div class=muted>Took longer: spent <input name=spent placeholder=\"e.g. 3h\" size=6> \
+             still needs <input name=more placeholder=\"e.g. 1h\" size=6> \
+             from <input name=from placeholder=\"optional, e.g. sat\" size=10> \
+             <button name=outcome value=longer class=mid>Save</button></div></form></div>",
             esc(&it.title),
             it.planned_min,
             esc(&it.block_uid),
@@ -781,6 +785,10 @@ struct CheckinForm {
     outcome: String,
     minutes: Option<String>,
     left: Option<String>,
+    /// "Took longer": time spent, how much more it needs, plan it from.
+    spent: Option<String>,
+    more: Option<String>,
+    from: Option<String>,
 }
 
 /// The phone page's form: done / finished / missed, partly with minutes,
@@ -806,11 +814,21 @@ async fn checkin_form(
             .filter(|s| !s.is_empty())
             .and_then(|s| kairos_core::dates::parse_minutes(s).ok())
     };
+    let longer = f.outcome == "longer";
     let req = api::CheckinReq {
         block_uid: uid,
         outcome: f.outcome.clone(),
-        actual_min: if f.outcome == "partial" { mins(&f.minutes) } else { None },
-        remaining_min: mins(&f.left),
+        actual_min: match f.outcome.as_str() {
+            "partial" => mins(&f.minutes),
+            "longer" => mins(&f.spent),
+            _ => None,
+        },
+        remaining_min: if longer { mins(&f.more) } else { mins(&f.left) },
+        not_before: if longer {
+            f.from.clone().filter(|s| !s.trim().is_empty())
+        } else {
+            None
+        },
     };
     with_engine(&st, move |e| e.checkin(&req)).await?;
     let to = format!("/checkin?day={}&sig={}", q.day, q.sig);
@@ -836,6 +854,7 @@ async fn checkin_signed(
         outcome,
         actual_min: None,
         remaining_min: None,
+        not_before: None,
     };
     with_engine(&st, move |e| e.checkin(&req)).await?;
     let to = format!("/checkin?day={}&sig={}", q.day, q.sig);

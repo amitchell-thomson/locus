@@ -883,13 +883,18 @@ impl App {
                     return;
                 }
                 // A work block that has started and isn't checked in: check it
-                // in right here (y done · c partly · x/d missed · F finished).
+                // in right here (y done · c partly · + took longer · x/d missed · F finished).
                 if i.meta.kind == EventKind::TaskBlock
                     && i.start(self.tz) <= self.now
                     && !i.title.trim_start().starts_with('✓')
-                    && matches!(k, Key::Char('y' | 'c' | 'x' | 'd' | 'F'))
+                    && matches!(k, Key::Char('y' | 'c' | 'x' | 'd' | 'F' | '+'))
                 {
                     let t = self.checkin_target(&i);
+                    if k == Key::Char('+') {
+                        self.message = None;
+                        self.mode = Mode::Form(Form::took_longer(t));
+                        return;
+                    }
                     let outcome = match k {
                         Key::Char('y') => "done",
                         Key::Char('c') => "partial",
@@ -1343,6 +1348,29 @@ impl App {
     pub fn form_preview(&self, f: &Form) -> Result<String, String> {
         let key = f.get("Calendar");
         match f.kind {
+            FormKind::TookLonger { .. } => {
+                let spent = dates::parse_minutes(f.get("Spent")).map_err(|_| "Spent: e.g. 3h or 2h30".to_string())?;
+                let needs =
+                    dates::parse_minutes(f.get("Needs")).map_err(|_| "Needs: e.g. 1h, or 0 if finished".to_string())?;
+                if needs == 0 {
+                    return Ok(format!(
+                        "{} spent · finished",
+                        crate::form::fmt_minutes(i64::from(spent))
+                    ));
+                }
+                let from = match f.get("From") {
+                    "" => "as soon as there's time".to_string(),
+                    d => match dates::parse_when(d, self.today()).map_err(|e| e.to_string())? {
+                        When::Date(d) => format!("from {}", d.format("%a %-d %b")),
+                        When::DateTime(n) => format!("from {}", n.format("%a %-d %b %H:%M")),
+                    },
+                };
+                Ok(format!(
+                    "{} spent · {} more, planned {from}",
+                    crate::form::fmt_minutes(i64::from(spent)),
+                    crate::form::fmt_minutes(i64::from(needs))
+                ))
+            }
             FormKind::EditTask { .. } => {
                 let left = dates::parse_minutes(f.get("Left")).map_err(|_| "Left: e.g. 3h or 90m".to_string())?;
                 let due = match f.get("Due") {
@@ -1406,6 +1434,24 @@ impl App {
     }
 
     fn submit_form(&mut self, f: Form) {
+        if let FormKind::TookLonger { t } = &f.kind {
+            if let Err(e) = self.form_preview(&f) {
+                self.set_message(e, true);
+                self.mode = Mode::Form(f);
+                return;
+            }
+            let spent = dates::parse_minutes(f.get("Spent")).ok();
+            let needs = dates::parse_minutes(f.get("Needs")).ok();
+            let from = match f.get("From") {
+                "" => None,
+                w => match self.when_str(w) {
+                    Ok(s) => Some(s),
+                    Err(e) => return self.set_message(e, true),
+                },
+            };
+            let outcome = if needs == Some(0) { "finished" } else { "longer" };
+            return self.send_checkin_full(&t.clone(), outcome, spent, needs, from);
+        }
         if f.get("Title").is_empty() {
             self.set_message("Title is empty", true);
             self.mode = Mode::Form(f);
@@ -1557,6 +1603,7 @@ impl App {
                     }
                 }
             }
+            FormKind::TookLonger { .. } => {}
             FormKind::AddTask => {
                 let due = match opt(f.get("Due")).map(|d| self.when_str(&d)).transpose() {
                     Ok(d) => d,
@@ -1599,6 +1646,7 @@ impl App {
             Key::Char('c') | Key::Char('p') => self.check_in(t, "partial"),
             Key::Char('x') | Key::Char('m') => self.check_in(t, "missed"),
             Key::Char('F') | Key::Char('f') => self.check_in(t, "finished"),
+            Key::Char('+') => self.mode = Mode::Form(Form::took_longer(t)),
             Key::Char('s') | Key::Char('j') | Key::Down => {
                 self.mode = Mode::Checkin((i + 1).min(open.len().saturating_sub(1)));
             }
@@ -1637,7 +1685,7 @@ impl App {
                     }
                     (EventKind::TaskBlock, _) if i.title.trim_start().starts_with('✓') => &["W log more work"],
                     (EventKind::TaskBlock, _) if i.start(self.tz) <= self.now => {
-                        &["y done", "c partly", "x missed", "F finished"]
+                        &["y done", "c partly", "+ longer", "x missed", "F finished"]
                     }
                     (EventKind::TaskBlock, _) => &["n start", "m move", "d skip", "e edit"],
                     (_, Overlay::Family) if i.meta.origin_key.is_none() => {
@@ -1871,17 +1919,30 @@ impl App {
     }
 
     fn send_checkin(&mut self, t: &CheckinTarget, outcome: &str, actual: Option<u32>, remaining: Option<u32>) {
+        self.send_checkin_full(t, outcome, actual, remaining, None);
+    }
+
+    fn send_checkin_full(
+        &mut self,
+        t: &CheckinTarget,
+        outcome: &str,
+        actual: Option<u32>,
+        remaining: Option<u32>,
+        not_before: Option<String>,
+    ) {
         let req = api::CheckinReq {
             block_uid: t.uid.clone(),
             outcome: outcome.into(),
             actual_min: actual,
             remaining_min: remaining,
+            not_before,
         };
         if let Some(r) = self.with_daemon(|d| d.checkin(&req)) {
             match r {
                 Ok(Ok(p)) => {
                     let what = match (outcome, actual) {
                         ("partial", Some(m)) => format!("{} done", crate::form::fmt_minutes(i64::from(m))),
+                        ("longer", Some(m)) => format!("{} spent", crate::form::fmt_minutes(i64::from(m))),
                         ("finished", _) => "finished ✓".to_string(),
                         (o, _) => o.to_string(),
                     };

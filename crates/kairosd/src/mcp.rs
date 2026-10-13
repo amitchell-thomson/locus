@@ -391,12 +391,15 @@ pub struct ListChangesetsArgs {
 pub struct CheckinArgs {
     /// The work block's uid (from list_checkins).
     pub block_uid: String,
-    /// done | partial | missed | finished (done, and the whole task is finished).
+    /// done | partial | missed | finished (done, and the whole task is finished) |
+    /// longer (took more than planned: actual_min spent, remaining_min still needed).
     pub outcome: String,
     /// Minutes actually worked (partial: required; done: if not the planned time).
     pub actual_min: Option<u32>,
     /// What's left of the task now, if Alec says (0 = finished).
     pub remaining_min: Option<u32>,
+    /// Plan what's left no earlier than this (date or time), if Alec says.
+    pub not_before: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -747,7 +750,7 @@ impl KairosMcp {
     }
 
     #[tool(
-        description = "Record what Alec says happened in a past work block: done, partial (with actual_min — the rest is planned again), missed (the block is removed and its time planned again), or finished (done and the task is finished). Only record what Alec told you. Returns the replan."
+        description = "Record what Alec says happened in a past work block: done, partial (with actual_min — the rest is planned again), missed (the block is removed and its time planned again), finished (done and the task is finished), or longer (took more than planned: actual_min spent, remaining_min he thinks it still needs, optionally not_before a date). Only record what Alec told you. Returns the replan."
     )]
     async fn checkin(&self, Parameters(a): Parameters<CheckinArgs>) -> Result<CallToolResult, ErrorData> {
         let req = api::CheckinReq {
@@ -755,6 +758,7 @@ impl KairosMcp {
             outcome: a.outcome,
             actual_min: a.actual_min,
             remaining_min: a.remaining_min,
+            not_before: a.not_before,
         };
         self.run(move |e| e.checkin(&req)).await
     }

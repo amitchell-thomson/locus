@@ -2534,12 +2534,33 @@ impl Engine {
             ),
             Outcome::Done | Outcome::Partial => {
                 let planned = b.minutes().max(0);
+                // Took longer: the block grows to the time spent, as far as
+                // free time after it (and now) allows.
+                let longer = (outcome == Outcome::Done && i64::from(actual) > planned).then(|| {
+                    let next_busy = world
+                        .instances
+                        .iter()
+                        .filter(|i| i.uid != uid && is_busy(i))
+                        .filter_map(|i| match i.span {
+                            Span::Timed { start, end } if end > b.end => Some(start.max(b.end)),
+                            _ => None,
+                        })
+                        .min();
+                    let mut end = (b.start + Duration::minutes(i64::from(actual))).min(self.now().max(b.end));
+                    if let Some(n) = next_busy {
+                        end = end.min(n);
+                    }
+                    end
+                });
                 let edit = Edit {
                     title: (!title.starts_with('✓')).then(|| build::done_block_title(&title)),
-                    time: (actual > 0 && i64::from(actual) < planned).then(|| NewTime::Timed {
-                        start: b.start,
-                        end: b.start + Duration::minutes(i64::from(actual)),
-                    }),
+                    time: match longer {
+                        Some(end) if end > b.end => Some(NewTime::Timed { start: b.start, end }),
+                        _ => (actual > 0 && i64::from(actual) < planned).then(|| NewTime::Timed {
+                            start: b.start,
+                            end: b.start + Duration::minutes(i64::from(actual)),
+                        }),
+                    },
                     ..Default::default()
                 };
                 if edit.title.is_none() && edit.time.is_none() {
@@ -2623,10 +2644,15 @@ impl Engine {
             req.outcome = "done".into();
             req.remaining_min = Some(0);
         }
+        // "longer" = done, taking `actual_min` (more than planned), with
+        // `remaining_min` still to do, planned from `not_before`.
+        if req.outcome == "longer" {
+            req.outcome = "done".into();
+        }
         let req = &req;
         let outcome = Outcome::parse(&req.outcome).ok_or_else(|| {
             EngineError::BadRequest(format!(
-                "outcome must be done|partial|missed|finished, got {:?}",
+                "outcome must be done|partial|missed|finished|longer, got {:?}",
                 req.outcome
             ))
         })?;
@@ -2647,6 +2673,19 @@ impl Engine {
                 return Ok(self.complete_task(Author::Alec, &t.id, None)?.plan.unwrap_or_default());
             }
             t.remaining_min = r;
+            t.updated_at = self.now();
+            self.db.task_put(&t)?;
+        }
+        // "Took longer — plan the rest from <date>".
+        if let Some(nb) = req.not_before.as_deref().filter(|s| !s.trim().is_empty())
+            && let Some(mut t) = self.db.task_get(&b.task_id)?
+            && t.status == TaskStatus::Open
+        {
+            let tz = self.tz();
+            t.earliest_start = Some(match api::parse_time(nb, tz, self.now())? {
+                TimeIn::At(x) => x,
+                TimeIn::Date(d) => kairos_core::time::resolve_local(d.and_time(NaiveTime::MIN), tz),
+            });
             t.updated_at = self.now();
             self.db.task_put(&t)?;
         }

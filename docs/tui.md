@@ -44,10 +44,11 @@ A work block that has ended waits for you to say how it went: no answer is decid
 | `c` | partly: asks how many minutes; the block is trimmed to that and the rest of the time is planned again |
 | `x` or `d` | missed: the block is removed and its time planned again |
 | `F` | done, and the whole task is finished |
+| `+` | took longer: a form for the time you actually spent, how much more you think it needs (0 = finished), and optionally a date to plan it from. The ✓ block grows to the time spent (into free time), and the rest is planned again |
 | `C` | every block waiting for a check-in, any day |
 | `W` | log work that wasn't in a block (a ✓ block ending now) |
 
-The same answers work from the phone (evening push → check-in page), `kairos checkin`, or by telling Claude (MCP `checkin` / `log_work`).
+The same answers work from the phone (evening push → check-in page, including "took longer"), `kairos checkin` (`l` = took longer), or by telling Claude (MCP `checkin` with `outcome: "longer"` / `log_work`).
 
 ## Reading a work block
 

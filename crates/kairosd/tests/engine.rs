@@ -768,6 +768,7 @@ fn checkin_missed_returns_time_and_done_consumes_it() {
             outcome: "missed".into(),
             actual_min: None,
             remaining_min: None,
+            not_before: None,
         })
         .unwrap();
     let t = e.db.task_get(&r.task.id).unwrap().unwrap();
@@ -794,6 +795,7 @@ fn checkin_missed_returns_time_and_done_consumes_it() {
         outcome: "done".into(),
         actual_min: None,
         remaining_min: None,
+        not_before: None,
     })
     .unwrap();
     let t = e.db.task_get(&r.task.id).unwrap().unwrap();
@@ -1067,6 +1069,7 @@ fn coursework_checkin_asks_and_takes_what_is_left() {
         outcome: "done".into(),
         actual_min: None,
         remaining_min: Some(480),
+        not_before: None,
     })
     .unwrap();
     let t = e.db.task_get(&r.task.id).unwrap().unwrap();
@@ -1418,6 +1421,7 @@ fn last_block_checkin_asks_finished_and_learned_time_isnt_dropped() {
         outcome: "done".into(),
         actual_min: None,
         remaining_min: Some(0),
+        not_before: None,
     })
     .unwrap();
     let t = e.db.task_get(&r.task.id).unwrap().unwrap();
@@ -1466,6 +1470,7 @@ fn done_blocks_use_up_the_estimate_at_the_learned_rate() {
         outcome: "done".into(),
         actual_min: None,
         remaining_min: None,
+        not_before: None,
     })
     .unwrap();
     let t = e.db.task_get(&r.task.id).unwrap().unwrap();
@@ -1611,6 +1616,7 @@ fn finishing_a_task_clears_its_deadline_even_from_the_phone() {
         outcome: "done".into(),
         actual_min: None,
         remaining_min: Some(0),
+        not_before: None,
     })
     .unwrap();
     let t = e.db.task_get(&r.task.id).unwrap().unwrap();
@@ -1678,12 +1684,47 @@ fn partly_done_block_gets_the_rest_planned_again() {
             outcome: "partial".into(),
             actual_min: Some(20),
             remaining_min: None,
+            not_before: None,
         })
         .unwrap();
     let again: i64 = p.created.iter().map(|b| (b.end - b.start).num_minutes()).sum();
     assert_eq!(again, 40, "{p:?}");
     assert!(p.created.iter().all(|b| b.start > created[0].end));
     assert_eq!(e.db.task_get(&r.task.id).unwrap().unwrap().remaining_min, 40);
+}
+
+#[test]
+fn took_longer_records_the_time_spent_and_plans_what_alec_says_is_left() {
+    // A 2 h block took 3 h, and Alec thinks it needs 1h30 more — not before Thursday.
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e.create_task(Author::Alec, &b4(120, "fri 17:00")).unwrap();
+    let created = r.plan.unwrap().created;
+    assert_eq!(created.len(), 1);
+    let b = created[0].clone();
+    *env.now.lock().unwrap() = b.end + Duration::hours(2);
+    let uid = e.checkin_items().unwrap()[0].block_uid.clone();
+    let p = e
+        .checkin(&CheckinReq {
+            block_uid: uid.clone(),
+            outcome: "longer".into(),
+            actual_min: Some(180),
+            remaining_min: Some(90),
+            not_before: Some("2026-10-15".into()),
+        })
+        .unwrap();
+    // The ✓ block shows the 3 h spent.
+    let world = e.world(14).unwrap();
+    let i = world.instances.iter().find(|i| i.uid == uid).unwrap();
+    assert_eq!(i.title, "✓ B4 problem sheet");
+    let tz = chrono_tz::Europe::London;
+    assert_eq!((i.end(tz) - i.start(tz)).num_minutes(), 180);
+    // What's left is what Alec said, planned from Thursday.
+    let t = e.db.task_get(&r.task.id).unwrap().unwrap();
+    assert_eq!((t.status, t.remaining_min), (TaskStatus::Open, 90));
+    let again: i64 = p.created.iter().map(|b| (b.end - b.start).num_minutes()).sum();
+    assert_eq!(again, 90, "{p:?}");
+    assert!(p.created.iter().all(|b| b.start >= at("2026-10-15 00:00")), "{p:?}");
 }
 
 #[test]
@@ -1702,6 +1743,7 @@ fn checked_in_blocks_show_what_happened_on_the_calendar() {
         outcome: "partial".into(),
         actual_min: Some(30),
         remaining_min: None,
+        not_before: None,
     })
     .unwrap();
     let world = e.world(14).unwrap();
@@ -1742,6 +1784,7 @@ fn checked_in_blocks_show_what_happened_on_the_calendar() {
             outcome: "missed".into(),
             actual_min: None,
             remaining_min: None,
+            not_before: None,
         })
         .unwrap();
         let world = e.world(14).unwrap();
@@ -1799,6 +1842,7 @@ fn finished_at_checkin_completes_the_task_and_earlier_blocks_wait_to_be_checked_
         outcome: "finished".into(),
         actual_min: None,
         remaining_min: None,
+        not_before: None,
     })
     .unwrap();
     assert_eq!(e.db.task_get(&r.task.id).unwrap().unwrap().status, TaskStatus::Done);

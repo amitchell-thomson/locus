@@ -1216,7 +1216,7 @@ fn checkin(ctx: &Ctx, p: &Paint) -> Result<()> {
             continue;
         }
         print!(
-            "{} {} — [d]one / [p]artial / [m]issed / [f]inished task / [s]kip? ",
+            "{} {} — [d]one / [p]artial / took [l]onger / [m]issed / [f]inished task / [s]kip? ",
             p.dim(&when),
             it.title
         );
@@ -1228,8 +1228,43 @@ fn checkin(ctx: &Ctx, p: &Paint) -> Result<()> {
             Some('p') => "partial",
             Some('m') => "missed",
             Some('f') => "finished",
+            Some('l') => "longer",
             _ => continue,
         };
+        let ask = |q: &str| -> Result<String> {
+            print!("  {q} ");
+            std::io::stdout().flush()?;
+            let mut l = String::new();
+            stdin.lock().read_line(&mut l)?;
+            Ok(l.trim().to_string())
+        };
+        if outcome == "longer" {
+            let spent = dates::parse_minutes(&ask("time actually spent? (e.g. 3h)")?).ok();
+            let needs = dates::parse_minutes(&ask("how much more does it need? (0 = finished)")?).ok();
+            let from = ask("plan it from? (e.g. sat; Enter = as soon as there's time)")?;
+            let not_before = if from.is_empty() {
+                None
+            } else {
+                Some(match dates::parse_when(&from, ctx.today()) {
+                    Ok(When::Date(d)) => d.to_string(),
+                    Ok(When::DateTime(n)) => resolve_local(n, ctx.tz).to_rfc3339(),
+                    Err(e) => return Err(anyhow!("{from:?}: {e}")),
+                })
+            };
+            let r = d
+                .checkin(&api::CheckinReq {
+                    block_uid: it.block_uid.clone(),
+                    outcome: if needs == Some(0) { "finished" } else { "longer" }.into(),
+                    actual_min: spent,
+                    remaining_min: needs,
+                    not_before,
+                })?
+                .map_err(|e| anyhow!("{e}"))?;
+            if !r.created.is_empty() || !r.shortfalls.is_empty() || !r.squeezed.is_empty() {
+                print_plan(p, &r, ctx.tz);
+            }
+            continue;
+        }
         let actual = if outcome == "partial" {
             print!("  minutes actually spent? ");
             std::io::stdout().flush()?;
@@ -1263,6 +1298,7 @@ fn checkin(ctx: &Ctx, p: &Paint) -> Result<()> {
                 outcome: outcome.into(),
                 actual_min: actual,
                 remaining_min: remaining,
+                not_before: None,
             })?
             .map_err(|e| anyhow!("{e}"))?;
         if !r.created.is_empty() || !r.shortfalls.is_empty() || !r.squeezed.is_empty() {

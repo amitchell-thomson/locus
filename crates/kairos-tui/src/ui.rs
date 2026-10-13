@@ -1747,8 +1747,8 @@ fn help(f: &mut Frame, app: &App, area: Rect) {
         ("n", "start the selected task now (plan reflows)"),
         ("T A", "tasks (D done · W log work · + more · o reopen) · approvals"),
         (
-            "y c x F",
-            "past block: done · partly (how long?) · missed · task finished",
+            "y c + x F",
+            "past block: done · partly · took longer · missed · task finished",
         ),
         ("W", "log work on a task (ending now) — for work that wasn't in a block"),
         ("P C", "run the scheduler · check in on everything waiting"),
@@ -1803,7 +1803,7 @@ fn checkin(f: &mut Frame, app: &App, area: Rect, i: usize) {
     }
     lines.push(Line::raw(""));
     lines.push(Line::from(TSpan::styled(
-        "y done · c partly (how long?) · x missed · F finished task · j next · Esc later",
+        "y done · c partly · + took longer · x missed · F finished · j next · Esc later",
         Style::default().fg(c("overlay0")),
     )));
     let r = centred(area, 60, lines.len() as u16 + 2);

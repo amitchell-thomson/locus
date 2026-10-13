@@ -786,10 +786,29 @@ fn past_blocks_wait_for_a_check_in_right_on_the_calendar() {
         s.contains(&format!("▌{} B4 sheet", kairos_core::build::WAITING_ICON)),
         "{s}"
     );
-    assert_eq!(a.key_hints(), "y done · c partly · x missed · F finished");
+    assert_eq!(a.key_hints(), "y done · c partly · + longer · x missed · F finished");
     // c asks how long (prefilled with half the block).
     a.key(Key::Char('c'));
     assert!(matches!(&a.mode, Mode::Prompt(PromptKind::Partial { t }, b) if t.title == "B4 sheet" && b == "45m"));
+    a.key(Key::Esc);
+    // + took longer: a form for time spent, what it still needs, and from when.
+    a.key(Key::Char('+'));
+    let Mode::Form(f) = &a.mode else { panic!("no form") };
+    assert_eq!(f.title(), "took longer");
+    assert_eq!(f.get("Spent"), "2h30");
+    assert_eq!(
+        a.form_preview(f).unwrap(),
+        format!("2h30 spent · {} more, planned as soon as there's time", f.get("Needs"))
+    );
+    let mut f = f.clone();
+    f.fields[2].value = "sat".into();
+    assert!(
+        a.form_preview(&f).unwrap().ends_with("planned from Sat 24 Oct"),
+        "{}",
+        a.form_preview(&f).unwrap()
+    );
+    f.fields[1].value = "0".into();
+    assert_eq!(a.form_preview(&f).unwrap(), "2h30 spent · finished");
     a.key(Key::Esc);
     // W logs work on its task.
     a.key(Key::Char('W'));

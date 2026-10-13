@@ -810,3 +810,14 @@ fn past_blocks_wait_for_a_check_in_right_on_the_calendar() {
     let s = render_to_string(&a, 130, 30);
     assert!(s.contains("1 to check in · C"), "{s}");
 }
+
+#[test]
+fn a_title_cut_short_by_a_tag_ends_in_an_ellipsis() {
+    // One row, "☐ Populate Calendar" beside ":15": the cut is marked.
+    let lines = kairos_tui::ui::wrap_first_narrow("󰄱 Populate Calendar", 12, 16, 1);
+    assert_eq!(lines.len(), 1);
+    assert!(lines[0].ends_with('…'), "{lines:?}");
+    // With a second row it wraps instead.
+    let lines = kairos_tui::ui::wrap_first_narrow("󰄱 Populate Calendar", 12, 16, 2);
+    assert_eq!(lines, ["󰄱 Populate", "Calendar"]);
+}

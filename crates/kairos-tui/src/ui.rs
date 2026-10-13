@@ -315,6 +315,11 @@ pub fn wrap_first_narrow(s: &str, w0: usize, w: usize, rows: usize) -> Vec<Strin
     if first.is_empty() && !rest.is_empty() {
         first = fit(rest.remove(0), w0);
     }
+    // No row left for the rest: cut the first line with `…`, so a title
+    // that doesn't fit beside the tag never looks complete when it isn't.
+    if rows <= 1 && !rest.is_empty() {
+        return vec![fit(&format!("{first} {}", rest.join(" ")), w0)];
+    }
     let mut out = vec![first];
     out.extend(wrap_lines(&rest.join(" "), w, rows.saturating_sub(1)));
     out

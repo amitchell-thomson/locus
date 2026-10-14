@@ -11,6 +11,7 @@ use std::path::PathBuf;
 
 mod auth;
 mod read;
+mod send;
 mod write;
 
 #[derive(Parser)]
@@ -99,6 +100,38 @@ enum Cmd {
     },
     /// Ask keryxd to sync every account now.
     Sync,
+    /// Reply in $EDITOR (needs a terminal), then confirm.
+    Reply {
+        thread: String,
+    },
+    /// Reply to everyone in $EDITOR, then confirm.
+    ReplyAll {
+        thread: String,
+    },
+    /// Forward in $EDITOR, then confirm.
+    Forward {
+        thread: String,
+    },
+    /// Write a new message from an account (personal, oxford, oqts, oqts-shared).
+    Compose {
+        account: String,
+    },
+    /// Approve a draft waiting for you (`keryx changes --status pending`).
+    Approve {
+        id: String,
+    },
+    /// Reject a draft: nothing is sent.
+    Reject {
+        id: String,
+    },
+    /// Stop a send during its hold.
+    Cancel {
+        id: String,
+    },
+    /// Unsubscribe from a thread's mailing list (asks first).
+    Unsubscribe {
+        thread: String,
+    },
     /// People you correspond with (for address completion).
     Addresses {
         #[arg(default_value = "")]
@@ -149,6 +182,14 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Undo { id }) => write::undo(&load(&path)?, id.as_deref()),
         Some(Cmd::Changes { status, limit, json }) => write::changes(&load(&path)?, status.as_deref(), limit, json),
         Some(Cmd::Sync) => write::sync(&load(&path)?),
+        Some(Cmd::Reply { thread }) => send::compose(&load(&path)?, send::Kind::Reply, Some(&thread)),
+        Some(Cmd::ReplyAll { thread }) => send::compose(&load(&path)?, send::Kind::ReplyAll, Some(&thread)),
+        Some(Cmd::Forward { thread }) => send::compose(&load(&path)?, send::Kind::Forward, Some(&thread)),
+        Some(Cmd::Compose { account }) => send::compose(&load(&path)?, send::Kind::Compose(account), None),
+        Some(Cmd::Approve { id }) => send::approve(&load(&path)?, &id),
+        Some(Cmd::Reject { id }) => send::reject(&load(&path)?, &id),
+        Some(Cmd::Cancel { id }) => send::cancel(&load(&path)?, &id),
+        Some(Cmd::Unsubscribe { thread }) => send::unsubscribe(&load(&path)?, &thread),
         None => keryx_tui::run(load(&path)?).map_err(anyhow::Error::msg),
     }
 }

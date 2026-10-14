@@ -45,10 +45,12 @@ impl Who {
     pub fn direct(self) -> bool {
         risk::is_direct(self.author, self.interactive)
     }
+    #[cfg(test)]
     pub const ALEC: Who = Who {
         author: Author::Alec,
         interactive: true,
     };
+    #[cfg(test)]
     pub const CLAUDE: Who = Who {
         author: Author::Claude,
         interactive: false,
@@ -116,7 +118,7 @@ impl Engine {
             cfg,
             db,
             act,
-            clock: Box::new(|| crate::now()),
+            clock: Box::new(crate::now),
         })
     }
 

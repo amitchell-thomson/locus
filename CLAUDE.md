@@ -44,6 +44,7 @@ cargo xtask mailapp-fixture   # rebuild fixtures/mailapp (synthetic Mail store) 
 cargo run -p keryx-tui --example frame -- <config> <rfc3339-now> <w> <h> [keys]   # one TUI frame as text (real mirror: don't paste it anywhere)
 cargo test --release -p keryx-cli --test perf -- --nocapture                      # 10k-message budgets
 ```
+Commit only when `scripts/ci.sh` **exits 0** — check its exit status, never a grep of its output (a piped grep once hid a clippy failure and a red commit was pushed, 5c1ce18; fixed in the next commit).
 Use `/bin/ls` in scripts: Alec's shell aliases `ls` to eza, which can hang a non-interactive command.
 `KERYX_NOW=<rfc3339>` fixes "now"; `KERYX_CONFIG` overrides the config path.
 

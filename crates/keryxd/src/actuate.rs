@@ -80,39 +80,37 @@ pub fn mail_steps(acc: &Account, before: &MsgState, after: &MsgState) -> Vec<Mai
     if before.read != after.read {
         steps.push(MailStep::Read(after.read));
     }
-    match (&before.location, &after.location) {
-        (
-            Location::Mailboxes {
-                physical: p1,
-                labels: l1,
-            },
-            Location::Mailboxes {
-                physical: p2,
-                labels: l2,
-            },
-        ) => {
-            if is_label_style(acc) {
-                // Add labels first (copy from All Mail), then remove (move out of the label).
-                for l in l2.iter().filter(|l| !l1.contains(l)) {
-                    steps.push(MailStep::Copy {
-                        from: p1.clone(),
-                        to: l.clone(),
-                    });
-                }
-                for l in l1.iter().filter(|l| !l2.contains(l)) {
-                    steps.push(MailStep::Move {
-                        from: l.clone(),
-                        to: p2.clone(),
-                    });
-                }
-            } else if p1 != p2 {
-                steps.push(MailStep::Move {
+    if let (
+        Location::Mailboxes {
+            physical: p1,
+            labels: l1,
+        },
+        Location::Mailboxes {
+            physical: p2,
+            labels: l2,
+        },
+    ) = (&before.location, &after.location)
+    {
+        if is_label_style(acc) {
+            // Add labels first (copy from All Mail), then remove (move out of the label).
+            for l in l2.iter().filter(|l| !l1.contains(l)) {
+                steps.push(MailStep::Copy {
                     from: p1.clone(),
+                    to: l.clone(),
+                });
+            }
+            for l in l1.iter().filter(|l| !l2.contains(l)) {
+                steps.push(MailStep::Move {
+                    from: l.clone(),
                     to: p2.clone(),
                 });
             }
+        } else if p1 != p2 {
+            steps.push(MailStep::Move {
+                from: p1.clone(),
+                to: p2.clone(),
+            });
         }
-        _ => {}
     }
     steps
 }

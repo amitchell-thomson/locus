@@ -407,7 +407,7 @@ impl Db {
                 proposal_row,
             )
             .optional()?;
-        Ok(r.transpose()?)
+        r.transpose()
     }
 
     pub fn decide_proposal(

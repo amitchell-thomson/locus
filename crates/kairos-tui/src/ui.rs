@@ -165,6 +165,10 @@ fn label(app: &App, i: &Instance) -> String {
         EventKind::Deadline => format!("⚑ {}", t.trim_start_matches('⚑').trim()),
         // Work: a box — 󰄱 to do (also past, until checked in), 󰄵 done.
         EventKind::TaskBlock => kairos_core::build::block_label(t, i.end(app.tz) <= app.now),
+        // Project sessions: diamonds — ◇ planned, ◈ waiting for a check-in, ◆ done.
+        EventKind::Event if i.meta.project_id.is_some() => {
+            kairos_core::build::session_label(t, i.end(app.tz) <= app.now)
+        }
         EventKind::Event => t.to_string(),
         EventKind::Proposal => format!("◌ {t}?"),
     }
@@ -348,7 +352,7 @@ fn task_progress(app: &App, i: &Instance) -> Option<String> {
                 .filter(|b| {
                     b.meta.task_id.as_deref() == Some(id)
                         && b.meta.kind == EventKind::TaskBlock
-                        && !b.title.trim_start().starts_with('✓')
+                        && !kairos_core::build::is_checked_in(&b.title)
                         && b.uid != i.uid
                         && b.span.bounds(app.tz).1 <= s
                 })
@@ -1645,6 +1649,29 @@ fn projects(f: &mut Frame, app: &App, area: Rect) {
                 TSpan::styled(format!("{:<34} ", fit(&p.project.note, 34)), dim),
                 TSpan::styled(time.join(" · "), dim),
             ]));
+            // Its open tasks (their checked-in time counts for it too).
+            for t in app
+                .tasks
+                .iter()
+                .filter(|t| t.project_id.as_ref() == Some(&p.project.id))
+            {
+                let due = t
+                    .due
+                    .map(|d| format!(" · due {}", d.describe(app.tz)))
+                    .unwrap_or_default();
+                lines.push(Line::from(vec![
+                    TSpan::raw("    "),
+                    TSpan::styled(
+                        format!("{} ", kairos_core::build::TODO_ICON),
+                        Style::default().fg(app.cfg.key(&t.key).map_or(c("text"), |k| rgb(k.colour))),
+                    ),
+                    TSpan::styled(fit(&t.title, 30), Style::default().fg(c("subtext0"))),
+                    TSpan::styled(
+                        format!("{due} · {} left", fmt(t.remaining_min)),
+                        Style::default().fg(c("overlay0")),
+                    ),
+                ]));
+            }
         }
     }
     f.render_widget(Paragraph::new(lines), inner);
@@ -1974,7 +2001,7 @@ fn form_popup(f: &mut Frame, app: &App, area: Rect, form: &Form) {
         );
         let mut spans = vec![lab];
         match fld.kind {
-            FieldKind::Key | FieldKind::Type | FieldKind::Repeat | FieldKind::Status => {
+            FieldKind::Key | FieldKind::Type | FieldKind::Repeat | FieldKind::Status | FieldKind::Project => {
                 let col = app.cfg.key(&fld.value).map_or(c("text"), |k| rgb(k.colour));
                 let arrow = Style::default().fg(if focus { c("mauve") } else { c("surface2") });
                 spans.push(TSpan::styled("◀ ", arrow));

@@ -60,6 +60,10 @@ pub struct Project {
     /// One line: what it is, or the next step.
     #[serde(default)]
     pub note: String,
+    /// The calendar (key) its sessions go in (default: the projects key),
+    /// e.g. Engineering for the 3rd-year project.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -71,6 +75,7 @@ impl Project {
             name: name.trim().to_string(),
             status,
             note: note.trim().to_string(),
+            key: None,
             created_at: now,
             updated_at: now,
         }

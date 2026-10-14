@@ -505,6 +505,7 @@ fn project(
             name: name.into(),
             status,
             note: String::new(),
+            key: None,
             created_at: t,
             updated_at: t,
         },
@@ -529,6 +530,15 @@ fn projects_view_and_picking_one_for_proposed_time() {
     ];
     a.projects[0].project.note = "next: phase 9 gateway".into();
     a.projects[1].unconfirmed_min = 60;
+    let mut t = kairos_core::task::Task::new(
+        "3YP interim report",
+        "Engineering",
+        120,
+        kairos_core::model::Author::Alec,
+        now("2026-10-01T09:00:00+01:00"),
+    );
+    t.project_id = Some("p-k".into());
+    a.tasks.push(t);
     // R: the Projects view, grouped by status, with time spent.
     a.key(Key::Char('R'));
     assert_eq!(a.view, View::Projects);
@@ -543,6 +553,7 @@ fn projects_view_and_picking_one_for_proposed_time() {
         "last Tue 20 Oct",
         "not worked on yet",
         "1h to check in",
+        "3YP interim report",
     ] {
         assert!(s.contains(want), "{want:?} missing:\n{s}");
     }

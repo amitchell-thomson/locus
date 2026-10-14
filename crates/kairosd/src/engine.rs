@@ -687,8 +687,12 @@ impl Engine {
         let s = first_series(text, source)?;
         let mut m = s.master.as_ref().map(|m| m.meta.clone()).unwrap_or_default();
         // `blocking` is a sidecar-only preference; never lose it on rewrite.
-        if self.db.meta_get(source, uid)?.is_some_and(|old| old.blocking) {
-            m.blocking = true;
+        if let Some(old) = self.db.meta_get(source, uid)? {
+            m.blocking |= old.blocking;
+            // So is the project a session counts for.
+            if m.project_id.is_none() {
+                m.project_id = old.project_id;
+            }
         }
         if m == Meta::default() {
             self.db.meta_delete(source, uid)?;
@@ -1685,6 +1689,9 @@ impl Engine {
             t.preferred_window = Some(w.clone());
         }
         t.notes = req.notes.clone().unwrap_or_default();
+        if let Some(p) = req.project.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
+            t.project_id = Some(self.find_project(p)?.id);
+        }
         let world = self.world(60)?;
         let mut ops = Vec::new();
         if let (Some(due), true) = (t.due, req.create_deadline.unwrap_or(true)) {
@@ -1787,6 +1794,13 @@ impl Engine {
         }
         if let Some(n) = &req.notes {
             t.notes = n.clone();
+        }
+        if let Some(p) = req.project.as_deref().map(str::trim) {
+            t.project_id = if p.is_empty() {
+                None
+            } else {
+                Some(self.find_project(p)?.id)
+            };
         }
         t.updated_at = now;
         let world = self.world(60)?;
@@ -2005,6 +2019,35 @@ impl Engine {
                 }
             }
         }
+        // Work blocks of the project's tasks count too, as checked in.
+        let task_project: std::collections::HashMap<String, String> = self
+            .db
+            .tasks(None)?
+            .into_iter()
+            .filter_map(|t| Some((t.id, t.project_id?)))
+            .collect();
+        let month_ago = today - Duration::days(30);
+        for c in self.db.checkins(false)? {
+            let (Some(_), Some(pid)) = (c.outcome, task_project.get(&c.task_id)) else {
+                continue;
+            };
+            let Some(it) = items.iter_mut().find(|p| &p.project.id == pid) else {
+                continue;
+            };
+            let actual = c.actual_min.unwrap_or(0);
+            if c.day >= month_ago {
+                it.month_min += actual;
+            }
+            if c.day >= monday {
+                it.week_min += actual;
+            }
+            if actual > 0 {
+                let t = kairos_core::time::resolve_local(c.day.and_time(NaiveTime::MIN), tz);
+                if it.last_worked.is_none_or(|l| l.with_timezone(&tz).date_naive() < c.day) {
+                    it.last_worked = Some(t);
+                }
+            }
+        }
         Ok((items, upcoming))
     }
 
@@ -2026,12 +2069,13 @@ impl Engine {
                 if let Some(pid) = links.get(&i.uid) {
                     return Some((i, pid.clone(), true));
                 }
-                if pkey.is_none() || i.key != pkey {
-                    return None;
-                }
                 let bare = build::bare_block_title(&i.title);
                 projects
                     .iter()
+                    .filter(|p| {
+                        let key = p.key.clone().or_else(|| pkey.clone());
+                        key.is_some() && i.key == key
+                    })
                     .find(|p| p.name.trim().eq_ignore_ascii_case(bare))
                     .map(|p| (i, p.id.clone(), false))
             })
@@ -2140,7 +2184,8 @@ impl Engine {
             )));
         }
         let status = Self::project_status(req.status.as_deref())?.unwrap_or_default();
-        let p = Project::new(name, status, req.note.as_deref().unwrap_or(""), self.now());
+        let mut p = Project::new(name, status, req.note.as_deref().unwrap_or(""), self.now());
+        p.key = self.project_key(req.key.as_deref())?;
         self.db.project_put(&p)?;
         Ok(p)
     }
@@ -2169,9 +2214,25 @@ impl Engine {
         if let Some(n) = &req.note {
             p.note = n.trim().to_string();
         }
+        if req.key.is_some() {
+            p.key = self.project_key(req.key.as_deref())?;
+        }
         p.updated_at = self.now();
         self.db.project_put(&p)?;
         Ok(p)
+    }
+
+    /// A project's calendar: a configured key, or none ("" / the projects key = default).
+    fn project_key(&self, k: Option<&str>) -> Result<Option<String>> {
+        let Some(k) = k.map(str::trim).filter(|k| !k.is_empty()) else {
+            return Ok(None);
+        };
+        let key = self
+            .cfg
+            .key(k)
+            .map(|x| x.name.clone())
+            .ok_or_else(|| EngineError::BadRequest(format!("no calendar called {k:?}")))?;
+        Ok((Some(&key) != self.constraints.projects.key.as_ref()).then_some(key))
     }
 
     /// Plan project time by hand: an event in the projects calendar, titled
@@ -2181,26 +2242,19 @@ impl Engine {
         let cs = self.create_event(
             author,
             &api::CreateEventReq {
-                title: p.name.clone(),
+                title: build::session_title(&p.name),
                 start: req.start.clone(),
                 end: req.end.clone(),
                 duration_min: req.duration_min.or(Some(120)).filter(|_| req.end.is_none()),
                 key: self
-                    .constraints
-                    .projects
-                    .key
-                    .clone()
+                    .session_key(&p)
+                    .or_else(|| self.constraints.projects.key.clone())
                     .filter(|k| self.cfg.key(k).is_some()),
                 description: Some(PROJECT_MARK.into()),
                 ..Default::default()
             },
         )?;
-        if let Some(uid) = cs.ops.iter().find_map(|o| match o {
-            Op::CreateEvent { uid, .. } => Some(uid.clone()),
-            _ => None,
-        }) {
-            self.db.project_session_link(&uid, &p.id)?;
-        }
+        self.link_created(&cs, &p.id)?;
         if p.status == ProjectStatus::Next {
             p.status = ProjectStatus::Active;
             p.updated_at = self.now();
@@ -2217,13 +2271,39 @@ impl Engine {
         let world = self.world(60)?;
         let mut n = 0;
         for uid in uids {
-            if !world.instances.iter().any(|i| &i.uid == uid) {
+            let Some(src) = world.instances.iter().find(|i| &i.uid == uid).map(|i| i.source.clone()) else {
                 return Err(EngineError::NotFound(format!("event {uid}")));
-            }
-            self.db.project_session_link(uid, &p.id)?;
+            };
+            self.link_session(&src, uid, &p.id)?;
             n += 1;
         }
         Ok(n)
+    }
+
+    /// Link an event as a project's session: the table (authoritative) and
+    /// the sidecar (so the TUI draws it as a session, with diamonds).
+    fn link_session(&mut self, source: &str, uid: &str, project_id: &str) -> Result<()> {
+        self.db.project_session_link(uid, project_id)?;
+        let mut m = self.db.meta_get(source, uid)?.unwrap_or_default();
+        m.project_id = Some(project_id.to_string());
+        self.db.meta_set(source, uid, &m)?;
+        Ok(())
+    }
+
+    /// Link the event a changeset created as a project's session.
+    fn link_created(&mut self, cs: &Changeset, project_id: &str) -> Result<()> {
+        if let Some((src, uid)) = cs.ops.iter().find_map(|o| match o {
+            Op::CreateEvent { item, uid, .. } => Some((item.source.clone(), uid.clone())),
+            _ => None,
+        }) {
+            self.link_session(&src, &uid, project_id)?;
+        }
+        Ok(())
+    }
+
+    /// The calendar a project's sessions go in, if it has its own.
+    fn session_key(&self, p: &Project) -> Option<String> {
+        p.key.clone().filter(|k| self.cfg.key(k).is_some())
     }
 
     pub fn delete_project(&mut self, id: &str) -> Result<()> {
@@ -2253,35 +2333,34 @@ impl Engine {
         };
         let title = project
             .as_ref()
-            .map(|x| x.name.clone())
+            .map(|x| build::session_title(&x.name))
             .or(typed.map(str::to_string))
             .unwrap_or_else(|| p.title.clone());
+        let project_key = project.as_ref().and_then(|x| self.session_key(x));
         let cs = self.create_event(
             author,
             &api::CreateEventReq {
                 title,
                 start: p.start.to_rfc3339(),
                 end: Some(p.end.to_rfc3339()),
-                // The projects key, if it exists (else the default key).
-                key: self.constraints.projects.key.clone().filter(|k| {
-                    let known = self.cfg.key(k).is_some();
-                    if !known {
-                        tracing::warn!("[projects] key {k:?} isn't a configured key; using the default");
-                    }
-                    known
-                }),
+                // The project's calendar, else the projects key, if it exists
+                // (else the default key).
+                key: project_key
+                    .or_else(|| self.constraints.projects.key.clone())
+                    .filter(|k| {
+                        let known = self.cfg.key(k).is_some();
+                        if !known {
+                            tracing::warn!("[projects] key {k:?} isn't a configured key; using the default");
+                        }
+                        known
+                    }),
                 description: Some(PROJECT_MARK.into()),
                 ..Default::default()
             },
         )?;
         self.db.proposal_set_status(id, "accepted")?;
         if let Some(mut x) = project {
-            if let Some(uid) = cs.ops.iter().find_map(|o| match o {
-                Op::CreateEvent { uid, .. } => Some(uid.clone()),
-                _ => None,
-            }) {
-                self.db.project_session_link(&uid, &x.id)?;
-            }
+            self.link_created(&cs, &x.id)?;
             // Planning time for a "next" project means it's under way.
             if x.status == ProjectStatus::Next {
                 x.status = ProjectStatus::Active;
@@ -2818,7 +2897,7 @@ impl Engine {
             .sessions_in(&world.instances, &projects)?
             .into_iter()
             .filter(|(i, _, _)| {
-                i.span.bounds(tz).1 <= boundary && !answered.contains(&i.uid) && !i.title.trim_start().starts_with('✓')
+                i.span.bounds(tz).1 <= boundary && !answered.contains(&i.uid) && !build::is_checked_in(&i.title)
             })
             .map(|(i, p, l)| (i.clone(), p, l))
             .collect();
@@ -2912,7 +2991,13 @@ impl Engine {
                     end
                 });
                 let edit = Edit {
-                    title: (!title.starts_with('✓')).then(|| build::done_block_title(&title)),
+                    title: (!build::is_checked_in(&title)).then(|| {
+                        if self.db.project_of_session(uid).ok().flatten().is_some() {
+                            build::session_done_title(&title)
+                        } else {
+                            build::done_block_title(&title)
+                        }
+                    }),
                     time: match longer {
                         Some(end) if end > b.end => Some(NewTime::Timed { start: b.start, end }),
                         _ => (actual > 0 && i64::from(actual) < planned).then(|| NewTime::Timed {
@@ -3002,7 +3087,7 @@ impl Engine {
                 .collect();
             for (i, pid, _) in self.sessions_in(&world.instances, &projects)? {
                 let Span::Timed { start, end } = i.span else { continue };
-                if start > now || answered.contains(&i.uid) || i.title.trim_start().starts_with('✓') {
+                if start > now || answered.contains(&i.uid) || build::is_checked_in(&i.title) {
                     continue;
                 }
                 out.push(api::CheckinItem {

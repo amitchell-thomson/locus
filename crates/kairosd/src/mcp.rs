@@ -335,6 +335,8 @@ pub struct CreateTaskArgs {
     /// morning | afternoon | evening
     pub preferred_window: Option<String>,
     pub notes: Option<String>,
+    /// The project it belongs to (id or name; "" = none on update).
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -357,6 +359,8 @@ pub struct UpdateTaskArgs {
     pub max_chunk_min: Option<u32>,
     pub preferred_window: Option<String>,
     pub notes: Option<String>,
+    /// The project it belongs to (id or name; "" = none on update).
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -435,6 +439,8 @@ pub struct CreateProjectArgs {
     pub status: Option<String>,
     /// One line: what it is, or the next step.
     pub note: Option<String>,
+    /// The calendar its sessions go in (default Projects), e.g. Engineering.
+    pub key: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -463,6 +469,8 @@ pub struct UpdateProjectArgs {
     /// active | next | paused | done
     pub status: Option<String>,
     pub note: Option<String>,
+    /// The calendar its sessions go in ("" = Projects).
+    pub key: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -746,6 +754,7 @@ impl KairosMcp {
             max_chunk_min: a.max_chunk_min,
             preferred_window: a.preferred_window,
             notes: a.notes,
+            project: a.project,
             create_deadline: None,
             plan: Some(true),
         };
@@ -770,6 +779,7 @@ impl KairosMcp {
             max_chunk_min: a.max_chunk_min,
             preferred_window: a.preferred_window,
             notes: a.notes,
+            project: a.project,
             plan: Some(true),
         };
         self.run(move |e| e.update_task(Author::Claude, &a.id, &req)).await
@@ -829,6 +839,7 @@ impl KairosMcp {
             name: a.name,
             status: a.status,
             note: a.note,
+            key: a.key,
         };
         self.run(move |e| e.create_project(&req)).await
     }
@@ -866,6 +877,7 @@ impl KairosMcp {
             name: a.name,
             status: a.status,
             note: a.note,
+            key: a.key,
         };
         self.run(move |e| e.update_project(&a.id, &req)).await
     }

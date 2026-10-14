@@ -40,10 +40,42 @@ pub struct NewEvent {
 
 /// The bare task title of a work block ("☐ B4 sheet" / "✓ B4 sheet" → "B4 sheet").
 pub fn bare_block_title(t: &str) -> &str {
-    t.trim_start_matches("☐ ")
-        .trim_start_matches("✓ ")
-        .trim_start_matches(['☐', '✓'])
-        .trim()
+    t.trim_start().trim_start_matches(['☐', '✓', '◇', '◈', '◆']).trim()
+}
+
+/// Project sessions use diamonds (tasks use boxes): ◇ planned, ◈ over and
+/// waiting for a check-in (drawn only), ◆ checked in. Plain Unicode, so the
+/// phone shows the same.
+pub const SESSION_TODO: &str = "◇";
+pub const SESSION_WAITING: &str = "◈";
+pub const SESSION_DONE: &str = "◆";
+
+/// A planned project session: "◇ quast".
+pub fn session_title(t: &str) -> String {
+    format!("{SESSION_TODO} {}", bare_block_title(t))
+}
+
+/// A project session checked in: "◆ quast".
+pub fn session_done_title(t: &str) -> String {
+    format!("{SESSION_DONE} {}", bare_block_title(t))
+}
+
+/// Has this work block or session been checked in (✓ / ◆)?
+pub fn is_checked_in(title: &str) -> bool {
+    let t = title.trim_start();
+    t.starts_with('✓') || t.starts_with('◆')
+}
+
+/// A project session's title as the TUI draws it.
+pub fn session_label(stored: &str, ended: bool) -> String {
+    let icon = if is_checked_in(stored) {
+        SESSION_DONE
+    } else if ended {
+        SESSION_WAITING
+    } else {
+        SESSION_TODO
+    };
+    format!("{icon} {}", bare_block_title(stored))
 }
 
 /// Terminal boxes (Nerd Font checkboxes: same size, centred) for work blocks;
@@ -302,6 +334,23 @@ pub fn set_meta_file(text: &str, meta: &Meta) -> Result<String, EditError> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn sessions_use_diamonds_tasks_use_boxes() {
+        assert_eq!(session_title("quast"), "◇ quast");
+        assert_eq!(session_done_title("◇ quast"), "◆ quast");
+        assert_eq!(session_label("◇ quast", false), "◇ quast");
+        assert_eq!(session_label("◇ quast", true), "◈ quast");
+        assert_eq!(session_label("◆ quast", true), "◆ quast");
+        // A linked event made on the phone (no diamond stored) still draws one.
+        assert_eq!(session_label("Quantum Research", true), "◈ Quantum Research");
+        for t in ["✓ B4", "◆ quast", "  ◆ quast"] {
+            assert!(is_checked_in(t), "{t}");
+        }
+        assert!(!is_checked_in("☐ B4") && !is_checked_in("◇ quast"));
+        assert_eq!(bare_block_title("◈ quast"), "quast");
+        assert_eq!(bare_block_title("☐ B4 sheet"), "B4 sheet");
+    }
+
     use super::*;
     use crate::normalize::series_from_calendars;
     use chrono::TimeZone;

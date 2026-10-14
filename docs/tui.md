@@ -58,12 +58,14 @@ Your projects, grouped **Active** (working on now) · **Next** (should be workin
 | Key | |
 |---|---|
 | `n` | plan time for it yourself (when, how long) — an event in Projects, counted as its session |
-| `a` | add a project (name, status, note) |
+| `a` | add a project (name, status, calendar, note) — the calendar is where its sessions go, e.g. Engineering for the 3rd-year project (default Projects) |
 | `e` | edit it |
 | `s` | next status: active → next → paused → done → active |
 | `d` | delete it (its sessions stay on the calendar) |
 
 A project's time is what you **checked in**, never what was planned. Its sessions (accepted proposed time, or an event in the Projects calendar titled with the project's name) wait for a check-in like work blocks, with the same keys: `y` done · `c` partly · `+` took longer · `x` missed (the session is removed) · `F` the project is finished. Sessions not checked in yet show as "to check in" and don't count until you answer; after a week they count as done.
+
+Tasks can belong to a project (the Project field in a task's form): they're listed under it here, and their checked-in block time counts as the project's time.
 
 Existing events can count for a project too (e.g. "Quantum Research" as QUAST work): ask Claude to attribute them (`attribute_to_project`).
 
@@ -74,7 +76,8 @@ Existing events can count for a project too (e.g. "Quantum Research" as QUAST wo
 ## Reading a work block
 
 - **Left edge:** `┆` kairos may move it · `╏` you placed it (pinned) · `▌` ordinary events and anything in the past.
-- **Box:** 󰄱 to do · 󰡖 over, waiting for a check-in · 󰄵 done. (Stored titles use ☐ / ✓ so the phone shows them too.)
+- **Box (tasks):** 󰄱 to do · 󰡖 over, waiting for a check-in · 󰄵 done. (Stored titles use ☐ / ✓ so the phone shows them too.)
+- **Diamond (project sessions):** ◇ planned · ◈ over, waiting for a check-in · ◆ done — the same on the phone. Boxes are work to finish; diamonds are time put into a project.
 - Titles are italic. A block starting off the grid (e.g. 10:15) shows a dim `:15`; a title cut short beside a tag ends in `…`.
 - **Bottom edge**, on the selected block: for a future block `task: X/Y done by then · Z left after`; for a past or current block `task: X/Y done · Z left`. Key hints sit on the right.
 - **Selection:** the selected item is filled in its own colour; other blocks of the same task get a lighter tint; pending approvals stay blue.

@@ -44,6 +44,8 @@ pub enum FieldKind {
     OptWhen,
     /// Picks a project status (←/→ or first letter).
     Status,
+    /// Picks a project ("none" or one of `Form::projects`).
+    Project,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,6 +65,8 @@ pub struct Form {
     pub original: Vec<String>,
     /// Key names in index order, for the picker.
     pub keys: Vec<String>,
+    /// Project names, for a task's Project picker.
+    pub projects: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,6 +79,9 @@ pub enum FormAction {
 pub const WHEN_HINT: &str = "tue 19:00 · 23 oct 2pm · tomorrow 9am · a date alone = all day";
 const DUR_HINT: &str = "60m · 1h30 · 2h (empty = 1h)";
 const KEY_HINT: &str = "←/→ or type the first letter";
+/// The Project picker's "no project".
+pub const NO_PROJECT: &str = "none";
+const CAL_HINT: &str = "where its sessions go, e.g. Engineering for the 3rd-year project — ←/→";
 const STATUS_HINT: &str = "active (now) · next (soon) · paused · done — ←/→";
 const TITLE_HINT: &str = "or all at once: Squash @ tue 19:00 #Sport for 90m";
 
@@ -96,7 +103,25 @@ impl Form {
             focus: 0,
             original,
             keys,
+            projects: Vec::new(),
         }
+    }
+
+    /// Add a Project picker (tasks): "none" or one of `projects`.
+    pub fn with_project(mut self, projects: Vec<String>, current: Option<&str>) -> Form {
+        if projects.is_empty() {
+            return self;
+        }
+        let v = current.unwrap_or(NO_PROJECT).to_string();
+        self.fields.push(field(
+            "Project",
+            v.clone(),
+            FieldKind::Project,
+            "the project it belongs to (its time counts there) — ←/→",
+        ));
+        self.original.push(v);
+        self.projects = projects;
+        self
     }
 
     pub fn add_event(keys: Vec<String>, default_key: &str, when: String) -> Form {
@@ -244,27 +269,35 @@ impl Form {
         )
     }
 
-    pub fn add_project() -> Form {
+    /// `keys`: calendars for its sessions; `default_key` the projects one.
+    pub fn add_project(keys: Vec<String>, default_key: &str) -> Form {
         Form::new(
             FormKind::AddProject,
             vec![
                 field("Name", "", FieldKind::Text, "what it's called: kairos · email TUI"),
                 field("Status", "active", FieldKind::Status, STATUS_HINT),
+                field("Calendar", default_key, FieldKind::Key, CAL_HINT),
                 field("Note", "", FieldKind::Text, "optional: what it is, or the next step"),
             ],
-            Vec::new(),
+            keys,
         )
     }
 
-    pub fn edit_project(p: &kairos_core::project::Project) -> Form {
+    pub fn edit_project(keys: Vec<String>, default_key: &str, p: &kairos_core::project::Project) -> Form {
         Form::new(
             FormKind::EditProject { id: p.id.clone() },
             vec![
                 field("Name", p.name.clone(), FieldKind::Text, ""),
                 field("Status", p.status.as_str(), FieldKind::Status, STATUS_HINT),
+                field(
+                    "Calendar",
+                    p.key.clone().unwrap_or_else(|| default_key.to_string()),
+                    FieldKind::Key,
+                    CAL_HINT,
+                ),
                 field("Note", p.note.clone(), FieldKind::Text, "empty = none"),
             ],
-            Vec::new(),
+            keys,
         )
     }
 
@@ -363,6 +396,9 @@ impl Form {
         match self.fields[self.focus].kind {
             FieldKind::Type => TASK_TYPES.iter().map(|s| s.to_string()).collect(),
             FieldKind::Repeat => REPEATS.iter().map(|s| s.to_string()).collect(),
+            FieldKind::Project => std::iter::once(NO_PROJECT.to_string())
+                .chain(self.projects.iter().cloned())
+                .collect(),
             FieldKind::Status => kairos_core::project::ProjectStatus::ALL
                 .iter()
                 .map(|s| s.as_str().to_string())
@@ -458,7 +494,7 @@ impl FieldKind {
     pub fn is_picker(self) -> bool {
         matches!(
             self,
-            FieldKind::Key | FieldKind::Type | FieldKind::Repeat | FieldKind::Status
+            FieldKind::Key | FieldKind::Type | FieldKind::Repeat | FieldKind::Status | FieldKind::Project
         )
     }
 }

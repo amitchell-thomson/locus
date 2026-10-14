@@ -90,6 +90,9 @@ pub struct Meta {
     /// A block Alec placed explicitly; the scheduler never moves it.
     #[serde(default)]
     pub pinned: bool,
+    /// A project session: the project it counts for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
 }
 
 impl Meta {
@@ -111,6 +114,7 @@ impl Meta {
             adopted_from: get("ADOPTED-FROM").map(String::from),
             blocking: truthy("BLOCKING"),
             pinned: truthy("PINNED"),
+            project_id: get("PROJECT-ID").map(String::from),
         }
     }
 
@@ -142,6 +146,9 @@ impl Meta {
         if self.pinned {
             c.push(P::new("X-KAIROS-PINNED", "true"));
         }
+        if let Some(p) = &self.project_id {
+            c.push(P::text("X-KAIROS-PROJECT-ID", p));
+        }
     }
 
     /// Prefer non-default sidecar values over the mirrored properties.
@@ -159,6 +166,7 @@ impl Meta {
             adopted_from: sidecar.adopted_from.clone().or_else(|| self.adopted_from.clone()),
             blocking: sidecar.blocking || self.blocking,
             pinned: sidecar.pinned || self.pinned,
+            project_id: sidecar.project_id.clone().or_else(|| self.project_id.clone()),
         }
     }
 }
@@ -359,6 +367,7 @@ mod tests {
             adopted_from: None,
             blocking: false,
             pinned: true,
+            project_id: Some("p-1".into()),
         };
         let mut c = Component::new("VEVENT");
         m.apply_to(&mut c);

@@ -761,7 +761,8 @@ impl App {
             Key::Char('a') => {
                 if self.view == View::Projects {
                     self.message = None;
-                    self.mode = Mode::Form(Form::add_project());
+                    let k = self.projects_key();
+                    self.mode = Mode::Form(Form::add_project(self.key_names(), &k));
                 } else if self.view == View::Tasks {
                     self.open_add(true);
                 } else {
@@ -808,7 +809,8 @@ impl App {
                     Key::Char('n') => self.open_add_session(Some(p.name.clone())),
                     Key::Char('e') => {
                         self.message = None;
-                        self.mode = Mode::Form(Form::edit_project(&p));
+                        let k = self.projects_key();
+                        self.mode = Mode::Form(Form::edit_project(self.key_names(), &k, &p));
                     }
                     Key::Char('s') => {
                         let next = p.status.cycle();
@@ -909,7 +911,8 @@ impl App {
                     }
                     Key::Char('e') => {
                         self.message = None;
-                        self.mode = Mode::Form(Form::edit_task(self.key_names(), &t, self.tz));
+                        let f = self.task_form_projects(Form::edit_task(self.key_names(), &t, self.tz), &t);
+                        self.mode = Mode::Form(f);
                     }
                     Key::Char('+') => {
                         self.message = None;
@@ -997,7 +1000,7 @@ impl App {
                     match k {
                         Key::Char('e') | Key::Char('K') => match self.tasks.iter().find(|t| t.id == tid).cloned() {
                             Some(t) => {
-                                let mut f = Form::edit_task(self.key_names(), &t, self.tz);
+                                let mut f = self.task_form_projects(Form::edit_task(self.key_names(), &t, self.tz), &t);
                                 f.focus_on(if k == Key::Char('K') { "Calendar" } else { "Due" });
                                 self.message = None;
                                 self.mode = Mode::Form(f);
@@ -1589,11 +1592,13 @@ impl App {
                 return;
             }
             let (status, note) = (f.get("Status").to_string(), f.get("Note").to_string());
+            let key = Some(f.get("Calendar").to_string());
             if let FormKind::EditProject { id } = &f.kind {
                 let req = api::UpdateProjectReq {
                     name: Some(name),
                     status: Some(status),
                     note: Some(note),
+                    key,
                 };
                 return self.update_project_and_report(&id.clone(), &req);
             }
@@ -1601,6 +1606,7 @@ impl App {
                 name,
                 status: Some(status),
                 note: Some(note),
+                key,
             };
             match self.with_daemon(|d| d.create_project(&req)) {
                 Some(Ok(Ok(p))) => {
@@ -1767,6 +1773,10 @@ impl App {
                     kind: changed("Type"),
                     remaining_min: if f.changed("Left") { dur(f.get("Left")) } else { None },
                     due,
+                    project: f.changed("Project").then(|| match f.get("Project") {
+                        crate::form::NO_PROJECT => String::new(),
+                        p => p.to_string(),
+                    }),
                     ..Default::default()
                 };
                 if req == api::UpdateTaskReq::default() {
@@ -1808,6 +1818,8 @@ impl App {
                     estimate_min: dur(f.get("Estimate")).unwrap_or(0),
                     kind: Some(f.get("Type").to_string()).filter(|k| !k.is_empty()),
                     due,
+                    project: Some(f.get("Project").to_string())
+                        .filter(|p| !p.is_empty() && p != crate::form::NO_PROJECT),
                     ..Default::default()
                 };
                 if let Some(r) = self.with_daemon(|d| d.create_task(&req)) {
@@ -1972,7 +1984,7 @@ impl App {
                     (EventKind::Deadline, _) if i.meta.task_id.is_some() => {
                         &["e edit", "m move", "d remove", "n start"]
                     }
-                    (EventKind::TaskBlock, _) if i.title.trim_start().starts_with('✓') => &["W log more work"],
+                    (EventKind::TaskBlock, _) if kairos_core::build::is_checked_in(&i.title) => &["W log more work"],
                     _ if self.awaits_checkin(&i) => &["y done", "c partly", "+ longer", "x missed", "F finished"],
                     (EventKind::TaskBlock, _) => &["n start", "m move", "d skip", "e edit"],
                     (_, Overlay::Family) if i.meta.origin_key.is_none() => {
@@ -2012,13 +2024,41 @@ impl App {
         ));
     }
 
+    /// Projects a task can belong to (not done), by name.
+    fn open_project_names(&self) -> Vec<String> {
+        self.projects
+            .iter()
+            .filter(|p| p.project.status != kairos_core::project::ProjectStatus::Done)
+            .map(|p| p.project.name.clone())
+            .collect()
+    }
+
+    /// A task's edit form with its Project picker.
+    fn task_form_projects(&self, f: Form, t: &kairos_core::task::Task) -> Form {
+        let current = t
+            .project_id
+            .as_ref()
+            .and_then(|id| self.projects.iter().find(|p| &p.project.id == id))
+            .map(|p| p.project.name.clone());
+        f.with_project(self.open_project_names(), current.as_deref())
+    }
+
+    /// The calendar project sessions go in by default.
+    fn projects_key(&self) -> String {
+        self.cfg.keys.iter().find(|k| k.name == "Projects").map_or_else(
+            || self.cfg.default_key().map(|k| k.name.clone()).unwrap_or_default(),
+            |k| k.name.clone(),
+        )
+    }
+
     /// Open the add form: a task, or an event (prefilled with the cursor day).
     fn open_add(&mut self, task: bool) {
         let keys = self.key_names();
         let default = self.cfg.default_key().map(|k| k.name.clone()).unwrap_or_default();
         self.message = None;
         self.mode = Mode::Form(if task {
-            Form::add_task(keys, &default)
+            let names = self.open_project_names();
+            Form::add_task(keys, &default).with_project(names, None)
         } else {
             Form::add_event(keys, &default, when_prefill(self.cursor, self.today()))
         });
@@ -2173,10 +2213,11 @@ impl App {
     /// A work block or project session that has started and isn't
     /// checked in yet.
     pub fn awaits_checkin(&self, i: &Instance) -> bool {
-        if i.title.trim_start().starts_with('✓') || i.start(self.tz) > self.now {
+        if kairos_core::build::is_checked_in(&i.title) || i.start(self.tz) > self.now {
             return false;
         }
         i.meta.kind == EventKind::TaskBlock
+            || i.meta.project_id.is_some()
             || self
                 .checkins
                 .iter()
@@ -2201,7 +2242,7 @@ impl App {
             ask_remaining: task.is_some_and(|t| t.kind.as_deref() == Some("coursework") || planned >= t.remaining_min),
             remaining_min: task.map_or(0, |t| t.remaining_min),
             from_list: false,
-            project: false,
+            project: i.meta.project_id.is_some(),
         }
     }
 

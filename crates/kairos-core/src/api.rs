@@ -183,6 +183,9 @@ pub struct CreateTaskReq {
     pub preferred_window: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
+    /// The project it belongs to (id or name).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
     /// Create a ⚑ deadline event too (default true when `due` is set).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub create_deadline: Option<bool>,
@@ -222,6 +225,9 @@ pub struct UpdateTaskReq {
     pub preferred_window: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
+    /// The project it belongs to (id or name; "" = none).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plan: Option<bool>,
 }
@@ -416,6 +422,9 @@ pub struct CreateProjectReq {
     pub status: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// The calendar its sessions go in (default: Projects).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -426,6 +435,9 @@ pub struct UpdateProjectReq {
     pub status: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// The calendar its sessions go in ("" = the default, Projects).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

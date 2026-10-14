@@ -91,6 +91,9 @@ pub struct Task {
     pub status: TaskStatus,
     #[serde(default)]
     pub notes: String,
+    /// The project it belongs to (its checked-in time counts there too).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
     pub created_by: Author,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -142,6 +145,7 @@ impl Task {
             preferred_window: None,
             status: TaskStatus::Open,
             notes: String::new(),
+            project_id: None,
             created_by,
             created_at: now,
             updated_at: now,

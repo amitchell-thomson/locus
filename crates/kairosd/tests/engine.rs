@@ -1233,6 +1233,7 @@ fn project_time_suggests_neglected_projects_and_tracks_time_spent() {
             name: name.into(),
             status: Some(status.into()),
             note: None,
+            key: None,
         })
         .unwrap()
     };
@@ -1271,8 +1272,8 @@ fn project_time_suggests_neglected_projects_and_tracks_time_spent() {
     )
     .unwrap();
     e.direct = false;
-    assert!(env.read_all("Personal").contains("SUMMARY:kairos"));
-    assert!(env.read_all("Personal").contains("SUMMARY:Locus"));
+    assert!(env.read_all("Personal").contains("SUMMARY:◇ kairos"));
+    assert!(env.read_all("Personal").contains("SUMMARY:◇ Locus"));
     assert_eq!(e.find_project("Locus").unwrap().status, ProjectStatus::Active);
     // With kairos and Locus planned, the neglected one comes first now.
     e.plan(false, Author::Scheduler).unwrap();
@@ -1321,7 +1322,8 @@ fn project_time_suggests_neglected_projects_and_tracks_time_spent() {
         .into_iter()
         .find(|i| i.uid == item.block_uid)
         .unwrap();
-    assert_eq!(ev.title, "✓ kairos");
+    assert_eq!(ev.title, "◆ kairos", "sessions get diamonds, not the task tick");
+    assert_eq!(ev.meta.project_id.as_deref(), Some(kairos.id.as_str()));
     assert_eq!(
         (ev.span.bounds(chrono_tz::Europe::London).1 - props[0].start).num_minutes(),
         45
@@ -1397,6 +1399,7 @@ fn project_time_planned_by_hand_and_existing_events_attributed() {
             name: "QUAST".into(),
             status: Some("next".into()),
             note: None,
+            key: None,
         })
         .unwrap();
     // Alec plans Thu 14:00 for 90 min himself.
@@ -1414,7 +1417,7 @@ fn project_time_planned_by_hand_and_existing_events_attributed() {
         .unwrap();
     e.direct = false;
     assert_eq!(w.status, Status::Applied);
-    assert!(env.read_all("Personal").contains("SUMMARY:QUAST"));
+    assert!(env.read_all("Personal").contains("SUMMARY:◇ QUAST"));
     let p = e.projects().unwrap().remove(0);
     assert_eq!(p.project.id, quast.id);
     assert_eq!(p.next_session, Some(at("2026-10-15 14:00")));
@@ -1455,6 +1458,68 @@ fn project_time_planned_by_hand_and_existing_events_attributed() {
         e.db.cs_list(Some(Status::Pending), 10).unwrap().is_empty(),
         "his own event isn't edited, so nothing waits"
     );
+    // The 3rd-year project lives in Engineering: its sessions go there, and
+    // its tasks' checked-in blocks count as its time.
+    let typ = e
+        .create_project(&CreateProjectReq {
+            name: "3YP".into(),
+            status: None,
+            note: None,
+            key: Some("Engineering".into()),
+        })
+        .unwrap();
+    assert_eq!(typ.key.as_deref(), Some("Engineering"));
+    e.direct = true;
+    e.create_session(
+        Author::Alec,
+        "3YP",
+        &SessionReq {
+            start: at("2026-10-16 10:00").to_rfc3339(),
+            end: None,
+            duration_min: Some(60),
+        },
+    )
+    .unwrap();
+    e.direct = false;
+    assert!(env.read_all("Engineering").contains("SUMMARY:◇ 3YP"));
+    let r = e
+        .create_task(
+            Author::Alec,
+            &CreateTaskReq {
+                title: "3YP interim report".into(),
+                key: "Engineering".into(),
+                estimate_min: 120,
+                due: Some("2026-10-23 17:00".into()),
+                project: Some("3yp".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(r.task.project_id.as_deref(), Some(typ.id.as_str()));
+    let b = r.plan.unwrap().created[0].clone();
+    *env.now.lock().unwrap() = b.end + Duration::minutes(5);
+    let uid = e
+        .checkin_items()
+        .unwrap()
+        .into_iter()
+        .find(|c| c.task_id == r.task.id)
+        .unwrap()
+        .block_uid;
+    e.checkin(&CheckinReq {
+        block_uid: uid,
+        outcome: "partial".into(),
+        actual_min: Some(50),
+        remaining_min: None,
+        not_before: None,
+    })
+    .unwrap();
+    let p = e
+        .projects()
+        .unwrap()
+        .into_iter()
+        .find(|p| p.project.id == typ.id)
+        .unwrap();
+    assert_eq!(p.month_min, 50, "the task's checked-in time counts for its project");
 }
 
 #[test]

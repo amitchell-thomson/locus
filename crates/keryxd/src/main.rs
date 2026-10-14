@@ -8,9 +8,12 @@ use keryx_store::db::Db;
 use keryx_store::ingest;
 use keryx_store::mailapp::MailStore;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
+mod actuate;
+mod engine;
 mod gmail_sync;
+mod http;
 mod jobs;
 
 #[derive(Parser)]
@@ -75,7 +78,30 @@ fn main() -> anyhow::Result<()> {
         );
         return Ok(());
     }
-    jobs::run(&cfg, db)
+    let token = keryx_store::keychain::get("keryx-api-token")
+        .context("no API token in the Keychain (docs/setup.md §5: keryx-api-token)")?;
+    let engine = engine::Engine::new(cfg.clone(), db, Box::new(actuate::Real::new(cfg.clone())))?;
+    let engine = std::sync::Arc::new(std::sync::Mutex::new(engine));
+    let (tx, rx) = std::sync::mpsc::sync_channel::<()>(1);
+    {
+        let (cfg, engine) = (cfg.clone(), engine.clone());
+        std::thread::spawn(move || jobs::run(&cfg, engine, rx));
+    }
+    let addr = format!("{}:{}", cfg.server.bind, cfg.server.port);
+    let st = http::AppState {
+        engine,
+        token: std::sync::Arc::new(token),
+        sync_now: tx,
+    };
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(async move {
+        let listener = tokio::net::TcpListener::bind(&addr)
+            .await
+            .with_context(|| format!("binding {addr} (is [server] bind your Tailscale IP?)"))?;
+        tracing::info!(%addr, "keryxd listening");
+        axum::serve(listener, http::router(st)).await?;
+        anyhow::Ok(())
+    })
 }
 
 /// One pass over every Mail.app account. Errors on one account don't stop the rest.
@@ -111,9 +137,4 @@ pub fn now() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
-}
-
-/// Sleep in small steps so a shutdown signal is noticed quickly.
-pub fn nap(d: Duration) {
-    std::thread::sleep(d);
 }

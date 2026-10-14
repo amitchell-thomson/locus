@@ -64,6 +64,25 @@ end run' "$ACC" "$INBOX")
   ASID="${found%%$'\t'*}"; MID="${found#*$'\t'}"
   ok "found test message: AppleScript id $ASID, Message-ID <$MID>"
 
+  r=$(as '
+on run argv
+  set {accName} to argv
+  tell application "Mail"
+    set a to account accName
+    return id of a
+  end tell
+end run' "$ACC")
+  if [[ "$r" =~ ^[0-9A-F-]{36}$ ]]; then
+    r2=$(as '
+on run argv
+  set {aid} to argv
+  tell application "Mail"
+    return name of (first account whose id is aid)
+  end tell
+end run' "$r")
+    [ "$r2" = "$ACC" ] && ok "account found by id ($r) — keryxd looks accounts up this way" || bad "lookup by id returned: $r2"
+  else bad "Mail account id: $r"; fi
+
   ROWID=$(envelope "SELECT m.ROWID FROM messages m JOIN message_global_data g ON g.ROWID = m.global_message_id WHERE g.message_id_header = '<$MID>' AND m.deleted = 0 LIMIT 1;")
   if [ "$ROWID" = "$ASID" ]; then ok "AppleScript id == Envelope Index ROWID ($ROWID)"
   else bad "AppleScript id $ASID != Envelope ROWID $ROWID (keryx will look messages up by Message-ID)"; fi
@@ -125,17 +144,28 @@ end run' "$ACC" "$INBOX" "$ARCHIVE" "$MID")
   NEWROW=$(envelope "SELECT m.ROWID FROM messages m JOIN message_global_data g ON g.ROWID = m.global_message_id WHERE g.message_id_header = '<$MID>' AND m.deleted = 0 LIMIT 1;")
   [ "$NEWROW" = "$ROWID" ] && ok "ROWID unchanged by the move ($ROWID)" || echo "  · ROWID changed on move: $ROWID → $NEWROW (keryx re-finds messages by Message-ID)"
 
+  # Un-archive. Gmail over IMAP: COPY into INBOX (adds the label) — moving a
+  # message out of All Mail would delete it in Gmail. Exchange: move back.
+  if [[ "$ARCHIVE" == "[Gmail]/"* ]]; then VERB=duplicate; else VERB=move; fi
   r=$(as '
 on run argv
-  set {accName, boxName, archName, mid} to argv
+  set {accName, boxName, archName, mid, verb} to argv
   tell application "Mail"
     set m to item 1 of (messages of mailbox archName of account accName whose message id is mid)
-    move m to mailbox boxName of account accName
+    if verb is "duplicate" then
+      duplicate m to mailbox boxName of account accName
+    else
+      move m to mailbox boxName of account accName
+    end if
   end tell
   return "ok"
-end run' "$ACC" "$INBOX" "$ARCHIVE" "$MID")
-  if [ "$r" = "ok" ] && got=$(await "$INBOX_Q" "1"); then ok "un-archive (move back to $INBOX) works"
+end run' "$ACC" "$INBOX" "$ARCHIVE" "$MID" "$VERB")
+  if [ "$r" = "ok" ] && got=$(await "$INBOX_Q" "1"); then ok "un-archive ($VERB back to $INBOX) works"
   else bad "un-archive: $r (inbox count now $got)"; fi
+  if [ "$VERB" = duplicate ]; then
+    n=$(envelope "SELECT count(*) FROM messages m JOIN message_global_data g ON g.ROWID = m.global_message_id WHERE g.message_id_header = '<$MID>' AND m.deleted = 0;")
+    [ "$n" = "1" ] && ok "still exactly one copy in Gmail after the label round trip" || bad "Gmail copies after round trip: $n (expected 1)"
+  fi
 
   if [ $SEND = 1 ]; then
     r=$(as '

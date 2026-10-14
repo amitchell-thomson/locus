@@ -193,6 +193,16 @@ impl Client<'_> {
         meta(&self.get(&format!("/messages/{id}?format=minimal"))?)
     }
 
+    /// Change a message's labels; returns its labels afterwards.
+    pub fn modify(&self, id: &str, add: &[String], remove: &[String]) -> Result<Vec<String>> {
+        let v = self.t.post_json(
+            &format!("{API}/messages/{id}/modify"),
+            &self.token,
+            &serde_json::json!({"addLabelIds": add, "removeLabelIds": remove}),
+        )?;
+        Ok(meta(&v)?.labels)
+    }
+
     /// History since `start`, or `Err(404)` if it has expired.
     pub fn history(&self, start: &str) -> Result<History> {
         let mut h = History::default();
@@ -306,8 +316,14 @@ pub fn hidden(labels: &[String]) -> bool {
     labels.iter().any(|l| is_hidden_mailbox(l))
 }
 
-fn location(labels: &[String]) -> Location {
-    let mut l = labels.to_vec();
+/// Where a Gmail message is: its labels minus UNREAD and STARRED, which
+/// the mirror keeps as `read` / `flagged`.
+pub fn location(labels: &[String]) -> Location {
+    let mut l: Vec<String> = labels
+        .iter()
+        .filter(|l| *l != "UNREAD" && *l != "STARRED")
+        .cloned()
+        .collect();
     l.sort();
     Location::Labels { labels: l }
 }

@@ -1,8 +1,9 @@
 //! Background jobs: Mail.app watch + poll, Gmail history poll.
 
+use crate::engine::Engine;
 use keryx_core::config::Config;
 use keryx_store::db::Db;
-use std::sync::mpsc;
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
 /// Mail.app is re-scanned when its Envelope Index changes (debounced) and at
@@ -10,28 +11,56 @@ use std::time::{Duration, Instant};
 const MAIL_POLL: Duration = Duration::from_secs(60);
 const DEBOUNCE: Duration = Duration::from_secs(2);
 
-pub fn run(cfg: &Config, mut db: Db) -> anyhow::Result<()> {
+/// How often snoozes are checked and tags tidied.
+const TICK: Duration = Duration::from_secs(30);
+
+/// The background loop: Mail.app (watched + polled), Gmail (polled), snooze
+/// wake-ups and tag housekeeping. Shares the engine (and its single writer
+/// connection) with the HTTP handlers.
+pub fn run(cfg: &Config, engine: Arc<Mutex<Engine>>, sync_now: mpsc::Receiver<()>) {
     let (tx, rx) = mpsc::channel::<()>();
     let _watcher = watch_mail(&cfg.paths.mail_dir.join("MailData"), tx);
     let gmail_every = Duration::from_secs(u64::from(cfg.gmail.poll_seconds));
     let mut last_mail = Instant::now() - MAIL_POLL;
     let mut last_gmail = Instant::now() - gmail_every;
+    let mut last_tick = Instant::now() - TICK;
     loop {
-        if last_mail.elapsed() >= MAIL_POLL {
-            run_mail(cfg, &mut db);
+        let forced = sync_now.try_recv().is_ok();
+        if forced || last_mail.elapsed() >= MAIL_POLL {
+            with(&engine, |e| run_mail(cfg, &mut e.db));
             last_mail = Instant::now();
         }
-        if last_gmail.elapsed() >= gmail_every {
-            sync_gmail_all(cfg, &mut db);
+        if forced || last_gmail.elapsed() >= gmail_every {
+            with(&engine, |e| sync_gmail_all(cfg, &mut e.db));
             last_gmail = Instant::now();
         }
+        if last_tick.elapsed() >= TICK {
+            with(&engine, |e| {
+                match e.wake_snoozes() {
+                    Ok(0) => {}
+                    Ok(n) => tracing::info!(threads = n, "woke snoozed threads"),
+                    Err(err) => tracing::warn!(error = %err, "snooze wake-ups"),
+                }
+                if let Err(err) = e.housekeeping() {
+                    tracing::warn!(error = %err, "tag housekeeping");
+                }
+            });
+            last_tick = Instant::now();
+        }
         // Wait for a Mail change or the next tick.
-        if rx.recv_timeout(Duration::from_secs(5)).is_ok() {
+        if rx.recv_timeout(Duration::from_secs(2)).is_ok() {
             std::thread::sleep(DEBOUNCE);
             while rx.try_recv().is_ok() {}
-            run_mail(cfg, &mut db);
+            with(&engine, |e| run_mail(cfg, &mut e.db));
             last_mail = Instant::now();
         }
+    }
+}
+
+fn with(engine: &Arc<Mutex<Engine>>, f: impl FnOnce(&mut Engine)) {
+    match engine.lock() {
+        Ok(mut e) => f(&mut e),
+        Err(_) => tracing::error!("engine lock poisoned"),
     }
 }
 

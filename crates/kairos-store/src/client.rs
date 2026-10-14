@@ -134,6 +134,45 @@ impl Daemon {
         self.send(self.http.delete(format!("{}{path}", self.base)))
     }
 
+    /// kairosd's instance index for `[from, to)` (what the TUI draws).
+    /// `etag` is the one from the last fetch: `Ok(None)` = nothing changed.
+    pub fn index(
+        &self,
+        from: chrono::DateTime<chrono::Utc>,
+        to: chrono::DateTime<chrono::Utc>,
+        etag: Option<&str>,
+    ) -> Result<Option<(crate::cache::Index, String)>> {
+        let mut req = self
+            .http
+            .get(format!(
+                "{}/api/index?from={}&to={}",
+                self.base,
+                enc(&from.to_rfc3339()),
+                enc(&to.to_rfc3339())
+            ))
+            .timeout(Duration::from_secs(10))
+            .bearer_auth(&self.token);
+        if let Some(t) = etag {
+            req = req.header(reqwest::header::IF_NONE_MATCH, t);
+        }
+        let resp = req.send().map_err(|e| StoreError::Http(e.without_url().to_string()))?;
+        let status = resp.status();
+        if status == reqwest::StatusCode::NOT_MODIFIED {
+            return Ok(None);
+        }
+        let tag = resp
+            .headers()
+            .get(reqwest::header::ETAG)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_string();
+        let text = resp.text().map_err(|e| StoreError::Http(e.without_url().to_string()))?;
+        if !status.is_success() {
+            return Err(StoreError::Http(format!("HTTP {status}: {text}")));
+        }
+        Ok(Some((serde_json::from_str(&text)?, tag)))
+    }
+
     pub fn healthy(&self) -> bool {
         self.http
             .get(format!("{}/healthz", self.base))

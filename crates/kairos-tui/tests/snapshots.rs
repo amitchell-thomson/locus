@@ -301,14 +301,25 @@ fn local_patches_survive_a_stale_reload() {
     a.patches.push(kairos_tui::app::LocalPatch {
         uid: squash.uid.clone(),
         inst: Some(moved),
+        made: chrono::Utc::now(),
         until: chrono::Utc::now() + chrono::Duration::seconds(90),
     });
-    // A reload that still has the old copy (iCloud not caught up yet).
+    // A reload that still has the old copy (the local copy not caught up yet).
     let stale = a.index.clone();
-    a.set_index(stale);
-    let now: Vec<_> = a.index.instances.iter().filter(|i| i.uid == squash.uid).collect();
-    assert_eq!(now.len(), 1);
-    assert_eq!(now[0].key.as_deref(), Some("OQTS"));
+    a.set_index(stale.clone());
+    let key_of = |a: &App| {
+        let v: Vec<_> = a.index.instances.iter().filter(|i| i.uid == squash.uid).collect();
+        assert_eq!(v.len(), 1);
+        v[0].key.clone()
+    };
+    assert_eq!(key_of(&a).as_deref(), Some("OQTS"));
+    // kairosd's index, requested before the change was made, can't show it either…
+    a.set_server_index(stale.clone(), chrono::Utc::now() - chrono::Duration::seconds(5));
+    assert_eq!(key_of(&a).as_deref(), Some("OQTS"));
+    // …one requested after it is the truth (here: the change didn't happen).
+    a.set_server_index(stale, chrono::Utc::now() + chrono::Duration::seconds(1));
+    assert_eq!(key_of(&a), squash.key);
+    assert!(a.patches.is_empty());
 }
 
 #[test]

@@ -282,6 +282,11 @@ impl Engine {
         })
     }
 
+    /// The instance index for `[from, to)`, as clients draw it.
+    pub fn index(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<cache::Index> {
+        Ok(cache::build(&self.cfg, None, &self.db.meta_all()?, from, to)?)
+    }
+
     fn source(&self, id: &str) -> Result<Source> {
         self.cfg
             .source(id)

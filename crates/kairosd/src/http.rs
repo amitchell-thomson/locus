@@ -15,7 +15,7 @@ use kairos_core::changeset::{Changeset, Status, WriteResult};
 use kairos_core::model::Author;
 use kairos_core::task::TaskStatus;
 use serde::Deserialize;
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
@@ -205,6 +205,7 @@ pub fn router(st: AppState, mcp: Option<Router<AppState>>) -> Router {
         .route("/api/changesets/{id}/reject", post(reject))
         .route("/api/changesets/{id}/undo", post(undo))
         .route("/api/sidecar", get(sidecar))
+        .route("/api/index", get(index))
         .route("/api/checkin", get(checkin_items).post(checkin))
         .route("/api/status", get(status));
     let mut protected = api;
@@ -607,6 +608,30 @@ async fn skip_event(
     let a = author(&h);
     let cs = with_engine_as(&st, &h, move |e| e.skip_block(a, Some(&source), &uid)).await?;
     Ok(Json(WriteResult::from(&cs)))
+}
+
+#[derive(Deserialize)]
+struct IndexQuery {
+    from: DateTime<Utc>,
+    to: DateTime<Utc>,
+}
+
+/// The instance index the TUI draws, built from kairosd's own vdir and
+/// sidecar (the source of truth, so a write shows at once instead of after
+/// a sync). The ETag is a hash of what's drawn: polls that find nothing new
+/// get an empty 304.
+async fn index(State(st): State<AppState>, h: HeaderMap, Query(q): Query<IndexQuery>) -> Result<Response, HttpError> {
+    let idx = with_engine(&st, move |e| e.index(q.from, q.to)).await?;
+    let drawn = serde_json::to_vec(&(&idx.instances, &idx.sources, &idx.missing, &idx.warnings)).unwrap_or_default();
+    let tag = format!("\"{}\"", hex::encode(&Sha256::digest(&drawn)[..12]));
+    let unchanged = h
+        .get(header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v == tag);
+    if unchanged {
+        return Ok((StatusCode::NOT_MODIFIED, [(header::ETAG, tag)]).into_response());
+    }
+    Ok(([(header::ETAG, tag)], Json(idx)).into_response())
 }
 
 async fn sidecar(State(st): State<AppState>) -> HResult<Vec<(String, String, kairos_core::model::Meta)>> {

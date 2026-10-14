@@ -63,11 +63,11 @@ Your projects, grouped **Active** (working on now) · **Next** (should be workin
 | `s` | next status: active → next → paused → done → active |
 | `d` | delete it (its sessions stay on the calendar) |
 
-A project's time is what you **checked in**, never what was planned. Its sessions (accepted proposed time, or an event in the Projects calendar titled with the project's name) wait for a check-in like work blocks, with the same keys: `y` done · `c` partly · `+` took longer · `x` missed (the session is removed) · `F` the project is finished. Sessions not checked in yet show as "to check in" and don't count until you answer; after a week they count as done.
+A project's time is what you **checked in**, never what was planned. Its sessions (accepted proposed time, time you planned with `n`, or events Claude attributed to it) wait for a check-in like work blocks, with the same keys: `y` done · `c` partly · `+` took longer · `x` missed (the session is removed) · `F` the project is finished. Sessions not checked in yet show as "to check in" and don't count until you answer; after a week they count as done.
 
 Tasks can belong to a project (the Project field in a task's form): they're listed under it here, and their checked-in block time counts as the project's time.
 
-Existing events can count for a project too (e.g. "Quantum Research" as QUAST work): ask Claude to attribute them (`attribute_to_project`).
+Existing events can count for a project too (e.g. "Quantum Research" as QUAST work): ask Claude to attribute them (`attribute_to_project`; it can suggest events titled with the project's name). Renaming a project (or changing its calendar) carries through to its sessions still to come that carry its name, in one undoable change.
 
 **Freed time:** deleting, shortening or moving an event away (here or on the phone) re-plans work from 2 h ahead, so blocks move into the gap; blocks you placed (pinned) stay.
 

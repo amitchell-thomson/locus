@@ -181,14 +181,15 @@ pub struct Ghost {
     pub span: Span,
 }
 
-/// A change kairosd has applied that the local copy (pulled from iCloud)
-/// may not show yet. Re-applied over every reload until it expires, so the
-/// view doesn't flicker back or lose the event mid-move.
+/// A change shown before kairosd has answered (optimistic). Re-applied over
+/// every reload until an index fetched from kairosd after it was made
+/// arrives (that one shows the real result), or it expires (offline).
 #[derive(Debug, Clone)]
 pub struct LocalPatch {
     pub uid: String,
     /// `None` = deleted.
     pub inst: Option<Instance>,
+    pub made: DateTime<Utc>,
     pub until: DateTime<Utc>,
 }
 
@@ -199,8 +200,8 @@ pub type Deferred = Box<dyn FnOnce(&mut App)>;
 pub struct App {
     pub cfg: Config,
     pub patches: Vec<LocalPatch>,
-    /// (uid, blocking, until): Family "block my time" flags set from the TUI.
-    pub blocking_overrides: Vec<(String, bool, DateTime<Utc>)>,
+    /// (uid, blocking, made, until): Family "block my time" flags set from the TUI.
+    pub blocking_overrides: Vec<(String, bool, DateTime<Utc>, DateTime<Utc>)>,
     pub deferred: Vec<Deferred>,
     pub tz: Tz,
     pub now: DateTime<Utc>,
@@ -228,7 +229,7 @@ pub struct App {
     pub daemon: Option<Daemon>,
     pub daemon_error: Option<String>,
     pub quit: bool,
-    /// Set after a write so the runner kicks a sync + reload.
+    /// Set after a write so the runner fetches kairosd's index at once.
     pub wants_sync: bool,
     /// Week view shows Mon–Fri only (wider columns).
     pub work_week: bool,
@@ -476,28 +477,30 @@ impl App {
             .map(|(_, _, r)| r.as_slice())
     }
 
+    /// An index fetched from kairosd, requested at `requested`: it shows
+    /// every change finished before then, so local patches made earlier go.
+    pub fn set_server_index(&mut self, idx: Index, requested: DateTime<Utc>) {
+        self.patches.retain(|p| p.made >= requested);
+        self.blocking_overrides.retain(|o| o.2 >= requested);
+        self.set_index(idx);
+    }
+
+    /// Patches or overrides that an index requested at `requested` replaces.
+    pub fn has_patches_before(&self, requested: DateTime<Utc>) -> bool {
+        self.patches.iter().any(|p| p.made < requested) || self.blocking_overrides.iter().any(|o| o.2 < requested)
+    }
+
     /// Replace the index (after a reload) and re-apply recent local patches.
     pub fn set_index(&mut self, idx: Index) {
         self.index = idx;
         let now = Utc::now();
-        self.blocking_overrides.retain(|(_, _, until)| *until > now);
-        for (uid, on, _) in &self.blocking_overrides {
+        self.blocking_overrides.retain(|o| o.3 > now);
+        for (uid, on, _, _) in &self.blocking_overrides {
             for i in self.index.instances.iter_mut().filter(|i| &i.uid == uid) {
                 i.meta.blocking = *on;
             }
         }
         self.patches.retain(|p| p.until > now);
-        // An accepted proposal's stand-in goes once the real event has synced.
-        let idx = &self.index;
-        let tz = self.tz;
-        self.patches.retain(|p| {
-            !p.uid.starts_with("accepted:")
-                || !p.inst.as_ref().is_some_and(|a| {
-                    idx.instances
-                        .iter()
-                        .any(|i| i.title == a.title && i.start(tz) == a.start(tz))
-                })
-        });
         for p in self.patches.clone() {
             self.index.instances.retain(|i| i.uid != p.uid);
             if let Some(i) = p.inst {
@@ -513,9 +516,10 @@ impl App {
     /// Show a Family event's "blocks my time" flag at once (all occurrences),
     /// and keep it over reloads until the server's copy has caught up.
     fn set_blocking_local(&mut self, uid: &str, on: bool) {
-        self.blocking_overrides.retain(|(u, _, _)| u != uid);
+        self.blocking_overrides.retain(|o| o.0 != uid);
+        let now = Utc::now();
         self.blocking_overrides
-            .push((uid.to_string(), on, Utc::now() + Duration::seconds(90)));
+            .push((uid.to_string(), on, now, now + Duration::seconds(90)));
         for i in self.index.instances.iter_mut().filter(|i| i.uid == uid) {
             i.meta.blocking = on;
         }
@@ -555,6 +559,7 @@ impl App {
         self.patches.push(LocalPatch {
             uid: uid.to_string(),
             inst: keep.then_some(next),
+            made: Utc::now(),
             until: Utc::now() + Duration::seconds(90),
         });
         let idx = self.index.clone();
@@ -2156,6 +2161,7 @@ impl App {
                 href: None,
                 alarms: Vec::new(),
             }),
+            made: Utc::now(),
             until: Utc::now() + Duration::seconds(120),
         });
         let idx = self.index.clone();

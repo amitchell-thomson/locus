@@ -1,5 +1,8 @@
-//! `kairos tui`: ratatui front end. Reads the local cache index (fast cold
-//! start, works offline); writes go to kairosd.
+//! `kairos tui`: ratatui front end. Draws kairosd's own index (polled every
+//! few seconds, at once after a write), so changes show as soon as they're
+//! made; starts from the local cache (fast first frame) and falls back to it
+//! (pulled by `sync.full_cmd`) when kairosd can't be reached. Writes go to
+//! kairosd.
 
 pub mod app;
 pub mod form;
@@ -70,19 +73,14 @@ fn map_key(k: event::KeyEvent) -> Option<Key> {
     })
 }
 
-/// Background: run the configured sync command (vdirsyncer pull on the Mac)
-/// so writes made through kairosd show up quickly.
+/// Background (offline only): run the configured sync command (the pull of
+/// kairosd's vdir on the Mac) so the local copy stays fresh.
 fn spawn_sync(cfg: &Config, done: mpsc::Sender<()>) {
     let cfg = cfg.clone();
     std::thread::spawn(move || {
-        // kairosd pushes to iCloud in the background after a write; pulling at
-        // once would usually miss it, so pull a little later and once more.
-        for wait in [1, 4, 10] {
-            std::thread::sleep(Duration::from_secs(wait));
-            let _ = kairos_store::sync::run_full(&cfg);
-            kairos_store::sync::pull_sidecar(&cfg);
-            let _ = done.send(());
-        }
+        let _ = kairos_store::sync::run_full(&cfg);
+        kairos_store::sync::pull_sidecar(&cfg);
+        let _ = done.send(());
     });
 }
 
@@ -98,12 +96,24 @@ pub fn run(cfg: Config, path: PathBuf) -> Result<(), String> {
     let mut app = load(cfg.clone(), &path, now)?;
     app.daemon = Daemon::from_config(&cfg).ok().map(|d| d.interactive(true));
     let (tx, rx) = mpsc::channel::<()>();
+    // kairosd's index, fetched in the background: (requested at, result).
+    type Fetched = (chrono::DateTime<Utc>, Result<Option<(cache::Index, String)>, String>);
+    let poller = Daemon::from_config(&cfg).ok().map(std::sync::Arc::new);
+    let (itx, irx) = mpsc::channel::<Fetched>();
     let mut terminal = ratatui::try_init().map_err(|e| e.to_string())?;
     let result = (|| -> Result<(), String> {
-        let mut last_remote = Instant::now() - Duration::from_secs(3600);
+        let long_ago = Instant::now() - Duration::from_secs(3600);
+        let mut last_remote = long_ago;
         let mut last_reload = Instant::now();
         let mut syncing = false;
         let mut last_pull = Instant::now();
+        let mut last_fetch = long_ago;
+        let mut fetching = false;
+        let mut etag: Option<String> = None;
+        let mut server_idx: Option<cache::Index> = None;
+        // Until the first fetch answers, assume kairosd is there.
+        let mut online = poller.is_some();
+        let mut write_done = chrono::DateTime::<Utc>::MIN_UTC;
         loop {
             app.now = Utc::now() + skew;
             terminal.draw(|f| ui::draw(f, &app)).map_err(|e| e.to_string())?;
@@ -114,34 +124,74 @@ pub fn run(cfg: Config, path: PathBuf) -> Result<(), String> {
                 maybe_prompt_checkin(&mut app);
                 continue;
             }
-            // Pick up changes made elsewhere (Claude, approvals on the phone).
-            if !syncing && last_pull.elapsed() > Duration::from_secs(20) {
-                app.wants_sync = true;
-            }
-            if app.wants_sync && !syncing {
-                last_pull = Instant::now();
+            // A write just finished: fetch the index now (and ignore one
+            // requested before the write, which can't show it).
+            if app.wants_sync {
                 app.wants_sync = false;
-                syncing = true;
-                spawn_sync(&app.cfg, tx.clone());
+                write_done = Utc::now();
+                last_fetch = long_ago;
             }
-            if rx.try_recv().is_ok() {
-                syncing = false;
-                last_reload = Instant::now() - Duration::from_secs(60);
-            }
-            // Reload the index if the vdir changed (cheap fingerprint check).
-            // Another process (`kairos sync` from launchd, `kairos today`) may
-            // have rebuilt the cache first, so compare with what's shown
-            // rather than asking whether this call rebuilt it.
-            if last_reload.elapsed() > Duration::from_secs(2) {
+            if let Some(d) = &poller
+                && !fetching
+                && last_fetch.elapsed() > Duration::from_secs(3)
+            {
+                fetching = true;
+                last_fetch = Instant::now();
                 let (from, to) = cache::default_window(&app.cfg, app.now);
-                if let Ok((idx, rebuilt)) = cache::get(&app.cfg, Some(&path), app.now, from, to)
-                    && (rebuilt || idx.built_at != app.index.built_at)
-                {
-                    app.set_index(idx);
-                }
-                last_reload = Instant::now();
+                let (d, tag, tx) = (d.clone(), etag.clone(), itx.clone());
+                std::thread::spawn(move || {
+                    let requested = Utc::now();
+                    let r = d.index(from, to, tag.as_deref()).map_err(|e| e.to_string());
+                    let _ = tx.send((requested, r));
+                });
             }
-            if event::poll(Duration::from_millis(500)).map_err(|e| e.to_string())?
+            if let Ok((requested, r)) = irx.try_recv() {
+                fetching = false;
+                match r {
+                    Ok(_) if requested < write_done => last_fetch = long_ago,
+                    Ok(Some((idx, tag))) => {
+                        online = true;
+                        etag = Some(tag);
+                        server_idx = Some(idx.clone());
+                        app.set_server_index(idx, requested);
+                    }
+                    Ok(None) => {
+                        online = true;
+                        if app.has_patches_before(requested)
+                            && let Some(idx) = &server_idx
+                        {
+                            app.set_server_index(idx.clone(), requested);
+                        }
+                    }
+                    Err(_) => online = false,
+                }
+            }
+            if !online {
+                // Offline: keep the local copy fresh and draw that.
+                if !syncing && last_pull.elapsed() > Duration::from_secs(20) {
+                    last_pull = Instant::now();
+                    syncing = true;
+                    spawn_sync(&app.cfg, tx.clone());
+                }
+                if rx.try_recv().is_ok() {
+                    syncing = false;
+                    last_reload = Instant::now() - Duration::from_secs(60);
+                }
+                // Reload the index if the vdir changed (cheap fingerprint check).
+                // Another process (`kairos sync` from launchd, `kairos today`) may
+                // have rebuilt the cache first, so compare with what's shown
+                // rather than asking whether this call rebuilt it.
+                if last_reload.elapsed() > Duration::from_secs(2) {
+                    let (from, to) = cache::default_window(&app.cfg, app.now);
+                    if let Ok((idx, rebuilt)) = cache::get(&app.cfg, Some(&path), app.now, from, to)
+                        && (rebuilt || idx.built_at != app.index.built_at)
+                    {
+                        app.set_index(idx);
+                    }
+                    last_reload = Instant::now();
+                }
+            }
+            if event::poll(Duration::from_millis(250)).map_err(|e| e.to_string())?
                 && let Event::Key(k) = event::read().map_err(|e| e.to_string())?
                 && let Some(key) = map_key(k)
             {

@@ -423,3 +423,46 @@ async fn mcp_survives_daemon_restart_mid_session() {
         "{tasks}"
     );
 }
+
+/// The TUI draws kairosd's index: a write shows on the next fetch, and a
+/// fetch that finds nothing new is an empty 304.
+#[tokio::test(flavor = "multi_thread")]
+async fn index_for_the_tui_with_etag() {
+    let env = Env::new(true);
+    let (base, _h, _) = start(&env).await;
+    let from = common::at("2026-10-12 00:00");
+    let to = common::at("2026-10-19 00:00");
+    let b = base.clone();
+    let (first, again) = tokio::task::spawn_blocking(move || {
+        let d = kairos_store::client::Daemon::new(&b, TOKEN).unwrap();
+        let (idx, tag) = d.index(from, to, None).unwrap().unwrap();
+        (
+            idx.instances.len(),
+            (tag.clone(), d.index(from, to, Some(&tag)).unwrap().is_none()),
+        )
+    })
+    .await
+    .unwrap();
+    assert_eq!(first, 0);
+    assert!(again.1, "unchanged → 304");
+    let r: Value = client()
+        .post(format!("{base}/api/events"))
+        .bearer_auth(TOKEN)
+        .json(&json!({"title": "Squash", "start": "2026-10-13T19:00", "duration_min": 60, "key": "Sport"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(r["status"], "applied");
+    let tag = again.0;
+    let titles = tokio::task::spawn_blocking(move || {
+        let d = kairos_store::client::Daemon::new(&base, TOKEN).unwrap();
+        let (idx, _) = d.index(from, to, Some(&tag)).unwrap().expect("changed");
+        idx.instances.into_iter().map(|i| i.title).collect::<Vec<_>>()
+    })
+    .await
+    .unwrap();
+    assert_eq!(titles, vec!["Squash".to_string()]);
+}

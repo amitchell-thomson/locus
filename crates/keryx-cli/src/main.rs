@@ -55,39 +55,23 @@ enum Cmd {
         json: bool,
     },
     /// Archive threads (`@N` or account:thread; several at once).
-    Archive {
-        threads: Vec<String>,
-    },
+    Archive { threads: Vec<String> },
     /// Back to the inbox.
-    Unarchive {
-        threads: Vec<String>,
-    },
-    Flag {
-        threads: Vec<String>,
-    },
-    Unflag {
-        threads: Vec<String>,
-    },
-    Read {
-        threads: Vec<String>,
-    },
-    Unread {
-        threads: Vec<String>,
-    },
+    Unarchive { threads: Vec<String> },
+    /// Flag threads.
+    Flag { threads: Vec<String> },
+    /// Remove the flag.
+    Unflag { threads: Vec<String> },
+    /// Mark threads read.
+    Read { threads: Vec<String> },
+    /// Mark threads unread.
+    Unread { threads: Vec<String> },
     /// Snooze until a time: "fri 17:00", "tomorrow 9", "23 oct".
-    Snooze {
-        when: String,
-        threads: Vec<String>,
-    },
+    Snooze { when: String, threads: Vec<String> },
     /// File into a key (and out of the inbox).
-    File {
-        key: String,
-        threads: Vec<String>,
-    },
+    File { key: String, threads: Vec<String> },
     /// Undo the last change, or a given changeset.
-    Undo {
-        id: Option<String>,
-    },
+    Undo { id: Option<String> },
     /// Recent changes (changesets).
     Changes {
         /// pending | applied | undone | failed …
@@ -101,37 +85,21 @@ enum Cmd {
     /// Ask keryxd to sync every account now.
     Sync,
     /// Reply in $EDITOR (needs a terminal), then confirm.
-    Reply {
-        thread: String,
-    },
+    Reply { thread: String },
     /// Reply to everyone in $EDITOR, then confirm.
-    ReplyAll {
-        thread: String,
-    },
+    ReplyAll { thread: String },
     /// Forward in $EDITOR, then confirm.
-    Forward {
-        thread: String,
-    },
+    Forward { thread: String },
     /// Write a new message from an account (personal, oxford, oqts, oqts-shared).
-    Compose {
-        account: String,
-    },
+    Compose { account: String },
     /// Approve a draft waiting for you (`keryx changes --status pending`).
-    Approve {
-        id: String,
-    },
+    Approve { id: String },
     /// Reject a draft: nothing is sent.
-    Reject {
-        id: String,
-    },
+    Reject { id: String },
     /// Stop a send during its hold.
-    Cancel {
-        id: String,
-    },
+    Cancel { id: String },
     /// Unsubscribe from a thread's mailing list (asks first).
-    Unsubscribe {
-        thread: String,
-    },
+    Unsubscribe { thread: String },
     /// People you correspond with (for address completion).
     Addresses {
         #[arg(default_value = "")]

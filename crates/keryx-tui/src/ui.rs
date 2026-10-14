@@ -48,6 +48,10 @@ pub fn draw(f: &mut Frame, app: &App) {
         crate::ui_send::approve_send(f, app, main, id);
     } else if matches!(app.mode, Mode::Approvals { .. }) {
         crate::ui_write::approvals(f, app, main);
+    } else if matches!(app.mode, Mode::Runs { .. }) {
+        crate::ui_runs::runs(f, app, main);
+    } else if matches!(app.mode, Mode::RunDetail { .. }) {
+        crate::ui_runs::detail(f, app, main);
     } else if app.split() {
         let lw = (main.width * 2 / 5).max(48);
         let left = Rect::new(main.x, main.y, lw, main.height);
@@ -556,7 +560,7 @@ fn help(f: &mut Frame, area: Rect) {
         ("j k  ↑ ↓  J K", "next / previous (J K: next thread while reading)"),
         ("Enter  Esc", "read the thread · back (clears a search)"),
         ("Tab  Shift-Tab", "account: All · each account"),
-        ("g", "go to: Inbox, Needs reply, Flagged, Snoozed, Sent, keys…"),
+        ("g", "go to: Inbox, Needs reply, Snoozed, Sent, Claude runs, keys…"),
         (
             "/",
             "search (from: to: subject: account: key: in: is: has: before: after:)",
@@ -604,6 +608,7 @@ fn goto(f: &mut Frame, app: &App, area: Rect) {
         ("t".into(), "Sent".into(), None),
         ("v".into(), "Archive".into(), None),
         ("a".into(), "All mail".into(), None),
+        ("c".into(), "Claude runs".into(), None),
     ];
     for (i, k) in app.cfg.keys.iter().enumerate().take(9) {
         rows.push(((i + 1).to_string(), k.name.clone(), Some(rgb(k.colour))));

@@ -11,6 +11,7 @@ use std::path::PathBuf;
 
 mod auth;
 mod read;
+mod runs;
 mod send;
 mod write;
 
@@ -128,6 +129,28 @@ enum Cmd {
     },
     /// Open the TUI on a thread: `keryx open keryx://thread/<account>/<thread_id>`.
     Open { url: String },
+    /// A scheduled Claude run now: morning, evening, or auto (by the hour).
+    Run {
+        kind: String,
+        /// Print the prompt and tool list instead of running.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// A background cleanup: Claude proposes, you review with A in keryx.
+    Cleanup {
+        /// Only these accounts (repeat for several).
+        #[arg(long)]
+        account: Vec<String>,
+        /// Extra instructions ("be strict with OQTS newsletters").
+        instructions: Option<String>,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Claude's runs: when, what they did, what failed.
+    Runs {
+        #[arg(long)]
+        json: bool,
+    },
     /// People you correspond with (for address completion).
     Addresses {
         #[arg(default_value = "")]
@@ -195,6 +218,43 @@ fn main() -> anyhow::Result<()> {
             key,
         }) => write::task(&load(&path)?, &thread, title, due, estimate, kind, key),
         Some(Cmd::Suggestions { status, json }) => read::suggestions(&load(&path)?, &status, json),
+        Some(Cmd::Run { kind, dry_run }) => {
+            let cfg = load(&path)?;
+            use chrono::Timelike;
+            let evening_h = cfg
+                .runs
+                .evening
+                .split(':')
+                .next()
+                .and_then(|h| h.parse().ok())
+                .unwrap_or(18);
+            let k = runs::kind_for(&kind, keryx_tui::now(&cfg).hour(), evening_h)?;
+            runs::run(&cfg, k, dry_run, &[], "")
+        }
+        Some(Cmd::Cleanup {
+            account,
+            instructions,
+            dry_run,
+        }) => {
+            let cfg = load(&path)?;
+            for a in &account {
+                if cfg.account(a).is_none() {
+                    bail!("no account {a:?}");
+                }
+            }
+            let ids: Vec<String> = account
+                .iter()
+                .filter_map(|a| cfg.account(a).map(|x| x.id.clone()))
+                .collect();
+            runs::run(
+                &cfg,
+                keryx_store::runs::RunKind::Cleanup,
+                dry_run,
+                &ids,
+                instructions.as_deref().unwrap_or(""),
+            )
+        }
+        Some(Cmd::Runs { json }) => runs::list(&load(&path)?, json),
         Some(Cmd::Open { url }) => {
             let (a, t) = keryx_core::model::parse_keryx_url(&url)
                 .with_context(|| format!("{url}: expected keryx://thread/<account>/<thread_id>"))?;
@@ -402,6 +462,53 @@ fn doctor(path: &std::path::Path) -> anyhow::Result<()> {
             format!("kairos isn't reachable at {}", cfg.kairos.url),
             "is Tailscale up and kairosd running on compute-node?",
         ),
+    }
+
+    // Phone pushes and scheduled runs.
+    if keryx_store::keychain::get("keryx-ntfy-topic").is_ok() {
+        r.ok("ntfy topic set (phone pushes on)");
+    } else {
+        r.note("no keryx-ntfy-topic in the Keychain: phone pushes are off (docs/setup.md §7)");
+    }
+    if cfg.runs.enabled {
+        let claude = std::process::Command::new(&cfg.runs.claude_bin)
+            .arg("--version")
+            .output();
+        match claude {
+            Ok(o) if o.status.success() => r.ok(format!(
+                "Claude Code for runs: {}",
+                String::from_utf8_lossy(&o.stdout).trim()
+            )),
+            _ => r.bad(
+                format!("{} isn't runnable", cfg.runs.claude_bin),
+                "install Claude Code, or set [runs] claude_bin to its full path",
+            ),
+        }
+        let agent = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_default()
+            .join("Library/LaunchAgents/com.keryx.runs.plist");
+        if agent.exists() {
+            r.ok("scheduled runs installed (com.keryx.runs)");
+        } else {
+            r.note("scheduled runs aren't installed yet: scripts/install-runs.sh");
+        }
+        if let Ok(db) = Db::open_readonly(&cfg.db_path())
+            && let Some(last) = db.runs(1).ok().and_then(|v| v.into_iter().next())
+        {
+            let when = keryx_core::display::date_full(last.started_at, cfg.tz());
+            match last.status.as_str() {
+                "failed" => r.bad(
+                    format!(
+                        "last run ({} {when}) failed: {}",
+                        last.kind.as_str(),
+                        last.error.unwrap_or_default()
+                    ),
+                    "see ~/Library/Logs/keryx-runs.log and the Runs view (g c)",
+                ),
+                s => r.ok(format!("last run: {} {when}, {s}", last.kind.as_str())),
+            }
+        }
     }
 
     if r.problems == 0 {

@@ -380,6 +380,7 @@ ntfy push for every pending **send** that Claude makes in a session Alec is in: 
 - **Background cleanups:** `keryx cleanup [--account oxford] ["be strict with OQTS newsletters"]` uses the same machinery (run token, keryx-only tools, logged in the Runs view) with the `runs/cleanup.md` prompt. It reads the scoped inbox in pages and calls `propose_cleanup` in chunks, then pushes once when done. Its tool list has **no** triage tools: it can only propose (and tag needs-reply). Limits: 2,000 threads, 45 minutes.
 - The **evening run** also proposes archiving threads Alec has dealt with today (replied, task created, or read with nothing to do), as a small "Evening tidy" review.
 - `keryx run morning --dry-run` prints what would be sent to Claude (the prompt and tool list) without running it. `[runs] enabled = false` turns them off.
+- **As built (2026-10-14):** run tokens are accepted only on `/mcp`; keryxd enforces each kind's tool list itself (`keryx_store::runs::RUN_TOOLS` / `CLEANUP_TOOLS`) as well as passing it to `--allowedTools`; Claude Code also gets `--tools ""` (no built-in tools), `--restricted` (no user settings or hooks) and `--permission-mode dontAsk`. A cleanup with `--account` can only touch those accounts. The launchd agent runs `keryx run auto`: evening from an hour before the evening time, otherwise morning, so a missed 08:00 caught up later in the day is still the morning run.
 
 ---
 

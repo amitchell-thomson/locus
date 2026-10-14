@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.keryx.runs</string>
+  <!-- `auto` = morning before 13:00, evening after. A time missed while the
+       Mac sleeps runs once on wake (launchd coalesces missed intervals). -->
+  <key>ProgramArguments</key>
+  <array><string>__HOME__/.cargo/bin/keryx</string><string>run</string><string>auto</string></array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>__MORNING_H__</integer><key>Minute</key><integer>__MORNING_M__</integer></dict>
+    <dict><key>Hour</key><integer>__EVENING_H__</integer><key>Minute</key><integer>__EVENING_M__</integer></dict>
+  </array>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardErrorPath</key><string>__HOME__/Library/Logs/keryx-runs.log</string>
+  <key>StandardOutPath</key><string>__HOME__/Library/Logs/keryx-runs.log</string>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>__HOME__/.local/bin:__HOME__/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string></dict>
+</dict>
+</plist>

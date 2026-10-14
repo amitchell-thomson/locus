@@ -29,6 +29,7 @@ Check the current syntax with `claude mcp add --help` if it changes. Then turn o
 | Drafts | `draft_reply` (recipients computed from the thread), `draft_email`: always wait for Alec's approval |
 | kairos | `suggest_task` (title, kind, estimate_min, due, reason), `suggest_event` (title, start, end, location, reason), `list_suggestions`: ideas Alec accepts (`y`, which opens the prefilled form) or dismisses (`n`). Nothing is written to kairos by Claude; a dismissed idea can't be suggested again |
 | Undo | `undo` |
+| Runs | `record_run` (only with a run token: scheduled runs and `keryx cleanup` end with it) |
 
 ## Workflows
 

@@ -70,6 +70,13 @@ impl Daemon for Fake {
     fn task_status(&self, _: &str) -> Result<Option<TaskStatus>> {
         Ok(None)
     }
+    fn undo(&self, id: &str) -> Result<Changeset> {
+        let c = self.undo_last();
+        // undo_last logged "undo": say which one instead.
+        self.calls.lock().unwrap().pop();
+        self.log(format!("undo {id}"));
+        c
+    }
     fn dismiss_suggestion(&self, id: &str) -> Result<()> {
         self.log(format!("dismiss {id}"));
         Ok(())
@@ -877,4 +884,68 @@ fn linked_task_line_and_row_icon() {
     a.search = Some("has:task".into());
     a.reload();
     assert_eq!(a.rows.len(), 1);
+}
+
+// ---- Phase 9: the Claude runs view ----
+
+#[test]
+fn runs_view_lists_runs_and_what_they_made() {
+    use keryx_store::runs::{Run, RunItem, RunKind};
+    let (mut a, f) = app();
+    let lab = select(&mut a, "Lab partner for Thursday?");
+    let (acc, t) = keryx_core::model::parse_thread_ref(&lab).unwrap();
+    let start = a.now.timestamp() - 7 * 3600;
+    a.db.create_run(
+        &Run {
+            id: "run-1".into(),
+            kind: RunKind::Morning,
+            started_at: start,
+            finished_at: Some(start + 120),
+            status: "running".into(),
+            summary: String::new(),
+            error: None,
+            expires_at: start + 1200,
+            scope: serde_json::json!({}),
+        },
+        "h",
+    )
+    .unwrap();
+    let mut applied = cs(Status::Applied);
+    applied.id = "cs-run".into();
+    a.db.save_changeset(&applied).unwrap();
+    for (kind, id) in [("changeset", format!("cs-run:{acc}:{t}")), ("tag", lab.clone())] {
+        a.db.add_run_item(&RunItem {
+            run_id: "run-1".into(),
+            kind: kind.into(),
+            item_id: id,
+            account: Some(acc.into()),
+            thread_id: Some(t.into()),
+            created_at: start + 10,
+        })
+        .unwrap();
+    }
+    a.db.finish_run("run-1", "done", "Jane asked about the lab; tagged.", None, start + 120)
+        .unwrap();
+    keys(&mut a, &[Key::Char('g')]);
+    assert!(render_to_string(&mut a, 80, 24).contains("c  Claude runs"));
+    keys(&mut a, &[Key::Char('c')]);
+    let s = render_to_string(&mut a, 90, 8);
+    assert!(
+        s.contains("morning") && s.contains("done") && s.contains("1 cleared · 1 need reply"),
+        "{s}"
+    );
+    keys(&mut a, &[Key::Enter]);
+    let s = render_to_string(&mut a, 90, 12);
+    insta::assert_snapshot!("run_detail", s);
+    assert!(s.contains("Jane asked about the lab; tagged."), "{s}");
+    // u undoes a cleared thread.
+    keys(&mut a, &[Key::Char('u')]);
+    assert_eq!(f.take(), vec!["undo cs-run".to_string()]);
+    // Enter opens the item's thread; Esc comes back to the run.
+    keys(&mut a, &[Key::Down, Key::Enter]);
+    assert_eq!(a.mode, Mode::Thread);
+    keys(&mut a, &[Key::Esc]);
+    assert!(matches!(a.mode, Mode::RunDetail { .. }));
+    keys(&mut a, &[Key::Esc, Key::Esc]);
+    assert_eq!(a.mode, Mode::List);
 }

@@ -46,6 +46,7 @@ pub trait Daemon: Send {
     fn kairos_free(&self, r: &FreeReq) -> Result<FreeOut>;
     fn task_status(&self, id: &str) -> Result<Option<TaskStatus>>;
     fn dismiss_suggestion(&self, id: &str) -> Result<()>;
+    fn undo(&self, id: &str) -> Result<Changeset>;
 }
 
 pub struct Client {
@@ -121,8 +122,21 @@ impl Client {
 }
 
 impl Client {
-    pub fn undo(&self, id: &str) -> Result<Changeset> {
-        self.post(&format!("/api/changesets/{id}/undo"), &json!({}))
+    /// Start a run: (run, its token). keryxd refuses if one is going.
+    pub fn start_run(&self, kind: &str, scope: &Value) -> Result<(crate::runs::Run, String)> {
+        let v: Value = self.post("/api/runs", &json!({ "kind": kind, "scope": scope }))?;
+        let run = serde_json::from_value(v["run"].clone()).map_err(|e| ClientError::Shape(e.to_string()))?;
+        let token = v["token"].as_str().unwrap_or_default().to_string();
+        Ok((run, token))
+    }
+    pub fn run_view(&self, id: &str) -> Result<crate::runs::RunView> {
+        self.get(&format!("/api/runs/{id}"))
+    }
+    pub fn fail_run(&self, id: &str, error: &str) -> Result<crate::runs::RunView> {
+        self.post(&format!("/api/runs/{id}/fail"), &json!({ "error": error }))
+    }
+    pub fn base(&self) -> &str {
+        &self.base
     }
     pub fn changesets(&self, status: Option<&str>, limit: u32) -> Result<Vec<Changeset>> {
         match status {
@@ -206,6 +220,9 @@ impl Daemon for Client {
     }
     fn task_status(&self, id: &str) -> Result<Option<TaskStatus>> {
         self.get(&format!("/api/kairos/tasks/{id}"))
+    }
+    fn undo(&self, id: &str) -> Result<Changeset> {
+        self.post(&format!("/api/changesets/{id}/undo"), &json!({}))
     }
     fn dismiss_suggestion(&self, id: &str) -> Result<()> {
         let _: Value = self.post(&format!("/api/suggestions/{id}/dismiss"), &json!({}))?;

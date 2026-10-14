@@ -57,6 +57,21 @@ impl Engine {
     /// A run may act on a limited number of threads; the rest wait.
     pub(crate) fn run_room(&self, refs: &[String]) -> Result<()> {
         let Some(r) = &self.current_run else { return Ok(()) };
+        // A cleanup scoped to some accounts stays on them.
+        let scope: Vec<&str> = r.scope["accounts"]
+            .as_array()
+            .map(|v| v.iter().filter_map(|a| a.as_str()).collect())
+            .unwrap_or_default();
+        if !scope.is_empty()
+            && let Some(out) = refs
+                .iter()
+                .find(|x| keryx_core::model::parse_thread_ref(x).is_none_or(|(a, _)| !scope.contains(&a)))
+        {
+            return Err(EngineError::Forbidden(format!(
+                "{out} is outside this run's accounts ({})",
+                scope.join(", ")
+            )));
+        }
         let limit = self.run_limit(r.kind);
         let used = self.db.run_thread_count(&r.id)?;
         let new = refs.iter().collect::<std::collections::BTreeSet<_>>().len() as u32;

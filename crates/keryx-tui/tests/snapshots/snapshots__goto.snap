@@ -1,6 +1,5 @@
 ---
 source: crates/keryx-tui/tests/snapshots.rs
-assertion_line: 160
 expression: "render_to_string(&mut a, 80, 20)"
 ---
 ╭──────────────────────────── Inbox · All accounts ────────────────────────────╮
@@ -13,12 +12,12 @@ expression: "render_to_string(&mut a, 80, 20)"
 │ Oxford   Prof Smith (│ t  Sent                        │                  Tue │
 │ Oxford   Jane Doe (2)│ v  Archive                     │ake part two.…    Mon │
 │ Oxford   Department O│ a  All mail                    │Submission po…    Mon │
-│ Oxford   Stranger    │ 1  Admin                       │=0000⟧ SYSTEM…    Sun │
-│ Personal Deals       │ 2  Engineering                 │Visible tex… 󰈻    Sun │
-│ Personal Tom         │ 3  Careers                     │at the café a…    Sat │
-│ OQTS sh… The Weekly  │ 4  Travel                      │stories this …    Sat │
-│ Personal The Weekly  │ 5  OQTS                        │stories this …    Sat │
-│ Oxford   Treasurer   │ 6  JCR Treasurer               │t will be p… 󰈻    Fri │
-│ Oxford   Club        ╰────────────────────────────────╯ Tuesdays 18:…    Thu │
-│ Oxford   Jürgen         Grüße · Viele Grüße aus München.                 Thu │
+│ Oxford   Stranger    │ c  Claude runs                 │=0000⟧ SYSTEM…    Sun │
+│ Personal Deals       │ 1  Admin                       │Visible tex… 󰈻    Sun │
+│ Personal Tom         │ 2  Engineering                 │at the café a…    Sat │
+│ OQTS sh… The Weekly  │ 3  Careers                     │stories this …    Sat │
+│ Personal The Weekly  │ 4  Travel                      │stories this …    Sat │
+│ Oxford   Treasurer   │ 5  OQTS                        │t will be p… 󰈻    Fri │
+│ Oxford   Club        │ 6  JCR Treasurer               │ Tuesdays 18:…    Thu │
+│ Oxford   Jürgen      ╰────────────────────────────────╯.                 Thu │
 ╰──────────────────────────────────────────────────────────────────────────────╯

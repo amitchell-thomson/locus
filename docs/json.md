@@ -91,3 +91,27 @@ Claude's kairos ideas. Nothing reaches kairos until you accept one with `y` in t
   ]
 }
 ```
+
+## `keryx runs --json`
+
+Claude's scheduled runs and background cleanups, newest first.
+
+```json
+{
+  "schema": 1,
+  "runs": [
+    {
+      "id": "run-1a2b3c4d5e",
+      "kind": "morning",               // morning | evening | cleanup
+      "started_at": "2026-10-15T08:00:02+01:00",
+      "finished_at": "2026-10-15T08:03:40+01:00",
+      "status": "done",                // running | done | failed
+      "counts": "23 cleared · 4 need reply · 2 drafts to approve · 1 task suggestion",
+      "summary": "…",                  // Claude's own words for you
+      "error": null,                   // why it failed
+      "drafts": ["cs-…"],              // changesets waiting for approval
+      "reviews": ["rv-…"]              // cleanup reviews it opened
+    }
+  ]
+}
+```

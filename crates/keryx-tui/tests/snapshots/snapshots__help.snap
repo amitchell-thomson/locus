@@ -7,7 +7,7 @@ expression: "render_to_string(&mut a, 80, 20)"
 ││ j k  ↑ ↓  J K   next / previous (J K: next thread while reading)           ││
 ││ Enter  Esc      read the thread · back (clears a search)                   ││
 ││ Tab  Shift-Tab  account: All · each account                                ││
-││ g               go to: Inbox, Needs reply, Flagged, Snoozed, Sent, keys…   ││
+││ g               go to: Inbox, Needs reply, Snoozed, Sent, Claude runs, key…││
 ││ /               search (from: to: subject: account: key: in: is: has: befo…││
 ││ z o             thread: show / fold quoted text · open an attachment       ││
 ││ r R F c         reply · reply all · forward · compose ($EDITOR)            ││

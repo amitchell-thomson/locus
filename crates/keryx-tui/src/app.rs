@@ -83,6 +83,15 @@ pub enum Mode {
     },
     /// `t` / `i` / `w` (and `y` on a suggestion): a kairos form.
     KairosForm(Box<crate::form::Form>),
+    /// `g` → `c`: Claude's runs.
+    Runs {
+        sel: usize,
+    },
+    /// One run: everything it made.
+    RunDetail {
+        id: String,
+        sel: usize,
+    },
 }
 
 /// A thread opened for reading.
@@ -368,6 +377,8 @@ impl App {
             Mode::ApproveSend { id } => self.approve_send_key(k, id),
             Mode::ConfirmUnsubscribe { r#ref, .. } => self.confirm_unsubscribe_key(k, r#ref),
             Mode::KairosForm(f) => self.form_key(k, *f),
+            Mode::Runs { sel } => self.runs_key(k, sel),
+            Mode::RunDetail { id, sel } => self.run_detail_key(k, id, sel),
         }
     }
 
@@ -531,6 +542,10 @@ impl App {
 
     fn goto_key(&mut self, k: Key) {
         self.mode = Mode::List;
+        if k == Key::Char('c') {
+            self.mode = Mode::Runs { sel: 0 };
+            return;
+        }
         let v = match k {
             Key::Char('i') => View::Inbox,
             Key::Char('f') => View::Flagged,

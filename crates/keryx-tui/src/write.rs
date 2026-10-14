@@ -40,6 +40,7 @@ pub enum Job {
     Free(String, keryx_store::api::FreeReq),
     Dismiss(String),
     TaskStatus(Vec<String>),
+    Undo(String),
 }
 
 fn kairos_message(o: &keryx_store::api::KairosOutcome) -> String {
@@ -619,6 +620,7 @@ impl App {
                     }
                     Err(e) => Err(e.to_string()),
                 },
+                Job::Undo(id) => d.undo(id).map(|c| Some(c.summary)).map_err(|e| e.to_string()),
                 Job::Dismiss(id) => d.dismiss_suggestion(id).map(|_| None).map_err(|e| e.to_string()),
                 Job::TaskStatus(ids) => {
                     for id in ids {

@@ -70,8 +70,23 @@ kairos's token is already in the Keychain as `kairos-api-token`, and keryx reuse
 
 ## 8. Phone (Phase 8)
 
-ntfy app → subscribe to the topic printed by `keryx doctor` (stored as `keryx-ntfy-topic`), on `https://ntfy.sh`. Your iPhone is already on Tailscale.
+1. Make a private topic and store it (keryxd reads it at start):
+   ```sh
+   security add-generic-password -U -s keryx-ntfy-topic -a "$USER" -w "keryx-$(openssl rand -hex 12)"
+   security find-generic-password -s keryx-ntfy-topic -w   # the name to subscribe to
+   ```
+2. ntfy app on the iPhone → subscribe to that topic on `https://ntfy.sh` (separate from kairos's topic, so they group apart).
+3. In `config.toml`, `[server] bind` must be the Mac's Tailscale IP (`tailscale ip -4`), so the phone can reach the approval pages. Links are signed with a key derived from `keryx-api-token`; rotating the token invalidates old links.
+4. Restart keryxd (`scripts/install-daemon.sh`). `keryx doctor` should say "ntfy topic set".
+
+Each push opens a confirmation page; nothing is approved until you press its button (link previews can't approve). If the Mac is asleep the page won't load and the draft stays pending.
 
 ## 9. Scheduled runs (Phase 9)
 
-`keryx doctor` installs nothing by itself. Phase 9 adds `scripts/install-runs.sh`, which writes the launchd agent for the 08:00/18:00 runs. You run it once.
+1. Claude Code must be installed and logged in (`claude --version`). Runs use your subscription.
+2. Try one by hand: `keryx run morning --dry-run` (prompt + tool list), then `keryx run morning`. It shows in the TUI under `g` → `c`.
+3. Install the 08:00 / 18:00 agent: `scripts/install-runs.sh` (other times: `KERYX_MORNING=07:30 KERYX_EVENING=18:30 scripts/install-runs.sh`, and set the same in `[runs]`). A time missed while the Mac sleeps runs once on wake.
+4. Background cleanup whenever you like: `keryx cleanup` (all accounts) or `keryx cleanup --account oxford "be strict with society newsletters"`; review with `A`.
+5. Logs: `~/Library/Logs/keryx-runs.log`. Turn runs off with `[runs] enabled = false`.
+
+A run's Claude has only keryx's tools for that run (no shell, files, web or kairos), its token works only for that run and only for MCP, and it can't send, delete or unsubscribe.

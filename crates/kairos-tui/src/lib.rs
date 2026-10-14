@@ -129,10 +129,13 @@ pub fn run(cfg: Config, path: PathBuf) -> Result<(), String> {
                 last_reload = Instant::now() - Duration::from_secs(60);
             }
             // Reload the index if the vdir changed (cheap fingerprint check).
+            // Another process (`kairos sync` from launchd, `kairos today`) may
+            // have rebuilt the cache first, so compare with what's shown
+            // rather than asking whether this call rebuilt it.
             if last_reload.elapsed() > Duration::from_secs(2) {
                 let (from, to) = cache::default_window(&app.cfg, app.now);
                 if let Ok((idx, rebuilt)) = cache::get(&app.cfg, Some(&path), app.now, from, to)
-                    && rebuilt
+                    && (rebuilt || idx.built_at != app.index.built_at)
                 {
                     app.set_index(idx);
                 }

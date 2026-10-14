@@ -440,6 +440,16 @@ pub struct UpdateProjectReq {
     pub key: Option<String>,
 }
 
+/// A project after an update. Renaming it retitles its sessions on the
+/// calendar too: `renamed` is that changeset (low-risk, or pending).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UpdateProjectResp {
+    #[serde(flatten)]
+    pub project: crate::project::Project,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renamed: Option<WriteResult>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FreeSlot {
     pub start: DateTime<Utc>,

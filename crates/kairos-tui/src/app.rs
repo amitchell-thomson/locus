@@ -1578,10 +1578,13 @@ impl App {
                 duration_min: dates::parse_minutes(f.get("Duration")).ok(),
             };
             let project = f.get("Project").to_string();
-            if let Some(r) = self.with_daemon(|d| d.create_session(&project, &req)) {
-                self.write_result(r);
-                self.refresh_remote();
-            }
+            // Close the form and say so first, then do the round trip.
+            self.set_message(format!("◇ planning {project}…"), false);
+            self.deferred.push(Box::new(move |app: &mut App| {
+                if let Some(r) = app.with_daemon(|d| d.create_session(&project, &req)) {
+                    app.write_result(r);
+                }
+            }));
             return;
         }
         if let FormKind::AddProject | FormKind::EditProject { .. } = &f.kind {
@@ -1940,8 +1943,14 @@ impl App {
 
     fn update_project_and_report(&mut self, id: &str, req: &api::UpdateProjectReq) {
         match self.with_daemon(|d| d.update_project(id, req)) {
-            Some(Ok(Ok(p))) => {
-                self.set_message(format!("✓ {} · {}", p.name, p.status.as_str()), false);
+            Some(Ok(Ok(r))) => {
+                let p = &r.project;
+                let renamed = match &r.renamed {
+                    Some(w) if w.status == Status::Pending => " · session titles waiting for approval".to_string(),
+                    Some(w) => format!(" · {}", w.summary),
+                    None => String::new(),
+                };
+                self.set_message(format!("✓ {} · {}{renamed}", p.name, p.status.as_str()), false);
                 self.refresh_remote();
             }
             Some(Ok(Err(e))) => self.set_message(e.to_string(), true),

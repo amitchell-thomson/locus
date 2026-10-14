@@ -1330,15 +1330,27 @@ fn project_time_suggests_neglected_projects_and_tracks_time_spent() {
     );
     assert!(e.checkin_items().unwrap().iter().all(|c| c.block_uid != item.block_uid));
     let mins = 45;
-    // Renamed: still its sessions (linked, not matched by title).
-    e.update_project(
-        &kairos.id,
-        &UpdateProjectReq {
-            name: Some("kairos calendar".into()),
-            ..Default::default()
-        },
-    )
-    .unwrap();
+    // Renamed: still its sessions (linked, not matched by title), and the
+    // calendar follows — keeping the diamond, without asking for approval.
+    let r = e
+        .update_project(
+            Author::Claude,
+            &kairos.id,
+            &UpdateProjectReq {
+                name: Some("kairos calendar".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(r.renamed.map(|w| w.status), Some(Status::Applied));
+    let ev = e
+        .world(14)
+        .unwrap()
+        .instances
+        .into_iter()
+        .find(|i| i.uid == item.block_uid)
+        .unwrap();
+    assert_eq!(ev.title, "◆ kairos calendar");
     let k = e
         .projects()
         .unwrap()
@@ -1348,6 +1360,7 @@ fn project_time_suggests_neglected_projects_and_tracks_time_spent() {
     assert_eq!(k.month_min, mins);
     // Done projects aren't suggested.
     e.update_project(
+        Author::Claude,
         "email",
         &UpdateProjectReq {
             status: Some("done".into()),
@@ -2249,4 +2262,84 @@ fn finished_at_checkin_completes_the_task_and_earlier_blocks_wait_to_be_checked_
     })
     .unwrap();
     assert_eq!(e.db.task_get(&r.task.id).unwrap().unwrap().status, TaskStatus::Done);
+}
+
+#[test]
+fn renaming_a_project_retitles_its_sessions() {
+    use kairos_core::api::{CreateProjectReq, SessionReq, UpdateProjectReq};
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let typ = e
+        .create_project(&CreateProjectReq {
+            name: "3YP".into(),
+            status: None,
+            note: None,
+            key: Some("Engineering".into()),
+        })
+        .unwrap();
+    e.direct = true;
+    e.create_session(
+        Author::Alec,
+        "3YP",
+        &SessionReq {
+            start: at("2026-10-16 10:00").to_rfc3339(),
+            end: None,
+            duration_min: Some(60),
+        },
+    )
+    .unwrap();
+    e.direct = false;
+    // Made on the phone: counts only because it's titled with the name.
+    env.phone_event("Engineering", "phone", "3YP", "2026-10-14 09:00", "2026-10-14 10:00");
+    // Claude renames it: the project is renamed at once, but editing Alec's
+    // own event waits for him. The phone event is linked meanwhile, so it
+    // stays the project's whatever the titles say.
+    let r = e
+        .update_project(
+            Author::Claude,
+            "3yp",
+            &UpdateProjectReq {
+                name: Some("Third-year project".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(r.project.name, "Third-year project");
+    let w = r.renamed.unwrap();
+    assert_eq!((w.status, w.risk), (Status::Pending, Risk::High));
+    assert!(
+        e.db.project_sessions()
+            .unwrap()
+            .contains(&("phone".to_string(), typ.id.clone()))
+    );
+    assert!(env.read_all("Engineering").contains("SUMMARY:◇ 3YP"));
+    // Alec renames it himself: everything follows, diamond kept.
+    e.direct = true;
+    let r = e
+        .update_project(
+            Author::Alec,
+            "third",
+            &UpdateProjectReq {
+                name: Some("3YP report".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    e.direct = false;
+    assert_eq!(r.renamed.unwrap().status, Status::Applied);
+    let eng = env.read_all("Engineering");
+    assert!(eng.contains("SUMMARY:◇ 3YP report"), "{eng}");
+    assert!(eng.contains("SUMMARY:3YP report"), "{eng}");
+    // Changing only the status touches no events.
+    let r = e
+        .update_project(
+            Author::Claude,
+            "3YP report",
+            &UpdateProjectReq {
+                status: Some("paused".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(r.renamed.is_none());
 }

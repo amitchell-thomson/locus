@@ -871,7 +871,9 @@ impl KairosMcp {
         .await
     }
 
-    #[tool(description = "Rename a project, change its status (active/next/paused/done) or its note.")]
+    #[tool(
+        description = "Rename a project (its sessions on the calendar are retitled too, as one changeset), change its status (active/next/paused/done) or its note."
+    )]
     async fn update_project(&self, Parameters(a): Parameters<UpdateProjectArgs>) -> Result<CallToolResult, ErrorData> {
         let req = api::UpdateProjectReq {
             name: a.name,
@@ -879,7 +881,7 @@ impl KairosMcp {
             note: a.note,
             key: a.key,
         };
-        self.run(move |e| e.update_project(&a.id, &req)).await
+        self.run(move |e| e.update_project(Author::Claude, &a.id, &req)).await
     }
 
     #[tool(

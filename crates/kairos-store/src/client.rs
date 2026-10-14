@@ -279,7 +279,7 @@ impl Daemon {
         &self,
         id: &str,
         req: &api::UpdateProjectReq,
-    ) -> Result<std::result::Result<kairos_core::project::Project, Rejected>> {
+    ) -> Result<std::result::Result<api::UpdateProjectResp, Rejected>> {
         self.patch(&format!("/api/projects/{}", enc(id)), req)
     }
 

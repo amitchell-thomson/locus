@@ -479,10 +479,14 @@ async fn create_project(
 
 async fn update_project(
     State(st): State<AppState>,
+    h: HeaderMap,
     Path(id): Path<String>,
     Json(req): Json<api::UpdateProjectReq>,
-) -> HResult<kairos_core::project::Project> {
-    Ok(Json(with_engine(&st, move |e| e.update_project(&id, &req)).await?))
+) -> HResult<api::UpdateProjectResp> {
+    let a = author(&h);
+    Ok(Json(
+        with_engine_as(&st, &h, move |e| e.update_project(a, &id, &req)).await?,
+    ))
 }
 
 async fn create_session(

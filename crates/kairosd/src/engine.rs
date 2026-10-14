@@ -2190,8 +2190,14 @@ impl Engine {
         Ok(p)
     }
 
-    pub fn update_project(&mut self, id: &str, req: &api::UpdateProjectReq) -> Result<Project> {
+    pub fn update_project(
+        &mut self,
+        author: Author,
+        id: &str,
+        req: &api::UpdateProjectReq,
+    ) -> Result<api::UpdateProjectResp> {
         let mut p = self.find_project(id)?;
+        let old_name = p.name.clone();
         if let Some(n) = req.name.as_deref().map(str::trim) {
             if n.is_empty() {
                 return Err(EngineError::BadRequest("a project needs a name".into()));
@@ -2219,7 +2225,67 @@ impl Engine {
         }
         p.updated_at = self.now();
         self.db.project_put(&p)?;
-        Ok(p)
+        // Given a name (even the same one, so a failed retitle can be retried):
+        // the calendar follows.
+        let renamed = match req.name {
+            Some(_) => self.retitle_sessions(author, &p, &old_name)?,
+            None => None,
+        };
+        Ok(api::UpdateProjectResp { project: p, renamed })
+    }
+
+    /// After a rename, the project's sessions on the calendar take its new
+    /// name, keeping their ◇/◆ — one changeset, normal risk rules (kairos's
+    /// sessions are low-risk; events Alec made need approval unless he typed it). Events counted only because
+    /// they're titled with the old name are linked first, so they stay the
+    /// project's even while a retitle waits for approval.
+    fn retitle_sessions(&mut self, author: Author, p: &Project, old_name: &str) -> Result<Option<WriteResult>> {
+        let world = self.world(60)?;
+        let linked: std::collections::HashSet<String> = self
+            .db
+            .project_sessions()?
+            .into_iter()
+            .filter(|(_, pid)| pid == &p.id)
+            .map(|(uid, _)| uid)
+            .collect();
+        let key = p.key.clone().or_else(|| self.constraints.projects.key.clone());
+        let mut seen = std::collections::HashSet::new();
+        let mut to_link = Vec::new();
+        let mut updates = Vec::new();
+        for s in &world.loaded.sources {
+            for e in s.series.iter().filter(|e| e.href.is_some()) {
+                let Some(m) = &e.master else { continue };
+                let by_title = key.is_some()
+                    && s.key == key
+                    && build::bare_block_title(&m.summary).eq_ignore_ascii_case(old_name.trim());
+                if !(linked.contains(&e.uid) || by_title) || !seen.insert(e.uid.clone()) {
+                    continue;
+                }
+                if !linked.contains(&e.uid) {
+                    to_link.push((s.id.clone(), e.uid.clone()));
+                }
+                let title = build::retitle_block(&m.summary, &p.name);
+                if title != m.summary {
+                    updates.push(api::EventUpdate {
+                        uid: e.uid.clone(),
+                        source: Some(s.id.clone()),
+                        change: api::UpdateEventReq {
+                            title: Some(title),
+                            ..Default::default()
+                        },
+                    });
+                }
+            }
+        }
+        for (src, uid) in to_link {
+            self.link_session(&src, &uid, &p.id)?;
+        }
+        if updates.is_empty() {
+            return Ok(None);
+        }
+        let label = format!("Rename {old_name:?} sessions to {:?}", p.name);
+        let cs = self.update_events(author, &updates, Some(&label))?;
+        Ok(Some(WriteResult::from(&cs)))
     }
 
     /// A project's calendar: a configured key, or none ("" / the projects key = default).

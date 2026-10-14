@@ -60,6 +60,20 @@ pub fn session_done_title(t: &str) -> String {
     format!("{SESSION_DONE} {}", bare_block_title(t))
 }
 
+/// A session or block retitled, keeping its leading box/diamond:
+/// ("◆ quast", "QUAST thesis") → "◆ QUAST thesis"; no icon → just the name.
+pub fn retitle_block(stored: &str, name: &str) -> String {
+    let icon = stored
+        .trim_start()
+        .chars()
+        .next()
+        .filter(|c| ['☐', '✓', '◇', '◈', '◆'].contains(c));
+    match icon {
+        Some(c) => format!("{c} {}", name.trim()),
+        None => name.trim().to_string(),
+    }
+}
+
 /// Has this work block or session been checked in (✓ / ◆)?
 pub fn is_checked_in(title: &str) -> bool {
     let t = title.trim_start();
@@ -341,6 +355,10 @@ mod tests {
         assert_eq!(session_label("◇ quast", false), "◇ quast");
         assert_eq!(session_label("◇ quast", true), "◈ quast");
         assert_eq!(session_label("◆ quast", true), "◆ quast");
+        // Renaming a project keeps each session's diamond.
+        assert_eq!(retitle_block("◆ quast", "QUAST thesis"), "◆ QUAST thesis");
+        assert_eq!(retitle_block(" ◇ quast", "QUAST"), "◇ QUAST");
+        assert_eq!(retitle_block("quast", "QUAST"), "QUAST");
         // A linked event made on the phone (no diamond stored) still draws one.
         assert_eq!(session_label("Quantum Research", true), "◈ Quantum Research");
         for t in ["✓ B4", "◆ quast", "  ◆ quast"] {

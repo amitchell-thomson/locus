@@ -2,8 +2,10 @@
 //! without keryxd); writes will go to keryxd (Phase 4).
 
 pub mod app;
+pub mod send;
 pub mod theme;
 pub mod ui;
+mod ui_send;
 mod ui_write;
 pub mod write;
 
@@ -113,12 +115,23 @@ pub fn run(cfg: Config) -> Result<(), String> {
                 app.ensure_preview();
             }
             terminal.draw(|f| ui::draw(f, &app)).map_err(|e| e.to_string())?;
+            // The app asked for $EDITOR: hand the terminal over, then back.
+            if let Some(req) = app.editor_request.take() {
+                ratatui::restore();
+                let result = send::run_editor(&req.text);
+                terminal = ratatui::try_init().map_err(|e| e.to_string())?;
+                app.editor_done(req.purpose, result);
+                continue;
+            }
             // keryxd writes the mirror; pick changes up within ~2 s.
             if last_check.elapsed() > Duration::from_secs(2) {
                 let s = db_stamp(&cfg);
                 if s != stamp {
                     stamp = s;
                     app.reload();
+                }
+                if app.hold.is_some() {
+                    app.refresh_hold();
                 }
                 last_check = Instant::now();
             }

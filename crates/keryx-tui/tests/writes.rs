@@ -14,6 +14,8 @@ use std::sync::{Arc, Mutex};
 #[derive(Clone, Default)]
 struct Fake {
     calls: Arc<Mutex<Vec<String>>>,
+    hold: Arc<Mutex<Option<Changeset>>>,
+    unsub: Arc<Mutex<Option<UnsubscribeOutcome>>>,
 }
 
 impl Fake {
@@ -85,6 +87,59 @@ impl Daemon for Fake {
     fn sync(&self) -> Result<()> {
         self.log("sync".into());
         Ok(())
+    }
+    fn send(&self, r: &SendReq) -> Result<Changeset> {
+        self.log(format!(
+            "send {} to={:?} cc={:?} thread={:?} body={:?}",
+            r.account,
+            r.to.iter().map(|a| a.email.clone()).collect::<Vec<_>>(),
+            r.cc.iter().map(|a| a.email.clone()).collect::<Vec<_>>(),
+            r.thread,
+            r.body
+        ));
+        Ok(cs(Status::Holding))
+    }
+    fn approve(&self, id: &str) -> Result<Changeset> {
+        self.log(format!("approve {id}"));
+        Ok(cs(Status::Holding))
+    }
+    fn reject(&self, id: &str) -> Result<Changeset> {
+        self.log(format!("reject {id}"));
+        Ok(cs(Status::Rejected))
+    }
+    fn cancel(&self, id: &str) -> Result<Changeset> {
+        self.log(format!("cancel {id}"));
+        Ok(cs(Status::Cancelled))
+    }
+    fn replace(&self, id: &str, r: &SendReq) -> Result<Changeset> {
+        self.log(format!("replace {id} body={:?}", r.body));
+        Ok(cs(Status::Holding))
+    }
+    fn holding(&self) -> Result<Option<Changeset>> {
+        Ok(self.hold.lock().unwrap().clone())
+    }
+    fn unsubscribe(&self, r: &str) -> Result<UnsubscribeOutcome> {
+        self.log(format!("unsubscribe {r}"));
+        Ok(self.unsub.lock().unwrap().clone().unwrap_or(UnsubscribeOutcome::None))
+    }
+}
+
+fn cs(status: Status) -> Changeset {
+    Changeset {
+        id: "cs-1".into(),
+        author: Author::Alec,
+        interactive: true,
+        created_at: 0,
+        ops: vec![],
+        risk: Risk::Low,
+        reasons: vec![],
+        status,
+        summary: "x".into(),
+        review_id: None,
+        undoes: None,
+        error: None,
+        hold_until: None,
+        warnings: vec![],
     }
 }
 
@@ -372,4 +427,202 @@ fn split_review_previews_without_marking_read() {
     let s = render_to_string(&mut a, 160, 20);
     assert!(s.contains("Thread"), "{s}");
     assert!(f.take().is_empty());
+}
+
+// ---------------- Phase 6: compose, send, approve ----------------
+
+use keryx_tui::send::Purpose;
+
+/// Type `body` where the cursor would be (after the headers' blank line).
+fn type_body(text: &str, body: &str) -> String {
+    text.replacen("\n\n\n", &format!("\n\n{body}\n"), 1)
+}
+
+fn editor(a: &mut App) -> (String, Purpose) {
+    let r = a.editor_request.take().expect("editor requested");
+    (r.text, r.purpose)
+}
+
+#[test]
+fn reply_flow_confirm_and_send() {
+    let (mut a, f) = app();
+    let r = select(&mut a, "Lab partner for Thursday?");
+    a.key(Key::Char('r'));
+    let (text, purpose) = editor(&mut a);
+    assert!(
+        text.starts_with("To: Jane Doe <jane.doe@example.com>\nCc: \nBcc: \nSubject: Re: Lab partner for Thursday?\n"),
+        "{text}"
+    );
+    assert!(text.contains(keryx_core::compose::MARKER) && text.contains("> Are you free"));
+    a.editor_done(purpose, Ok(type_body(&text, "Yes — 2pm works.")));
+    assert!(matches!(a.mode, Mode::ConfirmSend(_)));
+    insta::assert_snapshot!("confirm_send", render_to_string(&mut a, 80, 20));
+    keys(&mut a, &[Key::Char('y')]);
+    let call = f.take().remove(0);
+    assert!(
+        call.contains("to=[\"jane.doe@example.com\"]") && call.contains(&format!("thread=Some(\"{r}\")")),
+        "{call}"
+    );
+    assert!(
+        call.contains("Yes — 2pm works.") && call.contains("> Are you free"),
+        "quote kept: {call}"
+    );
+    assert!(a.message.as_ref().unwrap().0.contains("u cancels"));
+}
+
+#[test]
+fn reply_all_when_alec_wrote_last() {
+    let (mut a, _) = app();
+    select(&mut a, "Re: Group project plan");
+    a.key(Key::Char('R'));
+    let (text, _) = editor(&mut a);
+    assert!(
+        text.starts_with("To: Jane Doe <jane.doe@example.com>, Sam <sam@example.com>\nCc: Team <team@example.com>\n"),
+        "{text}"
+    );
+}
+
+#[test]
+fn empty_and_bad_input() {
+    let (mut a, f) = app();
+    select(&mut a, "Lab partner for Thursday?");
+    a.key(Key::Char('r'));
+    let (text, purpose) = editor(&mut a);
+    a.editor_done(purpose.clone(), Ok(text.clone()));
+    assert_eq!(a.message.as_ref().unwrap().0, "Nothing sent");
+    assert_eq!(a.mode, Mode::List);
+    let bad = type_body(&text, "hi").replacen("To: Jane Doe <jane.doe@example.com>", "To: jane at example", 1);
+    a.editor_done(purpose, Ok(bad));
+    let (again, _) = editor(&mut a);
+    assert!(
+        again.starts_with("# keryx: \"jane at example\" isn't an email address"),
+        "{again}"
+    );
+    assert!(f.take().is_empty());
+}
+
+#[test]
+fn forward_and_compose() {
+    let (mut a, _) = app();
+    select(&mut a, "Grüße");
+    a.key(Key::Char('F'));
+    let (text, purpose) = editor(&mut a);
+    assert!(text.starts_with("To: \nCc: \nBcc: \nSubject: Fwd: Grüße\n"), "{text}");
+    assert!(text.contains("---------- Forwarded message ----------"));
+    assert_eq!(
+        purpose,
+        Purpose::Forward {
+            account: "oxford".into()
+        }
+    );
+    a.key(Key::Tab); // Personal
+    a.key(Key::Char('c'));
+    let (_, purpose) = editor(&mut a);
+    assert_eq!(
+        purpose,
+        Purpose::Compose {
+            account: "personal".into()
+        }
+    );
+}
+
+#[test]
+fn hold_shows_and_u_cancels() {
+    let (mut a, f) = app();
+    let mut h = cs(Status::Holding);
+    h.id = "cs-hold".into();
+    h.hold_until = Some(a.now.timestamp() + 7);
+    *f.hold.lock().unwrap() = Some(h);
+    a.refresh_hold();
+    let s = render_to_string(&mut a, 80, 6);
+    assert!(s.contains("Sending in 7 s · u cancel"), "{s}");
+    keys(&mut a, &[Key::Char('u')]);
+    assert_eq!(f.take(), vec!["cancel cs-hold"]);
+}
+
+fn seed_draft(a: &App) -> String {
+    use keryx_core::changeset::{Op, Outgoing};
+    use keryx_core::model::Address;
+    let mut c = cs(Status::Pending);
+    c.id = "cs-draft".into();
+    c.author = Author::Claude;
+    c.interactive = false;
+    c.created_at = a.now.timestamp() - 60;
+    c.summary = "reply to Jane Doe".into();
+    c.ops = vec![Op::Send(Outgoing {
+        account: "oxford".into(),
+        thread_id: None,
+        from: Address::new(None, "newc7370@ox.ac.uk"),
+        to: vec![Address::new(Some("Jane Doe"), "jane.doe@example.com")],
+        cc: vec![Address::new(None, "x@evil.example")],
+        bcc: vec![],
+        subject: "Re: Lab partner".into(),
+        body: "Thursday works.".into(),
+        in_reply_to: None,
+        references: vec![],
+        message_id: "m@x".into(),
+        attachments: vec![],
+    })];
+    a.db.save_changeset(&c).unwrap();
+    c.id
+}
+
+#[test]
+fn approving_claudes_drafts() {
+    let (mut a, f) = app();
+    let id = seed_draft(&a);
+    a.reload();
+    assert!(render_to_string(&mut a, 80, 6).contains("1 waiting for approval · A"));
+    keys(&mut a, &[Key::Char('A')]);
+    let s = render_to_string(&mut a, 80, 8);
+    assert!(
+        s.contains("Drafts to approve") && s.contains("claude · reply to Jane Doe"),
+        "{s}"
+    );
+    keys(&mut a, &[Key::Enter]);
+    assert_eq!(a.mode, Mode::ApproveSend { id: id.clone() });
+    insta::assert_snapshot!("approve_send", render_to_string(&mut a, 80, 20));
+    keys(&mut a, &[Key::Char('y')]);
+    assert_eq!(f.take(), vec![format!("approve {id}")]);
+    keys(&mut a, &[Key::Enter, Key::Char('n')]);
+    assert_eq!(f.take(), vec![format!("reject {id}")]);
+    // e: Alec's edited version replaces the draft.
+    keys(&mut a, &[Key::Enter, Key::Char('e')]);
+    let (text, purpose) = editor(&mut a);
+    assert!(text.contains("Thursday works."));
+    a.editor_done(purpose, Ok(text.replace("Thursday works.", "Thursday at 2 works.")));
+    keys(&mut a, &[Key::Char('y')]);
+    let call = f.take().remove(0);
+    assert!(
+        call.starts_with(&format!("replace {id}")) && call.contains("Thursday at 2"),
+        "{call}"
+    );
+}
+
+#[test]
+fn unsubscribe_asks_first_and_mailto_goes_through_confirm() {
+    let (mut a, f) = app();
+    a.sel = a
+        .rows
+        .iter()
+        .position(|r| r.subject == "This week in engineering" && r.account == "personal")
+        .unwrap();
+    keys(&mut a, &[Key::Char('L')]);
+    assert!(matches!(&a.mode, Mode::ConfirmUnsubscribe { how, .. } if how.contains("weekly.example.com")));
+    keys(&mut a, &[Key::Char('y')]);
+    assert!(f.take()[0].starts_with("unsubscribe personal:"));
+    *f.unsub.lock().unwrap() = Some(UnsubscribeOutcome::Mailto {
+        account: "oxford".into(),
+        to: "leave-club@sports.example.org".into(),
+        subject: "unsubscribe".into(),
+        body: String::new(),
+    });
+    select(&mut a, "Training schedule");
+    keys(&mut a, &[Key::Char('L'), Key::Char('y')]);
+    assert!(matches!(&a.mode, Mode::ConfirmSend(d) if d.req.to[0].email == "leave-club@sports.example.org"));
+    // A plain message has nothing to unsubscribe from.
+    a.mode = Mode::List;
+    select(&mut a, "Lab partner for Thursday?");
+    keys(&mut a, &[Key::Char('L')]);
+    assert!(a.message.as_ref().unwrap().0.contains("no unsubscribe"));
 }

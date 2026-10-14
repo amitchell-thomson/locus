@@ -1,0 +1,25 @@
+---
+source: crates/keryx-tui/tests/writes.rs
+assertion_line: 556
+expression: "render_to_string(&mut a, 80, 20)"
+---
+╭───────────────────────────── Approve this send? ─────────────────────────────╮
+│ Drafted by claude · reply to Jane Doe                                        │
+│                                                                              │
+│ From     Oxford · newc7370@ox.ac.uk                                          │
+│ To       Jane Doe <jane.doe@example.com>                                     │
+│ Cc       x@evil.example                                                      │
+│ ⚠ new: x@evil.example — you've never written to this address                 │
+│ Subject  Re: Lab partner                                                     │
+│ ────────────────────────────────────────────────────────────                 │
+│ Thursday works.                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────── y approve · n reject · e edit · Esc back ╯
+ 1 waiting for approval · A

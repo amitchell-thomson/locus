@@ -41,6 +41,10 @@ pub fn draw(f: &mut Frame, app: &App) {
         } else {
             crate::ui_write::review(f, app, main);
         }
+    } else if let Mode::ConfirmSend(d) = &app.mode {
+        crate::ui_send::confirm_send(f, app, main, &d.req, &d.warnings);
+    } else if let Mode::ApproveSend { id } = &app.mode {
+        crate::ui_send::approve_send(f, app, main, id);
     } else if matches!(app.mode, Mode::Approvals { .. }) {
         crate::ui_write::approvals(f, app, main);
     } else if app.split() {
@@ -68,6 +72,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         Mode::File => crate::ui_write::file(f, app, area),
         Mode::ReviewChange { .. } => crate::ui_write::change(f, app, area),
         Mode::ConfirmGroup { group, count, .. } => crate::ui_write::confirm_group(f, area, group, *count),
+        Mode::ConfirmUnsubscribe { how, .. } => crate::ui_send::confirm_unsubscribe(f, area, how),
         _ => {}
     }
 }
@@ -495,6 +500,24 @@ fn status_bar(f: &mut Frame, app: &App, area: Rect) {
                 spans.push(Span::styled(
                     format!(" {m}"),
                     Style::default().fg(if *err { c("red") } else { c("text") }),
+                ));
+            }
+            if let Some((_, t)) = &app.hold {
+                let left = t - app.now.timestamp();
+                if left > 0 {
+                    spans.push(Span::styled(
+                        format!(" Sending in {left} s · u cancel "),
+                        Style::default()
+                            .fg(c("base"))
+                            .bg(c("peach"))
+                            .add_modifier(Modifier::BOLD),
+                    ));
+                }
+            }
+            if app.pending_sends > 0 && app.message.is_none() {
+                spans.push(Span::styled(
+                    format!(" {} waiting for approval · A", app.pending_sends),
+                    Style::default().fg(c("peach")),
                 ));
             }
             if app.open_proposals > 0 && app.message.is_none() {

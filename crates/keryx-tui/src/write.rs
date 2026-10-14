@@ -5,7 +5,7 @@
 
 use crate::app::{App, Key, Mode};
 use chrono::{Datelike, Duration, NaiveTime, TimeZone, Weekday};
-use keryx_store::api::{Decision, Intent, ReviewView, TriageReq};
+use keryx_store::api::{Decision, Intent, ReviewView, TriageReq, UnsubscribeOutcome};
 use keryx_store::state::{self, Action, Keep, ProposalStatus};
 
 /// Work for keryxd, run after the key is drawn (so "archiving…" shows).
@@ -19,6 +19,20 @@ pub enum Job {
     Tag(String),
     Untag(String),
     Sync,
+    Send(keryx_store::api::SendReq),
+    Replace(String, keryx_store::api::SendReq),
+    Approve(String),
+    Reject(String),
+    Cancel(String),
+    Unsubscribe(String),
+}
+
+fn sent_message(c: &keryx_core::changeset::Changeset) -> String {
+    match c.status {
+        keryx_core::changeset::Status::Holding => "sending… (u cancels during the hold)".into(),
+        keryx_core::changeset::Status::Pending => "draft waiting for approval".into(),
+        s => s.as_str().into(),
+    }
 }
 
 /// A line of the review screen.
@@ -145,7 +159,17 @@ impl App {
 
     /// Triage keys in the list and thread view. Returns whether `k` was one.
     pub fn write_key(&mut self, k: Key) -> bool {
+        if self.compose_key(k) {
+            return true;
+        }
         match k {
+            Key::Char('L') => self.unsubscribe_key(),
+            Key::Char('u') if self.hold.as_ref().is_some_and(|(_, t)| *t > self.now.timestamp()) => {
+                if let Some((id, _)) = self.hold.take() {
+                    self.deferred.push(Job::Cancel(id));
+                    self.message = Some(("cancelling the send…".into(), false));
+                }
+            }
             Key::Char('d') => self.triage(Intent::Archive, "archiving"),
             Key::Char('s') => self.mode = Mode::Snooze(None),
             Key::Char('m') => {
@@ -272,12 +296,21 @@ impl App {
     }
 
     pub fn approvals_key(&mut self, k: Key, sel: usize) {
+        let sends = self.pending_sends();
+        if k == Key::Enter
+            && let Some(cs) = sends.get(sel)
+        {
+            self.mode = Mode::ApproveSend { id: cs.id.clone() };
+            return;
+        }
+        let sel_review = sel.saturating_sub(sends.len());
         let list = self.open_reviews();
+        let total = sends.len() + list.len();
         match k {
             Key::Esc | Key::Char('q') | Key::Char('A') => self.mode = Mode::List,
             Key::Char('j') | Key::Down => {
                 self.mode = Mode::Approvals {
-                    sel: (sel + 1).min(list.len().saturating_sub(1)),
+                    sel: (sel + 1).min(total.saturating_sub(1)),
                 }
             }
             Key::Char('k') | Key::Up => {
@@ -286,7 +319,7 @@ impl App {
                 }
             }
             Key::Enter => {
-                if let Some((id, ..)) = list.get(sel) {
+                if let Some((id, ..)) = list.get(sel_review) {
                     self.load_review(id);
                     let first = self.first_open_item();
                     self.mode = Mode::Review {
@@ -473,6 +506,7 @@ impl App {
             return;
         };
         let mut last: Option<(String, bool)> = None;
+        let mut mailto: Option<(String, String, String, String)> = None;
         for job in jobs {
             let res: Result<Option<String>, String> = match &job {
                 Job::Triage { req, quiet } => d
@@ -510,6 +544,35 @@ impl App {
                     .map(|_| Some("needs-reply tag cleared".into()))
                     .map_err(|e| e.to_string()),
                 Job::Sync => d.sync().map(|_| Some("syncing".into())).map_err(|e| e.to_string()),
+                Job::Send(r) => d.send(r).map(|c| Some(sent_message(&c))).map_err(|e| e.to_string()),
+                Job::Replace(id, r) => d
+                    .replace(id, r)
+                    .map(|c| Some(sent_message(&c)))
+                    .map_err(|e| e.to_string()),
+                Job::Approve(id) => d.approve(id).map(|c| Some(sent_message(&c))).map_err(|e| e.to_string()),
+                Job::Reject(id) => d
+                    .reject(id)
+                    .map(|_| Some("draft rejected".into()))
+                    .map_err(|e| e.to_string()),
+                Job::Cancel(id) => d
+                    .cancel(id)
+                    .map(|_| Some("send cancelled: nothing sent".into()))
+                    .map_err(|e| e.to_string()),
+                Job::Unsubscribe(r) => match d.unsubscribe(r) {
+                    Ok(UnsubscribeOutcome::Done { .. }) => Ok(Some("unsubscribed and archived".into())),
+                    Ok(UnsubscribeOutcome::Mailto {
+                        account,
+                        to,
+                        subject,
+                        body,
+                    }) => {
+                        mailto = Some((account, to, subject, body));
+                        Ok(None)
+                    }
+                    Ok(UnsubscribeOutcome::Link { url }) => Ok(Some(format!("open this page to unsubscribe: {url}"))),
+                    Ok(UnsubscribeOutcome::None) => Ok(Some("no unsubscribe link".into())),
+                    Err(e) => Err(e.to_string()),
+                },
             };
             match res {
                 Ok(Some(m)) => last = Some((m, false)),
@@ -518,6 +581,28 @@ impl App {
             }
         }
         self.message = last;
+        if let Some((account, to, subject, body)) = mailto
+            && let Ok(addr) = keryx_core::compose::parse_addresses(&to)
+        {
+            // Unsubscribing by email: Alec confirms it like any send.
+            let req = keryx_store::api::SendReq {
+                account: account.clone(),
+                thread: None,
+                to: addr,
+                cc: vec![],
+                bcc: vec![],
+                subject,
+                body: if body.is_empty() { "unsubscribe".into() } else { body },
+                attachments: vec![],
+            };
+            self.mode = Mode::ConfirmSend(Box::new(crate::send::SendDraft {
+                warnings: vec![],
+                text: String::new(),
+                purpose: crate::send::Purpose::Compose { account },
+                req,
+            }));
+        }
+        self.refresh_hold();
         self.reload();
         if let Mode::Review { id, .. } = &self.mode {
             let id = id.clone();

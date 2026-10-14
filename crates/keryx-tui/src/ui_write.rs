@@ -136,8 +136,9 @@ pub fn approvals(f: &mut Frame, app: &App, area: Rect) {
     );
     let inner = block.inner(area);
     f.render_widget(block, area);
+    let sends = app.pending_sends();
     let reviews = app.open_reviews();
-    if reviews.is_empty() {
+    if reviews.is_empty() && sends.is_empty() {
         let msg = "Nothing waiting.";
         f.buffer_mut().set_string(
             inner.x + inner.width.saturating_sub(msg.width() as u16) / 2,
@@ -147,23 +148,44 @@ pub fn approvals(f: &mut Frame, app: &App, area: Rect) {
         );
         return;
     }
-    let mut lines = vec![Line::from(Span::styled(
-        " Cleanups",
-        Style::default().fg(c("mauve")).add_modifier(Modifier::BOLD),
-    ))];
-    for (i, (_, title, open, total)) in reviews.iter().enumerate() {
+    let row = |i: usize, text: String| {
+        let st = if i == sel {
+            selected_style(c("blue"))
+        } else {
+            Style::default().fg(c("text"))
+        };
+        Line::from(Span::styled(pad(&text, inner.width as usize), st))
+    };
+    let mut lines = Vec::new();
+    if !sends.is_empty() {
+        lines.push(Line::from(Span::styled(
+            " Drafts to approve",
+            Style::default().fg(c("peach")).add_modifier(Modifier::BOLD),
+        )));
+        for (i, cs) in sends.iter().enumerate() {
+            let warn = if cs.warnings.is_empty() {
+                String::new()
+            } else {
+                " · ⚠".into()
+            };
+            lines.push(row(i, format!(" {} · {}{warn}", cs.author.as_str(), cs.summary)));
+        }
+        lines.push(Line::raw(""));
+    }
+    if !reviews.is_empty() {
+        lines.push(Line::from(Span::styled(
+            " Cleanups",
+            Style::default().fg(c("mauve")).add_modifier(Modifier::BOLD),
+        )));
+    }
+    for (j, (_, title, open, total)) in reviews.iter().enumerate() {
         let text = format!(
             " {} · {} to review · {} of {total} decided",
             fit(title, inner.width.saturating_sub(40) as usize),
             open,
             total - open
         );
-        let st = if i == sel {
-            selected_style(c("blue"))
-        } else {
-            Style::default().fg(c("text"))
-        };
-        lines.push(Line::from(Span::styled(pad(&text, inner.width as usize), st)));
+        lines.push(row(sends.len() + j, text));
     }
     f.render_widget(Paragraph::new(lines), inner);
 }

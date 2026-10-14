@@ -1,0 +1,24 @@
+---
+source: crates/keryx-tui/tests/writes.rs
+assertion_line: 456
+expression: "render_to_string(&mut a, 80, 20)"
+---
+╭─────────────────────────────────── Send? ────────────────────────────────────╮
+│ From     Oxford · newc7370@ox.ac.uk                                          │
+│ To       Jane Doe <jane.doe@example.com>                                     │
+│ Subject  Re: Lab partner for Thursday?                                       │
+│ ────────────────────────────────────────────────────────────                 │
+│ Yes — 2pm works.                                                             │
+│                                                                              │
+│ On Tue 13 Oct 2026 at 09:12, Jane Doe wrote:                                 │
+│ > Hi Alec,                                                                   │
+│ >                                                                            │
+│ > Are you free to pair up for the B4 lab on Thursday afternoon?              │
+│ >                                                                            │
+│ > Jane                                                                       │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰───────────────────────────── y send (10 s to cancel) · e edit · n don't send ╯

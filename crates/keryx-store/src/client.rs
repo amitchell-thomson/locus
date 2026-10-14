@@ -34,6 +34,13 @@ pub trait Daemon: Send {
     fn tag(&self, r: &str, reason: &str) -> Result<()>;
     fn untag(&self, r: &str) -> Result<()>;
     fn sync(&self) -> Result<()>;
+    fn send(&self, r: &SendReq) -> Result<Changeset>;
+    fn approve(&self, id: &str) -> Result<Changeset>;
+    fn reject(&self, id: &str) -> Result<Changeset>;
+    fn cancel(&self, id: &str) -> Result<Changeset>;
+    fn replace(&self, id: &str, r: &SendReq) -> Result<Changeset>;
+    fn holding(&self) -> Result<Option<Changeset>>;
+    fn unsubscribe(&self, r: &str) -> Result<UnsubscribeOutcome>;
 }
 
 pub struct Client {
@@ -161,5 +168,26 @@ impl Daemon for Client {
     fn sync(&self) -> Result<()> {
         let _: Value = self.post("/api/sync", &json!({}))?;
         Ok(())
+    }
+    fn send(&self, r: &SendReq) -> Result<Changeset> {
+        self.post("/api/send", r)
+    }
+    fn approve(&self, id: &str) -> Result<Changeset> {
+        self.post(&format!("/api/changesets/{id}/approve"), &json!({}))
+    }
+    fn reject(&self, id: &str) -> Result<Changeset> {
+        self.post(&format!("/api/changesets/{id}/reject"), &json!({}))
+    }
+    fn cancel(&self, id: &str) -> Result<Changeset> {
+        self.post(&format!("/api/changesets/{id}/cancel"), &json!({}))
+    }
+    fn replace(&self, id: &str, r: &SendReq) -> Result<Changeset> {
+        self.post(&format!("/api/changesets/{id}/replace"), r)
+    }
+    fn holding(&self) -> Result<Option<Changeset>> {
+        self.get("/api/holding")
+    }
+    fn unsubscribe(&self, r: &str) -> Result<UnsubscribeOutcome> {
+        self.post("/api/unsubscribe", &json!({ "ref": r }))
     }
 }

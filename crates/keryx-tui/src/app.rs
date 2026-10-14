@@ -32,7 +32,7 @@ pub enum Key {
     PageDown,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Mode {
     List,
     /// Reading a thread (full screen when narrow; right pane when wide).
@@ -67,6 +67,17 @@ pub enum Mode {
         sel: usize,
         group: String,
         count: usize,
+    },
+    /// Alec's composed message: `y` sends (after the hold), `e` edits, `n` drops.
+    ConfirmSend(Box<crate::send::SendDraft>),
+    /// One of Claude's drafts: `y` approve · `n` reject · `e` edit.
+    ApproveSend {
+        id: String,
+    },
+    /// `L`: how unsubscribing will happen; `y` to go ahead.
+    ConfirmUnsubscribe {
+        r#ref: String,
+        how: String,
     },
 }
 
@@ -134,6 +145,12 @@ pub struct App {
     pub back: Option<Mode>,
     /// Open proposals waiting for Alec (status bar).
     pub open_proposals: usize,
+    /// Drafts waiting for Alec's approval (status bar).
+    pub pending_sends: usize,
+    /// The run loop opens `$EDITOR` for this, then calls `editor_done`.
+    pub editor_request: Option<crate::send::EditorRequest>,
+    /// A send in its hold: (changeset id, sends at).
+    pub hold: Option<(String, i64)>,
 }
 
 pub const LIST_LIMIT: u32 = 500;
@@ -167,6 +184,9 @@ impl App {
             review_marked: BTreeSet::new(),
             back: None,
             open_proposals: 0,
+            pending_sends: 0,
+            editor_request: None,
+            hold: None,
         };
         app.reload();
         app
@@ -231,6 +251,7 @@ impl App {
             .min(self.rows.len().saturating_sub(1));
         self.stale = self.stale_accounts();
         self.open_proposals = keryx_store::state::open_proposals(&self.db).unwrap_or(0);
+        self.pending_sends = self.pending_sends().len();
         // Marks on threads that left the list are dropped.
         let refs: BTreeSet<String> = self.rows.iter().map(|r| r.r#ref.clone()).collect();
         self.marked.retain(|r| refs.contains(r));
@@ -336,6 +357,9 @@ impl App {
             Mode::Review { id, sel } => self.review_key(k, id, sel),
             Mode::ReviewChange { id, sel } => self.review_change_key(k, id, sel),
             Mode::ConfirmGroup { id, sel, group, .. } => self.confirm_group_key(k, id, sel, group),
+            Mode::ConfirmSend(d) => self.confirm_send_key(k, *d),
+            Mode::ApproveSend { id } => self.approve_send_key(k, id),
+            Mode::ConfirmUnsubscribe { r#ref, .. } => self.confirm_unsubscribe_key(k, r#ref),
         }
     }
 
@@ -546,9 +570,9 @@ impl App {
         match &self.mode {
             Mode::Thread if self.back.is_some() => "z quotes · Esc back to the review".into(),
             Mode::Thread => {
-                let mut h = vec!["d archive", "s snooze", "m file", "z quotes"];
+                let mut h = vec!["r reply", "d archive", "s snooze", "z quotes"];
                 if self.open.as_ref().is_some_and(|o| !o.attachments().is_empty()) {
-                    h.push("o open attachment");
+                    h.push("o attachment");
                 }
                 h.extend(["Esc back", "? help"]);
                 h.join(" · ")
@@ -560,7 +584,7 @@ impl App {
                     self.marked.len()
                 )
             }
-            Mode::List => "d archive · s snooze · m file · x mark · ? help".into(),
+            Mode::List => "d archive · s snooze · m file · r reply · x mark · ? help".into(),
             Mode::Review { .. } => {
                 "y accept · n decline · c change · x mark · Y accept group · Enter read · u undo".into()
             }

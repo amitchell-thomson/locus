@@ -1789,6 +1789,7 @@ dependencies = [
  "ratatui",
  "serde_json",
  "unicode-width",
+ "uuid",
 ]
 
 [[package]]

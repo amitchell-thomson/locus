@@ -25,4 +25,4 @@ expression: "render_to_string(&mut a, 80, 24)"
 │                                                                              │
 │                                                                              │
 │                                                                              │
-╰──────────────── d archive · s snooze · m file · z quotes · Esc back · ? help ╯
+╰─────────────── r reply · d archive · s snooze · z quotes · Esc back · ? help ╯

@@ -34,6 +34,12 @@ pub fn run(cfg: &Config, engine: Arc<Mutex<Engine>>, sync_now: mpsc::Receiver<()
             with(&engine, |e| sync_gmail_all(cfg, &mut e.db));
             last_gmail = Instant::now();
         }
+        // Sends whose hold is over (checked every loop: holds are ~10 s).
+        with(&engine, |e| match e.process_holds() {
+            Ok(0) => {}
+            Ok(n) => tracing::info!(sent = n, "sent"),
+            Err(err) => tracing::warn!(error = %err, "sending"),
+        });
         if last_tick.elapsed() >= TICK {
             with(&engine, |e| {
                 match e.wake_snoozes() {

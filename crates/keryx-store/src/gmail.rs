@@ -203,6 +203,16 @@ impl Client<'_> {
         Ok(meta(&v)?.labels)
     }
 
+    /// Send RFC 5322 bytes, in a thread if given; returns the new message id.
+    pub fn send(&self, raw: &[u8], thread_id: Option<&str>) -> Result<String> {
+        let mut body = serde_json::json!({"raw": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw)});
+        if let Some(t) = thread_id {
+            body["threadId"] = serde_json::json!(t);
+        }
+        let v = self.t.post_json(&format!("{API}/messages/send"), &self.token, &body)?;
+        str_field(&v, "id")
+    }
+
     /// History since `start`, or `Err(404)` if it has expired.
     pub fn history(&self, start: &str) -> Result<History> {
         let mut h = History::default();

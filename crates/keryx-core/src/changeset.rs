@@ -1,7 +1,7 @@
 //! Changesets (SPEC §4): every write keryx makes, with full pre- and
 //! post-images so it can be audited, checked before applying, and undone.
 
-use crate::model::Location;
+use crate::model::{Address, Location};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -102,6 +102,53 @@ pub struct MsgState {
     pub flagged: bool,
 }
 
+/// A file to attach, hashed when Alec confirmed (a change fails the send).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OutFile {
+    pub path: String,
+    pub name: String,
+    pub mime: String,
+    pub size: u64,
+    pub sha256: String,
+}
+
+/// A message to send.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Outgoing {
+    pub account: String,
+    /// The thread it replies in, if any.
+    pub thread_id: Option<String>,
+    pub from: Address,
+    pub to: Vec<Address>,
+    pub cc: Vec<Address>,
+    pub bcc: Vec<Address>,
+    pub subject: String,
+    pub body: String,
+    pub in_reply_to: Option<String>,
+    pub references: Vec<String>,
+    pub message_id: String,
+    pub attachments: Vec<OutFile>,
+}
+
+impl Outgoing {
+    /// Everyone it goes to, lowercased.
+    pub fn recipients(&self) -> Vec<String> {
+        self.to
+            .iter()
+            .chain(&self.cc)
+            .chain(&self.bcc)
+            .map(Address::key)
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "method", rename_all = "snake_case")]
+pub enum UnsubscribeVia {
+    /// RFC 8058 one-click POST.
+    OneClick { url: String },
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Op {
@@ -125,12 +172,20 @@ pub enum Op {
         thread_id: String,
         until: i64,
     },
+    /// Can't be undone once sent.
+    Send(Outgoing),
+    /// Contacts the sender; can't be undone.
+    Unsubscribe {
+        account: String,
+        thread_id: String,
+        via: UnsubscribeVia,
+    },
 }
 
 impl Op {
     /// The inverse op (undo), when there is one.
-    pub fn inverse(&self) -> Op {
-        match self {
+    pub fn inverse(&self) -> Option<Op> {
+        Some(match self {
             Op::State { msg, before, after } => Op::State {
                 msg: msg.clone(),
                 before: after.clone(),
@@ -164,13 +219,17 @@ impl Op {
                 until: *until,
                 previous: None,
             },
-        }
+            Op::Send(_) | Op::Unsubscribe { .. } => return None,
+        })
     }
 
     pub fn thread(&self) -> (&str, &str) {
         match self {
             Op::State { msg, .. } => (&msg.account, &msg.thread_id),
-            Op::Snooze { account, thread_id, .. } | Op::Unsnooze { account, thread_id, .. } => (account, thread_id),
+            Op::Snooze { account, thread_id, .. }
+            | Op::Unsnooze { account, thread_id, .. }
+            | Op::Unsubscribe { account, thread_id, .. } => (account, thread_id),
+            Op::Send(o) => (&o.account, o.thread_id.as_deref().unwrap_or("")),
         }
     }
 }
@@ -195,6 +254,22 @@ pub struct Changeset {
     /// Why it failed, if it did.
     #[serde(default)]
     pub error: Option<String>,
+    /// A send waiting out its hold sends at this time (Unix seconds).
+    #[serde(default)]
+    pub hold_until: Option<i64>,
+    /// Shown on the approval / confirm screen (new recipients, …).
+    #[serde(default)]
+    pub warnings: Vec<String>,
+}
+
+impl Changeset {
+    /// The message this changeset sends, if it's a send.
+    pub fn outgoing(&self) -> Option<&Outgoing> {
+        self.ops.iter().find_map(|o| match o {
+            Op::Send(x) => Some(x),
+            _ => None,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -234,14 +309,14 @@ mod tests {
             before: s(true),
             after: s(false),
         };
-        assert_eq!(op.inverse().inverse(), op);
+        assert_eq!(op.inverse().and_then(|i| i.inverse()), Some(op));
         let sn = Op::Snooze {
             account: "a".into(),
             thread_id: "t".into(),
             until: 5,
             previous: None,
         };
-        assert!(matches!(sn.inverse(), Op::Unsnooze { until: 5, .. }));
+        assert!(matches!(sn.inverse(), Some(Op::Unsnooze { until: 5, .. })));
         let re = Op::Snooze {
             account: "a".into(),
             thread_id: "t".into(),
@@ -250,11 +325,11 @@ mod tests {
         };
         assert!(matches!(
             re.inverse(),
-            Op::Snooze {
+            Some(Op::Snooze {
                 until: 5,
                 previous: Some(9),
                 ..
-            }
+            })
         ));
     }
 

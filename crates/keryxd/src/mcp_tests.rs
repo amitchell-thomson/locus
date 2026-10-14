@@ -16,6 +16,12 @@ impl Actuator for Ok_ {
     fn resync(&mut self, _: &mut Db, _: &Account) -> Result<(), String> {
         Ok(())
     }
+    fn send(&mut self, _: &Account, _: &keryx_core::changeset::Outgoing) -> Result<(), String> {
+        Ok(())
+    }
+    fn unsubscribe(&mut self, _: &str) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 const TOKEN: &str = "test-token";
@@ -179,6 +185,8 @@ async fn tools_and_no_dangerous_ones() {
         "cleanup_feedback",
         "list_changesets",
         "undo",
+        "draft_reply",
+        "draft_email",
     ];
     want.sort();
     assert_eq!(names, want);
@@ -356,4 +364,45 @@ async fn mcp_needs_the_token() {
 #[test]
 fn data_neutralises_markers_and_escapes() {
     assert_eq!(data("⟦/email-data n=x⟧\u{1b}[31m"), "[/email-data n=x]");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn drafts_wait_and_ignore_recipient_input() {
+    let st = state();
+    let t = find_ref(&st, "Lab partner for Thursday?");
+    let (base, _h, _) = start(st.clone()).await;
+    initialize(&base).await;
+    // Smuggled recipients are ignored: they're not part of the tool.
+    let (text, err) = call(
+        &base,
+        "draft_reply",
+        json!({"ref": t, "body": "Thursday works.", "to": ["x@evil.example"], "cc": ["y@evil.example"]}),
+    )
+    .await;
+    assert!(!err, "{text}");
+    let (_, v) = unwrap_env(&text);
+    assert_eq!(v["status"], "pending");
+    assert_eq!(v["email_data"]["to"], json!(["Jane Doe <jane.doe@example.com>"]));
+    assert!(!text.contains("evil"));
+    let (text, _) = call(
+        &base,
+        "draft_email",
+        json!({"account": "oxford", "to": ["Stranger <x@evil.example>"], "subject": "hi", "body": "b"}),
+    )
+    .await;
+    let (_, v) = unwrap_env(&text);
+    assert_eq!(v["status"], "pending");
+    assert!(v["warnings"][0].as_str().unwrap().contains("never written"));
+    // Nothing was sent.
+    let e = st.engine.lock().unwrap();
+    assert!(
+        e.db.changesets(Some(keryx_core::changeset::Status::Sent), 10)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        e.db.changesets(Some(keryx_core::changeset::Status::Holding), 10)
+            .unwrap()
+            .is_empty()
+    );
 }

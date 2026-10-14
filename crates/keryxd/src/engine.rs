@@ -82,6 +82,10 @@ pub trait Actuator: Send {
     ) -> std::result::Result<Option<MsgState>, String>;
     /// Re-read an account into the mirror after `apply` returned `None`.
     fn resync(&mut self, db: &mut Db, account: &Account) -> std::result::Result<(), String>;
+    /// Send a message (after its hold). An error means nothing was sent.
+    fn send(&mut self, account: &Account, o: &keryx_core::changeset::Outgoing) -> std::result::Result<(), String>;
+    /// RFC 8058 one-click unsubscribe (POST `List-Unsubscribe=One-Click`).
+    fn unsubscribe(&mut self, url: &str) -> std::result::Result<(), String>;
 }
 
 pub struct Engine {
@@ -433,6 +437,8 @@ impl Engine {
                 review_id: req.review_id.clone(),
                 undoes: None,
                 error: None,
+                hold_until: None,
+                warnings: vec![],
             };
             self.apply(&mut cs)?;
             if cs.status == Status::Applied && req.intent.leaves_inbox() {
@@ -521,6 +527,7 @@ impl Engine {
             live: self.cfg.live,
             batch_threshold: self.cfg.risk.batch_threshold,
             threads,
+            recipients_own: false,
         })
     }
 
@@ -596,7 +603,11 @@ impl Engine {
         if let Some(e) = failure {
             let mut stuck = 0;
             for op in done.iter().rev() {
-                if self.apply_op(&op.inverse(), &mut resync).is_err() {
+                let undone = match op.inverse() {
+                    Some(inv) => self.apply_op(&inv, &mut resync).is_ok(),
+                    None => false,
+                };
+                if !undone {
                     stuck += 1;
                 }
             }
@@ -673,6 +684,10 @@ impl Engine {
                 .clear_snooze(account, thread_id)
                 .map(|_| ())
                 .map_err(|e| e.to_string()),
+            Op::Send(_) => Err("sends go through the hold queue, not apply".into()),
+            Op::Unsubscribe { via, .. } => match via {
+                keryx_core::changeset::UnsubscribeVia::OneClick { url } => self.act.unsubscribe(url),
+            },
         }
     }
 
@@ -683,6 +698,11 @@ impl Engine {
             .db
             .changeset(id)?
             .ok_or_else(|| EngineError::NotFound(format!("changeset {id}")))?;
+        if orig.ops.iter().any(|o| o.inverse().is_none()) {
+            return Err(EngineError::BadRequest(
+                "sent mail can't be unsent (and unsubscribing can't be undone)".into(),
+            ));
+        }
         if orig.status != Status::Applied {
             return Err(EngineError::BadRequest(format!(
                 "{id} is {}, not applied",
@@ -712,7 +732,7 @@ impl Engine {
             author: who.author,
             interactive: who.interactive,
             created_at: self.now(),
-            ops: orig.ops.iter().rev().map(Op::inverse).collect(),
+            ops: orig.ops.iter().rev().filter_map(Op::inverse).collect(),
             risk: Risk::Low,
             reasons: vec![],
             status: Status::Pending,
@@ -720,6 +740,8 @@ impl Engine {
             review_id: orig.review_id.clone(),
             undoes: Some(orig.id.clone()),
             error: None,
+            hold_until: None,
+            warnings: vec![],
         };
         self.apply(&mut cs)?;
         if cs.status == Status::Applied {

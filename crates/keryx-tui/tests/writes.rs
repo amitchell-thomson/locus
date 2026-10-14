@@ -52,6 +52,8 @@ impl Daemon for Fake {
             review_id: None,
             undoes: None,
             error: None,
+            hold_until: None,
+            warnings: vec![],
         })
     }
     fn reviews(&self, _: Option<&str>) -> Result<Vec<ReviewView>> {

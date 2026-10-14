@@ -1142,6 +1142,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "gethostname"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1bd49230192a3797a9a4d6abe9b3eed6f7fa4c8a8a4947977c6f80025f92cbd8"
+dependencies = [
+ "rustix",
+ "windows-link",
+]
+
+[[package]]
 name = "getopts"
 version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1732,6 +1742,7 @@ dependencies = [
  "eco-dates",
  "encoding_rs",
  "insta",
+ "mail-builder",
  "mail-parser",
  "pdf-extract",
  "proptest",
@@ -1741,6 +1752,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "toml",
+ "uuid",
  "zip",
 ]
 
@@ -1788,6 +1800,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "clap",
+ "hex",
  "keryx-core",
  "keryx-store",
  "notify",
@@ -1797,6 +1810,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -1953,6 +1967,15 @@ checksum = "f3d0581a75c45969c63afd2bb87b1d8b25cfcc556c7a918cf9bb13b0fe8d2381"
 dependencies = [
  "nix 0.31.3",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "mail-builder"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ccbc27cb02a58a311a404769a22f5abf63fe3173b290d80be7c534f9c7023151"
+dependencies = [
+ "gethostname",
 ]
 
 [[package]]

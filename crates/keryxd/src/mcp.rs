@@ -138,6 +138,21 @@ fn message_json(e: &Engine, m: &Message, compact: bool) -> Value {
     })
 }
 
+fn draft_json(cs: &keryx_core::changeset::Changeset) -> Value {
+    let o = cs.outgoing();
+    json!({
+        "changeset_id": cs.id,
+        "status": cs.status,
+        "warnings": cs.warnings,
+        "next": "Waiting for Alec's approval (A in keryx, `keryx approve`, or his phone). You can't send it.",
+        "email_data": {
+            "to": o.map(|o| addrs(&o.to)),
+            "cc": o.map(|o| addrs(&o.cc)),
+            "subject": o.map(|o| data(&o.subject)),
+        }
+    })
+}
+
 fn thread_json(e: &Engine, r: &str, compact: bool, sent_to: &HashSet<String>) -> Result<Value, EngineError> {
     let (a, t) = parse_thread_ref(r).ok_or_else(|| EngineError::BadRequest(format!("{r}: expected account:thread")))?;
     let msgs = e.db.thread(a, t)?;
@@ -342,6 +357,26 @@ pub struct ProposeArgs {
     pub title: String,
     /// Up to 100 per call.
     pub items: Vec<CleanupItem>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct DraftReplyArgs {
+    pub r#ref: String,
+    /// What Alec would say (plain text). Recipients come from the thread;
+    /// his signature and the quote are added by keryx.
+    pub body: String,
+    /// Reply to everyone in the thread. Default false.
+    pub reply_all: Option<bool>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct DraftEmailArgs {
+    /// Which of Alec's accounts sends it.
+    pub account: String,
+    pub to: Vec<String>,
+    pub cc: Option<Vec<String>>,
+    pub subject: String,
+    pub body: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -754,6 +789,56 @@ impl KeryxMcp {
                 "rejected": rejected,
                 "next": "Tell Alec how many proposals are waiting; he decides them with A in keryx.",
             }))
+        })
+        .await
+    }
+
+    #[tool(
+        description = "Draft a reply in a thread. It is NEVER sent by you: it waits for Alec's approval (TUI A, CLI, or his phone), which shows the recipients first. Recipients are computed from the thread. Write in Alec's voice (style_samples)."
+    )]
+    async fn draft_reply(&self, Parameters(a): Parameters<DraftReplyArgs>) -> Result<CallToolResult, ErrorData> {
+        self.run(move |e| {
+            let cs = e.draft_reply(
+                &keryx_store::api::DraftReplyReq {
+                    r#ref: a.r#ref,
+                    body: a.body,
+                    reply_all: a.reply_all.unwrap_or(false),
+                },
+                Who::claude(),
+            )?;
+            Ok(draft_json(&cs))
+        })
+        .await
+    }
+
+    #[tool(
+        description = "Draft a new email. NEVER sent by you: it waits for Alec's approval, with any address he's never written to flagged."
+    )]
+    async fn draft_email(&self, Parameters(a): Parameters<DraftEmailArgs>) -> Result<CallToolResult, ErrorData> {
+        self.run(move |e| {
+            let parse = |v: &[String]| -> Result<Vec<Address>, EngineError> {
+                v.iter()
+                    .map(|s| {
+                        keryx_core::compose::parse_addresses(s)
+                            .map_err(|err| EngineError::BadRequest(err.to_string()))
+                            .and_then(|mut l| {
+                                l.pop()
+                                    .ok_or_else(|| EngineError::BadRequest(format!("{s:?}: no address")))
+                            })
+                    })
+                    .collect()
+            };
+            let cs = e.draft_email(
+                &keryx_store::api::DraftEmailReq {
+                    account: a.account,
+                    to: parse(&a.to)?,
+                    cc: parse(&a.cc.unwrap_or_default())?,
+                    subject: a.subject,
+                    body: a.body,
+                },
+                Who::claude(),
+            )?;
+            Ok(draft_json(&cs))
         })
         .await
     }

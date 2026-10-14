@@ -12,6 +12,8 @@ chrono-tz.workspace = true
 mail-parser.workspace = true
 encoding_rs = "0.8"
 eco-dates.workspace = true
+mail-builder = "1"
+uuid.workspace = true
 scraper = "0.27"
 pdf-extract = "0.12"
 zip = { version = "9", default-features = false, features = ["deflate"] }

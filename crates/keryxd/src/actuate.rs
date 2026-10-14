@@ -160,6 +160,119 @@ pub fn step_args(acc: &Account, mid: &str, current: &str, step: &MailStep) -> Ve
     ]
 }
 
+/// Sending through Mail.app. A reply is made with Mail's `reply` (so Mail
+/// keeps its threading headers); its recipients are then replaced by exactly
+/// the approved ones. Lists arrive newline-separated in argv.
+const SEND_SCRIPT: &str = r#"
+on run argv
+  set {acctId, acctAddr, mid, toList, ccList, bccList, subj, body, files} to argv
+  tell application "Mail"
+    set acc to missing value
+    try
+      set acc to first account whose id is acctId
+    end try
+    if acc is missing value then
+      try
+        set acc to first account whose email addresses contains acctAddr
+      end try
+    end if
+    if acc is missing value then return "noaccount"
+    if mid is "" then
+      set msg to make new outgoing message with properties {subject:subj, content:body, visible:false}
+    else
+      set found to missing value
+      repeat with mb in (every mailbox of acc)
+        try
+          set ms to (messages of mb whose message id is mid)
+          if (count of ms) > 0 then
+            set found to item 1 of ms
+            exit repeat
+          end if
+        end try
+      end repeat
+      if found is missing value then return "notfound"
+      set msg to reply found opening window false
+      set subject of msg to subj
+      set content of msg to body
+    end if
+    tell msg
+      set sender to acctAddr
+      delete every to recipient
+      delete every cc recipient
+      delete every bcc recipient
+      repeat with a in paragraphs of toList
+        if (a as string) is not "" then make new to recipient at end of to recipients with properties {address:(a as string)}
+      end repeat
+      repeat with a in paragraphs of ccList
+        if (a as string) is not "" then make new cc recipient at end of cc recipients with properties {address:(a as string)}
+      end repeat
+      repeat with a in paragraphs of bccList
+        if (a as string) is not "" then make new bcc recipient at end of bcc recipients with properties {address:(a as string)}
+      end repeat
+    end tell
+    repeat with f in paragraphs of files
+      if (f as string) is not "" then
+        tell content of msg to make new attachment with properties {file name:(POSIX file (f as string))} at after last paragraph
+      end if
+    end repeat
+    delay 1
+    send msg
+    return "ok"
+  end tell
+end run
+"#;
+
+/// argv for SEND_SCRIPT.
+pub fn send_args(acc: &Account, o: &keryx_core::changeset::Outgoing) -> Vec<String> {
+    let lines = |v: &[keryx_core::model::Address]| v.iter().map(|a| a.email.clone()).collect::<Vec<_>>().join("\n");
+    vec![
+        acc.mailapp_account_id.clone().unwrap_or_default(),
+        acc.address.clone(),
+        o.in_reply_to.clone().unwrap_or_default(),
+        lines(&o.to),
+        lines(&o.cc),
+        lines(&o.bcc),
+        o.subject.clone(),
+        o.body.clone(),
+        o.attachments
+            .iter()
+            .map(|f| f.path.clone())
+            .collect::<Vec<_>>()
+            .join("\n"),
+    ]
+}
+
+fn osascript(script: &str, args: &[String]) -> Result<String, String> {
+    let out = Command::new("osascript")
+        .arg("-")
+        .args(args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write;
+            if let Some(stdin) = child.stdin.as_mut() {
+                stdin.write_all(script.as_bytes())?;
+            }
+            child.wait_with_output()
+        })
+        .map_err(|e| format!("osascript: {e}"))?;
+    let said = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if said == "ok" {
+        return Ok(said);
+    }
+    let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    Err(match said.as_str() {
+        "notfound" => "Mail can't find the message being replied to".into(),
+        "noaccount" => "Mail doesn't have that account".into(),
+        _ if err.contains("-1743") => {
+            "keryxd isn't allowed to control Mail: System Settings → Privacy & Security → Automation".into()
+        }
+        _ => format!("Mail: {said} {err}"),
+    })
+}
+
 pub struct Real {
     cfg: Config,
 }
@@ -294,6 +407,54 @@ impl Actuator for Real {
         }
     }
 
+    fn send(&mut self, account: &Account, o: &keryx_core::changeset::Outgoing) -> Result<(), String> {
+        match account.backend {
+            Backend::Gmail => {
+                let mut files = Vec::new();
+                for f in &o.attachments {
+                    files.push((
+                        f.name.clone(),
+                        f.mime.clone(),
+                        std::fs::read(&f.path).map_err(|e| format!("{}: {e}", f.name))?,
+                    ));
+                }
+                let raw = keryx_core::outgoing::build(o, crate::now(), &files).map_err(|e| e.to_string())?;
+                let client = keryx_store::keychain::get(crate::gmail_sync::CLIENT_SERVICE)
+                    .map_err(|e| e.to_string())
+                    .and_then(|j| ClientSecret::from_json(&j).map_err(|e| e.to_string()))?;
+                let refresh =
+                    keryx_store::keychain::get(crate::gmail_sync::REFRESH_SERVICE).map_err(|e| e.to_string())?;
+                let http = Http::new().map_err(|e| e.to_string())?;
+                let token = gmail::access_token(&http, &client, &refresh).map_err(|e| e.to_string())?;
+                Client { t: &http, token }
+                    .send(&raw, o.thread_id.as_deref())
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
+            }
+            Backend::Mailapp => {
+                Self::ensure_mail_running()?;
+                osascript(SEND_SCRIPT, &send_args(account, o)).map(|_| ())
+            }
+        }
+    }
+
+    fn unsubscribe(&mut self, url: &str) -> Result<(), String> {
+        let resp = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(15))
+            .build()
+            .map_err(|e| e.to_string())?
+            .post(url)
+            .header("content-type", "application/x-www-form-urlencoded")
+            .body("List-Unsubscribe=One-Click")
+            .send()
+            .map_err(|e| format!("unsubscribe: {e}"))?;
+        if resp.status().is_success() {
+            Ok(())
+        } else {
+            Err(format!("unsubscribe: the sender answered {}", resp.status()))
+        }
+    }
+
     fn resync(&mut self, db: &mut Db, account: &Account) -> Result<(), String> {
         let store = MailStore::open(&self.cfg.paths.mail_dir).map_err(|e| e.to_string())?;
         ingest::mailapp_account(db, &store, account, None)
@@ -412,6 +573,35 @@ mod tests {
         // Flags are set where the message is found (INBOX if it's there).
         assert_eq!(current_box(a, &mb(all, &["INBOX"])), "INBOX");
         assert_eq!(current_box(a, &mb(all, &[])), all);
+    }
+
+    #[test]
+    fn send_argv() {
+        let c = cfg();
+        let a = c.account("oxford").unwrap();
+        let o = keryx_core::changeset::Outgoing {
+            account: "oxford".into(),
+            thread_id: Some("9".into()),
+            from: keryx_core::model::Address::new(None, "newc7370@ox.ac.uk"),
+            to: vec![
+                keryx_core::model::Address::new(Some("Jane"), "jane@example.com"),
+                keryx_core::model::Address::new(None, "sam@example.com"),
+            ],
+            cc: vec![],
+            bcc: vec![],
+            subject: "Re: x".into(),
+            body: "hi \" & quit".into(),
+            in_reply_to: Some("thread-a@example.com".into()),
+            references: vec![],
+            message_id: "m@ox.ac.uk".into(),
+            attachments: vec![],
+        };
+        let args = send_args(a, &o);
+        assert_eq!(args.len(), 9);
+        assert_eq!(args[2], "thread-a@example.com");
+        assert_eq!(args[3], "jane@example.com\nsam@example.com");
+        assert_eq!(args[7], "hi \" & quit", "body is data");
+        assert!(!SEND_SCRIPT.contains("quit"));
     }
 
     #[test]

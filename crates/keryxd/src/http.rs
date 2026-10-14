@@ -106,7 +106,16 @@ pub fn router(st: AppState, mcp: Option<Router<AppState>>) -> Router {
         .route("/api/proposals/{id}/decide", post(decide))
         .route("/api/tags", post(tag))
         .route("/api/tags/{thread}", axum::routing::delete(untag))
-        .route("/api/feedback", get(feedback));
+        .route("/api/feedback", get(feedback))
+        .route("/api/send", post(send))
+        .route("/api/drafts/reply", post(draft_reply))
+        .route("/api/drafts/email", post(draft_email))
+        .route("/api/holding", get(holding))
+        .route("/api/changesets/{id}/approve", post(approve))
+        .route("/api/changesets/{id}/reject", post(reject))
+        .route("/api/changesets/{id}/cancel", post(cancel))
+        .route("/api/changesets/{id}/replace", post(replace))
+        .route("/api/unsubscribe", post(unsubscribe));
     let api = match mcp {
         Some(m) => api.merge(m),
         None => api,
@@ -277,6 +286,62 @@ async fn feedback(State(st): State<AppState>, Query(q): Query<FeedbackQ>) -> HRe
         })
         .await?,
     ))
+}
+
+type Cs = keryx_core::changeset::Changeset;
+
+async fn send(State(st): State<AppState>, h: HeaderMap, Json(r): Json<SendReq>) -> HResult<Cs> {
+    let w = who(&h);
+    Ok(Json(with_engine(&st, move |e| e.send(&r, w)).await?))
+}
+
+async fn draft_reply(State(st): State<AppState>, h: HeaderMap, Json(r): Json<DraftReplyReq>) -> HResult<Cs> {
+    let w = who(&h);
+    Ok(Json(with_engine(&st, move |e| e.draft_reply(&r, w)).await?))
+}
+
+async fn draft_email(State(st): State<AppState>, h: HeaderMap, Json(r): Json<DraftEmailReq>) -> HResult<Cs> {
+    let w = who(&h);
+    Ok(Json(with_engine(&st, move |e| e.draft_email(&r, w)).await?))
+}
+
+async fn holding(State(st): State<AppState>) -> HResult<Option<Cs>> {
+    Ok(Json(with_engine(&st, |e| e.holding()).await?))
+}
+
+async fn approve(State(st): State<AppState>, h: HeaderMap, Path(id): Path<String>) -> HResult<Cs> {
+    let w = who(&h);
+    Ok(Json(with_engine(&st, move |e| e.approve(&id, w)).await?))
+}
+
+async fn reject(State(st): State<AppState>, h: HeaderMap, Path(id): Path<String>) -> HResult<Cs> {
+    let w = who(&h);
+    Ok(Json(with_engine(&st, move |e| e.reject(&id, w)).await?))
+}
+
+async fn cancel(State(st): State<AppState>, h: HeaderMap, Path(id): Path<String>) -> HResult<Cs> {
+    let w = who(&h);
+    Ok(Json(with_engine(&st, move |e| e.cancel(&id, w)).await?))
+}
+
+async fn replace(
+    State(st): State<AppState>,
+    h: HeaderMap,
+    Path(id): Path<String>,
+    Json(r): Json<SendReq>,
+) -> HResult<Cs> {
+    let w = who(&h);
+    Ok(Json(with_engine(&st, move |e| e.replace(&id, &r, w)).await?))
+}
+
+#[derive(Deserialize)]
+struct UnsubReq {
+    r#ref: String,
+}
+
+async fn unsubscribe(State(st): State<AppState>, h: HeaderMap, Json(r): Json<UnsubReq>) -> HResult<UnsubscribeOutcome> {
+    let w = who(&h);
+    Ok(Json(with_engine(&st, move |e| e.unsubscribe(&r.r#ref, w)).await?))
 }
 
 #[cfg(test)]

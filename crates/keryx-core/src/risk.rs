@@ -42,6 +42,8 @@ pub struct Facts {
     pub live: bool,
     pub batch_threshold: u32,
     pub threads: Vec<ThreadFacts>,
+    /// Send: every recipient is one of Alec's own addresses.
+    pub recipients_own: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -70,11 +72,14 @@ pub fn is_direct(author: Author, interactive: bool) -> bool {
 
 pub fn assess(f: &Facts) -> Assessment {
     // ---- forbidden: for everyone ----
+    if f.kind == Kind::Send && !f.live && !f.recipients_own {
+        return Assessment::Forbidden("live = false: keryx only sends to your own addresses".into());
+    }
     for t in &f.threads {
         if !t.account_writable {
             return Assessment::Forbidden(format!("{} is read-only in keryx (writable = false)", t.account));
         }
-        if !f.live && !t.test_message {
+        if !f.live && !t.test_message && f.kind != Kind::Send {
             return Assessment::Forbidden(format!(
                 "live = false: keryx only changes messages whose subject starts with {TEST_PREFIX}"
             ));
@@ -162,6 +167,7 @@ mod tests {
             live: true,
             batch_threshold: 100,
             threads,
+            recipients_own: false,
         }
     }
 
@@ -254,6 +260,17 @@ mod tests {
             assert!(matches!(assess(&f), Assessment::Forbidden(m) if m.contains(TEST_PREFIX)));
             f.threads[0].test_message = true;
             assert_ne!(assess(&f), Assessment::Forbidden(String::new()));
+            assert!(!matches!(assess(&f), Assessment::Forbidden(_)), "{author:?}");
+        }
+    }
+
+    #[test]
+    fn live_false_sends_only_to_alec() {
+        for (author, interactive) in AUTHORS {
+            let mut f = facts(author, interactive, Kind::Send, vec![]);
+            f.live = false;
+            assert!(matches!(assess(&f), Assessment::Forbidden(m) if m.contains("own addresses")));
+            f.recipients_own = true;
             assert!(!matches!(assess(&f), Assessment::Forbidden(_)), "{author:?}");
         }
     }

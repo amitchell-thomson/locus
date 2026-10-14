@@ -534,6 +534,8 @@ mod tests {
             review_id: None,
             undoes: None,
             error: None,
+            hold_until: None,
+            warnings: vec![],
         };
         db.save_changeset(&cs).unwrap();
         cs.status = Status::Undone;

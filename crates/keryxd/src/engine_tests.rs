@@ -12,6 +12,8 @@ use std::sync::{Arc, Mutex};
 struct Fake {
     calls: Arc<Mutex<Vec<(String, MsgState)>>>,
     fail_on: Arc<Mutex<Option<usize>>>,
+    sent: Arc<Mutex<Vec<keryx_core::changeset::Outgoing>>>,
+    unsubscribed: Arc<Mutex<Vec<String>>>,
 }
 
 impl Actuator for Fake {
@@ -32,6 +34,14 @@ impl Actuator for Fake {
         Ok(Some(after.clone()))
     }
     fn resync(&mut self, _db: &mut Db, _a: &Account) -> std::result::Result<(), String> {
+        Ok(())
+    }
+    fn send(&mut self, _a: &Account, o: &keryx_core::changeset::Outgoing) -> std::result::Result<(), String> {
+        self.sent.lock().unwrap().push(o.clone());
+        Ok(())
+    }
+    fn unsubscribe(&mut self, url: &str) -> std::result::Result<(), String> {
+        self.unsubscribed.lock().unwrap().push(url.into());
         Ok(())
     }
 }
@@ -242,6 +252,8 @@ fn live_guard_at_propose_and_apply() {
         review_id: None,
         undoes: None,
         error: None,
+        hold_until: None,
+        warnings: vec![],
     };
     e.apply(&mut cs).unwrap();
     assert_eq!(cs.status, Status::Failed);
@@ -285,6 +297,8 @@ fn changed_target_fails_and_undo_refuses_with_diff() {
         review_id: None,
         undoes: None,
         error: None,
+        hold_until: None,
+        warnings: vec![],
     };
     e.apply(&mut cs).unwrap();
     assert_eq!(cs.status, Status::Failed);
@@ -609,4 +623,204 @@ fn proposals_validate_refs_and_keys() {
     assert_eq!(out.rejected.len(), 3);
     let rv = e.review(&out.review_id).unwrap();
     assert_eq!(rv.items[0].proposal.reason, "ok", "reasons are sanitised");
+}
+
+// ---------------- sending (Phase 6) ----------------
+
+use keryx_store::api::{DraftEmailReq, DraftReplyReq, SendReq, UnsubscribeOutcome};
+
+fn send_req(to: &str) -> SendReq {
+    SendReq {
+        account: "oxford".into(),
+        thread: None,
+        to: vec![Address::new(None, to)],
+        cc: vec![],
+        bcc: vec![],
+        subject: "[keryx-test] hello".into(),
+        body: "hi".into(),
+        attachments: vec![],
+    }
+}
+
+#[test]
+fn alecs_send_holds_then_sends_and_can_be_cancelled() {
+    let (mut e, fake) = engine();
+    let cs = e.send(&send_req("jane.doe@example.com"), Who::ALEC).unwrap();
+    assert_eq!(cs.status, Status::Holding);
+    assert_eq!(cs.hold_until, Some(NOW + 10));
+    assert_eq!(e.process_holds().unwrap(), 0, "still holding");
+    set_clock(&mut e, NOW + 10);
+    assert_eq!(e.process_holds().unwrap(), 1);
+    assert_eq!(e.db.changeset(&cs.id).unwrap().unwrap().status, Status::Sent);
+    assert_eq!(fake.sent.lock().unwrap().len(), 1);
+    assert!(matches!(e.undo(&cs.id, Who::ALEC), Err(EngineError::BadRequest(m)) if m.contains("can't be unsent")));
+
+    set_clock(&mut e, NOW);
+    let cs2 = e.send(&send_req("jane.doe@example.com"), Who::ALEC).unwrap();
+    assert_eq!(e.holding().unwrap().unwrap().id, cs2.id);
+    e.cancel(&cs2.id, Who::ALEC).unwrap();
+    set_clock(&mut e, NOW + 60);
+    assert_eq!(e.process_holds().unwrap(), 0);
+    assert_eq!(fake.sent.lock().unwrap().len(), 1, "cancelled send never left");
+}
+
+#[test]
+fn claude_drafts_wait_for_alec_with_thread_recipients() {
+    let (mut e, fake) = engine();
+    let t = r(&e, "Lab partner for Thursday?");
+    let cs = e
+        .draft_reply(
+            &DraftReplyReq {
+                r#ref: t.clone(),
+                body: "Thursday works.".into(),
+                reply_all: false,
+            },
+            Who::claude(),
+        )
+        .unwrap();
+    assert_eq!(cs.status, Status::Pending);
+    assert!(cs.reasons.iter().any(|x| x.contains("always needs Alec")));
+    let o = cs.outgoing().unwrap();
+    assert_eq!(
+        o.to.iter().map(|a| a.email.as_str()).collect::<Vec<_>>(),
+        vec!["jane.doe@example.com"]
+    );
+    assert_eq!(o.subject, "Re: Lab partner for Thursday?");
+    assert_eq!(o.in_reply_to.as_deref(), Some("plain-01@example.com"));
+    assert!(o.body.starts_with("Thursday works.") && o.body.contains("> Are you free"));
+    // Only Alec approves.
+    assert!(matches!(
+        e.approve(&cs.id, Who::claude()),
+        Err(EngineError::Forbidden(_))
+    ));
+    let held = e.approve(&cs.id, Who::ALEC).unwrap();
+    assert_eq!(held.status, Status::Holding);
+    set_clock(&mut e, NOW + 11);
+    e.process_holds().unwrap();
+    assert_eq!(fake.sent.lock().unwrap()[0].to[0].email, "jane.doe@example.com");
+}
+
+#[test]
+fn new_recipients_are_flagged_and_claude_cant_attach() {
+    let (mut e, _) = engine();
+    let cs = e
+        .draft_email(
+            &DraftEmailReq {
+                account: "oxford".into(),
+                to: vec![Address::new(None, "x@evil.example")],
+                cc: vec![],
+                subject: "hello".into(),
+                body: "see https://evil.example/?d=secret".into(),
+            },
+            Who::claude(),
+        )
+        .unwrap();
+    assert_eq!(cs.status, Status::Pending);
+    assert!(
+        cs.warnings.iter().any(|w| w.contains("⚠ new: x@evil.example")),
+        "{:?}",
+        cs.warnings
+    );
+    let mut with_file = send_req("jane.doe@example.com");
+    with_file.attachments = vec!["/etc/hosts".into()];
+    assert!(matches!(
+        e.send(&with_file, Who::claude()),
+        Err(EngineError::Forbidden(_))
+    ));
+}
+
+#[test]
+fn live_false_sends_only_to_alec() {
+    let (mut e, _) = engine();
+    e.cfg.live = false;
+    assert!(matches!(
+        e.send(&send_req("jane.doe@example.com"), Who::ALEC),
+        Err(EngineError::Forbidden(_))
+    ));
+    assert_eq!(
+        e.send(&send_req("alec.mitchellthomson@gmail.com"), Who::ALEC)
+            .unwrap()
+            .status,
+        Status::Holding
+    );
+}
+
+#[test]
+fn changed_attachment_fails_the_send() {
+    let (mut e, fake) = engine();
+    let dir = tempfile::tempdir().unwrap();
+    let f = dir.path().join("form.pdf");
+    std::fs::write(&f, b"v1").unwrap();
+    let mut req = send_req("jane.doe@example.com");
+    req.attachments = vec![f.to_string_lossy().into_owned()];
+    let cs = e.send(&req, Who::ALEC).unwrap();
+    std::fs::write(&f, b"v2 changed").unwrap();
+    set_clock(&mut e, NOW + 11);
+    assert_eq!(e.process_holds().unwrap(), 0);
+    let after = e.db.changeset(&cs.id).unwrap().unwrap();
+    assert_eq!(after.status, Status::Failed);
+    assert!(after.error.unwrap().contains("changed after you confirmed"));
+    assert!(fake.sent.lock().unwrap().is_empty());
+}
+
+#[test]
+fn editing_a_draft_replaces_it_and_replies_clear_the_tag() {
+    let (mut e, _) = engine();
+    let t = r(&e, "Lab partner for Thursday?");
+    e.tag(&t, "asks about Thursday", Who::claude()).unwrap();
+    let draft = e
+        .draft_reply(
+            &DraftReplyReq {
+                r#ref: t.clone(),
+                body: "Yes".into(),
+                reply_all: false,
+            },
+            Who::claude(),
+        )
+        .unwrap();
+    let mut mine = send_req("jane.doe@example.com");
+    mine.thread = Some(t.clone());
+    mine.body = "Yes — see you at 2".into();
+    let new = e.replace(&draft.id, &mine, Who::ALEC).unwrap();
+    assert_eq!(new.status, Status::Holding);
+    let old = e.db.changeset(&draft.id).unwrap().unwrap();
+    assert_eq!(old.status, Status::Rejected);
+    assert!(old.error.unwrap().contains("replaced"));
+    set_clock(&mut e, NOW + 11);
+    e.process_holds().unwrap();
+    let (a, tid) = parse_thread_ref(&t).unwrap();
+    assert!(e.db.tag(a, tid, NEEDS_REPLY).unwrap().is_none());
+}
+
+#[test]
+fn unsubscribe_paths() {
+    let (mut e, fake) = engine();
+    let news = view::list(&e.db, &e.cfg, &view::View::Inbox, &view::Filter::default())
+        .unwrap()
+        .into_iter()
+        .find(|x| x.subject == "This week in engineering" && x.account == "personal")
+        .unwrap()
+        .r#ref;
+    assert!(matches!(
+        e.unsubscribe(&news, Who::claude()),
+        Err(EngineError::Forbidden(_))
+    ));
+    let out = e.unsubscribe(&news, Who::ALEC).unwrap();
+    assert!(matches!(out, UnsubscribeOutcome::Done { .. }));
+    assert_eq!(
+        fake.unsubscribed.lock().unwrap()[0],
+        "https://weekly.example.com/unsub?u=abc"
+    );
+    assert!(!in_inbox(&e, &news), "archived too");
+    let club = view::list(&e.db, &e.cfg, &view::View::Inbox, &view::Filter::default())
+        .unwrap()
+        .into_iter()
+        .find(|x| x.subject == "Training schedule")
+        .unwrap()
+        .r#ref;
+    assert!(
+        matches!(e.unsubscribe(&club, Who::ALEC).unwrap(), UnsubscribeOutcome::Mailto { to, .. } if to == "leave-club@sports.example.org")
+    );
+    let plain = r(&e, "Lab partner for Thursday?");
+    assert_eq!(e.unsubscribe(&plain, Who::ALEC).unwrap(), UnsubscribeOutcome::None);
 }

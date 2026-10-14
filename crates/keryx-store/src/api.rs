@@ -139,3 +139,62 @@ pub struct Feedback {
     pub decision: String,
     pub instead: Option<String>,
 }
+
+/// A message Alec (or a script) asks keryxd to send.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SendReq {
+    pub account: String,
+    /// Replying in this thread (`account:thread`): threading headers come from it.
+    #[serde(default)]
+    pub thread: Option<String>,
+    pub to: Vec<keryx_core::model::Address>,
+    #[serde(default)]
+    pub cc: Vec<keryx_core::model::Address>,
+    #[serde(default)]
+    pub bcc: Vec<keryx_core::model::Address>,
+    pub subject: String,
+    pub body: String,
+    /// Local file paths (Alec only; Claude's drafts can't attach).
+    #[serde(default)]
+    pub attachments: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DraftReplyReq {
+    pub r#ref: String,
+    pub body: String,
+    #[serde(default)]
+    pub reply_all: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DraftEmailReq {
+    pub account: String,
+    pub to: Vec<keryx_core::model::Address>,
+    #[serde(default)]
+    pub cc: Vec<keryx_core::model::Address>,
+    pub subject: String,
+    pub body: String,
+}
+
+/// What `L` (unsubscribe) does for a thread.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum UnsubscribeOutcome {
+    /// One-click done (and the thread archived).
+    Done {
+        changeset: Changeset,
+    },
+    /// Send this email (through the normal confirm) to unsubscribe.
+    Mailto {
+        account: String,
+        to: String,
+        subject: String,
+        body: String,
+    },
+    /// Only a web page: keryx never visits it.
+    Link {
+        url: String,
+    },
+    None,
+}

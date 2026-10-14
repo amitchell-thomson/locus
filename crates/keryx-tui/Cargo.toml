@@ -16,10 +16,10 @@ chrono-tz.workspace = true
 crossterm = "0.29"
 ratatui = "0.30"
 unicode-width.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
-serde_json.workspace = true
 keryx-store = { workspace = true, features = ["testkit"] }
 
 [lints]

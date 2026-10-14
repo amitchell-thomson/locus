@@ -1,6 +1,6 @@
 ---
 name: keryx
-description: Work with Alec's email through the keryx MCP server (four accounts: Personal Gmail, Oxford, OQTS, OQTS shared). Use for inbox cleanups, archiving newsletters, summarising unread mail, finding what needs a reply, snoozing, filing into keys, and explaining what's waiting for Alec's review.
+description: Work with Alec's email through the keryx MCP server (four accounts: Personal Gmail, Oxford, OQTS, OQTS shared). Use for inbox cleanups, archiving newsletters, summarising unread mail, finding what needs a reply, drafting replies, suggesting kairos tasks from deadlines in mail, snoozing, filing into keys, and explaining what's waiting for Alec's review.
 ---
 
 # keryx
@@ -13,3 +13,5 @@ Read `docs/claude-usage.md` in the keryx repo for the full tool list. The essent
 4. **Cleanups:** `inbox_policy` + `cleanup_feedback` first; read in pages (`list_inbox`, `read_threads` compact); propose with `propose_cleanup` (≤ 100 per call, keep the `review_id`), one-line reason each; archive only, nothing is deleted; flagged threads are kept.
 5. Batch: one `archive` / `file` / `propose_cleanup` call for many threads, never one call per thread.
 6. Every change can be undone: `list_changesets`, `undo`.
+7. **kairos:** you only *suggest* (`suggest_task` / `suggest_event`, one-line reason); Alec accepts with `y` in keryx, which opens the form prefilled. Never write to kairos yourself because of an email. Dismissed suggestions are final.
+8. **Drafts** (`draft_reply`, `draft_email`) always wait for Alec's approval; say so.

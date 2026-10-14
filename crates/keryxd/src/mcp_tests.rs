@@ -187,6 +187,9 @@ async fn tools_and_no_dangerous_ones() {
         "undo",
         "draft_reply",
         "draft_email",
+        "suggest_task",
+        "suggest_event",
+        "list_suggestions",
     ];
     want.sort();
     assert_eq!(names, want);
@@ -199,6 +202,10 @@ async fn tools_and_no_dangerous_ones() {
         "delete",
         "unsubscribe",
         "trash",
+        "kairos",
+        "create_task",
+        "create_event",
+        "free",
     ] {
         assert!(!names.iter().any(|n| n.contains(bad)), "{bad}");
     }
@@ -405,4 +412,67 @@ async fn drafts_wait_and_ignore_recipient_input() {
             .unwrap()
             .is_empty()
     );
+}
+
+/// Records any call to kairos (no MCP tool may make one).
+struct Watch(Arc<Mutex<Vec<String>>>);
+impl keryx_store::kairos::Kairos for Watch {
+    fn create_task(&self, _: &Value, _: keryx_store::kairos::As) -> keryx_store::kairos::Result<Value> {
+        self.0.lock().unwrap().push("create_task".into());
+        Ok(json!({"task": {"id": "t"}}))
+    }
+    fn create_event(&self, _: &Value, _: keryx_store::kairos::As) -> keryx_store::kairos::Result<Value> {
+        self.0.lock().unwrap().push("create_event".into());
+        Ok(json!({"changeset_id": "c"}))
+    }
+    fn task(&self, _: &str) -> keryx_store::kairos::Result<Option<Value>> {
+        self.0.lock().unwrap().push("task".into());
+        Ok(None)
+    }
+    fn free(&self, _: &str, _: &str, _: u32) -> keryx_store::kairos::Result<Vec<keryx_core::freetime::Slot>> {
+        self.0.lock().unwrap().push("free".into());
+        Ok(vec![])
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn no_tool_reaches_kairos_and_suggestions_wait_for_alec() {
+    let st = state();
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    st.engine.lock().unwrap().kairos = Some(Box::new(Watch(calls.clone())));
+    let r = find_ref(&st, "Lab partner for Thursday?");
+    let (base, _h, _) = start(st.clone()).await;
+    initialize(&base).await;
+    let (out, err) = call(
+        &base,
+        "suggest_task",
+        json!({"ref": r, "title": "Part two of the project", "kind": "coursework", "estimate_min": 240,
+               "due": "2026-10-23T17:00", "reason": "Jane asked who takes part two"}),
+    )
+    .await;
+    assert!(!err, "{out}");
+    let (_, v) = unwrap_env(&out);
+    assert_eq!(v["status"], "open");
+    // A second task suggestion for the same thread is refused while one is open.
+    let (out, err) = call(&base, "suggest_task", json!({"ref": r, "title": "x", "reason": "y"})).await;
+    assert!(err && out.contains("already"), "{out}");
+    // Every tool, called with a superset of plausible arguments: kairos is never contacted.
+    let tools = rpc(&base, 3, "tools/list", json!({})).await;
+    let args = json!({
+        "ref": r, "refs": [r], "query": "project", "title": "t", "reason": "r", "body": "b",
+        "account": "oxford", "to": ["newc7370@ox.ac.uk"], "subject": "[keryx-test] s",
+        "start": "2026-10-20T10:00", "key": "Admin", "until": "tomorrow 9", "flagged": true,
+        "read": true, "id": "cs-none", "items": [], "attachment_id": "0", "kind": "admin", "status": "open",
+    });
+    for t in tools["result"]["tools"].as_array().unwrap() {
+        let name = t["name"].as_str().unwrap();
+        if name == "undo" {
+            continue;
+        }
+        let _ = call(&base, name, args.clone()).await;
+    }
+    assert!(calls.lock().unwrap().is_empty(), "{:?}", calls.lock().unwrap());
+    let open = st.engine.lock().unwrap().db.suggestions(Some("open"), None).unwrap();
+    assert_eq!(open.len(), 2, "one task + one event suggestion from the sweep");
+    assert!(open.iter().all(|s| s.author == "claude"));
 }

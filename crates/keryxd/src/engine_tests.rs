@@ -824,3 +824,300 @@ fn unsubscribe_paths() {
     let plain = r(&e, "Lab partner for Thursday?");
     assert_eq!(e.unsubscribe(&plain, Who::ALEC).unwrap(), UnsubscribeOutcome::None);
 }
+
+// ---- kairos link (SPEC §9, Phase 7 AC) ----
+
+use keryx_store::api::{FreeReq, KairosEventReq, KairosTaskReq, SuggestEventReq, SuggestTaskReq};
+use keryx_store::kairos::{As, Kairos, KairosError};
+use serde_json::{Value, json};
+
+#[derive(Clone, Default)]
+struct MockKairos {
+    calls: Arc<Mutex<Vec<(String, Value, As)>>>,
+    down: Arc<Mutex<bool>>,
+}
+
+impl MockKairos {
+    fn check(&self) -> keryx_store::kairos::Result<()> {
+        if *self.down.lock().unwrap() {
+            return Err(KairosError::Unreachable {
+                url: "http://compute-node:7420".into(),
+                msg: "connection refused".into(),
+            });
+        }
+        Ok(())
+    }
+}
+
+impl Kairos for MockKairos {
+    fn create_task(&self, req: &Value, who: As) -> keryx_store::kairos::Result<Value> {
+        self.check()?;
+        self.calls.lock().unwrap().push(("task".into(), req.clone(), who));
+        Ok(json!({
+            "task": {"id": "t-42", "title": req["title"], "status": "open"},
+            "plan": {"created": [{}, {}, {}], "shortfalls": [{"message": "1 h short before Fri 17:00"}], "squeezed": []}
+        }))
+    }
+    fn create_event(&self, req: &Value, who: As) -> keryx_store::kairos::Result<Value> {
+        self.check()?;
+        self.calls.lock().unwrap().push(("event".into(), req.clone(), who));
+        Ok(json!({"changeset_id": "kcs-1", "risk": "low", "status": "applied", "summary": "event"}))
+    }
+    fn task(&self, id: &str) -> keryx_store::kairos::Result<Option<Value>> {
+        self.check()?;
+        Ok((id == "t-42").then(|| json!({"id": "t-42", "title": "Lab", "status": "done", "remaining_min": 0})))
+    }
+    fn free(&self, _: &str, _: &str, _: u32) -> keryx_store::kairos::Result<Vec<keryx_core::freetime::Slot>> {
+        self.check()?;
+        let at = |d: i64, h: i64| NOW + d * 86_400 + h * 3600;
+        Ok(vec![
+            keryx_core::freetime::Slot {
+                start: at(1, 0),
+                end: at(1, 1),
+            },
+            keryx_core::freetime::Slot {
+                start: at(1, 1),
+                end: at(1, 2),
+            },
+            keryx_core::freetime::Slot {
+                start: at(1, 2),
+                end: at(1, 3),
+            },
+            keryx_core::freetime::Slot {
+                start: at(2, -4),
+                end: at(2, -3),
+            },
+        ])
+    }
+}
+
+fn with_kairos() -> (Engine, MockKairos) {
+    let (mut e, _) = engine();
+    let k = MockKairos::default();
+    e.kairos = Some(Box::new(k.clone()));
+    (e, k)
+}
+
+fn task_req(rf: &str) -> KairosTaskReq {
+    KairosTaskReq {
+        r#ref: rf.into(),
+        title: "Find a lab partner".into(),
+        due: Some("fri 17:00".into()),
+        estimate_min: Some(30),
+        kind: Some("admin".into()),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn kairos_task_as_alec_with_link_in_notes() {
+    let (mut e, k) = with_kairos();
+    let t = r(&e, "Lab partner for Thursday?");
+    let out = e.kairos_task(&task_req(&t), Who::ALEC).unwrap();
+    let calls = k.calls.lock().unwrap().clone();
+    assert_eq!(calls.len(), 1);
+    let (_, body, who) = &calls[0];
+    assert_eq!(*who, As::Alec);
+    let (a, tid) = parse_thread_ref(&t).unwrap();
+    let notes = body["notes"].as_str().unwrap();
+    assert!(notes.contains(&format!("keryx://thread/{a}/{tid}")), "{notes}");
+    assert!(notes.contains("Lab partner for Thursday?"), "{notes}");
+    assert_eq!(body["due"], "fri 17:00");
+    assert_eq!(body["kind"], "admin");
+    assert_eq!(body["estimate_min"], 30);
+    assert_eq!(body["key"], "Personal", "unfiled thread → Personal");
+    assert_eq!(out.link.target, "t-42");
+    assert_eq!(out.link.kind, "deadline");
+    assert_eq!(out.summary, "kairos task: Find a lab partner · 3 blocks planned");
+    assert_eq!(out.notes, vec!["1 h short before Fri 17:00"]);
+    assert_eq!(e.db.links(a, tid).unwrap().len(), 1);
+    // Live status for the thread view.
+    assert_eq!(e.kairos_task_status("t-42").unwrap().unwrap().status, "done");
+    assert!(e.kairos_task_status("gone").unwrap().is_none());
+}
+
+#[test]
+fn kairos_key_follows_the_threads_key() {
+    let (mut e, k) = with_kairos();
+    let t = r(&e, "Lab partner for Thursday?");
+    e.triage(req(Intent::File { key: "Careers".into() }, vec![t.clone()]), Who::ALEC)
+        .unwrap();
+    e.kairos_task(&task_req(&t), Who::ALEC).unwrap();
+    assert_eq!(k.calls.lock().unwrap()[0].1["key"], "Careers");
+    // An explicit key wins.
+    let mut rq = task_req(&t);
+    rq.key = Some("Sport".into());
+    e.kairos_task(&rq, Who::ALEC).unwrap();
+    assert_eq!(k.calls.lock().unwrap()[1].1["key"], "Sport");
+}
+
+#[test]
+fn kairos_author_rules() {
+    let (mut e, k) = with_kairos();
+    let t = r(&e, "Lab partner for Thursday?");
+    // A script (CLI without a TTY) is a script to kairos too.
+    let script = Who {
+        author: Author::Script,
+        interactive: false,
+    };
+    e.kairos_task(&task_req(&t), script).unwrap();
+    assert_eq!(k.calls.lock().unwrap()[0].2, As::Script);
+    // Claude never writes to kairos through keryx.
+    let err = e.kairos_task(&task_req(&t), Who::CLAUDE).unwrap_err();
+    assert!(matches!(err, EngineError::Forbidden(m) if m.contains("suggest_task")));
+    let ev = KairosEventReq {
+        r#ref: t.clone(),
+        title: "x".into(),
+        start: "2026-10-20T10:00".into(),
+        ..Default::default()
+    };
+    assert!(matches!(
+        e.kairos_event(&ev, Who::CLAUDE),
+        Err(EngineError::Forbidden(_))
+    ));
+    assert_eq!(k.calls.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn kairos_down_is_a_clear_error_and_no_link() {
+    let (mut e, k) = with_kairos();
+    *k.down.lock().unwrap() = true;
+    let t = r(&e, "Lab partner for Thursday?");
+    let err = e.kairos_task(&task_req(&t), Who::ALEC).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "kairos isn't reachable at compute-node:7420: task not created"
+    );
+    let (a, tid) = parse_thread_ref(&t).unwrap();
+    assert!(e.db.links(a, tid).unwrap().is_empty());
+}
+
+#[test]
+fn kairos_respects_live_false() {
+    let (mut e, k) = with_kairos();
+    e.cfg.live = false;
+    let t = r(&e, "Lab partner for Thursday?");
+    assert!(
+        matches!(e.kairos_task(&task_req(&t), Who::ALEC), Err(EngineError::Forbidden(m)) if m.contains("[keryx-test]"))
+    );
+    assert!(k.calls.lock().unwrap().is_empty());
+    let test = add(&e, "personal", 901, "jane@example.com", false);
+    e.db.conn()
+        .execute(
+            "UPDATE messages SET subject = '[keryx-test] task me' WHERE source_id = 'syn901'",
+            [],
+        )
+        .unwrap();
+    e.kairos_task(&task_req(&test), Who::ALEC).unwrap();
+}
+
+#[test]
+fn kairos_event_from_an_invite() {
+    let (mut e, k) = with_kairos();
+    let t = r(&e, "Lab partner for Thursday?");
+    let out = e
+        .kairos_event(
+            &KairosEventReq {
+                r#ref: t.clone(),
+                title: "Design review".into(),
+                start: "2026-10-20T14:00:00+01:00".into(),
+                end: Some("2026-10-20T15:00:00+01:00".into()),
+                location: Some("LR6".into()),
+                ..Default::default()
+            },
+            Who::ALEC,
+        )
+        .unwrap();
+    let (_, body, who) = k.calls.lock().unwrap()[0].clone();
+    assert_eq!(who, As::Alec);
+    assert_eq!(body["start"], "2026-10-20T14:00:00+01:00");
+    assert_eq!(body["end"], "2026-10-20T15:00:00+01:00");
+    assert_eq!(body["location"], "LR6");
+    assert!(body["description"].as_str().unwrap().contains("keryx://thread/"));
+    assert_eq!(out.link.kind, "event");
+    assert_eq!(out.link.target, "kcs-1");
+}
+
+#[test]
+fn suggestions_accept_dismiss_and_never_again() {
+    let (mut e, k) = with_kairos();
+    let t = r(&e, "Lab partner for Thursday?");
+    let sg = e
+        .suggest_task(
+            &SuggestTaskReq {
+                r#ref: t.clone(),
+                title: "Reply about lab\u{1b}[31m partner".into(),
+                due: Some("thu 9:00".into()),
+                reason: "Jane needs an answer before Thursday".into(),
+                ..Default::default()
+            },
+            Who::CLAUDE,
+        )
+        .unwrap();
+    // Suggesting writes nothing to kairos, and terminal escapes are gone.
+    assert!(k.calls.lock().unwrap().is_empty());
+    assert!(!sg.proposal["title"].as_str().unwrap().contains('\u{1b}'));
+    // Claude can't dismiss; Alec can. A dismissed idea isn't re-suggested.
+    assert!(matches!(
+        e.dismiss_suggestion(&sg.id, Who::CLAUDE),
+        Err(EngineError::Forbidden(_))
+    ));
+    e.dismiss_suggestion(&sg.id, Who::ALEC).unwrap();
+    let again = e.suggest_task(
+        &SuggestTaskReq {
+            r#ref: t.clone(),
+            title: "Reply about lab partner".into(),
+            reason: "still".into(),
+            ..Default::default()
+        },
+        Who::CLAUDE,
+    );
+    assert!(matches!(again, Err(EngineError::Forbidden(m)) if m.contains("dismissed")));
+    // An event suggestion is a different kind: allowed, then accepted by saving the form.
+    let ev = e
+        .suggest_event(
+            &SuggestEventReq {
+                r#ref: t.clone(),
+                title: "Lab".into(),
+                start: "2026-10-15T09:00".into(),
+                reason: "lab session".into(),
+                ..Default::default()
+            },
+            Who::CLAUDE,
+        )
+        .unwrap();
+    e.kairos_event(
+        &KairosEventReq {
+            r#ref: t.clone(),
+            title: "Lab".into(),
+            start: "2026-10-15T09:00".into(),
+            suggestion: Some(ev.id.clone()),
+            ..Default::default()
+        },
+        Who::ALEC,
+    )
+    .unwrap();
+    let all = e.db.suggestions(None, None).unwrap();
+    assert_eq!(all.iter().find(|s| s.id == ev.id).unwrap().status, "accepted");
+    assert_eq!(all.iter().find(|s| s.id == sg.id).unwrap().status, "dismissed");
+    // A suggestion from another thread can't be accepted here.
+    let other = r(&e, "Café on Sunday");
+    let mut rq = task_req(&other);
+    rq.suggestion = Some(ev.id);
+    assert!(matches!(e.kairos_task(&rq, Who::ALEC), Err(EngineError::NotFound(_))));
+}
+
+#[test]
+fn free_times_spread_across_days() {
+    let (e, _) = with_kairos();
+    let out = e
+        .kairos_free(&FreeReq {
+            from: "2026-10-15".into(),
+            to: "2026-10-17".into(),
+            duration_min: 60,
+            count: 2,
+        })
+        .unwrap();
+    // Three slots on Thursday afternoon and one on Friday morning: one from each day.
+    assert_eq!(out.text, "Thu 15 Oct 15:00–16:00\nFri 16 Oct 11:00–12:00");
+}

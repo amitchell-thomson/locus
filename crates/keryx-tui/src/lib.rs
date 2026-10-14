@@ -2,9 +2,12 @@
 //! without keryxd); writes will go to keryxd (Phase 4).
 
 pub mod app;
+pub mod form;
+mod kairos;
 pub mod send;
 pub mod theme;
 pub mod ui;
+mod ui_kairos;
 mod ui_send;
 mod ui_write;
 pub mod write;
@@ -63,6 +66,8 @@ fn map_key(k: event::KeyEvent) -> Option<Key> {
         KeyCode::BackTab => Key::BackTab,
         KeyCode::Backspace => Key::Backspace,
         KeyCode::Up => Key::Up,
+        KeyCode::Left => Key::Left,
+        KeyCode::Right => Key::Right,
         KeyCode::Down => Key::Down,
         KeyCode::PageUp => Key::PageUp,
         KeyCode::PageDown => Key::PageDown,
@@ -91,6 +96,11 @@ fn db_stamp(cfg: &Config) -> Option<SystemTime> {
 }
 
 pub fn run(cfg: Config) -> Result<(), String> {
+    run_at(cfg, None)
+}
+
+/// The TUI, opened on a thread (`keryx open keryx://thread/…`).
+pub fn run_at(cfg: Config, thread: Option<(String, String)>) -> Result<(), String> {
     let path = cfg.db_path();
     if !path.exists() {
         return Err(format!(
@@ -103,6 +113,11 @@ pub fn run(cfg: Config) -> Result<(), String> {
     app.daemon = keryx_store::client::Client::from_config(&cfg)
         .ok()
         .map(|c| Box::new(c.interactive(true)) as Box<dyn keryx_store::client::Daemon>);
+    if let Some((a, t)) = thread
+        && !app.open_thread(&a, &t)
+    {
+        return Err(format!("no thread {a}:{t} in the mirror"));
+    }
     let mut terminal = ratatui::try_init().map_err(|e| e.to_string())?;
     let result = (|| -> Result<(), String> {
         let mut stamp = db_stamp(&cfg);

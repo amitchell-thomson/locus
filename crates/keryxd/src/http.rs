@@ -115,7 +115,13 @@ pub fn router(st: AppState, mcp: Option<Router<AppState>>) -> Router {
         .route("/api/changesets/{id}/reject", post(reject))
         .route("/api/changesets/{id}/cancel", post(cancel))
         .route("/api/changesets/{id}/replace", post(replace))
-        .route("/api/unsubscribe", post(unsubscribe));
+        .route("/api/unsubscribe", post(unsubscribe))
+        .route("/api/kairos/task", post(kairos_task))
+        .route("/api/kairos/event", post(kairos_event))
+        .route("/api/kairos/free", post(kairos_free))
+        .route("/api/kairos/tasks/{id}", get(task_status))
+        .route("/api/suggestions", get(suggestions))
+        .route("/api/suggestions/{id}/dismiss", post(dismiss_suggestion));
     let api = match mcp {
         Some(m) => api.merge(m),
         None => api,
@@ -303,6 +309,43 @@ async fn draft_reply(State(st): State<AppState>, h: HeaderMap, Json(r): Json<Dra
 async fn draft_email(State(st): State<AppState>, h: HeaderMap, Json(r): Json<DraftEmailReq>) -> HResult<Cs> {
     let w = who(&h);
     Ok(Json(with_engine(&st, move |e| e.draft_email(&r, w)).await?))
+}
+
+async fn kairos_task(State(st): State<AppState>, h: HeaderMap, Json(r): Json<KairosTaskReq>) -> HResult<KairosOutcome> {
+    let w = who(&h);
+    Ok(Json(with_engine(&st, move |e| e.kairos_task(&r, w)).await?))
+}
+
+async fn kairos_event(
+    State(st): State<AppState>,
+    h: HeaderMap,
+    Json(r): Json<KairosEventReq>,
+) -> HResult<KairosOutcome> {
+    let w = who(&h);
+    Ok(Json(with_engine(&st, move |e| e.kairos_event(&r, w)).await?))
+}
+
+async fn kairos_free(State(st): State<AppState>, Json(r): Json<FreeReq>) -> HResult<FreeOut> {
+    Ok(Json(with_engine(&st, move |e| e.kairos_free(&r)).await?))
+}
+
+async fn task_status(State(st): State<AppState>, Path(id): Path<String>) -> HResult<Option<TaskStatus>> {
+    Ok(Json(with_engine(&st, move |e| e.kairos_task_status(&id)).await?))
+}
+
+async fn suggestions(
+    State(st): State<AppState>,
+    Query(q): Query<ReviewsQ>,
+) -> HResult<Vec<keryx_store::state::Suggestion>> {
+    Ok(Json(
+        with_engine(&st, move |e| Ok(e.db.suggestions(q.status.as_deref(), None)?)).await?,
+    ))
+}
+
+async fn dismiss_suggestion(State(st): State<AppState>, h: HeaderMap, Path(id): Path<String>) -> HResult<Value> {
+    let w = who(&h);
+    with_engine(&st, move |e| e.dismiss_suggestion(&id, w)).await?;
+    Ok(Json(json!({ "ok": true })))
 }
 
 async fn holding(State(st): State<AppState>) -> HResult<Option<Cs>> {

@@ -93,6 +93,9 @@ pub struct Engine {
     pub db: Db,
     pub act: Box<dyn Actuator>,
     pub clock: Box<dyn Fn() -> i64 + Send>,
+    /// kairos's API (`None` when it isn't set up; `kairos_note` says why).
+    pub kairos: Option<Box<dyn keryx_store::kairos::Kairos>>,
+    pub kairos_note: String,
 }
 
 fn new_id(prefix: &str) -> String {
@@ -130,10 +133,12 @@ impl Engine {
             db,
             act,
             clock: Box::new(crate::now),
+            kairos: None,
+            kairos_note: "no kairos client".into(),
         })
     }
 
-    fn now(&self) -> i64 {
+    pub(crate) fn now(&self) -> i64 {
         (self.clock)()
     }
 
@@ -143,7 +148,7 @@ impl Engine {
             .ok_or_else(|| EngineError::NotFound(format!("account {id}")))
     }
 
-    fn thread(&self, r: &str) -> Result<(String, String, Vec<Message>)> {
+    pub(crate) fn thread(&self, r: &str) -> Result<(String, String, Vec<Message>)> {
         let (a, t) =
             parse_thread_ref(r).ok_or_else(|| EngineError::BadRequest(format!("{r}: expected account:thread")))?;
         self.account(a)?;

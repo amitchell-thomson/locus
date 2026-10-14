@@ -57,7 +57,23 @@ fn list(v: &[Address]) -> String {
 
 /// The file to open in the editor.
 pub fn file(to: &[Address], cc: &[Address], subject: &str, signature: Option<&str>, quote: &str) -> String {
-    let mut s = format!("To: {}\nCc: {}\nBcc: \nSubject: {subject}\n\n\n", list(to), list(cc));
+    file_with_body(to, cc, subject, "", signature, quote)
+}
+
+/// The editor file with a body already typed (e.g. free times for `w`).
+pub fn file_with_body(
+    to: &[Address],
+    cc: &[Address],
+    subject: &str,
+    body: &str,
+    signature: Option<&str>,
+    quote: &str,
+) -> String {
+    let mut s = format!(
+        "To: {}\nCc: {}\nBcc: \nSubject: {subject}\n\n{body}\n",
+        list(to),
+        list(cc)
+    );
     if let Some(sig) = signature.filter(|s| !s.trim().is_empty()) {
         s.push_str(&format!("\n{}\n", sig.trim_end()));
     }

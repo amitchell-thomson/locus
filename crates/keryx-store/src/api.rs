@@ -198,3 +198,108 @@ pub enum UnsubscribeOutcome {
     },
     None,
 }
+
+/// `t`: a kairos task from a thread (Alec, or a script).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct KairosTaskReq {
+    pub r#ref: String,
+    pub title: String,
+    /// kairos calendar key (default: the thread's key's `kairos_key`, else Personal).
+    #[serde(default)]
+    pub key: Option<String>,
+    /// Task type: sheet | coursework | admin | …
+    #[serde(default)]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub estimate_min: Option<u32>,
+    /// Raw due string; kairos parses it ("fri 17:00").
+    #[serde(default)]
+    pub due: Option<String>,
+    /// Accepting this suggestion.
+    #[serde(default)]
+    pub suggestion: Option<String>,
+}
+
+/// `i`: a kairos event from an invite.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct KairosEventReq {
+    pub r#ref: String,
+    pub title: String,
+    pub start: String,
+    #[serde(default)]
+    pub end: Option<String>,
+    #[serde(default)]
+    pub location: Option<String>,
+    #[serde(default)]
+    pub key: Option<String>,
+    #[serde(default)]
+    pub suggestion: Option<String>,
+}
+
+/// What keryx did in kairos.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct KairosOutcome {
+    pub link: crate::state::Link,
+    /// One line for the status bar ("task created · 3 blocks planned").
+    pub summary: String,
+    /// kairos's own words worth showing (shortfalls, squeezes, pending).
+    #[serde(default)]
+    pub notes: Vec<String>,
+}
+
+/// `w`: free slots between two times.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FreeReq {
+    pub from: String,
+    pub to: String,
+    pub duration_min: u32,
+    pub count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FreeOut {
+    /// (start, end) Unix seconds.
+    pub slots: Vec<(i64, i64)>,
+    /// One `Tue 15 Oct 14:00–15:00` line per slot.
+    pub text: String,
+}
+
+/// A linked task's live state, for the thread view.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TaskStatus {
+    pub id: String,
+    pub title: String,
+    /// open | done | dropped
+    pub status: String,
+    #[serde(default)]
+    pub due: Option<String>,
+    #[serde(default)]
+    pub remaining_min: Option<u32>,
+}
+
+/// Claude's `suggest_task`.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct SuggestTaskReq {
+    pub r#ref: String,
+    pub title: String,
+    #[serde(default)]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub estimate_min: Option<u32>,
+    #[serde(default)]
+    pub due: Option<String>,
+    pub reason: String,
+}
+
+/// Claude's `suggest_event`.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct SuggestEventReq {
+    pub r#ref: String,
+    pub title: String,
+    pub start: String,
+    #[serde(default)]
+    pub end: Option<String>,
+    #[serde(default)]
+    pub location: Option<String>,
+    pub reason: String,
+}

@@ -100,6 +100,34 @@ enum Cmd {
     Cancel { id: String },
     /// Unsubscribe from a thread's mailing list (asks first).
     Unsubscribe { thread: String },
+    /// Make a kairos task from a thread (its notes link back here).
+    Task {
+        thread: String,
+        /// Title (default: the thread's subject).
+        title: Option<String>,
+        /// Deadline: "fri 17:00", "23 oct", 2026-10-23T17:00.
+        #[arg(long)]
+        due: Option<String>,
+        /// Estimate: 2h, 90m, 1h30.
+        #[arg(long)]
+        estimate: Option<String>,
+        /// Task type: sheet | coursework | admin.
+        #[arg(long)]
+        kind: Option<String>,
+        /// kairos calendar (default: the thread's key's, else Personal).
+        #[arg(long)]
+        key: Option<String>,
+    },
+    /// Claude's kairos suggestions waiting for you (accept them in the TUI with y).
+    Suggestions {
+        /// open | accepted | dismissed (default: open).
+        #[arg(long, default_value = "open")]
+        status: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Open the TUI on a thread: `keryx open keryx://thread/<account>/<thread_id>`.
+    Open { url: String },
     /// People you correspond with (for address completion).
     Addresses {
         #[arg(default_value = "")]
@@ -158,6 +186,20 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Reject { id }) => send::reject(&load(&path)?, &id),
         Some(Cmd::Cancel { id }) => send::cancel(&load(&path)?, &id),
         Some(Cmd::Unsubscribe { thread }) => send::unsubscribe(&load(&path)?, &thread),
+        Some(Cmd::Task {
+            thread,
+            title,
+            due,
+            estimate,
+            kind,
+            key,
+        }) => write::task(&load(&path)?, &thread, title, due, estimate, kind, key),
+        Some(Cmd::Suggestions { status, json }) => read::suggestions(&load(&path)?, &status, json),
+        Some(Cmd::Open { url }) => {
+            let (a, t) = keryx_core::model::parse_keryx_url(&url)
+                .with_context(|| format!("{url}: expected keryx://thread/<account>/<thread_id>"))?;
+            keryx_tui::run_at(load(&path)?, Some((a, t))).map_err(anyhow::Error::msg)
+        }
         None => keryx_tui::run(load(&path)?).map_err(anyhow::Error::msg),
     }
 }

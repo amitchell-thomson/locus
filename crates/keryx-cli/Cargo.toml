@@ -11,6 +11,7 @@ name = "keryx"
 path = "src/main.rs"
 
 [dependencies]
+eco-dates.workspace = true
 keryx-core.workspace = true
 keryx-store.workspace = true
 keryx-tui.workspace = true

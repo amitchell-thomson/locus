@@ -26,6 +26,8 @@ Check the current syntax with `claude mcp add --help` if it changes. Then turn o
 | Triage | `archive`, `unarchive`, `file` (key), `snooze` (until), `unsnooze`, `set_flag`, `mark_read` |
 | Tags | `tag_needs_reply` (one-line reason), `clear_tag` |
 | Cleanup | `propose_cleanup` (archive / file / snooze / keep + reason; ≤ 100 per call; same `review_id` to continue) |
+| Drafts | `draft_reply` (recipients computed from the thread), `draft_email`: always wait for Alec's approval |
+| kairos | `suggest_task` (title, kind, estimate_min, due, reason), `suggest_event` (title, start, end, location, reason), `list_suggestions`: ideas Alec accepts (`y`, which opens the prefilled form) or dismisses (`n`). Nothing is written to kairos by Claude; a dismissed idea can't be suggested again |
 | Undo | `undo` |
 
 ## Workflows
@@ -42,6 +44,12 @@ Check the current syntax with `claude mcp add --help` if it changes. Then turn o
 
 ### "Summarise my unread mail"
 `search {query: "in:inbox is:unread"}` → `read_threads` (compact) → a short summary per thread, people first. Offer to tag the ones that need replies (`tag_needs_reply`).
+
+### "Turn the deadlines in my inbox into tasks"
+`search {query: "in:inbox"}` → `read_threads` (compact; `read_attachment` for sheets) → one `suggest_task` per real deadline (kind sheet / coursework / admin, an estimate when the mail implies one, `due` as written, a one-line reason). Tell Alec: "4 task ideas waiting: 󰄱? in keryx, y to create, n to dismiss". Check `list_suggestions {status: "dismissed"}` first: those were rejected.
+
+### "Reply with times I'm free"
+kairos's own MCP `find_free` (keryx has no kairos tools), then `draft_reply` with the slots. Or Alec presses `w` in keryx, which fills a reply from kairos itself.
 
 ### "What needs a reply?"
 `list_tags`, then `search {query: "in:inbox is:unread"}` for anything new from people.

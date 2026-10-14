@@ -28,6 +28,52 @@ impl Fake {
 }
 
 impl Daemon for Fake {
+    fn kairos_task(&self, r: &KairosTaskReq) -> Result<KairosOutcome> {
+        self.log(format!("kairos-task {}", serde_json::to_string(r).unwrap()));
+        Ok(KairosOutcome {
+            link: keryx_store::state::Link {
+                account: "oxford".into(),
+                thread_id: "1".into(),
+                app: "kairos".into(),
+                kind: "task".into(),
+                target: "t-1".into(),
+                title: r.title.clone(),
+                created_at: 0,
+            },
+            summary: format!("kairos task: {}", r.title),
+            notes: vec![],
+        })
+    }
+    fn kairos_event(&self, r: &KairosEventReq) -> Result<KairosOutcome> {
+        self.log(format!("kairos-event {}", serde_json::to_string(r).unwrap()));
+        Ok(KairosOutcome {
+            link: keryx_store::state::Link {
+                account: "oxford".into(),
+                thread_id: "1".into(),
+                app: "kairos".into(),
+                kind: "event".into(),
+                target: "cs-1".into(),
+                title: r.title.clone(),
+                created_at: 0,
+            },
+            summary: format!("kairos event: {}", r.title),
+            notes: vec![],
+        })
+    }
+    fn kairos_free(&self, r: &FreeReq) -> Result<FreeOut> {
+        self.log(format!("kairos-free {}", serde_json::to_string(r).unwrap()));
+        Ok(FreeOut {
+            slots: vec![(0, 3600), (86_400, 90_000)],
+            text: "Tue 20 Oct 14:00–15:00\nWed 21 Oct 10:00–11:00".into(),
+        })
+    }
+    fn task_status(&self, _: &str) -> Result<Option<TaskStatus>> {
+        Ok(None)
+    }
+    fn dismiss_suggestion(&self, id: &str) -> Result<()> {
+        self.log(format!("dismiss {id}"));
+        Ok(())
+    }
     fn triage(&self, req: &TriageReq) -> Result<TriageOutcome> {
         self.log(format!(
             "triage {} {:?}",
@@ -625,4 +671,210 @@ fn unsubscribe_asks_first_and_mailto_goes_through_confirm() {
     select(&mut a, "Lab partner for Thursday?");
     keys(&mut a, &[Key::Char('L')]);
     assert!(a.message.as_ref().unwrap().0.contains("no unsubscribe"));
+}
+
+// ---- Phase 7: kairos ----
+
+fn suggest(a: &App, r: &str, kind: &str, proposal: serde_json::Value) -> String {
+    let (acc, t) = keryx_core::model::parse_thread_ref(r).unwrap();
+    let id = format!("sg-{kind}");
+    a.db.add_suggestion(&keryx_store::state::Suggestion {
+        id: id.clone(),
+        account: acc.into(),
+        thread_id: t.into(),
+        kind: kind.into(),
+        proposal,
+        reason: "Jane needs to know before Thursday".into(),
+        author: "claude".into(),
+        run_id: None,
+        status: "open".into(),
+        created_at: 0,
+    })
+    .unwrap();
+    id
+}
+
+fn type_str(a: &mut App, s: &str) {
+    for ch in s.chars() {
+        a.key(Key::Char(ch));
+    }
+}
+
+#[test]
+fn t_makes_a_kairos_task_through_a_form() {
+    let (mut a, f) = app();
+    let r = select(&mut a, "Lab partner for Thursday?");
+    keys(&mut a, &[Key::Char('t')]);
+    assert!(matches!(a.mode, Mode::KairosForm(_)));
+    // Due: typed, previewed exactly as it will be sent.
+    keys(
+        &mut a,
+        &[Key::Tab, Key::Tab, Key::Right, Key::Right, Key::Right, Key::Tab],
+    );
+    type_str(&mut a, "45m");
+    a.key(Key::Tab);
+    type_str(&mut a, "fri 17:00");
+    let s = render_to_string(&mut a, 80, 30);
+    assert!(
+        s.contains("→ Lab partner for Thursday? · Personal · admin · 45 min · due Fri 16") && s.contains("Oct 17:00"),
+        "{s}"
+    );
+    insta::assert_snapshot!("kairos_task_form", s);
+    keys(&mut a, &[Key::Enter]);
+    let calls = f.take();
+    assert_eq!(calls.len(), 1, "{calls:?}");
+    let body: serde_json::Value = serde_json::from_str(calls[0].strip_prefix("kairos-task ").unwrap()).unwrap();
+    assert_eq!(body["ref"], r.as_str());
+    assert_eq!(body["due"], "2026-10-16T17:00");
+    assert_eq!(body["kind"], "admin");
+    assert_eq!(body["estimate_min"], 45);
+    assert_eq!(body["key"], "Personal");
+    assert_eq!(a.mode, Mode::List);
+    assert_eq!(a.message.as_ref().unwrap().0, "kairos task: Lab partner for Thursday?");
+    // Esc leaves without asking kairos anything.
+    keys(&mut a, &[Key::Char('t'), Key::Esc]);
+    assert!(f.take().is_empty());
+}
+
+#[test]
+fn a_bad_form_stays_open_and_says_why() {
+    let (mut a, f) = app();
+    select(&mut a, "Lab partner for Thursday?");
+    keys(&mut a, &[Key::Char('t'), Key::BackTab]);
+    type_str(&mut a, "wed");
+    keys(&mut a, &[Key::Enter]);
+    assert!(matches!(a.mode, Mode::KairosForm(_)));
+    assert!(a.message.as_ref().unwrap().0.contains("ambiguous"));
+    assert!(f.take().is_empty());
+}
+
+#[test]
+fn suggestions_y_opens_the_prefilled_form_n_dismisses() {
+    let (mut a, f) = app();
+    let r = select(&mut a, "Lab partner for Thursday?");
+    let id = suggest(
+        &a,
+        &r,
+        "task",
+        serde_json::json!({"title": "Reply to Jane", "kind": "admin", "estimate_min": 15, "due": "thu 9:00"}),
+    );
+    a.reload();
+    let s = render_to_string(&mut a, 80, 6);
+    assert!(s.contains("󰄱?"), "{s}");
+    keys(&mut a, &[Key::Enter]);
+    let s = render_to_string(&mut a, 110, 20);
+    assert!(
+        s.contains("󰄱? kairos task: Reply to Jane · due Thu 15 Oct 09:00 · ~15 min · y create · n dismiss"),
+        "{s}"
+    );
+    assert!(s.contains("Claude: Jane needs to know before Thursday"), "{s}");
+    assert!(s.contains("y create · n dismiss · r reply"), "hints: {s}");
+    // y opens the form only: nothing reaches kairos until Enter.
+    f.take();
+    keys(&mut a, &[Key::Char('y')]);
+    assert!(f.take().is_empty());
+    let s = render_to_string(&mut a, 80, 30);
+    assert!(s.contains("Claude  Jane needs to know before Thursday"), "{s}");
+    assert!(
+        s.contains("→ Reply to Jane · Personal · admin · 15 min · due Thu 15 Oct 09:00"),
+        "{s}"
+    );
+    keys(&mut a, &[Key::Esc]);
+    assert_eq!(a.mode, Mode::Thread);
+    assert!(f.take().is_empty(), "Esc leaves the suggestion open");
+    keys(&mut a, &[Key::Char('y'), Key::Enter]);
+    let calls = f.take();
+    assert!(calls[0].contains(&format!(r#""suggestion":"{id}""#)), "{calls:?}");
+    // n dismisses (keryxd records it; the fake just logs).
+    keys(&mut a, &[Key::Char('n')]);
+    assert_eq!(f.take(), vec![format!("dismiss {id}")]);
+}
+
+#[test]
+fn i_turns_an_invite_into_an_event() {
+    let (mut a, f) = app();
+    select(&mut a, "Cancelled: Project meeting");
+    keys(&mut a, &[Key::Char('i')]);
+    assert_eq!(a.message.as_ref().unwrap().0, "this invite was cancelled");
+    assert!(f.take().is_empty());
+    // Without the cancellation, the request is offered at London time.
+    a.db.conn()
+        .execute("DELETE FROM messages WHERE subject LIKE 'Cancelled:%'", [])
+        .unwrap();
+    a.reload();
+    select(&mut a, "Invitation: Project meeting");
+    keys(&mut a, &[Key::Char('i')]);
+    let s = render_to_string(&mut a, 80, 30);
+    assert!(
+        s.contains("→ Project meeting · Personal · Thu 22 Oct 14:00–15:00 · Thom Building,") && s.contains("Room 2"),
+        "{s}"
+    );
+    keys(&mut a, &[Key::Enter]);
+    let calls = f.take();
+    let body: serde_json::Value = serde_json::from_str(calls[0].strip_prefix("kairos-event ").unwrap()).unwrap();
+    assert_eq!(body["start"], "2026-10-22T14:00");
+    assert_eq!(body["end"], "2026-10-22T15:00");
+}
+
+#[test]
+fn w_puts_free_times_in_a_reply() {
+    let (mut a, f) = app();
+    select(&mut a, "Lab partner for Thursday?");
+    keys(&mut a, &[Key::Char('w')]);
+    let s = render_to_string(&mut a, 80, 30);
+    assert!(
+        s.contains("→ up to 4 slots of 1 h between Wed 14 Oct 16:00 and Mon 19 Oct"),
+        "{s}"
+    );
+    keys(&mut a, &[Key::Enter]);
+    let calls = f.take();
+    assert!(calls[0].starts_with("kairos-free "), "{calls:?}");
+    let req = a.editor_request.take().expect("editor");
+    assert!(
+        req.text
+            .contains("\n\nTue 20 Oct 14:00–15:00\nWed 21 Oct 10:00–11:00\n"),
+        "{}",
+        req.text
+    );
+    assert!(req.text.starts_with("To: "), "{}", req.text);
+    assert!(matches!(req.purpose, keryx_tui::send::Purpose::Reply { .. }));
+}
+
+#[test]
+fn linked_task_line_and_row_icon() {
+    let (mut a, _) = app();
+    let r = select(&mut a, "Lab partner for Thursday?");
+    let (acc, t) = keryx_core::model::parse_thread_ref(&r).unwrap();
+    a.db.add_link(&keryx_store::state::Link {
+        account: acc.into(),
+        thread_id: t.into(),
+        app: "kairos".into(),
+        kind: "deadline".into(),
+        target: "t-9".into(),
+        title: "Find a lab partner".into(),
+        created_at: 0,
+    })
+    .unwrap();
+    a.task_status.insert(
+        "t-9".into(),
+        TaskStatus {
+            id: "t-9".into(),
+            title: "Find a lab partner".into(),
+            status: "open".into(),
+            due: Some("2026-10-16T17:00".into()),
+            remaining_min: Some(120),
+        },
+    );
+    a.reload();
+    assert!(a.rows[a.sel].linked);
+    keys(&mut a, &[Key::Enter]);
+    let s = render_to_string(&mut a, 80, 12);
+    assert!(
+        s.contains("󰄱 kairos: Find a lab partner · due Fri 16 Oct 17:00 · 2 h left"),
+        "{s}"
+    );
+    // has:task finds it.
+    a.search = Some("has:task".into());
+    a.reload();
+    assert_eq!(a.rows.len(), 1);
 }

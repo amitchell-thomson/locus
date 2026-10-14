@@ -47,6 +47,9 @@ fn row_json(cfg: &Config, r: &ThreadRow, n: usize) -> Value {
         "has_attachment": r.has_attachment,
         "in_inbox": r.in_inbox,
         "keys": r.keys,
+        "needs_reply": r.needs_reply,
+        "kairos_linked": r.linked,
+        "kairos_suggestion": r.suggested,
     })
 }
 
@@ -252,6 +255,40 @@ pub fn addresses(cfg: &Config, prefix: &str, limit: usize, json: bool) -> anyhow
                 .display()
             );
         }
+    }
+    Ok(())
+}
+
+/// `keryx suggestions`: Claude's kairos ideas (accept with `y` in the TUI).
+pub fn suggestions(cfg: &Config, status: &str, json: bool) -> anyhow::Result<()> {
+    let db = open_db(cfg)?;
+    let list = db.suggestions(Some(status), None).unwrap_or_default();
+    if json {
+        let v = json!({
+            "schema": SCHEMA,
+            "suggestions": list.iter().map(|s| json!({
+                "id": s.id,
+                "ref": keryx_core::model::thread_ref(&s.account, &s.thread_id),
+                "kind": s.kind,
+                "proposal": s.proposal,
+                "reason": s.reason,
+                "author": s.author,
+                "status": s.status,
+                "created_at": iso(cfg, s.created_at),
+            })).collect::<Vec<_>>(),
+        });
+        println!("{v:#}");
+        return Ok(());
+    }
+    if list.is_empty() {
+        println!("no {status} suggestions");
+    }
+    for s in &list {
+        let title = s.proposal.get("title").and_then(|v| v.as_str()).unwrap_or("");
+        println!("{}  {}:{}  {} · {}", s.kind, s.account, s.thread_id, title, s.reason);
+    }
+    if status == "open" && !list.is_empty() {
+        println!("\naccept or dismiss with y / n on the thread in keryx");
     }
     Ok(())
 }

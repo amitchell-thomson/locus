@@ -193,3 +193,56 @@ fn token_compare_is_exact() {
     assert!(!constant_eq(b"abc", b"abd"));
     assert!(!constant_eq(b"abc", b"abcd"));
 }
+
+#[derive(Clone, Default)]
+struct Who_(Arc<Mutex<Vec<keryx_store::kairos::As>>>);
+impl keryx_store::kairos::Kairos for Who_ {
+    fn create_task(&self, _: &Value, who: keryx_store::kairos::As) -> keryx_store::kairos::Result<Value> {
+        self.0.lock().unwrap().push(who);
+        Ok(json!({"task": {"id": "t-1", "title": "x"}}))
+    }
+    fn create_event(&self, _: &Value, who: keryx_store::kairos::As) -> keryx_store::kairos::Result<Value> {
+        self.0.lock().unwrap().push(who);
+        Ok(json!({"changeset_id": "c-1"}))
+    }
+    fn task(&self, _: &str) -> keryx_store::kairos::Result<Option<Value>> {
+        Ok(None)
+    }
+    fn free(&self, _: &str, _: &str, _: u32) -> keryx_store::kairos::Result<Vec<keryx_core::freetime::Slot>> {
+        Ok(vec![])
+    }
+}
+
+#[tokio::test]
+async fn kairos_author_comes_from_the_caller() {
+    use keryx_store::kairos::As;
+    let (app, engine) = app();
+    let k = Who_::default();
+    engine.lock().unwrap().kairos = Some(Box::new(k.clone()));
+    let r = lab_ref(&engine);
+    let body = json!({"ref": r, "title": "Lab partner"});
+    // The TUI / a CLI on a terminal.
+    let (s, _) = call(
+        &app,
+        "POST",
+        "/api/kairos/task",
+        &[AUTH, ("x-keryx-author", "alec"), ("x-keryx-interactive", "1")],
+        Some(body.clone()),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    // The CLI without a terminal (no author header = script).
+    let (s, _) = call(&app, "POST", "/api/kairos/task", &[AUTH], Some(body.clone())).await;
+    assert_eq!(s, StatusCode::OK);
+    // Claude claiming to be Claude over HTTP is refused too.
+    let (s, _) = call(
+        &app,
+        "POST",
+        "/api/kairos/task",
+        &[AUTH, ("x-keryx-author", "claude")],
+        Some(body),
+    )
+    .await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    assert_eq!(*k.0.lock().unwrap(), vec![As::Alec, As::Script]);
+}

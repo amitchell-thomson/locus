@@ -11,10 +11,19 @@ use keryx_store::state::{self, Action, Keep, ProposalStatus};
 /// Work for keryxd, run after the key is drawn (so "archiving…" shows).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Job {
-    Triage { req: TriageReq, quiet: bool },
+    Triage {
+        req: TriageReq,
+        quiet: bool,
+    },
     UndoLast,
-    Decide { proposal: String, decision: Decision },
-    AcceptGroup { review: String, group: String },
+    Decide {
+        proposal: String,
+        decision: Decision,
+    },
+    AcceptGroup {
+        review: String,
+        group: String,
+    },
     UndoReview(String),
     Tag(String),
     Untag(String),
@@ -25,6 +34,19 @@ pub enum Job {
     Reject(String),
     Cancel(String),
     Unsubscribe(String),
+    KairosTask(keryx_store::api::KairosTaskReq),
+    KairosEvent(keryx_store::api::KairosEventReq),
+    /// Free slots for a reply to this thread.
+    Free(String, keryx_store::api::FreeReq),
+    Dismiss(String),
+    TaskStatus(Vec<String>),
+}
+
+fn kairos_message(o: &keryx_store::api::KairosOutcome) -> String {
+    std::iter::once(o.summary.clone())
+        .chain(o.notes.iter().cloned())
+        .collect::<Vec<_>>()
+        .join(" · ")
 }
 
 fn sent_message(c: &keryx_core::changeset::Changeset) -> String {
@@ -159,7 +181,7 @@ impl App {
 
     /// Triage keys in the list and thread view. Returns whether `k` was one.
     pub fn write_key(&mut self, k: Key) -> bool {
-        if self.compose_key(k) {
+        if self.compose_key(k) || self.kairos_key(k) {
             return true;
         }
         match k {
@@ -500,13 +522,18 @@ impl App {
             return;
         }
         let Some(d) = self.daemon.as_ref() else {
-            if jobs.iter().any(|j| !matches!(j, Job::Triage { quiet: true, .. })) {
+            if jobs
+                .iter()
+                .any(|j| !matches!(j, Job::Triage { quiet: true, .. } | Job::TaskStatus(_)))
+            {
                 self.message = Some(("can't change mail: keryxd isn't running (keryx doctor)".into(), true));
             }
             return;
         };
         let mut last: Option<(String, bool)> = None;
         let mut mailto: Option<(String, String, String, String)> = None;
+        let mut free: Option<(String, String)> = None;
+        let mut statuses = Vec::new();
         for job in jobs {
             let res: Result<Option<String>, String> = match &job {
                 Job::Triage { req, quiet } => d
@@ -573,6 +600,35 @@ impl App {
                     Ok(UnsubscribeOutcome::None) => Ok(Some("no unsubscribe link".into())),
                     Err(e) => Err(e.to_string()),
                 },
+                Job::KairosTask(r) => d
+                    .kairos_task(r)
+                    .map(|o| Some(kairos_message(&o)))
+                    .map_err(|e| e.to_string()),
+                Job::KairosEvent(r) => d
+                    .kairos_event(r)
+                    .map(|o| Some(kairos_message(&o)))
+                    .map_err(|e| e.to_string()),
+                Job::Free(r, q) => match d.kairos_free(q) {
+                    Ok(out) if out.slots.is_empty() => Err(format!(
+                        "kairos has no free {} slots in that window",
+                        crate::form::minutes_label(q.duration_min)
+                    )),
+                    Ok(out) => {
+                        free = Some((r.clone(), out.text));
+                        Ok(None)
+                    }
+                    Err(e) => Err(e.to_string()),
+                },
+                Job::Dismiss(id) => d.dismiss_suggestion(id).map(|_| None).map_err(|e| e.to_string()),
+                Job::TaskStatus(ids) => {
+                    for id in ids {
+                        // kairos down: the line just shows without live state.
+                        if let Ok(Some(s)) = d.task_status(id) {
+                            statuses.push(s);
+                        }
+                    }
+                    Ok(None)
+                }
             };
             match res {
                 Ok(Some(m)) => last = Some((m, false)),
@@ -581,6 +637,12 @@ impl App {
             }
         }
         self.message = last;
+        for s in statuses {
+            self.task_status.insert(s.id.clone(), s);
+        }
+        if let Some((r, text)) = free {
+            self.free_reply(&r, &text);
+        }
         if let Some((account, to, subject, body)) = mailto
             && let Ok(addr) = keryx_core::compose::parse_addresses(&to)
         {

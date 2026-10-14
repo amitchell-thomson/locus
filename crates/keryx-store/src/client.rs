@@ -41,6 +41,11 @@ pub trait Daemon: Send {
     fn replace(&self, id: &str, r: &SendReq) -> Result<Changeset>;
     fn holding(&self) -> Result<Option<Changeset>>;
     fn unsubscribe(&self, r: &str) -> Result<UnsubscribeOutcome>;
+    fn kairos_task(&self, r: &KairosTaskReq) -> Result<KairosOutcome>;
+    fn kairos_event(&self, r: &KairosEventReq) -> Result<KairosOutcome>;
+    fn kairos_free(&self, r: &FreeReq) -> Result<FreeOut>;
+    fn task_status(&self, id: &str) -> Result<Option<TaskStatus>>;
+    fn dismiss_suggestion(&self, id: &str) -> Result<()>;
 }
 
 pub struct Client {
@@ -189,5 +194,21 @@ impl Daemon for Client {
     }
     fn unsubscribe(&self, r: &str) -> Result<UnsubscribeOutcome> {
         self.post("/api/unsubscribe", &json!({ "ref": r }))
+    }
+    fn kairos_task(&self, r: &KairosTaskReq) -> Result<KairosOutcome> {
+        self.post("/api/kairos/task", r)
+    }
+    fn kairos_event(&self, r: &KairosEventReq) -> Result<KairosOutcome> {
+        self.post("/api/kairos/event", r)
+    }
+    fn kairos_free(&self, r: &FreeReq) -> Result<FreeOut> {
+        self.post("/api/kairos/free", r)
+    }
+    fn task_status(&self, id: &str) -> Result<Option<TaskStatus>> {
+        self.get(&format!("/api/kairos/tasks/{id}"))
+    }
+    fn dismiss_suggestion(&self, id: &str) -> Result<()> {
+        let _: Value = self.post(&format!("/api/suggestions/{id}/dismiss"), &json!({}))?;
+        Ok(())
     }
 }

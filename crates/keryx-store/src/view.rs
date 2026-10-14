@@ -66,6 +66,10 @@ pub struct ThreadRow {
     pub snoozed_until: Option<i64>,
     /// Why it needs a reply (Claude's or Alec's one line).
     pub needs_reply: Option<String>,
+    /// Linked to a kairos task or event (󰄱).
+    pub linked: bool,
+    /// Claude has a kairos suggestion waiting (󰄱?).
+    pub suggested: bool,
 }
 
 /// Gmail label id → name per account, from sync state.
@@ -79,6 +83,15 @@ pub fn label_names(db: &Db, cfg: &Config) -> HashMap<String, BTreeMap<String, St
         }
     }
     out
+}
+
+/// The kairos calendar for a thread: its key's `kairos_key`, else Personal.
+pub fn kairos_key(db: &Db, cfg: &Config, account: &str, msgs: &[Message]) -> String {
+    let labels = label_names(db, cfg);
+    msgs.iter()
+        .flat_map(|m| keys_of(cfg, account, &m.location, labels.get(account)))
+        .find_map(|k| cfg.keys.iter().find(|d| d.name == k).and_then(|d| d.kairos_key.clone()))
+        .unwrap_or_else(|| "Personal".into())
 }
 
 /// Names of the keys a location is filed under.
@@ -220,6 +233,14 @@ fn rows_for(db: &Db, cfg: &Config, threads_sql: &str, args: Vec<Value>, limit: u
         .into_iter()
         .map(|t| ((t.account, t.thread_id), t.reason))
         .collect();
+    // keryxd creates these tables; an older mirror just has none yet.
+    let linked: HashSet<(String, String)> = db.linked_threads().unwrap_or_default();
+    let suggested: HashSet<(String, String)> = db
+        .suggestions(Some("open"), None)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|s| (s.account, s.thread_id))
+        .collect();
     let sql = format!(
         "WITH t AS (SELECT DISTINCT account, thread_id FROM ({threads_sql})),
          agg AS (
@@ -300,6 +321,8 @@ fn rows_for(db: &Db, cfg: &Config, threads_sql: &str, args: Vec<Value>, limit: u
             latest: latest.source_id.clone(),
             snoozed_until: snoozes.get(&(account.clone(), thread_id.clone())).copied(),
             needs_reply: needs.get(&(account.clone(), thread_id.clone())).cloned(),
+            linked: linked.contains(&(account.clone(), thread_id.clone())),
+            suggested: suggested.contains(&(account.clone(), thread_id.clone())),
             account,
             thread_id,
         });
@@ -388,7 +411,9 @@ pub fn search(db: &Db, cfg: &Config, q: &Query, f: &Filter) -> Result<Vec<Thread
         wh.push(
             match h {
                 Has::Attachment => "attachments_json != '[]'",
-                Has::Task => "0",
+                Has::Task => {
+                    "EXISTS (SELECT 1 FROM links l WHERE l.account = messages.account AND l.thread_id = messages.thread_id)"
+                }
             }
             .into(),
         );

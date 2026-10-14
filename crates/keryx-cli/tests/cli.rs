@@ -125,3 +125,22 @@ fn account_by_name_and_text_output() {
     assert!(out.contains("Poster for the talk"), "{out}");
     assert!(!out.contains("Oxford "), "{out}");
 }
+
+#[test]
+fn kairos_commands_explain_themselves() {
+    let e = env();
+    let (ok, out, err) = keryx(&e, &["suggestions", "--json"]);
+    assert!(ok, "{err}");
+    let v: Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["schema"], 1);
+    assert!(v["suggestions"].as_array().unwrap().is_empty());
+    let (ok, _, err) = keryx(&e, &["open", "https://example.com/x"]);
+    assert!(!ok);
+    assert!(err.contains("expected keryx://thread/<account>/<thread_id>"), "{err}");
+    let (ok, _, err) = keryx(&e, &["task", "oxford:1", "x", "--estimate", "lots"]);
+    assert!(!ok);
+    assert!(err.contains("--estimate: try 2h, 90m or 1h30"), "{err}");
+    let (ok, _, err) = keryx(&e, &["task", "oxford:1", "x", "--due", "wed"]);
+    assert!(!ok);
+    assert!(err.contains("ambiguous"), "{err}");
+}

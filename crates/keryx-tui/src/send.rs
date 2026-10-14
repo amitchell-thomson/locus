@@ -97,7 +97,7 @@ impl App {
     }
 
     /// The thread a compose key acts on (open thread, else selection).
-    fn compose_thread(&self) -> Option<(String, Vec<keryx_core::model::Message>)> {
+    pub(crate) fn compose_thread(&self) -> Option<(String, Vec<keryx_core::model::Message>)> {
         let r = match (&self.mode, &self.open) {
             (Mode::Thread, Some(o)) => keryx_core::model::thread_ref(&o.account, &o.thread_id),
             _ => self.selected()?.r#ref.clone(),

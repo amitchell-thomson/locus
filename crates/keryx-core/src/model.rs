@@ -119,9 +119,30 @@ pub fn parse_thread_ref(r: &str) -> Option<(&str, &str)> {
     (!a.is_empty() && !t.is_empty()).then_some((a, t))
 }
 
+/// The cross-link other apps keep (`keryx://thread/<account>/<thread_id>`).
+pub fn keryx_url(account: &str, thread_id: &str) -> String {
+    format!("keryx://thread/{account}/{thread_id}")
+}
+
+/// `keryx://thread/<account>/<thread_id>` → (account, thread_id).
+pub fn parse_keryx_url(url: &str) -> Option<(String, String)> {
+    let rest = url.trim().strip_prefix("keryx://thread/")?;
+    let (a, t) = rest.split_once('/')?;
+    (!a.is_empty() && !t.is_empty()).then(|| (a.to_string(), t.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keryx_urls_round_trip() {
+        let u = keryx_url("oxford", "9");
+        assert_eq!(u, "keryx://thread/oxford/9");
+        assert_eq!(parse_keryx_url(&u), Some(("oxford".into(), "9".into())));
+        assert_eq!(parse_keryx_url("keryx://thread/oxford/"), None);
+        assert_eq!(parse_keryx_url("https://thread/oxford/9"), None);
+    }
 
     #[test]
     fn address_display_and_key() {

@@ -1,6 +1,5 @@
 ---
 source: crates/keryx-tui/tests/snapshots.rs
-assertion_line: 84
 expression: "render_to_string(&mut a, 140, 26)"
 ---
 ╭──────────────── Inbox · All accounts ────────────────╮╭───────────────────────────────────── Thread ─────────────────────────────────────╮
@@ -27,4 +26,4 @@ expression: "render_to_string(&mut a, 140, 26)"
 │ Oxford   Bob            Re: Budget · Numbers…  5 Oct ││                                                                                  │
 │ Oxford   Ann            Hello · Hello from A…  5 Oct ││                                                                                  │
 │                                                      ││                                                                                  │
-╰──────────────────────────────────────────────────────╯╰──── r reply · d archive · s snooze · z quotes · o attachment · Esc back · ? help ╯
+╰──────────────────────────────────────────────────────╯╰────── r reply · d archive · t task · z quotes · o attachment · Esc back · ? help ╯

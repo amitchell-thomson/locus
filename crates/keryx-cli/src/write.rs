@@ -87,3 +87,50 @@ pub fn sync(cfg: &Config) -> anyhow::Result<()> {
     println!("keryxd is syncing every account now");
     Ok(())
 }
+
+/// `keryx task`: a kairos task from a thread, through keryxd (as Alec on a
+/// terminal, as a script otherwise; kairos is told which).
+#[allow(clippy::too_many_arguments)]
+pub fn task(
+    cfg: &Config,
+    thread: &str,
+    title: Option<String>,
+    due: Option<String>,
+    estimate: Option<String>,
+    kind: Option<String>,
+    key: Option<String>,
+) -> anyhow::Result<()> {
+    let (a, t) = crate::read::resolve_ref(cfg, thread)?;
+    let title = match title {
+        Some(t) => t,
+        None => {
+            let db = crate::read::open_db(cfg)?;
+            let msgs = db.thread(&a, &t)?;
+            msgs.first()
+                .map(|m| keryx_core::reply::bare_subject(&m.subject).to_string())
+                .context("no such thread")?
+        }
+    };
+    let now = keryx_tui::now(cfg);
+    let due = due
+        .map(|d| keryx_core::when::canonical(cfg, now, &d).map(|c| c.iso))
+        .transpose()
+        .map_err(anyhow::Error::msg)?;
+    let estimate_min = estimate
+        .map(|e| eco_dates::parse_minutes(&e).map_err(|_| anyhow::anyhow!("--estimate: try 2h, 90m or 1h30")))
+        .transpose()?;
+    let out = client(cfg)?.kairos_task(&keryx_store::api::KairosTaskReq {
+        r#ref: keryx_core::model::thread_ref(&a, &t),
+        title,
+        key,
+        kind,
+        estimate_min,
+        due,
+        suggestion: None,
+    })?;
+    println!("{}", out.summary);
+    for n in &out.notes {
+        println!("  {n}");
+    }
+    Ok(())
+}

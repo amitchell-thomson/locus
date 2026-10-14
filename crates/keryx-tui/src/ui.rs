@@ -18,6 +18,7 @@ pub const ICON_FLAG: &str = "󰈻";
 pub const ICON_ATTACH: &str = "󰁦";
 pub const ICON_INVITE: &str = "󰃭";
 pub const ICON_SNOOZE: &str = "󰒲";
+pub const ICON_TASK: &str = "󰄱";
 
 pub fn draw(f: &mut Frame, app: &App) {
     let area = f.area();
@@ -73,6 +74,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         Mode::ReviewChange { .. } => crate::ui_write::change(f, app, area),
         Mode::ConfirmGroup { group, count, .. } => crate::ui_write::confirm_group(f, area, group, *count),
         Mode::ConfirmUnsubscribe { how, .. } => crate::ui_send::confirm_unsubscribe(f, area, how),
+        Mode::KairosForm(form) => crate::ui_kairos::form(f, app, area, form),
         _ => {}
     }
 }
@@ -145,6 +147,11 @@ pub fn row_line(app: &App, r: &ThreadRow, width: usize, show_account: bool, sele
             ICON_SNOOZE.to_string()
         };
         right.push((label, Style::default().fg(c("sapphire"))));
+    }
+    if r.suggested {
+        right.push((format!("{ICON_TASK}?"), Style::default().fg(c("mauve"))));
+    } else if r.linked {
+        right.push((ICON_TASK.into(), Style::default().fg(c("green"))));
     }
     if r.flagged {
         right.push((ICON_FLAG.into(), Style::default().fg(c("red"))));
@@ -309,6 +316,7 @@ pub fn thread_lines(app: &App, open: &Open, w: usize) -> Vec<Line<'static>> {
         Span::raw("  "),
         Span::styled(acc, Style::default().fg(col)),
     ]));
+    out.extend(crate::ui_kairos::thread_lines(app, open, w));
     let last = open.msgs.len().saturating_sub(1);
     for (i, m) in open.msgs.iter().enumerate() {
         out.push(Line::raw(""));
@@ -545,25 +553,22 @@ fn status_bar(f: &mut Frame, app: &App, area: Rect) {
 
 fn help(f: &mut Frame, area: Rect) {
     let rows: &[(&str, &str)] = &[
-        ("j k  ↑ ↓", "next / previous"),
-        ("Enter", "read the thread"),
-        ("Esc", "back (clears a search)"),
+        ("j k  ↑ ↓  J K", "next / previous (J K: next thread while reading)"),
+        ("Enter  Esc", "read the thread · back (clears a search)"),
         ("Tab  Shift-Tab", "account: All · each account"),
         ("g", "go to: Inbox, Needs reply, Flagged, Snoozed, Sent, keys…"),
         (
             "/",
             "search (from: to: subject: account: key: in: is: has: before: after:)",
         ),
-        ("z", "thread: show / fold quoted text"),
-        ("o", "thread: open an attachment"),
+        ("z o", "thread: show / fold quoted text · open an attachment"),
+        ("r R F c", "reply · reply all · forward · compose ($EDITOR)"),
         ("d s m", "archive · snooze · file into a key"),
-        ("f U N", "flag · mark unread · needs-reply tag"),
-        ("x", "mark threads for a batch (Esc clears)"),
-        ("u", "undo the last change"),
-        ("A", "cleanups waiting for you"),
-        ("J K", "thread: next / previous thread"),
-        ("Ctrl-R", "sync now"),
-        ("q", "quit"),
+        ("f U N L", "flag · mark unread · needs-reply tag · unsubscribe"),
+        ("t i w", "kairos task · invite → event · reply with your free times"),
+        ("y n", "Claude's kairos idea: create (opens the form) · dismiss"),
+        ("x  u", "mark for a batch (Esc clears) · undo the last change"),
+        ("A  Ctrl-R  q", "waiting for you · sync now · quit"),
     ];
     let w = 78.min(area.width);
     let h = (rows.len() as u16 + 4).min(area.height);

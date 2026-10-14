@@ -28,6 +28,8 @@ pub enum Key {
     Backspace,
     Up,
     Down,
+    Left,
+    Right,
     PageUp,
     PageDown,
 }
@@ -79,6 +81,8 @@ pub enum Mode {
         r#ref: String,
         how: String,
     },
+    /// `t` / `i` / `w` (and `y` on a suggestion): a kairos form.
+    KairosForm(Box<crate::form::Form>),
 }
 
 /// A thread opened for reading.
@@ -151,6 +155,8 @@ pub struct App {
     pub editor_request: Option<crate::send::EditorRequest>,
     /// A send in its hold: (changeset id, sends at).
     pub hold: Option<(String, i64)>,
+    /// Live kairos task states, by task id (fetched when a thread opens).
+    pub task_status: std::collections::HashMap<String, keryx_store::api::TaskStatus>,
 }
 
 pub const LIST_LIMIT: u32 = 500;
@@ -187,6 +193,7 @@ impl App {
             pending_sends: 0,
             editor_request: None,
             hold: None,
+            task_status: std::collections::HashMap::new(),
         };
         app.reload();
         app
@@ -292,7 +299,7 @@ impl App {
     }
 
     /// Calendar parts aren't in the mirror's text: parse the raw message.
-    fn invite_of(&self, m: &Message) -> Option<Invite> {
+    pub(crate) fn invite_of(&self, m: &Message) -> Option<Invite> {
         let raw = self.raw(m)?;
         let p = mime::parse(&raw).ok()?;
         p.calendars.iter().find_map(|c| invite::parse(c, self.cfg.tz()))
@@ -360,6 +367,7 @@ impl App {
             Mode::ConfirmSend(d) => self.confirm_send_key(k, *d),
             Mode::ApproveSend { id } => self.approve_send_key(k, id),
             Mode::ConfirmUnsubscribe { r#ref, .. } => self.confirm_unsubscribe_key(k, r#ref),
+            Mode::KairosForm(f) => self.form_key(k, *f),
         }
     }
 
@@ -389,11 +397,29 @@ impl App {
         }
     }
 
+    /// Open a thread by id (selecting its row when it's in the list).
+    pub fn open_thread(&mut self, account: &str, thread_id: &str) -> bool {
+        if let Some(i) = self
+            .rows
+            .iter()
+            .position(|r| r.account == account && r.thread_id == thread_id)
+        {
+            self.sel = i;
+        }
+        self.open = self.load_thread(account, thread_id);
+        if self.open.is_some() {
+            self.mode = Mode::Thread;
+            self.queue_task_status();
+        }
+        self.open.is_some()
+    }
+
     fn open_selected(&mut self) {
         let Some(r) = self.selected().cloned() else { return };
         self.open = self.load_thread(&r.account, &r.thread_id);
         if self.open.is_some() {
             self.mode = Mode::Thread;
+            self.queue_task_status();
             // Opening a thread marks it read (Alec, 2026-10-14).
             if r.unread {
                 self.deferred.push(Job::Triage {
@@ -570,7 +596,15 @@ impl App {
         match &self.mode {
             Mode::Thread if self.back.is_some() => "z quotes · Esc back to the review".into(),
             Mode::Thread => {
-                let mut h = vec!["r reply", "d archive", "s snooze", "z quotes"];
+                let mut h = vec![];
+                if self
+                    .open
+                    .as_ref()
+                    .is_some_and(|o| self.suggestion_for(&o.account, &o.thread_id).is_some())
+                {
+                    h.extend(["y create", "n dismiss"]);
+                }
+                h.extend(["r reply", "d archive", "t task", "z quotes"]);
                 if self.open.as_ref().is_some_and(|o| !o.attachments().is_empty()) {
                     h.push("o attachment");
                 }

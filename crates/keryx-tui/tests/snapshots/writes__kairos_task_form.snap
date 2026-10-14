@@ -1,0 +1,33 @@
+---
+source: crates/keryx-tui/tests/writes.rs
+expression: s
+---
+╭──────────────────────────── Inbox · All accounts ────────────────────────────╮
+│ Oxford   Trains         Your e-ticket: Oxford to London, Fri 23 Oct    08:30 │
+│ Personal Trains         Your e-ticket: Oxford to London, Fri 23 Oct    08:30 │
+│ Oxford   Lecturer       Society minutes · Please see the attached … 󰁦    Tue │
+│ Oxford   Lecturer       Broken file · Please see the attached file. 󰁦    Tue │
+│ Oxford   Lecturer       B4 problem sheet 3 · Please see the attach… 󰁦    Tue │
+│ Oxford   Jane Doe       Lab partner for Thursday? · Hi Alec, Are you…    Tue │
+│ Oxford   Prof Smith (2) Cancelled: Project meeting                       Tue │
+│ ╭────────────────────────────── kairos task ───────────────────────────────╮ │
+│ │                                                                          │ │
+│ │    Title  Lab partner for Thursday?                                      │ │
+│ │ Calendar  ◀ ● Personal ▶                                                 │ │
+│ │     Type  ◀ admin ▶                                                      │ │
+│ │ Estimate  45m                                                            │ │
+│ │      Due  fri 17:00█                                                     │ │
+│ │           fri 17:00 · 23 oct · tomorrow 9 · 2026-10-23T17:00             │ │
+│ │                                                                          │ │
+│ │  → Lab partner for Thursday? · Personal · admin · 45 min · due Fri 16    │ │
+│ │    Oct 17:00                                                             │ │
+│ │                                                                          │ │
+│ │  Tab next · ⇧Tab back · Enter save · Esc cancel                          │ │
+│ ╰──────────────────────────────────────────────────────────────────────────╯ │
+│ Oxford   Ann            Hello · Hello from Ann.                        5 Oct │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯

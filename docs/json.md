@@ -23,7 +23,10 @@ Every read command takes `--json`. Output has a top-level `"schema": 1`; within 
       "flagged": false,
       "has_attachment": false,
       "in_inbox": true,
-      "keys": ["Admin"]                // keys (shared folders) the thread is filed under
+      "keys": ["Admin"],               // keys (shared folders) the thread is filed under
+      "needs_reply": "asks about Thursday",  // the needs-reply reason, or null
+      "kairos_linked": false,          // a kairos task / event was made from it
+      "kairos_suggestion": false       // Claude has a kairos suggestion waiting
     }
   ]
 }
@@ -66,3 +69,25 @@ Every read command takes `--json`. Output has a top-level `"schema": 1`; within 
 }
 ```
 People you've written to come first; newsletters are left out.
+
+## `keryx suggestions [--status open|accepted|dismissed] --json`
+
+Claude's kairos ideas. Nothing reaches kairos until you accept one with `y` in the TUI and save the form.
+
+```json
+{
+  "schema": 1,
+  "suggestions": [
+    {
+      "id": "sg-1a2b3c4d5e",
+      "ref": "oxford:42",
+      "kind": "task",                  // task | event
+      "proposal": {"title": "B4 sheet 3", "kind": "sheet", "estimate_min": 300, "due": "fri 17:00"},
+      "reason": "Sheet due Friday",    // Claude's one line
+      "author": "claude",
+      "status": "open",
+      "created_at": "2026-10-14T08:02:00+01:00"
+    }
+  ]
+}
+```

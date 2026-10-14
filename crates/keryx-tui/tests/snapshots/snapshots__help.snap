@@ -1,25 +1,23 @@
 ---
 source: crates/keryx-tui/tests/snapshots.rs
-assertion_line: 173
 expression: "render_to_string(&mut a, 80, 20)"
 ---
-╭╭─────────────────────────────────── keys ───────────────────────────────────╮╮
-││ j k  ↑ ↓        next / previous                                            ││
-││ Enter           read the thread                                            ││
-││ Esc             back (clears a search)                                     ││
+╭──────────────────────────── Admin · All accounts ────────────────────────────╮
+│╭─────────────────────────────────── keys ───────────────────────────────────╮│
+││ j k  ↑ ↓  J K   next / previous (J K: next thread while reading)           ││
+││ Enter  Esc      read the thread · back (clears a search)                   ││
 ││ Tab  Shift-Tab  account: All · each account                                ││
 ││ g               go to: Inbox, Needs reply, Flagged, Snoozed, Sent, keys…   ││
 ││ /               search (from: to: subject: account: key: in: is: has: befo…││
-││ z               thread: show / fold quoted text                            ││
-││ o               thread: open an attachment                                 ││
+││ z o             thread: show / fold quoted text · open an attachment       ││
+││ r R F c         reply · reply all · forward · compose ($EDITOR)            ││
 ││ d s m           archive · snooze · file into a key                         ││
-││ f U N           flag · mark unread · needs-reply tag                       ││
-││ x               mark threads for a batch (Esc clears)                      ││
-││ u               undo the last change                                       ││
-││ A               cleanups waiting for you                                   ││
-││ J K             thread: next / previous thread                             ││
-││ Ctrl-R          sync now                                                   ││
-││ q               quit                                                       ││
+││ f U N L         flag · mark unread · needs-reply tag · unsubscribe         ││
+││ t i w           kairos task · invite → event · reply with your free times  ││
+││ y n             Claude's kairos idea: create (opens the form) · dismiss    ││
+││ x  u            mark for a batch (Esc clears) · undo the last change       ││
+││ A  Ctrl-R  q    waiting for you · sync now · quit                          ││
 ││                                                                            ││
-╰│                                                                            │╯
- ╰────────────────────────────────────────────────────────────────────────────╯
+││                                                                            ││
+│╰────────────────────────────────────────────────────────────────────────────╯│
+╰──────────────────────────────────────────────────────────────────────────────╯

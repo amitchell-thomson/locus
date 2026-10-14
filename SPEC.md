@@ -391,7 +391,8 @@ ntfy push for every pending **send** that Claude makes in a session Alec is in: 
 - The task's `notes` get a cross-link `keryx://thread/<account>/<thread_id>` and the sender + subject. keryx stores the link (§4). `keryx open keryx://…` opens the TUI on that thread. (kairos showing or opening these links is a later kairos change.)
 - Free-time text: `Tue 15 Oct 14:00–15:00`, `Wed 16 Oct 10:00–11:30`, … in Europe/London. Slots shorter than the requested duration are dropped, and at most N slots come back, spread across days (no three slots on the same morning).
 - kairos down → a clear error ("kairos isn't reachable at compute-node:7420: task not created"), and nothing half-done. The link is only stored after kairos returns a task id.
-- **Due dates:** v1 sends the raw string to kairos, which parses natural forms, and shows kairos's error. The form's *live* preview needs the parser locally. That's the first real "needed twice" case (`kairos-core::dates`, §11). Decision for Alec (§13).
+- **Due dates:** the form parses with the shared `eco-dates` (the parser kairos uses) and sends the canonical form (`2026-10-23T17:00`, or `2026-10-23` for a day), so the live preview is exactly what kairos receives. Claude's suggested `due` is shown in the form and re-checked there.
+- `live = false` gates kairos writes as it gates mail writes: only `[keryx-test]` threads can become tasks or events until keryx goes live.
 
 ---
 

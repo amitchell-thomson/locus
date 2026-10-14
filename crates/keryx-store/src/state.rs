@@ -36,6 +36,28 @@ CREATE TABLE IF NOT EXISTS tags (
   created_at INTEGER NOT NULL,
   PRIMARY KEY (account, thread_id, kind)
 );
+CREATE TABLE IF NOT EXISTS links (
+  account TEXT NOT NULL,
+  thread_id TEXT NOT NULL,
+  app TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  target TEXT NOT NULL,
+  title TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (account, thread_id, app, target)
+);
+CREATE TABLE IF NOT EXISTS suggestions (
+  id TEXT PRIMARY KEY,
+  account TEXT NOT NULL,
+  thread_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  proposal TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  author TEXT NOT NULL,
+  run_id TEXT,
+  status TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS reviews (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
@@ -168,6 +190,38 @@ pub struct Tag {
     pub kind: String,
     pub reason: String,
     pub author: String,
+    pub created_at: i64,
+}
+
+/// A thread linked to something in another app (a kairos task or event).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Link {
+    pub account: String,
+    pub thread_id: String,
+    pub app: String,
+    /// task | event
+    pub kind: String,
+    /// The other app's id (kairos task id / changeset id for events).
+    pub target: String,
+    pub title: String,
+    pub created_at: i64,
+}
+
+/// Claude's idea for kairos; nothing reaches kairos until Alec saves the form.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Suggestion {
+    pub id: String,
+    pub account: String,
+    pub thread_id: String,
+    /// task | deadline | event
+    pub kind: String,
+    /// Prefill for the form (title, due, estimate_min, kind / start, end, location).
+    pub proposal: serde_json::Value,
+    pub reason: String,
+    pub author: String,
+    pub run_id: Option<String>,
+    /// open | accepted | dismissed
+    pub status: String,
     pub created_at: i64,
 }
 
@@ -326,6 +380,102 @@ impl Db {
             .tags(kind)?
             .into_iter()
             .find(|t| t.account == account && t.thread_id == thread_id))
+    }
+
+    pub fn add_link(&self, l: &Link) -> Result<(), DbError> {
+        self.conn().execute(
+            "INSERT OR REPLACE INTO links (account, thread_id, app, kind, target, title, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![l.account, l.thread_id, l.app, l.kind, l.target, l.title, l.created_at],
+        )?;
+        Ok(())
+    }
+
+    pub fn links(&self, account: &str, thread_id: &str) -> Result<Vec<Link>, DbError> {
+        let mut st = self.conn().prepare(
+            "SELECT account, thread_id, app, kind, target, title, created_at FROM links
+             WHERE account = ?1 AND thread_id = ?2 ORDER BY created_at",
+        )?;
+        let rows = st.query_map(params![account, thread_id], |r| {
+            Ok(Link {
+                account: r.get(0)?,
+                thread_id: r.get(1)?,
+                app: r.get(2)?,
+                kind: r.get(3)?,
+                target: r.get(4)?,
+                title: r.get(5)?,
+                created_at: r.get(6)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// Every thread with a link.
+    pub fn linked_threads(&self) -> Result<std::collections::HashSet<(String, String)>, DbError> {
+        let mut st = self.conn().prepare("SELECT DISTINCT account, thread_id FROM links")?;
+        let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    pub fn add_suggestion(&self, s: &Suggestion) -> Result<(), DbError> {
+        self.conn().execute(
+            "INSERT INTO suggestions (id, account, thread_id, kind, proposal, reason, author, run_id, status, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![
+                s.id,
+                s.account,
+                s.thread_id,
+                s.kind,
+                serde_json::to_string(&s.proposal)?,
+                s.reason,
+                s.author,
+                s.run_id,
+                s.status,
+                s.created_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Suggestions (newest first); `status` filters, `thread` narrows.
+    pub fn suggestions(&self, status: Option<&str>, thread: Option<(&str, &str)>) -> Result<Vec<Suggestion>, DbError> {
+        let mut st = self.conn().prepare(
+            "SELECT id, account, thread_id, kind, proposal, reason, author, run_id, status, created_at FROM suggestions
+             WHERE (?1 IS NULL OR status = ?1) AND (?2 IS NULL OR (account = ?2 AND thread_id = ?3))
+             ORDER BY created_at DESC, rowid DESC",
+        )?;
+        let (a, t) = thread.map(|(a, t)| (Some(a), Some(t))).unwrap_or((None, None));
+        let rows = st.query_map(params![status, a, t], |r| {
+            Ok((
+                Suggestion {
+                    id: r.get(0)?,
+                    account: r.get(1)?,
+                    thread_id: r.get(2)?,
+                    kind: r.get(3)?,
+                    proposal: serde_json::Value::Null,
+                    reason: r.get(5)?,
+                    author: r.get(6)?,
+                    run_id: r.get(7)?,
+                    status: r.get(8)?,
+                    created_at: r.get(9)?,
+                },
+                r.get::<_, String>(4)?,
+            ))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (mut s, p) = row?;
+            s.proposal = serde_json::from_str(&p)?;
+            out.push(s);
+        }
+        Ok(out)
+    }
+
+    pub fn set_suggestion_status(&self, id: &str, status: &str) -> Result<bool, DbError> {
+        Ok(self
+            .conn()
+            .execute("UPDATE suggestions SET status = ?2 WHERE id = ?1", params![id, status])?
+            > 0)
     }
 
     pub fn create_review(&self, r: &Review) -> Result<(), DbError> {

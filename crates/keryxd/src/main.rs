@@ -12,6 +12,7 @@ use std::time::Instant;
 
 mod actuate;
 mod engine;
+mod engine_kairos;
 mod engine_send;
 mod gmail_sync;
 mod http;
@@ -82,7 +83,14 @@ fn main() -> anyhow::Result<()> {
     }
     let token = keryx_store::keychain::get("keryx-api-token")
         .context("no API token in the Keychain (docs/setup.md §5: keryx-api-token)")?;
-    let engine = engine::Engine::new(cfg.clone(), db, Box::new(actuate::Real::new(cfg.clone())))?;
+    let mut engine = engine::Engine::new(cfg.clone(), db, Box::new(actuate::Real::new(cfg.clone())))?;
+    match keryx_store::kairos::Http::new(&cfg.kairos.url, &cfg.kairos.token_service) {
+        Ok(k) => engine.kairos = Some(Box::new(k)),
+        Err(e) => {
+            tracing::warn!(error = %e, "kairos link off");
+            engine.kairos_note = e.to_string();
+        }
+    }
     let engine = std::sync::Arc::new(std::sync::Mutex::new(engine));
     let (tx, rx) = std::sync::mpsc::sync_channel::<()>(1);
     {

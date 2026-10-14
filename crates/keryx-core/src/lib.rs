@@ -10,6 +10,7 @@ pub mod colour;
 pub mod compose;
 pub mod config;
 pub mod display;
+pub mod freetime;
 pub mod invite;
 pub mod location;
 pub mod mime;

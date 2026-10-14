@@ -1,6 +1,5 @@
 ---
 source: crates/keryx-tui/tests/snapshots.rs
-assertion_line: 111
 expression: s
 ---
 ╭───────────────────────────────────────────── Thread ─────────────────────────────────────────────╮
@@ -31,4 +30,4 @@ expression: s
 │                                                                                                  │
 │                                                                                                  │
 │                                                                                                  │
-╰─────────────────────────────────── r reply · d archive · s snooze · z quotes · Esc back · ? help ╯
+╰───────────────────────────────────── r reply · d archive · t task · z quotes · Esc back · ? help ╯

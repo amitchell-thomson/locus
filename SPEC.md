@@ -183,7 +183,8 @@ Deterministic Rust code. Claude's job is to interpret intent, create and update 
 5. **Stability:** on replan, keep already-placed future blocks that remain feasible; only move a block when required (or when a squeeze can be undone). Report how many blocks moved. A block Alec moves by hand becomes pinned.
 6. **Infeasibility is a first-class output:** if work doesn't fit, report per-task shortfall ("B4 sheet: 2.5 h short before Fri 17:00") and the options (extend window, drop/lower priority, cut estimate). Never silently overbook.
 7. **Learned estimates:** once a type has ≥ 3 finished tasks, remaining time is planned × the median actual/estimate ratio (clamped ×0.7–×2), shown in the plan ("≈ B4 sheet: planning 6 h for 4 h left (sheet tasks usually take ×1.50)").
-8. **Proposed project time:** after task work, one session a day (`max_per_day`), from 09:00 (`earliest`), in the day's longest comfortable free gap (1–3 h, within the daily work cap, next 7 days; none on a day with an accepted session — Alec can still add more himself) is offered as greyed "Project time?" blocks in the TUI (kairosd only — nothing written to iCloud). Alec accepts one (`y`, then says what to work on → an event) or drops it (`d`, never proposed there again).
+8. **Proposed project time:** after task work, one session a day (`max_per_day`), from 09:00 (`earliest`), in the day's longest comfortable free gap (1–3 h, within the daily work cap, next 7 days; none on a day with an accepted session — Alec can still add more himself) is offered as greyed "Project time?" blocks in the TUI (kairosd only — nothing written to iCloud). Alec accepts one (`y`, then picks the project → an event titled with it) or drops it (`d`, never proposed there again).
+9. **Projects** (2026-10-14): Alec's list of projects in kairosd (`projects` table, not calendar data, so not changesets), each **active** (working on now), **next** (should be soon), **paused** or **done**, with a one-line note. Time spent is computed, never logged: sessions linked when a proposal is accepted (`project_sessions`), plus events in the projects calendar titled with a project's name — shown as this week / last 30 days / last worked / next session. Each proposal suggests an active project, the most neglected first (least time this week counting sessions already planned, then longest since last worked), in turn; `y` opens a picker with the suggestion first, the other active and next projects, "+ new project…", or plain "Project time". Accepting a *next* project makes it active. No weekly targets (Alec, 2026-10-14).
 
 **Start now:** `n` in the TUI on a task (tasks view) or on one of its blocks / its ⚑ (week/day view) puts a pinned block from now (rounded down to the slot) for a full block of the task's type, stopping at the next fixed event or the deadline; it replaces the task's unpinned blocks it overlaps, and the plan reflows.
 
@@ -272,7 +273,8 @@ Requirements:
   - `create_event`, `update_event`, `delete_event`, `move_event`, `share_to_family`
   - `list_tasks`, `create_task`, `update_task` (incl. reopen), `complete_task`, `create_deadline`, `start_task`, `log_work`
   - `list_checkins`, `checkin(block, done|partial|missed|finished, actual_min?, remaining_min?)` (2026-10-13: Alec can check in by telling Claude)
-  - `list_proposals`, `accept_proposal`, `reject_proposal` (project time)
+  - `list_proposals`, `accept_proposal(project?)`, `reject_proposal` (project time)
+  - `list_projects`, `create_project`, `update_project` (no delete over MCP: mark it done)
   - `search_events`, `update_events`, `delete_events`, `move_events` (batches: one approval, one undo)
   - `plan(dry_run)`, `list_changesets(status?)`, `get_changeset(id)`, `undo(id)`
 - Every write tool returns `{changeset_id, risk, status, summary}`. There is **no** approve tool.

@@ -33,6 +33,7 @@ Your own edits here apply straight away (no approval); `u` undoes the last one, 
 | `P` | run the scheduler |
 | `T` | tasks: `D` done · `W` log work · `+` more time · `o` reopen · `e` edit · `n` start |
 | `A` | changes waiting for approval (from Claude or scripts) |
+| `R` | projects (below) |
 
 ## Check-ins
 
@@ -50,6 +51,21 @@ A work block that has ended waits for you to say how it went: no answer is decid
 
 The same answers work from the phone (evening push → check-in page, including "took longer"), `kairos checkin` (`l` = took longer), or by telling Claude (MCP `checkin` with `outcome: "longer"` / `log_work`).
 
+## Projects (`R`)
+
+Your projects, grouped **Active** (working on now) · **Next** (should be working on) · **Paused** · **Done**, each with its note and the time spent: this week, last 30 days, when you last worked on it, and the next session planned.
+
+| Key | |
+|---|---|
+| `a` | add a project (name, status, note) |
+| `e` | edit it |
+| `s` | next status: active → next → paused → done → active |
+| `d` | delete it (its sessions stay on the calendar) |
+
+Time is never logged by hand: a session counts for a project when you accepted proposed time for it, or when an event in the Projects calendar has the project's name as its title.
+
+**Proposed project time** (◌, greyed) suggests the active project you've spent least time on lately. `y` opens a picker with that one first, then your other active and next projects, `+ new project…`, or just "Project time". Choosing a *next* project makes it active.
+
 ## Reading a work block
 
 - **Left edge:** `┆` kairos may move it · `╏` you placed it (pinned) · `▌` ordinary events and anything in the past.
@@ -57,4 +73,4 @@ The same answers work from the phone (evening push → check-in page, including 
 - Titles are italic. A block starting off the grid (e.g. 10:15) shows a dim `:15`; a title cut short beside a tag ends in `…`.
 - **Bottom edge**, on the selected block: for a future block `task: X/Y done by then · Z left after`; for a past or current block `task: X/Y done · Z left`. Key hints sit on the right.
 - **Selection:** the selected item is filled in its own colour; other blocks of the same task get a lighter tint; pending approvals stay blue.
-- ◌ marks proposed project time (only in kairos until you accept it with `y`, or drop it with `d`).
+- ◌ marks proposed project time, titled with the suggested project (only in kairos until you accept it with `y`, or drop it with `d`).

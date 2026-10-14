@@ -450,6 +450,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         View::Agenda => agenda(f, app, main),
         View::Tasks => tasks(f, app, main),
         View::Approvals => approvals(f, app, main),
+        View::Projects => projects(f, app, main),
     }
     if app.expanded
         && matches!(app.view, View::Week | View::Day | View::Month | View::Agenda)
@@ -461,6 +462,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         Mode::Help => help(f, app, main),
         Mode::Checkin(i) => checkin(f, app, main, *i),
         Mode::Form(form) => form_popup(f, app, main, form),
+        Mode::PickProject { proposal, sel } => pick_project(f, app, main, proposal, *sel),
         _ => {}
     }
     status_bar(f, app, status);
@@ -1563,6 +1565,144 @@ fn tasks(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Paragraph::new(lines), inner);
 }
 
+fn projects(f: &mut Frame, app: &App, area: Rect) {
+    use kairos_core::project::ProjectStatus;
+    let block = with_hints(panel("Projects", true), app, area.width);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let mut lines: Vec<Line> = Vec::new();
+    if let Some(e) = &app.daemon_error {
+        lines.push(Line::from(TSpan::styled(
+            format!("kairosd: {e}"),
+            Style::default().fg(c("red")),
+        )));
+    }
+    if app.projects.is_empty() {
+        lines.push(Line::from(TSpan::styled(
+            "No projects yet. a adds one; proposed project time ◌ then suggests the one you've spent least time on.",
+            Style::default().fg(c("overlay1")),
+        )));
+    }
+    let col = app
+        .cfg
+        .keys
+        .iter()
+        .find(|k| k.name == "Projects")
+        .map_or(c("mauve"), |k| rgb(k.colour));
+    let fmt = |m: u32| crate::form::fmt_minutes(i64::from(m));
+    let mut k = 0usize;
+    for st in ProjectStatus::ALL {
+        let group: Vec<&kairos_core::api::ProjectItem> =
+            app.projects.iter().filter(|p| p.project.status == st).collect();
+        if group.is_empty() {
+            continue;
+        }
+        if !lines.is_empty() {
+            lines.push(Line::raw(""));
+        }
+        let head = match st {
+            ProjectStatus::Active => "Active — working on now",
+            ProjectStatus::Next => "Next — should be working on",
+            ProjectStatus::Paused => "Paused",
+            ProjectStatus::Done => "Done",
+        };
+        lines.push(Line::from(TSpan::styled(
+            format!("{head} · {}", group.len()),
+            Style::default().fg(c("overlay1")).add_modifier(Modifier::BOLD),
+        )));
+        for p in group {
+            let sel = k == app.sel;
+            k += 1;
+            let faded = matches!(st, ProjectStatus::Paused | ProjectStatus::Done);
+            let base = if sel {
+                selected_style(col)
+            } else if faded {
+                Style::default().fg(c("overlay1"))
+            } else {
+                Style::default().fg(c("text"))
+            };
+            let dim = if sel { base } else { Style::default().fg(c("overlay1")) };
+            let mut time = vec![format!("{} this week", fmt(p.week_min))];
+            if p.month_min > p.week_min {
+                time.push(format!("{} in 30 days", fmt(p.month_min)));
+            }
+            match p.last_worked {
+                Some(t) => time.push(format!("last {}", t.with_timezone(&app.tz).format("%a %-d %b"))),
+                None => time.push("not worked on yet".into()),
+            }
+            if let Some(n) = p.next_session {
+                time.push(format!("next {}", n.with_timezone(&app.tz).format("%a %H:%M")));
+            }
+            lines.push(Line::from(vec![
+                TSpan::styled(
+                    if faded { "○ " } else { "● " },
+                    if sel { base } else { Style::default().fg(col) },
+                ),
+                TSpan::styled(format!("{:<22} ", fit(&p.project.name, 22)), base),
+                TSpan::styled(format!("{:<34} ", fit(&p.project.note, 34)), dim),
+                TSpan::styled(time.join(" · "), dim),
+            ]));
+        }
+    }
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
+/// Accepting proposed project time: pick the project.
+fn pick_project(f: &mut Frame, app: &App, area: Rect, proposal: &str, sel: usize) {
+    use crate::app::PickOption;
+    let mut lines = vec![];
+    if let Some(p) = app.proposals.iter().find(|p| p.id == proposal) {
+        lines.push(Line::from(TSpan::styled(
+            format!(
+                "{}–{}: work on…",
+                p.start.with_timezone(&app.tz).format("%a %H:%M"),
+                p.end.with_timezone(&app.tz).format("%H:%M")
+            ),
+            Style::default().fg(c("text")).add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::raw(""));
+    }
+    let suggested = app
+        .proposals
+        .iter()
+        .find(|p| p.id == proposal)
+        .and_then(|p| p.project_id.clone());
+    for (k, o) in app.pick_options(proposal).iter().enumerate() {
+        let label = match o {
+            PickOption::Project { id, name } => {
+                let mut s = name.clone();
+                if Some(id) == suggested.as_ref() {
+                    s.push_str("  (least time lately)");
+                } else if let Some(p) = app.projects.iter().find(|p| &p.project.id == id)
+                    && p.project.status != kairos_core::project::ProjectStatus::Active
+                {
+                    s.push_str(&format!("  ({})", p.project.status.as_str()));
+                }
+                s
+            }
+            PickOption::New => "+ new project…".to_string(),
+            PickOption::Plain => "just “Project time”".to_string(),
+        };
+        let st = if k == sel {
+            Style::default()
+                .fg(c("base"))
+                .bg(c("blue"))
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(c("text"))
+        };
+        lines.push(Line::from(TSpan::styled(format!(" {label} "), st)));
+    }
+    lines.push(Line::raw(""));
+    lines.push(Line::from(TSpan::styled(
+        "j/k choose · Enter accept · Esc cancel",
+        Style::default().fg(c("overlay0")),
+    )));
+    let r = centred(area, 56, lines.len() as u16 + 2);
+    f.render_widget(Clear, r);
+    f.render_widget(Paragraph::new(lines).block(popup_block("project time")), r);
+}
+
 fn approvals(f: &mut Frame, app: &App, area: Rect) {
     let left_w = (area.width * 2 / 5).max(24).min(area.width);
     let left = Rect::new(area.x, area.y, left_w, area.height);
@@ -1743,9 +1883,12 @@ fn help(f: &mut Frame, app: &App, area: Rect) {
         ("d", "remove: event · skip work block · ⚑ with all its work · drop"),
         ("s", "share an event to Family"),
         ("B", "Family event: attending / not"),
-        ("y", "accept proposed project time ◌ (say what) · approve"),
+        ("y", "accept proposed project time ◌ (pick the project) · approve"),
         ("n", "start the selected task now (plan reflows)"),
-        ("T A", "tasks (D done · W log work · + more · o reopen) · approvals"),
+        (
+            "T A R",
+            "tasks (D done · W log · + more · o reopen) · approvals · projects",
+        ),
         (
             "y c + x F",
             "past block: done · partly · took longer · missed · task finished",
@@ -1828,7 +1971,7 @@ fn form_popup(f: &mut Frame, app: &App, area: Rect, form: &Form) {
         );
         let mut spans = vec![lab];
         match fld.kind {
-            FieldKind::Key | FieldKind::Type | FieldKind::Repeat => {
+            FieldKind::Key | FieldKind::Type | FieldKind::Repeat | FieldKind::Status => {
                 let col = app.cfg.key(&fld.value).map_or(c("text"), |k| rgb(k.colour));
                 let arrow = Style::default().fg(if focus { c("mauve") } else { c("surface2") });
                 spans.push(TSpan::styled("◀ ", arrow));
@@ -1955,6 +2098,7 @@ fn status_bar(f: &mut Frame, app: &App, area: Rect) {
                 Confirm::DropTask(_) => "drop task?",
                 Confirm::Skip => "skip block?",
                 Confirm::ClearDue(_) => "remove deadline?",
+                Confirm::DeleteProject(_) => "delete project?",
             };
             push(
                 buf,

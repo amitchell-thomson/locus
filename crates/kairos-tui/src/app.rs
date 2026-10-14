@@ -25,6 +25,7 @@ pub enum View {
     Agenda,
     Tasks,
     Approvals,
+    Projects,
 }
 
 impl View {
@@ -36,6 +37,7 @@ impl View {
             View::Agenda => "agenda",
             View::Tasks => "tasks",
             View::Approvals => "approvals",
+            View::Projects => "projects",
         }
     }
 }
@@ -60,10 +62,9 @@ pub enum PromptKind {
         task_id: String,
         title: String,
     },
-    /// Accepting proposed project time: what to work on.
-    Project {
-        id: String,
-        title: String,
+    /// Accepting proposed project time for a new project: its name.
+    NewProject {
+        proposal: String,
     },
     /// More time for a task (its planned time is used up, or it grew).
     MoreTime {
@@ -89,7 +90,7 @@ impl PromptKind {
             PromptKind::Partial { .. } => "partly done — how long did you work? (e.g. 45m)",
             PromptKind::Remaining { .. } => "how much is left? (e.g. 3h, 0 = finished)",
             PromptKind::LogWork { .. } => "log work — how long, ending now? (e.g. 40m)",
-            PromptKind::Project { .. } => "work on (Enter = Project time)",
+            PromptKind::NewProject { .. } => "new project — name (this time goes to it)",
             PromptKind::MoreTime { .. } => "how much more time? (e.g. 2h)",
             PromptKind::MoveDeadline { .. } => "deadline (when, e.g. fri 17:00)",
             PromptKind::Reopen { .. } => "reopen — how much is left? (e.g. 2h)",
@@ -108,6 +109,20 @@ pub enum Confirm {
     Skip,
     /// Remove a task's deadline (the task stays, with no deadline).
     ClearDue(String),
+    /// Delete a project (its sessions stay on the calendar).
+    DeleteProject(String),
+}
+
+/// A choice when accepting proposed project time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PickOption {
+    Project {
+        id: String,
+        name: String,
+    },
+    New,
+    /// No project: just the proposal's generic title.
+    Plain,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -120,6 +135,11 @@ pub enum Mode {
     Checkin(usize),
     /// `a` in the calendar: an event or a task?
     AddChoice,
+    /// Accepting proposed project time: which project?
+    PickProject {
+        proposal: String,
+        sel: usize,
+    },
 }
 
 /// A block being checked in (from the C list or the calendar).
@@ -196,6 +216,8 @@ pub struct App {
     pub checkins: Vec<api::CheckinItem>,
     /// Proposed project time (greyed; accept or drop).
     pub proposals: Vec<api::ProposalItem>,
+    /// Projects (active, next, paused, done) with time spent.
+    pub projects: Vec<api::ProjectItem>,
     /// Finished tasks, most recent first (the tasks view's Completed section).
     pub done_tasks: Vec<Task>,
     /// Squeezed work blocks (from a dry-run plan): (task id, start, reasons).
@@ -232,6 +254,7 @@ impl App {
             pending: Vec::new(),
             checkins: Vec::new(),
             proposals: Vec::new(),
+            projects: Vec::new(),
             done_tasks: Vec::new(),
             squeezed: Vec::new(),
             daemon,
@@ -349,6 +372,7 @@ impl App {
             View::Week | View::Day | View::Month => self.day_clusters(self.cursor).len(),
             View::Tasks => self.tasks.len() + self.done_tasks.len().min(DONE_SHOWN),
             View::Approvals => self.pending.len(),
+            View::Projects => self.projects.len(),
         }
     }
 
@@ -426,6 +450,9 @@ impl App {
         }
         if let Ok(Ok(p)) = d.proposals() {
             self.proposals = p;
+        }
+        if let Ok(Ok(p)) = d.projects() {
+            self.projects = p;
         }
         if let Ok(Ok(p)) = d.plan(true) {
             self.squeezed = p
@@ -632,6 +659,7 @@ impl App {
                 }
             }
             Mode::Checkin(i) => self.checkin_key(i, k),
+            Mode::PickProject { proposal, sel } => self.pick_project_key(proposal, sel, k),
             Mode::AddChoice => match k {
                 Key::Char('e') => self.open_add(false),
                 Key::Char('t') => self.open_add(true),
@@ -647,7 +675,7 @@ impl App {
             Key::Char('q') | Key::Esc if self.expanded => self.expanded = false,
             Key::Char('q') => self.quit = true,
             Key::Esc => {
-                if matches!(self.view, View::Tasks | View::Approvals) {
+                if matches!(self.view, View::Tasks | View::Approvals | View::Projects) {
                     self.view = View::Week;
                     self.sel = 0;
                 }
@@ -708,6 +736,11 @@ impl App {
                 self.sel = 0;
                 self.refresh_remote();
             }
+            Key::Char('R') => {
+                self.view = View::Projects;
+                self.sel = 0;
+                self.refresh_remote();
+            }
             Key::Char('C') => {
                 self.refresh_remote();
                 if self.checkins.iter().any(|c| c.outcome.is_none()) {
@@ -722,7 +755,10 @@ impl App {
                 self.set_message("syncing…", false);
             }
             Key::Char('a') => {
-                if self.view == View::Tasks {
+                if self.view == View::Projects {
+                    self.message = None;
+                    self.mode = Mode::Form(Form::add_project());
+                } else if self.view == View::Tasks {
                     self.open_add(true);
                 } else {
                     self.mode = Mode::AddChoice;
@@ -760,6 +796,37 @@ impl App {
     /// Keys whose meaning depends on the view / selection.
     fn contextual(&mut self, k: Key) {
         match self.view {
+            View::Projects => {
+                let Some(p) = self.projects.get(self.sel).map(|p| p.project.clone()) else {
+                    return;
+                };
+                match k {
+                    Key::Char('e') => {
+                        self.message = None;
+                        self.mode = Mode::Form(Form::edit_project(&p));
+                    }
+                    Key::Char('s') => {
+                        let next = p.status.cycle();
+                        let req = api::UpdateProjectReq {
+                            status: Some(next.as_str().into()),
+                            ..Default::default()
+                        };
+                        self.update_project_and_report(&p.id, &req);
+                        // Keep the same project selected after re-sorting.
+                        if let Some(k) = self.projects.iter().position(|x| x.project.id == p.id) {
+                            self.sel = k;
+                        }
+                    }
+                    Key::Char('d') => {
+                        self.mode = Mode::Confirm(Confirm::DeleteProject(p.id.clone()));
+                        self.set_message(
+                            format!("delete project “{}”? (its sessions stay on the calendar) y/N", p.name),
+                            false,
+                        );
+                    }
+                    _ => {}
+                }
+            }
             View::Approvals => {
                 let Some(cs) = self.pending.get(self.sel).cloned() else {
                     return;
@@ -869,13 +936,10 @@ impl App {
                     match k {
                         Key::Char('y') => {
                             self.message = None;
-                            self.mode = Mode::Prompt(
-                                PromptKind::Project {
-                                    id: i.uid.clone(),
-                                    title: i.title.clone(),
-                                },
-                                String::new(),
-                            );
+                            self.mode = Mode::PickProject {
+                                proposal: i.uid.clone(),
+                                sel: 0,
+                            };
                         }
                         Key::Char('d') => self.reject_proposal(&i.uid),
                         _ => {}
@@ -1065,6 +1129,16 @@ impl App {
 
     fn confirmed(&mut self, c: Confirm) {
         match c {
+            Confirm::DeleteProject(id) => match self.with_daemon(|d| d.delete_project(&id)) {
+                Some(Ok(Ok(_))) => {
+                    self.set_message("project deleted", false);
+                    self.refresh_remote();
+                    self.sel = self.sel.min(self.projects.len().saturating_sub(1));
+                }
+                Some(Ok(Err(e))) => self.set_message(e.to_string(), true),
+                Some(Err(e)) => self.set_message(e.to_string(), true),
+                None => {}
+            },
             Confirm::Delete => {
                 if let Some(cl) = self.selected() {
                     let i = cl.primary;
@@ -1289,9 +1363,27 @@ impl App {
             }
             return;
         }
-        if let PromptKind::Project { id, title } = &kind {
-            let title = if buf.is_empty() { title.clone() } else { buf };
-            return self.accept_proposal(id.clone(), title);
+        if let PromptKind::NewProject { proposal } = &kind {
+            if buf.is_empty() {
+                return;
+            }
+            let req = api::CreateProjectReq {
+                name: buf.clone(),
+                ..Default::default()
+            };
+            match self.with_daemon(|d| d.create_project(&req)) {
+                Some(Ok(Ok(p))) => {
+                    let req = api::AcceptProposalReq {
+                        project_id: Some(p.id.clone()),
+                        title: None,
+                    };
+                    self.accept_proposal(proposal.clone(), req, p.name);
+                }
+                Some(Ok(Err(e))) => self.set_message(e.to_string(), true),
+                Some(Err(e)) => self.set_message(e.to_string(), true),
+                None => {}
+            }
+            return;
         }
         if buf.is_empty() && kind != PromptKind::Search {
             return;
@@ -1300,7 +1392,7 @@ impl App {
             PromptKind::Remaining { .. }
             | PromptKind::Partial { .. }
             | PromptKind::LogWork { .. }
-            | PromptKind::Project { .. }
+            | PromptKind::NewProject { .. }
             | PromptKind::MoreTime { .. }
             | PromptKind::MoveDeadline { .. }
             | PromptKind::Reopen { .. } => {}
@@ -1348,6 +1440,17 @@ impl App {
     pub fn form_preview(&self, f: &Form) -> Result<String, String> {
         let key = f.get("Calendar");
         match f.kind {
+            FormKind::AddProject | FormKind::EditProject { .. } => {
+                if f.get("Name").is_empty() {
+                    return Err("Name: what the project is called".into());
+                }
+                Ok(match f.get("Status") {
+                    "active" => "active: working on it now — project time suggests it".to_string(),
+                    "next" => "next: should be working on it soon".to_string(),
+                    "paused" => "paused: on hold".to_string(),
+                    _ => "done: finished, kept as a record".to_string(),
+                })
+            }
             FormKind::TookLonger { .. } => {
                 let spent = dates::parse_minutes(f.get("Spent")).map_err(|_| "Spent: e.g. 3h or 2h30".to_string())?;
                 let needs =
@@ -1434,6 +1537,44 @@ impl App {
     }
 
     fn submit_form(&mut self, f: Form) {
+        if let FormKind::AddProject | FormKind::EditProject { .. } = &f.kind {
+            let name = f.get("Name").to_string();
+            if name.is_empty() {
+                self.set_message("Name is empty", true);
+                self.mode = Mode::Form(f);
+                return;
+            }
+            let (status, note) = (f.get("Status").to_string(), f.get("Note").to_string());
+            if let FormKind::EditProject { id } = &f.kind {
+                let req = api::UpdateProjectReq {
+                    name: Some(name),
+                    status: Some(status),
+                    note: Some(note),
+                };
+                return self.update_project_and_report(&id.clone(), &req);
+            }
+            let req = api::CreateProjectReq {
+                name,
+                status: Some(status),
+                note: Some(note),
+            };
+            match self.with_daemon(|d| d.create_project(&req)) {
+                Some(Ok(Ok(p))) => {
+                    self.set_message(format!("✓ project {} · {}", p.name, p.status.as_str()), false);
+                    self.refresh_remote();
+                    if let Some(k) = self.projects.iter().position(|x| x.project.id == p.id) {
+                        self.sel = k;
+                    }
+                }
+                Some(Ok(Err(e))) => {
+                    self.set_message(e.to_string(), true);
+                    self.mode = Mode::Form(f);
+                }
+                Some(Err(e)) => self.set_message(e.to_string(), true),
+                None => {}
+            }
+            return;
+        }
         if let FormKind::TookLonger { t } = &f.kind {
             if let Err(e) = self.form_preview(&f) {
                 self.set_message(e, true);
@@ -1603,7 +1744,7 @@ impl App {
                     }
                 }
             }
-            FormKind::TookLonger { .. } => {}
+            FormKind::TookLonger { .. } | FormKind::AddProject | FormKind::EditProject { .. } => {}
             FormKind::AddTask => {
                 let due = match opt(f.get("Due")).map(|d| self.when_str(&d)).transpose() {
                     Ok(d) => d,
@@ -1656,6 +1797,95 @@ impl App {
         }
     }
 
+    /// What accepting proposal `id` can go to: its suggested project first,
+    /// the other active and next projects, then a new one, or none.
+    pub fn pick_options(&self, id: &str) -> Vec<PickOption> {
+        use kairos_core::project::ProjectStatus;
+        let suggested = self
+            .proposals
+            .iter()
+            .find(|p| p.id == id)
+            .and_then(|p| p.project_id.clone());
+        let mut out: Vec<PickOption> = Vec::new();
+        let mut push = |p: &kairos_core::project::Project| {
+            out.push(PickOption::Project {
+                id: p.id.clone(),
+                name: p.name.clone(),
+            })
+        };
+        if let Some(s) = self.projects.iter().find(|p| Some(&p.project.id) == suggested.as_ref()) {
+            push(&s.project);
+        }
+        for st in [ProjectStatus::Active, ProjectStatus::Next, ProjectStatus::Paused] {
+            for p in self.projects.iter().filter(|p| p.project.status == st) {
+                if Some(&p.project.id) != suggested.as_ref() {
+                    push(&p.project);
+                }
+            }
+        }
+        out.push(PickOption::New);
+        out.push(PickOption::Plain);
+        out
+    }
+
+    fn pick_project_key(&mut self, proposal: String, sel: usize, k: Key) {
+        let opts = self.pick_options(&proposal);
+        match k {
+            Key::Char('j') | Key::Down | Key::Tab => {
+                self.mode = Mode::PickProject {
+                    proposal,
+                    sel: (sel + 1).min(opts.len().saturating_sub(1)),
+                };
+            }
+            Key::Char('k') | Key::Up | Key::BackTab => {
+                self.mode = Mode::PickProject {
+                    proposal,
+                    sel: sel.saturating_sub(1),
+                };
+            }
+            Key::Enter | Key::Char('y') => match opts.get(sel).cloned() {
+                Some(PickOption::Project { id, name }) => {
+                    let req = api::AcceptProposalReq {
+                        project_id: Some(id),
+                        title: None,
+                    };
+                    self.accept_proposal(proposal, req, name);
+                }
+                Some(PickOption::New) => {
+                    self.message = None;
+                    self.mode = Mode::Prompt(PromptKind::NewProject { proposal }, String::new());
+                }
+                Some(PickOption::Plain) | None => {
+                    let title = self.cfg_project_title();
+                    let req = api::AcceptProposalReq {
+                        title: Some(title.clone()),
+                        project_id: None,
+                    };
+                    self.accept_proposal(proposal, req, title);
+                }
+            },
+            Key::Esc | Key::Char('q') => self.message = None,
+            _ => self.mode = Mode::PickProject { proposal, sel },
+        }
+    }
+
+    /// The generic title of project time ("Project time").
+    fn cfg_project_title(&self) -> String {
+        "Project time".to_string()
+    }
+
+    fn update_project_and_report(&mut self, id: &str, req: &api::UpdateProjectReq) {
+        match self.with_daemon(|d| d.update_project(id, req)) {
+            Some(Ok(Ok(p))) => {
+                self.set_message(format!("✓ {} · {}", p.name, p.status.as_str()), false);
+                self.refresh_remote();
+            }
+            Some(Ok(Err(e))) => self.set_message(e.to_string(), true),
+            Some(Err(e)) => self.set_message(e.to_string(), true),
+            None => {}
+        }
+    }
+
     /// The keys that do something for what's selected, for the bottom-right
     /// edge ("e edit · m move · d delete").
     pub fn key_hints(&self) -> String {
@@ -1674,6 +1904,13 @@ impl App {
                     &[]
                 } else {
                     &["y approve", "n reject"]
+                }
+            }
+            View::Projects => {
+                if self.projects.is_empty() {
+                    &["a add project"]
+                } else {
+                    &["a add", "e edit", "s status", "d delete"]
                 }
             }
             View::Week | View::Day | View::Month | View::Agenda => match self.selected().map(|c| c.primary) {
@@ -1766,7 +2003,7 @@ impl App {
         }));
     }
 
-    fn accept_proposal(&mut self, id: String, title: String) {
+    fn accept_proposal(&mut self, id: String, req: api::AcceptProposalReq, title: String) {
         if self.daemon.is_none() {
             return self.set_message("kairosd not configured — writes unavailable", true);
         }
@@ -1813,7 +2050,7 @@ impl App {
             false,
         );
         self.deferred.push(Box::new(move |app: &mut App| {
-            let failed = match app.with_daemon(|d| d.accept_proposal(&id, &title)) {
+            let failed = match app.with_daemon(|d| d.accept_proposal(&id, &req)) {
                 Some(Ok(Ok(_))) => None,
                 Some(Ok(Err(e))) => Some(e.to_string()),
                 Some(Err(e)) => Some(e.to_string()),

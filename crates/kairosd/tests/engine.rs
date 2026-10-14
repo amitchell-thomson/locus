@@ -1189,6 +1189,7 @@ fn project_time_is_proposed_accepted_and_dropped() {
             &props[0].id,
             &kairos_core::api::AcceptProposalReq {
                 title: Some("kairos TUI work".into()),
+                project_id: None,
             },
         )
         .unwrap();
@@ -1219,6 +1220,105 @@ fn project_time_is_proposed_accepted_and_dropped() {
         "re-proposed over a dropped span"
     );
     assert!(matches!(e.reject_proposal("nope"), Err(EngineError::NotFound(_))));
+}
+
+#[test]
+fn project_time_suggests_neglected_projects_and_tracks_time_spent() {
+    use kairos_core::api::{AcceptProposalReq, CreateProjectReq, UpdateProjectReq};
+    use kairos_core::project::ProjectStatus;
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let mk = |e: &mut kairosd::engine::Engine, name: &str, status: &str| {
+        e.create_project(&CreateProjectReq {
+            name: name.into(),
+            status: Some(status.into()),
+            note: None,
+        })
+        .unwrap()
+    };
+    let kairos = mk(&mut e, "kairos", "active");
+    let t0 = *env.now.lock().unwrap();
+    *env.now.lock().unwrap() = t0 + Duration::minutes(1);
+    let mail = mk(&mut e, "email TUI", "active");
+    *env.now.lock().unwrap() = t0;
+    let locus = mk(&mut e, "Locus", "next");
+    assert!(
+        e.create_project(&CreateProjectReq {
+            name: "KAIROS".into(),
+            ..Default::default()
+        })
+        .is_err()
+    );
+    e.plan(false, Author::Scheduler).unwrap();
+    let props = e.proposals().unwrap();
+    assert!(props.len() >= 3, "{props:?}");
+    // Active projects only, in turn (nothing worked yet: oldest first).
+    let names: Vec<&str> = props.iter().take(3).map(|p| p.title.as_str()).collect();
+    assert_eq!(names, ["kairos", "email TUI", "kairos"]);
+    assert_eq!(props[0].project_id.as_deref(), Some(kairos.id.as_str()));
+    // y on the first: the suggested project.
+    e.direct = true;
+    e.accept_proposal(Author::Alec, &props[0].id, &AcceptProposalReq::default())
+        .unwrap();
+    // The second, picked from the list: Locus (next → active, it's under way).
+    e.accept_proposal(
+        Author::Alec,
+        &props[1].id,
+        &AcceptProposalReq {
+            project_id: Some("locus".into()),
+            title: None,
+        },
+    )
+    .unwrap();
+    e.direct = false;
+    assert!(env.read_all("Personal").contains("SUMMARY:kairos"));
+    assert!(env.read_all("Personal").contains("SUMMARY:Locus"));
+    assert_eq!(e.find_project("Locus").unwrap().status, ProjectStatus::Active);
+    // With kairos and Locus planned, the neglected one comes first now.
+    e.plan(false, Author::Scheduler).unwrap();
+    assert_eq!(e.proposals().unwrap()[0].title, "email TUI");
+    // After the kairos session: its time counts, its last worked is set.
+    let mins = (props[0].end - props[0].start).num_minutes() as u32;
+    *env.now.lock().unwrap() = props[1].start - Duration::minutes(1);
+    let items = e.projects().unwrap();
+    let k = items.iter().find(|p| p.project.id == kairos.id).unwrap();
+    assert_eq!(k.month_min, mins);
+    assert_eq!(k.last_worked, Some(props[0].start));
+    let l = items.iter().find(|p| p.project.id == locus.id).unwrap();
+    assert_eq!((l.month_min, l.next_session), (0, Some(props[1].start)));
+    // Renamed: still its sessions (linked, not matched by title).
+    e.update_project(
+        &kairos.id,
+        &UpdateProjectReq {
+            name: Some("kairos calendar".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let k = e
+        .projects()
+        .unwrap()
+        .into_iter()
+        .find(|p| p.project.id == kairos.id)
+        .unwrap();
+    assert_eq!(k.month_min, mins);
+    // Done projects aren't suggested.
+    e.update_project(
+        "email",
+        &UpdateProjectReq {
+            status: Some("done".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert!(
+        e.proposals()
+            .unwrap()
+            .iter()
+            .all(|p| p.project_id.as_deref() != Some(mail.id.as_str()))
+    );
+    e.delete_project(&mail.id).unwrap();
+    assert_eq!(e.projects().unwrap().len(), 2);
 }
 
 #[test]

@@ -19,9 +19,9 @@ expression: "render_to_string(&a, 100, 30)"
 │14:00 ┊  │         d  remove: event · skip work block · ⚑ with all its work · drop      │         │
 │15:00 ┊  │         s  share an event to Family                                          │         │
 │16:00 ┊  │         B  Family event: attending / not                                     │         │
-│17:00 ┊  │         y  accept proposed project time ◌ (say what) · approve               │         │
+│17:00 ┊  │         y  accept proposed project time ◌ (pick the project) · approve       │         │
 │      ┄┄┄│         n  start the selected task now (plan reflows)                        │┄┄┄┄┄┄┄┄┄│
-│18:00 ┊  │       T A  tasks (D done · W log work · + more · o reopen) · approvals       │         │
+│18:00 ┊  │     T A R  tasks (D done · W log · + more · o reopen) · approvals · projects │         │
 │19:00 ┊▌S│ y c + x F  past block: done · partly · took longer · missed · task finished  │day Sq…  │
 │20:00 ┊  │         W  log work on a task (ending now) — for work that wasn't in a block │         │
 │21:00 ┊  │       P C  run the scheduler · check in on everything waiting                │         │

@@ -256,13 +256,35 @@ impl Daemon {
         self.get("/api/proposals")
     }
 
-    pub fn accept_proposal(&self, id: &str, title: &str) -> Result<std::result::Result<WriteResult, Rejected>> {
-        self.post(
-            &format!("/api/proposals/{id}/accept"),
-            &api::AcceptProposalReq {
-                title: Some(title.to_string()),
-            },
-        )
+    pub fn accept_proposal(
+        &self,
+        id: &str,
+        req: &api::AcceptProposalReq,
+    ) -> Result<std::result::Result<WriteResult, Rejected>> {
+        self.post(&format!("/api/proposals/{}/accept", enc(id)), req)
+    }
+
+    pub fn projects(&self) -> Result<std::result::Result<Vec<api::ProjectItem>, Rejected>> {
+        self.get("/api/projects")
+    }
+
+    pub fn create_project(
+        &self,
+        req: &api::CreateProjectReq,
+    ) -> Result<std::result::Result<kairos_core::project::Project, Rejected>> {
+        self.post("/api/projects", req)
+    }
+
+    pub fn update_project(
+        &self,
+        id: &str,
+        req: &api::UpdateProjectReq,
+    ) -> Result<std::result::Result<kairos_core::project::Project, Rejected>> {
+        self.patch(&format!("/api/projects/{}", enc(id)), req)
+    }
+
+    pub fn delete_project(&self, id: &str) -> Result<std::result::Result<serde_json::Value, Rejected>> {
+        self.delete(&format!("/api/projects/{}", enc(id)))
     }
 
     pub fn reject_proposal(&self, id: &str) -> Result<std::result::Result<serde_json::Value, Rejected>> {

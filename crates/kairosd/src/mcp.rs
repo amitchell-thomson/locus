@@ -422,8 +422,29 @@ pub struct StartTaskArgs {
 pub struct AcceptProposalArgs {
     /// Proposal id (from list_proposals).
     pub id: String,
-    /// What Alec will work on (default "Project time").
+    /// The project (id or name) Alec will work on (default: the suggested one).
+    pub project: Option<String>,
+    /// Or just a title, when it isn't one of his projects.
     pub title: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CreateProjectArgs {
+    pub name: String,
+    /// active (default: working on it now) | next (should be soon) | paused | done
+    pub status: Option<String>,
+    /// One line: what it is, or the next step.
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UpdateProjectArgs {
+    /// Project id or name.
+    pub id: String,
+    pub name: Option<String>,
+    /// active | next | paused | done
+    pub status: Option<String>,
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -778,20 +799,50 @@ impl KairosMcp {
     }
 
     #[tool(
-        description = "Proposed project time (kept by kairos only, not on the calendar until Alec accepts). Read-only."
+        description = "Alec's projects (active = working on now, next = should be soon, paused, done) with time spent this week / last 30 days, last worked and next session. Read-only."
+    )]
+    async fn list_projects(&self) -> Result<CallToolResult, ErrorData> {
+        self.run(|e| e.projects()).await
+    }
+
+    #[tool(description = "Add a project to Alec's list (only when he asks).")]
+    async fn create_project(&self, Parameters(a): Parameters<CreateProjectArgs>) -> Result<CallToolResult, ErrorData> {
+        let req = api::CreateProjectReq {
+            name: a.name,
+            status: a.status,
+            note: a.note,
+        };
+        self.run(move |e| e.create_project(&req)).await
+    }
+
+    #[tool(description = "Rename a project, change its status (active/next/paused/done) or its note.")]
+    async fn update_project(&self, Parameters(a): Parameters<UpdateProjectArgs>) -> Result<CallToolResult, ErrorData> {
+        let req = api::UpdateProjectReq {
+            name: a.name,
+            status: a.status,
+            note: a.note,
+        };
+        self.run(move |e| e.update_project(&a.id, &req)).await
+    }
+
+    #[tool(
+        description = "Proposed project time (kept by kairos only, not on the calendar until Alec accepts), each suggesting the active project he's spent least time on lately. Read-only."
     )]
     async fn list_proposals(&self) -> Result<CallToolResult, ErrorData> {
         self.run(|e| e.proposals()).await
     }
 
     #[tool(
-        description = "Accept a project-time proposal when Alec says so: it becomes an event in the Projects calendar (normal risk rules)."
+        description = "Accept a project-time proposal when Alec says so: it becomes an event in the Projects calendar, titled with the project (default: the suggested one) and counted toward its time (normal risk rules)."
     )]
     async fn accept_proposal(
         &self,
         Parameters(a): Parameters<AcceptProposalArgs>,
     ) -> Result<CallToolResult, ErrorData> {
-        let req = api::AcceptProposalReq { title: a.title };
+        let req = api::AcceptProposalReq {
+            title: a.title,
+            project_id: a.project,
+        };
         self.run(move |e| e.accept_proposal(Author::Claude, &a.id, &req)).await
     }
 

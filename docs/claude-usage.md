@@ -28,7 +28,8 @@ claude mcp list   # kairos: … ✓ Connected
 | Events | `create_event`, `update_event`, `delete_event`, `move_event`, `share_to_family`; batches: `update_events`, `delete_events`, `move_events` |
 | Tasks | `create_task`, `update_task` (incl. `reopen`), `complete_task`, `create_deadline`, `start_task`, `log_work`, `plan` |
 | Check-ins | `list_checkins`, `checkin` (done / partial + `actual_min` / longer + `actual_min`, `remaining_min`, `not_before` / missed / finished) |
-| Project time | `list_proposals`, `accept_proposal`, `reject_proposal` |
+| Projects | `list_projects`, `create_project`, `update_project` (status active / next / paused / done) |
+| Project time | `list_proposals`, `accept_proposal` (with `project`), `reject_proposal` |
 | Undo | `undo` |
 
 ## Workflows
@@ -74,7 +75,7 @@ claude mcp list   # kairos: … ✓ Connected
 `start_task {id: "B4"}` → a block from now; the task's other blocks reflow.
 
 ### Project time
-`list_proposals` → offer them; on Alec's word `accept_proposal {id, title: "kairos MCP"}` (an event in Projects) or `reject_proposal {id}`.
+`list_proposals` → offer them with their suggested project ("Wed 14:00–16:00: email TUI?"); on Alec's word `accept_proposal {id}` (the suggestion) or `accept_proposal {id, project: "kairos"}`, or `reject_proposal {id}`. "What should I work on?" → `list_projects`: active ones with least time this week, and next ones waiting.
 
 ### Undo
 `list_changesets {status: "applied"}` → `undo {id}`. If the event was edited elsewhere since, undo refuses with a diff — show it to Alec.

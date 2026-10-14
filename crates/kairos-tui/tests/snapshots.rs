@@ -454,7 +454,7 @@ fn selected_deadline_highlights_its_work_blocks() {
 
 #[test]
 fn proposed_project_time_is_grey_selectable_and_asks_what_to_work_on() {
-    use kairos_tui::app::{Mode, PromptKind};
+    use kairos_tui::app::{Mode, PickOption};
     use ratatui::{Terminal, backend::TestBackend};
     let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
     a.key(Key::Tab); // day view
@@ -463,6 +463,7 @@ fn proposed_project_time_is_grey_selectable_and_asks_what_to_work_on() {
         start: now("2026-10-21T14:00:00+01:00"),
         end: now("2026-10-21T16:00:00+01:00"),
         title: "Project time".into(),
+        project_id: None,
     }];
     let s = render_to_string(&a, 100, 30);
     assert!(s.contains("◌ Project time?"), "{s}");
@@ -484,9 +485,113 @@ fn proposed_project_time_is_grey_selectable_and_asks_what_to_work_on() {
     let s = render_to_string(&a, 100, 30);
     assert!(s.contains("proposed project time: y accept · d drop"), "{s}");
     a.key(Key::Char('y'));
-    assert!(matches!(&a.mode, Mode::Prompt(PromptKind::Project { id, .. }, _) if id == "p1"));
+    assert!(matches!(&a.mode, Mode::PickProject { proposal, sel: 0 } if proposal == "p1"));
+    // No projects yet: a new one, or just "Project time".
+    assert_eq!(a.pick_options("p1"), [PickOption::New, PickOption::Plain]);
     a.key(Key::Esc);
     assert_eq!(a.proposals.len(), 1);
+}
+
+fn project(
+    id: &str,
+    name: &str,
+    status: kairos_core::project::ProjectStatus,
+    week: u32,
+) -> kairos_core::api::ProjectItem {
+    let t = now("2026-10-01T09:00:00+01:00");
+    kairos_core::api::ProjectItem {
+        project: kairos_core::project::Project {
+            id: id.into(),
+            name: name.into(),
+            status,
+            note: String::new(),
+            created_at: t,
+            updated_at: t,
+        },
+        week_min: week,
+        month_min: week,
+        last_worked: (week > 0).then(|| now("2026-10-20T14:00:00+01:00")),
+        next_session: None,
+    }
+}
+
+#[test]
+fn projects_view_and_picking_one_for_proposed_time() {
+    use kairos_core::project::ProjectStatus;
+    use kairos_tui::app::{Mode, PickOption, View};
+    let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
+    a.projects = vec![
+        project("p-k", "kairos", ProjectStatus::Active, 150),
+        project("p-m", "email TUI", ProjectStatus::Active, 0),
+        project("p-l", "Locus", ProjectStatus::Next, 0),
+        project("p-o", "old site", ProjectStatus::Done, 0),
+    ];
+    a.projects[0].project.note = "next: phase 9 gateway".into();
+    // R: the Projects view, grouped by status, with time spent.
+    a.key(Key::Char('R'));
+    assert_eq!(a.view, View::Projects);
+    let s = render_to_string(&a, 130, 24);
+    for want in [
+        "Active — working on now · 2",
+        "Next — should be working on · 1",
+        "Done · 1",
+        "kairos",
+        "next: phase 9 gateway",
+        "2h30 this week",
+        "last Tue 20 Oct",
+        "not worked on yet",
+    ] {
+        assert!(s.contains(want), "{want:?} missing:\n{s}");
+    }
+    assert_eq!(a.key_hints(), "a add · e edit · s status · d delete");
+    // a: the new-project form; e: edit the selected one.
+    a.key(Key::Char('a'));
+    let Mode::Form(f) = &a.mode else { panic!("no form") };
+    assert_eq!(f.title(), "new project");
+    assert_eq!(f.get("Status"), "active");
+    assert_eq!(a.form_preview(f), Err("Name: what the project is called".into()));
+    a.key(Key::Esc);
+    a.key(Key::Char('e'));
+    let Mode::Form(f) = &a.mode else { panic!("no form") };
+    assert_eq!((f.title(), f.get("Name")), ("edit project", "kairos"));
+    a.key(Key::Esc);
+    // Proposed time suggests the neglected one; y lists it first, then the
+    // other active and next projects, a new one, or none.
+    a.key(Key::Esc);
+    a.key(Key::Tab);
+    a.proposals = vec![kairos_core::api::ProposalItem {
+        id: "p1".into(),
+        start: now("2026-10-21T14:00:00+01:00"),
+        end: now("2026-10-21T16:00:00+01:00"),
+        title: "email TUI".into(),
+        project_id: Some("p-m".into()),
+    }];
+    let s = render_to_string(&a, 100, 30);
+    assert!(s.contains("◌ email TUI?"), "{s}");
+    a.sel = a
+        .day_clusters(a.cursor)
+        .iter()
+        .position(|c| c.primary.uid == "p1")
+        .unwrap();
+    a.key(Key::Char('y'));
+    let names: Vec<String> = a
+        .pick_options("p1")
+        .into_iter()
+        .map(|o| match o {
+            PickOption::Project { name, .. } => name,
+            PickOption::New => "new".into(),
+            PickOption::Plain => "plain".into(),
+        })
+        .collect();
+    assert_eq!(names, ["email TUI", "kairos", "Locus", "new", "plain"]);
+    let s = render_to_string(&a, 100, 30);
+    assert!(s.contains("Wed 14:00–16:00: work on…"), "{s}");
+    assert!(s.contains("email TUI  (least time lately)"), "{s}");
+    assert!(s.contains("Locus  (next)"), "{s}");
+    a.key(Key::Char('j'));
+    assert!(matches!(&a.mode, Mode::PickProject { sel: 1, .. }));
+    a.key(Key::Esc);
+    assert!(matches!(a.mode, Mode::Normal));
 }
 
 #[test]

@@ -34,6 +34,7 @@ Data flow: iCloud ⇄ vdirsyncer (rw on compute-node, **read-only** on the Mac) 
 - **Tasks finish only when Alec says so** (complete, or "0 left" at a check-in). Remaining is in estimate units; done time is divided by the learned ratio. Auto-done blocks never close a task or feed the estimate log.
 - **Replan on event changes**: `apply` sets `replan_soon` for any non-scheduler event write; the HTTP layer replans right after answering, the jobs loop on every tick (and after every sync). Stable, so it's a no-op unless work is displaced.
 - **Proposed project time is kairosd-only** (`proposals` table): never written to a calendar until Alec accepts (`y` in the TUI → an event). One a day (longest comfortable gap), none on a day with an accepted one; dropped spans are never re-proposed.
+- **Projects are kairosd metadata** (2026-10-14; `projects` + `project_sessions` tables, like proposals — not changesets). Time spent is derived from calendar events (linked sessions, or Projects-key events titled with the name), never stored. Proposals suggest active projects only, most neglected first.
 - **Day load (10 h) excludes Social and Sport** (`day_load_excludes`); the 3 h continuity rule counts everything.
 - No `unwrap()`/`expect()` outside tests (workspace clippy lints deny them). `thiserror` in libs, `anyhow` in bins.
 

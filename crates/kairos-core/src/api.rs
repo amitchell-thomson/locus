@@ -351,15 +351,57 @@ pub struct ProposalItem {
     pub id: String,
     pub start: DateTime<Utc>,
     pub end: DateTime<Utc>,
-    /// Default title for the event if accepted ("Project time").
+    /// The suggested project's name, or "Project time" when there's none.
     pub title: String,
+    /// The suggested project: the active one with least time lately.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct AcceptProposalReq {
-    /// What to work on (default: the proposal's title).
+    /// What to work on (default: the suggested project, else the proposal's title).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// The project to work on (wins over `title`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+}
+
+/// A project with the time spent on it (from linked sessions).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectItem {
+    #[serde(flatten)]
+    pub project: crate::project::Project,
+    /// Minutes since Monday 00:00 (local).
+    pub week_min: u32,
+    /// Minutes over the last 30 days.
+    pub month_min: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_worked: Option<DateTime<Utc>>,
+    /// The next session planned for it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_session: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct CreateProjectReq {
+    pub name: String,
+    /// active (default) | next | paused | done
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct UpdateProjectReq {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

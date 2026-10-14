@@ -7,6 +7,7 @@ use crate::load::Sidecar;
 use chrono::{DateTime, NaiveDate, Utc};
 use kairos_core::changeset::{Changeset, Status};
 use kairos_core::model::Meta;
+use kairos_core::project::Project;
 use kairos_core::task::{Task, TaskStatus};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
@@ -64,6 +65,14 @@ CREATE TABLE IF NOT EXISTS skips (
     changeset TEXT NOT NULL,
     start     TEXT NOT NULL,
     end       TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS projects (
+    id   TEXT PRIMARY KEY,
+    json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS project_sessions (
+    event_uid  TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS kv (
     k TEXT PRIMARY KEY,
@@ -465,6 +474,69 @@ impl Db {
             .conn
             .execute("UPDATE proposals SET status = ?2 WHERE id = ?1", params![id, status])?;
         Ok(n > 0)
+    }
+
+    // ---------------------------------------------------------------- projects
+
+    pub fn projects(&self) -> Result<Vec<Project>> {
+        let mut st = self.conn.prepare("SELECT json FROM projects")?;
+        let rows = st.query_map([], |r| r.get::<_, String>(0))?;
+        let mut out: Vec<Project> = Vec::new();
+        for r in rows {
+            out.push(serde_json::from_str(&r?)?);
+        }
+        out.sort_by(|a, b| (a.status, a.created_at, &a.id).cmp(&(b.status, b.created_at, &b.id)));
+        Ok(out)
+    }
+
+    pub fn project_get(&self, id: &str) -> Result<Option<Project>> {
+        let j: Option<String> = self
+            .conn
+            .query_row("SELECT json FROM projects WHERE id = ?1", params![id], |r| r.get(0))
+            .optional()?;
+        Ok(match j {
+            Some(j) => Some(serde_json::from_str(&j)?),
+            None => None,
+        })
+    }
+
+    pub fn project_put(&self, p: &Project) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO projects(id, json) VALUES (?1, ?2)
+             ON CONFLICT(id) DO UPDATE SET json = excluded.json",
+            params![p.id, serde_json::to_string(p)?],
+        )?;
+        Ok(())
+    }
+
+    /// Delete a project (its calendar sessions stay; they just aren't linked).
+    pub fn project_delete(&self, id: &str) -> Result<bool> {
+        self.conn
+            .execute("DELETE FROM project_sessions WHERE project_id = ?1", params![id])?;
+        Ok(self.conn.execute("DELETE FROM projects WHERE id = ?1", params![id])? > 0)
+    }
+
+    /// Link an accepted session (calendar event) to a project.
+    pub fn project_session_link(&self, event_uid: &str, project_id: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO project_sessions(event_uid, project_id) VALUES (?1, ?2)
+             ON CONFLICT(event_uid) DO UPDATE SET project_id = excluded.project_id",
+            params![event_uid, project_id],
+        )?;
+        Ok(())
+    }
+
+    /// `(event_uid, project_id)` for every linked session.
+    pub fn project_sessions(&self) -> Result<Vec<(String, String)>> {
+        let mut st = self
+            .conn
+            .prepare("SELECT event_uid, project_id FROM project_sessions")?;
+        let rows = st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
     }
 
     // ---------------------------------------------------------------- skips

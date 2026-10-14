@@ -190,6 +190,11 @@ pub fn router(st: AppState, mcp: Option<Router<AppState>>) -> Router {
         .route("/api/deadlines", post(create_deadline))
         .route("/api/plan", post(plan))
         .route("/api/proposals", get(list_proposals))
+        .route("/api/projects", get(list_projects).post(create_project))
+        .route(
+            "/api/projects/{id}",
+            axum::routing::patch(update_project).delete(delete_project),
+        )
         .route("/api/proposals/{id}/accept", post(accept_proposal))
         .route("/api/proposals/{id}/reject", post(reject_proposal))
         .route("/api/changesets", get(list_changesets))
@@ -455,6 +460,32 @@ async fn create_deadline(
 async fn plan(State(st): State<AppState>, body: Option<Json<api::PlanReq>>) -> HResult<api::PlanResp> {
     let dry = body.is_some_and(|b| b.0.dry_run);
     Ok(Json(with_engine(&st, move |e| e.plan(dry, Author::Scheduler)).await?))
+}
+
+// ---------------------------------------------------------------- projects
+
+async fn list_projects(State(st): State<AppState>) -> HResult<Vec<api::ProjectItem>> {
+    Ok(Json(with_engine(&st, move |e| e.projects()).await?))
+}
+
+async fn create_project(
+    State(st): State<AppState>,
+    Json(req): Json<api::CreateProjectReq>,
+) -> HResult<kairos_core::project::Project> {
+    Ok(Json(with_engine(&st, move |e| e.create_project(&req)).await?))
+}
+
+async fn update_project(
+    State(st): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<api::UpdateProjectReq>,
+) -> HResult<kairos_core::project::Project> {
+    Ok(Json(with_engine(&st, move |e| e.update_project(&id, &req)).await?))
+}
+
+async fn delete_project(State(st): State<AppState>, Path(id): Path<String>) -> HResult<serde_json::Value> {
+    with_engine(&st, move |e| e.delete_project(&id)).await?;
+    Ok(Json(serde_json::json!({"ok": true})))
 }
 
 // ---------------------------------------------------------------- proposed project time

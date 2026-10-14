@@ -21,6 +21,7 @@ use kairos_core::constraints::Constraints;
 use kairos_core::ics;
 use kairos_core::model::{Author, EventKind, EventSeries, Instance, Meta, Span};
 use kairos_core::normalize::series_from_calendars;
+use kairos_core::project::{Project, ProjectStatus};
 use kairos_core::risk::{self, Action, Assessment, CalendarFacts, EventFacts, OpFacts};
 use kairos_core::sched::{self, Block, Busy, PlanInput};
 use kairos_core::task::{Due, Task, TaskStatus};
@@ -1892,22 +1893,202 @@ impl Engine {
         Ok(())
     }
 
-    /// Open proposals, soonest first.
+    /// Open proposals, soonest first, each suggesting an active project:
+    /// the most neglected first (least time this week, counting sessions
+    /// already planned; then longest since last worked), in turn.
     pub fn proposals(&self) -> Result<Vec<api::ProposalItem>> {
         let now = self.now();
         let title = self.constraints.projects.title.clone();
+        let (items, upcoming) = self.project_stats()?;
+        let mut order: Vec<&api::ProjectItem> = items
+            .iter()
+            .filter(|p| p.project.status == ProjectStatus::Active)
+            .collect();
+        order.sort_by_key(|p| {
+            (
+                p.week_min + upcoming.get(&p.project.id).copied().unwrap_or(0),
+                p.last_worked,
+                p.project.created_at,
+                p.project.name.to_lowercase(),
+            )
+        });
         Ok(self
             .db
             .proposals()?
             .into_iter()
             .filter(|r| r.3 == "proposed" && r.2 > now)
-            .map(|(id, start, end, _)| api::ProposalItem {
-                id,
-                start,
-                end,
-                title: title.clone(),
+            .enumerate()
+            .map(|(k, (id, start, end, _))| {
+                let suggested = (!order.is_empty()).then(|| order[k % order.len()]);
+                api::ProposalItem {
+                    id,
+                    start,
+                    end,
+                    title: suggested.map_or_else(|| title.clone(), |p| p.project.name.clone()),
+                    project_id: suggested.map(|p| p.project.id.clone()),
+                }
             })
             .collect())
+    }
+
+    // ------------------------------------------------------------ projects
+
+    /// Projects with the time spent on them: sessions linked when a proposal
+    /// was accepted, or events in the projects calendar titled with the
+    /// project's name. Also each project's minutes planned in the next 7 days.
+    fn project_stats(&self) -> Result<(Vec<api::ProjectItem>, std::collections::HashMap<String, u32>)> {
+        let projects = self.db.projects()?;
+        let mut upcoming = std::collections::HashMap::new();
+        if projects.is_empty() {
+            return Ok((Vec::new(), upcoming));
+        }
+        let now = self.now();
+        let tz = self.tz();
+        let sidecar = self.db.meta_all()?;
+        let loaded = load::load_all(&self.cfg, &sidecar)?;
+        let mut w = Vec::new();
+        let instances = kairos_core::view::instances(
+            &loaded.sources,
+            now - Duration::days(30),
+            now + Duration::days(14),
+            tz,
+            &mut w,
+        );
+        let links: std::collections::HashMap<String, String> = self.db.project_sessions()?.into_iter().collect();
+        let pkey = self.constraints.projects.key.clone();
+        let today = now.with_timezone(&tz).date_naive();
+        let monday = today - Duration::days(i64::from(chrono::Datelike::weekday(&today).num_days_from_monday()));
+        let week_start = kairos_core::time::resolve_local(monday.and_time(NaiveTime::MIN), tz);
+        let mut items: Vec<api::ProjectItem> = projects
+            .into_iter()
+            .map(|project| api::ProjectItem {
+                project,
+                week_min: 0,
+                month_min: 0,
+                last_worked: None,
+                next_session: None,
+            })
+            .collect();
+        for i in &instances {
+            let Span::Timed { start, end } = i.span else { continue };
+            let pid = links.get(&i.uid).cloned().or_else(|| {
+                (pkey.is_some() && i.key == pkey)
+                    .then(|| {
+                        items
+                            .iter()
+                            .find(|p| p.project.name.trim().eq_ignore_ascii_case(i.title.trim()))
+                            .map(|p| p.project.id.clone())
+                    })
+                    .flatten()
+            });
+            let Some(it) = pid.and_then(|pid| items.iter_mut().find(|p| p.project.id == pid)) else {
+                continue;
+            };
+            if start < now {
+                let mins = (end.min(now) - start).num_minutes().max(0) as u32;
+                it.month_min += mins;
+                if end > week_start {
+                    it.week_min += (end.min(now) - start.max(week_start)).num_minutes().max(0) as u32;
+                }
+                it.last_worked = it.last_worked.max(Some(start));
+            } else {
+                if it.next_session.is_none_or(|n| start < n) {
+                    it.next_session = Some(start);
+                }
+                if start < now + Duration::days(7) {
+                    *upcoming.entry(it.project.id.clone()).or_insert(0) += (end - start).num_minutes().max(0) as u32;
+                }
+            }
+        }
+        Ok((items, upcoming))
+    }
+
+    /// Every project (active, next, paused, done) with time spent.
+    pub fn projects(&self) -> Result<Vec<api::ProjectItem>> {
+        Ok(self.project_stats()?.0)
+    }
+
+    /// A project by id or unique case-insensitive name (prefix).
+    pub fn find_project(&self, q: &str) -> Result<Project> {
+        if let Some(p) = self.db.project_get(q)? {
+            return Ok(p);
+        }
+        let ql = q.trim().to_lowercase();
+        let all = self.db.projects()?;
+        if let Some(p) = all.iter().find(|p| p.name.to_lowercase() == ql) {
+            return Ok(p.clone());
+        }
+        let mut hits: Vec<Project> = all
+            .into_iter()
+            .filter(|p| p.name.to_lowercase().starts_with(&ql))
+            .collect();
+        match hits.len() {
+            0 => Err(EngineError::NotFound(format!("project {q:?}"))),
+            1 => Ok(hits.remove(0)),
+            n => Err(EngineError::BadRequest(format!(
+                "{q:?} matches {n} projects: {}",
+                hits.iter().map(|p| p.name.as_str()).collect::<Vec<_>>().join(", ")
+            ))),
+        }
+    }
+
+    fn project_status(s: Option<&str>) -> Result<Option<ProjectStatus>> {
+        s.map(|s| {
+            ProjectStatus::parse(s)
+                .ok_or_else(|| EngineError::BadRequest(format!("status must be active|next|paused|done, got {s:?}")))
+        })
+        .transpose()
+    }
+
+    pub fn create_project(&mut self, req: &api::CreateProjectReq) -> Result<Project> {
+        let name = req.name.trim();
+        if name.is_empty() {
+            return Err(EngineError::BadRequest("a project needs a name".into()));
+        }
+        if self.db.projects()?.iter().any(|p| p.name.eq_ignore_ascii_case(name)) {
+            return Err(EngineError::BadRequest(format!(
+                "there's already a project called {name:?}"
+            )));
+        }
+        let status = Self::project_status(req.status.as_deref())?.unwrap_or_default();
+        let p = Project::new(name, status, req.note.as_deref().unwrap_or(""), self.now());
+        self.db.project_put(&p)?;
+        Ok(p)
+    }
+
+    pub fn update_project(&mut self, id: &str, req: &api::UpdateProjectReq) -> Result<Project> {
+        let mut p = self.find_project(id)?;
+        if let Some(n) = req.name.as_deref().map(str::trim) {
+            if n.is_empty() {
+                return Err(EngineError::BadRequest("a project needs a name".into()));
+            }
+            if self
+                .db
+                .projects()?
+                .iter()
+                .any(|o| o.id != p.id && o.name.eq_ignore_ascii_case(n))
+            {
+                return Err(EngineError::BadRequest(format!(
+                    "there's already a project called {n:?}"
+                )));
+            }
+            p.name = n.to_string();
+        }
+        if let Some(s) = Self::project_status(req.status.as_deref())? {
+            p.status = s;
+        }
+        if let Some(n) = &req.note {
+            p.note = n.trim().to_string();
+        }
+        p.updated_at = self.now();
+        self.db.project_put(&p)?;
+        Ok(p)
+    }
+
+    pub fn delete_project(&mut self, id: &str) -> Result<()> {
+        let p = self.find_project(id)?;
+        self.db.project_delete(&p.id)?;
+        Ok(())
     }
 
     /// Accept proposed project time: it becomes an event (titled with what
@@ -1918,13 +2099,22 @@ impl Engine {
             .into_iter()
             .find(|p| p.id == id)
             .ok_or_else(|| EngineError::NotFound(format!("proposal {id}")))?;
-        let title = req
-            .title
-            .as_deref()
-            .map(str::trim)
-            .filter(|t| !t.is_empty())
-            .unwrap_or(&p.title)
-            .to_string();
+        // What to work on: the project picked, a project's name typed, the
+        // suggested project — or just a title.
+        let typed = req.title.as_deref().map(str::trim).filter(|t| !t.is_empty());
+        let project = match (&req.project_id, typed) {
+            (Some(pid), _) => Some(self.find_project(pid)?),
+            (None, Some(t)) => self.db.projects()?.into_iter().find(|x| x.name.eq_ignore_ascii_case(t)),
+            (None, None) => match &p.project_id {
+                Some(pid) => self.db.project_get(pid)?,
+                None => None,
+            },
+        };
+        let title = project
+            .as_ref()
+            .map(|x| x.name.clone())
+            .or(typed.map(str::to_string))
+            .unwrap_or_else(|| p.title.clone());
         let cs = self.create_event(
             author,
             &api::CreateEventReq {
@@ -1944,6 +2134,20 @@ impl Engine {
             },
         )?;
         self.db.proposal_set_status(id, "accepted")?;
+        if let Some(mut x) = project {
+            if let Some(uid) = cs.ops.iter().find_map(|o| match o {
+                Op::CreateEvent { uid, .. } => Some(uid.clone()),
+                _ => None,
+            }) {
+                self.db.project_session_link(&uid, &x.id)?;
+            }
+            // Planning time for a "next" project means it's under way.
+            if x.status == ProjectStatus::Next {
+                x.status = ProjectStatus::Active;
+                x.updated_at = self.now();
+                self.db.project_put(&x)?;
+            }
+        }
         self.replan_soon = true;
         Ok(WriteResult::from(&cs))
     }

@@ -21,6 +21,10 @@ pub enum FormKind {
     TookLonger {
         t: crate::app::CheckinTarget,
     },
+    AddProject,
+    EditProject {
+        id: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,6 +40,8 @@ pub enum FieldKind {
     Repeat,
     /// Optional time (task due).
     OptWhen,
+    /// Picks a project status (←/→ or first letter).
+    Status,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,6 +73,7 @@ pub enum FormAction {
 pub const WHEN_HINT: &str = "tue 19:00 · 23 oct 2pm · tomorrow 9am · a date alone = all day";
 const DUR_HINT: &str = "60m · 1h30 · 2h (empty = 1h)";
 const KEY_HINT: &str = "←/→ or type the first letter";
+const STATUS_HINT: &str = "active (now) · next (soon) · paused · done — ←/→";
 const TITLE_HINT: &str = "or all at once: Squash @ tue 19:00 #Sport for 90m";
 
 fn field(label: &'static str, value: impl Into<String>, kind: FieldKind, hint: &'static str) -> Field {
@@ -216,7 +223,33 @@ impl Form {
             FormKind::AddTask => "new task",
             FormKind::EditTask { .. } => "edit task",
             FormKind::TookLonger { .. } => "took longer",
+            FormKind::AddProject => "new project",
+            FormKind::EditProject { .. } => "edit project",
         }
+    }
+
+    pub fn add_project() -> Form {
+        Form::new(
+            FormKind::AddProject,
+            vec![
+                field("Name", "", FieldKind::Text, "what it's called: kairos · email TUI"),
+                field("Status", "active", FieldKind::Status, STATUS_HINT),
+                field("Note", "", FieldKind::Text, "optional: what it is, or the next step"),
+            ],
+            Vec::new(),
+        )
+    }
+
+    pub fn edit_project(p: &kairos_core::project::Project) -> Form {
+        Form::new(
+            FormKind::EditProject { id: p.id.clone() },
+            vec![
+                field("Name", p.name.clone(), FieldKind::Text, ""),
+                field("Status", p.status.as_str(), FieldKind::Status, STATUS_HINT),
+                field("Note", p.note.clone(), FieldKind::Text, "empty = none"),
+            ],
+            Vec::new(),
+        )
     }
 
     /// "Took longer": time spent, how much more, plan it from when.
@@ -302,6 +335,10 @@ impl Form {
         match self.fields[self.focus].kind {
             FieldKind::Type => TASK_TYPES.iter().map(|s| s.to_string()).collect(),
             FieldKind::Repeat => REPEATS.iter().map(|s| s.to_string()).collect(),
+            FieldKind::Status => kairos_core::project::ProjectStatus::ALL
+                .iter()
+                .map(|s| s.as_str().to_string())
+                .collect(),
             _ => self.keys.clone(),
         }
     }
@@ -391,7 +428,10 @@ pub fn repeat_of(v: &str) -> Option<kairos_core::api::Repeat> {
 
 impl FieldKind {
     pub fn is_picker(self) -> bool {
-        matches!(self, FieldKind::Key | FieldKind::Type | FieldKind::Repeat)
+        matches!(
+            self,
+            FieldKind::Key | FieldKind::Type | FieldKind::Repeat | FieldKind::Status
+        )
     }
 }
 

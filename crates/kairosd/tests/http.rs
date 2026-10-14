@@ -298,6 +298,9 @@ async fn mcp_tools_and_no_approve_tool() {
         "list_proposals",
         "accept_proposal",
         "reject_proposal",
+        "list_projects",
+        "create_project",
+        "update_project",
     ] {
         assert!(names.contains(&want), "missing tool {want}: {names:?}");
     }

@@ -13,6 +13,7 @@ pub mod expand;
 pub mod ics;
 pub mod model;
 pub mod normalize;
+pub mod project;
 pub mod risk;
 pub mod sched;
 pub mod task;

@@ -59,6 +59,11 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
     let mut db = Db::open(&cfg.db_path()).with_context(|| format!("opening {}", cfg.db_path().display()))?;
+    match ingest::rederive(&mut db) {
+        Ok(0) => {}
+        Ok(n) => tracing::info!(messages = n, "re-derived text with the current rules"),
+        Err(e) => tracing::warn!(error = %e, "re-deriving text"),
+    }
     if args.once {
         let t = Instant::now();
         sync_mailapp(&cfg, &mut db)?;

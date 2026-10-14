@@ -10,6 +10,10 @@ publish.workspace = true
 chrono.workspace = true
 chrono-tz.workspace = true
 mail-parser.workspace = true
+scraper = "0.27"
+pdf-extract = "0.12"
+zip = { version = "9", default-features = false, features = ["deflate"] }
+quick-xml = "0.42"
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

@@ -19,6 +19,8 @@ pub const BATCH: usize = 200;
 pub enum IngestError {
     #[error(transparent)]
     Db(#[from] DbError),
+    #[error("mirror: {0}")]
+    Sqlite(#[from] rusqlite::Error),
     #[error(transparent)]
     Mail(#[from] MailError),
     #[error("account {0:?} isn't a Mail.app account (no mailapp_account_id)")]
@@ -209,6 +211,66 @@ pub fn mailapp_account(
         })?;
     }
     Ok(report)
+}
+
+/// Re-derive text for messages stored under an older [`TEXT_VERSION`],
+/// from the raw bytes already in the mirror (Gmail) or the `.emlx` path
+/// (Mail.app) — no network. Header-only rows (version 0) are left to ingest.
+pub fn rederive(db: &mut Db) -> Result<usize, IngestError> {
+    let stale: Vec<(String, String)> = {
+        let mut st = db
+            .conn()
+            .prepare("SELECT account, source_id FROM messages WHERE text_version > 0 AND text_version < ?1")?;
+        let rows = st.query_map([TEXT_VERSION], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        rows.collect::<Result<_, _>>()?
+    };
+    let mut done = 0;
+    for chunk in stale.chunks(BATCH) {
+        db.transaction(|db| {
+            for (account, sid) in chunk {
+                let Some(old) = db.message(account, sid)? else { continue };
+                let (bytes, path) = db.raw(account, sid)?;
+                let raw = match (&bytes, &path) {
+                    (Some(b), _) => b.clone(),
+                    (None, Some(p)) if !p.is_empty() => match mailapp::read_emlx(std::path::Path::new(p)) {
+                        Ok(r) => r,
+                        Err(_) => continue, // moved or gone: the next ingest pass fixes it
+                    },
+                    _ => continue,
+                };
+                let Ok(p) = mime::parse(&raw) else { continue };
+                let mut m = build::message(
+                    &p,
+                    SourceFacts {
+                        account: old.account.clone(),
+                        source_id: old.source_id.clone(),
+                        thread_id: old.thread_id.clone(),
+                        location: old.location.clone(),
+                        in_inbox: old.in_inbox,
+                        read: old.read,
+                        flagged: old.flagged,
+                        size: old.size,
+                        received: old.date,
+                    },
+                );
+                // Attachment sizes from disk (partial .emlx) are kept.
+                if m.attachments.len() == old.attachments.len() {
+                    for (new, prev) in m.attachments.iter_mut().zip(&old.attachments) {
+                        new.size = new.size.max(prev.size);
+                    }
+                }
+                let raw_arg = match (&bytes, &path) {
+                    (Some(b), _) => Raw::Bytes(b),
+                    (None, Some(p)) => Raw::Path(p),
+                    _ => Raw::None,
+                };
+                db.upsert(&m, raw_arg, TEXT_VERSION)?;
+                done += 1;
+            }
+            Ok(())
+        })?;
+    }
+    Ok(done)
 }
 
 /// A message built from what Mail's Envelope Index knows, for bodies Mail
@@ -452,6 +514,28 @@ mod tests {
         );
         let r = mailapp_account(&mut db, &MailStore::open(&root).unwrap(), acc, None).unwrap();
         assert!(!r.changed());
+    }
+
+    #[test]
+    fn rederive_upgrades_old_text_without_touching_state() {
+        let cfg = cfg();
+        let store = MailStore::open(&fixture_root()).unwrap();
+        let mut db = Db::open_in_memory().unwrap();
+        mailapp_account(&mut db, &store, cfg.account("oxford").unwrap(), None).unwrap();
+        // Pretend message 2 was stored by an older keryx, and flagged since.
+        db.conn()
+            .execute(
+                "UPDATE messages SET text_version = 1, body_text = 'old', flagged = 1 WHERE source_id = '2'",
+                [],
+            )
+            .unwrap();
+        assert_eq!(rederive(&mut db).unwrap(), 1);
+        let m = db.message("oxford", "2").unwrap().unwrap();
+        assert!(m.body_text.starts_with("Submission portal"), "{}", m.body_text);
+        assert!(m.flagged, "state is kept");
+        assert_eq!(rederive(&mut db).unwrap(), 0);
+        // Header-only rows (version 0) are ingest's business.
+        assert!(db.message("oxford", "23").unwrap().unwrap().body_text.is_empty());
     }
 
     #[test]

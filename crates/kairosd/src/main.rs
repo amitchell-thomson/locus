@@ -167,6 +167,9 @@ async fn main() -> Result<()> {
         direct: false,
         replan_soon: true,
     };
+    let mut engine = engine;
+    // Projects used to have their own tables (before 2026-10-14).
+    engine.migrate_projects().context("migrating projects")?;
     let st = AppState {
         engine: Arc::new(Mutex::new(engine)),
         token: Arc::new(token),

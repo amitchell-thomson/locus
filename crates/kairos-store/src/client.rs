@@ -291,7 +291,7 @@ impl Daemon {
         self.post(&format!("/api/projects/{}/sessions", enc(project)), req)
     }
 
-    pub fn delete_project(&self, id: &str) -> Result<std::result::Result<serde_json::Value, Rejected>> {
+    pub fn delete_project(&self, id: &str) -> Result<std::result::Result<WriteResult, Rejected>> {
         self.delete(&format!("/api/projects/{}", enc(id)))
     }
 

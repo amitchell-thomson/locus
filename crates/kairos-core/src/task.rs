@@ -60,6 +60,9 @@ impl Due {
     }
 }
 
+/// The task kind that makes a task a project.
+pub const PROJECT_KIND: &str = "project";
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Task {
     pub id: String,
@@ -94,6 +97,9 @@ pub struct Task {
     /// The project it belongs to (its checked-in time counts there too).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_id: Option<String>,
+    /// Projects only (`kind = "project"`): active / next / paused while open.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stage: Option<crate::project::ProjectStatus>,
     pub created_by: Author,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -113,6 +119,13 @@ impl Task {
             self.estimate_min = e;
             self.remaining_min = e;
         }
+    }
+
+    /// A project: open-ended work with no deadline or estimate. Its time on
+    /// the calendar is sessions (events linked by `Meta.project_id`), placed
+    /// by hand or accepted from proposals, never by the scheduler.
+    pub fn is_project(&self) -> bool {
+        self.kind.as_deref() == Some(PROJECT_KIND)
     }
 
     /// Preferred shortest block (never above the longest).
@@ -146,6 +159,7 @@ impl Task {
             status: TaskStatus::Open,
             notes: String::new(),
             project_id: None,
+            stage: None,
             created_by,
             created_at: now,
             updated_at: now,

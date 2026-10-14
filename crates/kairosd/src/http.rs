@@ -472,9 +472,11 @@ async fn list_projects(State(st): State<AppState>) -> HResult<Vec<api::ProjectIt
 
 async fn create_project(
     State(st): State<AppState>,
+    h: HeaderMap,
     Json(req): Json<api::CreateProjectReq>,
 ) -> HResult<kairos_core::project::Project> {
-    Ok(Json(with_engine(&st, move |e| e.create_project(&req)).await?))
+    let a = author(&h);
+    Ok(Json(with_engine_as(&st, &h, move |e| e.create_project(a, &req)).await?))
 }
 
 async fn update_project(
@@ -510,9 +512,9 @@ async fn link_sessions(
     Ok(Json(serde_json::json!({ "linked": n })))
 }
 
-async fn delete_project(State(st): State<AppState>, Path(id): Path<String>) -> HResult<serde_json::Value> {
-    with_engine(&st, move |e| e.delete_project(&id)).await?;
-    Ok(Json(serde_json::json!({"ok": true})))
+async fn delete_project(State(st): State<AppState>, h: HeaderMap, Path(id): Path<String>) -> HResult<WriteResult> {
+    let a = author(&h);
+    Ok(Json(with_engine_as(&st, &h, move |e| e.delete_project(a, &id)).await?))
 }
 
 // ---------------------------------------------------------------- proposed project time

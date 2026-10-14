@@ -1133,16 +1133,12 @@ impl App {
 
     fn confirmed(&mut self, c: Confirm) {
         match c {
-            Confirm::DeleteProject(id) => match self.with_daemon(|d| d.delete_project(&id)) {
-                Some(Ok(Ok(_))) => {
-                    self.set_message("project deleted", false);
-                    self.refresh_remote();
+            Confirm::DeleteProject(id) => {
+                if let Some(r) = self.with_daemon(|d| d.delete_project(&id)) {
+                    self.write_result(r);
                     self.sel = self.sel.min(self.projects.len().saturating_sub(1));
                 }
-                Some(Ok(Err(e))) => self.set_message(e.to_string(), true),
-                Some(Err(e)) => self.set_message(e.to_string(), true),
-                None => {}
-            },
+            }
             Confirm::Delete => {
                 if let Some(cl) = self.selected() {
                     let i = cl.primary;
@@ -1945,12 +1941,15 @@ impl App {
         match self.with_daemon(|d| d.update_project(id, req)) {
             Some(Ok(Ok(r))) => {
                 let p = &r.project;
-                let renamed = match &r.renamed {
-                    Some(w) if w.status == Status::Pending => " · session titles waiting for approval".to_string(),
-                    Some(w) => format!(" · {}", w.summary),
-                    None => String::new(),
-                };
-                self.set_message(format!("✓ {} · {}{renamed}", p.name, p.status.as_str()), false);
+                if r.changeset.status == Status::Pending {
+                    self.set_message(
+                        format!("◌ needs approval: {} (A to review)", r.changeset.summary),
+                        false,
+                    );
+                } else {
+                    self.set_message(format!("✓ {} · {}", p.name, p.status.as_str()), false);
+                }
+                self.wants_sync = true;
                 self.refresh_remote();
             }
             Some(Ok(Err(e))) => self.set_message(e.to_string(), true),

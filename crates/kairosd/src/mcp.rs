@@ -34,6 +34,11 @@ themselves: an open task with remaining_min 0 has used its planned time — ask 
 (\"only managed 20 min of furniture\"), find it with list_checkins and record it with checkin; work outside a block is \
 log_work. Unanswered blocks wait, and count as done after a week. Only create a specific block when Alec asks for a specific slot (create_event with \
 task_id makes a pinned block).\n\
+PROJECTS: open-ended work with no deadline (a project is a task of kind project; list_projects shows each with time \
+spent this week/month, time waiting for a check-in and the next session). Its calendar time is sessions (◇): plan one \
+with plan_project_time when Alec asks for a slot, or accept proposed time (list_proposals) — the scheduler never places \
+them. Time spent is only what's checked in on its sessions and on the blocks of tasks that belong to it (create_task \
+project=…). Events count only when linked: attribute_to_project (no uids = suggestions to confirm).\n\
 TIMES: ISO 8601 ('2026-10-16T17:00', with or without offset; Europe/London assumed) or plain dates for all-day; \
 natural forms like 'fri 17:00' also work but ambiguous input is rejected. Keys: {KEYS}.\n\
 BULK: for more than one event, find them with search_events, then make ONE update_events / delete_events / \
@@ -841,7 +846,7 @@ impl KairosMcp {
             note: a.note,
             key: a.key,
         };
-        self.run(move |e| e.create_project(&req)).await
+        self.run(move |e| e.create_project(Author::Claude, &req)).await
     }
 
     #[tool(
@@ -858,13 +863,29 @@ impl KairosMcp {
     }
 
     #[tool(
-        description = "Count existing events as a project's sessions (e.g. 'Quantum Research' is work on the QUAST project); their check-ins become the project's time. Doesn't change the calendar."
+        description = "Count existing events as a project's sessions (e.g. 'Quantum Research' is work on the QUAST project); their check-ins become the project's time. Doesn't change the calendar. Only linked events count (a title alone doesn't): with no uids it links nothing and returns suggestions, unlinked events titled with the project's name (last 30 days, next 14) — confirm with Alec before linking."
     )]
     async fn attribute_to_project(
         &self,
         Parameters(a): Parameters<LinkSessionsArgs>,
     ) -> Result<CallToolResult, ErrorData> {
         self.run(move |e| {
+            let tz = e.tz();
+            if a.uids.is_empty() {
+                let s: Vec<serde_json::Value> = e
+                    .session_suggestions(&a.project)?
+                    .iter()
+                    .map(|i| {
+                        let (start, end) = i.span.bounds(tz);
+                        serde_json::json!({
+                            "uid": i.uid, "title": i.title, "key": i.key,
+                            "start": start.with_timezone(&tz).to_rfc3339(),
+                            "end": end.with_timezone(&tz).to_rfc3339(),
+                        })
+                    })
+                    .collect();
+                return Ok(serde_json::json!({ "linked": 0, "suggestions": s }));
+            }
             e.link_sessions(&a.project, &a.uids)
                 .map(|n| serde_json::json!({ "linked": n }))
         })
@@ -872,7 +893,7 @@ impl KairosMcp {
     }
 
     #[tool(
-        description = "Rename a project (its sessions on the calendar are retitled too, as one changeset), change its status (active/next/paused/done) or its note."
+        description = "Rename a project, change its status (active/next/paused/done), note or calendar. A project is a task without a deadline: this is a task update, and a new name or calendar carries through to its sessions still to come (one changeset; editing sessions Alec made himself needs his approval)."
     )]
     async fn update_project(&self, Parameters(a): Parameters<UpdateProjectArgs>) -> Result<CallToolResult, ErrorData> {
         let req = api::UpdateProjectReq {

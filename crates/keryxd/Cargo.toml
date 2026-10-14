@@ -11,6 +11,12 @@ keryx-core.workspace = true
 keryx-store.workspace = true
 anyhow.workspace = true
 clap.workspace = true
+notify.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true

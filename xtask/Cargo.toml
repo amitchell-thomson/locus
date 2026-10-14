@@ -7,7 +7,7 @@ publish.workspace = true
 [dependencies]
 anyhow.workspace = true
 rusqlite.workspace = true
-mail-parser = "0.11"
+mail-parser.workspace = true
 
 [lints]
 workspace = true

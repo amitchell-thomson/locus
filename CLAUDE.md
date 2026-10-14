@@ -54,7 +54,7 @@ Tracked in SPEC §11: changeset/risk/approval engine, ntfy + signed links, state
 | Phase | Status |
 |---|---|
 | 0 Scaffolding & setup | Done 2026-10-14: workspace, lints, ci.sh, config schema + 16 validation tests, docs/setup.md, fixtures (26 .eml incl. PDF/DOCX/corrupt attachments, Gmail API JSON, synthetic Mail store via `cargo xtask mailapp-fixture`). Encrypted-PDF fixture deferred to Phase 2. |
-| 1 Read plumbing & verification | Not started |
+| 1 Read plumbing & verification | Code done 2026-10-14: mirror DB (WAL, FTS5, batches), Mail.app reader + ingest (incl. header-only for bodies Mail hasn't downloaded, index-rebuild detection, interrupted-pass convergence), Gmail full/history sync + OAuth loopback/PKCE (fixture-tested), keryxd `--once` + watch/poll loop, `keryx doctor [--discover]`, `keryx auth gmail`, launchd agent + `scripts/install-daemon.sh`, `scripts/verify-mailapp.sh`. Real store: 3,535 messages mirrored in 1.5 s (release), re-pass 0.1 s, every Mail mailbox count matches. **Waiting on Alec:** Gmail OAuth client + `keryx auth gmail`; `scripts/verify-mailapp.sh` with `[keryx-test]` mails; `scripts/install-daemon.sh` + FDA grant. |
 | 2 Core semantics | Not started |
 | 3 CLI + TUI read-only | Not started |
 | 4 Write path (triage + cleanup reviews) | Not started |
@@ -71,7 +71,9 @@ Tracked in SPEC §11: changeset/risk/approval engine, ntfy + signed links, state
 - `.emlx` path: `<acct>/<a>.mbox/<b>.mbox/<store-uuid>/Data/<digits of ROWID/1000, least significant first>/Messages/<ROWID>[.partial].emlx` (`Data/Messages/` below 1000); attachments of partial ones under `Data/Attachments/<ROWID>/<part>/<filename>`. emlx = byte-count line, message, plist (`flags`, `remote-id`, dates).
 - `messages.global_message_id` → `message_global_data.ROWID` (has `message_id_header`); `recipients.type` 0 = To, 1 = Cc; dates are Unix seconds; `subject_prefix` holds "Re: " etc. separately.
 - `messages.automated_conversation` takes 0 / 1 / 2 (2,731 / 220 / 4,379 of 7,330): meaning unknown, so keryx's automated detection relies on headers, not this column (Phase 2 decides whether 1 is a usable hint).
-- ~7.5k `.emlx`, ~3.5k of them `.partial.emlx`. Envelope Index tables used: `messages`, `mailboxes`, `subjects`, `addresses`, `recipients`, `message_global_data`, `conversations`.
+- ~7.5k `.emlx`, ~3.5k of them `.partial.emlx`.
+- Some messages have no body on disk yet (13 Oxford rows had no `.emlx`; one OQTS `.emlx` was a 0-byte placeholder): Mail downloads lazily. keryx mirrors them header-only from the Envelope Index (`text_version` 0) and re-tries every pass.
+- `pgrep -x Mail` tells whether Mail is running; keryxd will `open -gja Mail` before acting (Phase 4). Envelope Index tables used: `messages`, `mailboxes`, `subjects`, `addresses`, `recipients`, `message_global_data`, `conversations`.
 - The terminal has Full Disk Access; keryxd will need its own FDA + Automation grants (check they survive rebuilds in Phase 1).
 - The claude.ai Gmail connector in Claude Code can send directly, bypassing keryx: Alec is turning it off (2026-10-14).
 

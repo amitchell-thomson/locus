@@ -16,6 +16,8 @@ keryx-store.workspace = true
 keryx-tui.workspace = true
 anyhow.workspace = true
 clap.workspace = true
+reqwest.workspace = true
+uuid.workspace = true
 
 [lints]
 workspace = true

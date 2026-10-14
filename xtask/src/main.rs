@@ -148,6 +148,15 @@ struct Msg {
     conversation: i64,
     /// Store attachments separately (`.partial.emlx` + `Attachments/`).
     partial: bool,
+    /// Body not downloaded by Mail: no file, or a 0-byte placeholder.
+    body: Body,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Body {
+    Full,
+    NoFile,
+    Empty,
 }
 
 const fn m(rowid: i64, eml: &'static str, mailbox: usize, conversation: i64) -> Msg {
@@ -160,6 +169,7 @@ const fn m(rowid: i64, eml: &'static str, mailbox: usize, conversation: i64) -> 
         flagged: false,
         conversation,
         partial: false,
+        body: Body::Full,
     }
 }
 
@@ -210,6 +220,16 @@ fn messages() -> Vec<Msg> {
             partial: true,
             read: false,
             ..m(12345, "23-pdf-attachment.eml", 0, 20)
+        },
+        // Bodies Mail hasn't downloaded yet: mirrored header-only.
+        Msg {
+            body: Body::NoFile,
+            read: false,
+            ..m(23, "17-noreply-receipt.eml", 0, 21)
+        },
+        Msg {
+            body: Body::Empty,
+            ..m(24, "18-mailto-unsubscribe.eml", 4, 22)
         },
     ]
 }
@@ -440,6 +460,13 @@ fn build(eml_dir: &Path, out: &Path) -> Result<()> {
         let dir = mbox_dir(&v10, &MAILBOXES[msg.mailbox]);
         let msg_dir = dir.join(shard(msg.rowid));
         std::fs::create_dir_all(&msg_dir)?;
+        if msg.body == Body::NoFile {
+            continue;
+        }
+        if msg.body == Body::Empty {
+            std::fs::write(msg_dir.join(format!("{}.emlx", msg.rowid)), emlx(b"", flags, msg.rowid))?;
+            continue;
+        }
         if msg.partial {
             let (stripped, atts) = strip_attachments(&raw)?;
             std::fs::write(

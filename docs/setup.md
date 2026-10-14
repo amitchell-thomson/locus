@@ -31,6 +31,11 @@ keryx talks to your personal Gmail through the Gmail API with its own OAuth clie
 
 ## 3. Mail.app permissions for keryxd (Phase 1)
 
+Install keryxd as a launchd agent (starts at login, restarts if it stops):
+```sh
+cd ~/local-projects/keryx && scripts/install-daemon.sh
+```
+
 keryxd reads Mail's store and acts through AppleScript, so it needs two macOS permissions of its own (your terminal's don't carry over to a launchd agent):
 
 - **Full Disk Access**: System Settings → Privacy & Security → Full Disk Access → `+` → `⇧⌘G` → `~/.cargo/bin/keryxd` → on.

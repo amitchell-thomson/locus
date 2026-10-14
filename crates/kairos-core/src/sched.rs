@@ -32,7 +32,10 @@
 //! stay (pinned ones always). If the result is short or squeezed, alternatives
 //! — deadline-order fallback and a fresh pass from scratch — are tried, and
 //! used only if strictly better on (shortfall, squeezed minutes). So blocks
-//! move only when an event displaced them or a squeeze can be undone.
+//! move only when an event displaced them or a squeeze can be undone — or
+//! when time was freed (`reflow_after`): then every unpinned block from
+//! that time on is planned afresh, so work moves into the gap (Alec,
+//! 2026-10-14), unless that would be worse on (shortfall, squeezed minutes).
 //!
 //! **Proposals.** [`propose`] fills the free gaps left after task work with
 //! proposed project time (comfort rules on, same daily cap).
@@ -146,6 +149,9 @@ pub struct PlanInput<'a> {
     /// Times Alec skipped (deleted a work block there): no work, but not an
     /// event either (no buffers, no load, not "back-to-back").
     pub unavailable: &'a [(DateTime<Utc>, DateTime<Utc>)],
+    /// Time was freed (an event deleted, shortened or moved away): blocks
+    /// from this time on re-flow into the best layout (pinned ones stay).
+    pub reflow_after: Option<DateTime<Utc>>,
 }
 
 struct Grid<'a> {
@@ -990,6 +996,33 @@ pub fn plan(input: &PlanInput<'_>) -> Plan {
     let squeeze = |p: &Plan| p.squeezed.iter().map(|s| s.squeezed_min).sum::<u32>();
     let (stable, short) = run(input, &g, horizon_idx, true, true);
     let mut best_key = (short, squeeze(&stable));
+    if let Some(t) = input.reflow_after {
+        // Blocks before `t` hold (as if pinned); the rest is planned afresh.
+        let held: Vec<Block> = input
+            .existing
+            .iter()
+            .cloned()
+            .map(|mut b| {
+                b.pinned |= b.start < t;
+                b
+            })
+            .collect();
+        let inp = PlanInput {
+            existing: &held,
+            reflow_after: None,
+            ..*input
+        };
+        let (mut fresh, short) = run(&inp, &g, horizon_idx, false, true);
+        let key = (short, squeeze(&fresh));
+        if key <= best_key {
+            for k in fresh.keep.iter_mut() {
+                if let Some(o) = input.existing.iter().find(|o| o.uid.is_some() && o.uid == k.uid) {
+                    k.pinned = o.pinned;
+                }
+            }
+            return fresh;
+        }
+    }
     if best_key == (0, 0) {
         return stable;
     }

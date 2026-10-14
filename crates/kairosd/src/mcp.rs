@@ -438,6 +438,24 @@ pub struct CreateProjectArgs {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SessionArgs {
+    /// Project id or name.
+    pub project: String,
+    pub start: String,
+    pub end: Option<String>,
+    /// Default 120.
+    pub duration_min: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct LinkSessionsArgs {
+    /// Project id or name.
+    pub project: String,
+    /// Event uids (from search_events) to count as its sessions.
+    pub uids: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct UpdateProjectArgs {
     /// Project id or name.
     pub id: String,
@@ -813,6 +831,33 @@ impl KairosMcp {
             note: a.note,
         };
         self.run(move |e| e.create_project(&req)).await
+    }
+
+    #[tool(
+        description = "Plan project time Alec asks for: an event in the Projects calendar titled with the project, counted as its session (normal risk rules)."
+    )]
+    async fn plan_project_time(&self, Parameters(a): Parameters<SessionArgs>) -> Result<CallToolResult, ErrorData> {
+        let req = api::SessionReq {
+            start: a.start,
+            end: a.end,
+            duration_min: a.duration_min,
+        };
+        self.run(move |e| e.create_session(Author::Claude, &a.project, &req))
+            .await
+    }
+
+    #[tool(
+        description = "Count existing events as a project's sessions (e.g. 'Quantum Research' is work on the QUAST project); their check-ins become the project's time. Doesn't change the calendar."
+    )]
+    async fn attribute_to_project(
+        &self,
+        Parameters(a): Parameters<LinkSessionsArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.run(move |e| {
+            e.link_sessions(&a.project, &a.uids)
+                .map(|n| serde_json::json!({ "linked": n }))
+        })
+        .await
     }
 
     #[tool(description = "Rename a project, change its status (active/next/paused/done) or its note.")]

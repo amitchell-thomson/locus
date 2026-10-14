@@ -283,6 +283,14 @@ impl Daemon {
         self.patch(&format!("/api/projects/{}", enc(id)), req)
     }
 
+    pub fn create_session(
+        &self,
+        project: &str,
+        req: &api::SessionReq,
+    ) -> Result<std::result::Result<WriteResult, Rejected>> {
+        self.post(&format!("/api/projects/{}/sessions", enc(project)), req)
+    }
+
     pub fn delete_project(&self, id: &str) -> Result<std::result::Result<serde_json::Value, Rejected>> {
         self.delete(&format!("/api/projects/{}", enc(id)))
     }

@@ -2070,7 +2070,10 @@ impl Engine {
             Outcome::Missed => 0,
         };
         self.db.checkin_answer(&i.uid, outcome, actual, self.now())?;
-        if linked {
+        // Only sessions kairos made show it on the calendar: a repeating
+        // series isn't retitled for one session, and Alec's own events
+        // (made on the phone) aren't touched.
+        if linked && !i.recurring && i.meta.created_by.is_some() {
             let b = Block {
                 uid: Some(i.uid.clone()),
                 task_id: pid.into(),
@@ -2169,6 +2172,58 @@ impl Engine {
         p.updated_at = self.now();
         self.db.project_put(&p)?;
         Ok(p)
+    }
+
+    /// Plan project time by hand: an event in the projects calendar, titled
+    /// with the project and counted as its session (normal risk rules).
+    pub fn create_session(&mut self, author: Author, project: &str, req: &api::SessionReq) -> Result<WriteResult> {
+        let mut p = self.find_project(project)?;
+        let cs = self.create_event(
+            author,
+            &api::CreateEventReq {
+                title: p.name.clone(),
+                start: req.start.clone(),
+                end: req.end.clone(),
+                duration_min: req.duration_min.or(Some(120)).filter(|_| req.end.is_none()),
+                key: self
+                    .constraints
+                    .projects
+                    .key
+                    .clone()
+                    .filter(|k| self.cfg.key(k).is_some()),
+                description: Some(PROJECT_MARK.into()),
+                ..Default::default()
+            },
+        )?;
+        if let Some(uid) = cs.ops.iter().find_map(|o| match o {
+            Op::CreateEvent { uid, .. } => Some(uid.clone()),
+            _ => None,
+        }) {
+            self.db.project_session_link(&uid, &p.id)?;
+        }
+        if p.status == ProjectStatus::Next {
+            p.status = ProjectStatus::Active;
+            p.updated_at = self.now();
+            self.db.project_put(&p)?;
+        }
+        self.replan_soon = true;
+        Ok(WriteResult::from(&cs))
+    }
+
+    /// Count existing events as a project's sessions (time spent comes from
+    /// their check-ins). Returns how many were linked.
+    pub fn link_sessions(&mut self, project: &str, uids: &[String]) -> Result<usize> {
+        let p = self.find_project(project)?;
+        let world = self.world(60)?;
+        let mut n = 0;
+        for uid in uids {
+            if !world.instances.iter().any(|i| &i.uid == uid) {
+                return Err(EngineError::NotFound(format!("event {uid}")));
+            }
+            self.db.project_session_link(uid, &p.id)?;
+            n += 1;
+        }
+        Ok(n)
     }
 
     pub fn delete_project(&mut self, id: &str) -> Result<()> {
@@ -3121,6 +3176,28 @@ impl Engine {
             .filter(|s| s.2 > now)
             .map(|s| (s.1, s.2))
             .collect();
+        // Freed time (an event deleted, shortened or moved away since the
+        // last plan, here or on the phone): work re-flows into it, from the
+        // imminent horizon (2 h) on.
+        let reflow_from = now + risk::IMMINENT;
+        let spans: Vec<(i64, i64)> = merged_spans(&busy, reflow_from);
+        let reflow_after = match self.db.kv_get(BUSY_KEY)? {
+            Some(prev) => {
+                let prev: Vec<(i64, i64)> = serde_json::from_str(&prev).unwrap_or_default();
+                let freed = prev.iter().any(|&(s, e)| {
+                    e > reflow_from.timestamp()
+                        && !spans
+                            .iter()
+                            .any(|&(cs, ce)| cs <= s.max(reflow_from.timestamp()) && e <= ce)
+                });
+                freed.then_some(reflow_from)
+            }
+            None => None,
+        };
+        if !dry_run {
+            self.db
+                .kv_set(BUSY_KEY, &serde_json::to_string(&spans).unwrap_or_default())?;
+        }
         let input = PlanInput {
             now,
             tz,
@@ -3129,6 +3206,7 @@ impl Engine {
             busy: &busy,
             existing: &existing,
             unavailable: &skips,
+            reflow_after,
         };
         let p = sched::plan(&input);
         if !dry_run {
@@ -3391,6 +3469,27 @@ fn plan_summary(r: &api::PlanResp, tz: Tz) -> String {
 }
 
 /// Description of an accepted project session (how a day is known to have one).
+/// The busy spans the last plan saw (to notice freed time).
+const BUSY_KEY: &str = "plan.busy_spans";
+
+/// Busy time from `from` on, merged into disjoint `(start, end)` unix spans.
+fn merged_spans(busy: &[Busy], from: DateTime<Utc>) -> Vec<(i64, i64)> {
+    let mut v: Vec<(i64, i64)> = busy
+        .iter()
+        .filter(|b| b.end > from)
+        .map(|b| (b.start.max(from).timestamp(), b.end.timestamp()))
+        .collect();
+    v.sort_unstable();
+    let mut out: Vec<(i64, i64)> = Vec::new();
+    for (s, e) in v {
+        match out.last_mut() {
+            Some(last) if s <= last.1 => last.1 = last.1.max(e),
+            _ => out.push((s, e)),
+        }
+    }
+    out
+}
+
 const PROJECT_MARK: &str = "Project time (accepted kairos proposal)";
 
 fn fmt_min(m: u32) -> String {

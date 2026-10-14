@@ -666,6 +666,7 @@ impl App {
             Mode::AddChoice => match k {
                 Key::Char('e') => self.open_add(false),
                 Key::Char('t') => self.open_add(true),
+                Key::Char('p') => self.open_add_session(None),
                 _ => self.message = None,
             },
             Mode::Normal => self.normal(k),
@@ -765,7 +766,7 @@ impl App {
                     self.open_add(true);
                 } else {
                     self.mode = Mode::AddChoice;
-                    self.set_message("add: e event · t task (Esc cancels)", false);
+                    self.set_message("add: e event · t task · p project time (Esc cancels)", false);
                 }
             }
             Key::Char('w') => {
@@ -804,6 +805,7 @@ impl App {
                     return;
                 };
                 match k {
+                    Key::Char('n') => self.open_add_session(Some(p.name.clone())),
                     Key::Char('e') => {
                         self.message = None;
                         self.mode = Mode::Form(Form::edit_project(&p));
@@ -1439,6 +1441,24 @@ impl App {
     pub fn form_preview(&self, f: &Form) -> Result<String, String> {
         let key = f.get("Calendar");
         match f.kind {
+            FormKind::AddSession => {
+                let when = f.get("When");
+                if when.is_empty() {
+                    return Err("When: e.g. thu 14:00".into());
+                }
+                let dur = match f.get("Duration") {
+                    "" => 120,
+                    d => dates::parse_minutes(d).map_err(|_| "Duration: e.g. 90m, 2h".to_string())?,
+                };
+                match dates::parse_when(when, self.today()).map_err(|e| e.to_string())? {
+                    When::Date(_) => Err("When: give a time too, e.g. thu 14:00".into()),
+                    When::DateTime(n) => {
+                        let s = resolve_local(n, self.tz);
+                        let e = s + Duration::minutes(i64::from(dur));
+                        Ok(format!("{} · {}", describe_span(s, e, self.tz), f.get("Project")))
+                    }
+                }
+            }
             FormKind::AddProject | FormKind::EditProject { .. } => {
                 if f.get("Name").is_empty() {
                     return Err("Name: what the project is called".into());
@@ -1539,6 +1559,28 @@ impl App {
     }
 
     fn submit_form(&mut self, f: Form) {
+        if f.kind == FormKind::AddSession {
+            if let Err(e) = self.form_preview(&f) {
+                self.set_message(e, true);
+                self.mode = Mode::Form(f);
+                return;
+            }
+            let start = match self.when_str(f.get("When")) {
+                Ok(s) => s,
+                Err(e) => return self.set_message(e, true),
+            };
+            let req = api::SessionReq {
+                start,
+                end: None,
+                duration_min: dates::parse_minutes(f.get("Duration")).ok(),
+            };
+            let project = f.get("Project").to_string();
+            if let Some(r) = self.with_daemon(|d| d.create_session(&project, &req)) {
+                self.write_result(r);
+                self.refresh_remote();
+            }
+            return;
+        }
         if let FormKind::AddProject | FormKind::EditProject { .. } = &f.kind {
             let name = f.get("Name").to_string();
             if name.is_empty() {
@@ -1751,7 +1793,10 @@ impl App {
                     }
                 }
             }
-            FormKind::TookLonger { .. } | FormKind::AddProject | FormKind::EditProject { .. } => {}
+            FormKind::TookLonger { .. }
+            | FormKind::AddProject
+            | FormKind::EditProject { .. }
+            | FormKind::AddSession => {}
             FormKind::AddTask => {
                 let due = match opt(f.get("Due")).map(|d| self.when_str(&d)).transpose() {
                     Ok(d) => d,
@@ -1917,7 +1962,7 @@ impl App {
                 if self.projects.is_empty() {
                     &["a add project"]
                 } else {
-                    &["a add", "e edit", "s status", "d delete"]
+                    &["n plan time", "a add", "e edit", "s status", "d delete"]
                 }
             }
             View::Week | View::Day | View::Month | View::Agenda => match self.selected().map(|c| c.primary) {
@@ -1943,6 +1988,28 @@ impl App {
             },
         };
         h.join(" · ")
+    }
+
+    /// Plan project time by hand (for `project`, or the first active one).
+    fn open_add_session(&mut self, project: Option<String>) {
+        use kairos_core::project::ProjectStatus;
+        let names: Vec<String> = self
+            .projects
+            .iter()
+            .filter(|p| p.project.status != ProjectStatus::Done)
+            .map(|p| p.project.name.clone())
+            .collect();
+        if names.is_empty() {
+            self.mode = Mode::Normal;
+            return self.set_message("no projects yet — add one in R first", true);
+        }
+        let first = project.unwrap_or_else(|| names[0].clone());
+        self.message = None;
+        self.mode = Mode::Form(Form::add_session(
+            names,
+            &first,
+            when_prefill(self.cursor, self.today()),
+        ));
     }
 
     /// Open the add form: a task, or an event (prefilled with the cursor day).

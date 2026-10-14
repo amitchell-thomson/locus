@@ -195,6 +195,8 @@ pub fn router(st: AppState, mcp: Option<Router<AppState>>) -> Router {
             "/api/projects/{id}",
             axum::routing::patch(update_project).delete(delete_project),
         )
+        .route("/api/projects/{id}/sessions", post(create_session))
+        .route("/api/projects/{id}/link", post(link_sessions))
         .route("/api/proposals/{id}/accept", post(accept_proposal))
         .route("/api/proposals/{id}/reject", post(reject_proposal))
         .route("/api/changesets", get(list_changesets))
@@ -481,6 +483,27 @@ async fn update_project(
     Json(req): Json<api::UpdateProjectReq>,
 ) -> HResult<kairos_core::project::Project> {
     Ok(Json(with_engine(&st, move |e| e.update_project(&id, &req)).await?))
+}
+
+async fn create_session(
+    State(st): State<AppState>,
+    h: HeaderMap,
+    Path(id): Path<String>,
+    Json(req): Json<api::SessionReq>,
+) -> HResult<WriteResult> {
+    let a = author(&h);
+    Ok(Json(
+        with_engine_as(&st, &h, move |e| e.create_session(a, &id, &req)).await?,
+    ))
+}
+
+async fn link_sessions(
+    State(st): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<api::LinkSessionsReq>,
+) -> HResult<serde_json::Value> {
+    let n = with_engine(&st, move |e| e.link_sessions(&id, &req.uids)).await?;
+    Ok(Json(serde_json::json!({ "linked": n })))
 }
 
 async fn delete_project(State(st): State<AppState>, Path(id): Path<String>) -> HResult<serde_json::Value> {

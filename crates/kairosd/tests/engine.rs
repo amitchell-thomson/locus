@@ -1388,6 +1388,76 @@ fn project_time_suggests_neglected_projects_and_tracks_time_spent() {
 }
 
 #[test]
+fn project_time_planned_by_hand_and_existing_events_attributed() {
+    use kairos_core::api::{CreateProjectReq, SessionReq};
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let quast = e
+        .create_project(&CreateProjectReq {
+            name: "QUAST".into(),
+            status: Some("next".into()),
+            note: None,
+        })
+        .unwrap();
+    // Alec plans Thu 14:00 for 90 min himself.
+    e.direct = true;
+    let w = e
+        .create_session(
+            Author::Alec,
+            "quast",
+            &SessionReq {
+                start: at("2026-10-15 14:00").to_rfc3339(),
+                end: None,
+                duration_min: Some(90),
+            },
+        )
+        .unwrap();
+    e.direct = false;
+    assert_eq!(w.status, Status::Applied);
+    assert!(env.read_all("Personal").contains("SUMMARY:QUAST"));
+    let p = e.projects().unwrap().remove(0);
+    assert_eq!(p.project.id, quast.id);
+    assert_eq!(p.next_session, Some(at("2026-10-15 14:00")));
+    assert_eq!(p.project.status, kairos_core::project::ProjectStatus::Active);
+    // An existing "Quantum Research" event counts as QUAST work once attributed:
+    // it waits for a check-in, then counts.
+    env.phone_event(
+        "Personal",
+        "qr",
+        "Quantum Research",
+        "2026-10-12 09:00",
+        "2026-10-12 11:00",
+    );
+    assert_eq!(e.link_sessions("QUAST", &["qr".to_string()]).unwrap(), 1);
+    assert!(matches!(
+        e.link_sessions("QUAST", &["nope".to_string()]),
+        Err(EngineError::NotFound(_))
+    ));
+    env.set_now("2026-10-12 12:00");
+    let item = e
+        .checkin_items()
+        .unwrap()
+        .into_iter()
+        .find(|c| c.block_uid == "qr")
+        .unwrap();
+    assert!(item.project);
+    e.checkin(&CheckinReq {
+        block_uid: "qr".into(),
+        outcome: "done".into(),
+        actual_min: None,
+        remaining_min: None,
+        not_before: None,
+    })
+    .unwrap();
+    let p = e.projects().unwrap().remove(0);
+    assert_eq!(p.month_min, 120);
+    assert!(
+        e.db.cs_list(Some(Status::Pending), 10).unwrap().is_empty(),
+        "his own event isn't edited, so nothing waits"
+    );
+}
+
+#[test]
 fn weekly_term_time_event_is_one_series_per_term() {
     let env = Env::new(true);
     let mut e = env.engine();
@@ -1966,6 +2036,33 @@ fn checking_in_a_block_moved_back_over_a_lecture_needs_no_approval() {
         .find(|i| i.uid == uid)
         .unwrap();
     assert!(i.title.starts_with('✓'), "{}", i.title);
+}
+
+#[test]
+fn deleting_an_event_reflows_work_into_the_freed_time() {
+    // Tue is taken all day; Alec deletes it (here or on the phone): the next
+    // replan moves work into Tuesday, and later replans leave it be.
+    let env = Env::new(true);
+    env.phone_event("Personal", "away", "Away day", "2026-10-13 08:00", "2026-10-13 22:00");
+    let mut e = env.engine();
+    let r = e.create_task(Author::Claude, &b4(360, "fri 17:00")).unwrap();
+    let on_tue = |e: &mut kairosd::engine::Engine| {
+        e.world(14)
+            .unwrap()
+            .instances
+            .iter()
+            .filter(|i| i.meta.kind == EventKind::TaskBlock && i.meta.task_id.as_deref() == Some(r.task.id.as_str()))
+            .filter(|i| london(i.start(chrono_tz::Europe::London)).starts_with("2026-10-13"))
+            .count()
+    };
+    assert_eq!(on_tue(&mut e), 0);
+    e.direct = true;
+    e.delete_event(Author::Alec, None, "away").unwrap();
+    e.direct = false;
+    e.replan_if_needed().unwrap();
+    assert!(on_tue(&mut e) >= 1, "work moved into the freed day");
+    let again = e.plan(false, Author::Scheduler).unwrap();
+    assert!(again.created.is_empty() && again.moved == 0, "{}", again.summary);
 }
 
 #[test]

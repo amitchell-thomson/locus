@@ -25,6 +25,8 @@ pub enum FormKind {
     EditProject {
         id: String,
     },
+    /// Plan project time by hand.
+    AddSession,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -224,8 +226,22 @@ impl Form {
             FormKind::EditTask { .. } => "edit task",
             FormKind::TookLonger { .. } => "took longer",
             FormKind::AddProject => "new project",
+            FormKind::AddSession => "project time",
             FormKind::EditProject { .. } => "edit project",
         }
+    }
+
+    /// Plan project time: which project (←/→ over `projects`), when, how long.
+    pub fn add_session(projects: Vec<String>, project: &str, when: String) -> Form {
+        Form::new(
+            FormKind::AddSession,
+            vec![
+                field("Project", project, FieldKind::Key, "←/→ or type the first letter"),
+                field("When", when, FieldKind::When, "thu 14:00 · tomorrow 10am"),
+                field("Duration", "2h", FieldKind::Duration, "1h · 90m · 3h"),
+            ],
+            projects,
+        )
     }
 
     pub fn add_project() -> Form {

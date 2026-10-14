@@ -65,6 +65,7 @@ fn run_plan(now: &str, tasks: &[Task], busy: &[Busy], existing: &[Block]) -> Pla
         busy,
         existing,
         unavailable: &[],
+        reflow_after: None,
     })
 }
 
@@ -505,6 +506,50 @@ fn collision_moves_only_the_affected_block() {
 }
 
 #[test]
+fn freed_time_reflows_work_into_the_gap() {
+    // Tue is taken all day, so the sheet goes on the other days. Then Tue's
+    // event is deleted: a normal replan keeps everything, a reflow moves
+    // work into Tue (Alec, 2026-10-14) — pinned blocks stay put.
+    let tasks = [task("b4", 360, Some("2026-10-16 17:00"))];
+    let mut b = lectures();
+    b.push(busy("2026-10-13 08:00", "2026-10-13 22:00"));
+    let p1 = run_plan("2026-10-12 08:00", &tasks, &b, &[]);
+    let tue = |p: &Plan| {
+        p.keep
+            .iter()
+            .chain(&p.create)
+            .filter(|x| {
+                x.start.with_timezone(&London).date_naive()
+                    == at("2026-10-13 12:00").with_timezone(&London).date_naive()
+            })
+            .count()
+    };
+    assert_eq!(tue(&p1), 0);
+    let mut existing = as_existing(&p1);
+    existing[0].pinned = true;
+    let stable = run_plan("2026-10-12 08:00", &tasks, &lectures(), &existing);
+    assert!(stable.create.is_empty() && stable.delete.is_empty(), "{stable:?}");
+    let c = constraints();
+    let p = plan(&PlanInput {
+        now: at("2026-10-12 08:00"),
+        tz: London,
+        constraints: &c,
+        tasks: &tasks,
+        busy: &lectures(),
+        existing: &existing,
+        unavailable: &[],
+        reflow_after: Some(at("2026-10-12 10:00")),
+    });
+    assert!(tue(&p) >= 1, "work moves into the freed Tuesday: {p:#?}");
+    assert!(
+        p.keep.iter().any(|k| k.uid == existing[0].uid && k.pinned),
+        "pinned stays"
+    );
+    assert_eq!(total(&p, "b4"), 360);
+    assert!(p.shortfalls.is_empty());
+}
+
+#[test]
 fn pinned_block_is_never_moved() {
     let tasks = [task("b4", 120, Some("2026-10-16 17:00"))];
     let pinned = Block {
@@ -875,6 +920,7 @@ fn proposals_fill_comfortable_gaps_after_task_work() {
         busy: &b,
         existing: &[],
         unavailable: &[],
+        reflow_after: None,
     };
     let p = plan(&input);
     let props = propose(&input, &p, &[], &[]);
@@ -919,6 +965,7 @@ fn no_proposals_when_disabled() {
         busy: &[],
         existing: &[],
         unavailable: &[],
+        reflow_after: None,
     };
     assert!(propose(&input, &plan(&input), &[], &[]).is_empty());
 }
@@ -935,6 +982,7 @@ fn one_project_session_a_day_in_its_longest_gap() {
         busy: &b,
         existing: &[],
         unavailable: &[],
+        reflow_after: None,
     };
     let p = plan(&input);
     let props = propose(&input, &p, &[], &[]);
@@ -1004,6 +1052,7 @@ fn proposals_start_at_nine_at_the_earliest() {
         busy: &[],
         existing: &[],
         unavailable: &[],
+        reflow_after: None,
     };
     let props = propose(&input, &plan(&input), &[], &[]);
     assert_eq!(props.len(), 7);
@@ -1028,6 +1077,7 @@ fn weekends_start_at_ten() {
         busy: &[],
         existing: &[],
         unavailable: &[],
+        reflow_after: None,
     };
     let p = plan(&input);
     assert!(p.shortfalls.is_empty(), "{:?}", p.shortfalls);

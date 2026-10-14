@@ -391,6 +391,23 @@ pub struct ProjectItem {
     pub next_session: Option<DateTime<Utc>>,
 }
 
+/// Alec plans project time himself: a session for the project.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct SessionReq {
+    pub start: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end: Option<String>,
+    /// Default 2 h.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_min: Option<u32>,
+}
+
+/// Count existing events (e.g. "Quantum Research") as a project's sessions.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct LinkSessionsReq {
+    pub uids: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct CreateProjectReq {
     pub name: String,

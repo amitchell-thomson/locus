@@ -23,7 +23,7 @@ Your own edits here apply straight away (no approval); `u` undoes the last one, 
 
 | Key | |
 |---|---|
-| `a` | add: `e` event · `t` task (a form; `Tab` between fields) |
+| `a` | add: `e` event · `t` task · `p` project time (a form; `Tab` between fields) |
 | `e` · `K` · `m` | edit · change calendar · move. On a ⚑ deadline these act on the task's deadline |
 | `d` | remove: delete an event · skip a work block (kairos plans that time elsewhere) · on a task's ⚑, remove the task with its deadline and all its planned time (past, checked-in blocks stay) |
 | `s` | share an event to Family (asks first) |
@@ -57,12 +57,17 @@ Your projects, grouped **Active** (working on now) · **Next** (should be workin
 
 | Key | |
 |---|---|
+| `n` | plan time for it yourself (when, how long) — an event in Projects, counted as its session |
 | `a` | add a project (name, status, note) |
 | `e` | edit it |
 | `s` | next status: active → next → paused → done → active |
 | `d` | delete it (its sessions stay on the calendar) |
 
 A project's time is what you **checked in**, never what was planned. Its sessions (accepted proposed time, or an event in the Projects calendar titled with the project's name) wait for a check-in like work blocks, with the same keys: `y` done · `c` partly · `+` took longer · `x` missed (the session is removed) · `F` the project is finished. Sessions not checked in yet show as "to check in" and don't count until you answer; after a week they count as done.
+
+Existing events can count for a project too (e.g. "Quantum Research" as QUAST work): ask Claude to attribute them (`attribute_to_project`).
+
+**Freed time:** deleting, shortening or moving an event away (here or on the phone) re-plans work from 2 h ahead, so blocks move into the gap; blocks you placed (pinned) stay.
 
 **Proposed project time** (◌, greyed) suggests the active project you've spent least time on lately. `y` opens a picker with that one first, then your other active and next projects, `+ new project…`, or just "Project time". Choosing a *next* project makes it active.
 

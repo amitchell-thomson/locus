@@ -546,7 +546,18 @@ fn projects_view_and_picking_one_for_proposed_time() {
     ] {
         assert!(s.contains(want), "{want:?} missing:\n{s}");
     }
-    assert_eq!(a.key_hints(), "a add · e edit · s status · d delete");
+    assert_eq!(a.key_hints(), "n plan time · a add · e edit · s status · d delete");
+    // n: plan project time for the selected project by hand.
+    a.key(Key::Char('n'));
+    let Mode::Form(f) = &a.mode else { panic!("no form") };
+    assert_eq!(
+        (f.title(), f.get("Project"), f.get("Duration")),
+        ("project time", "kairos", "2h")
+    );
+    let mut f = f.clone();
+    f.fields[1].value = "thu 14:00".into();
+    assert_eq!(a.form_preview(&f).unwrap(), "Thu 22 Oct 14:00–16:00 · kairos");
+    a.key(Key::Esc);
     // a: the new-project form; e: edit the selected one.
     a.key(Key::Char('a'));
     let Mode::Form(f) = &a.mode else { panic!("no form") };

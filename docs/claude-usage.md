@@ -28,7 +28,7 @@ claude mcp list   # kairos: … ✓ Connected
 | Events | `create_event`, `update_event`, `delete_event`, `move_event`, `share_to_family`; batches: `update_events`, `delete_events`, `move_events` |
 | Tasks | `create_task`, `update_task` (incl. `reopen`), `complete_task`, `create_deadline`, `start_task`, `log_work`, `plan` |
 | Check-ins | `list_checkins`, `checkin` (done / partial + `actual_min` / longer + `actual_min`, `remaining_min`, `not_before` / missed / finished) |
-| Projects | `list_projects`, `create_project`, `update_project` (status active / next / paused / done) |
+| Projects | `list_projects`, `create_project`, `update_project` (status active / next / paused / done), `plan_project_time` (a session Alec asks for), `attribute_to_project` (existing events count as its sessions) |
 | Project time | `list_proposals`, `accept_proposal` (with `project`), `reject_proposal` |
 | Undo | `undo` |
 

@@ -205,7 +205,12 @@ pub fn router(st: AppState, mcp: Option<Router<AppState>>) -> Router {
         .route("/api/changesets/{id}/reject", post(reject))
         .route("/api/changesets/{id}/undo", post(undo))
         .route("/api/sidecar", get(sidecar))
-        .route("/api/index", get(index))
+        // ~70 KB of JSON for a normal window: gzip makes it ~10× smaller
+        // over the home connection's upload.
+        .route(
+            "/api/index",
+            get(index).layer(tower_http::compression::CompressionLayer::new()),
+        )
         .route("/api/checkin", get(checkin_items).post(checkin))
         .route("/api/status", get(status));
     let mut protected = api;

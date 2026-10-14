@@ -20,11 +20,16 @@ thiserror.workspace = true
 uuid.workspace = true
 rusqlite.workspace = true
 axum = "0.8"
+rmcp = { version = "3.5", features = ["server", "macros", "transport-streamable-http-server", "schemars"] }
+schemars = "1"
+chrono.workspace = true
+chrono-tz.workspace = true
 tokio = { version = "1", features = ["full"] }
 
 [dev-dependencies]
 tempfile.workspace = true
 tower = { version = "0.5", features = ["util"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 keryx-store = { workspace = true, features = ["testkit"] }
 
 [lints]

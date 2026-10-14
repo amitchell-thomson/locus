@@ -453,24 +453,7 @@ impl App {
         };
         let m = &open.msgs[mi];
         let a = &m.attachments[ai];
-        let bytes = match self.db.raw(&m.account, &m.source_id) {
-            Ok((Some(raw), _)) => mime::attachment_bytes(&raw, a.id),
-            Ok((None, Some(path))) if !path.is_empty() => {
-                let p = std::path::Path::new(&path);
-                if mailapp::is_partial(p) {
-                    m.source_id
-                        .parse::<i64>()
-                        .ok()
-                        .and_then(|rowid| mailapp::attachment_file(p, rowid, &a.name))
-                        .and_then(|f| std::fs::read(f).ok())
-                } else {
-                    mailapp::read_emlx(p)
-                        .ok()
-                        .and_then(|raw| mime::attachment_bytes(&raw, a.id))
-                }
-            }
-            _ => None,
-        };
+        let bytes = view::attachment_bytes(&self.db, m, a);
         let Some(bytes) = bytes else {
             self.message = Some((format!("{} isn't available locally yet", a.name), true));
             return;

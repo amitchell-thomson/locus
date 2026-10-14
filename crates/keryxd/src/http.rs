@@ -90,7 +90,7 @@ fn constant_eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
-pub fn router(st: AppState) -> Router {
+pub fn router(st: AppState, mcp: Option<Router<AppState>>) -> Router {
     let api = Router::new()
         .route("/api/status", get(status))
         .route("/api/sync", post(sync_now))
@@ -106,8 +106,12 @@ pub fn router(st: AppState) -> Router {
         .route("/api/proposals/{id}/decide", post(decide))
         .route("/api/tags", post(tag))
         .route("/api/tags/{thread}", axum::routing::delete(untag))
-        .route("/api/feedback", get(feedback))
-        .layer(middleware::from_fn_with_state(st.clone(), auth));
+        .route("/api/feedback", get(feedback));
+    let api = match mcp {
+        Some(m) => api.merge(m),
+        None => api,
+    };
+    let api = api.layer(middleware::from_fn_with_state(st.clone(), auth));
     Router::new()
         .route("/healthz", get(|| async { "ok" }))
         .merge(api)

@@ -19,5 +19,6 @@ pub mod risk;
 pub mod text;
 pub mod thread;
 pub mod unsubscribe;
+pub mod when;
 
 pub use chrono_tz::Tz;

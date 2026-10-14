@@ -408,6 +408,26 @@ pub fn search(db: &Db, cfg: &Config, q: &Query, f: &Filter) -> Result<Vec<Thread
     Ok(v)
 }
 
+/// An attachment's bytes, from the stored raw message (Gmail), the
+/// `.emlx` (Mail.app), or Mail's `Attachments/` folder for partial ones.
+pub fn attachment_bytes(db: &Db, m: &Message, a: &keryx_core::model::Attachment) -> Option<Vec<u8>> {
+    match db.raw(&m.account, &m.source_id).ok()? {
+        (Some(raw), _) => keryx_core::mime::attachment_bytes(&raw, a.id),
+        (None, Some(path)) if !path.is_empty() => {
+            let p = std::path::Path::new(&path);
+            if crate::mailapp::is_partial(p) {
+                let rowid = m.source_id.parse::<i64>().ok()?;
+                std::fs::read(crate::mailapp::attachment_file(p, rowid, &a.name)?).ok()
+            } else {
+                crate::mailapp::read_emlx(p)
+                    .ok()
+                    .and_then(|raw| keryx_core::mime::attachment_bytes(&raw, a.id))
+            }
+        }
+        _ => None,
+    }
+}
+
 /// One address-book entry.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Contact {

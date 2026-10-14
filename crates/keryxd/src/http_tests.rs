@@ -31,7 +31,7 @@ fn app() -> (Router, Arc<Mutex<Engine>>) {
         token: Arc::new(TOKEN.into()),
         sync_now: tx,
     };
-    (router(st), engine)
+    (router(st, None), engine)
 }
 
 async fn call(

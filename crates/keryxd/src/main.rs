@@ -15,6 +15,7 @@ mod engine;
 mod gmail_sync;
 mod http;
 mod jobs;
+mod mcp;
 
 #[derive(Parser)]
 #[command(
@@ -99,7 +100,8 @@ fn main() -> anyhow::Result<()> {
             .await
             .with_context(|| format!("binding {addr} (is [server] bind your Tailscale IP?)"))?;
         tracing::info!(%addr, "keryxd listening");
-        axum::serve(listener, http::router(st)).await?;
+        let mcp = mcp::router(st.clone(), vec![]);
+        axum::serve(listener, http::router(st, Some(mcp))).await?;
         anyhow::Ok(())
     })
 }

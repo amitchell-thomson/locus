@@ -42,6 +42,13 @@ pub struct Who {
 }
 
 impl Who {
+    /// MCP callers: always Claude, never interactive.
+    pub fn claude() -> Who {
+        Who {
+            author: Author::Claude,
+            interactive: false,
+        }
+    }
     pub fn direct(self) -> bool {
         risk::is_direct(self.author, self.interactive)
     }
@@ -850,7 +857,9 @@ impl Engine {
                 id
             }
         };
-        let base = self.db.proposals(&review_id)?.len() as i64;
+        let existing = self.db.proposals(&review_id)?;
+        let base = existing.len() as i64;
+        let mut seen: HashSet<(String, String)> = existing.into_iter().map(|p| (p.account, p.thread_id)).collect();
         let mut out = ProposeOutcome {
             review_id: review_id.clone(),
             added: 0,
@@ -859,6 +868,7 @@ impl Engine {
         for (i, item) in req.items.into_iter().enumerate() {
             match self.check_item(&item) {
                 Ok((account, thread_id, msgs)) => {
+                    let new = seen.insert((account.clone(), thread_id.clone()));
                     self.db.add_proposal(&Proposal {
                         id: new_id("p"),
                         review_id: review_id.clone(),
@@ -872,7 +882,10 @@ impl Engine {
                         decided_at: None,
                         changeset_id: None,
                     })?;
-                    out.added += 1;
+                    // A thread proposed again replaces its open proposal.
+                    if new {
+                        out.added += 1;
+                    }
                 }
                 Err(e) => out.rejected.push((item.r#ref, e.to_string())),
             }

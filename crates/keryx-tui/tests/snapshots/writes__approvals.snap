@@ -1,0 +1,13 @@
+---
+source: crates/keryx-tui/tests/writes.rs
+assertion_line: 291
+expression: "render_to_string(&mut a, 80, 8)"
+---
+╭────────────────────────────── Waiting for you ───────────────────────────────╮
+│ Cleanups                                                                     │
+│ Oxford inbox · 4 to review · 0 of 4 decided                                  │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰───────────────────────────────────────────────────── Enter review · Esc back ╯
+ Cleanup: 4 to review · A

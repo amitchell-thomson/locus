@@ -13,6 +13,8 @@ publish = false
 keryx-core = { path = "crates/keryx-core" }
 keryx-store = { path = "crates/keryx-store" }
 keryx-tui = { path = "crates/keryx-tui" }
+# Shared with kairos (SPEC §11); bump the rev deliberately.
+eco-dates = { git = "https://github.com/amitchell-thomson/eco", rev = "d2191b2adbb319aacf3a2cf252133b023bbc82a1" }
 anyhow = "1"
 chrono = { version = "0.4.45", features = ["serde"] }
 chrono-tz = { version = "0.10", features = ["serde"] }

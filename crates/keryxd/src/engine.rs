@@ -905,28 +905,7 @@ impl Engine {
 
     /// A review with each proposal's thread and whether it's gone stale.
     pub fn review(&self, id: &str) -> Result<ReviewView> {
-        let review = self
-            .db
-            .review(id)?
-            .ok_or_else(|| EngineError::NotFound(format!("review {id}")))?;
-        let mut items = Vec::new();
-        for p in self.db.proposals(id)? {
-            let msgs = self.db.thread(&p.account, &p.thread_id)?;
-            let latest = msgs.last();
-            items.push(ReviewItem {
-                stale: p.status == ProposalStatus::Open && state::fingerprint(&msgs) != p.fingerprint,
-                subject: latest.map(|m| m.subject.clone()).unwrap_or_default(),
-                who: latest
-                    .and_then(|m| m.from.as_ref())
-                    .map(|a| a.short().to_string())
-                    .unwrap_or_default(),
-                date: latest.map(|m| m.date).unwrap_or(0),
-                r#ref: keryx_core::model::thread_ref(&p.account, &p.thread_id),
-                group: p.action.group(),
-                proposal: p,
-            });
-        }
-        Ok(ReviewView { review, items })
+        state::review_view(&self.db, id)?.ok_or_else(|| EngineError::NotFound(format!("review {id}")))
     }
 
     fn intent_of(action: &Action) -> Option<Intent> {

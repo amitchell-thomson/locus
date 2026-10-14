@@ -1,5 +1,6 @@
 ---
 source: crates/keryx-tui/tests/snapshots.rs
+assertion_line: 50
 expression: "render_to_string(&mut app(), 80, 24)"
 ---
 ╭──────────────────────────── Inbox · All accounts ────────────────────────────╮
@@ -24,4 +25,4 @@ expression: "render_to_string(&mut app(), 80, 24)"
 │ OQTS     Society        Poster for the talk · Here is the poster: … 󰁦  5 Oct │
 │ Oxford   Ben            Hello · Hello from Ben.                        5 Oct │
 │ Oxford   Bob            Re: Budget · Numbers attached. Also red text…  5 Oct │
-╰────────────────────── Enter read · Tab account · g go to · / search · ? help ╯
+╰───────────────────────────── d archive · s snooze · m file · x mark · ? help ╯

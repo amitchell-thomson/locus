@@ -848,6 +848,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "eco-dates"
+version = "0.1.0"
+source = "git+https://github.com/amitchell-thomson/eco?rev=d2191b2adbb319aacf3a2cf252133b023bbc82a1#d2191b2adbb319aacf3a2cf252133b023bbc82a1"
+dependencies = [
+ "chrono",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "ego-tree"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1702,10 +1711,12 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "crossterm",
+ "eco-dates",
  "insta",
  "keryx-core",
  "keryx-store",
  "ratatui",
+ "serde_json",
  "unicode-width",
 ]
 

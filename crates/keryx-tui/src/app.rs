@@ -1,16 +1,20 @@
-//! TUI state and keys (no terminal here, so it's testable). Phase 3 is
-//! read-only: list, thread, reading pane, account filter, go-to, search,
-//! attachments, help. Triage keys arrive with the write path (Phase 4).
+//! TUI state and keys (no terminal here, so it's testable): list, thread,
+//! reading pane, account filter, go-to, search, attachments, help. Writes
+//! (triage, reviews) are in `write.rs`.
 
+use crate::write::Job;
 use chrono::DateTime;
 use chrono_tz::Tz;
 use keryx_core::config::Config;
 use keryx_core::invite::{self, Invite};
 use keryx_core::mime;
 use keryx_core::model::Message;
+use keryx_store::api::ReviewView;
+use keryx_store::client::Daemon;
 use keryx_store::db::Db;
 use keryx_store::mailapp;
 use keryx_store::view::{self, Filter, ThreadRow, View};
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,6 +43,31 @@ pub enum Mode {
     Help,
     /// Choosing which attachment to open.
     Attachments,
+    /// Snooze picker; `Some(text)` while typing a time for *Pick…*.
+    Snooze(Option<String>),
+    /// File-into-key picker.
+    File,
+    /// `A`: what's waiting for Alec (cleanup reviews).
+    Approvals {
+        sel: usize,
+    },
+    /// Deciding a cleanup review's proposals.
+    Review {
+        id: String,
+        sel: usize,
+    },
+    /// Choosing a different action for a proposal.
+    ReviewChange {
+        id: String,
+        sel: usize,
+    },
+    /// `Y`: confirm accepting a whole group.
+    ConfirmGroup {
+        id: String,
+        sel: usize,
+        group: String,
+        count: usize,
+    },
 }
 
 /// A thread opened for reading.
@@ -91,6 +120,20 @@ pub struct App {
     /// Files opened with `o`, for tests (the real TUI calls `open`).
     pub opened: Vec<PathBuf>,
     pub dry_open: bool,
+    /// keryxd, for changes (None: read-only, e.g. keryxd not running).
+    pub daemon: Option<Box<dyn Daemon>>,
+    /// Threads marked with `x` for a batch.
+    pub marked: BTreeSet<String>,
+    /// Changes queued for keryxd (run after the frame is drawn).
+    pub deferred: Vec<Job>,
+    /// The review being decided (read from the mirror).
+    pub review: Option<ReviewView>,
+    /// Proposals marked with `x` in the review.
+    pub review_marked: BTreeSet<String>,
+    /// Where Esc returns from a thread opened elsewhere (the review).
+    pub back: Option<Mode>,
+    /// Open proposals waiting for Alec (status bar).
+    pub open_proposals: usize,
 }
 
 pub const LIST_LIMIT: u32 = 500;
@@ -117,6 +160,13 @@ impl App {
             width: 100,
             opened: Vec::new(),
             dry_open: false,
+            daemon: None,
+            marked: BTreeSet::new(),
+            deferred: Vec::new(),
+            review: None,
+            review_marked: BTreeSet::new(),
+            back: None,
+            open_proposals: 0,
         };
         app.reload();
         app
@@ -180,6 +230,10 @@ impl App {
             .unwrap_or(0)
             .min(self.rows.len().saturating_sub(1));
         self.stale = self.stale_accounts();
+        self.open_proposals = keryx_store::state::open_proposals(&self.db).unwrap_or(0);
+        // Marks on threads that left the list are dropped.
+        let refs: BTreeSet<String> = self.rows.iter().map(|r| r.r#ref.clone()).collect();
+        self.marked.retain(|r| refs.contains(r));
         self.preview = None;
     }
 
@@ -231,20 +285,30 @@ impl App {
         }
     }
 
-    /// The thread shown in the reading pane (selection), cached.
+    /// The thread shown in the reading pane (list or review selection), cached.
     pub fn ensure_preview(&mut self) {
-        let Some(r) = self.selected() else {
+        let target = match &self.mode {
+            Mode::Review { sel, .. } | Mode::ReviewChange { sel, .. } | Mode::ConfirmGroup { sel, .. } => self
+                .review_selected(*sel)
+                .and_then(|i| self.review.as_ref().map(|v| v.items[i].r#ref.clone()))
+                .and_then(|r| keryx_core::model::parse_thread_ref(&r).map(|(a, t)| (a.to_string(), t.to_string()))),
+            _ => self.selected().map(|r| (r.account.clone(), r.thread_id.clone())),
+        };
+        let Some((a, t)) = target else {
             self.preview = None;
             return;
         };
         let fresh = self
             .preview
             .as_ref()
-            .is_some_and(|p| p.account == r.account && p.thread_id == r.thread_id);
+            .is_some_and(|p| p.account == a && p.thread_id == t);
         if !fresh {
-            let (a, t) = (r.account.clone(), r.thread_id.clone());
             self.preview = self.load_thread(&a, &t);
         }
+    }
+
+    pub fn move_sel_by(&mut self, d: isize) {
+        self.move_sel(d);
     }
 
     fn move_sel(&mut self, d: isize) {
@@ -266,10 +330,19 @@ impl App {
             Mode::Attachments => self.attachment_key(k),
             Mode::Thread => self.thread_key(k),
             Mode::List => self.list_key(k),
+            Mode::Snooze(input) => self.snooze_key(k, input),
+            Mode::File => self.file_key(k),
+            Mode::Approvals { sel } => self.approvals_key(k, sel),
+            Mode::Review { id, sel } => self.review_key(k, id, sel),
+            Mode::ReviewChange { id, sel } => self.review_change_key(k, id, sel),
+            Mode::ConfirmGroup { id, sel, group, .. } => self.confirm_group_key(k, id, sel, group),
         }
     }
 
     fn list_key(&mut self, k: Key) {
+        if self.write_key(k) {
+            return;
+        }
         match k {
             Key::Char('q') => self.quit = true,
             Key::Char('j') | Key::Down => self.move_sel(1),
@@ -283,13 +356,10 @@ impl App {
             Key::Char('g') => self.mode = Mode::GoTo,
             Key::Char('/') => self.mode = Mode::Search(self.search.clone().unwrap_or_default()),
             Key::Char('?') => self.mode = Mode::Help,
+            Key::Esc if !self.marked.is_empty() => self.marked.clear(),
             Key::Esc if self.search.is_some() => {
                 self.search = None;
                 self.reload();
-            }
-            Key::Ctrl('r') => {
-                self.reload();
-                self.message = Some(("reloaded".into(), false));
             }
             _ => {}
         }
@@ -300,6 +370,18 @@ impl App {
         self.open = self.load_thread(&r.account, &r.thread_id);
         if self.open.is_some() {
             self.mode = Mode::Thread;
+            // Opening a thread marks it read (Alec, 2026-10-14).
+            if r.unread {
+                self.deferred.push(Job::Triage {
+                    req: keryx_store::api::TriageReq {
+                        intent: keryx_store::api::Intent::Read { on: true },
+                        refs: vec![r.r#ref.clone()],
+                        summary: None,
+                        review_id: None,
+                    },
+                    quiet: true,
+                });
+            }
         }
     }
 
@@ -311,6 +393,9 @@ impl App {
     }
 
     fn thread_key(&mut self, k: Key) {
+        if self.back.is_none() && self.write_key(k) {
+            return;
+        }
         let Some(open) = self.open.as_mut() else {
             self.mode = Mode::List;
             return;
@@ -318,7 +403,7 @@ impl App {
         match k {
             Key::Esc | Key::Char('q') | Key::Char('h') => {
                 self.open = None;
-                self.mode = Mode::List;
+                self.mode = self.back.take().unwrap_or(Mode::List);
             }
             Key::Char('j') | Key::Down => open.scroll = open.scroll.saturating_add(1),
             Key::Char('k') | Key::Up => open.scroll = open.scroll.saturating_sub(1),
@@ -417,7 +502,9 @@ impl App {
             Key::Char('i') => View::Inbox,
             Key::Char('f') => View::Flagged,
             Key::Char('t') => View::Sent,
-            Key::Char('r') => View::Archive,
+            Key::Char('r') => View::NeedsReply,
+            Key::Char('s') => View::Snoozed,
+            Key::Char('v') => View::Archive,
             Key::Char('a') => View::All,
             Key::Char(c) if c.is_ascii_digit() && c != '0' => match self.cfg.keys.get(c as usize - '1' as usize) {
                 Some(k) => View::Key(k.name.clone()),
@@ -474,16 +561,26 @@ impl App {
     /// Hints for the bottom-right edge.
     pub fn key_hints(&self) -> String {
         match &self.mode {
+            Mode::Thread if self.back.is_some() => "z quotes · Esc back to the review".into(),
             Mode::Thread => {
-                let mut h = vec!["z quotes"];
+                let mut h = vec!["d archive", "s snooze", "m file", "z quotes"];
                 if self.open.as_ref().is_some_and(|o| !o.attachments().is_empty()) {
                     h.push("o open attachment");
                 }
-                h.extend(["J/K next/prev", "Esc back", "? help"]);
+                h.extend(["Esc back", "? help"]);
                 h.join(" · ")
             }
             Mode::List if self.rows.is_empty() => "g go to · / search · ? help".into(),
-            Mode::List => "Enter read · Tab account · g go to · / search · ? help".into(),
+            Mode::List if !self.marked.is_empty() => {
+                format!(
+                    "{} marked · d archive · s snooze · m file · f flag · Esc unmark",
+                    self.marked.len()
+                )
+            }
+            Mode::List => "d archive · s snooze · m file · x mark · ? help".into(),
+            Mode::Review { .. } => {
+                "y accept · n decline · c change · x mark · Y accept group · Enter read · u undo".into()
+            }
             Mode::Search(_) => "Enter keep · Esc clear · ↑↓ move".into(),
             _ => String::new(),
         }

@@ -21,6 +21,8 @@ pub enum View {
     All,
     /// Threads filed under a key.
     Key(String),
+    Snoozed,
+    NeedsReply,
 }
 
 impl View {
@@ -32,6 +34,8 @@ impl View {
             View::Archive => "Archive".into(),
             View::All => "All mail".into(),
             View::Key(k) => k.clone(),
+            View::Snoozed => "Snoozed".into(),
+            View::NeedsReply => "Needs reply".into(),
         }
     }
 }
@@ -58,6 +62,10 @@ pub struct ThreadRow {
     pub keys: Vec<String>,
     /// Latest message's source id (for opening / previews).
     pub latest: String,
+    /// Snoozed until (Unix seconds).
+    pub snoozed_until: Option<i64>,
+    /// Why it needs a reply (Claude's or Alec's one line).
+    pub needs_reply: Option<String>,
 }
 
 /// Gmail label id → name per account, from sync state.
@@ -170,6 +178,8 @@ fn view_threads(cfg: &Config, view: &View, f: &Filter, args: &mut Vec<Value>) ->
             let _ = k;
             format!("SELECT account, thread_id FROM messages WHERE {acc}")
         }
+        View::Snoozed => format!("SELECT account, thread_id FROM snoozes WHERE {acc}"),
+        View::NeedsReply => format!("SELECT account, thread_id FROM tags WHERE kind = 'needs_reply' AND {acc}"),
     }
 }
 
@@ -200,6 +210,16 @@ pub fn list(db: &Db, cfg: &Config, view: &View, f: &Filter) -> Result<Vec<Thread
 fn rows_for(db: &Db, cfg: &Config, threads_sql: &str, args: Vec<Value>, limit: u32) -> Result<Vec<ThreadRow>, DbError> {
     let own = cfg.own_addresses();
     let labels = label_names(db, cfg);
+    let snoozes: HashMap<(String, String), i64> = db
+        .snoozes()?
+        .into_iter()
+        .map(|s| ((s.account, s.thread_id), s.until))
+        .collect();
+    let needs: HashMap<(String, String), String> = db
+        .tags("needs_reply")?
+        .into_iter()
+        .map(|t| ((t.account, t.thread_id), t.reason))
+        .collect();
     let sql = format!(
         "WITH t AS (SELECT DISTINCT account, thread_id FROM ({threads_sql})),
          agg AS (
@@ -278,12 +298,17 @@ fn rows_for(db: &Db, cfg: &Config, threads_sql: &str, args: Vec<Value>, limit: u
             in_inbox,
             keys,
             latest: latest.source_id.clone(),
+            snoozed_until: snoozes.get(&(account.clone(), thread_id.clone())).copied(),
+            needs_reply: needs.get(&(account.clone(), thread_id.clone())).cloned(),
             account,
             thread_id,
         });
     }
     Ok(out)
 }
+
+const SNOOZED: &str =
+    "EXISTS (SELECT 1 FROM snoozes s WHERE s.account = messages.account AND s.thread_id = messages.thread_id)";
 
 /// Search with the §7 syntax. `in:snoozed`, `is:snoozed` and `has:task`
 /// match nothing until snoozing (Phase 4) and kairos links (Phase 7) exist.
@@ -332,7 +357,7 @@ pub fn search(db: &Db, cfg: &Config, q: &Query, f: &Filter) -> Result<Vec<Thread
             In::Inbox => wh.push("in_inbox = 1".into()),
             In::Archive => wh.push("in_inbox = 0".into()),
             In::Flagged => wh.push("flagged = 1".into()),
-            In::Snoozed => wh.push("0".into()),
+            In::Snoozed => wh.push(SNOOZED.into()),
             In::Sent => {
                 let marks: Vec<String> = own
                     .iter()
@@ -354,7 +379,7 @@ pub fn search(db: &Db, cfg: &Config, q: &Query, f: &Filter) -> Result<Vec<Thread
                 Is::Unread => "read = 0",
                 Is::Read => "read = 1",
                 Is::Flagged => "flagged = 1",
-                Is::Snoozed => "0",
+                Is::Snoozed => SNOOZED,
             }
             .into(),
         );
@@ -557,6 +582,43 @@ mod tests {
         assert!(!s("before:2026-10-14").contains(&"Your e-ticket: Oxford to London, Fri 23 Oct".to_string()));
         assert!(s("in:snoozed").is_empty());
         assert!(s("\"no such phrase anywhere\"").is_empty());
+    }
+
+    #[test]
+    fn snoozed_and_needs_reply_views() {
+        let (cfg, db) = fixture_db();
+        let rows = list(&db, &cfg, &View::Inbox, &Filter::default()).unwrap();
+        let (a, b) = (&rows[0], &rows[1]);
+        db.set_snooze(
+            &crate::state::Snooze {
+                account: a.account.clone(),
+                thread_id: a.thread_id.clone(),
+                until: 99,
+                created_at: 1,
+                created_by: "alec".into(),
+            },
+            "cs",
+        )
+        .unwrap();
+        db.set_tag(&crate::state::Tag {
+            account: b.account.clone(),
+            thread_id: b.thread_id.clone(),
+            kind: "needs_reply".into(),
+            reason: "asks about Thursday".into(),
+            author: "claude".into(),
+            created_at: 1,
+        })
+        .unwrap();
+        let s = list(&db, &cfg, &View::Snoozed, &Filter::default()).unwrap();
+        assert_eq!(s.len(), 1);
+        assert_eq!(s[0].snoozed_until, Some(99));
+        let n = list(&db, &cfg, &View::NeedsReply, &Filter::default()).unwrap();
+        assert_eq!(n[0].needs_reply.as_deref(), Some("asks about Thursday"));
+        let now = chrono_tz::Europe::London
+            .with_ymd_and_hms(2026, 10, 14, 15, 0, 0)
+            .unwrap();
+        let q = keryx_core::query::parse("is:snoozed", now).unwrap();
+        assert_eq!(search(&db, &cfg, &q, &Filter::default()).unwrap().len(), 1);
     }
 
     #[test]

@@ -1,5 +1,6 @@
 ---
 source: crates/keryx-tui/tests/snapshots.rs
+assertion_line: 95
 expression: s
 ---
 ╭─────────────────────────────────── Thread ───────────────────────────────────╮
@@ -16,4 +17,4 @@ expression: s
 │                                                                              │
 │                                                                              │
 │                                                                              │
-╰──────────────────────────────── z quotes · J/K next/prev · Esc back · ? help ╯
+╰──────────────── d archive · s snooze · m file · z quotes · Esc back · ? help ╯

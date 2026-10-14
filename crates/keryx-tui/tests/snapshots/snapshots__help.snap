@@ -1,23 +1,25 @@
 ---
 source: crates/keryx-tui/tests/snapshots.rs
+assertion_line: 173
 expression: "render_to_string(&mut a, 80, 20)"
 ---
-╭──────────────────────────── Admin · All accounts ────────────────────────────╮
-│ Oxford   Careers Servi… Your appointment is confirmed · Your appoint…    Mon │
-│╭─────────────────────────────────── keys ───────────────────────────────────╮│
-││                                                                            ││
+╭╭─────────────────────────────────── keys ───────────────────────────────────╮╮
 ││ j k  ↑ ↓        next / previous                                            ││
 ││ Enter           read the thread                                            ││
 ││ Esc             back (clears a search)                                     ││
 ││ Tab  Shift-Tab  account: All · each account                                ││
-││ g               go to: Inbox, Flagged, Sent, Archive, All mail, keys       ││
+││ g               go to: Inbox, Needs reply, Flagged, Snoozed, Sent, keys…   ││
 ││ /               search (from: to: subject: account: key: in: is: has: befo…││
 ││ z               thread: show / fold quoted text                            ││
 ││ o               thread: open an attachment                                 ││
+││ d s m           archive · snooze · file into a key                         ││
+││ f U N           flag · mark unread · needs-reply tag                       ││
+││ x               mark threads for a batch (Esc clears)                      ││
+││ u               undo the last change                                       ││
+││ A               cleanups waiting for you                                   ││
 ││ J K             thread: next / previous thread                             ││
-││ Ctrl-R          reload                                                     ││
+││ Ctrl-R          sync now                                                   ││
 ││ q               quit                                                       ││
 ││                                                                            ││
-│╰────────────────────────────────────────────────────────────────────────────╯│
-│                                                                              │
-╰──────────────────────────────────────────────────────────────────────────────╯
+╰│                                                                            │╯
+ ╰────────────────────────────────────────────────────────────────────────────╯

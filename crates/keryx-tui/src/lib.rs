@@ -4,6 +4,8 @@
 pub mod app;
 pub mod theme;
 pub mod ui;
+mod ui_write;
+pub mod write;
 
 use app::{App, Key};
 use chrono::Utc;
@@ -96,6 +98,9 @@ pub fn run(cfg: Config) -> Result<(), String> {
     }
     let db = Db::open_readonly(&path).map_err(|e| e.to_string())?;
     let mut app = App::new(cfg.clone(), db, now(&cfg));
+    app.daemon = keryx_store::client::Client::from_config(&cfg)
+        .ok()
+        .map(|c| Box::new(c.interactive(true)) as Box<dyn keryx_store::client::Daemon>);
     let mut terminal = ratatui::try_init().map_err(|e| e.to_string())?;
     let result = (|| -> Result<(), String> {
         let mut stamp = db_stamp(&cfg);
@@ -124,6 +129,11 @@ pub fn run(cfg: Config) -> Result<(), String> {
                 app.key(key);
                 if app.quit {
                     return Ok(());
+                }
+                if !app.deferred.is_empty() {
+                    // Show "archiving…" first, then talk to keryxd.
+                    terminal.draw(|f| ui::draw(f, &app)).map_err(|e| e.to_string())?;
+                    app.run_deferred();
                 }
             }
         }

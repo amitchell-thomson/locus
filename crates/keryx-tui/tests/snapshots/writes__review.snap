@@ -1,0 +1,21 @@
+---
+source: crates/keryx-tui/tests/writes.rs
+assertion_line: 294
+expression: "render_to_string(&mut a, 100, 16)"
+---
+╭───────────────────────────── Cleanup: Oxford inbox · 0 of 4 decided ─────────────────────────────╮
+│Archive · 2 of 2 open                                                                             │
+│  Jane Doe         Lab partner for Thursday?    reason 0                                      Tue │
+│  Jürgen           Grüße                        reason 1                                      Thu │
+│                                                                                                  │
+│File → Admin · 1 of 1 open                                                                        │
+│  Ben              Hello                        reason 2                                    5 Oct │
+│                                                                                                  │
+│Keep · 1 of 1 open                                                                                │
+│  Department Offi… Coursework submission portal reason 3                                      Mon │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+╰───────────────── y accept · n decline · c change · x mark · Y accept group · Enter read · u undo ╯
+ Cleanup: 4 to review · A

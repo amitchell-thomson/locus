@@ -1,5 +1,6 @@
 ---
 source: crates/keryx-tui/tests/snapshots.rs
+assertion_line: 69
 expression: "render_to_string(&mut a, 80, 24)"
 ---
 ╭─────────────────────────────────── Thread ───────────────────────────────────╮
@@ -24,4 +25,4 @@ expression: "render_to_string(&mut a, 80, 24)"
 │                                                                              │
 │                                                                              │
 │                                                                              │
-╰──────────────────────────────── z quotes · J/K next/prev · Esc back · ? help ╯
+╰──────────────── d archive · s snooze · m file · z quotes · Esc back · ? help ╯

@@ -46,7 +46,7 @@ impl Intent {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TriageReq {
     #[serde(flatten)]
     pub intent: Intent,
@@ -109,7 +109,7 @@ pub struct ReviewView {
     pub items: Vec<ReviewItem>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "decision", rename_all = "snake_case")]
 pub enum Decision {
     Accept,

@@ -17,6 +17,7 @@ use unicode_width::UnicodeWidthStr;
 pub const ICON_FLAG: &str = "󰈻";
 pub const ICON_ATTACH: &str = "󰁦";
 pub const ICON_INVITE: &str = "󰃭";
+pub const ICON_SNOOZE: &str = "󰒲";
 
 pub fn draw(f: &mut Frame, app: &App) {
     let area = f.area();
@@ -26,7 +27,23 @@ pub fn draw(f: &mut Frame, app: &App) {
     let main = Rect::new(area.x, area.y, area.width, area.height - 1);
     let status = Rect::new(area.x, area.y + area.height - 1, area.width, 1);
     let reading = matches!(app.mode, Mode::Thread | Mode::Attachments);
-    if app.split() {
+    let reviewing = matches!(
+        app.mode,
+        Mode::Review { .. } | Mode::ReviewChange { .. } | Mode::ConfirmGroup { .. }
+    );
+    if reviewing {
+        if app.split() {
+            let lw = (main.width * 3 / 5).max(60);
+            let left = Rect::new(main.x, main.y, lw, main.height);
+            let right = Rect::new(main.x + lw, main.y, main.width - lw, main.height);
+            crate::ui_write::review(f, app, left);
+            thread(f, app, right, app.preview.as_ref(), false);
+        } else {
+            crate::ui_write::review(f, app, main);
+        }
+    } else if matches!(app.mode, Mode::Approvals { .. }) {
+        crate::ui_write::approvals(f, app, main);
+    } else if app.split() {
         let lw = (main.width * 2 / 5).max(48);
         let left = Rect::new(main.x, main.y, lw, main.height);
         let right = Rect::new(main.x + lw, main.y, main.width - lw, main.height);
@@ -43,17 +60,21 @@ pub fn draw(f: &mut Frame, app: &App) {
         list(f, app, main, true);
     }
     status_bar(f, app, status);
-    match app.mode {
+    match &app.mode {
         Mode::Help => help(f, area),
         Mode::GoTo => goto(f, app, area),
         Mode::Attachments => attachments(f, app, area),
+        Mode::Snooze(input) => crate::ui_write::snooze(f, app, area, input.as_deref()),
+        Mode::File => crate::ui_write::file(f, app, area),
+        Mode::ReviewChange { .. } => crate::ui_write::change(f, app, area),
+        Mode::ConfirmGroup { group, count, .. } => crate::ui_write::confirm_group(f, area, group, *count),
         _ => {}
     }
 }
 
 fn hints_title(app: &App, width: u16) -> Option<Line<'static>> {
     let h = app.key_hints();
-    if h.is_empty() || (width as usize) < h.width() + 24 {
+    if h.is_empty() || (width as usize) < h.width() + 4 {
         return None;
     }
     Some(
@@ -112,6 +133,14 @@ fn list(f: &mut Frame, app: &App, area: Rect, focus: bool) {
 pub fn row_line(app: &App, r: &ThreadRow, width: usize, show_account: bool, selected: bool) -> Line<'static> {
     let date = date_label(r.date, app.now);
     let mut right: Vec<(String, Style)> = Vec::new();
+    if let Some(until) = r.snoozed_until {
+        let label = if app.view == keryx_store::view::View::Snoozed {
+            format!("{ICON_SNOOZE} {}", crate::write::when_label(app, until))
+        } else {
+            ICON_SNOOZE.to_string()
+        };
+        right.push((label, Style::default().fg(c("sapphire"))));
+    }
     if r.flagged {
         right.push((ICON_FLAG.into(), Style::default().fg(c("red"))));
     }
@@ -126,7 +155,12 @@ pub fn row_line(app: &App, r: &ThreadRow, width: usize, show_account: bool, sele
     } else {
         Style::default().fg(c("subtext1"))
     };
-    let mut spans: Vec<Span<'static>> = vec![Span::raw(" ")];
+    let marked = app.marked.contains(&r.r#ref);
+    let mut spans: Vec<Span<'static>> = vec![if marked {
+        Span::styled("•", Style::default().fg(c("blue")).add_modifier(Modifier::BOLD))
+    } else {
+        Span::raw(" ")
+    }];
     let mut used = 1;
     if show_account {
         let (name, col) = account_tag(app, &r.account);
@@ -149,6 +183,10 @@ pub fn row_line(app: &App, r: &ThreadRow, width: usize, show_account: bool, sele
     let subject = fit(&r.subject, avail);
     let mut rest = avail.saturating_sub(subject.width());
     spans.push(Span::styled(subject, base));
+    if r.needs_reply.is_some() && rest > 12 {
+        spans.push(Span::styled(" needs reply", Style::default().fg(c("mauve"))));
+        rest -= 12;
+    }
     for k in &r.keys {
         // In a key's own view its name says nothing.
         if app.view == keryx_store::view::View::Key(k.clone()) {
@@ -333,6 +371,18 @@ fn message_lines(
         out.push(Line::raw(""));
         out.extend(invite_lines(app, inv, w));
     }
+    if i == open.msgs.len() - 1
+        && let Some(why) = app
+            .rows
+            .iter()
+            .find(|r| r.account == open.account && r.thread_id == open.thread_id)
+            .and_then(|r| r.needs_reply.as_ref())
+    {
+        out.push(Line::from(Span::styled(
+            format!("needs reply: {why}"),
+            Style::default().fg(c("mauve")),
+        )));
+    }
     if m.hidden_text_removed {
         out.push(Line::from(Span::styled(
             "⚠ hidden text was removed from this message",
@@ -447,6 +497,12 @@ fn status_bar(f: &mut Frame, app: &App, area: Rect) {
                     Style::default().fg(if *err { c("red") } else { c("text") }),
                 ));
             }
+            if app.open_proposals > 0 && app.message.is_none() {
+                spans.push(Span::styled(
+                    format!(" Cleanup: {} to review · A", app.open_proposals),
+                    Style::default().fg(c("mauve")),
+                ));
+            }
             // Only what needs attention: stale syncs.
             for (name, mins) in &app.stale {
                 let ago = if *mins < 120 {
@@ -470,15 +526,20 @@ fn help(f: &mut Frame, area: Rect) {
         ("Enter", "read the thread"),
         ("Esc", "back (clears a search)"),
         ("Tab  Shift-Tab", "account: All · each account"),
-        ("g", "go to: Inbox, Flagged, Sent, Archive, All mail, keys"),
+        ("g", "go to: Inbox, Needs reply, Flagged, Snoozed, Sent, keys…"),
         (
             "/",
             "search (from: to: subject: account: key: in: is: has: before: after:)",
         ),
         ("z", "thread: show / fold quoted text"),
         ("o", "thread: open an attachment"),
+        ("d s m", "archive · snooze · file into a key"),
+        ("f U N", "flag · mark unread · needs-reply tag"),
+        ("x", "mark threads for a batch (Esc clears)"),
+        ("u", "undo the last change"),
+        ("A", "cleanups waiting for you"),
         ("J K", "thread: next / previous thread"),
-        ("Ctrl-R", "reload"),
+        ("Ctrl-R", "sync now"),
         ("q", "quit"),
     ];
     let w = 78.min(area.width);
@@ -502,16 +563,18 @@ fn help(f: &mut Frame, area: Rect) {
         .collect();
     f.render_widget(
         Paragraph::new(lines),
-        Rect::new(inner.x + 1, inner.y + 1, inner.width.saturating_sub(1), inner.height),
+        Rect::new(inner.x + 1, inner.y, inner.width.saturating_sub(1), inner.height),
     );
 }
 
 fn goto(f: &mut Frame, app: &App, area: Rect) {
     let mut rows: Vec<(String, String, Option<ratatui::style::Color>)> = vec![
         ("i".into(), "Inbox".into(), None),
+        ("r".into(), "Needs reply".into(), None),
         ("f".into(), "Flagged".into(), None),
+        ("s".into(), "Snoozed".into(), None),
         ("t".into(), "Sent".into(), None),
-        ("r".into(), "Archive".into(), None),
+        ("v".into(), "Archive".into(), None),
         ("a".into(), "All mail".into(), None),
     ];
     for (i, k) in app.cfg.keys.iter().enumerate().take(9) {

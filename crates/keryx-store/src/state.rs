@@ -441,6 +441,40 @@ impl Db {
     }
 }
 
+/// A review with each proposal's thread and whether it went stale
+/// (the thread changed after the proposal was made).
+pub fn review_view(db: &Db, id: &str) -> Result<Option<crate::api::ReviewView>, DbError> {
+    let Some(review) = db.review(id)? else { return Ok(None) };
+    let mut items = Vec::new();
+    for p in db.proposals(id)? {
+        let msgs = db.thread(&p.account, &p.thread_id)?;
+        let latest = msgs.last();
+        items.push(crate::api::ReviewItem {
+            stale: p.status == ProposalStatus::Open && fingerprint(&msgs) != p.fingerprint,
+            subject: latest.map(|m| m.subject.clone()).unwrap_or_default(),
+            who: latest
+                .and_then(|m| m.from.as_ref())
+                .map(|a| a.short().to_string())
+                .unwrap_or_default(),
+            date: latest.map(|m| m.date).unwrap_or(0),
+            r#ref: keryx_core::model::thread_ref(&p.account, &p.thread_id),
+            group: p.action.group(),
+            proposal: p,
+        });
+    }
+    Ok(Some(crate::api::ReviewView { review, items }))
+}
+
+/// Open proposals across open reviews (for the status bar).
+pub fn open_proposals(db: &Db) -> Result<usize, DbError> {
+    let n: i64 = db.conn().query_row(
+        "SELECT count(*) FROM proposals p JOIN reviews r ON r.id = p.review_id WHERE p.status = 'open' AND r.status = 'open'",
+        [],
+        |r| r.get(0),
+    )?;
+    Ok(n as usize)
+}
+
 fn review_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Review> {
     Ok(Review {
         id: r.get(0)?,

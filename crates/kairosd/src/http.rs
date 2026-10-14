@@ -784,6 +784,21 @@ async fn checkin_page(State(st): State<AppState>, Query(q): Query<DaySig>) -> Re
         }
         // One form per block: done / finished / missed, or partly with how long;
         // coursework (and a block that uses up the task) also asks what's left.
+        let finished = if it.project {
+            "Finished project"
+        } else {
+            "Finished task"
+        };
+        // A project session: no "what's left"; took longer = how long.
+        let longer = if it.project {
+            "<div class=muted>Took longer: spent <input name=spent placeholder=\"e.g. 3h\" size=6> \
+             <button name=outcome value=longer class=mid>Save</button></div>"
+        } else {
+            "<div class=muted>Took longer: spent <input name=spent placeholder=\"e.g. 3h\" size=6> \
+             still needs <input name=more placeholder=\"e.g. 1h\" size=6> \
+             from <input name=from placeholder=\"optional, e.g. sat\" size=10> \
+             <button name=outcome value=longer class=mid>Save</button></div>"
+        };
         let left = if it.ask_remaining {
             "<div class=muted>Left on the task: <input name=left placeholder=\"e.g. 3h (0 = finished)\" size=14></div>"
         } else {
@@ -793,14 +808,10 @@ async fn checkin_page(State(st): State<AppState>, Query(q): Query<DaySig>) -> Re
             "<div class=card><b>{}</b><div class=muted>{when} · {} min</div>\
              <form method=post action=\"/checkin/{}?day={}&sig={}\">\
              <button name=outcome value=done class=ok>Done</button> \
-             <button name=outcome value=finished class=ok>Finished task</button> \
+             <button name=outcome value=finished class=ok>{finished}</button> \
              <button name=outcome value=missed class=no>Missed</button>\
              <div class=muted>Partly: <input name=minutes inputmode=numeric placeholder=\"how long, e.g. 45m\" size=14> \
-             <button name=outcome value=partial class=mid>Save</button></div>{left}\
-             <div class=muted>Took longer: spent <input name=spent placeholder=\"e.g. 3h\" size=6> \
-             still needs <input name=more placeholder=\"e.g. 1h\" size=6> \
-             from <input name=from placeholder=\"optional, e.g. sat\" size=10> \
-             <button name=outcome value=longer class=mid>Save</button></div></form></div>",
+             <button name=outcome value=partial class=mid>Save</button></div>{left}{longer}</form></div>",
             esc(&it.title),
             it.planned_min,
             esc(&it.block_uid),

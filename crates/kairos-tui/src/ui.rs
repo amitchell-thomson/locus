@@ -1626,6 +1626,9 @@ fn projects(f: &mut Frame, app: &App, area: Rect) {
             if p.month_min > p.week_min {
                 time.push(format!("{} in 30 days", fmt(p.month_min)));
             }
+            if p.unconfirmed_min > 0 {
+                time.push(format!("{} to check in", fmt(p.unconfirmed_min)));
+            }
             match p.last_worked {
                 Some(t) => time.push(format!("last {}", t.with_timezone(&app.tz).format("%a %-d %b"))),
                 None => time.push("not worked on yet".into()),

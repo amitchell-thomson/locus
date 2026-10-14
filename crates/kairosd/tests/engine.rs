@@ -1277,15 +1277,57 @@ fn project_time_suggests_neglected_projects_and_tracks_time_spent() {
     // With kairos and Locus planned, the neglected one comes first now.
     e.plan(false, Author::Scheduler).unwrap();
     assert_eq!(e.proposals().unwrap()[0].title, "email TUI");
-    // After the kairos session: its time counts, its last worked is set.
+    // After the kairos session: nothing counts until Alec checks in — it
+    // waits in the check-in list (as a project session).
     let mins = (props[0].end - props[0].start).num_minutes() as u32;
     *env.now.lock().unwrap() = props[1].start - Duration::minutes(1);
     let items = e.projects().unwrap();
     let k = items.iter().find(|p| p.project.id == kairos.id).unwrap();
-    assert_eq!(k.month_min, mins);
-    assert_eq!(k.last_worked, Some(props[0].start));
+    assert_eq!((k.month_min, k.unconfirmed_min, k.last_worked), (0, mins, None));
     let l = items.iter().find(|p| p.project.id == locus.id).unwrap();
     assert_eq!((l.month_min, l.next_session), (0, Some(props[1].start)));
+    let item = e
+        .checkin_items()
+        .unwrap()
+        .into_iter()
+        .find(|c| c.project && c.task_id == kairos.id)
+        .unwrap();
+    assert_eq!((item.title.as_str(), item.planned_min), ("kairos", mins));
+    // Partly: 45 min. That's what counts, and the calendar shows it (✓, trimmed),
+    // without asking for approval.
+    e.checkin(&CheckinReq {
+        block_uid: item.block_uid.clone(),
+        outcome: "partial".into(),
+        actual_min: Some(45),
+        remaining_min: None,
+        not_before: None,
+    })
+    .unwrap();
+    assert!(e.db.cs_list(Some(Status::Pending), 10).unwrap().is_empty());
+    let k = e
+        .projects()
+        .unwrap()
+        .into_iter()
+        .find(|p| p.project.id == kairos.id)
+        .unwrap();
+    assert_eq!(
+        (k.month_min, k.unconfirmed_min, k.last_worked),
+        (45, 0, Some(props[0].start))
+    );
+    let ev = e
+        .world(14)
+        .unwrap()
+        .instances
+        .into_iter()
+        .find(|i| i.uid == item.block_uid)
+        .unwrap();
+    assert_eq!(ev.title, "✓ kairos");
+    assert_eq!(
+        (ev.span.bounds(chrono_tz::Europe::London).1 - props[0].start).num_minutes(),
+        45
+    );
+    assert!(e.checkin_items().unwrap().iter().all(|c| c.block_uid != item.block_uid));
+    let mins = 45;
     // Renamed: still its sessions (linked, not matched by title).
     e.update_project(
         &kairos.id,
@@ -1319,6 +1361,30 @@ fn project_time_suggests_neglected_projects_and_tracks_time_spent() {
     );
     e.delete_project(&mail.id).unwrap();
     assert_eq!(e.projects().unwrap().len(), 2);
+    // The Locus session is missed: removed from the calendar, nothing counts.
+    *env.now.lock().unwrap() = props[1].end + Duration::minutes(5);
+    let item = e
+        .checkin_items()
+        .unwrap()
+        .into_iter()
+        .find(|c| c.task_id == locus.id)
+        .unwrap();
+    e.checkin(&CheckinReq {
+        block_uid: item.block_uid.clone(),
+        outcome: "missed".into(),
+        actual_min: None,
+        remaining_min: None,
+        not_before: None,
+    })
+    .unwrap();
+    assert!(e.world(14).unwrap().instances.iter().all(|i| i.uid != item.block_uid));
+    let l = e
+        .projects()
+        .unwrap()
+        .into_iter()
+        .find(|p| p.project.id == locus.id)
+        .unwrap();
+    assert_eq!((l.month_min, l.unconfirmed_min), (0, 0));
 }
 
 #[test]
@@ -1825,6 +1891,81 @@ fn took_longer_records_the_time_spent_and_plans_what_alec_says_is_left() {
     let again: i64 = p.created.iter().map(|b| (b.end - b.start).num_minutes()).sum();
     assert_eq!(again, 90, "{p:?}");
     assert!(p.created.iter().all(|b| b.start >= at("2026-10-15 00:00")), "{p:?}");
+}
+
+#[test]
+fn checking_in_a_block_moved_back_over_a_lecture_needs_no_approval() {
+    // Alec moved a 10 min leftover block back to when he did it (during a
+    // lecture), then pressed y: his own check-in was queued for approval
+    // (2026-10-14). History may overlap other events.
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e
+        .create_task(
+            Author::Alec,
+            &CreateTaskReq {
+                title: "Purchase Furniture".into(),
+                key: "Personal".into(),
+                estimate_min: 30,
+                due: Some("fri 17:00".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let b = r.plan.unwrap().created[0].clone();
+    let day = b.start.with_timezone(&chrono_tz::Europe::London).date_naive();
+    env.phone_event(
+        "Engineering",
+        "lecture",
+        "Quantum Research",
+        &format!("{day} 06:00"),
+        &format!("{day} 07:00"),
+    );
+    *env.now.lock().unwrap() = at(&format!("{day} 08:00"));
+    let uid = e
+        .world(7)
+        .unwrap()
+        .instances
+        .iter()
+        .find(|i| i.meta.task_id.as_deref() == Some(r.task.id.as_str()) && i.meta.kind == EventKind::TaskBlock)
+        .unwrap()
+        .uid
+        .clone();
+    e.direct = true;
+    let mv = e
+        .update_event(
+            Author::Alec,
+            None,
+            &uid,
+            &UpdateEventReq {
+                start: Some(at(&format!("{day} 06:00")).to_rfc3339()),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .unwrap();
+    e.direct = false;
+    assert_eq!(mv.status, Status::Applied);
+    e.checkin(&CheckinReq {
+        block_uid: uid.clone(),
+        outcome: "done".into(),
+        actual_min: None,
+        remaining_min: None,
+        not_before: None,
+    })
+    .unwrap();
+    assert!(
+        e.db.cs_list(Some(Status::Pending), 10).unwrap().is_empty(),
+        "nothing waits for approval"
+    );
+    let i = e
+        .world(7)
+        .unwrap()
+        .instances
+        .into_iter()
+        .find(|i| i.uid == uid)
+        .unwrap();
+    assert!(i.title.starts_with('✓'), "{}", i.title);
 }
 
 #[test]

@@ -37,7 +37,7 @@ Your own edits here apply straight away (no approval); `u` undoes the last one, 
 
 ## Check-ins
 
-A work block that has ended waits for you to say how it went: no answer is decided for you. The status bar shows **N to check in · C** while anything waits. Blocks nobody answers count as done after a week (`notify.autodone_after_days`).
+A work block or project session that has ended waits for you to say how it went: no answer is decided for you. The status bar shows **N to check in · C** while anything waits. Blocks nobody answers count as done after a week (`notify.autodone_after_days`).
 
 | Key (on a past block) | |
 |---|---|
@@ -62,7 +62,7 @@ Your projects, grouped **Active** (working on now) · **Next** (should be workin
 | `s` | next status: active → next → paused → done → active |
 | `d` | delete it (its sessions stay on the calendar) |
 
-Time is never logged by hand: a session counts for a project when you accepted proposed time for it, or when an event in the Projects calendar has the project's name as its title.
+A project's time is what you **checked in**, never what was planned. Its sessions (accepted proposed time, or an event in the Projects calendar titled with the project's name) wait for a check-in like work blocks, with the same keys: `y` done · `c` partly · `+` took longer · `x` missed (the session is removed) · `F` the project is finished. Sessions not checked in yet show as "to check in" and don't count until you answer; after a week they count as done.
 
 **Proposed project time** (◌, greyed) suggests the active project you've spent least time on lately. `y` opens a picker with that one first, then your other active and next projects, `+ new project…`, or just "Project time". Choosing a *next* project makes it active.
 

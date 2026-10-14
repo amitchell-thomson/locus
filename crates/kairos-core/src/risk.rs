@@ -31,6 +31,9 @@ pub struct EventFacts {
     pub recurring: bool,
     pub start: DateTime<Utc>,
     pub end: DateTime<Utc>,
+    /// A project session kairos made (an accepted proposal): check-ins
+    /// record on it like on a work block.
+    pub project_session: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -149,15 +152,19 @@ pub fn is_checkin_record_op(op: &OpFacts, now: DateTime<Utc>) -> bool {
             .as_ref()
             .is_some_and(|a| a.kind == EventKind::TaskBlock && a.end <= now && !a.recurring);
     }
+    let recordable = |e: &EventFacts| e.kind == EventKind::TaskBlock || e.project_session;
     matches!(op.action, Action::Update | Action::Delete)
         && op
             .before
             .as_ref()
-            .is_some_and(|b| b.kind == EventKind::TaskBlock && b.created_by.is_some() && !b.recurring && b.start <= now)
-        && op
-            .after
-            .as_ref()
-            .is_none_or(|a| a.kind == EventKind::TaskBlock && a.start <= now && !op.overlaps_fixed)
+            .is_some_and(|b| recordable(b) && b.created_by.is_some() && !b.recurring && b.start <= now)
+        && op.after.as_ref().is_none_or(|a| {
+            // History: what happened may well overlap other events (Alec did
+            // 10 min during a lecture), so overlaps don't matter — but the
+            // block can't reach past now or its planned end.
+            let limit = op.before.as_ref().map_or(now, |b| b.end.max(now));
+            recordable(a) && a.start <= now && a.end <= limit
+        })
 }
 
 fn high_reasons(op: &OpFacts, now: DateTime<Utc>, finishing: bool) -> Vec<String> {
@@ -295,6 +302,7 @@ mod tests {
             recurring,
             start,
             end: start + Duration::hours(1),
+            project_session: false,
         })
     }
     fn op(

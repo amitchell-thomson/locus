@@ -392,6 +392,7 @@ impl Engine {
             recurring: series.is_recurring(),
             start: m.start.instant(tz),
             end: m.end.instant(tz),
+            project_session: self.db.project_of_session(&series.uid).ok().flatten().is_some(),
         })
     }
 
@@ -1906,7 +1907,7 @@ impl Engine {
             .collect();
         order.sort_by_key(|p| {
             (
-                p.week_min + upcoming.get(&p.project.id).copied().unwrap_or(0),
+                p.week_min + p.unconfirmed_min + upcoming.get(&p.project.id).copied().unwrap_or(0),
                 p.last_worked,
                 p.project.created_at,
                 p.project.name.to_lowercase(),
@@ -1954,8 +1955,14 @@ impl Engine {
             tz,
             &mut w,
         );
-        let links: std::collections::HashMap<String, String> = self.db.project_sessions()?.into_iter().collect();
-        let pkey = self.constraints.projects.key.clone();
+        let projects_now: Vec<Project> = projects.clone();
+        let sessions = self.sessions_in(&instances, &projects_now)?;
+        let answered: std::collections::HashMap<String, (Outcome, u32)> = self
+            .db
+            .checkins(false)?
+            .into_iter()
+            .filter_map(|c| Some((c.block_uid, (c.outcome?, c.actual_min.unwrap_or(0)))))
+            .collect();
         let today = now.with_timezone(&tz).date_naive();
         let monday = today - Duration::days(i64::from(chrono::Datelike::weekday(&today).num_days_from_monday()));
         let week_start = kairos_core::time::resolve_local(monday.and_time(NaiveTime::MIN), tz);
@@ -1965,32 +1972,30 @@ impl Engine {
                 project,
                 week_min: 0,
                 month_min: 0,
+                unconfirmed_min: 0,
                 last_worked: None,
                 next_session: None,
             })
             .collect();
-        for i in &instances {
+        // Time spent is what Alec checked in, never what was planned.
+        for (i, pid, _) in &sessions {
             let Span::Timed { start, end } = i.span else { continue };
-            let pid = links.get(&i.uid).cloned().or_else(|| {
-                (pkey.is_some() && i.key == pkey)
-                    .then(|| {
-                        items
-                            .iter()
-                            .find(|p| p.project.name.trim().eq_ignore_ascii_case(i.title.trim()))
-                            .map(|p| p.project.id.clone())
-                    })
-                    .flatten()
-            });
-            let Some(it) = pid.and_then(|pid| items.iter_mut().find(|p| p.project.id == pid)) else {
+            let Some(it) = items.iter_mut().find(|p| &p.project.id == pid) else {
                 continue;
             };
             if start < now {
-                let mins = (end.min(now) - start).num_minutes().max(0) as u32;
-                it.month_min += mins;
-                if end > week_start {
-                    it.week_min += (end.min(now) - start.max(week_start)).num_minutes().max(0) as u32;
+                match answered.get(&i.uid) {
+                    Some(&(_, actual)) => {
+                        it.month_min += actual;
+                        if start >= week_start {
+                            it.week_min += actual;
+                        }
+                        if actual > 0 {
+                            it.last_worked = it.last_worked.max(Some(start));
+                        }
+                    }
+                    None => it.unconfirmed_min += (end.min(now) - start).num_minutes().max(0) as u32,
                 }
-                it.last_worked = it.last_worked.max(Some(start));
             } else {
                 if it.next_session.is_none_or(|n| start < n) {
                     it.next_session = Some(start);
@@ -2001,6 +2006,87 @@ impl Engine {
             }
         }
         Ok((items, upcoming))
+    }
+
+    /// Project sessions among `instances`: `(instance, project id, linked)`.
+    /// Linked = accepted from a proposal (kairos made it, so check-ins
+    /// record on the calendar); otherwise an event in the projects calendar
+    /// titled with the project's name.
+    fn sessions_in<'a>(
+        &self,
+        instances: &'a [Instance],
+        projects: &[Project],
+    ) -> Result<Vec<(&'a Instance, String, bool)>> {
+        let links: std::collections::HashMap<String, String> = self.db.project_sessions()?.into_iter().collect();
+        let pkey = self.constraints.projects.key.clone();
+        Ok(instances
+            .iter()
+            .filter(|i| matches!(i.span, Span::Timed { .. }))
+            .filter_map(|i| {
+                if let Some(pid) = links.get(&i.uid) {
+                    return Some((i, pid.clone(), true));
+                }
+                if pkey.is_none() || i.key != pkey {
+                    return None;
+                }
+                let bare = build::bare_block_title(&i.title);
+                projects
+                    .iter()
+                    .find(|p| p.name.trim().eq_ignore_ascii_case(bare))
+                    .map(|p| (i, p.id.clone(), false))
+            })
+            .collect())
+    }
+
+    /// Record a check-in on a project session: the time counts for the
+    /// project; a session kairos made shows it (✓, trimmed, or removed if
+    /// missed). `finished` also finishes the project.
+    fn answer_project_checkin(
+        &mut self,
+        i: &Instance,
+        pid: &str,
+        linked: bool,
+        outcome: Outcome,
+        actual: Option<u32>,
+        finished: bool,
+    ) -> Result<()> {
+        let tz = self.tz();
+        let Span::Timed { start, end } = i.span else {
+            return Ok(());
+        };
+        let planned = (end - start).num_minutes().max(0) as u32;
+        self.db.checkin_upsert_planned(&Checkin {
+            block_uid: i.uid.clone(),
+            task_id: pid.into(),
+            day: start.with_timezone(&tz).date_naive(),
+            planned_min: planned,
+            outcome: None,
+            actual_min: None,
+            answered_at: None,
+        })?;
+        let actual = match outcome {
+            Outcome::Done => actual.unwrap_or(planned),
+            Outcome::Partial => actual.unwrap_or(planned / 2).min(planned),
+            Outcome::Missed => 0,
+        };
+        self.db.checkin_answer(&i.uid, outcome, actual, self.now())?;
+        if linked {
+            let b = Block {
+                uid: Some(i.uid.clone()),
+                task_id: pid.into(),
+                start,
+                end,
+                pinned: true,
+                why: None,
+            };
+            self.record_checkin(&i.uid, &b, outcome, actual)?;
+        }
+        if finished && let Some(mut p) = self.db.project_get(pid)? {
+            p.status = ProjectStatus::Done;
+            p.updated_at = self.now();
+            self.db.project_put(&p)?;
+        }
+        Ok(())
     }
 
     /// Every project (active, next, paused, done) with time spent.
@@ -2671,6 +2757,20 @@ impl Engine {
             self.answer_checkin(uid, &b, Outcome::Done, None)?;
             n += 1;
         }
+        // Project sessions too.
+        let projects = self.db.projects()?;
+        let old: Vec<(Instance, String, bool)> = self
+            .sessions_in(&world.instances, &projects)?
+            .into_iter()
+            .filter(|(i, _, _)| {
+                i.span.bounds(tz).1 <= boundary && !answered.contains(&i.uid) && !i.title.trim_start().starts_with('✓')
+            })
+            .map(|(i, p, l)| (i.clone(), p, l))
+            .collect();
+        for (i, pid, linked) in old {
+            self.answer_project_checkin(&i, &pid, linked, Outcome::Done, None, false)?;
+            n += 1;
+        }
         Ok(n)
     }
 
@@ -2834,7 +2934,35 @@ impl Engine {
                     None => false,
                 },
                 remaining_min: task.as_ref().map_or(0, |t| t.remaining_min),
+                project: false,
             });
+        }
+        // Project sessions that have started and aren't checked in.
+        let projects = self.db.projects()?;
+        if !projects.is_empty() {
+            let answered: std::collections::HashSet<String> = rows
+                .iter()
+                .filter(|r| r.outcome.is_some())
+                .map(|r| r.block_uid.clone())
+                .collect();
+            for (i, pid, _) in self.sessions_in(&world.instances, &projects)? {
+                let Span::Timed { start, end } = i.span else { continue };
+                if start > now || answered.contains(&i.uid) || i.title.trim_start().starts_with('✓') {
+                    continue;
+                }
+                out.push(api::CheckinItem {
+                    block_uid: i.uid.clone(),
+                    task_id: pid,
+                    title: build::bare_block_title(&i.title).to_string(),
+                    start,
+                    end,
+                    planned_min: (end - start).num_minutes().max(0) as u32,
+                    outcome: None,
+                    ask_remaining: false,
+                    project: true,
+                    remaining_min: 0,
+                });
+            }
         }
         out.sort_by_key(|c| c.start);
         Ok(out)
@@ -2861,11 +2989,22 @@ impl Engine {
             ))
         })?;
         let world = self.world(1)?;
-        let (b, _) = self
+        let Some((b, _)) = self
             .blocks(&world)
             .into_iter()
             .find(|(b, _)| b.uid.as_deref() == Some(req.block_uid.as_str()))
-            .ok_or_else(|| EngineError::NotFound(format!("block {}", req.block_uid)))?;
+        else {
+            // A project session?
+            let projects = self.db.projects()?;
+            let (i, pid, linked) = self
+                .sessions_in(&world.instances, &projects)?
+                .into_iter()
+                .find(|(i, _, _)| i.uid == req.block_uid)
+                .map(|(i, p, l)| (i.clone(), p, l))
+                .ok_or_else(|| EngineError::NotFound(format!("block {}", req.block_uid)))?;
+            self.answer_project_checkin(&i, &pid, linked, outcome, req.actual_min, finished)?;
+            return self.plan(false, Author::Scheduler);
+        };
         self.answer_checkin(&req.block_uid, &b, outcome, req.actual_min)?;
         // "How much is left?": the new remaining estimate (coursework).
         if let Some(r) = req.remaining_min

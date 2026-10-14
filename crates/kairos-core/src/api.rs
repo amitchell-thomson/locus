@@ -327,6 +327,10 @@ pub struct CheckinItem {
     /// Ask "how much is left?" (coursework, whose estimates move a lot).
     #[serde(default)]
     pub ask_remaining: bool,
+    /// A project session (task_id is the project's id): no "what's left",
+    /// and "finished" finishes the project.
+    #[serde(default)]
+    pub project: bool,
     /// The task's remaining minutes now.
     #[serde(default)]
     pub remaining_min: u32,
@@ -377,6 +381,9 @@ pub struct ProjectItem {
     pub week_min: u32,
     /// Minutes over the last 30 days.
     pub month_min: u32,
+    /// Past sessions not checked in yet (not counted above until they are).
+    #[serde(default)]
+    pub unconfirmed_min: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_worked: Option<DateTime<Utc>>,
     /// The next session planned for it.

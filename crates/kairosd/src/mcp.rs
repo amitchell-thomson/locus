@@ -764,7 +764,7 @@ impl KairosMcp {
     }
 
     #[tool(
-        description = "Work blocks waiting for a check-in (every unanswered past block, plus today's), with planned minutes and the task's remaining time. ask_remaining = ask Alec how much is left. Read-only."
+        description = "Work blocks and project sessions (project: true) waiting for a check-in (every unanswered past one, plus today's), with planned minutes and the task's remaining time. ask_remaining = ask Alec how much is left. A project's time spent is what's checked in. Read-only."
     )]
     async fn list_checkins(&self) -> Result<CallToolResult, ErrorData> {
         self.run(|e| e.checkin_items()).await

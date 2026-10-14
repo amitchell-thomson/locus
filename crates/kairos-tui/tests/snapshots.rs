@@ -510,6 +510,7 @@ fn project(
         },
         week_min: week,
         month_min: week,
+        unconfirmed_min: 0,
         last_worked: (week > 0).then(|| now("2026-10-20T14:00:00+01:00")),
         next_session: None,
     }
@@ -527,6 +528,7 @@ fn projects_view_and_picking_one_for_proposed_time() {
         project("p-o", "old site", ProjectStatus::Done, 0),
     ];
     a.projects[0].project.note = "next: phase 9 gateway".into();
+    a.projects[1].unconfirmed_min = 60;
     // R: the Projects view, grouped by status, with time spent.
     a.key(Key::Char('R'));
     assert_eq!(a.view, View::Projects);
@@ -540,6 +542,7 @@ fn projects_view_and_picking_one_for_proposed_time() {
         "2h30 this week",
         "last Tue 20 Oct",
         "not worked on yet",
+        "1h to check in",
     ] {
         assert!(s.contains(want), "{want:?} missing:\n{s}");
     }
@@ -592,6 +595,18 @@ fn projects_view_and_picking_one_for_proposed_time() {
     assert!(matches!(&a.mode, Mode::PickProject { sel: 1, .. }));
     a.key(Key::Esc);
     assert!(matches!(a.mode, Mode::Normal));
+    // A project session took longer: only how long (no "what's left").
+    let f = kairos_tui::form::Form::took_longer(kairos_tui::app::CheckinTarget {
+        uid: "s1".into(),
+        title: "kairos".into(),
+        planned_min: 120,
+        ask_remaining: false,
+        remaining_min: 0,
+        from_list: false,
+        project: true,
+    });
+    assert_eq!(f.fields.len(), 1);
+    assert_eq!(a.form_preview(&f).unwrap(), "3h spent");
 }
 
 #[test]
@@ -930,6 +945,7 @@ fn past_blocks_wait_for_a_check_in_right_on_the_calendar() {
         outcome: None,
         ask_remaining: false,
         remaining_min: 90,
+        project: false,
     }];
     a.message = None;
     let s = render_to_string(&a, 130, 30);

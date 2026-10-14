@@ -152,6 +152,8 @@ pub struct CheckinTarget {
     pub remaining_min: u32,
     /// Opened from the C list: go back to it afterwards.
     pub from_list: bool,
+    /// A project session (no "what's left"; F finishes the project).
+    pub project: bool,
 }
 
 impl CheckinTarget {
@@ -163,6 +165,7 @@ impl CheckinTarget {
             ask_remaining: item.ask_remaining,
             remaining_min: item.remaining_min,
             from_list,
+            project: item.project,
         }
     }
 }
@@ -948,11 +951,7 @@ impl App {
                 }
                 // A work block that has started and isn't checked in: check it
                 // in right here (y done · c partly · + took longer · x/d missed · F finished).
-                if i.meta.kind == EventKind::TaskBlock
-                    && i.start(self.tz) <= self.now
-                    && !i.title.trim_start().starts_with('✓')
-                    && matches!(k, Key::Char('y' | 'c' | 'x' | 'd' | 'F' | '+'))
-                {
+                if self.awaits_checkin(&i) && matches!(k, Key::Char('y' | 'c' | 'x' | 'd' | 'F' | '+')) {
                     let t = self.checkin_target(&i);
                     if k == Key::Char('+') {
                         self.message = None;
@@ -1453,6 +1452,9 @@ impl App {
             }
             FormKind::TookLonger { .. } => {
                 let spent = dates::parse_minutes(f.get("Spent")).map_err(|_| "Spent: e.g. 3h or 2h30".to_string())?;
+                if !f.fields.iter().any(|x| x.label == "Needs") {
+                    return Ok(format!("{} spent", crate::form::fmt_minutes(i64::from(spent))));
+                }
                 let needs =
                     dates::parse_minutes(f.get("Needs")).map_err(|_| "Needs: e.g. 1h, or 0 if finished".to_string())?;
                 if needs == 0 {
@@ -1582,7 +1584,12 @@ impl App {
                 return;
             }
             let spent = dates::parse_minutes(f.get("Spent")).ok();
-            let needs = dates::parse_minutes(f.get("Needs")).ok();
+            // A project session asks only how long it took.
+            let needs = if t.project {
+                None
+            } else {
+                dates::parse_minutes(f.get("Needs")).ok()
+            };
             let from = match f.get("From") {
                 "" => None,
                 w => match self.when_str(w) {
@@ -1921,9 +1928,7 @@ impl App {
                         &["e edit", "m move", "d remove", "n start"]
                     }
                     (EventKind::TaskBlock, _) if i.title.trim_start().starts_with('✓') => &["W log more work"],
-                    (EventKind::TaskBlock, _) if i.start(self.tz) <= self.now => {
-                        &["y done", "c partly", "+ longer", "x missed", "F finished"]
-                    }
+                    _ if self.awaits_checkin(&i) => &["y done", "c partly", "+ longer", "x missed", "F finished"],
                     (EventKind::TaskBlock, _) => &["n start", "m move", "d skip", "e edit"],
                     (_, Overlay::Family) if i.meta.origin_key.is_none() => {
                         if i.meta.blocking {
@@ -2098,6 +2103,19 @@ impl App {
 
     /// What a check-in needs about a block (from the C list's data if it's
     /// there, else from the block and its task).
+    /// A work block or project session that has started and isn't
+    /// checked in yet.
+    pub fn awaits_checkin(&self, i: &Instance) -> bool {
+        if i.title.trim_start().starts_with('✓') || i.start(self.tz) > self.now {
+            return false;
+        }
+        i.meta.kind == EventKind::TaskBlock
+            || self
+                .checkins
+                .iter()
+                .any(|c| c.project && c.block_uid == i.uid && c.outcome.is_none())
+    }
+
     fn checkin_target(&self, i: &Instance) -> CheckinTarget {
         if let Some(item) = self.checkins.iter().find(|c| c.block_uid == i.uid) {
             return CheckinTarget::of(item, false);
@@ -2116,6 +2134,7 @@ impl App {
             ask_remaining: task.is_some_and(|t| t.kind.as_deref() == Some("coursework") || planned >= t.remaining_min),
             remaining_min: task.map_or(0, |t| t.remaining_min),
             from_list: false,
+            project: false,
         }
     }
 

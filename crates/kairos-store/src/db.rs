@@ -526,6 +526,17 @@ impl Db {
         Ok(())
     }
 
+    pub fn project_of_session(&self, event_uid: &str) -> Result<Option<String>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT project_id FROM project_sessions WHERE event_uid = ?1",
+                params![event_uid],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
     /// `(event_uid, project_id)` for every linked session.
     pub fn project_sessions(&self) -> Result<Vec<(String, String)>> {
         let mut st = self

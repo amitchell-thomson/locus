@@ -255,6 +255,18 @@ impl Form {
     /// "Took longer": time spent, how much more, plan it from when.
     pub fn took_longer(t: crate::app::CheckinTarget) -> Form {
         let spent = fmt_minutes(i64::from(t.planned_min + 60));
+        if t.project {
+            return Form::new(
+                FormKind::TookLonger { t },
+                vec![field(
+                    "Spent",
+                    spent,
+                    FieldKind::Duration,
+                    "time actually spent on it: 3h · 2h30",
+                )],
+                Vec::new(),
+            );
+        }
         let more = fmt_minutes(i64::from(t.remaining_min.saturating_sub(t.planned_min).max(60)));
         Form::new(
             FormKind::TookLonger { t },

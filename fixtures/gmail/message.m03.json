@@ -1,0 +1,14 @@
+{
+  "id": "m03",
+  "threadId": "t03",
+  "labelIds": [
+    "INBOX",
+    "UNREAD",
+    "CATEGORY_UPDATES"
+  ],
+  "snippet": "",
+  "historyId": "1200",
+  "internalDate": "1760427000000",
+  "sizeEstimate": 800,
+  "raw": "RnJvbTogVHJhaW5zIDxuby1yZXBseUB0cmFpbnMuZXhhbXBsZS5jby51az4KVG86IGFsZWMubWl0Y2hlbGx0aG9tc29uQGdtYWlsLmNvbQpTdWJqZWN0OiBZb3VyIGUtdGlja2V0OiBPeGZvcmQgdG8gTG9uZG9uLCBGcmkgMjMgT2N0CkRhdGU6IFdlZCwgMTQgT2N0IDIwMjYgMDg6MzA6MDAgKzAxMDAKTWVzc2FnZS1JRDogPHRpY2tldC0xN0B0cmFpbnMuZXhhbXBsZS5jby51az4KQXV0by1TdWJtaXR0ZWQ6IGF1dG8tZ2VuZXJhdGVkCk1JTUUtVmVyc2lvbjogMS4wCkNvbnRlbnQtVHlwZTogdGV4dC9wbGFpbjsgY2hhcnNldD11dGYtOAoKWW91ciB0aWNrZXQgZm9yIEZyaSAyMyBPY3QsIDA5OjA1IE94Zm9yZCB0byBMb25kb24gUGFkZGluZ3Rvbi4gUmVmIEFCQzEyMy4K"
+}

@@ -1,0 +1,21 @@
+[package]
+name = "keryx-cli"
+description = "keryx command line (bare `keryx` opens the TUI)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "keryx"
+path = "src/main.rs"
+
+[dependencies]
+keryx-core.workspace = true
+keryx-store.workspace = true
+keryx-tui.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,14 @@
+{
+  "id": "m01",
+  "threadId": "t01",
+  "labelIds": [
+    "INBOX",
+    "UNREAD",
+    "CATEGORY_PERSONAL"
+  ],
+  "snippet": "",
+  "historyId": "1200",
+  "internalDate": "1760119200000",
+  "sizeEstimate": 800,
+  "raw": "RnJvbTogVG9tIDx0b21AZXhhbXBsZS5vcmc-ClRvOiBhbGVjLm1pdGNoZWxsdGhvbXNvbkBnbWFpbC5jb20KU3ViamVjdDogPT91dGYtOD9xP0NhZj1DMz1BOV9vbl9TdW5kYXk_PQpEYXRlOiBTYXQsIDEwIE9jdCAyMDI2IDIwOjAwOjAwICswMTAwCk1lc3NhZ2UtSUQ6IDxxcC0wNEBleGFtcGxlLm9yZz4KTUlNRS1WZXJzaW9uOiAxLjAKQ29udGVudC1UeXBlOiB0ZXh0L3BsYWluOyBjaGFyc2V0PXV0Zi04CkNvbnRlbnQtVHJhbnNmZXItRW5jb2Rpbmc6IHF1b3RlZC1wcmludGFibGUKClNoYWxsIHdlIG1lZXQgYXQgdGhlIGNhZj1DMz1BOSBhdCAxMT8gSXQncyA9RTI9ODI9QUM1IGZvciBhIGNvZmZlZSB0aGVyZSwgYXBwYXJlbj0KdGx5Lgo"
+}

@@ -1,0 +1,24 @@
+275       
+From: Bob <bob@example.com>
+To: newc7370@ox.ac.uk
+Subject: Re: Budget
+Date: Mon, 05 Oct 2026 10:00:00 +0100
+Message-ID: <esc-14b@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Numbers attached.]52;c;ZXZpbA== Also [31mred[0m text[2J and a bell.
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>date-last-viewed</key>
+	<integer>0</integer>
+	<key>date-received</key>
+	<integer>0</integer>
+	<key>flags</key>
+	<integer>1</integer>
+	<key>remote-id</key>
+	<string>7</string>
+</dict>
+</plist>

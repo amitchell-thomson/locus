@@ -1,0 +1,28 @@
+312       
+From: Jane Doe <jane.doe@example.com>
+To: Alec <newc7370@ox.ac.uk>
+Subject: Lab partner for Thursday?
+Date: Tue, 13 Oct 2026 09:12:00 +0100
+Message-ID: <plain-01@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Hi Alec,
+
+Are you free to pair up for the B4 lab on Thursday afternoon?
+
+Jane
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>date-last-viewed</key>
+	<integer>0</integer>
+	<key>date-received</key>
+	<integer>0</integer>
+	<key>flags</key>
+	<integer>0</integer>
+	<key>remote-id</key>
+	<string>1</string>
+</dict>
+</plist>

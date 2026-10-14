@@ -1,0 +1,33 @@
+522       
+From: "Careers Service" <careers@example.ac.uk>
+To: newc7370@ox.ac.uk
+Subject: Your appointment is confirmed
+Date: Mon, 12 Oct 2026 16:00:00 +0100
+Message-ID: <alt-02@example.ac.uk>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="b1"
+
+--b1
+Content-Type: text/plain; charset=utf-8
+
+Your appointment is confirmed for Wed 21 Oct at 14:00.
+
+--b1
+Content-Type: text/html; charset=utf-8
+
+<html><body><p>Your appointment is <b>confirmed</b> for Wed 21 Oct at 14:00.</p><p>HTML ONLY TEXT</p></body></html>
+--b1--
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>date-last-viewed</key>
+	<integer>0</integer>
+	<key>date-received</key>
+	<integer>0</integer>
+	<key>flags</key>
+	<integer>1</integer>
+	<key>remote-id</key>
+	<string>18</string>
+</dict>
+</plist>

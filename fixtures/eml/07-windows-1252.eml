@@ -1,0 +1,10 @@
+From: Shop <orders@shop.example.com>
+To: alec.mitchellthomson@gmail.com
+Subject: Your receipt
+Date: Wed, 07 Oct 2026 12:00:00 +0100
+Message-ID: <cp1252-07@shop.example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=windows-1252
+Content-Transfer-Encoding: 8bit
+
+Total: €12.50 – thanks for your “order”.

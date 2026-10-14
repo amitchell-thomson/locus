@@ -1,0 +1,26 @@
+325       
+From: Mia <mia@example.org>
+To: alec.mitchellthomson@gmail.com
+Subject: Photos
+Date: Fri, 09 Oct 2026 18:00:00 +0100
+Message-ID: <b64-05@example.org>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: base64
+
+SGVyZSBhcmUgdGhlIHBob3RvcyBmcm9tIHRoZSB0cmlwIOKAlCBNw7xuY2hlbiB3YXMgZ3JlYXQh
+Cg==
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>date-last-viewed</key>
+	<integer>0</integer>
+	<key>date-received</key>
+	<integer>0</integer>
+	<key>flags</key>
+	<integer>1</integer>
+	<key>remote-id</key>
+	<string>21</string>
+</dict>
+</plist>

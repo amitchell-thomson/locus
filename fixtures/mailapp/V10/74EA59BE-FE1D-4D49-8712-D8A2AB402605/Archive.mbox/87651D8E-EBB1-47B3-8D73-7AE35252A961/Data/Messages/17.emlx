@@ -1,0 +1,41 @@
+580       
+From: Jane Doe <jane.doe@example.com>
+To: newc7370@ox.ac.uk
+Subject: Fwd: Room booking
+Date: Tue, 06 Oct 2026 15:00:00 +0100
+Message-ID: <fwd-09@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="f1"
+
+--f1
+Content-Type: text/plain; charset=utf-8
+
+See below.
+
+--f1
+Content-Type: message/rfc822
+
+From: Porters <porters@example.ac.uk>
+To: jane.doe@example.com
+Subject: Room booking
+Date: Tue, 06 Oct 2026 11:00:00 +0100
+Message-ID: <inner-09@example.ac.uk>
+Content-Type: text/plain; charset=utf-8
+
+Seminar room 2 is booked for you on Friday 10:00-12:00.
+
+--f1--
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>date-last-viewed</key>
+	<integer>0</integer>
+	<key>date-received</key>
+	<integer>0</integer>
+	<key>flags</key>
+	<integer>1</integer>
+	<key>remote-id</key>
+	<string>17</string>
+</dict>
+</plist>

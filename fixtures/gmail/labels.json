@@ -1,0 +1,49 @@
+{
+  "labels": [
+    {
+      "id": "INBOX",
+      "name": "INBOX",
+      "type": "system"
+    },
+    {
+      "id": "UNREAD",
+      "name": "UNREAD",
+      "type": "system"
+    },
+    {
+      "id": "STARRED",
+      "name": "STARRED",
+      "type": "system"
+    },
+    {
+      "id": "SENT",
+      "name": "SENT",
+      "type": "system"
+    },
+    {
+      "id": "CATEGORY_UPDATES",
+      "name": "CATEGORY_UPDATES",
+      "type": "system"
+    },
+    {
+      "id": "CATEGORY_PROMOTIONS",
+      "name": "CATEGORY_PROMOTIONS",
+      "type": "system"
+    },
+    {
+      "id": "Label_1",
+      "name": "Admin & Receipts",
+      "type": "user"
+    },
+    {
+      "id": "Label_2",
+      "name": "Careers",
+      "type": "user"
+    },
+    {
+      "id": "Label_3",
+      "name": "Travel",
+      "type": "user"
+    }
+  ]
+}

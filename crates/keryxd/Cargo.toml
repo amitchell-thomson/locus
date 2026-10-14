@@ -1,0 +1,16 @@
+[package]
+name = "keryxd"
+description = "keryx daemon: the single writer (mirror, changesets, actions), HTTP API and MCP"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+keryx-core.workspace = true
+keryx-store.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+
+[lints]
+workspace = true

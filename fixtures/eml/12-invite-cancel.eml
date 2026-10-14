@@ -1,0 +1,19 @@
+From: Prof Smith <smith@eng.example.ac.uk>
+To: newc7370@ox.ac.uk
+Subject: Cancelled: Project meeting
+Date: Tue, 13 Oct 2026 09:00:00 +0100
+Message-ID: <invite-12@eng.example.ac.uk>
+MIME-Version: 1.0
+Content-Type: text/calendar; charset=utf-8; method=CANCEL
+
+BEGIN:VCALENDAR
+VERSION:2.0
+METHOD:CANCEL
+BEGIN:VEVENT
+UID:meeting-11@eng.example.ac.uk
+DTSTAMP:20261013T080000Z
+DTSTART;TZID=Europe/Vienna:20261022T150000
+SUMMARY:Project meeting
+STATUS:CANCELLED
+END:VEVENT
+END:VCALENDAR

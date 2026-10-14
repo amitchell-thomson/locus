@@ -1,0 +1,13 @@
+From: The Weekly <newsletter@weekly.example.com>
+To: alec.mitchellthomson@gmail.com
+Subject: This week in engineering
+Date: Sat, 10 Oct 2026 06:00:00 +0100
+Message-ID: <news-16@weekly.example.com>
+List-Id: The Weekly <weekly.example.com>
+List-Unsubscribe: <https://weekly.example.com/unsub?u=abc>, <mailto:unsub@weekly.example.com?subject=unsubscribe>
+List-Unsubscribe-Post: List-Unsubscribe=One-Click
+Precedence: bulk
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Top stories this week...

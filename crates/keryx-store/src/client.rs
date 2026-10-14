@@ -108,6 +108,18 @@ impl Client {
     }
 }
 
+impl Client {
+    pub fn undo(&self, id: &str) -> Result<Changeset> {
+        self.post(&format!("/api/changesets/{id}/undo"), &json!({}))
+    }
+    pub fn changesets(&self, status: Option<&str>, limit: u32) -> Result<Vec<Changeset>> {
+        match status {
+            Some(s) => self.get(&format!("/api/changesets?status={s}&limit={limit}")),
+            None => self.get(&format!("/api/changesets?limit={limit}")),
+        }
+    }
+}
+
 impl Daemon for Client {
     fn triage(&self, req: &TriageReq) -> Result<TriageOutcome> {
         self.post("/api/triage", req)

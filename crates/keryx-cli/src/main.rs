@@ -4,12 +4,14 @@ use anyhow::{Context, bail};
 use clap::{Parser, Subcommand};
 use keryx_core::build::is_hidden_mailbox;
 use keryx_core::config::{Backend, Config};
+use keryx_store::api::Intent;
 use keryx_store::db::Db;
 use keryx_store::mailapp::{self, MailStore};
 use std::path::PathBuf;
 
 mod auth;
 mod read;
+mod write;
 
 #[derive(Parser)]
 #[command(
@@ -51,6 +53,52 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Archive threads (`@N` or account:thread; several at once).
+    Archive {
+        threads: Vec<String>,
+    },
+    /// Back to the inbox.
+    Unarchive {
+        threads: Vec<String>,
+    },
+    Flag {
+        threads: Vec<String>,
+    },
+    Unflag {
+        threads: Vec<String>,
+    },
+    Read {
+        threads: Vec<String>,
+    },
+    Unread {
+        threads: Vec<String>,
+    },
+    /// Snooze until a time: "fri 17:00", "tomorrow 9", "23 oct".
+    Snooze {
+        when: String,
+        threads: Vec<String>,
+    },
+    /// File into a key (and out of the inbox).
+    File {
+        key: String,
+        threads: Vec<String>,
+    },
+    /// Undo the last change, or a given changeset.
+    Undo {
+        id: Option<String>,
+    },
+    /// Recent changes (changesets).
+    Changes {
+        /// pending | applied | undone | failed …
+        #[arg(long)]
+        status: Option<String>,
+        #[arg(long, default_value_t = 20)]
+        limit: u32,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Ask keryxd to sync every account now.
+    Sync,
     /// People you correspond with (for address completion).
     Addresses {
         #[arg(default_value = "")]
@@ -90,6 +138,17 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Search { query, limit, json }) => read::search(&load(&path)?, &query, limit, json),
         Some(Cmd::Show { thread, json }) => read::show(&load(&path)?, &thread, json),
         Some(Cmd::Addresses { prefix, limit, json }) => read::addresses(&load(&path)?, &prefix, limit, json),
+        Some(Cmd::Archive { threads }) => write::triage(&load(&path)?, Intent::Archive, &threads),
+        Some(Cmd::Unarchive { threads }) => write::triage(&load(&path)?, Intent::Unarchive, &threads),
+        Some(Cmd::Flag { threads }) => write::triage(&load(&path)?, Intent::Flag { on: true }, &threads),
+        Some(Cmd::Unflag { threads }) => write::triage(&load(&path)?, Intent::Flag { on: false }, &threads),
+        Some(Cmd::Read { threads }) => write::triage(&load(&path)?, Intent::Read { on: true }, &threads),
+        Some(Cmd::Unread { threads }) => write::triage(&load(&path)?, Intent::Read { on: false }, &threads),
+        Some(Cmd::Snooze { when, threads }) => write::snooze(&load(&path)?, &when, &threads),
+        Some(Cmd::File { key, threads }) => write::triage(&load(&path)?, Intent::File { key }, &threads),
+        Some(Cmd::Undo { id }) => write::undo(&load(&path)?, id.as_deref()),
+        Some(Cmd::Changes { status, limit, json }) => write::changes(&load(&path)?, status.as_deref(), limit, json),
+        Some(Cmd::Sync) => write::sync(&load(&path)?),
         None => keryx_tui::run(load(&path)?).map_err(anyhow::Error::msg),
     }
 }

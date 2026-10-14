@@ -83,22 +83,31 @@ pub fn snooze_presets(app: &App) -> Vec<(String, i64)> {
 /// `Pick…`: natural input ("fri 17:00", "23 oct", "tomorrow 9") → time.
 /// A bare date means the morning time. Must be in the future.
 pub fn parse_pick(app: &App, input: &str) -> Result<i64, String> {
-    let tz = app.cfg.tz();
-    let today = app.now.with_timezone(&tz).date_naive();
+    parse_when(&app.cfg, app.now, input)
+}
+
+/// Natural time input (eco-dates; ambiguity is an error) → Unix seconds,
+/// in the future. Shared by the TUI's *Pick…* and `keryx snooze`.
+pub fn parse_when(
+    cfg: &keryx_core::config::Config,
+    now: chrono::DateTime<chrono_tz::Tz>,
+    input: &str,
+) -> Result<i64, String> {
+    let tz = cfg.tz();
+    let today = now.with_timezone(&tz).date_naive();
+    let morning = keryx_core::config::parse_hhmm(&cfg.snooze.morning)
+        .unwrap_or_else(|| NaiveTime::from_hms_opt(8, 0, 0).unwrap_or_default());
     let when = eco_dates::parse_when(input, today).map_err(|e| e.to_string())?;
     let naive = match when {
         eco_dates::When::DateTime(dt) => dt,
-        eco_dates::When::Date(d) => d.and_time(
-            keryx_core::config::parse_hhmm(&app.cfg.snooze.morning)
-                .unwrap_or_else(|| NaiveTime::from_hms_opt(8, 0, 0).unwrap_or_default()),
-        ),
+        eco_dates::When::Date(d) => d.and_time(morning),
     };
     let t = tz
         .from_local_datetime(&naive)
         .earliest()
         .ok_or("that time doesn't exist (clocks change)")?
         .timestamp();
-    if t <= app.now.timestamp() {
+    if t <= now.timestamp() {
         return Err("that's in the past".into());
     }
     Ok(t)

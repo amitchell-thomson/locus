@@ -50,6 +50,12 @@ pub fn run(cfg: &Config, engine: Arc<Mutex<Engine>>, sync_now: mpsc::Receiver<()
                 if let Err(err) = e.housekeeping() {
                     tracing::warn!(error = %err, "tag housekeeping");
                 }
+                if let Err(err) = e.expire_runs() {
+                    tracing::warn!(error = %err, "expiring runs");
+                }
+                if let Err(err) = e.push_quiet_reviews() {
+                    tracing::warn!(error = %err, "review pushes");
+                }
             });
             last_tick = Instant::now();
         }

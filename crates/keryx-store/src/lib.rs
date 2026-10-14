@@ -9,6 +9,7 @@ pub mod ingest;
 pub mod kairos;
 pub mod keychain;
 pub mod mailapp;
+pub mod runs;
 pub mod state;
 #[cfg(any(test, feature = "testkit"))]
 pub mod testkit;

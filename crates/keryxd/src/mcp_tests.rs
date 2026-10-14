@@ -190,6 +190,7 @@ async fn tools_and_no_dangerous_ones() {
         "suggest_task",
         "suggest_event",
         "list_suggestions",
+        "record_run",
     ];
     want.sort();
     assert_eq!(names, want);
@@ -475,4 +476,363 @@ async fn no_tool_reaches_kairos_and_suggestions_wait_for_alec() {
     let open = st.engine.lock().unwrap().db.suggestions(Some("open"), None).unwrap();
     assert_eq!(open.len(), 2, "one task + one event suggestion from the sweep");
     assert!(open.iter().all(|s| s.author == "claude"));
+}
+
+// ---- Phase 8 (phone) and Phase 9 (runs) ----
+
+#[derive(Clone, Default)]
+struct Pushes(Arc<Mutex<Vec<crate::notify::Push>>>);
+impl crate::notify::Notifier for Pushes {
+    fn push(&self, p: &crate::notify::Push) -> Result<(), String> {
+        self.0.lock().unwrap().push(p.clone());
+        Ok(())
+    }
+}
+
+fn phone_state() -> (AppState, Pushes) {
+    let st = state();
+    let p = Pushes::default();
+    {
+        let mut e = st.engine.lock().unwrap();
+        e.notifier = Some(Box::new(p.clone()));
+        e.links = Some(crate::notify::Links::new(TOKEN, "http://keryx.test"));
+    }
+    (st, p)
+}
+
+/// A JSON-RPC call with any bearer token; returns (status, body).
+async fn rpc_as(base: &str, token: &str, method: &str, params: Value) -> (u16, Value) {
+    let resp = reqwest::Client::new()
+        .post(format!("{base}/mcp"))
+        .bearer_auth(token)
+        .header("accept", "application/json, text/event-stream")
+        .header("mcp-protocol-version", "2025-06-18")
+        .json(&json!({"jsonrpc": "2.0", "id": 9, "method": method, "params": params}))
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status().as_u16();
+    let text = resp.text().await.unwrap();
+    let text = match text.lines().find_map(|l| l.strip_prefix("data:")) {
+        Some(d) => d.trim().to_string(),
+        None => text,
+    };
+    (status, serde_json::from_str(&text).unwrap_or(Value::Null))
+}
+
+/// A tool call as a run: (text, is_error), or the JSON-RPC error message.
+async fn run_call(base: &str, token: &str, tool: &str, args: Value) -> Result<(String, bool), String> {
+    let (status, v) = rpc_as(base, token, "tools/call", json!({"name": tool, "arguments": args})).await;
+    if status != 200 {
+        return Err(format!("HTTP {status}"));
+    }
+    if let Some(e) = v.get("error") {
+        return Err(e["message"].as_str().unwrap_or("").to_string());
+    }
+    Ok((
+        v["result"]["content"][0]["text"].as_str().unwrap_or("").to_string(),
+        v["result"]["isError"].as_bool().unwrap_or(false),
+    ))
+}
+
+fn draft(st: &AppState, r: &str) -> keryx_core::changeset::Changeset {
+    st.engine
+        .lock()
+        .unwrap()
+        .draft_reply(
+            &keryx_store::api::DraftReplyReq {
+                r#ref: r.into(),
+                body: "Yes, Thursday works.".into(),
+                reply_all: false,
+            },
+            Who::claude(),
+        )
+        .unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn phone_links_show_on_get_and_act_only_on_post() {
+    let (st, pushes) = phone_state();
+    let r = find_ref(&st, "Lab partner for Thursday?");
+    let cs = draft(&st, &r);
+    let other = draft(&st, &find_ref(&st, "Re: Group project plan"));
+    // One push per draft, recipients in the title, buttons to signed pages.
+    let p = pushes.0.lock().unwrap().clone();
+    assert_eq!(p.len(), 2);
+    assert_eq!(p[0].title, "Send to Jane Doe <jane.doe@example.com>?");
+    assert!(p[0].message.contains("Yes, Thursday works."), "{}", p[0].message);
+    let approve = p[0].actions[0].1.clone();
+    assert!(approve.starts_with(&format!("http://keryx.test/a/{}/approve?s=", cs.id)));
+    let (base, _h, _) = start(st.clone()).await;
+    let path = approve.trim_start_matches("http://keryx.test");
+    let c = reqwest::Client::new();
+    // A link preview / prefetch (GET) shows the page and changes nothing.
+    for _ in 0..3 {
+        let page = c.get(format!("{base}{path}")).send().await.unwrap();
+        assert_eq!(page.status(), 200);
+        let html = page.text().await.unwrap();
+        assert!(
+            html.contains("Approve this send?") && html.contains("jane.doe@example.com"),
+            "{html}"
+        );
+        assert!(!html.contains("<script"), "no scripts");
+    }
+    let status = |id: &str| st.engine.lock().unwrap().db.changeset(id).unwrap().unwrap().status;
+    assert_eq!(status(&cs.id), keryx_core::changeset::Status::Pending);
+    // The signature only works for its own changeset and action.
+    let sig = path.split("s=").nth(1).unwrap();
+    for bad in [
+        format!("/a/{}/approve?s={sig}", other.id),
+        format!("/a/{}/reject?s={sig}", cs.id),
+        format!("/a/{}/approve?s=00", cs.id),
+    ] {
+        assert_eq!(
+            c.get(format!("{base}{bad}")).send().await.unwrap().status(),
+            403,
+            "{bad}"
+        );
+    }
+    let post = |id: String, action: &str, s: String| {
+        let c = c.clone();
+        let url = format!("{base}/a/{id}/{action}");
+        async move { c.post(url).form(&[("s", s)]).send().await.unwrap() }
+    };
+    assert_eq!(post(other.id.clone(), "approve", sig.to_string()).await.status(), 403);
+    assert_eq!(status(&other.id), keryx_core::changeset::Status::Pending);
+    // The page's button (POST) approves: holding, then the send goes out.
+    let r = post(cs.id.clone(), "approve", sig.to_string()).await;
+    assert_eq!(r.status(), 200);
+    assert!(r.text().await.unwrap().contains("Sending in 10 s"));
+    assert_eq!(status(&cs.id), keryx_core::changeset::Status::Holding);
+    // One-shot: approving again does nothing.
+    assert_eq!(post(cs.id.clone(), "approve", sig.to_string()).await.status(), 409);
+    // Reject the other from its own link.
+    let rej = st
+        .engine
+        .lock()
+        .unwrap()
+        .links
+        .as_ref()
+        .unwrap()
+        .sign(&other.id, "reject");
+    assert_eq!(post(other.id.clone(), "reject", rej).await.status(), 200);
+    assert_eq!(status(&other.id), keryx_core::changeset::Status::Rejected);
+    // No bearer token needed for pages, but the API still needs one.
+    assert_eq!(c.get(format!("{base}/api/status")).send().await.unwrap().status(), 401);
+}
+
+fn start_run(st: &AppState, kind: keryx_store::runs::RunKind) -> (String, String) {
+    let (run, token) = st
+        .engine
+        .lock()
+        .unwrap()
+        .start_run(kind, json!({}), Who::SYSTEM)
+        .unwrap();
+    (run.id, token)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn morning_run_replay_one_push_and_everything_recorded() {
+    use keryx_store::runs::RunKind;
+    let (st, pushes) = phone_state();
+    let lab = find_ref(&st, "Lab partner for Thursday?");
+    let news = find_ref_in(&st, Some("personal"), "This week in engineering");
+    let (run_id, token) = start_run(&st, RunKind::Morning);
+    // Runs never overlap.
+    let again = st
+        .engine
+        .lock()
+        .unwrap()
+        .start_run(RunKind::Evening, json!({}), Who::SYSTEM);
+    assert!(matches!(again, Err(EngineError::Conflict(_))), "{again:?}");
+    let (base, _h, _) = start(st.clone()).await;
+    // The run token works for MCP only.
+    let api = reqwest::Client::new()
+        .get(format!("{base}/api/status"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(api.status(), 403);
+    // A scripted "Claude": the tool sequence a morning run makes.
+    let ok = |r: Result<(String, bool), String>| {
+        let (t, err) = r.unwrap();
+        assert!(!err, "{t}");
+        t
+    };
+    ok(run_call(&base, &token, "list_inbox", json!({})).await);
+    let t = ok(run_call(
+        &base,
+        &token,
+        "archive",
+        json!({"refs": [news], "summary": "newsletter"}),
+    )
+    .await);
+    assert!(t.contains("applied"), "{t}");
+    ok(run_call(
+        &base,
+        &token,
+        "tag_needs_reply",
+        json!({"ref": lab, "reason": "asks about Thursday"}),
+    )
+    .await);
+    ok(run_call(
+        &base,
+        &token,
+        "draft_reply",
+        json!({"ref": lab, "body": "Thursday works for me."}),
+    )
+    .await);
+    ok(run_call(
+        &base,
+        &token,
+        "suggest_task",
+        json!({"ref": lab, "title": "B4 lab prep", "reason": "lab on Thursday"}),
+    )
+    .await);
+    ok(run_call(
+        &base,
+        &token,
+        "propose_cleanup",
+        json!({"title": "Evening tidy", "items": [{"ref": lab, "action": "archive", "reason": "dealt with"}]}),
+    )
+    .await);
+    // Tools outside the run's list are refused, whatever the arguments.
+    for tool in ["undo", "draft_email", "set_flag", "clear_tag", "unarchive"] {
+        let r = run_call(&base, &token, tool, json!({"id": "x", "refs": [lab], "ref": lab})).await;
+        assert!(
+            r.as_ref()
+                .is_err_and(|e| e.contains("isn't available in a morning run")),
+            "{tool}: {r:?}"
+        );
+    }
+    // Drafts inside a run don't push on their own.
+    assert!(pushes.0.lock().unwrap().is_empty());
+    // record_run only for its own run.
+    let (t, err) = run_call(
+        &base,
+        &token,
+        "record_run",
+        json!({"run_id": "run-other", "summary": "x"}),
+    )
+    .await
+    .unwrap();
+    assert!(err && t.contains("belongs to run"), "{t}");
+    ok(run_call(
+        &base,
+        &token,
+        "record_run",
+        json!({"run_id": run_id, "summary": "Quiet morning."}),
+    )
+    .await);
+    // Exactly one push, with the counts and the run page.
+    let p = pushes.0.lock().unwrap().clone();
+    assert_eq!(p.len(), 1, "{p:?}");
+    assert_eq!(
+        p[0].title,
+        "Morning: 1 cleared · 1 need reply · 1 draft to approve · 1 task suggestion · 1 proposal to review"
+    );
+    let link = p[0].click.clone().unwrap();
+    assert!(link.starts_with(&format!("http://keryx.test/r/{run_id}?s=")));
+    // The run page lists the draft with approve / reject.
+    let html = reqwest::get(format!("{base}{}", link.trim_start_matches("http://keryx.test")))
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(
+        html.contains("Thursday works for me.") && html.contains("Approve and send"),
+        "{html}"
+    );
+    // Everything is recorded against the run; the review and suggestion carry its id.
+    {
+        let e = st.engine.lock().unwrap();
+        let v = e.run_view(&run_id).unwrap();
+        assert_eq!(v.run.status, "done");
+        assert_eq!(v.reviews.len(), 1);
+        assert_eq!(
+            e.db.review(&v.reviews[0]).unwrap().unwrap().run_id.as_deref(),
+            Some(run_id.as_str())
+        );
+        let sg = e.db.suggestions(Some("open"), None).unwrap();
+        assert_eq!(sg[0].run_id.as_deref(), Some(run_id.as_str()));
+    }
+    // The token is dead once the run is recorded.
+    let r = run_call(&base, &token, "list_inbox", json!({})).await;
+    assert_eq!(r, Err("HTTP 401".into()));
+    // And a new run can start.
+    start_run(&st, RunKind::Evening);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn cleanup_runs_only_propose_and_runs_expire() {
+    use keryx_store::runs::RunKind;
+    let (st, pushes) = phone_state();
+    let news = find_ref_in(&st, Some("personal"), "This week in engineering");
+    let (run_id, token) = start_run(&st, RunKind::Cleanup);
+    let (base, _h, _) = start(st.clone()).await;
+    for tool in ["archive", "file", "snooze", "draft_reply", "suggest_task"] {
+        let r = run_call(
+            &base,
+            &token,
+            tool,
+            json!({"refs": [news], "ref": news, "key": "Admin"}),
+        )
+        .await;
+        assert!(r.as_ref().is_err_and(|e| e.contains("cleanup run")), "{tool}: {r:?}");
+    }
+    let (t, err) = run_call(
+        &base,
+        &token,
+        "propose_cleanup",
+        json!({"title": "All inboxes", "items": [{"ref": news, "action": "archive", "reason": "newsletter"}]}),
+    )
+    .await
+    .unwrap();
+    assert!(!err, "{t}");
+    // Past its time the run fails, pushes once, and the token stops working.
+    {
+        let mut e = st.engine.lock().unwrap();
+        e.clock = Box::new(|| 1_791_986_400 + 3 * 3600);
+        assert_eq!(e.expire_runs().unwrap(), 1);
+        assert_eq!(e.expire_runs().unwrap(), 0);
+        assert_eq!(e.run_view(&run_id).unwrap().run.error.as_deref(), Some("timed out"));
+    }
+    assert_eq!(
+        run_call(&base, &token, "list_inbox", json!({})).await,
+        Err("HTTP 401".into())
+    );
+    let p = pushes.0.lock().unwrap().clone();
+    assert_eq!(p.len(), 1);
+    assert_eq!(p[0].title, "Cleanup run failed");
+    // Claude can't start runs.
+    let r = st
+        .engine
+        .lock()
+        .unwrap()
+        .start_run(RunKind::Morning, json!({}), Who::claude());
+    assert!(matches!(r, Err(EngineError::Forbidden(_))));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_interactive_cleanup_pushes_once_when_claude_stops() {
+    let (st, pushes) = phone_state();
+    let a = find_ref(&st, "Lab partner for Thursday?");
+    let (base, _h, _) = start(st.clone()).await;
+    initialize(&base).await;
+    let (t, err) = call(
+        &base,
+        "propose_cleanup",
+        json!({"title": "Oxford inbox", "items": [{"ref": a, "action": "archive", "reason": "answered"}]}),
+    )
+    .await;
+    assert!(!err, "{t}");
+    let mut e = st.engine.lock().unwrap();
+    assert_eq!(e.push_quiet_reviews().unwrap(), 0, "still arriving");
+    e.clock = Box::new(|| 1_791_986_400 + 300);
+    assert_eq!(e.push_quiet_reviews().unwrap(), 1);
+    assert_eq!(e.push_quiet_reviews().unwrap(), 0, "once");
+    let p = pushes.0.lock().unwrap().clone();
+    assert_eq!(p[0].title, "Cleanup ready: 1 proposal");
 }

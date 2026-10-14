@@ -139,6 +139,7 @@ impl Db {
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         conn.execute_batch(SCHEMA)?;
         conn.execute_batch(crate::state::STATE_SCHEMA)?;
+        conn.execute_batch(crate::runs::RUNS_SCHEMA)?;
         let db = Db { conn };
         match db.meta("schema_version")? {
             Some(v) => {

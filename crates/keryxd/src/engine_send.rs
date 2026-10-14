@@ -114,6 +114,21 @@ impl Engine {
             warnings,
         };
         self.db.save_changeset(&cs)?;
+        if cs.status == Status::Pending {
+            if self.current_run.is_some() {
+                let thread = cs
+                    .outgoing()
+                    .and_then(|o| o.thread_id.clone().map(|t| (o.account.clone(), t)));
+                self.note_run(
+                    "draft",
+                    &cs.id,
+                    thread.as_ref().map(|(a, _)| a.as_str()),
+                    thread.as_ref().map(|(_, t)| t.as_str()),
+                )?;
+            } else {
+                self.push_draft(&cs);
+            }
+        }
         Ok(cs)
     }
 

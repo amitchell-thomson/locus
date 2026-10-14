@@ -96,6 +96,12 @@ pub struct Engine {
     /// kairos's API (`None` when it isn't set up; `kairos_note` says why).
     pub kairos: Option<Box<dyn keryx_store::kairos::Kairos>>,
     pub kairos_note: String,
+    /// ntfy (None: pushes off, e.g. no `keryx-ntfy-topic`).
+    pub notifier: Option<Box<dyn crate::notify::Notifier>>,
+    /// Signs phone links (None: no API token yet, so no links).
+    pub links: Option<crate::notify::Links>,
+    /// The run whose token made the current MCP call (set per call).
+    pub current_run: Option<keryx_store::runs::Run>,
 }
 
 fn new_id(prefix: &str) -> String {
@@ -135,6 +141,9 @@ impl Engine {
             clock: Box::new(crate::now),
             kairos: None,
             kairos_note: "no kairos client".into(),
+            notifier: None,
+            links: None,
+            current_run: None,
         })
     }
 
@@ -373,6 +382,7 @@ impl Engine {
         if req.refs.is_empty() {
             return Err(EngineError::BadRequest("no threads given".into()));
         }
+        self.run_room(&req.refs)?;
         if let Intent::Snooze { until } = req.intent
             && until <= self.now()
         {
@@ -624,6 +634,19 @@ impl Engine {
             });
         } else {
             cs.status = Status::Applied;
+            let threads: BTreeMap<(String, String), ()> = cs
+                .ops
+                .iter()
+                .filter_map(|op| match op {
+                    Op::State { msg, .. } => Some((msg.account.clone(), msg.thread_id.clone())),
+                    Op::Snooze { account, thread_id, .. } => Some((account.clone(), thread_id.clone())),
+                    _ => None,
+                })
+                .map(|k| (k, ()))
+                .collect();
+            for (a, t) in threads.keys() {
+                self.note_run("changeset", &format!("{}:{a}:{t}", cs.id), Some(a), Some(t))?;
+            }
         }
         for account in resync.keys() {
             if let Ok(acc) = self.account(account).cloned()
@@ -849,6 +872,10 @@ impl Engine {
             author: who.author.as_str().into(),
             created_at: self.now(),
         })?;
+        let (a, t) = parse_thread_ref(r)
+            .map(|(a, t)| (a.to_string(), t.to_string()))
+            .unwrap_or_default();
+        self.note_run("tag", r, Some(&a), Some(&t))?;
         Ok(())
     }
 
@@ -860,6 +887,7 @@ impl Engine {
     // ---------------- cleanup reviews ----------------
 
     pub fn propose(&mut self, req: ProposeReq, who: Who) -> Result<ProposeOutcome> {
+        self.run_room(&req.items.iter().map(|i| i.r#ref.clone()).collect::<Vec<_>>())?;
         let review_id = match &req.review_id {
             Some(id) => {
                 let r = self
@@ -877,10 +905,11 @@ impl Engine {
                     id: id.clone(),
                     title: keryx_core::text::sanitize(&req.title).chars().take(120).collect(),
                     author: who.author.as_str().into(),
-                    run_id: None,
+                    run_id: self.current_run.as_ref().map(|r| r.id.clone()),
                     created_at: self.now(),
                     status: "open".into(),
                 })?;
+                self.note_run("review", &id, None, None)?;
                 id
             }
         };
@@ -896,6 +925,12 @@ impl Engine {
             match self.check_item(&item) {
                 Ok((account, thread_id, msgs)) => {
                     let new = seen.insert((account.clone(), thread_id.clone()));
+                    self.note_run(
+                        "proposal",
+                        &format!("{review_id}:{account}:{thread_id}"),
+                        Some(&account),
+                        Some(&thread_id),
+                    )?;
                     self.db.add_proposal(&Proposal {
                         id: new_id("p"),
                         review_id: review_id.clone(),
@@ -916,6 +951,10 @@ impl Engine {
                 }
                 Err(e) => out.rejected.push((item.r#ref, e.to_string())),
             }
+        }
+        // Pushed once Claude stops adding (§8.4), unless a run pushes for it.
+        if who.author == Author::Claude && self.current_run.is_none() {
+            self.db.touch_review(&review_id, self.now())?;
         }
         Ok(out)
     }

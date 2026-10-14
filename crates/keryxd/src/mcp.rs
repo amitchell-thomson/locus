@@ -46,6 +46,11 @@ and that he reviews them with A in keryx.\n\
 REFS: threads are `account:thread_id` (from search / list_inbox). Times: ISO 8601 or natural ('fri 17:00', 'tomorrow 9'); \
 ambiguous input is rejected.";
 
+tokio::task_local! {
+    /// The run whose token made this MCP call (none for Alec's token).
+    static RUN: Option<keryx_store::runs::Run>;
+}
+
 fn nonce() -> String {
     uuid::Uuid::new_v4().simple().to_string()[..12].to_string()
 }
@@ -195,11 +200,16 @@ impl KeryxMcp {
         f: impl FnOnce(&mut Engine) -> Result<Value, EngineError> + Send + 'static,
     ) -> Result<CallToolResult, ErrorData> {
         let eng = self.st.engine.clone();
+        let run = RUN.try_with(|r| r.clone()).ok().flatten();
         let r = tokio::task::spawn_blocking(move || {
             let mut g = eng
                 .lock()
                 .map_err(|_| EngineError::BadRequest("engine lock poisoned".into()))?;
-            f(&mut g)
+            // Everything this call makes is recorded against the run.
+            g.current_run = run;
+            let out = f(&mut g);
+            g.current_run = None;
+            out
         })
         .await
         .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
@@ -417,6 +427,14 @@ pub struct DraftEmailArgs {
 pub struct ReviewsArgs {
     /// open | done
     pub status: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct RecordRunArgs {
+    /// The run id from your instructions.
+    pub run_id: String,
+    /// What you did, for Alec (a few lines; counts are added by keryx).
+    pub summary: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -1005,6 +1023,17 @@ impl KeryxMcp {
         .await
     }
 
+    #[tool(
+        description = "Scheduled runs only: finish the run with a short summary for Alec. keryx adds the counts and sends his one push."
+    )]
+    async fn record_run(&self, Parameters(a): Parameters<RecordRunArgs>) -> Result<CallToolResult, ErrorData> {
+        self.run(move |e| {
+            let v = e.record_run(&a.run_id, &a.summary)?;
+            Ok(json!({"run_id": v.run.id, "status": v.run.status, "summary": v.counts()}))
+        })
+        .await
+    }
+
     #[tool(description = "Undo an applied changeset. Refuses with the differences if a message moved since.")]
     async fn undo(&self, Parameters(a): Parameters<IdArgs>) -> Result<CallToolResult, ErrorData> {
         self.run(move |e| {
@@ -1017,6 +1046,29 @@ impl KeryxMcp {
 
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for KeryxMcp {
+    /// Calls made with a run token run as that run, limited to its tool list.
+    async fn call_tool(
+        &self,
+        request: rmcp::model::CallToolRequestParams,
+        context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<rmcp::model::CallToolResponse, ErrorData> {
+        let run = context
+            .extensions
+            .get::<axum::http::request::Parts>()
+            .and_then(|p| p.extensions.get::<crate::http::RunCtx>())
+            .map(|r| r.0.clone());
+        if let Some(r) = &run
+            && !r.kind.tools().contains(&request.name.as_ref())
+        {
+            return Err(ErrorData::invalid_request(
+                format!("{} isn't available in a {} run", request.name, r.kind.as_str()),
+                None,
+            ));
+        }
+        let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
+        RUN.scope(run, self.tool_router.call(tcc)).await
+    }
+
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(rmcp::model::Implementation::new("keryx", env!("CARGO_PKG_VERSION")))

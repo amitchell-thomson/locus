@@ -308,11 +308,12 @@ impl Engine {
             proposal,
             reason,
             author: who.author.as_str().into(),
-            run_id: None,
+            run_id: self.current_run.as_ref().map(|r| r.id.clone()),
             status: "open".into(),
             created_at: self.now(),
         };
         self.db.add_suggestion(&sg)?;
+        self.note_run("suggestion", &sg.id, Some(&sg.account), Some(&sg.thread_id))?;
         Ok(sg)
     }
 

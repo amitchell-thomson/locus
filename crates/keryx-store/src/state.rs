@@ -241,6 +241,7 @@ pub fn fingerprint(msgs: &[Message]) -> String {
 impl Db {
     pub fn init_state(&self) -> Result<(), DbError> {
         self.conn().execute_batch(STATE_SCHEMA)?;
+        self.conn().execute_batch(crate::runs::RUNS_SCHEMA)?;
         Ok(())
     }
 

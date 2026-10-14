@@ -72,17 +72,37 @@ async fn with_engine<T: Send + 'static>(
     .map_err(|e| HttpError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
 }
 
-async fn auth(State(st): State<AppState>, req: Request, next: Next) -> Response {
-    let ok = req
+/// The run a request's token belongs to (set by [`auth`] for run tokens).
+#[derive(Clone, Debug)]
+pub struct RunCtx(pub keryx_store::runs::Run);
+
+async fn auth(State(st): State<AppState>, mut req: Request, next: Next) -> Response {
+    let token = req
         .headers()
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
-        .is_some_and(|t| constant_eq(t.as_bytes(), st.token.as_bytes()));
-    if ok {
-        next.run(req).await
-    } else {
-        HttpError(StatusCode::UNAUTHORIZED, "missing or bad bearer token".into()).into_response()
+        .map(str::to_string);
+    let Some(token) = token else {
+        return HttpError(StatusCode::UNAUTHORIZED, "missing or bad bearer token".into()).into_response();
+    };
+    if constant_eq(token.as_bytes(), st.token.as_bytes()) {
+        return next.run(req).await;
+    }
+    // A run token: valid for its run only, on /mcp only, while it runs.
+    let engine = st.engine.clone();
+    let run =
+        tokio::task::spawn_blocking(move || engine.lock().ok().and_then(|e| e.run_for_token(&token).ok().flatten()))
+            .await
+            .ok()
+            .flatten();
+    match run {
+        Some(r) if req.uri().path().starts_with("/mcp") => {
+            req.extensions_mut().insert(RunCtx(r));
+            next.run(req).await
+        }
+        Some(_) => HttpError(StatusCode::FORBIDDEN, "a run token only works for MCP".into()).into_response(),
+        None => HttpError(StatusCode::UNAUTHORIZED, "missing or bad bearer token".into()).into_response(),
     }
 }
 
@@ -121,7 +141,10 @@ pub fn router(st: AppState, mcp: Option<Router<AppState>>) -> Router {
         .route("/api/kairos/free", post(kairos_free))
         .route("/api/kairos/tasks/{id}", get(task_status))
         .route("/api/suggestions", get(suggestions))
-        .route("/api/suggestions/{id}/dismiss", post(dismiss_suggestion));
+        .route("/api/suggestions/{id}/dismiss", post(dismiss_suggestion))
+        .route("/api/runs", get(runs).post(start_run))
+        .route("/api/runs/{id}", get(run_view))
+        .route("/api/runs/{id}/fail", post(fail_run));
     let api = match mcp {
         Some(m) => api.merge(m),
         None => api,
@@ -129,6 +152,7 @@ pub fn router(st: AppState, mcp: Option<Router<AppState>>) -> Router {
     let api = api.layer(middleware::from_fn_with_state(st.clone(), auth));
     Router::new()
         .route("/healthz", get(|| async { "ok" }))
+        .merge(crate::phone::router())
         .merge(api)
         .with_state(st)
 }
@@ -346,6 +370,56 @@ async fn dismiss_suggestion(State(st): State<AppState>, h: HeaderMap, Path(id): 
     let w = who(&h);
     with_engine(&st, move |e| e.dismiss_suggestion(&id, w)).await?;
     Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+struct StartRunReq {
+    kind: String,
+    #[serde(default)]
+    scope: Value,
+}
+
+async fn start_run(State(st): State<AppState>, h: HeaderMap, Json(r): Json<StartRunReq>) -> HResult<Value> {
+    let w = who(&h);
+    let kind = keryx_store::runs::RunKind::parse(&r.kind)
+        .ok_or_else(|| HttpError(StatusCode::BAD_REQUEST, format!("unknown run kind {:?}", r.kind)))?;
+    let (run, token) = with_engine(&st, move |e| e.start_run(kind, r.scope, w)).await?;
+    Ok(Json(json!({ "run": run, "token": token })))
+}
+
+#[derive(Deserialize)]
+struct LimitQ {
+    limit: Option<u32>,
+}
+
+async fn runs(State(st): State<AppState>, Query(q): Query<LimitQ>) -> HResult<Vec<keryx_store::runs::RunView>> {
+    let limit = q.limit.unwrap_or(30).min(200);
+    Ok(Json(
+        with_engine(&st, move |e| {
+            let list = e.db.runs(limit)?;
+            list.iter().map(|r| e.run_view(&r.id)).collect()
+        })
+        .await?,
+    ))
+}
+
+async fn run_view(State(st): State<AppState>, Path(id): Path<String>) -> HResult<keryx_store::runs::RunView> {
+    Ok(Json(with_engine(&st, move |e| e.run_view(&id)).await?))
+}
+
+#[derive(Deserialize)]
+struct FailReq {
+    error: String,
+}
+
+async fn fail_run(
+    State(st): State<AppState>,
+    h: HeaderMap,
+    Path(id): Path<String>,
+    Json(r): Json<FailReq>,
+) -> HResult<keryx_store::runs::RunView> {
+    let w = who(&h);
+    Ok(Json(with_engine(&st, move |e| e.fail_run(&id, &r.error, w)).await?))
 }
 
 async fn holding(State(st): State<AppState>) -> HResult<Option<Cs>> {

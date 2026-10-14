@@ -13,11 +13,14 @@ use std::time::Instant;
 mod actuate;
 mod engine;
 mod engine_kairos;
+mod engine_runs;
 mod engine_send;
 mod gmail_sync;
 mod http;
 mod jobs;
 mod mcp;
+mod notify;
+mod phone;
 
 #[derive(Parser)]
 #[command(
@@ -84,6 +87,19 @@ fn main() -> anyhow::Result<()> {
     let token = keryx_store::keychain::get("keryx-api-token")
         .context("no API token in the Keychain (docs/setup.md §5: keryx-api-token)")?;
     let mut engine = engine::Engine::new(cfg.clone(), db, Box::new(actuate::Real::new(cfg.clone())))?;
+    let base = cfg
+        .server
+        .url
+        .clone()
+        .unwrap_or_else(|| format!("http://{}:{}", cfg.server.bind, cfg.server.port));
+    engine.links = Some(notify::Links::new(&token, &base));
+    match keryx_store::keychain::get("keryx-ntfy-topic") {
+        Ok(topic) => match notify::Ntfy::new(&cfg.notify.ntfy_server, topic.trim()) {
+            Ok(n) => engine.notifier = Some(Box::new(n)),
+            Err(e) => tracing::warn!(error = %e, "pushes off"),
+        },
+        Err(_) => tracing::info!("no keryx-ntfy-topic in the Keychain: phone pushes off"),
+    }
     match keryx_store::kairos::Http::new(&cfg.kairos.url, &cfg.kairos.token_service) {
         Ok(k) => engine.kairos = Some(Box::new(k)),
         Err(e) => {

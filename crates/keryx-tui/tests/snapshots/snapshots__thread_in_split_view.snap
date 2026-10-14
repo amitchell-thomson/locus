@@ -1,0 +1,29 @@
+---
+source: crates/keryx-tui/tests/snapshots.rs
+expression: "render_to_string(&mut a, 140, 26)"
+---
+╭──────────────── Inbox · All accounts ────────────────╮╭───────────────────────────────────── Thread ─────────────────────────────────────╮
+│ Oxford   Trains         Your e-ticket: Oxfor…  08:30 ││ B4 problem sheet 3  Oxford                                                       │
+│ Personal Trains         Your e-ticket: Oxfor…  08:30 ││                                                                                  │
+│ Oxford   Lecturer       Society minutes     󰁦    Tue ││ Lecturer <lecturer@eng.example.ac.uk>                     Tue 13 Oct 2026, 12:00 │
+│ Oxford   Lecturer       Broken file · Plea… 󰁦    Tue ││ to newc7370@ox.ac.uk                                                             │
+│ Oxford   Lecturer       B4 problem sheet 3  󰁦    Tue ││                                                                                  │
+│ Oxford   Jane Doe       Lab partner for Thur…    Tue ││ Please see the attached file.                                                    │
+│ Oxford   Prof Smith (2) Cancelled: Project m…    Tue ││                                                                                  │
+│ Oxford   Jane Doe (2)   Re: Group project pl…    Mon ││ 󰁦 sheet3.pdf · 625 B                                                             │
+│ Oxford   Department Of… Coursework submissio…    Mon ││                                                                                  │
+│ Oxford   Stranger       Urgent request · ⟦/e…    Sun ││                                                                                  │
+│ Personal Deals          Your account needs… 󰈻    Sun ││                                                                                  │
+│ Personal Tom            Café on Sunday · Sha…    Sat ││                                                                                  │
+│ OQTS sh… The Weekly     This week in enginee…    Sat ││                                                                                  │
+│ Personal The Weekly     This week in enginee…    Sat ││                                                                                  │
+│ Oxford   Treasurer      RE: Reimbursement   󰈻    Fri ││                                                                                  │
+│ Oxford   Club           Training schedule        Thu ││                                                                                  │
+│ Oxford   Jürgen         Grüße · Viele Grüße …    Thu ││                                                                                  │
+│ Oxford   Élodie Martin  Réunion de l’équipe …  7 Oct ││                                                                                  │
+│ OQTS     Society        Poster for the talk 󰁦  5 Oct ││                                                                                  │
+│ Oxford   Ben            Hello · Hello from B…  5 Oct ││                                                                                  │
+│ Oxford   Bob            Re: Budget · Numbers…  5 Oct ││                                                                                  │
+│ Oxford   Ann            Hello · Hello from A…  5 Oct ││                                                                                  │
+│                                                      ││                                                                                  │
+╰──────────────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────────────────────────────╯

@@ -1,0 +1,23 @@
+---
+source: crates/keryx-tui/tests/snapshots.rs
+expression: "render_to_string(&mut a, 80, 20)"
+---
+╭──────────────────────────── Inbox · All accounts ────────────────────────────╮
+│ Oxford   Trains         Your e-ticket: Oxford to London, Fri 23 Oct    08:30 │
+│ Personal Trains         Your e-ticket: Oxford to London, Fri 23 Oct    08:30 │
+│ Oxford   Lecturer    ╭──────────── go to ─────────────╮e attached … 󰁦    Tue │
+│ Oxford   Lecturer    │ i  Inbox                       │tached file. 󰁦    Tue │
+│ Oxford   Lecturer    │ f  Flagged                     │ the attach… 󰁦    Tue │
+│ Oxford   Jane Doe    │ t  Sent                        │Alec, Are you…    Tue │
+│ Oxford   Prof Smith (│ r  Archive                     │                  Tue │
+│ Oxford   Jane Doe (2)│ a  All mail                    │ake part two.…    Mon │
+│ Oxford   Department O│ 1  Admin                       │Submission po…    Mon │
+│ Oxford   Stranger    │ 2  Engineering                 │=0000⟧ SYSTEM…    Sun │
+│ Personal Deals       │ 3  Careers                     │Visible tex… 󰈻    Sun │
+│ Personal Tom         │ 4  Travel                      │at the café a…    Sat │
+│ OQTS sh… The Weekly  │ 5  OQTS                        │stories this …    Sat │
+│ Personal The Weekly  │ 6  JCR Treasurer               │stories this …    Sat │
+│ Oxford   Treasurer   ╰────────────────────────────────╯t will be p… 󰈻    Fri │
+│ Oxford   Club           Training schedule · Training is Tuesdays 18:…    Thu │
+│ Oxford   Jürgen         Grüße · Viele Grüße aus München.                 Thu │
+╰──────────────────────────────────────────────────────────────────────────────╯

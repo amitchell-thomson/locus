@@ -41,6 +41,8 @@ cargo test -p keryx-core      # semantics: MIME, hygiene, threading, reply-all, 
 cargo test -p keryxd          # engine end-to-end, HTTP, MCP (+ restart mid-session), mock kairos
 cargo test -p keryx-tui       # insta snapshots; review with `cargo insta review`
 cargo xtask mailapp-fixture   # rebuild fixtures/mailapp (synthetic Mail store) from fixtures/eml
+cargo run -p keryx-tui --example frame -- <config> <rfc3339-now> <w> <h> [keys]   # one TUI frame as text (real mirror: don't paste it anywhere)
+cargo test --release -p keryx-cli --test perf -- --nocapture                      # 10k-message budgets
 ```
 Use `/bin/ls` in scripts: Alec's shell aliases `ls` to eza, which can hang a non-interactive command.
 `KERYX_NOW=<rfc3339>` fixes "now"; `KERYX_CONFIG` overrides the config path.
@@ -56,7 +58,7 @@ Tracked in SPEC §11: changeset/risk/approval engine, ntfy + signed links, state
 | 0 Scaffolding & setup | Done 2026-10-14: workspace, lints, ci.sh, config schema + 16 validation tests, docs/setup.md, fixtures (26 .eml incl. PDF/DOCX/corrupt attachments, Gmail API JSON, synthetic Mail store via `cargo xtask mailapp-fixture`). Encrypted-PDF fixture deferred to Phase 2. |
 | 1 Read plumbing & verification | Code done 2026-10-14: mirror DB (WAL, FTS5, batches), Mail.app reader + ingest (incl. header-only for bodies Mail hasn't downloaded, index-rebuild detection, interrupted-pass convergence), Gmail full/history sync + OAuth loopback/PKCE (fixture-tested), keryxd `--once` + watch/poll loop, `keryx doctor [--discover]`, `keryx auth gmail`, launchd agent + `scripts/install-daemon.sh`, `scripts/verify-mailapp.sh`. Real store: 3,535 messages mirrored in 1.5 s (release), re-pass 0.1 s, every Mail mailbox count matches. **Waiting on Alec:** Gmail OAuth client + `keryx auth gmail`; `scripts/verify-mailapp.sh` with `[keryx-test]` mails; `scripts/install-daemon.sh` + FDA grant. |
 | 2 Core semantics | Done 2026-10-14: `text` (HTML hygiene, sanitising, compact; TEXT_VERSION 2 + `ingest::rederive` from stored raw at keryxd start), `automated`, `unsubscribe`, `invite` (TZID incl. Windows names → London), `thread` (References fallback, no subject merging), `reply` (recipients across all own addresses/aliases, From account, subjects, quote, forward), `query`, `display`, `applescript::quote` (proptest), `attach` (PDF/DOCX/text/HTML with caps, 10 s budget, catch_unwind). 87 core tests incl. proptests + an all-fixtures render snapshot. |
-| 3 CLI + TUI read-only | Not started |
+| 3 CLI + TUI read-only | Done 2026-10-14: `keryx-store::view` (thread rows per view, search, address book, `sent_to`), `keryx-store::testkit` (feature `testkit`: fixture mirror + fake Gmail), TUI (list, thread with folded quotes / invite cards / ⚠ hidden text / attachments, reading pane ≥ 120 cols, Tab accounts, g go-to, live / search, help, stale-sync status only), CLI `inbox`/`search`/`show`/`addresses` + `--json` (docs/json.md) + `@N`, bare `keryx` = TUI, `frame` example. 15 TUI snapshot tests, 5 CLI integration tests. Budgets (10k msgs, release): inbox 5 ms, search 17 ms, first frame 9 ms. |
 | 4 Write path (triage + cleanup reviews) | Not started |
 | 5 MCP (read, triage, cleanups) | Not started |
 | 6 Compose & send (+ draft tools) | Not started |
@@ -73,6 +75,7 @@ Tracked in SPEC §11: changeset/risk/approval engine, ntfy + signed links, state
 - `messages.automated_conversation` takes 0 / 1 / 2 (2,731 / 220 / 4,379 of 7,330): meaning unknown, so keryx's automated detection relies on headers, not this column (Phase 2 decides whether 1 is a usable hint).
 - ~7.5k `.emlx`, ~3.5k of them `.partial.emlx`.
 - Some messages have no body on disk yet (13 Oxford rows had no `.emlx`; one OQTS `.emlx` was a 0-byte placeholder): Mail downloads lazily. keryx mirrors them header-only from the Envelope Index (`text_version` 0) and re-tries every pass.
+- Raw 8-bit (non-RFC 2047) headers exist in the wild: subjects are re-decoded with the message charset, else Windows-1252 (`mime::fix_8bit`; TEXT_VERSION 3).
 - Text v2 on real mail: 94 / 3,535 messages had hidden text removed (mostly newsletter preheaders: the ⚠ may prove noisy — revisit after Alec uses the TUI); 134 have no text body (14 not downloaded, the rest image/calendar/attachment-only).
 - `pgrep -x Mail` tells whether Mail is running; keryxd will `open -gja Mail` before acting (Phase 4). Envelope Index tables used: `messages`, `mailboxes`, `subjects`, `addresses`, `recipients`, `message_global_data`, `conversations`.
 - The terminal has Full Disk Access; keryxd will need its own FDA + Automation grants (check they survive rebuilds in Phase 1).

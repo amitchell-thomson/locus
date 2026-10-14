@@ -70,7 +70,7 @@ pub fn parse(raw: &[u8]) -> Result<Parsed, ParseError> {
         cc: addrs(msg.cc()),
         bcc: addrs(msg.bcc()),
         reply_to: addrs(msg.reply_to()),
-        subject: msg.subject().unwrap_or_default().to_string(),
+        subject: fix_8bit(raw, "subject", msg.subject().unwrap_or_default(), charset_of(&msg)),
         date: msg.date().map(|d| d.to_timestamp()).unwrap_or(0),
         message_id: msg.message_id().unwrap_or_default().to_string(),
         in_reply_to: id_list(msg.in_reply_to()),
@@ -153,6 +153,63 @@ pub fn parse(raw: &[u8]) -> Result<Parsed, ParseError> {
     Ok(p)
 }
 
+/// The top-level `charset=` parameter, if any.
+fn charset_of(msg: &mail_parser::Message) -> Option<String> {
+    msg.content_type()
+        .and_then(|c| c.attribute("charset"))
+        .map(str::to_string)
+}
+
+/// The raw bytes of a top-level header's value (unfolded), if present.
+fn raw_header(raw: &[u8], name: &str) -> Option<Vec<u8>> {
+    let end = raw
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .or_else(|| raw.windows(2).position(|w| w == b"\n\n"))
+        .unwrap_or(raw.len());
+    let head = &raw[..end];
+    let mut out: Option<Vec<u8>> = None;
+    for line in head.split(|&b| b == b'\n') {
+        let line = line.strip_suffix(b"\r").unwrap_or(line);
+        if let Some(v) = out.as_mut()
+            && line.first().is_some_and(|b| *b == b' ' || *b == b'\t')
+        {
+            v.extend_from_slice(line);
+            continue;
+        }
+        if out.is_some() {
+            break;
+        }
+        if let Some(colon) = line.iter().position(|&b| b == b':')
+            && line[..colon].eq_ignore_ascii_case(name.as_bytes())
+        {
+            out = Some(line[colon + 1..].to_vec());
+        }
+    }
+    out
+}
+
+/// Senders sometimes put raw 8-bit text (not RFC 2047) in headers. If the
+/// bytes aren't UTF-8, decode them with the message's charset, else
+/// Windows-1252 (a superset of Latin-1).
+fn fix_8bit(raw: &[u8], name: &str, decoded: &str, charset: Option<String>) -> String {
+    if !decoded.contains('\u{FFFD}') {
+        return decoded.to_string();
+    }
+    let Some(bytes) = raw_header(raw, name) else {
+        return decoded.to_string();
+    };
+    if std::str::from_utf8(&bytes).is_ok() {
+        return decoded.to_string();
+    }
+    let enc = charset
+        .and_then(|c| encoding_rs::Encoding::for_label(c.as_bytes()))
+        .filter(|e| *e != encoding_rs::UTF_8)
+        .unwrap_or(encoding_rs::WINDOWS_1252);
+    let (text, _, _) = enc.decode(&bytes);
+    text.trim().to_string()
+}
+
 /// The decoded bytes of attachment part `id`, if it exists and is non-empty.
 /// For `.partial.emlx` sources the store supplies the bytes from disk instead.
 pub fn attachment_bytes(raw: &[u8], id: u32) -> Option<Vec<u8>> {
@@ -216,6 +273,7 @@ mod tests {
         assert!(p.text_plain.unwrap().contains("München was great!"));
         let p = parse(&fixture("06-latin1.eml")).unwrap();
         assert_eq!(p.from.unwrap().name.as_deref(), Some("Jürgen"));
+        assert_eq!(p.subject, "Grüße", "raw 8-bit Latin-1 header");
         assert!(p.text_plain.unwrap().contains("Viele Grüße aus München."));
         let p = parse(&fixture("07-windows-1252.eml")).unwrap();
         assert!(

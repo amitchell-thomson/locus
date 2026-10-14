@@ -14,7 +14,7 @@ use scraper::{ElementRef, Html, Node};
 
 /// Bump whenever the output of [`body_text`] changes; the mirror re-derives
 /// older messages.
-pub const TEXT_VERSION: u32 = 2;
+pub const TEXT_VERSION: u32 = 3;
 
 /// The normalised body, and whether hidden text was removed.
 pub fn body_text(p: &Parsed) -> (String, bool) {

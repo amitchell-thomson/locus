@@ -624,95 +624,9 @@ pub fn exchange_code(
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use std::cell::RefCell;
     use std::path::PathBuf;
 
-    /// Serves `fixtures/gmail`, with overrides for specific URLs.
-    pub struct Fixtures {
-        pub dir: PathBuf,
-        pub history_expired: bool,
-        pub calls: RefCell<Vec<String>>,
-    }
-
-    impl Default for Fixtures {
-        fn default() -> Self {
-            Self::new()
-        }
-    }
-
-    impl Fixtures {
-        pub fn new() -> Fixtures {
-            Fixtures {
-                dir: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/gmail"),
-                history_expired: false,
-                calls: RefCell::new(Vec::new()),
-            }
-        }
-        fn file(&self, name: &str) -> Result<Value> {
-            let s = std::fs::read_to_string(self.dir.join(name)).map_err(|_| GmailError::Http {
-                status: 404,
-                body: name.into(),
-            })?;
-            Ok(serde_json::from_str(&s).unwrap())
-        }
-    }
-
-    impl Transport for Fixtures {
-        fn get(&self, url: &str, bearer: &str) -> Result<Value> {
-            assert_eq!(bearer, "tok");
-            self.calls.borrow_mut().push(url.to_string());
-            let path = url.strip_prefix(API).unwrap();
-            if path == "/profile" {
-                return self.file("profile.json");
-            }
-            if path == "/labels" {
-                return self.file("labels.json");
-            }
-            if path.starts_with("/messages?") {
-                return self.file(if path.contains("pageToken=page2") {
-                    "messages.list.page2.json"
-                } else {
-                    "messages.list.page1.json"
-                });
-            }
-            if let Some(rest) = path.strip_prefix("/messages/") {
-                let (id, q) = rest.split_once('?').unwrap();
-                let mut v = self.file(&format!("message.{id}.json"))?;
-                if q == "format=minimal" {
-                    v.as_object_mut().unwrap().remove("raw");
-                    // Simulate label changes from history.json.
-                    if id == "m02" {
-                        v["labelIds"] = serde_json::json!(["CATEGORY_UPDATES"]);
-                    }
-                    if id == "m03" {
-                        v["labelIds"] = serde_json::json!(["INBOX", "CATEGORY_UPDATES"]);
-                    }
-                }
-                return Ok(v);
-            }
-            if path.starts_with("/history?") {
-                if self.history_expired {
-                    return Err(GmailError::Http {
-                        status: 404,
-                        body: "expired".into(),
-                    });
-                }
-                return self.file("history.json");
-            }
-            panic!("unexpected GET {url}");
-        }
-        fn post_form(&self, url: &str, form: &[(&str, &str)]) -> Result<Value> {
-            assert_eq!(url, TOKEN_URL);
-            let grant = form.iter().find(|(k, _)| *k == "grant_type").unwrap().1;
-            Ok(match grant {
-                "refresh_token" => serde_json::json!({"access_token": "tok", "expires_in": 3599}),
-                _ => serde_json::json!({"access_token": "tok", "refresh_token": "ref", "scope": SCOPE}),
-            })
-        }
-        fn post_json(&self, _: &str, _: &str, _: &Value) -> Result<Value> {
-            unimplemented!()
-        }
-    }
+    pub use crate::testkit::Fixtures;
 
     fn account() -> Account {
         let cfg = keryx_core::config::Config::load(

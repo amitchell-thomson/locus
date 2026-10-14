@@ -1,0 +1,33 @@
+---
+source: crates/keryx-tui/tests/snapshots.rs
+expression: s
+---
+╭───────────────────────────────────────────── Thread ─────────────────────────────────────────────╮
+│ Cancelled: Project meeting  Oxford                                                               │
+│                                                                                                  │
+│ Prof Smith <smith@eng.example.ac.uk>                                      Mon 12 Oct 2026, 09:00 │
+│ to newc7370@ox.ac.uk                                                                             │
+│                                                                                                  │
+│ 󰃭 Project meeting · Thu 22 Oct, 14:00–15:00 · Thom Building, Room 2 · from Prof Smith            │
+│                                                                                                  │
+│ You have been invited to: Project meeting, Thu 22 Oct 15:00 (Vienna time).                       │
+│                                                                                                  │
+│ Prof Smith <smith@eng.example.ac.uk>                                      Tue 13 Oct 2026, 09:00 │
+│ to newc7370@ox.ac.uk                                                                             │
+│                                                                                                  │
+│ 󰃭 Cancelled: Project meeting · Thu 22 Oct, 14:00                                                 │
+│                                                                                                  │
+│ (no text)                                                                                        │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────── z quotes · J/K next/prev · Esc back · ? help ╯

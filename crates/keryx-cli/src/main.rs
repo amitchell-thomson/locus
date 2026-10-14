@@ -9,6 +9,7 @@ use keryx_store::mailapp::{self, MailStore};
 use std::path::PathBuf;
 
 mod auth;
+mod read;
 
 #[derive(Parser)]
 #[command(
@@ -26,6 +27,39 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Inbox threads, newest first (`@N` refers to row N afterwards).
+    Inbox {
+        /// One account (id or name).
+        #[arg(long)]
+        account: Option<String>,
+        #[arg(long, default_value_t = 50)]
+        limit: u32,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Search: free text plus from: to: subject: account: key: in: is: has: before: after:
+    Search {
+        query: String,
+        #[arg(long, default_value_t = 50)]
+        limit: u32,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Print a thread (`account:thread` or `@N`).
+    Show {
+        thread: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// People you correspond with (for address completion).
+    Addresses {
+        #[arg(default_value = "")]
+        prefix: String,
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+        #[arg(long)]
+        json: bool,
+    },
     /// Check config, permissions, the mirror and connections; each problem with a fix.
     Doctor {
         /// List the accounts Mac Mail knows (ids for `mailapp_account_id`).
@@ -52,8 +86,29 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Doctor { discover: true }) => discover(),
         Some(Cmd::Doctor { discover: false }) => doctor(&path),
         Some(Cmd::Auth { what: AuthWhat::Gmail }) => auth::gmail(),
-        None => bail!("the TUI arrives in Phase 3; try `keryx doctor`"),
+        Some(Cmd::Inbox { account, limit, json }) => read::inbox(&load(&path)?, account.as_deref(), limit, json),
+        Some(Cmd::Search { query, limit, json }) => read::search(&load(&path)?, &query, limit, json),
+        Some(Cmd::Show { thread, json }) => read::show(&load(&path)?, &thread, json),
+        Some(Cmd::Addresses { prefix, limit, json }) => read::addresses(&load(&path)?, &prefix, limit, json),
+        None => keryx_tui::run(load(&path)?).map_err(anyhow::Error::msg),
     }
+}
+
+/// Load and validate the config (every problem listed).
+fn load(path: &std::path::Path) -> anyhow::Result<Config> {
+    let cfg = Config::load(path).with_context(|| format!("loading {}", path.display()))?;
+    let errs = cfg.validate();
+    if !errs.is_empty() {
+        for e in &errs {
+            eprintln!("config: {e}");
+        }
+        bail!(
+            "{} problem(s) in {}; `keryx doctor` explains",
+            errs.len(),
+            path.display()
+        );
+    }
+    Ok(cfg)
 }
 
 fn discover() -> anyhow::Result<()> {

@@ -1,0 +1,33 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+publish = false
+
+[workspace.dependencies]
+locus-contract = { path = "crates/locus-contract" }
+# Path while the prototype runs on the laptop; pinned by git rev, as keryx pins eco-dates, once
+# the locus-shared `theme` branch is pushed.
+locus-theme = { path = "../../locus-shared/crates/locus-theme" }
+anyhow = "1"
+chrono = { version = "0.4.45", features = ["serde"] }
+clap = { version = "4.6", features = ["derive"] }
+crossterm = "0.29"
+ratatui = "0.30"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+unicode-width = "0.2"
+insta = "1.49"
+tempfile = "3"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+dbg_macro = "deny"

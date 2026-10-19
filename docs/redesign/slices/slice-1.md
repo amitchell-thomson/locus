@@ -23,7 +23,7 @@ The original questions, for the record:
 | # | Question | Options | Recommendation |
 |---|---|---|---|
 | D1 | Where the TUI code lives | a. a Cargo workspace at `tui/` in this repo (crates `locus-tui`, `locus-contract`) · b. its own repo, like kairos and keryx | **a.** The contracts belong in the shared root (plan D), which Slice 0 D3 made this repo; the TUI and its contracts change together through every round. The repos merge later anyway (B.1). |
-| D2 | One look across locus, kairos and keryx (Mocha palette, borders, the D.2 glyph table) | a. a small `eco-theme` crate in `eco`, beside `eco-dates`; locus uses it now, kairos and keryx move to it when next touched · b. copy kairos's theme into locus | **a.** The glyph table and palette are a shared contract in exactly the way `eco-dates` already is (keryx pins it by rev). A copy drifts: kairos's done glyph is already mislabelled in its own comment. |
+| D2 | One look across locus, kairos and keryx (Mocha palette, borders, the D.2 glyph table) | a. a small `eco-theme` crate in `eco`, beside `eco-dates` (renamed 19 Oct, see Departures); locus uses it now, kairos and keryx move to it when next touched · b. copy kairos's theme into locus | **a.** The glyph table and palette are a shared contract in exactly the way `eco-dates` already is (keryx pins it by rev). A copy drifts: kairos's done glyph is already mislabelled in its own comment. |
 | D3 | The contract's form | a. Rust types (serde) in `locus-contract`, JSON Schema exported from them; fixtures are JSON files validated against it; the Python service (Slice 0's HTTP service) tests its output against the same schema · b. pydantic models as the source, Rust generated from them | **a.** The TUI is the consumer and is built first; the screens define the data (plan D), so the types should live where the screens are. |
 | D4 | Where fixture data comes from | a. hand-curated from your real projects: real names, real branch histories extracted once from git, real decision-log entries; no transcript text · b. generated from transcripts | **a.** Realistic without waiting for the secrets scrubber (Slice 0 step 0.9), and nothing private sits in a committed file. Stage labels and "where you are" lines are written by hand, since change records do not exist yet. |
 | D5 | Which screens | a. every screen in screens v2, **plus** the ones the plan added after it and never drew: the learning system (goals, syllabus, a topic track, practice sheets), the ink-confirm view (C.5), the budget view (E), and the Decisions and Answered additions from 19 Oct · b. screens v2 only; the rest designed in their own slices | **a.** "the interface should be one of the first things we build in full" (18 Oct). The learning system is a key feature and has no screen at all yet. |
@@ -68,7 +68,7 @@ every screen is drawn.
 
 ### 1.1 Scaffold
 - Per D1/D2: the `tui/` workspace (`locus-tui` binary, `locus-contract` library), and
-  `eco-theme` in `eco` with the palette, border style, `fade`, and the D.2 glyph table as named
+  `locus-theme` in `locus-shared` with the palette, border style, `fade`, and the D.2 glyph table as named
   constants (`ATTENDED`, `NEEDS_YOU`, …), one source for every glyph.
 - The app shell: a screen stack, section focus by letter, Enter / Esc / `/` / `?`, the footer
   (open · log · search), the use log, `R` to reset.
@@ -171,7 +171,7 @@ Below, when the slice closes.
 - **Three screens are new**, never drawn on paper: Budget, Ink confirm, Learning (per D5). They
   get their first design in round 1, on screen rather than paper, as the plan's header says
   screens are now settled.
-- **`eco-theme`** (per D2) is a crate outside the plan. Moving kairos and keryx onto it is
+- **`locus-theme`** (per D2) is a crate outside the plan. The `eco` repo it lives in was renamed `locus-shared` on 19 Oct at your request ("should it not be called something more accurate"), and the crate with it; `eco-dates` keeps its name until kairos and keryx are next touched. Moving kairos and keryx onto it is
   **not** in this slice.
 - **Your `tmux.conf` gains one line** (sourcing the snippet), shown to you before it is made.
 - **The screens v2 source moves into the repo** (1.0); the plan cites it and it was git-excluded.

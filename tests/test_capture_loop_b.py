@@ -58,6 +58,17 @@ def _fake_transcriber(calls: list):
     return transcribe
 
 
+# Every direct `annotate_sync` call passes these. The defaults are the REAL ingest and promote,
+# which resolve the live config: a `/Reading/Finished` document is "chosen", so the real
+# `_ingest_from_bundle` wrote these fake bytes into the server's live vault/incoming/paper/ as
+# "A Paper.pdf" on every run of this file (found 2026-10-19, when the new locus-watch timer
+# would have quarantined it). The real promote would write into the live vault/notes/.
+_NO_LIVE_WRITES = dict(
+    ingest_fn=lambda conn, doc, name: None,
+    promote_fn=lambda conn, uri: None,
+)
+
+
 def _run(conn, staging, *, manifest=None, transcribe_fn=None, limit=8,
          device_path="/Reading/Finished/A Paper", ingest_fn=None, promote_fn=None):
     return annotate_sync(
@@ -168,13 +179,13 @@ def test_an_unchanged_render_costs_nothing(tmp_path):
         conn, staging_dir=staging, manifest=manifest,
         index_fn=lambda: {"uuid-1": ("/Reading/Finished/A Paper", "A Paper")},
         fetch_fn=fetch, read_fn=lambda p: _FakeDoc(), marks_fn=lambda d: [_FakeMark()],
-        transcribe_limit=0,
+        transcribe_limit=0, **_NO_LIVE_WRITES,
     )
     r2 = annotate_sync(
         conn, staging_dir=staging, manifest=manifest,
         index_fn=lambda: {"uuid-1": ("/Reading/Finished/A Paper", "A Paper")},
         fetch_fn=fetch, read_fn=lambda p: _FakeDoc(), marks_fn=lambda d: [_FakeMark()],
-        transcribe_limit=0,
+        transcribe_limit=0, **_NO_LIVE_WRITES,
     )
     assert len(fetches) == 1                        # second run downloaded nothing
     assert [o.status for o in r2.outcomes] == ["unchanged"]
@@ -202,7 +213,7 @@ def test_one_failing_document_never_aborts_the_batch(tmp_path):
             "good": ("/Reading/Good Doc", "Good Doc"),
         },
         fetch_fn=fetch, read_fn=read, marks_fn=lambda d: [_FakeMark()],
-        transcribe_limit=0,
+        transcribe_limit=0, **_NO_LIVE_WRITES,
     )
     by = {o.name: o.status for o in r.outcomes}
     assert by == {"Bad Doc": "failed", "Good Doc": "annotated"}

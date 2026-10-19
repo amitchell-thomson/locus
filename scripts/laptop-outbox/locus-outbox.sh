@@ -64,11 +64,10 @@ find "$DROP_DIR" -mindepth 1 -type f \
 find "$DROP_DIR" -mindepth 1 -type d \
   \( -name '.Spotlight-V100' -o -name '.Trashes' -o -name '.fseventsd' \) \
   -exec rm -rf {} +
-# Tidy now-empty subdirectories left behind by dropped folders-of-files — but only at
-# depth 2+: the FIRST-level folders are the owner's permanent category taxonomy
-# (papers/, coursework/, projects/, career/, notes/), which the server derives
-# `documents.category` from, and they must survive being emptied by a flush. Never
-# remove the drop folder itself either.
-find "$DROP_DIR" -mindepth 2 -type d -empty -delete
+# Delete emptied folders BELOW the course/project level only. The area folders (studies/,
+# projects/, careers/, personal/) and the course or project folders under them
+# (studies/control/) are the labels (locus ADR-003, 2026-10-19), so they persist when empty;
+# a folder dragged in deeper than that is cleared once it has been sent.
+find "$DROP_DIR" -mindepth 3 -type d -empty -delete
 
 echo "[$(ts)] done"

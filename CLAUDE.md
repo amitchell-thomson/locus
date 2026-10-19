@@ -9,6 +9,45 @@ code without breaking something invisible.
 
 ---
 
+## 0. The redesign — read this first (since 2026-10-19)
+
+Locus is being rebuilt from a document engine into a personal operating system. **The plan is
+[`docs/redesign/plan.tex`](docs/redesign/plan.tex) (v4, final)**, with
+[`info.tex`](docs/redesign/info.tex) on how information and links work. Both are LaTeX; read the
+source. Every decision in them is tagged `[you, date: "quote"]`, `[agreed date]` or `[proposal]`:
+the first two are Alec's and are not re-litigated; `[proposal]` items are open to a better idea,
+raised with him, not acted on silently.
+
+**In one paragraph.** heuris (the knowledge app; replaces "nous") builds per-project dossiers,
+answers questions, runs the scout and Explore, and a learning system. kairos (time) and keryx
+(mail) are the existing Rust apps. One locus window (tmux session `locus`) shows Home, a Project
+view that follows the focused project session, Calendar and Mail, built in ratatui, interface
+first on fixture data. Information is sources (the library: only grows), work (repositories and
+chats, read through change records) and learning state, each with one area label. Background
+work is `claude -p`, headless, inside a budget (about 15% of the week).
+
+**How the build runs** ([`docs/redesign/README.md`](docs/redesign/README.md), ADR-002): a spec
+per slice in `docs/redesign/slices/`, approved by Alec before anything is built; mechanical steps
+under `/goal` with a printed check and a turn bound; design work in chat; a report at the end.
+**Do not start a slice, or a step outside the approved spec, without his approval.** Decisions
+from here on go in [`docs/decisions/`](docs/decisions/).
+
+**What the sections below are now.** They describe the existing engine. The engine survives as
+the **library** (frozen: fixes, no features) for faithful reading of PDFs and search; much of the
+rest is being removed or restructured:
+
+| Section | Fate |
+| --- | --- |
+| §1–§7, §11, §13 | Stay true for the library. Invariants §2.1–§2.5 and §2.10, and §3 (silent failure) apply to everything new as well. |
+| §2.6–§2.9, §10 the daily page | **Removed in Slice 0** (daily page, its readback and nightly steps). |
+| §8 link layer | Nightly word-matching links **retired**; replaced by the linking job (ideas, decisions, concepts), Slice 5. |
+| §9 agent layer | Ink capture and readback **kept**. Recall, the contradiction tracker, `critique`/`synthesise` **removed**; discovery becomes the scout; margin answers become Answered. |
+| The MCP server (one process per chat over SSH; see §12, §13) | Replaced by **one HTTP service** on the server, Slice 0. The repo's `.mcp.json` points at a server-only path, which is why locus tools fail on the laptop. |
+
+Where a section below conflicts with the plan, the plan wins; say so when you notice it.
+
+---
+
 ## 1. What it is
 
 A self-hosted system for querying, linking and serving as Claude's context over the owner's

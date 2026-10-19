@@ -140,8 +140,9 @@ discussion: which other skills are worth having, versus carrying everything in t
 
 - **The library's intake fix is new** (found 19 Oct, after the plan's Slice 0 was written); it is
   0.2.
-- **The drop folder is flat** (ADR-003, 19 Oct): `~/LocusDrop/` lost its category subfolders;
-  until labelling on arrival exists, a drop is filed `uncategorized`.
+- **The drop folder is organised by area** (ADR-003, 19 Oct): `~/LocusDrop/` has
+  `studies/ projects/ careers/ personal/` in place of the old category folders, mapped onto
+  the stored categories; the watcher's repository drops are retired.
 - **Ordering:** the scrubber (0.9) must land before transcripts sync (0.10); the plan listed them
   the other way round.
 - **Daily-page and recall code removal** is deferred to the end of the slice, after one night

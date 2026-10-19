@@ -17,4 +17,4 @@ format every repository will share, checked so an edit can never break it, is ch
 |---|---|---|
 | [ADR-001](ADR-001-plan-in-repo.md) | The plan lives in the repository; CLAUDE.md gains a redesign section on top | accepted |
 | [ADR-002](ADR-002-build-method.md) | Spec per slice, `/goal` for mechanical steps, chat for design, report last | accepted |
-| [ADR-003](ADR-003-flat-drop-folder.md) | One flat drop folder; the system labels what arrives | accepted |
+| [ADR-003](ADR-003-drop-folder-by-area.md) | The drop folder is organised by area; repository drops retired | accepted |

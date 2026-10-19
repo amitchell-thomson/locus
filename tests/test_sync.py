@@ -6,20 +6,16 @@ under test; synthetic git repos in tmp_path.
 
 import shutil
 import subprocess
-import tarfile
-import time
 from pathlib import Path
 
 import pytest
 
 from locus import sync as sync_mod
-from locus import watcher as watcher_mod
 from locus.db.connection import get_connection
 from locus.db.migrate import migrate
 from locus.ingest_lock import IngestLockHeld, ingest_lock
 from locus.ingest_pipeline import IngestResult
 from locus.sync import sync_repos
-from locus.watcher import QUARANTINE_DIRNAME, process_once
 
 HAS_GIT = shutil.which("git") is not None
 needs_git = pytest.mark.skipif(not HAS_GIT, reason="git not installed")
@@ -121,136 +117,6 @@ def test_ingest_lock_contention(tmp_path, monkeypatch):
     # Released -> acquirable again.
     with ingest_lock():
         pass
-
-
-# --- watcher repo drops -----------------------------------------------------------------------
-
-
-@pytest.fixture()
-def incoming(tmp_path: Path) -> Path:
-    d = tmp_path / "incoming"
-    (d / "projects").mkdir(parents=True)
-    return d
-
-
-def _age_tree(tree: Path) -> None:
-    """ctime cannot be back-dated; patch time.time forward instead in tests that need it."""
-
-
-def test_repo_drop_ingested_as_one_unit(incoming, tmp_path, monkeypatch):
-    drop = _make_repo(incoming / "projects" / "mytool", git=False)
-    tarballs = []
-    monkeypatch.setattr(
-        watcher_mod, "_tarball_tree", lambda tree, dest: tarballs.append(dest)
-    )
-    seen = []
-    monkeypatch.setattr(
-        watcher_mod, "ingest_repo",
-        lambda tree, conn, **k: seen.append((Path(tree).name, k))
-        or IngestResult(str(tree), "ingested", doc_id=1),
-    )
-    # The tree's ctime is fresh; advance the watcher's clock past the settle window.
-    real_time = time.time()
-    monkeypatch.setattr(watcher_mod.time, "time", lambda: real_time + 60)
-
-    results = process_once(object(), incoming=incoming)
-    assert [r.status for r in results] == ["ingested"]
-    assert seen[0][0] == "mytool"
-    assert seen[0][1]["source_uri"] == "locusdrop:mytool"
-    assert seen[0][1]["raw_name"].endswith(".tar.gz")
-    assert len(tarballs) == 1
-    assert not drop.exists()  # disposed after ingest
-
-
-def test_unsettled_repo_drop_waits(incoming, monkeypatch):
-    _make_repo(incoming / "projects" / "fresh", git=False)
-    monkeypatch.setattr(
-        watcher_mod, "ingest_repo",
-        lambda *a, **k: pytest.fail("unsettled tree must not be ingested"),
-    )
-    # Real clock: ctimes are 'now', inside the 30s settle window.
-    results = process_once(object(), incoming=incoming)
-    assert results == []
-    assert (incoming / "projects" / "fresh").exists()
-
-
-def test_files_inside_repo_drop_not_picked_individually(incoming, monkeypatch):
-    _make_repo(incoming / "projects" / "mytool", git=False)
-    picked = []
-    monkeypatch.setattr(
-        watcher_mod, "ingest_file",
-        lambda p, c: picked.append(p) or IngestResult(str(p), "ingested"),
-    )
-    monkeypatch.setattr(
-        watcher_mod, "ingest_repo",
-        lambda tree, conn, **k: IngestResult(str(tree), "ingested", doc_id=1),
-    )
-    monkeypatch.setattr(watcher_mod, "_tarball_tree", lambda tree, dest: None)
-    real_time = time.time()
-    monkeypatch.setattr(watcher_mod.time, "time", lambda: real_time + 60)
-
-    process_once(object(), incoming=incoming)
-    assert picked == []  # the README.md inside the tree was claimed by the repo unit
-
-
-def test_loose_file_under_projects_still_per_file(incoming, monkeypatch):
-    loose = incoming / "projects" / "writeup.md"
-    loose.write_text("# Writeup\n\nProse about a project, ingested as a normal file.\n")
-    picked = []
-    monkeypatch.setattr(
-        watcher_mod, "ingest_file",
-        lambda p, c: picked.append(Path(p).name) or IngestResult(str(p), "ingested"),
-    )
-    real_time = time.time()
-    monkeypatch.setattr(watcher_mod.time, "time", lambda: real_time + 60)
-
-    process_once(object(), incoming=incoming)
-    assert picked == ["writeup.md"]
-
-
-def test_dir_under_other_category_is_not_a_repo(incoming, monkeypatch):
-    conf = incoming / "papers" / "conference2026"
-    conf.mkdir(parents=True)
-    (conf / "talk.md").write_text("# Talk\n\nNotes from a conference talk, plain file.\n")
-    picked = []
-    monkeypatch.setattr(
-        watcher_mod, "ingest_file",
-        lambda p, c: picked.append(Path(p).name) or IngestResult(str(p), "ingested"),
-    )
-    monkeypatch.setattr(
-        watcher_mod, "ingest_repo",
-        lambda *a, **k: pytest.fail("papers/ dirs are organization, not repo drops"),
-    )
-    real_time = time.time()
-    monkeypatch.setattr(watcher_mod.time, "time", lambda: real_time + 60)
-
-    process_once(object(), incoming=incoming)
-    assert picked == ["talk.md"]
-
-
-def test_failed_repo_drop_quarantined_with_tree(incoming, monkeypatch):
-    _make_repo(incoming / "projects" / "bad", git=False)
-    monkeypatch.setattr(watcher_mod, "_tarball_tree", lambda tree, dest: None)
-    monkeypatch.setattr(
-        watcher_mod, "ingest_repo",
-        lambda tree, conn, **k: IngestResult(str(tree), "quarantined", error="boom"),
-    )
-    real_time = time.time()
-    monkeypatch.setattr(watcher_mod.time, "time", lambda: real_time + 60)
-
-    process_once(object(), incoming=incoming)
-    assert not (incoming / "projects" / "bad").exists()
-    assert (incoming / QUARANTINE_DIRNAME / "projects" / "bad" / "main.py").exists()
-
-
-def test_tarball_tree_roundtrip(tmp_path):
-    tree = _make_repo(tmp_path / "t", git=False)
-    dest = tmp_path / "out" / "x.tar.gz"
-    watcher_mod._tarball_tree(tree, dest)
-    assert dest.exists()
-    with tarfile.open(dest) as tar:
-        names = tar.getnames()
-    assert "t/main.py" in names
 
 
 # --- CLI registration -------------------------------------------------------------------------

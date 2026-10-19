@@ -238,3 +238,18 @@ def test_watch_repo_tick_skips_when_lock_held(monkeypatch, tmp_path):
     monkeypatch.setattr(watcher_mod, "ingest_lock", _held)
     watcher_mod.watch_repos(once=True)  # must not raise; tick skipped
     assert rec["sync"] == []  # the pour was not interrupted
+
+
+def test_a_folder_under_projects_is_ordinary_files_not_a_repo_drop(incoming, monkeypatch):
+    """`projects/<name>/` is an AREA folder since ADR-003 (2026-10-19). It used to be claimed whole
+    as a code-repo snapshot, which would have ingested `projects/nabla/brief.pdf` as a repo."""
+    (incoming / "projects" / "nabla").mkdir(parents=True)
+    f = _drop(incoming, "projects/nabla/brief.pdf")
+    seen: list = []
+    monkeypatch.setattr(
+        watcher_mod, "ingest_file",
+        lambda path, conn: seen.append(path) or IngestResult(str(path), "ingested"),
+    )
+    process_once(conn=None, incoming=incoming, settle=0.0)
+    assert seen == [f]
+    assert not f.exists()

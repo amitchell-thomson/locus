@@ -92,20 +92,37 @@ def _source_type(path: Path) -> str | None:
 CATEGORIES = {"paper", "coursework", "project", "career", "note", "video"}
 
 
+# The drop folder's AREA folders (ADR-003, 2026-10-19), mapped onto the stored categories they
+# replace. The plan labels everything with an area (Studies, Projects, Careers, Personal); the
+# library still keys behaviour on the old categories (the coursework connection framing, the
+# coursework weighting), so `studies/` must arrive as `coursework`, not as a new value nothing
+# recognises. The folder BELOW the area (`studies/control/`) is the course or project; it is not
+# stored separately, because it survives in `source_uri` (the incoming path), where the labeller
+# of a later slice reads it.
+AREA_FOLDERS = {
+    "studies": "coursework",
+    "projects": "project",
+    "careers": "career",
+    "personal": "note",
+}
+
+
 def _category(path: Path) -> str:
     """Derive a category from the drop location. The owner's folder taxonomy is authoritative.
 
-    Primary rule: the first folder under vault/incoming/ IS the category, free-form —
-    `incoming/engineering/x.pdf` → 'engineering', `incoming/papers/y.pdf` → 'paper' (known
-    kinds are singularized so the §15.4 vocabulary stays canonical). The laptop outbox rsyncs
-    subfolders verbatim, so sorting once in the local drop folder carries all the way through.
-    Files ingested from outside incoming/ fall back to scanning path parts for a known kind;
-    anything else is 'uncategorized'.
+    Primary rule: the first folder under vault/incoming/ decides. An area folder maps through
+    AREA_FOLDERS; the older category folders still work (`incoming/papers/y.pdf` -> 'paper';
+    known kinds are singularized so the §15.4 vocabulary stays canonical); any other folder is
+    taken free-form. A file at the root of incoming/ is 'uncategorized' until the labeller of a
+    later slice assigns it an area. Files ingested from outside incoming/ fall back to scanning
+    path parts for a known kind; anything else is 'uncategorized'.
     """
     try:
         rel = path.resolve().relative_to(load().paths.incoming)
         if len(rel.parts) > 1:  # at least one folder between incoming/ and the file
             top = rel.parts[0].lower()
+            if top in AREA_FOLDERS:
+                return AREA_FOLDERS[top]
             norm = top.rstrip("s")  # papers -> paper, notes -> note
             return norm if norm in CATEGORIES else top
     except ValueError:

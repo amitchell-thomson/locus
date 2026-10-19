@@ -1,0 +1,12 @@
+[Unit]
+Description=Ingest anything dropped into vault/incoming/ every 5 minutes
+
+[Timer]
+# OnActiveSec starts the cycle when the timer is (re)started by a deploy; OnUnitInactiveSec
+# then counts 5 minutes from the END of each pass, so a long ingest never queues a second one.
+OnActiveSec=1min
+OnBootSec=3min
+OnUnitInactiveSec=5min
+
+[Install]
+WantedBy=timers.target

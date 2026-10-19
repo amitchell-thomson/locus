@@ -9,5 +9,6 @@ locus-daily-pull.timer
 locus-discover-harvest.timer
 locus-discover-pull.timer
 locus-maintain.timer
+locus-watch.timer
 # Long-running: restarted on every deploy that moves the code.
 locus-remarkable-receiver.service

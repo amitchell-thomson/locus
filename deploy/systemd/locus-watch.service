@@ -1,0 +1,25 @@
+[Unit]
+Description=Locus intake — ingest what has been dropped into vault/incoming/
+Documentation=file:///home/alec/server-projects/locus/docs/redesign/slices/slice-0.md
+# Nothing ran the watcher from 6 Sep to 19 Oct 2026: `locus watch` existed but no unit started
+# it, so a file dropped into incoming/ simply sat there. Papers accepted through discovery and
+# hand-added books still reached the corpus, because those paths ingest in place, which made
+# the dead drop zone look alive. This unit is the drop zone's only consumer.
+After=network-online.target
+Wants=network-online.target
+OnFailure=locus-failure@%n.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/alec/server-projects/locus
+Environment=PATH=/home/alec/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# One pass, not the long-running loop: a oneshot picks up new code at its next firing and
+# reports through OnFailure on every failed pass. Incoming only; repository ingest is retired
+# (plan C.3), so `locus watch-repo` is deliberately not scheduled. The pass holds the ingest
+# flock; a pass that finds it held skips and the next timer firing retries.
+ExecStart=/home/alec/.local/bin/uv run locus watch --once
+# Ingest is unbounded in time (a maths PDF through GOT-OCR takes minutes); the timer does not
+# re-fire while a pass is running, so this only bounds a wedged one.
+TimeoutStartSec=7200
+Nice=10
+IOSchedulingClass=idle

@@ -24,6 +24,7 @@ moves the code.
 
 | Timer | Cadence | Does | Cost |
 |---|---|---|---|
+| `locus-watch` | every 5 min | `locus watch --once` — ingest anything dropped into `vault/incoming/` | free (local models) |
 | `locus-capture` | every 30 min | `locus capture-sync` — pull reMarkable, transcribe changed notebooks, enrich, ingest | **$0 when nothing changed** |
 | `locus-maintain` | 03:30 daily | `locus link`, `locus structure --ingested-since <2 days ago>`, then `locus review --enrol` | ~$0 link (cached) + per new doc; enrol is free |
 | `locus-backup` | 02:00 daily | `locus backup` | free |

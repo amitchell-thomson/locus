@@ -1,6 +1,6 @@
 # Slice 0 — Plumbing
 
-**State:** spec, awaiting Alec's approval · **Written:** 2026-10-19
+**State:** approved 2026-10-19, ready to start · **Written:** 2026-10-19
 **Plan:** F, row 0; B.6; C.2; C.3; C.5; E.
 
 **Done when (from the plan):** tablet pushes and readback work with no hand steps, the library takes
@@ -10,7 +10,15 @@ new documents again, and nothing old runs at night.
 
 ## Decisions only you can make
 
-Each has a recommendation; answer with the letter, or overrule.
+**Answered 19 Oct 2026:**
+- **D1: a**, off now.
+- **D2: b**, harvest off, pull kept until the scout.
+- **D3: a**, the locus repo: "it is shared data under a shared contract."
+- **D4: a**, today's tools only: "the endpoints may change as we refine things."
+- **D5: a**, 0.1 first.
+- **D6:** passwords: no change needed ("it does not matter if you know it ... Do not worry"); 0.11 is dropped. Skill upload: when 0.4 lands, explain how to upload it so it works everywhere, and hold a discussion on whether other skills are needed or the MCP carries everything.
+
+The original questions, for the record:
 
 | # | Question | Options | Recommendation |
 |---|---|---|---|
@@ -122,9 +130,9 @@ Social, Travel with Errands; Studies, Projects and Careers filter as whole areas
 - **Check:** a new laptop chat appears scrubbed on the server within 30 minutes; path and a
   redacted line printed.
 
-### 0.11 Passwords (you)
-ARC and reMarkable root passwords changed; the old reMarkable password is removed from Claude's
-memory file. **Check:** you say so.
+### 0.11 Skills (with you, when 0.4 lands)
+Per D6: how to upload the rewritten skill so it works on every machine and client, then a
+discussion: which other skills are worth having, versus carrying everything in the MCP tools.
 
 ---
 

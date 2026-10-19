@@ -1,0 +1,14 @@
+[Unit]
+Description=Locus reMarkable render receiver (tailnet -> staging inbox)
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 /home/alec/server-projects/locus/scripts/remarkable/receiver.py
+Restart=always
+RestartSec=15
+Environment=LOCUS_RM_STAGE=/home/alec/remarkable-import
+Environment=LOCUS_RM_BIND=100.117.10.28
+Environment=LOCUS_RM_PORT=9010
+
+[Install]
+WantedBy=default.target

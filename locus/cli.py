@@ -550,6 +550,23 @@ def _fmt_bytes(n: float) -> str:
     return f"{n:.1f} GiB"
 
 
+def cmd_migrate(args) -> None:
+    """Upgrade the DB to head and print the revision before and after.
+
+    `deploy/deploy.sh` calls this right after `locus backup` when a pull brings a new migration.
+    Before it existed, the schema moved whenever the next ingest or `locus mcp` happened to call
+    `migrate()`, so a deploy could not say what revision it left the DB at.
+    """
+    from locus.db.migrate import current_revision, head_revision, migrate
+
+    db = load().paths.db
+    before = current_revision(db)
+    migrate(db)
+    after = current_revision(db)
+    note = "unchanged" if before == after else "migrated"
+    print(f"schema {before} -> {after} (head {head_revision(db)}, {note})")
+
+
 def cmd_backup(args) -> None:
     """Snapshot the durable corpus state (DB + raw store + authored notes)."""
     from locus import backup as bk
@@ -2606,6 +2623,9 @@ def main(argv=None) -> None:
     pb.add_argument("--dest", default=None, help="backup root (default: vault/backups)")
     pb.add_argument("--list", action="store_true", help="list existing snapshots and exit")
     pb.set_defaults(func=cmd_backup)
+
+    pmg = sub.add_parser("migrate", help="upgrade the DB schema to head; print before/after")
+    pmg.set_defaults(func=cmd_migrate)
 
     prs = sub.add_parser("restore", help="restore the corpus from a snapshot (destructive)")
     prs.add_argument("snapshot", help="snapshot dir path, or bare name under the backup root")

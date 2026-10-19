@@ -682,8 +682,12 @@ locus/
   the daily page was the thing that could not be delivered: a break in the delivery channel
   silences its own alarm. When a device push fails, check `rmapi version` against upstream and
   read `journalctl --user -u locus-daily.service` rather than asking the page.
-- **Deploying a systemd unit means copying it to `~/.config/systemd/user/` and reloading.**
-  Editing the repo copy alone changes nothing.
+- **Code and units reach the server only through `deploy/deploy.sh`** (laptop, on `main`): push,
+  `git pull --ff-only` on the server (refused over uncommitted changes), `uv sync --all-extras`
+  (a bare `uv sync` uninstalls torch and the other extras), backup + `locus migrate` when a
+  migration arrived, then `deploy/server-sync.sh` installs `deploy/systemd/` and makes the
+  enabled set equal `deploy/systemd/enabled`. Editing a unit on the server alone is drift the
+  next deploy overwrites.
 - **A CLI subcommand that dispatches on flags must be tested on the flag COMBINATIONS its units
   run, not one flag at a time.** `cmd_discover` is a chain of early-return branches, and the
   weekly unit runs `--harvest --profiles --propose --push`. An unconditional `return` at the end

@@ -12,13 +12,13 @@ is required so the timers survive logout — verify with `loginctl show-user ale
 
 ## Install
 
-```sh
-cp deploy/systemd/* ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now locus-capture.timer locus-maintain.timer locus-backup.timer \
-  locus-daily.timer locus-daily-pull.timer
-systemctl --user list-timers | grep locus
-```
+Not by hand. `deploy/deploy.sh` (run on the laptop, on `main`) pushes, fast-forwards the server
+checkout, and runs `deploy/server-sync.sh`, which copies every unit here that differs into
+`~/.config/systemd/user/`, removes locus units the repo no longer has, reloads, and makes the set
+of enabled units equal to `enabled` in this directory. Turning a timer on or off is an edit to
+`enabled` and a deploy. A timer-fired oneshot picks up new code at its next firing and is never
+restarted; long-running services (the `.service` lines in `enabled`) restart on every deploy that
+moves the code.
 
 ## What runs when
 

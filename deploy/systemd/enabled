@@ -1,0 +1,13 @@
+# The locus units that should be ON. deploy/server-sync.sh enables every unit listed here and
+# disables (stops) any enabled locus unit that is not, so switching a timer on or off is a commit,
+# never a hand step on the server. Oneshot services fired by a timer are not listed: they have no
+# [Install] section and are started by their timer. One unit per line; `#` starts a comment.
+locus-backup.timer
+locus-capture.timer
+locus-daily.timer
+locus-daily-pull.timer
+locus-discover-harvest.timer
+locus-discover-pull.timer
+locus-maintain.timer
+# Long-running: restarted on every deploy that moves the code.
+locus-remarkable-receiver.service

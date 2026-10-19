@@ -13,7 +13,7 @@ Read-only. argv[1] = DB path.
 import sys
 
 sys.path.insert(0, ".")
-DB = sys.argv[1] if len(sys.argv) > 1 else "vault/locus.db"
+DB = sys.argv[1] if len(sys.argv) > 1 else "data/locus.db"
 
 from locus.agent.compose_daily import TEACHABLE_TYPES  # noqa: F401  (documents the bar)
 from locus.db.connection import get_connection

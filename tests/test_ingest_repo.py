@@ -93,7 +93,7 @@ def fake_passes(monkeypatch):
     monkeypatch.setattr(gaps, "flag_gaps", lambda title, context, **k: [])
     monkeypatch.setattr(embed, "embed_text", lambda text: [0.1] * 768)
     monkeypatch.setattr(embed, "embed_texts", lambda texts: [[0.1] * 768 for _ in texts])
-    # Keep test repos out of the real vault/raw.
+    # Keep test repos out of the real data/raw.
     monkeypatch.setattr(
         ingest_pipeline, "_write_repo_manifest",
         lambda snap, repo: f"{snap.content_hash}.manifest.json",

@@ -314,7 +314,7 @@ class ObsidianConfig(BaseModel):
     docs/obsidian-projection-plan.md.
     """
 
-    out_dir: Path = Field(Path("vault/obsidian"), description="Exporter-owned vault root.")
+    out_dir: Path = Field(Path("data/obsidian"), description="Exporter-owned vault root.")
     # 10 (not 5): code projects share rarer concepts with each other than with papers, so the
     # papers a project is built on land at rank ~6-15 (the generic shared concept, e.g. 'Markov
     # model', is low-IDF). A top-10 list surfaces them without the cost of Phase-2 fuzzy linking.
@@ -474,7 +474,7 @@ class DiscoveryConfig(BaseModel):
                     "likely to mean a busy fortnight as a bad suggestion.",
     )
     drop_folder: str = Field(
-        "paper", description="Folder under vault/incoming/ that accepted readings are ingested via."
+        "paper", description="Folder under data/incoming/ that accepted readings are ingested via."
     )
 
     # --- the discovery engine (step 2) ---
@@ -801,7 +801,7 @@ class Config(BaseModel):
     retitle: RetitleConfig = Field(default_factory=RetitleConfig)
     # Optional: absent [concepts] falls back to defaults (code concept pass on).
     concepts: ConceptsConfig = Field(default_factory=ConceptsConfig)
-    # Optional: absent [obsidian] falls back to defaults (vault/obsidian, entity notes on).
+    # Optional: absent [obsidian] falls back to defaults (data/obsidian, entity notes on).
     obsidian: ObsidianConfig = Field(default_factory=ObsidianConfig)
     # Optional: absent [reading] falls back to defaults (Paper Pro geometry, folder "Locus").
     reading: ReadingConfig = Field(default_factory=ReadingConfig)

@@ -36,7 +36,7 @@ def conn(tmp_path: Path):
 def _seed(conn, **kw) -> int:
     args = dict(
         kind="paper", title="A Paper", why="cited by your regime work",
-        why_kind="citation", evidence_key="vault/incoming/papers/x.pdf",
+        why_kind="citation", evidence_key="data/incoming/papers/x.pdf",
     )
     args.update(kw)
     new_id = P.add_candidate(conn, **args)
@@ -244,11 +244,11 @@ def test_marks_reach_the_document_only_through_reading_targets(conn):
     assert P.annotated_source_uris(conn) == {}, "unmapped marks reach nothing"
 
     P.link_target(
-        conn, source_uri="vault/incoming/paper/Advanced Portfolio Management.pdf",
+        conn, source_uri="data/incoming/paper/Advanced Portfolio Management.pdf",
         doc_uuid="uuid-book", linked_by="manual",
     )
     assert P.annotated_source_uris(conn) == {
-        "vault/incoming/paper/Advanced Portfolio Management.pdf": 1
+        "data/incoming/paper/Advanced Portfolio Management.pdf": 1
     }
 
 

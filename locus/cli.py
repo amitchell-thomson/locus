@@ -1,7 +1,7 @@
 """Locus CLI — the product surface.
 
 Phase-1 subcommands:
-  locus ingest <paths...>     ingest files into the vault
+  locus ingest <paths...>     ingest files into the library
   locus list                  list ingested documents
   locus inspect <doc>         show what was ingested for a document (Layer-0 quality check)
 
@@ -536,7 +536,7 @@ def cmd_mcp_log(args) -> None:
 
 
 def _backup_root(args) -> Path:
-    """Backup destination: --dest if given, else vault/backups (sibling of the DB)."""
+    """Backup destination: --dest if given, else data/backups (sibling of the DB)."""
     if getattr(args, "dest", None):
         return Path(args.dest)
     return load().paths.db.parent / "backups"
@@ -697,7 +697,7 @@ def cmd_marks(args) -> None:
 
         targets = review.resolve_target(conn, args.document, rmapi_binary=load().capture.rmapi_binary)
         if not targets:
-            print(f"nothing on the device or in the vault matches {args.document!r}")
+            print(f"nothing on the device or in the library matches {args.document!r}")
             sys.exit(1)
         if len(targets) > 1:
             print(f"{args.document!r} matches several — say which:")
@@ -1613,8 +1613,8 @@ def cmd_device_migrate(args) -> None:
     from locus.capture import device_migrate as DM
 
     cfg = load()
-    vault = cfg.paths.db.parent          # vault/, sibling of the DB — as `_backup_root` resolves it
-    plan_path = Path(args.plan_file) if args.plan_file else vault / "device-migration.toml"
+    data_dir = cfg.paths.db.parent       # data/, parent of the DB — as `_backup_root` resolves it
+    plan_path = Path(args.plan_file) if args.plan_file else data_dir / "device-migration.toml"
     runner = None  # real subprocess runner; injectable only in tests
 
     if args.plan or not (args.snapshot or args.apply):
@@ -1639,7 +1639,7 @@ def cmd_device_migrate(args) -> None:
     if args.snapshot:
         items = DM.list_device(DM._subprocess_runner(cfg.capture.rmapi_binary))
         dest = Path(args.snapshot_dir) if args.snapshot_dir else (
-            vault / "backups" / f"device-{date.today().isoformat()}"
+            data_dir / "backups" / f"device-{date.today().isoformat()}"
         )
         result = DM.snapshot(items, dest, rmapi_binary=cfg.capture.rmapi_binary)
         for path, err in result.failed:
@@ -1840,7 +1840,7 @@ def _resolve_structure_docs(conn, args) -> list[int]:
         # nights behind them. The backlog exists because of a bug; he should not pay for it in
         # the order the fix runs.
         order = (
-            "CASE WHEN source_uri LIKE '%vault/notes/%' THEN 0 "
+            "CASE WHEN source_uri LIKE '%data/notes/%' THEN 0 "
             "WHEN category IN ('project','career') THEN 1 "
             "WHEN category = 'paper' THEN 2 ELSE 3 END, id"
         )
@@ -2072,7 +2072,7 @@ def cmd_notes_sync(args) -> None:
     (Re)ingests only notes whose whitespace-normalised content changed, skips trivial re-saves,
     and deletes documents whose note file was removed. Maturity comes from each note's frontmatter
     (`maturity: rough|tidy`), else `--default-maturity`. The capture loops call this internally;
-    run it by hand to ingest notes you authored or dropped into vault/notes/.
+    run it by hand to ingest notes you authored or dropped into data/notes/.
     """
     from locus.notes_sync import sync_notes
 
@@ -2152,10 +2152,10 @@ def cmd_eval(args) -> None:
 
 
 def main(argv=None) -> None:
-    parser = argparse.ArgumentParser(prog="locus", description="Locus — query-driven knowledge vault")
+    parser = argparse.ArgumentParser(prog="locus", description="Locus — query-driven personal library")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    pi = sub.add_parser("ingest", help="ingest files into the vault")
+    pi = sub.add_parser("ingest", help="ingest files into the library")
     pi.add_argument("paths", nargs="+", help="files to ingest")
     pi.add_argument(
         "--reingest", action="store_true",
@@ -2173,7 +2173,7 @@ def main(argv=None) -> None:
     pn.add_argument("--max-source", type=int, default=1200, help="max source chars to show")
     pn.set_defaults(func=cmd_inspect)
 
-    pw = sub.add_parser("watch", help="auto-ingest files dropped into vault/incoming/")
+    pw = sub.add_parser("watch", help="auto-ingest files dropped into data/incoming/")
     pw.add_argument("--interval", type=float, default=5.0, help="poll interval seconds")
     pw.add_argument("--once", action="store_true", help="process the backlog once and exit")
     pw.set_defaults(func=cmd_watch)
@@ -2190,7 +2190,7 @@ def main(argv=None) -> None:
     ps.add_argument("--force", action="store_true", help="re-ingest even if HEAD is unchanged")
     ps.set_defaults(func=cmd_sync)
 
-    pq = sub.add_parser("query", help="ask the vault a question (retrieve + Claude); needs ANTHROPIC_API_KEY")
+    pq = sub.add_parser("query", help="ask the library a question (retrieve + Claude); needs ANTHROPIC_API_KEY")
     pq.add_argument("query", help="the question")
     pq.add_argument(
         "--mode", default="standard",
@@ -2287,7 +2287,7 @@ def main(argv=None) -> None:
         "export-obsidian",
         help="render the corpus to a read-only Obsidian vault (joins-only, no API; run after `locus link`)",
     )
-    px.add_argument("--dest", default=None, help="output vault root (default: [obsidian].out_dir, vault/obsidian)")
+    px.add_argument("--dest", default=None, help="output vault root (default: [obsidian].out_dir, data/obsidian)")
     px.add_argument("--top-related", type=int, default=None, help="doc<->doc related edges per note (default: config)")
     px.add_argument("--no-entity-notes", action="store_true", help="docs-only graph (skip canonical entity notes)")
     px.add_argument(
@@ -2480,8 +2480,8 @@ def main(argv=None) -> None:
     pdm.add_argument("--plan", action="store_true", help="write the editable plan (the default)")
     pdm.add_argument("--snapshot", action="store_true", help="pull every document to local disk")
     pdm.add_argument("--apply", action="store_true", help="execute the plan (moves documents)")
-    pdm.add_argument("--plan-file", default=None, help="plan path (default: vault/device-migration.toml)")
-    pdm.add_argument("--snapshot-dir", default=None, help="snapshot dir (default: vault/backups/device-<date>)")
+    pdm.add_argument("--plan-file", default=None, help="plan path (default: data/device-migration.toml)")
+    pdm.add_argument("--snapshot-dir", default=None, help="snapshot dir (default: data/backups/device-<date>)")
     pdm.add_argument(
         "--no-snapshot", action="store_true",
         help="apply without a snapshot from this run — only if you have a backup by other means",
@@ -2610,7 +2610,7 @@ def main(argv=None) -> None:
 
     pns = sub.add_parser(
         "notes-sync",
-        help="incrementally ingest vault/notes/ (changed notes only; deletes removed ones)",
+        help="incrementally ingest data/notes/ (changed notes only; deletes removed ones)",
     )
     pns.add_argument("--dir", default=None, help="notes directory (default: [paths].notes)")
     pns.add_argument(
@@ -2620,7 +2620,7 @@ def main(argv=None) -> None:
     pns.set_defaults(func=cmd_notes_sync)
 
     pb = sub.add_parser("backup", help="snapshot the corpus (DB + raw store + notes)")
-    pb.add_argument("--dest", default=None, help="backup root (default: vault/backups)")
+    pb.add_argument("--dest", default=None, help="backup root (default: data/backups)")
     pb.add_argument("--list", action="store_true", help="list existing snapshots and exit")
     pb.set_defaults(func=cmd_backup)
 
@@ -2629,7 +2629,7 @@ def main(argv=None) -> None:
 
     prs = sub.add_parser("restore", help="restore the corpus from a snapshot (destructive)")
     prs.add_argument("snapshot", help="snapshot dir path, or bare name under the backup root")
-    prs.add_argument("--dest", default=None, help="backup root for bare names (default: vault/backups)")
+    prs.add_argument("--dest", default=None, help="backup root for bare names (default: data/backups)")
     prs.add_argument("--yes", action="store_true", help="actually overwrite live state (else dry-run)")
     prs.set_defaults(func=cmd_restore)
 

@@ -114,7 +114,7 @@ def test_non_git_tree_nested_inside_a_git_repo_uses_walk(tmp_path: Path):
     gitignored drop) returned nothing -> 'no eligible source files'. repo_head must require
     the directory to be its own work-tree root."""
     outer = _make_git_repo(tmp_path / "outer")
-    drop = _make_tree(outer / "vault" / "incoming" / "projects" / "drop")
+    drop = _make_tree(outer / "data" / "incoming" / "projects" / "drop")
     assert repo_head(drop) is None  # NOT the outer repo's HEAD
     snap = collect_repo(drop)
     assert snap.head is None

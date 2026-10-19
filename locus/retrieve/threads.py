@@ -1,7 +1,7 @@
 """When retrieval returns one of his own threads, return the THREAD — not a flattened copy of it.
 
 THE HALF-GAP THIS CLOSES. `objects` sits in no retrieval arm, and the bridge into search is
-`locus promote` -> `vault/notes/threads/` -> `notes_sync` -> the ordinary spine. That makes the
+`locus promote` -> `data/notes/threads/` -> `notes_sync` -> the ordinary spine. That makes the
 TEXT findable, which was the important half. But what comes back is a note: the sentence he wrote,
 stripped of the thing that made it worth storing as an object — the project it belongs to, the
 other threads it touches, and how his view moved across successive passes. Ask "what have I

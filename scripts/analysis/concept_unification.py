@@ -26,7 +26,7 @@ sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]
 
 from locus.ingest.summarize import _GENERIC  # noqa: E402
 
-DB = "/home/alec/server-projects/locus/vault/locus.db"
+DB = "/home/alec/server-projects/locus/data/locus.db"
 # Sub-phrase lengths worth promoting. 1 word is too generic ("model", "risk"); >4 is already
 # as specific as the compound it came from.
 NGRAM_MIN, NGRAM_MAX = 2, 4

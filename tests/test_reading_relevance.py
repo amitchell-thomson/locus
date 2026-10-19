@@ -187,7 +187,7 @@ def test_in_progress_reads_reading_targets_not_proposals(conn):
 
 def test_title_falls_back_when_the_device_path_went_stale(conn):
     """The 2026-08-02 reorganisation moved every document and nothing rewrote the stored paths."""
-    assert R.title_for("", "/vault/incoming/paper/Advanced Portfolio Management.pdf") == \
+    assert R.title_for("", "/data/incoming/paper/Advanced Portfolio Management.pdf") == \
         "Advanced Portfolio Management"
     assert R.title_for("/Reading/In-Progress/A Book", None) == "A Book"
     assert R.title_for("", None) == "(untitled)"

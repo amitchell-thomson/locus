@@ -444,7 +444,7 @@ def test_to_remarkable_returns_the_guidance_when_the_path_is_unresolvable(monkey
     assert "Not sent" in out and "no such PDF" in out
 
 
-def _seed_marks(db_path, uri="vault/incoming/papers/book.pdf"):
+def _seed_marks(db_path, uri="data/incoming/papers/book.pdf"):
     from locus.db.connection import get_connection
 
     c = get_connection(db_path)
@@ -477,7 +477,7 @@ def test_markups_text_only_mode_needs_no_device(seeded_db, monkeypatch):
     )
     monkeypatch.setattr(review, "resolve_target", lambda conn, doc, **k: [
         review.Target(device_path="", title="A Book",
-                      source_uri="vault/incoming/papers/book.pdf", doc_uuid="uuid-1")
+                      source_uri="data/incoming/papers/book.pdf", doc_uuid="uuid-1")
     ])
 
     out = _text(asyncio.run(mcp_server._build().call_tool(
@@ -497,7 +497,7 @@ def test_markups_reports_nothing_matching(seeded_db, monkeypatch):
     out = _text(asyncio.run(mcp_server._build().call_tool(
         "markups", {"document": "nonexistent"}
     )))
-    assert "Nothing on the device or in the vault matches" in out
+    assert "Nothing on the device or in the library matches" in out
 
 
 def test_markups_degrades_loudly_when_the_device_cannot_be_reached(seeded_db, monkeypatch):
@@ -506,7 +506,7 @@ def test_markups_degrades_loudly_when_the_device_cannot_be_reached(seeded_db, mo
     from locus.capture import review
 
     target = review.Target(device_path="/Inbox/D", title="A Book", doc_uuid="u1",
-                           source_uri="vault/incoming/papers/book.pdf")
+                           source_uri="data/incoming/papers/book.pdf")
     monkeypatch.setattr(review, "resolve_target", lambda *a, **k: [target])
     monkeypatch.setattr(
         review, "markups",

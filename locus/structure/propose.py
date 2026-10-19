@@ -538,7 +538,7 @@ def _is_promoted_thread(doc) -> bool:
     the constant means a rename cannot silently reopen the loop.
 
     Live proof this is needed: obj 79 ("Is leetcode that important...") was answered and ARCHIVED,
-    promoted to `vault/notes/threads/`, ingested as doc 493, and re-proposed by this module as
+    promoted to `data/notes/threads/`, ingested as doc 493, and re-proposed by this module as
     obj 85 — `active`, i.e. the resolved question came back as an open one.
     """
     from locus.agent.promote import THREADS_SUBDIR
@@ -637,7 +637,7 @@ def _owner_categories() -> tuple[str, ...]:
 def _is_owner_authored(doc) -> bool:
     """Is this document HIS — his decisions, in his or his agent's words?
 
-    PROVENANCE FIRST. Everything he writes lands under `vault/notes/`: Loop-A handwriting
+    PROVENANCE FIRST. Everything he writes lands under `data/notes/`: Loop-A handwriting
     captures, conversation captures, notes he authors directly. Category is a topic facet applied
     from the DEVICE FOLDER (`Notes/engineering` -> coursework), so keying eligibility on category
     alone made his own handwriting ineligible purely because of which folder he wrote it in —
@@ -654,7 +654,7 @@ def _is_owner_authored(doc) -> bool:
     cfg = load()
     uri = (doc["source_uri"] or "").replace("\\", "/")
     notes_dir = str(cfg.paths.notes).replace("\\", "/").rstrip("/")
-    if uri.startswith(f"{notes_dir}/") or "/vault/notes/" in uri or uri.startswith("vault/notes/"):
+    if uri.startswith(f"{notes_dir}/") or "/data/notes/" in uri or uri.startswith("data/notes/"):
         return True
     from locus.ingest_pipeline import is_area_drop
 

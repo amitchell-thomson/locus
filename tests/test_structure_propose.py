@@ -341,13 +341,13 @@ def test_agent_generated_documents_are_never_structured(conn):
 def test_a_promoted_thread_is_never_structured_back_into_a_second_object(conn):
     """The other feedback loop, and the one that actually fired in production.
 
-    `locus promote` writes a thread to `vault/notes/threads/` as HIS words, so the
+    `locus promote` writes a thread to `data/notes/threads/` as HIS words, so the
     `_is_generated` guard correctly does not catch it — but the object already exists. Live
     before this guard: obj 79 was answered and ARCHIVED, promoted, ingested as doc 493, and
     re-proposed as obj 85 `active`. The resolved question came back as an open one.
     """
     _doc(conn, 11, title="Is leetcode that important?",
-         uri="/home/alec/vault/notes/threads/is-leetcode-that-important-79.md",
+         uri="/home/alec/data/notes/threads/is-leetcode-that-important-79.md",
          category="note", text="Is leetcode that important or should we focus on codeforces?")
     plan = propose.plan_for_document(
         conn, 11, retrieve_fn=_no_support,
@@ -362,7 +362,7 @@ def test_his_own_writing_is_owner_authored_whatever_folder_it_came_from(conn):
     on it made his own handwriting ineligible for an idea purely because of where he wrote it.
     Live: doc 482 `Optimisation` is his note, filed `coursework`, and could yield nothing.
     """
-    _doc(conn, 20, title="Optimisation", uri="/home/alec/vault/notes/optimisation-abc.md",
+    _doc(conn, 20, title="Optimisation", uri="/home/alec/data/notes/optimisation-abc.md",
          category="coursework", text="anything")
     assert propose._is_owner_authored(_row(conn, 20)) is True
 
@@ -372,11 +372,11 @@ def test_a_vendor_pdf_in_his_project_folder_is_not_his_writing(conn):
     filed under `project` is his. `category='project'` also holds third-party manuals he keeps
     for reference (live: two Optibook PDFs), and a belief lifted from one and attributed to him
     is the §3.4 corruption the gate exists to prevent."""
-    _doc(conn, 21, title="Optibook Python Reference", uri="vault/incoming/projects/optibook.pdf",
+    _doc(conn, 21, title="Optibook Python Reference", uri="data/incoming/projects/optibook.pdf",
          category="project", source_type="pdf", text="vendor documentation")
     assert propose._is_owner_authored(_row(conn, 21)) is False
 
-    _doc(conn, 22, title="OXDAQ architecture", uri="vault/incoming/project/oxdaq.md",
+    _doc(conn, 22, title="OXDAQ architecture", uri="data/incoming/project/oxdaq.md",
          category="project", source_type="markdown", text="how the exchange is built")
     assert propose._is_owner_authored(_row(conn, 22)) is True
 
@@ -387,9 +387,9 @@ def test_nothing_dropped_into_an_area_folder_is_his_writing(conn):
     get drawn from someone else's words and attributed to him (§3.4)."""
     for i, (uri, category) in enumerate(
         [
-            ("vault/incoming/projects/oxdaq.md", "project"),
-            ("vault/incoming/careers/offer-letter.docx", "career"),
-            ("vault/incoming/personal/tenancy.docx", "personal"),
+            ("data/incoming/projects/oxdaq.md", "project"),
+            ("data/incoming/careers/offer-letter.docx", "career"),
+            ("data/incoming/personal/tenancy.docx", "personal"),
         ],
         start=23,
     ):

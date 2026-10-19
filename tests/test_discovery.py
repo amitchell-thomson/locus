@@ -647,7 +647,7 @@ def test_sweep_skips_unread_papers_and_records_folder(conn):
     from locus.reading import proposals as P
     from locus.reading.sweep import sweep
 
-    P.link_target(conn, source_uri="vault/incoming/paper/x.pdf", doc_uuid="u1",
+    P.link_target(conn, source_uri="data/incoming/paper/x.pdf", doc_uuid="u1",
                   device_path="2026-08-01 X.pdf", linked_by="delivery")
 
     def runner(args):
@@ -663,7 +663,7 @@ def test_sweep_reports_a_reading_that_left_the_folders(conn):
     from locus.reading import proposals as P
     from locus.reading.sweep import sweep
 
-    P.link_target(conn, source_uri="vault/incoming/paper/x.pdf", doc_uuid="u1",
+    P.link_target(conn, source_uri="data/incoming/paper/x.pdf", doc_uuid="u1",
                   device_path="2026-08-01 X.pdf", linked_by="delivery")
     out = sweep(conn, runner=lambda a: (0, "[f] Reading/Finished/2026-08-01 Other\n", ""))
     assert out[0].status == "gone"
@@ -775,12 +775,12 @@ def test_a_document_with_no_identifier_is_skipped_not_guessed(conn):
     conn.execute(
         "INSERT INTO documents (content_hash, source_type, source_uri, raw_path, title, "
         "category, ingest_model) VALUES "
-        "('h1','pdf','vault/incoming/papers/2605.30363v1.pdf','r','Has ID','paper','t')"
+        "('h1','pdf','data/incoming/papers/2605.30363v1.pdf','r','Has ID','paper','t')"
     )
     conn.execute(
         "INSERT INTO documents (content_hash, source_type, source_uri, raw_path, title, "
         "category, ingest_model) VALUES "
-        "('h2','pdf','vault/incoming/paper/A Book.pdf','r','No ID','paper','t')"
+        "('h2','pdf','data/incoming/paper/A Book.pdf','r','No ID','paper','t')"
     )
     conn.commit()
     ids = citations.corpus_identifiers(conn)

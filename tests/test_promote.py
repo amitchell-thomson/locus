@@ -1,7 +1,7 @@
 """Threads: the "Still open" section, and promotion of his own thinking into the corpus.
 
 Model-free. The invariant under test throughout is AUTHORSHIP: only what the owner wrote may be
-written out as a note, because a note in `vault/notes/` is ingested as HIS material.
+written out as a note, because a note in `data/notes/` is ingested as HIS material.
 """
 
 from __future__ import annotations

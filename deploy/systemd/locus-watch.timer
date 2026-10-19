@@ -1,5 +1,5 @@
 [Unit]
-Description=Ingest anything dropped into vault/incoming/ every 5 minutes
+Description=Ingest anything dropped into data/incoming/ every 5 minutes
 
 [Timer]
 # OnActiveSec starts the cycle when the timer is (re)started by a deploy; OnUnitInactiveSec

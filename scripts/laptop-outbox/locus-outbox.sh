@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # locus-outbox.sh — push files from a local drop folder to the Locus server's
-# vault/incoming over SSH, deleting each local file ONLY after a confirmed transfer.
+# data/incoming over SSH, deleting each local file ONLY after a confirmed transfer.
 #
 # One-way (outbox) sync: this script never pulls. Nothing the server does to
-# vault/incoming/ (the watcher consuming/deleting files) can propagate back to this Mac.
+# data/incoming/ (the watcher consuming/deleting files) can propagate back to this Mac.
 #
 # Driven on an interval by a launchd agent (com.locus.outbox.plist). Safe to run by hand.
 set -euo pipefail

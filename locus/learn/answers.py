@@ -144,7 +144,7 @@ def _drop_his_own_marks(conn, evidence):
     """Remove the reading-notes aggregation from the evidence — it IS his marks.
 
     `reading/sweep` collects every mark and its passage into
-    `vault/notes/reading/<book>.md`, which `notes_sync` ingests as an ordinary note. That makes it
+    `data/notes/reading/<book>.md`, which `notes_sync` ingests as an ordinary note. That makes it
     retrievable, and it retrieves EXTREMELY well against a mark's own question, because it
     literally contains that question. Live (2026-08-03) two of four answers cited it, and the
     quoted "evidence" was the owner's own words read back to him:

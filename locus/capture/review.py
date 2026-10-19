@@ -618,7 +618,7 @@ def _cache_dir(cfg) -> Path:
 
 
 def load_rmdoc(target: Target, *, cfg, refresh: bool = False, fetch=None, read=None):
-    """The parsed `.rmdoc`, from a vault cache when the ink has not changed.
+    """The parsed `.rmdoc`, from the bundle cache when the ink has not changed.
 
     `locus annotate` left every download in a `locus-rmdoc-*` temp directory, so a second look
     at the same document refetched the whole bundle. Cached by `doc_uuid` here, which makes a
@@ -626,7 +626,7 @@ def load_rmdoc(target: Target, *, cfg, refresh: bool = False, fetch=None, read=N
     unreachable. `refresh=True` always refetches — it is what the caller passes when the point
     of the call is to pick up new ink.
 
-    The cache is derived data: deleting `vault/cache/` costs one refetch and nothing else.
+    The cache is derived data: deleting `data/cache/` costs one refetch and nothing else.
     """
     from locus.capture.rmdoc import fetch_rmdoc, read_rmdoc
 

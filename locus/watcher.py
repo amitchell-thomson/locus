@@ -1,11 +1,11 @@
-"""Folder watcher (§10 slice 3): auto-ingest files dropped into vault/incoming/.
+"""Folder watcher (§10 slice 3): auto-ingest files dropped into data/incoming/.
 
 Closes the loop with the laptop outbox — a file rsync'd into incoming is ingested without a
 manual command. Uses simple polling (not filesystem events): ingest is unbounded-time (§2.4),
 polling is dependency-free, survives restarts (it rescans the backlog), and a settle window
 avoids grabbing a file mid-transfer.
 
-Disposition per file (incoming is a disposable drop zone; the raw copy is kept in vault/raw):
+Disposition per file (incoming is a disposable drop zone; the raw copy is kept in data/raw):
   ingested / skipped   -> removed from incoming
   unsupported / quarantined -> moved to incoming/.quarantine/<drop subpath> so it is not
                                retried forever (subpath preserved for category provenance)
@@ -100,7 +100,7 @@ def process_once(conn, *, incoming: Path | None = None, settle: float = 3.0) -> 
         results.append(result)
         rel = path.relative_to(incoming)
         if result.status in ("ingested", "skipped"):
-            path.unlink(missing_ok=True)  # canonical copy is already in vault/raw
+            path.unlink(missing_ok=True)  # canonical copy is already in data/raw
             _prune_empty_parents(path.parent, incoming)  # don't leave drained subfolders behind
         else:  # unsupported / quarantined — set aside so it is not retried every tick
             # Preserve the drop subpath: keeps category provenance visible and avoids
@@ -115,7 +115,7 @@ def process_once(conn, *, incoming: Path | None = None, settle: float = 3.0) -> 
 
 
 def watch(*, interval: float = 5.0, settle: float = 3.0, once: bool = False) -> None:
-    """Poll vault/incoming/ and ingest new files until interrupted (or one pass if `once`).
+    """Poll data/incoming/ and ingest new files until interrupted (or one pass if `once`).
 
     Incoming-only: tracked-repo sync lives in `watch_repos` (`locus watch-repo`) so a
     commit-triggered repo re-ingest can never steal the slot from a bulk pour mid-tick.

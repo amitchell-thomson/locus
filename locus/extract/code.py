@@ -79,7 +79,7 @@ def repo_head(repo: Path) -> str | None:
     """The repo's HEAD commit sha, or None if `repo` is not itself a git work-tree root.
 
     `git rev-parse` walks UP the directory tree, so a plain folder nested inside some
-    other repo (e.g. a LocusDrop tree under vault/incoming/, which lives inside the locus
+    other repo (e.g. a LocusDrop tree under data/incoming/, which lives inside the locus
     repo) would silently resolve to the ENCLOSING repo's HEAD — and `git ls-files` would
     then list nothing for the gitignored drop. Requiring toplevel == repo rejects that.
     """

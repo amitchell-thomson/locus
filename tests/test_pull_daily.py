@@ -258,7 +258,7 @@ def test_the_pages_own_printed_words_are_not_read_back_as_his_handwriting(conn, 
 
     Vision transcribes the ink AND the printed text under it. Live 2026-08-01: region O2 came
     back as `"raised 2026-07-30"` — the provenance line Locus itself printed — and it was stored
-    as his DEVELOPMENT of the thread, promoted to `vault/notes/threads/`, and ingested as his
+    as his DEVELOPMENT of the thread, promoted to `data/notes/threads/`, and ingested as his
     words. Nothing errored; the corpus simply gained a sentence he never wrote.
     """
     page = cd.compose(conn, today=date(2026, 6, 1))

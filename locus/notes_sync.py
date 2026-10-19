@@ -1,6 +1,6 @@
 """Incremental ingest of the authoring notes directory (agent-layer plan §6.7).
 
-The capture inbox (`vault/notes/` — transcribed handwriting, captured conversations, typed notes)
+The capture inbox (`data/notes/` — transcribed handwriting, captured conversations, typed notes)
 churns: a note is re-saved constantly, usually with trivial whitespace changes. Re-ingesting the
 whole directory on every save (re-extract + re-embed everything) would be unusable, and raw
 content-hash idempotency alone can't help — a trailing-newline change moves the byte hash and
@@ -148,7 +148,7 @@ def sync_notes(
             continue
         # replace_uri=key: a note's identity is its PATH — an edit REPLACES the prior document at
         # this path (not a new content-hash doc alongside it). category='note': notes live under
-        # vault/notes/, outside the incoming/<cat>/ folder convention (§6.7).
+        # data/notes/, outside the incoming/<cat>/ folder convention (§6.7).
         r = ingest_file(
             path, conn, reingest=True, maturity=_read_maturity(path, default_maturity),
             category=_read_category(path, "note"), replace_uri=key,

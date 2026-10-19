@@ -67,7 +67,7 @@ def main() -> None:
     if len(sys.argv) > 1:
         pdf, pages = Path(sys.argv[1]), None
     else:
-        pdf, pages = _synthetic_pdf(Path("vault/notes/_generated/_rule_spacing.pdf")), [0]
+        pdf, pages = _synthetic_pdf(Path("data/notes/_generated/_rule_spacing.pdf")), [0]
 
     import fitz
 

@@ -37,5 +37,5 @@ Full re-ingests tied to specific past fixes; kept for the record, not for reuse.
 | `reingest_step11.py` | step-11 figures re-ingest |
 
 ## `laptop-outbox/`
-The Mac-side launchd agent + script that rsyncs dropped files to `vault/incoming/` on the
+The Mac-side launchd agent + script that rsyncs dropped files to `data/incoming/` on the
 server (the ingest "outbox"). See its own `README.md`.

@@ -23,7 +23,7 @@ from locus.capture import review
 from locus.db.connection import get_connection
 from locus.db.migrate import migrate
 
-URI = "vault/incoming/papers/book.pdf"
+URI = "data/incoming/papers/book.pdf"
 
 
 @pytest.fixture()
@@ -144,7 +144,7 @@ def test_blank_marks_still_reach_the_reader(conn):
 def test_resolve_prefers_an_exact_uri_over_a_title_substring(conn):
     _document(conn, title="Portfolio Management")
     _mark(conn, page=1, covered="x")
-    other = "vault/incoming/papers/other.pdf"
+    other = "data/incoming/papers/other.pdf"
     _document(conn, uri=other, title="Portfolio Management Notes")
     _mark(conn, page=1, covered="y", uri=other, uuid="uuid-2")
 

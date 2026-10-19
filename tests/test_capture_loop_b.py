@@ -60,9 +60,9 @@ def _fake_transcriber(calls: list):
 
 # Every direct `annotate_sync` call passes these. The defaults are the REAL ingest and promote,
 # which resolve the live config: a `/Reading/Finished` document is "chosen", so the real
-# `_ingest_from_bundle` wrote these fake bytes into the server's live vault/incoming/paper/ as
+# `_ingest_from_bundle` wrote these fake bytes into the server's live data/incoming/paper/ as
 # "A Paper.pdf" on every run of this file (found 2026-10-19, when the new locus-watch timer
-# would have quarantined it). The real promote would write into the live vault/notes/.
+# would have quarantined it). The real promote would write into the live data/notes/.
 _NO_LIVE_WRITES = dict(
     ingest_fn=lambda conn, doc, name: None,
     promote_fn=lambda conn, uri: None,
@@ -96,7 +96,7 @@ def test_marks_key_to_the_corpus_document_by_content_hash(tmp_path):
     with conn:
         conn.execute(
             "INSERT INTO documents (content_hash, source_type, source_uri, raw_path, title, "
-            "ingest_model) VALUES (?,'pdf','vault/incoming/paper/a.pdf','r','A Paper','t')",
+            "ingest_model) VALUES (?,'pdf','data/incoming/paper/a.pdf','r','A Paper','t')",
             (PDF_HASH,),
         )
     calls: list = []
@@ -104,9 +104,9 @@ def test_marks_key_to_the_corpus_document_by_content_hash(tmp_path):
     assert [o.status for o in r.outcomes] == ["annotated"]
     assert r.outcomes[0].hash_mapped
     assert r.outcomes[0].transcribed == 1
-    assert calls == [("vault/incoming/paper/a.pdf", 8)]   # transcription keyed the same way
+    assert calls == [("data/incoming/paper/a.pdf", 8)]   # transcription keyed the same way
     row = conn.execute("SELECT source_uri, source_run FROM pdf_annotations").fetchone()
-    assert row["source_uri"] == "vault/incoming/paper/a.pdf"
+    assert row["source_uri"] == "data/incoming/paper/a.pdf"
     assert row["source_run"] is not None            # provenance: which run stored this ink
 
 
@@ -148,11 +148,11 @@ def test_a_chosen_hand_added_book_is_ingested_and_earlier_marks_rekeyed(tmp_path
         with conn:
             conn.execute(
                 "INSERT INTO documents (content_hash, source_type, source_uri, raw_path, "
-                "title, ingest_model) VALUES (?,'pdf','vault/incoming/paper/A Paper.pdf',"
+                "title, ingest_model) VALUES (?,'pdf','data/incoming/paper/A Paper.pdf',"
                 "'r',?, 't')",
                 (PDF_HASH, name),
             )
-        return "vault/incoming/paper/A Paper.pdf"
+        return "data/incoming/paper/A Paper.pdf"
 
     promoted: list = []
     r = _run(conn, staging, ingest_fn=ingest,
@@ -160,8 +160,8 @@ def test_a_chosen_hand_added_book_is_ingested_and_earlier_marks_rekeyed(tmp_path
     o = r.outcomes[0]
     assert o.status == "annotated" and o.ingested and not o.hash_mapped
     uris = {row["source_uri"] for row in conn.execute("SELECT source_uri FROM pdf_annotations")}
-    assert uris == {"vault/incoming/paper/A Paper.pdf"}   # old mark re-keyed, new mark joined
-    assert promoted == ["vault/incoming/paper/A Paper.pdf"]  # notes promotion ran, corpus-keyed
+    assert uris == {"data/incoming/paper/A Paper.pdf"}   # old mark re-keyed, new mark joined
+    assert promoted == ["data/incoming/paper/A Paper.pdf"]  # notes promotion ran, corpus-keyed
 
 
 def test_an_unchanged_render_costs_nothing(tmp_path):

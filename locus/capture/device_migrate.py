@@ -16,7 +16,7 @@ it belongs to.
 THREE DESIGN DECISIONS, each the answer to a way this could go wrong.
 
 **The plan is item-level, and he edits it before it runs.** Folder rules generate defaults into
-`vault/device-migration.toml`; per-item `dest` lines win. This is not ceremony — `/reading_list`
+`data/device-migration.toml`; per-item `dest` lines win. This is not ceremony — `/reading_list`
 is already not homogeneous. It holds an annotated PDF (a book, which belongs in `/Reading/
 In-Progress`) *and* a handwritten notebook of a reading list somebody gave him (a note, which
 belongs in `/Notes/brevan_howard`). No folder rule can tell those apart, and a rule that guessed

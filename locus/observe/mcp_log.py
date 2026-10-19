@@ -59,7 +59,7 @@ _resolved: Path | None = None
 
 
 def log_path(cfg: Any = None) -> Path:
-    """Where the call log lives: `vault/logs/mcp.jsonl`, beside the DB it serves."""
+    """Where the call log lives: `data/logs/mcp.jsonl`, beside the DB it serves."""
     global _resolved
     if cfg is not None:
         return cfg.paths.db.parent / "logs" / "mcp.jsonl"

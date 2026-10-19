@@ -6,7 +6,7 @@
 
 ## Context
 `~/LocusDrop/` on the laptop is the hand path into the library: the `com.locus.outbox` launchd
-job (`~/.local/bin/locus-outbox.sh`) rsyncs it every 60 s to the server's `vault/incoming/`, where
+job (`~/.local/bin/locus-outbox.sh`) rsyncs it every 60 s to the server's `data/incoming/`, where
 `locus-watch` (Slice 0.2) ingests it. It had five subfolders, `papers/ coursework/ projects/
 career/ notes/`, because `ingest_pipeline._category` takes the first folder under `incoming/` as
 the document's category. Those mixed two things: what kind of file it is (readable from the file)

@@ -25,7 +25,7 @@ Pass a **fragment**: open with body text or `\section{...}` and give the documen
 
 **Markdown (`markdown=`) — only for relaying text that is ALREADY markdown.** His own notes, a `.md` file you read, a stored pass output. It sends those unchanged, which is the point: do not re-author his words as LaTeX. Never use this for prose you are composing.
 
-**Existing PDF (`pdf_path=`).** Only when a PDF already exists — one you just generated, or one in the repo or vault. Pushed unchanged, nothing reflows. The path resolves **on the Locus server**: absolute, relative to its working directory, or relative to the checkout root (`docs/plan.pdf`). `title` is optional and defaults to the filename.
+**Existing PDF (`pdf_path=`).** Only when a PDF already exists — one you just generated, or one in the repo or the data directory. Pushed unchanged, nothing reflows. The path resolves **on the Locus server**: absolute, relative to its working directory, or relative to the checkout root (`docs/plan.pdf`). `title` is optional and defaults to the filename.
 
 Pass exactly one of the three.
 

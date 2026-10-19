@@ -102,7 +102,7 @@ def test_unknown_type_or_relation_is_rejected(conn):
         state.upsert_object(conn, type_="thesis", title="x")
     oid, _ = state.upsert_object(conn, type_="question", title="q")
     with pytest.raises(ValueError):
-        state.add_links(conn, oid, [ObjectLink("doc", "vault/raw/x.pdf", "cites")])
+        state.add_links(conn, oid, [ObjectLink("doc", "data/raw/x.pdf", "cites")])
 
 
 # ---------- links ----------
@@ -245,16 +245,16 @@ def test_owner_authored_sql_agrees_with_the_python_predicate(conn):
 
     rows = [
         # (uri, category, source_type, expected)
-        ("/home/alec/vault/notes/optimisation.md", "coursework", "markdown", True),
-        ("vault/incoming/project/oxdaq.md", "project", "markdown", True),
+        ("/home/alec/data/notes/optimisation.md", "coursework", "markdown", True),
+        ("data/incoming/project/oxdaq.md", "project", "markdown", True),
         # Nothing dropped into an AREA folder is his writing (ADR-003), whatever its category or
         # format: a third-party .docx in personal/, careers/ or projects/ is a source.
-        ("vault/incoming/projects/oxdaq.md", "project", "markdown", False),
-        ("vault/incoming/careers/offer.docx", "career", "docx", False),
-        ("vault/incoming/Personal/tenancy.docx", "note", "docx", False),
-        ("vault/incoming/career/cv.docx", "career", "docx", True),
-        ("vault/incoming/projects/optibook.pdf", "project", "pdf", False),
-        ("vault/incoming/papers/x.pdf", "paper", "pdf", False),
+        ("data/incoming/projects/oxdaq.md", "project", "markdown", False),
+        ("data/incoming/careers/offer.docx", "career", "docx", False),
+        ("data/incoming/Personal/tenancy.docx", "note", "docx", False),
+        ("data/incoming/career/cv.docx", "career", "docx", True),
+        ("data/incoming/projects/optibook.pdf", "project", "pdf", False),
+        ("data/incoming/papers/x.pdf", "paper", "pdf", False),
         ("repos/regime-ml", "project", "code", False),
     ]
     for i, (uri, cat, st, _expected) in enumerate(rows, start=500):

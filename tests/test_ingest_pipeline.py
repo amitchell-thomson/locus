@@ -66,7 +66,7 @@ def fake_passes(monkeypatch):
     monkeypatch.setattr(gaps, "flag_gaps", lambda title, context, **k: ["gap one"])
     monkeypatch.setattr(embed, "embed_text", lambda text: [0.1] * 768)
     monkeypatch.setattr(embed, "embed_texts", lambda texts: [[0.1] * 768 for _ in texts])
-    # Do NOT write synthetic test PDFs into the real vault/raw store (test isolation).
+    # Do NOT write synthetic test PDFs into the real data/raw store (test isolation).
     monkeypatch.setattr(
         ingest_pipeline, "_copy_to_raw", lambda path, content_hash: f"{content_hash}{Path(path).suffix}"
     )
@@ -508,7 +508,7 @@ def test_reingest_inherits_category_and_source_uri_from_raw_store(tmp_path, conn
     pdf = _make_pdf(tmp_path / "doc.pdf")
     first = ingest_file(pdf, conn)
     conn.execute(
-        "UPDATE documents SET category='paper', source_uri='vault/incoming/papers/orig.pdf' "
+        "UPDATE documents SET category='paper', source_uri='data/incoming/papers/orig.pdf' "
         "WHERE id=?", (first.doc_id,),
     )
     conn.commit()
@@ -522,7 +522,7 @@ def test_reingest_inherits_category_and_source_uri_from_raw_store(tmp_path, conn
     assert result.status == "ingested"
     row = conn.execute("SELECT category, source_uri FROM documents").fetchone()
     assert row["category"] == "paper"  # inherited, not 'uncategorized'
-    assert row["source_uri"] == "vault/incoming/papers/orig.pdf"  # original location kept
+    assert row["source_uri"] == "data/incoming/papers/orig.pdf"  # original location kept
 
     # A re-drop from a NON-raw-store path is a genuine new source: uri updates, category
     # still inherits when the new path derives none.

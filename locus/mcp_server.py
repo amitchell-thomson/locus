@@ -1,4 +1,4 @@
-"""MCP server — expose the vault to an MCP client (build step 2, CLAUDE.md §16).
+"""MCP server — expose the library to an MCP client (build step 2, CLAUDE.md §16).
 
 WHAT THIS IS
 ------------
@@ -30,7 +30,7 @@ TOOLS
                    API spend on a tool that isn't advertised.
 - list_documents : what is in the corpus (with date/category facets). FREE (local only).
 - inspect_document: what was ingested for one document (synthesis + sections). FREE.
-- capture        : save this conversation into the vault as a rough note (Loop C). FREE.
+- capture        : save this conversation into the library as a rough note (Loop C). FREE.
 - to_remarkable  : push a document to the tablet. FREE. Anything CLAUDE writes goes as LaTeX
                    (`latex=`, compiled by reading/tex2pdf) — his standing preference, for the
                    equations, layout and figures markdown cannot express. `markdown=` relays
@@ -137,7 +137,7 @@ def _instrument(fn):
     1. ARRIVAL IS RECORDED BEFORE THE WORK STARTS. The failure that cost the day was a call the
        client gave up on while the server was still working. An end-of-call log would have
        recorded nothing at all for it, which is precisely the case that needs evidence. A
-       `start` with no `end` in `vault/logs/mcp.jsonl` names that case exactly.
+       `start` with no `end` in `data/logs/mcp.jsonl` names that case exactly.
     2. EVERY EXCEPTION BECOMES TEXT. `to_remarkable` grew this guard alone in 1dae4ee after
        `subprocess.TimeoutExpired` slipped past its enumerated handlers; but the hole was never
        specific to that tool. Any tool that raises across the MCP boundary arrives as a bare
@@ -205,11 +205,11 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
     mcp = FastMCP(
         "locus",
         instructions=(
-            "Locus is the owner's personal knowledge vault (papers, code, notes, projects, "
+            "Locus is the owner's personal library (papers, code, notes, projects, "
             "achievements). Use `retrieve` to pull grounded context + citations into your own "
             "context and answer from it; use `query` to get a finished server-generated answer; "
             "use `list_documents`/`inspect_document` to see what the corpus contains; use "
-            "`capture` to save this conversation's decisions into the vault as a rough note, and "
+            "`capture` to save this conversation's decisions into the library as a rough note, and "
             "`to_remarkable` to send him a document to read on paper — anything YOU write for "
             "the tablet is authored in LaTeX and passed as `latex=`, which is his standing "
             "preference and the system's interface with him, not a per-document choice; "
@@ -248,7 +248,7 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
         category: str | None = None,
         include_excluded: bool = False,
     ):
-        """Retrieve grounded context for a query from the knowledge vault.
+        """Retrieve grounded context for a query from the library.
 
         Runs hybrid retrieval (dense + lexical + entity -> cross-encoder rerank -> hierarchical
         expansion -> context assembly) and returns the assembled context plus citations, each
@@ -287,7 +287,7 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
         until: str | None = None,
         category: str | None = None,
     ) -> str:
-        """Answer a question over the vault with server-side generation (one Claude call).
+        """Answer a question over the library with server-side generation (one Claude call).
 
         Retrieves grounded context and then generates a finished, cited answer ON THE SERVER.
         Requires ANTHROPIC_API_KEY in the server environment. Prefer `retrieve` if you want to
@@ -317,7 +317,7 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
         since: str | None = None,
         until: str | None = None,
     ) -> str:
-        """List the documents in the vault, optionally filtered by category / date range.
+        """List the documents in the library, optionally filtered by category / date range.
 
         Args:
             category: Optional document category filter (e.g. 'paper', 'project', 'note').
@@ -381,7 +381,7 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
         """Save this conversation (or a decision-summary of it) into Locus as a rough note (Loop C).
 
         Use when the owner wants to preserve reasoning, decisions, or conclusions from this
-        conversation into their knowledge vault. WRITE-TO-INBOX ONLY — this does NOT ingest or
+        conversation into their library. WRITE-TO-INBOX ONLY — this does NOT ingest or
         modify the corpus; it drops a markdown note into the capture inbox that the next note-sync
         picks up (as maturity=rough, so it informs retrieval without drowning authoritative
         sources). Prefer capturing a concise decision-summary (what was decided/concluded and why,
@@ -472,7 +472,7 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
         it for prose you are composing; that is what `latex=` is for.
 
         EXISTING PDF (`pdf_path=`): a PDF that already exists — one you just generated, or one in
-        the repo or vault. Pushed unchanged, not re-rendered. The path resolves ON THE LOCUS
+        the repo or the data directory. Pushed unchanged, not re-rendered. The path resolves ON THE LOCUS
         SERVER: absolute, or relative to the server's working directory, or to the checkout root
         ('docs/plan.pdf'). It therefore works only when you are running on that machine. If you
         are not, the error will say so — do not retry with a different path, send `latex`.
@@ -627,7 +627,7 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
         try:
             candidates = review.resolve_target(conn, document, rmapi_binary=cfg.capture.rmapi_binary)
             if not candidates:
-                return (f"Nothing on the device or in the vault matches {document!r}. "
+                return (f"Nothing on the device or in the library matches {document!r}. "
                         "Try a shorter fragment, or the exact device path.")
             if len(candidates) > 1:
                 listing = "\n".join(f"  {c.title}  [{c.device_path}]" for c in candidates)

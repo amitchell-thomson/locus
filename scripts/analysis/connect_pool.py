@@ -15,7 +15,7 @@ import sys
 from collections import Counter, defaultdict
 
 sys.path.insert(0, ".")
-DB = sys.argv[1] if len(sys.argv) > 1 else "vault/locus.db"
+DB = sys.argv[1] if len(sys.argv) > 1 else "data/locus.db"
 from locus.db.connection import get_connection
 
 conn = get_connection(DB)

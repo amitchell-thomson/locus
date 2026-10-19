@@ -129,7 +129,7 @@ def is_area_drop(source_uri: str) -> bool:
 def _category(path: Path) -> str:
     """Derive a category from the drop location. The owner's folder taxonomy is authoritative.
 
-    Primary rule: the first folder under vault/incoming/ decides. An area folder maps through
+    Primary rule: the first folder under data/incoming/ decides. An area folder maps through
     AREA_FOLDERS; the older category folders still work (`incoming/papers/y.pdf` -> 'paper';
     known kinds are singularized so the §15.4 vocabulary stays canonical); any other folder is
     taken free-form. A file at the root of incoming/ is 'uncategorized' until the labeller of a
@@ -894,7 +894,7 @@ def ingest_file(
     category continuity below — a raw-store re-ingest must not silently promote a rough note. An
     explicit value always wins (promotion re-ingests as `tidy`; the capture loops pass `rough`).
 
-    `category` overrides the drop-folder derivation (notes live under `vault/notes/`, not
+    `category` overrides the drop-folder derivation (notes live under `data/notes/`, not
     `incoming/<cat>/`, so they need `category='note'` set explicitly — §6.7).
 
     `replace_uri` switches identity from CONTENT to PATH: the document currently at that

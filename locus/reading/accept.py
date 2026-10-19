@@ -4,7 +4,7 @@ Deliberately separate from `watch.scan`, which only READS the device. Keeping th
 apart from the corpus write means a flaky `rmapi find` can never itself cause an ingest, and the
 accept decision stays reviewable in the DB between the two.
 
-There is no special-casing here: an accepted paper is copied into `vault/incoming/paper/` and goes
+There is no special-casing here: an accepted paper is copied into `data/incoming/paper/` and goes
 through the ordinary ingest spine like anything else the owner drops. That is the point of making
 the folder move the gate — once he has made the gesture, this is just a file arriving.
 

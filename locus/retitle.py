@@ -49,7 +49,7 @@ BACKUP_NAME = "title_backup.json"
 # Folder names that are structural buckets, never a document's "module". Lowercased match.
 # Categories (singular+plural) + drop-zone scaffolding + year buckets are handled separately.
 _BUCKET_FOLDERS = {
-    "incoming", "vault", "raw", "notes", "note", "papers", "paper", "coursework",
+    "incoming", "data", "vault", "raw", "notes", "note", "papers", "paper", "coursework",
     "career", "careers", "project", "projects", "career-documents", "course_files",
 }
 _YEAR_FOLDER = re.compile(r"^(oxford-)?year[\s_-]*\d+$", re.IGNORECASE)

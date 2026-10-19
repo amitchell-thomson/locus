@@ -14,10 +14,10 @@ SAFETY:
   - `delete_document()` is the ingest pipeline's own routine — it clears the sqlite-vec tables
     (virtual, no foreign keys, so orphan vectors would collide on a reused row id) and the
     figure PNGs. Raw SQL DELETE would silently corrupt the vector store.
-  - The source file is MOVED out of `vault/incoming/` into `vault/pruned/`, mirroring its subpath.
+  - The source file is MOVED out of `data/incoming/` into `data/pruned/`, mirroring its subpath.
     Without this the next `locus watch` / `locus ingest` re-ingests everything just deleted —
     the deletion would look successful and silently undo itself.
-  - Raw-store copies under `vault/raw/` are left untouched, so any document remains recoverable.
+  - Raw-store copies under `data/raw/` are left untouched, so any document remains recoverable.
 
 Dry run by default. Pass --apply to write.
 """
@@ -97,7 +97,7 @@ def main() -> None:
         def source_path(uri: str) -> Path | None:
             """Resolve a source_uri to a real file.
 
-            source_uri is stored RELATIVE for some documents ('vault/incoming/coursework/x.pdf')
+            source_uri is stored RELATIVE for some documents ('data/incoming/coursework/x.pdf')
             and absolute for others, so a bare Path(...).exists() check silently reports 'no files
             to move' — which would leave every pruned document sitting in the watch folder, to be
             re-ingested on the next run. Relative paths resolve against PROJECT_ROOT."""

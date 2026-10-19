@@ -41,11 +41,11 @@ def test_drop_folder_decides_the_category(incoming: Path, rel: str, category: st
 @pytest.mark.parametrize(
     "uri, area_drop",
     [
-        ("vault/incoming/studies/control/x.pdf", True),
-        ("/home/alec/locus/vault/incoming/Projects/brief.md", True),
-        ("vault/incoming/personal/tenancy.docx", True),
-        ("vault/incoming/career/cv.docx", False),     # the old category folder, unchanged
-        ("vault/notes/idea.md", False),
+        ("data/incoming/studies/control/x.pdf", True),
+        ("/home/alec/locus/data/incoming/Projects/brief.md", True),
+        ("data/incoming/personal/tenancy.docx", True),
+        ("data/incoming/career/cv.docx", False),     # the old category folder, unchanged
+        ("data/notes/idea.md", False),
         ("repos/regime-ml", False),
     ],
 )

@@ -46,7 +46,7 @@ Today work happens on the server and the laptop copy was 230 commits behind (syn
 
 ### 0.2 The library takes documents again
 Found 19 Oct: last ingest 6 Sep; **no file watcher runs on the server** (no `locus-watch` unit
-exists) and four papers dropped on 31 Jul still sit in `vault/incoming/paper/`.
+exists) and four papers dropped on 31 Jul still sit in `data/incoming/paper/`.
 - Confirm that is the cause (journal, timer list, last-ingest per path). If it is not, stop and
   report what is.
 - Add a `locus-watch` user unit (or fold intake into an existing timer), with the

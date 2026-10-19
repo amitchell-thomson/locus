@@ -34,10 +34,10 @@ def test_parse_sequence(filename, expected):
 
 
 def test_module_context_skips_buckets_and_years():
-    base = "/h/vault/incoming/coursework/oxford-year1/P1 Mathematics/Ordinary Differential Equations 1"
+    base = "/h/data/incoming/coursework/oxford-year1/P1 Mathematics/Ordinary Differential Equations 1"
     assert retitle.module_context(f"{base}/P1_ODEs_Lecture1.pdf") == "Ordinary Differential Equations 1"
     # A file sitting directly in a category bucket has no module.
-    assert retitle.module_context("vault/incoming/career/Alec_CV_2026.pdf") is None
+    assert retitle.module_context("data/incoming/career/Alec_CV_2026.pdf") is None
     # Year folders are buckets too.
     assert retitle.module_context("x/incoming/coursework/oxford-year2/A1 Mathematics/sheet.pdf") == "A1 Mathematics"
 
@@ -116,7 +116,7 @@ def _seed(conn, doc_id, source_uri, title, thesis, date="2024-11-01"):
 
 
 def test_build_titles_composes_and_breaks_collisions(conn):
-    base = "/h/vault/incoming/coursework/oxford-year1/P1 Mathematics/Ordinary Differential Equations 1"
+    base = "/h/data/incoming/coursework/oxford-year1/P1 Mathematics/Ordinary Differential Equations 1"
     _seed(conn, 1, f"{base}/P1_ODEs_Lecture1.pdf", "P1 ODEs 1", "To solve ODEs.")
     _seed(conn, 2, f"{base}/P1_ODEs_Lecture6.pdf", "P1 ODEs 1", "To explain Fourier series.")
     fake = _FakeClient({
@@ -155,14 +155,14 @@ def test_code_repo_title_leads_with_repo_name(conn):
 
 
 def test_keep_existing_title_is_left_verbatim(conn):
-    _seed(conn, 1, "/h/vault/incoming/papers/attention.pdf", "Attention Is All You Need", "Transformers.")
+    _seed(conn, 1, "/h/data/incoming/papers/attention.pdf", "Attention Is All You Need", "Transformers.")
     fake = _FakeClient({"attention.pdf": {"keep_existing": True, "topic": "Attention Is All You Need"}})
     retitle.build_titles(conn, use_llm=True, client=fake, log=lambda *_: None)
     assert conn.execute("SELECT title FROM documents WHERE id=1").fetchone()["title"] == "Attention Is All You Need"
 
 
 def test_cache_avoids_second_api_call(conn):
-    _seed(conn, 1, "/h/vault/incoming/papers/p.pdf", "banner", "To study X.")
+    _seed(conn, 1, "/h/data/incoming/papers/p.pdf", "banner", "To study X.")
     fake = _FakeClient({"p.pdf": {"keep_existing": False, "topic": "Study of X"}})
     r1 = retitle.build_titles(conn, use_llm=True, client=fake, log=lambda *_: None)
     r2 = retitle.build_titles(conn, use_llm=True, client=fake, log=lambda *_: None)
@@ -174,8 +174,8 @@ def test_verdict_persisted_incrementally_survives_a_crash(conn):
     # must leave the already-distilled verdict in pass_cache, so a re-run resumes from cache
     # instead of re-paying. With the old end-of-run flush, doc 1's billed verdict would be
     # lost entirely. Docs process in id order, so doc 1 is cached before doc 2 crashes.
-    _seed(conn, 1, "/h/vault/incoming/papers/one.pdf", "banner one", "To study X.")
-    _seed(conn, 2, "/h/vault/incoming/papers/two.pdf", "banner two", "To study Y.")
+    _seed(conn, 1, "/h/data/incoming/papers/one.pdf", "banner one", "To study X.")
+    _seed(conn, 2, "/h/data/incoming/papers/two.pdf", "banner two", "To study Y.")
 
     class _CrashOnSecond(_FakeClient):
         def create(self, **kwargs):
@@ -198,7 +198,7 @@ def test_verdict_persisted_incrementally_survives_a_crash(conn):
 
 
 def test_no_llm_uses_deterministic_topic(conn):
-    base = "/h/vault/incoming/coursework/oxford-year1/Calculus/calc"
+    base = "/h/data/incoming/coursework/oxford-year1/Calculus/calc"
     _seed(conn, 1, f"{base}/Slides lecture 1.pdf", "banner", "To introduce vector calculus and its operators.")
     retitle.build_titles(conn, use_llm=False, log=lambda *_: None)
     title = conn.execute("SELECT title FROM documents WHERE id=1").fetchone()["title"]
@@ -216,8 +216,8 @@ def test_unwraps_double_encoded_topic():
 
 
 def test_one_bad_response_keeps_title_and_does_not_abort(conn):
-    _seed(conn, 1, "/h/vault/incoming/papers/a.pdf", "Title A", "To study A.")
-    _seed(conn, 2, "/h/vault/incoming/papers/b.pdf", "Title B", "To study B.")
+    _seed(conn, 1, "/h/data/incoming/papers/a.pdf", "Title A", "To study A.")
+    _seed(conn, 2, "/h/data/incoming/papers/b.pdf", "Title B", "To study B.")
 
     class _PartlyBroken:
         def __init__(self):
@@ -236,13 +236,13 @@ def test_one_bad_response_keeps_title_and_does_not_abort(conn):
 
 def test_no_llm_keeps_title_without_structural_signal(conn):
     # A paper in a bucket (no module, no sequence) keeps its stored title under --no-llm.
-    _seed(conn, 1, "/h/vault/incoming/papers/attention.pdf", "Attention Is All You Need", "To study X.")
+    _seed(conn, 1, "/h/data/incoming/papers/attention.pdf", "Attention Is All You Need", "To study X.")
     retitle.build_titles(conn, use_llm=False, log=lambda *_: None)
     assert conn.execute("SELECT title FROM documents WHERE id=1").fetchone()["title"] == "Attention Is All You Need"
 
 
 def test_rollback_restores_prior_titles(conn):
-    _seed(conn, 1, "/h/vault/incoming/papers/p.pdf", "Original Title", "To study X.")
+    _seed(conn, 1, "/h/data/incoming/papers/p.pdf", "Original Title", "To study X.")
     fake = _FakeClient({"p.pdf": {"keep_existing": False, "topic": "Study of X"}})
     retitle.build_titles(conn, use_llm=True, client=fake, log=lambda *_: None)
     assert conn.execute("SELECT title FROM documents WHERE id=1").fetchone()["title"] == "Study of X"

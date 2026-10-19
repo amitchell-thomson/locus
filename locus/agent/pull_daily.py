@@ -640,7 +640,7 @@ def _drop_printed_text(region: ExtractedRegion, printed: str) -> ExtractedRegion
     Vision transcribes the ink AND whatever printed text sits under it, and a region's own
     subtitle is right there. Live 2026-08-01: region O2 came back as `"raised 2026-07-30"` — the
     provenance line Locus itself had printed — which was stored as his DEVELOPMENT of the thread,
-    then promoted to `vault/notes/threads/` and ingested as his words. That is invariant 5
+    then promoted to `data/notes/threads/` and ingested as his words. That is invariant 5
     failing in the exact direction it exists to prevent: agent prose re-entering the corpus as
     his.
 

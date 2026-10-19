@@ -84,7 +84,7 @@ violation.
 4. **Idempotent ingest by content hash.** Re-ingest of identical content is a no-op. Prepare
    first, then delete+write in one transaction — a failed re-ingest never destroys the prior doc.
 5. **Agent prose must never re-enter the corpus as his words.** Only fields carrying an
-   `_owner_edits` marker are promoted to `vault/notes/`. `_generated/` is corpus-excluded and
+   `_owner_edits` marker are promoted to `data/notes/`. `_generated/` is corpus-excluded and
    never read back by the structurer.
 6. **One decision, one surface.** A pending item appears in `locus decide` *or* on the daily
    page, never both. `decide/queue.pending` subtracts what `compose_daily` is offering; a test
@@ -155,7 +155,7 @@ VRAM change.**
 
 ## 5. Data model
 
-Source of truth: Alembic migrations in `locus/db/migrations/versions/` (currently **0036**).
+Source of truth: Alembic migrations in `locus/db/migrations/versions/` (currently **0037**).
 `locus/db/schema.sql` is a human-readable summary. Never `ALTER` a live DB ad hoc; never force a
 re-ingest for a schema change — migrate forward.
 
@@ -198,7 +198,7 @@ them specifically.
 document and the batch continues.
 
 ```
-source (vault/incoming/<category>/… or a tracked repo)
+source (data/incoming/<category>/… or a tracked repo)
   → hash; existing → skip
   → raw-store copy
   → EXTRACT (extract/)
@@ -371,7 +371,7 @@ inked pages and returns them as images with the text register. Three things it m
   empty bytes; and nothing may INGEST a notebook's bytes (Loop B and `annotate --ingest` guard
   it), since that would file a zero-byte `.pdf`.
 
-Bundles are cached under `vault/cache/rmdoc/<doc_uuid>.rmdoc` (derived; delete = one refetch), so
+Bundles are cached under `data/cache/rmdoc/<doc_uuid>.rmdoc` (derived; delete = one refetch), so
 a second look costs no fetch and renders with the cloud unreachable.
 
 The text register is the other half. Two
@@ -404,7 +404,7 @@ running after it put a two-day lag between writing a question and seeing it answ
 `locus decide`. The precision bar is the module: concepts must resolve through `entity_aliases` to
 a canonical spanning ≥2 documents and survive `non_topical_names`; every object carries ≥1
 grounding link; ≤3 per document. **Owner-authored is about provenance, not category** —
-`state.owner_authored_sql` is the one definition (path under `vault/notes/` first, category as
+`state.owner_authored_sql` is the one definition (path under `data/notes/` first, category as
 fallback), and a promoted thread is excluded so the loop cannot feed itself.
 
 **Learn.** A margin question the corpus cannot ground is **parked** after
@@ -543,7 +543,7 @@ locus/
 ├── locus/
 │   ├── cli.py              # the product surface (all commands)
 │   ├── config.py           # typed config; API key via env/.env only
-│   ├── db/                 # connection, migrate, migrations/ (0001–0036)
+│   ├── db/                 # connection, migrate, migrations/ (0001–0037)
 │   ├── extract/            # pdf · mathocr · figures_detect · docx · pptx · textdoc · code
 │   ├── ingest/             # llm · summarize · propositions · entities · concepts · synthesis
 │   │                       #   gaps · chunk · embed · figures · llamacpp
@@ -571,7 +571,7 @@ locus/
 ├── deploy/systemd/         # timers: maintain, daily, daily-pull, capture, discover-*, backup
 ├── scripts/analysis/       # one-off measurement scripts, kept as evidence
 ├── tests/                  # ~1,057 model-free-by-default tests
-└── vault/                  # incoming/ · raw/ · notes/ · backups/ · locus.db
+└── data/                   # incoming/ · raw/ · notes/ · backups/ · cache/ · logs/ · locus.db (was vault/, renamed 2026-10-19)
 ```
 
 ---

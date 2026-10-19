@@ -13,7 +13,7 @@ import sqlite3
 import sys
 
 sys.path.insert(0, ".")
-DB = sys.argv[1] if len(sys.argv) > 1 else "vault/locus.db"
+DB = sys.argv[1] if len(sys.argv) > 1 else "data/locus.db"
 conn = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
 conn.row_factory = sqlite3.Row
 

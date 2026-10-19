@@ -3,15 +3,15 @@
 Locus's whole knowledge base lives in three places, and only these are NOT cheaply
 regenerable from elsewhere:
 
-  - ``vault/locus.db``  — the SQLite DB. This is the expensive layer: every embedding,
+  - ``data/locus.db``  — the SQLite DB. This is the expensive layer: every embedding,
     LLM summary/proposition/entity, the alias substrate and the retitled titles. Rebuilding
     it means re-paying many GPU-hours of local ingest AND the *billed* ``link``/``retitle``
     Claude passes. Principle 9 calls derived data "regenerable", but regenerable ≠ free.
-  - ``vault/raw``       — the raw store: the original bytes of every ingested file. After
-    ``vault/incoming`` is cleared this is the ONLY copy Locus holds.
-  - ``vault/notes``     — authored notes. An *input*, not derived; loss is unrecoverable.
+  - ``data/raw``       — the raw store: the original bytes of every ingested file. After
+    ``data/incoming`` is cleared this is the ONLY copy Locus holds.
+  - ``data/notes``     — authored notes. An *input*, not derived; loss is unrecoverable.
 
-``vault/incoming`` is deliberately excluded: it is a transient drop folder whose contents
+``data/incoming`` is deliberately excluded: it is a transient drop folder whose contents
 are already in the raw store once ingested.
 
 The DB is snapshotted through SQLite's online backup API rather than a file copy: under WAL

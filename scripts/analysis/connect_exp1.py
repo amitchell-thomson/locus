@@ -26,7 +26,7 @@ from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, ".")
-DB = sys.argv[1] if len(sys.argv) > 1 else "vault/locus.db"
+DB = sys.argv[1] if len(sys.argv) > 1 else "data/locus.db"
 ARG2 = sys.argv[2] if len(sys.argv) > 2 else ""
 DRY = ARG2 == "dry"
 SHARD = ARG2 if ARG2 in ("v0", "v1", "v2") else None

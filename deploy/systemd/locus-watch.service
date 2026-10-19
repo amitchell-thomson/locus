@@ -1,5 +1,5 @@
 [Unit]
-Description=Locus intake — ingest what has been dropped into vault/incoming/
+Description=Locus intake — ingest what has been dropped into data/incoming/
 Documentation=file:///home/alec/server-projects/locus/docs/redesign/slices/slice-0.md
 # Nothing ran the watcher from 6 Sep to 19 Oct 2026: `locus watch` existed but no unit started
 # it, so a file dropped into incoming/ simply sat there. Papers accepted through discovery and

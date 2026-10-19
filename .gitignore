@@ -15,27 +15,11 @@ __pycache__/
 # Local config (may contain machine-specific paths; secrets come from env, never here)
 config.toml
 
-# Vault: local data, never committed
-vault/raw/*
-vault/incoming/*
-vault/notes/*
-vault/locus.db
-vault/locus.db-*
+# The data directory (database, raw store, drop zone, notes, backups, cache, logs, the Obsidian
+# export): local data, never committed. Called `vault/` until 2026-10-19 (migration 0037).
+/data/*
+!/data/.gitkeep
 
-# Local corpus snapshots (`locus backup`) — regenerable, never committed
-vault/backups/
-# Cached .rmdoc bundles (derived: delete = one refetch, nothing else)
-vault/cache/
-
-# Generated Obsidian projection (derived from the DB, §14) — never committed.
-# Carve-out: keep your own Obsidian layout/plugin config if you want it tracked.
-vault/obsidian/*
-!vault/obsidian/.obsidian/
-
-# Keep empty vault dirs in the tree
-!vault/raw/.gitkeep
-!vault/incoming/.gitkeep
-!vault/notes/.gitkeep
 eval-artifacts/
 .claude/scheduled_tasks.lock
 ingest-*.log
@@ -43,9 +27,6 @@ ingest-*.log
 # Transient run logs (re-ingest / eval output; results live in PLAN.md)
 reingest-*.log
 eval-*.log
-vault/.ingest.lock
-# `locus retitle` safety backups — regenerable, not tracked
-vault/title_backup*.json
 
 # Scratch that must never be tracked (swept in by an over-broad `git add -A`, 2026-08-01)
 .claude/worktrees/
@@ -53,8 +34,6 @@ config.toml.bak-*
 scripts/benchmarks/*.log
 scripts/benchmarks/*_out.json
 
-# MCP call log (derived: one JSON line per tool call, delete = lose history only)
-vault/logs/
 
 # Rust workspace (crates/)
 /target/

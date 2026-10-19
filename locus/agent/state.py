@@ -486,7 +486,7 @@ def owner_authored_sql(alias: str = "d") -> tuple[str, list]:
     cfg = load()
     notes = str(cfg.paths.notes).replace("\\", "/").rstrip("/")
     clause = f"({alias}.source_uri LIKE ? OR {alias}.source_uri LIKE ?"
-    params: list = [f"{notes}/%", "%/vault/notes/%"]
+    params: list = [f"{notes}/%", "%/data/notes/%"]
     cats = list(cfg.structure.belief_source_categories)
     if cats:
         from locus.ingest_pipeline import AREA_FOLDERS

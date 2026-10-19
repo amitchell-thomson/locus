@@ -6,7 +6,7 @@
 REMOTE="compute-node"
 
 # Absolute path to Locus's incoming dir on the server.
-REMOTE_DIR="/home/alec/server-projects/locus/vault/incoming"
+REMOTE_DIR="/home/alec/server-projects/locus/data/incoming"
 
 # Local drop folder on this Mac. Drop files here; they upload automatically.
 DROP_DIR="$HOME/LocusDrop"

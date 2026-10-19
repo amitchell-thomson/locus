@@ -33,7 +33,7 @@ def test_extension_loads(db: Path):
 def test_migration_records_head_and_is_idempotent(db: Path):
     # After migrate, the DB is at the head revision Alembic knows about.
     head = head_revision(db)
-    assert current_revision(db) == head == "0036"
+    assert current_revision(db) == head == "0037"
     # Re-running is a no-op and leaves the revision unchanged.
     migrate(db)
     assert current_revision(db) == head
@@ -143,4 +143,53 @@ def test_foreign_keys_cascade(db: Path):
     conn.commit()
     assert conn.execute("SELECT COUNT(*) AS c FROM sections").fetchone()["c"] == 0
     assert conn.execute("SELECT COUNT(*) AS c FROM propositions").fetchone()["c"] == 0
+    conn.close()
+
+
+def test_0037_moves_stored_paths_from_vault_to_data(tmp_path: Path):
+    """Paths under the data directory are identity keys (a note is found again by its
+    source_uri), so the rename rewrites them; a code path through the `locus/vault/` package and
+    the corpus text are left as they were."""
+    from alembic import command
+
+    from locus.db.migrate import _config
+
+    path = tmp_path / "old.db"
+    command.upgrade(_config(path), "0036")
+    conn = get_connection(path)
+    uris = {
+        1: "vault/incoming/papers/x.pdf",
+        2: "/home/alec/server-projects/locus/vault/notes/idea.md",
+        3: "locus/vault/markers.py",
+    }
+    for i, uri in uris.items():
+        conn.execute(
+            "INSERT INTO documents(id, content_hash, source_type, source_uri, raw_path,"
+            " ingest_model) VALUES (?, ?, 'markdown', ?, 'p', 'test')",
+            (i, f"h{i}", uri),
+        )
+    conn.execute(
+        "INSERT INTO daily_shown(item_key, kind, page_date, shown_at)"
+        " VALUES (?, 'consider', '2026-08-01', '2026-08-01T05:00:00')",
+        ("conn:/srv/locus/vault/incoming/career/cv.docx|vault/incoming/papers/x.pdf",),
+    )
+    conn.execute("INSERT INTO sections(id, doc_id, position, file_path) VALUES (1, 3, 0, ?)",
+                 ("vault/notes/as-quoted.md",))
+    conn.commit()
+    conn.close()
+
+    migrate(path)
+    conn = get_connection(path)
+    got = {r["id"]: r["source_uri"] for r in conn.execute("SELECT id, source_uri FROM documents")}
+    assert got == {
+        1: "data/incoming/papers/x.pdf",
+        2: "/home/alec/server-projects/locus/data/notes/idea.md",
+        3: "locus/vault/markers.py",
+    }
+    assert conn.execute("SELECT item_key FROM daily_shown").fetchone()["item_key"] == (
+        "conn:/srv/locus/data/incoming/career/cv.docx|data/incoming/papers/x.pdf"
+    )
+    assert conn.execute("SELECT file_path FROM sections").fetchone()["file_path"] == (
+        "vault/notes/as-quoted.md"
+    )
     conn.close()

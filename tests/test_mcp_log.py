@@ -18,7 +18,7 @@ from locus.observe import mcp_log
 
 @pytest.fixture(autouse=True)
 def log_to_tmp(tmp_path, monkeypatch):
-    """Never touch the real vault/logs, and never read the gitignored live config."""
+    """Never touch the real data/logs, and never read the gitignored live config."""
     monkeypatch.setattr(mcp_log, "_resolved", tmp_path / "mcp.jsonl")
     yield tmp_path / "mcp.jsonl"
 

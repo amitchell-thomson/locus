@@ -976,10 +976,10 @@ def _bridge_corpus(conn) -> None:
     """
     with conn:
         docs = [
-            ("hp", "pdf", "vault/incoming/paper/dyadic.pdf", "Specification Testing", "paper"),
-            ("hc", "pdf", "vault/incoming/coursework/linalg.pdf", "Linear Algebra", "coursework"),
-            ("hm", "pdf", "vault/incoming/project/manual.pdf", "Vendor Manual", "project"),
-            ("ha", "pdf", "vault/incoming/coursework/arch.pdf", "Computer Arch", "coursework"),
+            ("hp", "pdf", "data/incoming/paper/dyadic.pdf", "Specification Testing", "paper"),
+            ("hc", "pdf", "data/incoming/coursework/linalg.pdf", "Linear Algebra", "coursework"),
+            ("hm", "pdf", "data/incoming/project/manual.pdf", "Vendor Manual", "project"),
+            ("ha", "pdf", "data/incoming/coursework/arch.pdf", "Computer Arch", "coursework"),
         ]
         for h, st, uri, title, cat in docs:
             conn.execute(
@@ -1179,7 +1179,7 @@ def test_a_shown_pair_lets_the_sources_next_pair_through(conn, monkeypatch):
         }
 
     assert targets() == {"Specification Testing"}          # best pair leads
-    shown = {"conn:repos/liveproj|vault/incoming/paper/dyadic.pdf"}
+    shown = {"conn:repos/liveproj|data/incoming/paper/dyadic.pdf"}
     assert targets(skip=shown) == {"Linear Algebra"}       # retired -> next pair offers
 
 
@@ -1222,9 +1222,9 @@ def test_a_concept_no_side_narrates_is_not_a_connection(conn):
         # A paper<->coursework pair whose ONLY shared concept is compound and teachable but
         # appears nowhere in either side's narrative — the summaries are about other things.
         for h, uri, title, cat, summary in (
-            ("hq", "vault/incoming/paper/cascade.pdf", "Cascade Paper", "paper",
+            ("hq", "data/incoming/paper/cascade.pdf", "Cascade Paper", "paper",
              "Detects stop-loss cascades from order-flow features."),
-            ("hv", "vault/incoming/coursework/thermo.pdf", "Thermodynamics", "coursework",
+            ("hv", "data/incoming/coursework/thermo.pdf", "Thermodynamics", "coursework",
              "Raoult's law for vapour-liquid equilibrium of ideal solutions."),
         ):
             conn.execute(

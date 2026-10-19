@@ -14,6 +14,28 @@ export PATH="$HOME/.local/bin:$PATH"
 
 changed_files="$(git diff --name-only "$old" "$new")"
 
+# 0. One-time (2026-10-19): the data directory `vault/` becomes `data/`. The pull has just created
+#    `data/` holding only the tracked `.gitkeep`, so the old directory's entries move into it.
+#    Taken under the ingest flock so no ingest is writing into the raw store mid-move; the lock
+#    file moves with the directory, so an ingest started meanwhile finds it held and skips its
+#    turn (`ingest_lock` does not wait). config.toml (gitignored) is rewritten to the new paths, keeping a copy. Migration
+#    0037 then rewrites the stored paths (step 2). Remove this block once the server has run it.
+if [[ -d vault && ! -L vault && ! -e data/locus.db ]]; then
+  echo "== one-time: vault/ -> data/"
+  exec 9>>vault/.ingest.lock
+  flock -w 900 9 || { echo "deploy: an ingest held the lock for 15 min; not moving" >&2; exit 1; }
+  mkdir -p data
+  shopt -s dotglob
+  mv vault/* data/
+  shopt -u dotglob
+  rmdir vault
+  cp config.toml config.toml.bak-pre-data
+  sed -i -E 's#^([a-z_]+ *= *")vault/#\1data/#' config.toml
+  grep -n '"data/' config.toml
+  flock -u 9
+  exec 9>&-
+fi
+
 # 1. Dependencies. --all-extras because the server runs every extra (rerank, mathocr, reading,
 #    tui): a bare `uv sync` removes the ones it is not told about, torch included.
 echo "== uv sync --all-extras"

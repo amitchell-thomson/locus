@@ -8,10 +8,10 @@ ingest_model  = "qwen2.5:7b-instruct-q5_K_M"  # settled by the §11.C benchmark 
 num_ctx       = 8192              # ingest context window; >Ollama default 4096 so prop-dense sections don't slide out mid-generation
 
 [paths]
-db            = "vault/locus.db"
-raw_store     = "vault/raw"
-incoming      = "vault/incoming"
-notes         = "vault/notes"
+db            = "data/locus.db"
+raw_store     = "data/raw"
+incoming      = "data/incoming"
+notes         = "data/notes"
 
 [embed]
 dim           = 768               # locked to nomic-embed-text; changing => full re-embed
@@ -163,7 +163,7 @@ api_call_interval = 1.5    # seconds between topic-distillation API calls (0 = o
 # joins-only (no API). Run AFTER `locus link` (entity notes need the alias substrate). The
 # exporter owns only its docs/ and entities/ subtrees and never touches .obsidian/. View it
 # from the Mac by rsync-pulling the tree (see docs/obsidian-projection-plan.md §10).
-out_dir          = "vault/obsidian"   # exporter-owned root (gitignored, regenerable)
+out_dir          = "data/obsidian"   # exporter-owned root (gitignored, regenerable)
 top_related      = 10                 # doc<->doc related edges per note (matches related_documents)
 min_cluster_docs = 2                  # emit a canonical entity note only if it spans >= this many docs
 emit_entity_notes = true              # false = docs-only graph (no canonical entity notes)
@@ -260,7 +260,7 @@ paper_cap    = 10               # max papers in Proposed at once — a menu to t
                                 # and each rejection is flywheel signal (3 -> 10, 2026-07-31)
 book_cap     = 1                # max books — one considered suggestion, not a feed
 ttl_days     = 21               # days in Proposed before it reads as a no (a WEAK negative)
-drop_folder  = "paper"          # folder under vault/incoming/ that accepted readings ingest via
+drop_folder  = "paper"          # folder under data/incoming/ that accepted readings ingest via
 # The discovery engine (step 2). WHAT LEAVES THE MACHINE: a category token, an offset and a page
 # size — nothing else. Searching arXiv for his topics would ship his research vocabulary to a
 # third party on a timer, so relevance is judged LOCALLY instead: harvest a broad slice by

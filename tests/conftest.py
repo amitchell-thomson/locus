@@ -52,10 +52,10 @@ def _owner_authored_defaults(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _mcp_log_to_tmp(tmp_path, monkeypatch):
-    """Keep the MCP call log out of the live vault.
+    """Keep the MCP call log out of the live data directory.
 
     `mcp_server` records every tool call, and the tests that build a real server and call its
-    tools would otherwise append to `vault/logs/mcp.jsonl` — putting fake calls into the record
+    tools would otherwise append to `data/logs/mcp.jsonl` — putting fake calls into the record
     the next real investigation reads, which is a worse failure than the one the log fixes.
     """
     monkeypatch.setattr(mcp_log, "_resolved", tmp_path / "mcp.jsonl")

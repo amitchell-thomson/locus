@@ -7,7 +7,7 @@ THE LOOP THIS CLOSES. Until now the daily page ran one way into a side table:
 `objects` is not embedded and sits in no retrieval arm, so a question he asked and then
 developed over a week was invisible to `locus query`, invisible to `locus link`, and could
 never come back as a connection. Everything he wrote accumulated somewhere the rest of the
-system could not read. Promotion writes a thread out as an ordinary note in `vault/notes/`,
+system could not read. Promotion writes a thread out as an ordinary note in `data/notes/`,
 where `notes_sync` ingests it like any other note — after which it embeds, links, and can
 surface as a connection exactly like the papers do.
 

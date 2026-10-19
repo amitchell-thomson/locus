@@ -1,7 +1,7 @@
 # Locus laptop outbox (macOS → server)
 
 Automatically pushes anything you drop into `~/LocusDrop/` on your Mac to the Locus server's
-`vault/incoming/` over SSH, where the watcher ingests it. **One-way**: the server can never
+`data/incoming/` over SSH, where the watcher ingests it. **One-way**: the server can never
 delete or modify files on your Mac. Works over any network (it reuses your SSH connection),
 and retries automatically when you reconnect — drops made while offline simply wait.
 
@@ -37,7 +37,7 @@ cp outbox.conf.example ~/.config/locus-outbox/outbox.conf
 ## 3. Create the drop folder — with the category taxonomy
 
 First-level folders inside the drop folder ARE the document categories: rsync carries the
-folder through to `vault/incoming/<folder>/`, and ingest derives `documents.category` from
+folder through to `data/incoming/<folder>/`, and ingest derives `documents.category` from
 it (known kind names singularize, `papers` → `paper`; anything else is taken verbatim).
 First-level folders persist across flushes — only deeper emptied subfolders are tidied.
 Files dropped loose at the root ingest as `uncategorized`.
@@ -72,7 +72,7 @@ launchctl enable gui/$(id -u)/com.locus.outbox
 echo "hello locus $(date)" > ~/LocusDrop/test.txt
 # wait up to ~60s, then check the log and the server:
 tail -n 20 ~/Library/Logs/locus-outbox.log
-ssh compute-node 'ls -l /home/alec/server-projects/locus/vault/incoming/'
+ssh compute-node 'ls -l /home/alec/server-projects/locus/data/incoming/'
 ```
 
 You should see `test.txt` arrive on the server and disappear from `~/LocusDrop/`.

@@ -19,7 +19,7 @@ sys.path.insert(0, ".")
 from locus.db.connection import get_connection
 from locus.evolve import trajectory as T
 
-DB = sys.argv[1] if len(sys.argv) > 1 else "vault/locus.db"
+DB = sys.argv[1] if len(sys.argv) > 1 else "data/locus.db"
 conn = get_connection(DB)
 
 rows = conn.execute(

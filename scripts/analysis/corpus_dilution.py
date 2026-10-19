@@ -11,7 +11,7 @@ from __future__ import annotations
 import sqlite3
 from collections import defaultdict
 
-DB = "/home/alec/server-projects/locus/vault/locus.db"
+DB = "/home/alec/server-projects/locus/data/locus.db"
 QUANT = ("paper", "project", "career", "note")
 
 

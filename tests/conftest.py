@@ -36,6 +36,21 @@ def _local_pass_routing(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _owner_authored_defaults(monkeypatch):
+    """Pin what counts as his writing (`[structure].belief_source_*`) to the code defaults.
+
+    `config.example.toml` carried `["note"]` long after the default became note/project/career,
+    so a laptop whose config was copied from the example failed the owner-authored tests while
+    the server, with no such line, passed them.
+    """
+    cfg = config.load()
+    fields = type(cfg.structure).model_fields
+    for name in ("belief_source_categories", "belief_source_types"):
+        monkeypatch.setattr(cfg.structure, name, fields[name].default_factory(), raising=False)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _mcp_log_to_tmp(tmp_path, monkeypatch):
     """Keep the MCP call log out of the live vault.
 

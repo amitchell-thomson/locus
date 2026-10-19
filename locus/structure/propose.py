@@ -656,6 +656,10 @@ def _is_owner_authored(doc) -> bool:
     notes_dir = str(cfg.paths.notes).replace("\\", "/").rstrip("/")
     if uri.startswith(f"{notes_dir}/") or "/vault/notes/" in uri or uri.startswith("vault/notes/"):
         return True
+    from locus.ingest_pipeline import is_area_drop
+
+    if is_area_drop(uri):  # the drop folder holds sources, never his words (ADR-003)
+        return False
 
     scfg = cfg.structure
     if (doc["category"] or "") not in tuple(scfg.belief_source_categories):

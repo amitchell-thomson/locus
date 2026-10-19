@@ -376,9 +376,25 @@ def test_a_vendor_pdf_in_his_project_folder_is_not_his_writing(conn):
          category="project", source_type="pdf", text="vendor documentation")
     assert propose._is_owner_authored(_row(conn, 21)) is False
 
-    _doc(conn, 22, title="OXDAQ architecture", uri="vault/incoming/projects/oxdaq.md",
+    _doc(conn, 22, title="OXDAQ architecture", uri="vault/incoming/project/oxdaq.md",
          category="project", source_type="markdown", text="how the exchange is built")
     assert propose._is_owner_authored(_row(conn, 22)) is True
+
+
+def test_nothing_dropped_into_an_area_folder_is_his_writing(conn):
+    """The drop folder holds sources (ADR-003). A third-party .docx in `personal/`, `careers/` or
+    `projects/` passes the category+format test, so the path has to say no first, or beliefs
+    get drawn from someone else's words and attributed to him (§3.4)."""
+    for i, (uri, category) in enumerate(
+        [
+            ("vault/incoming/projects/oxdaq.md", "project"),
+            ("vault/incoming/careers/offer-letter.docx", "career"),
+            ("vault/incoming/personal/tenancy.docx", "personal"),
+        ],
+        start=23,
+    ):
+        _doc(conn, i, title=uri, uri=uri, category=category, source_type="docx", text="x")
+        assert propose._is_owner_authored(_row(conn, i)) is False, uri
 
 
 def test_a_structured_document_is_stamped_even_when_it_proposes_nothing(conn):

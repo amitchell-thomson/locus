@@ -89,7 +89,7 @@ def _source_type(path: Path) -> str | None:
 # (so no 'code'/'slides' category: a repo under projects/ is category='project',
 # source_type='code'). Authorship splits notes (owner-written) from coursework (handed to
 # the owner by a course); career absorbs CV/applications/achievements (2026-06-05 taxonomy).
-CATEGORIES = {"paper", "coursework", "project", "career", "note", "video"}
+CATEGORIES = {"paper", "coursework", "project", "career", "note", "video", "personal"}
 
 
 # The drop folder's AREA folders (ADR-003, 2026-10-19), mapped onto the stored categories they
@@ -99,12 +99,31 @@ CATEGORIES = {"paper", "coursework", "project", "career", "note", "video"}
 # recognises. The folder BELOW the area (`studies/control/`) is the course or project; it is not
 # stored separately, because it survives in `source_uri` (the incoming path), where the labeller
 # of a later slice reads it.
+#
+# `personal/` is its own category, NOT `note`: `note` is one of the categories whose text files
+# count as his writing (`state.owner_authored_sql`), and `personal/` is where a tenancy agreement
+# or a downloaded article goes. And nothing dropped into ANY area folder counts as his writing
+# (`is_area_drop`): his writing arrives through the notes repository and the tablet, so the drop
+# folder holds sources only. The cost, accepted 2026-10-19: a write-up he drops in `projects/` is
+# a source, not his words. That includes the two OQTS specs filed under the old `projects/`
+# folder, which shares the area's name; their stored beliefs stay, nothing new is drawn from them.
 AREA_FOLDERS = {
     "studies": "coursework",
     "projects": "project",
     "careers": "career",
-    "personal": "note",
+    "personal": "personal",
 }
+
+
+def is_area_drop(source_uri: str) -> bool:
+    """True when a document arrived through an area folder of the drop zone (`incoming/<area>/`).
+
+    Matched on the path segment, case-insensitively, so it holds for the relative URIs the watcher
+    stores and the absolute ones older ingests stored. `state.owner_authored_sql` is the same test
+    for a query; a test asserts the two agree.
+    """
+    uri = "/" + source_uri.replace("\\", "/").lower()
+    return any(f"/incoming/{area}/" in uri for area in AREA_FOLDERS)
 
 
 def _category(path: Path) -> str:

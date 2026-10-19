@@ -33,8 +33,18 @@ are cleared once sent.
 
 ## Consequences
 - `_category` maps each area onto the category the library still keys behaviour on
-  (`AREA_FOLDERS`: studies -> coursework, projects -> project, careers -> career, personal ->
-  note). The older folder names keep working.
+  (`AREA_FOLDERS`: studies -> coursework, projects -> project, careers -> career). `personal/`
+  gets its own category, `personal`, not `note`. The older folder names keep working.
+- **Nothing dropped into an area folder counts as his writing** (`ingest_pipeline.is_area_drop`,
+  checked by both `structure.propose._is_owner_authored` and `state.owner_authored_sql`). Before
+  this, a text file whose category was note/project/career counted as his, so a third-party
+  `.docx` in `personal/` (then `note`) or `careers/` would have had positions drawn from it and
+  attributed to him (§3.4). His writing arrives through the notes repository and the tablet,
+  which are recognised by location. Accepted cost (your call, 19 Oct: "let them flip"): a
+  write-up dropped in `projects/` is a source, and that includes the two OQTS specs already
+  filed under the old `projects/` folder, which shares the area's name. Their stored beliefs and
+  links stay; nothing new is drawn from them. The old singular folders (`career/`, `notes/`)
+  are unchanged.
 - The course or project folder (`studies/control/`) is not stored in a column. It survives in
   `source_uri`, the incoming path, which is where the labeller of a later slice reads it. A
   folder-labelled file should then need no approve-list item.

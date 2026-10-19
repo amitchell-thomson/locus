@@ -365,6 +365,10 @@ max_support_links        = 3          # extra cross-doc links, only from floor-c
 # however central they are to the work. The first live run proposed `Python` and `Optibook`
 # (both entity type `tool`) as concepts to track; filtering by KIND is the right instrument.
 concept_exclude_entity_types = ["tool", "author", "organization", "ticker", "other"]
-belief_source_categories = ["note"]   # ONLY owner-authored docs may yield positions; a paper's
-                                      #   claim is the paper's, not his (§3.4)
+# ONLY owner-authored docs may yield positions; a paper's claim is the paper's, not his (§3.4).
+# His writing is: anything under the notes directory; else one of these categories AND one of
+# these formats (`project` also holds vendor PDFs). Nothing dropped into an area folder of the
+# drop zone counts, whatever its category (ADR-003).
+belief_source_categories = ["note", "project", "career"]
+belief_source_types      = ["markdown", "text", "docx", "notebook"]
 # model = "haiku"                     # override [agent].model for this pass

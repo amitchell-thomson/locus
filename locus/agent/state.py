@@ -489,7 +489,15 @@ def owner_authored_sql(alias: str = "d") -> tuple[str, list]:
     params: list = [f"{notes}/%", "%/vault/notes/%"]
     cats = list(cfg.structure.belief_source_categories)
     if cats:
-        sub = f"{alias}.category IN ({','.join('?' * len(cats))})"
+        from locus.ingest_pipeline import AREA_FOLDERS
+
+        # Nothing dropped into an area folder is his writing (ingest_pipeline.is_area_drop). LIKE
+        # is case-insensitive for ASCII, matching the Python test's lower().
+        sub = " AND ".join(
+            f"('/' || COALESCE({alias}.source_uri, '')) NOT LIKE ?" for _ in AREA_FOLDERS
+        )
+        params += [f"%/incoming/{area}/%" for area in AREA_FOLDERS]
+        sub += f" AND {alias}.category IN ({','.join('?' * len(cats))})"
         params += cats
         types = list(cfg.structure.belief_source_types)
         if types:

@@ -67,7 +67,7 @@ every screen is drawn.
 - **Check:** `git ls-files docs/redesign/screens` printed.
 
 ### 1.1 Scaffold
-- Per D1/D2: the `tui/` workspace (`locus-tui` binary, `locus-contract` library), and
+- Per D1/D2: the Rust workspace (`locus-tui` binary, `locus-contract` library), and
   `locus-theme` in `locus-shared` with the palette, border style, `fade`, and the D.2 glyph table as named
   constants (`ATTENDED`, `NEEDS_YOU`, …), one source for every glyph.
 - The app shell: a screen stack, section focus by letter, Enter / Esc / `/` / `?`, the footer
@@ -105,7 +105,7 @@ Per D3/D4.
   failed job, a full scout queue.
 - A second fixture set, `empty`, in which every section is empty.
 - **Check:** `locus-tui --validate-fixtures` printed, every file OK against the schema; a grep
-  of `tui/fixtures/` for key and token patterns printed with no matches.
+  of `crates/locus-tui/fixtures/` for key and token patterns printed with no matches.
 
 ### 1.4 First pass of every screen
 Built from the screens v2 mockups as amended by plan v4 (Nerd Font glyphs, footer open · log ·
@@ -152,9 +152,9 @@ here (plan G and screens v2's own open questions):
 No turn bound. The rounds end when you say the done-when holds.
 
 ### 1.6 Contracts frozen
-- Each screen's contract types marked frozen; `tui/CONTRACTS.md` lists every screen, its types,
+- Each screen's contract types marked frozen; `crates/locus-contract/CONTRACTS.md` lists every screen, its types,
   which app fills them (plan B.2: kairos, keryx, heuris, locus core) and the slice that wires it.
-- JSON Schema exported to `tui/contracts/schema/` for the Python side.
+- JSON Schema exported to `crates/locus-contract/schema/` for the Python side.
 - A changed frozen type fails a test unless the schema version is bumped, so a later edit
   cannot silently break the backend that fills it (the same rule as the decision-log format,
   C.6).
@@ -171,7 +171,7 @@ Below, when the slice closes.
 - **Three screens are new**, never drawn on paper: Budget, Ink confirm, Learning (per D5). They
   get their first design in round 1, on screen rather than paper, as the plan's header says
   screens are now settled.
-- **`locus-theme`** (per D2) is a crate outside the plan. The `eco` repo it lives in was renamed `locus-shared` on 19 Oct at your request ("should it not be called something more accurate"), and the crate with it; `eco-dates` keeps its name until kairos and keryx are next touched. Moving kairos and keryx onto it is
+- **`locus-theme`** (per D2) is a crate outside the plan. The `eco` repo it lives in was renamed `locus-shared` on 19 Oct at your request ("should it not be called something more accurate"), and the crate with it; `eco-dates` keeps its name until kairos and keryx are next touched. Later the same day the shared crates were folded into this repo (ADR-004): one Rust workspace at the root, `crates/`, in place of D1's `tui/`; `locus-shared` is archived. Moving kairos and keryx onto it is
   **not** in this slice.
 - **Your `tmux.conf` gains one line** (sourcing the snippet), shown to you before it is made.
 - **The screens v2 source moves into the repo** (1.0); the plan cites it and it was git-excluded.

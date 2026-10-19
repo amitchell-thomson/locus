@@ -1,0 +1,13 @@
+[package]
+name = "locus-theme"
+description = "The look shared by locus, kairos and keryx: Catppuccin Mocha, panels, Nerd Font glyphs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+ratatui = "0.30"
+
+[lints]
+workspace = true

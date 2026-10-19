@@ -537,6 +537,9 @@ recall (~3.4), an extraction ceiling.
 locus/
 ├── CLAUDE.md · README.md · docs/
 ├── pyproject.toml (uv; extras: rerank, mathocr, reading, tui) · alembic.ini · config.toml
+├── Cargo.toml · crates/  # the Rust workspace (ADR-004): locus-tui (the locus window, Slice 1)
+│                       #   locus-contract (what each screen shows) · locus-theme (Mocha +
+│                       #   the D.2 glyphs) · eco-dates; kairos and keryx pin the last two by rev
 ├── locus/
 │   ├── cli.py              # the product surface (all commands)
 │   ├── config.py           # typed config; API key via env/.env only

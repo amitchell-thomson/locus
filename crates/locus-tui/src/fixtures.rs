@@ -1,5 +1,6 @@
 //! Fixture sets: a fixed, realistic snapshot that every screen runs on until its backend exists
-//! (plan D). A set is a directory of JSON files, one per contract, under `tui/fixtures/<name>/`.
+//! (plan D). A set is a directory of JSON files, one per contract, under
+//! `crates/locus-tui/fixtures/<name>/`.
 
 use anyhow::{Context, Result};
 use locus_contract::Manifest;
@@ -13,7 +14,7 @@ pub struct Fixtures {
 
 /// Where the repo's fixture sets live, found from the crate so it works from any directory.
 pub fn sets_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures")
 }
 
 /// A set by name (`default`, `empty`) or by path.

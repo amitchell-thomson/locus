@@ -55,3 +55,7 @@ scripts/benchmarks/*_out.json
 
 # MCP call log (derived: one JSON line per tool call, delete = lose history only)
 vault/logs/
+
+# Rust workspace (crates/)
+/target/
+*.pending-snap

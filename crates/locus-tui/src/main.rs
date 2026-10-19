@@ -16,7 +16,7 @@ struct Cli {
     /// Which root to run: home or project.
     #[arg(default_value = "home")]
     view: String,
-    /// Fixture set: a name under tui/fixtures/ or a path.
+    /// Fixture set: a name under crates/locus-tui/fixtures/ or a path.
     #[arg(long, default_value = "default")]
     fixtures: String,
     /// Print this screen as text and exit.

@@ -1,0 +1,13 @@
+{
+  "projects": [
+    { "id": "quast", "name": "quast", "area": "Projects", "sessions": ["quast"] },
+    { "id": "nabla", "name": "nabla", "area": "Projects", "sessions": ["nabla"] },
+    { "id": "locus", "name": "locus", "area": "Projects", "sessions": ["locus-dev"] },
+    { "id": "oqts", "name": "OQTS", "area": "Projects", "sessions": ["oqts"] },
+    { "id": "kairos", "name": "kairos", "area": "Projects", "sessions": ["kairos"] },
+    { "id": "keryx", "name": "keryx", "area": "Projects", "sessions": ["keryx"] },
+    { "id": "cv", "name": "CV", "area": "Careers", "sessions": ["cv"] },
+    { "id": "3yp", "name": "3YP", "area": "Studies", "sessions": ["B3-Project"] },
+    { "id": "b1", "name": "B1 practical", "area": "Studies", "sessions": ["b1-practical"] }
+  ]
+}

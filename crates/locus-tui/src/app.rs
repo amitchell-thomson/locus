@@ -6,9 +6,11 @@
 //! can claim a letter for an action; whether any should is a design-round question.
 
 use crate::fixtures::Fixtures;
+use crate::follow::{self, Follow};
 use crate::screen::{ScreenId, Section};
 use crate::uselog::UseLog;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use std::time::Instant;
 
 pub struct App {
     pub fixtures: Fixtures,
@@ -21,6 +23,9 @@ pub struct App {
     pub keys_open: bool,
     pub quit: bool,
     pub uselog: UseLog,
+    /// Which project the Project view shows, following the project window (plan B.4).
+    pub follow: Follow,
+    pub last_key: Option<Instant>,
 }
 
 impl App {
@@ -33,6 +38,8 @@ impl App {
             keys_open: false,
             quit: false,
             uselog,
+            follow: Follow::new(None),
+            last_key: None,
         };
         app.uselog.record(root.name(), "open");
         app
@@ -63,6 +70,7 @@ impl App {
 
     pub fn on_key(&mut self, key: KeyEvent) {
         let name = key_name(key);
+        self.last_key = Some(Instant::now());
         self.uselog.record(self.screen().name(), &name);
         self.note = None;
         if self.keys_open {
@@ -90,9 +98,28 @@ impl App {
             }
             KeyCode::Char('q') if self.screen().is_root() => self.quit = true,
             KeyCode::Char('R') => self.reset(),
+            KeyCode::Char('m') if self.screen() == ScreenId::Project => {
+                self.follow.toggle_pin();
+                let note = if self.follow.pinned {
+                    "pinned: stays on this project"
+                } else {
+                    "following the project window"
+                };
+                self.note = Some(note.into());
+            }
             KeyCode::Char(ch) if self.screen().sections().iter().any(|s| s.letter == ch) => self.focus = Some(ch),
             _ => self.note = Some(format!("{name} does nothing here · ? for keys")),
         }
+    }
+
+    /// The project window moved to `session` (from the focus file), or time passed: switch the
+    /// Project view if nothing holds it back.
+    pub fn tick(&mut self, session: Option<String>, now: Instant) {
+        let busy = follow::busy(self.last_key, now, self.stack.len() > 1);
+        if let Some(s) = session {
+            self.follow.offer(&s, busy);
+        }
+        self.follow.settle(busy);
     }
 
     /// Back to the fixture snapshot as it is on disk (spec: state resets on restart, or `R`).

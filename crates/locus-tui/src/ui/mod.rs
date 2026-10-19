@@ -40,6 +40,28 @@ pub fn draw(f: &mut Frame, app: &App) {
     }
 }
 
+/// The Project view's title: the project the view is on, by the registry; a session the
+/// registry does not know is named as such rather than guessed at.
+pub fn project_title(app: &App) -> String {
+    match app.follow.session.as_deref() {
+        None => "project · no project window seen yet".into(),
+        Some(s) => match app.fixtures.registry.by_session(s) {
+            Some(p) => format!("{} {}", locus_theme::glyph::PROJECT, p.name),
+            None => format!("{s} · not a registered project"),
+        },
+    }
+}
+
+/// Following or pinned, in the Project view's top-right corner.
+pub fn follow_badge(app: &App) -> Line<'static> {
+    let (text, col) = if app.follow.pinned {
+        (format!(" {} pinned ", locus_theme::glyph::HOLDING), c("peach"))
+    } else {
+        (format!(" {} following ", locus_theme::glyph::ATTENDED), c("overlay1"))
+    };
+    Line::from(Span::styled(text, Style::default().fg(col)))
+}
+
 /// A section's block: title on the left, its letter in the right corner (plan D), blue when
 /// focused.
 pub fn section_block(title: &str, letter: Option<char>, focus: bool) -> Block<'static> {

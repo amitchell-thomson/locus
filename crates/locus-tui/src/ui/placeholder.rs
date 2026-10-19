@@ -11,7 +11,14 @@ use ratatui::style::Style;
 use ratatui::widgets::Paragraph;
 
 pub fn draw(f: &mut Frame, area: Rect, app: &App, screen: ScreenId) {
-    let outer = section_block(screen.title(), None, false);
+    let title = match screen {
+        ScreenId::Project => crate::ui::project_title(app),
+        s => s.title().to_string(),
+    };
+    let mut outer = section_block(&title, None, false);
+    if screen == ScreenId::Project {
+        outer = outer.title(crate::ui::follow_badge(app).right_aligned());
+    }
     let inner = outer.inner(area);
     f.render_widget(outer, area);
     let sections = screen.sections();

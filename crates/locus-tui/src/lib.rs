@@ -5,6 +5,7 @@
 pub mod app;
 pub mod dump;
 pub mod fixtures;
+pub mod follow;
 pub mod screen;
 pub mod ui;
 pub mod uselog;

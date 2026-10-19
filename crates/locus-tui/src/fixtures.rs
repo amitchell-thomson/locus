@@ -3,13 +3,14 @@
 //! `crates/locus-tui/fixtures/<name>/`.
 
 use anyhow::{Context, Result};
-use locus_contract::Manifest;
+use locus_contract::{Manifest, Registry};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct Fixtures {
     pub dir: PathBuf,
     pub manifest: Manifest,
+    pub registry: Registry,
 }
 
 /// Where the repo's fixture sets live, found from the crate so it works from any directory.
@@ -30,9 +31,11 @@ pub fn resolve(set: &str) -> PathBuf {
 impl Fixtures {
     pub fn load(dir: &Path) -> Result<Fixtures> {
         let manifest = read(dir, "manifest.json")?;
+        let registry = read(dir, "registry.json")?;
         Ok(Fixtures {
             dir: dir.to_path_buf(),
             manifest,
+            registry,
         })
     }
 }

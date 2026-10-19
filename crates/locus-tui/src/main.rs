@@ -4,11 +4,12 @@ use anyhow::{Context, Result, bail};
 use clap::Parser;
 use locus_tui::app::App;
 use locus_tui::fixtures::{self, Fixtures};
+use locus_tui::follow::{self, FocusFile};
 use locus_tui::screen::ScreenId;
 use locus_tui::uselog::{self, UseLog};
 use locus_tui::{dump, ui};
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[derive(Parser)]
 #[command(about = "The locus window, on fixture data (Slice 1)")]
@@ -28,6 +29,9 @@ struct Cli {
     /// With --dump: draw the keys overlay on top.
     #[arg(long)]
     keys: bool,
+    /// With --dump: the tmux session the project window is on.
+    #[arg(long, value_name = "SESSION")]
+    focus: Option<String>,
     /// Print what has been used, per screen and key, and exit.
     #[arg(long)]
     use_report: bool,
@@ -58,6 +62,7 @@ fn main() -> Result<()> {
             app.open(screen);
         }
         app.keys_open = cli.keys;
+        app.follow.session = cli.focus;
         print!("{}", dump::render(&app, w, h)?);
         return Ok(());
     }
@@ -70,9 +75,12 @@ fn main() -> Result<()> {
 }
 
 fn run(mut app: App) -> Result<()> {
+    let mut focus = FocusFile::new(follow::state_dir());
+    app.tick(focus.poll(), Instant::now());
     let mut terminal = ratatui::try_init()?;
     let result = (|| -> Result<()> {
         while !app.quit {
+            app.tick(focus.poll(), Instant::now());
             terminal.draw(|f| ui::draw(f, &app))?;
             if event::poll(Duration::from_millis(250))?
                 && let Event::Key(k) = event::read()?

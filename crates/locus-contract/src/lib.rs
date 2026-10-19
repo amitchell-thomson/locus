@@ -17,3 +17,28 @@ pub struct Manifest {
     pub now: String,
     pub description: String,
 }
+
+/// The project registry (plan B.2: the shared root owns areas, streams and the repository
+/// registry). Slice 1 needs it for the Project view to follow tmux; step 1.3 fills it out.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Registry {
+    pub projects: Vec<Project>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Project {
+    /// Stable id, e.g. `quast`.
+    pub id: String,
+    pub name: String,
+    /// One of the four areas (plan B.3): Studies, Projects, Careers, Personal.
+    pub area: String,
+    /// tmux sessions that mean "working on this project" (`locus-dev` for locus).
+    pub sessions: Vec<String>,
+}
+
+impl Registry {
+    /// The project a tmux session belongs to, if any.
+    pub fn by_session(&self, session: &str) -> Option<&Project> {
+        self.projects.iter().find(|p| p.sessions.iter().any(|s| s == session))
+    }
+}

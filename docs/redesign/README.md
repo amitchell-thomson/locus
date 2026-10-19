@@ -38,7 +38,7 @@ decisions and runs by itself through mechanical steps.
 | Slice | What | State |
 |---|---|---|
 | 0 | Plumbing | approved 19 Oct, ready to start |
-| 1 | Every screen on fixtures (ratatui prototype) | spec not yet written; can run beside 0 |
+| 1 | Every screen on fixtures (ratatui prototype) | approved 19 Oct, in progress beside 0 |
 | 2 | Dossier loop | — |
 | 3 | Project view live | — |
 | 4 | Home live | — |

@@ -86,7 +86,7 @@ Copied from kairos so far:
 - Raw 8-bit (non-RFC 2047) headers exist in the wild: subjects are re-decoded with the message charset, else Windows-1252 (`mime::fix_8bit`; TEXT_VERSION 3).
 - Text v2 on real mail: 94 / 3,535 messages had hidden text removed (mostly newsletter preheaders: the ⚠ may prove noisy — revisit after Alec uses the TUI); 134 have no text body (14 not downloaded, the rest image/calendar/attachment-only).
 - `pgrep -x Mail` tells whether Mail is running; keryxd will `open -gja Mail` before acting (Phase 4). Envelope Index tables used: `messages`, `mailboxes`, `subjects`, `addresses`, `recipients`, `message_global_data`, `conversations`.
-- The terminal has Full Disk Access; keryxd will need its own FDA + Automation grants (check they survive rebuilds in Phase 1).
+- keryxd has its own FDA + Automation grants (2026-10-20); both survived a `cargo install` rebuild, so no signing script is needed. An unrelated crates.io crate is also called `keryx`: `cargo install keryx` installs the wrong thing (install-daemon.sh now checks).
 - The claude.ai Gmail connector in Claude Code can send directly, bypassing keryx: Alec is turning it off (2026-10-14).
 
 ## Decisions log

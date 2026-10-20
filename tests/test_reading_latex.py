@@ -452,7 +452,8 @@ def test_a_document_is_one_column_with_even_margins(tmp_path: Path):
     )
     with fitz.open(out) as doc:
         page = doc[0]
-        blocks = [b for b in page.get_text("blocks") if b[4].strip()]
+        # The centred page number at the foot is a block too; it is not a column.
+        blocks = [b for b in page.get_text("blocks") if b[4].strip() and not b[4].strip().isdigit()]
         width = page.rect.width
     lefts = {round(b[0]) for b in blocks}
     margin_pt = 0.95 * 72

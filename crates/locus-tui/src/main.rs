@@ -206,12 +206,23 @@ fn run(mut app: App) -> Result<()> {
     let mut first_frame = None;
     let mut slowest = Duration::ZERO;
     let mut asked = false;
+    app.in_session = std::env::var_os("LOCUS_IN_SESSION").is_some();
+    app.peek_file = Some(follow::PeekFile::new(follow::state_dir()));
+    let mut peek = follow::PeekFile::new(follow::state_dir());
     let mut focus = FocusFile::new(follow::state_dir());
     app.tick(focus.poll(), Instant::now());
     let mut terminal = ratatui::try_init()?;
     let result = (|| -> Result<()> {
         while !app.quit {
             app.tick(focus.poll(), Instant::now());
+            if let Some(change) = peek.poll()
+                && app.stack.first() == Some(&ScreenId::Project)
+            {
+                app.peek = change;
+                app.stack.truncate(1);
+                app.focus = None;
+            }
+            app.frame = app.frame.wrapping_add(1);
             // Ask the terminal which image protocol it speaks (D6: kitty in Ghostty, passed
             // through tmux) only when a screen first needs it: a terminal that never answers
             // costs the whole timeout, and at startup that was 2 s before the first frame

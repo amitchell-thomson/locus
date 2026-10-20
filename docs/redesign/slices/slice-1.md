@@ -207,6 +207,57 @@ feel effortless using." The order: Home; the Project view with Decisions, Answer
 Changes; Calendar (kairos); Mail (keryx); Explore; Approve, the log and Ink confirm; System and
 Budget; the work chart; Search; Learning and Interview prep; the weekly review.
 
+**Round 1, 21 Oct: Home (first pass).** From the use log: ↑/↓ pressed 162 times on Home
+with nothing focused, Tab 5 times. Changed:
+- *Moving around.* Tab and Shift-Tab cycle a screen's sections; ↑/↓ walk a section's rows and
+  run on into the next section ("it should also cycle between sections or at least cycle
+  between entries in sections until it reaches the bottom"). The selected row is a band across
+  the full width with a `▌` ("more of an indicator of what is selected than the tiny little
+  arrow ... but I do not want full boxes for everything").
+- *What counts as a project.* "they are internship applications and my CV, they do not feel
+  like projects." Home now has three sections, each headed with what it holds: projects ("what
+  you build": quast, nabla, locus, OQTS, 3YP), careers ("applications and your CV"), learning
+  ("what you are learning for"). The registry stays one list underneath, because each still
+  needs a Project view and change records; that is the mechanism, not what Home calls them.
+  [proposal, his to confirm]. kairos and keryx are parts of locus, not projects ("for the actual
+  system kairos should be part of locus and not its own project, same with keryx"): their
+  sessions map to locus.
+- *Approve.* One "waiting for you" line near the top, by kind; the items are on the approve page
+  ("I would rather see the approves in the approve window, with a smaller summary").
+- *Explore.* Grouped by kind with headings and space between groups, titles only, no grading
+  from Home ("not much should happen from home, it should just take you to somewhere useful").
+  Enter opens the find on the Explore page.
+- *Projects.* Each count says what it counts: "8 sessions", "2 new" ("the +1/+7 and the
+  notifications are confusing"). A session line shows a plain summary of what it wants, not the
+  raw command ("better simpler and more intuitive short explanations"): `Session.summary`.
+- *Enter on a project* switches the window to Project (Alt-2) showing it, marked "from home";
+  Esc goes back to Home and the Project view follows the project window again (his proposal).
+- *Header.* The date, running jobs and "review ready" moved to a centred line inside the frame
+  ("cramped between the tmux lines ... rarely read").
+- *System.* Running jobs separated and pulsing while they run ("animate the running symbols
+  slightly ... only when they are active right this instant"); the budget line names both
+  limits: "5-hour window: you 34% · background 4%" ("too obscure").
+- *Work.* The grid uses two columns a half hour at his width, and the bars fill the panel.
+- *`R`* says what it clears: the prototype's ticks and strikes, nothing real.
+
+Seeds for later pages, his words kept for their rounds:
+- *Project:* sessions active in the last 3 days shown, the rest behind `s`, each with a
+  summary line; the ask key more visible, or a better key than `i`; the branch graph is broken
+  when lanes cluster in a few days (nabla: vertical bars); empty space between New and
+  sessions.
+- *Explore:* best of the fortnight in bold; reading as three sections (in progress, done,
+  proposed); the queue's purpose is not obvious; ask why a find was proposed in a small
+  disposable chat; proper dividers per kind; the difference between queue and ideas is unclear.
+- *Approve:* the stamp glyph repeats per group; too much empty space; see the 14 mails before
+  archiving them; expand a jot to read it; more detail behind every item. Ink confirm: "looks
+  really good and is a great idea".
+- *Work chart:* fill the width; the x axis is unclear; detail underneath; too much empty space.
+- *Auto log:* daily divisions for 7 days, then everything older.
+- *Learning:* goals are purposes (a Jump application, general quant interview prep, personal
+  learning, Jump internship preparation), not concepts; the goal taxonomy needs settling;
+  tracks linking everything is right.
+- *Keys:* fine.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

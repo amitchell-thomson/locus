@@ -3,7 +3,7 @@ source: crates/locus-tui/tests/dump.rs
 expression: "dump::render(&a, 95, 38).unwrap()"
 ---
 ╭ quast · decisions · 1 re-check · 5 holding · 1 re-decided ──────────────────────── esc back ╮
-│▸ 󱉶 §8bf    The units at stage 1: the µeV core kept, the scale fixed by …   7 Oct  re-check  │
+│▌ 󱉶 §8bf    The units at stage 1: the µeV core kept, the scale fixed by …   7 Oct  re-check  │
 │  󰌾 §8bn    The input layer, built: the typical gate three times closer,…  10 Oct  holding   │
 │  󰌾 §8bl    The scope: QUAST starts where the lab's tools stop - a devic…   9 Oct  holding   │
 │  󰌾 §8bh    Mixed precision on a graphics card: a tune-up in about six s…   8 Oct  holding   │

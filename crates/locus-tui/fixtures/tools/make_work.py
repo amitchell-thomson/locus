@@ -15,8 +15,8 @@ import subprocess
 from pathlib import Path
 
 HOME = Path.home() / "local-projects"
-REPOS = {"quast": ["quast"], "nabla": ["nabla"], "locus": ["locus"],
-         "oqts": ["oqts/oqts-platform", "oqts/oqts-site", "oqts/oxdaq-core"], "kairos": ["kairos"], "keryx": ["keryx"],
+REPOS = {"quast": ["quast"], "nabla": ["nabla"], "locus": ["locus", "kairos", "keryx"],
+         "oqts": ["oqts/oqts-platform", "oqts/oqts-site", "oqts/oxdaq-core"],
          "cv": ["cv"]}
 TO = dt.date(2026, 10, 24)
 FROM = TO - dt.timedelta(days=55)  # eight weeks, ending on the snapshot's Saturday
@@ -27,7 +27,7 @@ WEEK = [
     (0, "20:00", "22:30", "locus", 3),
     (1, "09:00", "12:00", "quast", 4), (1, "12:00", "12:30", "nabla", 1), (1, "17:30", "19:00", "jump", 2),
     (1, "21:00", "23:30", "locus", 4),
-    (2, "10:00", "13:00", "locus", 4), (2, "13:00", "14:00", "kairos", 2), (2, "19:00", "21:00", "cv", 2),
+    (2, "10:00", "13:00", "locus", 4), (2, "13:00", "14:00", "locus", 2), (2, "19:00", "21:00", "cv", 2),
     (3, "08:00", "09:30", "quast", 3), (3, "15:00", "18:00", "nabla", 3), (3, "18:00", "18:30", "oqts", 1),
     (3, "22:00", "24:00", "locus", 3),
     # Friday: nothing logged (a day with no work is a case the grid must draw).

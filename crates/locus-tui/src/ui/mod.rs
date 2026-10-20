@@ -66,6 +66,41 @@ pub fn screen_key(app: &mut App, k: KeyEvent) -> bool {
     }
 }
 
+/// Screens whose sections are lists that ↑ and ↓ walk through, section to section. Explore's
+/// sections are tabs, so the arrows stay inside the open one there.
+pub fn flows(s: ScreenId) -> bool {
+    matches!(
+        s,
+        ScreenId::Home | ScreenId::Project | ScreenId::System | ScreenId::Learning | ScreenId::Prep
+    )
+}
+
+/// How many rows a section has, for walking through it with the arrows.
+pub fn section_len(app: &App, sec: char) -> usize {
+    match app.screen() {
+        ScreenId::Home => home::section_len(app, sec),
+        ScreenId::Project => project::section_len(app, sec),
+        ScreenId::System => match sec {
+            'r' => app.fixtures.system.running.len(),
+            'e' => app.fixtures.system.recent.len().min(6),
+            _ => 1,
+        },
+        ScreenId::Learning => match sec {
+            'g' => app.fixtures.learning.goals.len(),
+            't' => app.fixtures.learning.tracks.len(),
+            _ => app.fixtures.learning.sheets.len().min(4),
+        },
+        ScreenId::Prep => {
+            let p = app.project_id().and_then(|id| app.fixtures.prep.get(&id));
+            match sec {
+                't' => p.map_or(0, |p| p.topics.len()),
+                _ => p.map_or(0, |p| p.log.len()),
+            }
+        }
+        _ => 1,
+    }
+}
+
 /// The keys a screen adds to the global ones, for the overlay.
 pub fn screen_keys(s: ScreenId) -> &'static [(&'static str, &'static str)] {
     match s {

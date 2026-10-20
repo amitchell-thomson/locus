@@ -7,40 +7,145 @@
     "next": "fold §8by and §8bz into the prior, then rerun the battery before any new method"
   },
   "new": [
-    { "kind": "recheck", "text": "§8bf one lever-arm ratio in θ: worth re-checking · RIKEN's slope (§8by) bears on it", "at": "2026-10-24T19:30:00+01:00", "unread": true },
-    { "kind": "answer", "text": "delayed acceptance · answered from your margin · links Monte Carlo lecture 6", "at": "2026-10-24T16:05:00+01:00", "unread": true },
-    { "kind": "commits", "text": "6 commits on barrier-control · RIKEN's charging energy is inside the prior (§8bz)", "at": "2026-10-23T22:10:00+01:00", "unread": true },
-    { "kind": "scout_find", "text": "Bayesian optimisation tunes double-dot barriers with about 3x fewer measurements", "at": "2026-10-23T08:00:00+01:00", "unread": true },
-    { "kind": "dossier", "text": "dossier rebuilt · §3 ledger and §4 evidence changed · 2 pages to read", "at": "2026-10-22T23:05:00+01:00", "unread": false },
-    { "kind": "ink", "text": "38 margin marks read back · 9 decisions written to the log", "at": "2026-10-21T21:02:00+01:00", "unread": false }
+    {
+      "kind": "recheck",
+      "text": "§8bf one lever-arm ratio in θ: worth re-checking · RIKEN's slope (§8by) bears on it",
+      "at": "2026-10-24T19:30:00+01:00",
+      "unread": true
+    },
+    {
+      "kind": "answer",
+      "text": "delayed acceptance · answered from your margin · links Monte Carlo lecture 6",
+      "at": "2026-10-24T16:05:00+01:00",
+      "unread": true
+    },
+    {
+      "kind": "commits",
+      "text": "6 commits on barrier-control · RIKEN's charging energy is inside the prior (§8bz)",
+      "at": "2026-10-23T22:10:00+01:00",
+      "unread": true
+    },
+    {
+      "kind": "scout_find",
+      "text": "Bayesian optimisation tunes double-dot barriers with about 3x fewer measurements",
+      "at": "2026-10-23T08:00:00+01:00",
+      "unread": true
+    },
+    {
+      "kind": "dossier",
+      "text": "dossier rebuilt · §3 ledger and §4 evidence changed · 2 pages to read",
+      "at": "2026-10-22T23:05:00+01:00",
+      "unread": false
+    },
+    {
+      "kind": "ink",
+      "text": "38 margin marks read back · 9 decisions written to the log",
+      "at": "2026-10-21T21:02:00+01:00",
+      "unread": false
+    }
   ],
   "sessions": [
-    { "name": "main chat", "state": "working", "since": "2026-10-24T21:28:00+01:00", "doing": "running pytest -k barrier" },
-    { "name": "battery", "state": "needs_you", "since": "2026-10-24T21:05:00+01:00", "doing": "allow: python -m quast.battery --full ?", "background": true }
+    {
+      "name": "main chat",
+      "state": "working",
+      "since": "2026-10-24T21:28:00+01:00",
+      "doing": "running pytest -k barrier",
+      "summary": "running the barrier tests after folding in RIKEN's slope"
+    },
+    {
+      "name": "battery",
+      "state": "needs_you",
+      "since": "2026-10-24T21:05:00+01:00",
+      "doing": "allow: python -m quast.battery --full ?",
+      "background": true,
+      "summary": "wants to run the full battery on the server (about an hour); needs your yes"
+    }
   ],
   "chores": [
-    { "title": "reply to the supervisor about RIKEN's numbers", "minutes": 5 },
-    { "title": "book an ARC GPU slot for the battery", "minutes": 2, "due": "2026-10-26" }
+    {
+      "title": "reply to the supervisor about RIKEN's numbers",
+      "minutes": 5
+    },
+    {
+      "title": "book an ARC GPU slot for the battery",
+      "minutes": 2,
+      "due": "2026-10-26"
+    }
   ],
   "graph": {
     "trunk": "main",
     "from": "2026-09-10",
     "milestones": [
-      { "date": "2026-09-10", "label": "the simulator" },
-      { "date": "2026-09-27", "label": "§8ap the crowd drives the loop" },
-      { "date": "2026-09-29", "label": "§8ba the v2 design" },
-      { "date": "2026-10-09", "label": "§8bl the scope" },
-      { "date": "2026-10-10", "label": "§8bn the input layer" }
+      {
+        "date": "2026-09-10",
+        "label": "the simulator"
+      },
+      {
+        "date": "2026-09-27",
+        "label": "§8ap the crowd drives the loop"
+      },
+      {
+        "date": "2026-09-29",
+        "label": "§8ba the v2 design"
+      },
+      {
+        "date": "2026-10-09",
+        "label": "§8bl the scope"
+      },
+      {
+        "date": "2026-10-10",
+        "label": "§8bn the input layer"
+      }
     ],
     "lanes": [
-      { "branch": "worktree-wall-clock-pricing", "stage": "pricing by wall clock", "forked": "2026-10-07", "tip": "2026-10-07", "commits": 2,
-        "happened": ["Ranking settings by fridge time plus computing time, as an option", "A round sized by information per second was tried and failed: the crowd's information saturates", "Not merged (§8bg)"] },
-      { "branch": "worktree-gpu-mixed-precision", "stage": "mixed precision on a graphics card", "forked": "2026-10-07", "merged": "2026-10-10", "commits": 45,
-        "happened": ["numerics.py: one switch for precision and device", "A tune-up in about 6 s, gates as good as double precision (§8bh)", "ARC's L40S: 3.4 s a tune-up, a four-minute start per process (§8bi)"] },
-      { "branch": "worktree-barrier-control", "stage": "barrier control: the law learned", "forked": "2026-10-10", "tip": "2026-10-19", "commits": 75,
-        "happened": ["The decisions before code, laid out (barrier-control-decisions.md)", "Step 6: the law learned at 1.4e-5 median, honest, 2.3 minutes (§8bv)", "Delayed acceptance off until shown unbiased (§8bw)", "RIKEN's exchange slope and charging energy (§8by, §8bz)"] },
-      { "branch": "worktree-readout-adapter", "stage": "readout on hardware: the plan", "forked": "2026-10-13", "tip": "2026-10-13", "commits": 2,
-        "happened": ["QUAST thresholds each shot's sensor signal itself (§8bp)", "Raw signals in the likelihood not built: worth at most 1.04x"] }
+      {
+        "branch": "worktree-wall-clock-pricing",
+        "stage": "pricing by wall clock",
+        "forked": "2026-10-07",
+        "tip": "2026-10-07",
+        "commits": 2,
+        "happened": [
+          "Ranking settings by fridge time plus computing time, as an option",
+          "A round sized by information per second was tried and failed: the crowd's information saturates",
+          "Not merged (§8bg)"
+        ]
+      },
+      {
+        "branch": "worktree-gpu-mixed-precision",
+        "stage": "mixed precision on a graphics card",
+        "forked": "2026-10-07",
+        "merged": "2026-10-10",
+        "commits": 45,
+        "happened": [
+          "numerics.py: one switch for precision and device",
+          "A tune-up in about 6 s, gates as good as double precision (§8bh)",
+          "ARC's L40S: 3.4 s a tune-up, a four-minute start per process (§8bi)"
+        ]
+      },
+      {
+        "branch": "worktree-barrier-control",
+        "stage": "barrier control: the law learned",
+        "forked": "2026-10-10",
+        "tip": "2026-10-19",
+        "commits": 75,
+        "happened": [
+          "The decisions before code, laid out (barrier-control-decisions.md)",
+          "Step 6: the law learned at 1.4e-5 median, honest, 2.3 minutes (§8bv)",
+          "Delayed acceptance off until shown unbiased (§8bw)",
+          "RIKEN's exchange slope and charging energy (§8by, §8bz)"
+        ]
+      },
+      {
+        "branch": "worktree-readout-adapter",
+        "stage": "readout on hardware: the plan",
+        "forked": "2026-10-13",
+        "tip": "2026-10-13",
+        "commits": 2,
+        "happened": [
+          "QUAST thresholds each shot's sensor signal itself (§8bp)",
+          "Raw signals in the likelihood not built: worth at most 1.04x"
+        ]
+      }
     ]
   }
 }

@@ -5,7 +5,7 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 ╭ explore · queue 7 of 7 · ideas 5 · reading 3 of 5 ──────────────────────────────── esc back ╮
 │ [q] queue   [i] ideas   [r] reading   the queue is full: the scout waits                    │
 │                                                                                             │
-│▸ 󰭎 Bayes-opt barrier tuning, 3x… │ 󰭎 for quast · method · fri 23                            │
+│▌ 󰭎 Bayes-opt barrier tuning, 3x… │ 󰭎 for quast · method · fri 23                            │
 │  󰭎 Deal-completion hazard model… │                                                          │
 │  󰭎 What your Control course's K… │ Bayes-opt barrier tuning, 3x fewer measurements          │
 │  󰭎 quast and nabla both pre-reg… │                                                          │

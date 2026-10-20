@@ -7,43 +7,211 @@
     "next": "four more weeks of shadow fills before any money: ADR-007's loss budget decides"
   },
   "new": [
-    { "kind": "commits", "text": "observations 2026-10-24 · 2,611 lines of quotes and shadow journal", "at": "2026-10-24T06:10:00+01:00", "unread": true },
-    { "kind": "idea", "text": "your inbox idea: compute markets as a lead-lag source", "at": "2026-10-22T13:00:00+01:00", "unread": true },
-    { "kind": "commits", "text": "1 commit on syna-switch-to-cash · a switch from stock to cash is not a share leg", "at": "2026-10-16T18:40:00+01:00", "unread": false }
+    {
+      "kind": "commits",
+      "text": "observations 2026-10-24 · 2,611 lines of quotes and shadow journal",
+      "at": "2026-10-24T06:10:00+01:00",
+      "unread": true
+    },
+    {
+      "kind": "idea",
+      "text": "your inbox idea: compute markets as a lead-lag source",
+      "at": "2026-10-22T13:00:00+01:00",
+      "unread": true
+    },
+    {
+      "kind": "commits",
+      "text": "1 commit on syna-switch-to-cash · a switch from stock to cash is not a share leg",
+      "at": "2026-10-16T18:40:00+01:00",
+      "unread": false
+    }
   ],
   "sessions": [
-    { "name": "needs a decision", "state": "needs_you", "since": "2026-10-24T20:58:00+01:00", "doing": "SYNA: close the shadow position or hold to the vote?" },
-    { "name": "main chat", "state": "working", "since": "2026-10-24T21:31:00+01:00", "doing": "reading the deal tape for SYNA" },
-    { "name": "compute-leadlag", "state": "working", "since": "2026-10-24T21:12:00+01:00", "doing": "python -m nabla.compute --snapshot", "background": true },
-    { "name": "classifier tests", "state": "failed", "since": "2026-10-24T20:40:00+01:00", "doing": "3 failed in test_share_legs.py", "background": true },
-    { "name": "h008 write-up", "state": "done", "since": "2026-10-24T18:02:00+01:00" },
-    { "name": "dashboard copy", "state": "done", "since": "2026-10-24T15:20:00+01:00" },
-    { "name": "recall study", "state": "idle", "since": "2026-10-23T22:45:00+01:00" },
-    { "name": "INBOX triage", "state": "idle", "since": "2026-10-22T13:05:00+01:00" }
+    {
+      "name": "needs a decision",
+      "state": "needs_you",
+      "since": "2026-10-24T20:58:00+01:00",
+      "doing": "SYNA: close the shadow position or hold to the vote?",
+      "summary": "SYNA's vote is close: close the shadow position now, or hold through it?"
+    },
+    {
+      "name": "main chat",
+      "state": "working",
+      "since": "2026-10-24T21:31:00+01:00",
+      "doing": "reading the deal tape for SYNA",
+      "summary": "reading SYNA's deal terms to decide what the shadow book should hold"
+    },
+    {
+      "name": "compute-leadlag",
+      "state": "working",
+      "since": "2026-10-24T21:12:00+01:00",
+      "doing": "python -m nabla.compute --snapshot",
+      "background": true,
+      "summary": "taking tonight's compute-market snapshot for the lead-lag idea"
+    },
+    {
+      "name": "classifier tests",
+      "state": "failed",
+      "since": "2026-10-24T20:40:00+01:00",
+      "doing": "3 failed in test_share_legs.py",
+      "background": true,
+      "summary": "the share-leg classifier fix broke 3 tests; needs a look"
+    },
+    {
+      "name": "h008 write-up",
+      "state": "done",
+      "since": "2026-10-24T18:02:00+01:00",
+      "summary": "wrote up why H008 (ETF trend on idle cash) was killed"
+    },
+    {
+      "name": "dashboard copy",
+      "state": "done",
+      "since": "2026-10-24T15:20:00+01:00",
+      "summary": "reworded the dashboard's gate tab"
+    },
+    {
+      "name": "recall study",
+      "state": "idle",
+      "since": "2026-10-23T22:45:00+01:00",
+      "summary": "checked whether backtest spreads were ever available live"
+    },
+    {
+      "name": "INBOX triage",
+      "state": "idle",
+      "since": "2026-10-22T13:05:00+01:00",
+      "summary": "sorted the inbox ideas into hypotheses"
+    }
   ],
   "chores": [
-    { "title": "check the nightly heartbeat ping is still green", "minutes": 2 }
+    {
+      "title": "check the nightly heartbeat ping is still green",
+      "minutes": 2
+    }
   ],
   "graph": {
     "trunk": "main",
     "from": "2026-09-13",
     "milestones": [
-      { "date": "2026-09-13", "label": "a thinking instrument" },
-      { "date": "2026-09-15", "label": "ADR-006 few, high-IC structural edges" },
-      { "date": "2026-10-09", "label": "the dashboard" },
-      { "date": "2026-10-14", "label": "ADR-007 a loss budget" }
+      {
+        "date": "2026-09-13",
+        "label": "a thinking instrument"
+      },
+      {
+        "date": "2026-09-15",
+        "label": "ADR-006 few, high-IC structural edges"
+      },
+      {
+        "date": "2026-10-09",
+        "label": "the dashboard"
+      },
+      {
+        "date": "2026-10-14",
+        "label": "ADR-007 a loss budget"
+      }
     ],
     "lanes": [
-      { "branch": "completion-orphans", "stage": "classifier fixes", "forked": "2026-10-11", "merged": "2026-10-11", "commits": 1, "happened": ["A documented completion no longer blocks buying"] },
-      { "branch": "unpriced-deals", "stage": "the recall study", "forked": "2026-10-12", "merged": "2026-10-13", "commits": 2, "happened": ["The backtest's widest spreads were never available live"] },
-      { "branch": "lookahead-fix", "stage": "the lookahead fix", "forked": "2026-10-13", "merged": "2026-10-13", "commits": 2, "happened": ["Every configuration comparison re-run on the corrected panels"] },
-      { "branch": "corrected-truth", "stage": "the lookahead fix", "forked": "2026-10-13", "merged": "2026-10-14", "commits": 2, "happened": ["Classifier results in lookahead.md"] },
-      { "branch": "worktree-inbox-compute", "stage": "inbox", "forked": "2026-10-14", "merged": "2026-10-14", "commits": 1, "happened": ["Compute markets idea (14 Oct)"] },
-      { "branch": "gate-cap-text", "stage": "dashboard copy", "forked": "2026-10-14", "merged": "2026-10-14", "commits": 1, "happened": ["Gate tab: the spread cap is four times the bar, not twice"] },
-      { "branch": "dead-mans-switch", "stage": "the dead-man's switch", "forked": "2026-10-14", "merged": "2026-10-14", "commits": 1, "happened": ["GitHub watchdog on the nightly commit, and a heartbeat ping"] },
-      { "branch": "compute-leadlag", "stage": "compute markets: a snapshot job", "forked": "2026-10-14", "tip": "2026-10-14", "commits": 4, "happened": ["Daily snapshot job: nabla.compute --snapshot", "Health and dashboard show its evidence"] },
-      { "branch": "h008-etf-trend", "stage": "H008 tested and killed", "forked": "2026-10-14", "tip": "2026-10-14", "commits": 2, "happened": ["Pre-registered: ETF trend on merger arb's idle cash", "Killed: trend on idle cash cannot hedge merger arb"] },
-      { "branch": "syna-switch-to-cash", "stage": "classifier: SYNA", "forked": "2026-10-16", "tip": "2026-10-16", "commits": 1, "happened": ["A switch from stock to cash is not a share leg"] }
+      {
+        "branch": "completion-orphans",
+        "stage": "classifier fixes",
+        "forked": "2026-10-11",
+        "merged": "2026-10-11",
+        "commits": 1,
+        "happened": [
+          "A documented completion no longer blocks buying"
+        ]
+      },
+      {
+        "branch": "unpriced-deals",
+        "stage": "the recall study",
+        "forked": "2026-10-12",
+        "merged": "2026-10-13",
+        "commits": 2,
+        "happened": [
+          "The backtest's widest spreads were never available live"
+        ]
+      },
+      {
+        "branch": "lookahead-fix",
+        "stage": "the lookahead fix",
+        "forked": "2026-10-13",
+        "merged": "2026-10-13",
+        "commits": 2,
+        "happened": [
+          "Every configuration comparison re-run on the corrected panels"
+        ]
+      },
+      {
+        "branch": "corrected-truth",
+        "stage": "the lookahead fix",
+        "forked": "2026-10-13",
+        "merged": "2026-10-14",
+        "commits": 2,
+        "happened": [
+          "Classifier results in lookahead.md"
+        ]
+      },
+      {
+        "branch": "worktree-inbox-compute",
+        "stage": "inbox",
+        "forked": "2026-10-14",
+        "merged": "2026-10-14",
+        "commits": 1,
+        "happened": [
+          "Compute markets idea (14 Oct)"
+        ]
+      },
+      {
+        "branch": "gate-cap-text",
+        "stage": "dashboard copy",
+        "forked": "2026-10-14",
+        "merged": "2026-10-14",
+        "commits": 1,
+        "happened": [
+          "Gate tab: the spread cap is four times the bar, not twice"
+        ]
+      },
+      {
+        "branch": "dead-mans-switch",
+        "stage": "the dead-man's switch",
+        "forked": "2026-10-14",
+        "merged": "2026-10-14",
+        "commits": 1,
+        "happened": [
+          "GitHub watchdog on the nightly commit, and a heartbeat ping"
+        ]
+      },
+      {
+        "branch": "compute-leadlag",
+        "stage": "compute markets: a snapshot job",
+        "forked": "2026-10-14",
+        "tip": "2026-10-14",
+        "commits": 4,
+        "happened": [
+          "Daily snapshot job: nabla.compute --snapshot",
+          "Health and dashboard show its evidence"
+        ]
+      },
+      {
+        "branch": "h008-etf-trend",
+        "stage": "H008 tested and killed",
+        "forked": "2026-10-14",
+        "tip": "2026-10-14",
+        "commits": 2,
+        "happened": [
+          "Pre-registered: ETF trend on merger arb's idle cash",
+          "Killed: trend on idle cash cannot hedge merger arb"
+        ]
+      },
+      {
+        "branch": "syna-switch-to-cash",
+        "stage": "classifier: SYNA",
+        "forked": "2026-10-16",
+        "tip": "2026-10-16",
+        "commits": 1,
+        "happened": [
+          "A switch from stock to cash is not a share leg"
+        ]
+      }
     ]
   }
 }

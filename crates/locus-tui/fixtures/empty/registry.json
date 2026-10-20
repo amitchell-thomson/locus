@@ -28,10 +28,26 @@
       "area": "Projects",
       "kind": "code",
       "sessions": [
-        "locus-dev"
+        "locus-dev",
+        "kairos",
+        "keryx"
       ],
       "depth": "design",
-      "active": true
+      "active": true,
+      "components": [
+        {
+          "name": "locus",
+          "repo": "locus"
+        },
+        {
+          "name": "kairos (calendar)",
+          "repo": "kairos"
+        },
+        {
+          "name": "keryx (mail)",
+          "repo": "keryx"
+        }
+      ]
     },
     {
       "id": "oqts",
@@ -57,28 +73,6 @@
           "repo": "oqts/oqts-site"
         }
       ]
-    },
-    {
-      "id": "kairos",
-      "name": "kairos",
-      "area": "Projects",
-      "kind": "code",
-      "sessions": [
-        "kairos"
-      ],
-      "depth": "outcome",
-      "active": true
-    },
-    {
-      "id": "keryx",
-      "name": "keryx",
-      "area": "Projects",
-      "kind": "code",
-      "sessions": [
-        "keryx"
-      ],
-      "depth": "outcome",
-      "active": false
     },
     {
       "id": "cv",
@@ -115,7 +109,7 @@
       "id": "3yp",
       "name": "3YP",
       "area": "Studies",
-      "kind": "course",
+      "kind": "code",
       "sessions": [
         "B3-Project"
       ],

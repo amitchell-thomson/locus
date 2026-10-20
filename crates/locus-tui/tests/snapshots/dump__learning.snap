@@ -4,9 +4,9 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 ---
 ╭ learning · 2 goals · 9 tracks ──────────────────────────────────────────────────── esc back ╮
 │─ goals ─────────────────────────────────────────────────────────────────────────────── [g] ─│
-│▸ 󰌵 ready for the Jump Trading internship: PyTorch, backprop, mark… 30 h · syllabus to agree │
-│  󰌵 SVD, by hand and by meaning                                                 2 h · active │
-│  󰌵 Jump Trading final round, 1 Oct                                              25 h · done │
+│▌ 󰌵 Jump internship preparation                                     30 h · syllabus to agree │
+│  󰌵 personal learning                                                           2 h · active │
+│  󰌵 Jump Trading application                                                     25 h · done │
 │─ syllabus · y agrees · e changes ───────────────────────────────────────────────────────────│
 │ 1. backprop              ━━━─────    6 h  derive it by hand for a two-layer network, then…  │
 │ 2. PyTorch               ━━──────    8 h  tensors, autograd and a training loop from scra…  │

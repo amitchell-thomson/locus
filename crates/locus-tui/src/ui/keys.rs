@@ -35,7 +35,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         ("l", "the automatic-actions log"),
         ("j k ↑ ↓", "move in a list"),
         ("?", "keys"),
-        ("R", "reset fixtures"),
+        ("R", "clear the prototype's ticks and strikes (fixture data only)"),
         ("alt-1…4", "home · project · calendar · mail"),
     ] {
         lines.push(Line::from(vec![

@@ -70,3 +70,13 @@ $T switch-client -c "$tty" -t locus
 sleep 1
 echo "== client lands on locus; calendar shows: $($T capture-pane -p -t =locus:=calendar | head -1)"
 echo "   mail shows: $($T capture-pane -p -t =locus:=mail | head -1)"
+
+# Home hands a project to the Project window (round 1): Enter on a project row there switches to
+# the project window showing it; Esc goes back to Home and the Project view follows again.
+$T switch-client -c "$tty" -t locus
+$T send-keys -K -c "$tty" M-1
+sleep 0.5
+$T send-keys -t =locus:=home p Down Enter
+echo "== Enter on Home's second project shows: $(current) · $($T capture-pane -p -t =locus:=project | head -1 | grep -o 'from home[^╮]*' | head -1)"
+$T send-keys -t =locus:=project Escape
+echo "== Esc there shows: $(current) · project header: $($T capture-pane -p -t =locus:=project | head -1 | cut -c1-40)"

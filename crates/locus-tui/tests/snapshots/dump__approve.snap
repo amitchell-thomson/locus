@@ -4,7 +4,7 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 ---
 ╭ approve · 6 ────────────────────────────────────────────────────────────────────── esc back ╮
 │ 󰴹 filing · 2                                                                                │
-│▸ jot p3 "G-Research sponsor talk" → careers/g-research · jot                            y n │
+│▌ jot p3 "G-Research sponsor talk" → careers/g-research · jot                            y n │
 │  jot p3 "Kalman filters for…" → explore · jot                                           y n │
 │                                                                                             │
 │ 󰴹 mail · 1                                                                                  │

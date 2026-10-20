@@ -28,17 +28,27 @@ pub fn draw_week(f: &mut Frame, area: Rect, app: &App, focus: bool) {
     let w = &fx.work;
     let total: f32 = w.totals().iter().map(|(_, h)| h).sum::<f32>() + 0.0;
     let mut out = vec![rule("work", "this week", Some('w'), focus, area.width)];
-    let [grid, side] = Layout::horizontal([Constraint::Length(46), Constraint::Min(0)]).areas(Rect {
+    // Two columns a half hour when the window is wide enough (round 1: the grid sat in the
+    // left third with empty space beside it); the panel on the right takes the rest.
+    let cw: usize = if area.width >= 120 { 2 } else { 1 };
+    let grid_w = 6 + CELLS * cw + 5;
+    let [grid, side] = Layout::horizontal([Constraint::Length(grid_w as u16), Constraint::Min(0)]).areas(Rect {
         y: area.y + 1,
         height: area.height.saturating_sub(1),
         ..area
     });
     lines(f, Rect { height: 1, ..area }, std::mem::take(&mut out));
 
-    let mut g = vec![Line::from(Span::styled(
-        "      06    09    12    15    18    21    24",
-        dim(),
-    ))];
+    let mut head = String::from("      ");
+    for h in (START_H..=24).step_by(3) {
+        let label = format!("{h:02}");
+        let col = 6 + ((h - START_H) as usize * 2) * cw;
+        while head.chars().count() < col {
+            head.push(' ');
+        }
+        head.push_str(&label);
+    }
+    let mut g = vec![Line::from(Span::styled(head, dim()))];
     let first = w.week.first().map(|d| d.date);
     for (i, name) in DAYS.iter().enumerate() {
         let date = first.map(|d| d + Duration::days(i as i64));
@@ -62,10 +72,10 @@ pub fn draw_week(f: &mut Frame, area: Rect, app: &App, focus: bool) {
                         3 => "▓",
                         _ => "█",
                     };
-                    Span::styled(ch, Style::default().fg(project_colour(&fx.registry, p)))
+                    Span::styled(ch.repeat(cw), Style::default().fg(project_colour(&fx.registry, p)))
                 }
-                None if day.is_some() && x % 2 == 1 => Span::styled("·", st("surface1")),
-                None => Span::raw(" "),
+                None if day.is_some() && x % 2 == 1 => Span::styled(format!("{}·", " ".repeat(cw - 1)), st("surface1")),
+                None => Span::raw(" ".repeat(cw)),
             });
         }
         g.push(Line::from(spans));
@@ -81,7 +91,7 @@ pub fn draw_week(f: &mut Frame, area: Rect, app: &App, focus: bool) {
     let max = totals.first().map(|t| t.1).unwrap_or(1.0).max(1.0);
     for (p, h) in totals.iter().take(4) {
         let col = project_colour(&fx.registry, p);
-        let n = ((h / max) * 12.0).round() as usize;
+        let n = ((h / max) * (usize::from(side.width).saturating_sub(20)) as f32).round() as usize;
         s.push(Line::from(vec![
             Span::styled(format!("{:<8}", crate::ui::truncate(p, 8)), Style::default().fg(col)),
             Span::styled(format!("{h:>5.1} h "), text()),

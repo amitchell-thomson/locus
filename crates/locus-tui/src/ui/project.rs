@@ -47,6 +47,16 @@ fn is_unread(app: &App, view: &ProjectView, i: usize) -> bool {
     view.new.get(i).is_some_and(|it| it.unread) && app.marked(&new_key(view, i)).is_none()
 }
 
+pub fn section_len(app: &App, sec: char) -> usize {
+    let Some(v) = view(app) else { return 0 };
+    match sec {
+        'n' => v.new.len(),
+        'g' => v.graph.as_ref().map_or(0, |g| g.lanes.len().min(LANES)),
+        's' => v.sessions.len().min(8),
+        _ => v.chores.len().min(3),
+    }
+}
+
 pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     let now = app.fixtures.now();
     let view = view(app);
@@ -59,7 +69,9 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
             st("blue"),
         ));
     }
-    if app.stack.first() == Some(&ScreenId::Project) {
+    if app.peek.is_some() && app.stack.first() == Some(&ScreenId::Project) {
+        right.push(Span::styled(" from home · esc returns ", st("peach")));
+    } else if app.stack.first() == Some(&ScreenId::Project) {
         right.extend(follow_badge(app).spans);
     } else {
         right.push(Span::styled(" esc back ", dim()));
@@ -224,7 +236,7 @@ fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
         let col = c(PROJECT_COLOURS[i % PROJECT_COLOURS.len()]);
         let label = crate::ui::truncate(&l.stage, label_w - 2);
         let mut spans = vec![
-            Span::styled(if selected { "▸ " } else { "  " }, keyst()),
+            Span::styled(if selected { "▌ " } else { "  " }, keyst()),
             Span::styled(
                 format!("{label:>w$} ", w = label_w - 2),
                 if selected {

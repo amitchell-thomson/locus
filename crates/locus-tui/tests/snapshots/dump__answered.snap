@@ -3,7 +3,7 @@ source: crates/locus-tui/tests/dump.rs
 expression: "dump::render(&a, 95, 38).unwrap()"
 ---
 ╭ quast · answered ───────────────────────────────────────────────────────────────── esc back ╮
-│▸ 󱜾 delayed acceptance                 󰴓 ink ?  dossier p5 · §8bw                         5h │
+│▌ 󱜾 delayed acceptance                 󰴓 ink ?  dossier p5 · §8bw                         5h │
 │  󱜾 why SMC and not a genetic algori…  ask      ·                                         4d │
 │  󱜾 what the fit check rejects         󰴓 ink ?  the-loop.md §4                            7d │
 │─────────────────────────────────────────────────────────────────────────────────────────────│

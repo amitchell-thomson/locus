@@ -84,6 +84,14 @@ pub fn bar(frac: f32, width: usize, mark: Option<f32>, fill: Color) -> Vec<Span<
     spans
 }
 
+/// The colour of something running right now, stepped each frame so it reads as alive rather
+/// than parked (round 1: "animate the running symbols slightly ... only when they are active
+/// right this instant"). Frame 0, as in `--dump`, is the plain colour.
+pub fn pulse(frame: u64) -> Style {
+    const STEPS: [&str; 6] = ["blue", "sapphire", "sky", "teal", "sky", "sapphire"];
+    st(STEPS[(frame / 2 % STEPS.len() as u64) as usize])
+}
+
 pub fn item_glyph(k: ItemKind) -> (&'static str, &'static str) {
     match k {
         ItemKind::Recheck => (glyph::RECHECK, "yellow"),
@@ -167,8 +175,23 @@ pub fn rule(title: &str, extra: &str, letter: Option<char>, focus: bool, width: 
     Line::from(spans)
 }
 
-/// A row with text on the left and `right` flush right in `width`, the left cut to fit.
+/// What `pointer` puts at the start of the selected row; `row` sees it and lights the row.
+const SELECTED: &str = "▌ ";
+
+/// A row with text on the left and `right` flush right in `width`, the left cut to fit. A row
+/// that starts with the selection pointer is drawn on a band across the whole width (round 1:
+/// "we need more of an indicator of what is selected than the tiny little arrow").
 pub fn row(left: Vec<Span<'static>>, right: Vec<Span<'static>>, width: u16) -> Line<'static> {
+    let selected = left.first().is_some_and(|s| s.content == SELECTED);
+    let line = row_plain(left, right, width);
+    if selected {
+        line.patch_style(Style::default().bg(c("surface0")))
+    } else {
+        line
+    }
+}
+
+fn row_plain(left: Vec<Span<'static>>, right: Vec<Span<'static>>, width: u16) -> Line<'static> {
     let rw: usize = right.iter().map(|s| s.content.width()).sum();
     let avail = usize::from(width).saturating_sub(rw + 1);
     let mut out = Vec::new();
@@ -193,7 +216,7 @@ pub fn row(left: Vec<Span<'static>>, right: Vec<Span<'static>>, width: u16) -> L
 /// The selection marker for row `i` when `sel` is the selected row of a focused list.
 pub fn pointer(i: usize, sel: Option<usize>) -> Span<'static> {
     if sel == Some(i) {
-        Span::styled("▸ ", keyst())
+        Span::styled(SELECTED, keyst())
     } else {
         Span::raw("  ")
     }

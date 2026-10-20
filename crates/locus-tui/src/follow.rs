@@ -167,3 +167,76 @@ mod tests {
         assert_eq!(ff.poll(), None, "unchanged");
     }
 }
+
+/// Home asks the Project window to show a project for a moment (round 1, 21 Oct: "clicking on
+/// projects should take you to the projects tab ... escape on the project tab should take you
+/// back to home and set the project tab back to whatever it was before"). Home writes the id
+/// to `<state>/peek` and switches to the Project window; the Project view shows it until Esc,
+/// which empties the file and switches back. A file left from an earlier run is ignored.
+pub struct PeekFile {
+    path: Option<PathBuf>,
+    seen: Option<SystemTime>,
+}
+
+impl PeekFile {
+    pub fn new(dir: Option<PathBuf>) -> PeekFile {
+        let path = dir.map(|d| d.join("peek"));
+        let seen = path
+            .as_ref()
+            .and_then(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok());
+        PeekFile { path, seen }
+    }
+
+    /// `Some(change)` when the file changed: the project to show, or `None` to stop showing it.
+    pub fn poll(&mut self) -> Option<Option<String>> {
+        let path = self.path.as_ref()?;
+        let modified = std::fs::metadata(path).and_then(|m| m.modified()).ok()?;
+        if self.seen == Some(modified) {
+            return None;
+        }
+        self.seen = Some(modified);
+        let text = std::fs::read_to_string(path).ok()?;
+        let s = text.trim();
+        Some((!s.is_empty()).then(|| s.to_string()))
+    }
+
+    /// Ask for `id` (or stop asking), written whole so a reader never sees half a name.
+    pub fn write(&self, id: Option<&str>) -> std::io::Result<()> {
+        let Some(path) = &self.path else { return Ok(()) };
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let tmp = path.with_extension("tmp");
+        std::fs::write(&tmp, id.unwrap_or(""))?;
+        std::fs::rename(&tmp, path)
+    }
+}
+
+/// Show a window of the locus session (`home`, `project`): the one real effect the prototype
+/// has besides the focus file. False when not inside the locus session or tmux refused.
+pub fn select_window(view: &str) -> bool {
+    std::process::Command::new("tmux")
+        .args(["select-window", "-t", &format!("=locus:={view}")])
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+#[cfg(test)]
+mod peek_tests {
+    use super::*;
+
+    #[test]
+    fn peek_round_trips_and_ignores_a_stale_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("peek"), "quast").unwrap();
+        let mut reader = PeekFile::new(Some(dir.path().to_path_buf()));
+        assert_eq!(reader.poll(), None, "left from an earlier run");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let writer = PeekFile::new(Some(dir.path().to_path_buf()));
+        writer.write(Some("nabla")).unwrap();
+        assert_eq!(reader.poll(), Some(Some("nabla".into())));
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        writer.write(None).unwrap();
+        assert_eq!(reader.poll(), Some(None));
+    }
+}

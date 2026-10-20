@@ -125,11 +125,14 @@ impl ScreenId {
 }
 
 use ScreenId as S;
+// In the order Tab and the arrows visit them, top to bottom.
 const HOME: &[Section] = &[
+    s('a', "waiting for you", Some(S::Approve)),
     s('w', "work", Some(S::WorkChart)),
     s('p', "projects", Some(S::Project)),
+    s('c', "careers", None),
+    s('g', "learning", Some(S::Learning)),
     s('e', "explore", Some(S::Explore)),
-    s('a', "approve", Some(S::Approve)),
     s('s', "system", Some(S::System)),
 ];
 // Decisions (d), Answered (a) and prep (p) open from the Project view by their own keys: they

@@ -3,7 +3,7 @@ source: crates/locus-tui/tests/dump.rs
 expression: "dump::render(&a, 95, 38).unwrap()"
 ---
 ╭ automatic actions · live ───────────────────────────────────────────────────────── esc back ╮
-│▸ 21:31 󰚩 change record · quast · 6 commits                                                  │
+│▌ 21:31 󰚩 change record · quast · 6 commits                                                  │
 │  21:02 󰚩 filed 35 of 38 margin marks from quast dossier v3                           u undo │
 │  20:58 󰚩 filed jot p2 → projects/nabla  (automatic since 9 Oct)                      u undo │
 │  19:10 󰚩 kairos moved a work block out of a clash with Futsal                        u undo │

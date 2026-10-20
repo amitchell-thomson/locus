@@ -13,8 +13,8 @@ use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
-use ratatui_image::{FilterType, Resize, StatefulImage};
 use ratatui_image::picker::Picker;
+use ratatui_image::{FilterType, Resize, StatefulImage};
 
 pub const KEYS: &[(&str, &str)] = &[
     ("y n", "approve or refuse"),

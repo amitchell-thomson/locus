@@ -19,8 +19,8 @@ fi
 
 command_for() {
     case $1 in
-        home) echo "LOCUS_STATE_DIR='$state' '$bin' home" ;;
-        project) echo "LOCUS_STATE_DIR='$state' '$bin' project" ;;
+        home) echo "LOCUS_IN_SESSION=1 LOCUS_STATE_DIR='$state' '$bin' home" ;;
+        project) echo "LOCUS_IN_SESSION=1 LOCUS_STATE_DIR='$state' '$bin' project" ;;
         calendar) echo "$kairos" ;;
         mail) echo "$keryx" ;;
         *) echo "locus-session.sh: no view '$1' (home|project|calendar|mail)" >&2; exit 2 ;;

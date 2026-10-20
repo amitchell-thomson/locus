@@ -73,6 +73,14 @@ pub struct App {
     /// The terminal's image protocol, found at startup; none means half blocks (and `--dump`).
     pub picker: Option<Picker>,
     pub image: RefCell<Option<(String, StatefulProtocol)>>,
+    /// Draw count, for the pulse on things running right now.
+    pub frame: u64,
+    /// Running as a window of the locus session (set by locus-session.sh), so Home can hand a
+    /// project to the Project window instead of opening it in place.
+    pub in_session: bool,
+    /// The project Home asked the Project window to show, until Esc.
+    pub peek: Option<String>,
+    pub peek_file: Option<crate::follow::PeekFile>,
 }
 
 impl App {
@@ -100,6 +108,10 @@ impl App {
             split: false,
             picker: None,
             image: RefCell::new(None),
+            frame: 0,
+            in_session: false,
+            peek: None,
+            peek_file: None,
         };
         app.uselog.record(root.name(), "open");
         app
@@ -114,6 +126,19 @@ impl App {
         self.screen().sections().iter().find(|s| s.letter == f)
     }
 
+    /// Show a project: in the Project window when running in the locus session, else here.
+    pub fn open_project(&mut self, id: String) {
+        if self.in_session
+            && let Some(f) = &self.peek_file
+            && f.write(Some(&id)).is_ok()
+            && crate::follow::select_window("project")
+        {
+            return;
+        }
+        self.viewing = Some(id);
+        self.open(ScreenId::Project);
+    }
+
     pub fn open(&mut self, screen: ScreenId) {
         self.stack.push(screen);
         self.focus = None;
@@ -121,7 +146,14 @@ impl App {
     }
 
     fn back(&mut self) {
-        if self.focus.is_some() {
+        if self.stack.len() == 1 && self.peek.is_some() && self.focus.is_none() {
+            // A project Home handed over: give the window back to following, and go home.
+            self.peek = None;
+            if let Some(f) = &self.peek_file {
+                let _ = f.write(None);
+            }
+            crate::follow::select_window("home");
+        } else if self.focus.is_some() {
             self.focus = None;
         } else if self.stack.len() > 1 {
             self.stack.pop();
@@ -132,6 +164,9 @@ impl App {
     /// this window's root, otherwise the one opened from Home.
     pub fn project_id(&self) -> Option<String> {
         if self.stack.first() == Some(&ScreenId::Project) {
+            if let Some(p) = &self.peek {
+                return Some(p.clone());
+            }
             let s = self.follow.session.as_deref()?;
             Some(self.fixtures.registry.by_session(s)?.id.clone())
         } else {
@@ -177,6 +212,9 @@ impl App {
             self.on_mode_key(key);
             return;
         }
+        if self.section_key(key) {
+            return;
+        }
         if crate::ui::screen_key(self, key) {
             return;
         }
@@ -200,6 +238,60 @@ impl App {
             KeyCode::Char('R') => self.reset(),
             KeyCode::Char(ch) if self.screen().sections().iter().any(|s| s.letter == ch) => self.focus = Some(ch),
             _ => self.note = Some(format!("{name} does nothing here · ? for keys")),
+        }
+    }
+
+    /// Moving between a screen's sections without their letters (round 1, 21 Oct: "I definitely
+    /// want tab to be able to cycle us through the different sections"; ↑ and ↓ pressed 162
+    /// times on Home with nothing to move). Tab and Shift-Tab cycle the sections. On screens
+    /// whose sections are lists, ↓ walks a section's rows and at its last row moves on into the
+    /// next section; ↑ the same upwards.
+    fn section_key(&mut self, key: KeyEvent) -> bool {
+        let screen = self.screen();
+        let secs = screen.sections();
+        if secs.is_empty() {
+            return false;
+        }
+        let at = self.focus.and_then(|f| secs.iter().position(|s| s.letter == f));
+        let n = secs.len();
+        match key.code {
+            KeyCode::Tab | KeyCode::BackTab => {
+                let next = match (at, key.code == KeyCode::Tab) {
+                    (None, true) => 0,
+                    (None, false) => n - 1,
+                    (Some(i), true) => (i + 1) % n,
+                    (Some(i), false) => (i + n - 1) % n,
+                };
+                self.focus = Some(secs[next].letter);
+                true
+            }
+            _ if !crate::ui::flows(screen) => false,
+            _ => {
+                let Some(d) = nav(&key) else { return false };
+                let Some(i) = at else {
+                    let i = if d > 0 { 0 } else { n - 1 };
+                    self.focus = Some(secs[i].letter);
+                    return true;
+                };
+                let sec = secs[i].letter;
+                let len = crate::ui::section_len(self, sec).max(1);
+                let cur = self.sel(sec);
+                if d > 0 && cur + 1 < len {
+                    self.sel.insert((screen, sec), cur + 1);
+                } else if d < 0 && cur > 0 {
+                    self.sel.insert((screen, sec), cur - 1);
+                } else if d > 0 && i + 1 < n {
+                    let next = secs[i + 1].letter;
+                    self.focus = Some(next);
+                    self.sel.insert((screen, next), 0);
+                } else if d < 0 && i > 0 {
+                    let prev = secs[i - 1].letter;
+                    self.focus = Some(prev);
+                    let last = crate::ui::section_len(self, prev).max(1) - 1;
+                    self.sel.insert((screen, prev), last);
+                }
+                true
+            }
         }
     }
 
@@ -265,7 +357,7 @@ impl App {
                 self.marks.clear();
                 self.query = self.fixtures.search.query.clone();
                 self.image.replace(None);
-                self.note = Some("fixtures reset".into());
+                self.note = Some("prototype reset: ticks and strikes cleared (fixture data only)".into());
             }
             Err(e) => self.note = Some(format!("fixtures did not reload: {e:#}")),
         }
@@ -374,6 +466,39 @@ mod tests {
         assert_eq!(a.screen(), ScreenId::Project);
         let second = crate::ui::home::project_rows(&a)[1].clone();
         assert_eq!(a.project_id(), Some(second));
+    }
+
+    #[test]
+    fn tab_cycles_sections_and_arrows_flow_between_them() {
+        let mut a = app();
+        let secs: Vec<char> = ScreenId::Home.sections().iter().map(|s| s.letter).collect();
+        press(&mut a, KeyCode::Tab);
+        assert_eq!(a.focus, Some(secs[0]));
+        press(&mut a, KeyCode::Tab);
+        assert_eq!(a.focus, Some(secs[1]));
+        a.on_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
+        assert_eq!(a.focus, Some(secs[0]));
+        // Down through projects, then on into the next section.
+        a.focus = Some('p');
+        let n = crate::ui::section_len(&a, 'p');
+        for _ in 0..n {
+            press(&mut a, KeyCode::Down);
+        }
+        assert_eq!(a.focus, Some('c'), "past the last project, into careers");
+        press(&mut a, KeyCode::Up);
+        assert_eq!(
+            (a.focus, a.sel('p')),
+            (Some('p'), n - 1),
+            "and back to the last project"
+        );
+    }
+
+    #[test]
+    fn arrows_with_nothing_focused_focus_the_first_section() {
+        let mut a = app();
+        press(&mut a, KeyCode::Down);
+        assert_eq!(a.focus, Some(ScreenId::Home.sections()[0].letter));
+        assert!(a.note.is_none(), "no 'does nothing here'");
     }
 
     #[test]

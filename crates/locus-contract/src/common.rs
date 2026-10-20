@@ -110,6 +110,11 @@ pub struct Session {
     /// `allow: cargo test --release?`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub doing: Option<String>,
+    /// What it is for and what it wants, in plain words for someone without the chat's
+    /// context (round 1, 21 Oct): "wants to run the full battery on the server". Written from
+    /// the transcript by the change-record job; the raw `doing` stays as the detail.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
     /// Started in the background (`claude -p`, or a session you left running).
     #[serde(default)]
     pub background: bool,

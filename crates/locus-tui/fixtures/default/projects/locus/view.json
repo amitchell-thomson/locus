@@ -14,6 +14,12 @@
       "unread": true
     },
     {
+      "kind": "commits",
+      "text": "kairos · 3 commits on main · gzip the TUI index",
+      "at": "2026-10-21T13:40:00+01:00",
+      "unread": true
+    },
+    {
       "kind": "decision",
       "text": "ADR-005 the data directory is data/, not vault/",
       "at": "2026-10-20T10:00:00+01:00",
@@ -31,13 +37,21 @@
       "name": "slice 1",
       "state": "working",
       "since": "2026-10-24T21:35:00+01:00",
-      "doing": "cargo test -p locus-tui"
+      "doing": "cargo test -p locus-tui",
+      "summary": "building the Home round's changes"
     },
     {
       "name": "slice 0",
       "state": "needs_you",
       "since": "2026-10-24T21:20:00+01:00",
-      "doing": "allow: ssh compute-node 'systemctl --user restart locus-http' ?"
+      "doing": "allow: ssh compute-node 'systemctl --user restart locus-http' ?",
+      "summary": "wants to restart the locus HTTP service on the server; needs your yes"
+    },
+    {
+      "name": "kairos: taxonomy",
+      "state": "idle",
+      "since": "2026-10-21T14:05:00+01:00",
+      "summary": "moving kairos onto the four areas"
     }
   ],
   "chores": [],

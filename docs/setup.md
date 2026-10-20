@@ -18,7 +18,7 @@ keryx talks to your personal Gmail through the Gmail API with its own OAuth clie
 1. <https://console.cloud.google.com/> → project picker → **New project**, name it `keryx`.
 2. **APIs & Services → Library** → search **Gmail API** → **Enable**.
 3. **Google Auth Platform** (older consoles: *OAuth consent screen*):
-   - *Branding*: app name `keryx`, your Gmail as support and developer contact.
+   - *Branding*: app name `keryx`, your Gmail as support and developer contact. Leave **Application home page**, privacy policy, terms and authorised domains **empty**: they're only needed to submit the app for Google's verification, which a personal app doesn't do.
    - *Audience*: user type **External**, then **Publish app** so the status reads **In production**. This matters: in *Testing*, Google expires the refresh token every 7 days and keryx would lose access weekly. "Unverified" is fine for an app only you use.
    - *Data access*: add the scope `https://www.googleapis.com/auth/gmail.modify` (read, label, draft and send; it **can't** permanently delete). Don't add `https://mail.google.com/`.
 4. *Clients* → **Create client** → type **Desktop app**, name `keryx` → **Download JSON**.
@@ -79,7 +79,7 @@ kairos's token is already in the Keychain as `kairos-api-token`, and keryx reuse
 3. In `config.toml`, `[server] bind` must be the Mac's Tailscale IP (`tailscale ip -4`), so the phone can reach the approval pages. Links are signed with a key derived from `keryx-api-token`; rotating the token invalidates old links.
 4. Restart keryxd (`scripts/install-daemon.sh`). `keryx doctor` should say "ntfy topic set".
 
-Each push opens a confirmation page; nothing is approved until you press its button (link previews can't approve). If the Mac is asleep the page won't load and the draft stays pending.
+Approval pushes are **off** (`[notify] approvals = false`, Alec 2026-10-20): drafts are approved in keryx (`A`), the phone only gets the one push per run and per finished cleanup, and the pages show drafts without buttons. With `approvals = true`, each Claude draft pushes with buttons that open a confirmation page; nothing is approved until you press its button (link previews can't approve). If the Mac is asleep the page won't load and the draft stays pending.
 
 ## 9. Scheduled runs (Phase 9)
 

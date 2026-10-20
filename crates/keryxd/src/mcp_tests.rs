@@ -494,6 +494,7 @@ fn phone_state() -> (AppState, Pushes) {
     let p = Pushes::default();
     {
         let mut e = st.engine.lock().unwrap();
+        e.cfg.notify.approvals = true;
         e.notifier = Some(Box::new(p.clone()));
         e.links = Some(crate::notify::Links::new(TOKEN, "http://keryx.test"));
     }
@@ -835,4 +836,40 @@ async fn an_interactive_cleanup_pushes_once_when_claude_stops() {
     assert_eq!(e.push_quiet_reviews().unwrap(), 0, "once");
     let p = pushes.0.lock().unwrap().clone();
     assert_eq!(p[0].title, "Cleanup ready: 1 proposal");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn approvals_off_means_no_draft_push_and_pages_only_show() {
+    let (st, pushes) = phone_state();
+    st.engine.lock().unwrap().cfg.notify.approvals = false;
+    let cs = draft(&st, &find_ref(&st, "Lab partner for Thursday?"));
+    assert!(pushes.0.lock().unwrap().is_empty(), "no push for a draft");
+    let (base, _h, _) = start(st.clone()).await;
+    let sig = st
+        .engine
+        .lock()
+        .unwrap()
+        .links
+        .as_ref()
+        .unwrap()
+        .sign(&cs.id, "approve");
+    let html = reqwest::get(format!("{base}/a/{}/approve?s={sig}", cs.id))
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert!(
+        html.contains("Phone approvals are off") && !html.contains("<form"),
+        "{html}"
+    );
+    let r = reqwest::Client::new()
+        .post(format!("{base}/a/{}/approve", cs.id))
+        .form(&[("s", sig)])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 409);
+    let status = st.engine.lock().unwrap().db.changeset(&cs.id).unwrap().unwrap().status;
+    assert_eq!(status, keryx_core::changeset::Status::Pending);
 }

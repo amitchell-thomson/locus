@@ -165,6 +165,11 @@ pub struct Kairos {
 pub struct Notify {
     #[serde(default = "d_ntfy")]
     pub ntfy_server: String,
+    /// Push Claude's drafts to the phone with approve / reject links.
+    /// Off (Alec, 2026-10-20): drafts are approved in keryx only, and the
+    /// phone pages refuse to act.
+    #[serde(default)]
+    pub approvals: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -353,7 +358,10 @@ impl Kairos {
 }
 impl Notify {
     fn default_() -> Self {
-        Notify { ntfy_server: d_ntfy() }
+        Notify {
+            ntfy_server: d_ntfy(),
+            approvals: false,
+        }
     }
 }
 impl Server {

@@ -94,6 +94,9 @@ impl Engine {
 
     /// A pending send outside a run: one push, recipients first (§8.4).
     pub(crate) fn push_draft(&self, cs: &Changeset) {
+        if !self.cfg.notify.approvals {
+            return;
+        }
         let (Some(o), Some(links)) = (cs.outgoing(), &self.links) else {
             return;
         };
@@ -290,6 +293,11 @@ impl Engine {
     /// A signed link's action (`approve` / `reject` / `cancel`). The
     /// signature was checked by the caller; GET never gets here.
     pub fn phone_action(&mut self, id: &str, action: &str) -> Result<Changeset> {
+        if !self.cfg.notify.approvals {
+            return Err(EngineError::Forbidden(
+                "phone approvals are off ([notify] approvals = false): approve in keryx (A)".into(),
+            ));
+        }
         match action {
             "approve" => self.approve_unchecked(id),
             "reject" => self.reject(id, Who::PHONE),

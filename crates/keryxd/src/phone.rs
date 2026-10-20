@@ -138,6 +138,13 @@ fn verified(st: &AppState, id: &str, action: &str, sig: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// `[notify] approvals`: off means pages only show, never act.
+fn approvals_on(st: &AppState) -> bool {
+    st.engine.lock().map(|e| e.cfg.notify.approvals).unwrap_or(false)
+}
+
+const OFF_NOTE: &str = "<p class=l>Phone approvals are off: approve or reject in keryx (A).</p>";
+
 fn changeset(st: &AppState, id: &str) -> Option<Changeset> {
     st.engine.lock().ok().and_then(|e| e.db.changeset(id).ok().flatten())
 }
@@ -163,7 +170,9 @@ async fn show(
     };
     body.push_str(&format!("<h1>{heading}</h1>"));
     body.push_str(&card(&st, &cs));
-    if actionable(&cs) {
+    if actionable(&cs) && !approvals_on(&st) {
+        body.push_str(OFF_NOTE);
+    } else if actionable(&cs) {
         let buttons: Vec<&str> = match (cs.status, action.as_str()) {
             (Status::Pending, "approve") => vec!["approve"],
             (Status::Pending, "reject") => vec!["reject"],
@@ -237,9 +246,12 @@ async fn run_page(State(st): State<AppState>, Path(id): Path<String>, Query(q): 
     if let Some(e) = &v.run.error {
         body.push_str(&format!("<p class=w>{}</p>", esc(e)));
     }
+    let on = approvals_on(&st);
     for cs in &drafts {
         body.push_str(&card(&st, cs));
-        if actionable(cs) {
+        if actionable(cs) && !on {
+            body.push_str(OFF_NOTE);
+        } else if actionable(cs) {
             if cs.status == Status::Pending {
                 body.push_str(&button(&st, &cs.id, "approve"));
                 body.push_str(&button(&st, &cs.id, "reject"));

@@ -125,6 +125,7 @@ token_service = "kairos-api-token"
 
 [notify]
 ntfy_server = "https://ntfy.sh"
+approvals = false            # true: push each Claude draft with approve / reject links
 
 [server]
 bind = "127.0.0.1"         # set to the Mac's Tailscale IP for phone links

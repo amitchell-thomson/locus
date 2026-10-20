@@ -18,7 +18,7 @@ keryx talks to your personal Gmail through the Gmail API with its own OAuth clie
 1. <https://console.cloud.google.com/> → project picker → **New project**, name it `keryx`.
 2. **APIs & Services → Library** → search **Gmail API** → **Enable**.
 3. **Google Auth Platform** (older consoles: *OAuth consent screen*):
-   - *Branding*: app name `keryx`, your Gmail as support and developer contact. Leave **Application home page**, privacy policy, terms and authorised domains **empty**: they're only needed to submit the app for Google's verification, which a personal app doesn't do.
+   - *Branding*: app name `keryx`, your Gmail as support and developer contact. Publishing to production needs an **application home page** and a **privacy policy** URL: publish the two small pages in `docs/oauth-site/` (e.g. GitHub Pages at `https://amitchell-thomson.github.io/keryx-oauth/`), use `…/` and `…/privacy.html`, and add `amitchell-thomson.github.io` under **Authorised domains**. Leave terms of service empty. You don't submit for verification.
    - *Audience*: user type **External**, then **Publish app** so the status reads **In production**. This matters: in *Testing*, Google expires the refresh token every 7 days and keryx would lose access weekly. "Unverified" is fine for an app only you use.
    - *Data access*: add the scope `https://www.googleapis.com/auth/gmail.modify` (read, label, draft and send; it **can't** permanently delete). Don't add `https://mail.google.com/`.
 4. *Clients* → **Create client** → type **Desktop app**, name `keryx` → **Download JSON**.

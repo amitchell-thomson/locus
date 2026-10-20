@@ -131,15 +131,19 @@ def _ensure_folder(runner: RmapiRunner, folder: str) -> bool:
 
     rmapi mkdir is not idempotent (it errors if the folder exists), so we run it and treat an
     exists-style failure as success. Returns True only when the folder was newly created.
+
+    The exists check comes BEFORE the exit code: rmapi v0.0.35 prints "entry already exists" and
+    exits 0, so trusting the code reported "(created folder)" on every push to /Inbox, a folder
+    that had existed for weeks (seen 2026-10-19, Slice 0.4).
     """
     if not folder or folder == "/":
         return False
     code, out, err = runner(["mkdir", folder])
-    if code == 0:
-        return True
     blob = f"{out}\n{err}".lower()
     if "exist" in blob or "already" in blob:
         return False
+    if code == 0:
+        return True
     raise RuntimeError(f"rmapi mkdir {folder!r} failed: {err.strip() or out.strip()}")
 
 

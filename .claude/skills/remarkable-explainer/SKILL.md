@@ -82,6 +82,9 @@ Enforced by the tool, so getting it wrong costs you a round trip:
 - **One column at 10pt, even margins on all four sides.** The preamble sets it; do not write your
   own `\documentclass` or geometry. Use plain `figure` and `table`; `\linewidth` is the full
   measure.
+- **Write `-{}-` for a literal double hyphen** (a command-line flag such as `-{}-all-extras`). In
+  the typewriter font LaTeX still joins `--` into one dash, so `\texttt{--all-extras}` prints as
+  `-all-extras`.
 - Available without declaring anything: `amsmath`, `graphicx`, `booktabs`, `enumitem`,
   `hyperref`, `microtype`, `tikz`, `pgfplots`.
 

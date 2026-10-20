@@ -114,6 +114,15 @@ def test_deliver_tolerates_existing_folder(tmp_path: Path):
     assert fake.calls[-1][0] == "put"
 
 
+def test_an_existing_folder_is_not_reported_created_when_rmapi_exits_zero(tmp_path: Path):
+    """rmapi v0.0.35 says "entry already exists" and exits 0; the message decides, not the code."""
+    pdf = tmp_path / "doc.pdf"
+    pdf.write_bytes(b"%PDF-1.7\n...")
+    fake = FakeRmapi({"mkdir": (0, "entry already exists\n", ""), "put": (0, "", "")})
+
+    assert deliver_pdf(pdf, remote_folder="Inbox", runner=fake).created_folder is False
+
+
 def test_deliver_raises_on_put_failure(tmp_path: Path):
     pdf = tmp_path / "doc.pdf"
     pdf.write_bytes(b"%PDF-1.7\n...")

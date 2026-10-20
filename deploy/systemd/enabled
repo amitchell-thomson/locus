@@ -4,9 +4,8 @@
 # [Install] section and are started by their timer. One unit per line; `#` starts a comment.
 locus-backup.timer
 locus-capture.timer
-locus-daily.timer
-locus-daily-pull.timer
-locus-discover-harvest.timer
+# Off since Slice 0.3 (the daily page and its inputs): locus-daily.timer,
+# locus-daily-pull.timer, locus-discover-harvest.timer (the scout replaces it).
 locus-discover-pull.timer
 locus-maintain.timer
 locus-watch.timer

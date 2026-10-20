@@ -36,12 +36,11 @@ from datetime import datetime, timedelta, timezone
 # Run kind -> how often it is expected, in hours. Derived from `deploy/systemd/*.timer`; a kind
 # absent here is on-demand and is never reported as overdue. The grace multiplier below is what
 # stops a timer that fires a few minutes late from reading as a failure.
+# The daily page's timers (daily, daily-pull) and discover-harvest are off since Slice 0.3, so
+# they are absent here: a timer that is off would otherwise read as overdue within three days.
 EXPECTED_CADENCE_HOURS: dict[str, float] = {
     "capture": 1,
-    "daily": 24,
-    "daily-pull": 1,
     "discover-pull": 1,
-    "discover-harvest": 24 * 7,
     "maintain": 24,
     "backup": 24,
 }

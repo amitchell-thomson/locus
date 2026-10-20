@@ -26,10 +26,12 @@ moves the code.
 |---|---|---|---|
 | `locus-watch` | every 5 min | `locus watch --once` — ingest anything dropped into `data/incoming/` | free (local models) |
 | `locus-capture` | every 30 min | `locus capture-sync` — pull reMarkable, transcribe changed notebooks, enrich, ingest | **$0 when nothing changed** |
-| `locus-maintain` | 03:30 daily | `locus link`, `locus structure --ingested-since <2 days ago>`, then `locus review --enrol` | ~$0 link (cached) + per new doc; enrol is free |
+| `locus-maintain` | 03:30 daily | `locus structure --unstructured --limit 20` (everything else removed in Slice 0.3) | per new doc |
 | `locus-backup` | 02:00 daily | `locus backup` | free |
-| `locus-daily` | 05:30 daily | `locus daily` — compose the reMarkable page and push the PDF | free (aggregate-only) |
-| `locus-daily-pull` | hourly | `locus daily-pull` — read the annotated page back and route it | **$0 unless the page changed** (hash-guarded) |
+
+Off since Slice 0.3, unit files kept until the code goes: `locus-daily` (compose and push the
+daily page), `locus-daily-pull` (read its ink back), `locus-discover-harvest` (weekly paper hunt;
+the scout replaces it).
 
 **Why a 30-minute capture timer is safe.** `capture-sync` keys each document on a hash of its
 rendered raster, so an unchanged notebook is skipped before any model call. The first scheduled run

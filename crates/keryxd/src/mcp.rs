@@ -38,7 +38,7 @@ the shared OQTS inbox, ≤ 100 threads at a time. Everything else you ask for be
 Alec decides item by item in the keryx TUI (A). Tell him so plainly: \"35 newsletters archived; 5 threads from people are \
 waiting for your review (A in keryx)\". Every change can be undone (undo).\n\
 CLEANUPS: when Alec asks you to clean up his inbox, read it in pages (list_inbox / read_threads compact), follow \
-inbox_policy (keep only what's new, needs action, or is needed soon; snooze what's needed later until the day before; \
+inbox_policy (keep only what's new, needs action, or is needed soon; \
 file into a key when one fits; otherwise archive), check cleanup_feedback for his past corrections, and send your \
 decisions with propose_cleanup in chunks of up to 100 (pass the review_id from the first call to add to the same review). \
 Give every item a one-line reason. Archive only: nothing is ever deleted. Then tell Alec how many proposals are waiting \
@@ -189,10 +189,14 @@ pub struct KeryxMcp {
 
 impl KeryxMcp {
     pub fn new(st: AppState) -> Self {
-        KeryxMcp {
-            st,
-            tool_router: Self::tool_router(),
+        let mut tool_router = Self::tool_router();
+        // Snoozing off: Claude doesn't see the tools at all.
+        if !st.engine.lock().map(|e| e.cfg.snooze.enabled).unwrap_or(false) {
+            for t in ["snooze", "unsnooze", "list_snoozed"] {
+                tool_router.remove_route(t);
+            }
         }
+        KeryxMcp { st, tool_router }
     }
 
     async fn run(
@@ -689,7 +693,11 @@ impl KeryxMcp {
                     "anything flagged".to_string(),
                 ],
                 "otherwise": [
-                    format!("needed later than {} days: snooze until the day before", c.soon_days),
+                    if e.cfg.snooze.enabled {
+                        format!("needed later than {} days: snooze until the day before", c.soon_days)
+                    } else {
+                        format!("needed later than {} days (tickets, bookings): file under a key if one fits, else keep", c.soon_days)
+                    },
                     "fits a key (list_keys): file".to_string(),
                     "everything else: archive (nothing is ever deleted)".to_string(),
                 ],
@@ -863,7 +871,7 @@ impl KeryxMcp {
     }
 
     #[tool(
-        description = "Propose a cleanup: one action per thread (archive | file | snooze | keep) with a one-line reason. Nothing changes until Alec accepts each in keryx (A). Up to 100 items per call; pass review_id to add to the same review."
+        description = "Propose a cleanup: one action per thread (archive | file | keep; snooze only if inbox_policy mentions it) with a one-line reason. Nothing changes until Alec accepts each in keryx (A). Up to 100 items per call; pass review_id to add to the same review."
     )]
     async fn propose_cleanup(&self, Parameters(a): Parameters<ProposeArgs>) -> Result<CallToolResult, ErrorData> {
         self.run(move |e| {

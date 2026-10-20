@@ -280,6 +280,7 @@ fn opening_marks_read_quietly_and_only_when_unread() {
 #[test]
 fn snooze_presets_and_pick() {
     let (mut a, f) = app();
+    a.cfg.snooze.enabled = true;
     let r = select(&mut a, "Lab partner for Thursday?");
     keys(&mut a, &[Key::Char('s')]);
     insta::assert_snapshot!("snooze_picker", render_to_string(&mut a, 80, 14));
@@ -948,4 +949,18 @@ fn runs_view_lists_runs_and_what_they_made() {
     assert!(matches!(a.mode, Mode::RunDetail { .. }));
     keys(&mut a, &[Key::Esc, Key::Esc]);
     assert_eq!(a.mode, Mode::List);
+}
+
+#[test]
+fn snoozing_off_hides_the_key_and_view() {
+    let (mut a, f) = app();
+    assert!(!a.cfg.snooze.enabled, "off by default");
+    select(&mut a, "Lab partner for Thursday?");
+    keys(&mut a, &[Key::Char('s')]);
+    assert_eq!(a.mode, Mode::List);
+    assert!(f.take().is_empty());
+    keys(&mut a, &[Key::Char('g')]);
+    assert!(!render_to_string(&mut a, 80, 24).contains("Snoozed"));
+    keys(&mut a, &[Key::Char('s')]);
+    assert_ne!(a.view, keryx_store::view::View::Snoozed);
 }

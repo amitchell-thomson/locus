@@ -20,6 +20,8 @@ Working rules:
 
 ---
 
+> **2026-10-20 (Alec):** snoozing is **off** for now (`[snooze] enabled = false`; the §4 / §7 snooze rules apply only when it's on), and phone **approval pushes are off** (`[notify] approvals = false`; §8.4's run and cleanup pushes remain).
+
 ## 1. Goal and non-goals
 
 **Goal:** an email client Alec will actually use for triage. That means:

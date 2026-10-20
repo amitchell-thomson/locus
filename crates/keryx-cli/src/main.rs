@@ -67,7 +67,8 @@ enum Cmd {
     Read { threads: Vec<String> },
     /// Mark threads unread.
     Unread { threads: Vec<String> },
-    /// Snooze until a time: "fri 17:00", "tomorrow 9", "23 oct".
+    /// Snooze until a time (off for now: [snooze] enabled = false).
+    #[command(hide = true)]
     Snooze { when: String, threads: Vec<String> },
     /// File into a key (and out of the inbox).
     File { key: String, threads: Vec<String> },

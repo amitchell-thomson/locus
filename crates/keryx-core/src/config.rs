@@ -96,6 +96,10 @@ pub struct Send {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Snooze {
+    /// Off (Alec, 2026-10-20): no snoozing for now. Wake-ups only run on
+    /// the Mac, so snoozed mail could stay hidden on the phone.
+    #[serde(default)]
+    pub enabled: bool,
     #[serde(default = "d_later")]
     pub later_today_hours: u32,
     #[serde(default = "d_morning")]
@@ -317,6 +321,7 @@ impl Send {
 impl Snooze {
     fn default_() -> Self {
         Snooze {
+            enabled: false,
             later_today_hours: d_later(),
             morning: d_morning(),
         }

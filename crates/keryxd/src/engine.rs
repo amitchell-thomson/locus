@@ -15,6 +15,7 @@ use keryx_store::view;
 use std::collections::{BTreeMap, HashSet};
 
 pub const NEEDS_REPLY: &str = "needs_reply";
+pub const SNOOZE_OFF: &str = "snoozing is off ([snooze] enabled = false): keep, file or archive instead";
 
 #[derive(Debug, thiserror::Error)]
 pub enum EngineError {
@@ -383,6 +384,9 @@ impl Engine {
             return Err(EngineError::BadRequest("no threads given".into()));
         }
         self.run_room(&req.refs)?;
+        if matches!(req.intent, Intent::Snooze { .. }) && !self.cfg.snooze.enabled {
+            return Err(EngineError::Forbidden(SNOOZE_OFF.into()));
+        }
         if let Intent::Snooze { until } = req.intent
             && until <= self.now()
         {
@@ -973,6 +977,9 @@ impl Engine {
                         def.name
                     )));
                 }
+            }
+            Action::Snooze { .. } if !self.cfg.snooze.enabled => {
+                return Err(EngineError::BadRequest(SNOOZE_OFF.into()));
             }
             Action::Snooze { until } if *until <= self.now() => {
                 return Err(EngineError::BadRequest("snooze time is in the past".into()));

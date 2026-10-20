@@ -51,6 +51,8 @@ const NOW: i64 = 1_791_986_400; // Wed 14 Oct 2026 15:00 BST
 fn engine() -> (Engine, Fake) {
     let (mut cfg, db) = keryx_store::testkit::fixture_db();
     cfg.live = true;
+    // The snooze semantics stay tested while the feature is off by default.
+    cfg.snooze.enabled = true;
     let fake = Fake::default();
     let mut e = Engine::new(cfg, db, Box::new(fake.clone())).unwrap();
     let clock = Arc::new(Mutex::new(NOW));
@@ -1120,4 +1122,15 @@ fn free_times_spread_across_days() {
         .unwrap();
     // Three slots on Thursday afternoon and one on Friday morning: one from each day.
     assert_eq!(out.text, "Thu 15 Oct 15:00–16:00\nFri 16 Oct 11:00–12:00");
+}
+
+#[test]
+fn snoozing_off_is_refused() {
+    let (mut e, fake) = engine();
+    e.cfg.snooze.enabled = false;
+    let t = r(&e, "Lab partner for Thursday?");
+    let out = e.triage(req(Intent::Snooze { until: NOW + 3600 }, vec![t.clone()]), Who::ALEC);
+    assert!(matches!(out, Err(EngineError::Forbidden(m)) if m.contains("snoozing is off")));
+    assert!(fake.calls.lock().unwrap().is_empty());
+    assert!(in_inbox(&e, &t));
 }

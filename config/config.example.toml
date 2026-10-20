@@ -96,6 +96,7 @@ hold_seconds = 10          # undo window after you confirm / approve a send
 max_attachments_mb = 25
 
 [snooze]
+enabled = false            # off for now: wake-ups only run on the Mac (bare dates below still use `morning`)
 later_today_hours = 3
 morning = "08:00"          # "Tomorrow" / "Monday" presets
 

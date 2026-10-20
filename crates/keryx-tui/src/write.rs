@@ -194,7 +194,7 @@ impl App {
                 }
             }
             Key::Char('d') => self.triage(Intent::Archive, "archiving"),
-            Key::Char('s') => self.mode = Mode::Snooze(None),
+            Key::Char('s') if self.cfg.snooze.enabled => self.mode = Mode::Snooze(None),
             Key::Char('m') => {
                 if self.file_keys().is_empty() {
                     self.message = Some(("no key is mapped for this account (config [[keys]])".into(), true));
@@ -486,7 +486,9 @@ impl App {
                 why: Keep::Action,
                 needs_reply: false,
             }),
-            Key::Char('s') => snooze_presets(self).get(1).map(|(_, t)| Action::Snooze { until: *t }),
+            Key::Char('s') if self.cfg.snooze.enabled => {
+                snooze_presets(self).get(1).map(|(_, t)| Action::Snooze { until: *t })
+            }
             Key::Char(c) if c.is_ascii_digit() && c != '0' => self
                 .cfg
                 .keys

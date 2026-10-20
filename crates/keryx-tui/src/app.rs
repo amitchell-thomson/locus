@@ -551,7 +551,7 @@ impl App {
             Key::Char('f') => View::Flagged,
             Key::Char('t') => View::Sent,
             Key::Char('r') => View::NeedsReply,
-            Key::Char('s') => View::Snoozed,
+            Key::Char('s') if self.cfg.snooze.enabled => View::Snoozed,
             Key::Char('v') => View::Archive,
             Key::Char('a') => View::All,
             Key::Char(c) if c.is_ascii_digit() && c != '0' => match self.cfg.keys.get(c as usize - '1' as usize) {
@@ -629,11 +629,11 @@ impl App {
             Mode::List if self.rows.is_empty() => "g go to · / search · ? help".into(),
             Mode::List if !self.marked.is_empty() => {
                 format!(
-                    "{} marked · d archive · s snooze · m file · f flag · Esc unmark",
+                    "{} marked · d archive · m file · f flag · Esc unmark",
                     self.marked.len()
                 )
             }
-            Mode::List => "d archive · s snooze · m file · r reply · x mark · ? help".into(),
+            Mode::List => "d archive · m file · r reply · t task · x mark · ? help".into(),
             Mode::Review { .. } => {
                 "y accept · n decline · c change · x mark · Y accept group · Enter read · u undo".into()
             }

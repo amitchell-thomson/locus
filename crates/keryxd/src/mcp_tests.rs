@@ -168,13 +168,10 @@ async fn tools_and_no_dangerous_ones() {
         "style_samples",
         "list_keys",
         "inbox_policy",
-        "list_snoozed",
         "list_tags",
         "archive",
         "unarchive",
         "file",
-        "snooze",
-        "unsnooze",
         "set_flag",
         "mark_read",
         "tag_needs_reply",
@@ -275,6 +272,7 @@ async fn attachment_text_is_wrapped() {
 #[tokio::test(flavor = "multi_thread")]
 async fn policy_through_mcp() {
     let st = state();
+    st.engine.lock().unwrap().cfg.snooze.enabled = true;
     let people = find_ref(&st, "Lab partner for Thursday?");
     let news = find_ref_in(&st, Some("personal"), "This week in engineering");
     let (base, _h, _) = start(st.clone()).await;
@@ -294,6 +292,7 @@ async fn policy_through_mcp() {
 #[tokio::test(flavor = "multi_thread")]
 async fn propose_cleanup_validates_items_by_name() {
     let st = state();
+    st.engine.lock().unwrap().cfg.snooze.enabled = true;
     let a = find_ref(&st, "Lab partner for Thursday?");
     let b = find_ref(&st, "Grüße");
     let (base, _h, _) = start(st.clone()).await;
@@ -872,4 +871,29 @@ async fn approvals_off_means_no_draft_push_and_pages_only_show() {
     assert_eq!(r.status(), 409);
     let status = st.engine.lock().unwrap().db.changeset(&cs.id).unwrap().unwrap().status;
     assert_eq!(status, keryx_core::changeset::Status::Pending);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn snoozing_off_hides_the_tools_and_refuses_snooze_proposals() {
+    let st = state();
+    let a = find_ref(&st, "Lab partner for Thursday?");
+    let (base, _h, _) = start(st.clone()).await;
+    initialize(&base).await;
+    let tools = rpc(&base, 2, "tools/list", json!({})).await;
+    let names: Vec<&str> = tools["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    assert!(!names.iter().any(|n| n.contains("snooze")), "{names:?}");
+    let (t, _) = call(
+        &base,
+        "propose_cleanup",
+        json!({"title": "x", "items": [{"ref": a, "action": "snooze", "until": "2026-10-20T09:00", "reason": "later"}]}),
+    )
+    .await;
+    assert!(t.contains("snoozing is off"), "{t}");
+    let (t, _) = call(&base, "inbox_policy", json!({})).await;
+    assert!(!t.contains("snooze until"), "{t}");
 }

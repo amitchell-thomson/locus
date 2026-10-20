@@ -90,11 +90,14 @@ pub fn file(f: &mut Frame, app: &App, area: Rect) {
 }
 
 pub fn change(f: &mut Frame, app: &App, area: Rect) {
-    let mut lines = vec![
-        Line::from(vec![key_span("a"), Span::raw("archive")]),
-        Line::from(vec![key_span("s"), Span::raw("snooze until tomorrow morning")]),
-        Line::from(vec![key_span("k"), Span::raw("keep in the inbox")]),
-    ];
+    let mut lines = vec![Line::from(vec![key_span("a"), Span::raw("archive")])];
+    if app.cfg.snooze.enabled {
+        lines.push(Line::from(vec![
+            key_span("s"),
+            Span::raw("snooze until tomorrow morning"),
+        ]));
+    }
+    lines.push(Line::from(vec![key_span("k"), Span::raw("keep in the inbox")]));
     for (i, k) in app.cfg.keys.iter().enumerate().take(9) {
         lines.push(Line::from(vec![
             key_span(&(i + 1).to_string()),

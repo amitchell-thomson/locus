@@ -60,3 +60,13 @@ $T kill-window -t =locus:=mail
 $T switch-client -c "$tty" -t locus
 $T send-keys -K -c "$tty" M-4
 echo "== mail window closed, Alt-4 brings it back: $(current)"
+
+# A restart, as tmux-resurrect leaves it: windows with the right names, running bare shells,
+# without the @locus-view mark. Landing on the locus session respawns them.
+$T switch-client -c "$tty" -t quast
+for v in calendar mail; do $T respawn-window -k -t "=locus:=$v" sh; $T set -wu -t "=locus:=$v" @locus-view; done
+echo "== after a mock restore, calendar runs: $($T display -p -t =locus:=calendar '#{pane_current_command}')"
+$T switch-client -c "$tty" -t locus
+sleep 1
+echo "== client lands on locus; calendar shows: $($T capture-pane -p -t =locus:=calendar | head -1)"
+echo "   mail shows: $($T capture-pane -p -t =locus:=mail | head -1)"

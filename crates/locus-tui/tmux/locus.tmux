@@ -25,3 +25,8 @@ bind -n M-4 if -F "#{==:#{session_name},locus}" "run-shell -b '#{@locus-tmux-dir
 # it. Slot 42 so this never replaces another hook on the same event.
 set-hook -g client-session-changed[42] "run-shell -b '#{@locus-tmux-dir}/focus-hook.sh #{q:client_session}'"
 set-hook -g client-attached[42] "run-shell -b '#{@locus-tmux-dir}/focus-hook.sh #{q:client_session}'"
+
+# Landing on the locus session runs `ensure`: after a restart, tmux-resurrect brings the views
+# back as bare shells, and this respawns them (locus-session.sh says how it tells them apart).
+set-hook -g client-session-changed[43] "run-shell -b '#{@locus-tmux-dir}/locus-session.sh landed #{q:client_session}'"
+set-hook -g client-attached[43] "run-shell -b '#{@locus-tmux-dir}/locus-session.sh landed #{q:client_session}'"

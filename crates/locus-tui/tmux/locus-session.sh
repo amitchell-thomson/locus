@@ -33,23 +33,42 @@ window_for() {
     echo "$(command_for "$1") || { echo; echo \"$1 exited with an error · Enter closes this window\"; read _; }"
 }
 
+# Every window this script starts carries @locus-view. tmux-resurrect restores windows by name
+# but not user options, and restores a pane it has no rule for as a bare shell: so a view window
+# WITHOUT the mark is one resurrect brought back, and is respawned with its real command.
 ensure() {
     if ! tmux has-session -t =locus 2>/dev/null; then
         tmux new-session -d -s locus -n home "$(window_for home)"
+        tmux set -w -t "=locus:=home" @locus-view home
     fi
     base=$(tmux show -gv base-index)
     i=0
     for view in home project calendar mail; do
+        mark=$(tmux list-windows -t =locus -F '#{window_name} #{@locus-view}' | awk -v v="$view" '$1==v{print $2; exit}')
         if ! tmux list-windows -t =locus -F '#{window_name}' | grep -qx "$view"; then
             tmux new-window -d -t "=locus:$((base + i))" -n "$view" "$(window_for "$view")" 2>/dev/null \
                 || tmux new-window -d -a -t "=locus:" -n "$view" "$(window_for "$view")"
+            tmux set -w -t "=locus:=$view" @locus-view "$view"
+        elif [ -z "$mark" ]; then
+            tmux respawn-window -k -t "=locus:=$view" "$(window_for "$view")"
+            tmux set -w -t "=locus:=$view" @locus-view "$view"
         fi
         i=$((i + 1))
     done
 }
 
+# The attach hook and an Alt key fire together when a client lands on locus and presses one at
+# once; two unlocked ensures each create the missing window, and then neither can name it.
+locked_ensure() {
+    tmux wait-for -L locus-ensure
+    ensure || { tmux wait-for -U locus-ensure; exit 1; }
+    tmux wait-for -U locus-ensure
+}
+
 case ${1:-ensure} in
-    ensure) ensure ;;
-    select) command_for "${2:-}" >/dev/null; ensure; tmux select-window -t "=locus:=$2" ;;
+    ensure) locked_ensure ;;
+    # From the attach hooks (locus.tmux): a client landing on locus revives what a restart left.
+    landed) [ "${2:-}" = locus ] && locked_ensure; true ;;
+    select) command_for "${2:-}" >/dev/null; locked_ensure; tmux select-window -t "=locus:=$2" ;;
     *) echo "usage: locus-session.sh ensure | select <home|project|calendar|mail>" >&2; exit 2 ;;
 esac

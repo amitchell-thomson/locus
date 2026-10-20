@@ -142,7 +142,9 @@ and ends with a short entry under **Rounds** below: what changed, why, your word
 here (plan G and screens v2's own open questions):
 - how the Project view stops being a wall of text, the branch graph first;
 - the work section: rhythm grid by default, area chart one key away, still to prove;
-- keryx at the window size;
+- kairos (Alt-3) and keryx (Alt-4) as views of the locus window, reviewed page by page like
+  the rest (20 Oct: "plan to include kairos and keryx in the review as well"); keryx at the
+  window size. Changes land in their own repositories;
 - whether New splits into kinds; a detail pane for Changes;
 - whether Approve sits above Explore on Home;
 - the weekly review in use;
@@ -201,7 +203,9 @@ QUAST dossier of 15 Oct, 300 dpi): "What is wrong with my real handwriting sitti
 ... I would rather be shown my own handwriting." D4's "no transcript text" is about chat
 transcripts, not his own material. How the rounds run, his words: "slowly and methodically work
 through refining every one of the pages ... so that it becomes something I know end to end and
-feel effortless using."
+feel effortless using." The order: Home; the Project view with Decisions, Answered and
+Changes; Calendar (kairos); Mail (keryx); Explore; Approve, the log and Ink confirm; System and
+Budget; the work chart; Search; Learning and Interview prep; the weekly review.
 
 ## Report
 

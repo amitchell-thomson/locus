@@ -117,7 +117,8 @@ impl ScreenId {
             ScreenId::Project => PROJECT,
             ScreenId::System => SYSTEM,
             ScreenId::Explore => EXPLORE,
-            ScreenId::Approve => APPROVE,
+            ScreenId::Learning => LEARNING,
+            ScreenId::Prep => PREP,
             _ => &[],
         }
     }
@@ -131,16 +132,22 @@ const HOME: &[Section] = &[
     s('a', "approve", Some(S::Approve)),
     s('s', "system", Some(S::System)),
 ];
+// Decisions (d), Answered (a) and prep (p) open from the Project view by their own keys: they
+// are screens, not panes on it.
 const PROJECT: &[Section] = &[
     s('n', "new", Some(S::Changes)),
+    s('g', "branches", None),
     s('s', "sessions", None),
     s('c', "chores", None),
-    s('d', "decisions", Some(S::Decisions)),
-    s('a', "answered", Some(S::Answered)),
 ];
-const SYSTEM: &[Section] = &[s('r', "running", None), s('u', "usage", Some(S::Budget))];
+const SYSTEM: &[Section] = &[
+    s('r', "running", None),
+    s('e', "recent", None),
+    s('u', "usage", Some(S::Budget)),
+];
 const EXPLORE: &[Section] = &[s('q', "queue", None), s('i', "ideas", None), s('r', "reading", None)];
-const APPROVE: &[Section] = &[s('g', "groups", Some(S::InkConfirm))];
+const LEARNING: &[Section] = &[s('g', "goals", None), s('t', "tracks", None), s('s', "sheets", None)];
+const PREP: &[Section] = &[s('t', "topics", None), s('p', "practice log", None)];
 
 impl fmt::Display for ScreenId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

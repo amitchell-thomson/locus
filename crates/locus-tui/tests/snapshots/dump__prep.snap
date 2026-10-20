@@ -1,0 +1,42 @@
+---
+source: crates/locus-tui/tests/dump.rs
+expression: "dump::render(&a, 95, 38).unwrap()"
+---
+╭ Jump Trading · trading internship, 2027 · final round 1 Oct ────────────────────── esc back ╮
+│ budget 30 h by 1 Oct · 27.5 h used ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━───                     │
+│ outcome offer · internship in 2027                                                          │
+│─ the round ─────────────────────────────────────────────────────────────────────────────────│
+│ maths         linear algebra, optimisation, linear regress… pad or whiteboard, in front of… │
+│ programming   LeetCode style                                Python, shared editor           │
+│ data science  given data or a partial model: which feature… ChatGPT in ask mode; judgement… │
+│ trader        brainteasers and probability, Green Book ter… in person, verbal and on paper  │
+│─ topics · weakest first, from your tracks ──────────────────────────────────────────── [t] ─│
+│                         confidence        a day     from                                    │
+│  algorithms (LeetCode) ━━━━━━────────     70 min  LeetCode by topic, two mediums a d…       │
+│  data science          ━━━━━━━───────     35 min  three cases with a weak baseline, …       │
+│  linear algebra        ━━━━━━━━──────     15 min  eigen, SVD, PSD, rank                     │
+│  regression            ━━━━━━━━──────     20 min  OLS from scratch · the regression …       │
+│  optimisation          ━━━━━━━━──────     15 min  gradients, Lagrange and KKT, Newton       │
+│  probability           ━━━━━━━━━━────     75 min  Green Book ch. 2, 4, 5 · the daily…       │
+│─ practice log · 13 sessions ────────────────────────────────────────────────────────── [p] ─│
+│  tue 29  probability          8 problems ·  4 right   unlabelled, mixed: indicators… 64 min │
+│  tue 29  algorithms (LeetCo…  4 problems ·  0 right   198 the hardest; 104 and 226 … 80 min │
+│  tue 29  regression           6 problems ·  1 right   ridge, lasso, WLS, omitted va… 75 min │
+│  mon 28  probability          6 problems ·  1 right   Markov chains: first-step ana… 60 min │
+│  mon 28  linear algebra       3 problems ·  1 right   SVD by hand                    50 min │
+│  sun 27  probability         10 problems ·  4 right   order statistics, exponentials 75 min │
+│  sun 27  optimisation         3 problems ·  2 right   Lagrange, shadow price         50 min │
+│  fri 25  probability          7 problems ·  4 right   indicators and linearity       70 min │
+│  fri 25  regression           3 problems ·  1 right   matrix order in e = (I - H)y   50 min │
+│  thu 24  probability          9 problems ·  3 right   Bayes in odds form             75 min │
+│  thu 24  optimisation         3 problems ·  0 right                                  50 min │
+│  wed 23  probability          5 problems ·  1 right   learning techniques, not speed 60 min │
+│  wed 23  linear algebra       4 problems ·  0 right                                  50 min │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                         + log a session · e details and time│
+╰─────────────────────────────────────────────────────────────────────────────────────────────╯
+ ⏎ open · l log · / search · ? keys

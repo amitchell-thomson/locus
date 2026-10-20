@@ -32,9 +32,16 @@ struct Cli {
     /// With --dump: the tmux session the project window is on.
     #[arg(long, value_name = "SESSION")]
     focus: Option<String>,
+    /// With --dump: open this project as Home's project list does (for one with no tmux session).
+    #[arg(long, value_name = "ID")]
+    project: Option<String>,
     /// Print what has been used, per screen and key, and exit.
     #[arg(long)]
     use_report: bool,
+    /// Print how long loading and drawing each screen take (R5: first frame under 100 ms, every
+    /// frame under 16 ms) and exit.
+    #[arg(long)]
+    timing: bool,
     /// Load every fixture set strictly, cross-check it, print each file's verdict and exit.
     #[arg(long)]
     validate_fixtures: bool,
@@ -51,6 +58,9 @@ fn main() -> Result<()> {
     if cli.validate_fixtures {
         return validate();
     }
+    if cli.timing {
+        return timing(&cli.fixtures, &cli.size);
+    }
     let fx = Fixtures::load(&fixtures::resolve(&cli.fixtures))?;
     if let Some(name) = cli.dump {
         let Some(screen) = ScreenId::from_name(&name) else {
@@ -58,13 +68,28 @@ fn main() -> Result<()> {
             bail!("no screen {name:?}; screens: {}", all.join(", "));
         };
         let (w, h) = dump::parse_size(&cli.size).context("--size is WIDTHxHEIGHT, e.g. 95x38")?;
-        let root = if screen == ScreenId::Project {
+        // The project screens sit on the Project view: the root one following --focus, or one
+        // opened from Home with --project.
+        let project_screen = matches!(
+            screen,
+            ScreenId::Project | ScreenId::Decisions | ScreenId::Answered | ScreenId::Changes | ScreenId::Prep
+        );
+        let root = if project_screen && cli.project.is_none() {
             ScreenId::Project
         } else {
             ScreenId::Home
         };
         let mut app = App::new(fx, root, UseLog::off());
-        if screen != root {
+        if let Some(id) = cli.project {
+            if app.fixtures.registry.get(&id).is_none() {
+                bail!("no project {id:?} in the registry");
+            }
+            app.viewing = Some(id);
+            if project_screen {
+                app.open(ScreenId::Project);
+            }
+        }
+        if screen != app.screen() {
             app.open(screen);
         }
         app.keys_open = cli.keys;
@@ -133,14 +158,79 @@ fn validate() -> Result<()> {
     Ok(())
 }
 
+/// Load the set and draw every screen, best of five draws each, into an in-memory terminal: the
+/// work a frame costs before the terminal writes it out.
+fn timing(set: &str, size: &str) -> Result<()> {
+    let (w, h) = dump::parse_size(size).context("--size is WIDTHxHEIGHT, e.g. 95x38")?;
+    let t0 = Instant::now();
+    let fx = Fixtures::load(&fixtures::resolve(set))?;
+    let load = t0.elapsed();
+    let mut slowest = (Duration::ZERO, "");
+    let mut first = Duration::ZERO;
+    for screen in ScreenId::ALL {
+        let mut app = App::new(fx.clone(), ScreenId::Home, UseLog::off());
+        app.follow.session = Some("quast".into());
+        app.viewing = Some("jump".into());
+        if screen != ScreenId::Home {
+            app.open(screen);
+        }
+        let mut best = Duration::MAX;
+        for _ in 0..5 {
+            let t = Instant::now();
+            dump::render(&app, w, h)?;
+            best = best.min(t.elapsed());
+        }
+        if screen == ScreenId::Home {
+            first = load + best;
+        }
+        println!("{:<10} {:>7.2} ms", screen.name(), best.as_secs_f64() * 1000.0);
+        if best > slowest.0 {
+            slowest = (best, screen.name());
+        }
+    }
+    println!("load fixtures {:.2} ms", load.as_secs_f64() * 1000.0);
+    println!(
+        "first frame (load + home) {:.2} ms, target under 100",
+        first.as_secs_f64() * 1000.0
+    );
+    println!(
+        "slowest frame {} {:.2} ms, target under 16",
+        slowest.1,
+        slowest.0.as_secs_f64() * 1000.0
+    );
+    Ok(())
+}
+
 fn run(mut app: App) -> Result<()> {
+    let started = Instant::now();
+    let mut first_frame = None;
+    let mut slowest = Duration::ZERO;
+    let mut asked = false;
     let mut focus = FocusFile::new(follow::state_dir());
     app.tick(focus.poll(), Instant::now());
     let mut terminal = ratatui::try_init()?;
     let result = (|| -> Result<()> {
         while !app.quit {
             app.tick(focus.poll(), Instant::now());
+            // Ask the terminal which image protocol it speaks (D6: kitty in Ghostty, passed
+            // through tmux) only when a screen first needs it: a terminal that never answers
+            // costs the whole timeout, and at startup that was 2 s before the first frame
+            // (measured on a tmux server with no terminal behind it).
+            if app.screen() == ScreenId::InkConfirm && !asked {
+                asked = true;
+                let options = ratatui_image::picker::cap_parser::QueryStdioOptions {
+                    timeout: Duration::from_millis(500),
+                    ..Default::default()
+                };
+                match ratatui_image::picker::Picker::from_query_stdio_with_options(options) {
+                    Ok(p) => app.picker = Some(p),
+                    Err(e) => app.note = Some(format!("no image protocol ({e}); the crop is in half blocks")),
+                }
+            }
+            let t = Instant::now();
             terminal.draw(|f| ui::draw(f, &app))?;
+            slowest = slowest.max(t.elapsed());
+            first_frame.get_or_insert_with(|| started.elapsed());
             if event::poll(Duration::from_millis(250))?
                 && let Event::Key(k) = event::read()?
                 && k.kind == KeyEventKind::Press
@@ -151,5 +241,12 @@ fn run(mut app: App) -> Result<()> {
         Ok(())
     })();
     ratatui::restore();
+    if let Some(ff) = first_frame {
+        eprintln!(
+            "locus-tui: first frame {:.1} ms · slowest frame {:.1} ms",
+            ff.as_secs_f64() * 1000.0,
+            slowest.as_secs_f64() * 1000.0
+        );
+    }
     result
 }

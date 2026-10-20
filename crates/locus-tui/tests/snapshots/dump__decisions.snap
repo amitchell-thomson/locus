@@ -1,0 +1,42 @@
+---
+source: crates/locus-tui/tests/dump.rs
+expression: "dump::render(&a, 95, 38).unwrap()"
+---
+╭ quast · decisions · 1 re-check · 5 holding · 1 re-decided ──────────────────────── esc back ╮
+│▸ 󱉶 §8bf    The units at stage 1: the µeV core kept, the scale fixed by …   7 Oct  re-check  │
+│  󰌾 §8bn    The input layer, built: the typical gate three times closer,…  10 Oct  holding   │
+│  󰌾 §8bl    The scope: QUAST starts where the lab's tools stop - a devic…   9 Oct  holding   │
+│  󰌾 §8bh    Mixed precision on a graphics card: a tune-up in about six s…   8 Oct  holding   │
+│  󰌾 §8az    The placement menu was the largest loss in the system; the g…  29 Sep  holding   │
+│  󰃻 §8ay    The loop cleaned up: the guard and the second opinion retire…  28 Sep  → §8az    │
+│  󰌾 §8ap    The crowd drives the loop: 44 times closer to the best gate,…  27 Sep  holding   │
+│─────────────────────────────────────────────────────────────────────────────────────────────│
+│ §8bf · agreed 7 Oct                                                                         │
+│ chose     keep the µeV core and carry one lever-arm ratio in θ: the gate does not need the  │
+│           absolute scale (§8bd)                                                             │
+│ over      a full lever-arm matrix in θ: more parameters than one detuning sweep can         │
+│           identify                                                                          │
+│ over      volts throughout: ties the core to one device's calibration                       │
+│ evidence  §8bd: placing the gate does not need the absolute energy scale                    │
+│ re-check  RIKEN's exchange against barrier voltage is 2.6x shallower than the prior assumed │
+│           (§8by, 19 Oct)                                                                    │
+│ affects   barrier control step 7 · the prior's width on t_c                                 │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                        ? ask why · o reopen · c into the chat · ⏎ full entry│
+╰─────────────────────────────────────────────────────────────────────────────────────────────╯
+ ⏎ open · l log · / search · ? keys

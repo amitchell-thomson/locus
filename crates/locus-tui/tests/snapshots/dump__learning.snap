@@ -1,0 +1,42 @@
+---
+source: crates/locus-tui/tests/dump.rs
+expression: "dump::render(&a, 95, 38).unwrap()"
+---
+╭ learning · 2 goals · 9 tracks ──────────────────────────────────────────────────── esc back ╮
+│─ goals ─────────────────────────────────────────────────────────────────────────────── [g] ─│
+│▸ 󰌵 ready for the Jump Trading internship: PyTorch, backprop, mark… 30 h · syllabus to agree │
+│  󰌵 SVD, by hand and by meaning                                                 2 h · active │
+│  󰌵 Jump Trading final round, 1 Oct                                              25 h · done │
+│─ syllabus · y agrees · e changes ───────────────────────────────────────────────────────────│
+│ 1. backprop              ━━━─────    6 h  derive it by hand for a two-layer network, then…  │
+│ 2. PyTorch               ━━──────    8 h  tensors, autograd and a training loop from scra…  │
+│ 3. market microstructure ━───────   10 h  order books, queue position, impact and the cos…  │
+│ 4. algorithms (LeetCode) ━━━━────    6 h  keep the named weakness moving: two mediums a w…  │
+│                                                                                             │
+│─ tracks · confidence · history · misses open ───────────────────────────────────────── [t] ─│
+│  market microstructure   ━━──────────────  15%           no sessions                        │
+│  PyTorch                 ━━━━━───────────  30%           no sessions                        │
+│  backprop                ━━━━━━──────────  35%  ▃        no sessions                        │
+│  algorithms (LeetCode)   ━━━━━━━─────────  45%  ▃▄       1 session · 17 misses open         │
+│  data science            ━━━━━━━━────────  50%  ▅        no sessions · 3 misses open        │
+│  linear algebra          ━━━━━━━━━───────  55%  ▅▅       2 sessions · 7 misses open         │
+│  optimisation            ━━━━━━━━━━──────  60%  ▄▅       2 sessions · 2 misses open         │
+│  regression              ━━━━━━━━━━──────  60%  ▄▅       2 sessions · 6 misses open         │
+│  probability             ━━━━━━━━━━━━────  72%  ▃▅▅▆     6 sessions · 16 misses open        │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│─ practice sheets ───────────────────────────────────────────────────────────────────── [s] ─│
+│  󰴓 backprop by hand: a two-layer network                        24 Oct · draft · m sends it │
+│  󰴓 Jump sheet 7 · final light set              30 Sep · answered · waiting for the readback │
+│  󰴓 Jump sheet 6 · mixed, unlabelled                                  29 Sep · 6 of 23 right │
+│  󰴓 Jump sheet 5 · Markov chains, trees, SVD                          28 Sep · 3 of 12 right │
+│                                             y agree · e change · n new goal · m make a sheet│
+╰─────────────────────────────────────────────────────────────────────────────────────────────╯
+ ⏎ open · l log · / search · ? keys

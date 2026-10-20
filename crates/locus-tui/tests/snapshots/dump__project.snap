@@ -1,0 +1,42 @@
+---
+source: crates/locus-tui/tests/dump.rs
+expression: "dump::render(&a, 95, 38).unwrap()"
+---
+╭ 󱓟 quast · barrier control ───────────────────────────── 󰓦 claude working · 12m  󰆤 following ╮
+│─ where you are ─────────────────────────────────────────────────────────────────────────────│
+│ Barrier control: the exchange law is learned in 2.3 minutes a tune-up, honest on every run… │
+│ RIKEN's exchange slope is 2.6x shallower than the prior assumes (§8by); nothing yet uses i… │
+│ next ▸ fold §8by and §8bz into the prior, then rerun the battery before any new method      │
+│─ branches ──────────────────────────────────────────────────────────────────────────── [g] ─│
+│                          main ◂─────┬─────●──┼───────┬──────────────────────────────── now  │
+│         pricing by wall clock       ╽ 2                                                     │
+│  mixed precision on a graphi…       ╰━━━━━━━━╯ 45                                           │
+│  barrier control: the law le…                ╰━━━━━━━━━━━━━━━━━━━━━━━━○ 75                  │
+│  readout on hardware: the pl…                        ╽ 2                                    │
+│                                5 Oct                   14 Oct                   24 Oct      │
+│ worktree-readout-adapter · 13 Oct · open · last 13 Oct · QUAST thresholds each shot's…      │
+│                                                                                             │
+│─ new · 4 unread ────────────────────────────────────────────────────────────────────── [n] ─│
+│  󰅸 󱉶 §8bf one lever-arm ratio in θ: worth re-checking · RIKEN's slope (§8by) bears on it 2h │
+│  󰅸 󱜾 delayed acceptance · answered from your margin · links Monte Carlo lecture 6        5h │
+│  󰅸 󰘬 6 commits on barrier-control · RIKEN's charging energy is inside the prior (§8bz)  23h │
+│  󰅸 󰭎 Bayesian optimisation tunes double-dot barriers with about 3x fewer measurements    1d │
+│    󰈙 dossier rebuilt · §3 ledger and §4 evidence changed · 2 pages to read               1d │
+│    󰴓 38 margin marks read back · 9 decisions written to the log                          3d │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│─ sessions · 2 ──────────────────────────────────────────────────────────────────────── [s] ─│
+│  󰹇 battery (bg)        needs you · 35m   allow: python -m quast.battery --full ?     ⏎ jump │
+│  󰓦 main chat           working · 12m     running pytest -k barrier                          │
+│─ chores ────────────────────────────────────────────────────────────────────────────── [c] ─│
+│  󰝖 reply to the supervisor about RIKEN's numbers · 5 min                    ⏎ open · x done │
+│  󰝖 book an ARC GPU slot for the battery · 2 min · due mon 26                ⏎ open · x done │
+│─ ask ───────────────────────────────────────────────────────────────────────────────────────│
+│ ask › i to ask about this project · the answer comes back here                              │
+╰─────────────────────────────────────────────────────────────────────────────────────────────╯
+ ⏎ open · l log · / search · ? keys

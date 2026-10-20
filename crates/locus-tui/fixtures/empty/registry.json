@@ -98,6 +98,20 @@
       "active": true
     },
     {
+      "id": "gresearch",
+      "name": "G-Research",
+      "area": "Careers",
+      "kind": "opportunity",
+      "active": true
+    },
+    {
+      "id": "millennium",
+      "name": "Millennium",
+      "area": "Careers",
+      "kind": "opportunity",
+      "active": false
+    },
+    {
       "id": "3yp",
       "name": "3YP",
       "area": "Studies",

@@ -16,8 +16,14 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     let mut lines = vec![Line::from(Span::styled(" this screen", dim))];
     for s in app.screen().sections() {
         lines.push(Line::from(vec![
-            Span::styled(format!("  {}  ", s.letter), key),
+            Span::styled(format!("  {:<8}", s.letter), key),
             Span::styled(s.title, text),
+        ]));
+    }
+    for (k, what) in crate::ui::screen_keys(app.screen()) {
+        lines.push(Line::from(vec![
+            Span::styled(format!("  {k:<8}"), key),
+            Span::styled(*what, text),
         ]));
     }
     lines.push(Line::from(""));
@@ -26,6 +32,8 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         ("⏎", "open"),
         ("esc", "back"),
         ("/", "search"),
+        ("l", "the automatic-actions log"),
+        ("j k ↑ ↓", "move in a list"),
         ("?", "keys"),
         ("R", "reset fixtures"),
         ("alt-1…4", "home · project · calendar · mail"),
@@ -37,16 +45,16 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     }
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(" symbols", dim)));
-    for pair in glyph::ALL.chunks(2) {
+    for row in glyph::ALL.chunks(3) {
         let mut spans = Vec::new();
-        for (name, g) in pair {
+        for (name, g) in row {
             spans.push(Span::styled(format!("  {g} "), key));
-            spans.push(Span::styled(format!("{name:<22}"), text));
+            spans.push(Span::styled(format!("{:<20}", name.replace('_', " ")), text));
         }
         lines.push(Line::from(spans));
     }
     let h = u16::try_from(lines.len() + 2).unwrap_or(u16::MAX).min(area.height);
-    let w = 56.min(area.width);
+    let w = 80.min(area.width);
     let rect = Rect {
         x: area.x + (area.width - w) / 2,
         y: area.y + (area.height - h) / 2,

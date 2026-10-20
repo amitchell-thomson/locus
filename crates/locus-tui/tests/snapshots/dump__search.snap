@@ -1,0 +1,42 @@
+---
+source: crates/locus-tui/tests/dump.rs
+expression: "dump::render(&a, 95, 38).unwrap()"
+---
+╭ / barrier▏ ──────────────────────────────────────────────────────────── scope: everything ⇥ ╮
+│▸ decisions  quast §8bf one lever-arm ratio in θ (re-check)                                  │
+│  answers    quast "what the fit check rejects" · 17 Oct                              sat 17 │
+│  explore    quast Bayes-opt barrier tuning · in the queue                                   │
+│  notes      quast projects/quast/jot.tex · "barrier gates …"                          fri 9 │
+│  library    Optimisation lecture 6 p.12 · a 2024 tuning paper §3                            │
+│  chats      quast · 16 Oct · "the barrier step keeps stalling"                       fri 16 │
+│  dossiers   quast §3 · barrier control                                                      │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                  ⏎ jump · ⇥ scope · esc back│
+╰─────────────────────────────────────────────────────────────────────────────────────────────╯
+ ⏎ open · l log · / search · ? keys

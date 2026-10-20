@@ -1,38 +1,49 @@
 //! Drawing. The look is `locus_theme`'s (kairos's): Mocha on a transparent background, rounded
-//! borders, blue focus. Each screen fills the body; the footer is shared.
+//! borders, blue focus. Each screen is a module with `draw`, `key` (its own keys, tried before
+//! the global ones) and `KEYS` (what the `?` overlay lists); the footer is shared.
 
+pub mod approve;
+pub mod explore;
+pub mod home;
 mod keys;
-mod placeholder;
+pub mod learning;
+pub mod project;
+pub mod projectdetail;
+pub mod review;
+pub mod system;
+pub mod widgets;
+pub mod work;
 
-use crate::app::App;
+use crate::app::{App, Mode};
 use crate::screen::ScreenId;
 use locus_theme::{SEP, c};
 use ratatui::Frame;
+use ratatui::crossterm::event::KeyEvent;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Paragraph};
+use widgets::{dim, keyst, st};
 
 pub fn draw(f: &mut Frame, app: &App) {
     let [body, footer] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(f.area());
     match app.screen() {
-        // Every screen is a placeholder until step 1.4 builds it.
-        s @ (ScreenId::Home
-        | ScreenId::Project
-        | ScreenId::System
-        | ScreenId::Budget
-        | ScreenId::Explore
-        | ScreenId::Approve
-        | ScreenId::AutoLog
-        | ScreenId::InkConfirm
-        | ScreenId::Decisions
-        | ScreenId::Answered
-        | ScreenId::Changes
-        | ScreenId::Search
-        | ScreenId::WorkChart
-        | ScreenId::Prep
-        | ScreenId::Learning
-        | ScreenId::Review) => placeholder::draw(f, body, app, s),
+        ScreenId::Home => home::draw(f, body, app),
+        ScreenId::Project => project::draw(f, body, app),
+        ScreenId::System => system::draw(f, body, app),
+        ScreenId::Budget => system::draw_budget(f, body, app),
+        ScreenId::Explore => explore::draw(f, body, app),
+        ScreenId::Approve => approve::draw(f, body, app),
+        ScreenId::AutoLog => approve::draw_log(f, body, app),
+        ScreenId::InkConfirm => approve::draw_ink(f, body, app),
+        ScreenId::Decisions => projectdetail::draw_decisions(f, body, app),
+        ScreenId::Answered => projectdetail::draw_answered(f, body, app),
+        ScreenId::Changes => projectdetail::draw_changes(f, body, app),
+        ScreenId::Search => review::draw_search(f, body, app),
+        ScreenId::WorkChart => work::draw_chart(f, body, app),
+        ScreenId::Prep => learning::draw_prep(f, body, app),
+        ScreenId::Learning => learning::draw(f, body, app),
+        ScreenId::Review => review::draw(f, body, app),
     }
     draw_footer(f, footer, app);
     if app.keys_open {
@@ -40,9 +51,96 @@ pub fn draw(f: &mut Frame, app: &App) {
     }
 }
 
+/// The screen's own keys, tried before the global ones. True when the key was used.
+pub fn screen_key(app: &mut App, k: KeyEvent) -> bool {
+    match app.screen() {
+        ScreenId::Home => home::key(app, k),
+        ScreenId::Project => project::key(app, k),
+        ScreenId::System | ScreenId::Budget => system::key(app, k),
+        ScreenId::Explore => explore::key(app, k),
+        ScreenId::Approve | ScreenId::AutoLog | ScreenId::InkConfirm => approve::key(app, k),
+        ScreenId::Decisions | ScreenId::Answered | ScreenId::Changes => projectdetail::key(app, k),
+        ScreenId::Search | ScreenId::Review => review::key(app, k),
+        ScreenId::WorkChart => false,
+        ScreenId::Prep | ScreenId::Learning => learning::key(app, k),
+    }
+}
+
+/// The keys a screen adds to the global ones, for the overlay.
+pub fn screen_keys(s: ScreenId) -> &'static [(&'static str, &'static str)] {
+    match s {
+        ScreenId::Home => home::KEYS,
+        ScreenId::Project => project::KEYS,
+        ScreenId::System => system::KEYS,
+        ScreenId::Budget => system::BUDGET_KEYS,
+        ScreenId::Explore => explore::KEYS,
+        ScreenId::Approve => approve::KEYS,
+        ScreenId::AutoLog => approve::LOG_KEYS,
+        ScreenId::InkConfirm => approve::INK_KEYS,
+        ScreenId::Decisions => projectdetail::DECISION_KEYS,
+        ScreenId::Answered => projectdetail::ANSWER_KEYS,
+        ScreenId::Changes => projectdetail::CHANGE_KEYS,
+        ScreenId::Search => review::SEARCH_KEYS,
+        ScreenId::WorkChart => &[],
+        ScreenId::Prep => learning::PREP_KEYS,
+        ScreenId::Learning => learning::KEYS,
+        ScreenId::Review => review::KEYS,
+    }
+}
+
+/// The screen's outer frame with its title, and the area inside it.
+pub fn frame(f: &mut Frame, area: Rect, title: Line<'static>, right: Option<Line<'static>>) -> Rect {
+    let mut b = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(c("overlay0")))
+        .title(title.left_aligned());
+    if let Some(r) = right {
+        b = b.title(r.right_aligned());
+    }
+    let inner = b.inner(area);
+    f.render_widget(b, area);
+    inner
+}
+
+/// A plain screen title: ` name · extra `.
+pub fn title(name: &str, extra: &str) -> Line<'static> {
+    let mut spans = vec![Span::styled(format!(" {name} "), widgets::bold(st("text")))];
+    if !extra.is_empty() {
+        spans.pop();
+        spans.push(Span::styled(format!(" {name}"), widgets::bold(st("text"))));
+        spans.push(Span::styled(format!("{SEP}{extra} "), dim()));
+    }
+    Line::from(spans)
+}
+
+/// `esc back` in a detail screen's top-right corner.
+pub fn esc_back() -> Line<'static> {
+    Line::from(vec![Span::styled(" esc", keyst()), Span::styled(" back ", dim())])
+}
+
+/// Hints along the bottom of a screen: `y tick · n strike`.
+pub fn hints(pairs: &[(&str, &str)]) -> Line<'static> {
+    let mut spans = Vec::new();
+    for (i, (k, what)) in pairs.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled(SEP, dim()));
+        }
+        spans.push(Span::styled(k.to_string(), keyst()));
+        spans.push(Span::styled(format!(" {what}"), dim()));
+    }
+    Line::from(spans)
+}
+
 /// The Project view's title: the project the view is on, by the registry; a session the
 /// registry does not know is named as such rather than guessed at.
 pub fn project_title(app: &App) -> String {
+    if app.stack.first() != Some(&ScreenId::Project) {
+        return match app.viewing.as_deref().and_then(|id| app.fixtures.registry.get(id)) {
+            Some(p) => format!("{} {}", locus_theme::glyph::PROJECT, p.name),
+            None => "project".into(),
+        };
+    }
     match app.follow.session.as_deref() {
         None => "project · no project window seen yet".into(),
         Some(s) => match app.fixtures.registry.by_session(s) {
@@ -83,24 +181,14 @@ pub fn section_block(title: &str, letter: Option<char>, focus: bool) -> Block<'s
 }
 
 /// The footer: open · log · search · keys on the left (plan D: Home's key strip keeps only
-/// these), the note on the right.
+/// these), the note on the right. While typing, it says how to finish.
 fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
-    let key = Style::default().fg(c("blue"));
-    let dim = Style::default().fg(c("overlay1"));
-    let mut spans = Vec::new();
-    for (i, (k, what)) in [("⏎", "open"), ("l", "log"), ("/", "search"), ("?", "keys")]
-        .into_iter()
-        .enumerate()
-    {
-        if i > 0 {
-            spans.push(Span::styled(SEP, dim));
-        }
-        spans.push(Span::styled(k, key));
-        spans.push(Span::styled(format!(" {what}"), dim));
-    }
-    let left = Line::from(spans);
+    let left = match &app.mode {
+        Mode::Ask(_) => hints(&[("⏎", "answer here"), ("⇥", "send to tablet"), ("esc", "cancel")]),
+        Mode::Strike(_) => hints(&[("i", "irrelevant"), ("k", "knew it"), ("l", "level"), ("t", "too long")]),
+        Mode::Normal => hints(&[("⏎", "open"), ("l", "log"), ("/", "search"), ("?", "keys")]),
+    };
     let used = u16::try_from(left.width()).unwrap_or(u16::MAX);
-    f.render_widget(Paragraph::new(Line::from(vec![Span::raw(" ")]).patch_style(dim)), area);
     let [l, r] = Layout::horizontal([Constraint::Length(used.saturating_add(1)), Constraint::Min(0)]).areas(area);
     f.render_widget(
         Paragraph::new(Line::from([vec![Span::raw(" ")], left.spans].concat())),
@@ -125,6 +213,9 @@ pub fn truncate(s: &str, width: usize) -> String {
     if s.width() <= width {
         return s.to_string();
     }
+    if width == 0 {
+        return String::new();
+    }
     let mut out = String::new();
     let mut w = 0;
     for ch in s.chars() {
@@ -139,6 +230,11 @@ pub fn truncate(s: &str, width: usize) -> String {
     out
 }
 
+/// Draw `lines` into `area`, top-aligned; anything past the bottom is cut.
+pub fn lines(f: &mut Frame, area: Rect, lines: Vec<Line<'static>>) {
+    f.render_widget(Paragraph::new(lines), area);
+}
+
 #[cfg(test)]
 mod tests {
     use super::truncate;
@@ -147,5 +243,6 @@ mod tests {
     fn truncates_by_display_width() {
         assert_eq!(truncate("abcdef", 6), "abcdef");
         assert_eq!(truncate("abcdef", 4), "abc…");
+        assert_eq!(truncate("abcdef", 0), "");
     }
 }

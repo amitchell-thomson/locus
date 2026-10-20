@@ -1,0 +1,42 @@
+---
+source: crates/locus-tui/tests/dump.rs
+expression: "dump::render(&a, 95, 38).unwrap()"
+---
+╭ system ─────────────────────────────────────────────────────────────────────────── esc back ╮
+│─ running · live ────────────────────────────────────────────────────────────────────── [r] ─│
+│ 󰓦 dossier · quast           opus    step 4 of 6 · rendering plots                     12:00 │
+│ 󰓦 scout · reading           sonnet  searching arXiv                                    3:00 │
+│ 󰓦 change record · nabla     haiku   reading diff 3f1c0a2                               0:12 │
+│─ recent ────────────────────────────────────────────────────────────────────────────── [e] ─│
+│  󰄵 ink readback · quast dossier v3   38 marks · 3 unsure, sent to approve             21:02 │
+│  󰅘 tablet push · nabla dossier       rmapi: HTTP 429 from the cloud (rate limited) ·… 20:40 │
+│  󰄵 change record · quast             6 commits                                        20:31 │
+│  󰄵 answers · quast · delayed accept… 1 answer, linked to Monte Carlo lecture 6        16:05 │
+│                                                                                             │
+│─ usage · u for the budget ──────────────────────────────────────────────────────────── [u] ─│
+│ this week       9.1%   of 15% cap         │ ━━━━━━━━━━━━━━━━━━━━━━──────────────┊────────── │
+│ by sunday      13.2%   projected          │ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━────┊────────── │
+│ window · you     34%                      │ ━━━━━━━━━━━━━━━━────────────┊────────────────── │
+│ window · locus    4%   stops at 60%       │ ━━──────────────────────────┊────────────────── │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+╰─────────────────────────────────────────────────────────────────────────────────────────────╯
+ ⏎ open · l log · / search · ? keys

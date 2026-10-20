@@ -1,0 +1,42 @@
+---
+source: crates/locus-tui/tests/dump.rs
+expression: "dump::render(&a, 95, 38).unwrap()"
+---
+╭ work · 8 weeks ─────────────────────────────────────────────────────────────────── esc back ╮
+│                                                                                             │
+│ quast               ▂▄█▆   █▇▄▂▄█▄▅▇▄▅█▇▂   ▁▁ █▅█▅▃ ▆▄▅█  ▁       170 h                    │
+│                                                                                             │
+│ nabla                  ▂▁▇▁▃   ██▄▂▅▂  ▁▁ ▁ ▁▁▁▅▄█▂▁▂▄▇▁            94 h                    │
+│                                                                                             │
+│ locus          ▁  ▃     ▁                                  ▇▁       16 h                    │
+│                                                                                             │
+│ kairos                                             ███▄             32 h                    │
+│                                                                                             │
+│ keryx                                                 ▇              8 h                    │
+│                                                                                             │
+│ cv               ▃▃                                    ▂ ▁          10 h                    │
+│                                                                                             │
+│            sep                           oct                                                │
+│                                                                                             │
+│ from commits, half an hour each · transcripts replace this in Slice 4 · 1 day a column      │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+╰─────────────────────────────────────────────────────────────────────────────────────────────╯
+ ⏎ open · l log · / search · ? keys

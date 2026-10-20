@@ -1,0 +1,42 @@
+---
+source: crates/locus-tui/tests/dump.rs
+expression: "dump::render(&a, 95, 38).unwrap()"
+---
+╭ explore · queue 7 of 7 · ideas 5 · reading 3 of 5 ──────────────────────────────── esc back ╮
+│ [q] queue   [i] ideas   [r] reading   the queue is full: the scout waits                    │
+│                                                                                             │
+│▸ 󰭎 Bayes-opt barrier tuning, 3x… │ 󰭎 for quast · method · fri 23                            │
+│  󰭎 Deal-completion hazard model… │                                                          │
+│  󰭎 What your Control course's K… │ Bayes-opt barrier tuning, 3x fewer measurements          │
+│  󰭎 quast and nabla both pre-reg… │                                                          │
+│  󱀄 The Bitter Lesson             │ Bayesian optimisation tunes double-dot barriers with     │
+│  󱀄 Market Microstructure in Pra… │ about 3x fewer measurements than pattern search, on a    │
+│  󰌵 A Kalman nowcast on tanker-f… │ simulated 2x2 device.                                    │
+│                                  │                                                          │
+│                                  │ why      your next step is barrier control, and every    │
+│                                  │          measurement there costs fridge time (§8bg)      │
+│                                  │ differs  simulated device only; no readout noise         │
+│                                  │          modelled                                        │
+│                                  │ touches  barrier control step 7                          │
+│                                  │ cost     about 15 minutes                                │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                              y ✓ · n ✗ then a reason · p park · v to reading│
+╰─────────────────────────────────────────────────────────────────────────────────────────────╯
+ ⏎ open · l log · / search · ? keys

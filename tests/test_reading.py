@@ -516,11 +516,12 @@ def read_calls(monkeypatch):
     monkeypatch.setattr("locus.reading.tex2pdf.render_latex_file", fake_render_latex_file)
     monkeypatch.setattr("locus.reading.send.send_pdf", fake_send_pdf)
     monkeypatch.setattr("locus.reading.deliver_remarkable.deliver_pdf", fake_deliver_pdf)
-    # The real one calls `config.load()` when given no cfg, which would read the live file.
-    monkeypatch.setattr(
-        "locus.reading.send.latex_geometry",
-        lambda cfg=None: PageGeometry(width_in=7.07, height_in=9.43, margin_in=0.5, font_pt=9.0),
-    )
+    # The real one calls `config.load()` when given no cfg, which would read the live file, so
+    # it is handed the pinned config instead.
+    from locus.reading import send
+
+    real_latex_geometry = send.latex_geometry
+    monkeypatch.setattr(send, "latex_geometry", lambda cfg=None: real_latex_geometry(_FakeCfg()))
     return calls
 
 
@@ -585,7 +586,9 @@ def test_read_compiles_a_tex_file_rather_than_typesetting_its_macros(tmp_path: P
     assert read_calls["markdown"] == []
     (src, out_pdf, geometry, engine) = read_calls["latex"][0]
     assert (src, out_pdf) == (tex, tmp_path / "brief.pdf")
-    assert geometry.font_pt == 9.0        # the two-column LaTeX size, not [reading].font_pt
+    # The LaTeX size and margin, not [reading].font_pt/margin_in (the pinned config carries
+    # neither latex field, so these are the defaults).
+    assert (geometry.font_pt, geometry.margin_in) == (10.0, 0.95)
     assert engine == "tectonic"
 
 

@@ -425,11 +425,9 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
         one, the document is compiled EXACTLY as you wrote it and the device geometry is yours to
         get right.
 
-        LAYOUT: the page is set in TWO COLUMNS at 9pt. Each column is about 2.9in, so a display
-        equation wider than that overflows into the gutter — break wide maths with `split` or
-        `aligned`, and use the starred floats `figure*` and `table*` for anything that genuinely
-        needs the full width. `\linewidth` inside a float is the column, which is what you want
-        for `\includegraphics` and for pgfplots `width=`.
+        LAYOUT: one column at 10pt with even 0.95in margins, a measure of about 5.2in. Use plain
+        `figure` and `table`; `\linewidth` is the full measure, which is what you want for
+        `\includegraphics` and for pgfplots `width=`.
 
         DRAW THINGS. This is the main reason he reads on the tablet: he is trying to UNDERSTAND
         something, and a diagram beside the prose is most of what makes that work on paper. TikZ

@@ -30,7 +30,7 @@ Requiring a fragment would throw away the control the language was chosen for.
 
 `render_latex_to_pdf` therefore checks for `\documentclass`. A fragment is wrapped in the
 device-tuned preamble below; a full document is compiled EXACTLY as given, geometry and all.
-That is the escape hatch: when the author wants a two-column layout or a custom class, they
+That is the escape hatch: when the author wants a different layout or a custom class, they
 write the preamble and this module gets out of the way.
 
 ENGINE
@@ -52,7 +52,7 @@ a unit test of the helper passes either way, which is why one existed and caught
 
 HOUSE STYLE, AND WHICH HALF OF IT IS ENFORCED
 ---------------------------------------------
-Two rules arrived with the two-column change (2026-09-08). They are enforced differently on
+Two rules arrived on 2026-09-08. They are enforced differently on
 purpose. **No em dashes** is checkable, so `build_document` raises on one (`_EM_DASH`). **No
 assistant register** — no throat-clearing, no "it's worth noting", no summary that restates the
 section it just ended — is a judgement, so it lives in the MCP tool docstring and the
@@ -218,24 +218,22 @@ def latex_preamble(geometry: PageGeometry) -> str:
 
     Choices that are about e-ink specifically, not about LaTeX defaults:
 
-    - `\linespread{1.06}` and ragged-right. Justification on a 6.07in text column at 11pt opens
-      rivers that a backlit screen hides and e-ink does not; the reMarkable's contrast makes
-      inter-word stretching legible as unevenness.
+    - `\linespread{1.08}` and ragged-right. Justification on a narrow text column opens rivers
+      that a backlit screen hides and e-ink does not; the reMarkable's contrast makes inter-word
+      stretching legible as unevenness.
     - `parskip` rather than paragraph indentation. These are notes read in minutes, and a blank
       line between paragraphs is a stronger scanning cue than a 15pt indent.
     - `hidelinks`. Coloured link boxes render as grey smears on a greyscale screen, and there is
       nothing to click on paper.
     - No `fontspec`. It would give better faces but binds the document to XeTeX/LuaTeX, and the
       pdflatex fallback has to produce the same document rather than a near-miss.
-    - **Two columns, always** (his instruction, 2026-09-08). On a 7.07in page with 0.5in margins
-      that is two ~2.9in columns, which is close to a journal measure and is why the body size
-      drops with it: `[reading].latex_font_pt` defaults to 9pt where the markdown path stays at
-      11pt. The consequence an author has to hold in mind is that a display equation wider than
-      2.9in will overflow its column silently-looking (LaTeX logs an Overfull \hbox and renders
-      it hanging into the gutter), so wide maths wants `split`/`aligned` or the full-width
-      `equation*` inside a `figure*`. Tables and figures that need the full measure use the
-      starred floats, `table*` and `figure*`.
-    - `extarticle`, not `article`. Only so that 9pt is really 9pt: see `CLASS_SIZES_PT`.
+    - **One column, even margins on all four sides** (Slice 0.4, 2026-10-19), the geometry of the
+      redesign plan documents he reads on the device: 7.07 x 9.43in, 0.95in margins, 10pt, a
+      5.17in measure. It replaced two columns at 9pt (2026-09-08), whose ~2.9in columns made
+      every wide equation and figure a special case (`split`, `figure*`). The margin is
+      `[reading].latex_margin_in`, separate from the markdown path's `margin_in`.
+    - `extarticle`, not `article`, so a size outside 10/11/12pt is really that size: see
+      `CLASS_SIZES_PT`.
     - TikZ and pgfplots are loaded for every document (`_DIAGRAM_SETUP`). The tablet is for
       LEARNING something, and a diagram drawn beside the prose is most of what makes that work
       on paper, so the packages have to be there without the author declaring them — the same
@@ -253,7 +251,7 @@ def latex_preamble(geometry: PageGeometry) -> str:
         )
     return "\n".join(
         [
-            f"\\documentclass[{geometry.font_pt:g}pt,twocolumn]{{extarticle}}",
+            f"\\documentclass[{geometry.font_pt:g}pt]{{extarticle}}",
             f"\\usepackage[paperwidth={geometry.width_in}in,"
             f"paperheight={geometry.height_in}in,margin={geometry.margin_in}in]{{geometry}}",
             "\\usepackage[T1]{fontenc}",
@@ -273,22 +271,18 @@ def latex_preamble(geometry: PageGeometry) -> str:
             "\\usepackage[hidelinks]{hyperref}",
             "\\usepackage{parskip}",
             "\\usepackage{ragged2e}",
-            "\\linespread{1.06}",
+            "\\linespread{1.08}",
             # `\RaggedRight`, NOT the built-in `\raggedright`. MEASURED, not preferred: plain
             # `\raggedright` does `\let\\\@centercr`, so `\\` stops ending a table row and the
             # next `\midrule` dies with "Misplaced \noalign". Every document containing a table
             # failed to compile until this was swapped (caught 2026-09-08 on the first realistic
             # sample — three equations, a list and one booktabs table). ragged2e's version
             # leaves `\\` alone and hyphenates properly instead of only stretching interword
-            # space, which matters more here than usual: the text column is 6.07in.
+            # space.
             "\\RaggedRight",
-            # 3em, not the 2em the single-column layout used. Emergency stretch is the last
-            # resort TeX reaches for before letting a line stick out, and a 2.9in column gives
-            # it far less room to break a long identifier or URL than a 6.07in one did.
-            "\\setlength{\\emergencystretch}{3em}",
-            # The gutter. Wide enough that two columns of 9pt text do not read as one, narrow
-            # enough not to spend measure that the body needs at this size.
-            "\\setlength{\\columnsep}{0.22in}",
+            # Emergency stretch is the last resort TeX reaches for before letting a line stick
+            # out; a long identifier or URL in a 5.17in measure needs it.
+            "\\setlength{\\emergencystretch}{2em}",
             "\\pagestyle{plain}",
             # Lists at LaTeX's default leading eat a third of a 9.43in page. Tightened, but not
             # to `nosep` — the items still need to read as separate on a low-contrast screen.
@@ -305,12 +299,10 @@ def _title_block(title: str) -> str:
     a plain `\section*`, not `\maketitle`: `\maketitle` on `article` spends ~1.5in of a 9.43in
     page on vertical centring and a date nobody asked for.
 
-    Wrapped in `\twocolumn[...]` since the layout went two-column: the optional argument is the
-    one place LaTeX sets material across the full measure at the top of a page. Without it the
-    title is a `\section*` sitting in the left column, which reads as the first section's
-    heading rather than as the document's name.
+    (It was wrapped in `\twocolumn[...]` while the layout was two-column, 2026-09-08 to
+    2026-10-19, so it spanned both columns.)
     """
-    return f"\\twocolumn[%\n  \\section*{{{escape_text(title)}}}%\n  \\vspace{{0.4em}}%\n]"
+    return f"\\section*{{{escape_text(title)}}}\n\\vspace{{0.4em}}"
 
 
 # The heading a fragment opens with, if it opens with one, and its text.
@@ -325,9 +317,7 @@ def _opening_heading_repeats(body: str, title: str) -> bool:
     Compares the TEXT, not merely the presence of a heading. The presence test this replaces
     suppressed the title whenever a document opened with any `\\section{...}` at all, which is how
     a normal document opens — so a fragment beginning "1. The project in one sentence" was
-    silently delivered with no title on it. That is worse under the two-column layout than it was
-    before: `_title_block` is the only thing set across the full measure, so losing it loses the
-    one piece of the page that announces what the document is, and the tablet shows no filename
+    silently delivered with no title on it, and the tablet shows no filename
     while a document is open.
     """
     match = _OPENING_HEADING.match(body)
@@ -572,6 +562,11 @@ def render_latex_to_pdf(
                     _engine_argv(engine, src, tmp_dir),
                     capture_output=True,
                     text=True,
+                    # A compiler log is not guaranteed UTF-8 (a font name, a path, a glyph LaTeX
+                    # echoes back), and strict decoding raised UnicodeDecodeError here, inside
+                    # subprocess.run, before the return code was even looked at: the send died
+                    # with a decode error instead of the compile's own result (Slice 0.4).
+                    errors="replace",
                     cwd=tmp_dir,
                     env=env,
                     timeout=limit,

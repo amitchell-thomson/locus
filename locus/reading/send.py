@@ -108,12 +108,12 @@ def reading_geometry(cfg=None) -> PageGeometry:
 
 
 def latex_geometry(cfg=None) -> PageGeometry:
-    """`reading_geometry` with the LaTeX body size substituted for the markdown one.
+    """`reading_geometry` with the LaTeX body size and margin substituted for the markdown ones.
 
-    Same paper, different type size. The LaTeX path sets two columns, so it reads at 9pt where
-    the single-column markdown path reads at 11pt; sharing one `font_pt` between them would mean
-    every adjustment to a document Claude wrote also resized his own relayed notes, and through
-    the shared geometry the daily page (§10 keeps that on Typst deliberately).
+    Same paper, different type: one column at 10pt inside 0.95in margins (Slice 0.4), where the
+    markdown path reads at 11pt inside 0.5in. Sharing one `font_pt` or `margin_in` between them
+    would mean every adjustment to a document Claude wrote also resized his own relayed notes,
+    and through the shared geometry the daily page (§10 keeps that on Typst deliberately).
 
     `getattr`, not attribute access, for the reason the `latex_engine` lookup below gives: config
     stubs in tests are SimpleNamespaces carrying only the fields their test needs, and one
@@ -123,8 +123,8 @@ def latex_geometry(cfg=None) -> PageGeometry:
     return PageGeometry(
         width_in=reading.page_width_in,
         height_in=reading.page_height_in,
-        margin_in=reading.margin_in,
-        font_pt=getattr(reading, "latex_font_pt", 9.0),
+        margin_in=getattr(reading, "latex_margin_in", 0.95),
+        font_pt=getattr(reading, "latex_font_pt", 10.0),
     )
 
 

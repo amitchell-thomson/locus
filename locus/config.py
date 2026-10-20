@@ -380,11 +380,11 @@ class ReadingConfig(BaseModel):
         description="Ceiling on one LaTeX engine invocation (s). Sized for the one-off "
         "cold-cache package fetch, not the warm compile.",
     )
-    # The LaTeX path carries its OWN body size and deliberately does not inherit `font_pt`.
-    # Agent-authored documents are set TWO-COLUMN (2026-09-08), which puts ~2.9in of measure in
-    # each column; 11pt across that is too few words per line to read comfortably. `font_pt`
-    # still sizes the markdown path, and through the shared geometry the daily page, which §10
-    # keeps on Typst on purpose — changing one must not silently move the other.
+    # The LaTeX path carries its OWN body size and margin and deliberately does not inherit
+    # `font_pt`/`margin_in`. Agent-authored documents are set one column, 10pt, with 0.95in
+    # margins all round (Slice 0.4, 2026-10-19: the geometry of the redesign plan documents),
+    # replacing two columns at 9pt. `font_pt` and `margin_in` still size the markdown path, and
+    # through the shared geometry the daily page — changing one must not silently move the other.
     #
     # MEASURED, and the reason this is a CONSTRAINED set rather than a free float: `article`
     # accepts only 10/11/12pt as a class option and silently typesets anything else at 10pt.
@@ -394,7 +394,10 @@ class ReadingConfig(BaseModel):
     # (extsizes), whose supported sizes are these, and a value outside them fails HERE at config
     # load rather than becoming a document typeset at a size nobody chose.
     latex_font_pt: float = Field(
-        9.0, description="Body text size (pt) for agent-authored LaTeX sends (extsizes set)."
+        10.0, description="Body text size (pt) for agent-authored LaTeX sends (extsizes set)."
+    )
+    latex_margin_in: float = Field(
+        0.95, description="Page margin (in), all four sides, for agent-authored LaTeX sends."
     )
 
     @field_validator("latex_font_pt")

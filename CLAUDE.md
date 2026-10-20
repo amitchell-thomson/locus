@@ -586,12 +586,12 @@ locus/
   FRAGMENT; the device preamble (page size, margins, e-ink leading, amsmath/graphicx/booktabs/
   enumitem/hyperref/microtype/tikz/pgfplots) is wrapped around it, and a source carrying its own
   `\documentclass` is compiled untouched as the escape hatch.
-  **Set two-column at 9pt** (2026-09-08), which is why the class is `extarticle` and why
-  `[reading].latex_font_pt` validates against a fixed set: stock `article` accepts only
-  10/11/12pt and silently typesets `[9.5pt]` at 10pt. It is a SEPARATE size from
-  `[reading].font_pt`, which still drives the single-column markdown path and, through the
-  shared geometry, the daily page. A column is ~2.9in, so wide display maths needs `split`, and
-  full-width material needs `figure*`/`table*`.
+  **Set one column at 10pt with even 0.95in margins** (Slice 0.4, 2026-10-19: the geometry of
+  the redesign plan documents; two columns at 9pt before that). The class is `extarticle` and
+  `[reading].latex_font_pt` validates against a fixed set, because stock `article` accepts only
+  10/11/12pt and silently typesets `[9.5pt]` at 10pt. `latex_font_pt` and `latex_margin_in` are
+  SEPARATE from `[reading].font_pt`/`margin_in`, which still drive the markdown path and,
+  through the shared geometry, the daily page.
   **Diagrams are the point, not decoration.** The tablet is where he goes to understand
   something, so TikZ and pgfplots load for every document (measured tax: ~0.5s per compile) and
   the authoring rule is to draw the mechanism rather than describe it. Greyscale screen: series

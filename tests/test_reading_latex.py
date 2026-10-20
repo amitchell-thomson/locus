@@ -58,7 +58,8 @@ def _send_cfg(folder: str = "Inbox", engine: str = "tectonic"):
             rmapi_binary="rmapi",
             target_folder="Daily",
             send_folder=folder,
-            latex_font_pt=9.0,
+            latex_font_pt=10.0,
+            latex_margin_in=0.95,
             page_width_in=7.07,
             page_height_in=9.43,
             margin_in=0.5,
@@ -77,7 +78,8 @@ def test_preamble_carries_the_device_geometry():
     assert "paperwidth=7.07in" in pre
     assert "paperheight=9.43in" in pre
     assert "margin=0.5in" in pre
-    assert "\\documentclass[11pt,twocolumn]{extarticle}" in pre
+    assert "\\documentclass[11pt]{extarticle}" in pre
+    assert "twocolumn" not in pre
 
 
 def test_preamble_loads_the_packages_the_tool_promises():
@@ -409,15 +411,18 @@ def test_an_em_dash_is_refused_in_a_full_document_too():
 
 # ---------- layout ----------
 
-def test_the_latex_layout_is_two_column_and_its_own_size():
-    """Two columns at 9pt, where the markdown path is one column at 11pt. Sharing `font_pt`
-    would mean resizing a document Claude wrote also resized his own relayed notes."""
+def test_the_latex_layout_is_one_column_with_its_own_size_and_margin():
+    """One column at 10pt inside 0.95in margins (Slice 0.4), where the markdown path is 11pt
+    inside 0.5in. Sharing `font_pt` or `margin_in` would mean resizing a document Claude wrote
+    also resized his own relayed notes."""
     from locus.reading.send import latex_geometry, reading_geometry
 
     cfg = _send_cfg()
-    assert latex_geometry(cfg).font_pt == 9.0
-    assert reading_geometry(cfg).font_pt == 11.0
-    assert "twocolumn" in latex_preamble(latex_geometry(cfg))
+    latex, markdown = latex_geometry(cfg), reading_geometry(cfg)
+    assert (latex.font_pt, latex.margin_in) == (10.0, 0.95)
+    assert (markdown.font_pt, markdown.margin_in) == (11.0, 0.5)
+    pre = latex_preamble(latex)
+    assert "twocolumn" not in pre and "margin=0.95in" in pre
 
 
 def test_a_font_size_the_document_class_cannot_set_is_refused():
@@ -428,27 +433,33 @@ def test_a_font_size_the_document_class_cannot_set_is_refused():
         latex_preamble(PageGeometry(width_in=7.07, height_in=9.43, margin_in=0.5, font_pt=9.5))
 
 
-def test_the_title_spans_both_columns():
-    """A `\\section*` title in a two-column document sits in the left column and reads as the
-    first section's heading rather than as the document's name."""
+def test_the_title_is_a_plain_heading():
+    """One column, so the title needs no `\\twocolumn[...]` wrapper to span the page."""
     out = build_document("Opening prose.", title="Kalman notes")
-    assert "\\twocolumn[" in out and "Kalman notes" in out
+    assert "\\section*{Kalman notes}" in out and "\\twocolumn" not in out
 
 
 @requires_latex
-def test_a_two_column_document_really_has_two_columns(tmp_path: Path):
+def test_a_document_is_one_column_with_even_margins(tmp_path: Path):
     """Source-level assertions cannot see a class option that silently did nothing. Read the
-    text back out of the PDF and check it arrives in two horizontal bands."""
+    text back out of the PDF: every block starts at the left margin, and the text spans the
+    page minus the margin on each side."""
     fitz = pytest.importorskip("fitz")
 
     out = render_latex_to_pdf(
         "word " * 900, tmp_path / "cols.pdf", title="Columns",
-        geometry=PageGeometry(width_in=7.07, height_in=9.43, margin_in=0.5, font_pt=9.0),
+        geometry=PageGeometry(width_in=7.07, height_in=9.43, margin_in=0.95, font_pt=10.0),
     )
     with fitz.open(out) as doc:
-        lefts = {round(b[0]) for b in doc[0].get_text("blocks") if b[4].strip()}
-    assert len(lefts) >= 2, f"expected two column origins, got {sorted(lefts)}"
-    assert max(lefts) - min(lefts) > 100, f"columns too close to be real: {sorted(lefts)}"
+        page = doc[0]
+        blocks = [b for b in page.get_text("blocks") if b[4].strip()]
+        width = page.rect.width
+    lefts = {round(b[0]) for b in blocks}
+    margin_pt = 0.95 * 72
+    assert max(lefts) - min(lefts) < 10, f"more than one column origin: {sorted(lefts)}"
+    assert min(lefts) == pytest.approx(margin_pt, abs=4)
+    right_gap = width - max(b[2] for b in blocks)
+    assert right_gap == pytest.approx(margin_pt, abs=12), f"right margin {right_gap:.1f}pt"
 
 
 # ---------- diagrams and images ----------
@@ -547,11 +558,10 @@ def test_a_document_opening_with_its_first_section_still_gets_a_title():
     almost every real document and the page came out with nothing naming it. Invisible in the
     source and invisible in a page-count check; you only see it by looking at page 1.
 
-    It matters more under the two-column layout, where `_title_block` is the only material set
-    across the full measure, and the tablet shows no filename while a document is open.
+    The tablet shows no filename while a document is open, so the title is what names it.
     """
     out = build_document("\\section{The project in one sentence}\n\nBody.", title="Ares brief")
-    assert "\\twocolumn[" in out and "\\section*{Ares brief}" in out
+    assert "\\section*{Ares brief}" in out
     assert "The project in one sentence" in out
 
 
@@ -559,7 +569,7 @@ def test_a_title_the_opening_heading_repeats_is_still_not_printed_twice():
     """The case the guard was for, kept: same name, printed once."""
     for heading in ("\\section{Regime detection}", "\\section*{regime  DETECTION}"):
         out = build_document(f"{heading}\n\nBody.", title="Regime detection")
-        assert "\\twocolumn[" not in out, f"title should be suppressed for {heading!r}"
+        assert "\\section*{Regime detection}" not in out, f"title should be suppressed for {heading!r}"
 
 
 @requires_latex
@@ -677,3 +687,37 @@ def test_send_latex_does_not_push_when_the_compile_times_out(monkeypatch):
         send_latex(r"\section{X}B.", title="Slow", cfg=_send_cfg(), runner=fake)
 
     assert not [c for c in fake.calls if c[0] == "put"]
+
+
+def test_a_log_that_is_not_utf8_does_not_crash_the_compile(tmp_path: Path, monkeypatch):
+    """Slice 0.4. The compiler's output was decoded strictly, so one non-UTF-8 byte in the log (a
+    font name, a path) raised UnicodeDecodeError inside subprocess.run, and the send died with a
+    decode error instead of the compile's own result. A fake engine plants the byte on both
+    streams: a failing compile must still report as a LaTeX failure, and a passing one must
+    still produce its PDF."""
+    import sys
+
+    from locus.reading import tex2pdf
+
+    def fake_engine(ok: bool) -> list[str]:
+        script = tmp_path / ("ok.py" if ok else "fail.py")
+        script.write_text(
+            "import pathlib, sys\n"
+            "sys.stdout.buffer.write(b'Font \\xff\\xfe loaded\\n')\n"
+            "sys.stderr.buffer.write(b'! Undefined control sequence \\xe9\\n')\n"
+            + ("pathlib.Path(sys.argv[1], 'doc.pdf').write_bytes(b'%PDF-1.5')\n" if ok else "sys.exit(1)\n")
+        )
+        return [sys.executable, str(script)]
+
+    monkeypatch.setattr(tex2pdf, "available_engine", lambda preferred=None: "pdflatex")
+    for ok in (True, False):
+        monkeypatch.setattr(
+            tex2pdf, "_engine_argv", lambda engine, src, outdir, ok=ok: [*fake_engine(ok), str(outdir)]
+        )
+        out = tmp_path / f"planted-{ok}.pdf"
+        if ok:
+            assert render_latex_to_pdf("Body.", out, title="Planted") == out
+            assert out.read_bytes().startswith(b"%PDF")
+        else:
+            with pytest.raises(RuntimeError, match="LaTeX compile failed"):
+                render_latex_to_pdf("Body.", out, title="Planted")

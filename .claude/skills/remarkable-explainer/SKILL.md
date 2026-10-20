@@ -1,6 +1,6 @@
 ---
 name: remarkable-explainer
-description: "Write a document for Alec to read on paper on his reMarkable, usually to understand something. Use whenever he asks for an explanation, description, primer, brief, plan or write-up to be sent to the tablet, or says things like \"explain X and put it on my remarkable\", \"send me a description of this\", \"write this up for paper\", \"I want to understand X\". Covers the format contract (LaTeX, two columns), the house voice (no assistant register, no em dashes), and how to build an explanation that actually lands."
+description: "Write a document for Alec to read on paper on his reMarkable, usually to understand something. Use whenever he asks for an explanation, description, primer, brief, plan or write-up to be sent to the tablet, or says things like \"explain X and put it on my remarkable\", \"send me a description of this\", \"write this up for paper\", \"I want to understand X\". Covers the format contract (LaTeX, one column, even margins), the house voice (no assistant register, no em dashes), and how to build an explanation that actually lands."
 ---
 
 # Writing for the reMarkable
@@ -79,9 +79,9 @@ Enforced by the tool, so getting it wrong costs you a round trip:
 
 - **No em dashes.** `---` or the character itself is refused with an error. Recast the sentence:
   colon, semicolon, parentheses, or two sentences. `--` for a numeric range is fine.
-- **Two columns at 9pt.** A column is about 2.9 inches. Display maths wider than that overflows,
-  so break it with `split` or `aligned`. Use `figure*` and `table*` for anything needing the full
-  page width. Inside a float, `\linewidth` is the column.
+- **One column at 10pt, even margins on all four sides.** The preamble sets it; do not write your
+  own `\documentclass` or geometry. Use plain `figure` and `table`; `\linewidth` is the full
+  measure.
 - Available without declaring anything: `amsmath`, `graphicx`, `booktabs`, `enumitem`,
   `hyperref`, `microtype`, `tikz`, `pgfplots`.
 
@@ -108,5 +108,4 @@ discussion, the annotated axis showing what a parameter does.
 2. No em dashes. No assistant register. No section that opens or closes by describing itself.
 3. At least one figure if the subject has any structure or geometry to it.
 4. Any invented numbers labelled as illustrative in the caption.
-5. Equations narrow enough for a 2.9in column.
-6. Report the device path the tool returns.
+5. Report the device path the tool returns.

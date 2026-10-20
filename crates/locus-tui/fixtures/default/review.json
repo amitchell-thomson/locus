@@ -1,0 +1,81 @@
+{
+ "from": "2026-10-19",
+ "to": "2026-10-25",
+ "steps": [
+  "done",
+  "current",
+  "todo",
+  "todo",
+  "todo"
+ ],
+ "week": {
+  "blocks_kept": 8,
+  "blocks_planned": 9,
+  "budget_pct": 9.1,
+  "dossiers_rebuilt": [
+   "quast",
+   "nabla"
+  ]
+ },
+ "rechecks": [
+  {
+   "project": "quast",
+   "decision": "§8bf",
+   "title": "one lever-arm ratio in θ",
+   "agreed": "2026-10-07",
+   "flagged": "RIKEN's exchange against barrier voltage is 2.6x shallower than the prior assumes (§8by)",
+   "effect": "barrier control step 7; nothing built on it yet"
+  }
+ ],
+ "explore": {
+  "left": 7,
+  "best_idea": {
+   "id": "f-1017-tanker",
+   "kind": "new_project",
+   "title": "A Kalman nowcast on tanker-flow data",
+   "summary": "Nowcast weekly LNG exports from daily vessel positions with a state-space model, scored against the official release.",
+   "why": "Tanker-Flow's null result was on the raw signal; a nowcast asks a narrower question it may answer",
+   "differs": "a new project, not a fix",
+   "minutes": 10,
+   "at": "2026-10-17T08:00:00+01:00"
+  },
+  "untouched": [
+   "Sequential Monte Carlo samplers (Del Moral, Doucet, Jasra)"
+  ]
+ },
+ "locus": {
+  "unused": [
+   "Answered",
+   "Search"
+  ],
+  "strikes": [
+   "wrong level x4 · irrelevant x1 → the scout is pitching too basic"
+  ],
+  "orphans": [
+   {
+    "kind": "ink",
+    "text": "Jot p4: a list of five names, no title",
+    "at": "2026-10-22T19:30:00+01:00"
+   },
+   {
+    "kind": "reading",
+    "text": "a PDF dropped into incoming/ with no area: lecture-7.pdf",
+    "at": "2026-10-23T10:12:00+01:00"
+   }
+  ]
+ },
+ "next_week": [
+  {
+   "project": "quast",
+   "blocks": 3
+  },
+  {
+   "project": "nabla",
+   "blocks": 2
+  },
+  {
+   "project": "locus",
+   "blocks": 2
+  }
+ ]
+}

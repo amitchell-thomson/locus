@@ -1,0 +1,51 @@
+{
+  "project": "locus",
+  "log": "docs/decisions/",
+  "items": [
+    {
+      "id": "ADR-005",
+      "title": "The data directory is data/, not vault/",
+      "date": "2026-10-20",
+      "status": { "state": "holding" },
+      "chose": "rename vault/ to data/ with a migration (0037)",
+      "over": ["keep vault/: the name implies an Obsidian vault, which it stopped being"],
+      "evidence": []
+    },
+    {
+      "id": "ADR-004",
+      "title": "The shared Rust crates live in the locus repository",
+      "date": "2026-10-19",
+      "status": { "state": "holding" },
+      "chose": "fold locus-theme and eco-dates into crates/ here; kairos and keryx keep their pins until next touched",
+      "over": ["a separate locus-shared repository: one more repo to keep in step", "a git submodule: every clone and pull has to remember it"],
+      "evidence": []
+    },
+    {
+      "id": "ADR-003",
+      "title": "The drop folder is organised by area",
+      "date": "2026-10-19",
+      "status": { "state": "holding" },
+      "chose": "one drop folder with a subfolder per area",
+      "over": ["one flat folder where the system labels what arrives: revised the same day"],
+      "evidence": []
+    },
+    {
+      "id": "ADR-002",
+      "title": "How the build is run",
+      "date": "2026-10-19",
+      "status": { "state": "holding" },
+      "chose": "a spec per slice approved first; mechanical steps under /goal with a printed check; design in chat; a report at the end",
+      "over": [],
+      "evidence": []
+    },
+    {
+      "id": "ADR-001",
+      "title": "The plan lives in the repository",
+      "date": "2026-10-19",
+      "status": { "state": "holding" },
+      "chose": "plan.tex and info.tex in docs/redesign/, read as source",
+      "over": [],
+      "evidence": []
+    }
+  ]
+}

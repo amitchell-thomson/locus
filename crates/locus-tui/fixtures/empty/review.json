@@ -1,0 +1,20 @@
+{
+  "from": "2026-10-19",
+  "to": "2026-10-25",
+  "steps": [
+    "todo",
+    "todo",
+    "todo",
+    "todo",
+    "todo"
+  ],
+  "week": {
+    "blocks_kept": 0,
+    "blocks_planned": 0,
+    "budget_pct": 0.0
+  },
+  "explore": {
+    "left": 0
+  },
+  "locus": {}
+}

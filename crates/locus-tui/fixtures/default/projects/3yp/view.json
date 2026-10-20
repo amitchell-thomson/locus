@@ -1,0 +1,13 @@
+{
+  "project": "3yp",
+  "stage": "not started",
+  "where_you_are": {
+    "state": "Third-year project: a repository with an empty notes file; nothing recorded yet.",
+    "next": "write down what the project is, so heuris has something to read"
+  },
+  "new": [
+    { "kind": "calendar", "text": "3YP briefing added to the calendar · tue 14:00", "at": "2026-10-23T17:00:00+01:00", "unread": true }
+  ],
+  "sessions": [],
+  "chores": []
+}

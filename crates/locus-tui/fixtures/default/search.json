@@ -1,0 +1,13 @@
+{
+  "query": "barrier",
+  "scope": "everything",
+  "hits": [
+    { "source": "decisions", "project": "quast", "title": "§8bf one lever-arm ratio in θ (re-check)", "jump": "Decisions, quast, §8bf" },
+    { "source": "answers", "project": "quast", "title": "\"what the fit check rejects\" · 17 Oct", "at": "2026-10-17T21:10:00+01:00", "jump": "Answered, quast" },
+    { "source": "explore", "project": "quast", "title": "Bayes-opt barrier tuning · in the queue", "jump": "Explore, queue" },
+    { "source": "notes", "project": "quast", "title": "projects/quast/jot.tex · \"barrier gates …\"", "at": "2026-10-09T10:00:00+01:00", "jump": "nvim projects/quast/jot.tex:41" },
+    { "source": "library", "title": "Optimisation lecture 6 p.12 · a 2024 tuning paper §3", "jump": "the PDF at p.12" },
+    { "source": "chats", "project": "quast", "title": "quast · 16 Oct · \"the barrier step keeps stalling\"", "at": "2026-10-16T15:20:00+01:00", "jump": "the chat at 15:20 on 16 Oct" },
+    { "source": "dossiers", "project": "quast", "title": "quast §3 · barrier control", "jump": "the dossier PDF, §3" }
+  ]
+}

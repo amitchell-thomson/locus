@@ -1,0 +1,11 @@
+{
+  "entries": [
+    { "at": "2026-10-24T21:31:00+01:00", "text": "change record · quast · 6 commits", "undo": false },
+    { "at": "2026-10-24T21:02:00+01:00", "text": "filed 35 of 38 margin marks from quast dossier v3", "undo": true },
+    { "at": "2026-10-24T20:58:00+01:00", "text": "filed jot p2 → projects/nabla", "undo": true, "automatic_since": "2026-10-09" },
+    { "at": "2026-10-24T19:10:00+01:00", "text": "kairos moved a work block out of a clash with Futsal", "undo": true },
+    { "at": "2026-10-24T08:00:00+01:00", "text": "scout queue full (7 of 7): scout paused", "undo": false },
+    { "at": "2026-10-23T23:05:00+01:00", "text": "dossier rebuilt · nabla", "undo": false },
+    { "at": "2026-10-23T18:12:00+01:00", "text": "archived 9 mails (spam)", "undo": true }
+  ]
+}

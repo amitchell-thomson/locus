@@ -1,0 +1,15 @@
+{
+  "running": [
+    { "kind": "dossier", "subject": "quast", "model": "opus", "started": "2026-10-24T21:28:00+01:00", "detail": "step 4 of 6 · rendering plots", "outcome": { "state": "running" } },
+    { "kind": "scout", "subject": "reading", "model": "sonnet", "started": "2026-10-24T21:37:00+01:00", "detail": "searching arXiv", "outcome": { "state": "running" } },
+    { "kind": "change record", "subject": "nabla", "model": "haiku", "started": "2026-10-24T21:39:48+01:00", "detail": "reading diff 3f1c0a2", "outcome": { "state": "running" } }
+  ],
+  "recent": [
+    { "kind": "ink readback", "subject": "quast dossier v3", "model": "sonnet", "started": "2026-10-24T20:58:00+01:00", "ended": "2026-10-24T21:02:00+01:00", "detail": "38 marks · 3 unsure, sent to approve", "outcome": { "state": "done" } },
+    { "kind": "tablet push", "subject": "nabla dossier", "started": "2026-10-24T20:40:00+01:00", "ended": "2026-10-24T20:40:12+01:00", "detail": "", "outcome": { "state": "failed", "cause": "rmapi: HTTP 429 from the cloud (rate limited)", "next": "retrying at 22:00, once" } },
+    { "kind": "change record", "subject": "quast", "model": "haiku", "started": "2026-10-24T20:31:00+01:00", "ended": "2026-10-24T20:31:40+01:00", "detail": "6 commits", "outcome": { "state": "done" } },
+    { "kind": "answers", "subject": "quast · delayed acceptance", "model": "sonnet", "started": "2026-10-24T16:01:00+01:00", "ended": "2026-10-24T16:05:00+01:00", "detail": "1 answer, linked to Monte Carlo lecture 6", "outcome": { "state": "done" } }
+  ],
+  "done_today": 14,
+  "failed_today": 1
+}

@@ -1,0 +1,46 @@
+{
+  "queue_cap": 7,
+  "queue": [
+    { "id": "f-1023-bo", "kind": "method", "project": "quast", "title": "Bayes-opt barrier tuning, 3x fewer measurements",
+      "summary": "Bayesian optimisation tunes double-dot barriers with about 3x fewer measurements than pattern search, on a simulated 2x2 device.",
+      "why": "your next step is barrier control, and every measurement there costs fridge time (§8bg)", "differs": "simulated device only; no readout noise modelled",
+      "touches": "barrier control step 7", "minutes": 15, "at": "2026-10-23T08:00:00+01:00" },
+    { "id": "f-1022-hazard", "kind": "method", "project": "nabla", "title": "Deal-completion hazard models from the merger-arbitrage literature, and why the market's implied probability is biased low in the last thirty days before a shareholder vote",
+      "summary": "A survival model of deal completion, fitted on 20 years of US deals, prices the spread better than the market's implied probability near the vote.",
+      "why": "your shadow journal prices SYNA by the implied probability alone", "differs": "US deals, daily data; your fills are intraday",
+      "touches": "ADR-007's next hypothesis", "minutes": 25, "at": "2026-10-22T08:00:00+01:00" },
+    { "id": "f-1021-kalman", "kind": "course", "project": "nabla", "title": "What your Control course's Kalman filter offers the spread model",
+      "summary": "Lecture 8's steady-state Kalman filter is the textbook form of the spread smoother nabla already hand-tunes.",
+      "why": "the course's derivation gives the gain you are currently guessing", "touches": "the spread smoother", "minutes": 10, "at": "2026-10-21T08:00:00+01:00" },
+    { "id": "f-1020-preregister", "kind": "pattern", "title": "quast and nabla both pre-register their tests: one template could serve both",
+      "summary": "quast's batteries and nabla's ADR-007 hypotheses write the same four fields before a run: claim, measure, threshold, budget.",
+      "why": "a shared template is one place to get it right", "touches": "quast docs/roadmap.md · nabla docs/hypotheses/", "minutes": 5, "at": "2026-10-20T08:00:00+01:00" },
+    { "id": "f-1019-bitter", "kind": "reading", "title": "The Bitter Lesson",
+      "summary": "Sutton's short essay: general methods that scale with computation beat hand-built knowledge, every time it has been tested.",
+      "why": "you chose the crowd over a network in quast; the essay argues the other side, well", "minutes": 12, "at": "2026-10-19T08:00:00+01:00" },
+    { "id": "f-1018-mip", "kind": "reading", "title": "Market Microstructure in Practice, chapter 3: queue position",
+      "summary": "How queue position, not price, decides fills for a passive order, and how to estimate it from public data.",
+      "why": "microstructure is on your internship goal and is the weakest track in it", "minutes": 40, "at": "2026-10-18T08:00:00+01:00" },
+    { "id": "f-1017-tanker", "kind": "new_project", "title": "A Kalman nowcast on tanker-flow data",
+      "summary": "Nowcast weekly LNG exports from daily vessel positions with a state-space model, scored against the official release.",
+      "why": "Tanker-Flow's null result was on the raw signal; a nowcast asks a narrower question it may answer", "differs": "a new project, not a fix",
+      "minutes": 10, "at": "2026-10-17T08:00:00+01:00" }
+  ],
+  "ideas": [
+    { "title": "compute markets as a lead-lag source", "from": "you", "project": "nabla", "state": "handed", "at": "2026-10-14T12:00:00+01:00" },
+    { "title": "a locus view of the decision network", "from": "jot", "project": "locus", "state": "parked", "at": "2026-10-19T22:00:00+01:00" },
+    { "title": "the readout adapter as its own small library", "from": "scout", "project": "quast", "state": "open", "at": "2026-10-16T08:00:00+01:00" },
+    { "title": "A Kalman nowcast on tanker-flow data", "from": "scout", "state": "open", "at": "2026-10-17T08:00:00+01:00", "best_of_fortnight": true },
+    { "title": "an exam-style sheet generator for any course", "from": "jot", "state": "open", "at": "2026-10-12T10:30:00+01:00" }
+  ],
+  "reading_cap": 5,
+  "reading": [
+    { "title": "Advanced Portfolio Management", "state": "in_progress", "since": "2026-09-01", "progress": "p.112 of 211" },
+    { "title": "Sequential Monte Carlo samplers (Del Moral, Doucet, Jasra)", "state": "untouched", "since": "2026-10-01" },
+    { "title": "Deep Learning (Goodfellow et al.), chapter 6", "state": "done", "since": "2026-10-08" }
+  ],
+  "strikes": [
+    { "reason": "wrong_level", "count": 4 },
+    { "reason": "irrelevant", "count": 1 }
+  ]
+}

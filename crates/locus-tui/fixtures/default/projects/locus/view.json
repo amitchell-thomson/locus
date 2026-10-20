@@ -1,0 +1,116 @@
+{
+  "project": "locus",
+  "stage": "slice 1 · design rounds",
+  "where_you_are": {
+    "state": "Slice 1: every screen runs on fixtures in the locus window; Alt-1..4 and the follow hook are live.",
+    "short": "Slice 0 is still finding why nothing has entered the library since 6 September.",
+    "next": "round 1 on the Project view: the branch graph first"
+  },
+  "new": [
+    {
+      "kind": "commits",
+      "text": "11 commits on main · Slice 1 steps 1.3 and 1.4",
+      "at": "2026-10-24T20:50:00+01:00",
+      "unread": true
+    },
+    {
+      "kind": "decision",
+      "text": "ADR-005 the data directory is data/, not vault/",
+      "at": "2026-10-20T10:00:00+01:00",
+      "unread": true
+    },
+    {
+      "kind": "decision",
+      "text": "ADR-004 the shared Rust crates live in the locus repository",
+      "at": "2026-10-19T23:00:00+01:00",
+      "unread": true
+    }
+  ],
+  "sessions": [
+    {
+      "name": "slice 1",
+      "state": "working",
+      "since": "2026-10-24T21:35:00+01:00",
+      "doing": "cargo test -p locus-tui"
+    },
+    {
+      "name": "slice 0",
+      "state": "needs_you",
+      "since": "2026-10-24T21:20:00+01:00",
+      "doing": "allow: ssh compute-node 'systemctl --user restart locus-http' ?"
+    }
+  ],
+  "chores": [],
+  "graph": {
+    "trunk": "main",
+    "from": "2026-07-18",
+    "milestones": [
+      {
+        "date": "2026-07-18",
+        "label": "the engine"
+      },
+      {
+        "date": "2026-08-06",
+        "label": "the daily page"
+      },
+      {
+        "date": "2026-09-14",
+        "label": "markups read back"
+      },
+      {
+        "date": "2026-10-19",
+        "label": "plan v4"
+      },
+      {
+        "date": "2026-10-20",
+        "label": "Slice 1: the locus window"
+      }
+    ],
+    "lanes": [
+      {
+        "branch": "worktree-reading-discovery-plan",
+        "stage": "reading and discovery",
+        "forked": "2026-07-30",
+        "merged": "2026-08-01",
+        "commits": 10,
+        "happened": [
+          "The reading loop and discovery plan, merged in seven passes"
+        ]
+      },
+      {
+        "branch": "merge: the page earns all five of its sections",
+        "stage": "the daily page, audited and fixed",
+        "forked": "2026-08-03",
+        "merged": "2026-08-04",
+        "commits": 8,
+        "happened": [
+          "Audit fixes, phases 0 to 3",
+          "Highlights are their own gesture",
+          "Read gets R anchors; Recall becomes Learn"
+        ]
+      },
+      {
+        "branch": "merge: CONNECT redesign — project arm, attestation gate, Sonnet prose, page renames",
+        "stage": "CONNECT redesigned",
+        "forked": "2026-08-06",
+        "merged": "2026-08-06",
+        "commits": 6,
+        "happened": [
+          "Pages named for what he does on them",
+          "Project arm, attestation gate, Sonnet prose"
+        ]
+      },
+      {
+        "branch": "redesign",
+        "stage": "the redesign: plan v4 into the repo",
+        "forked": "2026-10-19",
+        "merged": "2026-10-19",
+        "commits": 3,
+        "happened": [
+          "plan.tex and info.tex in docs/redesign (ADR-001)",
+          "How the build is run (ADR-002)"
+        ]
+      }
+    ]
+  }
+}

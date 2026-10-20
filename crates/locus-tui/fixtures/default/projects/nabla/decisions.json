@@ -1,0 +1,70 @@
+{
+  "project": "nabla",
+  "log": "docs/decisions/",
+  "items": [
+    {
+      "id": "ADR-007",
+      "title": "Prospective, mechanism-led hypotheses on a loss budget",
+      "date": "2026-10-14",
+      "status": { "state": "holding" },
+      "chose": "every hypothesis is pre-registered with its mechanism and tested forward against a loss budget",
+      "over": ["retrospective sweeps: the lookahead fix showed how easily they flatter"],
+      "evidence": ["the lookahead fix (13 Oct): every comparison re-run on corrected panels", "H008 pre-registered and killed inside its budget"]
+    },
+    {
+      "id": "ADR-006",
+      "title": "Abandon breadth-based strategies; pursue few, high-IC structural edges",
+      "date": "2026-09-15",
+      "status": { "state": "holding" },
+      "chose": "a few structural edges with high information coefficient, not a wide cross-section",
+      "over": ["ALT/XBT cross-rates for Bitcoin-factor neutrality: worth about 2.7 independent bets however wide"],
+      "evidence": ["mean pairwise correlation 0.620 in USD, 0.366 in XBT (Kraken daily, 720 observations, 26 alts)"],
+      "affects": "closes the crypto cross-sectional route ADR-005 opened"
+    },
+    {
+      "id": "ADR-005",
+      "title": "Live trading cannot validate; neutrality is the only lever that can",
+      "date": "2026-09-15",
+      "status": { "state": "redecided", "by": "ADR-006" },
+      "chose": "make strategies factor-neutral so that a short live record can say something",
+      "over": ["validating by live trading alone: too few independent observations"],
+      "evidence": ["power calculation: years of live trading to separate a modest edge from zero"]
+    },
+    {
+      "id": "ADR-004",
+      "title": "Which venue, frequency and position-size cells survive costs",
+      "date": "2026-09-15",
+      "status": { "state": "holding" },
+      "chose": "only the cells whose edge survives the cost model at retail size",
+      "over": [],
+      "evidence": ["cost-model.md: spreads, fees and impact per venue"]
+    },
+    {
+      "id": "ADR-003",
+      "title": "Narrow the employer-adjacency exclusion to EM rates and EM FX",
+      "date": "2026-09-14",
+      "status": { "state": "holding" },
+      "chose": "exclude only EM rates and EM FX",
+      "over": ["excluding rates, EM, FX and discretionary macro wholesale (ADR-002): too broad"],
+      "evidence": []
+    },
+    {
+      "id": "ADR-002",
+      "title": "Deliberately avoid rates, EM, FX and discretionary macro",
+      "date": "2026-09-13",
+      "status": { "state": "redecided", "by": "ADR-003" },
+      "chose": "stay clear of anything adjacent to an employer's book",
+      "over": [],
+      "evidence": []
+    },
+    {
+      "id": "ADR-001",
+      "title": "Build the execution spine before the research platform",
+      "date": "2026-09-13",
+      "status": { "state": "holding" },
+      "chose": "the execution spine first: data in, orders out, a journal, before any research tooling",
+      "over": ["a research platform first: the lesson from the last five projects"],
+      "evidence": ["lessons-from-prior-projects.md"]
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 {
   "name": "empty",
   "now": "2026-10-24T21:40:00+01:00",
-  "description": "Every section empty: each screen must render with its empty sections left out."
+  "description": "Every section empty: the same registry as default, with nothing in it."
 }

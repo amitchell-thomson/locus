@@ -1,13 +1,121 @@
 {
   "projects": [
-    { "id": "quast", "name": "quast", "area": "Projects", "sessions": ["quast"] },
-    { "id": "nabla", "name": "nabla", "area": "Projects", "sessions": ["nabla"] },
-    { "id": "locus", "name": "locus", "area": "Projects", "sessions": ["locus-dev"] },
-    { "id": "oqts", "name": "OQTS", "area": "Projects", "sessions": ["oqts"] },
-    { "id": "kairos", "name": "kairos", "area": "Projects", "sessions": ["kairos"] },
-    { "id": "keryx", "name": "keryx", "area": "Projects", "sessions": ["keryx"] },
-    { "id": "cv", "name": "CV", "area": "Careers", "sessions": ["cv"] },
-    { "id": "3yp", "name": "3YP", "area": "Studies", "sessions": ["B3-Project"] },
-    { "id": "b1", "name": "B1 practical", "area": "Studies", "sessions": ["b1-practical"] }
+    {
+      "id": "quast",
+      "name": "quast",
+      "area": "Projects",
+      "kind": "code",
+      "sessions": [
+        "quast"
+      ],
+      "depth": "field",
+      "active": true
+    },
+    {
+      "id": "nabla",
+      "name": "nabla",
+      "area": "Projects",
+      "kind": "code",
+      "sessions": [
+        "nabla"
+      ],
+      "depth": "design",
+      "active": true
+    },
+    {
+      "id": "locus",
+      "name": "locus",
+      "area": "Projects",
+      "kind": "code",
+      "sessions": [
+        "locus-dev"
+      ],
+      "depth": "design",
+      "active": true
+    },
+    {
+      "id": "oqts",
+      "name": "OQTS",
+      "area": "Projects",
+      "kind": "code",
+      "sessions": [
+        "oqts"
+      ],
+      "depth": "outcome",
+      "active": true,
+      "components": [
+        {
+          "name": "oxdaq",
+          "repo": "oqts/oxdaq-core"
+        },
+        {
+          "name": "platform",
+          "repo": "oqts/oqts-platform"
+        },
+        {
+          "name": "website",
+          "repo": "oqts/oqts-site"
+        }
+      ]
+    },
+    {
+      "id": "kairos",
+      "name": "kairos",
+      "area": "Projects",
+      "kind": "code",
+      "sessions": [
+        "kairos"
+      ],
+      "depth": "outcome",
+      "active": true
+    },
+    {
+      "id": "keryx",
+      "name": "keryx",
+      "area": "Projects",
+      "kind": "code",
+      "sessions": [
+        "keryx"
+      ],
+      "depth": "outcome",
+      "active": false
+    },
+    {
+      "id": "cv",
+      "name": "CV",
+      "area": "Careers",
+      "kind": "light",
+      "sessions": [
+        "cv"
+      ],
+      "active": true
+    },
+    {
+      "id": "jump",
+      "name": "Jump Trading",
+      "area": "Careers",
+      "kind": "opportunity",
+      "active": true
+    },
+    {
+      "id": "3yp",
+      "name": "3YP",
+      "area": "Studies",
+      "kind": "course",
+      "sessions": [
+        "B3-Project"
+      ],
+      "active": true
+    },
+    {
+      "id": "b1",
+      "name": "B1 practical",
+      "area": "Studies",
+      "kind": "course",
+      "sessions": [
+        "b1-practical"
+      ],
+      "active": false
+    }
   ]
 }

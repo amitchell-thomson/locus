@@ -1,0 +1,27 @@
+{
+  "week_pct": 9.1,
+  "cap_pct": 15.0,
+  "projected_pct": 13.2,
+  "window": { "you_pct": 34.0, "locus_pct": 4.0, "stop_at_pct": 60.0, "resets": "2026-10-24T23:00:00+01:00", "held": [] },
+  "days": [
+    { "date": "2026-10-19", "by_kind": [ { "label": "dossier", "pct": 1.1 }, { "label": "scout", "pct": 0.5 }, { "label": "change records", "pct": 0.2 } ] },
+    { "date": "2026-10-20", "by_kind": [ { "label": "answers", "pct": 0.7 }, { "label": "change records", "pct": 0.2 } ] },
+    { "date": "2026-10-21", "by_kind": [ { "label": "dossier", "pct": 1.6 }, { "label": "ink readback", "pct": 0.8 }, { "label": "change records", "pct": 0.2 } ] },
+    { "date": "2026-10-22", "by_kind": [ { "label": "scout", "pct": 0.9 }, { "label": "change records", "pct": 0.2 } ] },
+    { "date": "2026-10-23", "by_kind": [ { "label": "dossier", "pct": 1.4 }, { "label": "scout", "pct": 0.4 }, { "label": "change records", "pct": 0.2 } ] },
+    { "date": "2026-10-24", "by_kind": [ { "label": "ink readback", "pct": 0.4 }, { "label": "answers", "pct": 0.2 }, { "label": "change records", "pct": 0.1 } ] }
+  ],
+  "top_jobs": [
+    { "label": "dossier · quast", "model": "opus", "pct": 2.1 },
+    { "label": "dossier · nabla", "model": "opus", "pct": 1.6 },
+    { "label": "scout · reading", "model": "sonnet", "pct": 1.4 },
+    { "label": "answers", "model": "sonnet", "pct": 0.9 }
+  ],
+  "by_project": [
+    { "label": "quast", "pct": 4.0 },
+    { "label": "nabla", "pct": 2.6 },
+    { "label": "locus", "pct": 0.9 },
+    { "label": "oqts", "pct": 0.0 },
+    { "label": "no project (scout, reading)", "pct": 1.6 }
+  ]
+}

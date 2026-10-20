@@ -1,0 +1,38 @@
+{
+  "opportunity": "jump",
+  "role": "trading internship, 2027",
+  "round": "final round",
+  "date": "2026-10-01",
+  "budget_hours": 30.0,
+  "used_hours": 27.5,
+  "format": [
+    { "name": "maths", "covers": "linear algebra, optimisation, linear regression", "how": "pad or whiteboard, in front of them" },
+    { "name": "programming", "covers": "LeetCode style", "how": "Python, shared editor" },
+    { "name": "data science", "covers": "given data or a partial model: which feature, and build it", "how": "ChatGPT in ask mode; judgement over syntax" },
+    { "name": "trader", "covers": "brainteasers and probability, Green Book territory", "how": "in person, verbal and on paper" }
+  ],
+  "topics": [
+    { "track": "probability", "minutes_a_day": 75, "from": "Green Book ch. 2, 4, 5 · the daily sheets" },
+    { "track": "algorithms", "minutes_a_day": 70, "from": "LeetCode by topic, two mediums a day · the named weakness" },
+    { "track": "regression", "minutes_a_day": 20, "from": "OLS from scratch · the regression reference sheet" },
+    { "track": "optimisation", "minutes_a_day": 15, "from": "gradients, Lagrange and KKT, Newton" },
+    { "track": "linear-algebra", "minutes_a_day": 15, "from": "eigen, SVD, PSD, rank" },
+    { "track": "data-science", "minutes_a_day": 35, "from": "three cases with a weak baseline, on rotation" }
+  ],
+  "log": [
+    { "date": "2026-09-29", "track": "probability", "problems": 8, "right": 4, "minutes": 64, "note": "unlabelled, mixed: indicators missed again" },
+    { "date": "2026-09-29", "track": "algorithms", "problems": 4, "right": 0, "minutes": 80, "note": "198 the hardest; 104 and 226 needed help" },
+    { "date": "2026-09-29", "track": "regression", "problems": 6, "right": 1, "minutes": 75, "note": "ridge, lasso, WLS, omitted variables" },
+    { "date": "2026-09-28", "track": "probability", "problems": 6, "right": 1, "minutes": 60, "note": "Markov chains: first-step analysis new" },
+    { "date": "2026-09-28", "track": "linear-algebra", "problems": 3, "right": 1, "minutes": 50, "note": "SVD by hand" },
+    { "date": "2026-09-27", "track": "probability", "problems": 10, "right": 4, "minutes": 75, "note": "order statistics, exponentials" },
+    { "date": "2026-09-27", "track": "optimisation", "problems": 3, "right": 2, "minutes": 50, "note": "Lagrange, shadow price" },
+    { "date": "2026-09-25", "track": "probability", "problems": 7, "right": 4, "minutes": 70, "note": "indicators and linearity" },
+    { "date": "2026-09-25", "track": "regression", "problems": 3, "right": 1, "minutes": 50, "note": "matrix order in e = (I - H)y" },
+    { "date": "2026-09-24", "track": "probability", "problems": 9, "right": 3, "minutes": 75, "note": "Bayes in odds form" },
+    { "date": "2026-09-24", "track": "optimisation", "problems": 3, "right": 0, "minutes": 50 },
+    { "date": "2026-09-23", "track": "probability", "problems": 5, "right": 1, "minutes": 60, "note": "learning techniques, not speed" },
+    { "date": "2026-09-23", "track": "linear-algebra", "problems": 4, "right": 0, "minutes": 50 }
+  ],
+  "outcome": "offer · internship in 2027"
+}

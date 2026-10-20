@@ -35,6 +35,9 @@ struct Cli {
     /// Print what has been used, per screen and key, and exit.
     #[arg(long)]
     use_report: bool,
+    /// Load every fixture set strictly, cross-check it, print each file's verdict and exit.
+    #[arg(long)]
+    validate_fixtures: bool,
 }
 
 fn main() -> Result<()> {
@@ -44,6 +47,9 @@ fn main() -> Result<()> {
         let text = std::fs::read_to_string(&path).unwrap_or_default();
         print!("{}", uselog::report(&text));
         return Ok(());
+    }
+    if cli.validate_fixtures {
+        return validate();
     }
     let fx = Fixtures::load(&fixtures::resolve(&cli.fixtures))?;
     if let Some(name) = cli.dump {
@@ -72,6 +78,59 @@ fn main() -> Result<()> {
         other => bail!("view is home or project, not {other:?}"),
     };
     run(App::new(fx, root, UseLog::new(uselog::default_path())))
+}
+
+/// Every set under fixtures/: a file that fails to parse is named by the loader's error; the
+/// cross-file checks then run over the whole set.
+fn validate() -> Result<()> {
+    let mut failed = false;
+    let mut sets: Vec<_> = std::fs::read_dir(fixtures::sets_dir())?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.join("manifest.json").is_file())
+        .collect();
+    sets.sort();
+    for dir in sets {
+        let name = dir
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let files = Fixtures::files(&dir);
+        match Fixtures::load(&dir) {
+            Err(e) => {
+                failed = true;
+                println!("{name}: FAILED {e:#}");
+            }
+            Ok(fx) => {
+                let read = fx.read_files();
+                let mut bad = fx.check();
+                for f in &files {
+                    if read.contains(f) {
+                        println!("{name}/{f}: OK");
+                    } else {
+                        bad.push(format!("{f} is not read by any screen"));
+                    }
+                }
+                for b in &bad {
+                    println!("{name}: {b}");
+                }
+                failed |= !bad.is_empty();
+                println!(
+                    "{name}: {} files, {} cross-file problems",
+                    files.len(),
+                    if bad.is_empty() {
+                        "no".to_string()
+                    } else {
+                        bad.len().to_string()
+                    }
+                );
+            }
+        }
+    }
+    if failed {
+        bail!("fixtures failed validation");
+    }
+    Ok(())
 }
 
 fn run(mut app: App) -> Result<()> {

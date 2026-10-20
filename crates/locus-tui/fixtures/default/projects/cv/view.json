@@ -1,0 +1,27 @@
+{
+  "project": "cv",
+  "stage": "G-Research release, 17 Oct",
+  "where_you_are": {
+    "state": "Three releases kept: Jump (7 Sep), October general and Millennium (15 Oct), G-Research (17 Oct).",
+    "next": "nothing due; the next release goes with the next application"
+  },
+  "new": [
+    { "kind": "commits", "text": "release: G-Research CV (Oct 2026) from the gresearch branch", "at": "2026-10-17T19:40:00+01:00", "unread": false }
+  ],
+  "sessions": [],
+  "chores": [],
+  "graph": {
+    "trunk": "master",
+    "from": "2026-09-07",
+    "milestones": [
+      { "date": "2026-09-07", "label": "release: Jump Trading" },
+      { "date": "2026-09-08", "label": "cover letters" },
+      { "date": "2026-10-15", "label": "release: October, general and Millennium" },
+      { "date": "2026-10-17", "label": "release: G-Research" }
+    ],
+    "lanes": [
+      { "branch": "jump-2027-app", "stage": "the Jump Trading copy", "forked": "2026-09-07", "merged": "2026-09-07", "commits": 1, "happened": ["LaTeX CV, September 2026, for the Jump Trading application"] },
+      { "branch": "gresearch", "stage": "the G-Research variant", "forked": "2026-10-17", "tip": "2026-10-17", "commits": 1, "happened": ["Quantitative Projects above Experience", "Tanker Flow leads with the null result"] }
+    ]
+  }
+}

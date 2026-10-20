@@ -1,0 +1,11 @@
+{
+  "document": "quast dossier v3",
+  "page": 5,
+  "note": "\"is this still true?\" with an arrow",
+  "candidates": [
+    { "at": "§3 D8 ¶2", "text": "The fit check restarts the crowd from the prior when no candidate explains the data (§8as)." },
+    { "at": "§3 D9 ¶1", "text": "Delayed acceptance stays off by default until the learned-law crowd is shown unbiased (§8bw)." },
+    { "at": "§4 E11", "text": "The shortfall sweep: fidelity 0.93 against a 0.99 target, not yet characterised." }
+  ],
+  "remaining": 2
+}

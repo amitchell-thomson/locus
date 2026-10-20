@@ -1,0 +1,15 @@
+{
+  "project": "kairos",
+  "stage": "the shared taxonomy",
+  "where_you_are": {
+    "state": "Projects are tasks; the TUI draws kairosd's own index (14 Oct). The shared taxonomy is Slice 0 step 0.8.",
+    "next": "move kairos's keys to the four areas, with Personal's streams"
+  },
+  "new": [
+    { "kind": "commits", "text": "3 commits on main · gzip the TUI index", "at": "2026-10-21T13:40:00+01:00", "unread": true }
+  ],
+  "sessions": [
+    { "name": "taxonomy", "state": "idle", "since": "2026-10-21T14:05:00+01:00" }
+  ],
+  "chores": []
+}

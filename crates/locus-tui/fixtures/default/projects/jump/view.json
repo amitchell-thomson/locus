@@ -1,0 +1,16 @@
+{
+  "project": "jump",
+  "stage": "offer accepted · internship 2027",
+  "where_you_are": {
+    "state": "Final round on 1 Oct, in person: maths, programming, data science, trader. Offer accepted.",
+    "short": "Before the internship: PyTorch, backprop and market microstructure, all untested so far.",
+    "next": "agree the internship syllabus (Learning) so its sessions reach kairos"
+  },
+  "new": [
+    { "kind": "idea", "text": "learning goal proposed: ready for the Jump Trading internship · syllabus to agree", "at": "2026-10-24T09:00:00+01:00", "unread": true }
+  ],
+  "sessions": [],
+  "chores": [
+    { "title": "return the signed internship paperwork", "minutes": 10, "due": "2026-10-31" }
+  ]
+}

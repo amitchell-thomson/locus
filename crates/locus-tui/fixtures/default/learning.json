@@ -1,0 +1,62 @@
+{
+  "goals": [
+    { "id": "jump-internship", "title": "ready for the Jump Trading internship: PyTorch, backprop, market microstructure", "state": "proposed",
+      "syllabus": [
+        { "track": "backprop", "what": "derive it by hand for a two-layer network, then check against autograd", "hours": 6.0, "from": "Deep Learning ch. 6 (read 8 Oct)" },
+        { "track": "pytorch", "what": "tensors, autograd and a training loop from scratch, then a small model on your own data", "hours": 8.0, "from": "the PyTorch workshop repository and its tutorials" },
+        { "track": "microstructure", "what": "order books, queue position, impact and the cost of trading", "hours": 10.0, "from": "Market Microstructure in Practice (in Explore) · nabla's cost model" },
+        { "track": "algorithms", "what": "keep the named weakness moving: two mediums a week", "hours": 6.0, "from": "LeetCode by topic" }
+      ] },
+    { "id": "svd", "title": "SVD, by hand and by meaning", "state": "active",
+      "syllabus": [
+        { "track": "linear-algebra", "what": "both sides of the SVD without a separate eigen-solve; Eckart-Young; the condition number", "hours": 2.0, "from": "your Jump error log, S5 M1" }
+      ] },
+    { "id": "jump-final", "title": "Jump Trading final round, 1 Oct", "by": "2026-10-01", "state": "done",
+      "syllabus": [
+        { "track": "probability", "what": "Green Book ch. 2, 4, 5", "hours": 10.0, "from": "the daily sheets" },
+        { "track": "algorithms", "what": "LeetCode by topic", "hours": 9.0, "from": "the daily sheets" },
+        { "track": "regression", "what": "OLS, ridge, lasso, WLS", "hours": 3.0, "from": "the daily sheets" },
+        { "track": "data-science", "what": "three feature cases", "hours": 3.0, "from": "the daily sheets" }
+      ] }
+  ],
+  "tracks": [
+    { "id": "probability", "name": "probability", "confidence": 0.72, "open_misses": 16,
+      "history": [ { "date": "2026-09-23", "confidence": 0.35 }, { "date": "2026-09-25", "confidence": 0.5 }, { "date": "2026-09-28", "confidence": 0.58 }, { "date": "2026-09-30", "confidence": 0.72 } ],
+      "sessions": [
+        { "date": "2026-09-29", "problems": 8, "right": 4, "minutes": 64, "sheet": "jump-6" },
+        { "date": "2026-09-28", "problems": 6, "right": 1, "minutes": 60, "sheet": "jump-5" },
+        { "date": "2026-09-27", "problems": 10, "right": 4, "minutes": 75, "sheet": "jump-4" },
+        { "date": "2026-09-25", "problems": 7, "right": 4, "minutes": 70, "sheet": "jump-3" },
+        { "date": "2026-09-24", "problems": 9, "right": 3, "minutes": 75, "sheet": "jump-2" },
+        { "date": "2026-09-23", "problems": 5, "right": 1, "minutes": 60, "sheet": "jump-1" }
+      ] },
+    { "id": "algorithms", "name": "algorithms (LeetCode)", "confidence": 0.45, "open_misses": 17,
+      "history": [ { "date": "2026-09-23", "confidence": 0.3 }, { "date": "2026-09-30", "confidence": 0.45 } ],
+      "sessions": [ { "date": "2026-09-29", "problems": 4, "right": 0, "minutes": 80, "note": "198 the hardest", "sheet": "jump-6" } ] },
+    { "id": "linear-algebra", "name": "linear algebra", "confidence": 0.55, "open_misses": 7,
+      "history": [ { "date": "2026-09-23", "confidence": 0.5 }, { "date": "2026-09-28", "confidence": 0.55 } ],
+      "sessions": [ { "date": "2026-09-28", "problems": 3, "right": 1, "minutes": 50, "sheet": "jump-5" }, { "date": "2026-09-23", "problems": 4, "right": 0, "minutes": 50, "sheet": "jump-1" } ] },
+    { "id": "optimisation", "name": "optimisation", "confidence": 0.6, "open_misses": 2,
+      "history": [ { "date": "2026-09-24", "confidence": 0.4 }, { "date": "2026-09-27", "confidence": 0.6 } ],
+      "sessions": [ { "date": "2026-09-27", "problems": 3, "right": 2, "minutes": 50, "sheet": "jump-4" }, { "date": "2026-09-24", "problems": 3, "right": 0, "minutes": 50, "sheet": "jump-2" } ] },
+    { "id": "regression", "name": "regression", "confidence": 0.6, "open_misses": 6,
+      "history": [ { "date": "2026-09-25", "confidence": 0.45 }, { "date": "2026-09-29", "confidence": 0.6 } ],
+      "sessions": [ { "date": "2026-09-29", "problems": 6, "right": 1, "minutes": 75, "sheet": "jump-6" }, { "date": "2026-09-25", "problems": 3, "right": 1, "minutes": 50, "sheet": "jump-3" } ] },
+    { "id": "data-science", "name": "data science", "confidence": 0.5, "open_misses": 3,
+      "history": [ { "date": "2026-09-25", "confidence": 0.5 } ],
+      "sessions": [] },
+    { "id": "backprop", "name": "backprop", "confidence": 0.35, "history": [ { "date": "2026-10-08", "confidence": 0.35 } ], "sessions": [] },
+    { "id": "pytorch", "name": "PyTorch", "confidence": 0.3, "history": [], "sessions": [] },
+    { "id": "microstructure", "name": "market microstructure", "confidence": 0.15, "history": [], "sessions": [] }
+  ],
+  "sheets": [
+    { "id": "internship-1", "title": "backprop by hand: a two-layer network", "tracks": ["backprop"], "sent": "2026-10-24", "state": "draft", "questions": 4 },
+    { "id": "jump-7", "title": "Jump sheet 7 · final light set", "tracks": ["probability", "algorithms", "data-science"], "sent": "2026-09-30", "state": "answered", "questions": 14 },
+    { "id": "jump-6", "title": "Jump sheet 6 · mixed, unlabelled", "tracks": ["probability", "algorithms", "regression", "data-science"], "sent": "2026-09-29", "state": "marked", "questions": 23, "right": 6 },
+    { "id": "jump-5", "title": "Jump sheet 5 · Markov chains, trees, SVD", "tracks": ["probability", "algorithms", "linear-algebra", "data-science"], "sent": "2026-09-28", "state": "marked", "questions": 12, "right": 3 },
+    { "id": "jump-4", "title": "Jump sheet 4 · distributions, binary search, Lagrange", "tracks": ["probability", "algorithms", "optimisation"], "sent": "2026-09-27", "state": "marked", "questions": 15, "right": 6 },
+    { "id": "jump-3", "title": "Jump sheet 3 · expectation, stacks and heaps, OLS", "tracks": ["probability", "algorithms", "regression", "data-science"], "sent": "2026-09-25", "state": "marked", "questions": 13, "right": 5 },
+    { "id": "jump-2", "title": "Jump sheet 2 · Bayes, two pointers, optimisation", "tracks": ["probability", "algorithms", "optimisation"], "sent": "2026-09-24", "state": "marked", "questions": 14, "right": 3 },
+    { "id": "jump-1", "title": "Jump sheet 1 · combinatorics, hashing, linear algebra", "tracks": ["probability", "algorithms", "linear-algebra", "data-science"], "sent": "2026-09-23", "state": "marked", "questions": 12, "right": 1 }
+  ]
+}

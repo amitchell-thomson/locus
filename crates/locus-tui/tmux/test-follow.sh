@@ -80,3 +80,9 @@ $T send-keys -t =locus:=home p Down Enter
 echo "== Enter on Home's second project shows: $(current) · $($T capture-pane -p -t =locus:=project | head -1 | grep -o 'from home[^╮]*' | head -1)"
 $T send-keys -t =locus:=project Escape
 echo "== Esc there shows: $(current) · project header: $($T capture-pane -p -t =locus:=project | head -1 | cut -c1-40)"
+
+# With renumber-windows on, closing home shifts the rest down; ensure brings it back first.
+$T set -g renumber-windows on
+$T kill-window -t =locus:=home
+$T run-shell "$here/locus-session.sh ensure"
+echo "== home closed and recreated, order: $($T list-windows -t =locus -F '#{window_name}' | tr '\n' ' ')"

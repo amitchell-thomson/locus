@@ -55,6 +55,21 @@ ensure() {
         fi
         i=$((i + 1))
     done
+    # Put the views back in order: with renumber-windows on, closing one shifts the rest down,
+    # so the recreated one lands at the end (21 Oct: home came back after project).
+    i=0
+    for view in home project calendar mail; do
+        at=$(tmux list-windows -t =locus -F '#{window_index} #{window_name}' | awk -v v="$view" '$2==v{print $1; exit}')
+        want=$((base + i))
+        if [ -n "$at" ] && [ "$at" != "$want" ]; then
+            if tmux list-windows -t =locus -F '#{window_index}' | grep -qx "$want"; then
+                tmux swap-window -d -s "=locus:$at" -t "=locus:$want"
+            else
+                tmux move-window -s "=locus:$at" -t "=locus:$want"
+            fi
+        fi
+        i=$((i + 1))
+    done
 }
 
 # The attach hook and an Alt key fire together when a client lands on locus and presses one at

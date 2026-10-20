@@ -17,8 +17,9 @@ Personal Gmail goes through Mac Mail, like the OQTS accounts (Alec, 2026-10-20):
 
 ## 3. Mail.app permissions for keryxd (Phase 1)
 
-Install keryxd as a launchd agent (starts at login, restarts if it stops):
+First make keryx's API token (keryxd won't start without it), then install keryxd as a launchd agent (starts at login, restarts if it stops):
 ```sh
+security add-generic-password -U -s keryx-api-token -a "$USER" -w "$(openssl rand -hex 32)"
 cd ~/local-projects/keryx && scripts/install-daemon.sh
 ```
 
@@ -27,7 +28,7 @@ keryxd reads Mail's store and acts through AppleScript, so it needs two macOS pe
 - **Full Disk Access**: System Settings → Privacy & Security → Full Disk Access → `+` → `⇧⌘G` → `~/.cargo/bin/keryxd` → on.
 - **Automation → Mail**: the first time keryxd moves a message, macOS asks "keryxd wants to control Mail". Allow it. (`keryx doctor` triggers this on purpose with a harmless script.)
 
-Mail must be signed in to Oxford, OQTS and OQTS shared (it already is). keryxd starts Mail in the background when it needs it.
+Mail must be signed in to Personal Gmail, Oxford, OQTS and OQTS shared (it already is). keryxd starts Mail in the background when it needs it.
 
 Phase 1 checks whether these grants survive `cargo install` rebuilds. If they don't, `scripts/sign.sh` will sign keryxd with a stable local identity, and you grant once more.
 

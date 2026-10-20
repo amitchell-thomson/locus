@@ -135,6 +135,13 @@ impl Client {
     pub fn fail_run(&self, id: &str, error: &str) -> Result<crate::runs::RunView> {
         self.post(&format!("/api/runs/{id}/fail"), &json!({ "error": error }))
     }
+    pub fn status(&self) -> Result<Value> {
+        self.get("/api/status")
+    }
+    /// keryxd runs a no-op AppleScript (macOS asks for its Mail permission once).
+    pub fn check_automation(&self) -> Result<Value> {
+        self.post("/api/check/automation", &json!({}))
+    }
     pub fn base(&self) -> &str {
         &self.base
     }

@@ -465,6 +465,31 @@ fn doctor(path: &std::path::Path) -> anyhow::Result<()> {
         ),
     }
 
+    // keryxd itself, and its permission to control Mail.
+    match keryx_store::client::Client::from_config(&cfg) {
+        Err(e) => r.bad(e.to_string(), "make the token: docs/setup.md §3"),
+        Ok(c) => match c.status() {
+            Err(e) => r.bad(
+                format!("keryxd isn't answering at {}: {e}", cfg.server_url()),
+                "scripts/install-daemon.sh, then `launchctl print gui/$(id -u)/com.keryx.daemon`",
+            ),
+            Ok(_) => {
+                r.ok(format!("keryxd running at {}", cfg.server_url()));
+                match c.check_automation() {
+                    Ok(v) if v["ok"].as_bool() == Some(true) => r.ok("keryxd may control Mail (Automation)"),
+                    Ok(v) => r.bad(
+                        format!(
+                            "keryxd can't control Mail: {}",
+                            v["error"].as_str().unwrap_or("no reason given")
+                        ),
+                        "System Settings → Privacy & Security → Automation → keryxd → turn on Mail (or answer the prompt)",
+                    ),
+                    Err(e) => r.bad(format!("Automation check failed: {e}"), "check ~/Library/Logs/keryxd.log"),
+                }
+            }
+        },
+    }
+
     // Phone pushes and scheduled runs.
     if keryx_store::keychain::get("keryx-ntfy-topic").is_ok() {
         r.ok("ntfy topic set (phone pushes on)");

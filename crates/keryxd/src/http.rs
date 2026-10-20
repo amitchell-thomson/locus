@@ -114,6 +114,7 @@ pub fn router(st: AppState, mcp: Option<Router<AppState>>) -> Router {
     let api = Router::new()
         .route("/api/status", get(status))
         .route("/api/sync", post(sync_now))
+        .route("/api/check/automation", post(check_automation))
         .route("/api/triage", post(triage))
         .route("/api/undo-last", post(undo_last))
         .route("/api/changesets", get(changesets))
@@ -173,6 +174,21 @@ async fn status(State(st): State<AppState>) -> HResult<Value> {
     })
     .await?;
     Ok(Json(v))
+}
+
+/// A harmless AppleScript run *by keryxd*, so macOS asks once for
+/// keryxd's own "control Mail" permission (doctor calls this).
+async fn check_automation() -> HResult<Value> {
+    let out = tokio::task::spawn_blocking(|| {
+        std::process::Command::new("osascript")
+            .args(["-e", "tell application \"Mail\" to get name"])
+            .output()
+    })
+    .await
+    .map_err(|e| HttpError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| HttpError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    Ok(Json(json!({ "ok": out.status.success(), "error": err })))
 }
 
 async fn sync_now(State(st): State<AppState>) -> HResult<Value> {

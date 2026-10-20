@@ -482,7 +482,7 @@ mod tests {
     use chrono_tz::Europe::London;
 
     fn cfg() -> Config {
-        Config::load(&std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../config/config.example.toml"))
+        Config::load(&std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../config/config.test.toml"))
             .unwrap()
     }
 

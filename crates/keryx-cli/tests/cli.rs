@@ -12,7 +12,7 @@ struct Env {
 fn env() -> Env {
     let dir = tempfile::tempdir().unwrap();
     let (cfg, _) = keryx_store::testkit::fixture_db_file(&dir.path().join("data"));
-    let example = std::fs::read_to_string(keryx_store::testkit::root().join("config/config.example.toml")).unwrap();
+    let example = std::fs::read_to_string(keryx_store::testkit::root().join("config/config.test.toml")).unwrap();
     let toml = example.replace(
         "[server]",
         &format!(

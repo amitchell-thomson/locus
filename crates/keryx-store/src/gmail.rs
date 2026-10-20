@@ -656,7 +656,7 @@ pub mod tests {
 
     fn account() -> Account {
         let cfg = keryx_core::config::Config::load(
-            &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../config/config.example.toml"),
+            &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../config/config.test.toml"),
         )
         .unwrap();
         cfg.account("personal").unwrap().clone()

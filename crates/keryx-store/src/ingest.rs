@@ -304,7 +304,7 @@ mod tests {
     }
 
     fn cfg() -> Config {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../config/config.example.toml");
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../config/config.test.toml");
         Config::load(&path).unwrap()
     }
 

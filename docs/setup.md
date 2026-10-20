@@ -11,23 +11,9 @@ keryx doctor            # names every problem in the config
 ```
 The example already has your four accounts and the Mail.app account ids found on 2026-10-14. Leave `live = false` until the Phase 4 checks pass.
 
-## 2. Gmail API client (Phase 1, about 10 minutes)
+## 2. Gmail (nothing to do)
 
-keryx talks to your personal Gmail through the Gmail API with its own OAuth client. Only you use it.
-
-1. <https://console.cloud.google.com/> → project picker → **New project**, name it `keryx`.
-2. **APIs & Services → Library** → search **Gmail API** → **Enable**.
-3. **Google Auth Platform** (older consoles: *OAuth consent screen*):
-   - *Branding*: app name `keryx`, your Gmail as support and developer contact. Publishing to production needs an **application home page** and a **privacy policy** URL: publish the two small pages in `docs/oauth-site/` (e.g. GitHub Pages at `https://amitchell-thomson.github.io/keryx-oauth/`), use `…/` and `…/privacy.html`, and add `amitchell-thomson.github.io` under **Authorised domains**. Leave terms of service empty. You don't submit for verification.
-   - *Audience*: user type **External**, then **Publish app** so the status reads **In production**. This matters: in *Testing*, Google expires the refresh token every 7 days and keryx would lose access weekly. "Unverified" is fine for an app only you use.
-   - *Data access*: add the scope `https://www.googleapis.com/auth/gmail.modify` (read, label, draft and send; it **can't** permanently delete). Don't add `https://mail.google.com/`.
-4. *Clients* → **Create client** → type **Desktop app**, name `keryx` → **Download JSON**.
-5. Put it in the Keychain, then delete the download:
-   ```sh
-   security add-generic-password -U -s keryx-gmail-client -a "$USER" -w "$(cat ~/Downloads/client_secret_*.json)"
-   rm ~/Downloads/client_secret_*.json
-   ```
-6. `keryx auth gmail` opens the browser. Google warns *"Google hasn't verified this app"* → **Advanced** → **Go to keryx (unsafe)** → allow. keryx stores the refresh token as `keryx-gmail-refresh` in the Keychain.
+Personal Gmail goes through Mac Mail, like the OQTS accounts (Alec, 2026-10-20): no Google Cloud project or OAuth. The Gmail API backend still exists (`backend = "gmail"` + `keryx auth gmail`) if it's ever wanted; it needs a published OAuth app with public home and privacy pages.
 
 ## 3. Mail.app permissions for keryxd (Phase 1)
 

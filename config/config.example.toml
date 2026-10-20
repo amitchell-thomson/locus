@@ -10,7 +10,11 @@ timezone = "Europe/London"
 id = "personal"
 name = "Personal"
 address = "alec.mitchellthomson@gmail.com"
-backend = "gmail"
+backend = "mailapp"          # through Mac Mail (Gmail over IMAP), like OQTS
+mailapp_account_id = "1FD73A3D-D50A-49FE-B98E-E87E389ED2E0"
+inbox_mailbox = "INBOX"
+archive_mailbox = "[Gmail]/All Mail"
+sent_mailbox = "[Gmail]/Sent Mail"
 colour = "lavender"
 
 [[accounts]]

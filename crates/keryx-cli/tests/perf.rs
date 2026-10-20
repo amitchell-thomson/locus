@@ -44,7 +44,7 @@ const WORDS: &[&str] = &[
 ];
 
 fn synthetic(n: usize) -> (Config, Db) {
-    let cfg = Config::load(&keryx_store::testkit::root().join("config/config.example.toml")).unwrap();
+    let cfg = Config::load(&keryx_store::testkit::root().join("config/config.test.toml")).unwrap();
     let mut db = Db::open_in_memory().unwrap();
     let accounts = ["personal", "oxford", "oqts", "oqts-shared"];
     let mut seed: u64 = 42;

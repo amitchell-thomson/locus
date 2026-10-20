@@ -649,7 +649,7 @@ impl Config {
 mod tests {
     use super::*;
 
-    const EXAMPLE: &str = include_str!("../../../config/config.example.toml");
+    const EXAMPLE: &str = include_str!("../../../config/config.test.toml");
 
     fn example() -> Config {
         Config::from_toml(EXAMPLE).unwrap()
@@ -883,5 +883,16 @@ mod tests {
         }
         .to_string();
         assert!(msg.contains("Admin") && msg.contains("nowhere"), "{msg}");
+    }
+}
+
+#[cfg(test)]
+mod example_tests {
+    #[test]
+    fn the_example_config_is_valid() {
+        let p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../config/config.example.toml");
+        let c = super::Config::load(&p).unwrap_or_else(|e| panic!("{e}"));
+        assert!(c.validate().is_empty(), "{:?}", c.validate());
+        assert!(c.accounts.iter().all(|a| a.backend == super::Backend::Mailapp));
     }
 }

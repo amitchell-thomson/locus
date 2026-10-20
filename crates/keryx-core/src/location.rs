@@ -117,7 +117,7 @@ mod tests {
     use std::path::PathBuf;
 
     fn cfg() -> Config {
-        Config::load(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../config/config.example.toml")).unwrap()
+        Config::load(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../config/config.test.toml")).unwrap()
     }
 
     fn labels(v: &[&str]) -> Location {

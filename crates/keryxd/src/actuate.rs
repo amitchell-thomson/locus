@@ -468,7 +468,7 @@ mod tests {
     use super::*;
 
     fn cfg() -> Config {
-        Config::load(&keryx_store::testkit::root().join("config/config.example.toml")).unwrap()
+        Config::load(&keryx_store::testkit::root().join("config/config.test.toml")).unwrap()
     }
 
     fn st(loc: Location, read: bool, flagged: bool) -> MsgState {

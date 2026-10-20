@@ -18,7 +18,7 @@ pub fn root() -> PathBuf {
 
 /// The example config with every account mirrored from fixtures.
 pub fn fixture_db() -> (Config, Db) {
-    let cfg = Config::load(&root().join("config/config.example.toml")).unwrap();
+    let cfg = Config::load(&root().join("config/config.test.toml")).unwrap();
     let store = MailStore::open(&root().join("fixtures/mailapp/V10")).unwrap();
     let mut db = Db::open_in_memory().unwrap();
     for id in ["oxford", "oqts", "oqts-shared"] {

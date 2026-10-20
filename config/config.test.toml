@@ -1,0 +1,133 @@
+# Test fixture config: the mirror fixtures (Personal via the Gmail API fixtures,
+# the rest via the synthetic Mail store). Real setups start from config.example.toml.
+
+# false = writes only touch messages whose subject starts with [keryx-test],
+# and sends only go to your own addresses. Set true once Phase 4/6 checks pass.
+live = false
+timezone = "Europe/London"
+
+[[accounts]]
+id = "personal"
+name = "Personal"
+address = "alec.mitchellthomson@gmail.com"
+backend = "gmail"
+colour = "lavender"
+
+[[accounts]]
+id = "oxford"
+name = "Oxford"
+address = "newc7370@ox.ac.uk"
+backend = "mailapp"
+mailapp_account_id = "74EA59BE-FE1D-4D49-8712-D8A2AB402605"
+inbox_mailbox = "Inbox"
+archive_mailbox = "Archive"
+sent_mailbox = "Sent Items"
+colour = "blue"
+# signature = """
+# Your name
+# Your college / department"""
+
+[[accounts]]
+id = "oqts"
+name = "OQTS"
+address = "alec@oqts.org"
+backend = "mailapp"
+mailapp_account_id = "09F30390-18E1-4550-AF71-D9A1004D8C0F"
+inbox_mailbox = "INBOX"
+archive_mailbox = "[Gmail]/All Mail"
+sent_mailbox = "[Gmail]/Sent Mail"
+colour = "mauve"
+
+[[accounts]]
+id = "oqts-shared"
+name = "OQTS shared"
+address = "oqts@oqts.org"
+backend = "mailapp"
+mailapp_account_id = "428452FB-23CB-4AFF-B98C-CFBB01D1B7D1"
+inbox_mailbox = "INBOX"
+archive_mailbox = "[Gmail]/All Mail"
+sent_mailbox = "[Gmail]/Sent Mail"
+shared = true              # used with one other person: every Claude write needs you
+colour = "pink"
+
+# Keys: shared filing destinations ("Admin is Admin on any account").
+# folders maps account id → Gmail label or Mail mailbox. Numbered 1… in the TUI.
+[[keys]]
+name = "Admin"
+colour = "lavender"
+kairos_key = "Personal"
+folders = { personal = "Admin & Receipts", oxford = "Admin" }
+
+[[keys]]
+name = "Engineering"
+colour = "blue"
+kairos_key = "Engineering"
+folders = { oxford = "Engineering" }
+
+[[keys]]
+name = "Careers"
+colour = "peach"
+kairos_key = "Careers"
+folders = { personal = "Careers", oxford = "Careers" }
+
+[[keys]]
+name = "Travel"
+colour = "sapphire"
+kairos_key = "Personal"
+folders = { personal = "Travel" }
+
+[[keys]]
+name = "OQTS"
+colour = "mauve"
+kairos_key = "Careers"
+folders = { oxford = "oqts" }
+
+[[keys]]
+name = "JCR Treasurer"
+colour = "yellow"
+kairos_key = "Personal"
+folders = { oxford = "JCR Treasurer" }
+
+[risk]
+batch_threshold = 100      # Claude's automated-only batches above this need you
+
+[send]
+hold_seconds = 10          # undo window after you confirm / approve a send
+max_attachments_mb = 25
+
+[snooze]
+enabled = false            # off for now: wake-ups only run on the Mac (bare dates below still use `morning`)
+later_today_hours = 3
+morning = "08:00"          # "Tomorrow" / "Monday" presets
+
+[gmail]
+poll_seconds = 60
+
+[automated]                # overrides for newsletter/notification detection
+always = []                # e.g. "news@example.com", "@mailer.example.com"
+never = []                 # e.g. "@ox.ac.uk"
+
+[cleanup]
+new_days = 3               # "new" = arrived in the last 3 days
+soon_days = 7              # "needed soon" = within 7 days; later → snooze
+notes = ""                 # your habits, for Claude ("keep JCR Treasurer mail")
+
+[runs]
+enabled = true
+morning = "08:00"
+evening = "18:00"
+max_threads = 200
+timeout_minutes = 15
+claude_bin = "claude"
+
+[kairos]
+url = "http://compute-node:7420"
+token_service = "kairos-api-token"
+
+[notify]
+ntfy_server = "https://ntfy.sh"
+approvals = false            # true: push each Claude draft with approve / reject links
+
+[server]
+bind = "127.0.0.1"         # set to the Mac's Tailscale IP for phone links
+port = 7421

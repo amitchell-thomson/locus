@@ -214,7 +214,7 @@ mod tests {
 
     fn cfg() -> Config {
         let mut c =
-            Config::load(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../config/config.example.toml")).unwrap();
+            Config::load(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../config/config.test.toml")).unwrap();
         c.accounts[1].aliases.push("alec.mitchell-thomson@new.ox.ac.uk".into());
         c
     }

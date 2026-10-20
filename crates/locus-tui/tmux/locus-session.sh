@@ -27,16 +27,22 @@ command_for() {
     esac
 }
 
+# A view that fails keeps its window open on the error (keryx with no config exits at once,
+# and a window that vanishes says nothing); a clean quit still closes it.
+window_for() {
+    echo "$(command_for "$1") || { echo; echo \"$1 exited with an error · Enter closes this window\"; read _; }"
+}
+
 ensure() {
     if ! tmux has-session -t =locus 2>/dev/null; then
-        tmux new-session -d -s locus -n home "$(command_for home)"
+        tmux new-session -d -s locus -n home "$(window_for home)"
     fi
     base=$(tmux show -gv base-index)
     i=0
     for view in home project calendar mail; do
         if ! tmux list-windows -t =locus -F '#{window_name}' | grep -qx "$view"; then
-            tmux new-window -d -t "=locus:$((base + i))" -n "$view" "$(command_for "$view")" 2>/dev/null \
-                || tmux new-window -d -a -t "=locus:" -n "$view" "$(command_for "$view")"
+            tmux new-window -d -t "=locus:$((base + i))" -n "$view" "$(window_for "$view")" 2>/dev/null \
+                || tmux new-window -d -a -t "=locus:" -n "$view" "$(window_for "$view")"
         fi
         i=$((i + 1))
     done

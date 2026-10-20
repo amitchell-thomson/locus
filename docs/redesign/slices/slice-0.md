@@ -27,7 +27,7 @@ The original questions, for the record:
 | D3 | Where the shared taxonomy (areas, streams, repository registry) lives | a. a TOML file in the locus repo, served by the HTTP service · b. a separate small repo · c. inside kairos | **a.** One place, versioned with the plan; kairos reads it from the service with a cached local copy, so kairos still works offline. |
 | D4 | How far the HTTP service goes in Slice 0 | a. replace the MCP tools only (retrieve, documents, markups, push) · b. also the endpoints later screens need | **a.** Later slices add endpoints when their screens are wired; designing them now would guess at contracts Slice 1 has not settled. |
 | D5 | Order of work | a. 0.1 first, then the rest in the order below · b. as listed but with 0.6 (HTTP service) last | **a.** |
-| D6 | Your hand steps | change the ARC and reMarkable root passwords; re-upload the remarkable-explainer skill to claude.ai after 0.4 | Please do both; the slice cannot close without them. |
+| D6 | Your hand steps | re-upload the remarkable-explainer skill to claude.ai after 0.4 (the password change was dropped, see the D6 decision above) | Please do it; the slice cannot close without it. |
 
 ---
 

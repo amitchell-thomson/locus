@@ -181,13 +181,11 @@ def collect_status(
                 pass
 
     warnings: list[str] = []
+    # Uncovered surfaces are no longer a warning: `locus link` left the nightly unit in Slice 0.3
+    # (the linking job of Slice 5 replaces it), so the count only grows and a warning nothing will
+    # clear trains him to ignore the block. The count stays on the `alias substrate` line.
     if not built:
         warnings.append("entity-alias substrate not built — run `locus link`")
-    elif uncovered:
-        warnings.append(
-            f"{uncovered} entity surface(s) not in the alias substrate — "
-            "ingest happened since the last `locus link`; rerun it"
-        )
     if quarantine_count:
         warnings.append(
             f"{quarantine_count} quarantined file(s) under {qdir} — triage them (§14)"

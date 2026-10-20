@@ -19,6 +19,9 @@ other.
 - The Jump Trading prep: the four-round format, the topics and their minutes a day, the seven
   daily sheets, from the tablet (`/Notes/jump_trading`). Practice-session scores are
   approximate: a problem counts as right when the error log (v6) has no line for it.
+- The ink-confirm crop: page 5 of the QUAST dossier of 15 Oct with your ink on it, rendered at
+  300 dpi from the tablet bundle (`composite_pages_with_margins`), cropped to the right column.
+  The candidate passages are that page's text.
 - The 8-week area chart: commits per repository per day, at half an hour a commit
   (`tools/make_work.py`).
 

@@ -193,6 +193,16 @@ if it has not landed yet.
 
 *(one entry per design round)*
 
+**Round 0, 20 Oct (the 1.4 check).** The crop rendered through kitty graphics inside tmux in
+Ghostty: "image renders fine, could be larger and centered to fill that section of the screen,
+but idea is really good, and rendering works well." Changed: the crop now scales to fill its
+section, centred. And the synthetic stand-in crop was replaced with his real ink (page 5 of the
+QUAST dossier of 15 Oct, 300 dpi): "What is wrong with my real handwriting sitting in the repo?
+... I would rather be shown my own handwriting." D4's "no transcript text" is about chat
+transcripts, not his own material. How the rounds run, his words: "slowly and methodically work
+through refining every one of the pages ... so that it becomes something I know end to end and
+feel effortless using."
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

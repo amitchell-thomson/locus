@@ -11,7 +11,7 @@
       { "text": "G-Research applications close 31 Oct", "to": "kairos deadline", "from": "keryx" }
     ] },
     { "kind": "ink", "items": [
-      { "text": "quast dossier v3 · 3 marks I am unsure where they point", "from": "ink readback", "opens": "quast-dossier-p5" }
+      { "text": "QUAST dossier 15 Oct · 3 marks I am unsure where they point", "from": "ink readback", "opens": "quast-dossier-p5" }
     ] },
     { "kind": "stop_asking", "items": [
       { "text": "spam archives: you approved 23 of 23. Do them automatically?", "from": "locus" }

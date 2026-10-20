@@ -13,7 +13,7 @@ use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
-use ratatui_image::StatefulImage;
+use ratatui_image::{FilterType, Resize, StatefulImage};
 use ratatui_image::picker::Picker;
 
 pub const KEYS: &[(&str, &str)] = &[
@@ -228,7 +228,17 @@ fn draw_image(f: &mut Frame, area: Rect, app: &App, path: &std::path::Path) {
         }
     }
     if let Some((_, proto)) = slot.as_mut() {
-        f.render_stateful_widget(StatefulImage::default(), area, proto);
+        // As large as the section allows, centred in it (round 0, 20 Oct: "could be larger and
+        // centered to fill that section").
+        let resize = Resize::Scale(Some(FilterType::CatmullRom));
+        let size = proto.size_for(resize.clone(), area.as_size());
+        let at = Rect {
+            x: area.x + area.width.saturating_sub(size.width) / 2,
+            y: area.y + area.height.saturating_sub(size.height) / 2,
+            width: size.width.min(area.width),
+            height: size.height.min(area.height),
+        };
+        f.render_stateful_widget(StatefulImage::default().resize(resize), at, proto);
     }
 }
 

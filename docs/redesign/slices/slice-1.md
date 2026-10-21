@@ -606,6 +606,12 @@ colours of round 2t said nothing the rule did not, so titles are plain white, bl
 colour stays only where it means something (the states, the re-check, your words in pink, a
 branch in teal).
 
+**Decisions: done for now**, with his doubt recorded: "will have to see if I actually use it, as
+I am unsure if I will given it is quite dense." The test is use, not opinion: the use log already
+records each time the page opens (`--use-report`), so once it is live, two weeks with no opens
+means it gets cut or rethought (the same rule as R9), and the weekly review is where that is
+read. If it is opened but its entries are not, the brief alone may be the page.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

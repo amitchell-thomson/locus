@@ -152,10 +152,10 @@ const PROJECT: &[Section] = &[
 // The log's states down the left, then the entry on the right (round 2q). A state with no
 // decisions is not drawn, and Tab and the arrows pass over it.
 const DECISIONS: &[Section] = &[
+    s('h', "holding", None),
+    s('n', "new", None),
     s('r', "to re-check", None),
     s('v', "under review", None),
-    s('n', "new", None),
-    s('h', "holding", None),
     s('x', "replaced", None),
     s('e', "the entry", None),
     s('a', "ask about this decision", None),

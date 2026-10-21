@@ -572,6 +572,10 @@ when the selection reaches it. The fixtures were merged field by field, nothing 
 - "The other sections other than holding should still show, just with a note that says nothing
   here": every state shows, an empty one with a line ("nothing needs re-checking").
 
+**Round 2z, 22 Oct.** "Holding should be at the top, then new, then the others in their order
+now": holding, new, to re-check, under review, replaced, in the list, for Tab and in the
+header's counts. An empty "new" whose new decision sits under another state says so.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

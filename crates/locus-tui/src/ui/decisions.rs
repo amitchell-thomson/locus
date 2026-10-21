@@ -36,11 +36,12 @@ pub const KEYS: &[(&str, &str)] = &[
 ];
 
 /// The list's sections, in the order drawn and walked: (letter, heading).
+// Holding first, then new, then the rest (round 2z: "holding should be at the top, then new").
 pub const SECTIONS: &[(char, &str)] = &[
+    ('h', "holding"),
+    ('n', "new since you last looked"),
     ('r', "to re-check"),
     ('v', "under review"),
-    ('n', "new since you last looked"),
-    ('h', "holding"),
     ('x', "replaced"),
 ];
 
@@ -302,16 +303,17 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
             let gs = groups(app, ds);
             let n = |k: char| gs.iter().find(|g| g.0 == k).map_or(0, |g| g.2.len());
             let mut parts = vec![];
-            for (k, word) in [('r', "to re-check"), ('v', "under review"), ('n', "new")] {
+            // In the list's order.
+            for (k, word) in [
+                ('h', "holding"),
+                ('n', "new"),
+                ('r', "to re-check"),
+                ('v', "under review"),
+                ('x', "replaced"),
+            ] {
                 if n(k) > 0 {
                     parts.push(format!("{} {word}", n(k)));
                 }
-            }
-            if n('h') > 0 {
-                parts.push(format!("{} holding", n('h')));
-            }
-            if n('x') > 0 {
-                parts.push(format!("{} replaced", n('x')));
             }
             parts.join(SEP)
         })
@@ -517,6 +519,23 @@ fn draw_list(f: &mut Frame, area: Rect, app: &App, ds: &Decisions) {
             s.style = bold(st(head_style));
         }
         out.push(head);
+        // A new decision filed under another state is still new: say where it is.
+        let new_elsewhere = gs
+            .iter()
+            .filter(|g| g.0 != 'n')
+            .flat_map(|g| g.2.iter())
+            .filter(|&&i| ds.items[i].new)
+            .count();
+        if idx.is_empty() && *k == 'n' && new_elsewhere > 0 {
+            out.push(Line::from(Span::styled(
+                format!(
+                    "   nothing else new · {new_elsewhere} newly flagged, marked {} below",
+                    glyph::UNREAD
+                ),
+                dim(),
+            )));
+            continue;
+        }
         if idx.is_empty() {
             let note = match k {
                 'r' => "nothing needs re-checking",

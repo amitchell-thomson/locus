@@ -269,6 +269,9 @@ what they last did ("last 28 Aug  agent guidance..."); applications say where th
 move it is ("applied · waiting for them, 7 days"), the CV its last release (`ProjectView.status`,
 `ApproveItem.new`). Not done, his call: pointing the weakest track at its goal.
 
+*Round 1e, 21 Oct.* "home is fine for now." Explore uses spare rows for gaps between its groups
+one at a time, instead of all or none. His window is 155 × 44. **Home: done for now.**
+
 Seeds for later pages, his words kept for their rounds:
 - *Project:* sessions active in the last 3 days shown, the rest behind `s`, each with a
   summary line; the ask key more visible, or a better key than `i`; the branch graph is broken

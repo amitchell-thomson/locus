@@ -550,8 +550,7 @@ fn draw_explore(f: &mut Frame, area: Rect, app: &App) {
     let total = |shown: &[usize], gaps: bool| -> usize {
         shown.iter().sum::<usize>() + shown.len() + if gaps { shown.len().saturating_sub(1) } else { 0 }
     };
-    let spaced = total(&shown, true) <= room;
-    while total(&shown, spaced) > room {
+    while total(&shown, false) > room {
         match shown
             .iter()
             .enumerate()
@@ -562,9 +561,14 @@ fn draw_explore(f: &mut Frame, area: Rect, app: &App) {
             None => break,
         }
     }
+    // Then as many blank lines between groups as the spare rows allow, so space is never left
+    // over at the bottom while the groups are packed (round 1e).
+    let gaps = room
+        .saturating_sub(total(&shown, false))
+        .min(shown.len().saturating_sub(1));
     let mut pos = 0;
     for (gi, (heading, idx)) in groups.iter().enumerate() {
-        if gi > 0 && spaced {
+        if gi > 0 && gi <= gaps {
             out.push(Line::from(""));
         }
         let mut head = vec![Span::styled(

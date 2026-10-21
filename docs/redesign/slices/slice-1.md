@@ -409,6 +409,12 @@ nabla's 26 branches that carried only their last commit message got written summ
 branch summary as a whole is worth more here than a commit summary"); change-record text stays
 raw commit subjects until Slice 2. **The Project view: done for now.**
 
+**Round 2k, 22 Oct. Decisions move to New.** "Open questions and decisions being next to each
+other makes you feel like they are linked ... I was expecting open questions to relate to the
+decisions when I opened them." Decisions leave the open questions' rule and sit on New's, as
+`decisions 7 [d]` beside `full timeline [n n]`: New already lists new and re-checked
+decisions, so the log they come from belongs with it. Narrow, the counts drop and the keys stay.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

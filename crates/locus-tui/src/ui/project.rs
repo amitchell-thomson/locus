@@ -131,8 +131,8 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         t.push(Span::styled(format!("· {stage} "), dim()));
     }
     // Each thing behind a key sits where its context is (round 2d): the dossier, which bears on
-    // everything, centred at the top; decisions beside the open questions; the timeline with
-    // New; answered at the end of the ask line.
+    // everything, centred at the top; the timeline and decisions with New; answered at the end of
+    // the ask line.
     let centre = view.map(|v| centre_title(app, v)).unwrap_or_default();
     let block = ratatui::widgets::Block::default()
         .borders(ratatui::widgets::Borders::ALL)
@@ -392,34 +392,23 @@ fn centre_title(app: &App, v: &ProjectView) -> Line<'static> {
 }
 
 /// Open questions from the dossier: the bigger picture behind next (round 2d: "I want it to
-/// always remind me of what is next to address bigger picture"), with decisions at the right of
-/// its heading, since a question and the decisions it may reopen belong together.
+/// always remind me of what is next to address bigger picture"). Decisions used to sit at the
+/// right of its heading and read as the questions' answers, so they moved to New (round 2k).
 fn questions(app: &App, v: &ProjectView, w: u16) -> Vec<Line<'static>> {
     if v.questions.is_empty() {
         return vec![];
     }
-    let right = match more_rows(app, v).into_iter().find(|r| r.0 == "d") {
-        Some((k, g, col, name, state)) => vec![
-            Span::styled(format!("{g} "), st(col)),
-            Span::styled(format!("{name} "), text()),
-            Span::styled(format!("{state}  "), dim()),
-            Span::styled(format!("{k} "), bold(keyst())),
-        ],
-        None => vec![],
-    };
     let focus = app.focus == Some('q');
     let mut head = vec![
         Span::styled("─ ", st(if focus { "blue" } else { "surface2" })),
         Span::styled("open questions", bold(if focus { st("blue") } else { text() })),
         Span::styled(" · from the dossier ", dim()),
     ];
-    let used: usize = head.iter().chain(right.iter()).map(|s| s.content.width()).sum();
+    let used: usize = head.iter().map(|s| s.content.width()).sum();
     head.push(Span::styled(
-        "─".repeat(usize::from(w).saturating_sub(used + 2)),
+        "─".repeat(usize::from(w).saturating_sub(used)),
         st("surface2"),
     ));
-    head.push(Span::raw(" "));
-    head.extend(right);
     let mut out = vec![Line::from(head)];
     let body = usize::from(w).saturating_sub(10);
     // Each question is a row you can select, like any other section (round 2i); Enter opens the
@@ -911,17 +900,37 @@ fn draw_new(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
     let now = app.fixtures.now();
     let focus = app.focus == Some('n');
     let unread = (0..v.new.len()).filter(|&i| is_unread(app, v, i)).count();
-    // The full timeline sits with New, whose history it is (round 2d).
-    let timeline = more_rows(app, v)
-        .into_iter()
-        .find(|r| r.0 == "n n")
-        .map(|(_, _, _, _, state)| format!(" · n n full timeline {state}"))
-        .unwrap_or_default();
-    let extra = if v.new.is_empty() {
-        format!("nothing new{timeline}")
-    } else {
-        format!("{unread} unread{timeline}")
+    // The full timeline sits with New, whose history it is (round 2d), and so does the decision
+    // log, whose new entries New already lists: beside the open questions it read as their
+    // answers (round 2k: "I was expecting open questions to relate to the decisions").
+    // Narrow, the states go first and the keys stay, so the line never runs into the tail.
+    let behind = |key: &str, name: &str, full: bool| {
+        more_rows(app, v)
+            .into_iter()
+            .find(|r| r.0 == key)
+            .map(|(_, _, _, _, state)| match full {
+                true => format!(" · {name} {state} [{key}]"),
+                false => format!(" · {name} [{key}]"),
+            })
+            .unwrap_or_default()
     };
+    let lead = if v.new.is_empty() {
+        "nothing new".to_string()
+    } else {
+        format!("{unread} unread")
+    };
+    let room = usize::from(area.width).saturating_sub("─ new · ".len() + " [n] ─".len() + 4);
+    let extra = [true, false]
+        .into_iter()
+        .map(|full| {
+            format!(
+                "{lead}{}{}",
+                behind("n n", "full timeline", full),
+                behind("d", "decisions", full)
+            )
+        })
+        .find(|e| e.width() <= room)
+        .unwrap_or_else(|| format!("{lead}{}", behind("d", "decisions", false)));
     let mut out = vec![rule("new", &extra, Some('n'), focus, area.width)];
     let sel = focus.then(|| app.sel('n'));
     let mut pos = 0;
@@ -1104,8 +1113,7 @@ fn draw_ask(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
             Span::styled(" to ask about this project · the answer comes back here", dim()),
         ],
     };
-    // What was asked before sits at the right of the ask rule, as decisions sit on the open
-    // questions' rule (round 2e).
+    // What was asked before sits at the right of the ask rule (round 2e).
     let mut head = vec![
         Span::styled("─ ", st(if asking { "blue" } else { "surface2" })),
         Span::styled("ask", bold(if asking { st("blue") } else { text() })),

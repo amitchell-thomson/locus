@@ -4,11 +4,11 @@
     {
       "title": "delayed acceptance",
       "asked": "ink",
-      "passage": "dossier p5 · §8bw",
+      "passage": "dossier p5, delayed acceptance",
       "at": "2026-10-24T16:05:00+01:00",
       "body": [
         "Delayed acceptance screens each proposed move on the cheap surrogate first and only scores the survivors on the exact simulator, so most bad proposals cost almost nothing.",
-        "It took a third off a learned-law tune-up, but the crowd came out slightly over-confident, which is why it is off by default until it is shown unbiased (§8bw)."
+        "It took a third off a learned-law tune-up, but the crowd came out slightly over-confident, which is why it is off by default until it is shown unbiased."
       ],
       "links": ["the same two-stage idea as Metropolis-Hastings with a surrogate proposal (Monte Carlo lecture 6, p.9)"],
       "thread": "answer-2026-10-24-delayed-acceptance",
@@ -20,7 +20,7 @@
       "at": "2026-10-20T11:40:00+01:00",
       "body": [
         "The crowd is a posterior, not just a search: each candidate device carries a weight, so the loop can ask which measurement would most change its mind. A genetic algorithm keeps the fittest candidates but cannot say how sure it is.",
-        "That is what §8aq relies on: the crowd chooses its own measurements."
+        "That is what lets the crowd choose its own measurements."
       ],
       "links": [],
       "thread": "answer-2026-10-20-smc-vs-ga"
@@ -31,7 +31,7 @@
       "passage": "the-loop.md §4",
       "at": "2026-10-17T21:10:00+01:00",
       "body": [
-        "The fit check asks whether any device in the crowd could have produced the data seen so far. When none can, the crowd restarts from the prior instead of narrowing further around a wrong answer (§8as)."
+        "The fit check asks whether any device in the crowd could have produced the data seen so far. When none can, the crowd restarts from the prior instead of narrowing further around a wrong answer."
       ],
       "links": [],
       "thread": "answer-2026-10-17-fit-check"

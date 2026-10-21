@@ -2,7 +2,7 @@
   "query": "barrier",
   "scope": "everything",
   "hits": [
-    { "source": "decisions", "project": "quast", "title": "§8bf one lever-arm ratio in θ (re-check)", "jump": "Decisions, quast, §8bf" },
+    { "source": "decisions", "project": "quast", "title": "one lever-arm ratio in θ (worth re-checking)", "jump": "Decisions, quast, the lever-arm choice" },
     { "source": "answers", "project": "quast", "title": "\"what the fit check rejects\" · 17 Oct", "at": "2026-10-17T21:10:00+01:00", "jump": "Answered, quast" },
     { "source": "explore", "project": "quast", "title": "Bayes-opt barrier tuning · in the queue", "jump": "Explore, queue" },
     { "source": "notes", "project": "quast", "title": "projects/quast/jot.tex · \"barrier gates …\"", "at": "2026-10-09T10:00:00+01:00", "jump": "nvim projects/quast/jot.tex:41" },

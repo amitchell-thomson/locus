@@ -4,7 +4,7 @@
   "image": "quast-dossier-p5.png",
   "note": "\"but 20s vs 30s is negligible if fidelity can be better…\" · a bracket, then an arrow",
   "candidates": [
-    { "at": "D6 status", "text": "Status: holding; a fast-gate headroom defect fixed 15 Oct (§8br), re-measure running. Reopen if: the re-measure shows early stops on barrier devices." },
+    { "at": "D6 status", "text": "Status: holding; a fast-gate headroom defect fixed 15 Oct, re-measure running. Reopen if: the re-measure shows early stops on barrier devices." },
     { "at": "D6 why", "text": "Why: stopping early cost nothing where it fired; your point that wall clock, not fridge time, is the real cost." },
     { "at": "D7 chosen", "text": "Chosen: maximise mean fidelity over the crowd, continuous search, shortest among ties." }
   ],

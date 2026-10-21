@@ -290,6 +290,33 @@ Seeds for later pages, his words kept for their rounds:
   tracks linking everything is right.
 - *Keys:* fine.
 
+**Round 2, 22 Oct: the Project view (first pass).** Changed:
+- Home's rules here too ("consistent section highlighting and spacing rules as in with home"):
+  gaps between sections, bright titles, the focused section's bar on the frame.
+- *Where you are* draws the eye: a peach heading, labelled parts (now, short of) that wrap,
+  and next on its own band after a blank line ("next should be given more space and be
+  visually separated").
+- A strip under it names what sits behind keys: decisions and how many to re-check, answered,
+  the dossier's last rebuild, prep, the timeline. A rule for every page from here: "every big
+  capability should be referenced in some way on every page, even if it is just a tiny bit of
+  space."
+- *Branches*: each lane hangs from main and rises back at its merge; lanes are packed into rows
+  as git draws them; named on the bar with the short worktree name ("those fit better in small
+  spaces"); milestones named above main ("I do not know what those two green dots are"); the
+  selected lane's work listed underneath; columns are events in date order, not days.
+- *New* grouped by kind, the kind named in a column on its first item; the unread marker on the
+  right, as on Home.
+- No decision numbers in text ("I do not know off the top of my head which number is what"):
+  §-references and ADR numbers written out across the fixtures.
+- *Sessions*: the full line is a plain summary of what each wants; the live count in the rule;
+  the working glyph turns as on Home.
+- *Chores* are life admin for a gap ("laundry, or responding to an email, or picking up
+  furniture"), the same list on every project.
+- Space opens the ask line ("I felt myself hitting / to go for ask"); `i` still works.
+- ↑/↓ walk the sections in layout order (↑ from sessions jumped to branches).
+- Opening an application from Home named the project window's project (nabla) over Jump's view.
+Open: what an application is, against a project (below the round, his to settle).
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

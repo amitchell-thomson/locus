@@ -3,13 +3,13 @@
   "stage": "barrier control",
   "where_you_are": {
     "state": "Barrier control: the exchange law is learned in 2.3 minutes a tune-up, honest on every run (step 6, 16 Oct).",
-    "short": "RIKEN's exchange slope is 2.6x shallower than the prior assumes (§8by); nothing yet uses it.",
-    "next": "fold §8by and §8bz into the prior, then rerun the battery before any new method"
+    "short": "RIKEN's measured exchange slope is 2.6x shallower than the prior assumes, and nothing uses it yet.",
+    "next": "fold RIKEN's slope and charging-energy numbers into the prior, then rerun the battery before trying any new method"
   },
   "new": [
     {
       "kind": "recheck",
-      "text": "§8bf one lever-arm ratio in θ: worth re-checking · RIKEN's slope (§8by) bears on it",
+      "text": "re-check the choice of one lever-arm ratio in θ: RIKEN's measured slope bears on it",
       "at": "2026-10-24T19:30:00+01:00",
       "unread": true
     },
@@ -21,7 +21,7 @@
     },
     {
       "kind": "commits",
-      "text": "6 commits on barrier-control · RIKEN's charging energy is inside the prior (§8bz)",
+      "text": "6 commits on barrier-control · RIKEN's charging energy is inside the prior",
       "at": "2026-10-23T22:10:00+01:00",
       "unread": true
     },
@@ -33,7 +33,7 @@
     },
     {
       "kind": "dossier",
-      "text": "dossier rebuilt · §3 ledger and §4 evidence changed · 2 pages to read",
+      "text": "dossier rebuilt · the decision ledger and the evidence changed · 2 pages to read",
       "at": "2026-10-22T23:05:00+01:00",
       "unread": false
     },
@@ -63,13 +63,17 @@
   ],
   "chores": [
     {
-      "title": "reply to the supervisor about RIKEN's numbers",
+      "title": "put a load of laundry on",
       "minutes": 5
     },
     {
-      "title": "book an ARC GPU slot for the battery",
-      "minutes": 2,
+      "title": "reply to the 3YP group about Tuesday's meeting",
+      "minutes": 5,
       "due": "2026-10-26"
+    },
+    {
+      "title": "collect the parcel from the porters' lodge",
+      "minutes": 10
     }
   ],
   "graph": {
@@ -82,19 +86,19 @@
       },
       {
         "date": "2026-09-27",
-        "label": "§8ap the crowd drives the loop"
+        "label": "the crowd drives the loop"
       },
       {
         "date": "2026-09-29",
-        "label": "§8ba the v2 design"
+        "label": "the v2 design"
       },
       {
         "date": "2026-10-09",
-        "label": "§8bl the scope"
+        "label": "the scope set"
       },
       {
         "date": "2026-10-10",
-        "label": "§8bn the input layer"
+        "label": "the input layer"
       }
     ],
     "lanes": [
@@ -107,7 +111,7 @@
         "happened": [
           "Ranking settings by fridge time plus computing time, as an option",
           "A round sized by information per second was tried and failed: the crowd's information saturates",
-          "Not merged (§8bg)"
+          "Not merged"
         ]
       },
       {
@@ -118,8 +122,8 @@
         "commits": 45,
         "happened": [
           "numerics.py: one switch for precision and device",
-          "A tune-up in about 6 s, gates as good as double precision (§8bh)",
-          "ARC's L40S: 3.4 s a tune-up, a four-minute start per process (§8bi)"
+          "A tune-up in about 6 s, gates as good as double precision",
+          "ARC's L40S: 3.4 s a tune-up, a four-minute start per process"
         ]
       },
       {
@@ -130,9 +134,9 @@
         "commits": 75,
         "happened": [
           "The decisions before code, laid out (barrier-control-decisions.md)",
-          "Step 6: the law learned at 1.4e-5 median, honest, 2.3 minutes (§8bv)",
-          "Delayed acceptance off until shown unbiased (§8bw)",
-          "RIKEN's exchange slope and charging energy (§8by, §8bz)"
+          "Step 6: the law learned at 1.4e-5 median, honest, 2.3 minutes",
+          "Delayed acceptance off until shown unbiased",
+          "RIKEN's exchange slope and charging energy"
         ]
       },
       {
@@ -142,7 +146,7 @@
         "tip": "2026-10-13",
         "commits": 2,
         "happened": [
-          "QUAST thresholds each shot's sensor signal itself (§8bp)",
+          "QUAST thresholds each shot's sensor signal itself",
           "Raw signals in the likelihood not built: worth at most 1.04x"
         ]
       }

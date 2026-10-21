@@ -4,7 +4,7 @@
   "where_you_are": {
     "state": "Merger arbitrage runs in a shadow journal every night; the dashboard and the dead-man's switch watch it.",
     "short": "The backtest's widest spreads were never available live (the recall study, 13 Oct); live edge unmeasured.",
-    "next": "four more weeks of shadow fills before any money: ADR-007's loss budget decides"
+    "next": "four more weeks of shadow fills before any money; the loss-budget rule decides"
   },
   "new": [
     {
@@ -84,8 +84,17 @@
   ],
   "chores": [
     {
-      "title": "check the nightly heartbeat ping is still green",
-      "minutes": 2
+      "title": "put a load of laundry on",
+      "minutes": 5
+    },
+    {
+      "title": "reply to the 3YP group about Tuesday's meeting",
+      "minutes": 5,
+      "due": "2026-10-26"
+    },
+    {
+      "title": "collect the parcel from the porters' lodge",
+      "minutes": 10
     }
   ],
   "graph": {
@@ -98,7 +107,7 @@
       },
       {
         "date": "2026-09-15",
-        "label": "ADR-006 few, high-IC structural edges"
+        "label": "few, high-IC structural edges"
       },
       {
         "date": "2026-10-09",
@@ -106,7 +115,7 @@
       },
       {
         "date": "2026-10-14",
-        "label": "ADR-007 a loss budget"
+        "label": "hypotheses on a loss budget"
       }
     ],
     "lanes": [

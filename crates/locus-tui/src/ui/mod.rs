@@ -176,6 +176,11 @@ pub fn project_title(app: &App) -> String {
             None => "project".into(),
         };
     }
+    // A project Home handed over is named, not the session the window follows (round 2: Jump
+    // opened as "a blank looking page with nabla at the top").
+    if let Some(p) = app.peek.as_deref().and_then(|id| app.fixtures.registry.get(id)) {
+        return format!("{} {}", locus_theme::glyph::PROJECT, p.name);
+    }
     match app.follow.session.as_deref() {
         None => "project · no project window seen yet".into(),
         Some(s) => match app.fixtures.registry.by_session(s) {

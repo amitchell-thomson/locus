@@ -137,9 +137,11 @@ const HOME: &[Section] = &[
 ];
 // Decisions (d), Answered (a) and prep (p) open from the Project view by their own keys: they
 // are screens, not panes on it.
+// In layout order, so ↑ and ↓ walk them as drawn (round 2: "going up from sessions jumps
+// you straight to branches").
 const PROJECT: &[Section] = &[
-    s('n', "new", Some(S::Changes)),
     s('g', "branches", None),
+    s('n', "new", Some(S::Changes)),
     s('s', "sessions", None),
     s('c', "chores", None),
 ];

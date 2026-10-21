@@ -23,7 +23,7 @@
    "decision": "§8bf",
    "title": "one lever-arm ratio in θ",
    "agreed": "2026-10-07",
-   "flagged": "RIKEN's exchange against barrier voltage is 2.6x shallower than the prior assumes (§8by)",
+   "flagged": "RIKEN's exchange against barrier voltage is 2.6x shallower than the prior assumes",
    "effect": "barrier control step 7; nothing built on it yet"
   }
  ],

@@ -4,39 +4,39 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 ---
 ╭ 󱓟 quast · barrier control ───────────────────────────── 󰓦 claude working · 12m  󰆤 following ╮
 │─ where you are ─────────────────────────────────────────────────────────────────────────────│
-│ Barrier control: the exchange law is learned in 2.3 minutes a tune-up, honest on every run… │
-│ RIKEN's exchange slope is 2.6x shallower than the prior assumes (§8by); nothing yet uses i… │
-│ next ▸ fold §8by and §8bz into the prior, then rerun the battery before any new method      │
-│─ branches ──────────────────────────────────────────────────────────────────────────── [g] ─│
-│                          main ◂─┬──────────┬─────●─────●────┴─────┬─────┬───────────── now  │
-│         pricing by wall clock   ╰━━━━○ 2                                                    │
-│  mixed precision on a graphi…              ╰━━━━━━━━━━━━━━━━╯ 45                            │
-│  barrier control: the law le…                                     ╰━━━━━━━━━━━━━━━━━○ 75    │
-│  readout on hardware: the pl…                                           ╰━━━━━○ 2           │
-│                                 7 Oct            9 Oct      10 Oct      13 Oct              │
-│ worktree-readout-adapter · 13 Oct · open · last 13 Oct · QUAST thresholds each shot's…      │
+│   now        Barrier control: the exchange law is learned in 2.3 minutes a tune-up, honest  │
+│              on every run (step 6, 16 Oct).                                                 │
+│   short of   RIKEN's measured exchange slope is 2.6x shallower than the prior assumes, and  │
+│              nothing uses it yet.                                                           │
+│                                                                                             │
+│ ▌ next       fold RIKEN's slope and charging-energy numbers into the prior, then rerun the b│
+│   󰌾 7 decisions · 1 to re-check d     󱜾 3 answered · 1 new a     󰈙 dossier, rebuilt 22 Oct o│
+│                                                                                             │
+│─ branches · 4 branches ─────────────────────────────────────────────────────────────── [g] ─│
+│                                the scope set                                                │
+│main ◂─┬────────────────┬───────●────────●───────┴────────┬───────┬──────────────────── now  │
+│       ╰━━━━━━━○ wall-clock-pricing              │        ╰━ barrier-control ━━━━━━━○        │
+│                        ╰━ gpu-mixed-precision ━━╯                │                          │
+│                                                  readout-adapter ╰━━━━━━━━○                 │
+│       7 Oct                    9 Oct    10 Oct                   13 Oct            19 Oct   │
+│                                                                                             │
+│   readout-adapter · readout on hardware: the plan · open since 13 Oct, last commit 13 Oct · │
+│     · QUAST thresholds each shot's sensor signal itself                                     │
+│     · Raw signals in the likelihood not built: worth at most 1.04x                          │
+│                                                                                             │
 │                                                                                             │
 │─ new · 4 unread ────────────────────────────────────────────────────────────────────── [n] ─│
-│  󰅸 󱉶 §8bf one lever-arm ratio in θ: worth re-checking · RIKEN's slope (§8by) bears on it 2h │
-│  󰅸 󱜾 delayed acceptance · answered from your margin · links Monte Carlo lecture 6        5h │
-│  󰅸 󰘬 6 commits on barrier-control · RIKEN's charging energy is inside the prior (§8bz)  23h │
-│  󰅸 󰭎 Bayesian optimisation tunes double-dot barriers with about 3x fewer measurements    1d │
-│    󰈙 dossier rebuilt · §3 ledger and §4 evidence changed · 2 pages to read               1d │
-│    󰴓 38 margin marks read back · 9 decisions written to the log                          3d │
 │                                                                                             │
+│─ sessions · 2 · 2 live ─────────────────────────────────────────────────────────────── [s] ─│
+│  󰹇 battery (bg)        needs you 35m   wants to run the full battery on the server … ⏎ jump │
+│  󰓦 main chat           working   12m   running the barrier tests after folding in RIKEN's … │
 │                                                                                             │
+│─ chores · for a gap while you wait ─────────────────────────────────────────────────── [c] ─│
+│    󰝖 put a load of laundry on                                                         5 min │
+│    󰝖 reply to the 3YP group about Tuesday's meeting                      due mon 26   5 min │
+│    󰝖 collect the parcel from the porters' lodge                                      10 min │
 │                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│─ sessions · 2 ──────────────────────────────────────────────────────────────────────── [s] ─│
-│  󰹇 battery (bg)        needs you · 35m   allow: python -m quast.battery --full ?     ⏎ jump │
-│  󰓦 main chat           working · 12m     running pytest -k barrier                          │
-│─ chores ────────────────────────────────────────────────────────────────────────────── [c] ─│
-│  󰝖 reply to the supervisor about RIKEN's numbers · 5 min                    ⏎ open · x done │
-│  󰝖 book an ARC GPU slot for the battery · 2 min · due mon 26                ⏎ open · x done │
 │─ ask ───────────────────────────────────────────────────────────────────────────────────────│
-│ ask › i to ask about this project · the answer comes back here                              │
+│   ask › ␣ to ask about this project · the answer comes back here                            │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯
  ⏎ open · ⇥ sections · l log · / search · ? keys

@@ -14,7 +14,21 @@
     }
   ],
   "sessions": [],
-  "chores": [],
+  "chores": [
+    {
+      "title": "put a load of laundry on",
+      "minutes": 5
+    },
+    {
+      "title": "reply to the 3YP group about Tuesday's meeting",
+      "minutes": 5,
+      "due": "2026-10-26"
+    },
+    {
+      "title": "collect the parcel from the porters' lodge",
+      "minutes": 10
+    }
+  ],
   "status": {
     "stage": "applied",
     "since": "2026-10-17",

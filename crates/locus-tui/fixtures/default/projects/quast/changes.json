@@ -2,14 +2,14 @@
   "project": "quast",
   "since": "2026-10-19",
   "entries": [
-    { "kind": "recheck", "text": "§8bf flagged: RIKEN's slope bears on the lever-arm ratio", "at": "2026-10-24T19:30:00+01:00" },
+    { "kind": "recheck", "text": "flagged for re-checking: RIKEN's slope bears on the lever-arm ratio", "at": "2026-10-24T19:30:00+01:00" },
     { "kind": "answer", "text": "delayed acceptance, answered from your margin", "at": "2026-10-24T16:05:00+01:00" },
-    { "kind": "commits", "text": "6 commits on barrier-control · RIKEN's charging energy (§8bz)", "at": "2026-10-23T22:10:00+01:00" },
+    { "kind": "commits", "text": "6 commits on barrier-control · RIKEN's charging energy", "at": "2026-10-23T22:10:00+01:00" },
     { "kind": "scout_find", "text": "scout find: Bayesian optimisation for barrier tuning", "at": "2026-10-23T08:00:00+01:00" },
-    { "kind": "dossier", "text": "dossier rebuilt · §3 ledger, §4 evidence", "at": "2026-10-22T23:05:00+01:00" },
+    { "kind": "dossier", "text": "dossier rebuilt · decision ledger, evidence", "at": "2026-10-22T23:05:00+01:00" },
     { "kind": "chat", "text": "chat 2h · decided to fold RIKEN's numbers into the prior before any new method", "at": "2026-10-22T17:30:00+01:00" },
     { "kind": "ink", "text": "38 margin marks read back · 9 decisions to the log", "at": "2026-10-21T21:02:00+01:00" },
     { "kind": "answer", "text": "why SMC and not a genetic algorithm, from the ask line", "at": "2026-10-20T11:40:00+01:00" },
-    { "kind": "commits", "text": "2 commits on barrier-control · RIKEN's exchange against barrier voltage (§8by)", "at": "2026-10-19T18:20:00+01:00" }
+    { "kind": "commits", "text": "2 commits on barrier-control · RIKEN's exchange against barrier voltage", "at": "2026-10-19T18:20:00+01:00" }
   ]
 }

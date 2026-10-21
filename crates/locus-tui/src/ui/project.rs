@@ -1,12 +1,18 @@
-//! The Project view (Alt-2): one screen in every state. Where you are, the branch graph (plan
-//! D.1), one list of everything new, this project's sessions, chores, and the ask line.
+//! The Project view (Alt-2): one screen in every state. Where you are, a strip naming what sits
+//! behind its keys, the branch graph (plan D.1), everything new by kind, this project's
+//! sessions, the chores that fit a gap, and the ask line.
+//!
+//! The same rules as Home (round 2, 22 Oct: "consistent section highlighting and spacing rules
+//! as in with home"): a blank line between sections, bright section titles, the focused section
+//! marked on the frame's edge. And every big capability is named somewhere on the page, even if
+//! only in a strip ("every big capability should be referenced in some way on every page").
 
-use crate::app::{App, Mark, Mode, nav};
+use crate::app::{App, Mark, Mode};
 use crate::screen::ScreenId;
 use crate::ui::widgets::*;
 use crate::ui::{follow_badge, frame, lines, project_title};
 use chrono::NaiveDate;
-use locus_contract::{BranchGraph, ProjectKind, ProjectView, SessionState};
+use locus_contract::{BranchGraph, DecisionStatus, ItemKind, ProjectKind, ProjectView, SessionState};
 use locus_theme::{SEP, c, glyph};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
@@ -16,19 +22,16 @@ use ratatui::text::{Line, Span};
 use unicode_width::UnicodeWidthStr;
 
 pub const KEYS: &[(&str, &str)] = &[
+    ("␣ or i", "ask about this project"),
     ("n n", "new; again for the full timeline"),
     ("r", "mark the selected new item read"),
     ("x", "a chore done"),
-    ("i", "ask a question"),
     ("d", "decisions"),
     ("a", "answered"),
-    ("p", "interview prep (an opportunity)"),
     ("o", "the dossier"),
+    ("p", "interview prep (an application)"),
     ("m", "pin or follow"),
 ];
-
-/// Lanes drawn at once; older ones are counted in the rule.
-const LANES: usize = 6;
 
 pub fn view(app: &App) -> Option<&ProjectView> {
     let id = app.project_id()?;
@@ -47,12 +50,55 @@ fn is_unread(app: &App, view: &ProjectView, i: usize) -> bool {
     view.new.get(i).is_some_and(|it| it.unread) && app.marked(&new_key(view, i)).is_none()
 }
 
+/// New, grouped by kind (round 2: "new being grouped by kind would be good"): each group's
+/// heading and the indexes of its items, groups in this order, items newest first.
+fn new_groups(v: &ProjectView) -> Vec<(&'static str, Vec<usize>)> {
+    let group = |k: ItemKind| match k {
+        ItemKind::Recheck | ItemKind::Redecided | ItemKind::Decision => 0,
+        ItemKind::Answer => 1,
+        ItemKind::ScoutFind | ItemKind::Reading | ItemKind::Idea => 2,
+        ItemKind::Commits | ItemKind::Chat => 3,
+        ItemKind::Dossier | ItemKind::Ink => 4,
+        ItemKind::Mail | ItemKind::Calendar | ItemKind::AutoAction => 5,
+    };
+    let names = [
+        "decisions",
+        "answers",
+        "finds and ideas",
+        "work",
+        "dossier and ink",
+        "elsewhere",
+    ];
+    (0..names.len())
+        .map(|g| {
+            (
+                names[g],
+                (0..v.new.len())
+                    .filter(|&i| group(v.new[i].kind) == g)
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .filter(|(_, v)| !v.is_empty())
+        .collect()
+}
+
+/// New's items in the order they are drawn, for selection.
+fn new_order(v: &ProjectView) -> Vec<usize> {
+    new_groups(v).into_iter().flat_map(|(_, v)| v).collect()
+}
+
+fn sorted_sessions(v: &ProjectView) -> Vec<&locus_contract::Session> {
+    let mut ss: Vec<_> = v.sessions.iter().collect();
+    ss.sort_by_key(|s| (s.state, std::cmp::Reverse(s.since)));
+    ss
+}
+
 pub fn section_len(app: &App, sec: char) -> usize {
     let Some(v) = view(app) else { return 0 };
     match sec {
+        'g' => v.graph.as_ref().map_or(0, |g| g.lanes.len()),
         'n' => v.new.len(),
-        'g' => v.graph.as_ref().map_or(0, |g| g.lanes.len().min(LANES)),
-        's' => v.sessions.len().min(8),
+        's' => v.sessions.len(),
         _ => v.chores.len().min(3),
     }
 }
@@ -65,7 +111,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         && let Some(s) = v.sessions.iter().find(|s| s.state == SessionState::Working)
     {
         right.push(Span::styled(
-            format!(" {} claude working{SEP}{} ", glyph::WORKING, ago(now, s.since)),
+            format!(" {} claude working{SEP}{} ", spin(app.frame), ago(now, s.since)),
             st("blue"),
         ));
     }
@@ -86,71 +132,182 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         return;
     };
     let w = inner.width;
-    let graph_h = v.graph.as_ref().map_or(0, |g| g.lanes.len().min(LANES) as u16 + 5);
-    let sessions_h = if app.focus == Some('s') {
-        v.sessions.len().min(8)
+
+    let where_lines = where_you_are(v, w);
+    let groups = new_groups(v);
+    let new_h = if v.new.is_empty() {
+        2
     } else {
-        v.sessions.len().min(3)
-    } as u16
-        + 1
-        + u16::from(app.focus != Some('s') && v.sessions.len() > 3);
-    let chores_h = v.chores.len().min(3) as u16 + 1;
-    let [where_r, graph_r, new_r, ses_r, ch_r, ask_r] = Layout::vertical([
-        Constraint::Length(4),
-        Constraint::Length(graph_h),
-        Constraint::Min(3),
-        Constraint::Length(sessions_h.max(2)),
-        Constraint::Length(chores_h.max(2)),
+        1 + groups.iter().map(|(_, i)| i.len()).sum::<usize>() as u16
+    };
+    let ss = v.sessions.len();
+    let focus_s = app.focus == Some('s');
+    let ses_rows = if focus_s { ss.min(10) } else { ss.min(3) } as u16 + u16::from(!focus_s && ss > 3);
+    let ses_h = 1 + ses_rows.max(1);
+    let ch_h = 1 + (v.chores.len().min(3) as u16).max(1);
+    let has_graph = v.graph.is_some();
+    let gap = Constraint::Length(1);
+    let rects = Layout::vertical([
+        Constraint::Length(where_lines.len() as u16),
+        Constraint::Length(1),
+        gap,
+        // The graph takes what it needs (all its lanes and the selected one's summary) when there
+        // is room, and gives way first when there is not.
+        if has_graph {
+            Constraint::Min(graph_need(app, v, w))
+        } else {
+            Constraint::Length(0)
+        },
+        if has_graph { gap } else { Constraint::Length(0) },
+        Constraint::Length(new_h),
+        gap,
+        Constraint::Length(ses_h),
+        gap,
+        Constraint::Length(ch_h),
+        gap,
         Constraint::Length(2),
+        Constraint::Min(0),
     ])
-    .areas(inner);
+    .split(inner);
+    let (where_r, strip_r, graph_r, new_r, ses_r, ch_r, ask_r) =
+        (rects[0], rects[1], rects[3], rects[5], rects[7], rects[9], rects[11]);
 
-    let mut wy = vec![rule("where you are", "", None, false, w)];
-    match &v.where_you_are {
-        Some(wh) => {
-            wy.push(Line::from(Span::styled(
-                format!(" {}", crate::ui::truncate(&wh.state, usize::from(w) - 2)),
-                text(),
-            )));
-            if let Some(s) = &wh.short {
-                wy.push(Line::from(Span::styled(
-                    format!(" {}", crate::ui::truncate(s, usize::from(w) - 2)),
-                    st("subtext0"),
-                )));
-            }
-            wy.push(Line::from(vec![
-                Span::styled(" next ▸ ", st("peach")),
-                Span::styled(crate::ui::truncate(&wh.next, usize::from(w) - 9), text()),
-            ]));
-        }
-        None => wy.push(Line::from(Span::styled(" nothing written yet", dim()))),
-    }
-    lines(f, where_r, wy);
-
+    lines(f, where_r, where_lines);
+    lines(f, strip_r, vec![strip(app, v)]);
     if let Some(g) = &v.graph {
         draw_graph(f, graph_r, app, g);
     }
     draw_new(f, new_r, app, v);
     draw_sessions(f, ses_r, app, v);
     draw_chores(f, ch_r, app, v);
+    draw_ask(f, ask_r, app);
 
-    let ask = match &app.mode {
-        Mode::Ask(q) => Line::from(vec![
-            Span::styled(" ask › ", st("mauve")),
-            Span::styled(q.clone(), text()),
-            Span::styled("▏", st("mauve")),
-        ]),
-        _ => Line::from(vec![
-            Span::styled(" ask › ", dim()),
-            Span::styled("i", keyst()),
-            Span::styled(" to ask about this project · the answer comes back here", dim()),
-        ]),
+    let focused = match app.focus {
+        Some('g') => Some(graph_r),
+        Some('n') => Some(new_r),
+        Some('s') => Some(ses_r),
+        Some('c') => Some(ch_r),
+        _ => None,
     };
-    lines(
-        f,
-        ask_r,
-        vec![rule("ask", "", None, matches!(app.mode, Mode::Ask(_)), w), ask],
-    );
+    if let Some(r) = focused {
+        let buf = f.buffer_mut();
+        for y in r.y..r.y + r.height {
+            if let Some(cell) = buf.cell_mut((area.x, y)) {
+                cell.set_symbol("┃").set_style(st("blue"));
+            }
+        }
+    }
+}
+
+/// Where you are, drawn to catch the eye (round 2: "should draw your eye, and now it reads like
+/// a block of text"): labelled parts, the state free to wrap, and next on its own band, set
+/// apart by a blank line.
+fn where_you_are(v: &ProjectView, w: u16) -> Vec<Line<'static>> {
+    let mut out = vec![Line::from(vec![
+        Span::styled("─ ", st("peach")),
+        Span::styled("where you are", bold(st("peach"))),
+        Span::styled(
+            format!(" {}", "─".repeat(usize::from(w).saturating_sub(16))),
+            st("surface2"),
+        ),
+    ])];
+    let Some(wh) = &v.where_you_are else {
+        out.push(Line::from(Span::styled("   nothing written yet", dim())));
+        return out;
+    };
+    let body = usize::from(w).saturating_sub(16);
+    let mut part = |label: &str, text_: &str, style: Style, max: usize| {
+        for (i, l) in wrap(text_, body).into_iter().take(max).enumerate() {
+            out.push(Line::from(vec![
+                Span::styled(format!("   {:<11}", if i == 0 { label } else { "" }), dim()),
+                Span::styled(l, style),
+            ]));
+        }
+    };
+    part("now", &wh.state, text(), 3);
+    if let Some(s) = &wh.short {
+        part("short of", s, st("subtext0"), 2);
+    }
+    out.push(Line::from(""));
+    let mut next = vec![
+        Span::styled(" ▌ ", st("peach")),
+        Span::styled(format!("{:<11}", "next"), bold(st("peach"))),
+        Span::styled(wh.next.clone(), bold(text())),
+    ];
+    let used: usize = next.iter().map(|s| s.content.width()).sum();
+    next.push(Span::raw(" ".repeat(usize::from(w).saturating_sub(used))));
+    out.push(Line::from(next).patch_style(Style::default().bg(c("surface0"))));
+    out
+}
+
+/// One line naming what sits behind this view's keys (round 2: "otherwise there is no way to
+/// know about the two pages behind keys"; "every big capability should be referenced").
+fn strip(app: &App, v: &ProjectView) -> Line<'static> {
+    let pf = app.fixtures.projects.get(&v.project);
+    let reg = app.fixtures.registry.get(&v.project);
+    let mut spans = vec![Span::raw("   ")];
+    let mut item = |k: &str, g: &str, col: &str, t: String| {
+        spans.push(Span::styled(format!("{g} "), st(col)));
+        spans.push(Span::styled(t, text()));
+        spans.push(Span::styled(format!(" {k}"), keyst()));
+        spans.push(Span::raw("     "));
+    };
+    if let Some(d) = pf.and_then(|p| p.decisions.as_ref()) {
+        let re = d.items.iter().filter(|x| x.status == DecisionStatus::Recheck).count();
+        let extra = if re > 0 {
+            format!(" · {re} to re-check")
+        } else {
+            String::new()
+        };
+        item(
+            "d",
+            glyph::HOLDING,
+            "green",
+            format!("{} decisions{extra}", d.items.len()),
+        );
+    }
+    if let Some(a) = pf.and_then(|p| p.answered.as_ref()) {
+        let unread = a.items.iter().filter(|x| x.unread).count();
+        let extra = if unread > 0 {
+            format!(" · {unread} new")
+        } else {
+            String::new()
+        };
+        item("a", glyph::ANSWER, "sky", format!("{} answered{extra}", a.items.len()));
+    }
+    if reg.is_some_and(|p| p.depth.is_some()) {
+        let rebuilt = v
+            .new
+            .iter()
+            .chain(
+                pf.and_then(|p| p.changes.as_ref())
+                    .map(|c| c.entries.as_slice())
+                    .unwrap_or(&[]),
+            )
+            .filter(|i| i.kind == ItemKind::Dossier)
+            .map(|i| i.at)
+            .max();
+        let t = match rebuilt {
+            Some(t) => format!("dossier, rebuilt {}", date(t.date_naive())),
+            None => "dossier".into(),
+        };
+        item("o", glyph::DOSSIER, "blue", t);
+    }
+    if reg.is_some_and(|p| p.kind == ProjectKind::Opportunity) {
+        let has = app.fixtures.prep.contains_key(&v.project);
+        item(
+            "p",
+            glyph::IDEA,
+            "peach",
+            if has {
+                "interview prep".into()
+            } else {
+                "no prep plan yet".into()
+            },
+        );
+    }
+    item("n n", glyph::COMMITS, "green", "full timeline".into());
+    Line::from(spans)
 }
 
 /// The view has nothing to show: say which of the three reasons it is.
@@ -175,31 +332,47 @@ fn draw_missing(f: &mut Frame, area: Rect, app: &App) {
     lines(f, area, out);
 }
 
-fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
-    let now = app.fixtures.now().date_naive();
-    let focus = app.focus == Some('g');
-    let w = usize::from(area.width);
-    let hidden = g.lanes.len().saturating_sub(LANES);
-    let lanes = &g.lanes[hidden..];
-    let extra = if hidden > 0 {
-        format!("{} lanes, {hidden} older not drawn", g.lanes.len())
+/// A lane's short name: the worktree's, as git has it (round 2: "labelled with its short
+/// worktree name, as those fit better in small spaces"). A merge whose branch name did not
+/// survive is named by its stage.
+fn short_name(l: &locus_contract::Lane) -> String {
+    let b = l.branch.trim_start_matches("worktree-").trim_start_matches("alec/");
+    if b.starts_with("merge: ") {
+        l.stage.clone()
     } else {
-        String::new()
-    };
-    let mut out = vec![rule("branches", &extra, Some('g'), focus, area.width)];
-    let label_w = 30;
-    let gw = w.saturating_sub(label_w + 8).max(10);
-
-    // Columns are events in date order, not days (round 2: on a day axis nabla's ten lanes,
-    // all within a few days, collapsed into vertical bars). Every fork, merge, open tip and
-    // milestone in view gets its own column, so lanes from the same day still spread out.
-    let start = lanes.iter().map(|l| l.forked).min().unwrap_or(g.from).max(g.from);
-    #[derive(Clone, Copy, PartialEq)]
-    enum Ev {
-        Milestone(usize),
-        Fork(usize),
-        End(usize),
+        b.to_string()
     }
+}
+
+/// Where each lane sits: its fork and end columns, the row it is packed into, and where its
+/// name goes. Shared by drawing and by working out how many rows the graph needs.
+struct Placed {
+    a: usize,
+    b: usize,
+    row: usize,
+    name_at: usize,
+    name: String,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Ev {
+    Milestone(usize),
+    Fork(usize),
+    End(usize),
+}
+
+/// Lay the graph out across `gw` columns. Columns are events in date order, not days (on a day
+/// axis nabla's lanes, all within a few days, collapsed into bars): every fork, merge, open tip
+/// and milestone in view gets its own column; within a day, lane by lane, fork before end. Rows
+/// are packed as git draws them: a lane takes the first row free by the time it forks (round 2:
+/// one row a lane made every connector climb past all the earlier rows).
+fn layout(
+    g: &BranchGraph,
+    lanes: &[locus_contract::Lane],
+    now: NaiveDate,
+    gw: usize,
+) -> (Vec<(NaiveDate, u8, Ev)>, Vec<Placed>, usize) {
+    let start = lanes.iter().map(|l| l.forked).min().unwrap_or(g.from).max(g.from);
     let mut evs: Vec<(NaiveDate, u8, Ev)> = Vec::new();
     for (i, m) in g.milestones.iter().enumerate().filter(|(_, m)| m.date >= start) {
         evs.push((m.date, 0, Ev::Milestone(i)));
@@ -212,118 +385,227 @@ fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
         let lane = match e {
             Ev::Milestone(i) | Ev::Fork(i) | Ev::End(i) => *i,
         };
-        // Within a day, milestones first, then lane by lane, each lane's fork before its end:
-        // a branch made and merged the same day stays short instead of spanning the others.
         (*d, *k != 0, lane, *k)
     });
-    let n = evs.len().max(1);
-    // Leave a column at each end: the trunk comes in from the left and runs on to now.
-    let col = |slot: usize| -> usize { 1 + slot * (gw.saturating_sub(3)) / n.max(2).saturating_sub(1).max(1) };
+    let n = evs.len().max(2);
+    let col = |slot: usize| -> usize { (1 + slot * gw.saturating_sub(4) / (n - 1)).min(gw - 1) };
     let at = |e: Ev| evs.iter().position(|(_, _, x)| *x == e).map(col).unwrap_or(0);
-
-    let mut trunk: Vec<(char, &str)> = vec![('─', "overlay2"); gw];
-    for (slot, (_, _, e)) in evs.iter().enumerate() {
-        let x = col(slot).min(gw - 1);
-        trunk[x] = match e {
-            Ev::Milestone(_) => ('●', "green"),
-            Ev::Fork(_) => ('┬', "overlay2"),
-            Ev::End(i) if lanes[*i].merged.is_some() => ('┴', "overlay2"),
-            Ev::End(_) => trunk[x],
-        };
-    }
-    let earlier = g.milestones.iter().filter(|m| m.date < start).count();
-    let mut spans = vec![
-        Span::styled(format!("{:>w$} ", g.trunk, w = label_w), bold(st("subtext1"))),
-        Span::styled(if earlier > 0 { "◂" } else { " " }, dim()),
-    ];
-    spans.extend(trunk.iter().map(|(ch, c)| Span::styled(ch.to_string(), st(c))));
-    spans.push(Span::styled(" now", dim()));
-    out.push(Line::from(spans));
-
-    let sel = app.sel('g').min(lanes.len().saturating_sub(1));
+    let mut row_end: Vec<usize> = Vec::new();
+    let mut placed = Vec::new();
     for (i, l) in lanes.iter().enumerate() {
-        let selected = focus && i == sel;
-        let colour = c(PROJECT_COLOURS[i % PROJECT_COLOURS.len()]);
-        let label = crate::ui::truncate(&l.stage, label_w - 2);
-        let (a, b) = (at(Ev::Fork(i)).min(gw - 1), at(Ev::End(i)).min(gw - 1));
-        let mut cells = String::new();
-        for x in 0..gw {
-            cells.push(if x < a || x > b {
-                ' '
-            } else if x == a {
-                '╰'
-            } else if x < b {
-                '━'
-            } else if l.merged.is_some() {
-                '╯'
-            } else {
-                '○'
-            });
-        }
-        let lane = cells.trim_end().to_string();
-        let pad = gw.saturating_sub(lane.chars().count());
-        let count = format!(" {}", l.commits);
-        let left = vec![
-            Span::styled(if selected { "▌ " } else { "  " }, keyst()),
-            Span::styled(
-                format!("{label:>w$} ", w = label_w - 2),
-                if selected {
-                    bold(Style::default().fg(colour))
-                } else {
-                    Style::default().fg(colour)
-                },
-            ),
-            Span::raw(" "),
-            Span::styled(lane, Style::default().fg(colour)),
-            Span::styled(count.clone(), dim()),
-            Span::raw(" ".repeat(pad.saturating_sub(count.width()))),
-        ];
-        let line = Line::from(left);
-        out.push(if selected {
-            line.patch_style(Style::default().bg(c("surface0")))
+        let a = at(Ev::Fork(i));
+        let b = at(Ev::End(i)).max(a);
+        let name = format!(" {} ", short_name(l));
+        let w = name.chars().count();
+        let inside = b - a > w + 2;
+        // On the bar when it is long enough, after it when there is room, else before the fork.
+        let (name_at, left, extent) = if inside {
+            (a + 2, a, b)
+        } else if b + w < gw {
+            (b + 1, a, b + w)
         } else {
-            line
+            let at_ = a.saturating_sub(w);
+            (at_, at_, b)
+        };
+        let row = match row_end.iter().position(|&e| e + 2 < left) {
+            Some(r) => {
+                row_end[r] = extent;
+                r
+            }
+            None => {
+                row_end.push(extent);
+                row_end.len() - 1
+            }
+        };
+        placed.push(Placed {
+            a,
+            b,
+            row,
+            name_at,
+            name,
         });
     }
+    let rows = row_end.len();
+    (evs, placed, rows)
+}
 
+/// Rows the graph needs at this width: names, main, its packed rows, the axis, a blank and the
+/// selected lane's summary.
+fn graph_need(app: &App, v: &ProjectView, w: u16) -> u16 {
+    let Some(g) = &v.graph else { return 0 };
+    let gw = usize::from(w).saturating_sub(12).max(10);
+    let (_, _, rows) = layout(g, &g.lanes, app.fixtures.now().date_naive(), gw);
+    let sel = app.sel('g').min(g.lanes.len().saturating_sub(1));
+    let detail = 1 + g.lanes.get(sel).map_or(0, |l| l.happened.len().min(3));
+    (5 + rows + detail) as u16
+}
+
+/// The branch graph: main along the top with its milestones named above it, each lane hanging
+/// from main by a connector at its fork and rising back at its merge, named on the bar itself;
+/// the selected lane's work summarised underneath (round 2: lanes "hover in their row only",
+/// "I do not know what those two green dots are", "use the extra space to show what each branch
+/// is on the branch itself", "hovering over the branch should show more detail").
+fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
+    let now = app.fixtures.now().date_naive();
+    let focus = app.focus == Some('g');
+    let w = usize::from(area.width);
+    let lead = 6;
+    let gw = w.saturating_sub(lead + 6).max(10);
+    let sel_all = app.sel('g').min(g.lanes.len().saturating_sub(1));
+    let detail_h = 1 + g.lanes.get(sel_all).map_or(0, |l| l.happened.len().min(3));
+    let room = usize::from(area.height).saturating_sub(5 + detail_h).max(1);
+    // Drop the oldest lanes until the packed rows fit.
+    let mut first = 0;
+    let (evs, placed, rows) = loop {
+        let (e, p, r) = layout(g, &g.lanes[first..], now, gw);
+        if r <= room || first + 1 >= g.lanes.len() {
+            break (e, p, r);
+        }
+        first += 1;
+    };
+    let lanes = &g.lanes[first..];
+    let extra = if first > 0 {
+        format!("{} branches, the {first} oldest not drawn", g.lanes.len())
+    } else {
+        format!("{} branches", g.lanes.len())
+    };
+    let mut out = vec![rule("branches", &extra, Some('g'), focus, area.width)];
+    let n = evs.len().max(2);
+    let col = |slot: usize| -> usize { (1 + slot * gw.saturating_sub(4) / (n - 1)).min(gw - 1) };
+
+    let mut cv: Vec<Vec<(char, Style)>> = vec![vec![(' ', Style::default()); gw]; 1 + rows];
+    for cell in cv[0].iter_mut() {
+        *cell = ('─', st("overlay2"));
+    }
+    for (i, (l, p)) in lanes.iter().zip(&placed).enumerate() {
+        let selected = focus && first + i == sel_all;
+        let mut style = Style::default().fg(c(PROJECT_COLOURS[(first + i) % PROJECT_COLOURS.len()]));
+        if selected {
+            style = bold(style).bg(c("surface0"));
+        }
+        let r = 1 + p.row;
+        for (x, cell) in cv[r].iter_mut().enumerate().take(p.b + 1).skip(p.a) {
+            *cell = (
+                if x == p.a {
+                    '╰'
+                } else if x < p.b {
+                    '━'
+                } else if l.merged.is_some() {
+                    '╯'
+                } else {
+                    '○'
+                },
+                style,
+            );
+        }
+        for (k, ch) in p.name.chars().enumerate() {
+            if p.name_at + k < gw {
+                cv[r][p.name_at + k] = (ch, bold(style));
+            }
+        }
+        cv[0][p.a] = ('┬', st("overlay2"));
+        join(&mut cv, p.a, r, style);
+        if l.merged.is_some() {
+            cv[0][p.b] = if cv[0][p.b].0 == '┬' {
+                ('┼', st("overlay2"))
+            } else {
+                ('┴', st("overlay2"))
+            };
+            join(&mut cv, p.b, r, style);
+        }
+    }
+    // Milestones: a dot on main, named in the row above it where there is room.
+    let mut names: Vec<char> = vec![' '; gw];
+    let mut free_from = 0;
+    for (slot, (_, _, e)) in evs.iter().enumerate() {
+        if let Ev::Milestone(i) = e {
+            let x = col(slot);
+            if cv[0][x].0 == '─' {
+                cv[0][x] = ('●', st("green"));
+            }
+            let label: Vec<char> = crate::ui::truncate(&g.milestones[*i].label, 24).chars().collect();
+            if x >= free_from && x + label.len() < gw {
+                names[x..x + label.len()].copy_from_slice(&label);
+                free_from = x + label.len() + 2;
+            }
+        }
+    }
+    let start = lanes.iter().map(|l| l.forked).min().unwrap_or(g.from).max(g.from);
+    let earlier = g.milestones.iter().filter(|m| m.date < start).count();
+    out.push(Line::from(vec![
+        Span::raw(" ".repeat(lead)),
+        Span::styled(names.into_iter().collect::<String>(), st("green")),
+    ]));
+    for (r, cells) in cv.into_iter().enumerate() {
+        let mut spans = vec![if r == 0 {
+            Span::styled(
+                format!("{:>4} {}", g.trunk, if earlier > 0 { "◂" } else { " " }),
+                bold(st("subtext1")),
+            )
+        } else {
+            Span::raw(" ".repeat(lead))
+        }];
+        spans.extend(cells.into_iter().map(|(ch, s)| Span::styled(ch.to_string(), s)));
+        if r == 0 {
+            spans.push(Span::styled(" now", dim()));
+        }
+        out.push(Line::from(spans));
+    }
     // The axis: a date wherever it changes and there is room for it.
-    let mut axis: Vec<char> = vec![' '; label_w + 2 + gw + 4];
+    let mut axis: Vec<char> = vec![' '; lead + gw + 6];
     let mut last_end = 0;
     let mut last_date = None;
     for (slot, (d, _, _)) in evs.iter().enumerate() {
         if last_date == Some(*d) {
             continue;
         }
-        let x = label_w + 2 + col(slot);
-        let text = date(*d);
-        if x >= last_end && x + text.chars().count() < axis.len() {
-            for (k, ch) in text.chars().enumerate() {
-                axis[x + k] = ch;
-            }
-            last_end = x + text.chars().count() + 2;
+        let x = lead + col(slot);
+        let text_: Vec<char> = date(*d).chars().collect();
+        if x >= last_end && x + text_.len() < axis.len() {
+            axis[x..x + text_.len()].copy_from_slice(&text_);
+            last_end = x + text_.len() + 2;
             last_date = Some(*d);
         }
     }
     out.push(Line::from(Span::styled(axis.into_iter().collect::<String>(), dim())));
-
-    // What happened in the selected lane (or the newest, unfocused).
-    let shown = if focus { lanes.get(sel) } else { lanes.last() };
+    out.push(Line::from(""));
+    // The selected lane's work, or the newest lane's when the graph is not focused.
+    let shown = if focus { g.lanes.get(sel_all) } else { g.lanes.last() };
     if let Some(l) = shown {
         let state = match l.merged {
-            Some(m) => format!("merged {}", date(m)),
-            None => format!("open{SEP}last {}", l.tip.map(date).unwrap_or_default()),
-        };
-        let happened = l.happened.join("; ");
-        out.push(Line::from(vec![
-            Span::styled(format!(" {}", l.branch), st("subtext1")),
-            Span::styled(format!("{SEP}{}{SEP}{state}{SEP}", date(l.forked)), dim()),
-            Span::styled(
-                crate::ui::truncate(&happened, w.saturating_sub(l.branch.width() + 40)),
-                text(),
+            Some(m) => format!("{} to {}, merged", date(l.forked), date(m)),
+            None => format!(
+                "open since {}, last commit {}",
+                date(l.forked),
+                l.tip.map(date).unwrap_or_default()
             ),
+        };
+        let commits = if l.commits == 1 {
+            "1 commit".to_string()
+        } else {
+            format!("{} commits", l.commits)
+        };
+        out.push(Line::from(vec![
+            Span::styled(format!("   {}", short_name(l)), bold(text())),
+            Span::styled(format!("{SEP}{}{SEP}{state}{SEP}{commits}", l.stage), dim()),
         ]));
+        for h in l.happened.iter().take(3) {
+            out.push(Line::from(vec![
+                Span::styled("     · ", dim()),
+                Span::styled(crate::ui::truncate(h, w.saturating_sub(8)), text()),
+            ]));
+        }
     }
     lines(f, area, out);
+}
+
+/// A connector in column `x` from main (row 0) down to lane row `r`, through empty cells only.
+fn join(cv: &mut [Vec<(char, Style)>], x: usize, r: usize, style: Style) {
+    for rr in cv.iter_mut().take(r).skip(1) {
+        if rr[x].0 == ' ' {
+            rr[x] = ('│', style);
+        }
+    }
 }
 
 fn draw_new(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
@@ -337,26 +619,33 @@ fn draw_new(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
     };
     let mut out = vec![rule("new", &extra, Some('n'), focus, area.width)];
     let sel = focus.then(|| app.sel('n'));
-    for (i, it) in v.new.iter().enumerate() {
-        let (g, gc) = item_glyph(it.kind);
-        let unread = is_unread(app, v, i);
-        out.push(row(
-            vec![
-                pointer(i, sel),
-                Span::styled(
-                    if unread {
-                        format!("{} ", glyph::UNREAD)
-                    } else {
-                        "  ".into()
-                    },
-                    st("peach"),
-                ),
-                Span::styled(format!("{g} "), st(gc)),
-                Span::styled(it.text.clone(), if unread { text() } else { dim() }),
-            ],
-            vec![Span::styled(format!("{} ", ago(now, it.at)), dim())],
-            area.width,
-        ));
+    let mut pos = 0;
+    // Each kind is named in a column of its own on its first item, rather than on a row of its
+    // own, so grouping costs no height.
+    for (heading, idx) in new_groups(v) {
+        for (k, i) in idx.into_iter().enumerate() {
+            let label = if k == 0 { heading } else { "" };
+            let it = &v.new[i];
+            let (g, gc) = item_glyph(it.kind);
+            let unread = is_unread(app, v, i);
+            // The unread marker sits on the right, as the counts do on Home (round 2).
+            let mut right = vec![];
+            if unread {
+                right.push(Span::styled(format!("{} ", glyph::UNREAD), st("peach")));
+            }
+            right.push(Span::styled(format!("{:>4} ", ago(now, it.at)), dim()));
+            out.push(row(
+                vec![
+                    pointer(pos, sel),
+                    Span::styled(format!(" {label:<16}"), bold(st("subtext1"))),
+                    Span::styled(format!("{g} "), st(gc)),
+                    Span::styled(it.text.clone(), if unread { text() } else { dim() }),
+                ],
+                right,
+                area.width,
+            ));
+            pos += 1;
+        }
     }
     if v.new.is_empty() {
         let last = app
@@ -366,31 +655,39 @@ fn draw_new(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
             .and_then(|p| p.changes.as_ref())
             .and_then(|c| c.entries.first().map(|e| e.at));
         let msg = match last {
-            Some(t) => format!("  nothing new; last change {} ago · n n for the timeline", ago(now, t)),
-            None => "  nothing new".to_string(),
+            Some(t) => format!("   nothing new; the last change was {} ago", ago(now, t)),
+            None => "   nothing new".to_string(),
         };
         out.push(Line::from(Span::styled(msg, dim())));
     }
     lines(f, area, out);
 }
 
+/// Every Claude session in the project, live ones first, each with what it is for and what it
+/// needs in plain words across the full line (round 2: "a good, intuitive and clear natural
+/// language summary of what they need"). Unfocused, the three most pressing; focused, the rest.
 fn draw_sessions(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
     let now = app.fixtures.now();
     let focus = app.focus == Some('s');
-    let mut out = vec![rule(
-        "sessions",
-        &v.sessions.len().to_string(),
-        Some('s'),
-        focus,
-        area.width,
-    )];
-    let mut ss: Vec<_> = v.sessions.iter().collect();
-    ss.sort_by_key(|s| s.state);
-    let room = if focus { 8 } else { 3 };
+    let ss = sorted_sessions(v);
+    let live = ss
+        .iter()
+        .filter(|s| matches!(s.state, SessionState::Working | SessionState::NeedsYou))
+        .count();
+    let extra = format!("{} · {live} live", ss.len());
+    let mut out = vec![rule("sessions", &extra, Some('s'), focus, area.width)];
+    let room = usize::from(area.height.saturating_sub(1)) - usize::from(!focus && ss.len() > 3);
     let sel = focus.then(|| app.sel('s'));
-    for (i, s) in ss.iter().take(room).enumerate() {
+    let first = sel.map_or(0, |s| s.saturating_sub(room.saturating_sub(1)));
+    for (i, s) in ss.iter().enumerate().skip(first).take(room) {
         let (g, gc, word) = session_glyph(s.state);
+        let g = if s.state == SessionState::Working {
+            spin(app.frame)
+        } else {
+            g
+        };
         let name = format!("{}{}", s.name, if s.background { " (bg)" } else { "" });
+        let what = s.summary.clone().or_else(|| s.doing.clone()).unwrap_or_default();
         let right = if s.state == SessionState::NeedsYou {
             vec![Span::styled("⏎ jump ", keyst())]
         } else {
@@ -400,75 +697,89 @@ fn draw_sessions(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
             vec![
                 pointer(i, sel),
                 Span::styled(format!("{g} "), st(gc)),
-                Span::styled(format!("{:<20}", crate::ui::truncate(&name, 20)), text()),
-                Span::styled(format!("{:<18}", format!("{word}{SEP}{}", ago(now, s.since))), st(gc)),
-                Span::styled(s.doing.clone().unwrap_or_default(), dim()),
+                Span::styled(format!("{:<20}", crate::ui::truncate(&name, 19)), text()),
+                Span::styled(format!("{:<9}", word), st(gc)),
+                Span::styled(format!("{:>4}   ", ago(now, s.since)), dim()),
+                Span::styled(
+                    what,
+                    if matches!(s.state, SessionState::Done | SessionState::Idle) {
+                        dim()
+                    } else {
+                        text()
+                    },
+                ),
             ],
             right,
             area.width,
         ));
     }
-    if ss.len() > room {
+    if !focus && ss.len() > 3 {
         out.push(Line::from(Span::styled(
-            format!("    + {} more · s to see them", ss.len() - room),
+            format!("     + {} older · s to see them", ss.len() - 3),
             dim(),
         )));
     }
     if ss.is_empty() {
-        out.push(Line::from(Span::styled("  no sessions", dim())));
+        out.push(Line::from(Span::styled("   no sessions", dim())));
     }
     lines(f, area, out);
 }
 
+/// Chores are life admin that fits a gap while Claude works (round 2: "laundry, or responding to
+/// an email, or picking up furniture"), the same list on every project.
 fn draw_chores(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
     let focus = app.focus == Some('c');
-    let mut out = vec![rule("chores", "", Some('c'), focus, area.width)];
+    let mut out = vec![rule("chores", "for a gap while you wait", Some('c'), focus, area.width)];
     let sel = focus.then(|| app.sel('c'));
     for (i, ch) in v.chores.iter().enumerate().take(3) {
         let done = app.marked(&chore_key(v, i)) == Some(&Mark::Done);
-        let mut t = format!("{}{SEP}{} min", ch.title, ch.minutes);
+        let mut right = vec![Span::styled(format!("{} min ", ch.minutes), dim())];
         if let Some(d) = ch.due {
-            t.push_str(&format!("{SEP}due {}", day(d)));
+            right.insert(0, Span::styled(format!("due {}   ", day(d)), st("peach")));
         }
         out.push(row(
             vec![
                 pointer(i, sel),
-                Span::styled(format!("{} ", glyph::CHORES), st("teal")),
-                Span::styled(t, if done { struck(text()) } else { text() }),
+                Span::styled(format!("  {} ", glyph::CHORES), st("teal")),
+                Span::styled(ch.title.clone(), if done { struck(text()) } else { text() }),
             ],
-            vec![Span::styled("⏎ open · x done ", dim())],
+            right,
             area.width,
         ));
     }
     if v.chores.is_empty() {
-        out.push(Line::from(Span::styled("  none fit now", dim())));
+        out.push(Line::from(Span::styled("   none fit now", dim())));
     }
     lines(f, area, out);
+}
+
+fn draw_ask(f: &mut Frame, area: Rect, app: &App) {
+    let asking = matches!(app.mode, Mode::Ask(_));
+    let line = match &app.mode {
+        Mode::Ask(q) => Line::from(vec![
+            Span::styled("   ask › ", st("mauve")),
+            Span::styled(q.clone(), text()),
+            Span::styled("▏", st("mauve")),
+        ]),
+        _ => Line::from(vec![
+            Span::styled("   ask › ", dim()),
+            Span::styled("␣", keyst()),
+            Span::styled(" to ask about this project · the answer comes back here", dim()),
+        ]),
+    };
+    lines(f, area, vec![rule("ask", "", None, asking, area.width), line]);
 }
 
 pub fn key(app: &mut App, k: KeyEvent) -> bool {
     let Some(v) = view(app).cloned() else {
         return matches!(k.code, KeyCode::Char('m')) && toggle_pin(app);
     };
-    if let Some(d) = nav(&k) {
-        let len = match app.focus {
-            Some('n') => v.new.len(),
-            Some('s') => v.sessions.len(),
-            Some('c') => v.chores.len(),
-            Some('g') => v.graph.as_ref().map_or(0, |g| g.lanes.len().min(LANES)),
-            _ => return false,
-        };
-        if let Some(sec) = app.focus {
-            app.move_sel(sec, len, d);
-        }
-        return true;
-    }
     let focus = app.focus;
     match (focus, k.code) {
         (Some('n'), KeyCode::Char('n')) => app.open(ScreenId::Changes),
         (Some('n'), KeyCode::Enter | KeyCode::Char('r')) => {
-            let i = app.sel('n');
-            if let Some(it) = v.new.get(i) {
+            if let Some(&i) = new_order(&v).get(app.sel('n')) {
+                let it = &v.new[i];
                 let note = if k.code == KeyCode::Enter {
                     format!("would open: {}", it.text)
                 } else {
@@ -478,9 +789,7 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
             }
         }
         (Some('s'), KeyCode::Enter) => {
-            let mut ss: Vec<_> = v.sessions.iter().collect();
-            ss.sort_by_key(|s| s.state);
-            if let Some(s) = ss.get(app.sel('s')) {
+            if let Some(s) = sorted_sessions(&v).get(app.sel('s')) {
                 app.note = Some(format!("would jump your project window to \"{}\"", s.name));
             }
         }
@@ -499,8 +808,9 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 app.note = Some(format!("would open \"{}\" in kairos", ch.title));
             }
         }
-        (Some('g'), KeyCode::Enter) => app.note = Some("would show the lane's change records".into()),
-        (_, KeyCode::Char('i')) => app.mode = Mode::Ask(String::new()),
+        (Some('g'), KeyCode::Enter) => app.note = Some("would list the branch's change records".into()),
+        // Space asks (round 2: "a better key than i"); i still works.
+        (_, KeyCode::Char(' ' | 'i')) => app.mode = Mode::Ask(String::new()),
         (_, KeyCode::Char('d')) => app.open(ScreenId::Decisions),
         (_, KeyCode::Char('a')) => app.open(ScreenId::Answered),
         (_, KeyCode::Char('o')) => {
@@ -516,7 +826,7 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
             if kind == Some(ProjectKind::Opportunity) {
                 app.open(ScreenId::Prep);
             } else {
-                app.note = Some("p is interview prep, for an opportunity".into());
+                app.note = Some("p is interview prep, for an application".into());
             }
         }
         (_, KeyCode::Char('m')) => return toggle_pin(app),

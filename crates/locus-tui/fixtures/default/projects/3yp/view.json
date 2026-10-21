@@ -6,8 +6,27 @@
     "next": "write down what the project is, so heuris has something to read"
   },
   "new": [
-    { "kind": "calendar", "text": "3YP briefing added to the calendar · tue 14:00", "at": "2026-10-23T17:00:00+01:00", "unread": true }
+    {
+      "kind": "calendar",
+      "text": "3YP briefing added to the calendar · tue 14:00",
+      "at": "2026-10-23T17:00:00+01:00",
+      "unread": true
+    }
   ],
   "sessions": [],
-  "chores": []
+  "chores": [
+    {
+      "title": "put a load of laundry on",
+      "minutes": 5
+    },
+    {
+      "title": "reply to the 3YP group about Tuesday's meeting",
+      "minutes": 5,
+      "due": "2026-10-26"
+    },
+    {
+      "title": "collect the parcel from the porters' lodge",
+      "minutes": 10
+    }
+  ]
 }

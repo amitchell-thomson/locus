@@ -14,7 +14,7 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │  󰌵 A Kalman nowcast on tanker-f… │ simulated 2x2 device.                                    │
 │                                  │                                                          │
 │                                  │ why      your next step is barrier control, and every    │
-│                                  │          measurement there costs fridge time (§8bg)      │
+│                                  │          measurement there costs fridge time             │
 │                                  │ differs  simulated device only; no readout noise         │
 │                                  │          modelled                                        │
 │                                  │ touches  barrier control step 7                          │

@@ -28,7 +28,7 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │ 󰴓 the mark "but 20s vs 30s is negligible if fidelity can be better…" · a bracket, then an ar│
 │                                                                                             │
 │─ it might point at ─────────────────────────────────────────────────────────────────────────│
-│ 1 D6 status Status: holding; a fast-gate headroom defect fixed 15 Oct (§8br), re-measure    │
+│ 1 D6 status Status: holding; a fast-gate headroom defect fixed 15 Oct, re-measure           │
 │             running. Reopen if: the re-measure shows early stops on barrier devices.        │
 │                                                                                             │
 │ 2 D6 why    Why: stopping early cost nothing where it fired; your point that wall clock,    │

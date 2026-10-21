@@ -21,13 +21,13 @@
     },
     {
       "kind": "decision",
-      "text": "ADR-005 the data directory is data/, not vault/",
+      "text": "decided: the data directory is data/, not vault/",
       "at": "2026-10-20T10:00:00+01:00",
       "unread": true
     },
     {
       "kind": "decision",
-      "text": "ADR-004 the shared Rust crates live in the locus repository",
+      "text": "decided: the shared Rust crates live in the locus repository",
       "at": "2026-10-19T23:00:00+01:00",
       "unread": true
     }
@@ -54,7 +54,21 @@
       "summary": "moving kairos onto the four areas"
     }
   ],
-  "chores": [],
+  "chores": [
+    {
+      "title": "put a load of laundry on",
+      "minutes": 5
+    },
+    {
+      "title": "reply to the 3YP group about Tuesday's meeting",
+      "minutes": 5,
+      "due": "2026-10-26"
+    },
+    {
+      "title": "collect the parcel from the porters' lodge",
+      "minutes": 10
+    }
+  ],
   "graph": {
     "trunk": "main",
     "from": "2026-07-18",
@@ -121,8 +135,8 @@
         "merged": "2026-10-19",
         "commits": 3,
         "happened": [
-          "plan.tex and info.tex in docs/redesign (ADR-001)",
-          "How the build is run (ADR-002)"
+          "plan.tex and info.tex in docs/redesign",
+          "How the build is run"
         ]
       }
     ]

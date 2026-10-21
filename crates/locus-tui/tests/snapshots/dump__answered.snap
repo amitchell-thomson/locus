@@ -3,7 +3,7 @@ source: crates/locus-tui/tests/dump.rs
 expression: "dump::render(&a, 95, 38).unwrap()"
 ---
 ╭ quast · answered ───────────────────────────────────────────────────────────────── esc back ╮
-│▌ 󱜾 delayed acceptance                 󰴓 ink ?  dossier p5 · §8bw                         5h │
+│▌ 󱜾 delayed acceptance                 󰴓 ink ?  dossier p5, delayed acceptance            5h │
 │  󱜾 why SMC and not a genetic algori…  ask      ·                                         4d │
 │  󱜾 what the fit check rejects         󰴓 ink ?  the-loop.md §4                            7d │
 │─────────────────────────────────────────────────────────────────────────────────────────────│
@@ -11,7 +11,7 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │ the survivors on the exact simulator, so most bad proposals cost almost nothing.            │
 │                                                                                             │
 │ It took a third off a learned-law tune-up, but the crowd came out slightly over-confident,  │
-│ which is why it is off by default until it is shown unbiased (§8bw).                        │
+│ which is why it is off by default until it is shown unbiased.                               │
 │                                                                                             │
 │ ↳ the same two-stage idea as Metropolis-Hastings with a surrogate proposal (Monte Carlo     │
 │   lecture 6, p.9)                                                                           │

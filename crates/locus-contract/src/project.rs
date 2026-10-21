@@ -27,6 +27,32 @@ pub struct ProjectView {
     pub chores: Vec<Chore>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub graph: Option<BranchGraph>,
+    /// Where an application stands, and whose move it is (round 1d: "applications should say
+    /// the status of the application. eg. waiting for them, x days, open assessment stage,
+    /// interview 4, final round, offer made, rejected").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<Status>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Status {
+    /// `applied`, `online assessment`, `interview 2 of 4`, `final round`, `offer made`,
+    /// `offer accepted`, `rejected`; for the CV, its last release.
+    pub stage: String,
+    /// When it reached this stage.
+    pub since: NaiveDate,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn: Option<Turn>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Turn {
+    /// Waiting on them.
+    Them,
+    /// Something for you to do.
+    You,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

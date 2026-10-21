@@ -1,0 +1,26 @@
+{
+  "project": "oqts",
+  "since": "2026-08-08",
+  "entries": [
+    {
+      "kind": "commits",
+      "text": "agent guidance in all three repositories",
+      "at": "2026-08-28T17:10:00+01:00"
+    },
+    {
+      "kind": "commits",
+      "text": "platform: cloud-init authorises the workstation key",
+      "at": "2026-08-26T12:00:00+01:00"
+    },
+    {
+      "kind": "commits",
+      "text": "website: fewer intensifiers, one aphorism per page",
+      "at": "2026-08-23T15:30:00+01:00"
+    },
+    {
+      "kind": "commits",
+      "text": "platform: dead code, dead table, dead token, dead status removed",
+      "at": "2026-08-13T11:00:00+01:00"
+    }
+  ]
+}

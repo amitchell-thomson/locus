@@ -1,20 +1,60 @@
 {
   "groups": [
-    { "kind": "filing", "items": [
-      { "text": "jot p3 \"G-Research sponsor talk\"", "to": "careers/g-research", "from": "jot" },
-      { "text": "jot p3 \"Kalman filters for…\"", "to": "explore", "from": "jot" }
-    ] },
-    { "kind": "mail", "items": [
-      { "text": "14 mails", "to": "archive (spam)", "from": "keryx" }
-    ] },
-    { "kind": "deadline", "items": [
-      { "text": "G-Research applications close 31 Oct", "to": "kairos deadline", "from": "keryx" }
-    ] },
-    { "kind": "ink", "items": [
-      { "text": "QUAST dossier 15 Oct · 3 marks I am unsure where they point", "from": "ink readback", "opens": "quast-dossier-p5" }
-    ] },
-    { "kind": "stop_asking", "items": [
-      { "text": "spam archives: you approved 23 of 23. Do them automatically?", "from": "locus" }
-    ] }
+    {
+      "kind": "filing",
+      "items": [
+        {
+          "text": "jot p3 \"G-Research sponsor talk\"",
+          "to": "careers/g-research",
+          "from": "jot",
+          "new": true
+        },
+        {
+          "text": "jot p3 \"Kalman filters for…\"",
+          "to": "explore",
+          "from": "jot"
+        }
+      ]
+    },
+    {
+      "kind": "mail",
+      "items": [
+        {
+          "text": "14 mails",
+          "to": "archive (spam)",
+          "from": "keryx"
+        }
+      ]
+    },
+    {
+      "kind": "deadline",
+      "items": [
+        {
+          "text": "G-Research applications close 31 Oct",
+          "to": "kairos deadline",
+          "from": "keryx"
+        }
+      ]
+    },
+    {
+      "kind": "ink",
+      "items": [
+        {
+          "text": "QUAST dossier 15 Oct · 3 marks I am unsure where they point",
+          "from": "ink readback",
+          "opens": "quast-dossier-p5",
+          "new": true
+        }
+      ]
+    },
+    {
+      "kind": "stop_asking",
+      "items": [
+        {
+          "text": "spam archives: you approved 23 of 23. Do them automatically?",
+          "from": "locus"
+        }
+      ]
+    }
   ]
 }

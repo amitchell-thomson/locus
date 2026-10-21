@@ -67,7 +67,17 @@ pub fn draw_week(f: &mut Frame, area: Rect, app: &App, focus: bool) {
                 }
             }
         }
+        // Today: a marker at the current half hour, and nothing drawn after it (round 1d).
+        let now_cell = today.then(|| cell_of(fx.now().time())).filter(|&c| c < CELLS);
         for (x, cell) in cells.iter().enumerate() {
+            if Some(x) == now_cell {
+                spans.push(Span::styled(format!("{}┃", " ".repeat(cw - 1)), bold(st("peach"))));
+                continue;
+            }
+            if now_cell.is_some_and(|n| x > n) {
+                spans.push(Span::raw(" ".repeat(cw)));
+                continue;
+            }
             spans.push(match cell {
                 Some((p, n)) => {
                     let ch = match n {
@@ -86,32 +96,55 @@ pub fn draw_week(f: &mut Frame, area: Rect, app: &App, focus: bool) {
     }
     lines(f, grid, g);
 
-    // One set of columns for every row: a label, then its number where the hours are, so
-    // "blocks kept" and "streak" sit with the totals instead of across the panel (round 1c).
-    let label =
-        |t: &str, v: String, vs: Style| Line::from(vec![Span::styled(format!("{t:<8}"), dim()), Span::styled(v, vs)]);
-    let mut s = vec![label("total", format!("{total:>5.1} h"), bold(text()))];
+    // A small table of fixed width, not a block stretched across the panel (round 1d: "too
+    // weirdly aligned and like one block, total is not clear enough and neither are projects"):
+    // a heading with the total, a row per project (hours, share of the week, a bar), and one
+    // line for the blocks kept and the streak.
+    let pw = usize::from(side.width).saturating_sub(7).min(62);
+    let panel = Rect {
+        x: side.x + 3,
+        width: pw as u16,
+        ..side
+    };
     let totals = w.totals();
+    let bar_w = pw.saturating_sub(8 + 8 + 6 + 2);
     let max = totals.first().map(|t| t.1).unwrap_or(1.0).max(1.0);
+    let mut s = vec![row(
+        vec![Span::styled("this week", bold(text()))],
+        vec![Span::styled(format!("{total:.1} h"), bold(text()))],
+        panel.width,
+    )];
+    s.push(Line::from(Span::styled("─".repeat(pw), st("surface1"))));
     for (p, h) in totals.iter().take(4) {
         let col = project_colour(&fx.registry, p);
-        let n = ((h / max) * (usize::from(side.width).saturating_sub(20)) as f32).round() as usize;
+        let n = ((h / max) * bar_w as f32).round() as usize;
+        let share = if total > 0.0 { h / total * 100.0 } else { 0.0 };
         s.push(Line::from(vec![
-            Span::styled(format!("{:<8}", crate::ui::truncate(p, 8)), Style::default().fg(col)),
+            Span::styled(
+                format!("{:<8}", crate::ui::truncate(p, 8)),
+                bold(Style::default().fg(col)),
+            ),
             Span::styled(format!("{h:>5.1} h "), text()),
+            Span::styled(format!("{share:>4.0}% "), dim()),
+            Span::styled(" ", dim()),
             Span::styled("━".repeat(n), Style::default().fg(col)),
         ]));
     }
     if totals.is_empty() {
         s.push(Line::from(Span::styled("no work logged yet", dim())));
     }
-    s.push(label(
-        "kept",
-        format!("{:>3} of {} blocks", w.blocks_kept, w.blocks_planned),
-        text(),
-    ));
-    s.push(label("streak", format!("{:>3} days", w.streak_days), text()));
-    lines(f, side, s);
+    while s.len() < 6 {
+        s.push(Line::from(""));
+    }
+    s.push(Line::from(Span::styled("─".repeat(pw), st("surface1"))));
+    s.push(Line::from(vec![
+        Span::styled(format!("{} of {}", w.blocks_kept, w.blocks_planned), text()),
+        Span::styled(" blocks kept", dim()),
+        Span::styled(SEP, dim()),
+        Span::styled(format!("{}-day", w.streak_days), text()),
+        Span::styled(" streak", dim()),
+    ]));
+    lines(f, panel, s);
 }
 
 const BLOCKS: [&str; 9] = [" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];

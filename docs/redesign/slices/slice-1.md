@@ -259,6 +259,16 @@ style); blocks kept and streak in the same columns as the hours ("really far awa
 disconnected"); today's day label picked out in the grid; the footer's Enter hint says what
 Enter does for the focused section, and Tab is listed.
 
+*Round 1d, 21 Oct (Home, fourth pass).* Changed: the week panel is a fixed-width table (a
+heading with the total, hours and share of the week per project, one line for blocks kept and the
+streak: "too weirdly aligned and like one block"); a now marker on today's row; the divider lights
+up when learning is focused, instead of the frame's edge; "waiting for you" moved to the foot,
+above system, with "󰅸 2 new" at its right like the project rows (recommended: he checks approvals
+as a sign the system is working, and "work feels like a good header section"); quiet projects say
+what they last did ("last 28 Aug  agent guidance..."); applications say where they stand and whose
+move it is ("applied · waiting for them, 7 days"), the CV its last release (`ProjectView.status`,
+`ApproveItem.new`). Not done, his call: pointing the weakest track at its goal.
+
 Seeds for later pages, his words kept for their rounds:
 - *Project:* sessions active in the last 3 days shown, the rest behind `s`, each with a
   summary line; the ask key more visible, or a better key than `i`; the branch graph is broken

@@ -7,10 +7,23 @@
     "next": "agree the internship syllabus (Learning) so its sessions reach kairos"
   },
   "new": [
-    { "kind": "idea", "text": "learning goal proposed: ready for the Jump Trading internship · syllabus to agree", "at": "2026-10-24T09:00:00+01:00", "unread": true }
+    {
+      "kind": "idea",
+      "text": "learning goal proposed: ready for the Jump Trading internship · syllabus to agree",
+      "at": "2026-10-24T09:00:00+01:00",
+      "unread": true
+    }
   ],
   "sessions": [],
   "chores": [
-    { "title": "return the signed internship paperwork", "minutes": 10, "due": "2026-10-31" }
-  ]
+    {
+      "title": "return the signed internship paperwork",
+      "minutes": 10,
+      "due": "2026-10-31"
+    }
+  ],
+  "status": {
+    "stage": "offer accepted · internship 2027",
+    "since": "2026-10-06"
+  }
 }

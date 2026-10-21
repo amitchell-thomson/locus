@@ -127,6 +127,9 @@ pub struct ApproveItem {
     pub to: Option<String>,
     /// Which app proposed it: `keryx`, `jot`, `ink readback`.
     pub from: String,
+    /// Arrived since you last opened the approve list (round 1d: Home shows "2 new").
+    #[serde(default)]
+    pub new: bool,
     /// For an ink item: the ink-confirm fixture it opens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opens: Option<String>,

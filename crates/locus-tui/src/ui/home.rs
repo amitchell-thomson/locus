@@ -143,9 +143,9 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     // A blank line between sections (round 1b), paid for by moving next and mail into the
     // border.
     let gap = Constraint::Length(1);
+    // Work heads the page; the approve line sits with the system at the foot (round 1d: he
+    // checks approvals as a sign the system is working, so it belongs beside the system).
     let rects = Layout::vertical([
-        Constraint::Length(2),
-        gap,
         Constraint::Length(9),
         gap,
         Constraint::Length(n_proj + 1),
@@ -154,10 +154,12 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         gap,
         Constraint::Min(3),
         gap,
+        Constraint::Length(2),
+        gap,
         Constraint::Length(3),
     ])
     .split(inner);
-    let (wait_r, work_r, proj_r, side_r, exp_r, sys_r) = (rects[0], rects[2], rects[4], rects[6], rects[8], rects[10]);
+    let (work_r, proj_r, side_r, exp_r, wait_r, sys_r) = (rects[0], rects[2], rects[4], rects[6], rects[8], rects[10]);
 
     draw_waiting(f, wait_r, app);
     work::draw_week(f, work_r, app, app.focus == Some('w'));
@@ -171,9 +173,16 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     .areas(side_r);
     draw_careers(f, c_r, app);
     draw_learning(f, g_r, app);
-    let mut div = vec![Line::from(Span::styled("─┬─", st("surface2")))];
+    // The divider is learning's edge: focused, it lights up the way the frame does for the
+    // other sections (round 1d).
+    let (col, top, side) = if app.focus == Some('g') {
+        (st("blue"), "━┳━", " ┃ ")
+    } else {
+        (st("surface2"), "─┬─", " │ ")
+    };
+    let mut div = vec![Line::from(Span::styled(top, col))];
     for _ in 1..bar_r.height {
-        div.push(Line::from(Span::styled(" │ ", st("surface2"))));
+        div.push(Line::from(Span::styled(side, col)));
     }
     lines(f, bar_r, div);
     draw_explore(f, exp_r, app);
@@ -185,7 +194,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         Some('a') => Some(wait_r),
         Some('w') => Some(work_r),
         Some('p') => Some(proj_r),
-        Some('c' | 'g') => Some(side_r),
+        Some('c') => Some(side_r),
         Some('e') => Some(exp_r),
         Some('s') => Some(sys_r),
         _ => None,
@@ -319,7 +328,13 @@ fn draw_waiting(f: &mut Frame, area: Rect, app: &App) {
             Span::styled(format!("{} {n} to approve   ", glyph::APPROVE), bold(st("yellow"))),
             Span::styled(kinds.join(SEP), text()),
         ];
-        out.push(row(left, vec![Span::styled("⏎ go through them ", dim())], area.width));
+        let new = ap.groups.iter().flat_map(|g| &g.items).filter(|i| i.new).count();
+        let right = if new > 0 {
+            vec![Span::styled(format!("{} {new} new ", glyph::UNREAD), st("peach"))]
+        } else {
+            vec![]
+        };
+        out.push(row(left, right, area.width));
     }
     lines(f, area, out);
 }
@@ -367,10 +382,25 @@ fn draw_projects(f: &mut Frame, area: Rect, app: &App) {
             None => {
                 left.push(Span::styled(format!("{} ", glyph::IDLE), dim()));
                 left.push(Span::styled(format!("{:<15}", "no sessions"), dim()));
-                left.push(Span::styled(
-                    pf.and_then(|pf| pf.view.stage.clone()).unwrap_or_default(),
-                    dim(),
-                ));
+                // What it last did, so a stalled project shows where it stopped (round 1d).
+                let last = pf.and_then(|pf| {
+                    let mut items: Vec<_> = pf.view.new.iter().collect();
+                    if let Some(c) = &pf.changes {
+                        items.extend(c.entries.iter());
+                    }
+                    items.into_iter().max_by_key(|i| i.at).cloned()
+                });
+                match last {
+                    Some(it) => {
+                        left.push(Span::styled(format!("last {}  ", date(it.at.date_naive())), dim()));
+                        left.push(Span::styled(it.text, st("subtext0")));
+                    }
+                    None => left.push(Span::styled(
+                        pf.and_then(|pf| pf.view.stage.clone())
+                            .unwrap_or_else(|| "nothing yet".into()),
+                        dim(),
+                    )),
+                }
             }
         }
         out.push(row(left, counts(pf.map(|p| &p.view), sessions.len()), area.width));
@@ -414,7 +444,27 @@ fn draw_careers(f: &mut Frame, area: Rect, app: &App) {
     for (i, id) in ids.iter().enumerate() {
         let Some(p) = fx.registry.get(id) else { continue };
         let pf = fx.projects.get(id);
-        let stage = pf.and_then(|pf| pf.view.stage.clone()).unwrap_or_default();
+        let today = fx.now().date_naive();
+        let mut stage = vec![];
+        match pf.and_then(|pf| pf.view.status.clone()) {
+            Some(st_) => {
+                let days = (today - st_.since).num_days();
+                stage.push(Span::styled(st_.stage.clone(), text()));
+                match st_.turn {
+                    Some(locus_contract::Turn::Them) => {
+                        stage.push(Span::styled(format!("{SEP}waiting for them, {days} days"), dim()))
+                    }
+                    Some(locus_contract::Turn::You) => {
+                        stage.push(Span::styled(format!("{SEP}your move, {days} days"), bold(st("peach"))))
+                    }
+                    None => stage.push(Span::styled(format!("{SEP}{}", date(st_.since)), dim())),
+                }
+            }
+            None => stage.push(Span::styled(
+                pf.and_then(|pf| pf.view.stage.clone()).unwrap_or_default(),
+                text(),
+            )),
+        }
         let g = if p.kind == ProjectKind::Light {
             glyph::DOSSIER
         } else {
@@ -424,8 +474,9 @@ fn draw_careers(f: &mut Frame, area: Rect, app: &App) {
             pointer(i, sel),
             Span::styled(format!("{g} "), st("peach")),
             Span::styled(format!("{:<13}", crate::ui::truncate(&p.name, 12)), bold(st("peach"))),
-            Span::styled(stage, text()),
         ];
+        let mut left = left;
+        left.extend(stage);
         out.push(row(left, counts(pf.map(|p| &p.view), 0), area.width));
     }
     if ids.is_empty() {

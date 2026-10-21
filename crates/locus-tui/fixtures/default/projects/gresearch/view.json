@@ -6,8 +6,18 @@
     "next": "when an interview is offered, give its details and your time, and a prep plan is drawn up"
   },
   "new": [
-    { "kind": "mail", "text": "G-Research: application received", "at": "2026-10-18T09:12:00+01:00", "unread": false }
+    {
+      "kind": "mail",
+      "text": "G-Research: application received",
+      "at": "2026-10-18T09:12:00+01:00",
+      "unread": false
+    }
   ],
   "sessions": [],
-  "chores": []
+  "chores": [],
+  "status": {
+    "stage": "applied",
+    "since": "2026-10-17",
+    "turn": "them"
+  }
 }

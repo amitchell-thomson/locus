@@ -3,30 +3,27 @@ source: crates/locus-tui/tests/dump.rs
 expression: "dump::render(&a, 95, 38).unwrap()"
 ---
 ╭ locus · home ───────────── sat 24 oct · 21:40   󰓦 3   review · W ───── 󰃭 futsal in 21h  󰇮 2 ╮
-│─ waiting for you ───────────────────────────────────────────────────────────────────── [a] ─│
-│  󰴹 6 to approve   2 to file · 1 mail · 1 deadline · 1 ink to place · 1 s… ⏎ go through them │
-│                                                                                             │
 │─ work · this week ──────────────────────────────────────────────────────────────────── [w] ─│
-│      06    09    12    15    18    21    24   total    36.2 h                               │
-│ mon   · · ▓▓▓█████· ·▒▒▒▒ · · · ·▓▓▓▓▓· ·     quast    12.5 h ━━━━━━━━━━━━━━━━━━━━━━━━━━    │
-│ tue   · · ·██████░· · · · · ▒▒▒ · ·█████·     locus    12.2 h ━━━━━━━━━━━━━━━━━━━━━━━━━     │
-│ wed   · · · ·██████▒▒ · · · · ·▒▒▒▒ · · ·     nabla     5.5 h ━━━━━━━━━━━                   │
-│ thu   · ·▓▓▓· · · · · ·▓▓▓▓▓▓░· · · ·▓▓▓·     cv        2.0 h ━━━━                          │
-│ fri   · · · · · · · · · · · · · · · · · ·     kept      8 of 9 blocks                       │
-│ sat   · · · ████████· · ·▒▒▒▒ · · ▓▓· · ·     streak    4 days                              │
-│ sun                                                                                         │
+│      06    09    12    15    18    21    24      this week                        36.2 h    │
+│ mon   · · ▓▓▓█████· ·▒▒▒▒ · · · ·▓▓▓▓▓· ·        ───────────────────────────────────────    │
+│ tue   · · ·██████░· · · · · ▒▒▒ · ·█████·        quast    12.5 h   35%  ━━━━━━━━━━━━━━━     │
+│ wed   · · · ·██████▒▒ · · · · ·▒▒▒▒ · · ·        locus    12.2 h   34%  ━━━━━━━━━━━━━━━     │
+│ thu   · ·▓▓▓· · · · · ·▓▓▓▓▓▓░· · · ·▓▓▓·        nabla     5.5 h   15%  ━━━━━━━             │
+│ fri   · · · · · · · · · · · · · · · · · ·        cv        2.0 h    6%  ━━                  │
+│ sat   · · · ████████· · ·▒▒▒▒ · · ▓▓┃            ───────────────────────────────────────    │
+│ sun                                              8 of 9 blocks kept · 4-day streak          │
 │                                                                                             │
 │─ projects · what you build ─────────────────────────────────────────────────────────── [p] ─│
 │  󰆤 quast    󰹇 needs you 35m  wants to run the full battery on the serv… 2 sessions  󰅸 4 new │
 │  󰆣 nabla    󰹇 needs you 42m  SYNA's vote is close: close the shadow po… 8 sessions  󰅸 2 new │
 │  󰆣 locus    󰹇 needs you 20m  wants to restart the locus HTTP service o… 3 sessions  󰅸 4 new │
-│  󰆣 OQTS     󰤄 no sessions    quiet since August                                             │
-│  󰆣 3YP      󰤄 no sessions    not started                                            󰅸 1 new │
+│  󰆣 OQTS     󰤄 no sessions    last 28 Aug  agent guidance in all three repositories          │
+│  󰆣 3YP      󰤄 no sessions    last 23 Oct  3YP briefing added to the calendar · tue… 󰅸 1 new │
 │                                                                                             │
 │─ careers · applications and your CV ─ [c] ──┬── learning · what you are learning for ─ [g] ─│
-│  󰈙 CV           G-Research release, 17 O…   │   󰌵 Jump internship… 30 h · syllabus to agree │
+│  󰈙 CV           released the G-Research …   │   󰌵 Jump internship… 30 h · syllabus to agree │
 │  󰇮 Jump Trading offer accepted · … 󰅸 1 new  │   󰌵 personal learning            2 h · active │
-│  󰇮 G-Research   applied · no interview y…   │     weakest  market microstr… ━━────────  15% │
+│  󰇮 G-Research   applied · waiting for th…   │     weakest  market microstr… ━━────────  15% │
 │                                                                                             │
 │─ explore · 7 finds · full, so the scout is waiting for you ─────────────────────────── [e] ─│
 │   for your projects · 4   + 3 more on the Explore page                                      │
@@ -34,6 +31,9 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │   to read · 2   + 1 more on the Explore page                                                │
 │    󱀄        The Bitter Lesson                                                        12 min │
 │   new project ideas · 1                                                                     │
+│                                                                                             │
+│─ waiting for you ───────────────────────────────────────────────────────────────────── [a] ─│
+│  󰴹 6 to approve   2 to file · 1 mail · 1 deadline · 1 ink to place · 1 stop asking? 󰅸 2 new │
 │                                                                                             │
 │─ system ────────────────────────────────────────────────────────────────────────────── [s] ─│
 │ running  󰓦 dossier quast   │   󰓦 scout reading   │   󰁪 change… 󰄵 14 done today   󰅘 1 failed │

@@ -1299,9 +1299,18 @@ fn draw_ask(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
             Span::styled(q.clone(), text()),
             Span::styled("▏", st("mauve")),
         ],
+        // Space asks from anywhere, so Enter here reads what was asked before (round 2m: "we
+        // need a better result of enter when on ask").
+        _ if app.focus == Some('i') => vec![
+            Span::styled("   ask › ", dim()),
+            Span::styled("␣", keyst()),
+            Span::styled(" to ask about this project · ", dim()),
+            Span::styled("⏎", keyst()),
+            Span::styled(" for what you asked before, in answered", dim()),
+        ],
         _ => vec![
             Span::styled("   ask › ", dim()),
-            Span::styled(if app.focus == Some('i') { "⏎ or ␣" } else { "␣" }, keyst()),
+            Span::styled("␣", keyst()),
             Span::styled(" to ask about this project · the answer comes back here", dim()),
         ],
     };
@@ -1366,7 +1375,7 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 app.open(ScreenId::Decisions);
             }
         }
-        (Some('i'), KeyCode::Enter) => app.mode = Mode::Ask(String::new()),
+        (Some('i'), KeyCode::Enter) => app.open(ScreenId::Answered),
         (Some('s'), KeyCode::Enter) => {
             if let Some(s) = sorted_sessions(&v).get(app.sel('s')) {
                 app.note = Some(format!("would jump your project window to \"{}\"", s.name));

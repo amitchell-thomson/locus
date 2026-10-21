@@ -433,6 +433,11 @@ sections give way in turn (decisions, new, chores, the branch's story, sessions)
 each, then where you are keeps a line per part, so the open questions always draw (they were
 squeezed out at 95x36 before this round).
 
+**Round 2m, 22 Oct. Enter on ask opens Answered.** "Space from anywhere makes more sense, I just
+think we need a better result of enter when on ask." Space asks from anywhere, so Enter on the
+focused ask line opens Answered, what was asked before; the hint line says so when it is
+focused.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

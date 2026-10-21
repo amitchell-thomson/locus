@@ -27,7 +27,7 @@ pub const KEYS: &[(&str, &str)] = &[
     ("r", "mark the selected new item read"),
     ("x", "a chore done"),
     ("d", "decisions: the full log"),
-    ("a", "answered"),
+    ("a", "ask; ⏎ there opens answered"),
     ("o", "the dossier"),
     ("p", "interview prep (an application)"),
     ("m", "pin or follow"),
@@ -135,7 +135,7 @@ pub fn section_len(app: &App, sec: char) -> usize {
         'g' => v.graph.as_ref().map_or(0, |g| g.lanes.len()),
         'd' => shown(app, 'd').len(),
         's' => v.sessions.len(),
-        'i' => 1,
+        'a' => 1,
         _ => v.chores.len(),
     }
 }
@@ -311,7 +311,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         Some('d') => Some(dec_r),
         Some('s') => Some(ses_r),
         Some('c') => Some(ch_r),
-        Some('i') => Some(ask_r),
+        Some('a') => Some(ask_r),
         _ => None,
     };
     if let Some(r) = focused {
@@ -1292,7 +1292,7 @@ fn draw_chores(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
 
 fn draw_ask(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
     // Tab reaches it like any section, and focused its whole rule lights (round 2l).
-    let asking = matches!(app.mode, Mode::Ask(_)) || app.focus == Some('i');
+    let asking = matches!(app.mode, Mode::Ask(_)) || app.focus == Some('a');
     let left = match &app.mode {
         Mode::Ask(q) => vec![
             Span::styled("   ask › ", st("mauve")),
@@ -1301,7 +1301,7 @@ fn draw_ask(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
         ],
         // Space asks from anywhere, so Enter here reads what was asked before (round 2m: "we
         // need a better result of enter when on ask").
-        _ if app.focus == Some('i') => vec![
+        _ if app.focus == Some('a') => vec![
             Span::styled("   ask › ", dim()),
             Span::styled("␣", keyst()),
             Span::styled(" to ask about this project · ", dim()),
@@ -1314,30 +1314,38 @@ fn draw_ask(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
             Span::styled(" to ask about this project · the answer comes back here", dim()),
         ],
     };
-    // What was asked before sits at the right of the ask rule (round 2e).
+    // What was asked before sits at the right of the ask rule (round 2e); a reaches the line
+    // like any section's letter, and only there does Enter open answered (round 2n).
     let mut head = vec![
         Span::styled("─ ", st(if asking { "blue" } else { "surface2" })),
         Span::styled("ask", bold(if asking { st("blue") } else { text() })),
     ];
     let right = match more_rows(app, v).into_iter().find(|r| r.0 == "a") {
-        Some((k, g, col, name, state)) => vec![
+        Some((_, g, col, name, state)) => vec![
             Span::styled(format!("{g} "), st(col)),
             Span::styled(format!("{name} "), text()),
-            Span::styled(format!("{state}  "), dim()),
-            Span::styled(format!("{k} "), bold(keyst())),
+            Span::styled(state, dim()),
         ],
         None => vec![],
     };
-    let used: usize = head.iter().chain(right.iter()).map(|s| s.content.width()).sum();
-    let tail = if right.is_empty() { 1 } else { 2 };
+    let rule_c = st(if asking { "blue" } else { "surface2" });
+    let tail = Span::styled(" [a] ─", rule_c);
+    let used: usize = head
+        .iter()
+        .chain(right.iter())
+        .map(|s| s.content.width())
+        .sum::<usize>()
+        + tail.content.width();
+    let pad = if right.is_empty() { 1 } else { 2 };
     head.push(Span::styled(
-        format!(" {}", "─".repeat(usize::from(area.width).saturating_sub(used + tail))),
-        st(if asking { "blue" } else { "surface2" }),
+        format!(" {}", "─".repeat(usize::from(area.width).saturating_sub(used + pad))),
+        rule_c,
     ));
     if !right.is_empty() {
         head.push(Span::raw(" "));
         head.extend(right);
     }
+    head.push(tail);
     lines(f, area, vec![Line::from(head), Line::from(left)]);
 }
 
@@ -1375,7 +1383,7 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 app.open(ScreenId::Decisions);
             }
         }
-        (Some('i'), KeyCode::Enter) => app.open(ScreenId::Answered),
+        (Some('a'), KeyCode::Enter) => app.open(ScreenId::Answered),
         (Some('s'), KeyCode::Enter) => {
             if let Some(s) = sorted_sessions(&v).get(app.sel('s')) {
                 app.note = Some(format!("would jump your project window to \"{}\"", s.name));
@@ -1424,7 +1432,6 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
         // Space asks (round 2: "a better key than i"); i still works.
         (_, KeyCode::Char(' ' | 'i')) => app.mode = Mode::Ask(String::new()),
         (_, KeyCode::Char('d')) => app.open(ScreenId::Decisions),
-        (_, KeyCode::Char('a')) => app.open(ScreenId::Answered),
         (_, KeyCode::Char('o')) => {
             let has = app.fixtures.registry.get(&v.project).is_some_and(|p| p.depth.is_some());
             app.note = Some(if has {

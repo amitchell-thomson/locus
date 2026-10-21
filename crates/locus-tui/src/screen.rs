@@ -146,7 +146,7 @@ const PROJECT: &[Section] = &[
     s('d', "decisions", Some(S::Decisions)),
     s('s', "sessions", None),
     s('c', "chores", None),
-    s('i', "ask", None),
+    s('a', "ask", None),
 ];
 const SYSTEM: &[Section] = &[
     s('r', "running", None),

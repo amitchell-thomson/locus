@@ -36,7 +36,7 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │─ chores · for a gap while you wait ─────────────────────────────────────────────────── [c] ─│
 │   󰝖 put a load of laundry on                                                          5 min │
 │                                                                                             │
-│─ ask ─────────────────────────────────────────────────────────────── 󱜾 answered 3, 1 new  a │
+│─ ask ───────────────────────────────────────────────────────────── 󱜾 answered 3, 1 new [a] ─│
 │   ask › ␣ to ask about this project · the answer comes back here                            │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯
  ⏎ open · ⇥ sections · l log · / search · ? keys

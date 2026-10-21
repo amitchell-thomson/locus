@@ -438,6 +438,11 @@ think we need a better result of enter when on ask." Space asks from anywhere, s
 focused ask line opens Answered, what was asked before; the hint line says so when it is
 focused.
 
+**Round 2n, 22 Oct. a reaches ask.** "Getting to ask should also be [a], and only when you are
+already on ask does the press enter to go to answered appear." `a` focuses the ask line like any
+section's letter, with `[a]` at the end of its rule; the answered count stays on the rule with no
+key beside it, and the Enter hint shows only once you are there. Space still asks from anywhere.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

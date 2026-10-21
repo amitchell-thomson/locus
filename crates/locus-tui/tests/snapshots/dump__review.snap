@@ -6,13 +6,13 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │ 1 week 󰄵 ── 2 decisions 󰆣 ── 3 explore 󰆣 ── 4 locus 󰆣 ── 5 next week 󰆣                      │
 │                                                                                             │
 │─ work · this week ──────────────────────────────────────────────────────────────────── [w] ─│
-│      06    09    12    15    18    21    24   this week                              36.2 h │
+│      06    09    12    15    18    21    24   total    36.2 h                               │
 │ mon   · · ▓▓▓█████· ·▒▒▒▒ · · · ·▓▓▓▓▓· ·     quast    12.5 h ━━━━━━━━━━━━━━━━━━━━━━━━━━    │
 │ tue   · · ·██████░· · · · · ▒▒▒ · ·█████·     locus    12.2 h ━━━━━━━━━━━━━━━━━━━━━━━━━     │
 │ wed   · · · ·██████▒▒ · · · · ·▒▒▒▒ · · ·     nabla     5.5 h ━━━━━━━━━━━                   │
 │ thu   · ·▓▓▓· · · · · ·▓▓▓▓▓▓░· · · ·▓▓▓·     cv        2.0 h ━━━━                          │
-│ fri   · · · · · · · · · · · · · · · · · ·     blocks kept                            8 of 9 │
-│ sat   · · · ████████· · ·▒▒▒▒ · · ▓▓· · ·     streak                                 4 days │
+│ fri   · · · · · · · · · · · · · · · · · ·     kept      8 of 9 blocks                       │
+│ sat   · · · ████████· · ·▒▒▒▒ · · ▓▓· · ·     streak    4 days                              │
 │ sun                                                                                         │
 │                                                                                             │
 │ blocks kept on their project   8 of 9                                                       │
@@ -39,4 +39,4 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │                                                                                             │
 │                                                               ← → steps · s skip · esc pause│
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯
- ⏎ open · l log · / search · ? keys
+ ⏎ open · ⇥ sections · l log · / search · ? keys

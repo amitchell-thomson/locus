@@ -221,7 +221,21 @@ fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
     let left = match &app.mode {
         Mode::Ask(_) => hints(&[("⏎", "answer here"), ("⇥", "send to tablet"), ("esc", "cancel")]),
         Mode::Strike(_) => hints(&[("i", "irrelevant"), ("k", "knew it"), ("l", "level"), ("t", "too long")]),
-        Mode::Normal => hints(&[("⏎", "open"), ("l", "log"), ("/", "search"), ("?", "keys")]),
+        // Enter's hint says what it does for the focused section, where a screen knows.
+        Mode::Normal => {
+            let enter = match app.screen() {
+                ScreenId::Home => home::enter_hint(app),
+                _ => None,
+            }
+            .unwrap_or("open");
+            hints(&[
+                ("⏎", enter),
+                ("⇥", "sections"),
+                ("l", "log"),
+                ("/", "search"),
+                ("?", "keys"),
+            ])
+        }
     };
     let used = u16::try_from(left.width()).unwrap_or(u16::MAX);
     let [l, r] = Layout::horizontal([Constraint::Length(used.saturating_add(1)), Constraint::Min(0)]).areas(area);

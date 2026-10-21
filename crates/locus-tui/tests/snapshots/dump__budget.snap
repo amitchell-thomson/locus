@@ -39,4 +39,4 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │                                                                                             │
 │                                                                          t split by job type│
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯
- ⏎ open · l log · / search · ? keys
+ ⏎ open · ⇥ sections · l log · / search · ? keys

@@ -53,7 +53,11 @@ pub fn draw_week(f: &mut Frame, area: Rect, app: &App, focus: bool) {
     for (i, name) in DAYS.iter().enumerate() {
         let date = first.map(|d| d + Duration::days(i as i64));
         let day = date.and_then(|d| w.week.iter().find(|x| x.date == d));
-        let mut spans = vec![Span::styled(format!(" {name}  "), dim())];
+        let today = date == Some(fx.now().date_naive());
+        let mut spans = vec![Span::styled(
+            format!(" {name}  "),
+            if today { bold(st("peach")) } else { dim() },
+        )];
         let mut cells: Vec<Option<(String, u8)>> = vec![None; CELLS];
         if let Some(day) = day {
             for s in &day.spans {
@@ -82,11 +86,11 @@ pub fn draw_week(f: &mut Frame, area: Rect, app: &App, focus: bool) {
     }
     lines(f, grid, g);
 
-    let mut s = vec![row(
-        vec![Span::styled("this week", text())],
-        vec![Span::styled(format!("{total:.1} h "), bold(text()))],
-        side.width,
-    )];
+    // One set of columns for every row: a label, then its number where the hours are, so
+    // "blocks kept" and "streak" sit with the totals instead of across the panel (round 1c).
+    let label =
+        |t: &str, v: String, vs: Style| Line::from(vec![Span::styled(format!("{t:<8}"), dim()), Span::styled(v, vs)]);
+    let mut s = vec![label("total", format!("{total:>5.1} h"), bold(text()))];
     let totals = w.totals();
     let max = totals.first().map(|t| t.1).unwrap_or(1.0).max(1.0);
     for (p, h) in totals.iter().take(4) {
@@ -101,19 +105,12 @@ pub fn draw_week(f: &mut Frame, area: Rect, app: &App, focus: bool) {
     if totals.is_empty() {
         s.push(Line::from(Span::styled("no work logged yet", dim())));
     }
-    s.push(row(
-        vec![Span::styled("blocks kept", dim())],
-        vec![Span::styled(
-            format!("{} of {} ", w.blocks_kept, w.blocks_planned),
-            text(),
-        )],
-        side.width,
+    s.push(label(
+        "kept",
+        format!("{:>3} of {} blocks", w.blocks_kept, w.blocks_planned),
+        text(),
     ));
-    s.push(row(
-        vec![Span::styled("streak", dim())],
-        vec![Span::styled(format!("{} days ", w.streak_days), text())],
-        side.width,
-    ));
+    s.push(label("streak", format!("{:>3} days", w.streak_days), text()));
     lines(f, side, s);
 }
 

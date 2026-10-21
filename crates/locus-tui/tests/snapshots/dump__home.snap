@@ -2,18 +2,18 @@
 source: crates/locus-tui/tests/dump.rs
 expression: "dump::render(&a, 95, 38).unwrap()"
 ---
-╭ locus · home ────── sat 24 oct · 21:40   󰓦 3 running   review ready · W ── 󰃭 sun 18:00  󰇮 2 ╮
+╭ locus · home ───────────── sat 24 oct · 21:40   󰓦 3   review · W ───── 󰃭 futsal in 21h  󰇮 2 ╮
 │─ waiting for you ───────────────────────────────────────────────────────────────────── [a] ─│
 │  󰴹 6 to approve   2 to file · 1 mail · 1 deadline · 1 ink to place · 1 s… ⏎ go through them │
 │                                                                                             │
 │─ work · this week ──────────────────────────────────────────────────────────────────── [w] ─│
-│      06    09    12    15    18    21    24   this week                              36.2 h │
+│      06    09    12    15    18    21    24   total    36.2 h                               │
 │ mon   · · ▓▓▓█████· ·▒▒▒▒ · · · ·▓▓▓▓▓· ·     quast    12.5 h ━━━━━━━━━━━━━━━━━━━━━━━━━━    │
 │ tue   · · ·██████░· · · · · ▒▒▒ · ·█████·     locus    12.2 h ━━━━━━━━━━━━━━━━━━━━━━━━━     │
 │ wed   · · · ·██████▒▒ · · · · ·▒▒▒▒ · · ·     nabla     5.5 h ━━━━━━━━━━━                   │
 │ thu   · ·▓▓▓· · · · · ·▓▓▓▓▓▓░· · · ·▓▓▓·     cv        2.0 h ━━━━                          │
-│ fri   · · · · · · · · · · · · · · · · · ·     blocks kept                            8 of 9 │
-│ sat   · · · ████████· · ·▒▒▒▒ · · ▓▓· · ·     streak                                 4 days │
+│ fri   · · · · · · · · · · · · · · · · · ·     kept      8 of 9 blocks                       │
+│ sat   · · · ████████· · ·▒▒▒▒ · · ▓▓· · ·     streak    4 days                              │
 │ sun                                                                                         │
 │                                                                                             │
 │─ projects · what you build ─────────────────────────────────────────────────────────── [p] ─│
@@ -23,10 +23,10 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │  󰆣 OQTS     󰤄 no sessions    quiet since August                                             │
 │  󰆣 3YP      󰤄 no sessions    not started                                            󰅸 1 new │
 │                                                                                             │
-│─ careers · applications and your CV ──── [c] ── learning · what you are learning for ─ [g] ─│
-│  󰈙 CV           G-Research release, 17 Oct      󰌵 Jump internship… 30 h · syllabus to agree │
-│  󰇮 Jump Trading offer accepted · int… 󰅸 1 new   󰌵 personal learning            2 h · active │
-│  󰇮 G-Research   applied · no interview yet        weakest  market microstr… ━━────────  15% │
+│─ careers · applications and your CV ─ [c] ──┬── learning · what you are learning for ─ [g] ─│
+│  󰈙 CV           G-Research release, 17 O…   │   󰌵 Jump internship… 30 h · syllabus to agree │
+│  󰇮 Jump Trading offer accepted · … 󰅸 1 new  │   󰌵 personal learning            2 h · active │
+│  󰇮 G-Research   applied · no interview y…   │     weakest  market microstr… ━━────────  15% │
 │                                                                                             │
 │─ explore · 7 finds · full, so the scout is waiting for you ─────────────────────────── [e] ─│
 │   for your projects · 4   + 3 more on the Explore page                                      │
@@ -39,4 +39,4 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │ running  󰓦 dossier quast   │   󰓦 scout reading   │   󰁪 change… 󰄵 14 done today   󰅘 1 failed │
 │ budget   ━━━━━━━━━━━───────┊─────  9.1% of the 15% … 5-hour window: you 34% · background 4% │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯
- ⏎ open · l log · / search · ? keys
+ ⏎ open · ⇥ sections · l log · / search · ? keys

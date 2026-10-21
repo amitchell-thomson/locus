@@ -39,4 +39,4 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │                                                                                             │
 │                                         f follow up · t send to tablet · c open as a session│
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯
- ⏎ open · l log · / search · ? keys
+ ⏎ open · ⇥ sections · l log · / search · ? keys

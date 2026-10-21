@@ -112,6 +112,20 @@ fn find_groups(app: &App) -> Vec<(&'static str, Vec<usize>)> {
     .collect()
 }
 
+/// What Enter does for the focused section, for the footer.
+pub fn enter_hint(app: &App) -> Option<&'static str> {
+    Some(match app.focus? {
+        'a' => "go through the approvals",
+        'w' => "the 8-week chart",
+        'p' => "open the project",
+        'c' => "open it",
+        'g' => "learning",
+        'e' => "the find, in Explore",
+        's' => "the system page",
+        _ => return None,
+    })
+}
+
 pub fn section_len(app: &App, sec: char) -> usize {
     match sec {
         'p' => project_rows(app).len(),
@@ -148,9 +162,20 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     draw_waiting(f, wait_r, app);
     work::draw_week(f, work_r, app, app.focus == Some('w'));
     draw_projects(f, proj_r, app);
-    let [c_r, g_r] = Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]).areas(side_r);
+    // Careers and learning side by side, a line between them (round 1c).
+    let [c_r, bar_r, g_r] = Layout::horizontal([
+        Constraint::Percentage(50),
+        Constraint::Length(3),
+        Constraint::Percentage(50),
+    ])
+    .areas(side_r);
     draw_careers(f, c_r, app);
     draw_learning(f, g_r, app);
+    let mut div = vec![Line::from(Span::styled("─┬─", st("surface2")))];
+    for _ in 1..bar_r.height {
+        div.push(Line::from(Span::styled(" │ ", st("surface2"))));
+    }
+    lines(f, bar_r, div);
     draw_explore(f, exp_r, app);
     draw_system(f, sys_r, app);
 
@@ -208,21 +233,31 @@ fn draw_border(f: &mut Frame, area: Rect, app: &App) -> Rect {
         }
         v
     };
+    // Short, so the border stays balanced (round 1c: "something really short and 'in 15m'"):
+    // the event's first word and how long until it; mail as a count.
+    let until = |t: locus_contract::Time| -> String {
+        let m = (t - now).num_minutes();
+        match m {
+            i64::MIN..=0 => "now".into(),
+            1..=59 => format!("in {m}m"),
+            60..=1439 => format!("in {}h", m / 60),
+            _ => t.format("%a %H:%M").to_string().to_lowercase(),
+        }
+    };
     let make_right = |n: u8| -> Vec<Span<'static>> {
         let mut v = Vec::new();
         if let Some(e) = &fx.home.next {
-            let when = e.at.format("%a %H:%M").to_string().to_lowercase();
+            let word = e.title.split_whitespace().next().unwrap_or("").to_lowercase();
             let t = if n > 0 {
-                format!("{} {when}", e.title.to_lowercase())
+                format!("{word} {}", until(e.at))
             } else {
-                when
+                until(e.at)
             };
             v.push(Span::styled(format!(" {} {t} ", glyph::CALENDAR), st("peach")));
         }
         let m = fx.home.mail.need_reply;
         if m > 0 {
-            let t = if n > 0 { format!("{m} to reply") } else { m.to_string() };
-            v.push(Span::styled(format!(" {} {t} ", glyph::MAIL), st("sapphire")));
+            v.push(Span::styled(format!(" {} {m} ", glyph::MAIL), st("sapphire")));
         }
         v
     };
@@ -590,6 +625,15 @@ fn draw_system(f: &mut Frame, area: Rect, app: &App) {
 
 pub fn key(app: &mut App, k: KeyEvent) -> bool {
     match (app.focus, k.code) {
+        // Careers and learning sit side by side: ← and → cross between them (round 1c).
+        (Some('c'), KeyCode::Right) => {
+            app.focus = Some('g');
+            true
+        }
+        (Some('g'), KeyCode::Left) => {
+            app.focus = Some('c');
+            true
+        }
         (Some('p'), KeyCode::Enter) => {
             if let Some(id) = project_rows(app).get(app.sel('p')).cloned() {
                 app.open_project(id);

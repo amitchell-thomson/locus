@@ -252,6 +252,13 @@ it; the running glyph turns (md-sync and md-autorenew alternate) instead of chan
 Explore trims its longest group first so each kind keeps a line. Kept: waiting for you at the
 top (what he looks for first); 3YP a project ("in the format of a long running project").
 
+*Round 1c, 21 Oct (Home, third pass).* "I like the highlighting of the sections." Changed: a
+vertical line between careers and learning, ← and → crossing between them; the border's right
+end short ("󰃭 futsal in 21h  󰇮 2": the event's first word and the time until it, "in 15m"
+style); blocks kept and streak in the same columns as the hours ("really far away and look
+disconnected"); today's day label picked out in the grid; the footer's Enter hint says what
+Enter does for the focused section, and Tab is listed.
+
 Seeds for later pages, his words kept for their rounds:
 - *Project:* sessions active in the last 3 days shown, the rest behind `s`, each with a
   summary line; the ask key more visible, or a better key than `i`; the branch graph is broken

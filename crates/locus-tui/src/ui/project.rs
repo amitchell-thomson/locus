@@ -5,7 +5,7 @@ use crate::app::{App, Mark, Mode, nav};
 use crate::screen::ScreenId;
 use crate::ui::widgets::*;
 use crate::ui::{follow_badge, frame, lines, project_title};
-use chrono::{Duration, NaiveDate};
+use chrono::NaiveDate;
 use locus_contract::{BranchGraph, ProjectKind, ProjectView, SessionState};
 use locus_theme::{SEP, c, glyph};
 use ratatui::Frame;
@@ -189,101 +189,123 @@ fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
     let mut out = vec![rule("branches", &extra, Some('g'), focus, area.width)];
     let label_w = 30;
     let gw = w.saturating_sub(label_w + 8).max(10);
-    // Time runs from just before the oldest drawn fork (or the graph's start) to now.
-    let start = lanes
-        .iter()
-        .map(|l| l.forked - Duration::days(2))
-        .min()
-        .unwrap_or(g.from)
-        .max(g.from);
-    let span = (now - start).num_days().max(1) as usize;
-    let x = |d: NaiveDate| -> usize { ((d - start).num_days().max(0) as usize * (gw - 1) / span).min(gw - 1) };
 
-    let mut trunk: Vec<char> = vec!['─'; gw];
-    for l in lanes {
-        let fx = x(l.forked);
-        trunk[fx] = if trunk[fx] == '┴' { '┼' } else { '┬' };
-        if let Some(m) = l.merged {
-            let mx = x(m);
-            trunk[mx] = if trunk[mx] == '┬' { '┼' } else { '┴' };
-        }
+    // Columns are events in date order, not days (round 2: on a day axis nabla's ten lanes,
+    // all within a few days, collapsed into vertical bars). Every fork, merge, open tip and
+    // milestone in view gets its own column, so lanes from the same day still spread out.
+    let start = lanes.iter().map(|l| l.forked).min().unwrap_or(g.from).max(g.from);
+    #[derive(Clone, Copy, PartialEq)]
+    enum Ev {
+        Milestone(usize),
+        Fork(usize),
+        End(usize),
     }
-    let mut trunk_spans = vec![Span::styled(
-        format!("{:>w$} ", g.trunk, w = label_w),
-        bold(st("subtext1")),
-    )];
+    let mut evs: Vec<(NaiveDate, u8, Ev)> = Vec::new();
+    for (i, m) in g.milestones.iter().enumerate().filter(|(_, m)| m.date >= start) {
+        evs.push((m.date, 0, Ev::Milestone(i)));
+    }
+    for (i, l) in lanes.iter().enumerate() {
+        evs.push((l.forked, 1, Ev::Fork(i)));
+        evs.push((l.merged.or(l.tip).unwrap_or(now), 2, Ev::End(i)));
+    }
+    evs.sort_by_key(|(d, k, e)| {
+        let lane = match e {
+            Ev::Milestone(i) | Ev::Fork(i) | Ev::End(i) => *i,
+        };
+        // Within a day, milestones first, then lane by lane, each lane's fork before its end:
+        // a branch made and merged the same day stays short instead of spanning the others.
+        (*d, *k != 0, lane, *k)
+    });
+    let n = evs.len().max(1);
+    // Leave a column at each end: the trunk comes in from the left and runs on to now.
+    let col = |slot: usize| -> usize { 1 + slot * (gw.saturating_sub(3)) / n.max(2).saturating_sub(1).max(1) };
+    let at = |e: Ev| evs.iter().position(|(_, _, x)| *x == e).map(col).unwrap_or(0);
+
+    let mut trunk: Vec<(char, &str)> = vec![('─', "overlay2"); gw];
+    for (slot, (_, _, e)) in evs.iter().enumerate() {
+        let x = col(slot).min(gw - 1);
+        trunk[x] = match e {
+            Ev::Milestone(_) => ('●', "green"),
+            Ev::Fork(_) => ('┬', "overlay2"),
+            Ev::End(i) if lanes[*i].merged.is_some() => ('┴', "overlay2"),
+            Ev::End(_) => trunk[x],
+        };
+    }
     let earlier = g.milestones.iter().filter(|m| m.date < start).count();
-    trunk_spans.push(Span::styled(if earlier > 0 { "◂" } else { " " }, dim()));
-    let ms: Vec<usize> = g
-        .milestones
-        .iter()
-        .filter(|m| m.date >= start)
-        .map(|m| x(m.date))
-        .collect();
-    for (i, ch) in trunk.iter().enumerate() {
-        if ms.contains(&i) && *ch == '─' {
-            trunk_spans.push(Span::styled("●", st("green")));
-        } else {
-            trunk_spans.push(Span::styled(ch.to_string(), st("overlay2")));
-        }
-    }
-    trunk_spans.push(Span::styled(" now", dim()));
-    out.push(Line::from(trunk_spans));
+    let mut spans = vec![
+        Span::styled(format!("{:>w$} ", g.trunk, w = label_w), bold(st("subtext1"))),
+        Span::styled(if earlier > 0 { "◂" } else { " " }, dim()),
+    ];
+    spans.extend(trunk.iter().map(|(ch, c)| Span::styled(ch.to_string(), st(c))));
+    spans.push(Span::styled(" now", dim()));
+    out.push(Line::from(spans));
 
     let sel = app.sel('g').min(lanes.len().saturating_sub(1));
     for (i, l) in lanes.iter().enumerate() {
         let selected = focus && i == sel;
-        let col = c(PROJECT_COLOURS[i % PROJECT_COLOURS.len()]);
+        let colour = c(PROJECT_COLOURS[i % PROJECT_COLOURS.len()]);
         let label = crate::ui::truncate(&l.stage, label_w - 2);
-        let mut spans = vec![
+        let (a, b) = (at(Ev::Fork(i)).min(gw - 1), at(Ev::End(i)).min(gw - 1));
+        let mut cells = String::new();
+        for x in 0..gw {
+            cells.push(if x < a || x > b {
+                ' '
+            } else if x == a {
+                '╰'
+            } else if x < b {
+                '━'
+            } else if l.merged.is_some() {
+                '╯'
+            } else {
+                '○'
+            });
+        }
+        let lane = cells.trim_end().to_string();
+        let pad = gw.saturating_sub(lane.chars().count());
+        let count = format!(" {}", l.commits);
+        let left = vec![
             Span::styled(if selected { "▌ " } else { "  " }, keyst()),
             Span::styled(
                 format!("{label:>w$} ", w = label_w - 2),
                 if selected {
-                    bold(Style::default().fg(col))
+                    bold(Style::default().fg(colour))
                 } else {
-                    Style::default().fg(col)
+                    Style::default().fg(colour)
                 },
             ),
             Span::raw(" "),
+            Span::styled(lane, Style::default().fg(colour)),
+            Span::styled(count.clone(), dim()),
+            Span::raw(" ".repeat(pad.saturating_sub(count.width()))),
         ];
-        let a = x(l.forked);
-        let end = l.merged.or(l.tip).unwrap_or(now);
-        let b = x(end).max(a);
-        let mut cells = String::new();
-        for i in 0..gw {
-            cells.push(if i < a {
-                ' '
-            } else if i == a && a == b {
-                if l.merged.is_some() { '┃' } else { '╽' }
-            } else if i == a {
-                '╰'
-            } else if i < b {
-                '━'
-            } else if i == b {
-                if l.merged.is_some() { '╯' } else { '○' }
-            } else {
-                ' '
-            });
-        }
-        let trimmed = cells.trim_end().to_string();
-        let pad = gw - trimmed.chars().count();
-        spans.push(Span::styled(trimmed, Style::default().fg(col)));
-        let n = format!(" {}", l.commits);
-        spans.push(Span::styled(n.clone(), dim()));
-        spans.push(Span::raw(" ".repeat(pad.saturating_sub(n.width()))));
-        out.push(Line::from(spans));
+        let line = Line::from(left);
+        out.push(if selected {
+            line.patch_style(Style::default().bg(c("surface0")))
+        } else {
+            line
+        });
     }
-    // The axis: the first and last day, and the middle.
-    let mid = start + Duration::days((span / 2) as i64);
-    let mut axis = format!("{:w$}  ", "", w = label_w);
-    let a = date(start);
-    let m = date(mid);
-    let e = date(now);
-    let gap1 = (gw / 2).saturating_sub(a.width() + m.width() / 2);
-    let gap2 = gw.saturating_sub(a.width() + gap1 + m.width() + e.width());
-    axis.push_str(&format!("{a}{}{m}{}{e}", " ".repeat(gap1), " ".repeat(gap2)));
-    out.push(Line::from(Span::styled(axis, dim())));
+
+    // The axis: a date wherever it changes and there is room for it.
+    let mut axis: Vec<char> = vec![' '; label_w + 2 + gw + 4];
+    let mut last_end = 0;
+    let mut last_date = None;
+    for (slot, (d, _, _)) in evs.iter().enumerate() {
+        if last_date == Some(*d) {
+            continue;
+        }
+        let x = label_w + 2 + col(slot);
+        let text = date(*d);
+        if x >= last_end && x + text.chars().count() < axis.len() {
+            for (k, ch) in text.chars().enumerate() {
+                axis[x + k] = ch;
+            }
+            last_end = x + text.chars().count() + 2;
+            last_date = Some(*d);
+        }
+    }
+    out.push(Line::from(Span::styled(axis.into_iter().collect::<String>(), dim())));
+
     // What happened in the selected lane (or the newest, unfocused).
     let shown = if focus { lanes.get(sel) } else { lanes.last() };
     if let Some(l) = shown {

@@ -8,12 +8,12 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │ RIKEN's exchange slope is 2.6x shallower than the prior assumes (§8by); nothing yet uses i… │
 │ next ▸ fold §8by and §8bz into the prior, then rerun the battery before any new method      │
 │─ branches ──────────────────────────────────────────────────────────────────────────── [g] ─│
-│                          main ◂─────┬─────●──┼───────┬──────────────────────────────── now  │
-│         pricing by wall clock       ╽ 2                                                     │
-│  mixed precision on a graphi…       ╰━━━━━━━━╯ 45                                           │
-│  barrier control: the law le…                ╰━━━━━━━━━━━━━━━━━━━━━━━━○ 75                  │
-│  readout on hardware: the pl…                        ╽ 2                                    │
-│                                5 Oct                   14 Oct                   24 Oct      │
+│                          main ◂─┬──────────┬─────●─────●────┴─────┬─────┬───────────── now  │
+│         pricing by wall clock   ╰━━━━○ 2                                                    │
+│  mixed precision on a graphi…              ╰━━━━━━━━━━━━━━━━╯ 45                            │
+│  barrier control: the law le…                                     ╰━━━━━━━━━━━━━━━━━○ 75    │
+│  readout on hardware: the pl…                                           ╰━━━━━○ 2           │
+│                                 7 Oct            9 Oct      10 Oct      13 Oct              │
 │ worktree-readout-adapter · 13 Oct · open · last 13 Oct · QUAST thresholds each shot's…      │
 │                                                                                             │
 │─ new · 4 unread ────────────────────────────────────────────────────────────────────── [n] ─│

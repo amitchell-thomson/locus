@@ -21,21 +21,21 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │  ratio in θ                                                                                 │
 │  󱉶 re-check · agreed 7 Oct · 󰅸 new since you last looked                                    │
 │                                                                                             │
-│  re-check    RIKEN's exchange against barrier voltage arrived on 19 Oct through Natalia:    │
-│              about 0.03 per mV in tunnel coupling, about 2.6 times shallower than the       │
-│              germanium-centred prior assumed (0.08 per mV), with saturation inside the      │
-│              range a CZ uses and the barrier range too short at that slope. Three changes   │
-│              were proposed and none applied yet. The same day RIKEN's lever arm (80-100     │
-│              µeV/mV) was found to bracket the fixed 90 µeV/mV to about ten per cent, so     │
-│              their 50-60 mV addition voltage reads as 4,500-5,400 µeV in this project's     │
-│              units, inside the charging-energy prior.                                       │
-│  built on by 󰌾 The input layer, built: the typical gate three times closer, no failure fix… │
-│              󰌾 The scope: QUAST starts where the lab's tools stop - a device ready for two… │
+│─ why re-check ──────────────────────────────────────────────────────────────────────────────│
+│   RIKEN's exchange against barrier voltage arrived on 19 Oct through Natalia: about 0.03    │
+│   per mV in tunnel coupling, about 2.6 times shallower than the germanium-centred prior     │
+│   assumed (0.08 per mV), with saturation inside the range a CZ uses and the barrier range   │
+│   too short at that slope. Three changes were proposed and none applied yet. The same day   │
+│   RIKEN's lever arm (80-100 µeV/mV) was found to bracket the fixed 90 µeV/mV to about ten   │
+│   per cent, so their 50-60 mV addition voltage reads as 4,500-5,400 µeV in this project's   │
+│   units, inside the charging-energy prior.                                                  │
 │                                                                                             │
-│  question    Stage 1 was about to read a charge stability diagram, which is measured in     │
-│              gate volts and fixes the device only up to a common scale, while the           │
-│              simulator's core works in µeV. Either the core keeps µeV and converts at the   │
-│              boundary, or it becomes volt-referred throughout; it had to be settled before  │
+│─ connections ───────────────────────────────────────────────────────────────────────────────│
+│   built on by 󰌾 The input layer, built: the typical gate three times closer, no failure fi… │
+│               󰌾 The scope: QUAST starts where the lab's tools stop - a device ready for tw… │
+│                                                                                             │
+│─ question ──────────────────────────────────────────────────────────────────────────────────│
+│   Stage 1 was about to read a charge stability diagram, which is measured in gate volts and │
 │   ↓ more · → to read on                                                                     │
 │                                 → read it · o reopen · ? ask why · c its chat · f full entry│
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯

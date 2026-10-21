@@ -483,18 +483,23 @@ fn days_ago(now: chrono::NaiveDate, d: chrono::NaiveDate) -> String {
     }
 }
 
-/// The entry: its title and state, the links first, then every field labelled and in full.
+/// The entry: its title and state, then a section per field, each under a rule with its title
+/// in its own colour and a blank line between (round 2t: "the sections should be divided by
+/// lines, with a line of white space spacing between them and titles colored per section ...
+/// in colors that do not conflict with any others on the page"). The states own yellow, sky,
+/// peach, green and mauve, and focus owns blue, so the fields use the rest of the palette.
+/// The connections lead, each a row Enter follows.
 fn draw_entry(f: &mut Frame, area: Rect, app: &App, ds: &Decisions, i: usize) {
     let d = &ds.items[i];
     let status = status_of(app, &ds.project, d);
     let (g, gc, word) = decision_glyph(&status);
     let w = usize::from(area.width);
-    // Every line starts two columns in, where a selected link puts its marker.
-    let body = w.saturating_sub(15);
+    // Content starts at column 3, under the rule's title, as in every section (round 2h).
+    let body = w.saturating_sub(4);
     let focus = app.focus == Some('e');
     let ls = links(ds, i);
     let sel = app.sel('e');
-    let mut head: Vec<Line<'static>> = wrap(&d.title, w.saturating_sub(3))
+    let mut out: Vec<Line<'static>> = wrap(&d.title, w.saturating_sub(3))
         .into_iter()
         .map(|l| {
             Line::from(vec![
@@ -514,100 +519,105 @@ fn draw_entry(f: &mut Frame, area: Rect, app: &App, ds: &Decisions, i: usize) {
             st("peach"),
         ));
     }
-    head.push(Line::from(state));
-    head.push(Line::from(""));
-    let mut out = head;
-    let field = |out: &mut Vec<Line<'static>>, label: &str, value: &str, style: Style| {
-        for (j, l) in wrap(value, body).into_iter().enumerate() {
-            out.push(Line::from(vec![
-                Span::raw("  "),
-                Span::styled(format!("{:<12}", if j == 0 { label } else { "" }), bold(st("subtext1"))),
-                Span::styled(l, style),
-            ]));
+    if let Some(chat) = &d.chat {
+        state.push(Span::styled(format!("{SEP}decided in {chat}"), dim()));
+    }
+    out.push(Line::from(state));
+    let head = |out: &mut Vec<Line<'static>>, title: &str, colour: &str| {
+        out.push(Line::from(""));
+        let mut r = rule(title, "", None, false, area.width);
+        if let Some(s) = r.spans.get_mut(1) {
+            s.style = bold(st(colour));
+        }
+        out.push(r);
+    };
+    let para = |out: &mut Vec<Line<'static>>, value: &str, style: Style| {
+        for l in wrap(value, body) {
+            out.push(Line::from(vec![Span::raw("   "), Span::styled(l, style)]));
         }
     };
-    let list = |out: &mut Vec<Line<'static>>, label: &str, items: &[String], style: Style| {
-        for (k, it) in items.iter().enumerate() {
-            for (j, l) in wrap(it, body.saturating_sub(2)).into_iter().enumerate() {
+    let items = |out: &mut Vec<Line<'static>>, values: &[String], style: Style| {
+        for v in values {
+            for (j, l) in wrap(v, body.saturating_sub(2)).into_iter().enumerate() {
                 out.push(Line::from(vec![
-                    Span::raw("  "),
-                    Span::styled(
-                        format!("{:<12}", if k == 0 && j == 0 { label } else { "" }),
-                        bold(st("subtext1")),
-                    ),
-                    Span::styled(if j == 0 { "· " } else { "  " }, dim()),
+                    Span::styled(if j == 0 { "   · " } else { "     " }, dim()),
                     Span::styled(l, style),
                 ]));
             }
         }
     };
     if let Some(r) = d.recheck.as_ref().filter(|_| status == DecisionStatus::Recheck) {
-        field(&mut out, "re-check", r, st("yellow"));
+        head(&mut out, "why re-check", "yellow");
+        para(&mut out, r, text());
     }
     if status == DecisionStatus::Review {
-        field(
+        head(&mut out, "under review", "sky");
+        para(
             &mut out,
-            "review",
-            "reopened by you; a chat in locus has it as context, and moves to the project window if the project itself needs to change",
-            st("sky"),
+            "Reopened by you. A chat in locus has it as context, and moves to the project window if the project itself needs to change.",
+            text(),
         );
     }
-    // The links lead, each a row Enter follows; a replaced decision is dim here as in the list.
     let link_at = out.len();
-    let mut last = "";
-    for (k, &(label, j)) in ls.iter().enumerate() {
-        let o = &ds.items[j];
-        let (og, oc, _) = decision_glyph(&status_of(app, &ds.project, o));
-        let lead = if focus && sel == k {
-            pointer(0, Some(0))
-        } else {
-            Span::raw("  ")
-        };
-        out.push(row(
-            vec![
-                lead,
-                Span::styled(
-                    format!("{:<12}", if label == last { "" } else { label }),
-                    bold(st("subtext1")),
-                ),
-                Span::styled(format!("{og} "), st(oc)),
-                Span::styled(
-                    o.title.clone(),
-                    if matches!(o.status, DecisionStatus::Redecided { .. }) {
-                        dim()
-                    } else {
-                        text()
-                    },
-                ),
-            ],
-            vec![],
-            area.width,
-        ));
-        last = label;
-    }
     if !ls.is_empty() {
-        out.push(Line::from(""));
+        head(&mut out, "connections", "teal");
+        let mut last = "";
+        for (k, &(label, j)) in ls.iter().enumerate() {
+            let o = &ds.items[j];
+            let (og, oc, _) = decision_glyph(&status_of(app, &ds.project, o));
+            out.push(row(
+                vec![
+                    if focus && sel == k {
+                        pointer(0, Some(0))
+                    } else {
+                        Span::raw("  ")
+                    },
+                    Span::styled(
+                        format!(" {:<12}", if label == last { "" } else { label }),
+                        st("subtext1"),
+                    ),
+                    Span::styled(format!("{og} "), st(oc)),
+                    Span::styled(
+                        o.title.clone(),
+                        if matches!(o.status, DecisionStatus::Redecided { .. }) {
+                            dim()
+                        } else {
+                            text()
+                        },
+                    ),
+                ],
+                vec![],
+                area.width,
+            ));
+            last = label;
+        }
     }
-    field(&mut out, "question", &d.question, text());
-    field(&mut out, "chose", &d.chose, bold(text()));
-    field(&mut out, "why", &d.why, text());
+    head(&mut out, "question", "sapphire");
+    para(&mut out, &d.question, text());
+    head(&mut out, "chose", "rosewater");
+    para(&mut out, &d.chose, bold(text()));
+    head(&mut out, "why", "flamingo");
+    para(&mut out, &d.why, text());
     // Your own words, whenever there are any ("definitely quote me").
-    for q in &d.you {
-        field(
-            &mut out,
-            "you said",
-            &format!("“{}”  ({})", q.text, q.source),
-            st("lavender"),
-        );
+    if !d.you.is_empty() {
+        head(&mut out, "you said", "pink");
+        for q in &d.you {
+            para(&mut out, &format!("“{}”", q.text), st("pink"));
+            out.push(Line::from(Span::styled(format!("     {}", q.source), dim())));
+        }
     }
-    out.push(Line::from(""));
-    list(&mut out, "over", &d.over, st("subtext0"));
-    list(&mut out, "assumes", &d.assumes, text());
-    list(&mut out, "costs", &d.costs, text());
-    list(&mut out, "evidence", &d.evidence, text());
-    list(&mut out, "affects", &d.affects, text());
-    if let Some(chat) = &d.chat {
-        field(&mut out, "decided in", chat, dim());
+    let sections: [(&str, &str, &Vec<String>); 5] = [
+        ("over", "maroon", &d.over),
+        ("assumes", "lavender", &d.assumes),
+        ("costs", "red", &d.costs),
+        ("evidence", "subtext1", &d.evidence),
+        ("affects", "overlay2", &d.affects),
+    ];
+    for (name, colour, values) in sections {
+        if !values.is_empty() {
+            head(&mut out, name, colour);
+            items(&mut out, values, text());
+        }
     }
     while out.last().is_some_and(|l| l.width() == 0) {
         out.pop();

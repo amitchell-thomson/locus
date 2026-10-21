@@ -509,6 +509,16 @@ the list into the entry, as Enter does, and ← comes back to the same decision 
 **Round 2s, 22 Oct.** "There are two parts that say 'the full log [d]'": a "+N more" line only
 counts; the key to the rest is on the section's heading, for decisions and for what is new.
 
+**Round 2t, 22 Oct. The entry in sections.** "The sections should be divided by lines, with a
+line of white space spacing between them and titles colored per section accordingly, with
+section headers colored in colors that do not conflict with any others on the page." Each field
+is a section under its own rule, a blank line between, content at column 3 and full width. The
+states keep yellow, sky, peach, green and mauve and focus keeps blue, so the fields take the
+rest: connections teal, question sapphire, chose rosewater, why flamingo, you said pink (each
+quote with its date under it), over maroon, assumes lavender, costs red, evidence subtext,
+affects overlay; why re-check and under review keep their state's colour. Where it was decided
+moves to the state line.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

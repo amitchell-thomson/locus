@@ -850,7 +850,19 @@ fn draw_entry(f: &mut Frame, area: Rect, app: &App, ds: &Decisions, i: usize) {
             sp.style = bold(st(fd.colour));
         }
         out.push(r);
-        if is_open {
+        if is_open && fd.name == "you said" {
+            // Your words at full width, where they came from under each, a blank line between
+            // (round 2zb: "my statements are compressed, the date should be below each").
+            for (k, (quote, source)) in fd.lines.iter().enumerate() {
+                if k > 0 {
+                    out.push(Line::from(""));
+                }
+                for l in wrap(quote, body) {
+                    out.push(Line::from(vec![Span::raw("   "), Span::styled(l, st("pink"))]));
+                }
+                out.push(Line::from(Span::styled(format!("   {source}"), dim())));
+            }
+        } else if is_open {
             // Each item: its label, then its detail beside it, wrapping under the detail.
             let lw = fd.lines.iter().map(|(l, _)| l.width()).max().unwrap_or(0).min(body / 3) + 2;
             for (label, detail) in &fd.lines {

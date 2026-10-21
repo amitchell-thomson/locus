@@ -595,6 +595,10 @@ read the entry, its decision keeps a band and marker in the list.
   limits, each point citing the passage it came from, regenerated when the entry changes, and
   copies "you said" verbatim. `f` opens the full entry.
 
+**Round 2zb, 22 Oct.** "The you said section is weird as the tiny date takes up the whole
+section, and my statements are compressed, the date should be below each statement": your words
+run the full width, where and when you said them dim underneath, a blank line between.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

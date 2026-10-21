@@ -89,7 +89,7 @@ pub fn bar(frac: f32, width: usize, mark: Option<f32>, fill: Color) -> Vec<Span<
 /// glyphs in different degrees of rotation", not a colour change). Frame 0 is md-sync, the
 /// D.2 glyph, so `--dump` and the legend agree.
 pub fn spin(frame: u64) -> &'static str {
-    if frame / 2 % 2 == 0 {
+    if (frame / 2).is_multiple_of(2) {
         locus_theme::glyph::WORKING
     } else {
         "\u{f006a}"

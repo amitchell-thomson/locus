@@ -21,10 +21,10 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │  󰇮 Jump Trading offer accepted · … 󰅸 1 new  │   󱀄 B2   Engineering in Society        noth…  │
 │  󰇮 G-Research   applied · waiting for th…   │   󱀄 B3   Group Design Project       … 󰅸 1 new │
 │                                             │   󱀄 B14  Information Engineering Syst… noth…  │
-│                                             │   󱀄 B15  Control Systems               noth…  │
-│                                             │   󱀄 B16  Software Engineering Systems  noth…  │
-│                                             │   󱀄 B18  Biomedical Modelling and Mon… noth…  │
-│                                             │   󱀄 B20  Machine Learning              noth…  │
+│  ╭──────────────────────────────────────╮   │   󱀄 B15  Control Systems               noth…  │
+│  │ 2 open · 1 offer · their move: G-Rese│   │   󱀄 B16  Software Engineering Systems  noth…  │
+│  │ CV released the G-Research version, 1│   │   󱀄 B18  Biomedical Modelling and Mon… noth…  │
+│  ╰──────────────────────────────────────╯   │   󱀄 B20  Machine Learning              noth…  │
 │                                             │    ─────────────────────────────────────────  │
 │                                             │   󰌵 learning                           2 g… L │
 │                                                                                             │

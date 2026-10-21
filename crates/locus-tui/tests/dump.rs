@@ -208,3 +208,30 @@ fn every_screen_survives_other_sizes() {
         }
     }
 }
+
+/// ↓ walks Home in the order it is drawn, and inside Explore only over the finds drawn; past
+/// the last drawn find it moves on to the next section (round 2g: it went over hidden finds,
+/// and broke across "waiting for you").
+#[test]
+fn home_arrows_follow_what_is_drawn() {
+    let mut a = app("default", ScreenId::Home);
+    let order: Vec<char> = ScreenId::Home.sections().iter().map(|s| s.letter).collect();
+    assert_eq!(
+        order,
+        vec!['w', 'p', 'c', 't', 'e', 'a', 's'],
+        "the drawn order, top to bottom"
+    );
+    dump::render(&a, 95, 38).unwrap();
+    let drawn = a.shown.borrow().get(&(ScreenId::Home, 'e')).map_or(0, Vec::len);
+    assert!(
+        drawn < a.fixtures.explore.queue.len(),
+        "at 95 x 38 some finds are not drawn"
+    );
+    a.focus = Some('e');
+    for _ in 0..drawn {
+        a.on_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    }
+    assert_eq!(a.focus, Some('a'), "past the last drawn find, into waiting for you");
+    a.on_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    assert_eq!(a.focus, Some('s'));
+}

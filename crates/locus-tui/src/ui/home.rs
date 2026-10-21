@@ -148,7 +148,12 @@ pub fn section_len(app: &App, sec: char) -> usize {
         'p' => project_rows(app).len(),
         'c' => career_rows(app).len(),
         't' => study_rows(app).len() + 1,
-        'e' => app.fixtures.explore.queue.len(),
+        // Only the finds drawn; the draw records which they are.
+        'e' => app
+            .shown
+            .borrow()
+            .get(&(ScreenId::Home, 'e'))
+            .map_or(app.fixtures.explore.queue.len(), Vec::len),
         _ => 1,
     }
 }
@@ -190,6 +195,17 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     .areas(side_r);
     draw_careers(f, c_r, app);
     draw_studies(f, g_r, app);
+    // Rows careers had no use for hold its summary (round 2g).
+    let used = 1 + career_rows(app).len().max(1) as u16;
+    crate::ui::summary_box(
+        f,
+        Rect {
+            y: c_r.y + used,
+            height: c_r.height.saturating_sub(used),
+            ..c_r
+        },
+        careers_summary(app),
+    );
     // The divider is learning's edge: focused, it lights up the way the frame does for the
     // other sections (round 1d).
     let (col, top, side) = if app.focus == Some('t') {
@@ -502,6 +518,64 @@ fn draw_careers(f: &mut Frame, area: Rect, app: &App) {
     lines(f, area, out);
 }
 
+/// Careers in two lines: where the applications stand, and the CV's last release.
+fn careers_summary(app: &App) -> Vec<Line<'static>> {
+    let fx = &app.fixtures;
+    let today = fx.now().date_naive();
+    let mut apps = 0;
+    let mut theirs = Vec::new();
+    let mut offers = 0;
+    let mut cv = None;
+    for id in career_rows(app) {
+        let (Some(p), Some(pf)) = (fx.registry.get(&id), fx.projects.get(&id)) else {
+            continue;
+        };
+        let status = pf.view.status.as_ref();
+        if p.kind == ProjectKind::Application {
+            apps += 1;
+            if status.is_some_and(|s| s.turn == Some(locus_contract::Turn::Them)) {
+                let days = status.map_or(0, |s| (today - s.since).num_days());
+                theirs.push(format!("{} {days}d", p.name));
+            }
+            if status.is_some_and(|s| s.stage.contains("offer")) {
+                offers += 1;
+            }
+        } else if let Some(s) = status {
+            cv = Some(format!("{}, {}", s.stage, date(s.since)));
+        }
+    }
+    let mut first = vec![Span::styled(format!(" {apps} open"), text())];
+    if offers > 0 {
+        first.push(Span::styled(format!("{SEP}{offers} offer"), st("green")));
+    }
+    if !theirs.is_empty() {
+        first.push(Span::styled(format!("{SEP}their move: {}", theirs.join(", ")), dim()));
+    }
+    let mut out = vec![Line::from(first)];
+    if let Some(cv) = cv {
+        out.push(Line::from(vec![Span::styled(" CV ", text()), Span::styled(cv, dim())]));
+    }
+    out
+}
+
+/// Explore in two lines: what the finds are, and that the scout waits on you.
+fn explore_summary(app: &App) -> Vec<Line<'static>> {
+    let ex = &app.fixtures.explore;
+    let groups = find_groups(app);
+    let kinds: Vec<String> = groups.iter().map(|(h, v)| format!("{} {h}", v.len())).collect();
+    let mut out = vec![Line::from(vec![
+        Span::styled(format!(" {} finds  ", ex.queue.len()), text()),
+        Span::styled(kinds.join(SEP), dim()),
+    ])];
+    if ex.queue.len() as u32 >= ex.queue_cap {
+        out.push(Line::from(Span::styled(
+            " the scout pauses at 7: grading them in Explore lets it look again",
+            dim(),
+        )));
+    }
+    out
+}
+
 /// Studies: each course and the coursework repos, with what is due next; the last row opens
 /// Learning, which serves studies and careers alike (round 2d: learning as "just a button
 /// somewhere that makes sense in context").
@@ -624,12 +698,14 @@ fn draw_explore(f: &mut Frame, area: Rect, app: &App) {
     let why = items * 2 + gaps <= room;
     let width = usize::from(area.width);
     let mut pos = 0;
+    let mut drawn = Vec::new();
     for (gi, (heading, idx)) in groups.iter().enumerate() {
         if gi > 0 && spaced {
             out.push(Line::from(""));
         }
         for (k, &qi) in idx.iter().take(shown[gi]).enumerate() {
             let find = &ex.queue[qi];
+            drawn.push(qi);
             let (g, gc, _) = find_glyph(find.kind);
             let label = match k {
                 0 if shown[gi] < idx.len() => format!("{heading} +{}", idx.len() - shown[gi]),
@@ -661,13 +737,27 @@ fn draw_explore(f: &mut Frame, area: Rect, app: &App) {
             }
             pos += 1;
         }
-        pos += idx.len() - shown[gi];
     }
     if ex.queue.is_empty() {
         out.push(Line::from(Span::styled(
             "  nothing waiting; about one find a day",
             dim(),
         )));
+    }
+    app.shown.borrow_mut().insert((ScreenId::Home, 'e'), drawn);
+    let used = out.len() as u16;
+    if used < area.height {
+        lines(f, area, std::mem::take(&mut out));
+        crate::ui::summary_box(
+            f,
+            Rect {
+                y: area.y + used,
+                height: area.height - used,
+                ..area
+            },
+            explore_summary(app),
+        );
+        return;
     }
     lines(f, area, out);
 }
@@ -776,7 +866,12 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
         }
         (Some('e'), KeyCode::Enter) => {
             // Open Explore on the find that was selected here.
-            let order: Vec<usize> = find_groups(app).into_iter().flat_map(|(_, v)| v).collect();
+            let order: Vec<usize> = app
+                .shown
+                .borrow()
+                .get(&(ScreenId::Home, 'e'))
+                .cloned()
+                .unwrap_or_default();
             let qi = order.get(app.sel('e')).copied().unwrap_or(0);
             app.open(ScreenId::Explore);
             app.sel.insert((ScreenId::Explore, 'q'), qi);

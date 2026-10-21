@@ -209,8 +209,10 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         Constraint::Length(2),
     ])
     .split(inner);
-    let (where_r, q_r, graph_r, new_r, ses_r, ch_r, ask_r) =
-        (rects[0], rects[2], rects[4], rects[6], rects[8], rects[10], rects[12]);
+    let (where_r, q_r, graph_r, new_r, ses_r, ch_r, spare_r, ask_r) = (
+        rects[0], rects[2], rects[4], rects[6], rects[8], rects[10], rects[11], rects[12],
+    );
+    crate::ui::summary_box(f, spare_r, project_summary(app, v));
 
     lines(f, where_r, where_lines);
     lines(f, q_r, question_lines);
@@ -558,6 +560,48 @@ fn graph_need(app: &App, v: &ProjectView, w: u16, cap: usize) -> u16 {
     };
     let detail = 1 + g.lanes.get(sel).map_or(0, |l| summary_lines(l, w, cap).len());
     (4 + rows + detail) as u16
+}
+
+/// The project in two lines, for rows nothing else wanted: this week's time and what is live,
+/// then the latest change.
+fn project_summary(app: &App, v: &ProjectView) -> Vec<Line<'static>> {
+    let now = app.fixtures.now();
+    let hours = app
+        .fixtures
+        .work
+        .totals()
+        .into_iter()
+        .find(|(p, _)| *p == v.project)
+        .map_or(0.0, |(_, h)| h);
+    let live = v
+        .sessions
+        .iter()
+        .filter(|s| matches!(s.state, SessionState::Working | SessionState::NeedsYou))
+        .count();
+    let unread = v.unread();
+    let mut out = vec![Line::from(vec![
+        Span::styled(format!(" {hours:.1} h this week"), text()),
+        Span::styled(format!("{SEP}{live} sessions live{SEP}{unread} new"), dim()),
+    ])];
+    let latest = v
+        .new
+        .iter()
+        .chain(
+            app.fixtures
+                .projects
+                .get(&v.project)
+                .and_then(|p| p.changes.as_ref())
+                .map(|c| c.entries.as_slice())
+                .unwrap_or(&[]),
+        )
+        .max_by_key(|i| i.at);
+    if let Some(it) = latest {
+        out.push(Line::from(vec![
+            Span::styled(format!(" latest, {} ago  ", ago(now, it.at)), dim()),
+            Span::styled(it.text.clone(), text()),
+        ]));
+    }
+    out
 }
 
 /// Which lanes are drawn: unfocused, the newest that fit; focused, a window around the selected

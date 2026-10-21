@@ -284,6 +284,32 @@ pub fn truncate(s: &str, width: usize) -> String {
     out
 }
 
+/// Whether spare rows show a section's summary box (round 2g: "I may ask to revert if I think I
+/// like just normal empty more"): false gives plain space everywhere.
+pub const SUMMARY_BOXES: bool = true;
+
+/// A section's summary in a quiet rounded box, centred in rows the section had no use for: the
+/// one filler for any section on any page (round 2g: "I want any space filler to be the same
+/// sort of thing for any section on any page"). Nothing when fewer than four rows are spare, so
+/// a box always has a line of space around it and shrinks away as the section fills.
+pub fn summary_box(f: &mut Frame, area: Rect, body: Vec<Line<'static>>) {
+    if !SUMMARY_BOXES || area.height < 4 || area.width < 20 || body.is_empty() {
+        return;
+    }
+    let h = (body.len() as u16 + 2).min(area.height - 1);
+    let rect = Rect {
+        x: area.x + 2,
+        y: area.y + (area.height - h) / 2,
+        width: area.width.saturating_sub(4),
+        height: h,
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(c("surface1")));
+    f.render_widget(Paragraph::new(body).block(block), rect);
+}
+
 /// Draw `lines` into `area`, top-aligned; anything past the bottom is cut.
 pub fn lines(f: &mut Frame, area: Rect, lines: Vec<Line<'static>>) {
     f.render_widget(Paragraph::new(lines), area);

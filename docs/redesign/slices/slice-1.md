@@ -370,6 +370,15 @@ Calendar and Mail too, where a TUI margin would not). Found on the way: the extr
 left the sessions section no rows and a subtraction panicked; every screen is now tested at six
 sizes from 60 × 20 to 200 × 60.
 
+**Round 2g, 22 Oct.** "gap is MUCH better." Experiment, his to revert (`ui::SUMMARY_BOXES`):
+any section left with four or more spare rows shows its summary in a quiet rounded box centred
+in them, the one filler for every page ("I want any space filler to be the same sort of thing
+for any section on any page"); careers (where the applications stand, the CV's last release),
+Explore (the finds by kind, that the scout waits), the Project view (this week's hours, live
+sessions, new, the latest change). Fixed: Home's sections walked out of drawn order (waiting
+for you sat first in the list, last but one on the page); Explore's arrows walked finds that
+were not drawn (the draw now records what it drew, in `App::shown`).
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

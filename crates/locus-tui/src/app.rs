@@ -80,6 +80,10 @@ pub struct App {
     pub in_session: bool,
     /// The project Home asked the Project window to show, until Esc.
     pub peek: Option<String>,
+    /// For a section that draws only some of its items, the ones drawn, in order: the arrows
+    /// walk these and Enter opens them, never an item off screen (round 2g: Explore's selection
+    /// moved over finds that were not shown). Written by the draw.
+    pub shown: RefCell<HashMap<(ScreenId, char), Vec<usize>>>,
     pub peek_file: Option<crate::follow::PeekFile>,
 }
 
@@ -111,6 +115,7 @@ impl App {
             frame: 0,
             in_session: false,
             peek: None,
+            shown: RefCell::new(HashMap::new()),
             peek_file: None,
         };
         app.uselog.record(root.name(), "open");

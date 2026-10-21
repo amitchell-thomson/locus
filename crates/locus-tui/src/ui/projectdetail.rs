@@ -44,7 +44,7 @@ pub fn draw_answered(f: &mut Frame, area: Rect, app: &App) {
         Some(esc_back()),
     );
     let Some(ans) = ans.filter(|a| !a.items.is_empty()) else {
-        none(f, inner, "nothing answered yet · i on the Project view asks");
+        none(f, inner, "nothing answered yet · ␣ on the Project view asks");
         return;
     };
     let list_h = (ans.items.len() as u16).min(8);

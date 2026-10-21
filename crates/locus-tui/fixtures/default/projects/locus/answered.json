@@ -1,0 +1,79 @@
+{
+  "project": "locus",
+  "items": [
+    {
+      "title": "should answered sit on the ask line?",
+      "asked": "ask",
+      "at": "2026-10-21T17:38:00+01:00",
+      "body": [
+        "On the ask line's dividing rule, at its right end. Decisions then sat on the open questions' rule the same way, so one pattern held across the page: a heading rule names what is behind a key and shows its state."
+      ],
+      "thread": "chat-2026-10-21-answered-placement",
+      "unread": true
+    },
+    {
+      "title": "can a thing have two kinds?",
+      "asked": "ask",
+      "at": "2026-10-21T17:38:00+01:00",
+      "body": [
+        "No. When something seems to need two kinds, it is two linked things.",
+        "B3 Group Design Project is a course on Canvas, and 3YP is the repo where you do its work: two items with a link between them, which is why 3YP felt like it belonged in three places. One kind each, joined by links, keeps the backend's rules simple."
+      ],
+      "links": [
+        "the taxonomy decision: one kind per thing"
+      ],
+      "thread": "chat-2026-10-21-two-kinds",
+      "decision": "ADR-006",
+      "unread": true
+    },
+    {
+      "title": "are tutorial sheets their own type, or coursework?",
+      "asked": "ask",
+      "at": "2026-10-21T17:21:00+01:00",
+      "body": [
+        "Their own type, sheet, alongside coursework. Both are tasks linked to a course, and both can carry a deadline, which any task can have.",
+        "Sheets are separate because they are planned differently: about five hours in two or three blocks, every week, where coursework needs its own estimate. Merging them would lose that."
+      ],
+      "links": [
+        "the taxonomy decision: a task's type is sheet, coursework, admin or chore"
+      ],
+      "thread": "chat-2026-10-21-sheets",
+      "decision": "ADR-006"
+    },
+    {
+      "title": "what is the difference between goals and threads?",
+      "asked": "ask",
+      "at": "2026-10-21T17:21:00+01:00",
+      "body": [
+        "They are unrelated. A goal is a purpose for learning, such as Jump internship preparation. A mail thread is an email conversation.",
+        "An earlier table said \"thread (keryx)\", and that bracket was the confusion: it named the app that stores mail, which plays no part in labelling."
+      ],
+      "thread": "chat-2026-10-21-goals-threads",
+      "decision": "ADR-006"
+    },
+    {
+      "title": "is the taxonomy global?",
+      "asked": "ask",
+      "at": "2026-10-21T17:21:00+01:00",
+      "body": [
+        "Yes. Every item, in every project and every app, carries two independent labels: its area (where it belongs in your life) and its kind (what shape of thing it is).",
+        "Both are defined once in the shared root and read by everything. The brackets naming kairos or keryx only said which app stores a thing, so they are gone."
+      ],
+      "links": [
+        "the taxonomy decision, with the full grid of areas by kinds"
+      ],
+      "thread": "chat-2026-10-21-taxonomy-global",
+      "decision": "ADR-006"
+    },
+    {
+      "title": "what is the failed glyph?",
+      "asked": "ask",
+      "at": "2026-10-20T01:30:00+01:00",
+      "body": [
+        "The Nerd Font symbol that marks a failed job or session, such as a tablet push that hit the rate limit. It should pair with kairos's done box.",
+        "kairos's done box is the outline style (md-checkbox_marked_outline), so the matching failed glyph is md-close_box_outline, the one the plan named. An earlier note had suggested the filled box by mistake."
+      ],
+      "thread": "chat-2026-10-20-failed-glyph"
+    }
+  ]
+}

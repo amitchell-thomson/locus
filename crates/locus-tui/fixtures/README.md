@@ -14,6 +14,9 @@ other.
 - Branch graphs: quast, nabla, OQTS, CV from their git histories (`tools/branch_graph.py`;
   quast's branches merged by fast-forward were read from their reflogs). locus's August merges
   came from branches whose names did not survive, so those lanes carry the merge subject.
+- locus's Answered: six questions you asked about locus in the Slice 1 design chat (20-21 Oct),
+  in your words, with the answers condensed from what was said; four are linked to the taxonomy
+  decision they were about.
 - Decision titles and dates: quast `docs/decisions/` (§8 entries), nabla and locus ADRs.
   The `chose` / `over` / `evidence` lines are condensed from them by hand; no quotes of yours.
 - The Jump Trading prep: the four-round format, the topics and their minutes a day, the seven

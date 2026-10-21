@@ -327,6 +327,22 @@ impl Fixtures {
                     bad.push(format!("projects/{id}/{file}.json: says project `{p}`"));
                 }
             }
+            // An answer asked about a decision names one that is in the log (round 2v).
+            if let Some(a) = &pf.answered {
+                for x in &a.items {
+                    if let Some(id_) = &x.decision
+                        && !pf
+                            .decisions
+                            .as_ref()
+                            .is_some_and(|d| d.items.iter().any(|i| &i.id == id_))
+                    {
+                        bad.push(format!(
+                            "projects/{id}/answered.json: \"{}\" asks about {id_}, not in decisions.json",
+                            x.title
+                        ));
+                    }
+                }
+            }
             // One decision, one surface (round 2l): the log marks a new one, New never lists it.
             for it in &pf.view.new {
                 if matches!(it.kind, ItemKind::Decision | ItemKind::Recheck | ItemKind::Redecided) {

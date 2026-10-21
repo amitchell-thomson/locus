@@ -292,8 +292,8 @@ impl Fixtures {
                 bad.push(format!("prep/{name}.json: says opportunity `{}`", p.opportunity));
             }
             match self.registry.get(&p.opportunity) {
-                Some(r) if r.kind == ProjectKind::Opportunity => {}
-                Some(_) => bad.push(format!("prep/{name}.json: {} is not an opportunity", p.opportunity)),
+                Some(r) if r.kind == ProjectKind::Application => {}
+                Some(_) => bad.push(format!("prep/{name}.json: {} is not an application", p.opportunity)),
                 None => bad.push(format!(
                     "prep/{name}.json: no project `{}` in registry.json",
                     p.opportunity

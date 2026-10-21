@@ -317,6 +317,17 @@ Seeds for later pages, his words kept for their rounds:
 - Opening an application from Home named the project window's project (nabla) over Jump's view.
 Open: what an application is, against a project (below the round, his to settle).
 
+**Round 2b, 22 Oct: the Project view (second pass).** Changed: the ask line pinned to the foot
+("ask should always be pinned to the bottom"); next set apart by a dashed line, not a band;
+"short of" is "shortfall"; the strip became a "more on this project" table at the foot (key,
+what, state: "should be in a more sensible place, and laid out in a way that is easier to
+read"); the selected branch drawn solid in its colour and the rest dimmed while focused; each
+branch carries a plain-English summary of what was done on it (`Lane.summary` replaces
+`happened`: "not this weird note form that is hard to decode"); milestones dropped ("too rare
+and not enough info so are just added noise"). New split by kind: kept ("that is good").
+Settled: ADR-006, the registry holds projects, courses and applications; the Project window
+shows only projects; Home groups by area; the map is in the ADR.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

@@ -72,28 +72,7 @@
   "graph": {
     "trunk": "main",
     "from": "2026-07-18",
-    "milestones": [
-      {
-        "date": "2026-07-18",
-        "label": "the engine"
-      },
-      {
-        "date": "2026-08-06",
-        "label": "the daily page"
-      },
-      {
-        "date": "2026-09-14",
-        "label": "markups read back"
-      },
-      {
-        "date": "2026-10-19",
-        "label": "plan v4"
-      },
-      {
-        "date": "2026-10-20",
-        "label": "Slice 1: the locus window"
-      }
-    ],
+    "milestones": [],
     "lanes": [
       {
         "branch": "worktree-reading-discovery-plan",
@@ -101,9 +80,7 @@
         "forked": "2026-07-30",
         "merged": "2026-08-01",
         "commits": 10,
-        "happened": [
-          "The reading loop and discovery plan, merged in seven passes"
-        ]
+        "summary": "Built the reading loop and the discovery plan: proposals for the tablet's reading shelf and how they are found."
       },
       {
         "branch": "merge: the page earns all five of its sections",
@@ -111,11 +88,7 @@
         "forked": "2026-08-03",
         "merged": "2026-08-04",
         "commits": 8,
-        "happened": [
-          "Audit fixes, phases 0 to 3",
-          "Highlights are their own gesture",
-          "Read gets R anchors; Recall becomes Learn"
-        ]
+        "summary": "Audited the daily page and fixed it in four passes: highlights became their own gesture, the Read page gained anchors and the recall page became Learn."
       },
       {
         "branch": "merge: CONNECT redesign — project arm, attestation gate, Sonnet prose, page renames",
@@ -123,10 +96,7 @@
         "forked": "2026-08-06",
         "merged": "2026-08-06",
         "commits": 6,
-        "happened": [
-          "Pages named for what he does on them",
-          "Project arm, attestation gate, Sonnet prose"
-        ]
+        "summary": "Redesigned the written connections between documents: a project arm, a check that the shared concept was really offered, Sonnet writing the prose, and pages named for what you do on them."
       },
       {
         "branch": "redesign",
@@ -134,10 +104,7 @@
         "forked": "2026-10-19",
         "merged": "2026-10-19",
         "commits": 3,
-        "happened": [
-          "plan.tex and info.tex in docs/redesign",
-          "How the build is run"
-        ]
+        "summary": "Brought the redesign plan into the repository and wrote down how the build is run."
       }
     ]
   }

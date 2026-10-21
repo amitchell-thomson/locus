@@ -102,9 +102,10 @@ pub struct Lane {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tip: Option<NaiveDate>,
     pub commits: u32,
-    /// What selecting the lane shows: what happened in it.
+    /// What was done on the branch, in plain sentences (round 2b: "more detail about what was
+    /// done on each branch, in clear natural language, not this weird note form").
     #[serde(default)]
-    pub happened: Vec<String>,
+    pub summary: String,
 }
 
 /// The decisions in a project's decision log (C.6), with their live status.

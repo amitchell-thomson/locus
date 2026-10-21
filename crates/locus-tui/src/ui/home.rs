@@ -28,17 +28,18 @@ pub const KEYS: &[(&str, &str)] = &[
 ];
 
 /// Projects in the order Home lists them: a session that needs you first, then the attended
-/// project, then the rest as registered. Only kinds you build: code and courses.
+/// project, then the rest as registered. Home's sections go by area, not kind (ADR-006): this
+/// one holds everything outside Careers.
 pub fn project_rows(app: &App) -> Vec<String> {
-    rows_of(app, |k| matches!(k, ProjectKind::Code | ProjectKind::Course))
+    rows_of(app, |p| p.area != "Careers")
 }
 
-/// Applications and the CV.
+/// The Careers area: applications, and the CV (a project that lives there).
 pub fn career_rows(app: &App) -> Vec<String> {
-    rows_of(app, |k| matches!(k, ProjectKind::Opportunity | ProjectKind::Light))
+    rows_of(app, |p| p.area == "Careers")
 }
 
-fn rows_of(app: &App, kind: impl Fn(ProjectKind) -> bool) -> Vec<String> {
+fn rows_of(app: &App, keep: impl Fn(&locus_contract::Project) -> bool) -> Vec<String> {
     let fx = &app.fixtures;
     let mut rows: Vec<(u8, usize, String)> = Vec::new();
     for (i, p) in fx
@@ -46,7 +47,7 @@ fn rows_of(app: &App, kind: impl Fn(ProjectKind) -> bool) -> Vec<String> {
         .projects
         .iter()
         .enumerate()
-        .filter(|(_, p)| p.active && kind(p.kind))
+        .filter(|(_, p)| p.active && keep(p))
     {
         let needs = fx
             .projects
@@ -465,7 +466,7 @@ fn draw_careers(f: &mut Frame, area: Rect, app: &App) {
                 text(),
             )),
         }
-        let g = if p.kind == ProjectKind::Light {
+        let g = if p.kind == ProjectKind::Project {
             glyph::DOSSIER
         } else {
             glyph::MAIL

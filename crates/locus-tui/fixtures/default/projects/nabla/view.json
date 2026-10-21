@@ -100,24 +100,7 @@
   "graph": {
     "trunk": "main",
     "from": "2026-09-13",
-    "milestones": [
-      {
-        "date": "2026-09-13",
-        "label": "a thinking instrument"
-      },
-      {
-        "date": "2026-09-15",
-        "label": "few, high-IC structural edges"
-      },
-      {
-        "date": "2026-10-09",
-        "label": "the dashboard"
-      },
-      {
-        "date": "2026-10-14",
-        "label": "hypotheses on a loss budget"
-      }
-    ],
+    "milestones": [],
     "lanes": [
       {
         "branch": "completion-orphans",
@@ -125,9 +108,7 @@
         "forked": "2026-10-11",
         "merged": "2026-10-11",
         "commits": 1,
-        "happened": [
-          "A documented completion no longer blocks buying"
-        ]
+        "summary": "Fixed the deal classifier so that a completion already documented no longer blocks buying into a deal."
       },
       {
         "branch": "unpriced-deals",
@@ -135,9 +116,7 @@
         "forked": "2026-10-12",
         "merged": "2026-10-13",
         "commits": 2,
-        "happened": [
-          "The backtest's widest spreads were never available live"
-        ]
+        "summary": "Checked whether the backtest's widest spreads could ever have been traded live. They could not, so the backtest was flattering itself."
       },
       {
         "branch": "lookahead-fix",
@@ -145,9 +124,7 @@
         "forked": "2026-10-13",
         "merged": "2026-10-13",
         "commits": 2,
-        "happened": [
-          "Every configuration comparison re-run on the corrected panels"
-        ]
+        "summary": "Found and removed lookahead in the panels, then re-ran every configuration comparison on the corrected data."
       },
       {
         "branch": "corrected-truth",
@@ -155,9 +132,7 @@
         "forked": "2026-10-13",
         "merged": "2026-10-14",
         "commits": 2,
-        "happened": [
-          "Classifier results in lookahead.md"
-        ]
+        "summary": "Re-scored the classifier against the corrected panels and wrote the results into the lookahead notes."
       },
       {
         "branch": "worktree-inbox-compute",
@@ -165,9 +140,7 @@
         "forked": "2026-10-14",
         "merged": "2026-10-14",
         "commits": 1,
-        "happened": [
-          "Compute markets idea (14 Oct)"
-        ]
+        "summary": "Noted an idea: compute markets as a source of lead-lag signals."
       },
       {
         "branch": "gate-cap-text",
@@ -175,9 +148,7 @@
         "forked": "2026-10-14",
         "merged": "2026-10-14",
         "commits": 1,
-        "happened": [
-          "Gate tab: the spread cap is four times the bar, not twice"
-        ]
+        "summary": "Corrected the dashboard's gate tab: the spread cap is four times the bar, not twice."
       },
       {
         "branch": "dead-mans-switch",
@@ -185,9 +156,7 @@
         "forked": "2026-10-14",
         "merged": "2026-10-14",
         "commits": 1,
-        "happened": [
-          "GitHub watchdog on the nightly commit, and a heartbeat ping"
-        ]
+        "summary": "Added a watchdog on GitHub that raises an alarm if the nightly commit does not arrive, plus a heartbeat ping."
       },
       {
         "branch": "compute-leadlag",
@@ -195,10 +164,7 @@
         "forked": "2026-10-14",
         "tip": "2026-10-14",
         "commits": 4,
-        "happened": [
-          "Daily snapshot job: nabla.compute --snapshot",
-          "Health and dashboard show its evidence"
-        ]
+        "summary": "Started a daily snapshot job for compute-market prices, with its evidence shown on the health dashboard. Still open."
       },
       {
         "branch": "h008-etf-trend",
@@ -206,10 +172,7 @@
         "forked": "2026-10-14",
         "tip": "2026-10-14",
         "commits": 2,
-        "happened": [
-          "Pre-registered: ETF trend on merger arb's idle cash",
-          "Killed: trend on idle cash cannot hedge merger arb"
-        ]
+        "summary": "Pre-registered and tested whether trend-following on merger arbitrage's idle cash could hedge it. It cannot; the hypothesis was killed."
       },
       {
         "branch": "syna-switch-to-cash",
@@ -217,9 +180,7 @@
         "forked": "2026-10-16",
         "tip": "2026-10-16",
         "commits": 1,
-        "happened": [
-          "A switch from stock to cash is not a share leg"
-        ]
+        "summary": "Taught the classifier that a switch from stock to cash consideration (SYNA) is not a share leg. Still open."
       }
     ]
   }

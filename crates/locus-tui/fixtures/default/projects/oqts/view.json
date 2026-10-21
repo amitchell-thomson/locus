@@ -25,24 +25,7 @@
   "graph": {
     "trunk": "main",
     "from": "2026-08-08",
-    "milestones": [
-      {
-        "date": "2026-08-08",
-        "label": "Society, not Strategies"
-      },
-      {
-        "date": "2026-08-13",
-        "label": "platform loose ends closed"
-      },
-      {
-        "date": "2026-08-23",
-        "label": "website copy"
-      },
-      {
-        "date": "2026-08-28",
-        "label": "agent guidance, all three"
-      }
-    ],
+    "milestones": [],
     "lanes": [
       {
         "branch": "alec/repo-agent-guidance",
@@ -50,9 +33,7 @@
         "forked": "2026-08-28",
         "merged": "2026-08-28",
         "commits": 1,
-        "happened": [
-          "A CLAUDE.md in each repository"
-        ]
+        "summary": "Gave each OQTS repository a CLAUDE.md so working chats start with the right context. Merged."
       },
       {
         "branch": "alec/agent-guidance",
@@ -60,9 +41,7 @@
         "forked": "2026-08-28",
         "tip": "2026-08-28",
         "commits": 1,
-        "happened": [
-          "Agent guidance updated for plan v2.0, not merged"
-        ]
+        "summary": "Updated oxdaq's agent guidance for its plan v2.0. Never merged."
       }
     ]
   }

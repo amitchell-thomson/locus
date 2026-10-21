@@ -146,18 +146,14 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     let ses_h = 1 + ses_rows.max(1);
     let ch_h = 1 + (v.chores.len().min(3) as u16).max(1);
     let has_graph = v.graph.is_some();
+    let more = more_rows(app, v);
+    let more_h = 1 + more.len().div_ceil(2) as u16;
     let gap = Constraint::Length(1);
     let rects = Layout::vertical([
         Constraint::Length(where_lines.len() as u16),
-        Constraint::Length(1),
         gap,
-        // The graph takes what it needs (all its lanes and the selected one's summary) when there
-        // is room, and gives way first when there is not.
-        if has_graph {
-            Constraint::Min(graph_need(app, v, w))
-        } else {
-            Constraint::Length(0)
-        },
+        // The graph takes what it needs: every lane and the selected one's summary.
+        Constraint::Length(if has_graph { graph_need(app, v, w) } else { 0 }),
         if has_graph { gap } else { Constraint::Length(0) },
         Constraint::Length(new_h),
         gap,
@@ -165,21 +161,23 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         gap,
         Constraint::Length(ch_h),
         gap,
-        Constraint::Length(2),
+        Constraint::Length(more_h),
+        // Spare rows go here, so the ask line always sits at the foot of the page (round 2b).
         Constraint::Min(0),
+        Constraint::Length(2),
     ])
     .split(inner);
-    let (where_r, strip_r, graph_r, new_r, ses_r, ch_r, ask_r) =
-        (rects[0], rects[1], rects[3], rects[5], rects[7], rects[9], rects[11]);
+    let (where_r, graph_r, new_r, ses_r, ch_r, more_r, ask_r) =
+        (rects[0], rects[2], rects[4], rects[6], rects[8], rects[10], rects[12]);
 
     lines(f, where_r, where_lines);
-    lines(f, strip_r, vec![strip(app, v)]);
     if let Some(g) = &v.graph {
         draw_graph(f, graph_r, app, g);
     }
     draw_new(f, new_r, app, v);
     draw_sessions(f, ses_r, app, v);
     draw_chores(f, ch_r, app, v);
+    draw_more(f, more_r, &more);
     draw_ask(f, ask_r, app);
 
     let focused = match app.focus {
@@ -226,54 +224,49 @@ fn where_you_are(v: &ProjectView, w: u16) -> Vec<Line<'static>> {
     };
     part("now", &wh.state, text(), 3);
     if let Some(s) = &wh.short {
-        part("short of", s, st("subtext0"), 2);
+        part("shortfall", s, st("subtext0"), 2);
     }
-    out.push(Line::from(""));
-    let mut next = vec![
-        Span::styled(" ▌ ", st("peach")),
-        Span::styled(format!("{:<11}", "next"), bold(st("peach"))),
-        Span::styled(wh.next.clone(), bold(text())),
-    ];
-    let used: usize = next.iter().map(|s| s.content.width()).sum();
-    next.push(Span::raw(" ".repeat(usize::from(w).saturating_sub(used))));
-    out.push(Line::from(next).patch_style(Style::default().bg(c("surface0"))));
+    // Next, set apart by a dashed line rather than a band (round 2b).
+    out.push(Line::from(Span::styled(
+        format!("   {}", "╌".repeat(usize::from(w).saturating_sub(6))),
+        st("surface2"),
+    )));
+    for (i, l) in wrap(&wh.next, body).into_iter().take(2).enumerate() {
+        out.push(Line::from(vec![
+            Span::styled(
+                format!("   {:<11}", if i == 0 { "next ▸" } else { "" }),
+                bold(st("peach")),
+            ),
+            Span::styled(l, bold(text())),
+        ]));
+    }
     out
 }
 
-/// One line naming what sits behind this view's keys (round 2: "otherwise there is no way to
-/// know about the two pages behind keys"; "every big capability should be referenced").
-fn strip(app: &App, v: &ProjectView) -> Line<'static> {
+/// What sits behind this view's keys, each with its state (round 2: "otherwise there is no
+/// way to know about the two pages behind keys"; round 2b: in "a more sensible place, and laid
+/// out in a way that is easier to read"). (key, glyph, colour, name, state)
+fn more_rows(app: &App, v: &ProjectView) -> Vec<(&'static str, &'static str, &'static str, &'static str, String)> {
     let pf = app.fixtures.projects.get(&v.project);
     let reg = app.fixtures.registry.get(&v.project);
-    let mut spans = vec![Span::raw("   ")];
-    let mut item = |k: &str, g: &str, col: &str, t: String| {
-        spans.push(Span::styled(format!("{g} "), st(col)));
-        spans.push(Span::styled(t, text()));
-        spans.push(Span::styled(format!(" {k}"), keyst()));
-        spans.push(Span::raw("     "));
-    };
+    let mut out = Vec::new();
     if let Some(d) = pf.and_then(|p| p.decisions.as_ref()) {
         let re = d.items.iter().filter(|x| x.status == DecisionStatus::Recheck).count();
-        let extra = if re > 0 {
-            format!(" · {re} to re-check")
+        let state = if re > 0 {
+            format!("{}, {re} worth re-checking", d.items.len())
         } else {
-            String::new()
+            d.items.len().to_string()
         };
-        item(
-            "d",
-            glyph::HOLDING,
-            "green",
-            format!("{} decisions{extra}", d.items.len()),
-        );
+        out.push(("d", glyph::HOLDING, "green", "decisions", state));
     }
     if let Some(a) = pf.and_then(|p| p.answered.as_ref()) {
         let unread = a.items.iter().filter(|x| x.unread).count();
-        let extra = if unread > 0 {
-            format!(" · {unread} new")
+        let state = if unread > 0 {
+            format!("{}, {unread} new", a.items.len())
         } else {
-            String::new()
+            a.items.len().to_string()
         };
-        item("a", glyph::ANSWER, "sky", format!("{} answered{extra}", a.items.len()));
+        out.push(("a", glyph::ANSWER, "sky", "answered", state));
     }
     if reg.is_some_and(|p| p.depth.is_some()) {
         let rebuilt = v
@@ -287,27 +280,52 @@ fn strip(app: &App, v: &ProjectView) -> Line<'static> {
             .filter(|i| i.kind == ItemKind::Dossier)
             .map(|i| i.at)
             .max();
-        let t = match rebuilt {
-            Some(t) => format!("dossier, rebuilt {}", date(t.date_naive())),
-            None => "dossier".into(),
+        let state = rebuilt
+            .map(|t| format!("rebuilt {}", date(t.date_naive())))
+            .unwrap_or_else(|| "not built".into());
+        out.push(("o", glyph::DOSSIER, "blue", "dossier", state));
+    }
+    if reg.is_some_and(|p| p.kind == ProjectKind::Application) {
+        let state = if app.fixtures.prep.contains_key(&v.project) {
+            "a plan".into()
+        } else {
+            "no plan yet".into()
         };
-        item("o", glyph::DOSSIER, "blue", t);
+        out.push(("p", glyph::IDEA, "peach", "interview prep", state));
     }
-    if reg.is_some_and(|p| p.kind == ProjectKind::Opportunity) {
-        let has = app.fixtures.prep.contains_key(&v.project);
-        item(
-            "p",
-            glyph::IDEA,
-            "peach",
-            if has {
-                "interview prep".into()
-            } else {
-                "no prep plan yet".into()
-            },
-        );
+    let since = pf
+        .and_then(|p| p.changes.as_ref())
+        .map(|c| format!("since {}", day(c.since)));
+    out.push((
+        "n n",
+        glyph::COMMITS,
+        "green",
+        "full timeline",
+        since.unwrap_or_default(),
+    ));
+    out
+}
+
+/// The rows of `more_rows` as a small two-column table: key, what it is, its state.
+fn draw_more(f: &mut Frame, area: Rect, rows: &[(&str, &str, &str, &str, String)]) {
+    let mut out = vec![rule("more on this project", "", None, false, area.width)];
+    let half = usize::from(area.width) / 2;
+    for pair in rows.chunks(2) {
+        let mut spans = Vec::new();
+        for (k, g, col, name, state) in pair {
+            let cell = vec![
+                Span::styled(format!("   {k:<5}"), keyst()),
+                Span::styled(format!("{g} "), st(col)),
+                Span::styled(format!("{name:<16}"), text()),
+                Span::styled(state.clone(), dim()),
+            ];
+            let w: usize = cell.iter().map(|s| s.content.width()).sum();
+            spans.extend(cell);
+            spans.push(Span::raw(" ".repeat(half.saturating_sub(w))));
+        }
+        out.push(Line::from(spans));
     }
-    item("n n", glyph::COMMITS, "green", "full timeline".into());
-    Line::from(spans)
+    lines(f, area, out);
 }
 
 /// The view has nothing to show: say which of the three reasons it is.
@@ -429,15 +447,20 @@ fn layout(
     (evs, placed, rows)
 }
 
-/// Rows the graph needs at this width: names, main, its packed rows, the axis, a blank and the
-/// selected lane's summary.
+/// Rows the graph needs at this width: main, its packed rows, the axis, a blank and the
+/// selected lane's heading and summary.
 fn graph_need(app: &App, v: &ProjectView, w: u16) -> u16 {
     let Some(g) = &v.graph else { return 0 };
     let gw = usize::from(w).saturating_sub(12).max(10);
     let (_, _, rows) = layout(g, &g.lanes, app.fixtures.now().date_naive(), gw);
-    let sel = app.sel('g').min(g.lanes.len().saturating_sub(1));
-    let detail = 1 + g.lanes.get(sel).map_or(0, |l| l.happened.len().min(3));
-    (5 + rows + detail) as u16
+    // The lane whose summary is shown: the selected one when focused, else the newest.
+    let sel = if app.focus == Some('g') {
+        app.sel('g').min(g.lanes.len().saturating_sub(1))
+    } else {
+        g.lanes.len().saturating_sub(1)
+    };
+    let detail = 1 + g.lanes.get(sel).map_or(0, |l| summary_lines(l, w).len());
+    (4 + rows + detail) as u16
 }
 
 /// The branch graph: main along the top with its milestones named above it, each lane hanging
@@ -452,8 +475,13 @@ fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
     let lead = 6;
     let gw = w.saturating_sub(lead + 6).max(10);
     let sel_all = app.sel('g').min(g.lanes.len().saturating_sub(1));
-    let detail_h = 1 + g.lanes.get(sel_all).map_or(0, |l| l.happened.len().min(3));
-    let room = usize::from(area.height).saturating_sub(5 + detail_h).max(1);
+    let shown_i = if focus {
+        sel_all
+    } else {
+        g.lanes.len().saturating_sub(1)
+    };
+    let detail_h = 1 + g.lanes.get(shown_i).map_or(0, |l| summary_lines(l, area.width).len());
+    let room = usize::from(area.height).saturating_sub(4 + detail_h).max(1);
     // Drop the oldest lanes until the packed rows fit.
     let mut first = 0;
     let (evs, placed, rows) = loop {
@@ -479,10 +507,16 @@ fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
     }
     for (i, (l, p)) in lanes.iter().zip(&placed).enumerate() {
         let selected = focus && first + i == sel_all;
-        let mut style = Style::default().fg(c(PROJECT_COLOURS[(first + i) % PROJECT_COLOURS.len()]));
-        if selected {
-            style = bold(style).bg(c("surface0"));
-        }
+        // The selected branch is drawn solid in its colour, the others dimmed while the graph
+        // has focus (round 2b: "hard to tell what is selected").
+        let colour = c(PROJECT_COLOURS[(first + i) % PROJECT_COLOURS.len()]);
+        let style = if selected {
+            bold(Style::default().fg(c("crust")).bg(colour))
+        } else if focus {
+            Style::default().fg(locus_theme::fade(colour, 0.55))
+        } else {
+            Style::default().fg(colour)
+        };
         let r = 1 + p.row;
         for (x, cell) in cv[r].iter_mut().enumerate().take(p.b + 1).skip(p.a) {
             *cell = (
@@ -514,28 +548,9 @@ fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
             join(&mut cv, p.b, r, style);
         }
     }
-    // Milestones: a dot on main, named in the row above it where there is room.
-    let mut names: Vec<char> = vec![' '; gw];
-    let mut free_from = 0;
-    for (slot, (_, _, e)) in evs.iter().enumerate() {
-        if let Ev::Milestone(i) = e {
-            let x = col(slot);
-            if cv[0][x].0 == '─' {
-                cv[0][x] = ('●', st("green"));
-            }
-            let label: Vec<char> = crate::ui::truncate(&g.milestones[*i].label, 24).chars().collect();
-            if x >= free_from && x + label.len() < gw {
-                names[x..x + label.len()].copy_from_slice(&label);
-                free_from = x + label.len() + 2;
-            }
-        }
-    }
+    // Milestones are not drawn: too few and too thin to be worth the noise (round 2b).
     let start = lanes.iter().map(|l| l.forked).min().unwrap_or(g.from).max(g.from);
-    let earlier = g.milestones.iter().filter(|m| m.date < start).count();
-    out.push(Line::from(vec![
-        Span::raw(" ".repeat(lead)),
-        Span::styled(names.into_iter().collect::<String>(), st("green")),
-    ]));
+    let earlier = g.lanes.len() - lanes.len() + usize::from(start > g.from);
     for (r, cells) in cv.into_iter().enumerate() {
         let mut spans = vec![if r == 0 {
             Span::styled(
@@ -589,14 +604,23 @@ fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
             Span::styled(format!("   {}", short_name(l)), bold(text())),
             Span::styled(format!("{SEP}{}{SEP}{state}{SEP}{commits}", l.stage), dim()),
         ]));
-        for h in l.happened.iter().take(3) {
-            out.push(Line::from(vec![
-                Span::styled("     · ", dim()),
-                Span::styled(crate::ui::truncate(h, w.saturating_sub(8)), text()),
-            ]));
+        for line in summary_lines(l, area.width) {
+            out.push(Line::from(Span::styled(format!("     {line}"), text())));
         }
     }
     lines(f, area, out);
+}
+
+/// The selected lane's summary, wrapped, at most three lines.
+fn summary_lines(l: &locus_contract::Lane, w: u16) -> Vec<String> {
+    let mut v = wrap(&l.summary, usize::from(w).saturating_sub(8));
+    if v.len() > 3 {
+        v.truncate(3);
+        if let Some(last) = v.last_mut() {
+            last.push(locus_theme::ELLIPSIS);
+        }
+    }
+    v
 }
 
 /// A connector in column `x` from main (row 0) down to lane row `r`, through empty cells only.
@@ -823,7 +847,7 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
         }
         (_, KeyCode::Char('p')) => {
             let kind = app.fixtures.registry.get(&v.project).map(|p| p.kind);
-            if kind == Some(ProjectKind::Opportunity) {
+            if kind == Some(ProjectKind::Application) {
                 app.open(ScreenId::Prep);
             } else {
                 app.note = Some("p is interview prep, for an application".into());

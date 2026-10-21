@@ -128,7 +128,15 @@ impl App {
 
     /// Show a project: in the Project window when running in the locus session, else here.
     pub fn open_project(&mut self, id: String) {
-        if self.in_session
+        // Only projects go to the Project window, which follows tmux; an application opens here
+        // (ADR-006: the Project window never shows anything but a project).
+        let project = self
+            .fixtures
+            .registry
+            .get(&id)
+            .is_some_and(|p| p.kind == locus_contract::ProjectKind::Project);
+        if project
+            && self.in_session
             && let Some(f) = &self.peek_file
             && f.write(Some(&id)).is_ok()
             && crate::follow::select_window("project")

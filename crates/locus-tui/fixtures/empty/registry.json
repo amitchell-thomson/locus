@@ -4,7 +4,7 @@
       "id": "quast",
       "name": "quast",
       "area": "Projects",
-      "kind": "code",
+      "kind": "project",
       "sessions": [
         "quast"
       ],
@@ -15,7 +15,7 @@
       "id": "nabla",
       "name": "nabla",
       "area": "Projects",
-      "kind": "code",
+      "kind": "project",
       "sessions": [
         "nabla"
       ],
@@ -26,7 +26,7 @@
       "id": "locus",
       "name": "locus",
       "area": "Projects",
-      "kind": "code",
+      "kind": "project",
       "sessions": [
         "locus-dev",
         "kairos",
@@ -53,7 +53,7 @@
       "id": "oqts",
       "name": "OQTS",
       "area": "Projects",
-      "kind": "code",
+      "kind": "project",
       "sessions": [
         "oqts"
       ],
@@ -78,7 +78,7 @@
       "id": "cv",
       "name": "CV",
       "area": "Careers",
-      "kind": "light",
+      "kind": "project",
       "sessions": [
         "cv"
       ],
@@ -88,28 +88,28 @@
       "id": "jump",
       "name": "Jump Trading",
       "area": "Careers",
-      "kind": "opportunity",
+      "kind": "application",
       "active": true
     },
     {
       "id": "gresearch",
       "name": "G-Research",
       "area": "Careers",
-      "kind": "opportunity",
+      "kind": "application",
       "active": true
     },
     {
       "id": "millennium",
       "name": "Millennium",
       "area": "Careers",
-      "kind": "opportunity",
+      "kind": "application",
       "active": false
     },
     {
       "id": "3yp",
       "name": "3YP",
       "area": "Studies",
-      "kind": "code",
+      "kind": "project",
       "sessions": [
         "B3-Project"
       ],

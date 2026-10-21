@@ -32,24 +32,7 @@
   "graph": {
     "trunk": "master",
     "from": "2026-09-07",
-    "milestones": [
-      {
-        "date": "2026-09-07",
-        "label": "release: Jump Trading"
-      },
-      {
-        "date": "2026-09-08",
-        "label": "cover letters"
-      },
-      {
-        "date": "2026-10-15",
-        "label": "release: October, general and Millennium"
-      },
-      {
-        "date": "2026-10-17",
-        "label": "release: G-Research"
-      }
-    ],
+    "milestones": [],
     "lanes": [
       {
         "branch": "jump-2027-app",
@@ -57,9 +40,7 @@
         "forked": "2026-09-07",
         "merged": "2026-09-07",
         "commits": 1,
-        "happened": [
-          "LaTeX CV, September 2026, for the Jump Trading application"
-        ]
+        "summary": "The CV as sent to Jump Trading in September, kept as its own branch."
       },
       {
         "branch": "gresearch",
@@ -67,10 +48,7 @@
         "forked": "2026-10-17",
         "tip": "2026-10-17",
         "commits": 1,
-        "happened": [
-          "Quantitative Projects above Experience",
-          "Tanker Flow leads with the null result"
-        ]
+        "summary": "The G-Research variant: quantitative projects moved above experience, and Tanker Flow leads with its null result."
       }
     ]
   },

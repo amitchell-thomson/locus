@@ -6,26 +6,23 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │─ where you are ─────────────────────────────────────────────────────────────────────────────│
 │   now        Barrier control: the exchange law is learned in 2.3 minutes a tune-up, honest  │
 │              on every run (step 6, 16 Oct).                                                 │
-│   short of   RIKEN's measured exchange slope is 2.6x shallower than the prior assumes, and  │
+│   shortfall  RIKEN's measured exchange slope is 2.6x shallower than the prior assumes, and  │
 │              nothing uses it yet.                                                           │
+│   ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌   │
+│   next ▸     fold RIKEN's slope and charging-energy numbers into the prior, then rerun the  │
+│              battery before trying any new method                                           │
 │                                                                                             │
-│ ▌ next       fold RIKEN's slope and charging-energy numbers into the prior, then rerun the b│
-│   󰌾 7 decisions · 1 to re-check d     󱜾 3 answered · 1 new a     󰈙 dossier, rebuilt 22 Oct o│
-│                                                                                             │
-│─ branches · 4 branches ─────────────────────────────────────────────────────────────── [g] ─│
-│                                the scope set                                                │
-│main ◂─┬────────────────┬───────●────────●───────┴────────┬───────┬──────────────────── now  │
-│       ╰━━━━━━━○ wall-clock-pricing              │        ╰━ barrier-control ━━━━━━━○        │
-│                        ╰━ gpu-mixed-precision ━━╯                │                          │
-│                                                  readout-adapter ╰━━━━━━━━○                 │
-│       7 Oct                    9 Oct    10 Oct                   13 Oct            19 Oct   │
-│                                                                                             │
-│   readout-adapter · readout on hardware: the plan · open since 13 Oct, last commit 13 Oct · │
-│     · QUAST thresholds each shot's sensor signal itself                                     │
-│     · Raw signals in the likelihood not built: worth at most 1.04x                          │
-│                                                                                             │
+│─ branches · 4 branches, the 3 oldest not drawn ─────────────────────────────────────── [g] ─│
+│main ◂─┬─────────────────────────────────────────────────────────────────────────────── now  │
+│       ╰━ readout-adapter ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━○        │
 │                                                                                             │
 │─ new · 4 unread ────────────────────────────────────────────────────────────────────── [n] ─│
+│   decisions       󱉶 re-check the choice of one lever-arm ratio in θ: RIKEN's measur… 󰅸   2h │
+│   answers         󱜾 delayed acceptance · answered from your margin · links Monte Ca… 󰅸   5h │
+│   finds and ideas 󰭎 Bayesian optimisation tunes double-dot barriers with about 3x f… 󰅸   1d │
+│   work            󰘬 6 commits on barrier-control · RIKEN's charging energy is insid… 󰅸  23h │
+│   dossier and ink 󰈙 dossier rebuilt · the decision ledger and the evidence changed · …   1d │
+│                   󰴓 38 margin marks read back · 9 decisions written to the log           3d │
 │                                                                                             │
 │─ sessions · 2 · 2 live ─────────────────────────────────────────────────────────────── [s] ─│
 │  󰹇 battery (bg)        needs you 35m   wants to run the full battery on the server … ⏎ jump │
@@ -36,6 +33,9 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │    󰝖 reply to the 3YP group about Tuesday's meeting                      due mon 26   5 min │
 │    󰝖 collect the parcel from the porters' lodge                                      10 min │
 │                                                                                             │
+│─ more on this project ──────────────────────────────────────────────────────────────────────│
+│   d    󰌾 decisions       7, 1 worth re-checking   a    󱜾 answered        3, 1 new           │
+│   o    󰈙 dossier         rebuilt 22 Oct         n n  󰘬 full timeline   since mon 19         │
 │─ ask ───────────────────────────────────────────────────────────────────────────────────────│
 │   ask › ␣ to ask about this project · the answer comes back here                            │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯

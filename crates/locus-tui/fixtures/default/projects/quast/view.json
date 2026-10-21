@@ -79,28 +79,7 @@
   "graph": {
     "trunk": "main",
     "from": "2026-09-10",
-    "milestones": [
-      {
-        "date": "2026-09-10",
-        "label": "the simulator"
-      },
-      {
-        "date": "2026-09-27",
-        "label": "the crowd drives the loop"
-      },
-      {
-        "date": "2026-09-29",
-        "label": "the v2 design"
-      },
-      {
-        "date": "2026-10-09",
-        "label": "the scope set"
-      },
-      {
-        "date": "2026-10-10",
-        "label": "the input layer"
-      }
-    ],
+    "milestones": [],
     "lanes": [
       {
         "branch": "worktree-wall-clock-pricing",
@@ -108,11 +87,7 @@
         "forked": "2026-10-07",
         "tip": "2026-10-07",
         "commits": 2,
-        "happened": [
-          "Ranking settings by fridge time plus computing time, as an option",
-          "A round sized by information per second was tried and failed: the crowd's information saturates",
-          "Not merged"
-        ]
+        "summary": "Tried ranking measurement settings by real elapsed time, fridge time plus the computing each setting adds, instead of fridge time alone. A version that sized each round by information per second was tried too and failed, because the crowd's information saturates. Kept as an option and never merged."
       },
       {
         "branch": "worktree-gpu-mixed-precision",
@@ -120,11 +95,7 @@
         "forked": "2026-10-07",
         "merged": "2026-10-10",
         "commits": 45,
-        "happened": [
-          "numerics.py: one switch for precision and device",
-          "A tune-up in about 6 s, gates as good as double precision",
-          "ARC's L40S: 3.4 s a tune-up, a four-minute start per process"
-        ]
+        "summary": "Moved the simulator onto the graphics card in mixed precision behind one switch for precision and device. A tune-up dropped to about six seconds with gates as good as double precision, and to 3.4 seconds on ARC's L40S cards, though every process there pays a four-minute start. Merged into main."
       },
       {
         "branch": "worktree-barrier-control",
@@ -132,12 +103,7 @@
         "forked": "2026-10-10",
         "tip": "2026-10-19",
         "commits": 75,
-        "happened": [
-          "The decisions before code, laid out (barrier-control-decisions.md)",
-          "Step 6: the law learned at 1.4e-5 median, honest, 2.3 minutes",
-          "Delayed acceptance off until shown unbiased",
-          "RIKEN's exchange slope and charging energy"
-        ]
+        "summary": "Barrier control: tuning the barrier gate as well as the detuning. The decisions were laid out before any code, then the exchange law was learned in 2.3 minutes a tune-up and was honest on every run. Delayed acceptance is switched off until it is shown to be unbiased, and RIKEN's measured slope and charging energy have just come in. Still open."
       },
       {
         "branch": "worktree-readout-adapter",
@@ -145,10 +111,7 @@
         "forked": "2026-10-13",
         "tip": "2026-10-13",
         "commits": 2,
-        "happened": [
-          "QUAST thresholds each shot's sensor signal itself",
-          "Raw signals in the likelihood not built: worth at most 1.04x"
-        ]
+        "summary": "Planned how QUAST reads out on real hardware: it thresholds each shot's sensor signal itself, the way ANITA does, and hands the loop counts. Feeding raw signals into the likelihood was judged not worth building, worth at most 4%. Only the plan so far."
       }
     ]
   }

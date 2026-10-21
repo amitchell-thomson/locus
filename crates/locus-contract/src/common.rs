@@ -26,8 +26,8 @@ pub struct Area {
     pub filter_by_stream: bool,
 }
 
-/// The project registry (plan B.2: the shared root owns it). Every kind of work is a project:
-/// code, the CV, a course, an opportunity (plan D, 19 Oct: "include other types of work").
+/// The registry (plan B.2: the shared root owns it): one entry for each thing you work on,
+/// of three kinds (ADR-006).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Registry {
@@ -59,16 +59,20 @@ pub struct Project {
     pub active: bool,
 }
 
+/// What a registry entry is (ADR-006). The kind decides which view shows it and whether
+/// anything follows it; the area decides where Home lists it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProjectKind {
-    /// A repository with a dossier.
-    Code,
-    /// Registered, with change records, no dossier (the CV, C.12).
-    Light,
+    /// Something you build over weeks: a repository, tmux sessions, Claude chats, change records,
+    /// a branch graph. The only kind the Project window shows and follows. The CV is one, in
+    /// the Careers area.
+    Project,
+    /// A course: notes, lectures, Canvas deadlines, topic tracks; no repository of its own.
     Course,
-    /// An application with its own Project view and a prep plan (C.10).
-    Opportunity,
+    /// A pursuit with stages owned by a company: an internship or job application. No
+    /// repository or sessions; it has a stage and whose move it is, dates, mail, a prep plan.
+    Application,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

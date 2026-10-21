@@ -69,6 +69,9 @@ pub struct App {
     pub mode: Mode,
     /// The project a Project view opened from Home shows (the root one follows tmux instead).
     pub viewing: Option<String>,
+    /// Questions asked this session about a decision, keyed `project:id`, oldest first: the
+    /// prototype's stand-in for an answer that has not come back yet (round 2v).
+    pub asked: Vec<(String, String)>,
     /// The ink fixture Ink confirm shows.
     pub ink: Option<String>,
     pub query: String,
@@ -116,6 +119,7 @@ impl App {
             marks: HashMap::new(),
             mode: Mode::Normal,
             viewing: None,
+            asked: Vec::new(),
             ink: None,
             query,
             scope_all,
@@ -346,7 +350,10 @@ impl App {
             (Mode::Ask(q), KeyCode::Enter) => {
                 let q = q.trim().to_string();
                 self.mode = Mode::Normal;
-                if !q.is_empty() {
+                if q.is_empty() {
+                } else if self.screen() == crate::screen::ScreenId::Decisions {
+                    crate::ui::decisions::ask(self, q);
+                } else {
                     self.note = Some(format!("would ask heuris: \"{q}\" · the answer lands in Answered"));
                 }
             }

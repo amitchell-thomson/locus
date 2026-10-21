@@ -524,6 +524,15 @@ moves to the state line.
 there, dont jump back to the list": the entry holds the arrows at its ends; ← (or Tab, or Esc)
 leaves it.
 
+**Round 2v, 22 Oct. Ask about a decision, in place of "ask why".** "Can we have an ask section
+pinned to the bottom of the detail side, scoped to questions about the decision." The ask line
+sits at the foot of the entry as on the Project view: Space asks from anywhere on the page with
+the decision on the right as context, `a` reaches the line, and Enter there scrolls the entry to
+what you asked. The entry gains an "asked" section (answers that came back, then questions on
+their way), with `o` offered beside it, so a question that finds a problem goes straight to a
+review; asking never changes a decision's state. `Answer` gains `decision` (the id it was asked
+about); no fixture answer is linked, since none was asked about a decision.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

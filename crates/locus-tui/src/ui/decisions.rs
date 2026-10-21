@@ -20,12 +20,17 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
+use unicode_width::UnicodeWidthStr;
 
 pub const KEYS: &[(&str, &str)] = &[
     ("→ or ⏎", "read it on the right; on a link, ⏎ goes to that decision"),
     ("←", "back to the list"),
     ("o", "reopen: under review, with a chat about it"),
-    ("?", "ask why it was made (lands in Answered)"),
+    (
+        "␣",
+        "ask about this decision (the answer comes back on it, and in Answered)",
+    ),
+    ("a", "the ask line; ⏎ there shows what you asked about it"),
     ("c", "the chat where it was decided"),
     ("f", "the full entry in the repository"),
 ];
@@ -99,6 +104,75 @@ fn current(app: &App, ds: &Decisions) -> Option<usize> {
         .and_then(|v| v.first().copied())
         .filter(|&i| i < ds.items.len());
     kept.or_else(|| gs.iter().find_map(|g| g.2.first().copied()))
+}
+
+fn asked_key(project: &str, id: &str) -> String {
+    format!("{project}:{id}")
+}
+
+/// A question typed on the ask line, about the decision on the right.
+pub fn ask(app: &mut App, q: String) {
+    let Some(ds) = log(app).cloned() else { return };
+    let Some(cur) = current(app, &ds) else { return };
+    let d = &ds.items[cur];
+    app.asked.push((asked_key(&ds.project, &d.id), q));
+    app.note = Some(format!(
+        "would ask heuris with \"{}\" as context; the answer comes back on it and in Answered",
+        crate::ui::truncate(&d.title, 40)
+    ));
+}
+
+/// The ask line at the foot of the entry: scoped to the decision on the right, its short title
+/// on the rule; `a` reaches it and Enter there shows what you asked about it.
+fn draw_ask(f: &mut Frame, area: Rect, app: &App, ds: &Decisions, i: usize) {
+    if area.height == 0 {
+        return;
+    }
+    let d = &ds.items[i];
+    let focus = app.focus == Some('a');
+    let asking = matches!(app.mode, crate::app::Mode::Ask(_));
+    let lit = focus || asking;
+    let col = st(if lit { "blue" } else { "surface2" });
+    let n = app
+        .asked
+        .iter()
+        .filter(|(k, _)| *k == asked_key(&ds.project, &d.id))
+        .count();
+    let mut head = vec![
+        Span::styled("─ ", col),
+        Span::styled("ask about this decision", bold(if lit { st("blue") } else { text() })),
+    ];
+    let right = if n > 0 {
+        format!("{n} asked [a] ─")
+    } else {
+        "[a] ─".into()
+    };
+    let used: usize = head.iter().map(|s| s.content.width()).sum::<usize>() + right.width();
+    head.push(Span::styled(
+        format!(" {} ", "─".repeat(usize::from(area.width).saturating_sub(used + 2))),
+        col,
+    ));
+    head.push(Span::styled(right, col));
+    let body = match &app.mode {
+        crate::app::Mode::Ask(q) => vec![
+            Span::styled("   ask › ", st("mauve")),
+            Span::styled(q.clone(), text()),
+            Span::styled("▏", st("mauve")),
+        ],
+        _ if focus && n > 0 => vec![
+            Span::styled("   ask › ", dim()),
+            Span::styled("␣", keyst()),
+            Span::styled(" to ask · ", dim()),
+            Span::styled("⏎", keyst()),
+            Span::styled(" for what you asked about it", dim()),
+        ],
+        _ => vec![
+            Span::styled("   ask › ", dim()),
+            Span::styled("␣", keyst()),
+            Span::styled(" to ask about this decision · the answer comes back on it", dim()),
+        ],
+    };
+    lines(f, area, vec![Line::from(head), Line::from(body)]);
 }
 
 /// Open the page on decision `i` (Enter on the Project view's decisions section).
@@ -272,20 +346,33 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
             vec![Line::from(Span::styled(bar.repeat(usize::from(div_r.width)), col))],
         );
     }
+    // The ask line is pinned to the foot of the entry, as on the Project view (round 2v).
+    let ask_h = 2.min(entry_r.height);
+    let (entry_r, ask_r) = (
+        Rect {
+            height: entry_r.height - ask_h,
+            ..entry_r
+        },
+        Rect {
+            y: entry_r.y + entry_r.height - ask_h,
+            height: ask_h,
+            ..entry_r
+        },
+    );
     draw_entry(f, entry_r, app, ds, cur);
+    draw_ask(f, ask_r, app, ds, cur);
     let h: Vec<(&str, &str)> = if app.focus == Some('e') {
         let on_link = app.sel('e') < links(ds, cur).len();
         let mut h = vec![];
         if on_link {
             h.push(("⏎", "go to it"));
         }
-        h.extend([("↑ ↓", "read on"), ("o", "reopen"), ("?", "ask why"), ("←", "the list")]);
+        h.extend([("↑ ↓", "read on"), ("o", "reopen"), ("←", "the list")]);
         h
     } else {
         vec![
             ("→", "read it"),
             ("o", "reopen"),
-            ("?", "ask why"),
             ("c", "its chat"),
             ("f", "full entry"),
         ]
@@ -558,6 +645,49 @@ fn draw_entry(f: &mut Frame, area: Rect, app: &App, ds: &Decisions, i: usize) {
             text(),
         );
     }
+    // What you asked about it, newest first: the answers that came back, then any still on
+    // their way. It builds a record of what you questioned (round 2v).
+    let answered: Vec<&locus_contract::Answer> = app
+        .fixtures
+        .projects
+        .get(&ds.project)
+        .and_then(|p| p.answered.as_ref())
+        .map(|a| {
+            a.items
+                .iter()
+                .filter(|x| x.decision.as_deref() == Some(d.id.as_str()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let pending: Vec<&String> = app
+        .asked
+        .iter()
+        .rev()
+        .filter(|(k, _)| *k == asked_key(&ds.project, &d.id))
+        .map(|(_, q)| q)
+        .collect();
+    let asked_at = out.len();
+    if !answered.is_empty() || !pending.is_empty() {
+        head(&mut out, "asked", "text");
+        for q in &pending {
+            para(&mut out, &format!("“{q}”"), text());
+            out.push(Line::from(Span::styled(
+                "     on its way · it lands here and in Answered",
+                dim(),
+            )));
+        }
+        for a in &answered {
+            para(&mut out, &format!("“{}”", a.title), text());
+            for b in &a.body {
+                para(&mut out, b, st("subtext0"));
+            }
+        }
+        out.push(Line::from(vec![
+            Span::styled("   if an answer says it no longer holds, ", dim()),
+            Span::styled("o", keyst()),
+            Span::styled(" reopens it", dim()),
+        ]));
+    }
     let link_at = out.len();
     if !ls.is_empty() {
         head(&mut out, "connections", "teal");
@@ -628,7 +758,7 @@ fn draw_entry(f: &mut Frame, area: Rect, app: &App, ds: &Decisions, i: usize) {
     let max_scroll = out.len().saturating_sub(h);
     app.shown
         .borrow_mut()
-        .insert((ScreenId::Decisions, 'e'), vec![ls.len(), max_scroll]);
+        .insert((ScreenId::Decisions, 'e'), vec![ls.len(), max_scroll, asked_at]);
     let scroll = if focus && sel >= ls.len() {
         (sel + 1 - ls.len()).min(max_scroll)
     } else {
@@ -688,11 +818,24 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 focus_on(app, cur);
             }
         }
-        KeyCode::Char('?') => {
-            app.note = Some(format!(
-                "would ask why \"{}\" was decided; the answer lands in Answered",
-                crate::ui::truncate(&d.title, 40)
-            ))
+        // Space asks about this decision from anywhere on the page (round 2v).
+        KeyCode::Char(' ') => app.mode = crate::app::Mode::Ask(String::new()),
+        KeyCode::Enter if app.focus == Some('a') => {
+            if app.asked.iter().any(|(k, _)| *k == asked_key(&ds.project, &d.id)) {
+                // Into the entry, scrolled to what you asked.
+                let m = app
+                    .shown
+                    .borrow()
+                    .get(&(ScreenId::Decisions, 'e'))
+                    .cloned()
+                    .unwrap_or_default();
+                let (nl, at) = (m.first().copied().unwrap_or(0), m.get(2).copied().unwrap_or(0));
+                app.focus = Some('e');
+                app.sel
+                    .insert((ScreenId::Decisions, 'e'), (nl + at).saturating_sub(1).max(nl));
+            } else {
+                app.note = Some("nothing asked about this decision yet · ␣ asks".into());
+            }
         }
         KeyCode::Char('c') => {
             app.note = Some(match &d.chat {

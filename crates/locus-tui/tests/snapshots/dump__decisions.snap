@@ -34,9 +34,9 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │   built on by 󰌾 The input layer, built: the typical gate three times closer, no failure fi… │
 │               󰌾 The scope: QUAST starts where the lab's tools stop - a device ready for tw… │
 │                                                                                             │
-│─ question ──────────────────────────────────────────────────────────────────────────────────│
-│   Stage 1 was about to read a charge stability diagram, which is measured in gate volts and │
 │   ↓ more · → to read on                                                                     │
-│                                 → read it · o reopen · ? ask why · c its chat · f full entry│
+│─ ask about this decision ───────────────────────────────────────────────────────────── [a] ─│
+│   ask › ␣ to ask about this decision · the answer comes back on it                          │
+│                                             → read it · o reopen · c its chat · f full entry│
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯
  ⏎ open · ⇥ sections · l log · / search · ? keys

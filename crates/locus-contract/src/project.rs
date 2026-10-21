@@ -257,6 +257,10 @@ pub struct Answer {
     pub links: Vec<String>,
     /// The read-only Claude thread behind it; `f` continues it, `c` opens it as a session.
     pub thread: String,
+    /// The decision it was asked about, by id, when asked from the Decisions page; the entry
+    /// shows it under "asked" (round 2v).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decision: Option<String>,
     #[serde(default)]
     pub unread: bool,
 }

@@ -158,6 +158,7 @@ const DECISIONS: &[Section] = &[
     s('h', "holding", None),
     s('x', "replaced", None),
     s('e', "the entry", None),
+    s('a', "ask about this decision", None),
 ];
 const SYSTEM: &[Section] = &[
     s('r', "running", None),

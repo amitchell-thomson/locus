@@ -104,11 +104,11 @@
     "lanes": [
       {
         "branch": "worktree-cron-quotes",
-        "stage": "worktree cron quotes",
+        "stage": "cron quotes",
         "forked": "2026-09-21",
         "merged": "2026-09-21",
         "commits": 1,
-        "summary": "Autostash the pull so it stops failing on the quotes it is about to commit.",
+        "summary": "The nightly job that records quotes kept failing because the repository had uncommitted quotes in it when it pulled. It now stashes them, pulls, and puts them back, so the record keeps arriving.",
         "records": [
           {
             "date": "2026-09-21",
@@ -118,11 +118,11 @@
       },
       {
         "branch": "worktree-final-commit",
-        "stage": "worktree final commit",
+        "stage": "final commit",
         "forked": "2026-09-21",
         "merged": "2026-09-21",
         "commits": 1,
-        "summary": "Commit tonight's quote record and the dependency lockfile.",
+        "summary": "Committed the evening's quote record together with the dependency lockfile, so the night's data and the exact library versions that produced it are kept side by side.",
         "records": [
           {
             "date": "2026-09-21",
@@ -132,11 +132,11 @@
       },
       {
         "branch": "worktree-commit-charts",
-        "stage": "worktree commit charts",
+        "stage": "commit charts",
         "forked": "2026-09-21",
         "merged": "2026-09-21",
         "commits": 1,
-        "summary": "Commit the eight merger-arb charts.",
+        "summary": "Added the eight merger-arbitrage charts to the repository, so the backtest's pictures are versioned with the code that drew them.",
         "records": [
           {
             "date": "2026-09-21",
@@ -146,11 +146,11 @@
       },
       {
         "branch": "worktree-uk-holdout",
-        "stage": "worktree uk holdout",
+        "stage": "uk holdout",
         "forked": "2026-09-21",
         "merged": "2026-09-21",
         "commits": 1,
-        "summary": "Reconstruct the UK offer price from SDC's premium, not its price level.",
+        "summary": "Fixed how UK deals were priced in the held-out test: the offer price is now rebuilt from the premium SDC reports rather than from its price level, which was wrong for UK deals.",
         "records": [
           {
             "date": "2026-09-21",
@@ -164,7 +164,7 @@
         "forked": "2026-10-08",
         "merged": "2026-10-08",
         "commits": 1,
-        "summary": "Pre-flight gate, report-only: step 6.",
+        "summary": "Built step 6 of the live path, a pre-flight gate that checks every order before it would go out. For now it only reports what it would block; it stops nothing.",
         "records": [
           {
             "date": "2026-10-08",
@@ -174,11 +174,11 @@
       },
       {
         "branch": "worktree-ledger-reconcile",
-        "stage": "worktree ledger reconcile",
+        "stage": "ledger reconcile",
         "forked": "2026-10-08",
         "merged": "2026-10-08",
         "commits": 1,
-        "summary": "Ledger and reconciliation: step 5, with no order placement.",
+        "summary": "Built step 5, the ledger: every position and cash movement recorded and reconciled against the broker, with order placement still switched off.",
         "records": [
           {
             "date": "2026-10-08",
@@ -192,7 +192,7 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Slot study: keep 10 slots; correct the margin note's fewer-slots suggestion.",
+        "summary": "Studied how many deals the book should hold at once and kept ten. An earlier margin note had suggested fewer slots; this corrected it.",
         "records": [
           {
             "date": "2026-10-09",
@@ -206,7 +206,7 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Jobs check: a cron line added today is not reported as never having run.",
+        "summary": "Fixed the health check on scheduled jobs: a job added today was being reported as never having run, when it simply had not been due yet.",
         "records": [
           {
             "date": "2026-10-09",
@@ -220,7 +220,7 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Push alerts to a phone via ntfy.",
+        "summary": "Sent the system's alerts to a phone through ntfy, so a problem overnight reaches you rather than waiting in a log.",
         "records": [
           {
             "date": "2026-10-09",
@@ -234,7 +234,7 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Margin research: no margin in phase 1; fewer slots get most of the gain without a loan.",
+        "summary": "Researched trading on margin and decided against it for the first phase: holding fewer deals gets most of the same gain without borrowing.",
         "records": [
           {
             "date": "2026-10-09",
@@ -248,7 +248,7 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 2,
-        "summary": "Break sell: cron lines, dashboard job, tracked reports, readiness item 9.",
+        "summary": "Added the break sell: when a document confirms a deal has broken, the position is sold the next morning. It runs on its own schedule, appears on the dashboard and is item 9 on the readiness list.",
         "records": [
           {
             "date": "2026-10-09",
@@ -266,7 +266,7 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Live readiness checklist: paper test results and the audit's blocking items.",
+        "summary": "Wrote the checklist for going live: what the paper test showed, and the audit's items that must be closed before any real money.",
         "records": [
           {
             "date": "2026-10-09",
@@ -280,7 +280,7 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Backtest tab: shorter label for the five-slot book so its dot label stays clear.",
+        "summary": "Shortened the label for the five-slot book on the backtest tab so its point on the chart stays readable.",
         "records": [
           {
             "date": "2026-10-09",
@@ -294,7 +294,7 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Backtest tab: name each book by universe, configuration and leverage only.",
+        "summary": "Renamed every book on the backtest tab by just its universe, configuration and leverage, so the comparison reads at a glance.",
         "records": [
           {
             "date": "2026-10-09",
@@ -308,7 +308,7 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Backtest tab: draw the configurations chart by hand so its dots take clicks.",
+        "summary": "Redrew the configurations chart on the backtest tab by hand so each point can be clicked to open that book.",
         "records": [
           {
             "date": "2026-10-09",
@@ -322,7 +322,7 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Backtest tab: the live rule is the headline, every other book is a click away.",
+        "summary": "Reorganised the backtest tab around the rule that actually trades: it is the headline, and every other book is one click away.",
         "records": [
           {
             "date": "2026-10-09",
@@ -336,7 +336,7 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Fix LSE tick units and wait for a two-sided quote at the gate.",
+        "summary": "Fixed two faults the paper account exposed: London prices were in the wrong tick units, and the gate now waits for both a bid and an offer before judging a quote.",
         "records": [
           {
             "date": "2026-10-09",
@@ -350,7 +350,7 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Switch off the summer 2027 freeze cutoff pending HR.",
+        "summary": "Switched off the rule that stops new positions before the summer 2027 internship freeze, until HR confirms what the freeze actually requires.",
         "records": [
           {
             "date": "2026-10-09",
@@ -364,7 +364,7 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Order placement on the paper account, and the pre-freeze entry cutoff.",
+        "summary": "Placed orders on the paper account for the first time, with a cutoff that stops new entries ahead of the internship freeze.",
         "records": [
           {
             "date": "2026-10-09",
@@ -378,7 +378,7 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Let chart legends wrap at narrow widths.",
+        "summary": "Let chart legends wrap onto a second line when the window is narrow, instead of running off the side.",
         "records": [
           {
             "date": "2026-10-09",
@@ -392,7 +392,7 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Backtest tab: the cash book is the live rule, bar fitted on all friendly deals.",
+        "summary": "Made the cash-only book the live rule on the backtest tab, with its entry bar fitted on all friendly deals.",
         "records": [
           {
             "date": "2026-10-09",
@@ -406,7 +406,7 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Backtest tab: the cash-only book, the universe the live path actually trades.",
+        "summary": "Added the cash-only book to the backtest tab: the universe of deals the live system can actually trade.",
         "records": [
           {
             "date": "2026-10-09",
@@ -420,7 +420,7 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Backtest tab: draw the levered variants as full curves, finer outcome bins.",
+        "summary": "Drew the levered variants as full curves rather than single points, with finer bins for deal outcomes.",
         "records": [
           {
             "date": "2026-10-09",
@@ -434,7 +434,7 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 2,
-        "summary": "Judge the Panel snapshot job by its log, not only the file.",
+        "summary": "Built the web dashboard: the live system viewed over the tailnet, replacing the terminal view. The snapshot job is now judged by its log as well as by whether its file appears.",
         "records": [
           {
             "date": "2026-10-09",
@@ -452,7 +452,7 @@
         "forked": "2026-10-10",
         "merged": "2026-10-10",
         "commits": 1,
-        "summary": "Blockers 4-6: pinned live release, atomic locked state, no buying while books disagree.",
+        "summary": "Closed three blockers to going live: the live code runs from a pinned release, its state is written atomically under a lock, and it will not buy while its books disagree.",
         "records": [
           {
             "date": "2026-10-10",
@@ -466,7 +466,7 @@
         "forked": "2026-10-10",
         "merged": "2026-10-10",
         "commits": 2,
-        "summary": "Blockers 1-3: verify the instrument, corroborate every price, fail break checks closed.",
+        "summary": "Closed the first three blockers: every instrument is verified before trading, every price is corroborated from a second source, and the checks for a broken deal fail safe. New-deal notifications came with it.",
         "records": [
           {
             "date": "2026-10-10",

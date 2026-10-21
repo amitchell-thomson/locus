@@ -401,6 +401,14 @@ the right (the git name, stage label and dates dropped). The Slice 0 session was
 with the course list and the kairos task and deadline direction before its step 0.8, so the
 taxonomy file it writes matches the contracts.
 
+**Round 2j, 22 Oct. A rule for every page: one page, no page scroll.** "I want every page to be
+one page, and not have to scroll away from other bits. We should instead rely on the dynamic
+formatting and the within section scrolling." Sections size to their content and scroll
+inside themselves (sessions, an open branch's records); the page never scrolls as a whole.
+nabla's 26 branches that carried only their last commit message got written summaries ("the
+branch summary as a whole is worth more here than a commit summary"); change-record text stays
+raw commit subjects until Slice 2. **The Project view: done for now.**
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

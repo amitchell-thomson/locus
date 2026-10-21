@@ -10,15 +10,14 @@
         "state": "holding"
       },
       "brief": "Every item gets two separate labels: an area for which part of life, and a kind for what shape of thing. Splitting where from what means nothing has to sit in two places.",
-      "question": "The first fixtures made \"project\" mean anything with a view, so an application opened in the Project window and showed blank. A kind called project then made 3YP seem to belong in three places.",
-      "chose": "Two independent labels from one global taxonomy: an area (Studies, Projects, Careers, Personal) and a kind. The registry holds repo, course and application; the Project window shows repos only.",
-      "why": [
+      "decision": [
+        "Two independent labels from one global taxonomy: an area (Studies, Projects, Careers, Personal) and a kind. The registry holds repo, course and application; the Project window shows repos only.",
         "A kind never implies an area and an area never implies a kind, so nothing sits in two places.",
         "A thing that seems two kinds is two linked things: B3 is a course, 3YP the repo doing its work.",
         "One taxonomy in the shared root, served by one HTTP service, so every app labels the same way.",
         "The Project window needs no special cases: it only resolves a tmux session to a repo."
       ],
-      "over": [
+      "alternatives": [
         "\"Project\" as anything with a view: an application opened in the Project window and showed blank under another project's name",
         "A kind called project: the word meant both area and kind, so 3YP seemed to belong in three places",
         "One thing as two kinds: 3YP becomes two linked things, the course and the repo doing its work",
@@ -29,12 +28,19 @@
         "Every item has exactly one area; if two are often needed, areas become tags",
         "Tracks labelled Studies are not misfiled when Careers prep plans use them; if they are, tracks inherit their goal's area"
       ],
-      "costs": [
+      "consequences": [
         "kairos changes: task types become sheet, coursework, admin and chore; deadlines become due dates on their owner",
         "New screens: an Application screen now, a course view with Canvas later",
-        "Tracks sit in Studies by default even when a Careers prep plan uses them"
+        "Tracks sit in Studies by default even when a Careers prep plan uses them",
+        "The shared contract: kinds become repo, course and application; a repo links to its course; the Project view gains questions and a due list",
+        "Home: one section per area, personal projects under Projects; Personal shows through the calendar and chores",
+        "The Project window, which follows its tmux session and shows repos only",
+        "kairos task types and deadlines, a change raised in Slice 0",
+        "The Application screen in Slice 1; the course view and Canvas in Slice 7",
+        "Every app, reading one taxonomy and registry through the one HTTP service"
       ],
-      "evidence": [
+      "context": [
+        "The first fixtures made \"project\" mean anything with a view, so an application opened in the Project window and showed blank. A kind called project then made 3YP seem to belong in three places.",
         "Under the first fixtures an application opened in the Project window and showed blank under another project's name",
         "Every area by every kind was laid out with real examples (B15 sheet 3, 3YP, Jump, Futsal) to check each thing has one place"
       ],
@@ -59,14 +65,6 @@
       "rests_on": [
         "ADR-004"
       ],
-      "affects": [
-        "The shared contract: kinds become repo, course and application; a repo links to its course; the Project view gains questions and a due list",
-        "Home: one section per area, personal projects under Projects; Personal shows through the calendar and chores",
-        "The Project window, which follows its tmux session and shows repos only",
-        "kairos task types and deadlines, a change raised in Slice 0",
-        "The Application screen in Slice 1; the course view and Canvas in Slice 7",
-        "Every app, reading one taxonomy and registry through the one HTTP service"
-      ],
       "new": true
     },
     {
@@ -77,14 +75,13 @@
         "state": "holding"
       },
       "brief": "Rename vault/ to data/ and migrate every stored path with it. Stored paths are identity, so renaming the folder alone would silently duplicate every edited note.",
-      "question": "vault/ holds the database, notes, caches and backups, but reads as an Obsidian vault, and one sits inside it. Its paths are stored as identity, so renaming is not just a rename.",
-      "chose": "Rename vault/ to data/ everywhere, with migration 0037 rewriting the stored paths and no compatibility symlink.",
-      "why": [
+      "decision": [
+        "Rename vault/ to data/ everywhere, with migration 0037 rewriting the stored paths and no compatibility symlink.",
         "vault/ invited confusion with Obsidian's vault.",
         "data/ is accurate: \"the library\" already means the frozen engine, and this also holds notes, backups and caches.",
         "Stored paths are identity, so they migrate in the same change or edited notes arrive twice."
       ],
-      "over": [
+      "alternatives": [
         "Keep vault/: reads as an Obsidian vault, and one sits inside it",
         "library/: the plan's \"library\" is the frozen engine, and this folder also holds notes, backups and caches",
         "Rename without migrating paths: every edited note would silently arrive as a second document"
@@ -92,13 +89,20 @@
       "assumes": [
         "The directory stays one thing; if it splits into a library store and your notes, the parts get named then"
       ],
-      "costs": [
+      "consequences": [
         "MCP sessions started before the deploy cannot open the database until they restart",
         "Corpus text that mentions vault/ still says so; derived layers do not edit documents",
         "Model prompts keep \"knowledge vault\" so pass caches stay valid; only user-facing wording says \"library\"",
-        "The notes-writer package keeps the name vault; older docs keep the old paths as history"
+        "The notes-writer package keeps the name vault; older docs keep the old paths as history",
+        "Config defaults and the example config",
+        "Code, tests and systemd units",
+        "The laptop outbox job that syncs the drop folder",
+        "The server deploy, which moves the directory once and rewrites its config",
+        "Every stored path in the database, through migration 0037",
+        "Running MCP sessions, which need a restart"
       ],
-      "evidence": [
+      "context": [
+        "vault/ holds the database, notes, caches and backups, but reads as an Obsidian vault, and one sits inside it. Its paths are stored as identity, so renaming is not just a rename.",
         "The migration rewrites 1,549 rows across 14 columns on the server, trialled on a copy before deploying"
       ],
       "you": [
@@ -112,14 +116,6 @@
         }
       ],
       "rests_on": [],
-      "affects": [
-        "Config defaults and the example config",
-        "Code, tests and systemd units",
-        "The laptop outbox job that syncs the drop folder",
-        "The server deploy, which moves the directory once and rewrites its config",
-        "Every stored path in the database, through migration 0037",
-        "Running MCP sessions, which need a restart"
-      ],
       "new": true
     },
     {
@@ -130,14 +126,13 @@
         "state": "holding"
       },
       "brief": "Fold the shared Rust crates into one workspace in this repository. A theme or contract change during design rounds is then one commit, not a commit, a push and a pin bump.",
-      "question": "The shared crates lived in a separate repository, reached by a relative path that only builds with both checked out. Each theme change would cost a commit and push there plus a pin bump here.",
-      "chose": "One Rust workspace at this repository's root: eco-dates, locus-theme, locus-contract and locus-tui. kairos and keryx keep their pins and repoint here when next touched.",
-      "why": [
+      "decision": [
+        "One Rust workspace at this repository's root: eco-dates, locus-theme, locus-contract and locus-tui. kairos and keryx keep their pins and repoint here when next touched.",
         "A theme or contract change during the design rounds is one commit.",
         "The plan merges the repositories once the shared root has real contents; it now has them.",
         "kairos and keryx do not break: the archived old repository still resolves their pins."
       ],
-      "over": [
+      "alternatives": [
         "Keep the name eco: it did not say what the crates are, so it became locus-shared",
         "Separate repository by relative path: only builds with both repositories checked out side by side",
         "Separate repository by git pin: each theme change is a commit there, a push, and a pin bump here",
@@ -147,11 +142,16 @@
         "kairos and keryx need shared-crate changes on roughly the same cadence as locus",
         "The Python side does not get in the way of their builds; if either fails, the crates move to a repository of their own"
       ],
-      "costs": [
+      "consequences": [
         "kairos and keryx builds fetch this whole repository for two small crates",
-        "A crate change here reaches kairos or keryx only when their pin is bumped, as before"
+        "A crate change here reaches kairos or keryx only when their pin is bumped, as before",
+        "The locus window and its fixtures, now under crates/",
+        "The screen contracts and theme, one commit per change in design rounds",
+        "kairos and keryx, which repoint their dependency here when next touched",
+        "The later decision on moving kairos and keryx into this repository"
       ],
-      "evidence": [
+      "context": [
+        "The shared crates lived in a separate repository, reached by a relative path that only builds with both checked out. Each theme change would cost a commit and push there plus a pin bump here.",
         "eco-dates was copied verbatim from locus-shared main (d2191b2); locus-theme from its theme branch (b74d7a0)",
         "This repository is 4.3 MB of history, against kairos's own 10 MB",
         "The old pins still resolve: the GitHub repository is archived, not deleted, and redirects from eco"
@@ -167,12 +167,6 @@
         }
       ],
       "rests_on": [],
-      "affects": [
-        "The locus window and its fixtures, now under crates/",
-        "The screen contracts and theme, one commit per change in design rounds",
-        "kairos and keryx, which repoint their dependency here when next touched",
-        "The later decision on moving kairos and keryx into this repository"
-      ],
       "new": true
     },
     {
@@ -183,15 +177,14 @@
         "state": "holding"
       },
       "brief": "Keep the drop folder, organised by area like the notes repository and the tablet. The system cannot label arrivals yet, so a flat folder would file everything uncategorized.",
-      "question": "The drop folder's five type subfolders set each file's category, mixing what a file is with what it is for. The plan labels everything by area and does not list a hand drop.",
-      "chose": "Keep it for files with no other path, in folders studies/<course>/, projects/<name>/, careers/<company or general>/ and personal/; the root means let the system decide. Area drops never count as your writing, and repository drops are retired.",
-      "why": [
+      "decision": [
+        "Keep it for files with no other path, in folders studies/<course>/, projects/<name>/, careers/<company or general>/ and personal/; the root means let the system decide. Area drops never count as your writing, and repository drops are retired.",
         "Some files reach no other path: a downloaded PDF, early lecture material, a career document.",
         "Labelling on arrival is a later slice, so a flat drop would be filed uncategorized.",
         "Area folders match the tree used everywhere, and the stored path keeps the folder for the later labeller.",
         "Treating drops as sources stops a third-party document being attributed to you."
       ],
-      "over": [
+      "alternatives": [
         "Five subfolders by type: they mixed what kind of file it is with what it is for",
         "One flat folder: chosen first, revised the same day because the system cannot label yet",
         "Dropping the hand path: kept, because some files reach no other path",
@@ -201,12 +194,17 @@
         "The labeller is not yet reliable enough to replace the folders; once it is, they can go",
         "The library still keys on the old categories, so each area folder maps to one; if those are retired, folders map to areas directly"
       ],
-      "costs": [
+      "consequences": [
         "Your write-ups dropped in projects/ count as sources, including the two OQTS specs; nothing new is drawn from them",
         "A root drop stays uncategorized until the labeller exists",
-        "The outbox script stays outside the repository until transcripts sync in Slice 0"
+        "The outbox script stays outside the repository until transcripts sync in Slice 0",
+        "Ingest's category mapping from area folders; personal gets its own category",
+        "The check for your writing, in the structure proposer and the owner-authored query",
+        "The laptop outbox job and the server's incoming folder",
+        "The later arrival labeller, which reads the course or project folder from the stored path"
       ],
-      "evidence": [
+      "context": [
+        "The drop folder's five type subfolders set each file's category, mixing what a file is with what it is for. The plan labels everything by area and does not list a hand drop.",
         "Before this, a third-party .docx in personal or careers would have counted as your writing"
       ],
       "you": [
@@ -223,13 +221,7 @@
           "source": "19 Oct 2026, on drops in projects/ counting as sources"
         }
       ],
-      "rests_on": [],
-      "affects": [
-        "Ingest's category mapping from area folders; personal gets its own category",
-        "The check for your writing, in the structure proposer and the owner-authored query",
-        "The laptop outbox job and the server's incoming folder",
-        "The later arrival labeller, which reads the course or project folder from the stored path"
-      ]
+      "rests_on": []
     },
     {
       "id": "ADR-002",
@@ -239,15 +231,14 @@
         "state": "holding"
       },
       "brief": "Each slice gets a spec you approve, mechanical steps under /goal, design in chat, and a closing report. Your time goes on specs and reports, not on supervising mechanical work.",
-      "question": "Your key work is planning and guidance, so how should slices be executed: /goal, chat messages like \"start slice 0\", or something else?",
-      "chose": "A spec per slice in docs/redesign/slices/, approved before building, and one session per slice. Mechanical steps run under /goal with a printed check and a turn bound, design work in chat, and each slice ends with a report.",
-      "why": [
+      "decision": [
+        "A spec per slice in docs/redesign/slices/, approved before building, and one session per slice. Mechanical steps run under /goal with a printed check and a turn bound, design work in chat, and each slice ends with a report.",
         "Your time goes on specs and reports, not on supervising mechanical work.",
         "The /goal judge reads no files, so each step names a printed check and a turn bound.",
         "Chat keeps you in every step, which suits design at the screen but drifts over a long slice.",
         "The spec lists your decisions up front and flags departures from the plan."
       ],
-      "over": [
+      "alternatives": [
         "Chat for every step: keeps you in every step but drifts and loses context over a long slice",
         "Plan mode: blocks edits until a written plan is approved; no further reason recorded",
         "Fan-out workflows: suited to wide jobs, not ordered slices"
@@ -256,11 +247,15 @@
         "/goal runs do not often drift from the spec or stop early",
         "You do not skim specs as a chore; if either fails, steps become smaller and chat-driven, or specs shorter"
       ],
-      "costs": [
+      "consequences": [
         "A spec costs time before each slice; small slices may get a short one",
-        "/goal is session-scoped and runs unattended only in auto mode"
+        "/goal is session-scoped and runs unattended only in auto mode",
+        "Every slice of the redesign, starting with Slice 0",
+        "The spec files in docs/redesign/slices/",
+        "Slice 1, the design work, done in chat with you at the screen"
       ],
-      "evidence": [
+      "context": [
+        "Your key work is planning and guidance, so how should slices be executed: /goal, chat messages like \"start slice 0\", or something else?",
         "The options were checked against Claude Code's docs on 19 Oct 2026, including that the /goal judge sees only the transcript"
       ],
       "you": [
@@ -273,12 +268,7 @@
           "source": "19 Oct 2026, to the recommendation"
         }
       ],
-      "rests_on": [],
-      "affects": [
-        "Every slice of the redesign, starting with Slice 0",
-        "The spec files in docs/redesign/slices/",
-        "Slice 1, the design work, done in chat with you at the screen"
-      ]
+      "rests_on": []
     },
     {
       "id": "ADR-001",
@@ -288,14 +278,13 @@
         "state": "holding"
       },
       "brief": "Keep the plan's source in the repository and point CLAUDE.md at it first. Its scratchpad copy was deleted mid-way, so nothing should depend on one surviving.",
-      "question": "The plan's source lived in a session scratchpad that was deleted mid-way. Sessions need the plan without it being pasted in, and CLAUDE.md described only the old engine.",
-      "chose": "plan.tex (version 4, final) and info.tex in docs/redesign/ are the source of truth. CLAUDE.md gains a first section on what is changing, where the plan is and how the build runs.",
-      "why": [
+      "decision": [
+        "plan.tex (version 4, final) and info.tex in docs/redesign/ are the source of truth. CLAUDE.md gains a first section on what is changing, where the plan is and how the build runs.",
         "Nothing depends on a scratchpad surviving.",
         "Any session sees the redesign first and the engine detail second.",
         "CLAUDE.md's engine invariants stay true for the library, so it shrinks slice by slice instead of being rewritten."
       ],
-      "over": [
+      "alternatives": [
         "Plan source in a session scratchpad: it was deleted mid-way, and version 2 was recovered from a transcript",
         "Rewriting CLAUDE.md up front: its hard-won invariants stay true for the library, so it shrinks slice by slice"
       ],
@@ -303,10 +292,14 @@
         "Sessions do not keep acting on engine sections marked for removal",
         "The plan and CLAUDE.md do not drift apart; if either happens, CLAUDE.md is rewritten in full"
       ],
-      "costs": [
-        "Two documents for a while, the plan and CLAUDE.md's engine sections, with a table marking which are on their way out"
+      "consequences": [
+        "Two documents for a while, the plan and CLAUDE.md's engine sections, with a table marking which are on their way out",
+        "CLAUDE.md and every session that reads it",
+        "The Slice 0 spec, written alongside",
+        "Every later decision, which starts where the plan stops"
       ],
-      "evidence": [
+      "context": [
+        "The plan's source lived in a session scratchpad that was deleted mid-way. Sessions need the plan without it being pasted in, and CLAUDE.md described only the old engine.",
         "The scratchpad holding the plan's source was deleted mid-way, and version 2 was recovered from the transcript"
       ],
       "you": [
@@ -315,12 +308,7 @@
           "source": "19 Oct 2026, to putting the plan into the repository, orienting CLAUDE.md to the redesign, and writing the Slice 0 spec"
         }
       ],
-      "rests_on": [],
-      "affects": [
-        "CLAUDE.md and every session that reads it",
-        "The Slice 0 spec, written alongside",
-        "Every later decision, which starts where the plan stops"
-      ]
+      "rests_on": []
     }
   ]
 }

@@ -550,6 +550,28 @@ breaks (4).
 to press enter": the section under the selection is the open one, so ↑ ↓ through the folds read
 each in turn; ← goes back to the list. A one-paragraph section has no bullet.
 
+**Round 2y, 22 Oct. The entry follows the ADR template; branch decisions; every state shows.**
+"This new decision page has entries not present in the decision log, and I think there are also
+perhaps too many entries ... instead of the in full, lets have them all as sections like
+connections that expand when you hover over them ... whatever sections we have will either need
+to be synced with the real decision log format in repos, or something needs to write up each
+decision in this format." Agreed: seven sections after the brief, named for the ADR template
+locus and nabla already use: connections, decision (was chose + why), you said, alternatives
+(was over), assumes ("lets keep assumes instead of the clunky 'would be wrong if'"; the ADR's
+What would make this wrong), consequences (was costs + affects), context (was question +
+evidence). Each is a rule with its title and count, one summary line while folded, everything
+when the selection reaches it. The fixtures were merged field by field, nothing rewritten.
+- Sync: where a repo follows the template, locus reads its headings directly (no model); the
+  brief everywhere, and every section for a free-form log (quast), come from a writer job in
+  the dossier loop (Slice 2), each item citing the passage it came from, derived and
+  regenerable; "you said" is only ever copied verbatim. The locus template gains `**Builds
+  on:**` and `## Alternatives`; the same is suggested for nabla, in its own repo.
+- "Branch decisions should also show, as I often work on branches and want those decisions to
+  be viewable live as well": `Decision.branch`, shown on the state line and marked in the list
+  (nabla's prospective-hypotheses decision, on compute-leadlag).
+- "The other sections other than holding should still show, just with a note that says nothing
+  here": every state shows, an empty one with a line ("nothing needs re-checking").
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

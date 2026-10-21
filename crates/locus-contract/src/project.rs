@@ -176,24 +176,24 @@ pub struct Decision {
     /// leads with it (round 2w: the entry was "a little too dense, and time consuming to read
     /// such that I might skip over it").
     pub brief: String,
-    /// What needed deciding, and why it came up then.
-    pub question: String,
-    /// What was chosen, plainly.
-    pub chose: String,
-    /// Why: the reasons, one per item, each short (round 2w: bullets, not a paragraph).
-    pub why: Vec<String>,
-    /// The options rejected, each with why it lost ("keeps me in the loop on other options so
-    /// I can reopen questions on why another method might not be better now").
+    /// What was decided and why: the choice first, then its reasons, one per item. The ADR's
+    /// Decision section (round 2y: the entry's sections follow the ADR template the repos use).
+    pub decision: Vec<String>,
+    /// The options rejected, each "the option: why it lost" ("keeps me in the loop on other
+    /// options so I can reopen questions on why another method might not be better now"). The
+    /// ADR's Alternatives section.
     #[serde(default)]
-    pub over: Vec<String>,
-    /// What has to stay true for it to hold.
+    pub alternatives: Vec<String>,
+    /// What has to stay true for it to hold. The ADR's "What would make this wrong".
     #[serde(default)]
     pub assumes: Vec<String>,
-    /// What it gives up: the trade-offs taken knowingly.
+    /// What it makes easier and harder, what it gives up, and what rests on it. The ADR's
+    /// Consequences.
     #[serde(default)]
-    pub costs: Vec<String>,
+    pub consequences: Vec<String>,
+    /// The situation that forced the call, with the findings it rested on. The ADR's Context.
     #[serde(default)]
-    pub evidence: Vec<String>,
+    pub context: Vec<String>,
     /// Your words, each with where you said them; quoted on screen whenever there are any.
     #[serde(default)]
     pub you: Vec<Quote>,
@@ -203,9 +203,10 @@ pub struct Decision {
     /// The decisions it builds on, by id. The screen also lists the reverse: what builds on it.
     #[serde(default)]
     pub rests_on: Vec<String>,
-    /// What else rests on it: code, steps, other projects.
-    #[serde(default)]
-    pub affects: Vec<String>,
+    /// The branch the decision was made on, while it is not yet on the trunk (round 2y: "I
+    /// often work on branches and want those decisions to be viewable live as well").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
     /// The chat where it was decided, if one is known (19 Oct: a link to the chat).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chat: Option<String>,

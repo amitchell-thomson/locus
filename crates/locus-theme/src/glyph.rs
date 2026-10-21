@@ -85,6 +85,6 @@ mod tests {
             assert!(u32::from(chars[0]) >= 0xF0000, "{name} is not plane 15");
             assert!(seen.insert(*g), "{name} duplicates another glyph");
         }
-        assert_eq!(ALL.len(), 26);
+        assert_eq!(ALL.len(), 27);
     }
 }

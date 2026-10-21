@@ -10,15 +10,14 @@
         "state": "holding"
       },
       "brief": "Let new-market ideas trade without clearing the history test, on a fixed loss budget with written stop rules. That test rejected every new market, where a small trader's edge is largest.",
-      "question": "Every hypothesis had to clear a statistical power bound on history before trading. The GPU rental futures idea of 14 Oct showed this rejects every new market, so: open a second route in, and on what terms?",
-      "chose": "A second route, class P (prospective): trade without clearing the history bound if the hypothesis names its mechanism observables in advance, stays inside a fixed loss budget and has pre-written stop conditions. All other rules still apply.",
-      "why": [
+      "decision": [
+        "A second route, class P (prospective): trade without clearing the history bound if the hypothesis names its mechanism observables in advance, stays inside a fixed loss budget and has pre-written stop conditions. All other rules still apply.",
         "New markets are where a small trader's edge is largest, and it is usually gone before enough history exists.",
         "History is not the safety it looks: merger arb cleared every bound on 20 years of data and was still overstated by half.",
         "With few trades P&L cannot tell skill from luck, so evidence comes from mechanism observables, which accumulate far faster.",
         "A loss budget, set before the first trade and never topped up, replaces the power bound."
       ],
-      "over": [
+      "alternatives": [
         "History-first only: rejects every new market by construction, where the edge is largest and soon gone.",
         "Prospective in principle, never acted on: where crypto listing events stopped; a conclusion with no route forward is a closed door.",
         "Trade unvalidated, no discipline: few observations cannot tell skill from luck, and it turns into \"it's early, add more\".",
@@ -30,13 +29,18 @@
         "Losing a whole budget (default 10% of the book or £1,500, whichever is smaller) is survivable and informative.",
         "At least one class-P sleeve can reach scale-up inside the 21-month trading window."
       ],
-      "costs": [
+      "consequences": [
         "Small, budgeted losses on wrong ideas: the price of reaching ideas the history gate cannot see.",
         "Each sleeve's observables must be measured live; nothing is admitted on the idea alone.",
         "Unrecoverable records (a rolling free data window, a quote, an order book) are captured from admission, trade or not.",
-        "A sleeve stays at budget size, however well it does, until its observables clear an ordinary power bound."
+        "A sleeve stays at budget size, however well it does, until its observables clear an ordinary power bound.",
+        "The pre-registered-hypotheses rule from the abandon-breadth decision, amended with a second route.",
+        "The \"feedback rate\" gate in the hypothesis template.",
+        "GPU rental futures (H007), the first candidate, with daily snapshots of the Ornn index, whose free window cannot be re-fetched.",
+        "Crypto listing events (H005), which gains a route forward if its \"who pays\" answer is sharpened."
       ],
-      "evidence": [
+      "context": [
+        "Every hypothesis had to clear a statistical power bound on history before trading. The GPU rental futures idea of 14 Oct showed this rejects every new market, so: open a second route in, and on what terms?",
         "Merger-arb backtest on 20 years of data: 25.8% fell to 11.8% once final-state fields were removed.",
         "Crypto listing events called its study \"necessarily prospective\" and stopped there.",
         "First class-P candidate, GPU rental index (H007), 14 Oct 2026: lead-lag test null (corr -0.09, n = 59, permutation p = 0.32; detectable about 0.26).",
@@ -47,12 +51,7 @@
         "ADR-006",
         "ADR-005"
       ],
-      "affects": [
-        "The pre-registered-hypotheses rule from the abandon-breadth decision, amended with a second route.",
-        "The \"feedback rate\" gate in the hypothesis template.",
-        "GPU rental futures (H007), the first candidate, with daily snapshots of the Ornn index, whose free window cannot be re-fetched.",
-        "Crypto listing events (H005), which gains a route forward if its \"who pays\" answer is sharpened."
-      ]
+      "branch": "compute-leadlag"
     },
     {
       "id": "ADR-006",
@@ -62,15 +61,14 @@
         "state": "holding"
       },
       "brief": "Stop chasing many small bets and look for a few strong, well-understood edges. Crypto prices move together so tightly that even a thousand coins give under three independent bets.",
-      "question": "Trading altcoins priced in Bitcoin was meant to give Bitcoin-neutrality cheaply, but rested on a guessed correlation. Once measured, could any crypto cross-section, or any breadth-based design, still be validated?",
-      "chose": "Close the crypto cross-section and treat breadth-based strategies as unavailable. Pursue a few high-IC (information coefficient: how well a signal predicts returns) structural and event edges, each a small pre-registered set of hypotheses with a fixed trial budget.",
-      "why": [
+      "decision": [
+        "Close the crypto cross-section and treat breadth-based strategies as unavailable. Pursue a few high-IC (information coefficient: how well a signal predicts returns) structural and event edges, each a small pre-registered set of hypotheses with a fixed trial budget.",
         "Return per unit risk is IC times the square root of breadth, and the project cannot buy breadth.",
         "Pricing in Bitcoin cut correlation from 0.620 to 0.366, but the whole cross-section is still worth about 2.7 bets.",
         "Holds of a day or less cost 63-153% a year in fees; five days or more need 40-168 years of history, against about 8.",
         "So edge must come from IC: forced sellers, corporate actions, index and listing events, where moves are large against noise."
       ],
-      "over": [
+      "alternatives": [
         "ALT/XBT cross-rates: sound, raising independent bets 1.6x, but the whole cross-section is still worth about 2.7 bets.",
         "A bigger universe: a thousand Bitcoin-quoted pairs give 2.73 independent bets against 2.56 for twenty-six.",
         "Trade faster for breadth: a 1-day hold needs 8 years of history but costs 15,258bps a year; no holding period passes both.",
@@ -82,12 +80,17 @@
         "Correlation from 720 daily observations is not too high; crypto correlations spike in stress, exactly when diversification is needed.",
         "Kraken's 26 XBT pairs are representative; even a thousand pairs would give 2.73 independent bets."
       ],
-      "costs": [
+      "consequences": [
         "A founding principle, the priorless wide sweep, is amended away.",
         "Anything shaped like a broad statistical cross-section drops down the backlog, however cheap to trade.",
-        "A five-day ALT/XBT strategy would need IC 0.112 to validate in eight years, two to four times good professional work (0.03-0.05)."
+        "A five-day ALT/XBT strategy would need IC 0.112 to validate in eight years, two to four times good professional work (0.03-0.05).",
+        "Backlog re-ranked by mechanism and effect size: forced-seller calendar (H002), crypto listings (H005), corporate actions (H006) rise.",
+        "The trial-budget question becomes how a small pre-registered budget is set and enforced.",
+        "Whether families of events exist, or only single ones, becomes central: event count is the binding constraint.",
+        "Crypto stays attractive as a venue (cheapest execution, no per-order minimum, 24/7), not as a cross-section."
       ],
-      "evidence": [
+      "context": [
+        "Trading altcoins priced in Bitcoin was meant to give Bitcoin-neutrality cheaply, but rested on a guessed correlation. Once measured, could any crypto cross-section, or any breadth-based design, still be validated?",
         "Mean pairwise correlation 0.620 in USD (1.58 effective names), 0.366 in XBT (2.56): Kraken daily closes, 720 observations, 26 alts.",
         "Effective independent names: 2.56 at 26 pairs, 2.69 at 100, 2.73 at 1,000.",
         "Ten £2,500 positions, 100 trials: 0.25-day hold needs 2.0 years and costs 43,513bps a year; 1-day 8.0 and 15,258; 5-day 40.0 and 3,636; 21-day 167.9 and 1,144.",
@@ -98,12 +101,6 @@
       "rests_on": [
         "ADR-005",
         "ADR-004"
-      ],
-      "affects": [
-        "Backlog re-ranked by mechanism and effect size: forced-seller calendar (H002), crypto listings (H005), corporate actions (H006) rise.",
-        "The trial-budget question becomes how a small pre-registered budget is set and enforced.",
-        "Whether families of events exist, or only single ones, becomes central: event count is the binding constraint.",
-        "Crypto stays attractive as a venue (cheapest execution, no per-order minimum, 24/7), not as a cross-section."
       ]
     },
     {
@@ -115,15 +112,14 @@
         "by": "ADR-006"
       },
       "brief": "Live trading is for learning operations, never for proving a strategy: 21 months of live results cannot separate skill from luck. Validate on history, and favour market-neutral designs.",
-      "question": "Could any strategy produce enough independent observations to tell skill from luck by 2028? Tanker-flow died of exactly this, found after thirteen months, so a power calculation was built to answer it.",
-      "chose": "Live trading is for operational learning and catching failures, never validation; validate on history with a pre-registered, counted trial correction. Target market- or factor-neutral designs, prefer long-history markets, and count trials from the start.",
-      "why": [
+      "decision": [
+        "Live trading is for operational learning and catching failures, never validation; validate on history with a pre-registered, counted trial correction. Target market- or factor-neutral designs, prefer long-history markets, and count trials from the start.",
         "Over about 21 months, a true Sharpe of 1.0 looks insignificant three times in four; time helps only as its square root.",
         "A big loss is still informative: catastrophic divergence from backtest is detectable when modest outperformance is not.",
         "Multiplicity roughly doubles the history needed (8 years at one trial, 19 at a hundred), so trial counts are pre-registered.",
         "Independent bets saturate at 1/correlation; neutralising the common factor roughly triples breadth, the largest lever available."
       ],
-      "over": [
+      "alternatives": [
         "Validate by live trading: a true Sharpe of 1.0 has 26.2% power over 21 months; detectable Sharpe is 2.13, or 3.30 at a hundred trials.",
         "Long-only designs: an equity cross-section needs 47-55 years of history; fifty coins held long are worth 1.4 bets.",
         "Widen the universe instead: ten thousand names at correlation 0.3 are worth about 3.3 independent bets.",
@@ -136,13 +132,19 @@
         "The fundamental law (independent bets, stable IC, free sizing), used only to rule designs out, never to promise returns.",
         "An IC of 0.05, generous for retail; a lower IC only tightens every conclusion, so the error is safe."
       ],
-      "costs": [
+      "consequences": [
         "Live P&L can never count as confirmation, however good it looks.",
         "Neutrality needs shorting, and retail equity borrow is worst in the small names where the edge points.",
         "Long history favours equities while costs favour crypto; the tension was recorded, not resolved.",
-        "Crypto's five to eight usable years of alt history cap what can be validated there at any serious correction."
+        "Crypto's five to eight usable years of alt history cap what can be validated there at any serious correction.",
+        "The execution-spine-first decision: still right, now justified by operational learning only.",
+        "Live trading is framed as \"is this behaving as modelled?\", never \"does this work?\".",
+        "The borrow rate in the cost assumptions becomes venue-specific.",
+        "The crypto-derivatives constraint must record that the ban does not reach spot margin.",
+        "A sharper tension: only neutral designs have power, neutrality needs shorting, and shorting is unavailable, banned or worst where the edge is best."
       ],
-      "evidence": [
+      "context": [
+        "Could any strategy produce enough independent observations to tell skill from luck by 2028? Tanker-flow died of exactly this, found after thirteen months, so a power calculation was built to answer it.",
         "Power over about 21 months at 5% significance: Sharpe 0.5 9.7%, 1.0 26.2%, 1.5 50.8%, 2.0 75.0%, 3.0 97.6%.",
         "History needed at 80% power for Sharpe 1.0: 7.9 years at one trial, 13.3 at ten, 18.7 at a hundred, 24.0 at a thousand.",
         "At IC 0.05, a hundred trials: US equities long, 10 positions, 5-day hold 54.9 years; market-neutral, 50 positions 14.6; crypto neutral, 50 positions, 1-day 3.5.",
@@ -152,13 +154,6 @@
       "rests_on": [
         "ADR-004",
         "ADR-001"
-      ],
-      "affects": [
-        "The execution-spine-first decision: still right, now justified by operational learning only.",
-        "Live trading is framed as \"is this behaving as modelled?\", never \"does this work?\".",
-        "The borrow rate in the cost assumptions becomes venue-specific.",
-        "The crypto-derivatives constraint must record that the ban does not reach spot margin.",
-        "A sharper tension: only neutral designs have power, neutrality needs shorting, and shorting is unavailable, banned or worst where the edge is best."
       ]
     },
     {
@@ -169,15 +164,14 @@
         "state": "holding"
       },
       "brief": "Trade only on holds of days to weeks, defaulting to US equities and crypto majors on Kraken. Faster trading is unaffordable at this account size, and UK stamp duty never amortises.",
-      "question": "The cost model now priced round trips from published fees. Before any signal research, which venues, holding periods and position sizes survive costs at this account size?",
-      "chose": "Search only holds of days to weeks, default to US equities, hold UK main market a month or more, keep positions above £2,000 UK and £1,000 US, budget order amendments, assume entry-tier equity fees. Amended that day: Kraken crypto majors viable, AIM pruned, crypto in USD.",
-      "why": [
+      "decision": [
+        "Search only holds of days to weeks, default to US equities, hold UK main market a month or more, keep positions above £2,000 UK and £1,000 US, budget order amendments, assume entry-tier equity fees. Amended that day: Kraken crypto majors viable, AIM pruned, crypto in USD.",
         "Costs close the band from the fast side, power from the slow side: a one-day hold needs about 42% gross a year to break even, five days about 8%.",
         "US equities are 4-5x cheaper than UK: stamp duty (50bps a round trip) never amortises, about 2,500bps a year at five days.",
         "Below £2,000 on UK venues per-order minimums dominate: a £500 position pays about 120bps in commission alone.",
         "Kraken has no per-order minimum, so cost is flat in size, and Bitcoin and Ether spreads are about a tenth of a basis point."
       ],
-      "over": [
+      "alternatives": [
         "Sub-daily holds: a quarter-day hold needs about 166% gross a year on the cheapest cell; nothing faster than a few days is affordable.",
         "UK main market at short holds: stamp duty alone costs about 2,500bps a year at a five-day hold.",
         "AIM for its stamp-duty exemption: measured spreads of 335-383bps mean the 50bps exemption offsets about an eighth of the penalty.",
@@ -193,13 +187,18 @@
         "US equity spreads near the assumed 8bps, still unmeasured.",
         "US Tiered exchange pass-through fees, not modelled, do not erase the 17bps advantage."
       ],
-      "costs": [
+      "consequences": [
         "At most a handful of concurrent equity positions on a £5-25k book, against diversification and the breadth power wants.",
         "The fast end of the frequency sweep is pruned unrun, with any hypothesis assuming intraday execution.",
         "Directed API orders cannot use IBKR's cheaper Tiered plan, so execution design and commission plan are chosen together.",
-        "Micro-cap attention (H003) carries about a 400bps round-trip hurdle no signal can fix; the earlier 120bps was 3x optimistic."
+        "Micro-cap attention (H003) carries about a 400bps round-trip hurdle no signal can fix; the earlier 120bps was 3x optimistic.",
+        "The frequency sweep searches days to weeks, not minutes to weeks, cutting the multiplicity it pays for.",
+        "The power calculation assumes five-day-or-slower holds, so leans on cross-sectional breadth, which position sizes cap.",
+        "The cost model's order-amendment pricing and its fee-tier feedback loop (crypto only).",
+        "Crypto execution targets fee tier and maker/taker mix rather than slippage; crypto is funded and quoted in USD."
       ],
-      "evidence": [
+      "context": [
+        "The cost model now priced round trips from published fees. Before any signal research, which venues, holding periods and position sizes survive costs at this account size?",
         "Round trip at £2,000, ten positions: US tiered 17bps, US fixed 23, LSE tiered 91, LSE main 110, AIM 155, Kraken entry tier 170, Coinbase 250.",
         "Kraken Tier 3 from $10k of 30-day volume (or $20k held), Tier 7 from $250k (0.10% maker, 0.22% taker); ten £2,500 five-day positions trade about $300k a month.",
         "Measured on Kraken's live book: XBTGBP 0.10bps, ETHGBP 0.11-0.18bps; ADAUSD 6.16bps against ADAGBP 129.41bps at £10,000.",
@@ -208,13 +207,7 @@
         "Ten £2,000 equity positions on five-day holds trade about 3,400 shares a month against a 300,000-share entry band: higher tiers unreachable."
       ],
       "you": [],
-      "rests_on": [],
-      "affects": [
-        "The frequency sweep searches days to weeks, not minutes to weeks, cutting the multiplicity it pays for.",
-        "The power calculation assumes five-day-or-slower holds, so leans on cross-sectional breadth, which position sizes cap.",
-        "The cost model's order-amendment pricing and its fee-tier feedback loop (crypto only).",
-        "Crypto execution targets fee tier and maker/taker mix rather than slippage; crypto is funded and quoted in USD."
-      ]
+      "rests_on": []
     },
     {
       "id": "ADR-003",
@@ -224,15 +217,14 @@
         "state": "holding"
       },
       "brief": "Exclude only EM rates, EM FX and anything touched on the desk; allow other macro with a public-source trail. The risk is appearance, which attaches to instruments, not asset classes.",
-      "question": "The blanket exclusion of rates, EM, FX and macro, made the day before, was wider than its argument. You objected that desk knowledge cannot help a systematic strategy; the real defect was where the line sat.",
-      "chose": "Three tiers. Excluded for good: EM rates, EM FX, anything built or researched on desk, any instrument you hold non-public information on; permitted with every input traced to a public source: G10 rates and FX, commodities, index macro, systematic trend or carry; clean: crypto spot, single-name equities, event-driven.",
-      "why": [
+      "decision": [
+        "Three tiers. Excluded for good: EM rates, EM FX, anything built or researched on desk, any instrument you hold non-public information on; permitted with every input traced to a public source: G10 rates and FX, commodities, index macro, systematic trend or carry; clean: crypto spot, single-name equities, event-driven.",
         "The original risk was appearance, not usefulness, so your objection, though largely right, did not answer it.",
         "Appearance attaches to the instruments the desk trades and you worked on, not to four asset-class families.",
         "The old line excluded things nobody could object to, a cost paid for no reduction in risk.",
         "The test \"would every input trace to a public source?\" binds what matters, and reproducibility already requires it."
       ],
-      "over": [
+      "alternatives": [
         "Keep the blanket exclusion: bright in the wrong place, it shut out systematic macro, a well-documented edge family, for no risk reduction.",
         "Drop the exclusion as desk knowledge would not help: misses the point, since appearance does not depend on usefulness.",
         "Relax the core after the internship: confidentiality and market-abuse law bind the holder of the information and do not expire."
@@ -242,20 +234,20 @@
         "PA restrictions bind only during placements; outside them the constraint is confidentiality and optics.",
         "Every permitted-tier input stays traceable to a cited public source, retained and presentable, not merely true."
       ],
-      "costs": [
+      "consequences": [
         "Judgement is needed where the blanket rule needed none, accepted deliberately.",
         "Systematic macro is still mostly unaffordable: one micro futures contract is tens of thousands of dollars of notional against a £5-25k account.",
-        "Disclosure and the full trading freeze at the summer 2027 placement apply in full regardless."
-      ],
-      "evidence": [],
-      "you": [],
-      "rests_on": [
-        "ADR-002"
-      ],
-      "affects": [
+        "Disclosure and the full trading freeze at the summer 2027 placement apply in full regardless.",
         "The constraints register entry that nothing learned at Brevan Howard may inform nabla, now narrowed to these tiers.",
         "Strategies meant to run across a placement boundary should prefer the clean markets.",
         "An action: read the PA policy on firm-wide versus desk-wide adjacency at the 2027 placement."
+      ],
+      "context": [
+        "The blanket exclusion of rates, EM, FX and macro, made the day before, was wider than its argument. You objected that desk knowledge cannot help a systematic strategy; the real defect was where the line sat."
+      ],
+      "you": [],
+      "rests_on": [
+        "ADR-002"
       ]
     },
     {
@@ -267,15 +259,14 @@
         "by": "ADR-003"
       },
       "brief": "Keep nabla well away from rates, EM, FX and macro, the areas of your Brevan Howard desk. Trading next to an employer's book looks indefensible whether or not anything was used.",
-      "question": "Summer 2026 on a Brevan Howard rates desk built non-public knowledge of EM swaps, policy pricing, positioning and flow, with a 2027 return and likely full-time entry around September 2028. How far must nabla stay from it?",
-      "chose": "Keep nabla structurally distant from rates, EM, FX and discretionary macro, with nothing from Brevan Howard informing it. Candidate markets: crypto spot, single-name equities, event-driven situations.",
-      "why": [
+      "decision": [
+        "Keep nabla structurally distant from rates, EM, FX and discretionary macro, with nothing from Brevan Howard informing it. Candidate markets: crypto spot, single-name equities, event-driven situations.",
         "Trading next to an employer's book is indefensible on appearance alone, whether or not information was used.",
         "A bright line removes a whole category of future doubt about whether a trade used desk knowledge.",
         "Giving up your strongest market was judged nearly free: career transfer is not a goal of the project.",
         "It narrows the search space usefully before any research."
       ],
-      "over": [
+      "alternatives": [
         "Trade where your human capital is greatest (rates, EM, macro): adjacency to the employer's book is indefensible on appearance alone.",
         "A judgement-based line, instrument by instrument: passed over for a bright line, later reversed because the bright line sat in the wrong place."
       ],
@@ -283,17 +274,17 @@
         "Career transfer is not a selection criterion for nabla.",
         "Knowledge does not expire on schedule, so an ended relationship would not obviously free these markets."
       ],
-      "costs": [
+      "consequences": [
         "The market where your human capital is greatest becomes unavailable, a genuine cost.",
-        "It excluded systematic macro (trend, carry, cross-asset momentum) for no risk reduction, a cost found later and not priced here."
-      ],
-      "evidence": [],
-      "you": [],
-      "rests_on": [],
-      "affects": [
+        "It excluded systematic macro (trend, carry, cross-asset momentum) for no risk reduction, a cost found later and not priced here.",
         "The set of candidate markets: crypto spot, single-name equities, event-driven situations.",
         "The constraints register entry that nothing learned at Brevan Howard may inform nabla."
-      ]
+      ],
+      "context": [
+        "Summer 2026 on a Brevan Howard rates desk built non-public knowledge of EM swaps, policy pricing, positioning and flow, with a 2027 return and likely full-time entry around September 2028. How far must nabla stay from it?"
+      ],
+      "you": [],
+      "rests_on": []
     },
     {
       "id": "ADR-001",
@@ -303,15 +294,14 @@
         "state": "holding"
       },
       "brief": "Build the live trading machinery first and trade a trivial rule with real money, then build research. The missing skills are operational, and only a live account teaches them.",
-      "question": "Five of six prior projects ended in a pipeline or platform rather than a decision. With no live trading experience at all, what to build first?",
-      "chose": "Build the execution spine first (broker link, order management, reconciliation, logging, kill switch, alerts, crash recovery), trade a trivial rule with real money at a negligible size, then build research.",
-      "why": [
+      "decision": [
+        "Build the execution spine first (broker link, order management, reconciliation, logging, kill switch, alerts, crash recovery), trade a trivial rule with real money at a negligible size, then build research.",
         "Research is the comfortable half and operations the valuable half; the usual order defers operations indefinitely.",
         "The gap is operational (fills, slippage, borrow, reconciliation, outages, crash recovery), and only a live account teaches it.",
         "A live P&L endpoint gives research somewhere to terminate, so it cannot orphan itself.",
         "The first strategy's return does not matter: its job is to force that endpoint to exist."
       ],
-      "over": [
+      "alternatives": [
         "Research platform first: the conventional order, and the pattern behind five of six projects ending without a trading decision.",
         "Paper trading: paper fills are fiction and paper drawdowns are not felt, so the learning differs.",
         "A complete spine, not a minimal one: it must not eat the 24-month window needed to validate a strategy."
@@ -320,12 +310,16 @@
         "Live trading is allowed: PA policies bind only employees, and you are not one until about September 2028, roughly 24 months.",
         "The execution spine does not consume so much of that window that no strategy is validated inside it."
       ],
-      "costs": [
+      "consequences": [
         "Early time on infrastructure that a stronger strategy might later outgrow.",
         "A period of being live with no edge.",
-        "Real money at risk early."
+        "Real money at risk early.",
+        "The live-versus-backtest divergence monitor, which can exist from the first trade.",
+        "The open question on the minimum viable execution spine, where IBKR authentication turned out to be the binding difficulty.",
+        "The research machinery, which now has a live endpoint to terminate in."
       ],
-      "evidence": [
+      "context": [
+        "Five of six prior projects ended in a pipeline or platform rather than a decision. With no live trading experience at all, what to build first?",
         "Five of six prior projects terminated in a pipeline, detector or platform; only one (quantum-ml) reached a decision.",
         "Zero live trading experience: research, a simulated market-making engine and a desk internship, but no live account."
       ],
@@ -335,12 +329,7 @@
           "source": "nabla decision log, execution-spine record (13 Sep 2026), quoted as the project's stated definition of success"
         }
       ],
-      "rests_on": [],
-      "affects": [
-        "The live-versus-backtest divergence monitor, which can exist from the first trade.",
-        "The open question on the minimum viable execution spine, where IBKR authentication turned out to be the binding difficulty.",
-        "The research machinery, which now has a live endpoint to terminate in."
-      ]
+      "rests_on": []
     }
   ]
 }

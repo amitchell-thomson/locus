@@ -10,15 +10,14 @@
         "state": "recheck"
       },
       "brief": "Keep the µeV core and fix the scale by convention: no measurement can pin the absolute scale, so making it a parameter would only waste the crowd.",
-      "question": "Stage 1 reads a diagram in gate volts, which fixes the device only up to a common scale; the core works in µeV. Keep µeV and convert at the boundary, or go volt-referred throughout?",
-      "chose": "Keep the µeV core and fix the scale by convention: the geometric mean of the two lever arms is 0.09. θ carries only their ratio, with a log prior.",
-      "why": [
+      "decision": [
+        "Keep the µeV core and fix the scale by convention: the geometric mean of the two lever arms is 0.09. θ carries only their ratio, with a log prior.",
         "A volt-referred core still needs a volts-to-µeV factor, because the Zeeman energies are absolute; only where it lives is a choice.",
         "Scaling the lever arms and every electrostatic energy together leaves the diagram identical, so no measurement narrows the scale.",
         "Placing the gate was already measured not to need the absolute scale.",
         "The geometric mean treats both dots alike, and makes a constant per µeV of detuning a constant per volt."
       ],
-      "over": [
+      "alternatives": [
         "Volt-referred core: the Zeeman energies are absolute, so a volts-to-µeV factor is needed anyway.",
         "Scale as a parameter: the diagram cannot see it, so the crowd would waste members spreading along it.",
         "Two lever arms in θ: replaced by one ratio; the renumbering changed no saved artefact's meaning.",
@@ -29,12 +28,17 @@
         "Charge-noise amplitude is inferred, and every detuning-tied constant is freed or quoted per volt.",
         "Barrier physics adds per-volt terms that should obey the same argument; re-check when it lands."
       ],
-      "costs": [
+      "consequences": [
         "Another device's energy compares only via its own lever arm or in plunger mV; RIKEN's µeV assumes their lever arm is 0.09.",
         "The RIKEN request had to ask for charging energy in plunger mV, or absolute with their lever arm.",
-        "The 1000-2000 µeV charging-energy bracket and 4.47 µeV tunnel-coupling ceiling are in project units, not absolute."
+        "The 1000-2000 µeV charging-energy bracket and 4.47 µeV tunnel-coupling ceiling are in project units, not absolute.",
+        "How outside energies compare with the project's: RIKEN's charging energy, the 4.47 µeV tunnel-coupling ceiling.",
+        "The input layer's seed formula, which reads the lever-arm ratio without an absolute scale.",
+        "The electrostatics in θ: the lever-arm matrix on this ratio, and the crosstalk terms, also ratios.",
+        "The prior on the log of the lever-arm ratio."
       ],
-      "evidence": [
+      "context": [
+        "Stage 1 reads a diagram in gate volts, which fixes the device only up to a common scale; the core works in µeV. Keep µeV and convert at the boundary, or go volt-referred throughout?",
         "16 twin devices differing only in scale (k 0.5-2), noise in volts: readings differ 0.03-0.15 sd median, 0.89 sd worst.",
         "Same twins: fidelity landscape differs by at most 2.5e-05; placing at the twin's best loses at most 1.4e-05.",
         "With noise fixed in µeV the scale shows (6.8-15 sd median), but only through noise per volt, itself unknown.",
@@ -43,12 +47,6 @@
       "you": [],
       "recheck": "On 19 Oct RIKEN's exchange against barrier voltage came via Natalia: about 0.03 per mV, about 2.6 times shallower than the prior's 0.08, saturating inside a CZ's range; three changes proposed, none applied. The same day their lever arm (80-100 µeV/mV, as Intel's) was found to bracket the fixed 90 to about ten per cent, putting their charging energy at 4,500-5,400 µeV, inside the prior.",
       "rests_on": [],
-      "affects": [
-        "How outside energies compare with the project's: RIKEN's charging energy, the 4.47 µeV tunnel-coupling ceiling.",
-        "The input layer's seed formula, which reads the lever-arm ratio without an absolute scale.",
-        "The electrostatics in θ: the lever-arm matrix on this ratio, and the crosstalk terms, also ratios.",
-        "The prior on the log of the lever-arm ratio."
-      ],
       "new": true
     },
     {
@@ -59,15 +57,14 @@
         "state": "holding"
       },
       "brief": "Build the input layer: upstream readings become the crowd's starting box. The typical gate lands three times closer to the best, though no failure is fixed.",
-      "question": "With the scope moved to a device ready for two-qubit work, upstream's measurements were to become the crowd's starting belief. What does a realistic reader of the diagram buy?",
-      "chose": "Keep the input layer whenever upstream readings exist: a seed formula turns diagram features into electrostatics, qubit frequencies give the Zeeman energies, and errors become a flat starting box.",
-      "why": [
+      "decision": [
+        "Keep the input layer whenever upstream readings exist: a seed formula turns diagram features into electrostatics, qubit frequencies give the Zeeman energies, and errors become a flat starting box.",
         "Honest by construction: over 300 devices every θ interval held the truth 99-100% of the time, the box 99.3%.",
         "Changes nothing it should not: the default path and earlier both-inputs runs reproduce bit for bit.",
         "Makes the typical gate three times closer to the best on ordinary devices, cheaply, from what upstream hands over anyway.",
         "The failures it leaves belong to search and calibration, not to the starting belief."
       ],
-      "over": [
+      "alternatives": [
         "Seeding from a network: the prior seeds as well at three parameters; a large network for one small job is waste.",
         "Rewriting the global prior (the earlier hack): replaced by per-device boxes carrying the same thing.",
         "Clipping out-of-prior readings: such a reading is refused instead.",
@@ -78,13 +75,17 @@
         "The lever-arm ratio comes from one interdot coupling seen through both plungers, so no absolute scale is needed.",
         "Upstream supplies a diagram and both qubit frequencies; without frequencies, the loop infers the Zeeman difference itself."
       ],
-      "costs": [
+      "consequences": [
         "No failure fixed: device 29's alias decides the mean (9e-5 to 0.37, flagged); device 24 still loses about 2e-3 unflagged.",
         "Weakest on hard devices: 24 and 29 (charging energy about 1,200-1,300 µeV) leave the ratio unknown, the box nearly the prior.",
         "Median box is ±14% of the charging energy, not the ±9% assumed earlier; one device in ten nearly the prior.",
-        "A better placed gate, not a shorter tune-up: no rounds saved."
+        "A better placed gate, not a shorter tune-up: no rounds saved.",
+        "Every tune-up's starting box, through flow.Box.",
+        "The question to Cornelius of what ANITA reports and how precisely, especially triple points.",
+        "Device 29's alias goes to the redesigned search at barrier control; device 24's losses to calibration."
       ],
-      "evidence": [
+      "context": [
+        "With the scope moved to a device ready for two-qubit work, upstream's measurements were to become the crowd's starting belief. What does a realistic reader of the diagram buy?",
         "32 devices, control / both inputs / input layer: median shortfall 8.2e-05, 2.9e-05, 2.5e-05; mean 1.9e-04, 9.2e-05, 5.7e-04.",
         "Losing more than 1e-3: 2, 0, 3 (devices 22, 24, 29 at 1.3e-02); paired against control, better on 22, worse on 8.",
         "Hard devices (12 runs): median 3.4e-04, 8.1e-05, 3.6e-04; mean 8.3e-04, 6.1e-04, 3.1e-02; device 29 lost 0.37, flagged.",
@@ -94,11 +95,6 @@
       "rests_on": [
         "§8bl",
         "§8bf"
-      ],
-      "affects": [
-        "Every tune-up's starting box, through flow.Box.",
-        "The question to Cornelius of what ANITA reports and how precisely, especially triple points.",
-        "Device 29's alias goes to the redesigned search at barrier control; device 24's losses to calibration."
       ]
     },
     {
@@ -109,14 +105,13 @@
         "state": "holding"
       },
       "brief": "Start QUAST from a device ready for two-qubit work and take it to a placed CZ. ANITA already automates everything before that.",
-      "question": "ANITA already automates a cold chip to calibrated single-qubit gates, and a charge-sensing stage would add only a number on the lab's diagram. Where should QUAST start?",
-      "chose": "Start from a device ready for two-qubit work, by ANITA or by hand, and take it to a placed, characterised CZ. Build the input layer, then barrier control; not charge sensing or drive calibration.",
-      "why": [
+      "decision": [
+        "Start from a device ready for two-qubit work, by ANITA or by hand, and take it to a placed, characterised CZ. Build the input layer, then barrier control; not charge sensing or drive calibration.",
         "Exchange calibration and the two-qubit gate are the steps nobody has automated.",
         "Everything before them is automated by ANITA or done by hand at RIKEN today.",
         "The charging energy comes to a few per cent from the lab's diagram; measuring it separately removed no failure and saved no rounds."
       ],
-      "over": [
+      "alternatives": [
         "Start from formed dots: ANITA already reaches one charge per dot and calibrates the drive.",
         "A charge-sensing stage: it adds one number already on the lab's diagram; shelved with its work list.",
         "The whole journey from a cold chip: redoes years of the lab's work for little that is new."
@@ -125,11 +120,16 @@
         "Upstream delivers a ready device and its measurements: ANITA, or by hand at RIKEN as today.",
         "ANITA is shown once, on germanium, unpublished and unreleased, not on silicon or at RIKEN; questions to Cornelius open."
       ],
-      "costs": [
+      "consequences": [
         "Automation is claimed from a two-qubit-ready device, not a cold chip; cold chip to CZ is joint with ANITA.",
-        "QUAST depends on upstream; if ANITA falls short, the shelved builds become the work list."
+        "QUAST depends on upstream; if ANITA falls short, the shelved builds become the work list.",
+        "The hand-off contract: every assumption, its source and its fall-back.",
+        "The build order: the input layer first, then barrier control.",
+        "The electrostatics in θ stay: the input layer and barrier control both use them.",
+        "The project's CLAUDE.md, roadmap and docs, rewritten to match."
       ],
-      "evidence": [
+      "context": [
+        "ANITA already automates a cold chip to calibrated single-qubit gates, and a charge-sensing stage would add only a number on the lab's diagram. Where should QUAST start?",
         "Diagram charging energy: median shortfall 8.2e-05 to 2.8e-05, better on 20 and worse on 12; rounds 3.78 to 3.72.",
         "With it, device 24 still lost about 1e-3 unflagged.",
         "ANITA reaches the (1,1)-(0,2) transition and calibrated single-qubit gates in about an hour, unattended.",
@@ -138,12 +138,6 @@
       "you": [],
       "rests_on": [
         "§8bf"
-      ],
-      "affects": [
-        "The hand-off contract: every assumption, its source and its fall-back.",
-        "The build order: the input layer first, then barrier control.",
-        "The electrostatics in θ stay: the input layer and barrier control both use them.",
-        "The project's CLAUDE.md, roadmap and docs, rewritten to match."
       ]
     },
     {
@@ -154,15 +148,14 @@
         "state": "holding"
       },
       "brief": "Add an opt-in mixed-precision mode on the graphics card: a tune-up drops from 35-40 s to about six, with gates matching double precision.",
-      "question": "Most of a tune-up is simulator linear algebra, and the available cards are fast only in single precision. Can the card run it without losing accuracy?",
-      "chose": "An opt-in \"mixed\" mode: energy levels and phase reduction in double, propagators, noise average and likelihoods in single, final fidelity sums in double. The default stays double on the processor.",
-      "why": [
+      "decision": [
+        "An opt-in \"mixed\" mode: energy levels and phase reduction in double, propagators, noise average and likelihoods in single, final fidelity sums in double. The default stays double on the processor.",
         "Solving each level as a shift from its nearest pole keeps it accurate; agrees with the double solver to 7e-12.",
         "Matches double to about a millionth on readings, likelihoods and fidelities, and places the same gate.",
         "A tune-up takes 4.6-6.2 s on the server's card against 35-40 s on the laptop's processor.",
         "Both batteries indistinguishable within run-to-run spread, about thirty times faster on the server."
       ],
-      "over": [
+      "alternatives": [
         "Double on the card: 0.9 times the processor's speed; a gaming card's double units are the bottleneck.",
         "Plain single: 1e9-radian phases overflow to NaN on over half the candidates; exchange wrong by a per cent.",
         "Pure single with the new solver: a few per cent wrong at idle-point crossings, only 1.4 times faster; kept experimental.",
@@ -176,13 +169,17 @@
         "Micromagnet spin-flip tunnelling, triplet charge states or a drive during exchange break it; the code then falls back.",
         "One process per card: three on the 8 GB card ran out of memory."
       ],
-      "costs": [
+      "consequences": [
         "A one-off compilation before the first tune-up.",
         "Opt-in: the default stays double on the processor, keeping the matrix exponential and its gradients.",
         "On hard devices paired better on 5, worse on 7, within run-to-run spread.",
-        "The bigger scaling risk, the noise average's product of quadrature grids, is untouched and stays on the v2 list."
+        "The bigger scaling risk, the noise average's product of quadrature grids, is untouched and stays on the v2 list.",
+        "The numerics mode and arrowhead level solver that barrier control's tune-ups run on.",
+        "Runs on cards beyond the server, starting with Oxford's ARC cluster.",
+        "The loop's handling of out-of-memory errors."
       ],
-      "evidence": [
+      "context": [
+        "Most of a tune-up is simulator linear algebra, and the available cards are fast only in single precision. Can the card run it without losing accuracy?",
         "Mixed against double: readings and log-likelihoods within 1.7e-6, fidelities within 1.3e-6, same placed gate.",
         "Server card: simulator for 64 devices at 288 settings 8.2 s double, 0.22 s mixed; placement 3.4 s and 0.32 s.",
         "32 devices, card mixed against processor double: median shortfall 7.5e-05 against 8.2e-05; 0.1 against 3.2 minutes.",
@@ -190,12 +187,7 @@
         "Exposed a bug: out-of-memory read as an unsamplable posterior stopped seven runs early; now re-raised, with a test."
       ],
       "you": [],
-      "rests_on": [],
-      "affects": [
-        "The numerics mode and arrowhead level solver that barrier control's tune-ups run on.",
-        "Runs on cards beyond the server, starting with Oxford's ARC cluster.",
-        "The loop's handling of out-of-memory errors."
-      ]
+      "rests_on": []
     },
     {
       "id": "§8az",
@@ -205,15 +197,14 @@
         "state": "holding"
       },
       "brief": "Place the gate continuously instead of from a fixed menu: the menu was the largest loss in the system, about a hundred times what inference lost.",
-      "question": "Every run chose the gate from a fixed 120-entry menu with holds 34% apart, while a CZ needs its phase at π. How much did the menu lose, and should the retired guard return?",
-      "chose": "Search the operating point continuously and solve the hold time from each candidate's own CZ time. Restore the guard and second opinion at the stop decision.",
-      "why": [
+      "decision": [
+        "Search the operating point continuously and solve the hold time from each candidate's own CZ time. Restore the guard and second opinion at the stop decision.",
         "The menu lost a mean of 1.3e-03; 17 of 32 devices lost over 1e-3, about a hundred times inference's loss.",
         "The operating point sets exchange and noise exposure; the hold only needs the conditional phase at π.",
         "End to end, median shortfall fell from 1.2e-03 to 2.3e-05 with no more rounds.",
         "It exposed aliases the fit check cannot flag; only the guarded loop avoided them on all 32 devices."
       ],
-      "over": [
+      "alternatives": [
         "The fixed 120-entry menu: the largest single loss measured in the system.",
         "A dense 64 x 800 grid: continuous matches or beats it on 8 of 8 devices in 0.1-0.3 s.",
         "The lean loop without the guard: left unflagged alias losses (device 29 by 0.042, device 20 by 1.8e-03)."
@@ -222,12 +213,16 @@
         "The hold is fixed by the phase reaching π, so seeding with each candidate's CZ time keeps the right peak.",
         "The restored guard's standard: no unflagged loss above 1e-3 on 32 devices, hard devices no worse."
       ],
-      "costs": [
+      "consequences": [
         "Placement costs 1.4 s a round on a crowd of 64 on the laptop.",
         "The guard is expensive: 9.0 against 2.6 minutes a device, 31 against 7.4 a hard-device run.",
-        "Earlier shortfalls were measured against the menu's cap, so their absolute fidelities understate the device."
+        "Earlier shortfalls were measured against the menu's cap, so their absolute fidelities understate the device.",
+        "Every later result is measured against the best gate a device supports, by the same continuous search.",
+        "Placement at barrier control: the operating point becomes a vector of knobs, the barrier joining the detuning.",
+        "The design for v2, which ranks placement resolution above any inference gain that month."
       ],
-      "evidence": [
+      "context": [
+        "Every run chose the gate from a fixed 120-entry menu with holds 34% apart, while a CZ needs its phase at π. How much did the menu lose, and should the retired guard return?",
         "Lost to the menu: mean 1.3e-03, median 1.1e-03, worst 6.4e-03 (device 24); best gate about 0.9999 against 0.9988.",
         "Continuous against menu: median shortfall 2.3e-05 against 1.2e-03; over 1e-3: 3 against 19; rounds 2.8 against 2.9.",
         "Lean loop unflagged losses: device 29 by 0.042, device 20 by 1.8e-03, device 24 by 1.5-3.6e-03 three times.",
@@ -237,11 +232,6 @@
       "rests_on": [
         "§8ay",
         "§8ap"
-      ],
-      "affects": [
-        "Every later result is measured against the best gate a device supports, by the same continuous search.",
-        "Placement at barrier control: the operating point becomes a vector of knobs, the barrier joining the detuning.",
-        "The design for v2, which ranks placement resolution above any inference gain that month."
       ]
     },
     {
@@ -253,15 +243,14 @@
         "by": "§8az"
       },
       "brief": "Retire the guard and second opinion: they made runs about four times slower, and every wrong gate the lean loop placed was flagged by the fit check.",
-      "question": "The guard and second opinion made runs about four times slower. Did they still change any gate, measured by switching them off on the same runs?",
-      "chose": "Merge the lean loop: retire the guard, second opinion, fit-check restarts and the network's role. Keep the fit check, exact redo, two rounds before stopping, the stopping rule and the phase ladder.",
-      "why": [
+      "decision": [
+        "Merge the lean loop: retire the guard, second opinion, fit-check restarts and the network's role. Keep the fit check, exact redo, two rounds before stopping, the stopping rule and the phase ladder.",
         "Removing them took hard-device failures from 1 in 12 to 3; ordinary devices showed no difference.",
         "Every lean failure was flagged (misfit z of 124, 72, 94 against 5); every right gate passed.",
         "A fix should be designed for barrier control, where this detuning-only tuning would not carry over.",
         "About 1,000 lines removed."
       ],
-      "over": [
+      "alternatives": [
         "Keeping the guard and second opinion: saved gates on 24 and 29, but cost up to 149 s a device and tuning that would not carry over.",
         "Fixing hard-device failures now with a narrow-region search: deferred to barrier control, tested on the hard-device battery."
       ],
@@ -269,21 +258,20 @@
         "A crowd on a wrong device fails the fit check, so every wrong gate is flagged.",
         "Ordinary devices behave as the three hard ones measured; next day's 32-device run showed aliases passing the check."
       ],
-      "costs": [
+      "consequences": [
         "On the three hardest devices, about three runs in twelve place a flagged wrong gate.",
-        "A crowd lost in its first rounds is flagged but not searched again."
+        "A crowd lost in its first rounds is flagged but not searched again.",
+        "The run record's flagged field, the fit check's verdict on the placed gate.",
+        "The hard-device replicate battery, the test barrier control's redesigned search must pass."
       ],
-      "evidence": [
+      "context": [
+        "The guard and second opinion made runs about four times slower. Did they still change any gate, measured by switching them off on the same runs?",
         "With against without: device 24 4 of 4 against 3 of 4; device 29 3 of 4 against 2 of 4; over 1e-3, 1 of 12 against 3 of 12.",
         "With every safety fix, devices 0-7 on the laptop: mean 51 s against 12 s before, worst 149 s, mostly at the stop decision."
       ],
       "you": [],
       "rests_on": [
         "§8ap"
-      ],
-      "affects": [
-        "The run record's flagged field, the fit check's verdict on the placed gate.",
-        "The hard-device replicate battery, the test barrier control's redesigned search must pass."
       ]
     },
     {
@@ -294,15 +282,14 @@
         "state": "holding"
       },
       "brief": "Let the crowd drive the loop instead of the network: it came 44 times closer to the best gate and fixed every earlier failure.",
-      "question": "Should the trained network or the crowd of candidate devices drive the loop? The crowd had been catastrophic on four aliased devices, so the head-to-head was rerun on all 32.",
-      "chose": "The crowd drives the loop: it carries over between rounds, chooses measurements and places the gate on the surrogate corrected to exact. The network only seeds the first round, sets the agreement rule and is the fall-back.",
-      "why": [
+      "decision": [
+        "The crowd drives the loop: it carries over between rounds, chooses measurements and places the gate on the surrogate corrected to exact. The network only seeds the first round, sets the agreement rule and is the fall-back.",
         "44 times closer to the best gate on the menu; over 1e-3 lost on 1 device in 32 against 13.",
         "Every earlier failure fixed: devices 29, 24, 17, 7 and 14 all placed the best gate.",
         "The earlier catastrophe was mispriced rounds, not the method; priced right it ran as many rounds as the network.",
         "The network is overconfident on the designs the loop chooses; the crowd corrected to exact is calibrated."
       ],
-      "over": [
+      "alternatives": [
         "The network driving: overconfident on chosen designs (90% intervals held 54% and 46%); lost over 1e-3 on 13 of 32.",
         "The crowd as first tried: catastrophic on four aliased devices (0.43, 0.34, 0.15, 0.05), stopping after one round.",
         "Network choosing, sampler restarted each round: same failure (29 lost 0.43, 17 lost 0.23), so the fault was trusting one round.",
@@ -313,23 +300,22 @@
         "The surrogate orders candidates almost exactly (rank correlation 0.999), so correcting it gives the exact posterior.",
         "A width of 0.000 of the prior is not a collapse at this budget: those devices all placed the best gate."
       ],
-      "costs": [
+      "consequences": [
         "About three times the network's wall clock: 66 against 23 minutes; 8-17 minutes a device, inside twenty.",
-        "Paired, worse on 2 devices (by 1.2e-04 and 2.4e-05)."
+        "Paired, worse on 2 devices (by 1.2e-04 and 2.4e-05).",
+        "Every later loop: the crowd choosing measurements, the network-free loop, the guard experiments, continuous placement.",
+        "Whether the network is needed: a crowd from the prior proved as good at three parameters, so no v2 retrain.",
+        "The design for v2, with the crowd at the core of every stage."
       ],
-      "evidence": [
+      "context": [
+        "Should the trained network or the crowd of candidate devices drive the loop? The crowd had been catastrophic on four aliased devices, so the head-to-head was rerun on all 32.",
         "Shortfall: 3.1e-03 ± 1.7e-03 (network) against 7.1e-05 ± 4.6e-05 (crowd); worst 0.055 against 1.1e-03.",
         "Paired better on 18, same on 12, worse on 2.",
         "Rounds and fridge time: 12.5 rounds, 2.0 s (network) against 13.6, 2.1 s (crowd).",
         "Surrogate against simulator: log-likelihood difference median 0.11 nats, worst 0.19, 27 times faster."
       ],
       "you": [],
-      "rests_on": [],
-      "affects": [
-        "Every later loop: the crowd choosing measurements, the network-free loop, the guard experiments, continuous placement.",
-        "Whether the network is needed: a crowd from the prior proved as good at three parameters, so no v2 retrain.",
-        "The design for v2, with the crowd at the core of every stage."
-      ]
+      "rests_on": []
     }
   ]
 }

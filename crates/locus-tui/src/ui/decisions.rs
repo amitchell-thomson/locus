@@ -110,8 +110,8 @@ fn asked_key(project: &str, id: &str) -> String {
     format!("{project}:{id}")
 }
 
-/// One folded section of the entry: its name and colour, the one-line summary shown folded,
-/// and its items when open.
+/// One section of the entry: its name and colour, the one line shown while folded, and its
+/// items.
 struct Fold {
     name: &'static str,
     colour: &'static str,
@@ -119,86 +119,49 @@ struct Fold {
     lines: Vec<(String, Style)>,
 }
 
-/// The entry's sections after the brief, in reading order (round 2w): why first, then the
-/// choice in full and your words, what it beat, assumes and costs, then the background. The
-/// states keep yellow, sky, peach, green and mauve and focus keeps blue, so these take the rest
-/// of the palette (round 2t).
+/// The entry's sections after the connections, in reading order (round 2y): the ADR template's
+/// sections, which the repos write, plus your words and alternatives. Reasons first, background
+/// last. The states keep yellow, sky, peach, green and mauve and focus keeps blue, so these take
+/// the rest of the palette (round 2t). A section with nothing in it is left out.
 fn folds(d: &Decision) -> Vec<Fold> {
-    let first = |v: &[String]| v.first().cloned().unwrap_or_default();
-    let count = |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
     let plain = |v: &[String]| v.iter().map(|x| (x.clone(), text())).collect::<Vec<_>>();
-    let mut out = vec![
-        Fold {
-            name: "why",
-            colour: "flamingo",
-            summary: format!("{} · {}", count(d.why.len(), "reason", "reasons"), first(&d.why)),
-            lines: plain(&d.why),
-        },
-        Fold {
-            name: "chose",
-            colour: "rosewater",
-            summary: d.chose.clone(),
-            lines: vec![(d.chose.clone(), text())],
-        },
-    ];
-    // Your own words, whenever there are any ("definitely quote me").
-    if !d.you.is_empty() {
-        out.push(Fold {
-            name: "you said",
-            colour: "pink",
-            summary: format!("“{}”", d.you[0].text),
-            lines: d
-                .you
-                .iter()
-                .map(|q| (format!("“{}”  ({})", q.text, q.source), st("pink")))
-                .collect(),
-        });
-    }
-    // The options it beat, named: the part of each before its colon.
-    let names: Vec<String> = d
-        .over
-        .iter()
-        .map(|o| o.split(':').next().unwrap_or(o).trim().to_string())
-        .collect();
-    for (name, colour, v, one, many) in [
-        ("over", "maroon", &d.over, "option", "options"),
-        ("assumes", "lavender", &d.assumes, "", ""),
-        ("costs", "red", &d.costs, "", ""),
-    ] {
-        if v.is_empty() {
-            continue;
-        }
-        let summary = if name == "over" {
-            format!("{}: {}", count(v.len(), one, many), names.join(", "))
-        } else {
-            format!("{} · {}", v.len(), first(v))
-        };
-        out.push(Fold {
-            name,
-            colour,
-            summary,
-            lines: plain(v),
-        });
-    }
-    out.push(Fold {
-        name: "question",
-        colour: "sapphire",
-        summary: d.question.clone(),
-        lines: vec![(d.question.clone(), text())],
-    });
-    for (name, colour, v) in [
-        ("evidence", "subtext1", &d.evidence),
-        ("affects", "overlay2", &d.affects),
-    ] {
-        if !v.is_empty() {
+    let first = |v: &[String]| match v.len() {
+        0 => String::new(),
+        1 => v[0].clone(),
+        n => format!("{} (+{} more)", v[0], n - 1),
+    };
+    let mut out = vec![];
+    let mut add = |name, colour, summary: String, lines: Vec<(String, Style)>| {
+        if !lines.is_empty() {
             out.push(Fold {
                 name,
                 colour,
-                summary: format!("{} · {}", v.len(), first(v)),
-                lines: plain(v),
+                summary,
+                lines,
             });
         }
-    }
+    };
+    add("decision", "flamingo", first(&d.decision), plain(&d.decision));
+    // Your own words, whenever there are any ("definitely quote me").
+    add(
+        "you said",
+        "pink",
+        d.you.first().map(|q| format!("“{}”", q.text)).unwrap_or_default(),
+        d.you
+            .iter()
+            .map(|q| (format!("“{}”  ({})", q.text, q.source), st("pink")))
+            .collect(),
+    );
+    // The options it beat, named: the part of each before its colon.
+    let names: Vec<&str> = d
+        .alternatives
+        .iter()
+        .map(|o| o.split(':').next().unwrap_or(o).trim())
+        .collect();
+    add("alternatives", "maroon", names.join(", "), plain(&d.alternatives));
+    add("assumes", "lavender", first(&d.assumes), plain(&d.assumes));
+    add("consequences", "red", first(&d.consequences), plain(&d.consequences));
+    add("context", "sapphire", first(&d.context), plain(&d.context));
     out
 }
 
@@ -399,12 +362,11 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     } else {
         // Stacked: the list as tall as it needs, up to half, a rule, then the entry.
         let gs = groups(app, ds);
-        let drawn: Vec<_> = gs.iter().filter(|g| !g.2.is_empty()).collect();
-        let need = drawn
+        let need = gs
             .iter()
-            .map(|g| 1 + g.2.len() + g.2.iter().filter(|&&i| ds.items[i].recheck.is_some()).count())
+            .map(|g| 1 + (g.2.len() + g.2.iter().filter(|&&i| ds.items[i].recheck.is_some()).count()).max(1))
             .sum::<usize>()
-            + drawn.len().saturating_sub(1);
+            + gs.len().saturating_sub(1);
         let lh = (need as u16).min(body.height / 2).max(4);
         (
             Rect { height: lh, ..body },
@@ -485,7 +447,9 @@ fn empty(f: &mut Frame, area: Rect, what: &str) {
 /// section gives way first and scrolls to its selection.
 fn draw_list(f: &mut Frame, area: Rect, app: &App, ds: &Decisions) {
     let now = app.fixtures.now().date_naive();
-    let gs: Vec<_> = groups(app, ds).into_iter().filter(|g| !g.2.is_empty()).collect();
+    // Every state shows, an empty one saying so in a line (round 2y: "the other sections other
+    // than holding should still show, just with a note that says nothing here").
+    let gs: Vec<_> = groups(app, ds);
     let w = usize::from(area.width);
     // A title wraps to two lines when every section still fits that way (spare rows go to
     // fuller rows first, round 2f); otherwise each title keeps one line.
@@ -497,7 +461,7 @@ fn draw_list(f: &mut Frame, area: Rect, app: &App, ds: &Decisions) {
     };
     let full: usize = gs
         .iter()
-        .map(|g| 1 + g.2.iter().map(|&i| title_lines(i) + reason(i)).sum::<usize>())
+        .map(|g| 1 + g.2.iter().map(|&i| title_lines(i) + reason(i)).sum::<usize>().max(1))
         .sum::<usize>()
         + gs.len().saturating_sub(1);
     let two = full <= usize::from(area.height);
@@ -505,7 +469,7 @@ fn draw_list(f: &mut Frame, area: Rect, app: &App, ds: &Decisions) {
     let rows_of = |i: usize| if two { title_lines(i) } else { 1 } + reason(i);
     let need: Vec<usize> = gs
         .iter()
-        .map(|g| 1 + g.2.iter().map(|&i| rows_of(i)).sum::<usize>())
+        .map(|g| 1 + g.2.iter().map(|&i| rows_of(i)).sum::<usize>().max(1))
         .collect();
     let avail = usize::from(area.height);
     let gaps = gs.len().saturating_sub(1);
@@ -542,12 +506,28 @@ fn draw_list(f: &mut Frame, area: Rect, app: &App, ds: &Decisions) {
             'n' => "peach",
             _ => "text",
         };
-        let mut head = rule(name, &idx.len().to_string(), None, focus, area.width);
+        let count = if idx.is_empty() {
+            String::new()
+        } else {
+            idx.len().to_string()
+        };
+        let mut head = rule(name, &count, None, focus, area.width);
         // The state's colour on its heading, so the blocks tell apart at a glance.
         if !focus && let Some(s) = head.spans.get_mut(1) {
             s.style = bold(st(head_style));
         }
         out.push(head);
+        if idx.is_empty() {
+            let note = match k {
+                'r' => "nothing needs re-checking",
+                'v' => "nothing is under review",
+                'n' => "nothing new since you last looked",
+                'h' => "nothing holds yet",
+                _ => "nothing has been replaced",
+            };
+            out.push(Line::from(Span::styled(format!("   {note}"), dim())));
+            continue;
+        }
         let sel = focus.then(|| app.sel(*k));
         let room = give[gi].saturating_sub(1);
         // Scroll so the selection stays in view.
@@ -582,6 +562,10 @@ fn draw_list(f: &mut Frame, area: Rect, app: &App, ds: &Decisions) {
                     right.push(Span::styled(format!("{} ", glyph::UNREAD), st("peach")));
                 }
                 right.push(Span::styled(format!("{:>7} ", date(d.date)), dim()));
+            }
+            // A decision made on a branch, not yet on the trunk (round 2y).
+            if d.branch.is_some() {
+                right.insert(0, Span::styled(format!("{} ", glyph::COMMITS), st("teal")));
             }
             out.push(row(
                 vec![
@@ -698,6 +682,12 @@ fn draw_entry(f: &mut Frame, area: Rect, app: &App, ds: &Decisions, i: usize) {
             st("peach"),
         ));
     }
+    if let Some(b) = &d.branch {
+        state.push(Span::styled(
+            format!("{SEP}{} on branch {b}", glyph::COMMITS),
+            st("teal"),
+        ));
+    }
     if let Some(chat) = &d.chat {
         state.push(Span::styled(format!("{SEP}decided in {chat}"), dim()));
     }
@@ -809,65 +799,39 @@ fn draw_entry(f: &mut Frame, area: Rect, app: &App, ds: &Decisions, i: usize) {
             last = label;
         }
     }
-    // The rest, folded to a line each: its name and a summary, Enter or → opens one at a time
-    // (round 2w: "a little too dense ... I might skip over it"). In the order he reads them:
-    // why, then what was given up and assumed, then the background.
+    // Then the record's sections, each like connections: a rule with its title and count, one
+    // summary line while folded, and everything when the selection reaches it (round 2y: "lets
+    // have them all as sections like connections that expand when you hover over them").
     let fs = folds(d);
-    // The section under the selection is the open one: moving onto it shows it (round 2x:
-    // "hovering over a section automatically show its detail instead of need to press enter").
     let open = if focus { sel.checked_sub(ls.len()) } else { None };
     let mut fold_at = Vec::new();
-    head(&mut out, "in full", "subtext0");
     for (k, fd) in fs.iter().enumerate() {
-        let at = ls.len() + k;
-        fold_at.push(out.len());
         let is_open = open == Some(k);
-        out.push(row(
-            vec![
-                if focus && sel == at {
-                    pointer(0, Some(0))
-                } else {
-                    Span::raw("  ")
-                },
-                Span::styled(if is_open { " ▾ " } else { " ▸ " }, dim()),
-                Span::styled(format!("{:<10}", fd.name), bold(st(fd.colour))),
-                // Open, the summary would repeat what is under it: just the count, if any.
-                Span::styled(
-                    if is_open {
-                        fd.summary
-                            .split([':', '·'])
-                            .next()
-                            .filter(|c| c.trim().starts_with(|ch: char| ch.is_ascii_digit()))
-                            .unwrap_or("")
-                            .trim()
-                            .to_string()
-                    } else {
-                        fd.summary.clone()
-                    },
-                    if is_open { dim() } else { st("subtext0") },
-                ),
-            ],
-            vec![],
-            area.width,
-        ));
+        out.push(Line::from(""));
+        fold_at.push(out.len());
+        let n = fd.lines.len();
+        let extra = if n > 1 { n.to_string() } else { String::new() };
+        let mut r = rule(fd.name, &extra, None, is_open, area.width);
+        if !is_open && let Some(sp) = r.spans.get_mut(1) {
+            sp.style = bold(st(fd.colour));
+        }
+        out.push(r);
         if is_open {
             for (text_, style) in &fd.lines {
-                for (j, l) in wrap(text_, body.saturating_sub(6)).into_iter().enumerate() {
+                for (j, l) in wrap(text_, body.saturating_sub(2)).into_iter().enumerate() {
                     out.push(Line::from(vec![
-                        // A single paragraph (chose, question) needs no bullet.
-                        Span::styled(
-                            if j == 0 && fd.lines.len() > 1 {
-                                "      - "
-                            } else {
-                                "        "
-                            },
-                            dim(),
-                        ),
+                        // A single paragraph needs no bullet.
+                        Span::styled(if j == 0 && n > 1 { "   - " } else { "     " }, dim()),
                         Span::styled(l, *style),
                     ]));
                 }
             }
-            out.push(Line::from(""));
+        } else {
+            out.push(row(
+                vec![Span::raw("   "), Span::styled(fd.summary.clone(), st("subtext0"))],
+                vec![],
+                area.width,
+            ));
         }
     }
     while out.last().is_some_and(|l| l.width() == 0) {

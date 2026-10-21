@@ -518,6 +518,7 @@ rest: connections teal, question sapphire, chose rosewater, why flamingo, you sa
 quote with its date under it), over maroon, assumes lavender, costs red, evidence subtext,
 affects overlay; why re-check and under review keep their state's colour. Where it was decided
 moves to the state line.
+"Bullets should use -, not the dot icon."
 
 ## Report
 

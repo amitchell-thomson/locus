@@ -540,7 +540,7 @@ fn draw_entry(f: &mut Frame, area: Rect, app: &App, ds: &Decisions, i: usize) {
         for v in values {
             for (j, l) in wrap(v, body.saturating_sub(2)).into_iter().enumerate() {
                 out.push(Line::from(vec![
-                    Span::styled(if j == 0 { "   · " } else { "     " }, dim()),
+                    Span::styled(if j == 0 { "   - " } else { "     " }, dim()),
                     Span::styled(l, style),
                 ]));
             }

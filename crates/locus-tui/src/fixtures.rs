@@ -171,6 +171,14 @@ impl Fixtures {
                     }
                 }
             }
+            if let Some(c) = &p.course
+                && self.registry.get(c).is_none_or(|x| x.kind != ProjectKind::Course)
+            {
+                bad.push(format!(
+                    "registry.json: {} is linked to `{c}`, which is not a course",
+                    p.id
+                ));
+            }
             for s in &p.sessions {
                 if !sessions.insert(s.as_str()) {
                     bad.push(format!("registry.json: session `{s}` belongs to two projects"));

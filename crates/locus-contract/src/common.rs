@@ -57,6 +57,10 @@ pub struct Project {
     pub depth: Option<Depth>,
     /// Shown on Home. A project nobody has touched for weeks is registered but not active.
     pub active: bool,
+    /// The course a repo does the work of (3YP for B3). One kind per thing; a thing that seems
+    /// to be two kinds is two linked things (ADR-006).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub course: Option<String>,
 }
 
 /// What a registry entry is (ADR-006). The kind decides which view shows it and whether

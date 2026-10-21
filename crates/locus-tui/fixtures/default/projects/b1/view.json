@@ -1,8 +1,7 @@
 {
   "project": "b1",
-  "stage": "Michaelmas",
   "where_you_are": {
-    "state": "A course this term. Its lectures, notes and deadlines arrive here once Canvas is read (Slice 7).",
+    "state": "Its lectures, notes, sheets and deadlines arrive here once Canvas is read (Slice 7).",
     "next": "nothing recorded yet"
   },
   "new": [],

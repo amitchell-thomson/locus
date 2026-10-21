@@ -36,7 +36,7 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │    󰝖 put a load of laundry on                                                         5 min │
 │    󰝖 reply to the 3YP group about Tuesday's meeting                      due mon 26   5 min │
 │    󰝖 collect the parcel from the porters' lodge                                      10 min │
-│─ ask ───────────────────────────────────────────────────────────────────────────────────────│
-│   ask › ␣ to ask about this project · the answer comes back here     󱜾 answered 3, 1 new  a │
+│─ ask ─────────────────────────────────────────────────────────────── 󱜾 answered 3, 1 new  a │
+│   ask › ␣ to ask about this project · the answer comes back here                            │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯
  ⏎ open · ⇥ sections · l log · / search · ? keys

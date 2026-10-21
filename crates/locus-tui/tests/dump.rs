@@ -182,4 +182,9 @@ fn left_scrolls_the_branch_graph_back_through_history() {
     }
     let oldest = dump::render(&a, 95, 38).unwrap();
     assert!(oldest.contains(&oldest_name), "{oldest}");
+    assert!(
+        oldest.contains("start,"),
+        "the first branch's date is marked as the start"
+    );
+    assert!(!newest.contains("start,"));
 }

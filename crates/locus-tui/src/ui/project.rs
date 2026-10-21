@@ -542,7 +542,10 @@ fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
     // Which lanes fit: unfocused, the newest; focused, a window around the selected lane, so
     // ← and → walk back through the whole history (round 2c: "the ability to scroll back in
     // history and see past branches too").
-    let fits = |a: usize, b: usize| layout(g, &g.lanes[a..b], now, gw).2 <= room;
+    // At least MIN_GAP columns an event, so close branches are not squeezed together; the cost
+    // is a longer scroll (round 2e: "do not be afraid of spreading them out a little bit more").
+    const MIN_GAP: usize = 6;
+    let fits = |a: usize, b: usize| 2 * (b - a) * MIN_GAP <= gw && layout(g, &g.lanes[a..b], now, gw).2 <= room;
     let len = g.lanes.len();
     let (first, end) = if focus {
         let (mut a, mut b) = (sel_all, (sel_all + 1).min(len));
@@ -622,13 +625,13 @@ fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
         }
     }
     // Milestones are not drawn: too few and too thin to be worth the noise (round 2b).
-    let start = lanes.iter().map(|l| l.forked).min().unwrap_or(g.from).max(g.from);
-    let earlier = first + usize::from(start > g.from);
+    let earlier = first;
     for (r, cells) in cv.into_iter().enumerate() {
+        // At the start of history main begins with a green dot; otherwise ◂ says there is more.
         let mut spans = vec![if r == 0 {
             Span::styled(
-                format!("{:>4} {}", g.trunk, if earlier > 0 { "◂" } else { " " }),
-                bold(st("subtext1")),
+                format!("{:>4} {}", g.trunk, if earlier > 0 { "◂" } else { "●" }),
+                bold(st(if earlier > 0 { "subtext1" } else { "green" })),
             )
         } else {
             Span::raw(" ".repeat(lead))
@@ -640,7 +643,9 @@ fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
         out.push(Line::from(spans));
     }
     // The axis: a date wherever it changes and there is room for it.
-    let mut axis: Vec<char> = vec![' '; lead + gw + 6];
+    // At the start of history the first label says so (round 2e: "mark the start more clearly,
+    // so I know what the first branch was").
+    let mut axis: Vec<char> = vec![' '; lead + gw + 14];
     let mut last_end = 0;
     let mut last_date = None;
     for (slot, (d, _, _)) in evs.iter().enumerate() {
@@ -648,7 +653,12 @@ fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
             continue;
         }
         let x = lead + col(slot);
-        let text_: Vec<char> = date(*d).chars().collect();
+        let label = if slot == 0 && earlier == 0 {
+            format!("start, {}", date(*d))
+        } else {
+            date(*d)
+        };
+        let text_: Vec<char> = label.chars().collect();
         if x >= last_end && x + text_.len() < axis.len() {
             axis[x..x + text_.len()].copy_from_slice(&text_);
             last_end = x + text_.len() + 2;
@@ -879,7 +889,12 @@ fn draw_ask(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
             Span::styled(" to ask about this project · the answer comes back here", dim()),
         ],
     };
-    // What was asked before sits at the far end of the ask line (round 2d).
+    // What was asked before sits at the right of the ask rule, as decisions sit on the open
+    // questions' rule (round 2e).
+    let mut head = vec![
+        Span::styled("─ ", st(if asking { "blue" } else { "surface2" })),
+        Span::styled("ask", bold(if asking { st("blue") } else { text() })),
+    ];
     let right = match more_rows(app, v).into_iter().find(|r| r.0 == "a") {
         Some((k, g, col, name, state)) => vec![
             Span::styled(format!("{g} "), st(col)),
@@ -889,11 +904,14 @@ fn draw_ask(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
         ],
         None => vec![],
     };
-    lines(
-        f,
-        area,
-        vec![rule("ask", "", None, asking, area.width), row(left, right, area.width)],
-    );
+    let used: usize = head.iter().chain(right.iter()).map(|s| s.content.width()).sum();
+    head.push(Span::styled(
+        format!(" {}", "─".repeat(usize::from(area.width).saturating_sub(used + 2))),
+        st("surface2"),
+    ));
+    head.push(Span::raw(" "));
+    head.extend(right);
+    lines(f, area, vec![Line::from(head), Line::from(left)]);
 }
 
 pub fn key(app: &mut App, k: KeyEvent) -> bool {

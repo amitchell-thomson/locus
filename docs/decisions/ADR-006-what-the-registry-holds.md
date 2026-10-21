@@ -39,14 +39,16 @@ detail and plays no part in how it is labelled.
 | application | a pursuit with stages, owned by a company | a stage and whose move, dates, mail, notes, the CV version sent, a prep plan; an Application screen |
 
 ### Kinds of everything else
+**One kind per thing; a thing that seems to be two kinds is two linked things** (22 Oct): B3
+Group Design Project is a course, 3YP the repo that does its work, linked by `course: b3`.
+**A due date is an attribute, not a kind**: a task, an application's stage or a course milestone
+can each carry one, hard or soft. "G-Research applications close 31 Oct" is a date on the
+application.
+
 | Kind | What it is | Linked to |
 |---|---|---|
-| task: sheet | a weekly problem or tutorial sheet, planned as about five hours in two or three blocks | its course |
-| task: coursework | assessed work needing its own estimate (a lab report, a 3YP milestone) | its course or repo |
-| task: admin | a one-sitting errand (book a slot, fill a form) | anything, or nothing |
-| task: chore | life admin for a gap (laundry, a parcel) | nothing |
-| deadline | a due date, hard or soft; any task can carry one | its task, course, repo or application |
-| event | something at a time (Futsal, a lecture, an interview) | anything |
+| task | something to do, with a **type** and optionally a due date: **sheet** (a weekly problem or tutorial sheet, planned as about five hours in two or three blocks), **coursework** (assessed work needing its own estimate: a lab report, a 3YP milestone), **admin** (a one-sitting errand), **chore** (life admin for a gap: laundry, a parcel) | its course, repo or application, or nothing |
+| event | something that happens at a time (Futsal, a lecture, an interview) | anything |
 | mail thread | an email conversation; can become a task or deadline through Approve | anything |
 | source | a paper, book, lecture slides, a note; the library only grows | the course or repo it serves |
 | session | one Claude Code chat | its repo |
@@ -66,14 +68,10 @@ but the word "thread" in older notes, which no longer names anything in locus.
 ### The grid: every area by every kind, with real examples
 | | Studies | Projects | Careers | Personal |
 |---|---|---|---|---|
-| **repo** | 3YP | quast, nabla, locus (with kairos and keryx), OQTS | CV | |
-| **course** | B1 practical, this term's courses | | | |
+| **repo** | 3YP (does B3's work) | quast, nabla, locus (with kairos and keryx), OQTS | CV | |
+| **course** | B1 Engineering Computation, B2 Engineering in Society, B3 Group Design Project, B14 Information Engineering Systems, B15 Control Systems, B16 Software Engineering Systems, B18 Biomedical Modelling and Monitoring, B20 Machine Learning | | | |
 | **application** | | | Jump, G-Research, Millennium | |
-| **task: sheet** | a weekly sheet for a course | | | |
-| **task: coursework** | a lab report; a 3YP milestone | | | |
-| **task: admin** | register for exams | book an ARC GPU slot | return internship paperwork | renew a railcard |
-| **task: chore** | | | | laundry, the parcel (Travel and errands) |
-| **deadline** | a sheet due Friday | a paper submission | G-Research applications close 31 Oct | |
+| **task** (type, due date) | sheet: B15 sheet 3, due fri; coursework: a lab report | admin: book an ARC GPU slot | admin: return internship paperwork, due 31 Oct | chore: laundry, the parcel (Travel and errands) |
 | **event** | a lecture, the 3YP briefing | a supervisor meeting | an interview | Futsal (Sport) |
 | **mail thread** | the 3YP group thread | RIKEN's numbers | a recruiter's email | family (Family) |
 | **source** | lecture slides, a textbook | a tuning paper | a firm's report | |
@@ -85,14 +83,18 @@ but the word "thread" in older notes, which no longer names anything in locus.
 | **jot, ink** | a thought in a lecture | a margin note on the dossier | sponsor-talk notes | a person to remember (stays in jot) |
 
 ### Where you meet it
-- **Home** has a section per area: projects (Projects), careers | studies (Careers, Studies);
+- **Home** has a section per area: personal projects (Projects), careers | studies (Careers,
+  Studies; a course with a linked repo shows it on the course's row);
   Personal shows through the calendar and chores. Learning opens from the last row of studies.
 - **Alt-2**, the Project window, shows repos only, following the project window's tmux session,
   whatever the repo's area. An application opens its own screen from Home; a course its view.
 
 ## Consequences
-- `ProjectKind` is `repo | course | application`. `ProjectView` gains `questions` (from the
-  dossier) and `due` (sheets, coursework, reports, exams, each `DueKind`).
+- `ProjectKind` is `repo | course | application`; `Project.course` links a repo to its course.
+  `ProjectView` gains `questions` (from the dossier) and `due` (sheets, coursework, reports,
+  exams, each `DueKind`). kairos's task types become sheet, coursework, admin, chore; its
+  separate deadline object becomes a due date on whatever it belongs to (a Slice 0 change to
+  kairos, raised there).
 - The Project window needs no special cases: it only resolves a tmux session to a repo.
 - To build: the Application screen (a Slice 1 page); the course view and Canvas (Slice 7).
 - Home's "projects" section and the Projects area now mean the same thing.

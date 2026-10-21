@@ -344,6 +344,15 @@ branches to show). Home: a studies section beside careers (courses and coursewor
 them; learning opens from its last row), projects limited to the Projects area. ADR-006 revised:
 areas say where, kinds say what, one global taxonomy; registry kinds repo, course, application.
 
+**Round 2e, 22 Oct.** Answered at the right of the ask rule (recommended, matching decisions on
+the open questions' rule); branch events at least six columns apart, so nabla shows eleven at a
+time with a longer scroll ("do not be afraid of spreading them out"); the start of history
+marked (main begins with a green dot, the axis says "start, 21 Sep"); Home's projects section
+titled "personal projects" with no callout. His eight courses registered (B1, B2, B3, B14, B15,
+B16, B18, B20, Canvas names); 3YP linked to B3 and shown on its row. ADR-006: one kind per thing
+(two kinds means two linked things); task is one kind with a type (sheet, coursework, admin,
+chore); a due date is an attribute, not a kind.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

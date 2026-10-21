@@ -113,16 +113,63 @@
       "sessions": [
         "B3-Project"
       ],
-      "active": true
+      "active": true,
+      "course": "b3"
     },
     {
       "id": "b1",
-      "name": "B1 practical",
+      "name": "B1 Engineering Computation",
       "area": "Studies",
       "kind": "course",
-      "sessions": [
-        "b1-practical"
-      ],
+      "active": true
+    },
+    {
+      "id": "b2",
+      "name": "B2 Engineering in Society",
+      "area": "Studies",
+      "kind": "course",
+      "active": true
+    },
+    {
+      "id": "b3",
+      "name": "B3 Group Design Project",
+      "area": "Studies",
+      "kind": "course",
+      "active": true
+    },
+    {
+      "id": "b14",
+      "name": "B14 Information Engineering Systems",
+      "area": "Studies",
+      "kind": "course",
+      "active": true
+    },
+    {
+      "id": "b15",
+      "name": "B15 Control Systems",
+      "area": "Studies",
+      "kind": "course",
+      "active": true
+    },
+    {
+      "id": "b16",
+      "name": "B16 Software Engineering Systems",
+      "area": "Studies",
+      "kind": "course",
+      "active": true
+    },
+    {
+      "id": "b18",
+      "name": "B18 Biomedical Modelling and Monitoring",
+      "area": "Studies",
+      "kind": "course",
+      "active": true
+    },
+    {
+      "id": "b20",
+      "name": "B20 Machine Learning",
+      "area": "Studies",
+      "kind": "course",
       "active": true
     }
   ]

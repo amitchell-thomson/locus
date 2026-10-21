@@ -36,8 +36,18 @@ pub fn project_rows(app: &App) -> Vec<String> {
 
 /// The Studies area: courses, and coursework run as a repo (3YP) (round 2d: "I can see on
 /// studies all of the courses that I take and the project").
+/// A repo linked to a course is shown on its course's row, not as a row of its own.
 pub fn study_rows(app: &App) -> Vec<String> {
-    rows_of(app, |p| p.area == "Studies")
+    rows_of(app, |p| p.area == "Studies" && p.course.is_none())
+}
+
+/// The repo doing a course's work, if one is linked to it (3YP for B3).
+fn repo_for<'a>(app: &'a App, course: &str) -> Option<&'a locus_contract::Project> {
+    app.fixtures
+        .registry
+        .projects
+        .iter()
+        .find(|p| p.course.as_deref() == Some(course))
 }
 
 /// The Careers area: applications, and the CV (a project that lives there).
@@ -351,7 +361,7 @@ fn draw_projects(f: &mut Frame, area: Rect, app: &App) {
     let now = fx.now();
     let focus = app.focus == Some('p');
     let ids = project_rows(app);
-    let mut out = vec![rule("projects", "what you build", Some('p'), focus, area.width)];
+    let mut out = vec![rule("personal projects", "", Some('p'), focus, area.width)];
     let sel = focus.then(|| app.sel('p'));
     for (i, id) in ids.iter().enumerate() {
         let Some(p) = fx.registry.get(id) else { continue };
@@ -510,11 +520,22 @@ fn draw_studies(f: &mut Frame, area: Rect, app: &App) {
         } else {
             glyph::READING
         };
+        // The course code bold, the name after it: "B15  Control Systems".
+        let (code, name) = p.name.split_once(' ').unwrap_or((p.name.as_str(), ""));
         let mut left = vec![
             pointer(i, sel),
             Span::styled(format!("{g} "), st("blue")),
-            Span::styled(format!("{:<14}", crate::ui::truncate(&p.name, 13)), bold(st("blue"))),
+            Span::styled(format!("{code:<4} "), bold(st("blue"))),
+            Span::styled(format!("{:<30}", crate::ui::truncate(name, 29)), text()),
         ];
+        let linked = repo_for(app, id);
+        if let Some(r) = linked {
+            left.push(Span::styled(
+                format!("{} {}  ", glyph::PROJECT, r.name),
+                bold(st("blue")),
+            ));
+        }
+        let pf = linked.and_then(|r| fx.projects.get(&r.id)).or(pf);
         let next_due = pf.and_then(|pf| pf.view.due.iter().filter(|d| d.at >= today).min_by_key(|d| d.at));
         match next_due {
             Some(d) => {
@@ -550,7 +571,7 @@ fn draw_studies(f: &mut Frame, area: Rect, app: &App) {
         vec![
             pointer(ids.len(), sel),
             Span::styled(format!("{} ", glyph::IDEA), st("yellow")),
-            Span::styled(format!("{:<14}", "learning"), bold(st("yellow"))),
+            Span::styled(format!("{:<35}", "learning"), bold(st("yellow"))),
             Span::styled(state, if to_agree > 0 { st("peach") } else { dim() }),
         ],
         vec![Span::styled("L ", bold(keyst()))],
@@ -733,7 +754,11 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
         }
         (Some('t'), KeyCode::Enter) => {
             match study_rows(app).get(app.sel('t')).cloned() {
-                Some(id) => app.open_project(id),
+                // A course with a repo doing its work opens the repo (3YP for B3).
+                Some(id) => {
+                    let target = repo_for(app, &id).map(|r| r.id.clone()).unwrap_or(id);
+                    app.open_project(target)
+                }
                 None => app.open(ScreenId::Learning),
             }
             true

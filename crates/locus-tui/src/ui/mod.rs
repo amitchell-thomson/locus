@@ -82,6 +82,13 @@ pub fn flows(s: ScreenId) -> bool {
     )
 }
 
+/// A section the arrows do not flow out of at its ends: the decision entry, which you scroll
+/// to read (round 2u: "when up or down reaches the top/ bottom in the detail view, make it stay
+/// there, dont jump back to the list"); ← leaves it.
+pub fn holds(s: ScreenId, sec: char) -> bool {
+    s == ScreenId::Decisions && sec == 'e'
+}
+
 /// How many rows a section has, for walking through it with the arrows.
 pub fn section_len(app: &App, sec: char) -> usize {
     match app.screen() {

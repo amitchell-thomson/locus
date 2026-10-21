@@ -319,6 +319,8 @@ impl App {
                     self.sel.insert((screen, sec), cur + 1);
                 } else if d < 0 && cur > 0 {
                     self.sel.insert((screen, sec), cur - 1);
+                } else if crate::ui::holds(screen, sec) {
+                    // A pane you read stays put at its ends rather than flowing on.
                 } else if d > 0
                     && let Some(j) = (i + 1..n).find(|&j| crate::ui::section_len(self, secs[j].letter) > 0)
                 {

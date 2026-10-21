@@ -520,6 +520,10 @@ affects overlay; why re-check and under review keep their state's colour. Where 
 moves to the state line.
 "Bullets should use -, not the dot icon."
 
+**Round 2u, 22 Oct.** "When up or down reaches the top/ bottom in the detail view, make it stay
+there, dont jump back to the list": the entry holds the arrows at its ends; ← (or Tab, or Esc)
+leaves it.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

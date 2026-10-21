@@ -235,3 +235,21 @@ fn home_arrows_follow_what_is_drawn() {
     a.on_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     assert_eq!(a.focus, Some('s'));
 }
+
+/// Enter on a branch opens its change records under the graph; ↑ ↓ scroll them, Esc closes.
+#[test]
+fn enter_opens_a_branchs_records() {
+    let mut a = app("default", ScreenId::Project);
+    a.focus = Some('g');
+    let press = |a: &mut App, c| a.on_key(KeyEvent::new(c, KeyModifiers::NONE));
+    press(&mut a, KeyCode::Left); // barrier-control, the one with 40 records
+    press(&mut a, KeyCode::Enter);
+    let open = dump::render(&a, 155, 44).unwrap();
+    assert!(open.contains("change records · 40"), "{open}");
+    press(&mut a, KeyCode::Down);
+    assert_eq!(a.records_at, 1);
+    assert_eq!(a.focus, Some('g'), "↓ scrolls while open, it does not leave the graph");
+    press(&mut a, KeyCode::Esc);
+    assert!(!a.lane_open);
+    assert!(!dump::render(&a, 155, 44).unwrap().contains("change records"));
+}

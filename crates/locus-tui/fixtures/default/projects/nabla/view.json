@@ -108,7 +108,13 @@
         "forked": "2026-09-21",
         "merged": "2026-09-21",
         "commits": 1,
-        "summary": "Autostash the pull so it stops failing on the quotes it is about to commit."
+        "summary": "Autostash the pull so it stops failing on the quotes it is about to commit.",
+        "records": [
+          {
+            "date": "2026-09-21",
+            "text": "Autostash the pull so it stops failing on the quotes it is about to commit"
+          }
+        ]
       },
       {
         "branch": "worktree-final-commit",
@@ -116,7 +122,13 @@
         "forked": "2026-09-21",
         "merged": "2026-09-21",
         "commits": 1,
-        "summary": "Commit tonight's quote record and the dependency lockfile."
+        "summary": "Commit tonight's quote record and the dependency lockfile.",
+        "records": [
+          {
+            "date": "2026-09-21",
+            "text": "Commit tonight's quote record and the dependency lockfile"
+          }
+        ]
       },
       {
         "branch": "worktree-commit-charts",
@@ -124,7 +136,13 @@
         "forked": "2026-09-21",
         "merged": "2026-09-21",
         "commits": 1,
-        "summary": "Commit the eight merger-arb charts."
+        "summary": "Commit the eight merger-arb charts.",
+        "records": [
+          {
+            "date": "2026-09-21",
+            "text": "Commit the eight merger-arb charts"
+          }
+        ]
       },
       {
         "branch": "worktree-uk-holdout",
@@ -132,7 +150,13 @@
         "forked": "2026-09-21",
         "merged": "2026-09-21",
         "commits": 1,
-        "summary": "Reconstruct the UK offer price from SDC's premium, not its price level."
+        "summary": "Reconstruct the UK offer price from SDC's premium, not its price level.",
+        "records": [
+          {
+            "date": "2026-09-21",
+            "text": "Reconstruct the UK offer price from SDC's premium, not its price level"
+          }
+        ]
       },
       {
         "branch": "preflight-gate",
@@ -140,7 +164,13 @@
         "forked": "2026-10-08",
         "merged": "2026-10-08",
         "commits": 1,
-        "summary": "Pre-flight gate, report-only: step 6."
+        "summary": "Pre-flight gate, report-only: step 6.",
+        "records": [
+          {
+            "date": "2026-10-08",
+            "text": "Pre-flight gate, report-only: step 6"
+          }
+        ]
       },
       {
         "branch": "worktree-ledger-reconcile",
@@ -148,7 +178,13 @@
         "forked": "2026-10-08",
         "merged": "2026-10-08",
         "commits": 1,
-        "summary": "Ledger and reconciliation: step 5, with no order placement."
+        "summary": "Ledger and reconciliation: step 5, with no order placement.",
+        "records": [
+          {
+            "date": "2026-10-08",
+            "text": "Ledger and reconciliation: step 5, with no order placement"
+          }
+        ]
       },
       {
         "branch": "slots-research",
@@ -156,7 +192,13 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Slot study: keep 10 slots; correct the margin note's fewer-slots suggestion."
+        "summary": "Slot study: keep 10 slots; correct the margin note's fewer-slots suggestion.",
+        "records": [
+          {
+            "date": "2026-10-09",
+            "text": "Slot study: keep 10 slots; correct the margin note's fewer-slots suggestion"
+          }
+        ]
       },
       {
         "branch": "jobs-first-seen",
@@ -164,7 +206,13 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Jobs check: a cron line added today is not reported as never having run."
+        "summary": "Jobs check: a cron line added today is not reported as never having run.",
+        "records": [
+          {
+            "date": "2026-10-09",
+            "text": "Jobs check: a cron line added today is not reported as never having run"
+          }
+        ]
       },
       {
         "branch": "alerts",
@@ -172,7 +220,13 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Push alerts to a phone via ntfy."
+        "summary": "Push alerts to a phone via ntfy.",
+        "records": [
+          {
+            "date": "2026-10-09",
+            "text": "Push alerts to a phone via ntfy"
+          }
+        ]
       },
       {
         "branch": "margin-research",
@@ -180,7 +234,13 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Margin research: no margin in phase 1; fewer slots get most of the gain without a loan."
+        "summary": "Margin research: no margin in phase 1; fewer slots get most of the gain without a loan.",
+        "records": [
+          {
+            "date": "2026-10-09",
+            "text": "Margin research: no margin in phase 1; fewer slots get most of the gain without a loan"
+          }
+        ]
       },
       {
         "branch": "break-sell",
@@ -188,7 +248,17 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 2,
-        "summary": "Break sell: cron lines, dashboard job, tracked reports, readiness item 9."
+        "summary": "Break sell: cron lines, dashboard job, tracked reports, readiness item 9.",
+        "records": [
+          {
+            "date": "2026-10-09",
+            "text": "The break sell: sell a held deal the morning after a document confirms the break"
+          },
+          {
+            "date": "2026-10-09",
+            "text": "Break sell: cron lines, dashboard job, tracked reports, readiness item 9"
+          }
+        ]
       },
       {
         "branch": "live-readiness",
@@ -196,7 +266,13 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Live readiness checklist: paper test results and the audit's blocking items."
+        "summary": "Live readiness checklist: paper test results and the audit's blocking items.",
+        "records": [
+          {
+            "date": "2026-10-09",
+            "text": "Live readiness checklist: paper test results and the audit's blocking items"
+          }
+        ]
       },
       {
         "branch": "alt-label",
@@ -204,7 +280,13 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Backtest tab: shorter label for the five-slot book so its dot label stays clear."
+        "summary": "Backtest tab: shorter label for the five-slot book so its dot label stays clear.",
+        "records": [
+          {
+            "date": "2026-10-09",
+            "text": "Backtest tab: shorter label for the five-slot book so its dot label stays clear"
+          }
+        ]
       },
       {
         "branch": "labels",
@@ -212,7 +294,13 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Backtest tab: name each book by universe, configuration and leverage only."
+        "summary": "Backtest tab: name each book by universe, configuration and leverage only.",
+        "records": [
+          {
+            "date": "2026-10-09",
+            "text": "Backtest tab: name each book by universe, configuration and leverage only"
+          }
+        ]
       },
       {
         "branch": "dot-click",
@@ -220,7 +308,13 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Backtest tab: draw the configurations chart by hand so its dots take clicks."
+        "summary": "Backtest tab: draw the configurations chart by hand so its dots take clicks.",
+        "records": [
+          {
+            "date": "2026-10-09",
+            "text": "Backtest tab: draw the configurations chart by hand so its dots take clicks"
+          }
+        ]
       },
       {
         "branch": "book-focus",
@@ -228,7 +322,13 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Backtest tab: the live rule is the headline, every other book is a click away."
+        "summary": "Backtest tab: the live rule is the headline, every other book is a click away.",
+        "records": [
+          {
+            "date": "2026-10-09",
+            "text": "Backtest tab: the live rule is the headline, every other book is a click away"
+          }
+        ]
       },
       {
         "branch": "paper-fixes",
@@ -236,7 +336,13 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Fix LSE tick units and wait for a two-sided quote at the gate."
+        "summary": "Fix LSE tick units and wait for a two-sided quote at the gate.",
+        "records": [
+          {
+            "date": "2026-10-09",
+            "text": "Fix LSE tick units and wait for a two-sided quote at the gate"
+          }
+        ]
       },
       {
         "branch": "freeze-off",
@@ -244,7 +350,13 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Switch off the summer 2027 freeze cutoff pending HR."
+        "summary": "Switch off the summer 2027 freeze cutoff pending HR.",
+        "records": [
+          {
+            "date": "2026-10-09",
+            "text": "Switch off the summer 2027 freeze cutoff pending HR"
+          }
+        ]
       },
       {
         "branch": "placement",
@@ -252,7 +364,13 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Order placement on the paper account, and the pre-freeze entry cutoff."
+        "summary": "Order placement on the paper account, and the pre-freeze entry cutoff.",
+        "records": [
+          {
+            "date": "2026-10-09",
+            "text": "Order placement on the paper account, and the pre-freeze entry cutoff"
+          }
+        ]
       },
       {
         "branch": "legend-wrap",
@@ -260,7 +378,13 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Let chart legends wrap at narrow widths."
+        "summary": "Let chart legends wrap at narrow widths.",
+        "records": [
+          {
+            "date": "2026-10-09",
+            "text": "Let chart legends wrap at narrow widths"
+          }
+        ]
       },
       {
         "branch": "live-rule",
@@ -268,7 +392,13 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Backtest tab: the cash book is the live rule, bar fitted on all friendly deals."
+        "summary": "Backtest tab: the cash book is the live rule, bar fitted on all friendly deals.",
+        "records": [
+          {
+            "date": "2026-10-09",
+            "text": "Backtest tab: the cash book is the live rule, bar fitted on all friendly deals"
+          }
+        ]
       },
       {
         "branch": "cash-only",
@@ -276,7 +406,13 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Backtest tab: the cash-only book, the universe the live path actually trades."
+        "summary": "Backtest tab: the cash-only book, the universe the live path actually trades.",
+        "records": [
+          {
+            "date": "2026-10-09",
+            "text": "Backtest tab: the cash-only book, the universe the live path actually trades"
+          }
+        ]
       },
       {
         "branch": "levered",
@@ -284,7 +420,13 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 1,
-        "summary": "Backtest tab: draw the levered variants as full curves, finer outcome bins."
+        "summary": "Backtest tab: draw the levered variants as full curves, finer outcome bins.",
+        "records": [
+          {
+            "date": "2026-10-09",
+            "text": "Backtest tab: draw the levered variants as full curves, finer outcome bins"
+          }
+        ]
       },
       {
         "branch": "dashboard",
@@ -292,7 +434,17 @@
         "forked": "2026-10-09",
         "merged": "2026-10-09",
         "commits": 2,
-        "summary": "Judge the Panel snapshot job by its log, not only the file."
+        "summary": "Judge the Panel snapshot job by its log, not only the file.",
+        "records": [
+          {
+            "date": "2026-10-09",
+            "text": "Web dashboard: the live system on the tailnet, replacing the TUI"
+          },
+          {
+            "date": "2026-10-09",
+            "text": "Judge the Panel snapshot job by its log, not only the file"
+          }
+        ]
       },
       {
         "branch": "blockers-4-6",
@@ -300,7 +452,13 @@
         "forked": "2026-10-10",
         "merged": "2026-10-10",
         "commits": 1,
-        "summary": "Blockers 4-6: pinned live release, atomic locked state, no buying while books disagree."
+        "summary": "Blockers 4-6: pinned live release, atomic locked state, no buying while books disagree.",
+        "records": [
+          {
+            "date": "2026-10-10",
+            "text": "Blockers 4-6: pinned live release, atomic locked state, no buying while books disagree"
+          }
+        ]
       },
       {
         "branch": "blockers-1-3",
@@ -308,7 +466,17 @@
         "forked": "2026-10-10",
         "merged": "2026-10-10",
         "commits": 2,
-        "summary": "Blockers 1-3: verify the instrument, corroborate every price, fail break checks closed."
+        "summary": "Blockers 1-3: verify the instrument, corroborate every price, fail break checks closed.",
+        "records": [
+          {
+            "date": "2026-10-10",
+            "text": "WIP blockers 1-3 and new-deal notifications (verifying on server)"
+          },
+          {
+            "date": "2026-10-10",
+            "text": "Blockers 1-3: verify the instrument, corroborate every price, fail break checks closed"
+          }
+        ]
       },
       {
         "branch": "completion-orphans",
@@ -316,7 +484,13 @@
         "forked": "2026-10-11",
         "merged": "2026-10-11",
         "commits": 1,
-        "summary": "Fixed the deal classifier so that a completion already documented no longer blocks buying into a deal."
+        "summary": "Fixed the deal classifier so that a completion already documented no longer blocks buying into a deal.",
+        "records": [
+          {
+            "date": "2026-10-11",
+            "text": "A documented completion no longer blocks buying"
+          }
+        ]
       },
       {
         "branch": "unpriced-deals",
@@ -324,7 +498,17 @@
         "forked": "2026-10-12",
         "merged": "2026-10-13",
         "commits": 2,
-        "summary": "Checked whether the backtest's widest spreads could ever have been traded live. They could not, so the backtest was flattering itself."
+        "summary": "Checked whether the backtest's widest spreads could ever have been traded live. They could not, so the backtest was flattering itself.",
+        "records": [
+          {
+            "date": "2026-10-12",
+            "text": "Name the test that refused a priced deal"
+          },
+          {
+            "date": "2026-10-12",
+            "text": "Recall study: the backtest's widest spreads were never available live"
+          }
+        ]
       },
       {
         "branch": "lookahead-fix",
@@ -332,7 +516,17 @@
         "forked": "2026-10-13",
         "merged": "2026-10-13",
         "commits": 2,
-        "summary": "Found and removed lookahead in the panels, then re-ran every configuration comparison on the corrected data."
+        "summary": "Found and removed lookahead in the panels, then re-ran every configuration comparison on the corrected data.",
+        "records": [
+          {
+            "date": "2026-10-13",
+            "text": "Remove the backtest's lookahead: final prices, first-approach dates, final attitude"
+          },
+          {
+            "date": "2026-10-13",
+            "text": "Re-run every configuration comparison on the corrected panels"
+          }
+        ]
       },
       {
         "branch": "corrected-truth",
@@ -340,7 +534,17 @@
         "forked": "2026-10-13",
         "merged": "2026-10-14",
         "commits": 2,
-        "summary": "Re-scored the classifier against the corrected panels and wrote the results into the lookahead notes."
+        "summary": "Re-scored the classifier against the corrected panels and wrote the results into the lookahead notes.",
+        "records": [
+          {
+            "date": "2026-10-13",
+            "text": "Treat the corrected backtest as the truth: dashboard, docs, charts, and three live fixes"
+          },
+          {
+            "date": "2026-10-13",
+            "text": "Classifier results in lookahead.md"
+          }
+        ]
       },
       {
         "branch": "worktree-inbox-compute",
@@ -348,7 +552,13 @@
         "forked": "2026-10-14",
         "merged": "2026-10-14",
         "commits": 1,
-        "summary": "Noted an idea: compute markets as a source of lead-lag signals."
+        "summary": "Noted an idea: compute markets as a source of lead-lag signals.",
+        "records": [
+          {
+            "date": "2026-10-14",
+            "text": "Inbox: compute markets idea (14 Oct)"
+          }
+        ]
       },
       {
         "branch": "gate-cap-text",
@@ -356,7 +566,13 @@
         "forked": "2026-10-14",
         "merged": "2026-10-14",
         "commits": 1,
-        "summary": "Corrected the dashboard's gate tab: the spread cap is four times the bar, not twice."
+        "summary": "Corrected the dashboard's gate tab: the spread cap is four times the bar, not twice.",
+        "records": [
+          {
+            "date": "2026-10-14",
+            "text": "Gate tab: the spread cap is four times the bar, not twice"
+          }
+        ]
       },
       {
         "branch": "dead-mans-switch",
@@ -364,7 +580,13 @@
         "forked": "2026-10-14",
         "merged": "2026-10-14",
         "commits": 1,
-        "summary": "Added a watchdog on GitHub that raises an alarm if the nightly commit does not arrive, plus a heartbeat ping."
+        "summary": "Added a watchdog on GitHub that raises an alarm if the nightly commit does not arrive, plus a heartbeat ping.",
+        "records": [
+          {
+            "date": "2026-10-14",
+            "text": "Dead-man's switch: GitHub watchdog on the nightly commit, and a heartbeat ping"
+          }
+        ]
       },
       {
         "branch": "compute-leadlag",
@@ -372,7 +594,25 @@
         "forked": "2026-10-14",
         "tip": "2026-10-14",
         "commits": 4,
-        "summary": "Started a daily snapshot job for compute-market prices, with its evidence shown on the health dashboard. Still open."
+        "summary": "Started a daily snapshot job for compute-market prices, with its evidence shown on the health dashboard. Still open.",
+        "records": [
+          {
+            "date": "2026-10-14",
+            "text": "H007: compute equities vs GPU rental index, first test; ADR-007 prospective route"
+          },
+          {
+            "date": "2026-10-14",
+            "text": "Accept ADR-007: prospective, mechanism-led hypotheses on a loss budget"
+          },
+          {
+            "date": "2026-10-14",
+            "text": "Daily Ornn snapshot job: nabla.compute --snapshot and scripts/compute_snapshot.sh"
+          },
+          {
+            "date": "2026-10-14",
+            "text": "Health/dashboard: evidence for the nabla-compute snapshot job"
+          }
+        ]
       },
       {
         "branch": "h008-etf-trend",
@@ -380,7 +620,17 @@
         "forked": "2026-10-14",
         "tip": "2026-10-14",
         "commits": 2,
-        "summary": "Pre-registered and tested whether trend-following on merger arbitrage's idle cash could hedge it. It cannot; the hypothesis was killed."
+        "summary": "Pre-registered and tested whether trend-following on merger arbitrage's idle cash could hedge it. It cannot; the hypothesis was killed.",
+        "records": [
+          {
+            "date": "2026-10-14",
+            "text": "H008: pre-register ETF trend on merger arb's idle cash"
+          },
+          {
+            "date": "2026-10-14",
+            "text": "H008 tested and killed: trend on idle cash cannot hedge merger arb"
+          }
+        ]
       },
       {
         "branch": "syna-switch-to-cash",
@@ -388,7 +638,13 @@
         "forked": "2026-10-16",
         "tip": "2026-10-16",
         "commits": 1,
-        "summary": "Taught the classifier that a switch from stock to cash consideration (SYNA) is not a share leg. Still open."
+        "summary": "Taught the classifier that a switch from stock to cash consideration (SYNA) is not a share leg. Still open.",
+        "records": [
+          {
+            "date": "2026-10-16",
+            "text": "Classifier: a switch from stock to cash is not a share leg (SYNA)"
+          }
+        ]
       }
     ]
   },

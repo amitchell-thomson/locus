@@ -286,7 +286,7 @@ pub fn truncate(s: &str, width: usize) -> String {
 
 /// Whether spare rows show a section's summary box (round 2g: "I may ask to revert if I think I
 /// like just normal empty more"): false gives plain space everywhere.
-pub const SUMMARY_BOXES: bool = true;
+pub const SUMMARY_BOXES: bool = false;
 
 /// A section's summary in a quiet rounded box, centred in rows the section had no use for: the
 /// one filler for any section on any page (round 2g: "I want any space filler to be the same

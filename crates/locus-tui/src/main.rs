@@ -32,6 +32,9 @@ struct Cli {
     /// With --dump: the tmux session the project window is on.
     #[arg(long, value_name = "SESSION")]
     focus: Option<String>,
+    /// With --dump: keys to press first, by name, space-separated: `tab left enter`, `p down`.
+    #[arg(long, value_name = "KEYS")]
+    press: Option<String>,
     /// With --dump: open this project as Home's project list does (for one with no tmux session).
     #[arg(long, value_name = "ID")]
     project: Option<String>,
@@ -94,6 +97,25 @@ fn main() -> Result<()> {
         }
         app.keys_open = cli.keys;
         app.follow.session = cli.focus;
+        // A first draw, so sections that record what they drew know it before keys arrive.
+        dump::render(&app, w, h)?;
+        for name in cli.press.as_deref().unwrap_or("").split_whitespace() {
+            use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+            let code = match name {
+                "enter" => KeyCode::Enter,
+                "esc" => KeyCode::Esc,
+                "tab" => KeyCode::Tab,
+                "up" => KeyCode::Up,
+                "down" => KeyCode::Down,
+                "left" => KeyCode::Left,
+                "right" => KeyCode::Right,
+                "space" => KeyCode::Char(' '),
+                c if c.chars().count() == 1 => KeyCode::Char(c.chars().next().unwrap_or(' ')),
+                other => bail!("--press: no key {other:?}"),
+            };
+            app.on_key(KeyEvent::new(code, KeyModifiers::NONE));
+            dump::render(&app, w, h)?;
+        }
         print!("{}", dump::render(&app, w, h)?);
         return Ok(());
     }

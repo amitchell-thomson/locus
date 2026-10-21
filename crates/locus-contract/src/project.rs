@@ -135,9 +135,20 @@ pub struct Lane {
     /// done on each branch, in clear natural language, not this weird note form").
     #[serde(default)]
     pub summary: String,
+    /// The branch's change records, oldest first: what Enter on the lane opens (round 2h). Its
+    /// commits until change records exist (Slice 2).
+    #[serde(default)]
+    pub records: Vec<Record>,
 }
 
 /// The decisions in a project's decision log (C.6), with their live status.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Record {
+    pub date: NaiveDate,
+    pub text: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Decisions {

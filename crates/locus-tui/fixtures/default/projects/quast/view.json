@@ -87,7 +87,17 @@
         "forked": "2026-10-07",
         "tip": "2026-10-07",
         "commits": 2,
-        "summary": "Tried ranking measurement settings by real elapsed time, fridge time plus the computing each setting adds, instead of fridge time alone. A version that sized each round by information per second was tried too and failed, because the crowd's information saturates. Kept as an option and never merged."
+        "summary": "Tried ranking measurement settings by real elapsed time, fridge time plus the computing each setting adds, instead of fridge time alone. A version that sized each round by information per second was tried too and failed, because the crowd's information saturates. Kept as an option and never merged.",
+        "records": [
+          {
+            "date": "2026-10-07",
+            "text": "The phase ladder held in the first round only: excluding earlier settings replaced its exclusions instead of adding to them. Fixed, with a test"
+          },
+          {
+            "date": "2026-10-07",
+            "text": "Rank settings by wall clock as an option: fridge time plus the computing a setting adds (0.15 s, profiled); --pricing wall. A round that sizes itself by information per second was tried and failed - the crowd's information saturates - and is not kept"
+          }
+        ]
       },
       {
         "branch": "worktree-gpu-mixed-precision",
@@ -95,7 +105,169 @@
         "forked": "2026-10-07",
         "merged": "2026-10-10",
         "commits": 45,
-        "summary": "Moved the simulator onto the graphics card in mixed precision behind one switch for precision and device. A tune-up dropped to about six seconds with gates as good as double precision, and to 3.4 seconds on ARC's L40S cards, though every process there pays a four-minute start. Merged into main."
+        "summary": "Moved the simulator onto the graphics card in mixed precision behind one switch for precision and device. A tune-up dropped to about six seconds with gates as good as double precision, and to 3.4 seconds on ARC's L40S cards, though every process there pays a four-minute start. Merged into main.",
+        "records": [
+          {
+            "date": "2026-10-07",
+            "text": "The coupled-block index follows the Hamiltonian's device"
+          },
+          {
+            "date": "2026-10-07",
+            "text": "Tensors are made on their data's device, explicitly: making the device torch's default cost two seconds of three and a half in placement"
+          },
+          {
+            "date": "2026-10-07",
+            "text": "The ramps decomposed as the coupled block in double, phases reduced, slices built and composed in the bulk precision; the pair's ramp is one summed phase. No matrix exponential and no device round trip left in placement"
+          },
+          {
+            "date": "2026-10-07",
+            "text": "Decompose in chunks: the card's batched solver's workspace outgrows its memory"
+          },
+          {
+            "date": "2026-10-07",
+            "text": "The levels are decomposed on the processor whatever the device: the card's batched solver wants 17 GB of workspace for 32,768 four-by-four matrices"
+          },
+          {
+            "date": "2026-10-07",
+            "text": "Placement scores many operating points in one call: the grid all at once, each compass step's probes together - read in the same order and recorded up to the accepted one, so the search is unchanged"
+          },
+          {
+            "date": "2026-10-07",
+            "text": "Decompose on the card in chunks of 4,096: 3.5 times the server processor's speed, and inside the solver's workspace"
+          },
+          {
+            "date": "2026-10-08",
+            "text": "The simulator in mixed precision: propagators from the coupled block's levels in double, phases reduced, the rest in single, the free sequence's closing phase reduced in double; double mode keeps the matrix exponential and its gradients. The level helpers are shared with placement. Readings within 1.7e-6 of double, log-likelihoods within 1.7e-6 nats, 3.9x on the laptop's processor"
+          },
+          {
+            "date": "2026-10-08",
+            "text": "The precision check runs the simulator eight devices at a time"
+          },
+          {
+            "date": "2026-10-08",
+            "text": "The crowd's exact likelihood and the loop's placement run on the device numerics names; a whole-tune-up benchmark"
+          },
+          {
+            "date": "2026-10-08",
+            "text": "The closed form's likelihood and the chooser's predictions run on the device numerics names; one chunked eigendecomposition in numerics for every caller; the card's likelihood chunk halved"
+          },
+          {
+            "date": "2026-10-08",
+            "text": "A test that mixed precision agrees with double: readings, a log-likelihood at 2,500 shots, gate fidelities at long holds"
+          },
+          {
+            "date": "2026-10-08",
+            "text": "An accurate element-wise solver for the coupled block (an arrowhead: each level as a shift from its nearest pole by a rational iteration, the exchange carried as the spin pair's centre); mixed mode uses it in double instead of the library eigensolver, and a single mode runs it in single - not yet accurate at the idle-point crossings"
+          },
+          {
+            "date": "2026-10-08",
+            "text": "The coupled-block solver can be compiled into fused kernels on a card (QUAST_COMPILE=1), for comparison"
+          },
+          {
+            "date": "2026-10-08",
+            "text": "On the processor the library solver serves the fast modes (faster there, exact in double); the phase ladder runs on the named device"
+          },
+          {
+            "date": "2026-10-08",
+            "text": "Tests for the element-wise solver against the general one across the prior and the window; the single mode marked experimental"
+          },
+          {
+            "date": "2026-10-08",
+            "text": "Both batteries in mixed precision on a card"
+          },
+          {
+            "date": "2026-10-08",
+            "text": "The loop never reads a device out of memory as an unsamplable posterior: caught as one it gave zero headroom and confident stops on barely narrowed crowds when three processes shared a card. Test; the card batteries run one process at a time"
+          },
+          {
+            "date": "2026-10-08",
+            "text": "8bh: mixed precision on a graphics card - a tune-up in about 6 s, gates as good as double on both batteries; CLAUDE.md states the eigendecomposition rule's one exception and the new modules"
+          },
+          {
+            "date": "2026-10-09",
+            "text": "ARC: both batteries as one SLURM job array on htc's L40S cards, eight at a time, and a collect step into the comparison scripts' shapes; docs/arc.md with where things are and the fair-use rules"
+          },
+          {
+            "date": "2026-10-09",
+            "text": "ARC battery as 11 tasks of several tune-ups each: the first compile took 400 s on ARC's storage against 3.4 s a tune-up"
+          },
+          {
+            "date": "2026-10-09",
+            "text": "docs/arc.md: the battery is 11 tasks"
+          },
+          {
+            "date": "2026-10-09",
+            "text": "8bi: ARC's htc cluster - a tune-up in 3.4 s on an L40S, a four-minute compile at every process start and how to live with it; docs/arc.md and CLAUDE.md carry the fair-use rules and the new scripts"
+          },
+          {
+            "date": "2026-10-09",
+            "text": "8bi: the first htc battery - L40S gates match the server's card and main; 43 GPU-minutes, startups near a minute once the cache is warm; collect runs on an interactive node"
+          },
+          {
+            "date": "2026-10-09",
+            "text": "8bf: the units at stage 1 - the µeV core kept, the volts-to-µeV scale fixed by convention (geometric mean of the lever arms 0.09), theta carries only the lever-arm ratio at index 3 and later indices move down one; electrostatics.lever_arms and its tests; the RIKEN charging energy wanted in plunger mV"
+          },
+          {
+            "date": "2026-10-09",
+            "text": "8bi: theta for stage 1 - the electrostatics block in the group's convention (lever-arm ratio, two crosstalk entries, two offsets, E_m, U_1, U_2), the single U retired for exchange_charging_energy() = (U_1 + U_2)/2 - E_m; the gate loop's charging energy fills both dots; the loop bitwise unchanged on probabilities, surrogate, fidelity and CZ duration"
+          },
+          {
+            "date": "2026-10-09",
+            "text": "Each gate acts on both dots: the lever-arm matrix in the group's crosstalk convention, the honeycomb placed by the offsets at the middle of the (1,1)-(0,2) transition, the virtual gates and plunger_voltages() turning a detuning into voltages, from_capacitances() reading QArray devices. Ladder rung (a) now compares coupled devices with crosstalk and agrees with QArray except at exact ties; tests pin the line slopes, periods and jogs a diagram measures"
+          },
+          {
+            "date": "2026-10-09",
+            "text": "8bi recorded (numbered after main's 8bg and 8bh): the five stage-1 decisions; the ANITA draft in FINDINGS 6.5 and 8be corrected (one charge per dot is automated in the group's work, on holes); CLAUDE.md theta table, units index and findings list; the roadmap's next steps for stage 1; theta indices in prose written as names"
+          },
+          {
+            "date": "2026-10-09",
+            "text": "validate_theta.sh: both batteries from main and from this branch, same seeds, compared bit for bit by compare_exact.py - the test for a change meant to leave the loop untouched"
+          },
+          {
+            "date": "2026-10-09",
+            "text": "8bi: batteries waived by Alec - the loop is bitwise identical to main; validate_theta.sh kept for if that is ever doubted"
+          },
+          {
+            "date": "2026-10-09",
+            "text": "The charging-energy test: --charging-diagram narrows the charging energy's prior to a charge stability diagram's reading (a relative error, flat over three of them), the reading drawn apart from every other draw so runs pair with an un-narrowed run of the same seed; validate_charging.sh runs both batteries with and without"
+          },
+          {
+            "date": "2026-10-09",
+            "text": "compare_arms.py: arms of a battery paired by device and replicate - shortfalls, losses flagged and unflagged, rounds, settings, minutes, better and worse; reproduces 8bg's hard-device table from its recorded runs"
+          },
+          {
+            "date": "2026-10-09",
+            "text": "8bj: a diagram's charging energy improves the typical gate and shrinks every loss but removes no failure and saves no rounds; proposed - take it from the lab's diagram, do not build the charge-sensing stage now"
+          },
+          {
+            "date": "2026-10-09",
+            "text": "The Zeeman-difference test: --zeeman-frequencies narrows its prior to the two qubits' measured frequencies (an absolute error in MHz), drawn apart from every other draw; validate_zeeman.sh runs it alone and with the charging energy from a diagram, paired with validate_charging.sh's ctrl"
+          },
+          {
+            "date": "2026-10-09",
+            "text": "Renumber past main's 8bi (ARC): electrostatics 8bj, charging 8bk, scope 8bl; CLAUDE.md rewritten for agent reading (the 9 Oct text kept in docs/history); docs/handoff.md, the hand-off contract and shelved builds; electrostatics tensors through quast.numerics"
+          },
+          {
+            "date": "2026-10-09",
+            "text": "8bl: the scope - QUAST starts from a device ready for two-qubit work; the input layer, then barrier control; charge sensing and drive calibration upstream's. Docs cleaned for agent reading: CLAUDE.md with ARC folded in; a read-first table and Later notes on superseded decisions; the roadmap cut to what is next (its old text in the records); the-loop, README, how-it-works, FINDINGS and the references list brought into line; the stale v2 loop figure removed"
+          },
+          {
+            "date": "2026-10-09",
+            "text": "CLAUDE.md and roadmap: ARC's first battery - startups about a minute once the cache is warm, collect.py on an interactive node, 43 GPU-minutes a battery"
+          },
+          {
+            "date": "2026-10-09",
+            "text": "ARC battery: THINK=real charges the real clock, as a live run does"
+          },
+          {
+            "date": "2026-10-10",
+            "text": "8bm: the upstream inputs together - the diagram's electrostatics and the qubit frequencies' Zeeman difference - remove every loss on the 32 ordinary devices and halve the mean shortfall; device 24's hard-device losses remain (a calibration question); no rounds saved. The input layer is worth building with both"
+          },
+          {
+            "date": "2026-10-10",
+            "text": "8bi: the live clock - three per cent more rounds on an L40S, the same gates"
+          }
+        ]
       },
       {
         "branch": "worktree-barrier-control",
@@ -103,7 +275,169 @@
         "forked": "2026-10-10",
         "tip": "2026-10-19",
         "commits": 75,
-        "summary": "Barrier control: tuning the barrier gate as well as the detuning. The decisions were laid out before any code, then the exchange law was learned in 2.3 minutes a tune-up and was honest on every run. Delayed acceptance is switched off until it is shown to be unbiased, and RIKEN's measured slope and charging energy have just come in. Still open."
+        "summary": "Barrier control: tuning the barrier gate as well as the detuning. The decisions were laid out before any code, then the exchange law was learned in 2.3 minutes a tune-up and was honest on every run. Delayed acceptance is switched off until it is shown to be unbiased, and RIKEN's measured slope and charging energy have just come in. Still open.",
+        "records": [
+          {
+            "date": "2026-10-15",
+            "text": "scripts/validate_fast_gates.sh: the fast-gate fixes against the runs made before them on the server's card, one process at a time; scripts/compare_placed.py compares placed gates against the later run's best, since a placement change moves the benchmark too"
+          },
+          {
+            "date": "2026-10-15",
+            "text": "8bq update: the barrier verdict under four gate-time decays, and compiled barrier tune-ups on ARC (38-52 s); 8br: the hold window and the level solver at eps = -U, and the three tests the decay had broken; roadmap and CLAUDE.md state brought to 15 Oct"
+          },
+          {
+            "date": "2026-10-15",
+            "text": "story-so-far: what the decay re-run and the overnight sensitivity showed, in plain words"
+          },
+          {
+            "date": "2026-10-15",
+            "text": "8br's third fast-gate defect: the headroom the stopping rule weighs scored each device at its analytic CZ time, which for a gate of a few ns is far below its best (0.73 against 0.998), so an unsettled crowd saw nothing left to gain and stopped; a known device is now credited at its CZ time moved by the crowd's own ramp shift, or the best it reached in the scans. Test fails on the previous code (headroom 0.0)"
+          },
+          {
+            "date": "2026-10-15",
+            "text": "scripts/validate_headroom.sh: reference devices on the code with all three fast-gate fixes, on the server's card"
+          },
+          {
+            "date": "2026-10-15",
+            "text": "8br: the first two fast-gate fixes re-measured (neutral on long gates; exponential decay 6.3e-4 -> 1.3e-4), and the third defect behind the losses left"
+          },
+          {
+            "date": "2026-10-15",
+            "text": "8br: all three fast-gate fixes re-measured - every set clean, the typical gate two to five times closer, a barrier tune-up now 1.2-1.4 min on the L40S; roadmap puts speed first"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "8bs: batteries waived until v2's end (Alec, 16 Oct); timing on ARC's L40S, everything else wherever it finishes soonest, arms of one comparison on one machine"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "scripts/bench_placement.py: one placement's time and batched calls on a barrier box, for the speed work"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "Speed: the level solver's crowded-pole case computed for every row and selected, not branched on (the branch split the compiled solver into pieces), its state the hub-decoupled combination for any two crowded poles; placement's batch per call sized by the card's memory (EVALUATIONS_PER_GB) instead of a fixed 400,000, which sent two points a call"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "Placement's zoom size a setting (ZOOM, still 48) and counted in the batch budget; scripts/compare_zoom.py to test a smaller one on the true devices"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "Placement's zoom 48 -> 16 hold times: the best gate on the true barrier devices moves by at most 6e-6, placement 40% faster"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "Placement's compass search runs its starts side by side, all probes of a step in one call: the same search, about half the calls"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "Step 6, the law learnable: expand() takes six coordinates (log10 steepness, the barrier's and the detuning's leftover pulls appended after the three); provisional bounds in constants with what replaces each; law_prior_box, with_law, draw_law, LEARNED_LAW_FAMILY. tests/test_learned_law.py"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "Harness: --family learned, barrier devices whose tunnelling law is drawn (beside the same first three coordinates) and learned by a six-coordinate crowd starting over the law's whole bounds"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "Placement's batch per call sized from the card's memory available at the call, not its total: a full tune-up on the 8 GB card ran out of memory with the total-memory rule"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "barrier-control.md: step 6 as built so far, and the first learned-law tune-up"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "Placement survives a candidate whose exchange vanishes: CZ times capped at LONGEST_HOLD (an infinite one crashed a learned-law run on a card), and a gate that cannot be computed scores 0, not NaN"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "scripts/rerun_hard.sh: rerun named hard-device runs on the server in an ARC battery's shape"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "8bt: a barrier tune-up back under a minute on the L40S (27-40 s), and placement robust to vanishing exchange"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "Learned-law crash, found: a NaN in the propagator cache's keys made torch.unique on a card return indices out of range. Rows are now matched on a NaN-safe copy and handed back as they were; CZ times are taken as magnitudes, floored at a picosecond"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "true_optimum.py reads a pattern of result files"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "Harness records the crowd's final draws (up to 256, coordinates only), to check whether the truth was among them"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "Harness --moves: the crowd's moves per tempering step and after it (2, as always)"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "The crowd moves 8 times a step when it estimates six coordinates (2, as always, for three): at 2 the learned-law crowd sat on wrong devices the data disfavoured; smc.MOVES_BY_DIMENSION, moves_for"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "8bu: the tunnelling law learned - six coordinates work once the crowd moves eight times a step; time and hard device 24 r3 open"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "The crowd scores pulses too short for a plateau exactly and the rest on the surrogate (smc.mixed_log_likelihood, surrogate.trusted): 4 ns pulses at high barrier were 14 nats wrong on the surrogate and made over half the barrier runs give it up for the rest of the run"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "Harness --trusted-pulse: the shortest pulse the crowd scores on the surrogate"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "8bv: pulses with no plateau scored exactly - the learned-law loop honest on every run, no losses; 2.3 minutes a tune-up"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "Delayed acceptance in the crowd's update moves: a proposal screened on the surrogate's part of the mixed scorer, scored exactly on the rest only if it passes; same target, the exact work cut to the proposals that pass"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "8bw: delayed acceptance takes a third off a learned-law tune-up (1.6 min), with a little over-confidence back"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "Delayed acceptance off by default behind smc.Crowd(delayed=...) and --delayed: with it the learned-law crowd covered the truth 77% of the time at 90%, and less with more moves; scripts/coverage.py, scripts/check_delayed.py"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "8bw update: coverage of the truth by the crowd's draws; delayed acceptance off until shown unbiased"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "8bw: the controlled check - the screened crowd is narrower on every coordinate; delayed acceptance stays off"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "CLAUDE.md, roadmap and barrier-control.md: step 6 built and measured - the law learned at 1.4e-5 median, honest, 2.3 minutes; what is left"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "SampledCandidates.shortest and --shortest-pulse: a floor on the offered pulse, dropping points the crowd cannot read above it rather than breaking the phase ladder; default the hardware's, unchanged"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "8bx: a floor on the offered pulse takes the learned-law tune-up to 1.2-1.3 minutes at much the same quality; left as an option"
+          },
+          {
+            "date": "2026-10-16",
+            "text": "roadmap: speed with the law learned, after 8bw-8bx"
+          },
+          {
+            "date": "2026-10-19",
+            "text": "8by: RIKEN's exchange against barrier voltage (private communication via Natalia, 19 Oct) - 0.03 per mV in t_c, about 2.6x shallower than the germanium-centred prior; Reed's form fits three times better and saturation sits inside the CZ's range; the barrier range too short for silicon. Three changes proposed for Alec, none applied. Points recovered exactly from the vector PDF into references/data/ (now tracked); FINDINGS 9.10; CLAUDE.md 9 item 1 half answered; the figure's legend is per e-fold, not per decade"
+          },
+          {
+            "date": "2026-10-19",
+            "text": "8bz: RIKEN's charging energy - addition voltage 50-60 mV at 80-100 µeV/mV, 4,500-5,400 µeV in our units, inside the prior; they work in (3,1), which the six-level model maps with a closed shell; their barrier sweep was at the symmetry point. The prior can represent them through the barrier (0.7-7.5 µeV of coupling over their curve); the 4.47 µeV coupling ceiling belongs on the exchange. CLAUDE.md 9 item 1 answered but for what Delta V_B is; FINDINGS 9.11; their virtualised diagram in references/data/"
+          }
+        ]
       },
       {
         "branch": "worktree-readout-adapter",
@@ -111,7 +445,17 @@
         "forked": "2026-10-13",
         "tip": "2026-10-13",
         "commits": 2,
-        "summary": "Planned how QUAST reads out on real hardware: it thresholds each shot's sensor signal itself, the way ANITA does, and hands the loop counts. Feeding raw signals into the likelihood was judged not worth building, worth at most 4%. Only the plan so far."
+        "summary": "Planned how QUAST reads out on real hardware: it thresholds each shot's sensor signal itself, the way ANITA does, and hands the loop counts. Feeding raw signals into the likelihood was judged not worth building, worth at most 4%. Only the plan so far.",
+        "records": [
+          {
+            "date": "2026-10-13",
+            "text": "8bp: readout on hardware - QUAST thresholds each shot's sensor signal itself, ANITA's way (a reference pair per round, the threshold at its pooled mean, a separation check), and hands the loop counts; raw signals in the likelihood not built (worth at most 1.04x at RIKEN's readout). The plan in docs/readout-adapter.md; ANITA's readout and X-gate score in FINDINGS 6.5; handoff item 6, roadmap item 4 and CLAUDE.md 5 point to it"
+          },
+          {
+            "date": "2026-10-13",
+            "text": "8bp: the pair readout model comes before the adapter if RIKEN reads the pair - the loop reads only counts of the kind the simulator predicts, two per measurement today; from_device refuses a channel mismatch"
+          }
+        ]
       }
     ]
   },

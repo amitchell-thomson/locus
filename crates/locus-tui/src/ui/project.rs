@@ -32,6 +32,7 @@ pub const KEYS: &[(&str, &str)] = &[
     ("p", "interview prep (an application)"),
     ("m", "pin or follow"),
     ("← →", "branches: older and newer, through the whole history"),
+    ("⏎ on a branch", "its change records; ↑ ↓ scroll, esc closes"),
 ];
 
 pub fn view(app: &App) -> Option<&ProjectView> {
@@ -97,6 +98,7 @@ fn sorted_sessions(v: &ProjectView) -> Vec<&locus_contract::Session> {
 pub fn section_len(app: &App, sec: char) -> usize {
     let Some(v) = view(app) else { return 0 };
     match sec {
+        'y' => 1,
         'g' => v.graph.as_ref().map_or(0, |g| g.lanes.len()),
         'n' => v.new.len(),
         's' => v.sessions.len(),
@@ -146,7 +148,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     };
     let w = inner.width;
 
-    let where_lines = where_you_are(v, w);
+    let where_lines = where_you_are(v, w, app.focus == Some('y'));
     let groups = new_groups(v);
     let new_h = if v.new.is_empty() {
         2
@@ -160,33 +162,44 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     // chore, more of the branch's story), and only what is left becomes space above the ask line.
     let ss = v.sessions.len() as u16;
     let ch = v.chores.len() as u16;
+    let nn = v.new.len() as u16;
     let mins = [
-        if has_graph { graph_need(app, v, w, 3) } else { 0 },
+        if has_graph { graph_need(app, v, w, 3, 3) } else { 0 },
         1 + ss.clamp(1, 3) + u16::from(ss > 3),
         1 + ch.clamp(1, 3),
+        1 + nn.clamp(1, 2) + u16::from(nn > 2),
     ];
     let wants = [
-        if has_graph { graph_need(app, v, w, 8) } else { 0 },
+        if has_graph { graph_need(app, v, w, 8, 30) } else { 0 },
         1 + ss.max(1),
         1 + ch.max(1),
+        1 + nn.max(1),
     ];
     // Everything that is not one of the three: where, questions, new, the ask line and the gaps.
+    let _ = new_h;
     let fixed = where_lines.len() as u16
         + question_lines.len() as u16
-        + new_h
         + 2
         + 4
         + u16::from(!question_lines.is_empty())
         + u16::from(has_graph);
     let mut heights = mins;
     let mut spare = inner.height.saturating_sub(fixed + mins.iter().sum::<u16>());
-    // Sessions first (live work), then chores, then the branch's story.
-    for i in [1usize, 2, 0] {
+    // Sessions first (live work), then chores, then the branch's story; an open branch is what
+    // you are reading, so it takes spare rows first.
+    // New first (everything new should show), then sessions, chores, the branch's story; an
+    // open branch is what you are reading, so it takes spare rows first.
+    let order = if app.lane_open && app.focus == Some('g') {
+        [0usize, 3, 1, 2]
+    } else {
+        [3, 1, 2, 0]
+    };
+    for i in order {
         let more = wants[i].saturating_sub(heights[i]).min(spare);
         heights[i] += more;
         spare -= more;
     }
-    let [graph_h, ses_h, ch_h] = heights;
+    let [graph_h, ses_h, ch_h, new_h] = heights;
     let gap = Constraint::Length(1);
     let rects = Layout::vertical([
         Constraint::Length(where_lines.len() as u16),
@@ -225,6 +238,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     draw_ask(f, ask_r, app, v);
 
     let focused = match app.focus {
+        Some('y') => Some(where_r),
         Some('g') => Some(graph_r),
         Some('n') => Some(new_r),
         Some('s') => Some(ses_r),
@@ -244,10 +258,10 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
 /// Where you are, drawn to catch the eye (round 2: "should draw your eye, and now it reads like
 /// a block of text"): labelled parts, the state free to wrap, and next on its own band, set
 /// apart by a blank line.
-fn where_you_are(v: &ProjectView, w: u16) -> Vec<Line<'static>> {
+fn where_you_are(v: &ProjectView, w: u16, focus: bool) -> Vec<Line<'static>> {
     let mut out = vec![Line::from(vec![
         Span::styled("─ ", st("peach")),
-        Span::styled("where you are", bold(st("peach"))),
+        Span::styled("where you are", bold(st(if focus { "blue" } else { "peach" }))),
         Span::styled(
             format!(" {}", "─".repeat(usize::from(w).saturating_sub(16))),
             st("surface2"),
@@ -544,9 +558,9 @@ fn layout(
 
 /// Rows the graph needs at this width: main, its packed rows, the axis, a blank and the
 /// selected lane's heading and summary.
-fn graph_need(app: &App, v: &ProjectView, w: u16, cap: usize) -> u16 {
+fn graph_need(app: &App, v: &ProjectView, w: u16, cap: usize, recs: usize) -> u16 {
     let Some(g) = &v.graph else { return 0 };
-    let gw = usize::from(w).saturating_sub(12).max(10);
+    let gw = usize::from(w).saturating_sub(15).max(10);
     let now = app.fixtures.now().date_naive();
     // Measure the window as it will be drawn, not every lane packed together.
     let focus = (app.focus == Some('g')).then(|| lane_at(app, g));
@@ -558,7 +572,14 @@ fn graph_need(app: &App, v: &ProjectView, w: u16, cap: usize) -> u16 {
     } else {
         g.lanes.len().saturating_sub(1)
     };
-    let detail = 1 + g.lanes.get(sel).map_or(0, |l| summary_lines(l, w, cap).len());
+    let detail = 1 + g.lanes.get(sel).map_or(0, |l| {
+        if app.lane_open && focus.is_some() {
+            // Open: the whole summary, a heading, and up to twelve records.
+            summary_lines(l, w, usize::MAX).len() + 2 + l.records.len().min(recs)
+        } else {
+            summary_lines(l, w, cap).len()
+        }
+    });
     (4 + rows + detail) as u16
 }
 
@@ -609,7 +630,7 @@ fn project_summary(app: &App, v: &ProjectView) -> Vec<Line<'static>> {
 /// MIN_GAP columns, so close branches are not squeezed together; the cost is a longer scroll
 /// (round 2e: "do not be afraid of spreading them out a little bit more").
 fn window(g: &BranchGraph, now: NaiveDate, gw: usize, room: usize, sel: Option<usize>) -> (usize, usize) {
-    const MIN_GAP: usize = 6;
+    const MIN_GAP: usize = 11;
     let fits = |a: usize, b: usize| 2 * (b - a) * MIN_GAP <= gw && layout(g, &g.lanes[a..b], now, gw).2 <= room;
     let len = g.lanes.len();
     match sel {
@@ -645,7 +666,8 @@ fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
     let now = app.fixtures.now().date_naive();
     let focus = app.focus == Some('g');
     let w = usize::from(area.width);
-    let lead = 6;
+    // Main starts in column 3, where every section's content starts (round 2h).
+    let lead = 9;
     let gw = w.saturating_sub(lead + 6).max(10);
     let sel_all = lane_at(app, g);
     let shown_i = if focus {
@@ -658,7 +680,9 @@ fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
         .get(shown_i)
         .map_or(0, |l| summary_lines(l, area.width, 3).len());
     let room = usize::from(area.height).saturating_sub(4 + detail_h).max(1);
-    let (first, end) = window(g, now, gw, room, focus.then_some(sel_all));
+    // No limit on overlapping rows (round 2h); the gap alone decides how many lanes are drawn.
+    let _ = room;
+    let (first, end) = window(g, now, gw, usize::MAX, focus.then_some(sel_all));
     let len = g.lanes.len();
     let (evs, placed, rows) = layout(g, &g.lanes[first..end], now, gw);
     let lanes = &g.lanes[first..end];
@@ -724,7 +748,7 @@ fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
         // At the start of history main begins with a green dot; otherwise ◂ says there is more.
         let mut spans = vec![if r == 0 {
             Span::styled(
-                format!("{:>4} {}", g.trunk, if earlier > 0 { "◂" } else { "●" }),
+                format!("   {:>4} {}", g.trunk, if earlier > 0 { "◂" } else { "●" }),
                 bold(st(if earlier > 0 { "subtext1" } else { "green" })),
             )
         } else {
@@ -781,6 +805,43 @@ fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
             Span::styled(format!("   {}", short_name(l)), bold(text())),
             Span::styled(format!("{SEP}{}{SEP}{state}{SEP}{commits}", l.stage), dim()),
         ]));
+        if app.lane_open && focus {
+            for line in summary_lines(l, area.width, usize::MAX) {
+                out.push(Line::from(Span::styled(format!("     {line}"), text())));
+            }
+            // The change records, scrolled; ↑ ↓ scroll, Esc closes (round 2h).
+            let room = usize::from(area.height).saturating_sub(out.len() + 1);
+            let at = app.records_at.min(l.records.len().saturating_sub(room.max(1)));
+            out.push(Line::from(vec![
+                Span::styled(
+                    format!("     change records · {}", l.records.len()),
+                    bold(st("subtext1")),
+                ),
+                Span::styled(
+                    if l.records.len() > room {
+                        format!(
+                            "   {} to {} · ↑ ↓ scroll · esc closes",
+                            at + 1,
+                            (at + room).min(l.records.len())
+                        )
+                    } else {
+                        "   esc closes".into()
+                    },
+                    dim(),
+                ),
+            ]));
+            for r in l.records.iter().skip(at).take(room) {
+                out.push(Line::from(vec![
+                    Span::styled(format!("       {:<8}", date(r.date)), dim()),
+                    Span::styled(crate::ui::truncate(&r.text, w.saturating_sub(17)), text()),
+                ]));
+            }
+            if l.records.is_empty() {
+                out.push(Line::from(Span::styled("       no records for this branch", dim())));
+            }
+            lines(f, area, out);
+            return;
+        }
         // The story gets whatever rows the graph was given beyond its branches.
         let cap = usize::from(area.height).saturating_sub(out.len() + 1).max(1);
         for line in summary_lines(l, area.width, cap) {
@@ -838,10 +899,21 @@ fn draw_new(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
     let mut out = vec![rule("new", &extra, Some('n'), focus, area.width)];
     let sel = focus.then(|| app.sel('n'));
     let mut pos = 0;
+    // As many as the section was given; the last line counts the rest (round 2h: New gives
+    // way while a branch is open).
+    let rows = usize::from(area.height.saturating_sub(1));
+    let budget = if v.new.len() > rows {
+        rows.saturating_sub(1)
+    } else {
+        rows
+    };
     // Each kind is named in a column of its own on its first item, rather than on a row of its
     // own, so grouping costs no height.
     for (heading, idx) in new_groups(v) {
         for (k, i) in idx.into_iter().enumerate() {
+            if pos >= budget {
+                break;
+            }
             let label = if k == 0 { heading } else { "" };
             let it = &v.new[i];
             let (g, gc) = item_glyph(it.kind);
@@ -864,6 +936,12 @@ fn draw_new(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
             ));
             pos += 1;
         }
+    }
+    if v.new.len() > budget && budget < rows + 1 && pos < v.new.len() {
+        out.push(Line::from(Span::styled(
+            format!("   + {} more · n n for the full timeline", v.new.len() - pos),
+            dim(),
+        )));
     }
     if v.new.is_empty() {
         let last = app
@@ -899,6 +977,13 @@ fn draw_sessions(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
     let overflow = !focus && ss.len() > rows;
     let room = rows.saturating_sub(usize::from(overflow));
     let sel = focus.then(|| app.sel('s'));
+    // The name column fits the longest name, within reason (round 2h: names were cut).
+    let nw = ss
+        .iter()
+        .map(|s| s.name.width() + if s.background { 5 } else { 0 } + 1)
+        .max()
+        .unwrap_or(12)
+        .clamp(12, 30);
     let first = sel.map_or(0, |s| s.saturating_sub(room.saturating_sub(1)));
     for (i, s) in ss.iter().enumerate().skip(first).take(room) {
         let (g, gc, word) = session_glyph(s.state);
@@ -917,8 +1002,8 @@ fn draw_sessions(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
         out.push(row(
             vec![
                 pointer(i, sel),
-                Span::styled(format!("{g} "), st(gc)),
-                Span::styled(format!("{:<20}", crate::ui::truncate(&name, 19)), text()),
+                Span::styled(format!(" {g} "), st(gc)),
+                Span::styled(format!("{:<nw$}", crate::ui::truncate(&name, nw - 1)), text()),
                 Span::styled(format!("{:<9}", word), st(gc)),
                 Span::styled(format!("{:>4}   ", ago(now, s.since)), dim()),
                 Span::styled(
@@ -966,7 +1051,7 @@ fn draw_chores(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
         out.push(row(
             vec![
                 pointer(i, sel),
-                Span::styled(format!("  {} ", glyph::CHORES), st("teal")),
+                Span::styled(format!(" {} ", glyph::CHORES), st("teal")),
                 Span::styled(ch.title.clone(), if done { struck(text()) } else { text() }),
             ],
             right,
@@ -1065,8 +1150,18 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
             let n = v.graph.as_ref().map_or(0, |g| g.lanes.len());
             let d = if k.code == KeyCode::Left { 1 } else { -1 };
             app.move_sel('g', n, d);
+            app.records_at = 0;
         }
-        (Some('g'), KeyCode::Enter) => app.note = Some("would list the branch's change records".into()),
+        (Some('g'), KeyCode::Enter) => {
+            app.lane_open = !app.lane_open;
+            app.records_at = 0;
+        }
+        (Some('g'), KeyCode::Esc) if app.lane_open => app.lane_open = false,
+        (Some('g'), KeyCode::Up | KeyCode::Down | KeyCode::Char('j' | 'k')) if app.lane_open => {
+            let d = crate::app::nav(&k).unwrap_or(0);
+            app.records_at = (app.records_at as isize + d).max(0) as usize;
+        }
+        (Some('y'), KeyCode::Enter) => app.note = Some("would open the dossier at where this project stands".into()),
         // Space asks (round 2: "a better key than i"); i still works.
         (_, KeyCode::Char(' ' | 'i')) => app.mode = Mode::Ask(String::new()),
         (_, KeyCode::Char('d')) => app.open(ScreenId::Decisions),

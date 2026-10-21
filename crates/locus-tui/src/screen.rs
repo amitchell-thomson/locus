@@ -140,6 +140,7 @@ const HOME: &[Section] = &[
 // In layout order, so ↑ and ↓ walk them as drawn (round 2: "going up from sessions jumps
 // you straight to branches").
 const PROJECT: &[Section] = &[
+    s('y', "where you are", None),
     s('g', "branches", None),
     s('n', "new", Some(S::Changes)),
     s('s', "sessions", None),

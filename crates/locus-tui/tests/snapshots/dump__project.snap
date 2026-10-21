@@ -14,27 +14,27 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │                                                                                             │
 │─ open questions · from the dossier ───────────────── 󰌾 decisions 7, 1 worth re-checking  d  │
 │                                                                                             │
-│─ branches · 4 branches · 4 to 4 shown · ← → older and newer ────────────────────────── [g] ─│
-│main ◂─┬─────────────────────────────────────────────────────────────────────────────── now  │
-│       ╰━ readout-adapter ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━○        │
-│       13 Oct                                                                                │
+│─ branches · 4 branches · 2 to 4 shown · ← → older and newer ────────────────────────── [g] ─│
+│   main ◂─┬─────────────┴──────────────┬──────────────┬──────────────────────────────── now  │
+│          ╰━━━━━━━━━━━━━╯ gpu-mixed-precision         ╰━━━━━━━━━━━━━━○ readout-adapter       │
+│                                       ╰━ barrier-control ━━━━━━━━━━━━━━━━━━━━━━━━━━○        │
+│          7 Oct         10 Oct                        13 Oct                        19 Oct   │
+│                                                                                             │
+│   readout-adapter · readout on hardware: the plan · open since 13 Oct, last commit 13 Oct · │
 │                                                                                             │
 │─ new · 4 unread · n n full timeline since mon 19 ───────────────────────────────────── [n] ─│
 │   decisions       󱉶 re-check the choice of one lever-arm ratio in θ: RIKEN's measur… 󰅸   2h │
 │   answers         󱜾 delayed acceptance · answered from your margin · links Monte Ca… 󰅸   5h │
-│   finds and ideas 󰭎 Bayesian optimisation tunes double-dot barriers with about 3x f… 󰅸   1d │
-│   work            󰘬 6 commits on barrier-control · RIKEN's charging energy is insid… 󰅸  23h │
-│   dossier and ink 󰈙 dossier rebuilt · the decision ledger and the evidence changed · …   1d │
-│                   󰴓 38 margin marks read back · 9 decisions written to the log           3d │
+│   + 4 more · n n for the full timeline                                                      │
 │                                                                                             │
 │─ sessions · 2 · 2 live ─────────────────────────────────────────────────────────────── [s] ─│
-│  󰹇 battery (bg)        needs you 35m   wants to run the full battery on the server … ⏎ jump │
-│  󰓦 main chat           working   12m   running the barrier tests after folding in RIKEN's … │
+│   󰹇 battery (bg) needs you 35m   wants to run the full battery on the server (about… ⏎ jump │
+│   󰓦 main chat    working   12m   running the barrier tests after folding in RIKEN's slope   │
 │                                                                                             │
 │─ chores · for a gap while you wait ─────────────────────────────────────────────────── [c] ─│
-│    󰝖 put a load of laundry on                                                         5 min │
-│    󰝖 reply to the 3YP group about Tuesday's meeting                      due mon 26   5 min │
-│    󰝖 collect the parcel from the porters' lodge                                      10 min │
+│   󰝖 put a load of laundry on                                                          5 min │
+│   󰝖 reply to the 3YP group about Tuesday's meeting                       due mon 26   5 min │
+│   󰝖 collect the parcel from the porters' lodge                                       10 min │
 │                                                                                             │
 │─ ask ─────────────────────────────────────────────────────────────── 󱜾 answered 3, 1 new  a │
 │   ask › ␣ to ask about this project · the answer comes back here                            │

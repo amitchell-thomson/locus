@@ -204,7 +204,7 @@ QUAST dossier of 15 Oct, 300 dpi): "What is wrong with my real handwriting sitti
 transcripts, not his own material. How the rounds run, his words: "slowly and methodically work
 through refining every one of the pages ... so that it becomes something I know end to end and
 feel effortless using." The order: Home; the Project view with Decisions, Answered and
-Changes; Calendar (kairos); Mail (keryx); Explore; Approve, the log and Ink confirm; System and
+Changes; the Application screen (ADR-006); Calendar (kairos); Mail (keryx); Explore; Approve, the log and Ink confirm; System and
 Budget; the work chart; Search; Learning and Interview prep; the weekly review.
 
 **Round 1, 21 Oct: Home (first pass).** From the use log: ↑/↓ pressed 162 times on Home
@@ -378,6 +378,20 @@ Explore (the finds by kind, that the scout waits), the Project view (this week's
 sessions, new, the latest change). Fixed: Home's sections walked out of drawn order (waiting
 for you sat first in the list, last but one on the page); Explore's arrows walked finds that
 were not drawn (the draw now records what it drew, in `App::shown`).
+
+**Round 2h, 22 Oct.** Summary boxes off: "lets just leave it blank, and rely on the dynamic
+formatting when it can, and leave blank when not" (`SUMMARY_BOXES = false`; the careers box
+was liked, kept for later). **A rule for every page: every section's content starts in the
+same column** (column 3, after the selection marker), as chores, open questions, New and
+Explore did; branches, sessions, personal projects, careers, approve and system moved to it.
+"Where you are" is a selectable section. Branches: at least eleven columns an event, so fewer
+per window, and no limit on overlapping rows ("less branches visible per window, with no limit
+to the number of overlapping branches"). Enter on a branch opens it inline: the full
+plain-English summary and its change records (its commits until Slice 2, `Lane.records`, from
+`tools/lane_records.py`), ↑ ↓ to scroll, Esc to close; while open it takes spare rows first and
+New gives way to two items and a count. Session names size their column. Planned and
+confirmed: the Application screen is its own page, after Decisions, Answered and Changes.
+`--dump --press "<keys>"` replays keys before drawing, for checking states like these.
 
 ## Report
 

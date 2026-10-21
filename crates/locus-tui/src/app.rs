@@ -84,6 +84,10 @@ pub struct App {
     /// walk these and Enter opens them, never an item off screen (round 2g: Explore's selection
     /// moved over finds that were not shown). Written by the draw.
     pub shown: RefCell<HashMap<(ScreenId, char), Vec<usize>>>,
+    /// The Project view's selected branch is open, its change records listed under the graph;
+    /// `records_at` is how far they are scrolled (round 2h).
+    pub lane_open: bool,
+    pub records_at: usize,
     pub peek_file: Option<crate::follow::PeekFile>,
 }
 
@@ -116,6 +120,8 @@ impl App {
             in_session: false,
             peek: None,
             shown: RefCell::new(HashMap::new()),
+            lane_open: false,
+            records_at: 0,
             peek_file: None,
         };
         app.uselog.record(root.name(), "open");
@@ -263,6 +269,10 @@ impl App {
         let screen = self.screen();
         let secs = screen.sections();
         if secs.is_empty() {
+            return false;
+        }
+        // An open branch takes ↑ and ↓ to scroll its change records.
+        if self.lane_open && self.focus == Some('g') && nav(&key).is_some() {
             return false;
         }
         let at = self.focus.and_then(|f| secs.iter().position(|s| s.letter == f));

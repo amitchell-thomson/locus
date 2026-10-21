@@ -33,7 +33,13 @@
         "forked": "2026-08-28",
         "merged": "2026-08-28",
         "commits": 1,
-        "summary": "Gave each OQTS repository a CLAUDE.md so working chats start with the right context. Merged."
+        "summary": "Gave each OQTS repository a CLAUDE.md so working chats start with the right context. Merged.",
+        "records": [
+          {
+            "date": "2026-08-28",
+            "text": "Add agent guidance"
+          }
+        ]
       },
       {
         "branch": "alec/agent-guidance",
@@ -41,7 +47,8 @@
         "forked": "2026-08-28",
         "tip": "2026-08-28",
         "commits": 1,
-        "summary": "Updated oxdaq's agent guidance for its plan v2.0. Never merged."
+        "summary": "Updated oxdaq's agent guidance for its plan v2.0. Never merged.",
+        "records": []
       }
     ]
   },

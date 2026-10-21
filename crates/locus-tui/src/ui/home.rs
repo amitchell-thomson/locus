@@ -358,7 +358,7 @@ fn draw_waiting(f: &mut Frame, area: Rect, app: &App) {
             .collect();
         let left = vec![
             pointer(0, focus.then_some(0)),
-            Span::styled(format!("{} {n} to approve   ", glyph::APPROVE), bold(st("yellow"))),
+            Span::styled(format!(" {} {n} to approve   ", glyph::APPROVE), bold(st("yellow"))),
             Span::styled(kinds.join(SEP), text()),
         ];
         let new = ap.groups.iter().flat_map(|g| &g.items).filter(|i| i.new).count();
@@ -390,7 +390,7 @@ fn draw_projects(f: &mut Frame, area: Rect, app: &App) {
         };
         let mut left = vec![
             pointer(i, sel),
-            Span::styled(format!("{g} "), st(gc)),
+            Span::styled(format!(" {g} "), st(gc)),
             Span::styled(
                 format!("{:<9}", crate::ui::truncate(&p.name, 9)),
                 bold(st(area_colour(app, &p.area))),
@@ -505,7 +505,7 @@ fn draw_careers(f: &mut Frame, area: Rect, app: &App) {
         };
         let left = vec![
             pointer(i, sel),
-            Span::styled(format!("{g} "), st("peach")),
+            Span::styled(format!(" {g} "), st("peach")),
             Span::styled(format!("{:<13}", crate::ui::truncate(&p.name, 12)), bold(st("peach"))),
         ];
         let mut left = left;
@@ -598,7 +598,7 @@ fn draw_studies(f: &mut Frame, area: Rect, app: &App) {
         let (code, name) = p.name.split_once(' ').unwrap_or((p.name.as_str(), ""));
         let mut left = vec![
             pointer(i, sel),
-            Span::styled(format!("{g} "), st("blue")),
+            Span::styled(format!(" {g} "), st("blue")),
             Span::styled(format!("{code:<4} "), bold(st("blue"))),
             Span::styled(format!("{:<30}", crate::ui::truncate(name, 29)), text()),
         ];
@@ -650,7 +650,7 @@ fn draw_studies(f: &mut Frame, area: Rect, app: &App) {
     out.push(row(
         vec![
             pointer(ids.len(), sel),
-            Span::styled(format!("{} ", glyph::IDEA), st("yellow")),
+            Span::styled(format!(" {} ", glyph::IDEA), st("yellow")),
             Span::styled(format!("{:<35}", "learning"), bold(st("yellow"))),
             Span::styled(state, if to_agree > 0 { st("peach") } else { dim() }),
         ],
@@ -785,7 +785,7 @@ fn draw_system(f: &mut Frame, area: Rect, app: &App) {
     let fx = &app.fixtures;
     let focus = app.focus == Some('s');
     let mut out = vec![rule("system", "", Some('s'), focus, area.width)];
-    let mut jobs: Vec<Span> = vec![Span::styled(" running  ", dim())];
+    let mut jobs: Vec<Span> = vec![Span::styled("   running  ", dim())];
     for (i, j) in fx.system.running.iter().enumerate() {
         if i > 0 {
             jobs.push(Span::styled("   │   ", st("surface2")));
@@ -810,7 +810,7 @@ fn draw_system(f: &mut Frame, area: Rect, app: &App) {
     ];
     out.push(row(jobs, counts, area.width));
     let u = &fx.usage;
-    let mut b = vec![Span::styled(" budget   ", dim())];
+    let mut b = vec![Span::styled("   budget   ", dim())];
     b.extend(bar(u.week_pct / (u.cap_pct * 1.3), 24, Some(1.0 / 1.3), c("mauve")));
     b.push(Span::styled(
         format!("  {:.1}% of the {:.0}% weekly cap", u.week_pct, u.cap_pct),

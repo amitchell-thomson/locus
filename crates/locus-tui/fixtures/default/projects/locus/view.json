@@ -80,7 +80,13 @@
         "forked": "2026-07-30",
         "merged": "2026-08-01",
         "commits": 10,
-        "summary": "Built the reading loop and the discovery plan: proposals for the tablet's reading shelf and how they are found."
+        "summary": "Built the reading loop and the discovery plan: proposals for the tablet's reading shelf and how they are found.",
+        "records": [
+          {
+            "date": "2026-08-01",
+            "text": "fix(discover): quote the OpenAlex phrase — unquoted was barely a filter"
+          }
+        ]
       },
       {
         "branch": "merge: the page earns all five of its sections",
@@ -88,7 +94,41 @@
         "forked": "2026-08-03",
         "merged": "2026-08-04",
         "commits": 8,
-        "summary": "Audited the daily page and fixed it in four passes: highlights became their own gesture, the Read page gained anchors and the recall page became Learn."
+        "summary": "Audited the daily page and fixed it in four passes: highlights became their own gesture, the Read page gained anchors and the recall page became Learn.",
+        "records": [
+          {
+            "date": "2026-08-03",
+            "text": "feat(learn): the questions he wrote in the margin, answered"
+          },
+          {
+            "date": "2026-08-03",
+            "text": "feat(daily): \"You asked\" — his margin questions come back answered"
+          },
+          {
+            "date": "2026-08-03",
+            "text": "feat(discovery): only live projects propose reading; page order is READ THINK ASK RECALL"
+          },
+          {
+            "date": "2026-08-03",
+            "text": "fix(daily): DEVELOP leads with a thread about real work, not the stalest one"
+          },
+          {
+            "date": "2026-08-03",
+            "text": "fix(daily): rank DEVELOP on project links, not on any object link"
+          },
+          {
+            "date": "2026-08-03",
+            "text": "feat(evolution): a tension has to be worth showing, not just true"
+          },
+          {
+            "date": "2026-08-03",
+            "text": "fix(daily): the re-read slot is superseded by the Ask page, not recalibrated"
+          },
+          {
+            "date": "2026-08-04",
+            "text": "feat(capture): highlights are their own gesture, one per line"
+          }
+        ]
       },
       {
         "branch": "merge: CONNECT redesign — project arm, attestation gate, Sonnet prose, page renames",
@@ -96,7 +136,33 @@
         "forked": "2026-08-06",
         "merged": "2026-08-06",
         "commits": 6,
-        "summary": "Redesigned the written connections between documents: a project arm, a check that the shared concept was really offered, Sonnet writing the prose, and pages named for what you do on them."
+        "summary": "Redesigned the written connections between documents: a project arm, a check that the shared concept was really offered, Sonnet writing the prose, and pages named for what you do on them.",
+        "records": [
+          {
+            "date": "2026-08-06",
+            "text": "docs: measure the CONNECT candidate pool before widening it"
+          },
+          {
+            "date": "2026-08-06",
+            "text": "feat(connect): project arm, attestation gate, deep Sonnet prose — A/B-measured"
+          },
+          {
+            "date": "2026-08-06",
+            "text": "feat(connect): archived projects keep coursework links, take no new ideas"
+          },
+          {
+            "date": "2026-08-06",
+            "text": "feat(connect): a shown pair lets its source's next pair through"
+          },
+          {
+            "date": "2026-08-06",
+            "text": "feat(connect): idea allowlist — only actively-developed projects take new ideas"
+          },
+          {
+            "date": "2026-08-06",
+            "text": "refactor(daily): pages named for what he DOES — Develop, Consider, Answered, Recall"
+          }
+        ]
       },
       {
         "branch": "redesign",
@@ -104,7 +170,21 @@
         "forked": "2026-10-19",
         "merged": "2026-10-19",
         "commits": 3,
-        "summary": "Brought the redesign plan into the repository and wrote down how the build is run."
+        "summary": "Brought the redesign plan into the repository and wrote down how the build is run.",
+        "records": [
+          {
+            "date": "2026-10-19",
+            "text": "Redesign: plan v4 in the repo, CLAUDE.md section 0, decision log, Slice 0 spec"
+          },
+          {
+            "date": "2026-10-19",
+            "text": "Redesign: how ink on a source is treated (info.tex)"
+          },
+          {
+            "date": "2026-10-19",
+            "text": "Slice 0: decisions D1-D6 answered, spec approved"
+          }
+        ]
       }
     ]
   },

@@ -115,7 +115,7 @@ fn decision_order(ds: &locus_contract::Decisions) -> Vec<usize> {
     idx.sort_by_key(|&i| {
         let d = &ds.items[i];
         let rank = match d.status {
-            DecisionStatus::Recheck => 0,
+            DecisionStatus::Recheck | DecisionStatus::Review => 0,
             _ if d.new => 1,
             DecisionStatus::Holding => 2,
             DecisionStatus::Redecided { .. } => 3,
@@ -1139,11 +1139,14 @@ fn draw_decisions(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
             let sel = focus.then(|| app.sel('d'));
             for (pos, &i) in order.iter().take(take).enumerate() {
                 let d = &ds.items[i];
-                let (g, gc, _) = decision_glyph(&d.status);
+                // Reopened on the Decisions page shows here too.
+                let st_now = crate::ui::decisions::status_of(app, &v.project, d);
+                let (g, gc, _) = decision_glyph(&st_now);
                 // No decision numbers on screen (round 2): a replaced one just says so.
-                let status = match d.status {
+                let status = match st_now {
                     DecisionStatus::Holding => "holding",
                     DecisionStatus::Recheck => "re-check",
+                    DecisionStatus::Review => "reviewing",
                     DecisionStatus::Redecided { .. } => "replaced",
                 };
                 let left = vec![
@@ -1151,14 +1154,14 @@ fn draw_decisions(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
                     Span::styled(format!(" {g} "), st(gc)),
                     Span::styled(
                         d.title.clone(),
-                        if matches!(d.status, DecisionStatus::Redecided { .. }) {
+                        if matches!(st_now, DecisionStatus::Redecided { .. }) {
                             dim()
                         } else {
                             text()
                         },
                     ),
                 ];
-                let why = d.recheck.as_ref().filter(|_| d.status == DecisionStatus::Recheck);
+                let why = d.recheck.as_ref().filter(|_| st_now == DecisionStatus::Recheck);
                 let mut right = vec![];
                 if d.new {
                     right.push(Span::styled(format!("{} ", glyph::UNREAD), st("peach")));
@@ -1392,11 +1395,10 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
             }
         }
         (Some('d'), KeyCode::Enter) => {
-            if let Some(&i) = shown(app, 'd').get(app.sel('d')) {
-                app.open(ScreenId::Decisions);
-                app.sel.insert((ScreenId::Decisions, ' '), i);
-            } else {
-                app.open(ScreenId::Decisions);
+            let at = shown(app, 'd').get(app.sel('d')).copied();
+            app.open(ScreenId::Decisions);
+            if let Some(i) = at {
+                crate::ui::decisions::focus_on(app, i);
             }
         }
         (Some('a'), KeyCode::Enter) => {

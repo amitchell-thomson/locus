@@ -456,6 +456,53 @@ typing keeps the draft.
 **Round 2p, 22 Oct.** "Now and shortfall get highlighted at the same time, instead of being
 separate selections": the shortfall is a selection of its own.
 
+**Round 2q, 22 Oct. The Decisions page: a section per state, the entry in full beside it.**
+"The different states of decisions should be clearly marked out sections, as currently there is
+a huuuge amount of whitspace"; "list on the left and full detailed entry on the right hand
+side, the decision detail right now is very short, I want more detail so that I can properly
+understand everything about the decision. I like the labelled fields for decisions, but the
+content of each field could be much better, and longer." What he opens it for: "checking why we
+made a certain decision; checking what decisions are affected by a new one; learning about the
+current state and why we are where we are; making sure I did not miss any assumptions/
+decisions/ trade-offs".
+- The list: to re-check (with the reason), under review, new since you last looked (marked,
+  bold, how many days ago: "some way to highlight newest decisions ... more than just being at
+  the top"), holding, replaced (dim). Each a section with its count, coloured by state, the
+  blank space spread between them; titles wrap to two lines when everything fits. Side by side
+  from 120 columns, stacked below that.
+- The entry: title and state, then its links (replaces, replaced by, builds on, built on by),
+  each a row Enter follows ("press enter on the replaces section and jump to the old decision,
+  to see alongside the why on the replacing decisions why it was replaced"); then question,
+  chose, why, you said ("definitely quote me if a decision has a quote from me"), over ("over
+  is great! keeps me in the loop on other options so I can reopen questions on why another
+  method might not be better now given some new detail"), assumes, costs, evidence, affects.
+  ↑ ↓ walk the links and then scroll the entry.
+- The contract: `Decision` gains question, why, assumes, costs, `you` as a list, `rests_on`
+  (ids, so what builds on a decision is derived) and `affects` as a list; `DecisionStatus`
+  gains `review`. Decision numbers are ids only, never shown; a test checks no page state shows
+  one.
+- The content, rewritten from the real logs (quast's `docs/decisions/`, nabla's ADRs, locus's
+  ADRs; locus gains its taxonomy decision): every field from the source, nothing invented; 14
+  quotes of his from the locus ADRs, one from nabla, none recorded in quast's entries. Three
+  unsupported lines in the old quast and nabla fixtures were dropped (a rejected option and an
+  affects line on the units decision; "H008 killed inside its budget", which no nabla source
+  has). Open for him: quast's continuous-placement decision is listed as holding, but the log
+  records that its restored guard and second opinion were dropped again on 30 Sept, so half
+  its title is out of date.
+- Reopen (`o`): "flag a decision as open/ or under review ... and start a chat with that
+  decision as context ... maybe start in locus and if it actually is something that is wrong
+  with the project then we should be able to pull it out as a working session into the project
+  window". In the prototype it moves the decision to under review (and the Project view's
+  section shows it reviewing); `o` again undoes it. The chat is Slice 3.
+- What `d` does on a course or an application: decided with the Application screen.
+- Tab and the arrows now pass over a section with nothing in it, on every screen.
+- Later (seed, from his words): a view of the decision network, how decisions depend on each
+  other and on the evidence under them. History: the research track ("decisions and their
+  evidence as a dependency graph, so overturned evidence flags what rests on it") agreed 16 Oct
+  to start after the dossier loop; "decision network/graph would be interesting to view" (19
+  Oct, info.tex); the parked jot "a locus view of the decision network" (19 Oct). `rests_on` is
+  the first edge of that graph.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

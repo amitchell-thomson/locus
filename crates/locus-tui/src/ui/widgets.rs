@@ -137,7 +137,9 @@ pub fn decision_glyph(s: &DecisionStatus) -> (&'static str, &'static str, String
     match s {
         DecisionStatus::Holding => (glyph::HOLDING, "green", "holding".into()),
         DecisionStatus::Recheck => (glyph::RECHECK, "yellow", "re-check".into()),
-        DecisionStatus::Redecided { by } => (glyph::REDECIDED, "mauve", format!("→ {by}")),
+        DecisionStatus::Review => (glyph::REVIEW, "sky", "under review".into()),
+        // Never the replacing decision's number (round 2): the screens name it by title.
+        DecisionStatus::Redecided { .. } => (glyph::REDECIDED, "mauve", "replaced".into()),
     }
 }
 

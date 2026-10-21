@@ -160,30 +160,48 @@ pub struct Decisions {
     pub items: Vec<Decision>,
 }
 
+/// One entry in a repo's decision log, with everything needed to understand it on its own
+/// (round 2q: "I want more detail so that I can properly understand everything about the
+/// decision"). Text never names another decision by its number; links go through `rests_on`
+/// and `Redecided::by`, and the screen names the other decision by its title.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Decision {
-    /// The id the repository uses: `ADR-006`, `§8bn`.
+    /// The id the repository uses: `ADR-006`, `§8bn`. For links only, never shown.
     pub id: String,
     pub title: String,
     pub date: NaiveDate,
     pub status: DecisionStatus,
-    /// What was chosen, and the reason.
+    /// What needed deciding, and why it came up then.
+    pub question: String,
+    /// What was chosen, plainly.
     pub chose: String,
-    /// The options rejected, each with why.
+    /// Why, in full: the reasoning that made this the choice.
+    pub why: String,
+    /// The options rejected, each with why it lost ("keeps me in the loop on other options so
+    /// I can reopen questions on why another method might not be better now").
     #[serde(default)]
     pub over: Vec<String>,
-    /// Your words, with where you said them.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub you: Option<Quote>,
+    /// What has to stay true for it to hold.
+    #[serde(default)]
+    pub assumes: Vec<String>,
+    /// What it gives up: the trade-offs taken knowingly.
+    #[serde(default)]
+    pub costs: Vec<String>,
     #[serde(default)]
     pub evidence: Vec<String>,
+    /// Your words, each with where you said them; quoted on screen whenever there are any.
+    #[serde(default)]
+    pub you: Vec<Quote>,
     /// Why it is worth re-checking, when it is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recheck: Option<String>,
-    /// What rests on it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub affects: Option<String>,
+    /// The decisions it builds on, by id. The screen also lists the reverse: what builds on it.
+    #[serde(default)]
+    pub rests_on: Vec<String>,
+    /// What else rests on it: code, steps, other projects.
+    #[serde(default)]
+    pub affects: Vec<String>,
     /// The chat where it was decided, if one is known (19 Oct: a link to the chat).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chat: Option<String>,
@@ -198,6 +216,8 @@ pub struct Decision {
 pub enum DecisionStatus {
     Holding,
     Recheck,
+    /// Reopened by you and being looked at again, in a chat with it as context (round 2q).
+    Review,
     /// Replaced by a later decision.
     Redecided {
         by: String,

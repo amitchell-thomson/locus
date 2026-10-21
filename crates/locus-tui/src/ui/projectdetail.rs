@@ -1,23 +1,17 @@
-//! The screens a Project view opens: Decisions (`d`), Answered (`a`), Changes (`n n`).
-//! Each is a list on top and the selected entry explained below.
+//! The screens a Project view opens: Answered (`a`, then Enter) and Changes (`n`). Each is a
+//! list on top and the selected entry explained below. Decisions has its own module.
 
 use crate::app::{App, nav};
 use crate::screen::ScreenId;
 use crate::ui::widgets::*;
 use crate::ui::{esc_back, frame, hints, lines, title};
-use locus_contract::{AskedFrom, DecisionStatus};
-use locus_theme::{SEP, glyph};
+use locus_contract::AskedFrom;
+use locus_theme::glyph;
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
 
-pub const DECISION_KEYS: &[(&str, &str)] = &[
-    ("?", "ask why it was made (lands in Answered)"),
-    ("o", "reopen it in the log"),
-    ("c", "put it into the project chat as context"),
-    ("⏎", "the full entry"),
-];
 pub const ANSWER_KEYS: &[(&str, &str)] = &[
     ("f", "follow up in the same thread"),
     ("t", "send to the tablet as an explainer"),
@@ -37,100 +31,6 @@ fn none(f: &mut Frame, area: Rect, what: &str) {
         area,
         vec![Line::from(""), Line::from(Span::styled(format!("  {what}"), dim()))],
     );
-}
-
-pub fn draw_decisions(f: &mut Frame, area: Rect, app: &App) {
-    let pf = app.project_id().and_then(|id| app.fixtures.projects.get(&id));
-    let ds = pf.and_then(|p| p.decisions.as_ref());
-    let counts = ds
-        .map(|d| {
-            let n = |f: fn(&DecisionStatus) -> bool| d.items.iter().filter(|x| f(&x.status)).count();
-            format!(
-                "{} re-check{SEP}{} holding{SEP}{} re-decided",
-                n(|s| *s == DecisionStatus::Recheck),
-                n(|s| *s == DecisionStatus::Holding),
-                n(|s| matches!(s, DecisionStatus::Redecided { .. }))
-            )
-        })
-        .unwrap_or_default();
-    let inner = frame(
-        f,
-        area,
-        title(&format!("{} · decisions", project_name(app)), &counts),
-        Some(esc_back()),
-    );
-    let Some(ds) = ds else {
-        none(f, inner, "this project has no decision log");
-        return;
-    };
-    if ds.items.is_empty() {
-        none(f, inner, &format!("no decisions in {} yet", ds.log));
-        return;
-    }
-    let list_h = (ds.items.len() as u16).min(10);
-    let [list, sep, detail, foot] = Layout::vertical([
-        Constraint::Length(list_h),
-        Constraint::Length(1),
-        Constraint::Min(0),
-        Constraint::Length(1),
-    ])
-    .areas(inner);
-    let sel = app.sel(' ').min(ds.items.len() - 1);
-    // Re-checks first, then by date, newest first.
-    let first = sel.saturating_sub(usize::from(list_h).saturating_sub(1));
-    let mut out = Vec::new();
-    for (i, d) in ds.items.iter().enumerate().skip(first).take(usize::from(list_h)) {
-        let (g, gc, status) = decision_glyph(&d.status);
-        out.push(row(
-            vec![
-                pointer(i, Some(sel)),
-                Span::styled(format!("{g} "), st(gc)),
-                Span::styled(format!("{:<8}", d.id), st("subtext1")),
-                Span::styled(d.title.clone(), text()),
-            ],
-            vec![Span::styled(format!("{:>7}  {:<10}", date(d.date), status), st(gc))],
-            list.width,
-        ));
-    }
-    lines(f, list, out);
-    lines(f, sep, vec![rule("", "", None, false, sep.width)]);
-    let d = &ds.items[sel];
-    let w = usize::from(detail.width).saturating_sub(12);
-    let mut out = vec![Line::from(vec![
-        Span::styled(format!(" {}", d.id), bold(st("subtext1"))),
-        Span::styled(format!("{SEP}agreed {}", date(d.date)), dim()),
-    ])];
-    let mut field = |label: &str, value: &str, style| {
-        for (i, l) in wrap(value, w).into_iter().enumerate() {
-            out.push(Line::from(vec![
-                Span::styled(format!(" {:<10}", if i == 0 { label } else { "" }), dim()),
-                Span::styled(l, style),
-            ]));
-        }
-    };
-    field("chose", &d.chose, text());
-    for o in &d.over {
-        field("over", o, st("subtext0"));
-    }
-    if let Some(q) = &d.you {
-        field("you", &format!("\"{}\" [{}]", q.text, q.source), st("lavender"));
-    }
-    for e in &d.evidence {
-        field("evidence", e, text());
-    }
-    if let Some(r) = &d.recheck {
-        field("re-check", r, st("yellow"));
-    }
-    if let Some(a) = &d.affects {
-        field("affects", a, text());
-    }
-    if let DecisionStatus::Redecided { by } = &d.status {
-        field("replaced", &format!("by {by}"), st("mauve"));
-    }
-    lines(f, detail, out);
-    let mut h = vec![("?", "ask why"), ("o", "reopen"), ("c", "into the chat")];
-    h.push(("⏎", "full entry"));
-    lines(f, foot, vec![hints(&h).right_aligned()]);
 }
 
 pub fn draw_answered(f: &mut Frame, area: Rect, app: &App) {
@@ -246,7 +146,6 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
     let Some(pf) = pf else { return false };
     let screen = app.screen();
     let len = match screen {
-        ScreenId::Decisions => pf.decisions.as_ref().map_or(0, |d| d.items.len()),
         ScreenId::Answered => pf.answered.as_ref().map_or(0, |a| a.items.len()),
         _ => pf.changes.as_ref().map_or(0, |c| c.entries.len()),
     };
@@ -256,25 +155,6 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
     }
     let i = app.sel(' ');
     match (screen, k.code) {
-        (ScreenId::Decisions, c @ (KeyCode::Char('?' | 'o' | 'c') | KeyCode::Enter)) => {
-            let Some(d) = pf.decisions.as_ref().and_then(|d| d.items.get(i)) else {
-                return false;
-            };
-            app.note = Some(match c {
-                KeyCode::Char('?') => format!("would ask why {} was made; the answer lands in Answered", d.id),
-                KeyCode::Char('o') => format!(
-                    "would reopen {} in the decision log, where the working chats see it",
-                    d.id
-                ),
-                KeyCode::Char('c') => format!("would put {} into the focused project chat as context", d.id),
-                _ => format!(
-                    "would open {} at {}",
-                    pf.decisions.as_ref().map_or("", |d| d.log.as_str()),
-                    d.id
-                ),
-            });
-            true
-        }
         (ScreenId::Answered, KeyCode::Char(c @ ('f' | 't' | 'c'))) => {
             let Some(a) = pf.answered.as_ref().and_then(|a| a.items.get(i)) else {
                 return false;

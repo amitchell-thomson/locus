@@ -22,6 +22,7 @@ pub const FAILED: &str = "\u{f0158}";
 pub const RECHECK: &str = "\u{f1276}";
 pub const HOLDING: &str = "\u{f033e}";
 pub const REDECIDED: &str = "\u{f00fb}";
+pub const REVIEW: &str = "\u{f0349}";
 
 // Kinds of thing.
 pub const SCOUT_FIND: &str = "\u{f0b4e}";
@@ -52,7 +53,8 @@ pub const ALL: &[(&str, &str)] = &[
     ("failed", FAILED),
     ("decision: re-check", RECHECK),
     ("decision: holding", HOLDING),
-    ("decision: re-decided", REDECIDED),
+    ("decision: replaced", REDECIDED),
+    ("decision: under review", REVIEW),
     ("scout find", SCOUT_FIND),
     ("reading", READING),
     ("ink", INK),

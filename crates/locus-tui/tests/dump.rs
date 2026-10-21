@@ -253,3 +253,48 @@ fn enter_opens_a_branchs_records() {
     assert!(!a.lane_open);
     assert!(!dump::render(&a, 155, 44).unwrap().contains("change records"));
 }
+
+/// The Decisions page never shows a decision's number (round 2: "no decision numbers"), in the
+/// list or the entry, whatever is focused; and Enter on a replaced decision's link reaches the
+/// decision that replaced it (round 2q).
+#[test]
+fn decisions_page_names_decisions_by_title_and_follows_links() {
+    for id in ["quast", "nabla", "locus"] {
+        let mut a = viewing("default", id, ScreenId::Decisions);
+        for sec in [None, Some('r'), Some('n'), Some('h'), Some('x'), Some('e')] {
+            a.focus = sec;
+            for w in [95u16, 160] {
+                let text = dump::render(&a, w, 45).unwrap();
+                for bad in ["§8", "ADR-"] {
+                    assert!(!text.contains(bad), "{id} {sec:?} at {w} shows {bad}:\n{text}");
+                }
+            }
+        }
+    }
+    // nabla: the power decision was replaced by the breadth one; from it, Enter on its link
+    // ("replaced by") lands on the breadth decision.
+    let mut a = viewing("default", "nabla", ScreenId::Decisions);
+    a.focus = Some('x');
+    let text = dump::render(&a, 160, 45).unwrap();
+    assert!(text.contains("replaced by"), "{text}");
+    press(&mut a, KeyCode::Enter);
+    assert_eq!(a.focus, Some('e'));
+    for _ in 0..5 {
+        let text = dump::render(&a, 160, 45).unwrap();
+        if text.contains("▌") && text.lines().any(|l| l.contains("▌") && l.contains("Abandon breadth")) {
+            break;
+        }
+        press(&mut a, KeyCode::Down);
+    }
+    press(&mut a, KeyCode::Enter);
+    assert_eq!(a.focus, Some('h'));
+    let text = dump::render(&a, 160, 45).unwrap();
+    assert!(
+        text.lines().any(|l| l.contains("▌") && l.contains("Abandon breadth")),
+        "{text}"
+    );
+}
+
+fn press(a: &mut App, code: KeyCode) {
+    a.on_key(KeyEvent::new(code, KeyModifiers::NONE));
+}

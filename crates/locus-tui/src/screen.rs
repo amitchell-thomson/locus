@@ -115,6 +115,7 @@ impl ScreenId {
         match self {
             ScreenId::Home => HOME,
             ScreenId::Project => PROJECT,
+            ScreenId::Decisions => DECISIONS,
             ScreenId::System => SYSTEM,
             ScreenId::Explore => EXPLORE,
             ScreenId::Learning => LEARNING,
@@ -147,6 +148,16 @@ const PROJECT: &[Section] = &[
     s('s', "sessions", None),
     s('c', "chores", None),
     s('a', "ask", None),
+];
+// The log's states down the left, then the entry on the right (round 2q). A state with no
+// decisions is not drawn, and Tab and the arrows pass over it.
+const DECISIONS: &[Section] = &[
+    s('r', "to re-check", None),
+    s('v', "under review", None),
+    s('n', "new", None),
+    s('h', "holding", None),
+    s('x', "replaced", None),
+    s('e', "the entry", None),
 ];
 const SYSTEM: &[Section] = &[
     s('r', "running", None),

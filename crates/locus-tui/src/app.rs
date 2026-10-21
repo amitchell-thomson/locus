@@ -30,6 +30,8 @@ pub enum Mark {
     Rejected,
     Undone,
     Parked,
+    /// A decision reopened for review (round 2q).
+    Reopened,
 }
 
 /// A mode that takes every key until it ends.
@@ -285,12 +287,20 @@ impl App {
         let n = secs.len();
         match key.code {
             KeyCode::Tab | KeyCode::BackTab => {
-                let next = match (at, key.code == KeyCode::Tab) {
+                let fwd = key.code == KeyCode::Tab;
+                let mut next = match (at, fwd) {
                     (None, true) => 0,
                     (None, false) => n - 1,
                     (Some(i), true) => (i + 1) % n,
                     (Some(i), false) => (i + n - 1) % n,
                 };
+                // A section with nothing in it is not drawn, so Tab passes over it (round 2q).
+                for _ in 0..n {
+                    if crate::ui::section_len(self, secs[next].letter) > 0 {
+                        break;
+                    }
+                    next = if fwd { (next + 1) % n } else { (next + n - 1) % n };
+                }
                 self.focus = Some(secs[next].letter);
                 true
             }
@@ -309,12 +319,16 @@ impl App {
                     self.sel.insert((screen, sec), cur + 1);
                 } else if d < 0 && cur > 0 {
                     self.sel.insert((screen, sec), cur - 1);
-                } else if d > 0 && i + 1 < n {
-                    let next = secs[i + 1].letter;
+                } else if d > 0
+                    && let Some(j) = (i + 1..n).find(|&j| crate::ui::section_len(self, secs[j].letter) > 0)
+                {
+                    let next = secs[j].letter;
                     self.focus = Some(next);
                     self.sel.insert((screen, next), 0);
-                } else if d < 0 && i > 0 {
-                    let prev = secs[i - 1].letter;
+                } else if d < 0
+                    && let Some(j) = (0..i).rev().find(|&j| crate::ui::section_len(self, secs[j].letter) > 0)
+                {
+                    let prev = secs[j].letter;
                     self.focus = Some(prev);
                     let last = crate::ui::section_len(self, prev).max(1) - 1;
                     self.sel.insert((screen, prev), last);

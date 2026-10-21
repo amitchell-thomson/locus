@@ -3,6 +3,7 @@
 //! the global ones) and `KEYS` (what the `?` overlay lists); the footer is shared.
 
 pub mod approve;
+pub mod decisions;
 pub mod explore;
 pub mod home;
 mod keys;
@@ -36,7 +37,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         ScreenId::Approve => approve::draw(f, body, app),
         ScreenId::AutoLog => approve::draw_log(f, body, app),
         ScreenId::InkConfirm => approve::draw_ink(f, body, app),
-        ScreenId::Decisions => projectdetail::draw_decisions(f, body, app),
+        ScreenId::Decisions => decisions::draw(f, body, app),
         ScreenId::Answered => projectdetail::draw_answered(f, body, app),
         ScreenId::Changes => projectdetail::draw_changes(f, body, app),
         ScreenId::Search => review::draw_search(f, body, app),
@@ -59,7 +60,8 @@ pub fn screen_key(app: &mut App, k: KeyEvent) -> bool {
         ScreenId::System | ScreenId::Budget => system::key(app, k),
         ScreenId::Explore => explore::key(app, k),
         ScreenId::Approve | ScreenId::AutoLog | ScreenId::InkConfirm => approve::key(app, k),
-        ScreenId::Decisions | ScreenId::Answered | ScreenId::Changes => projectdetail::key(app, k),
+        ScreenId::Decisions => decisions::key(app, k),
+        ScreenId::Answered | ScreenId::Changes => projectdetail::key(app, k),
         ScreenId::Search | ScreenId::Review => review::key(app, k),
         ScreenId::WorkChart => false,
         ScreenId::Prep | ScreenId::Learning => learning::key(app, k),
@@ -71,7 +73,12 @@ pub fn screen_key(app: &mut App, k: KeyEvent) -> bool {
 pub fn flows(s: ScreenId) -> bool {
     matches!(
         s,
-        ScreenId::Home | ScreenId::Project | ScreenId::System | ScreenId::Learning | ScreenId::Prep
+        ScreenId::Home
+            | ScreenId::Project
+            | ScreenId::Decisions
+            | ScreenId::System
+            | ScreenId::Learning
+            | ScreenId::Prep
     )
 }
 
@@ -80,6 +87,7 @@ pub fn section_len(app: &App, sec: char) -> usize {
     match app.screen() {
         ScreenId::Home => home::section_len(app, sec),
         ScreenId::Project => project::section_len(app, sec),
+        ScreenId::Decisions => decisions::section_len(app, sec),
         ScreenId::System => match sec {
             'r' => app.fixtures.system.running.len(),
             'e' => app.fixtures.system.recent.len().min(6),
@@ -112,7 +120,7 @@ pub fn screen_keys(s: ScreenId) -> &'static [(&'static str, &'static str)] {
         ScreenId::Approve => approve::KEYS,
         ScreenId::AutoLog => approve::LOG_KEYS,
         ScreenId::InkConfirm => approve::INK_KEYS,
-        ScreenId::Decisions => projectdetail::DECISION_KEYS,
+        ScreenId::Decisions => decisions::KEYS,
         ScreenId::Answered => projectdetail::ANSWER_KEYS,
         ScreenId::Changes => projectdetail::CHANGE_KEYS,
         ScreenId::Search => review::SEARCH_KEYS,

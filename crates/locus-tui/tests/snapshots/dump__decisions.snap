@@ -2,41 +2,41 @@
 source: crates/locus-tui/tests/dump.rs
 expression: "dump::render(&a, 95, 38).unwrap()"
 ---
-╭ quast · decisions · 1 re-check · 5 holding · 1 re-decided ──────────────────────── esc back ╮
-│▌ 󱉶 §8bf    The units at stage 1: the µeV core kept, the scale fixed by …   7 Oct  re-check  │
-│  󰌾 §8bn    The input layer, built: the typical gate three times closer,…  10 Oct  holding   │
-│  󰌾 §8bl    The scope: QUAST starts where the lab's tools stop - a devic…   9 Oct  holding   │
-│  󰌾 §8bh    Mixed precision on a graphics card: a tune-up in about six s…   8 Oct  holding   │
-│  󰌾 §8az    The placement menu was the largest loss in the system; the g…  29 Sep  holding   │
-│  󰃻 §8ay    The loop cleaned up: the guard and the second opinion retire…  28 Sep  → §8az    │
-│  󰌾 §8ap    The crowd drives the loop: 44 times closer to the best gate,…  27 Sep  holding   │
+╭ quast · decisions · 1 to re-check · 5 holding · 1 replaced ─────────────────────── esc back ╮
+│─ to re-check · 1 ───────────────────────────────────────────────────────────────────────────│
+│   󱉶 The units at stage 1: the µeV core kept, the scale fixed by convention, one … 󰅸   7 Oct │
+│     RIKEN's exchange against barrier voltage arrived on 19 Oct through Natalia: about 0.03… │
+│                                                                                             │
+│─ holding · 5 ───────────────────────────────────────────────────────────────────────────────│
+│   󰌾 The input layer, built: the typical gate three times closer, no failure fixed,…  10 Oct │
+│   󰌾 The scope: QUAST starts where the lab's tools stop - a device ready for two-qu…   9 Oct │
+│   󰌾 Mixed precision on a graphics card: a tune-up in about six seconds, gates as g…   8 Oct │
+│   󰌾 The placement menu was the largest loss in the system; the gate is now placed …  29 Sep │
+│   󰌾 The crowd drives the loop: 44 times closer to the best gate, every earlier fai…  27 Sep │
+│                                                                                             │
+│─ replaced · 1 ──────────────────────────────────────────────────────────────────────────────│
+│   󰃻 The loop cleaned up: the guard and the second opinion retired, knowingly         28 Sep │
 │─────────────────────────────────────────────────────────────────────────────────────────────│
-│ §8bf · agreed 7 Oct                                                                         │
-│ chose     keep the µeV core and carry one lever-arm ratio in θ: the gate does not need the  │
-│           absolute scale (§8bd)                                                             │
-│ over      a full lever-arm matrix in θ: more parameters than one detuning sweep can         │
-│           identify                                                                          │
-│ over      volts throughout: ties the core to one device's calibration                       │
-│ evidence  §8bd: placing the gate does not need the absolute energy scale                    │
-│ re-check  RIKEN's exchange against barrier voltage is 2.6x shallower than the prior assumed │
-│           (19 Oct)                                                                          │
-│ affects   barrier control step 7 · the prior's width on t_c                                 │
+│  The units at stage 1: the µeV core kept, the scale fixed by convention, one lever-arm      │
+│  ratio in θ                                                                                 │
+│  󱉶 re-check · agreed 7 Oct · 󰅸 new since you last looked                                    │
 │                                                                                             │
+│  re-check    RIKEN's exchange against barrier voltage arrived on 19 Oct through Natalia:    │
+│              about 0.03 per mV in tunnel coupling, about 2.6 times shallower than the       │
+│              germanium-centred prior assumed (0.08 per mV), with saturation inside the      │
+│              range a CZ uses and the barrier range too short at that slope. Three changes   │
+│              were proposed and none applied yet. The same day RIKEN's lever arm (80-100     │
+│              µeV/mV) was found to bracket the fixed 90 µeV/mV to about ten per cent, so     │
+│              their 50-60 mV addition voltage reads as 4,500-5,400 µeV in this project's     │
+│              units, inside the charging-energy prior.                                       │
+│  built on by 󰌾 The input layer, built: the typical gate three times closer, no failure fix… │
+│              󰌾 The scope: QUAST starts where the lab's tools stop - a device ready for two… │
 │                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                        ? ask why · o reopen · c into the chat · ⏎ full entry│
+│  question    Stage 1 was about to read a charge stability diagram, which is measured in     │
+│              gate volts and fixes the device only up to a common scale, while the           │
+│              simulator's core works in µeV. Either the core keeps µeV and converts at the   │
+│              boundary, or it becomes volt-referred throughout; it had to be settled before  │
+│   ↓ more · ⏎ or ⇥ to read on                                                                │
+│                                 ⏎ read it · o reopen · ? ask why · c its chat · f full entry│
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯
  ⏎ open · ⇥ sections · l log · / search · ? keys

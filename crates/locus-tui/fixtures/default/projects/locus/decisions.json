@@ -9,28 +9,34 @@
       "status": {
         "state": "holding"
       },
-      "question": "The first fixtures made \"project\" mean anything with a view, so an internship application got a Project view, opened in the Project window that follows tmux, and showed blank under another project's name. The first fix, a kind called project, left the word doing two jobs (a part of life and a shape of thing), so 3YP looked as if it belonged in three places, and the labelling is key to the backend logic.",
-      "chose": "Every item carries two independent labels from one global taxonomy: an area (Studies, Projects, Careers or Personal: which part of your life) and a kind (what shape of thing it is, which decides its machinery and its screen). The registry holds three kinds, repo, course and application, and the Project window shows repos only.",
-      "why": "Splitting where from what means a kind never implies an area and an area never implies a kind, so nothing has to sit in two places. A thing that seems to be two kinds is two linked things: B3 Group Design Project is a course and 3YP is the repo that does its work, linked by its course. A due date is an attribute that a task, an application's stage or a course milestone can carry, hard or soft, rather than a kind of its own. The taxonomy lives in the shared root in this repository and is served by the one HTTP service, so every app reads the same one, and which app stores a thing (kairos keeps tasks, keryx keeps mail) plays no part in how it is labelled. The Project window then needs no special cases: it only resolves a tmux session to a repo, whatever the repo's area.",
+      "brief": "Every item gets two separate labels: an area for which part of life, and a kind for what shape of thing. Splitting where from what means nothing has to sit in two places.",
+      "question": "The first fixtures made \"project\" mean anything with a view, so an application opened in the Project window and showed blank. A kind called project then made 3YP seem to belong in three places.",
+      "chose": "Two independent labels from one global taxonomy: an area (Studies, Projects, Careers, Personal) and a kind. The registry holds repo, course and application; the Project window shows repos only.",
+      "why": [
+        "A kind never implies an area and an area never implies a kind, so nothing sits in two places.",
+        "A thing that seems two kinds is two linked things: B3 is a course, 3YP the repo doing its work.",
+        "One taxonomy in the shared root, served by one HTTP service, so every app labels the same way.",
+        "The Project window needs no special cases: it only resolves a tmux session to a repo."
+      ],
       "over": [
-        "\"Project\" as anything with a view, as the first fixtures had it: an application opened in the Project window, which follows tmux, and showed blank under another project's name",
-        "A kind called project alongside the area called Projects: the word did two jobs, area and kind, so 3YP looked as if it belonged in Studies, Projects and course at once",
-        "Letting one thing be two kinds (3YP as both course and repo): replaced by two linked things, the course and the repo that does its work",
-        "A deadline as its own kind of object, as kairos has it: a due date is an attribute of whatever it belongs to",
-        "Labelling a thing by the app that stores it: storage is a detail and plays no part in how something is labelled"
+        "\"Project\" as anything with a view: an application opened in the Project window and showed blank under another project's name",
+        "A kind called project: the word meant both area and kind, so 3YP seemed to belong in three places",
+        "One thing as two kinds: 3YP becomes two linked things, the course and the repo doing its work",
+        "Deadline as its own kind: a due date is an attribute of whatever it belongs to",
+        "Labelling by the app that stores it: storage is a detail and plays no part in labelling"
       ],
       "assumes": [
-        "Every item has exactly one area; if things often need two areas at once, areas become tags instead",
-        "Labelling tracks Studies by default does not misfile them, although prep plans in Careers use them; if it misfiles them in search or the weekly review, tracks get no area and inherit their goal's"
+        "Every item has exactly one area; if two are often needed, areas become tags",
+        "Tracks labelled Studies are not misfiled when Careers prep plans use them; if they are, tracks inherit their goal's area"
       ],
       "costs": [
-        "kairos changes: its task types become sheet, coursework, admin and chore, and its separate deadline object becomes a due date on whatever it belongs to",
-        "New screens to build: an Application screen, and later a course view with Canvas",
+        "kairos changes: task types become sheet, coursework, admin and chore; deadlines become due dates on their owner",
+        "New screens: an Application screen now, a course view with Canvas later",
         "Tracks sit in Studies by default even when a Careers prep plan uses them"
       ],
       "evidence": [
         "Under the first fixtures an application opened in the Project window and showed blank under another project's name",
-        "Every area by every kind was laid out against real examples, from B15 sheet 3 and 3YP to Jump, G-Research, Millennium and Futsal, to check each thing has one place"
+        "Every area by every kind was laid out with real examples (B15 sheet 3, 3YP, Jump, Futsal) to check each thing has one place"
       ],
       "you": [
         {
@@ -54,12 +60,12 @@
         "ADR-004"
       ],
       "affects": [
-        "The shared contract: project kinds become repo, course and application, a repo links to its course, and the Project view gains questions from the dossier and a due list",
-        "Home: a section per area, with personal projects under Projects, careers and studies side by side, and Personal shown through the calendar and chores",
-        "The Project window, which follows the project window's tmux session and shows repos only",
+        "The shared contract: kinds become repo, course and application; a repo links to its course; the Project view gains questions and a due list",
+        "Home: one section per area, personal projects under Projects; Personal shows through the calendar and chores",
+        "The Project window, which follows its tmux session and shows repos only",
         "kairos task types and deadlines, a change raised in Slice 0",
-        "The Application screen in Slice 1, and the course view and Canvas in Slice 7",
-        "Every app, which reads the same taxonomy and registry through the one HTTP service"
+        "The Application screen in Slice 1; the course view and Canvas in Slice 7",
+        "Every app, reading one taxonomy and registry through the one HTTP service"
       ],
       "new": true
     },
@@ -70,25 +76,30 @@
       "status": {
         "state": "holding"
       },
-      "question": "The directory in the checkout holding the database, the raw store, the drop zone, his notes, backups, caches, logs and the Obsidian export was called vault/, which reads as an Obsidian vault, and one sits inside it. Renaming it was not just a rename, because paths under it are stored as identity: they are how an edited note is found and replaced, and they key the agent tables.",
-      "chose": "Rename vault/ to data/ everywhere (config defaults, the example config, code, tests, units, the outbox, CLAUDE.md), with migration 0037 rewriting the stored paths and no compatibility symlink.",
-      "why": "The old name invited confusion with Obsidian's vault. library/ was the other candidate, but the plan already uses \"the library\" for the frozen engine and its sources, and this directory also holds his notes, backups and caches, so data/ is the accurate name. Because stored paths are identity, renaming the directory alone would have made every edited note arrive as a second document, silently, so the stored paths are migrated in the same change. On the server the directory moves once, inside the server sync script, under the ingest lock, and its config is rewritten there.",
+      "brief": "Rename vault/ to data/ and migrate every stored path with it. Stored paths are identity, so renaming the folder alone would silently duplicate every edited note.",
+      "question": "vault/ holds the database, notes, caches and backups, but reads as an Obsidian vault, and one sits inside it. Its paths are stored as identity, so renaming is not just a rename.",
+      "chose": "Rename vault/ to data/ everywhere, with migration 0037 rewriting the stored paths and no compatibility symlink.",
+      "why": [
+        "vault/ invited confusion with Obsidian's vault.",
+        "data/ is accurate: \"the library\" already means the frozen engine, and this also holds notes, backups and caches.",
+        "Stored paths are identity, so they migrate in the same change or edited notes arrive twice."
+      ],
       "over": [
-        "Keep vault/: the name reads as an Obsidian vault, and one sits inside it",
-        "library/: the plan uses \"the library\" for the frozen engine and its sources, and this directory also holds his notes, backups and caches",
-        "Rename the directory without migrating stored paths: every edited note would have arrived as a second document, silently"
+        "Keep vault/: reads as an Obsidian vault, and one sits inside it",
+        "library/: the plan's \"library\" is the frozen engine, and this folder also holds notes, backups and caches",
+        "Rename without migrating paths: every edited note would silently arrive as a second document"
       ],
       "assumes": [
-        "The directory stays one thing; if it ever splits into a library store and his notes, the parts get named then"
+        "The directory stays one thing; if it splits into a library store and your notes, the parts get named then"
       ],
       "costs": [
-        "Long-running MCP sessions started before the deploy hold the old config and cannot open the database until they restart",
-        "Corpus text that mentions vault/ still says so, because derived layers do not edit what a document said",
-        "Model prompts that call the corpus a \"knowledge vault\" are left as they are so their pass caches stay valid; only user-facing wording now says \"library\"",
-        "The notes-writer code package keeps the name vault, and docs written before the rename keep the old paths as history"
+        "MCP sessions started before the deploy cannot open the database until they restart",
+        "Corpus text that mentions vault/ still says so; derived layers do not edit documents",
+        "Model prompts keep \"knowledge vault\" so pass caches stay valid; only user-facing wording says \"library\"",
+        "The notes-writer package keeps the name vault; older docs keep the old paths as history"
       ],
       "evidence": [
-        "The migration rewrites 1,549 rows across 14 columns on the server, and was trialled on a copy before deploying"
+        "The migration rewrites 1,549 rows across 14 columns on the server, trialled on a copy before deploying"
       ],
       "you": [
         {
@@ -118,25 +129,30 @@
       "status": {
         "state": "holding"
       },
-      "question": "The crates shared by kairos and keryx (eco-dates) lived in a separate repository, first called eco and then renamed locus-shared, and Slice 1 added the theme to it. The locus window reached it through a relative path that only works with both repositories checked out side by side, and every theme change during the design rounds would otherwise cost a commit and a push there plus a pin bump here.",
-      "chose": "One Rust workspace at the root of this repository holding eco-dates, locus-theme, locus-contract and locus-tui, which replaces the TUI's own folder. kairos and keryx keep their current pins and move their dependency to this repository when each is next touched.",
-      "why": "With the crates here, a theme or contract change during the design rounds is one commit. The plan already merges the repositories once the shared root has real contents, and it now holds the taxonomy, the screen contracts and the theme, so this is the first piece of that merge. kairos and keryx do not break: their pins still resolve because the old GitHub repository is archived rather than deleted and redirects from eco, and Cargo finds a crate by name anywhere in a repository. Moving kairos and keryx themselves into this repository stays a later decision.",
+      "brief": "Fold the shared Rust crates into one workspace in this repository. A theme or contract change during design rounds is then one commit, not a commit, a push and a pin bump.",
+      "question": "The shared crates lived in a separate repository, reached by a relative path that only builds with both checked out. Each theme change would cost a commit and push there plus a pin bump here.",
+      "chose": "One Rust workspace at this repository's root: eco-dates, locus-theme, locus-contract and locus-tui. kairos and keryx keep their pins and repoint here when next touched.",
+      "why": [
+        "A theme or contract change during the design rounds is one commit.",
+        "The plan merges the repositories once the shared root has real contents; it now has them.",
+        "kairos and keryx do not break: the archived old repository still resolves their pins."
+      ],
       "over": [
-        "Keep the name eco: it did not say what the crates are, so it became locus-shared before being folded in",
-        "A separate locus-shared repository reached by a relative path: it only builds on a machine with both repositories checked out side by side",
-        "A separate locus-shared repository reached by a git pin: every theme change in a design round becomes a commit there, a push, and a pin bump here",
-        "A git submodule: two commits per change and a pin that is easy to forget, so a checkout can build old code while looking current"
+        "Keep the name eco: it did not say what the crates are, so it became locus-shared",
+        "Separate repository by relative path: only builds with both repositories checked out side by side",
+        "Separate repository by git pin: each theme change is a commit there, a push, and a pin bump here",
+        "A git submodule: two commits per change, and a forgotten pin can build old code while looking current"
       ],
       "assumes": [
         "kairos and keryx need shared-crate changes on roughly the same cadence as locus",
-        "The repository's Python side does not get in the way of their builds; if either fails, the shared crates move back out into a repository that holds only them"
+        "The Python side does not get in the way of their builds; if either fails, the crates move to a repository of their own"
       ],
       "costs": [
         "kairos and keryx builds fetch this whole repository for two small crates",
-        "A change here to a crate kairos or keryx uses does not reach them until their pin is bumped, as before"
+        "A crate change here reaches kairos or keryx only when their pin is bumped, as before"
       ],
       "evidence": [
-        "eco-dates was copied verbatim, identical to locus-shared main at d2191b2; locus-theme came from its theme branch at b74d7a0",
+        "eco-dates was copied verbatim from locus-shared main (d2191b2); locus-theme from its theme branch (b74d7a0)",
         "This repository is 4.3 MB of history, against kairos's own 10 MB",
         "The old pins still resolve: the GitHub repository is archived, not deleted, and redirects from eco"
       ],
@@ -153,7 +169,7 @@
       "rests_on": [],
       "affects": [
         "The locus window and its fixtures, now under crates/",
-        "The screen contracts and the theme, edited in one commit each during design rounds",
+        "The screen contracts and theme, one commit per change in design rounds",
         "kairos and keryx, which repoint their dependency here when next touched",
         "The later decision on moving kairos and keryx into this repository"
       ],
@@ -166,26 +182,32 @@
       "status": {
         "state": "holding"
       },
-      "question": "The laptop drop folder is the hand path into the library, synced to the server's incoming folder every minute. It had five subfolders (papers, coursework, projects, career, notes) because ingest takes the first folder as the document's category, which mixed what kind of file it is with what it is for, while the plan labels everything by area and does not list a hand drop among the ways sources arrive.",
-      "chose": "Keep the drop folder for files that reach no other path, organised by area like the notes repository and the tablet: studies/<course>/, projects/<name>/, careers/<company or general>/, personal/, with the root meaning let the system decide. Nothing dropped into an area folder counts as his writing, and repository drops are retired.",
-      "why": "Some files still reach no other path: a downloaded PDF, lecture material before the Canvas pull, a career document. A flat folder was chosen first on the understanding that the system labels arrivals, but labelling on arrival is a later slice, so a flat drop would be filed uncategorized. Area folders say what a file is for in the same tree used everywhere else, and the course or project folder survives in the stored incoming path for the later labeller to read. Treating area drops as sources rather than his writing closes a hole where a third-party document dropped in personal or careers would have had positions drawn from it and attributed to him; his own writing arrives through the notes repository and the tablet, recognised by location.",
+      "brief": "Keep the drop folder, organised by area like the notes repository and the tablet. The system cannot label arrivals yet, so a flat folder would file everything uncategorized.",
+      "question": "The drop folder's five type subfolders set each file's category, mixing what a file is with what it is for. The plan labels everything by area and does not list a hand drop.",
+      "chose": "Keep it for files with no other path, in folders studies/<course>/, projects/<name>/, careers/<company or general>/ and personal/; the root means let the system decide. Area drops never count as your writing, and repository drops are retired.",
+      "why": [
+        "Some files reach no other path: a downloaded PDF, early lecture material, a career document.",
+        "Labelling on arrival is a later slice, so a flat drop would be filed uncategorized.",
+        "Area folders match the tree used everywhere, and the stored path keeps the folder for the later labeller.",
+        "Treating drops as sources stops a third-party document being attributed to you."
+      ],
       "over": [
-        "The old five subfolders by type (papers, coursework, projects, career, notes): they mixed what kind of file it is, readable from the file, with what it is for, which is not",
-        "One flat folder where the system labels what arrives: chosen first and revised the same day, because the system cannot label yet and everything would be filed uncategorized",
-        "Dropping the hand path, since the plan's list of ways in does not include it: kept, because some files reach no other path",
-        "Keeping repository drops, where a directory under projects was ingested whole as a code snapshot: retired, and the plan removes repository ingest anyway"
+        "Five subfolders by type: they mixed what kind of file it is with what it is for",
+        "One flat folder: chosen first, revised the same day because the system cannot label yet",
+        "Dropping the hand path: kept, because some files reach no other path",
+        "Keeping repository drops: retired, and the plan removes repository ingest anyway"
       ],
       "assumes": [
-        "The labeller is not yet reliable enough to make the folders unnecessary; once it is, they can go, since the root already works",
-        "The library still keys behaviour on the old categories, so each area folder maps onto one; if those categories are retired, the folders map to areas directly"
+        "The labeller is not yet reliable enough to replace the folders; once it is, they can go",
+        "The library still keys on the old categories, so each area folder maps to one; if those are retired, folders map to areas directly"
       ],
       "costs": [
-        "A write-up of his dropped in projects/ counts as a source, not his writing, including the two OQTS specs already filed under the old projects folder; their stored beliefs and links stay, but nothing new is drawn from them",
-        "Subfolders are optional, so a root drop stays uncategorized until the labeller exists",
-        "The outbox script still lives outside the repository until transcripts sync in Slice 0"
+        "Your write-ups dropped in projects/ count as sources, including the two OQTS specs; nothing new is drawn from them",
+        "A root drop stays uncategorized until the labeller exists",
+        "The outbox script stays outside the repository until transcripts sync in Slice 0"
       ],
       "evidence": [
-        "Before this, a text file whose category was note, project or career counted as his, so a third-party .docx in personal or careers would have been attributed to him"
+        "Before this, a third-party .docx in personal or careers would have counted as your writing"
       ],
       "you": [
         {
@@ -203,10 +225,10 @@
       ],
       "rests_on": [],
       "affects": [
-        "Ingest's category mapping from area folders, with personal getting its own category",
-        "The check for what counts as his writing, in both the structure proposer and the shared owner-authored query",
+        "Ingest's category mapping from area folders; personal gets its own category",
+        "The check for your writing, in the structure proposer and the owner-authored query",
         "The laptop outbox job and the server's incoming folder",
-        "The arrival labeller in a later slice, which reads the course or project folder from the stored path"
+        "The later arrival labeller, which reads the course or project folder from the stored path"
       ]
     },
     {
@@ -216,24 +238,30 @@
       "status": {
         "state": "holding"
       },
-      "question": "His key work is the planning and guidance, so the method for executing the plan had to be chosen: whether to drive slices with /goal, with chat messages like \"start slice 0\", or something else in Claude Code.",
-      "chose": "Each slice starts with a spec in docs/redesign/slices/ that he approves before anything is built; one named session per slice, with mechanical steps under /goal with a printed check and a turn bound, judgement stopping to ask, and design work in plain chat; each slice ends with a report in its spec file.",
-      "why": "It puts his time on specs and reports rather than on supervising mechanical work. /goal keeps a session working until a small model judges the condition met, but that judge runs no commands and reads no files, so a condition must name a check whose output is printed, plus a turn bound. Plain chat keeps him in every step, which suits design work at the screen but drifts and loses context over a long slice. The spec lists his decisions up front and flags departures from the plan, and the report gives done, evidence per \"done when\", deviations and decisions, with big ones going to the tablet.",
+      "brief": "Each slice gets a spec you approve, mechanical steps under /goal, design in chat, and a closing report. Your time goes on specs and reports, not on supervising mechanical work.",
+      "question": "Your key work is planning and guidance, so how should slices be executed: /goal, chat messages like \"start slice 0\", or something else?",
+      "chose": "A spec per slice in docs/redesign/slices/, approved before building, and one session per slice. Mechanical steps run under /goal with a printed check and a turn bound, design work in chat, and each slice ends with a report.",
+      "why": [
+        "Your time goes on specs and reports, not on supervising mechanical work.",
+        "The /goal judge reads no files, so each step names a printed check and a turn bound.",
+        "Chat keeps you in every step, which suits design at the screen but drifts over a long slice.",
+        "The spec lists your decisions up front and flags departures from the plan."
+      ],
       "over": [
-        "Plain chat messages for every step: keeps him in every step but drifts and loses context over a long slice; kept only for design work",
-        "Plan mode: blocks edits until a written plan is approved; the record gives no further reason",
-        "Workflows that fan out many agents: suited to wide jobs, not ordered slices"
+        "Chat for every step: keeps you in every step but drifts and loses context over a long slice",
+        "Plan mode: blocks edits until a written plan is approved; no further reason recorded",
+        "Fan-out workflows: suited to wide jobs, not ordered slices"
       ],
       "assumes": [
         "/goal runs do not often drift from the spec or stop early",
-        "He does not find specs a chore he skims; if either fails, steps become smaller and chat-driven, or specs shorter"
+        "You do not skim specs as a chore; if either fails, steps become smaller and chat-driven, or specs shorter"
       ],
       "costs": [
         "A spec costs time before each slice; small slices may get a short one",
         "/goal is session-scoped and runs unattended only in auto mode"
       ],
       "evidence": [
-        "The options were checked against Claude Code's docs on 19 Oct 2026, including that the /goal judge sees only what the transcript shows"
+        "The options were checked against Claude Code's docs on 19 Oct 2026, including that the /goal judge sees only the transcript"
       ],
       "you": [
         {
@@ -249,7 +277,7 @@
       "affects": [
         "Every slice of the redesign, starting with Slice 0",
         "The spec files in docs/redesign/slices/",
-        "Slice 1, the design work, done in chat with him at the screen"
+        "Slice 1, the design work, done in chat with you at the screen"
       ]
     },
     {
@@ -259,22 +287,27 @@
       "status": {
         "state": "holding"
       },
-      "question": "The plan was written and marked up on paper over four versions, but its LaTeX source lived in a session scratchpad that was deleted mid-way, and version 2 had to be recovered from the session transcript. Sessions that build locus need the plan without someone pasting it in, and the existing CLAUDE.md described only the current engine.",
-      "chose": "plan.tex (version 4, final) and info.tex in docs/redesign/ are the source of truth for the redesign, read as source. CLAUDE.md gains a new first section on top saying what is changing, where the plan is, how the build runs and which engine sections are being removed.",
-      "why": "Keeping the plan in the repository means any session sees the redesign first and the engine detail second, and nothing depends on a scratchpad surviving. The existing CLAUDE.md is 706 lines about the engine, much of it hard-won invariants (the silent-failure class, VRAM choreography, idempotent ingest) that stay true for the library. So its sections are kept intact and shrink as their code is removed slice by slice, rather than being rewritten up front.",
+      "brief": "Keep the plan's source in the repository and point CLAUDE.md at it first. Its scratchpad copy was deleted mid-way, so nothing should depend on one surviving.",
+      "question": "The plan's source lived in a session scratchpad that was deleted mid-way. Sessions need the plan without it being pasted in, and CLAUDE.md described only the old engine.",
+      "chose": "plan.tex (version 4, final) and info.tex in docs/redesign/ are the source of truth. CLAUDE.md gains a first section on what is changing, where the plan is and how the build runs.",
+      "why": [
+        "Nothing depends on a scratchpad surviving.",
+        "Any session sees the redesign first and the engine detail second.",
+        "CLAUDE.md's engine invariants stay true for the library, so it shrinks slice by slice instead of being rewritten."
+      ],
       "over": [
-        "Keeping the plan's source outside the repository, in a session scratchpad: it was deleted mid-way and version 2 had to be recovered from a transcript",
-        "Rewriting CLAUDE.md in full up front: much of it is hard-won invariants that stay true for the library, so it shrinks slice by slice instead"
+        "Plan source in a session scratchpad: it was deleted mid-way, and version 2 was recovered from a transcript",
+        "Rewriting CLAUDE.md up front: its hard-won invariants stay true for the library, so it shrinks slice by slice"
       ],
       "assumes": [
         "Sessions do not keep acting on engine sections marked for removal",
         "The plan and CLAUDE.md do not drift apart; if either happens, CLAUDE.md is rewritten in full"
       ],
       "costs": [
-        "Two documents for a while, the plan and the engine sections of CLAUDE.md, with a table saying which engine sections are on their way out"
+        "Two documents for a while, the plan and CLAUDE.md's engine sections, with a table marking which are on their way out"
       ],
       "evidence": [
-        "The scratchpad holding the plan's source was deleted mid-way through the four versions, and version 2 was recovered from the session transcript"
+        "The scratchpad holding the plan's source was deleted mid-way, and version 2 was recovered from the transcript"
       ],
       "you": [
         {

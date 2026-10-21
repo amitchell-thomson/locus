@@ -5,7 +5,7 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 ╭ quast · decisions · 1 to re-check · 5 holding · 1 replaced ─────────────────────── esc back ╮
 │─ to re-check · 1 ───────────────────────────────────────────────────────────────────────────│
 │   󱉶 The units at stage 1: the µeV core kept, the scale fixed by convention, one … 󰅸   7 Oct │
-│     RIKEN's exchange against barrier voltage arrived on 19 Oct through Natalia: about 0.03… │
+│     On 19 Oct RIKEN's exchange against barrier voltage came via Natalia: about 0.03 per mV… │
 │                                                                                             │
 │─ holding · 5 ───────────────────────────────────────────────────────────────────────────────│
 │   󰌾 The input layer, built: the typical gate three times closer, no failure fixed,…  10 Oct │
@@ -21,19 +21,19 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │  ratio in θ                                                                                 │
 │  󱉶 re-check · agreed 7 Oct · 󰅸 new since you last looked                                    │
 │                                                                                             │
+│   Keep the µeV core and fix the scale by convention: no measurement can pin the absolute    │
+│   scale, so making it a parameter would only waste the crowd.                               │
+│                                                                                             │
 │─ why re-check ──────────────────────────────────────────────────────────────────────────────│
-│   RIKEN's exchange against barrier voltage arrived on 19 Oct through Natalia: about 0.03    │
-│   per mV in tunnel coupling, about 2.6 times shallower than the germanium-centred prior     │
-│   assumed (0.08 per mV), with saturation inside the range a CZ uses and the barrier range   │
-│   too short at that slope. Three changes were proposed and none applied yet. The same day   │
-│   RIKEN's lever arm (80-100 µeV/mV) was found to bracket the fixed 90 µeV/mV to about ten   │
-│   per cent, so their 50-60 mV addition voltage reads as 4,500-5,400 µeV in this project's   │
-│   units, inside the charging-energy prior.                                                  │
+│   On 19 Oct RIKEN's exchange against barrier voltage came via Natalia: about 0.03 per mV,   │
+│   about 2.6 times shallower than the prior's 0.08, saturating inside a CZ's range; three    │
+│   changes proposed, none applied. The same day their lever arm (80-100 µeV/mV, as Intel's)  │
+│   was found to bracket the fixed 90 to about ten per cent, putting their charging energy at │
+│   4,500-5,400 µeV, inside the prior.                                                        │
 │                                                                                             │
 │─ connections ───────────────────────────────────────────────────────────────────────────────│
 │   built on by 󰌾 The input layer, built: the typical gate three times closer, no failure fi… │
 │               󰌾 The scope: QUAST starts where the lab's tools stop - a device ready for tw… │
-│                                                                                             │
 │   ↓ more · → to read on                                                                     │
 │─ ask about this decision ───────────────────────────────────────────────────────────── [a] ─│
 │   ask › ␣ to ask about this decision · the answer comes back on it                          │

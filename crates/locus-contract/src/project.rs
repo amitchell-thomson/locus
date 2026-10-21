@@ -172,12 +172,16 @@ pub struct Decision {
     pub title: String,
     pub date: NaiveDate,
     pub status: DecisionStatus,
+    /// Two lines at most, in plain words: what was chosen and the one biggest reason. The entry
+    /// leads with it (round 2w: the entry was "a little too dense, and time consuming to read
+    /// such that I might skip over it").
+    pub brief: String,
     /// What needed deciding, and why it came up then.
     pub question: String,
     /// What was chosen, plainly.
     pub chose: String,
-    /// Why, in full: the reasoning that made this the choice.
-    pub why: String,
+    /// Why: the reasons, one per item, each short (round 2w: bullets, not a paragraph).
+    pub why: Vec<String>,
     /// The options rejected, each with why it lost ("keeps me in the loop on other options so
     /// I can reopen questions on why another method might not be better now").
     #[serde(default)]

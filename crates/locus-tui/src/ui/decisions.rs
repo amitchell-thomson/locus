@@ -110,6 +110,98 @@ fn asked_key(project: &str, id: &str) -> String {
     format!("{project}:{id}")
 }
 
+/// One folded section of the entry: its name and colour, the one-line summary shown folded,
+/// and its items when open.
+struct Fold {
+    name: &'static str,
+    colour: &'static str,
+    summary: String,
+    lines: Vec<(String, Style)>,
+}
+
+/// The entry's sections after the brief, in reading order (round 2w): why first, then the
+/// choice in full and your words, what it beat, assumes and costs, then the background. The
+/// states keep yellow, sky, peach, green and mauve and focus keeps blue, so these take the rest
+/// of the palette (round 2t).
+fn folds(d: &Decision) -> Vec<Fold> {
+    let first = |v: &[String]| v.first().cloned().unwrap_or_default();
+    let count = |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+    let plain = |v: &[String]| v.iter().map(|x| (x.clone(), text())).collect::<Vec<_>>();
+    let mut out = vec![
+        Fold {
+            name: "why",
+            colour: "flamingo",
+            summary: format!("{} · {}", count(d.why.len(), "reason", "reasons"), first(&d.why)),
+            lines: plain(&d.why),
+        },
+        Fold {
+            name: "chose",
+            colour: "rosewater",
+            summary: d.chose.clone(),
+            lines: vec![(d.chose.clone(), text())],
+        },
+    ];
+    // Your own words, whenever there are any ("definitely quote me").
+    if !d.you.is_empty() {
+        out.push(Fold {
+            name: "you said",
+            colour: "pink",
+            summary: format!("“{}”", d.you[0].text),
+            lines: d
+                .you
+                .iter()
+                .map(|q| (format!("“{}”  ({})", q.text, q.source), st("pink")))
+                .collect(),
+        });
+    }
+    // The options it beat, named: the part of each before its colon.
+    let names: Vec<String> = d
+        .over
+        .iter()
+        .map(|o| o.split(':').next().unwrap_or(o).trim().to_string())
+        .collect();
+    for (name, colour, v, one, many) in [
+        ("over", "maroon", &d.over, "option", "options"),
+        ("assumes", "lavender", &d.assumes, "", ""),
+        ("costs", "red", &d.costs, "", ""),
+    ] {
+        if v.is_empty() {
+            continue;
+        }
+        let summary = if name == "over" {
+            format!("{}: {}", count(v.len(), one, many), names.join(", "))
+        } else {
+            format!("{} · {}", v.len(), first(v))
+        };
+        out.push(Fold {
+            name,
+            colour,
+            summary,
+            lines: plain(v),
+        });
+    }
+    out.push(Fold {
+        name: "question",
+        colour: "sapphire",
+        summary: d.question.clone(),
+        lines: vec![(d.question.clone(), text())],
+    });
+    for (name, colour, v) in [
+        ("evidence", "subtext1", &d.evidence),
+        ("affects", "overlay2", &d.affects),
+    ] {
+        if !v.is_empty() {
+            out.push(Fold {
+                name,
+                colour,
+                summary: format!("{} · {}", v.len(), first(v)),
+                lines: plain(v),
+            });
+        }
+    }
+    out
+}
+
 /// A question typed on the ask line, about the decision on the right.
 pub fn ask(app: &mut App, q: String) {
     let Some(ds) = log(app).cloned() else { return };
@@ -220,7 +312,7 @@ fn links(ds: &Decisions, i: usize) -> Vec<(&'static str, usize)> {
 pub fn section_len(app: &App, sec: char) -> usize {
     let Some(ds) = log(app) else { return 0 };
     if sec == 'e' {
-        // The links, then each line the entry can still scroll by.
+        // The links, then each folded section.
         let m = app
             .shown
             .borrow()
@@ -610,6 +702,12 @@ fn draw_entry(f: &mut Frame, area: Rect, app: &App, ds: &Decisions, i: usize) {
         state.push(Span::styled(format!("{SEP}decided in {chat}"), dim()));
     }
     out.push(Line::from(state));
+    // The brief leads: what was chosen and the one biggest reason, in two lines at most, so
+    // most visits end here (round 2w).
+    out.push(Line::from(""));
+    for l in wrap(&d.brief, w.saturating_sub(4)) {
+        out.push(Line::from(vec![Span::raw("   "), Span::styled(l, bold(text()))]));
+    }
     let head = |out: &mut Vec<Line<'static>>, title: &str, colour: &str| {
         out.push(Line::from(""));
         let mut r = rule(title, "", None, false, area.width);
@@ -621,16 +719,6 @@ fn draw_entry(f: &mut Frame, area: Rect, app: &App, ds: &Decisions, i: usize) {
     let para = |out: &mut Vec<Line<'static>>, value: &str, style: Style| {
         for l in wrap(value, body) {
             out.push(Line::from(vec![Span::raw("   "), Span::styled(l, style)]));
-        }
-    };
-    let items = |out: &mut Vec<Line<'static>>, values: &[String], style: Style| {
-        for v in values {
-            for (j, l) in wrap(v, body.saturating_sub(2)).into_iter().enumerate() {
-                out.push(Line::from(vec![
-                    Span::styled(if j == 0 { "   - " } else { "     " }, dim()),
-                    Span::styled(l, style),
-                ]));
-            }
         }
     };
     if let Some(r) = d.recheck.as_ref().filter(|_| status == DecisionStatus::Recheck) {
@@ -666,7 +754,6 @@ fn draw_entry(f: &mut Frame, area: Rect, app: &App, ds: &Decisions, i: usize) {
         .filter(|(k, _)| *k == asked_key(&ds.project, &d.id))
         .map(|(_, q)| q)
         .collect();
-    let asked_at = out.len();
     if !answered.is_empty() || !pending.is_empty() {
         head(&mut out, "asked", "text");
         for q in &pending {
@@ -722,47 +809,83 @@ fn draw_entry(f: &mut Frame, area: Rect, app: &App, ds: &Decisions, i: usize) {
             last = label;
         }
     }
-    head(&mut out, "question", "sapphire");
-    para(&mut out, &d.question, text());
-    head(&mut out, "chose", "rosewater");
-    para(&mut out, &d.chose, bold(text()));
-    head(&mut out, "why", "flamingo");
-    para(&mut out, &d.why, text());
-    // Your own words, whenever there are any ("definitely quote me").
-    if !d.you.is_empty() {
-        head(&mut out, "you said", "pink");
-        for q in &d.you {
-            para(&mut out, &format!("“{}”", q.text), st("pink"));
-            out.push(Line::from(Span::styled(format!("     {}", q.source), dim())));
-        }
-    }
-    let sections: [(&str, &str, &Vec<String>); 5] = [
-        ("over", "maroon", &d.over),
-        ("assumes", "lavender", &d.assumes),
-        ("costs", "red", &d.costs),
-        ("evidence", "subtext1", &d.evidence),
-        ("affects", "overlay2", &d.affects),
-    ];
-    for (name, colour, values) in sections {
-        if !values.is_empty() {
-            head(&mut out, name, colour);
-            items(&mut out, values, text());
+    // The rest, folded to a line each: its name and a summary, Enter or → opens one at a time
+    // (round 2w: "a little too dense ... I might skip over it"). In the order he reads them:
+    // why, then what was given up and assumed, then the background.
+    let fs = folds(d);
+    let open = app.sel('o').checked_sub(1);
+    let mut fold_at = Vec::new();
+    head(&mut out, "in full", "subtext0");
+    for (k, fd) in fs.iter().enumerate() {
+        let at = ls.len() + k;
+        fold_at.push(out.len());
+        let is_open = open == Some(k);
+        out.push(row(
+            vec![
+                if focus && sel == at {
+                    pointer(0, Some(0))
+                } else {
+                    Span::raw("  ")
+                },
+                Span::styled(if is_open { " ▾ " } else { " ▸ " }, dim()),
+                Span::styled(format!("{:<10}", fd.name), bold(st(fd.colour))),
+                // Open, the summary would repeat what is under it: just the count, if any.
+                Span::styled(
+                    if is_open {
+                        fd.summary
+                            .split([':', '·'])
+                            .next()
+                            .filter(|c| c.trim().starts_with(|ch: char| ch.is_ascii_digit()))
+                            .unwrap_or("")
+                            .trim()
+                            .to_string()
+                    } else {
+                        fd.summary.clone()
+                    },
+                    if is_open { dim() } else { st("subtext0") },
+                ),
+            ],
+            vec![],
+            area.width,
+        ));
+        if is_open {
+            for (text_, style) in &fd.lines {
+                for (j, l) in wrap(text_, body.saturating_sub(6)).into_iter().enumerate() {
+                    out.push(Line::from(vec![
+                        Span::styled(if j == 0 { "      - " } else { "        " }, dim()),
+                        Span::styled(l, *style),
+                    ]));
+                }
+            }
+            out.push(Line::from(""));
         }
     }
     while out.last().is_some_and(|l| l.width() == 0) {
         out.pop();
     }
-    let _ = link_at;
-    // Scrolling: past the links, each ↓ moves the entry up a line.
+    // Scrolling follows the selection: the selected row in view, with as much of its open
+    // section under it as fits.
     let h = usize::from(area.height);
     let max_scroll = out.len().saturating_sub(h);
     app.shown
         .borrow_mut()
-        .insert((ScreenId::Decisions, 'e'), vec![ls.len(), max_scroll, asked_at]);
-    let scroll = if focus && sel >= ls.len() {
-        (sel + 1 - ls.len()).min(max_scroll)
+        .insert((ScreenId::Decisions, 'e'), vec![ls.len(), fs.len()]);
+    let sel_line = if !focus {
+        None
+    } else if sel < ls.len() {
+        Some(link_at + 2 + sel)
     } else {
-        0
+        fold_at.get(sel - ls.len()).copied()
+    };
+    let scroll = match sel_line {
+        Some(l) => {
+            let end = match open {
+                Some(k) if fold_at.get(k) == Some(&l) => fold_at.get(k + 1).copied().unwrap_or(out.len()),
+                _ => l + 1,
+            };
+            end.saturating_sub(h).min(l.saturating_sub(1)).min(max_scroll)
+        }
+        None => 0,
     };
     let mut view: Vec<Line<'static>> = out.into_iter().skip(scroll).take(h).collect();
     let hidden = (max_scroll - scroll.min(max_scroll)) > 0;
@@ -787,7 +910,28 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
     match k.code {
         // → crosses to the entry, as Enter does; ← comes back to the decision in the list
         // (round 2r: "right arrow should take you to the description section").
-        KeyCode::Left if app.focus == Some('e') => focus_on(app, cur),
+        // ← folds the open section you are on, else goes back to the list.
+        KeyCode::Left if app.focus == Some('e') => {
+            let nl = links(&ds, cur).len();
+            let on = app.sel('e').checked_sub(nl);
+            if on.is_some() && app.sel('o').checked_sub(1) == on {
+                app.sel.insert((ScreenId::Decisions, 'o'), 0);
+            } else {
+                focus_on(app, cur);
+            }
+        }
+        // On a folded section, Enter opens or closes it and → opens it; one is open at a time.
+        code @ (KeyCode::Enter | KeyCode::Right) if app.focus == Some('e') && app.sel('e') >= links(&ds, cur).len() => {
+            let k = app.sel('e') - links(&ds, cur).len();
+            let open = app.sel('o').checked_sub(1);
+            // Enter toggles; → only opens.
+            let next = if open == Some(k) && matches!(code, KeyCode::Enter) {
+                0
+            } else {
+                k + 1
+            };
+            app.sel.insert((ScreenId::Decisions, 'o'), next);
+        }
         KeyCode::Enter | KeyCode::Right if in_list || app.focus.is_none() => {
             app.shown.borrow_mut().insert((ScreenId::Decisions, '*'), vec![cur]);
             app.focus = Some('e');
@@ -822,17 +966,9 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
         KeyCode::Char(' ') => app.mode = crate::app::Mode::Ask(String::new()),
         KeyCode::Enter if app.focus == Some('a') => {
             if app.asked.iter().any(|(k, _)| *k == asked_key(&ds.project, &d.id)) {
-                // Into the entry, scrolled to what you asked.
-                let m = app
-                    .shown
-                    .borrow()
-                    .get(&(ScreenId::Decisions, 'e'))
-                    .cloned()
-                    .unwrap_or_default();
-                let (nl, at) = (m.first().copied().unwrap_or(0), m.get(2).copied().unwrap_or(0));
+                // Into the entry, which shows what you asked near its top.
                 app.focus = Some('e');
-                app.sel
-                    .insert((ScreenId::Decisions, 'e'), (nl + at).saturating_sub(1).max(nl));
+                app.sel.insert((ScreenId::Decisions, 'e'), 0);
             } else {
                 app.note = Some("nothing asked about this decision yet · ␣ asks".into());
             }

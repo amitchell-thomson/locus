@@ -393,6 +393,14 @@ New gives way to two items and a count. Session names size their column. Planned
 confirmed: the Application screen is its own page, after Decisions, Answered and Changes.
 `--dump --press "<keys>"` replays keys before drawing, for checking states like these.
 
+**Round 2i, 22 Oct.** Open questions are a selectable section like the rest (each question a
+row; Enter will open the dossier where it is asked); the "where you are" rule's dash is quiet,
+its title still orange; the selected branch's story is one block, its short name then its
+summary on the same line, wrapping beneath, with "merged · 45 commits" or "open · 2 commits" at
+the right (the git name, stage label and dates dropped). The Slice 0 session was sent ADR-006
+with the course list and the kairos task and deadline direction before its step 0.8, so the
+taxonomy file it writes matches the contracts.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

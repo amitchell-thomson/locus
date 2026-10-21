@@ -20,7 +20,7 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │                                       ╰━ barrier-control ━━━━━━━━━━━━━━━━━━━━━━━━━━○        │
 │          7 Oct         10 Oct                        13 Oct                        19 Oct   │
 │                                                                                             │
-│   readout-adapter · readout on hardware: the plan · open since 13 Oct, last commit 13 Oct · │
+│   readout-adapter  Planned how QUAST reads out on real hardware: it…       open · 2 commits │
 │                                                                                             │
 │─ new · 4 unread · n n full timeline since mon 19 ───────────────────────────────────── [n] ─│
 │   decisions       󱉶 re-check the choice of one lever-arm ratio in θ: RIKEN's measur… 󰅸   2h │

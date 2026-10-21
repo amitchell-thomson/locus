@@ -99,6 +99,7 @@ pub fn section_len(app: &App, sec: char) -> usize {
     let Some(v) = view(app) else { return 0 };
     match sec {
         'y' => 1,
+        'q' => v.questions.len(),
         'g' => v.graph.as_ref().map_or(0, |g| g.lanes.len()),
         'n' => v.new.len(),
         's' => v.sessions.len(),
@@ -239,6 +240,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
 
     let focused = match app.focus {
         Some('y') => Some(where_r),
+        Some('q') => Some(q_r),
         Some('g') => Some(graph_r),
         Some('n') => Some(new_r),
         Some('s') => Some(ses_r),
@@ -260,7 +262,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
 /// apart by a blank line.
 fn where_you_are(v: &ProjectView, w: u16, focus: bool) -> Vec<Line<'static>> {
     let mut out = vec![Line::from(vec![
-        Span::styled("─ ", st("peach")),
+        Span::styled("─ ", st(if focus { "blue" } else { "surface2" })),
         Span::styled("where you are", bold(st(if focus { "blue" } else { "peach" }))),
         Span::styled(
             format!(" {}", "─".repeat(usize::from(w).saturating_sub(16))),
@@ -405,9 +407,10 @@ fn questions(app: &App, v: &ProjectView, w: u16) -> Vec<Line<'static>> {
         ],
         None => vec![],
     };
+    let focus = app.focus == Some('q');
     let mut head = vec![
-        Span::styled("─ ", st("surface2")),
-        Span::styled("open questions", bold(text())),
+        Span::styled("─ ", st(if focus { "blue" } else { "surface2" })),
+        Span::styled("open questions", bold(if focus { st("blue") } else { text() })),
         Span::styled(" · from the dossier ", dim()),
     ];
     let used: usize = head.iter().chain(right.iter()).map(|s| s.content.width()).sum();
@@ -419,19 +422,23 @@ fn questions(app: &App, v: &ProjectView, w: u16) -> Vec<Line<'static>> {
     head.extend(right);
     let mut out = vec![Line::from(head)];
     let body = usize::from(w).saturating_sub(10);
+    // Each question is a row you can select, like any other section (round 2i); Enter opens the
+    // dossier where it is asked.
+    let sel = focus.then(|| app.sel('q'));
     for (i, q) in v.questions.iter().enumerate() {
         for (j, l) in wrap(q, body).into_iter().take(2).enumerate() {
-            out.push(Line::from(vec![
-                Span::styled(
-                    if j == 0 {
-                        format!("   {}  ", i + 1)
-                    } else {
-                        "      ".into()
-                    },
-                    bold(st("mauve")),
-                ),
-                Span::styled(l, text()),
-            ]));
+            let lead = if j == 0 { pointer(i, sel) } else { Span::raw("  ") };
+            let num = if j == 0 { format!(" {}  ", i + 1) } else { "    ".into() };
+            let line = row(
+                vec![lead, Span::styled(num, bold(st("mauve"))), Span::styled(l, text())],
+                vec![],
+                w,
+            );
+            out.push(if j > 0 && sel == Some(i) {
+                line.patch_style(Style::default().bg(c("surface0")))
+            } else {
+                line
+            });
         }
     }
     out
@@ -572,7 +579,7 @@ fn graph_need(app: &App, v: &ProjectView, w: u16, cap: usize, recs: usize) -> u1
     } else {
         g.lanes.len().saturating_sub(1)
     };
-    let detail = 1 + g.lanes.get(sel).map_or(0, |l| {
+    let detail = g.lanes.get(sel).map_or(0, |l| {
         if app.lane_open && focus.is_some() {
             // Open: the whole summary, a heading, and up to twelve records.
             summary_lines(l, w, usize::MAX).len() + 2 + l.records.len().min(recs)
@@ -675,7 +682,7 @@ fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
     } else {
         g.lanes.len().saturating_sub(1)
     };
-    let detail_h = 1 + g
+    let detail_h = g
         .lanes
         .get(shown_i)
         .map_or(0, |l| summary_lines(l, area.width, 3).len());
@@ -788,27 +795,8 @@ fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
     // The selected lane's work, or the newest lane's when the graph is not focused.
     let shown = if focus { g.lanes.get(sel_all) } else { g.lanes.last() };
     if let Some(l) = shown {
-        let state = match l.merged {
-            Some(m) => format!("{} to {}, merged", date(l.forked), date(m)),
-            None => format!(
-                "open since {}, last commit {}",
-                date(l.forked),
-                l.tip.map(date).unwrap_or_default()
-            ),
-        };
-        let commits = if l.commits == 1 {
-            "1 commit".to_string()
-        } else {
-            format!("{} commits", l.commits)
-        };
-        out.push(Line::from(vec![
-            Span::styled(format!("   {}", short_name(l)), bold(text())),
-            Span::styled(format!("{SEP}{}{SEP}{state}{SEP}{commits}", l.stage), dim()),
-        ]));
         if app.lane_open && focus {
-            for line in summary_lines(l, area.width, usize::MAX) {
-                out.push(Line::from(Span::styled(format!("     {line}"), text())));
-            }
+            out.extend(story(l, area.width, usize::MAX));
             // The change records, scrolled; ↑ ↓ scroll, Esc closes (round 2h).
             let room = usize::from(area.height).saturating_sub(out.len() + 1);
             let at = app.records_at.min(l.records.len().saturating_sub(room.max(1)));
@@ -843,10 +831,8 @@ fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
             return;
         }
         // The story gets whatever rows the graph was given beyond its branches.
-        let cap = usize::from(area.height).saturating_sub(out.len() + 1).max(1);
-        for line in summary_lines(l, area.width, cap) {
-            out.push(Line::from(Span::styled(format!("     {line}"), text())));
-        }
+        let cap = usize::from(area.height).saturating_sub(out.len()).max(1);
+        out.extend(story(l, area.width, cap));
     }
     lines(f, area, out);
 }
@@ -860,9 +846,21 @@ fn lane_at(app: &App, g: &BranchGraph) -> usize {
         .saturating_sub(app.sel('g').min(n.saturating_sub(1)))
 }
 
-/// The selected lane's summary, wrapped, at most three lines.
+/// Where a lane stands, for the right of its story: "merged · 45 commits", "open · 2 commits".
+fn lane_status(l: &locus_contract::Lane) -> String {
+    let state = if l.merged.is_some() { "merged" } else { "open" };
+    let commits = if l.commits == 1 {
+        "1 commit".to_string()
+    } else {
+        format!("{} commits", l.commits)
+    };
+    format!("{state}{SEP}{commits}")
+}
+
+/// The lane's summary wrapped to the space beside its name and status, at most `cap` lines.
 fn summary_lines(l: &locus_contract::Lane, w: u16, cap: usize) -> Vec<String> {
-    let mut v = wrap(&l.summary, usize::from(w).saturating_sub(8));
+    let used = 3 + short_name(l).width() + 2 + lane_status(l).width() + 2;
+    let mut v = wrap(&l.summary, usize::from(w).saturating_sub(used).max(20));
     if v.len() > cap {
         v.truncate(cap);
         if let Some(last) = v.last_mut() {
@@ -870,6 +868,34 @@ fn summary_lines(l: &locus_contract::Lane, w: u16, cap: usize) -> Vec<String> {
         }
     }
     v
+}
+
+/// The selected lane's story: its name, then its summary on the same line and wrapped beneath,
+/// with merged or open and the commit count at the right (round 2i: "the branch name and the
+/// summary should be on one line"; the branch's git name and dates dropped).
+fn story(l: &locus_contract::Lane, w: u16, cap: usize) -> Vec<Line<'static>> {
+    let name = short_name(l);
+    let indent = " ".repeat(3 + name.width() + 2);
+    summary_lines(l, w, cap)
+        .into_iter()
+        .enumerate()
+        .map(|(i, line)| {
+            if i == 0 {
+                row(
+                    vec![
+                        Span::raw("   "),
+                        Span::styled(name.clone(), bold(text())),
+                        Span::raw("  "),
+                        Span::styled(line, text()),
+                    ],
+                    vec![Span::styled(format!("{} ", lane_status(l)), dim())],
+                    w,
+                )
+            } else {
+                Line::from(vec![Span::raw(indent.clone()), Span::styled(line, text())])
+            }
+        })
+        .collect()
 }
 
 /// A connector in column `x` from main (row 0) down to lane row `r`, through empty cells only.
@@ -1160,6 +1186,14 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
         (Some('g'), KeyCode::Up | KeyCode::Down | KeyCode::Char('j' | 'k')) if app.lane_open => {
             let d = crate::app::nav(&k).unwrap_or(0);
             app.records_at = (app.records_at as isize + d).max(0) as usize;
+        }
+        (Some('q'), KeyCode::Enter) => {
+            if let Some(q) = v.questions.get(app.sel('q')) {
+                app.note = Some(format!(
+                    "would open the dossier where it asks: {}",
+                    crate::ui::truncate(q, 60)
+                ));
+            }
         }
         (Some('y'), KeyCode::Enter) => app.note = Some("would open the dossier at where this project stands".into()),
         // Space asks (round 2: "a better key than i"); i still works.

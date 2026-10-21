@@ -141,6 +141,7 @@ const HOME: &[Section] = &[
 // you straight to branches").
 const PROJECT: &[Section] = &[
     s('y', "where you are", None),
+    s('q', "open questions", None),
     s('g', "branches", None),
     s('n', "new", Some(S::Changes)),
     s('s', "sessions", None),

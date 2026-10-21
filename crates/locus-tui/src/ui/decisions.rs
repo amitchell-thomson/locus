@@ -813,7 +813,9 @@ fn draw_entry(f: &mut Frame, area: Rect, app: &App, ds: &Decisions, i: usize) {
     // (round 2w: "a little too dense ... I might skip over it"). In the order he reads them:
     // why, then what was given up and assumed, then the background.
     let fs = folds(d);
-    let open = app.sel('o').checked_sub(1);
+    // The section under the selection is the open one: moving onto it shows it (round 2x:
+    // "hovering over a section automatically show its detail instead of need to press enter").
+    let open = if focus { sel.checked_sub(ls.len()) } else { None };
     let mut fold_at = Vec::new();
     head(&mut out, "in full", "subtext0");
     for (k, fd) in fs.iter().enumerate() {
@@ -852,7 +854,15 @@ fn draw_entry(f: &mut Frame, area: Rect, app: &App, ds: &Decisions, i: usize) {
             for (text_, style) in &fd.lines {
                 for (j, l) in wrap(text_, body.saturating_sub(6)).into_iter().enumerate() {
                     out.push(Line::from(vec![
-                        Span::styled(if j == 0 { "      - " } else { "        " }, dim()),
+                        // A single paragraph (chose, question) needs no bullet.
+                        Span::styled(
+                            if j == 0 && fd.lines.len() > 1 {
+                                "      - "
+                            } else {
+                                "        "
+                            },
+                            dim(),
+                        ),
                         Span::styled(l, *style),
                     ]));
                 }
@@ -910,28 +920,9 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
     match k.code {
         // → crosses to the entry, as Enter does; ← comes back to the decision in the list
         // (round 2r: "right arrow should take you to the description section").
-        // ← folds the open section you are on, else goes back to the list.
-        KeyCode::Left if app.focus == Some('e') => {
-            let nl = links(&ds, cur).len();
-            let on = app.sel('e').checked_sub(nl);
-            if on.is_some() && app.sel('o').checked_sub(1) == on {
-                app.sel.insert((ScreenId::Decisions, 'o'), 0);
-            } else {
-                focus_on(app, cur);
-            }
-        }
-        // On a folded section, Enter opens or closes it and → opens it; one is open at a time.
-        code @ (KeyCode::Enter | KeyCode::Right) if app.focus == Some('e') && app.sel('e') >= links(&ds, cur).len() => {
-            let k = app.sel('e') - links(&ds, cur).len();
-            let open = app.sel('o').checked_sub(1);
-            // Enter toggles; → only opens.
-            let next = if open == Some(k) && matches!(code, KeyCode::Enter) {
-                0
-            } else {
-                k + 1
-            };
-            app.sel.insert((ScreenId::Decisions, 'o'), next);
-        }
+        KeyCode::Left if app.focus == Some('e') => focus_on(app, cur),
+        // A section opens as you move onto it, so Enter and → have nothing more to do there.
+        KeyCode::Enter | KeyCode::Right if app.focus == Some('e') && app.sel('e') >= links(&ds, cur).len() => {}
         KeyCode::Enter | KeyCode::Right if in_list || app.focus.is_none() => {
             app.shown.borrow_mut().insert((ScreenId::Decisions, '*'), vec![cur]);
             app.focus = Some('e');

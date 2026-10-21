@@ -546,6 +546,10 @@ chose, you said, over, assumes, costs, then question, evidence, affects. The dec
 to him as "you", never "his" or "Alec". Not built yet: a re-check pointing at the assumption it
 breaks (4).
 
+**Round 2x, 22 Oct.** "Make hovering over a section automatically show its detail instead of need
+to press enter": the section under the selection is the open one, so ↑ ↓ through the folds read
+each in turn; ← goes back to the list. A one-paragraph section has no bullet.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

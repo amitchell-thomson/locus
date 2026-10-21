@@ -533,6 +533,19 @@ their way), with `o` offered beside it, so a question that finds a problem goes 
 review; asking never changes a decision's state. `Answer` gains `decision` (the id it was asked
 about); no fixture answer is linked, since none was asked about a decision.
 
+**Round 2w, 22 Oct. The entry in layers: a brief, then folded sections.** "I currently love the
+concept and how it is turning out, but find the detail view a little too dense, and time
+consuming to read such that I might skip over it." Built: (1) every entry leads with a brief,
+two lines at most: what was chosen and the one biggest reason (`Decision.brief`, written for all
+three projects from the sources); (2) after the connections, each field is folded to one line,
+its name and a summary built from its content (the count and first item, or the names of the
+options it beat), and Enter or → opens one at a time, ← folds it, ← again goes back to the list;
+(3) `why` is now 2-4 short reasons (`Vec<String>`), and question, chose, over, assumes, costs,
+evidence and affects were tightened item by item, nothing dropped; (5) in reading order: why,
+chose, you said, over, assumes, costs, then question, evidence, affects. The decision text speaks
+to him as "you", never "his" or "Alec". Not built yet: a re-check pointing at the assumption it
+breaks (4).
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

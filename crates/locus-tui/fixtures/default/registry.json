@@ -4,7 +4,7 @@
       "id": "quast",
       "name": "quast",
       "area": "Projects",
-      "kind": "project",
+      "kind": "repo",
       "sessions": [
         "quast"
       ],
@@ -15,7 +15,7 @@
       "id": "nabla",
       "name": "nabla",
       "area": "Projects",
-      "kind": "project",
+      "kind": "repo",
       "sessions": [
         "nabla"
       ],
@@ -26,7 +26,7 @@
       "id": "locus",
       "name": "locus",
       "area": "Projects",
-      "kind": "project",
+      "kind": "repo",
       "sessions": [
         "locus-dev",
         "kairos",
@@ -53,7 +53,7 @@
       "id": "oqts",
       "name": "OQTS",
       "area": "Projects",
-      "kind": "project",
+      "kind": "repo",
       "sessions": [
         "oqts"
       ],
@@ -78,7 +78,7 @@
       "id": "cv",
       "name": "CV",
       "area": "Careers",
-      "kind": "project",
+      "kind": "repo",
       "sessions": [
         "cv"
       ],
@@ -109,7 +109,7 @@
       "id": "3yp",
       "name": "3YP",
       "area": "Studies",
-      "kind": "project",
+      "kind": "repo",
       "sessions": [
         "B3-Project"
       ],
@@ -123,7 +123,7 @@
       "sessions": [
         "b1-practical"
       ],
-      "active": false
+      "active": true
     }
   ]
 }

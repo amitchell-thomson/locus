@@ -64,10 +64,10 @@ pub struct Project {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProjectKind {
-    /// Something you build over weeks: a repository, tmux sessions, Claude chats, change records,
-    /// a branch graph. The only kind the Project window shows and follows. The CV is one, in
-    /// the Careers area.
-    Project,
+    /// A repository you work in: tmux sessions, Claude chats, change records, a branch graph.
+    /// The only kind the Project window shows and follows, in any area: quast (Projects), 3YP
+    /// (Studies), the CV (Careers).
+    Repo,
     /// A course: notes, lectures, Canvas deadlines, topic tracks; no repository of its own.
     Course,
     /// A pursuit with stages owned by a company: an internship or job application. No

@@ -167,15 +167,19 @@ fn left_scrolls_the_branch_graph_back_through_history() {
     a.follow.session = Some("nabla".into());
     a.focus = Some('g');
     let n = locus_tui::ui::section_len(&a, 'g');
-    a.sel.insert((ScreenId::Project, 'g'), n - 1);
+    a.sel.insert((ScreenId::Project, 'g'), 0);
+    let oldest_name = a.fixtures.projects["nabla"].view.graph.as_ref().unwrap().lanes[0]
+        .branch
+        .trim_start_matches("worktree-")
+        .to_string();
     let newest = dump::render(&a, 95, 38).unwrap();
     assert!(
-        !newest.contains("completion-orphans"),
+        !newest.contains(&oldest_name),
         "the oldest branch is off screen at first"
     );
     for _ in 0..n {
         a.on_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
     }
     let oldest = dump::render(&a, 95, 38).unwrap();
-    assert!(oldest.contains("completion-orphans"), "{oldest}");
+    assert!(oldest.contains(&oldest_name), "{oldest}");
 }

@@ -114,5 +114,9 @@
         "summary": "Planned how QUAST reads out on real hardware: it thresholds each shot's sensor signal itself, the way ANITA does, and hands the loop counts. Feeding raw signals into the likelihood was judged not worth building, worth at most 4%. Only the plan so far."
       }
     ]
-  }
+  },
+  "questions": [
+    "How large is barrier control's real advantage? It depends on how coherence decays during a pulse, which needs RIKEN's echo decay curve.",
+    "Should the phase ladder still run every round?"
+  ]
 }

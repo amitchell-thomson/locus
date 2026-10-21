@@ -103,6 +103,214 @@
     "milestones": [],
     "lanes": [
       {
+        "branch": "worktree-cron-quotes",
+        "stage": "worktree cron quotes",
+        "forked": "2026-09-21",
+        "merged": "2026-09-21",
+        "commits": 1,
+        "summary": "Autostash the pull so it stops failing on the quotes it is about to commit."
+      },
+      {
+        "branch": "worktree-final-commit",
+        "stage": "worktree final commit",
+        "forked": "2026-09-21",
+        "merged": "2026-09-21",
+        "commits": 1,
+        "summary": "Commit tonight's quote record and the dependency lockfile."
+      },
+      {
+        "branch": "worktree-commit-charts",
+        "stage": "worktree commit charts",
+        "forked": "2026-09-21",
+        "merged": "2026-09-21",
+        "commits": 1,
+        "summary": "Commit the eight merger-arb charts."
+      },
+      {
+        "branch": "worktree-uk-holdout",
+        "stage": "worktree uk holdout",
+        "forked": "2026-09-21",
+        "merged": "2026-09-21",
+        "commits": 1,
+        "summary": "Reconstruct the UK offer price from SDC's premium, not its price level."
+      },
+      {
+        "branch": "preflight-gate",
+        "stage": "preflight gate",
+        "forked": "2026-10-08",
+        "merged": "2026-10-08",
+        "commits": 1,
+        "summary": "Pre-flight gate, report-only: step 6."
+      },
+      {
+        "branch": "worktree-ledger-reconcile",
+        "stage": "worktree ledger reconcile",
+        "forked": "2026-10-08",
+        "merged": "2026-10-08",
+        "commits": 1,
+        "summary": "Ledger and reconciliation: step 5, with no order placement."
+      },
+      {
+        "branch": "slots-research",
+        "stage": "slots research",
+        "forked": "2026-10-09",
+        "merged": "2026-10-09",
+        "commits": 1,
+        "summary": "Slot study: keep 10 slots; correct the margin note's fewer-slots suggestion."
+      },
+      {
+        "branch": "jobs-first-seen",
+        "stage": "jobs first seen",
+        "forked": "2026-10-09",
+        "merged": "2026-10-09",
+        "commits": 1,
+        "summary": "Jobs check: a cron line added today is not reported as never having run."
+      },
+      {
+        "branch": "alerts",
+        "stage": "alerts",
+        "forked": "2026-10-09",
+        "merged": "2026-10-09",
+        "commits": 1,
+        "summary": "Push alerts to a phone via ntfy."
+      },
+      {
+        "branch": "margin-research",
+        "stage": "margin research",
+        "forked": "2026-10-09",
+        "merged": "2026-10-09",
+        "commits": 1,
+        "summary": "Margin research: no margin in phase 1; fewer slots get most of the gain without a loan."
+      },
+      {
+        "branch": "break-sell",
+        "stage": "break sell",
+        "forked": "2026-10-09",
+        "merged": "2026-10-09",
+        "commits": 2,
+        "summary": "Break sell: cron lines, dashboard job, tracked reports, readiness item 9."
+      },
+      {
+        "branch": "live-readiness",
+        "stage": "live readiness",
+        "forked": "2026-10-09",
+        "merged": "2026-10-09",
+        "commits": 1,
+        "summary": "Live readiness checklist: paper test results and the audit's blocking items."
+      },
+      {
+        "branch": "alt-label",
+        "stage": "alt label",
+        "forked": "2026-10-09",
+        "merged": "2026-10-09",
+        "commits": 1,
+        "summary": "Backtest tab: shorter label for the five-slot book so its dot label stays clear."
+      },
+      {
+        "branch": "labels",
+        "stage": "labels",
+        "forked": "2026-10-09",
+        "merged": "2026-10-09",
+        "commits": 1,
+        "summary": "Backtest tab: name each book by universe, configuration and leverage only."
+      },
+      {
+        "branch": "dot-click",
+        "stage": "dot click",
+        "forked": "2026-10-09",
+        "merged": "2026-10-09",
+        "commits": 1,
+        "summary": "Backtest tab: draw the configurations chart by hand so its dots take clicks."
+      },
+      {
+        "branch": "book-focus",
+        "stage": "book focus",
+        "forked": "2026-10-09",
+        "merged": "2026-10-09",
+        "commits": 1,
+        "summary": "Backtest tab: the live rule is the headline, every other book is a click away."
+      },
+      {
+        "branch": "paper-fixes",
+        "stage": "paper fixes",
+        "forked": "2026-10-09",
+        "merged": "2026-10-09",
+        "commits": 1,
+        "summary": "Fix LSE tick units and wait for a two-sided quote at the gate."
+      },
+      {
+        "branch": "freeze-off",
+        "stage": "freeze off",
+        "forked": "2026-10-09",
+        "merged": "2026-10-09",
+        "commits": 1,
+        "summary": "Switch off the summer 2027 freeze cutoff pending HR."
+      },
+      {
+        "branch": "placement",
+        "stage": "placement",
+        "forked": "2026-10-09",
+        "merged": "2026-10-09",
+        "commits": 1,
+        "summary": "Order placement on the paper account, and the pre-freeze entry cutoff."
+      },
+      {
+        "branch": "legend-wrap",
+        "stage": "legend wrap",
+        "forked": "2026-10-09",
+        "merged": "2026-10-09",
+        "commits": 1,
+        "summary": "Let chart legends wrap at narrow widths."
+      },
+      {
+        "branch": "live-rule",
+        "stage": "live rule",
+        "forked": "2026-10-09",
+        "merged": "2026-10-09",
+        "commits": 1,
+        "summary": "Backtest tab: the cash book is the live rule, bar fitted on all friendly deals."
+      },
+      {
+        "branch": "cash-only",
+        "stage": "cash only",
+        "forked": "2026-10-09",
+        "merged": "2026-10-09",
+        "commits": 1,
+        "summary": "Backtest tab: the cash-only book, the universe the live path actually trades."
+      },
+      {
+        "branch": "levered",
+        "stage": "levered",
+        "forked": "2026-10-09",
+        "merged": "2026-10-09",
+        "commits": 1,
+        "summary": "Backtest tab: draw the levered variants as full curves, finer outcome bins."
+      },
+      {
+        "branch": "dashboard",
+        "stage": "dashboard",
+        "forked": "2026-10-09",
+        "merged": "2026-10-09",
+        "commits": 2,
+        "summary": "Judge the Panel snapshot job by its log, not only the file."
+      },
+      {
+        "branch": "blockers-4-6",
+        "stage": "blockers 4 6",
+        "forked": "2026-10-10",
+        "merged": "2026-10-10",
+        "commits": 1,
+        "summary": "Blockers 4-6: pinned live release, atomic locked state, no buying while books disagree."
+      },
+      {
+        "branch": "blockers-1-3",
+        "stage": "blockers 1 3",
+        "forked": "2026-10-10",
+        "merged": "2026-10-10",
+        "commits": 2,
+        "summary": "Blockers 1-3: verify the instrument, corroborate every price, fail break checks closed."
+      },
+      {
         "branch": "completion-orphans",
         "stage": "classifier fixes",
         "forked": "2026-10-11",
@@ -183,5 +391,10 @@
         "summary": "Taught the classifier that a switch from stock to cash consideration (SYNA) is not a share leg. Still open."
       }
     ]
-  }
+  },
+  "questions": [
+    "Is the goal profit, or the machine? Marked urgent in the open-questions file.",
+    "Stock and mixed-deal pricing has not been audited for the lookahead that the cash deals had.",
+    "How should idle cash earn while the book is only about 60% deployed?"
+  ]
 }

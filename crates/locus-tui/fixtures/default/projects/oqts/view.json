@@ -44,5 +44,8 @@
         "summary": "Updated oxdaq's agent guidance for its plan v2.0. Never merged."
       }
     ]
-  }
+  },
+  "questions": [
+    "Does oxdaq's plan v2.0 start this term, or wait until after exams?"
+  ]
 }

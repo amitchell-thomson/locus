@@ -131,7 +131,7 @@ const HOME: &[Section] = &[
     s('w', "work", Some(S::WorkChart)),
     s('p', "projects", Some(S::Project)),
     s('c', "careers", None),
-    s('g', "learning", Some(S::Learning)),
+    s('t', "studies", None),
     s('e', "explore", Some(S::Explore)),
     s('s', "system", Some(S::System)),
 ];

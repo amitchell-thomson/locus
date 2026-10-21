@@ -19,6 +19,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
+use unicode_width::UnicodeWidthStr;
 
 pub const KEYS: &[(&str, &str)] = &[
     ("␣ or i", "ask about this project"),
@@ -126,17 +127,17 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     if let Some(stage) = view.and_then(|v| v.stage.as_deref()) {
         t.push(Span::styled(format!("· {stage} "), dim()));
     }
-    // What sits behind this view's keys lives on the bottom border, one compact line, as Home's
-    // top border carries the moment (round 2c: the "more on this project" table felt "weird and
-    // clunky"; borders hold status, the page holds content).
-    let bottom = view.map(|v| status_line(app, v)).unwrap_or_default();
+    // Each thing behind a key sits where its context is (round 2d): the dossier, which bears on
+    // everything, centred at the top; decisions beside the open questions; the timeline with
+    // New; answered at the end of the ask line.
+    let centre = view.map(|v| centre_title(app, v)).unwrap_or_default();
     let block = ratatui::widgets::Block::default()
         .borders(ratatui::widgets::Borders::ALL)
         .border_type(ratatui::widgets::BorderType::Rounded)
         .border_style(st("overlay0"))
         .title(Line::from(t).left_aligned())
-        .title(Line::from(right).right_aligned())
-        .title_bottom(bottom.left_aligned());
+        .title(centre.centered())
+        .title(Line::from(right).right_aligned());
     let inner = block.inner(area);
     f.render_widget(block, area);
     let Some(v) = view else {
@@ -158,10 +159,17 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     let ses_h = 1 + ses_rows.max(1);
     let ch_h = 1 + (v.chores.len().min(3) as u16).max(1);
     let has_graph = v.graph.is_some();
+    let question_lines = questions(app, v, w);
     let gap = Constraint::Length(1);
     let rects = Layout::vertical([
         Constraint::Length(where_lines.len() as u16),
         gap,
+        Constraint::Length(question_lines.len() as u16),
+        if question_lines.is_empty() {
+            Constraint::Length(0)
+        } else {
+            gap
+        },
         // The graph takes what it needs: every lane and the selected one's summary.
         Constraint::Length(if has_graph { graph_need(app, v, w) } else { 0 }),
         if has_graph { gap } else { Constraint::Length(0) },
@@ -175,16 +183,18 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         Constraint::Length(2),
     ])
     .split(inner);
-    let (where_r, graph_r, new_r, ses_r, ch_r, ask_r) = (rects[0], rects[2], rects[4], rects[6], rects[8], rects[10]);
+    let (where_r, q_r, graph_r, new_r, ses_r, ch_r, ask_r) =
+        (rects[0], rects[2], rects[4], rects[6], rects[8], rects[10], rects[12]);
 
     lines(f, where_r, where_lines);
+    lines(f, q_r, question_lines);
     if let Some(g) = &v.graph {
         draw_graph(f, graph_r, app, g);
     }
     draw_new(f, new_r, app, v);
     draw_sessions(f, ses_r, app, v);
     draw_chores(f, ch_r, app, v);
-    draw_ask(f, ask_r, app);
+    draw_ask(f, ask_r, app, v);
 
     let focused = match app.focus {
         Some('g') => Some(graph_r),
@@ -312,19 +322,67 @@ fn more_rows(app: &App, v: &ProjectView) -> Vec<(&'static str, &'static str, &'s
     out
 }
 
-/// `more_rows` as one line for the bottom border: key, then what and its state.
-fn status_line(app: &App, v: &ProjectView) -> Line<'static> {
-    let mut spans = vec![Span::raw(" ")];
-    for (k, g, col, name, state) in more_rows(app, v) {
-        spans.push(Span::styled(format!(" {k} "), bold(keyst())));
-        spans.push(Span::styled(format!("{g} "), st(col)));
-        spans.push(Span::styled(name.to_string(), text()));
-        if !state.is_empty() {
-            spans.push(Span::styled(format!(" {state}"), dim()));
-        }
-        spans.push(Span::styled("  ", dim()));
+/// The top border's centre: the dossier for a repo (it bears on everything), interview prep for
+/// an application.
+fn centre_title(app: &App, v: &ProjectView) -> Line<'static> {
+    let rows = more_rows(app, v);
+    let Some((k, g, col, name, state)) = rows.iter().find(|r| r.0 == "o" || r.0 == "p") else {
+        return Line::default();
+    };
+    Line::from(vec![
+        Span::styled(format!(" {g} "), st(col)),
+        Span::styled(name.to_string(), bold(text())),
+        Span::styled(format!(" {state} "), dim()),
+        Span::styled(format!("{k} "), bold(keyst())),
+    ])
+}
+
+/// Open questions from the dossier: the bigger picture behind next (round 2d: "I want it to
+/// always remind me of what is next to address bigger picture"), with decisions at the right of
+/// its heading, since a question and the decisions it may reopen belong together.
+fn questions(app: &App, v: &ProjectView, w: u16) -> Vec<Line<'static>> {
+    if v.questions.is_empty() {
+        return vec![];
     }
-    Line::from(spans)
+    let right = match more_rows(app, v).into_iter().find(|r| r.0 == "d") {
+        Some((k, g, col, name, state)) => vec![
+            Span::styled(format!("{g} "), st(col)),
+            Span::styled(format!("{name} "), text()),
+            Span::styled(format!("{state}  "), dim()),
+            Span::styled(format!("{k} "), bold(keyst())),
+        ],
+        None => vec![],
+    };
+    let mut head = vec![
+        Span::styled("─ ", st("surface2")),
+        Span::styled("open questions", bold(text())),
+        Span::styled(" · from the dossier ", dim()),
+    ];
+    let used: usize = head.iter().chain(right.iter()).map(|s| s.content.width()).sum();
+    head.push(Span::styled(
+        "─".repeat(usize::from(w).saturating_sub(used + 2)),
+        st("surface2"),
+    ));
+    head.push(Span::raw(" "));
+    head.extend(right);
+    let mut out = vec![Line::from(head)];
+    let body = usize::from(w).saturating_sub(10);
+    for (i, q) in v.questions.iter().enumerate() {
+        for (j, l) in wrap(q, body).into_iter().take(2).enumerate() {
+            out.push(Line::from(vec![
+                Span::styled(
+                    if j == 0 {
+                        format!("   {}  ", i + 1)
+                    } else {
+                        "      ".into()
+                    },
+                    bold(st("mauve")),
+                ),
+                Span::styled(l, text()),
+            ]));
+        }
+    }
+    out
 }
 
 /// The view has nothing to show: say which of the three reasons it is.
@@ -454,7 +512,7 @@ fn graph_need(app: &App, v: &ProjectView, w: u16) -> u16 {
     let (_, _, rows) = layout(g, &g.lanes, app.fixtures.now().date_naive(), gw);
     // The lane whose summary is shown: the selected one when focused, else the newest.
     let sel = if app.focus == Some('g') {
-        app.sel('g').min(g.lanes.len().saturating_sub(1))
+        lane_at(app, g)
     } else {
         g.lanes.len().saturating_sub(1)
     };
@@ -473,7 +531,7 @@ fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
     let w = usize::from(area.width);
     let lead = 6;
     let gw = w.saturating_sub(lead + 6).max(10);
-    let sel_all = app.sel('g').min(g.lanes.len().saturating_sub(1));
+    let sel_all = lane_at(app, g);
     let shown_i = if focus {
         sel_all
     } else {
@@ -626,6 +684,15 @@ fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
     lines(f, area, out);
 }
 
+/// The selected lane. The graph's selection counts back from the newest branch, so entering
+/// the graph starts on the latest work, ← steps back in time and → forward (round 2d: entering
+/// it landed on the oldest branch, and ← had nowhere to go).
+fn lane_at(app: &App, g: &BranchGraph) -> usize {
+    let n = g.lanes.len();
+    n.saturating_sub(1)
+        .saturating_sub(app.sel('g').min(n.saturating_sub(1)))
+}
+
 /// The selected lane's summary, wrapped, at most three lines.
 fn summary_lines(l: &locus_contract::Lane, w: u16) -> Vec<String> {
     let mut v = wrap(&l.summary, usize::from(w).saturating_sub(8));
@@ -651,10 +718,16 @@ fn draw_new(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
     let now = app.fixtures.now();
     let focus = app.focus == Some('n');
     let unread = (0..v.new.len()).filter(|&i| is_unread(app, v, i)).count();
+    // The full timeline sits with New, whose history it is (round 2d).
+    let timeline = more_rows(app, v)
+        .into_iter()
+        .find(|r| r.0 == "n n")
+        .map(|(_, _, _, _, state)| format!(" · n n full timeline {state}"))
+        .unwrap_or_default();
     let extra = if v.new.is_empty() {
-        "nothing new".to_string()
+        format!("nothing new{timeline}")
     } else {
-        format!("{unread} unread")
+        format!("{unread} unread{timeline}")
     };
     let mut out = vec![rule("new", &extra, Some('n'), focus, area.width)];
     let sel = focus.then(|| app.sel('n'));
@@ -792,21 +865,35 @@ fn draw_chores(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
     lines(f, area, out);
 }
 
-fn draw_ask(f: &mut Frame, area: Rect, app: &App) {
+fn draw_ask(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
     let asking = matches!(app.mode, Mode::Ask(_));
-    let line = match &app.mode {
-        Mode::Ask(q) => Line::from(vec![
+    let left = match &app.mode {
+        Mode::Ask(q) => vec![
             Span::styled("   ask › ", st("mauve")),
             Span::styled(q.clone(), text()),
             Span::styled("▏", st("mauve")),
-        ]),
-        _ => Line::from(vec![
+        ],
+        _ => vec![
             Span::styled("   ask › ", dim()),
             Span::styled("␣", keyst()),
             Span::styled(" to ask about this project · the answer comes back here", dim()),
-        ]),
+        ],
     };
-    lines(f, area, vec![rule("ask", "", None, asking, area.width), line]);
+    // What was asked before sits at the far end of the ask line (round 2d).
+    let right = match more_rows(app, v).into_iter().find(|r| r.0 == "a") {
+        Some((k, g, col, name, state)) => vec![
+            Span::styled(format!("{g} "), st(col)),
+            Span::styled(format!("{name} "), text()),
+            Span::styled(format!("{state}  "), dim()),
+            Span::styled(format!("{k} "), bold(keyst())),
+        ],
+        None => vec![],
+    };
+    lines(
+        f,
+        area,
+        vec![rule("ask", "", None, asking, area.width), row(left, right, area.width)],
+    );
 }
 
 pub fn key(app: &mut App, k: KeyEvent) -> bool {
@@ -847,9 +934,11 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 app.note = Some(format!("would open \"{}\" in kairos", ch.title));
             }
         }
-        (Some('g'), KeyCode::Left | KeyCode::Right) => {
+        // ← and → walk the branches from anywhere on the page (round 2d), focusing the graph.
+        (_, KeyCode::Left | KeyCode::Right) => {
+            app.focus = Some('g');
             let n = v.graph.as_ref().map_or(0, |g| g.lanes.len());
-            let d = if k.code == KeyCode::Left { -1 } else { 1 };
+            let d = if k.code == KeyCode::Left { 1 } else { -1 };
             app.move_sel('g', n, d);
         }
         (Some('g'), KeyCode::Enter) => app.note = Some("would list the branch's change records".into()),

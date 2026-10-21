@@ -31,7 +31,13 @@ pub const KEYS: &[(&str, &str)] = &[
 /// project, then the rest as registered. Home's sections go by area, not kind (ADR-006): this
 /// one holds everything outside Careers.
 pub fn project_rows(app: &App) -> Vec<String> {
-    rows_of(app, |p| p.area != "Careers")
+    rows_of(app, |p| p.area == "Projects")
+}
+
+/// The Studies area: courses, and coursework run as a repo (3YP) (round 2d: "I can see on
+/// studies all of the courses that I take and the project").
+pub fn study_rows(app: &App) -> Vec<String> {
+    rows_of(app, |p| p.area == "Studies")
 }
 
 /// The Careers area: applications, and the CV (a project that lives there).
@@ -120,7 +126,7 @@ pub fn enter_hint(app: &App) -> Option<&'static str> {
         'w' => "the 8-week chart",
         'p' => "open the project",
         'c' => "open it",
-        'g' => "learning",
+        't' => "open it · the last row opens learning",
         'e' => "the find, in Explore",
         's' => "the system page",
         _ => return None,
@@ -131,7 +137,7 @@ pub fn section_len(app: &App, sec: char) -> usize {
     match sec {
         'p' => project_rows(app).len(),
         'c' => career_rows(app).len(),
-        'g' => goal_rows(app).len(),
+        't' => study_rows(app).len() + 1,
         'e' => app.fixtures.explore.queue.len(),
         _ => 1,
     }
@@ -140,7 +146,7 @@ pub fn section_len(app: &App, sec: char) -> usize {
 pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     let inner = draw_border(f, area, app);
     let n_proj = project_rows(app).len().max(1) as u16;
-    let n_side = career_rows(app).len().max(goal_rows(app).len() + 1).max(1) as u16;
+    let n_side = career_rows(app).len().max(study_rows(app).len() + 1).max(1) as u16;
     // A blank line between sections (round 1b), paid for by moving next and mail into the
     // border.
     let gap = Constraint::Length(1);
@@ -173,10 +179,10 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     ])
     .areas(side_r);
     draw_careers(f, c_r, app);
-    draw_learning(f, g_r, app);
+    draw_studies(f, g_r, app);
     // The divider is learning's edge: focused, it lights up the way the frame does for the
     // other sections (round 1d).
-    let (col, top, side) = if app.focus == Some('g') {
+    let (col, top, side) = if app.focus == Some('t') {
         (st("blue"), "━┳━", " ┃ ")
     } else {
         (st("surface2"), "─┬─", " │ ")
@@ -466,7 +472,7 @@ fn draw_careers(f: &mut Frame, area: Rect, app: &App) {
                 text(),
             )),
         }
-        let g = if p.kind == ProjectKind::Project {
+        let g = if p.kind == ProjectKind::Repo {
             glyph::DOSSIER
         } else {
             glyph::MAIL
@@ -486,47 +492,70 @@ fn draw_careers(f: &mut Frame, area: Rect, app: &App) {
     lines(f, area, out);
 }
 
-fn draw_learning(f: &mut Frame, area: Rect, app: &App) {
-    let l = &app.fixtures.learning;
-    let focus = app.focus == Some('g');
-    let goals = goal_rows(app);
-    let mut out = vec![rule(
-        "learning",
-        "what you are learning for",
-        Some('g'),
-        focus,
-        area.width,
-    )];
-    let sel = focus.then(|| app.sel('g'));
-    for (i, g) in goals.iter().enumerate() {
-        let hours: f32 = g.syllabus.iter().map(|s| s.hours).sum();
-        let (state, col) = match g.state {
-            GoalState::Proposed => ("syllabus to agree", "peach"),
-            GoalState::Active => ("active", "blue"),
-            GoalState::Done => ("done", "green"),
+/// Studies: each course and the coursework repos, with what is due next; the last row opens
+/// Learning, which serves studies and careers alike (round 2d: learning as "just a button
+/// somewhere that makes sense in context").
+fn draw_studies(f: &mut Frame, area: Rect, app: &App) {
+    let fx = &app.fixtures;
+    let today = fx.now().date_naive();
+    let focus = app.focus == Some('t');
+    let ids = study_rows(app);
+    let mut out = vec![rule("studies", "courses and coursework", Some('t'), focus, area.width)];
+    let sel = focus.then(|| app.sel('t'));
+    for (i, id) in ids.iter().enumerate() {
+        let Some(p) = fx.registry.get(id) else { continue };
+        let pf = fx.projects.get(id);
+        let g = if p.kind == ProjectKind::Repo {
+            glyph::PROJECT
+        } else {
+            glyph::READING
         };
-        out.push(row(
-            vec![
-                pointer(i, sel),
-                Span::styled(format!("{} ", glyph::IDEA), st(col)),
-                Span::styled(g.title.clone(), text()),
-            ],
-            vec![Span::styled(format!("{hours:.0} h{SEP}{state} "), st(col))],
-            area.width,
-        ));
+        let mut left = vec![
+            pointer(i, sel),
+            Span::styled(format!("{g} "), st("blue")),
+            Span::styled(format!("{:<14}", crate::ui::truncate(&p.name, 13)), bold(st("blue"))),
+        ];
+        let next_due = pf.and_then(|pf| pf.view.due.iter().filter(|d| d.at >= today).min_by_key(|d| d.at));
+        match next_due {
+            Some(d) => {
+                let days = (d.at - today).num_days();
+                let when = if days == 0 {
+                    "today".to_string()
+                } else if days == 1 {
+                    "tomorrow".into()
+                } else {
+                    day(d.at)
+                };
+                left.push(Span::styled(d.title.clone(), text()));
+                left.push(Span::styled(
+                    format!("{SEP}due {when}"),
+                    if days <= 2 { st("peach") } else { dim() },
+                ));
+            }
+            None => left.push(Span::styled(
+                pf.and_then(|pf| pf.view.stage.clone())
+                    .unwrap_or_else(|| "nothing due".into()),
+                dim(),
+            )),
+        }
+        out.push(row(left, counts(pf.map(|p| &p.view), 0), area.width));
     }
-    if let Some(t) = l.tracks.iter().min_by(|a, b| a.confidence.total_cmp(&b.confidence)) {
-        let mut right = bar(t.confidence, 10, None, c("red"));
-        right.push(Span::styled(format!(" {:>3.0}% ", t.confidence * 100.0), dim()));
-        out.push(row(
-            vec![Span::styled(format!("    weakest  {}", t.name), dim())],
-            right,
-            area.width,
-        ));
+    let goals = goal_rows(app);
+    let to_agree = goals.iter().filter(|g| g.state == GoalState::Proposed).count();
+    let mut state = format!("{} goals", goals.len());
+    if to_agree > 0 {
+        state.push_str(&format!(", {to_agree} syllabus to agree"));
     }
-    if goals.is_empty() {
-        out.push(Line::from(Span::styled("  no goals set · L to set one", dim())));
-    }
+    out.push(row(
+        vec![
+            pointer(ids.len(), sel),
+            Span::styled(format!("{} ", glyph::IDEA), st("yellow")),
+            Span::styled(format!("{:<14}", "learning"), bold(st("yellow"))),
+            Span::styled(state, if to_agree > 0 { st("peach") } else { dim() }),
+        ],
+        vec![Span::styled("L ", bold(keyst()))],
+        area.width,
+    ));
     lines(f, area, out);
 }
 
@@ -683,10 +712,10 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
     match (app.focus, k.code) {
         // Careers and learning sit side by side: ← and → cross between them (round 1c).
         (Some('c'), KeyCode::Right) => {
-            app.focus = Some('g');
+            app.focus = Some('t');
             true
         }
-        (Some('g'), KeyCode::Left) => {
+        (Some('t'), KeyCode::Left) => {
             app.focus = Some('c');
             true
         }
@@ -699,6 +728,13 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
         (Some('c'), KeyCode::Enter) => {
             if let Some(id) = career_rows(app).get(app.sel('c')).cloned() {
                 app.open_project(id);
+            }
+            true
+        }
+        (Some('t'), KeyCode::Enter) => {
+            match study_rows(app).get(app.sel('t')).cloned() {
+                Some(id) => app.open_project(id),
+                None => app.open(ScreenId::Learning),
             }
             true
         }

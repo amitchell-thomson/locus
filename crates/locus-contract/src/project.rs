@@ -27,11 +27,40 @@ pub struct ProjectView {
     pub chores: Vec<Chore>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub graph: Option<BranchGraph>,
+    /// The questions that matter most, from the dossier's front page (plan C.6): the bigger
+    /// picture behind next (round 2d: "I want it to always remind me of what is next to
+    /// address bigger picture than the next in the where you are section").
+    #[serde(default)]
+    pub questions: Vec<String>,
+    /// What is due: sheets, coursework, reports, exams, each with its date (for courses, and
+    /// repos such as 3YP that have deadlines).
+    #[serde(default)]
+    pub due: Vec<Due>,
     /// Where an application stands, and whose move it is (round 1d: "applications should say
     /// the status of the application. eg. waiting for them, x days, open assessment stage,
     /// interview 4, final round, offer made, rejected").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<Status>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Due {
+    pub title: String,
+    pub kind: DueKind,
+    pub at: NaiveDate,
+}
+
+/// What kind of thing is due. A sheet is its own kind because it is planned differently: a
+/// weekly problem sheet is about five hours in two or three blocks (kairos's `sheet`), where
+/// coursework needs its own estimate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DueKind {
+    Sheet,
+    Coursework,
+    Report,
+    Exam,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

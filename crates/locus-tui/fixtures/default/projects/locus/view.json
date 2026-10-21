@@ -107,5 +107,10 @@
         "summary": "Brought the redesign plan into the repository and wrote down how the build is run."
       }
     ]
-  }
+  },
+  "questions": [
+    "Why has nothing entered the library since 6 September?",
+    "Is the rhythm grid or the 8-week chart the right picture of your work?",
+    "What should an application's own screen show?"
+  ]
 }

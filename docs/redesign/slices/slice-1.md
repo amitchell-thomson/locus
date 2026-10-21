@@ -334,6 +334,16 @@ shows only projects; Home groups by area; the map is in the ADR.
 table removed ("weird and clunky") and its contents moved to the frame's bottom border as one
 line, mirroring Home's top border. "next looks a lot better."
 
+**Round 2d, 22 Oct.** Each key's capability placed where its context is: the dossier centred
+in the top border ("relevant to everything"), decisions at the right of the open questions,
+the full timeline in New's heading, answered at the far right of the ask line. Open questions
+from the dossier under where you are ("remind me of what is next to address bigger picture").
+← and → walk the branches from anywhere on the page, starting from the newest; nabla's graph now
+holds its full 36-branch history (quast merged most work by fast-forward, so it has only four
+branches to show). Home: a studies section beside careers (courses and coursework, 3YP among
+them; learning opens from its last row), projects limited to the Projects area. ADR-006 revised:
+areas say where, kinds say what, one global taxonomy; registry kinds repo, course, application.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

@@ -20,4 +20,4 @@ format every repository will share, checked so an edit can never break it, is ch
 | [ADR-003](ADR-003-drop-folder-by-area.md) | The drop folder is organised by area; repository drops retired | accepted |
 | [ADR-004](ADR-004-shared-crates-in-locus.md) | The shared Rust crates (`eco-dates`, `locus-theme`) and the locus window live in one workspace in this repo | accepted |
 | [ADR-005](ADR-005-data-directory.md) | The data directory is `data/`, not `vault/`; stored paths migrated (0037) | accepted |
-| [ADR-006](ADR-006-what-the-registry-holds.md) | The registry holds three kinds (project, course, application); the Project window shows only projects; Home groups by area | accepted |
+| [ADR-006](ADR-006-what-the-registry-holds.md) | One global taxonomy: every item has an area (where) and a kind (what); registry kinds repo, course, application; the Project window shows repos only | accepted |

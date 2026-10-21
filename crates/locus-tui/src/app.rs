@@ -134,7 +134,7 @@ impl App {
             .fixtures
             .registry
             .get(&id)
-            .is_some_and(|p| p.kind == locus_contract::ProjectKind::Project);
+            .is_some_and(|p| p.kind == locus_contract::ProjectKind::Repo);
         if project
             && self.in_session
             && let Some(f) = &self.peek_file

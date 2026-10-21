@@ -1,0 +1,43 @@
+---
+source: crates/locus-tui/tests/dump.rs
+assertion_line: 158
+expression: "dump::render(&a, 95, 38).unwrap()"
+---
+╭ locus · home ───────────── sat 24 oct · 21:40   󰓦 3   review · W ───── 󰃭 futsal in 21h  󰇮 2 ╮
+│─ work · this week ──────────────────────────────────────────────────────────────────── [w] ─│
+│      06    09    12    15    18    21    24      this week                        36.2 h    │
+│ mon   · · ▓▓▓█████· ·▒▒▒▒ · · · ·▓▓▓▓▓· ·        ───────────────────────────────────────    │
+│ tue   · · ·██████░· · · · · ▒▒▒ · ·█████·        quast    12.5 h   35%  ━━━━━━━━━━━━━━━     │
+│ wed   · · · ·██████▒▒ · · · · ·▒▒▒▒ · · ·        locus    12.2 h   34%  ━━━━━━━━━━━━━━━     │
+│ thu   · ·▓▓▓· · · · · ·▓▓▓▓▓▓░· · · ·▓▓▓·        nabla     5.5 h   15%  ━━━━━━━             │
+│ fri   · · · · · · · · · · · · · · · · · ·        cv        2.0 h    6%  ━━                  │
+│ sat   · · · ████████· · ·▒▒▒▒ · · ▓▓┃            ───────────────────────────────────────    │
+│ sun                                              8 of 9 blocks kept · 4-day streak          │
+│                                                                                             │
+│─ projects · what you build ─────────────────────────────────────────────────────────── [p] ─│
+│  󰆤 quast    󰹇 needs you 35m  wants to run the full battery on the serv… 2 sessions  󰅸 4 new │
+│  󰆣 nabla    󰹇 needs you 42m  SYNA's vote is close: close the shadow po… 8 sessions  󰅸 2 new │
+│  󰆣 locus    󰹇 needs you 20m  wants to restart the locus HTTP service o… 3 sessions  󰅸 4 new │
+│  󰆣 OQTS     󰤄 no sessions    last 28 Aug  agent guidance in all three repositories          │
+│  󰆣 3YP      󰤄 no sessions    last 23 Oct  3YP briefing added to the calendar · tue… 󰅸 1 new │
+│  󰆣 B1 pract…󰤄 no sessions    Michaelmas                                                     │
+│                                                                                             │
+│─ careers · applications and your CV ─ [c] ──┬── learning · what you are learning for ─ [g] ─│
+│  󰈙 CV           released the G-Research …   │   󰌵 Jump internship… 30 h · syllabus to agree │
+│  󰇮 Jump Trading offer accepted · … 󰅸 1 new  │   󰌵 personal learning            2 h · active │
+│  󰇮 G-Research   applied · waiting for th…   │     weakest  market microstr… ━━────────  15% │
+│                                                                                             │
+│─ explore · 7 finds · full, so the scout is waiting for you ─────────────────────────── [e] ─│
+│   for your projects · 4   + 3 more on the Explore page                                      │
+│    󰭎 quast  Bayes-opt barrier tuning, 3x fewer measurements                          15 min │
+│   to read · 2   + 1 more on the Explore page                                                │
+│    󱀄        The Bitter Lesson                                                        12 min │
+│                                                                                             │
+│─ waiting for you ───────────────────────────────────────────────────────────────────── [a] ─│
+│  󰴹 6 to approve   2 to file · 1 mail · 1 deadline · 1 ink to place · 1 stop asking? 󰅸 2 new │
+│                                                                                             │
+│─ system ────────────────────────────────────────────────────────────────────────────── [s] ─│
+│ running  󰓦 dossier quast   │   󰓦 scout reading   │   󰁪 change… 󰄵 14 done today   󰅘 1 failed │
+│ budget   ━━━━━━━━━━━───────┊─────  9.1% of the 15% … 5-hour window: you 34% · background 4% │
+╰─────────────────────────────────────────────────────────────────────────────────────────────╯
+ ⏎ open · ⇥ sections · l log · / search · ? keys

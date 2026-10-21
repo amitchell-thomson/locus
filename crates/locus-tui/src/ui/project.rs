@@ -292,23 +292,33 @@ fn more_rows(app: &App, v: &ProjectView) -> Vec<(&'static str, &'static str, &'s
     let pf = app.fixtures.projects.get(&v.project);
     let reg = app.fixtures.registry.get(&v.project);
     let mut out = Vec::new();
-    if let Some(d) = pf.and_then(|p| p.decisions.as_ref()) {
-        let re = d.items.iter().filter(|x| x.status == DecisionStatus::Recheck).count();
-        let state = if re > 0 {
-            format!("{}, {re} worth re-checking", d.items.len())
-        } else {
-            d.items.len().to_string()
-        };
-        out.push(("d", glyph::HOLDING, "green", "decisions", state));
+    // Decisions and answered are always named, saying so when there are none, so where they
+    // sit does not change from project to project (round 2g).
+    let repo = reg.is_some_and(|p| p.kind == ProjectKind::Repo);
+    match pf.and_then(|p| p.decisions.as_ref()) {
+        Some(d) => {
+            let re = d.items.iter().filter(|x| x.status == DecisionStatus::Recheck).count();
+            let state = if re > 0 {
+                format!("{}, {re} worth re-checking", d.items.len())
+            } else {
+                d.items.len().to_string()
+            };
+            out.push(("d", glyph::HOLDING, "green", "decisions", state));
+        }
+        None if repo => out.push(("d", glyph::HOLDING, "green", "decisions", "no log yet".into())),
+        None => {}
     }
-    if let Some(a) = pf.and_then(|p| p.answered.as_ref()) {
-        let unread = a.items.iter().filter(|x| x.unread).count();
-        let state = if unread > 0 {
-            format!("{}, {unread} new", a.items.len())
-        } else {
-            a.items.len().to_string()
-        };
-        out.push(("a", glyph::ANSWER, "sky", "answered", state));
+    match pf.and_then(|p| p.answered.as_ref()) {
+        Some(a) => {
+            let unread = a.items.iter().filter(|x| x.unread).count();
+            let state = if unread > 0 {
+                format!("{}, {unread} new", a.items.len())
+            } else {
+                a.items.len().to_string()
+            };
+            out.push(("a", glyph::ANSWER, "sky", "answered", state));
+        }
+        None => out.push(("a", glyph::ANSWER, "sky", "answered", "nothing yet".into())),
     }
     if reg.is_some_and(|p| p.depth.is_some()) {
         let rebuilt = v

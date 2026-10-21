@@ -43,7 +43,10 @@ ensure() {
     fi
     # A blank line under the tab bar, in the locus session only, for every view in it (round 2f:
     # the header looked "crowded so close to the tmux tabs"). A second status line, left empty.
+    # Setting one line of a session's status-format makes the whole list session-level, so the
+    # first line (the tab bar) is copied from the global one or it comes out blank (22 Oct).
     tmux set -t locus: status 2
+    tmux set -t locus: 'status-format[0]' "$(tmux show -gv 'status-format[0]')"
     tmux set -t locus: 'status-format[1]' ''
     base=$(tmux show -gv base-index)
     i=0

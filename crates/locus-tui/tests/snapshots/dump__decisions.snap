@@ -4,7 +4,7 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 ---
 ╭ quast · decisions · 5 holding · 1 to re-check · 1 replaced ─────────────────────── esc back ╮
 │─ holding · 5 ───────────────────────────────────────────────────────────────────────────────│
-│   󰌾 The input layer, built: the typical gate three times closer, no failure fixed,…  10 Oct │
+│▌  󰌾 The input layer, built: the typical gate three times closer, no failure fixed,…  10 Oct │
 │   󰌾 The scope: QUAST starts where the lab's tools stop - a device ready for two-qu…   9 Oct │
 │     + 3 more                                                                                │
 │                                                                                             │
@@ -13,7 +13,7 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │                                                                                             │
 │─ to re-check · 1 ───────────────────────────────────────────────────────────────────────────│
 │   󱉶 The units at stage 1: the µeV core kept, the scale fixed by convention, one … 󰅸   7 Oct │
-│     On 19 Oct RIKEN's exchange against barrier voltage came via Natalia: about 0.03 per mV… │
+│     RIKEN's barrier slope 2.6x shallower                                                    │
 │                                                                                             │
 │─ under review ──────────────────────────────────────────────────────────────────────────────│
 │   nothing is under review                                                                   │
@@ -26,14 +26,14 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │  󰌾 holding · agreed 10 Oct                                                                  │
 │                                                                                             │
 │   Build the input layer: upstream readings become the crowd's starting box. The typical     │
-│   gate lands three times closer to the best, though no failure is fixed.                    │
+│   gate lands three times closer, but no failure is fixed.                                   │
 │                                                                                             │
 │─ connections ───────────────────────────────────────────────────────────────────────────────│
 │   builds on   󰌾 The scope: QUAST starts where the lab's tools stop - a device ready for tw… │
 │               󱉶 The units at stage 1: the µeV core kept, the scale fixed by convention, on… │
 │                                                                                             │
-│─ decision · 5 ──────────────────────────────────────────────────────────────────────────────│
-│   Keep the input layer whenever upstream readings exist: a seed formula turns diagram feat… │
+│─ decision · 4 ──────────────────────────────────────────────────────────────────────────────│
+│   readings to a starting box · honest by construction · changes nothing else · failures li… │
 │   ↓ more · → to read on                                                                     │
 │─ ask about this decision ───────────────────────────────────────────────────────────── [a] ─│
 │   ask › ␣ to ask about this decision · the answer comes back on it                          │

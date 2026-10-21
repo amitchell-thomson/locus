@@ -13,7 +13,7 @@ use crate::app::{App, Mark};
 use crate::screen::ScreenId;
 use crate::ui::widgets::*;
 use crate::ui::{esc_back, frame, hints, lines, title};
-use locus_contract::{Decision, DecisionStatus, Decisions};
+use locus_contract::{Decision, DecisionPoint, DecisionStatus, Decisions};
 use locus_theme::{SEP, c, glyph};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
@@ -117,7 +117,8 @@ struct Fold {
     name: &'static str,
     colour: &'static str,
     summary: String,
-    lines: Vec<(String, Style)>,
+    /// (label, detail) per item.
+    lines: Vec<(String, String)>,
 }
 
 /// The entry's sections after the connections, in reading order (round 2y): the ADR template's
@@ -125,14 +126,16 @@ struct Fold {
 /// last. The states keep yellow, sky, peach, green and mauve and focus keeps blue, so these take
 /// the rest of the palette (round 2t). A section with nothing in it is left out.
 fn folds(d: &Decision) -> Vec<Fold> {
-    let plain = |v: &[String]| v.iter().map(|x| (x.clone(), text())).collect::<Vec<_>>();
-    let first = |v: &[String]| match v.len() {
-        0 => String::new(),
-        1 => v[0].clone(),
-        n => format!("{} (+{} more)", v[0], n - 1),
+    // Folded, a section is its labels side by side; open, each label with its short detail
+    // (round 2za: "each section is still too long and hard to parse").
+    let labels = |v: &[DecisionPoint]| v.iter().map(|p| p.label.as_str()).collect::<Vec<_>>().join(" · ");
+    let points = |v: &[DecisionPoint]| {
+        v.iter()
+            .map(|p| (p.label.clone(), p.detail.clone()))
+            .collect::<Vec<_>>()
     };
     let mut out = vec![];
-    let mut add = |name, colour, summary: String, lines: Vec<(String, Style)>| {
+    let mut add = |name, colour, summary: String, lines: Vec<(String, String)>| {
         if !lines.is_empty() {
             out.push(Fold {
                 name,
@@ -142,7 +145,7 @@ fn folds(d: &Decision) -> Vec<Fold> {
             });
         }
     };
-    add("decision", "flamingo", first(&d.decision), plain(&d.decision));
+    add("decision", "flamingo", labels(&d.decision), points(&d.decision));
     // Your own words, whenever there are any ("definitely quote me").
     add(
         "you said",
@@ -150,19 +153,18 @@ fn folds(d: &Decision) -> Vec<Fold> {
         d.you.first().map(|q| format!("“{}”", q.text)).unwrap_or_default(),
         d.you
             .iter()
-            .map(|q| (format!("“{}”  ({})", q.text, q.source), st("pink")))
+            .map(|q| (format!("“{}”", q.text), q.source.clone()))
             .collect(),
     );
-    // The options it beat, named: the part of each before its colon.
-    let names: Vec<&str> = d
-        .alternatives
-        .iter()
-        .map(|o| o.split(':').next().unwrap_or(o).trim())
-        .collect();
-    add("alternatives", "maroon", names.join(", "), plain(&d.alternatives));
-    add("assumes", "lavender", first(&d.assumes), plain(&d.assumes));
-    add("consequences", "red", first(&d.consequences), plain(&d.consequences));
-    add("context", "sapphire", first(&d.context), plain(&d.context));
+    add(
+        "alternatives",
+        "maroon",
+        labels(&d.alternatives),
+        points(&d.alternatives),
+    );
+    add("assumes", "lavender", labels(&d.assumes), points(&d.assumes));
+    add("consequences", "red", labels(&d.consequences), points(&d.consequences));
+    add("context", "sapphire", labels(&d.context), points(&d.context));
     out
 }
 
@@ -384,7 +386,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
             },
         )
     };
-    draw_list(f, list_r, app, ds);
+    draw_list(f, list_r, app, ds, cur);
     // The divider is the entry's edge, and lights when the entry is focused, as on Home.
     let col = st(if app.focus == Some('e') { "blue" } else { "surface2" });
     if div_r.width == 3 {
@@ -447,7 +449,7 @@ fn empty(f: &mut Frame, area: Rect, what: &str) {
 /// The list: a section per state, each sized to its decisions, the blank space between them
 /// spread evenly ("spread out sections per decision state"). Short of room, the holding
 /// section gives way first and scrolls to its selection.
-fn draw_list(f: &mut Frame, area: Rect, app: &App, ds: &Decisions) {
+fn draw_list(f: &mut Frame, area: Rect, app: &App, ds: &Decisions, cur: usize) {
     let now = app.fixtures.now().date_naive();
     // Every state shows, an empty one saying so in a line (round 2y: "the other sections other
     // than holding should still show, just with a note that says nothing here").
@@ -586,9 +588,17 @@ fn draw_list(f: &mut Frame, area: Rect, app: &App, ds: &Decisions) {
             if d.branch.is_some() {
                 right.insert(0, Span::styled(format!("{} ", glyph::COMMITS), st("teal")));
             }
-            out.push(row(
+            // The decision the entry shows keeps its band and marker while you read the entry, so
+            // the list always says which one it is (round 2za).
+            let showing = sel.is_none() && i == cur;
+            let lead = if showing {
+                Span::styled("▌ ", st("blue"))
+            } else {
+                pointer(pos, sel)
+            };
+            let first_line = row(
                 vec![
-                    pointer(pos, sel),
+                    lead,
                     Span::styled(format!(" {g} "), st(gc)),
                     Span::styled(
                         if two && title_lines(i) > 1 {
@@ -607,9 +617,14 @@ fn draw_list(f: &mut Frame, area: Rect, app: &App, ds: &Decisions) {
                 ],
                 right,
                 area.width,
-            ));
+            );
+            out.push(if showing {
+                first_line.patch_style(Style::default().bg(c("surface0")))
+            } else {
+                first_line
+            });
             let band = |line: Line<'static>| {
-                if sel == Some(pos) {
+                if sel == Some(pos) || showing {
                     line.patch_style(Style::default().bg(c("surface0")))
                 } else {
                     line
@@ -639,13 +654,9 @@ fn draw_list(f: &mut Frame, area: Rect, app: &App, ds: &Decisions) {
             {
                 let line = Line::from(vec![
                     Span::raw("     "),
-                    Span::styled(crate::ui::truncate(why, w.saturating_sub(6)), st("yellow")),
+                    Span::styled(crate::ui::truncate(&why.label, w.saturating_sub(6)), st("yellow")),
                 ]);
-                out.push(if sel == Some(pos) {
-                    line.patch_style(Style::default().bg(c("surface0")))
-                } else {
-                    line
-                });
+                out.push(band(line));
             }
             used += extra;
             drawn += 1;
@@ -731,8 +742,12 @@ fn draw_entry(f: &mut Frame, area: Rect, app: &App, ds: &Decisions, i: usize) {
         }
     };
     if let Some(r) = d.recheck.as_ref().filter(|_| status == DecisionStatus::Recheck) {
+        // What changed, in a line, and its numbers under it (round 2za).
         head(&mut out, "why re-check", "yellow");
-        para(&mut out, r, text());
+        para(&mut out, &r.label, bold(st("yellow")));
+        if !r.detail.is_empty() {
+            para(&mut out, &r.detail, dim());
+        }
     }
     if status == DecisionStatus::Review {
         head(&mut out, "under review", "sky");
@@ -836,12 +851,20 @@ fn draw_entry(f: &mut Frame, area: Rect, app: &App, ds: &Decisions, i: usize) {
         }
         out.push(r);
         if is_open {
-            for (text_, style) in &fd.lines {
-                for (j, l) in wrap(text_, body.saturating_sub(2)).into_iter().enumerate() {
+            // Each item: its label, then its detail beside it, wrapping under the detail.
+            let lw = fd.lines.iter().map(|(l, _)| l.width()).max().unwrap_or(0).min(body / 3) + 2;
+            for (label, detail) in &fd.lines {
+                let dw = body.saturating_sub(lw + 1).max(10);
+                let label_lines = wrap(label, lw - 2);
+                let detail_lines = wrap(detail, dw);
+                for j in 0..label_lines.len().max(detail_lines.len()) {
                     out.push(Line::from(vec![
-                        // A single paragraph needs no bullet.
-                        Span::styled(if j == 0 && n > 1 { "   - " } else { "     " }, dim()),
-                        Span::styled(l, *style),
+                        Span::raw("   "),
+                        Span::styled(
+                            format!("{:<lw$}", label_lines.get(j).cloned().unwrap_or_default()),
+                            bold(text()),
+                        ),
+                        Span::styled(detail_lines.get(j).cloned().unwrap_or_default(), st("subtext0")),
                     ]));
                 }
             }

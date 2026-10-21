@@ -576,6 +576,25 @@ when the selection reaches it. The fixtures were merged field by field, nothing 
 now": holding, new, to re-check, under review, replaced, in the list, for Tab and in the
 header's counts. An empty "new" whose new decision sits under another state says so.
 
+**Round 2za, 22 Oct. Shorter: labels, short details, a one-line re-check.** "The page is pretty
+dense still, I feel like each section is still too long and hard to parse ... my preference of
+being shorter so that I actually read it." Every item in decision, alternatives, assumes,
+consequences and context is now a `DecisionPoint` {label: two to five words, detail: one short
+line}, at most four to a section. Folded, a section is its labels side by side; open, each label
+with its detail beside it. The decision section no longer repeats the brief: it opens with the
+specifics the brief leaves out. The re-check is a `DecisionPoint` too: what changed in a line,
+the numbers under it. Briefs are 25 words at most. Condensed from the previous fixtures by agents
+(minor items dropped; the full text stays in the repository's log, behind `f`), then the labels
+that meant nothing on their own ("rests on it", "shortfall") relabelled from their details.
+"Also highlight whatever decision on the left's detail is being show on the right": while you
+read the entry, its decision keeps a band and marker in the list.
+- The writer (recorded for the dossier loop, Slice 2): this condensed form is what he reads, so
+  a job writes it for every repo, not only the free-form ones, since an ADR's own sections are
+  paragraphs and the page would be dense again. It reads the log's sections (the template's
+  headings where a repo follows it), writes the brief and the labelled points within these
+  limits, each point citing the passage it came from, regenerated when the entry changes, and
+  copies "you said" verbatim. `f` opens the full entry.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

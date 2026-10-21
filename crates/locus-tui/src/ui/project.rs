@@ -1171,7 +1171,10 @@ fn draw_decisions(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
                 out.push(row(left, right, area.width));
                 if let Some(why) = why {
                     let line = row(
-                        vec![Span::raw("     "), Span::styled(format!("why: {why}"), st("yellow"))],
+                        vec![
+                            Span::raw("     "),
+                            Span::styled(format!("why: {}", why.label), st("yellow")),
+                        ],
                         vec![],
                         area.width,
                     );

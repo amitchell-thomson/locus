@@ -178,28 +178,28 @@ pub struct Decision {
     pub brief: String,
     /// What was decided and why: the choice first, then its reasons, one per item. The ADR's
     /// Decision section (round 2y: the entry's sections follow the ADR template the repos use).
-    pub decision: Vec<String>,
+    pub decision: Vec<DecisionPoint>,
     /// The options rejected, each "the option: why it lost" ("keeps me in the loop on other
     /// options so I can reopen questions on why another method might not be better now"). The
     /// ADR's Alternatives section.
     #[serde(default)]
-    pub alternatives: Vec<String>,
+    pub alternatives: Vec<DecisionPoint>,
     /// What has to stay true for it to hold. The ADR's "What would make this wrong".
     #[serde(default)]
-    pub assumes: Vec<String>,
+    pub assumes: Vec<DecisionPoint>,
     /// What it makes easier and harder, what it gives up, and what rests on it. The ADR's
     /// Consequences.
     #[serde(default)]
-    pub consequences: Vec<String>,
+    pub consequences: Vec<DecisionPoint>,
     /// The situation that forced the call, with the findings it rested on. The ADR's Context.
     #[serde(default)]
-    pub context: Vec<String>,
+    pub context: Vec<DecisionPoint>,
     /// Your words, each with where you said them; quoted on screen whenever there are any.
     #[serde(default)]
     pub you: Vec<Quote>,
-    /// Why it is worth re-checking, when it is.
+    /// Why it is worth re-checking, when it is: what changed, in a line, and the numbers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub recheck: Option<String>,
+    pub recheck: Option<DecisionPoint>,
     /// The decisions it builds on, by id. The screen also lists the reverse: what builds on it.
     #[serde(default)]
     pub rests_on: Vec<String>,
@@ -214,6 +214,20 @@ pub struct Decision {
     /// Project view's decisions section marks it, as New marks an unread item).
     #[serde(default)]
     pub new: bool,
+}
+
+/// One item in a decision's section: a short label, read at a glance and joined into the
+/// section's folded line, and a short detail shown when it opens (round 2za: "each section is
+/// still too long and hard to parse ... my preference of being shorter so that I actually read
+/// it").
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DecisionPoint {
+    /// Two to five words.
+    pub label: String,
+    /// One short line, or empty when the label says it all.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub detail: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

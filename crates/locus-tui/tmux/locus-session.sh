@@ -41,6 +41,10 @@ ensure() {
         tmux new-session -d -s locus -n home "$(window_for home)"
         tmux set -w -t "=locus:=home" @locus-view home
     fi
+    # A blank line under the tab bar, in the locus session only, for every view in it (round 2f:
+    # the header looked "crowded so close to the tmux tabs"). A second status line, left empty.
+    tmux set -t locus: status 2
+    tmux set -t locus: 'status-format[1]' ''
     base=$(tmux show -gv base-index)
     i=0
     for view in home project calendar mail; do

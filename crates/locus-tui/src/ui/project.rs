@@ -100,7 +100,7 @@ pub fn section_len(app: &App, sec: char) -> usize {
         'g' => v.graph.as_ref().map_or(0, |g| g.lanes.len()),
         'n' => v.new.len(),
         's' => v.sessions.len(),
-        _ => v.chores.len().min(3),
+        _ => v.chores.len(),
     }
 }
 
@@ -153,13 +153,40 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     } else {
         1 + groups.iter().map(|(_, i)| i.len()).sum::<usize>() as u16
     };
-    let ss = v.sessions.len();
-    let focus_s = app.focus == Some('s');
-    let ses_rows = if focus_s { ss.min(10) } else { ss.min(3) } as u16 + u16::from(!focus_s && ss > 3);
-    let ses_h = 1 + ses_rows.max(1);
-    let ch_h = 1 + (v.chores.len().min(3) as u16).max(1);
     let has_graph = v.graph.is_some();
     let question_lines = questions(app, v, w);
+    // Sections size to their content (round 2f, a rule for all of locus): each gets its least
+    // useful height, then spare rows go to whichever has more to show (every session, every
+    // chore, more of the branch's story), and only what is left becomes space above the ask line.
+    let ss = v.sessions.len() as u16;
+    let ch = v.chores.len() as u16;
+    let mins = [
+        if has_graph { graph_need(app, v, w, 3) } else { 0 },
+        1 + ss.clamp(1, 3) + u16::from(ss > 3),
+        1 + ch.clamp(1, 3),
+    ];
+    let wants = [
+        if has_graph { graph_need(app, v, w, 8) } else { 0 },
+        1 + ss.max(1),
+        1 + ch.max(1),
+    ];
+    // Everything that is not one of the three: where, questions, new, the ask line and the gaps.
+    let fixed = where_lines.len() as u16
+        + question_lines.len() as u16
+        + new_h
+        + 2
+        + 4
+        + u16::from(!question_lines.is_empty())
+        + u16::from(has_graph);
+    let mut heights = mins;
+    let mut spare = inner.height.saturating_sub(fixed + mins.iter().sum::<u16>());
+    // Sessions first (live work), then chores, then the branch's story.
+    for i in [1usize, 2, 0] {
+        let more = wants[i].saturating_sub(heights[i]).min(spare);
+        heights[i] += more;
+        spare -= more;
+    }
+    let [graph_h, ses_h, ch_h] = heights;
     let gap = Constraint::Length(1);
     let rects = Layout::vertical([
         Constraint::Length(where_lines.len() as u16),
@@ -170,16 +197,15 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         } else {
             gap
         },
-        // The graph takes what it needs: every lane and the selected one's summary.
-        Constraint::Length(if has_graph { graph_need(app, v, w) } else { 0 }),
+        Constraint::Length(graph_h),
         if has_graph { gap } else { Constraint::Length(0) },
         Constraint::Length(new_h),
         gap,
         Constraint::Length(ses_h),
         gap,
         Constraint::Length(ch_h),
-        // Spare rows go here, so the ask line always sits at the foot of the page (round 2b).
-        Constraint::Min(0),
+        // What is still spare sits here, so the ask line is always at the foot (round 2b).
+        Constraint::Min(1),
         Constraint::Length(2),
     ])
     .split(inner);
@@ -506,18 +532,54 @@ fn layout(
 
 /// Rows the graph needs at this width: main, its packed rows, the axis, a blank and the
 /// selected lane's heading and summary.
-fn graph_need(app: &App, v: &ProjectView, w: u16) -> u16 {
+fn graph_need(app: &App, v: &ProjectView, w: u16, cap: usize) -> u16 {
     let Some(g) = &v.graph else { return 0 };
     let gw = usize::from(w).saturating_sub(12).max(10);
-    let (_, _, rows) = layout(g, &g.lanes, app.fixtures.now().date_naive(), gw);
+    let now = app.fixtures.now().date_naive();
+    // Measure the window as it will be drawn, not every lane packed together.
+    let focus = (app.focus == Some('g')).then(|| lane_at(app, g));
+    let (a, b) = window(g, now, gw, usize::MAX, focus);
+    let (_, _, rows) = layout(g, &g.lanes[a..b], now, gw);
     // The lane whose summary is shown: the selected one when focused, else the newest.
     let sel = if app.focus == Some('g') {
         lane_at(app, g)
     } else {
         g.lanes.len().saturating_sub(1)
     };
-    let detail = 1 + g.lanes.get(sel).map_or(0, |l| summary_lines(l, w).len());
+    let detail = 1 + g.lanes.get(sel).map_or(0, |l| summary_lines(l, w, cap).len());
     (4 + rows + detail) as u16
+}
+
+/// Which lanes are drawn: unfocused, the newest that fit; focused, a window around the selected
+/// lane, so ← and → walk back through the whole history (round 2c). Each event gets at least
+/// MIN_GAP columns, so close branches are not squeezed together; the cost is a longer scroll
+/// (round 2e: "do not be afraid of spreading them out a little bit more").
+fn window(g: &BranchGraph, now: NaiveDate, gw: usize, room: usize, sel: Option<usize>) -> (usize, usize) {
+    const MIN_GAP: usize = 6;
+    let fits = |a: usize, b: usize| 2 * (b - a) * MIN_GAP <= gw && layout(g, &g.lanes[a..b], now, gw).2 <= room;
+    let len = g.lanes.len();
+    match sel {
+        Some(sel) => {
+            let (mut a, mut b) = (sel, (sel + 1).min(len));
+            loop {
+                if b < len && fits(a, b + 1) {
+                    b += 1;
+                } else if a > 0 && fits(a - 1, b) {
+                    a -= 1;
+                } else {
+                    break;
+                }
+            }
+            (a, b)
+        }
+        None => {
+            let mut a = 0;
+            while a + 1 < len && !fits(a, len) {
+                a += 1;
+            }
+            (a, len)
+        }
+    }
 }
 
 /// The branch graph: main along the top with its milestones named above it, each lane hanging
@@ -537,35 +599,13 @@ fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
     } else {
         g.lanes.len().saturating_sub(1)
     };
-    let detail_h = 1 + g.lanes.get(shown_i).map_or(0, |l| summary_lines(l, area.width).len());
+    let detail_h = 1 + g
+        .lanes
+        .get(shown_i)
+        .map_or(0, |l| summary_lines(l, area.width, 3).len());
     let room = usize::from(area.height).saturating_sub(4 + detail_h).max(1);
-    // Which lanes fit: unfocused, the newest; focused, a window around the selected lane, so
-    // ← and → walk back through the whole history (round 2c: "the ability to scroll back in
-    // history and see past branches too").
-    // At least MIN_GAP columns an event, so close branches are not squeezed together; the cost
-    // is a longer scroll (round 2e: "do not be afraid of spreading them out a little bit more").
-    const MIN_GAP: usize = 6;
-    let fits = |a: usize, b: usize| 2 * (b - a) * MIN_GAP <= gw && layout(g, &g.lanes[a..b], now, gw).2 <= room;
+    let (first, end) = window(g, now, gw, room, focus.then_some(sel_all));
     let len = g.lanes.len();
-    let (first, end) = if focus {
-        let (mut a, mut b) = (sel_all, (sel_all + 1).min(len));
-        loop {
-            if b < len && fits(a, b + 1) {
-                b += 1;
-            } else if a > 0 && fits(a - 1, b) {
-                a -= 1;
-            } else {
-                break;
-            }
-        }
-        (a, b)
-    } else {
-        let mut a = 0;
-        while a + 1 < len && !fits(a, len) {
-            a += 1;
-        }
-        (a, len)
-    };
     let (evs, placed, rows) = layout(g, &g.lanes[first..end], now, gw);
     let lanes = &g.lanes[first..end];
     let extra = if first > 0 || end < len {
@@ -687,7 +727,9 @@ fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
             Span::styled(format!("   {}", short_name(l)), bold(text())),
             Span::styled(format!("{SEP}{}{SEP}{state}{SEP}{commits}", l.stage), dim()),
         ]));
-        for line in summary_lines(l, area.width) {
+        // The story gets whatever rows the graph was given beyond its branches.
+        let cap = usize::from(area.height).saturating_sub(out.len() + 1).max(1);
+        for line in summary_lines(l, area.width, cap) {
             out.push(Line::from(Span::styled(format!("     {line}"), text())));
         }
     }
@@ -704,10 +746,10 @@ fn lane_at(app: &App, g: &BranchGraph) -> usize {
 }
 
 /// The selected lane's summary, wrapped, at most three lines.
-fn summary_lines(l: &locus_contract::Lane, w: u16) -> Vec<String> {
+fn summary_lines(l: &locus_contract::Lane, w: u16, cap: usize) -> Vec<String> {
     let mut v = wrap(&l.summary, usize::from(w).saturating_sub(8));
-    if v.len() > 3 {
-        v.truncate(3);
+    if v.len() > cap {
+        v.truncate(cap);
         if let Some(last) = v.last_mut() {
             last.push(locus_theme::ELLIPSIS);
         }
@@ -798,7 +840,10 @@ fn draw_sessions(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
         .count();
     let extra = format!("{} · {live} live", ss.len());
     let mut out = vec![rule("sessions", &extra, Some('s'), focus, area.width)];
-    let room = usize::from(area.height.saturating_sub(1)) - usize::from(!focus && ss.len() > 3);
+    // As many as the section was given; a last line counts the rest when they do not fit.
+    let rows = usize::from(area.height.saturating_sub(1));
+    let overflow = !focus && ss.len() > rows;
+    let room = rows.saturating_sub(usize::from(overflow));
     let sel = focus.then(|| app.sel('s'));
     let first = sel.map_or(0, |s| s.saturating_sub(room.saturating_sub(1)));
     for (i, s) in ss.iter().enumerate().skip(first).take(room) {
@@ -835,9 +880,9 @@ fn draw_sessions(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
             area.width,
         ));
     }
-    if !focus && ss.len() > 3 {
+    if overflow {
         out.push(Line::from(Span::styled(
-            format!("     + {} older · s to see them", ss.len() - 3),
+            format!("     + {} older · s to see them", ss.len() - room),
             dim(),
         )));
     }
@@ -853,7 +898,12 @@ fn draw_chores(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
     let focus = app.focus == Some('c');
     let mut out = vec![rule("chores", "for a gap while you wait", Some('c'), focus, area.width)];
     let sel = focus.then(|| app.sel('c'));
-    for (i, ch) in v.chores.iter().enumerate().take(3) {
+    for (i, ch) in v
+        .chores
+        .iter()
+        .enumerate()
+        .take(usize::from(area.height.saturating_sub(1)))
+    {
         let done = app.marked(&chore_key(v, i)) == Some(&Mark::Done);
         let mut right = vec![Span::styled(format!("{} min ", ch.minutes), dim())];
         if let Some(d) = ch.due {
@@ -905,12 +955,15 @@ fn draw_ask(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
         None => vec![],
     };
     let used: usize = head.iter().chain(right.iter()).map(|s| s.content.width()).sum();
+    let tail = if right.is_empty() { 1 } else { 2 };
     head.push(Span::styled(
-        format!(" {}", "─".repeat(usize::from(area.width).saturating_sub(used + 2))),
+        format!(" {}", "─".repeat(usize::from(area.width).saturating_sub(used + tail))),
         st("surface2"),
     ));
-    head.push(Span::raw(" "));
-    head.extend(right);
+    if !right.is_empty() {
+        head.push(Span::raw(" "));
+        head.extend(right);
+    }
     lines(f, area, vec![Line::from(head), Line::from(left)]);
 }
 

@@ -19,7 +19,6 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │       ╰━ readout-adapter ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━○        │
 │       13 Oct                                                                                │
 │                                                                                             │
-│                                                                                             │
 │─ new · 4 unread · n n full timeline since mon 19 ───────────────────────────────────── [n] ─│
 │   decisions       󱉶 re-check the choice of one lever-arm ratio in θ: RIKEN's measur… 󰅸   2h │
 │   answers         󱜾 delayed acceptance · answered from your margin · links Monte Ca… 󰅸   5h │
@@ -36,6 +35,7 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │    󰝖 put a load of laundry on                                                         5 min │
 │    󰝖 reply to the 3YP group about Tuesday's meeting                      due mon 26   5 min │
 │    󰝖 collect the parcel from the porters' lodge                                      10 min │
+│                                                                                             │
 │─ ask ─────────────────────────────────────────────────────────────── 󱜾 answered 3, 1 new  a │
 │   ask › ␣ to ask about this project · the answer comes back here                            │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯

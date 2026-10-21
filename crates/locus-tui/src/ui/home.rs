@@ -118,11 +118,11 @@ fn find_groups(app: &App) -> Vec<(&'static str, Vec<usize>)> {
     let pick = |f: fn(FindKind) -> bool| -> Vec<usize> { (0..q.len()).filter(|&i| f(q[i].kind)).collect() };
     [
         (
-            "for your projects",
+            "for projects",
             pick(|k| matches!(k, FindKind::Method | FindKind::Course | FindKind::Pattern)),
         ),
         ("to read", pick(|k| k == FindKind::Reading)),
-        ("new project ideas", pick(|k| k == FindKind::NewProject)),
+        ("new ideas", pick(|k| k == FindKind::NewProject)),
     ]
     .into_iter()
     .filter(|(_, v)| !v.is_empty())
@@ -156,7 +156,7 @@ pub fn section_len(app: &App, sec: char) -> usize {
 pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     let inner = draw_border(f, area, app);
     let n_proj = project_rows(app).len().max(1) as u16;
-    let n_side = career_rows(app).len().max(study_rows(app).len() + 1).max(1) as u16;
+    let n_side = career_rows(app).len().max(study_rows(app).len() + 2).max(1) as u16;
     // A blank line between sections (round 1b), paid for by moving next and mail into the
     // border.
     let gap = Constraint::Length(1);
@@ -561,6 +561,12 @@ fn draw_studies(f: &mut Frame, area: Rect, app: &App) {
         }
         out.push(row(left, counts(pf.map(|p| &p.view), 0), area.width));
     }
+    // A thin line between the courses and learning, as the work panel sets its total apart
+    // from the projects (round 2f).
+    out.push(Line::from(Span::styled(
+        format!("   {}", "─".repeat(usize::from(area.width).saturating_sub(5))),
+        st("surface1"),
+    )));
     let goals = goal_rows(app);
     let to_agree = goals.iter().filter(|g| g.state == GoalState::Proposed).count();
     let mut state = format!("{} goals", goals.len());
@@ -595,13 +601,13 @@ fn draw_explore(f: &mut Frame, area: Rect, app: &App) {
     let sel = focus.then(|| app.sel('e'));
     let room = usize::from(area.height.saturating_sub(1));
     let groups = find_groups(app);
-    // Every kind keeps its heading and at least one find: when they do not all fit, the
-    // longest group gives up rows first, and its heading says how many more there are.
+    // Compact, each kind named in a column on its first find (round 2f: "the explore section
+    // labels should probably be shorter and on the same line as the idea"). It grows with the
+    // room it is given, the rule for every section: first gaps between kinds, then a second
+    // line per find saying why it matters. Too little room: the longest kind gives up rows
+    // first, and its label counts the rest.
     let mut shown: Vec<usize> = groups.iter().map(|(_, v)| v.len()).collect();
-    let total = |shown: &[usize], gaps: bool| -> usize {
-        shown.iter().sum::<usize>() + shown.len() + if gaps { shown.len().saturating_sub(1) } else { 0 }
-    };
-    while total(&shown, false) > room {
+    while shown.iter().sum::<usize>() > room {
         match shown
             .iter()
             .enumerate()
@@ -612,34 +618,29 @@ fn draw_explore(f: &mut Frame, area: Rect, app: &App) {
             None => break,
         }
     }
-    // Then as many blank lines between groups as the spare rows allow, so space is never left
-    // over at the bottom while the groups are packed (round 1e).
-    let gaps = room
-        .saturating_sub(total(&shown, false))
-        .min(shown.len().saturating_sub(1));
+    let items: usize = shown.iter().sum();
+    let gaps = groups.len().saturating_sub(1);
+    let spaced = items + gaps <= room;
+    let why = items * 2 + gaps <= room;
+    let width = usize::from(area.width);
     let mut pos = 0;
     for (gi, (heading, idx)) in groups.iter().enumerate() {
-        if gi > 0 && gi <= gaps {
+        if gi > 0 && spaced {
             out.push(Line::from(""));
         }
-        let mut head = vec![Span::styled(
-            format!("   {heading}{SEP}{}", idx.len()),
-            bold(st("subtext1")),
-        )];
-        if shown[gi] < idx.len() {
-            head.push(Span::styled(
-                format!("   + {} more on the Explore page", idx.len() - shown[gi]),
-                dim(),
-            ));
-        }
-        out.push(Line::from(head));
-        for &qi in idx.iter().take(shown[gi]) {
+        for (k, &qi) in idx.iter().take(shown[gi]).enumerate() {
             let find = &ex.queue[qi];
             let (g, gc, _) = find_glyph(find.kind);
+            let label = match k {
+                0 if shown[gi] < idx.len() => format!("{heading} +{}", idx.len() - shown[gi]),
+                0 => heading.to_string(),
+                _ => String::new(),
+            };
             let who = find.project.clone().unwrap_or_default();
             let left = vec![
                 pointer(pos, sel),
-                Span::styled(format!("  {g} "), st(gc)),
+                Span::styled(format!(" {label:<17}"), bold(st("subtext1"))),
+                Span::styled(format!("{g} "), st(gc)),
                 Span::styled(format!("{who:<7}"), dim()),
                 Span::styled(find.title.clone(), text()),
             ];
@@ -648,6 +649,16 @@ fn draw_explore(f: &mut Frame, area: Rect, app: &App) {
                 vec![Span::styled(format!("{} min ", find.minutes), dim())],
                 area.width,
             ));
+            if why {
+                out.push(Line::from(Span::styled(
+                    format!(
+                        "{:30}{}",
+                        "",
+                        crate::ui::truncate(&format!("why: {}", find.why), width.saturating_sub(33))
+                    ),
+                    dim(),
+                )));
+            }
             pos += 1;
         }
         pos += idx.len() - shown[gi];

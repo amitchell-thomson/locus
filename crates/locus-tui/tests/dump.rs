@@ -188,3 +188,23 @@ fn left_scrolls_the_branch_graph_back_through_history() {
     );
     assert!(!newest.contains("start,"));
 }
+
+/// Every screen at sizes other than the design size, including small and odd ones: a layout
+/// that subtracts rows it was not given panics here before it panics in a window (the locus
+/// session's second status line took two rows and found one, 22 Oct).
+#[test]
+fn every_screen_survives_other_sizes() {
+    for (w, h) in [(60u16, 20u16), (80, 24), (95, 36), (120, 30), (155, 44), (200, 60)] {
+        for set in ["default", "empty"] {
+            for screen in ScreenId::ALL {
+                let mut a = app(set, screen);
+                let text = dump::render(&a, w, h).unwrap();
+                assert_eq!(text.lines().count(), usize::from(h), "{set}/{screen} at {w}x{h}");
+                for sec in ['g', 'n', 's', 'c', 'p', 'e', 't'] {
+                    a.focus = Some(sec);
+                    dump::render(&a, w, h).unwrap();
+                }
+            }
+        }
+    }
+}

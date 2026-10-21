@@ -353,6 +353,23 @@ B16, B18, B20, Canvas names); 3YP linked to B3 and shown on its row. ADR-006: on
 (two kinds means two linked things); task is one kind with a type (sheet, coursework, admin,
 chore); a due date is an attribute, not a kind.
 
+**Round 2f, 22 Oct. A rule for every page: sections size to their content.** Each section
+gets its least useful height; spare rows go to whichever has more to show (hidden rows, then
+fuller forms of its rows, such as a second line per find), and only what is left is space. A
+section with nothing says so in one line. Compact forms put labels inline. His words: "the
+sections should show more or less if they have more or less items to fill up any empty space";
+"the formatting should be dynamic with how much information each section has ... This is a rule
+across all of locus." Open, his to decide later: fillers for space that is truly empty (careers
+when the applications resolve), "something ... that expands and contracts ... and also makes
+the space not look like a big hole".
+Changed: the Project view hands spare rows to sessions, chores, then the branch's story; Home's
+Explore puts each kind's short name on its first find, adding gaps and a "why" line as room
+allows; a thin line between courses and learning in studies; a blank line under the tab bar in
+the locus session only (a second, empty tmux status line, set by locus-session.sh: it covers
+Calendar and Mail too, where a TUI margin would not). Found on the way: the extra status line
+left the sessions section no rows and a subtraction panicked; every screen is now tested at six
+sizes from 60 × 20 to 200 × 60.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

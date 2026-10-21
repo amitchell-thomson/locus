@@ -10,7 +10,7 @@
 use crate::app::{App, Mark, Mode};
 use crate::screen::ScreenId;
 use crate::ui::widgets::*;
-use crate::ui::{follow_badge, frame, lines, project_title};
+use crate::ui::{follow_badge, lines, project_title};
 use chrono::NaiveDate;
 use locus_contract::{BranchGraph, DecisionStatus, ItemKind, ProjectKind, ProjectView, SessionState};
 use locus_theme::{SEP, c, glyph};
@@ -19,7 +19,6 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use unicode_width::UnicodeWidthStr;
 
 pub const KEYS: &[(&str, &str)] = &[
     ("␣ or i", "ask about this project"),
@@ -31,6 +30,7 @@ pub const KEYS: &[(&str, &str)] = &[
     ("o", "the dossier"),
     ("p", "interview prep (an application)"),
     ("m", "pin or follow"),
+    ("← →", "branches: older and newer, through the whole history"),
 ];
 
 pub fn view(app: &App) -> Option<&ProjectView> {
@@ -126,7 +126,19 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     if let Some(stage) = view.and_then(|v| v.stage.as_deref()) {
         t.push(Span::styled(format!("· {stage} "), dim()));
     }
-    let inner = frame(f, area, Line::from(t), Some(Line::from(right)));
+    // What sits behind this view's keys lives on the bottom border, one compact line, as Home's
+    // top border carries the moment (round 2c: the "more on this project" table felt "weird and
+    // clunky"; borders hold status, the page holds content).
+    let bottom = view.map(|v| status_line(app, v)).unwrap_or_default();
+    let block = ratatui::widgets::Block::default()
+        .borders(ratatui::widgets::Borders::ALL)
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(st("overlay0"))
+        .title(Line::from(t).left_aligned())
+        .title(Line::from(right).right_aligned())
+        .title_bottom(bottom.left_aligned());
+    let inner = block.inner(area);
+    f.render_widget(block, area);
     let Some(v) = view else {
         draw_missing(f, inner, app);
         return;
@@ -146,8 +158,6 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     let ses_h = 1 + ses_rows.max(1);
     let ch_h = 1 + (v.chores.len().min(3) as u16).max(1);
     let has_graph = v.graph.is_some();
-    let more = more_rows(app, v);
-    let more_h = 1 + more.len().div_ceil(2) as u16;
     let gap = Constraint::Length(1);
     let rects = Layout::vertical([
         Constraint::Length(where_lines.len() as u16),
@@ -160,15 +170,12 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         Constraint::Length(ses_h),
         gap,
         Constraint::Length(ch_h),
-        gap,
-        Constraint::Length(more_h),
         // Spare rows go here, so the ask line always sits at the foot of the page (round 2b).
         Constraint::Min(0),
         Constraint::Length(2),
     ])
     .split(inner);
-    let (where_r, graph_r, new_r, ses_r, ch_r, more_r, ask_r) =
-        (rects[0], rects[2], rects[4], rects[6], rects[8], rects[10], rects[12]);
+    let (where_r, graph_r, new_r, ses_r, ch_r, ask_r) = (rects[0], rects[2], rects[4], rects[6], rects[8], rects[10]);
 
     lines(f, where_r, where_lines);
     if let Some(g) = &v.graph {
@@ -177,7 +184,6 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     draw_new(f, new_r, app, v);
     draw_sessions(f, ses_r, app, v);
     draw_chores(f, ch_r, app, v);
-    draw_more(f, more_r, &more);
     draw_ask(f, ask_r, app);
 
     let focused = match app.focus {
@@ -306,26 +312,19 @@ fn more_rows(app: &App, v: &ProjectView) -> Vec<(&'static str, &'static str, &'s
     out
 }
 
-/// The rows of `more_rows` as a small two-column table: key, what it is, its state.
-fn draw_more(f: &mut Frame, area: Rect, rows: &[(&str, &str, &str, &str, String)]) {
-    let mut out = vec![rule("more on this project", "", None, false, area.width)];
-    let half = usize::from(area.width) / 2;
-    for pair in rows.chunks(2) {
-        let mut spans = Vec::new();
-        for (k, g, col, name, state) in pair {
-            let cell = vec![
-                Span::styled(format!("   {k:<5}"), keyst()),
-                Span::styled(format!("{g} "), st(col)),
-                Span::styled(format!("{name:<16}"), text()),
-                Span::styled(state.clone(), dim()),
-            ];
-            let w: usize = cell.iter().map(|s| s.content.width()).sum();
-            spans.extend(cell);
-            spans.push(Span::raw(" ".repeat(half.saturating_sub(w))));
+/// `more_rows` as one line for the bottom border: key, then what and its state.
+fn status_line(app: &App, v: &ProjectView) -> Line<'static> {
+    let mut spans = vec![Span::raw(" ")];
+    for (k, g, col, name, state) in more_rows(app, v) {
+        spans.push(Span::styled(format!(" {k} "), bold(keyst())));
+        spans.push(Span::styled(format!("{g} "), st(col)));
+        spans.push(Span::styled(name.to_string(), text()));
+        if !state.is_empty() {
+            spans.push(Span::styled(format!(" {state}"), dim()));
         }
-        out.push(Line::from(spans));
+        spans.push(Span::styled("  ", dim()));
     }
-    lines(f, area, out);
+    Line::from(spans)
 }
 
 /// The view has nothing to show: say which of the three reasons it is.
@@ -482,20 +481,36 @@ fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
     };
     let detail_h = 1 + g.lanes.get(shown_i).map_or(0, |l| summary_lines(l, area.width).len());
     let room = usize::from(area.height).saturating_sub(4 + detail_h).max(1);
-    // Drop the oldest lanes until the packed rows fit.
-    let mut first = 0;
-    let (evs, placed, rows) = loop {
-        let (e, p, r) = layout(g, &g.lanes[first..], now, gw);
-        if r <= room || first + 1 >= g.lanes.len() {
-            break (e, p, r);
+    // Which lanes fit: unfocused, the newest; focused, a window around the selected lane, so
+    // ← and → walk back through the whole history (round 2c: "the ability to scroll back in
+    // history and see past branches too").
+    let fits = |a: usize, b: usize| layout(g, &g.lanes[a..b], now, gw).2 <= room;
+    let len = g.lanes.len();
+    let (first, end) = if focus {
+        let (mut a, mut b) = (sel_all, (sel_all + 1).min(len));
+        loop {
+            if b < len && fits(a, b + 1) {
+                b += 1;
+            } else if a > 0 && fits(a - 1, b) {
+                a -= 1;
+            } else {
+                break;
+            }
         }
-        first += 1;
-    };
-    let lanes = &g.lanes[first..];
-    let extra = if first > 0 {
-        format!("{} branches, the {first} oldest not drawn", g.lanes.len())
+        (a, b)
     } else {
-        format!("{} branches", g.lanes.len())
+        let mut a = 0;
+        while a + 1 < len && !fits(a, len) {
+            a += 1;
+        }
+        (a, len)
+    };
+    let (evs, placed, rows) = layout(g, &g.lanes[first..end], now, gw);
+    let lanes = &g.lanes[first..end];
+    let extra = if first > 0 || end < len {
+        format!("{len} branches · {} to {} shown · ← → older and newer", first + 1, end)
+    } else {
+        format!("{len} branches")
     };
     let mut out = vec![rule("branches", &extra, Some('g'), focus, area.width)];
     let n = evs.len().max(2);
@@ -507,11 +522,11 @@ fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
     }
     for (i, (l, p)) in lanes.iter().zip(&placed).enumerate() {
         let selected = focus && first + i == sel_all;
-        // The selected branch is drawn solid in its colour, the others dimmed while the graph
-        // has focus (round 2b: "hard to tell what is selected").
+        // The selected branch on a light band in its own colour, the others dimmed while the
+        // graph has focus (round 2b: "hard to tell what is selected"; 2c: solid was "too bold").
         let colour = c(PROJECT_COLOURS[(first + i) % PROJECT_COLOURS.len()]);
         let style = if selected {
-            bold(Style::default().fg(c("crust")).bg(colour))
+            bold(Style::default().fg(colour).bg(c("surface1")))
         } else if focus {
             Style::default().fg(locus_theme::fade(colour, 0.55))
         } else {
@@ -550,7 +565,7 @@ fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
     }
     // Milestones are not drawn: too few and too thin to be worth the noise (round 2b).
     let start = lanes.iter().map(|l| l.forked).min().unwrap_or(g.from).max(g.from);
-    let earlier = g.lanes.len() - lanes.len() + usize::from(start > g.from);
+    let earlier = first + usize::from(start > g.from);
     for (r, cells) in cv.into_iter().enumerate() {
         let mut spans = vec![if r == 0 {
             Span::styled(
@@ -562,7 +577,7 @@ fn draw_graph(f: &mut Frame, area: Rect, app: &App, g: &BranchGraph) {
         }];
         spans.extend(cells.into_iter().map(|(ch, s)| Span::styled(ch.to_string(), s)));
         if r == 0 {
-            spans.push(Span::styled(" now", dim()));
+            spans.push(Span::styled(if end < g.lanes.len() { " ▸" } else { " now" }, dim()));
         }
         out.push(Line::from(spans));
     }
@@ -831,6 +846,11 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
             if let Some(ch) = v.chores.get(app.sel('c')) {
                 app.note = Some(format!("would open \"{}\" in kairos", ch.title));
             }
+        }
+        (Some('g'), KeyCode::Left | KeyCode::Right) => {
+            let n = v.graph.as_ref().map_or(0, |g| g.lanes.len());
+            let d = if k.code == KeyCode::Left { -1 } else { 1 };
+            app.move_sel('g', n, d);
         }
         (Some('g'), KeyCode::Enter) => app.note = Some("would list the branch's change records".into()),
         // Space asks (round 2: "a better key than i"); i still works.

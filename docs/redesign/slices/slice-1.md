@@ -328,6 +328,12 @@ and not enough info so are just added noise"). New split by kind: kept ("that is
 Settled: ADR-006, the registry holds projects, courses and applications; the Project window
 shows only projects; Home groups by area; the map is in the ADR.
 
+**Round 2c, 22 Oct.** The selected branch on a light band in its own colour ("too bold now");
+← and → walk the branch graph through the whole history, the window following the selection
+("the ability to scroll back in history and see past branches too"); the "more on this project"
+table removed ("weird and clunky") and its contents moved to the frame's bottom border as one
+line, mirroring Home's top border. "next looks a lot better."
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

@@ -158,3 +158,24 @@ fn snapshots_of_every_screen() {
         insta::assert_snapshot!(screen.name(), dump::render(&a, 95, 38).unwrap());
     }
 }
+
+/// ← walks the branch graph back through history: on a small window, nabla's oldest branch is
+/// not drawn until the selection reaches it.
+#[test]
+fn left_scrolls_the_branch_graph_back_through_history() {
+    let mut a = app("default", ScreenId::Project);
+    a.follow.session = Some("nabla".into());
+    a.focus = Some('g');
+    let n = locus_tui::ui::section_len(&a, 'g');
+    a.sel.insert((ScreenId::Project, 'g'), n - 1);
+    let newest = dump::render(&a, 95, 38).unwrap();
+    assert!(
+        !newest.contains("completion-orphans"),
+        "the oldest branch is off screen at first"
+    );
+    for _ in 0..n {
+        a.on_key(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+    }
+    let oldest = dump::render(&a, 95, 38).unwrap();
+    assert!(oldest.contains("completion-orphans"), "{oldest}");
+}

@@ -12,9 +12,13 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │   next ▸     fold RIKEN's slope and charging-energy numbers into the prior, then rerun the  │
 │              battery before trying any new method                                           │
 │                                                                                             │
-│─ branches · 4 branches, the 3 oldest not drawn ─────────────────────────────────────── [g] ─│
+│─ branches · 4 branches · 4 to 4 shown · ← → older and newer ────────────────────────── [g] ─│
 │main ◂─┬─────────────────────────────────────────────────────────────────────────────── now  │
 │       ╰━ readout-adapter ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━○        │
+│       13 Oct                                                                                │
+│                                                                                             │
+│   readout-adapter · readout on hardware: the plan · open since 13 Oct, last commit 13 Oct · │
+│     Planned how QUAST reads out on real hardware: it thresholds each shot's sensor signal   │
 │                                                                                             │
 │─ new · 4 unread ────────────────────────────────────────────────────────────────────── [n] ─│
 │   decisions       󱉶 re-check the choice of one lever-arm ratio in θ: RIKEN's measur… 󰅸   2h │
@@ -32,11 +36,7 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │    󰝖 put a load of laundry on                                                         5 min │
 │    󰝖 reply to the 3YP group about Tuesday's meeting                      due mon 26   5 min │
 │    󰝖 collect the parcel from the porters' lodge                                      10 min │
-│                                                                                             │
-│─ more on this project ──────────────────────────────────────────────────────────────────────│
-│   d    󰌾 decisions       7, 1 worth re-checking   a    󱜾 answered        3, 1 new           │
-│   o    󰈙 dossier         rebuilt 22 Oct         n n  󰘬 full timeline   since mon 19         │
 │─ ask ───────────────────────────────────────────────────────────────────────────────────────│
 │   ask › ␣ to ask about this project · the answer comes back here                            │
-╰─────────────────────────────────────────────────────────────────────────────────────────────╯
+╰  d 󰌾 decisions 7, 1 worth re-checking   a 󱜾 answered 3, 1 new   o 󰈙 dossier rebuilt 22 Oct  ╯
  ⏎ open · ⇥ sections · l log · / search · ? keys

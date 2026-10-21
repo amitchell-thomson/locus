@@ -36,7 +36,7 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │              gate volts and fixes the device only up to a common scale, while the           │
 │              simulator's core works in µeV. Either the core keeps µeV and converts at the   │
 │              boundary, or it becomes volt-referred throughout; it had to be settled before  │
-│   ↓ more · ⏎ or ⇥ to read on                                                                │
-│                                 ⏎ read it · o reopen · ? ask why · c its chat · f full entry│
+│   ↓ more · → to read on                                                                     │
+│                                 → read it · o reopen · ? ask why · c its chat · f full entry│
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯
  ⏎ open · ⇥ sections · l log · / search · ? keys

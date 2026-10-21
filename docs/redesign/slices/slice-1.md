@@ -503,6 +503,9 @@ decisions/ trade-offs".
   Oct, info.tex); the parked jot "a locus view of the decision network" (19 Oct). `rests_on` is
   the first edge of that graph.
 
+**Round 2r, 22 Oct.** "Right arrow should take you to the description section": → crosses from
+the list into the entry, as Enter does, and ← comes back to the same decision in the list.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

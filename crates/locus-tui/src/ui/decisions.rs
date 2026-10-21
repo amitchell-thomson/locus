@@ -22,7 +22,8 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 
 pub const KEYS: &[(&str, &str)] = &[
-    ("⏎", "read it on the right; on a link, go to that decision"),
+    ("→ or ⏎", "read it on the right; on a link, ⏎ goes to that decision"),
+    ("←", "back to the list"),
     ("o", "reopen: under review, with a chat about it"),
     ("?", "ask why it was made (lands in Answered)"),
     ("c", "the chat where it was decided"),
@@ -278,16 +279,11 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         if on_link {
             h.push(("⏎", "go to it"));
         }
-        h.extend([
-            ("↑ ↓", "read on"),
-            ("o", "reopen"),
-            ("?", "ask why"),
-            ("esc", "the list"),
-        ]);
+        h.extend([("↑ ↓", "read on"), ("o", "reopen"), ("?", "ask why"), ("←", "the list")]);
         h
     } else {
         vec![
-            ("⏎", "read it"),
+            ("→", "read it"),
             ("o", "reopen"),
             ("?", "ask why"),
             ("c", "its chat"),
@@ -635,7 +631,7 @@ fn draw_entry(f: &mut Frame, area: Rect, app: &App, ds: &Decisions, i: usize) {
             if focus {
                 "   ↓ more"
             } else {
-                "   ↓ more · ⏎ or ⇥ to read on"
+                "   ↓ more · → to read on"
             },
             dim(),
         ));
@@ -649,7 +645,10 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
     let d = &ds.items[cur];
     let in_list = SECTIONS.iter().any(|s| Some(s.0) == app.focus);
     match k.code {
-        KeyCode::Enter if in_list || app.focus.is_none() => {
+        // → crosses to the entry, as Enter does; ← comes back to the decision in the list
+        // (round 2r: "right arrow should take you to the description section").
+        KeyCode::Left if app.focus == Some('e') => focus_on(app, cur),
+        KeyCode::Enter | KeyCode::Right if in_list || app.focus.is_none() => {
             app.shown.borrow_mut().insert((ScreenId::Decisions, '*'), vec![cur]);
             app.focus = Some('e');
             app.sel.insert((ScreenId::Decisions, 'e'), 0);

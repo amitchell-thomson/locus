@@ -11,7 +11,7 @@
 use crate::app::App;
 use crate::screen::ScreenId;
 use crate::ui::widgets::*;
-use crate::ui::{frame, lines, work};
+use crate::ui::{lines, work};
 use locus_contract::{FindKind, GoalState, ProjectKind, SessionState};
 use locus_theme::{SEP, c, glyph};
 use ratatui::Frame;
@@ -123,21 +123,28 @@ pub fn section_len(app: &App, sec: char) -> usize {
 }
 
 pub fn draw(f: &mut Frame, area: Rect, app: &App) {
-    let inner = frame(f, area, crate::ui::title("locus", "home"), None);
+    let inner = draw_border(f, area, app);
     let n_proj = project_rows(app).len().max(1) as u16;
     let n_side = career_rows(app).len().max(goal_rows(app).len() + 1).max(1) as u16;
-    let [top, wait_r, work_r, proj_r, side_r, exp_r, sys_r] = Layout::vertical([
-        Constraint::Length(3),
+    // A blank line between sections (round 1b), paid for by moving next and mail into the
+    // border.
+    let gap = Constraint::Length(1);
+    let rects = Layout::vertical([
         Constraint::Length(2),
+        gap,
         Constraint::Length(9),
+        gap,
         Constraint::Length(n_proj + 1),
+        gap,
         Constraint::Length(n_side + 1),
+        gap,
         Constraint::Min(3),
+        gap,
         Constraint::Length(3),
     ])
-    .areas(inner);
+    .split(inner);
+    let (wait_r, work_r, proj_r, side_r, exp_r, sys_r) = (rects[0], rects[2], rects[4], rects[6], rects[8], rects[10]);
 
-    draw_top(f, top, app);
     draw_waiting(f, wait_r, app);
     work::draw_week(f, work_r, app, app.focus == Some('w'));
     draw_projects(f, proj_r, app);
@@ -146,66 +153,104 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     draw_learning(f, g_r, app);
     draw_explore(f, exp_r, app);
     draw_system(f, sys_r, app);
+
+    // The focused section gets a thick blue bar on the frame's edge beside it: clearer than a
+    // coloured rule alone, without boxing every section (round 1b).
+    let focused = match app.focus {
+        Some('a') => Some(wait_r),
+        Some('w') => Some(work_r),
+        Some('p') => Some(proj_r),
+        Some('c' | 'g') => Some(side_r),
+        Some('e') => Some(exp_r),
+        Some('s') => Some(sys_r),
+        _ => None,
+    };
+    if let Some(r) = focused {
+        let buf = f.buffer_mut();
+        for y in r.y..r.y + r.height {
+            if let Some(cell) = buf.cell_mut((area.x, y)) {
+                cell.set_symbol("┃").set_style(st("blue"));
+            }
+        }
+    }
 }
 
-/// The moment, centred so it is read (round 1: the corner it sat in "becomes kind of hidden");
-/// then the next calendar item and mail.
-fn draw_top(f: &mut Frame, area: Rect, app: &App) {
+/// The frame, with the moment centred in its top border and next and mail, short, at its right
+/// (round 1b: "centered in the top bar, on the same line as locus . home"; next and mail "on the
+/// top of the border ... in a shorter format"). The chores count and the proposed deadline
+/// left: the deadline is an item in Approve, chores are on the Project view.
+fn draw_border(f: &mut Frame, area: Rect, app: &App) -> Rect {
     let fx = &app.fixtures;
     let now = fx.now();
     let w = usize::from(area.width);
-    let mut mid = vec![Span::styled(
-        now.format("%A %-d %B · %H:%M").to_string().to_lowercase(),
-        bold(text()),
-    )];
     let running = fx.system.running.len();
-    if running > 0 {
-        mid.push(Span::styled("    ", text()));
-        mid.push(Span::styled(
-            format!("{} {running} jobs running", glyph::WORKING),
-            pulse(app.frame),
-        ));
-    }
-    if fx.home.review_ready {
-        mid.push(Span::styled("    ", text()));
-        mid.push(Span::styled("weekly review ready · W", bold(st("peach"))));
-    }
-    let mw: usize = mid.iter().map(|s| s.content.width()).sum();
-    let mut line = vec![Span::raw(" ".repeat(w.saturating_sub(mw) / 2))];
-    line.extend(mid);
-    let next = match &fx.home.next {
-        Some(n) => format!(
-            "{}, {}{SEP}{} chores fit today",
-            n.title,
-            n.at.format("%a %H:%M").to_string().to_lowercase(),
-            fx.home.chores_fit
-        ),
-        None => format!("nothing else today{SEP}{} chores fit", fx.home.chores_fit),
+    // Three lengths of each part: 2 full words, 1 shorter, 0 shortest.
+    let make_mid = |n: u8| -> Vec<Span<'static>> {
+        let fmt = if n == 2 {
+            "%A %-d %B · %H:%M"
+        } else {
+            "%a %-d %b · %H:%M"
+        };
+        let mut v = vec![Span::styled(
+            format!(" {} ", now.format(fmt).to_string().to_lowercase()),
+            bold(text()),
+        )];
+        if running > 0 {
+            let word = ["", " running", " jobs running"][usize::from(n)];
+            v.push(Span::styled(
+                format!("  {} {running}{word} ", spin(app.frame)),
+                st("blue"),
+            ));
+        }
+        if fx.home.review_ready {
+            let t = ["  review · W ", "  review ready · W ", "  weekly review ready · W "][usize::from(n)];
+            v.push(Span::styled(t, bold(st("peach"))));
+        }
+        v
     };
-    let mail = &fx.home.mail;
-    let mail_s = if mail.need_reply + mail.deadlines_proposed == 0 {
-        "nothing needs you".to_string()
-    } else {
-        format!(
-            "{} need a reply{SEP}{} deadline proposed",
-            mail.need_reply, mail.deadlines_proposed
-        )
+    let make_right = |n: u8| -> Vec<Span<'static>> {
+        let mut v = Vec::new();
+        if let Some(e) = &fx.home.next {
+            let when = e.at.format("%a %H:%M").to_string().to_lowercase();
+            let t = if n > 0 {
+                format!("{} {when}", e.title.to_lowercase())
+            } else {
+                when
+            };
+            v.push(Span::styled(format!(" {} {t} ", glyph::CALENDAR), st("peach")));
+        }
+        let m = fx.home.mail.need_reply;
+        if m > 0 {
+            let t = if n > 0 { format!("{m} to reply") } else { m.to_string() };
+            v.push(Span::styled(format!(" {} {t} ", glyph::MAIL), st("sapphire")));
+        }
+        v
     };
-    lines(
-        f,
-        area,
-        vec![
-            Line::from(line),
-            Line::from(vec![
-                Span::styled(format!(" {} next  ", glyph::CALENDAR), st("peach")),
-                Span::styled(next, text()),
-            ]),
-            Line::from(vec![
-                Span::styled(format!(" {} mail  ", glyph::MAIL), st("sapphire")),
-                Span::styled(mail_s, text()),
-            ]),
-        ],
-    );
+    let width = |v: &[Span]| v.iter().map(|s| s.content.width()).sum::<usize>();
+    // The centre is centred on the whole width, so each side has (w - centre) / 2 for the left
+    // title (16) or the right part. Take the first pairing, in order of preference, that fits.
+    let fits = |mid: &[Span], right: &[Span]| {
+        let side = w.saturating_sub(width(mid)) / 2;
+        width(right) + 3 <= side && 19 <= side
+    };
+    let (mut mid, mut right) = (make_mid(0), Vec::new());
+    for (m, r) in [(2, 2), (1, 2), (0, 2), (1, 0), (0, 0)] {
+        let (a, b) = (make_mid(m), make_right(r));
+        if fits(&a, &b) {
+            (mid, right) = (a, b);
+            break;
+        }
+    }
+    let block = ratatui::widgets::Block::default()
+        .borders(ratatui::widgets::Borders::ALL)
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(st("overlay0"))
+        .title(crate::ui::title("locus", "home").left_aligned())
+        .title(Line::from(mid).centered())
+        .title(Line::from(right).right_aligned());
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    inner
 }
 
 /// The approve list as one line that draws the eye; the items themselves are on the approve
@@ -273,12 +318,12 @@ fn draw_projects(f: &mut Frame, area: Rect, app: &App) {
         match sessions.first() {
             Some(s) => {
                 let (sg, sc, word) = session_glyph(s.state);
-                let gs = if s.state == SessionState::Working {
-                    pulse(app.frame)
+                let sg = if s.state == SessionState::Working {
+                    spin(app.frame)
                 } else {
-                    st(sc)
+                    sg
                 };
-                left.push(Span::styled(format!("{sg} "), gs));
+                left.push(Span::styled(format!("{sg} "), st(sc)));
                 left.push(Span::styled(format!("{word:<9}"), st(sc)));
                 left.push(Span::styled(format!("{:>4}  ", ago(now, s.since)), dim()));
                 let what = s.summary.clone().or_else(|| s.doing.clone()).unwrap_or_default();
@@ -413,19 +458,41 @@ fn draw_explore(f: &mut Frame, area: Rect, app: &App) {
     let sel = focus.then(|| app.sel('e'));
     let room = usize::from(area.height.saturating_sub(1));
     let groups = find_groups(app);
-    // Blank lines between groups only when everything still fits.
-    let needed: usize = groups.iter().map(|(_, v)| v.len() + 1).sum::<usize>() + groups.len().saturating_sub(1);
-    let spaced = needed <= room;
+    // Every kind keeps its heading and at least one find: when they do not all fit, the
+    // longest group gives up rows first, and its heading says how many more there are.
+    let mut shown: Vec<usize> = groups.iter().map(|(_, v)| v.len()).collect();
+    let total = |shown: &[usize], gaps: bool| -> usize {
+        shown.iter().sum::<usize>() + shown.len() + if gaps { shown.len().saturating_sub(1) } else { 0 }
+    };
+    let spaced = total(&shown, true) <= room;
+    while total(&shown, spaced) > room {
+        match shown
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| **n > 1)
+            .max_by_key(|(_, n)| **n)
+        {
+            Some((i, _)) => shown[i] -= 1,
+            None => break,
+        }
+    }
     let mut pos = 0;
     for (gi, (heading, idx)) in groups.iter().enumerate() {
         if gi > 0 && spaced {
             out.push(Line::from(""));
         }
-        out.push(Line::from(Span::styled(
+        let mut head = vec![Span::styled(
             format!("   {heading}{SEP}{}", idx.len()),
             bold(st("subtext1")),
-        )));
-        for &qi in idx {
+        )];
+        if shown[gi] < idx.len() {
+            head.push(Span::styled(
+                format!("   + {} more on the Explore page", idx.len() - shown[gi]),
+                dim(),
+            ));
+        }
+        out.push(Line::from(head));
+        for &qi in idx.iter().take(shown[gi]) {
             let find = &ex.queue[qi];
             let (g, gc, _) = find_glyph(find.kind);
             let who = find.project.clone().unwrap_or_default();
@@ -442,18 +509,11 @@ fn draw_explore(f: &mut Frame, area: Rect, app: &App) {
             ));
             pos += 1;
         }
+        pos += idx.len() - shown[gi];
     }
     if ex.queue.is_empty() {
         out.push(Line::from(Span::styled(
             "  nothing waiting; about one find a day",
-            dim(),
-        )));
-    }
-    if out.len() > room + 1 {
-        let hidden = out.len() - room;
-        out.truncate(room);
-        out.push(Line::from(Span::styled(
-            format!("   + {hidden} more on the Explore page"),
             dim(),
         )));
     }
@@ -488,10 +548,7 @@ fn draw_system(f: &mut Frame, area: Rect, app: &App) {
         if i > 0 {
             jobs.push(Span::styled("   │   ", st("surface2")));
         }
-        jobs.push(Span::styled(
-            format!("{} ", glyph::WORKING),
-            pulse(app.frame + i as u64 * 3),
-        ));
+        jobs.push(Span::styled(format!("{} ", spin(app.frame + i as u64)), st("blue")));
         jobs.push(Span::styled(format!("{} {}", j.kind, j.subject), text()));
     }
     if fx.system.running.is_empty() {

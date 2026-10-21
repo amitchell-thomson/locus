@@ -2,12 +2,10 @@
 source: crates/locus-tui/tests/dump.rs
 expression: "dump::render(&a, 95, 38).unwrap()"
 ---
-╭ locus · home ───────────────────────────────────────────────────────────────────────────────╮
-│         saturday 24 october · 21:40    󰓦 3 jobs running    weekly review ready · W          │
-│ 󰃭 next  Futsal training, sun 18:00 · 2 chores fit today                                     │
-│ 󰇮 mail  2 need a reply · 1 deadline proposed                                                │
+╭ locus · home ────── sat 24 oct · 21:40   󰓦 3 running   review ready · W ── 󰃭 sun 18:00  󰇮 2 ╮
 │─ waiting for you ───────────────────────────────────────────────────────────────────── [a] ─│
 │  󰴹 6 to approve   2 to file · 1 mail · 1 deadline · 1 ink to place · 1 s… ⏎ go through them │
+│                                                                                             │
 │─ work · this week ──────────────────────────────────────────────────────────────────── [w] ─│
 │      06    09    12    15    18    21    24   this week                              36.2 h │
 │ mon   · · ▓▓▓█████· ·▒▒▒▒ · · · ·▓▓▓▓▓· ·     quast    12.5 h ━━━━━━━━━━━━━━━━━━━━━━━━━━    │
@@ -17,26 +15,28 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │ fri   · · · · · · · · · · · · · · · · · ·     blocks kept                            8 of 9 │
 │ sat   · · · ████████· · ·▒▒▒▒ · · ▓▓· · ·     streak                                 4 days │
 │ sun                                                                                         │
+│                                                                                             │
 │─ projects · what you build ─────────────────────────────────────────────────────────── [p] ─│
 │  󰆤 quast    󰹇 needs you 35m  wants to run the full battery on the serv… 2 sessions  󰅸 4 new │
 │  󰆣 nabla    󰹇 needs you 42m  SYNA's vote is close: close the shadow po… 8 sessions  󰅸 2 new │
 │  󰆣 locus    󰹇 needs you 20m  wants to restart the locus HTTP service o… 3 sessions  󰅸 4 new │
 │  󰆣 OQTS     󰤄 no sessions    quiet since August                                             │
 │  󰆣 3YP      󰤄 no sessions    not started                                            󰅸 1 new │
+│                                                                                             │
 │─ careers · applications and your CV ──── [c] ── learning · what you are learning for ─ [g] ─│
 │  󰈙 CV           G-Research release, 17 Oct      󰌵 Jump internship… 30 h · syllabus to agree │
 │  󰇮 Jump Trading offer accepted · int… 󰅸 1 new   󰌵 personal learning            2 h · active │
 │  󰇮 G-Research   applied · no interview yet        weakest  market microstr… ━━────────  15% │
+│                                                                                             │
 │─ explore · 7 finds · full, so the scout is waiting for you ─────────────────────────── [e] ─│
-│   for your projects · 4                                                                     │
+│   for your projects · 4   + 3 more on the Explore page                                      │
 │    󰭎 quast  Bayes-opt barrier tuning, 3x fewer measurements                          15 min │
-│    󰭎 nabla  Deal-completion hazard models from the merger-arbitrage literature, and… 25 min │
-│    󰭎 nabla  What your Control course's Kalman filter offers the spread model         10 min │
-│    󰭎        quast and nabla both pre-register their tests: one template could serve … 5 min │
-│   to read · 2                                                                               │
-│   + 4 more on the Explore page                                                              │
+│   to read · 2   + 1 more on the Explore page                                                │
+│    󱀄        The Bitter Lesson                                                        12 min │
+│   new project ideas · 1                                                                     │
+│                                                                                             │
 │─ system ────────────────────────────────────────────────────────────────────────────── [s] ─│
-│ running  󰓦 dossier quast   │   󰓦 scout reading   │   󰓦 change… 󰄵 14 done today   󰅘 1 failed │
+│ running  󰓦 dossier quast   │   󰓦 scout reading   │   󰁪 change… 󰄵 14 done today   󰅘 1 failed │
 │ budget   ━━━━━━━━━━━───────┊─────  9.1% of the 15% … 5-hour window: you 34% · background 4% │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯
  ⏎ open · l log · / search · ? keys

@@ -240,6 +240,18 @@ with nothing focused, Tab 5 times. Changed:
 - *Work.* The grid uses two columns a half hour at his width, and the bars fill the panel.
 - *`R`* says what it clears: the prototype's ticks and strikes, nothing real.
 
+*Round 1b, 21 Oct (Home, second pass).* "home now looks a lot better ... especially the better
+descriptions of what needs me", the wider time tracker, the numbers-only approve line, the
+careers/learning split ("a good addition"), the system line ("the background vs me 5h window
+line ... very useful"). Changed: the moment centred in the top border, next and mail short at
+its right ("on the top of the border ... in a shorter format"); the chores count and the
+proposed deadline dropped from Home (the deadline is an approve item; chores are on the Project
+view); a blank line between sections, titles bright and bold, rules quiet ("the grey text hides
+in between the content"); the focused section marked by a thick blue bar on the frame beside
+it; the running glyph turns (md-sync and md-autorenew alternate) instead of changing colour;
+Explore trims its longest group first so each kind keeps a line. Kept: waiting for you at the
+top (what he looks for first); 3YP a project ("in the format of a long running project").
+
 Seeds for later pages, his words kept for their rounds:
 - *Project:* sessions active in the last 3 days shown, the rest behind `s`, each with a
   summary line; the ask key more visible, or a better key than `i`; the branch graph is broken

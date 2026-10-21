@@ -84,12 +84,16 @@ pub fn bar(frac: f32, width: usize, mark: Option<f32>, fill: Color) -> Vec<Span<
     spans
 }
 
-/// The colour of something running right now, stepped each frame so it reads as alive rather
-/// than parked (round 1: "animate the running symbols slightly ... only when they are active
-/// right this instant"). Frame 0, as in `--dump`, is the plain colour.
-pub fn pulse(frame: u64) -> Style {
-    const STEPS: [&str; 6] = ["blue", "sapphire", "sky", "teal", "sky", "sapphire"];
-    st(STEPS[(frame / 2 % STEPS.len() as u64) as usize])
+/// The running glyph, turning: md-sync and md-autorenew are the same two arrows a quarter turn
+/// apart, so alternating them reads as rotation (round 1b: "flipping between two rotation
+/// glyphs in different degrees of rotation", not a colour change). Frame 0 is md-sync, the
+/// D.2 glyph, so `--dump` and the legend agree.
+pub fn spin(frame: u64) -> &'static str {
+    if frame / 2 % 2 == 0 {
+        locus_theme::glyph::WORKING
+    } else {
+        "\u{f006a}"
+    }
 }
 
 pub fn item_glyph(k: ItemKind) -> (&'static str, &'static str) {
@@ -149,14 +153,16 @@ pub fn find_glyph(k: FindKind) -> (&'static str, &'static str, &'static str) {
 
 /// A section's rule: `─ title · extra ──────── [l] ─`, blue when focused.
 pub fn rule(title: &str, extra: &str, letter: Option<char>, focus: bool, width: u16) -> Line<'static> {
-    let col = if focus { c("blue") } else { c("overlay0") };
+    let col = if focus { c("blue") } else { c("surface2") };
     if title.is_empty() && extra.is_empty() && letter.is_none() {
         return Line::from(Span::styled("─".repeat(usize::from(width)), Style::default().fg(col)));
     }
+    // Titles bright and bold, the line itself quiet, so sections stand apart even unfocused
+    // (round 1b: "the grey text hides in between the content of the surrounding sections").
     let ts = if focus {
         bold(Style::default().fg(c("blue")))
     } else {
-        st("subtext0")
+        bold(st("text"))
     };
     let mut spans = vec![
         Span::styled("─ ", Style::default().fg(col)),

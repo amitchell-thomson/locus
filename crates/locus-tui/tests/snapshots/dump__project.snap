@@ -9,7 +9,7 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │   shortfall  RIKEN's measured exchange slope is 2.6x shallower than the prior assumes, and  │
 │              nothing uses it yet.                                                           │
 │   new        answer     󱜾 delayed acceptance · answered from your margin · links Mo… 󰅸   5h │
-│              + 4 more · the full timeline [n]                                               │
+│              + 4 more                                                                       │
 │   ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌   │
 │   next ▸     fold RIKEN's slope and charging-energy numbers into the prior, then rerun the  │
 │              battery before trying any new method                                           │

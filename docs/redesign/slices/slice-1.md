@@ -506,6 +506,9 @@ decisions/ trade-offs".
 **Round 2r, 22 Oct.** "Right arrow should take you to the description section": → crosses from
 the list into the entry, as Enter does, and ← comes back to the same decision in the list.
 
+**Round 2s, 22 Oct.** "There are two parts that say 'the full log [d]'": a "+N more" line only
+counts; the key to the rest is on the section's heading, for decisions and for what is new.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

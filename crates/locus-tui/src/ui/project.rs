@@ -468,7 +468,7 @@ fn where_you_are(app: &App, v: &ProjectView, w: u16, budget: usize, tight: bool)
         }
         if take < order.len() {
             out.push(Line::from(Span::styled(
-                format!("              + {} more · the full timeline [n]", order.len() - take),
+                format!("              + {} more", order.len() - take),
                 dim(),
             )));
         }
@@ -1185,7 +1185,8 @@ fn draw_decisions(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
             }
             if take < order.len() {
                 out.push(Line::from(Span::styled(
-                    format!("   + {} more · the full log [d]", order.len() - take),
+                    // The heading already says where the full log is.
+                    format!("   + {} more", order.len() - take),
                     dim(),
                 )));
             }

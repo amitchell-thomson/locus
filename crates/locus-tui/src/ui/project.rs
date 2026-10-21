@@ -44,6 +44,20 @@ fn new_key(view: &ProjectView, i: usize) -> String {
     format!("new:{}:{i}", view.project)
 }
 
+pub fn answer_key(project: &str, i: usize) -> String {
+    format!("answer:{project}:{i}")
+}
+
+/// The newest answer not yet read, with its place in the log: what Enter on ask opens.
+fn new_answer<'a>(app: &'a App, v: &ProjectView) -> Option<(usize, &'a locus_contract::Answer)> {
+    let ans = app.fixtures.projects.get(&v.project)?.answered.as_ref()?;
+    ans.items
+        .iter()
+        .enumerate()
+        .filter(|(i, a)| a.unread && app.marked(&answer_key(&v.project, *i)).is_none())
+        .max_by_key(|(_, a)| a.at)
+}
+
 fn chore_key(view: &ProjectView, i: usize) -> String {
     format!("chore:{}:{i}", view.project)
 }
@@ -530,7 +544,12 @@ fn more_rows(app: &App, v: &ProjectView) -> Vec<(&'static str, &'static str, &'s
     }
     match pf.and_then(|p| p.answered.as_ref()) {
         Some(a) => {
-            let unread = a.items.iter().filter(|x| x.unread).count();
+            let unread = a
+                .items
+                .iter()
+                .enumerate()
+                .filter(|(i, x)| x.unread && app.marked(&answer_key(&v.project, *i)).is_none())
+                .count();
             let state = if unread > 0 {
                 format!("{}, {unread} new", a.items.len())
             } else {
@@ -1306,7 +1325,14 @@ fn draw_ask(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
             Span::styled("␣", keyst()),
             Span::styled(" to ask about this project · ", dim()),
             Span::styled("⏎", keyst()),
-            Span::styled(" for what you asked before, in answered", dim()),
+            // With an answer waiting, Enter opens it (round 2o).
+            Span::styled(
+                match new_answer(app, v) {
+                    Some((_, a)) => format!(" to read the new answer: {}", a.title),
+                    None => " for what you asked before, in answered".into(),
+                },
+                dim(),
+            ),
         ],
         _ => vec![
             Span::styled("   ask › ", dim()),
@@ -1383,7 +1409,15 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 app.open(ScreenId::Decisions);
             }
         }
-        (Some('a'), KeyCode::Enter) => app.open(ScreenId::Answered),
+        (Some('a'), KeyCode::Enter) => {
+            let waiting = new_answer(app, &v).map(|(i, _)| i);
+            app.open(ScreenId::Answered);
+            if let Some(i) = waiting {
+                app.sel.insert((ScreenId::Answered, ' '), i);
+                app.mark(answer_key(&v.project, i), Mark::Read, "");
+                app.note = None;
+            }
+        }
         (Some('s'), KeyCode::Enter) => {
             if let Some(s) = sorted_sessions(&v).get(app.sel('s')) {
                 app.note = Some(format!("would jump your project window to \"{}\"", s.name));

@@ -242,6 +242,7 @@ fn run(mut app: App) -> Result<()> {
             {
                 app.peek = change;
                 app.stack.truncate(1);
+                app.focus_below.clear();
                 app.focus = None;
             }
             app.frame = app.frame.wrapping_add(1);

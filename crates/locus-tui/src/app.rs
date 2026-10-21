@@ -48,6 +48,10 @@ pub struct App {
     pub stack: Vec<ScreenId>,
     /// The focused section's letter, on the top screen.
     pub focus: Option<char>,
+    /// The focus each screen under the top one had when it opened the next, so Esc comes back
+    /// to where you were (round 2o: Esc from Answered landed on a Project view with nothing
+    /// focused). Selections are kept per screen already; only the focus was lost.
+    pub focus_below: Vec<Option<char>>,
     /// The footer's message: what an action would have done, or why a key did nothing.
     pub note: Option<String>,
     pub keys_open: bool,
@@ -99,6 +103,7 @@ impl App {
             fixtures,
             stack: vec![root],
             focus: None,
+            focus_below: Vec::new(),
             note: None,
             keys_open: false,
             quit: false,
@@ -160,7 +165,7 @@ impl App {
 
     pub fn open(&mut self, screen: ScreenId) {
         self.stack.push(screen);
-        self.focus = None;
+        self.focus_below.push(self.focus.take());
         self.uselog.record(screen.name(), "open");
     }
 
@@ -176,6 +181,7 @@ impl App {
             self.focus = None;
         } else if self.stack.len() > 1 {
             self.stack.pop();
+            self.focus = self.focus_below.pop().flatten();
         }
     }
 
@@ -522,6 +528,18 @@ mod tests {
         press(&mut a, KeyCode::Down);
         assert_eq!(a.focus, Some(ScreenId::Home.sections()[0].letter));
         assert!(a.note.is_none(), "no 'does nothing here'");
+    }
+
+    /// Esc from a screen comes back to the section that opened it (round 2o).
+    #[test]
+    fn esc_returns_to_the_section_you_left() {
+        let mut a = app();
+        press(&mut a, KeyCode::Char('e'));
+        a.open(ScreenId::Explore);
+        assert_eq!(a.focus, None);
+        press(&mut a, KeyCode::Esc);
+        assert_eq!(a.screen(), ScreenId::Home);
+        assert_eq!(a.focus, Some('e'));
     }
 
     #[test]

@@ -443,6 +443,16 @@ already on ask does the press enter to go to answered appear." `a` focuses the a
 section's letter, with `[a]` at the end of its rule; the answered count stays on the rule with no
 key beside it, and the Enter hint shows only once you are there. Space still asks from anywhere.
 
+**Round 2o, 22 Oct. Esc comes back to where you were; Enter opens the waiting answer.** Opening a
+screen remembered nothing of where you were, so Esc from Answered (or Decisions, or the
+timeline) landed on a Project view with nothing focused. Each screen now keeps its focus under
+the one it opened, and selections were already kept, so Esc puts you back on the ask line or on
+the decision you opened, on every page. With an answer waiting, the ask hint names it ("⏎ to read
+the new answer: delayed acceptance") and Enter opens Answered on it and counts it read; with
+none, Enter opens the list. Saved for the Answered round: Space on an answer asks a follow-up
+with it as context; the ask line holds a question in flight until its answer lands; Esc while
+typing keeps the draft.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

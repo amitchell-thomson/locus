@@ -115,7 +115,6 @@ fn asked_key(project: &str, id: &str) -> String {
 /// items.
 struct Fold {
     name: &'static str,
-    colour: &'static str,
     summary: String,
     /// (label, detail) per item.
     lines: Vec<(String, String)>,
@@ -123,8 +122,8 @@ struct Fold {
 
 /// The entry's sections after the connections, in reading order (round 2y): the ADR template's
 /// sections, which the repos write, plus your words and alternatives. Reasons first, background
-/// last. The states keep yellow, sky, peach, green and mauve and focus keeps blue, so these take
-/// the rest of the palette (round 2t). A section with nothing in it is left out.
+/// last. Their titles are plain (round 2zc: one colour per section, round 2t, said nothing the
+/// rule did not). A section with nothing in it is left out.
 fn folds(d: &Decision) -> Vec<Fold> {
     // Folded, a section is its labels side by side; open, each label with its short detail
     // (round 2za: "each section is still too long and hard to parse").
@@ -135,36 +134,25 @@ fn folds(d: &Decision) -> Vec<Fold> {
             .collect::<Vec<_>>()
     };
     let mut out = vec![];
-    let mut add = |name, colour, summary: String, lines: Vec<(String, String)>| {
+    let mut add = |name, summary: String, lines: Vec<(String, String)>| {
         if !lines.is_empty() {
-            out.push(Fold {
-                name,
-                colour,
-                summary,
-                lines,
-            });
+            out.push(Fold { name, summary, lines });
         }
     };
-    add("decision", "flamingo", labels(&d.decision), points(&d.decision));
+    add("decision", labels(&d.decision), points(&d.decision));
     // Your own words, whenever there are any ("definitely quote me").
     add(
         "you said",
-        "pink",
         d.you.first().map(|q| format!("“{}”", q.text)).unwrap_or_default(),
         d.you
             .iter()
             .map(|q| (format!("“{}”", q.text), q.source.clone()))
             .collect(),
     );
-    add(
-        "alternatives",
-        "maroon",
-        labels(&d.alternatives),
-        points(&d.alternatives),
-    );
-    add("assumes", "lavender", labels(&d.assumes), points(&d.assumes));
-    add("consequences", "red", labels(&d.consequences), points(&d.consequences));
-    add("context", "sapphire", labels(&d.context), points(&d.context));
+    add("alternatives", labels(&d.alternatives), points(&d.alternatives));
+    add("assumes", labels(&d.assumes), points(&d.assumes));
+    add("consequences", labels(&d.consequences), points(&d.consequences));
+    add("context", labels(&d.context), points(&d.context));
     out
 }
 
@@ -676,12 +664,10 @@ fn days_ago(now: chrono::NaiveDate, d: chrono::NaiveDate) -> String {
     }
 }
 
-/// The entry: its title and state, then a section per field, each under a rule with its title
-/// in its own colour and a blank line between (round 2t: "the sections should be divided by
-/// lines, with a line of white space spacing between them and titles colored per section ...
-/// in colors that do not conflict with any others on the page"). The states own yellow, sky,
-/// peach, green and mauve, and focus owns blue, so the fields use the rest of the palette.
-/// The connections lead, each a row Enter follows.
+/// The entry: its title and state, the brief, then a section per field, each under a rule with
+/// a blank line between (round 2t). Titles are plain white, blue when open (round 2zc); colour
+/// is kept for meaning: the states, the re-check, your words, a branch. The connections lead,
+/// each a row Enter follows.
 fn draw_entry(f: &mut Frame, area: Rect, app: &App, ds: &Decisions, i: usize) {
     let d = &ds.items[i];
     let status = status_of(app, &ds.project, d);
@@ -801,7 +787,7 @@ fn draw_entry(f: &mut Frame, area: Rect, app: &App, ds: &Decisions, i: usize) {
     }
     let link_at = out.len();
     if !ls.is_empty() {
-        head(&mut out, "connections", "teal");
+        head(&mut out, "connections", "text");
         let mut last = "";
         for (k, &(label, j)) in ls.iter().enumerate() {
             let o = &ds.items[j];
@@ -845,10 +831,9 @@ fn draw_entry(f: &mut Frame, area: Rect, app: &App, ds: &Decisions, i: usize) {
         fold_at.push(out.len());
         let n = fd.lines.len();
         let extra = if n > 1 { n.to_string() } else { String::new() };
-        let mut r = rule(fd.name, &extra, None, is_open, area.width);
-        if !is_open && let Some(sp) = r.spans.get_mut(1) {
-            sp.style = bold(st(fd.colour));
-        }
+        let r = rule(fd.name, &extra, None, is_open, area.width);
+        // Titles are plain white, blue when open: colour is kept for what means something
+        // (states, the re-check, your words, a branch), not to tell sections apart (round 2zc).
         out.push(r);
         if is_open && fd.name == "you said" {
             // Your words at full width, where they came from under each, a blank line between
@@ -863,10 +848,19 @@ fn draw_entry(f: &mut Frame, area: Rect, app: &App, ds: &Decisions, i: usize) {
                 out.push(Line::from(Span::styled(format!("   {source}"), dim())));
             }
         } else if is_open {
-            // Each item: its label, then its detail beside it, wrapping under the detail.
+            // Each item: its label, then its detail beside it, wrapping under the detail. Single
+            // lines read as a table; if any item wraps, a blank line between items keeps them
+            // apart (round 2zc).
             let lw = fd.lines.iter().map(|(l, _)| l.width()).max().unwrap_or(0).min(body / 3) + 2;
-            for (label, detail) in &fd.lines {
-                let dw = body.saturating_sub(lw + 1).max(10);
+            let dw = body.saturating_sub(lw + 1).max(10);
+            let wraps = fd
+                .lines
+                .iter()
+                .any(|(l, d)| wrap(l, lw - 2).len() > 1 || wrap(d, dw).len() > 1);
+            for (k, (label, detail)) in fd.lines.iter().enumerate() {
+                if wraps && k > 0 {
+                    out.push(Line::from(""));
+                }
                 let label_lines = wrap(label, lw - 2);
                 let detail_lines = wrap(detail, dw);
                 for j in 0..label_lines.len().max(detail_lines.len()) {

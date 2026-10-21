@@ -599,6 +599,13 @@ read the entry, its decision keeps a band and marker in the list.
 section, and my statements are compressed, the date should be below each statement": your words
 run the full width, where and when you said them dim underneath, a blank line between.
 
+**Round 2zc, 22 Oct. Spacing by need; plain titles.** Agreed: in a label-and-detail section,
+items that fit one line read as a table with no gap; if any item wraps, a blank line goes between
+items. "I do not know if I like all of the colors for each section": the per-section title
+colours of round 2t said nothing the rule did not, so titles are plain white, blue when open;
+colour stays only where it means something (the states, the re-check, your words in pink, a
+branch in teal).
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

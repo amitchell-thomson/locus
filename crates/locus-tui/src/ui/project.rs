@@ -125,6 +125,12 @@ fn decision_order(ds: &locus_contract::Decisions) -> Vec<usize> {
     idx
 }
 
+/// Where you are's selectable parts run now, the shortfall (if any), each new item, next:
+/// this is the first new item's place.
+fn first_new(v: &ProjectView) -> usize {
+    1 + usize::from(v.where_you_are.as_ref().is_some_and(|w| w.short.is_some()))
+}
+
 /// What a section drew, recorded by the draw so the arrows walk only that.
 fn shown(app: &App, sec: char) -> Vec<usize> {
     app.shown
@@ -144,7 +150,7 @@ pub fn section_len(app: &App, sec: char) -> usize {
     let Some(v) = view(app) else { return 0 };
     match sec {
         // Now, each new item drawn, then next.
-        'y' => 1 + shown(app, 'y').len() + usize::from(v.where_you_are.is_some()),
+        'y' => first_new(v) + shown(app, 'y').len() + usize::from(v.where_you_are.is_some()),
         'q' => v.questions.len(),
         'g' => v.graph.as_ref().map_or(0, |g| g.lanes.len()),
         'd' => shown(app, 'd').len(),
@@ -414,25 +420,9 @@ fn where_you_are(app: &App, v: &ProjectView, w: u16, budget: usize, tight: bool)
     match &v.where_you_are {
         Some(wh) => {
             part(&mut out, 0, "now", fit(&wh.state, 3), dim(), text());
+            // The shortfall is a part of its own, selected apart from now (round 2p).
             if let Some(sh) = &wh.short {
-                // The shortfall belongs to now: one part, so the arrows step over it together.
-                let l: Vec<String> = fit(sh, 2);
-                for (j, l) in l.into_iter().enumerate() {
-                    let line = row(
-                        vec![
-                            Span::raw("  "),
-                            Span::styled(format!(" {:<11}", if j == 0 { "shortfall" } else { "" }), dim()),
-                            Span::styled(l, st("subtext0")),
-                        ],
-                        vec![],
-                        w,
-                    );
-                    out.push(if sel == Some(0) {
-                        line.patch_style(Style::default().bg(c("surface0")))
-                    } else {
-                        line
-                    });
-                }
+                part(&mut out, 1, "shortfall", fit(sh, 2), dim(), st("subtext0"));
             }
         }
         None => part(&mut out, 0, "now", vec!["nothing written yet".into()], dim(), dim()),
@@ -462,7 +452,7 @@ fn where_you_are(app: &App, v: &ProjectView, w: u16, budget: usize, tight: bool)
             right.push(Span::styled(format!("{:>4} ", ago(now, it.at)), dim()));
             out.push(row(
                 vec![
-                    pointer(1 + pos, sel),
+                    pointer(first_new(v) + pos, sel),
                     Span::styled(format!(" {:<11}", if pos == 0 { "new" } else { "" }), dim()),
                     Span::styled(
                         format!("{:<11}", if first || pos == 0 { heading } else { "" }),
@@ -507,7 +497,7 @@ fn where_you_are(app: &App, v: &ProjectView, w: u16, budget: usize, tight: bool)
         format!("   {}", "╌".repeat(usize::from(w).saturating_sub(6))),
         st("surface2"),
     )));
-    let at = 1 + drawn.len();
+    let at = first_new(v) + drawn.len();
     part(
         &mut out,
         at,
@@ -1386,7 +1376,7 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
         // next open the dossier where they are written.
         (Some('y'), KeyCode::Enter | KeyCode::Char('r')) => {
             let at = app.sel('y');
-            match shown(app, 'y').get(at.wrapping_sub(1)).copied() {
+            match shown(app, 'y').get(at.wrapping_sub(first_new(&v))).copied() {
                 Some(i) => {
                     let note = if k.code == KeyCode::Enter {
                         format!("would open: {}", v.new[i].text)

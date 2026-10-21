@@ -453,6 +453,9 @@ none, Enter opens the list. Saved for the Answered round: Space on an answer ask
 with it as context; the ask line holds a question in flight until its answer lands; Esc while
 typing keeps the draft.
 
+**Round 2p, 22 Oct.** "Now and shortfall get highlighted at the same time, instead of being
+separate selections": the shortfall is a selection of its own.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

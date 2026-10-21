@@ -16,7 +16,8 @@ pub struct ProjectView {
     /// the next step.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub where_you_are: Option<WhereYouAre>,
-    /// Everything new, newest first; read items stay in Changes.
+    /// Everything new, newest first; read items stay in Changes. Never a decision: a new or
+    /// re-checked decision is marked `new` in the decision log, so it shows once (round 2l).
     #[serde(default)]
     pub new: Vec<Item>,
     /// Only this project's sessions.
@@ -186,6 +187,10 @@ pub struct Decision {
     /// The chat where it was decided, if one is known (19 Oct: a link to the chat).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chat: Option<String>,
+    /// Decided, replaced or flagged for re-checking since you last looked (round 2l: the
+    /// Project view's decisions section marks it, as New marks an unread item).
+    #[serde(default)]
+    pub new: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

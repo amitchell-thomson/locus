@@ -143,9 +143,10 @@ const PROJECT: &[Section] = &[
     s('y', "where you are", None),
     s('q', "open questions", None),
     s('g', "branches", None),
-    s('n', "new", Some(S::Changes)),
+    s('d', "decisions", Some(S::Decisions)),
     s('s', "sessions", None),
     s('c', "chores", None),
+    s('i', "ask", None),
 ];
 const SYSTEM: &[Section] = &[
     s('r', "running", None),

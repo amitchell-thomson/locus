@@ -19,7 +19,7 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │ over      volts throughout: ties the core to one device's calibration                       │
 │ evidence  §8bd: placing the gate does not need the absolute energy scale                    │
 │ re-check  RIKEN's exchange against barrier voltage is 2.6x shallower than the prior assumed │
-│           (§8by, 19 Oct)                                                                    │
+│           (19 Oct)                                                                          │
 │ affects   barrier control step 7 · the prior's width on t_c                                 │
 │                                                                                             │
 │                                                                                             │

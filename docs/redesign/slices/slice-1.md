@@ -415,6 +415,24 @@ decisions when I opened them." Decisions leave the open questions' rule and sit 
 `decisions 7 [d]` beside `full timeline [n n]`: New already lists new and re-checked
 decisions, so the log they come from belongs with it. Narrow, the counts drop and the keys stay.
 
+**Round 2l, 22 Oct. Where you are holds what is new; decisions get a section; ask is a
+section.** "Decisions does deserve its own section (replacing where new is currently), and ...
+new should move to the where you are section, so you see where you are, being now, shortfall,
+new, next. New is more something that I look at rather than really interact with." Where you
+are now reads now, shortfall, new, next, with the full timeline on its rule as `[n]` ("n alone
+for the timeline is fine"); its new rows are still walkable, and Enter still opens one. New
+gets three rows by default, the last counting the rest, and spare rows first. The decisions
+section sits where New was: re-checks first with their reason on a line of their own, then
+what is new, then the rest while they fit, a replaced decision last and named "replaced", not
+by its number; Enter opens that decision on the Decisions page, `d` the full log. One
+decision, one surface: a decision is marked `new` in the log (a contract field) and New never
+lists one; the fixture check fails if it does. "I should be able to tab into the ask section,
+and when I am in it, the whole dividing line on which 'ask' sits should be highlighted blue":
+ask is the last section, its whole rule lights when focused, and Enter asks. Short of room, the
+sections give way in turn (decisions, new, chores, the branch's story, sessions) down to one row
+each, then where you are keeps a line per part, so the open questions always draw (they were
+squeezed out at 95x36 before this round).
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

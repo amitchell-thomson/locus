@@ -3,16 +3,20 @@ source: crates/locus-tui/tests/dump.rs
 expression: "dump::render(&a, 95, 38).unwrap()"
 ---
 ╭ 󱓟 quast · barrier control ───── 󰈙 dossier rebuilt 22 Oc 󰓦 claude working · 12m  󰆤 following ╮
-│─ where you are ─────────────────────────────────────────────────────────────────────────────│
+│─ where you are · 3 unread · full timeline since mon 19 [n] ─────────────────────────────────│
 │   now        Barrier control: the exchange law is learned in 2.3 minutes a tune-up, honest  │
 │              on every run (step 6, 16 Oct).                                                 │
 │   shortfall  RIKEN's measured exchange slope is 2.6x shallower than the prior assumes, and  │
 │              nothing uses it yet.                                                           │
+│   new        answer     󱜾 delayed acceptance · answered from your margin · links Mo… 󰅸   5h │
+│              + 4 more · the full timeline [n]                                               │
 │   ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌   │
 │   next ▸     fold RIKEN's slope and charging-energy numbers into the prior, then rerun the  │
 │              battery before trying any new method                                           │
 │                                                                                             │
 │─ open questions · from the dossier ─────────────────────────────────────────────────────────│
+│   1  How large is barrier control's real advantage? It depends on how coherence decays      │
+│      during a pulse, which needs RIKEN's echo decay curve.                                  │
 │                                                                                             │
 │─ branches · 4 branches · 2 to 4 shown · ← → older and newer ────────────────────────── [g] ─│
 │   main ◂─┬─────────────┴──────────────┬──────────────┬──────────────────────────────── now  │
@@ -20,21 +24,17 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │                                       ╰━ barrier-control ━━━━━━━━━━━━━━━━━━━━━━━━━━○        │
 │          7 Oct         10 Oct                        13 Oct                        19 Oct   │
 │                                                                                             │
-│   readout-adapter  Planned how QUAST reads out on real hardware: it…       open · 2 commits │
+│   readout-adapter  Planned how QUAST reads out on real hardware: it        open · 2 commits │
+│                    thresholds each shot's sensor signal itself, the way…                    │
 │                                                                                             │
-│─ new · 4 unread · full timeline [n n] · decisions [d] ──────────────────────────────── [n] ─│
-│   decisions       󱉶 re-check the choice of one lever-arm ratio in θ: RIKEN's measur… 󰅸   2h │
-│   answers         󱜾 delayed acceptance · answered from your margin · links Monte Ca… 󰅸   5h │
-│   + 4 more · n n for the full timeline                                                      │
+│─ decisions · 7 · 1 to re-check · full log [d] ──────────────────────────────────────────────│
+│   󱉶 The units at stage 1: the µeV core kept, the scale fixed by convent… 󰅸 re-check   7 Oct │
 │                                                                                             │
 │─ sessions · 2 · 2 live ─────────────────────────────────────────────────────────────── [s] ─│
 │   󰹇 battery (bg) needs you 35m   wants to run the full battery on the server (about… ⏎ jump │
-│   󰓦 main chat    working   12m   running the barrier tests after folding in RIKEN's slope   │
 │                                                                                             │
 │─ chores · for a gap while you wait ─────────────────────────────────────────────────── [c] ─│
 │   󰝖 put a load of laundry on                                                          5 min │
-│   󰝖 reply to the 3YP group about Tuesday's meeting                       due mon 26   5 min │
-│   󰝖 collect the parcel from the porters' lodge                                       10 min │
 │                                                                                             │
 │─ ask ─────────────────────────────────────────────────────────────── 󱜾 answered 3, 1 new  a │
 │   ask › ␣ to ask about this project · the answer comes back here                            │

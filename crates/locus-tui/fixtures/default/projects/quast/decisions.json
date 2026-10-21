@@ -6,67 +6,113 @@
       "id": "§8bf",
       "title": "The units at stage 1: the µeV core kept, the scale fixed by convention, one lever-arm ratio in θ",
       "date": "2026-10-07",
-      "status": { "state": "recheck" },
+      "status": {
+        "state": "recheck"
+      },
       "chose": "keep the µeV core and carry one lever-arm ratio in θ: the gate does not need the absolute scale (§8bd)",
-      "over": ["a full lever-arm matrix in θ: more parameters than one detuning sweep can identify", "volts throughout: ties the core to one device's calibration"],
-      "evidence": ["§8bd: placing the gate does not need the absolute energy scale"],
-      "recheck": "RIKEN's exchange against barrier voltage is 2.6x shallower than the prior assumed (§8by, 19 Oct)",
-      "affects": "barrier control step 7 · the prior's width on t_c"
+      "over": [
+        "a full lever-arm matrix in θ: more parameters than one detuning sweep can identify",
+        "volts throughout: ties the core to one device's calibration"
+      ],
+      "evidence": [
+        "§8bd: placing the gate does not need the absolute energy scale"
+      ],
+      "recheck": "RIKEN's exchange against barrier voltage is 2.6x shallower than the prior assumed (19 Oct)",
+      "affects": "barrier control step 7 · the prior's width on t_c",
+      "new": true
     },
     {
       "id": "§8bn",
       "title": "The input layer, built: the typical gate three times closer, no failure fixed, and the diagram weakest where it matters",
       "date": "2026-10-10",
-      "status": { "state": "holding" },
+      "status": {
+        "state": "holding"
+      },
       "chose": "a diagram and the qubit frequencies become the crowd's starting box, carried by flow.Box",
-      "over": ["seeding the crowd from a network: retired in §8bc"],
-      "evidence": ["typical gate 3x closer to the best on the battery", "no failure fixed; device 24 untouched"],
+      "over": [
+        "seeding the crowd from a network: retired in §8bc"
+      ],
+      "evidence": [
+        "typical gate 3x closer to the best on the battery",
+        "no failure fixed; device 24 untouched"
+      ],
       "affects": "every tune-up's starting box"
     },
     {
       "id": "§8bl",
       "title": "The scope: QUAST starts where the lab's tools stop - a device ready for two-qubit work",
       "date": "2026-10-09",
-      "status": { "state": "holding" },
+      "status": {
+        "state": "holding"
+      },
       "chose": "start from a device ready for two-qubit work; the input layer first, then barrier control",
-      "over": ["from formed dots with a working sensor (§8be): duplicates the lab's own tools"],
-      "evidence": ["handoff.md: what QUAST assumes it is given, and from where"]
+      "over": [
+        "from formed dots with a working sensor (§8be): duplicates the lab's own tools"
+      ],
+      "evidence": [
+        "handoff.md: what QUAST assumes it is given, and from where"
+      ]
     },
     {
       "id": "§8bh",
       "title": "Mixed precision on a graphics card: a tune-up in about six seconds, gates as good as double",
       "date": "2026-10-08",
-      "status": { "state": "holding" },
+      "status": {
+        "state": "holding"
+      },
       "chose": "a mixed-precision mode on the graphics card, opt-in",
-      "over": ["double precision on the card: no faster than the laptop (§8ao)"],
-      "evidence": ["about 6 s a tune-up", "gate quality matches double on every battery device"]
+      "over": [
+        "double precision on the card: no faster than the laptop (§8ao)"
+      ],
+      "evidence": [
+        "about 6 s a tune-up",
+        "gate quality matches double on every battery device"
+      ]
     },
     {
       "id": "§8az",
       "title": "The placement menu was the largest loss in the system; the gate is now placed continuously, and the guard is back",
       "date": "2026-09-29",
-      "status": { "state": "holding" },
+      "status": {
+        "state": "holding"
+      },
       "chose": "place the gate continuously, and restore the guard",
-      "over": ["the placement menu: the largest single loss measured"],
-      "evidence": ["the menu's cost measured against continuous placement on the battery"]
+      "over": [
+        "the placement menu: the largest single loss measured"
+      ],
+      "evidence": [
+        "the menu's cost measured against continuous placement on the battery"
+      ]
     },
     {
       "id": "§8ay",
       "title": "The loop cleaned up: the guard and the second opinion retired, knowingly",
       "date": "2026-09-28",
-      "status": { "state": "redecided", "by": "§8az" },
+      "status": {
+        "state": "redecided",
+        "by": "§8az"
+      },
       "chose": "retire the guard and the second opinion",
       "over": [],
-      "evidence": ["neither changed a verdict on the battery at the time"]
+      "evidence": [
+        "neither changed a verdict on the battery at the time"
+      ]
     },
     {
       "id": "§8ap",
       "title": "The crowd drives the loop: 44 times closer to the best gate, every earlier failure fixed",
       "date": "2026-09-27",
-      "status": { "state": "holding" },
+      "status": {
+        "state": "holding"
+      },
       "chose": "sequential Monte Carlo (the crowd) drives the loop; the network is no longer in it",
-      "over": ["the amortised normalising-flow posterior: overconfident on the designs it chose (§8l, §8v)"],
-      "evidence": ["44x closer to the best gate", "every earlier failure fixed"],
+      "over": [
+        "the amortised normalising-flow posterior: overconfident on the designs it chose (§8l, §8v)"
+      ],
+      "evidence": [
+        "44x closer to the best gate",
+        "every earlier failure fixed"
+      ],
       "affects": "everything since: the v2 design (§8ba) is built on it"
     }
   ]

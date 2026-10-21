@@ -18,18 +18,6 @@
       "text": "kairos · 3 commits on main · gzip the TUI index",
       "at": "2026-10-21T13:40:00+01:00",
       "unread": true
-    },
-    {
-      "kind": "decision",
-      "text": "decided: the data directory is data/, not vault/",
-      "at": "2026-10-20T10:00:00+01:00",
-      "unread": true
-    },
-    {
-      "kind": "decision",
-      "text": "decided: the shared Rust crates live in the locus repository",
-      "at": "2026-10-19T23:00:00+01:00",
-      "unread": true
     }
   ],
   "sessions": [

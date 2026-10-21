@@ -1,6 +1,6 @@
-//! The Project view (Alt-2): one screen in every state. Where you are, a strip naming what sits
-//! behind its keys, the branch graph (plan D.1), everything new by kind, this project's
-//! sessions, the chores that fit a gap, and the ask line.
+//! The Project view (Alt-2): one screen in every state. Where you are (now, the shortfall, what
+//! is new, next), the open questions, the branch graph (plan D.1), the decision log, this
+//! project's sessions, the chores that fit a gap, and the ask line.
 //!
 //! The same rules as Home (round 2, 22 Oct: "consistent section highlighting and spacing rules
 //! as in with home"): a blank line between sections, bright section titles, the focused section
@@ -23,10 +23,10 @@ use unicode_width::UnicodeWidthStr;
 
 pub const KEYS: &[(&str, &str)] = &[
     ("␣ or i", "ask about this project"),
-    ("n n", "new; again for the full timeline"),
+    ("n", "the full timeline"),
     ("r", "mark the selected new item read"),
     ("x", "a chore done"),
-    ("d", "decisions"),
+    ("d", "decisions: the full log"),
     ("a", "answered"),
     ("o", "the dossier"),
     ("p", "interview prep (an application)"),
@@ -55,22 +55,16 @@ fn is_unread(app: &App, view: &ProjectView, i: usize) -> bool {
 /// New, grouped by kind (round 2: "new being grouped by kind would be good"): each group's
 /// heading and the indexes of its items, groups in this order, items newest first.
 fn new_groups(v: &ProjectView) -> Vec<(&'static str, Vec<usize>)> {
+    // Decisions are never in New (round 2l): the decisions section marks a new one. Should one
+    // arrive anyway, it is filed with the dossier rather than lost.
     let group = |k: ItemKind| match k {
-        ItemKind::Recheck | ItemKind::Redecided | ItemKind::Decision => 0,
-        ItemKind::Answer => 1,
-        ItemKind::ScoutFind | ItemKind::Reading | ItemKind::Idea => 2,
-        ItemKind::Commits | ItemKind::Chat => 3,
-        ItemKind::Dossier | ItemKind::Ink => 4,
-        ItemKind::Mail | ItemKind::Calendar | ItemKind::AutoAction => 5,
+        ItemKind::Answer => 0,
+        ItemKind::ScoutFind | ItemKind::Reading | ItemKind::Idea => 1,
+        ItemKind::Commits | ItemKind::Chat => 2,
+        ItemKind::Dossier | ItemKind::Ink | ItemKind::Recheck | ItemKind::Redecided | ItemKind::Decision => 3,
+        ItemKind::Mail | ItemKind::Calendar | ItemKind::AutoAction => 4,
     };
-    let names = [
-        "decisions",
-        "answers",
-        "finds and ideas",
-        "work",
-        "dossier and ink",
-        "elsewhere",
-    ];
+    let names = ["answer", "find, idea", "work", "dossier", "elsewhere"];
     (0..names.len())
         .map(|g| {
             (
@@ -84,9 +78,46 @@ fn new_groups(v: &ProjectView) -> Vec<(&'static str, Vec<usize>)> {
         .collect()
 }
 
-/// New's items in the order they are drawn, for selection.
-fn new_order(v: &ProjectView) -> Vec<usize> {
-    new_groups(v).into_iter().flat_map(|(_, v)| v).collect()
+/// The decision log, if this project keeps one.
+fn decisions<'a>(app: &'a App, v: &ProjectView) -> Option<&'a locus_contract::Decisions> {
+    app.fixtures.projects.get(&v.project).and_then(|p| p.decisions.as_ref())
+}
+
+/// A repo always has the section, saying so when it has no log yet (round 2g: where things sit
+/// does not change from project to project); an application or a course has none.
+fn has_decisions(app: &App, v: &ProjectView) -> bool {
+    decisions(app, v).is_some()
+        || app
+            .fixtures
+            .registry
+            .get(&v.project)
+            .is_some_and(|p| p.kind == ProjectKind::Repo)
+}
+
+/// The log in the section's order: what to re-check, then what is new, then the rest newest
+/// first, a replaced decision last (round 2l).
+fn decision_order(ds: &locus_contract::Decisions) -> Vec<usize> {
+    let mut idx: Vec<usize> = (0..ds.items.len()).collect();
+    idx.sort_by_key(|&i| {
+        let d = &ds.items[i];
+        let rank = match d.status {
+            DecisionStatus::Recheck => 0,
+            _ if d.new => 1,
+            DecisionStatus::Holding => 2,
+            DecisionStatus::Redecided { .. } => 3,
+        };
+        (rank, std::cmp::Reverse(d.date))
+    });
+    idx
+}
+
+/// What a section drew, recorded by the draw so the arrows walk only that.
+fn shown(app: &App, sec: char) -> Vec<usize> {
+    app.shown
+        .borrow()
+        .get(&(ScreenId::Project, sec))
+        .cloned()
+        .unwrap_or_default()
 }
 
 fn sorted_sessions(v: &ProjectView) -> Vec<&locus_contract::Session> {
@@ -98,11 +129,13 @@ fn sorted_sessions(v: &ProjectView) -> Vec<&locus_contract::Session> {
 pub fn section_len(app: &App, sec: char) -> usize {
     let Some(v) = view(app) else { return 0 };
     match sec {
-        'y' => 1,
+        // Now, each new item drawn, then next.
+        'y' => 1 + shown(app, 'y').len() + usize::from(v.where_you_are.is_some()),
         'q' => v.questions.len(),
         'g' => v.graph.as_ref().map_or(0, |g| g.lanes.len()),
-        'n' => v.new.len(),
+        'd' => shown(app, 'd').len(),
         's' => v.sessions.len(),
+        'i' => 1,
         _ => v.chores.len(),
     }
 }
@@ -131,8 +164,8 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         t.push(Span::styled(format!("· {stage} "), dim()));
     }
     // Each thing behind a key sits where its context is (round 2d): the dossier, which bears on
-    // everything, centred at the top; the timeline and decisions with New; answered at the end of
-    // the ask line.
+    // everything, centred at the top; the timeline with what is new, in where you are; the full
+    // decision log on the decisions section; answered at the end of the ask line.
     let centre = view.map(|v| centre_title(app, v)).unwrap_or_default();
     let block = ratatui::widgets::Block::default()
         .borders(ratatui::widgets::Borders::ALL)
@@ -149,72 +182,103 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     };
     let w = inner.width;
 
-    let where_lines = where_you_are(v, w, app.focus == Some('y'));
-    let groups = new_groups(v);
-    let new_h = if v.new.is_empty() {
-        2
-    } else {
-        1 + groups.iter().map(|(_, i)| i.len()).sum::<usize>() as u16
-    };
+    let mut base = where_you_are(app, v, w, 0, false).0.len() as u16;
     let has_graph = v.graph.is_some();
+    let has_dec = has_decisions(app, v);
     let question_lines = questions(app, v, w);
     // Sections size to their content (round 2f, a rule for all of locus): each gets its least
-    // useful height, then spare rows go to whichever has more to show (every session, every
-    // chore, more of the branch's story), and only what is left becomes space above the ask line.
+    // useful height, then spare rows go to whichever has more to show, and only what is left
+    // becomes space above the ask line.
     let ss = v.sessions.len() as u16;
     let ch = v.chores.len() as u16;
     let nn = v.new.len() as u16;
+    let nd = decisions(app, v).map_or(0, |d| d.items.len()) as u16;
+    // A re-check carries its reason on a line of its own.
+    let nr = decisions(app, v).map_or(0, |d| {
+        d.items
+            .iter()
+            .filter(|x| x.status == DecisionStatus::Recheck && x.recheck.is_some())
+            .count()
+    }) as u16;
     let mins = [
         if has_graph { graph_need(app, v, w, 3, 3) } else { 0 },
         1 + ss.clamp(1, 3) + u16::from(ss > 3),
         1 + ch.clamp(1, 3),
-        1 + nn.clamp(1, 2) + u16::from(nn > 2),
+        // What is new, inside where you are: three rows, the last counting the rest (round 2l).
+        if nn > 3 { 3 } else { nn.max(1) },
+        if has_dec {
+            1 + nd.clamp(1, 2) + u16::from(nd > 2) + nr.min(2)
+        } else {
+            0
+        },
     ];
     let wants = [
         if has_graph { graph_need(app, v, w, 8, 30) } else { 0 },
         1 + ss.max(1),
         1 + ch.max(1),
-        1 + nn.max(1),
+        nn.max(1),
+        if has_dec { 1 + nd.max(1) + nr } else { 0 },
     ];
-    // Everything that is not one of the three: where, questions, new, the ask line and the gaps.
-    let _ = new_h;
-    let fixed = where_lines.len() as u16
+    // Everything that is not allocated: where you are without its new rows, the questions, the
+    // ask line and the gaps.
+    let mut fixed = base
         + question_lines.len() as u16
-        + 2
-        + 4
+        + 5
         + u16::from(!question_lines.is_empty())
-        + u16::from(has_graph);
+        + u16::from(has_graph)
+        + u16::from(has_dec);
     let mut heights = mins;
-    let mut spare = inner.height.saturating_sub(fixed + mins.iter().sum::<u16>());
-    // Sessions first (live work), then chores, then the branch's story; an open branch is what
-    // you are reading, so it takes spare rows first.
-    // New first (everything new should show), then sessions, chores, the branch's story; an
-    // open branch is what you are reading, so it takes spare rows first.
+    // Short of room even for those, the sections give way a row at a time, decisions first,
+    // then what is new, chores, the branch's story, sessions, each down to a heading and one
+    // row, so the open questions always draw.
+    let floors = [
+        if has_graph { graph_need(app, v, w, 2, 0) } else { 0 },
+        2,
+        2,
+        1,
+        u16::from(has_dec) * 2,
+    ];
+    let mut over = (fixed + heights.iter().sum::<u16>()).saturating_sub(inner.height);
+    for i in [4usize, 3, 2, 0, 1] {
+        let give = heights[i].saturating_sub(floors[i]).min(over);
+        heights[i] -= give;
+        over -= give;
+    }
+    // Still short: where you are keeps a line per part.
+    let tight = over > 0;
+    if tight {
+        let short = where_you_are(app, v, w, 0, true).0.len() as u16;
+        fixed -= base - short;
+        base = short;
+    }
+    let _ = base;
+    let mut spare = inner.height.saturating_sub(fixed + heights.iter().sum::<u16>());
+    // What is new first (everything new should show), then sessions, chores, decisions, the
+    // branch's story; an open branch is what you are reading, so it takes spare rows first.
     let order = if app.lane_open && app.focus == Some('g') {
-        [0usize, 3, 1, 2]
+        [0usize, 3, 1, 2, 4]
     } else {
-        [3, 1, 2, 0]
+        [3, 1, 2, 4, 0]
     };
     for i in order {
         let more = wants[i].saturating_sub(heights[i]).min(spare);
         heights[i] += more;
         spare -= more;
     }
-    let [graph_h, ses_h, ch_h, new_h] = heights;
+    let [graph_h, ses_h, ch_h, new_h, dec_h] = heights;
+    let (where_lines, new_shown) = where_you_are(app, v, w, usize::from(new_h), tight);
+    app.shown.borrow_mut().insert((ScreenId::Project, 'y'), new_shown);
     let gap = Constraint::Length(1);
+    let none = Constraint::Length(0);
     let rects = Layout::vertical([
         Constraint::Length(where_lines.len() as u16),
         gap,
         Constraint::Length(question_lines.len() as u16),
-        if question_lines.is_empty() {
-            Constraint::Length(0)
-        } else {
-            gap
-        },
+        if question_lines.is_empty() { none } else { gap },
         Constraint::Length(graph_h),
-        if has_graph { gap } else { Constraint::Length(0) },
-        Constraint::Length(new_h),
-        gap,
+        if has_graph { gap } else { none },
+        Constraint::Length(dec_h),
+        if has_dec { gap } else { none },
         Constraint::Length(ses_h),
         gap,
         Constraint::Length(ch_h),
@@ -223,7 +287,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         Constraint::Length(2),
     ])
     .split(inner);
-    let (where_r, q_r, graph_r, new_r, ses_r, ch_r, spare_r, ask_r) = (
+    let (where_r, q_r, graph_r, dec_r, ses_r, ch_r, spare_r, ask_r) = (
         rects[0], rects[2], rects[4], rects[6], rects[8], rects[10], rects[11], rects[12],
     );
     crate::ui::summary_box(f, spare_r, project_summary(app, v));
@@ -233,7 +297,9 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     if let Some(g) = &v.graph {
         draw_graph(f, graph_r, app, g);
     }
-    draw_new(f, new_r, app, v);
+    if has_dec {
+        draw_decisions(f, dec_r, app, v);
+    }
     draw_sessions(f, ses_r, app, v);
     draw_chores(f, ch_r, app, v);
     draw_ask(f, ask_r, app, v);
@@ -242,9 +308,10 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         Some('y') => Some(where_r),
         Some('q') => Some(q_r),
         Some('g') => Some(graph_r),
-        Some('n') => Some(new_r),
+        Some('d') => Some(dec_r),
         Some('s') => Some(ses_r),
         Some('c') => Some(ch_r),
+        Some('i') => Some(ask_r),
         _ => None,
     };
     if let Some(r) = focused {
@@ -259,48 +326,183 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
 
 /// Where you are, drawn to catch the eye (round 2: "should draw your eye, and now it reads like
 /// a block of text"): labelled parts, the state free to wrap, and next on its own band, set
-/// apart by a blank line.
-fn where_you_are(v: &ProjectView, w: u16, focus: bool) -> Vec<Line<'static>> {
-    let mut out = vec![Line::from(vec![
-        Span::styled("─ ", st(if focus { "blue" } else { "surface2" })),
-        Span::styled("where you are", bold(st(if focus { "blue" } else { "peach" }))),
-        Span::styled(
-            format!(" {}", "─".repeat(usize::from(w).saturating_sub(16))),
-            st("surface2"),
-        ),
-    ])];
-    let Some(wh) = &v.where_you_are else {
-        out.push(Line::from(Span::styled("   nothing written yet", dim())));
-        return out;
-    };
+/// apart by a dashed line. Since round 2l it is the whole state in one place: now, the
+/// shortfall, what is new since you last looked, then next ("so you see where you are, being
+/// now, shortfall, new, next"). New is read more than worked in, so it has no section of its
+/// own; its rows are still walkable, and Enter still opens one. `budget` is the rows new was
+/// given (0 measures the rest); the new items drawn are returned for the arrows.
+fn where_you_are(app: &App, v: &ProjectView, w: u16, budget: usize, tight: bool) -> (Vec<Line<'static>>, Vec<usize>) {
+    // Tight, on a short window, each part keeps one line so the sections below still draw.
     let body = usize::from(w).saturating_sub(16);
-    let mut part = |label: &str, text_: &str, style: Style, max: usize| {
-        for (i, l) in wrap(text_, body).into_iter().take(max).enumerate() {
-            out.push(Line::from(vec![
-                Span::styled(format!("   {:<11}", if i == 0 { label } else { "" }), dim()),
-                Span::styled(l, style),
-            ]));
+    let fit = |t: &str, n: usize| -> Vec<String> {
+        if tight {
+            vec![crate::ui::truncate(t, body)]
+        } else {
+            wrap(t, body).into_iter().take(n).collect()
         }
     };
-    part("now", &wh.state, text(), 3);
-    if let Some(s) = &wh.short {
-        part("shortfall", s, st("subtext0"), 2);
+    let now = app.fixtures.now();
+    let focus = app.focus == Some('y');
+    let sel = focus.then(|| app.sel('y'));
+    let unread = (0..v.new.len()).filter(|&i| is_unread(app, v, i)).count();
+    // The full timeline sits with what is new, whose history it is (round 2d); narrow, its
+    // state goes and the key stays.
+    let room = usize::from(w).saturating_sub(20);
+    let lead = if unread > 0 {
+        format!(" · {unread} unread")
+    } else {
+        String::new()
+    };
+    let extra = more_rows(app, v)
+        .into_iter()
+        .find(|r| r.0 == "n")
+        .map(|(k, _, _, name, state)| {
+            let full = format!("{lead} · {name} {state} [{k}]");
+            if full.width() <= room {
+                full
+            } else {
+                format!("{lead} · {name} [{k}]")
+            }
+        })
+        .unwrap_or(lead);
+    let head_c = if focus { "blue" } else { "surface2" };
+    let mut head = vec![
+        Span::styled("─ ", st(head_c)),
+        Span::styled("where you are", bold(st(if focus { "blue" } else { "peach" }))),
+        Span::styled(extra, dim()),
+    ];
+    let used: usize = head.iter().map(|s| s.content.width()).sum();
+    head.push(Span::styled(
+        format!(" {}", "─".repeat(usize::from(w).saturating_sub(used + 1))),
+        st(head_c),
+    ));
+    let mut out = vec![Line::from(head)];
+    // One selectable part: its first line carries the pointer, and every line of it the band.
+    let part = |out: &mut Vec<Line<'static>>, at: usize, label: &str, lines_: Vec<String>, ls: Style, ts: Style| {
+        for (j, l) in lines_.into_iter().enumerate() {
+            let lead = if j == 0 { pointer(at, sel) } else { Span::raw("  ") };
+            let line = row(
+                vec![
+                    lead,
+                    Span::styled(format!(" {:<11}", if j == 0 { label } else { "" }), ls),
+                    Span::styled(l, ts),
+                ],
+                vec![],
+                w,
+            );
+            out.push(if j > 0 && sel == Some(at) {
+                line.patch_style(Style::default().bg(c("surface0")))
+            } else {
+                line
+            });
+        }
+    };
+    match &v.where_you_are {
+        Some(wh) => {
+            part(&mut out, 0, "now", fit(&wh.state, 3), dim(), text());
+            if let Some(sh) = &wh.short {
+                // The shortfall belongs to now: one part, so the arrows step over it together.
+                let l: Vec<String> = fit(sh, 2);
+                for (j, l) in l.into_iter().enumerate() {
+                    let line = row(
+                        vec![
+                            Span::raw("  "),
+                            Span::styled(format!(" {:<11}", if j == 0 { "shortfall" } else { "" }), dim()),
+                            Span::styled(l, st("subtext0")),
+                        ],
+                        vec![],
+                        w,
+                    );
+                    out.push(if sel == Some(0) {
+                        line.patch_style(Style::default().bg(c("surface0")))
+                    } else {
+                        line
+                    });
+                }
+            }
+        }
+        None => part(&mut out, 0, "now", vec!["nothing written yet".into()], dim(), dim()),
     }
+    // What is new: each kind named in a column on its first item, so grouping costs no height
+    // (round 2: "new being grouped by kind").
+    let mut drawn = Vec::new();
+    if budget > 0 {
+        let order: Vec<(&str, usize, bool)> = new_groups(v)
+            .into_iter()
+            .flat_map(|(h, idx)| idx.into_iter().enumerate().map(move |(k, i)| (h, i, k == 0)))
+            .collect();
+        let take = if order.len() > budget && budget > 1 {
+            budget - 1
+        } else {
+            order.len().min(budget)
+        };
+        for (pos, &(heading, i, first)) in order.iter().take(take).enumerate() {
+            let it = &v.new[i];
+            let (g, gc) = item_glyph(it.kind);
+            let unread = is_unread(app, v, i);
+            // The unread marker sits on the right, as the counts do on Home (round 2).
+            let mut right = vec![];
+            if unread {
+                right.push(Span::styled(format!("{} ", glyph::UNREAD), st("peach")));
+            }
+            right.push(Span::styled(format!("{:>4} ", ago(now, it.at)), dim()));
+            out.push(row(
+                vec![
+                    pointer(1 + pos, sel),
+                    Span::styled(format!(" {:<11}", if pos == 0 { "new" } else { "" }), dim()),
+                    Span::styled(
+                        format!("{:<11}", if first || pos == 0 { heading } else { "" }),
+                        bold(st("subtext1")),
+                    ),
+                    Span::styled(format!("{g} "), st(gc)),
+                    Span::styled(it.text.clone(), if unread { text() } else { dim() }),
+                ],
+                right,
+                w,
+            ));
+            drawn.push(i);
+        }
+        if take < order.len() {
+            out.push(Line::from(Span::styled(
+                format!("              + {} more · the full timeline [n]", order.len() - take),
+                dim(),
+            )));
+        }
+        if v.new.is_empty() {
+            let last = app
+                .fixtures
+                .projects
+                .get(&v.project)
+                .and_then(|p| p.changes.as_ref())
+                .and_then(|c| c.entries.first().map(|e| e.at));
+            let msg = match last {
+                Some(t) => format!("nothing since you last looked; the last change was {} ago", ago(now, t)),
+                None => "nothing since you last looked".to_string(),
+            };
+            out.push(Line::from(vec![
+                Span::styled(format!("   {:<11}", "new"), dim()),
+                Span::styled(msg, dim()),
+            ]));
+        }
+    }
+    let Some(wh) = &v.where_you_are else {
+        return (out, drawn);
+    };
     // Next, set apart by a dashed line rather than a band (round 2b).
     out.push(Line::from(Span::styled(
         format!("   {}", "╌".repeat(usize::from(w).saturating_sub(6))),
         st("surface2"),
     )));
-    for (i, l) in wrap(&wh.next, body).into_iter().take(2).enumerate() {
-        out.push(Line::from(vec![
-            Span::styled(
-                format!("   {:<11}", if i == 0 { "next ▸" } else { "" }),
-                bold(st("peach")),
-            ),
-            Span::styled(l, bold(text())),
-        ]));
-    }
-    out
+    let at = 1 + drawn.len();
+    part(
+        &mut out,
+        at,
+        "next ▸",
+        fit(&wh.next, 2),
+        bold(st("peach")),
+        bold(text()),
+    );
+    (out, drawn)
 }
 
 /// What sits behind this view's keys, each with its state (round 2: "otherwise there is no
@@ -366,13 +568,7 @@ fn more_rows(app: &App, v: &ProjectView) -> Vec<(&'static str, &'static str, &'s
     let since = pf
         .and_then(|p| p.changes.as_ref())
         .map(|c| format!("since {}", day(c.since)));
-    out.push((
-        "n n",
-        glyph::COMMITS,
-        "green",
-        "full timeline",
-        since.unwrap_or_default(),
-    ));
+    out.push(("n", glyph::COMMITS, "green", "full timeline", since.unwrap_or_default()));
     out
 }
 
@@ -393,7 +589,8 @@ fn centre_title(app: &App, v: &ProjectView) -> Line<'static> {
 
 /// Open questions from the dossier: the bigger picture behind next (round 2d: "I want it to
 /// always remind me of what is next to address bigger picture"). Decisions used to sit at the
-/// right of its heading and read as the questions' answers, so they moved to New (round 2k).
+/// right of its heading and read as the questions' answers, so they have their own section
+/// further down (rounds 2k, 2l).
 fn questions(app: &App, v: &ProjectView, w: u16) -> Vec<Line<'static>> {
     if v.questions.is_empty() {
         return vec![];
@@ -896,101 +1093,94 @@ fn join(cv: &mut [Vec<(char, Style)>], x: usize, r: usize, style: Style) {
     }
 }
 
-fn draw_new(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
-    let now = app.fixtures.now();
-    let focus = app.focus == Some('n');
-    let unread = (0..v.new.len()).filter(|&i| is_unread(app, v, i)).count();
-    // The full timeline sits with New, whose history it is (round 2d), and so does the decision
-    // log, whose new entries New already lists: beside the open questions it read as their
-    // answers (round 2k: "I was expecting open questions to relate to the decisions").
-    // Narrow, the states go first and the keys stay, so the line never runs into the tail.
-    let behind = |key: &str, name: &str, full: bool| {
-        more_rows(app, v)
-            .into_iter()
-            .find(|r| r.0 == key)
-            .map(|(_, _, _, _, state)| match full {
-                true => format!(" · {name} {state} [{key}]"),
-                false => format!(" · {name} [{key}]"),
-            })
-            .unwrap_or_default()
-    };
-    let lead = if v.new.is_empty() {
-        "nothing new".to_string()
-    } else {
-        format!("{unread} unread")
-    };
-    let room = usize::from(area.width).saturating_sub("─ new · ".len() + " [n] ─".len() + 4);
-    let extra = [true, false]
-        .into_iter()
-        .map(|full| {
-            format!(
-                "{lead}{}{}",
-                behind("n n", "full timeline", full),
-                behind("d", "decisions", full)
-            )
-        })
-        .find(|e| e.width() <= room)
-        .unwrap_or_else(|| format!("{lead}{}", behind("d", "decisions", false)));
-    let mut out = vec![rule("new", &extra, Some('n'), focus, area.width)];
-    let sel = focus.then(|| app.sel('n'));
-    let mut pos = 0;
-    // As many as the section was given; the last line counts the rest (round 2h: New gives
-    // way while a branch is open).
-    let rows = usize::from(area.height.saturating_sub(1));
-    let budget = if v.new.len() > rows {
-        rows.saturating_sub(1)
-    } else {
-        rows
-    };
-    // Each kind is named in a column of its own on its first item, rather than on a row of its
-    // own, so grouping costs no height.
-    for (heading, idx) in new_groups(v) {
-        for (k, i) in idx.into_iter().enumerate() {
-            if pos >= budget {
-                break;
+/// The decision log, what to act on first (round 2l: "decisions does deserve its own section"):
+/// what is worth re-checking, with why in a few words, then what was decided since you last
+/// looked, then the rest while they fit. Enter opens one on the Decisions page; d opens the log.
+fn draw_decisions(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
+    let focus = app.focus == Some('d');
+    let ds = decisions(app, v);
+    let n = ds.map_or(0, |d| d.items.len());
+    let re = ds.map_or(0, |d| {
+        d.items.iter().filter(|x| x.status == DecisionStatus::Recheck).count()
+    });
+    let mut extra = n.to_string();
+    if re > 0 {
+        extra += &format!(" · {re} to re-check");
+    }
+    extra += " · full log [d]";
+    let mut out = vec![rule("decisions", &extra, None, focus, area.width)];
+    let mut drawn = Vec::new();
+    match ds {
+        Some(ds) if !ds.items.is_empty() => {
+            let order = decision_order(ds);
+            let rows = usize::from(area.height.saturating_sub(1));
+            let lines_of = |i: usize| {
+                let d = &ds.items[i];
+                1 + usize::from(d.status == DecisionStatus::Recheck && d.recheck.is_some())
+            };
+            let all: usize = order.iter().map(|&i| lines_of(i)).sum();
+            let room = if all > rows && rows > 1 { rows - 1 } else { rows };
+            let mut take = 0;
+            let mut used = 0;
+            // The first always draws, its reason cut if it must be.
+            while take < order.len() && (take == 0 || used + lines_of(order[take]) <= room) {
+                used += lines_of(order[take]);
+                take += 1;
             }
-            let label = if k == 0 { heading } else { "" };
-            let it = &v.new[i];
-            let (g, gc) = item_glyph(it.kind);
-            let unread = is_unread(app, v, i);
-            // The unread marker sits on the right, as the counts do on Home (round 2).
-            let mut right = vec![];
-            if unread {
-                right.push(Span::styled(format!("{} ", glyph::UNREAD), st("peach")));
-            }
-            right.push(Span::styled(format!("{:>4} ", ago(now, it.at)), dim()));
-            out.push(row(
-                vec![
+            let sel = focus.then(|| app.sel('d'));
+            for (pos, &i) in order.iter().take(take).enumerate() {
+                let d = &ds.items[i];
+                let (g, gc, _) = decision_glyph(&d.status);
+                // No decision numbers on screen (round 2): a replaced one just says so.
+                let status = match d.status {
+                    DecisionStatus::Holding => "holding",
+                    DecisionStatus::Recheck => "re-check",
+                    DecisionStatus::Redecided { .. } => "replaced",
+                };
+                let left = vec![
                     pointer(pos, sel),
-                    Span::styled(format!(" {label:<16}"), bold(st("subtext1"))),
-                    Span::styled(format!("{g} "), st(gc)),
-                    Span::styled(it.text.clone(), if unread { text() } else { dim() }),
-                ],
-                right,
-                area.width,
-            ));
-            pos += 1;
+                    Span::styled(format!(" {g} "), st(gc)),
+                    Span::styled(
+                        d.title.clone(),
+                        if matches!(d.status, DecisionStatus::Redecided { .. }) {
+                            dim()
+                        } else {
+                            text()
+                        },
+                    ),
+                ];
+                let why = d.recheck.as_ref().filter(|_| d.status == DecisionStatus::Recheck);
+                let mut right = vec![];
+                if d.new {
+                    right.push(Span::styled(format!("{} ", glyph::UNREAD), st("peach")));
+                }
+                right.push(Span::styled(format!("{status:<9}"), st(gc)));
+                right.push(Span::styled(format!("{:>7} ", date(d.date)), dim()));
+                out.push(row(left, right, area.width));
+                if let Some(why) = why {
+                    let line = row(
+                        vec![Span::raw("     "), Span::styled(format!("why: {why}"), st("yellow"))],
+                        vec![],
+                        area.width,
+                    );
+                    out.push(if sel == Some(pos) {
+                        line.patch_style(Style::default().bg(c("surface0")))
+                    } else {
+                        line
+                    });
+                }
+                drawn.push(i);
+            }
+            if take < order.len() {
+                out.push(Line::from(Span::styled(
+                    format!("   + {} more · the full log [d]", order.len() - take),
+                    dim(),
+                )));
+            }
         }
+        _ => out.push(Line::from(Span::styled("   no decisions logged yet", dim()))),
     }
-    if v.new.len() > budget && budget < rows + 1 && pos < v.new.len() {
-        out.push(Line::from(Span::styled(
-            format!("   + {} more · n n for the full timeline", v.new.len() - pos),
-            dim(),
-        )));
-    }
-    if v.new.is_empty() {
-        let last = app
-            .fixtures
-            .projects
-            .get(&v.project)
-            .and_then(|p| p.changes.as_ref())
-            .and_then(|c| c.entries.first().map(|e| e.at));
-        let msg = match last {
-            Some(t) => format!("   nothing new; the last change was {} ago", ago(now, t)),
-            None => "   nothing new".to_string(),
-        };
-        out.push(Line::from(Span::styled(msg, dim())));
-    }
+    app.shown.borrow_mut().insert((ScreenId::Project, 'd'), drawn);
     lines(f, area, out);
 }
 
@@ -1009,7 +1199,8 @@ fn draw_sessions(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
     let mut out = vec![rule("sessions", &extra, Some('s'), focus, area.width)];
     // As many as the section was given; a last line counts the rest when they do not fit.
     let rows = usize::from(area.height.saturating_sub(1));
-    let overflow = !focus && ss.len() > rows;
+    // One row shows the most pressing session rather than only a count of them.
+    let overflow = !focus && ss.len() > rows && rows > 1;
     let room = rows.saturating_sub(usize::from(overflow));
     let sel = focus.then(|| app.sel('s'));
     // The name column fits the longest name, within reason (round 2h: names were cut).
@@ -1100,7 +1291,8 @@ fn draw_chores(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
 }
 
 fn draw_ask(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
-    let asking = matches!(app.mode, Mode::Ask(_));
+    // Tab reaches it like any section, and focused its whole rule lights (round 2l).
+    let asking = matches!(app.mode, Mode::Ask(_)) || app.focus == Some('i');
     let left = match &app.mode {
         Mode::Ask(q) => vec![
             Span::styled("   ask › ", st("mauve")),
@@ -1109,7 +1301,7 @@ fn draw_ask(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
         ],
         _ => vec![
             Span::styled("   ask › ", dim()),
-            Span::styled("␣", keyst()),
+            Span::styled(if app.focus == Some('i') { "⏎ or ␣" } else { "␣" }, keyst()),
             Span::styled(" to ask about this project · the answer comes back here", dim()),
         ],
     };
@@ -1131,7 +1323,7 @@ fn draw_ask(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
     let tail = if right.is_empty() { 1 } else { 2 };
     head.push(Span::styled(
         format!(" {}", "─".repeat(usize::from(area.width).saturating_sub(used + tail))),
-        st("surface2"),
+        st(if asking { "blue" } else { "surface2" }),
     ));
     if !right.is_empty() {
         head.push(Span::raw(" "));
@@ -1146,18 +1338,35 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
     };
     let focus = app.focus;
     match (focus, k.code) {
-        (Some('n'), KeyCode::Char('n')) => app.open(ScreenId::Changes),
-        (Some('n'), KeyCode::Enter | KeyCode::Char('r')) => {
-            if let Some(&i) = new_order(&v).get(app.sel('n')) {
-                let it = &v.new[i];
-                let note = if k.code == KeyCode::Enter {
-                    format!("would open: {}", it.text)
-                } else {
-                    "marked read".into()
-                };
-                app.mark(new_key(&v, i), Mark::Read, note);
+        (_, KeyCode::Char('n')) => app.open(ScreenId::Changes),
+        // Where you are: now, the new items, next. A new item opens or is marked read; now and
+        // next open the dossier where they are written.
+        (Some('y'), KeyCode::Enter | KeyCode::Char('r')) => {
+            let at = app.sel('y');
+            match shown(app, 'y').get(at.wrapping_sub(1)).copied() {
+                Some(i) => {
+                    let note = if k.code == KeyCode::Enter {
+                        format!("would open: {}", v.new[i].text)
+                    } else {
+                        "marked read".into()
+                    };
+                    app.mark(new_key(&v, i), Mark::Read, note);
+                }
+                None if k.code == KeyCode::Enter => {
+                    app.note = Some("would open the dossier at where this project stands".into())
+                }
+                None => app.note = Some("r marks a new item read".into()),
             }
         }
+        (Some('d'), KeyCode::Enter) => {
+            if let Some(&i) = shown(app, 'd').get(app.sel('d')) {
+                app.open(ScreenId::Decisions);
+                app.sel.insert((ScreenId::Decisions, ' '), i);
+            } else {
+                app.open(ScreenId::Decisions);
+            }
+        }
+        (Some('i'), KeyCode::Enter) => app.mode = Mode::Ask(String::new()),
         (Some('s'), KeyCode::Enter) => {
             if let Some(s) = sorted_sessions(&v).get(app.sel('s')) {
                 app.note = Some(format!("would jump your project window to \"{}\"", s.name));
@@ -1203,7 +1412,6 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 ));
             }
         }
-        (Some('y'), KeyCode::Enter) => app.note = Some("would open the dossier at where this project stands".into()),
         // Space asks (round 2: "a better key than i"); i still works.
         (_, KeyCode::Char(' ' | 'i')) => app.mode = Mode::Ask(String::new()),
         (_, KeyCode::Char('d')) => app.open(ScreenId::Decisions),

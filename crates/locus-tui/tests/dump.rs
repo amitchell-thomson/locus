@@ -200,7 +200,7 @@ fn every_screen_survives_other_sizes() {
                 let mut a = app(set, screen);
                 let text = dump::render(&a, w, h).unwrap();
                 assert_eq!(text.lines().count(), usize::from(h), "{set}/{screen} at {w}x{h}");
-                for sec in ['g', 'n', 's', 'c', 'p', 'e', 't'] {
+                for sec in ['y', 'g', 'd', 's', 'c', 'i', 'p', 'e', 't'] {
                     a.focus = Some(sec);
                     dump::render(&a, w, h).unwrap();
                 }

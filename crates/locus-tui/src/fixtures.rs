@@ -327,6 +327,15 @@ impl Fixtures {
                     bad.push(format!("projects/{id}/{file}.json: says project `{p}`"));
                 }
             }
+            // One decision, one surface (round 2l): the log marks a new one, New never lists it.
+            for it in &pf.view.new {
+                if matches!(it.kind, ItemKind::Decision | ItemKind::Recheck | ItemKind::Redecided) {
+                    bad.push(format!(
+                        "projects/{id}/view.json: new lists a decision ({}); mark it new in decisions.json",
+                        it.text
+                    ));
+                }
+            }
             if let Some(g) = &pf.view.graph {
                 for l in &g.lanes {
                     if l.merged.is_some() == l.tip.is_some() {

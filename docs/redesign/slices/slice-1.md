@@ -612,6 +612,26 @@ records each time the page opens (`--use-report`), so once it is live, two weeks
 means it gets cut or rethought (the same rule as R9), and the weekly review is where that is
 read. If it is opened but its entries are not, the brief alone may be the page.
 
+**Round 3, 22 Oct. Answered.** "I like the answered page, it does not need to be that
+complicated." locus gained six real answers: questions he asked about locus in this chat, in his
+words, with the answers condensed from what was said; four link to the taxonomy decision and
+show under its "asked".
+- The split, recorded as ADR-007: "project window for code writing and implementing plans etc,
+  and this window for learning and questioning things ... I feel I would be following up a lot
+  and would want it to be ergonomic to do so." Follow-ups stay in the locus window, in the
+  answer's thread: a follow-up line pinned at the foot of the answer, Space from anywhere on the
+  page, the question shown under the answer while its reply is on its way. `c` is the one bridge
+  to building (the thread moves to the project window as a working session). `f` is gone.
+- Length: "the answers are a little short, and they should be allowed to be longer, but only
+  when they need to be." The answering job writes to the length the question needs (a full
+  explanation for "explain the physics" or "describe the strategy"), and a long answer scrolls:
+  → or Enter into it, ↑ ↓, ← back. `t` (to the tablet) is offered only for an answer over about
+  150 words: "if I asked a more explanatory question ... those would make longer explanations
+  that it would actually make sense to send to the tablet."
+- The answer leads with the question in full, then where it came from and the decision it is
+  about; unread answers carry the marker. Esc while typing keeps the draft, on every ask line,
+  and Space brings it back.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

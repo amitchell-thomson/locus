@@ -966,7 +966,7 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
             }
         }
         // Space asks about this decision from anywhere on the page (round 2v).
-        KeyCode::Char(' ') => app.mode = crate::app::Mode::Ask(String::new()),
+        KeyCode::Char(' ') => app.start_ask(),
         KeyCode::Enter if app.focus == Some('a') => {
             if app.asked.iter().any(|(k, _)| *k == asked_key(&ds.project, &d.id)) {
                 // Into the entry, which shows what you asked near its top.

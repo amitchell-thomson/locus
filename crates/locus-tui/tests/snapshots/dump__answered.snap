@@ -3,23 +3,21 @@ source: crates/locus-tui/tests/dump.rs
 expression: "dump::render(&a, 95, 38).unwrap()"
 ---
 ╭ quast · answered ───────────────────────────────────────────────────────────────── esc back ╮
-│▌ 󱜾 delayed acceptance                 󰴓 ink ?  dossier p5, delayed acceptance            5h │
-│  󱜾 why SMC and not a genetic algori…  ask      ·                                         4d │
-│  󱜾 what the fit check rejects         󰴓 ink ?  the-loop.md §4                            7d │
+│▌ 󱜾 delayed acceptance                              󰴓 ink ?  dossier p5, delayed acc… 󰅸   5h │
+│  󱜾 why SMC and not a genetic algorithm?            ask                                   4d │
+│  󱜾 what the fit check rejects                      󰴓 ink ?  the-loop.md §4               7d │
 │─────────────────────────────────────────────────────────────────────────────────────────────│
-│ Delayed acceptance screens each proposed move on the cheap surrogate first and only scores  │
-│ the survivors on the exact simulator, so most bad proposals cost almost nothing.            │
+│  delayed acceptance                                                                         │
+│  circled in your ink, dossier p5, delayed acceptance · 5h ago                               │
 │                                                                                             │
-│ It took a third off a learned-law tune-up, but the crowd came out slightly over-confident,  │
-│ which is why it is off by default until it is shown unbiased.                               │
+│  Delayed acceptance screens each proposed move on the cheap surrogate first and only        │
+│  scores the survivors on the exact simulator, so most bad proposals cost almost nothing.    │
 │                                                                                             │
-│ ↳ the same two-stage idea as Metropolis-Hastings with a surrogate proposal (Monte Carlo     │
-│   lecture 6, p.9)                                                                           │
+│  It took a third off a learned-law tune-up, but the crowd came out slightly                 │
+│  over-confident, which is why it is off by default until it is shown unbiased.              │
 │                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
+│  ↳ the same two-stage idea as Metropolis-Hastings with a surrogate proposal (Monte Carlo    │
+│    lecture 6, p.9)                                                                          │
 │                                                                                             │
 │                                                                                             │
 │                                                                                             │
@@ -37,6 +35,8 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │                                                                                             │
 │                                                                                             │
 │                                                                                             │
-│                                         f follow up · t send to tablet · c open as a session│
+│─ follow up on this ─────────────────────────────────────────────────────────────────────────│
+│   follow up › ␣ to ask more · it continues this thread                                      │
+│                                            ␣ follow up · c build on it in the project window│
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯
  ⏎ open · ⇥ sections · l log · / search · ? keys

@@ -1460,7 +1460,7 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
             }
         }
         // Space asks (round 2: "a better key than i"); i still works.
-        (_, KeyCode::Char(' ' | 'i')) => app.mode = Mode::Ask(String::new()),
+        (_, KeyCode::Char(' ' | 'i')) => app.start_ask(),
         (_, KeyCode::Char('d')) => app.open(ScreenId::Decisions),
         (_, KeyCode::Char('o')) => {
             let has = app.fixtures.registry.get(&v.project).is_some_and(|p| p.depth.is_some());

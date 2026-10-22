@@ -3,6 +3,91 @@
   "log": "docs/decisions/",
   "items": [
     {
+      "id": "ADR-007",
+      "title": "The project window builds; the locus window questions and learns",
+      "date": "2026-10-22",
+      "status": {
+        "state": "holding"
+      },
+      "brief": "Build in the project window; question and learn in the locus window, where follow-ups stay one key away.",
+      "decision": [
+        {
+          "label": "follow-ups stay in locus",
+          "detail": "Space on Answered continues that answer's thread."
+        },
+        {
+          "label": "c bridges to building",
+          "detail": "Moves the thread to the project window as a working session."
+        },
+        {
+          "label": "answers as long as needed",
+          "detail": "Short by default; an explanatory question gets a full explanation."
+        },
+        {
+          "label": "tablet only for long ones",
+          "detail": "t is offered only for an answer worth reading on paper."
+        }
+      ],
+      "alternatives": [
+        {
+          "label": "one window for both",
+          "detail": "Questions in a coding session are slow, costly and lost in code work."
+        },
+        {
+          "label": "follow-ups in the project window",
+          "detail": "Every follow-up would cost a window switch."
+        },
+        {
+          "label": "ask wherever you are",
+          "detail": "The same question could land in two places."
+        }
+      ],
+      "assumes": [
+        {
+          "label": "questions rarely need the repo's state",
+          "detail": "If most do, questioning belongs in the project window."
+        },
+        {
+          "label": "follow-ups rarely turn into code",
+          "detail": "If they often do, the bridge should be the default."
+        }
+      ],
+      "consequences": [
+        {
+          "label": "Answered is the record",
+          "detail": "Of what you asked and learned; sessions record what was built."
+        },
+        {
+          "label": "answering is read-only",
+          "detail": "It never edits the repo, and stays within the budget."
+        },
+        {
+          "label": "reopen here, fix there",
+          "detail": "A decision found wrong is reopened in locus, fixed in the project window."
+        }
+      ],
+      "context": [
+        {
+          "label": "two places to talk",
+          "detail": "The project window's sessions and the locus window's ask lines."
+        },
+        {
+          "label": "no rule before",
+          "detail": "A question could start in either, and an answer could sprout code."
+        }
+      ],
+      "you": [
+        {
+          "text": "I think the primary split will be project window for code writing and implementing plans etc, and this window for learning and questioning things, if that split is clearly recorded then follow up makes sense, as I feel I would be following up a lot and would want it to be ergonomic to do so",
+          "source": "22 Oct 2026, the Answered round"
+        }
+      ],
+      "rests_on": [
+        "ADR-006"
+      ],
+      "new": true
+    },
+    {
       "id": "ADR-006",
       "title": "One taxonomy for everything: areas say where, kinds say what",
       "date": "2026-10-22",

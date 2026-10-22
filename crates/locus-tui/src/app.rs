@@ -72,6 +72,9 @@ pub struct App {
     /// Questions asked this session about a decision, keyed `project:id`, oldest first: the
     /// prototype's stand-in for an answer that has not come back yet (round 2v).
     pub asked: Vec<(String, String)>,
+    /// A question you were typing when you pressed Esc: Space brings it back (round 2zd: "Esc
+    /// while typing keeps the draft").
+    pub draft: String,
     /// The ink fixture Ink confirm shows.
     pub ink: Option<String>,
     pub query: String,
@@ -120,6 +123,7 @@ impl App {
             mode: Mode::Normal,
             viewing: None,
             asked: Vec::new(),
+            draft: String::new(),
             ink: None,
             query,
             scope_all,
@@ -215,6 +219,11 @@ impl App {
         let cur = self.sel(sec) as isize;
         let next = (cur + d).clamp(0, len.saturating_sub(1) as isize) as usize;
         self.sel.insert((self.screen(), sec), next);
+    }
+
+    /// Open the ask line, with any draft you left.
+    pub fn start_ask(&mut self) {
+        self.mode = Mode::Ask(std::mem::take(&mut self.draft));
     }
 
     pub fn mark(&mut self, key: String, m: Mark, note: impl Into<String>) {
@@ -346,13 +355,25 @@ impl App {
 
     fn on_mode_key(&mut self, key: KeyEvent) {
         match (&mut self.mode, key.code) {
-            (Mode::Ask(_), KeyCode::Esc) | (Mode::Strike(_), KeyCode::Esc) => self.mode = Mode::Normal,
+            // Esc keeps what you typed; Esc on an empty line forgets it.
+            (Mode::Ask(q), KeyCode::Esc) => {
+                if q.trim().is_empty() {
+                    self.draft.clear();
+                } else {
+                    self.draft = std::mem::take(q);
+                    self.note = Some("draft kept · ␣ brings it back".into());
+                }
+                self.mode = Mode::Normal;
+            }
+            (Mode::Strike(_), KeyCode::Esc) => self.mode = Mode::Normal,
             (Mode::Ask(q), KeyCode::Enter) => {
                 let q = q.trim().to_string();
                 self.mode = Mode::Normal;
                 if q.is_empty() {
                 } else if self.screen() == crate::screen::ScreenId::Decisions {
                     crate::ui::decisions::ask(self, q);
+                } else if self.screen() == crate::screen::ScreenId::Answered {
+                    crate::ui::projectdetail::follow_up(self, q);
                 } else {
                     self.note = Some(format!("would ask heuris: \"{q}\" · the answer lands in Answered"));
                 }

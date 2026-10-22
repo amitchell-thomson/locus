@@ -12,7 +12,7 @@
 use crate::app::{App, Mark};
 use crate::screen::ScreenId;
 use crate::ui::widgets::*;
-use crate::ui::{esc_back, frame, hints, lines, title};
+use crate::ui::{esc_back, frame, lines, title};
 use locus_contract::{Decision, DecisionPoint, DecisionStatus, Decisions};
 use locus_theme::{SEP, c, glyph};
 use ratatui::Frame;
@@ -178,27 +178,29 @@ fn draw_ask(f: &mut Frame, area: Rect, app: &App, ds: &Decisions, i: usize) {
     let focus = app.focus == Some('a');
     let asking = matches!(app.mode, crate::app::Mode::Ask(_));
     let lit = focus || asking;
-    let col = st(if lit { "blue" } else { "surface2" });
     let n = app
         .asked
         .iter()
         .filter(|(k, _)| *k == asked_key(&ds.project, &d.id))
         .count();
-    let mut head = vec![
-        Span::styled("─ ", col),
-        Span::styled("ask about this decision", bold(if lit { st("blue") } else { text() })),
-    ];
-    let right = if n > 0 {
-        format!("{n} asked [a] ─")
+    // The page's keys at the right end of the ask rule, as on the Project view (round 3b).
+    let keys: Vec<(&str, &str)> = if app.focus == Some('e') {
+        let mut k = vec![];
+        if app.sel('e') < links(ds, i).len() {
+            k.push(("⏎", "go to it"));
+        }
+        k.extend([("←", "the list"), ("o", "reopen")]);
+        k
     } else {
-        "[a] ─".into()
+        vec![
+            ("→", "read it"),
+            ("o", "reopen"),
+            ("c", "its chat"),
+            ("f", "full entry"),
+        ]
     };
-    let used: usize = head.iter().map(|s| s.content.width()).sum::<usize>() + right.width();
-    head.push(Span::styled(
-        format!(" {} ", "─".repeat(usize::from(area.width).saturating_sub(used + 2))),
-        col,
-    ));
-    head.push(Span::styled(right, col));
+    let tail = if n > 0 { format!("{n} asked [a]") } else { "[a]".into() };
+    let head = crate::ui::ask_rule("ask about this decision", lit, &keys, &tail, area.width);
     let body = match &app.mode {
         crate::app::Mode::Ask(q) => vec![
             Span::styled("   ask › ", st("mauve")),
@@ -218,7 +220,7 @@ fn draw_ask(f: &mut Frame, area: Rect, app: &App, ds: &Decisions, i: usize) {
             Span::styled(" to ask about this decision · the answer comes back on it", dim()),
         ],
     };
-    lines(f, area, vec![Line::from(head), Line::from(body)]);
+    lines(f, area, vec![head, Line::from(body)]);
 }
 
 /// Open the page on decision `i` (Enter on the Project view's decisions section).
@@ -326,15 +328,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     if SECTIONS.iter().any(|s| Some(s.0) == app.focus) {
         app.shown.borrow_mut().insert((ScreenId::Decisions, '*'), vec![cur]);
     }
-    let body = Rect {
-        height: inner.height.saturating_sub(1),
-        ..inner
-    };
-    let foot = Rect {
-        y: inner.y + inner.height.saturating_sub(1),
-        height: 1,
-        ..inner
-    };
+    let body = inner;
     // Side by side when there is room; on a narrow window the entry goes under the list.
     let (list_r, div_r, entry_r) = if inner.width >= 120 {
         let lw = (inner.width * 2 / 5).clamp(36, 64);
@@ -407,23 +401,6 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     );
     draw_entry(f, entry_r, app, ds, cur);
     draw_ask(f, ask_r, app, ds, cur);
-    let h: Vec<(&str, &str)> = if app.focus == Some('e') {
-        let on_link = app.sel('e') < links(ds, cur).len();
-        let mut h = vec![];
-        if on_link {
-            h.push(("⏎", "go to it"));
-        }
-        h.extend([("↑ ↓", "read on"), ("o", "reopen"), ("←", "the list")]);
-        h
-    } else {
-        vec![
-            ("→", "read it"),
-            ("o", "reopen"),
-            ("c", "its chat"),
-            ("f", "full entry"),
-        ]
-    };
-    lines(f, foot, vec![hints(&h).right_aligned()]);
 }
 
 fn empty(f: &mut Frame, area: Rect, what: &str) {

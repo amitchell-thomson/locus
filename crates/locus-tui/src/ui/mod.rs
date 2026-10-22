@@ -169,6 +169,51 @@ pub fn esc_back() -> Line<'static> {
     Line::from(vec![Span::styled(" esc", keyst()), Span::styled(" back ", dim())])
 }
 
+/// An ask line's rule: its title on the left, the page's keys at the right end, as the Project
+/// view's ask line carries "answered" (round 3b: "the other hints should be the same format as
+/// in the ask window"). Keys that do not fit are dropped from the end; `tail` (a letter, a
+/// count) always stays.
+pub fn ask_rule(title: &str, lit: bool, keys: &[(&str, &str)], tail: &str, width: u16) -> Line<'static> {
+    use unicode_width::UnicodeWidthStr;
+    let col = st(if lit { "blue" } else { "surface2" });
+    let mut left = vec![
+        Span::styled("─ ", col),
+        Span::styled(
+            title.to_string(),
+            widgets::bold(if lit { st("blue") } else { st("text") }),
+        ),
+    ];
+    let tail = Span::styled(
+        if tail.is_empty() {
+            " ─".to_string()
+        } else {
+            format!(" {tail} ─")
+        },
+        col,
+    );
+    let room = usize::from(width)
+        .saturating_sub(left.iter().map(|s| s.content.width()).sum::<usize>() + tail.content.width() + 4);
+    let mut n = keys.len();
+    let mut right = hints(&keys[..n]).spans;
+    while n > 0 && right.iter().map(|s| s.content.width()).sum::<usize>() > room {
+        n -= 1;
+        right = hints(&keys[..n]).spans;
+    }
+    let used: usize = left
+        .iter()
+        .chain(right.iter())
+        .map(|s| s.content.width())
+        .sum::<usize>()
+        + tail.content.width();
+    left.push(Span::styled(
+        format!(" {} ", "─".repeat(usize::from(width).saturating_sub(used + 2))),
+        col,
+    ));
+    left.extend(right);
+    left.push(tail);
+    Line::from(left)
+}
+
 /// Hints along the bottom of a screen: `y tick · n strike`.
 pub fn hints(pairs: &[(&str, &str)]) -> Line<'static> {
     let mut spans = Vec::new();

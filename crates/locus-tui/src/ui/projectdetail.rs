@@ -4,7 +4,7 @@
 use crate::app::{App, nav};
 use crate::screen::ScreenId;
 use crate::ui::widgets::*;
-use crate::ui::{esc_back, frame, hints, lines, title};
+use crate::ui::{esc_back, frame, lines, title};
 use locus_contract::AskedFrom;
 use locus_theme::glyph;
 use ratatui::Frame;
@@ -16,7 +16,10 @@ pub const ANSWER_KEYS: &[(&str, &str)] = &[
     ("␣", "follow up: continues this answer's thread, here"),
     ("→ or ⏎", "read a long answer; ↑ ↓ scroll, ← back"),
     ("t", "send to the tablet (a long explanation only)"),
-    ("c", "build in project window: the thread becomes a working session there"),
+    (
+        "c",
+        "build in project window: the thread becomes a working session there",
+    ),
 ];
 pub const CHANGE_KEYS: &[(&str, &str)] = &[("⏎", "open the entry where it lives")];
 
@@ -85,12 +88,11 @@ pub fn draw_answered(f: &mut Frame, area: Rect, app: &App) {
         return;
     };
     let list_h = (ans.items.len() as u16).min(8);
-    let [list, sep, body, ask_r, foot] = Layout::vertical([
+    let [list, sep, body, ask_r] = Layout::vertical([
         Constraint::Length(list_h),
         Constraint::Length(1),
         Constraint::Min(0),
         Constraint::Length(2),
-        Constraint::Length(1),
     ])
     .areas(inner);
     let sel = app.sel(' ').min(ans.items.len() - 1);
@@ -220,16 +222,19 @@ pub fn draw_answered(f: &mut Frame, area: Rect, app: &App) {
     lines(f, body, view);
     // The follow-up line, as the ask line is on the Project view.
     let asking = matches!(app.mode, crate::app::Mode::Ask(_));
-    let col = st(if asking { "blue" } else { "surface2" });
-    // Just "follow up", with what it does as grey text inside the line (round 3a).
-    let head = Line::from(vec![
-        Span::styled("─ ", col),
-        Span::styled("follow up", bold(if asking { st("blue") } else { text() })),
-        Span::styled(
-            format!(" {}", "─".repeat(usize::from(ask_r.width).saturating_sub(12))),
-            col,
-        ),
-    ]);
+    // Just "follow up", with what it does as grey text inside the line (round 3a), and the
+    // page's keys at the right end of its rule, as on the Project view's ask line (round 3b).
+    let mut keys: Vec<(&str, &str)> = vec![];
+    if reading {
+        keys.push(("←", "the list"));
+    } else if max_scroll > 0 {
+        keys.push(("→", "read on"));
+    }
+    if long(a) {
+        keys.push(("t", "send to tablet"));
+    }
+    keys.push(("c", "build in project window"));
+    let head = crate::ui::ask_rule("follow up", asking, &keys, "", ask_r.width);
     let hint = if app.draft.is_empty() {
         "continue this thread".to_string()
     } else {
@@ -248,23 +253,11 @@ pub fn draw_answered(f: &mut Frame, area: Rect, app: &App) {
         ]),
         _ => Line::from(vec![
             Span::styled("   follow up › ", dim()),
+            Span::styled("␣ ", keyst()),
             Span::styled(hint, st("overlay0")),
         ]),
     };
     lines(f, ask_r, vec![head, line]);
-    let mut h: Vec<(&str, &str)> = vec![];
-    if max_scroll > 0 && !reading {
-        h.push(("→", "read on"));
-    }
-    if reading {
-        h.push(("←", "the list"));
-    }
-    h.push(("␣", "follow up"));
-    if long(a) {
-        h.push(("t", "send to the tablet"));
-    }
-    h.push(("c", "build in project window"));
-    lines(f, foot, vec![hints(&h).right_aligned()]);
 }
 
 pub fn draw_changes(f: &mut Frame, area: Rect, app: &App) {

@@ -636,6 +636,12 @@ show under its "asked".
 'continue this thread', and c should say build in project window": done, the grey text showing
 your draft instead when there is one.
 
+**Round 3b, 22 Oct.** "The other hints should be the same format as in the ask window, the two
+line hint split looks odd": on Answered and Decisions the page's keys move onto the ask line's
+rule, at its right end, as the Project view's ask line carries answered, and the hint row under
+it is gone. Keys that do not fit are dropped from the end. The follow-up line shows ␣ before its
+grey text, as the ask line does.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

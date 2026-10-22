@@ -34,9 +34,9 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │                                                                                             │
 │─ decision · 4 ──────────────────────────────────────────────────────────────────────────────│
 │   readings to a starting box · honest by construction · changes nothing else · failures li… │
+│                                                                                             │
 │   ↓ more · → to read on                                                                     │
-│─ ask about this decision ───────────────────────────────────────────────────────────── [a] ─│
+│─ ask about this decision ──────────── → read it · o reopen · c its chat · f full entry [a] ─│
 │   ask › ␣ to ask about this decision · the answer comes back on it                          │
-│                                             → read it · o reopen · c its chat · f full entry│
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯
  ⏎ open · ⇥ sections · l log · / search · ? keys

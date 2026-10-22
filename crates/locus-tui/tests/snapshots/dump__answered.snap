@@ -35,8 +35,8 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │                                                                                             │
 │                                                                                             │
 │                                                                                             │
-│─ follow up on this ─────────────────────────────────────────────────────────────────────────│
-│   follow up › ␣ to ask more · it continues this thread                                      │
-│                                            ␣ follow up · c build on it in the project window│
+│─ follow up ─────────────────────────────────────────────────────────────────────────────────│
+│   follow up › continue this thread                                                          │
+│                                                      ␣ follow up · c build in project window│
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯
  ⏎ open · ⇥ sections · l log · / search · ? keys

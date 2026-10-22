@@ -632,6 +632,10 @@ show under its "asked".
   about; unread answers carry the marker. Esc while typing keeps the draft, on every ask line,
   and Space brings it back.
 
+**Round 3a, 22 Oct.** "The prompt should just be follow up, with the grey text inside saying
+'continue this thread', and c should say build in project window": done, the grey text showing
+your draft instead when there is one.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

@@ -16,7 +16,7 @@ pub const ANSWER_KEYS: &[(&str, &str)] = &[
     ("␣", "follow up: continues this answer's thread, here"),
     ("→ or ⏎", "read a long answer; ↑ ↓ scroll, ← back"),
     ("t", "send to the tablet (a long explanation only)"),
-    ("c", "build on it: a working session in the project window"),
+    ("c", "build in project window: the thread becomes a working session there"),
 ];
 pub const CHANGE_KEYS: &[(&str, &str)] = &[("⏎", "open the entry where it lives")];
 
@@ -221,31 +221,34 @@ pub fn draw_answered(f: &mut Frame, area: Rect, app: &App) {
     // The follow-up line, as the ask line is on the Project view.
     let asking = matches!(app.mode, crate::app::Mode::Ask(_));
     let col = st(if asking { "blue" } else { "surface2" });
+    // Just "follow up", with what it does as grey text inside the line (round 3a).
     let head = Line::from(vec![
         Span::styled("─ ", col),
-        Span::styled("follow up on this", bold(if asking { st("blue") } else { text() })),
+        Span::styled("follow up", bold(if asking { st("blue") } else { text() })),
         Span::styled(
-            format!(" {}", "─".repeat(usize::from(ask_r.width).saturating_sub(20))),
+            format!(" {}", "─".repeat(usize::from(ask_r.width).saturating_sub(12))),
             col,
         ),
     ]);
+    let hint = if app.draft.is_empty() {
+        "continue this thread".to_string()
+    } else {
+        format!("your draft: {}", crate::ui::truncate(&app.draft, 50))
+    };
     let line = match &app.mode {
-        crate::app::Mode::Ask(q) => Line::from(vec![
+        crate::app::Mode::Ask(q) if !q.is_empty() => Line::from(vec![
             Span::styled("   follow up › ", st("mauve")),
             Span::styled(q.clone(), text()),
             Span::styled("▏", st("mauve")),
         ]),
+        crate::app::Mode::Ask(_) => Line::from(vec![
+            Span::styled("   follow up › ", st("mauve")),
+            Span::styled("▏", st("mauve")),
+            Span::styled("continue this thread", st("overlay0")),
+        ]),
         _ => Line::from(vec![
             Span::styled("   follow up › ", dim()),
-            Span::styled("␣", keyst()),
-            Span::styled(
-                if app.draft.is_empty() {
-                    " to ask more · it continues this thread".to_string()
-                } else {
-                    format!(" to finish your draft: {}", crate::ui::truncate(&app.draft, 40))
-                },
-                dim(),
-            ),
+            Span::styled(hint, st("overlay0")),
         ]),
     };
     lines(f, ask_r, vec![head, line]);
@@ -260,7 +263,7 @@ pub fn draw_answered(f: &mut Frame, area: Rect, app: &App) {
     if long(a) {
         h.push(("t", "send to the tablet"));
     }
-    h.push(("c", "build on it in the project window"));
+    h.push(("c", "build in project window"));
     lines(f, foot, vec![hints(&h).right_aligned()]);
 }
 

@@ -178,7 +178,11 @@ non-excluded document on each run (about 80 cloud calls every 30 minutes), which
   printed by `locus list` as a source; one capture run's journal printed showing its cloud call
   count; a day of `locus-capture` logs with no 429.
 
-### 0.5b Tablet tidy (added 23 Oct)
+### 0.5b Tablet tidy (added 23 Oct; done by Alec by hand, 23 Oct)
+**Done:** the root is `Admin Archive Careers Inbox Jot Projects Reading Studies trash`, listed
+twice. Level-2 folders not yet in the registry: `Careers/Brevan Howard`, `Careers/Jane Street`,
+`Projects/Tanker-flow` (for 0.8's taxonomy). The table below is kept as the record of the plan.
+
 One home per thing, by area, at the root (Alec, 23 Oct: two high-level places for course
 material "seems complicated"). Inside a folder, notebooks are his and PDFs are sources or
 Claude's documents (0.12), so nothing needs a separate tree.

@@ -3,6 +3,7 @@
 //! the global ones) and `KEYS` (what the `?` overlay lists); the footer is shared.
 
 pub mod approve;
+pub mod changes;
 pub mod decisions;
 pub mod explore;
 pub mod home;
@@ -39,7 +40,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         ScreenId::InkConfirm => approve::draw_ink(f, body, app),
         ScreenId::Decisions => decisions::draw(f, body, app),
         ScreenId::Answered => projectdetail::draw_answered(f, body, app),
-        ScreenId::Changes => projectdetail::draw_changes(f, body, app),
+        ScreenId::Changes => changes::draw(f, body, app),
         ScreenId::Search => review::draw_search(f, body, app),
         ScreenId::WorkChart => work::draw_chart(f, body, app),
         ScreenId::Prep => learning::draw_prep(f, body, app),
@@ -61,7 +62,8 @@ pub fn screen_key(app: &mut App, k: KeyEvent) -> bool {
         ScreenId::Explore => explore::key(app, k),
         ScreenId::Approve | ScreenId::AutoLog | ScreenId::InkConfirm => approve::key(app, k),
         ScreenId::Decisions => decisions::key(app, k),
-        ScreenId::Answered | ScreenId::Changes => projectdetail::key(app, k),
+        ScreenId::Answered => projectdetail::key(app, k),
+        ScreenId::Changes => changes::key(app, k),
         ScreenId::Search | ScreenId::Review => review::key(app, k),
         ScreenId::WorkChart => false,
         ScreenId::Prep | ScreenId::Learning => learning::key(app, k),
@@ -129,7 +131,7 @@ pub fn screen_keys(s: ScreenId) -> &'static [(&'static str, &'static str)] {
         ScreenId::InkConfirm => approve::INK_KEYS,
         ScreenId::Decisions => decisions::KEYS,
         ScreenId::Answered => projectdetail::ANSWER_KEYS,
-        ScreenId::Changes => projectdetail::CHANGE_KEYS,
+        ScreenId::Changes => changes::KEYS,
         ScreenId::Search => review::SEARCH_KEYS,
         ScreenId::WorkChart => &[],
         ScreenId::Prep => learning::PREP_KEYS,

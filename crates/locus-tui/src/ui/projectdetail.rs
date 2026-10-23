@@ -1,5 +1,5 @@
-//! The screens a Project view opens: Answered (`a`, then Enter) and Changes (`n`). Each is a
-//! list on top and the selected entry explained below. Decisions has its own module.
+//! Answered (`a`, then Enter on the Project view): a list on top and the selected answer below
+//! it. Decisions and Changes have modules of their own.
 
 use crate::app::{App, nav};
 use crate::screen::ScreenId;
@@ -21,7 +21,6 @@ pub const ANSWER_KEYS: &[(&str, &str)] = &[
         "build in project window: the thread becomes a working session there",
     ),
 ];
-pub const CHANGE_KEYS: &[(&str, &str)] = &[("⏎", "open the entry where it lives")];
 
 fn project_name(app: &App) -> String {
     app.project_id()
@@ -260,43 +259,6 @@ pub fn draw_answered(f: &mut Frame, area: Rect, app: &App) {
     lines(f, ask_r, vec![head, line]);
 }
 
-pub fn draw_changes(f: &mut Frame, area: Rect, app: &App) {
-    let now = app.fixtures.now();
-    let pf = app.project_id().and_then(|id| app.fixtures.projects.get(&id));
-    let ch = pf.and_then(|p| p.changes.as_ref());
-    let since = ch.map(|c| format!("since {} ▾", day(c.since))).unwrap_or_default();
-    let inner = frame(
-        f,
-        area,
-        title(&format!("{} · changes", project_name(app)), &since),
-        Some(esc_back()),
-    );
-    let Some(ch) = ch.filter(|c| !c.entries.is_empty()) else {
-        none(f, inner, "no changes recorded");
-        return;
-    };
-    let sel = app.sel(' ').min(ch.entries.len() - 1);
-    let mut out = Vec::new();
-    let mut last_day = None;
-    for (i, e) in ch.entries.iter().enumerate() {
-        let d = e.at.date_naive();
-        let label = if last_day == Some(d) { String::new() } else { day(d) };
-        last_day = Some(d);
-        let (g, gc) = item_glyph(e.kind);
-        out.push(row(
-            vec![
-                pointer(i, Some(sel)),
-                Span::styled(format!("{label:<8}"), dim()),
-                Span::styled(format!("{g} "), st(gc)),
-                Span::styled(e.text.clone(), text()),
-            ],
-            vec![Span::styled(format!("{} ", ago(now, e.at)), dim())],
-            inner.width,
-        ));
-    }
-    lines(f, inner, out);
-}
-
 pub fn key(app: &mut App, k: KeyEvent) -> bool {
     let pf = app.project_id().and_then(|id| app.fixtures.projects.get(&id)).cloned();
     let Some(pf) = pf else { return false };
@@ -351,12 +313,6 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                     a.thread
                 ),
             });
-            true
-        }
-        (ScreenId::Changes, KeyCode::Enter) => {
-            if let Some(e) = pf.changes.as_ref().and_then(|c| c.entries.get(i)) {
-                app.note = Some(format!("would open where it lives: {}", e.text));
-            }
             true
         }
         _ => false,

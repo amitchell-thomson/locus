@@ -299,6 +299,10 @@ pub enum AskedFrom {
 pub struct Changes {
     pub project: String,
     pub since: NaiveDate,
+    /// When you last opened Changes: entries after it are new, and a line marks the place
+    /// (round 4: "a you were here last would be good too").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_seen: Option<Time>,
     /// Newest first.
     #[serde(default)]
     pub entries: Vec<Item>,

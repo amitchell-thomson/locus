@@ -642,6 +642,24 @@ rule, at its right end, as the Project view's ask line carries answered, and the
 it is gone. Keys that do not fit are dropped from the end. The follow-up line shows ␣ before its
 grey text, as the ask line does.
 
+**Round 4, 23 Oct. Changes.** "Same shape as decisions would be good, a you were here last would
+be good too, showing what is new since I last opened the page. Also definitely fold routine
+items, they would crowd out actual interesting work by me."
+- The timeline down the left by day, newest first; the selected entry on the right: what it was,
+  when, and its detail (a commit's message for now; a change record from Slice 2). → or Enter
+  reads it, ↑ ↓ scroll, ← back. Side by side from 120 columns.
+- `Changes.last_seen`: a peach line, "you were here, thu 22", with everything above it marked
+  new, and the count in the title.
+- `Item.routine`: mechanical work that recurs (nabla's nightly observations) folds into one row,
+  "nightly observations · 6 runs", whose runs list on the right.
+- locus has a real timeline: its commits since 19 Oct with their messages, and its answers.
+  Commit subjects are shown as written, decision numbers included, until change records
+  replace them.
+- **Done for now, on the same probation as Decisions:** "this is something where I would
+  probably better just see how it goes, similar to decisions I will have to see if I actually
+  use it." The use log records each open; unopened for two weeks once live, it is cut or
+  rethought.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

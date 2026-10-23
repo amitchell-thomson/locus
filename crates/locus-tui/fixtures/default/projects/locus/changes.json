@@ -1,0 +1,611 @@
+{
+  "project": "locus",
+  "since": "2026-10-19",
+  "last_seen": "2026-10-21T23:00:00+01:00",
+  "entries": [
+    {
+      "kind": "commits",
+      "text": "Slice 0.5: ink in Notes/studies/<course>/ is coursework",
+      "at": "2026-10-23T14:19:09+01:00",
+      "detail": [
+        "The plan's notes tree puts course writing under Notes/studies/; unmapped, it fell through to note with no error."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Round 3b: page keys on the ask rule, not a row under it",
+      "at": "2026-10-22T13:11:26+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "Round 3a: follow up, with continue this thread inside; c builds in project window",
+      "at": "2026-10-22T13:08:06+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "Round 3: Answered follows up in place; ADR-007, the project window builds and locus questions",
+      "at": "2026-10-22T13:04:24+01:00",
+      "detail": [
+        "A follow-up line at the foot of the answer, Space follows up in the thread, the question shown while on its way; long answers scroll; t only for long answers; c bridges to the project window. Esc keeps a draft on every ask line. ADR-007 records the split, and joins the locus decision fixture."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "locus gets real Answered entries: six questions from the design chat",
+      "at": "2026-10-22T00:04:12+01:00",
+      "detail": [
+        "Four link to the taxonomy decision, so its entry shows them under asked. A fixture check that an answer's decision is in the log. The empty state says space asks."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Decisions done for now; its use to be checked against the use log",
+      "at": "2026-10-21T23:55:41+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2zc: a gap between items only when one wraps; plain section titles",
+      "at": "2026-10-21T23:55:32+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2zb: your words at full width, the date under each",
+      "at": "2026-10-21T23:50:15+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2za: decision sections as labels with short details; the list marks the decision shown",
+      "at": "2026-10-21T23:45:08+01:00",
+      "detail": [
+        "Decision items become DecisionPoint {label, detail}, at most four a section; folded sections show their labels, open ones each label with its detail. The re-check is a one-line point. The decision section no longer repeats the brief. All three logs condensed; vague labels relabelled. The decision the entry shows keeps its band in the list. The writer plan is recorded."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2z: holding first, then new, then the other states",
+      "at": "2026-10-21T23:29:32+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2y: decision sections follow the ADR template; branch decisions; every state shows",
+      "at": "2026-10-21T22:53:32+01:00",
+      "detail": [
+        "Seven sections after the brief (connections, decision, you said, alternatives, assumes, consequences, context), each folded to a line and opened when the selection reaches it. Decision fields merged to match; branch added. The ADR template gains Builds on and Alternatives. Empty states say so. The glyph count test now counts the review glyph."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2x: a folded section opens as the selection reaches it",
+      "at": "2026-10-21T22:42:17+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2w in the spec",
+      "at": "2026-10-21T22:40:52+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2w: the decision entry in layers, a brief then folded sections",
+      "at": "2026-10-21T22:40:43+01:00",
+      "detail": [
+        "Decision gains brief; why becomes a list of short reasons. The entry leads with the brief and the connections, then each field folded to one line with a summary; Enter or → opens one at a time, ← folds it. All three projects' decisions briefed and tightened from their sources, and written to you."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2v: ask about a decision, pinned to the foot of the entry",
+      "at": "2026-10-21T22:33:52+01:00",
+      "detail": [
+        "Space asks with the decision as context, a reaches the line, Enter there shows what you asked; the entry gains an asked section, with o beside it. Answer gains decision. ? is gone."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2u: the decision entry holds the arrows at its ends",
+      "at": "2026-10-21T22:28:07+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2t: bullets are -",
+      "at": "2026-10-21T22:26:23+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2t: the decision entry in sections, each titled in its own colour",
+      "at": "2026-10-21T22:25:56+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2s: +N more lines only count; the key stays on the heading",
+      "at": "2026-10-21T22:23:23+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2r: → reads the entry, ← returns to the list",
+      "at": "2026-10-21T22:22:48+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2q: the Decisions page by state, the entry in full, decisions from the real logs",
+      "at": "2026-10-21T22:18:39+01:00",
+      "detail": [
+        "A section per state down the left (to re-check, under review, new, holding, replaced), the selected decision in full on the right with its links first; Enter follows a link. Decision gains question, why, assumes, costs, quotes, rests_on; status gains review, which o sets. quast, nabla and locus decision fixtures rewritten from their real logs; locus gains its taxonomy decision. Tab and the arrows pass over empty sections on every screen."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2p: now and shortfall are separate selections",
+      "at": "2026-10-21T21:58:49+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2o: Esc returns to the section you left; Enter on ask opens the waiting answer",
+      "at": "2026-10-21T21:56:04+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2n: a focuses ask; Enter there opens answered",
+      "at": "2026-10-21T21:52:17+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2m: Enter on ask opens Answered; space still asks from anywhere",
+      "at": "2026-10-21T21:51:15+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2l: new joins where you are, decisions get a section, ask is a section",
+      "at": "2026-10-21T21:47:44+01:00",
+      "detail": [
+        "Where you are reads now, shortfall, new, next; n alone opens the timeline. The decisions section replaces New: re-checks with their reason, then new, then the rest; Enter opens one on the Decisions page. Decision gains a new flag and New never lists a decision (fixture check). Ask is the last section and lights its whole rule when focused. Sections give way in turn when the window is short."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2k: decisions move from the open questions to New, as [d]",
+      "at": "2026-10-21T21:37:32+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2j: nabla's branches all summarised; one page, no page scroll; Project view done",
+      "at": "2026-10-21T19:59:40+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2i: open questions selectable, a branch's story on one line",
+      "at": "2026-10-21T19:46:59+01:00",
+      "detail": [
+        "Open questions are a section with selectable rows; the where-you-are dash is quiet; the selected branch reads name, then summary, with merged or open and its commit count at the right."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2h: one left margin, branches open inline with their records, boxes off",
+      "at": "2026-10-21T19:26:53+01:00",
+      "detail": [
+        "Every section's content starts in column 3. Where you are is selectable. Branches spread to at least eleven columns an event with no limit on rows; Enter opens a branch inline with its full summary and change records (Lane.records, its commits until Slice 2, from tools/lane_records.py), scrolled with up and down, closed with Esc; New gives way while it is open. Session names size their column. Summary boxes switched off. --dump --press replays keys before drawing."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2g: summary boxes in spare rows; arrows follow what is drawn",
+      "at": "2026-10-21T18:44:15+01:00",
+      "detail": [
+        "A section with four or more spare rows shows its summary in a quiet rounded box (ui::summary_box, one switch to revert): careers, Explore, the Project view. Home's sections walk in drawn order; Explore's arrows walk only the finds drawn (App::shown, written by the draw)."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "locus session: keep the tab bar on the first status line; answered and decisions always named",
+      "at": "2026-10-21T18:34:22+01:00",
+      "detail": [
+        "Setting only status-format[1] on the session made the list session-level with an empty first line, hiding the tab bar; the global first line is now copied. Decisions and answered always appear on their rules, saying 'none yet' when empty."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2f: sections size to their content; a gap under the tab bar",
+      "at": "2026-10-21T18:26:14+01:00",
+      "detail": [
+        "Project view: spare rows to sessions, chores, then the branch story. Home: Explore labels inline, growing gaps and a why line with room; a line between courses and learning. locus-session.sh sets a second, empty status line on the locus session only.",
+        "Fixed: the sessions section panicked when given no rows (the extra status line made the window two rows shorter); every screen now tested at six sizes."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2e: courses registered, 3YP on B3's row, branches spaced, start of history marked",
+      "at": "2026-10-21T17:41:44+01:00",
+      "detail": [
+        "Home: personal projects; studies lists the eight courses by Canvas name, 3YP on B3's row (Project.course). Project view: answered on the ask rule; branch events six columns apart at least; main starts with a green dot and the axis says 'start' when the window reaches the first branch. ADR-006: one kind per thing, task with a type, due dates an attribute."
+      ]
+    },
+    {
+      "kind": "answer",
+      "text": "should answered sit on the ask line?",
+      "at": "2026-10-21T17:38:00+01:00",
+      "detail": [
+        "On the ask line's dividing rule, at its right end. Decisions then sat on the open questions' rule the same way, so one pattern held across the page: a heading rule names what is behind a key and shows its state."
+      ]
+    },
+    {
+      "kind": "answer",
+      "text": "can a thing have two kinds?",
+      "at": "2026-10-21T17:38:00+01:00",
+      "detail": [
+        "No. When something seems to need two kinds, it is two linked things.",
+        "B3 Group Design Project is a course on Canvas, and 3YP is the repo where you do its work: two items with a link between them, which is why 3YP felt like it belonged in three places. One kind each, joined by links, keeps the backend's rules simple."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2d: each capability where its context is; studies on Home; ADR-006 revised",
+      "at": "2026-10-21T17:26:26+01:00",
+      "detail": [
+        "Project view: dossier centred in the top border, decisions beside the open questions (new, from the dossier), the timeline in New's heading, answered at the end of the ask line; left and right walk the branches from anywhere, starting at the newest; nabla's full branch history.",
+        "Home: careers | studies, studies holding courses and coursework with what is due, learning opening from its last row; projects is the Projects area.",
+        "ADR-006: areas say where, kinds say what, one global taxonomy, with the full grid. ProjectKind repo | course | application; ProjectView.questions, .due."
+      ]
+    },
+    {
+      "kind": "answer",
+      "text": "are tutorial sheets their own type, or coursework?",
+      "at": "2026-10-21T17:21:00+01:00",
+      "detail": [
+        "Their own type, sheet, alongside coursework. Both are tasks linked to a course, and both can carry a deadline, which any task can have.",
+        "Sheets are separate because they are planned differently: about five hours in two or three blocks, every week, where coursework needs its own estimate. Merging them would lose that."
+      ]
+    },
+    {
+      "kind": "answer",
+      "text": "what is the difference between goals and threads?",
+      "at": "2026-10-21T17:21:00+01:00",
+      "detail": [
+        "They are unrelated. A goal is a purpose for learning, such as Jump internship preparation. A mail thread is an email conversation.",
+        "An earlier table said \"thread (keryx)\", and that bracket was the confusion: it named the app that stores mail, which plays no part in labelling."
+      ]
+    },
+    {
+      "kind": "answer",
+      "text": "is the taxonomy global?",
+      "at": "2026-10-21T17:21:00+01:00",
+      "detail": [
+        "Yes. Every item, in every project and every app, carries two independent labels: its area (where it belongs in your life) and its kind (what shape of thing it is).",
+        "Both are defined once in the shared root and read by everything. The brackets naming kairos or keryx only said which app stores a thing, so they are gone."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2c, Project view: subtler branch highlight, scroll history, status on the border",
+      "at": "2026-10-21T17:07:01+01:00",
+      "detail": [
+        "The selected branch sits on a light band; left and right walk the whole branch history; what sits behind d, a, o, p and n n moves to the frame's bottom border."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2b, Project view; ADR-006: the registry holds projects, courses, applications",
+      "at": "2026-10-21T16:57:04+01:00",
+      "detail": [
+        "Project view: ask pinned to the foot; next behind a dashed line; shortfall; the strip becomes a 'more on this project' table above ask; the selected branch drawn solid, the others dimmed; each branch a plain-English summary (Lane.summary replaces happened); milestones dropped.",
+        "ADR-006, with its map: ProjectKind is project | course | application; the Project window shows only projects, so an application opens in place; Home groups by area (the CV is a project in Careers, 3YP one in Studies)."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Round 2, Project view: where you are first, a branch graph that hangs from main",
+      "at": "2026-10-21T16:05:00+01:00",
+      "detail": [
+        "Home's spacing and focus rules; where you are in labelled parts with next on its own band; a strip naming what sits behind d, a, o, p and n n; the graph packs lanes into rows, joins them to main at fork and merge, names them on the bar by worktree, names its milestones, and lists the selected branch's work; New grouped by kind with unread on the right; sessions as plain summaries; chores as life admin; Space asks; arrows follow the layout. Decision numbers written out in the fixtures. A project handed over from Home is named right."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Project view: the branch graph spaces events, not days",
+      "at": "2026-10-21T15:19:35+01:00",
+      "detail": [
+        "On a day axis nabla's ten lanes, all within a few days, collapsed into vertical bars. Each fork, merge, open tip and milestone in view now gets its own column in date order; within a day, lane by lane, so a branch made and merged the same day stays short. Dates label the axis where they change."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Round 1e: Explore on Home spends spare rows on gaps; Home done for now",
+      "at": "2026-10-21T15:18:23+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "Round 1d, Home: week panel as a table, approve at the foot, status on applications",
+      "at": "2026-10-21T15:10:56+01:00",
+      "detail": [
+        "The week panel is a fixed-width table; a now marker on today's row; the careers|learning divider lights for learning; waiting-for-you moves above system with a 'new' count; quiet projects show their last change; applications show their stage and whose move it is (ProjectView.status, ApproveItem.new)."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Round 1c, Home: careers|learning divider, short border, aligned week panel",
+      "at": "2026-10-21T13:52:49+01:00",
+      "detail": [
+        "A line between careers and learning, with left and right crossing it; the border's right end reads 'futsal in 21h  mail 2'; kept and streak sit in the hours' columns; today's label is picked out; the footer says what Enter does."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "clippy: is_multiple_of",
+      "at": "2026-10-21T13:42:51+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "Round 1b, Home: the moment in the border, space between sections, a turning glyph",
+      "at": "2026-10-21T13:42:36+01:00",
+      "detail": [
+        "The date, running jobs and review sit centred in the top border, next and mail short at its right; the rows they freed become a blank line between sections. Section titles bright, rules quiet; the focused section gets a thick blue bar on the frame. Running glyphs alternate md-sync and md-autorenew. Explore trims its longest group first."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "locus session: a recreated view goes back to its place",
+      "at": "2026-10-21T00:52:55+01:00",
+      "detail": [
+        "With renumber-windows on, closing home shifted the rest down and ensure recreated home at the end. ensure now swaps or moves each view to its slot; test-follow.sh checks it."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Round 1, Home: sections by kind of work, Tab and arrows move, a sender not a doer",
+      "at": "2026-10-21T00:45:15+01:00",
+      "detail": [
+        "Home gets three kinds of work under their own headings: projects (what you build), careers (applications and the CV), learning (goals). kairos and keryx become parts of locus. Approve shrinks to one 'waiting for you' line; Explore is grouped by kind, titles only, no grading here. Counts say what they count; sessions carry a plain summary (Session.summary). The moment sits centred in the frame; running jobs pulse; the budget names both limits. The work grid fills the width.",
+        "Tab cycles sections everywhere; arrows walk a section and run into the next. The selected row is a full-width band. Enter on a project hands it to the Project window (a peek file and tmux select-window); Esc there returns home and following resumes. test-follow.sh checks the handoff.",
+        "The round's notes, and his seeds for later pages, are in slice-1.md Rounds."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Slice 0 spec: the D6 row no longer asks for a password change",
+      "at": "2026-10-20T14:36:44+01:00",
+      "detail": [
+        "The D6 decision dropped it (0.11); the table row still listed it."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Slice 1 rounds: kairos and keryx reviewed page by page too",
+      "at": "2026-10-20T02:39:35+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "Ink confirm: his real ink, scaled to fill and centred (round 0)",
+      "at": "2026-10-20T02:31:47+01:00",
+      "detail": [
+        "The crop is page 5 of the QUAST dossier of 15 Oct with his ink, rendered at 300 dpi from the tablet bundle; the synthetic stand-in and its script are gone. The candidates are that page's real passages. The image scales to fill its section and is centred in it."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "deliver: an existing folder is not reported created; skill: -{}- for a literal --",
+      "at": "2026-10-20T02:29:02+01:00",
+      "detail": [
+        "rmapi v0.0.35 prints \"entry already exists\" and exits 0, so `_ensure_folder` reported \"(created folder)\" on every push to /Inbox. The message is checked before the exit code. Found by the Slice 0.4 check, as was `\\texttt{--all-extras}` printing as `-all-extras`, now in the skill."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Slice 0.4: the one-column test ignores the page number; cli comment",
+      "at": "2026-10-20T02:27:26+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "Slice 0.4: LaTeX to the tablet in one column with even margins",
+      "at": "2026-10-20T02:26:48+01:00",
+      "detail": [
+        "The device preamble drops `twocolumn`: one column at 10pt inside 0.95in margins on all four sides, the geometry of the redesign plan documents (7.07 x 9.43in), with their 1.08 leading. The margin is a new LaTeX-only setting, [reading].latex_margin_in, so the markdown path and the daily page keep margin_in; latex_font_pt defaults to 10. The title is a plain heading now that nothing needs to span two columns. The MCP tool docstring, the `remarkable` command, the remarkable-explainer skill and CLAUDE.md say the same.",
+        "tex2pdf decoded the compiler's output strictly, so a non-UTF-8 byte in a log raised UnicodeDecodeError inside subprocess.run and the send died with a decode error instead of the compile's result. Decoded with errors=\"replace\"; a fake engine plants the byte on both streams in the test, for a passing and a failing compile."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Slice 1 step 1.4: first pass of every screen",
+      "at": "2026-10-20T02:10:01+01:00",
+      "detail": [
+        "All 16 screens draw from the fixtures at 95x38: Home (next, mail, the rhythm grid, projects with their sessions, explore beside approve, system), the Project view with its branch graph (plan D.1: a lane per branch, collapsed to fork, length and merge), Decisions, Answered and Changes, System and Budget, Explore (queue cards with their reasoning, strike reasons), Approve, the automatic-actions log, Ink confirm with the crop through ratatui-image (kitty in Ghostty; half blocks in --dump), Search, the 8-week area chart, Interview prep, Learning (goals, syllabus, tracks, sheets) and the weekly review's five steps.",
+        "Actions do their visual part and the footer says what they would have done; nothing leaves the process. Each screen module carries its own keys, tried before the global ones, and lists them in the ? overlay.",
+        "The image protocol is asked for only when Ink confirm first opens, with a 500 ms ceiling: asked at startup, a terminal that never answers cost 2 s before the first frame (measured on a tmux server with nothing behind it).",
+        "Fixtures: G-Research open with no plan, Millennium finished; the ink crop is synthetic (tools/make_ink_crop.py). --dump --project opens a project with no tmux session; --timing prints load and per-screen draw times.",
+        "Tests: every screen on both sets, every active project's screens, each review step and Explore tab, the keys overlay everywhere, and every key pressed on every screen, all within the window; snapshots of all 16."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "status: uncovered alias surfaces are no longer a warning",
+      "at": "2026-10-20T02:01:34+01:00",
+      "detail": [
+        "Slice 0.3 took `locus link` out of the nightly unit, so the count only grows and the warning \"rerun `locus link`\" would print every day with nothing to clear it. The count stays on the alias substrate line."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Slice 1 step 1.3: contracts for every screen, the default and empty fixture sets",
+      "at": "2026-10-20T01:51:10+01:00",
+      "detail": [
+        "locus-contract gains a first cut of what each of the 16 screens shows: the taxonomy and registry (every kind of work is a project: code, light, course, opportunity), the Project view with its branch graph, Decisions, Answered, Changes, Home's own lines and the work section, System and usage, Explore, approve, the auto log, ink confirm, search, the learning system with interview prep, and the weekly review. Every struct refuses unknown fields.",
+        "The default set is a Saturday evening across the real projects: branch graphs, decision titles and the Jump Trading prep (format, topics, the seven daily sheets, scores from error log v6) are real; the rest is by hand (fixtures/README.md says which). The empty set is generated from it.",
+        "locus-tui --validate-fixtures loads both sets strictly and cross-checks them (project ids, tracks, ink fixtures, usage totals, unread files); tests break the default set on purpose to show each check fires."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Slice 0.3: nothing old runs at night",
+      "at": "2026-10-20T01:48:57+01:00",
+      "detail": [
+        "Off: locus-daily, locus-daily-pull, locus-discover-harvest (removed from deploy/systemd/enabled). locus-maintain now runs only `structure --unstructured --limit 20` and records completion; link, recall enrolment and questions, intent --act, answer-marks, connections, tensions and the discover reading steps are gone from it. health drops the three switched-off kinds from its expected cadence, or `locus status` would call them overdue within three days. The code stays until its removal commit later in the slice."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "locus session: views come back after a restart",
+      "at": "2026-10-20T01:35:33+01:00",
+      "detail": [
+        "tmux-resurrect restores the view windows by name as bare shells. Windows the session script starts carry @locus-view, which resurrect does not restore, so ensure respawns any view window without it; a client landing on locus runs ensure. ensure is serialised with a tmux wait-for lock, since the landing hook and an Alt key otherwise race to create the same window. test-follow.sh checks a mock restore."
+      ]
+    },
+    {
+      "kind": "answer",
+      "text": "what is the failed glyph?",
+      "at": "2026-10-20T01:30:00+01:00",
+      "detail": [
+        "The Nerd Font symbol that marks a failed job or session, such as a tablet push that hit the rate limit. It should pair with kairos's done box.",
+        "kairos's done box is the outline style (md-checkbox_marked_outline), so the matching failed glyph is md-close_box_outline, the one the plan named. An earlier note had suggested the filled box by mistake."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "locus-session.sh: a view that fails keeps its window open on the error",
+      "at": "2026-10-20T01:24:41+01:00",
+      "detail": [
+        "keryx with no config exits at once, and its window vanished without a word."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "laptop outbox: the repo copy keeps the area folders (matches the installed script)",
+      "at": "2026-10-19T23:03:07+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "Rename the data directory vault/ -> data/ (ADR-005, migration 0037)",
+      "at": "2026-10-19T23:02:20+01:00",
+      "detail": [
+        "`vault/` read as an Obsidian vault (and held one). Paths under it are identity keys: an edited note is found again by its source_uri, so a directory rename alone would have filed every edited note as a second document. Migration 0037 rewrites the stored paths in the 14 key/location columns (1,549 rows on the server, trialled on a copy), only where `vault/` is followed by one of the directory's own entries, so `locus/vault/` code paths and corpus text are untouched.",
+        "server-sync.sh moves the server's directory once, under the ingest flock, and rewrites its config.toml (copy kept as config.toml.bak-pre-data). Placeholders are untracked except data/.gitkeep, so the pull cannot collide with the move. User-facing wording says \"library\"; model prompts are unchanged so pass caches stay valid."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Drop folder holds sources: personal/ is its own category; area drops are never his writing",
+      "at": "2026-10-19T22:52:31+01:00",
+      "detail": [
+        "ADR-003 follow-up. `personal/` mapped to `note`, which with a text format counted as owner- authored, so a third-party .docx dropped there would have had beliefs drawn from it as his. `personal/` now files as `personal`, and `is_area_drop` excludes every area folder from the owner-authored rule in both its Python and SQL forms. The old `projects/` folder shares the area's name, so its two OQTS specs flip to sources (accepted).",
+        "Tests pin [structure].belief_source_* to the code defaults: config.example.toml still said [\"note\"], so a laptop config copied from it failed the owner-authored tests. The example now matches the defaults."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Slice 1 step 1.2: the locus tmux session, Alt-1..4, Project view follows",
+      "at": "2026-10-19T22:52:20+01:00",
+      "detail": [
+        "crates/locus-tui/tmux/: locus.tmux (Alt-1..4 only on the locus session, else passed through; client-session-changed/client-attached hooks in slot 42), locus-session.sh (idempotent: recreates a closed view), focus-hook.sh (atomic write of the project window's session, locus and aulos ignored). The Project view follows <state>/focus, holds while a key was pressed in the last 5 s or a detail screen is open, and m pins it. test-follow.sh checks all of it on a private tmux server (-L locus-test -f /dev/null)."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Fold the shared Rust crates into the repo (ADR-004)",
+      "at": "2026-10-19T22:44:36+01:00",
+      "detail": [
+        "One workspace at the root: crates/{eco-dates,locus-theme,locus-contract, locus-tui}, replacing tui/. eco-dates copied verbatim from locus-shared main (d2191b2), locus-theme from its theme branch (b74d7a0). kairos and keryx keep their pins; each moves to this repo when next touched."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Slice 1 step 1.1: tui workspace, app shell, use log, --dump",
+      "at": "2026-10-19T22:34:50+01:00",
+      "detail": [
+        "locus-tui runs Home or Project with every screen of the spec's table as a placeholder: section focus by letter, Enter/Esc/?//, the footer, R to reset, a local use log with --use-report. --dump prints a screen as text; a test renders every screen on both fixture sets at 95x38 and checks display width. The theme is locus-theme in locus-shared (formerly eco)."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Slice 1 step 1.0: screens v2 reference into the repo",
+      "at": "2026-10-19T22:28:19+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "Slice 1: spec, decisions D1-D6 answered, approved",
+      "at": "2026-10-19T22:26:53+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "ADR-003 revised: the drop folder is organised by area",
+      "at": "2026-10-19T21:15:10+01:00",
+      "detail": [
+        "The system cannot label arrivals yet, so a flat drop would be filed `uncategorized`. ~/LocusDrop/ now has studies/ projects/ careers/ personal/ (the notes-repository tree), and `_category` maps each onto the category the library still keys behaviour on (studies -> coursework, ...). The course or project folder below survives in source_uri for the labeller.",
+        "The watcher's repository drops are retired: `projects/<name>/` is an area folder of ordinary files now, and the plan removes repository ingest. Existing `locusdrop:` documents are untouched."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "ADR-003: one flat drop folder; the system labels what arrives",
+      "at": "2026-10-19T21:10:11+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "fix(tests): loop B tests wrote fake PDFs into the live vault/incoming",
+      "at": "2026-10-19T19:38:10+01:00",
+      "detail": [
+        "Three direct annotate_sync calls left ingest_fn and promote_fn at their defaults, the real ingest and promote. A /Reading/Finished document counts as chosen, so every run of the file wrote \"%PDF-1.4 fake paper bytes\" into the live vault/incoming/paper/ as \"A Paper.pdf\" (there since 6 Aug, recreated by a server test run on 19 Oct). With locus-watch now consuming that folder, it would have been quarantined every time the suite ran."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Slice 0.2: locus-watch, the drop zone's only consumer",
+      "at": "2026-10-19T19:34:10+01:00",
+      "detail": [
+        "Nothing ran `locus watch` between 6 Sep and 19 Oct, so files dropped into vault/incoming/ sat there. Discovery accepts and hand-added books kept arriving because they ingest in place, which hid the dead drop zone. A 5-minute oneshot timer (`locus watch --once`), incoming only: repository ingest is retired by the plan, so `watch-repo` stays unscheduled."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Slice 0.1: one deploy flow, laptop -> GitHub -> server",
+      "at": "2026-10-19T18:23:04+01:00",
+      "detail": [
+        "deploy/deploy.sh pushes main, fast-forwards the server checkout (refused over uncommitted changes) and hands over to deploy/server-sync.sh from the code just pulled: uv sync --all-extras (a bare sync would uninstall torch and the other extras the server runs), backup + `locus migrate` when a migration arrived, unit files installed from deploy/systemd/, the enabled set made equal to deploy/systemd/enabled, and long-running services restarted when the code moved.",
+        "The server-only locus-remarkable-receiver.service is adopted into the repo unchanged. The manifest lists exactly what is enabled today, so this first deploy changes nothing that runs. `locus migrate` is new: it prints the schema revision before and after, so a deploy can say where it left the DB."
+      ]
+    },
+    {
+      "kind": "commits",
+      "text": "Slice 0: decisions D1-D6 answered, spec approved",
+      "at": "2026-10-19T18:06:39+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "Redesign: how ink on a source is treated (info.tex)",
+      "at": "2026-10-19T18:00:59+01:00",
+      "detail": []
+    },
+    {
+      "kind": "commits",
+      "text": "Redesign: plan v4 in the repo, CLAUDE.md section 0, decision log, Slice 0 spec",
+      "at": "2026-10-19T17:56:52+01:00",
+      "detail": [
+        "The plan (v4, final, 19 Oct 2026) and its companion on information and links move from a session scratchpad into docs/redesign/, so every session that builds locus reads them from the tree. CLAUDE.md gains a section 0 that orients to the redesign and says which engine sections are being removed; the existing sections stay intact and shrink slice by slice. docs/decisions/ starts locus's own log (provisional format until Slice 2). slices/slice-0.md is the Slice 0 spec, awaiting approval."
+      ]
+    }
+  ]
+}

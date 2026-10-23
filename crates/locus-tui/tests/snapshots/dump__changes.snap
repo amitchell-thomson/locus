@@ -2,13 +2,14 @@
 source: crates/locus-tui/tests/dump.rs
 expression: "dump::render(&a, 95, 38).unwrap()"
 ---
-╭ quast · changes · since mon 19 ▾ ───────────────────────────────────────────────── esc back ╮
-│▌ sat 24  󱉶 flagged for re-checking: RIKEN's slope bears on the lever-arm ratio           2h │
-│          󱜾 delayed acceptance, answered from your margin                                 5h │
-│  fri 23  󰘬 6 commits on barrier-control · RIKEN's charging energy                       23h │
+╭ quast · changes · 3 new since you were here · since mon 19 ─────────────────────── esc back ╮
+│▌ sat 24  󱉶 flagged for re-checking: RIKEN's slope bears on the lever-arm ratio       󰅸   2h │
+│          󱜾 delayed acceptance, answered from your margin                             󰅸   5h │
+│  fri 23  󰘬 6 commits on barrier-control · RIKEN's charging energy                    󰅸  23h │
+│── you were here, fri 23 ──────────────────────────────────────────────────────────────────  │
 │          󰭎 scout find: Bayesian optimisation for barrier tuning                          1d │
 │  thu 22  󰈙 dossier rebuilt · decision ledger, evidence                                   1d │
-│          󰊌 chat 2h · decided to fold RIKEN's numbers into the prior before any new meth… 2d │
+│          󰊌 chat 2h · decided to fold RIKEN's numbers into the prior before any new me…   2d │
 │  wed 21  󰴓 38 margin marks read back · 9 decisions to the log                            3d │
 │  tue 20  󱜾 why SMC and not a genetic algorithm, from the ask line                        4d │
 │  mon 19  󰘬 2 commits on barrier-control · RIKEN's exchange against barrier voltage       5d │
@@ -19,12 +20,11 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │                                                                                             │
 │                                                                                             │
 │                                                                                             │
+│─────────────────────────────────────────────────────────────────────────────────────────────│
+│  flagged for re-checking: RIKEN's slope bears on the lever-arm ratio                        │
+│  󱉶 sat 24 19:30 · 2h ago · 󰅸 new since you were here                                        │
 │                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
+│  nothing more recorded                                                                      │
 │                                                                                             │
 │                                                                                             │
 │                                                                                             │

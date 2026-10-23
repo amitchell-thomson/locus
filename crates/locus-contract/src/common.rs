@@ -178,6 +178,15 @@ pub struct Item {
     pub at: Time,
     #[serde(default)]
     pub unread: bool,
+    /// More about it, a paragraph per entry: a commit's message, what a chat decided. Changes
+    /// shows it beside the timeline (round 4).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub detail: Vec<String>,
+    /// Set on mechanical work that recurs (a nightly job's commit): items with the same name fold
+    /// into one row on Changes, so they do not crowd out your own work (round 4: "they would
+    /// crowd out actual interesting work by me").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routine: Option<String>,
 }
 
 /// A scout find or one of your ideas, as a card with its reasoning (C.7).

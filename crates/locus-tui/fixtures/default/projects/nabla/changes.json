@@ -1,11 +1,13 @@
 {
   "project": "nabla",
   "since": "2026-10-19",
+  "last_seen": "2026-10-22T09:00:00+01:00",
   "entries": [
     {
       "kind": "commits",
       "text": "observations 2026-10-24 · quotes and shadow journal",
-      "at": "2026-10-24T06:10:00+01:00"
+      "at": "2026-10-24T06:10:00+01:00",
+      "routine": "nightly observations"
     },
     {
       "kind": "dossier",
@@ -15,7 +17,8 @@
     {
       "kind": "commits",
       "text": "observations 2026-10-23",
-      "at": "2026-10-23T06:10:00+01:00"
+      "at": "2026-10-23T06:10:00+01:00",
+      "routine": "nightly observations"
     },
     {
       "kind": "idea",
@@ -25,7 +28,8 @@
     {
       "kind": "commits",
       "text": "observations 2026-10-22",
-      "at": "2026-10-22T06:10:00+01:00"
+      "at": "2026-10-22T06:10:00+01:00",
+      "routine": "nightly observations"
     },
     {
       "kind": "chat",
@@ -35,17 +39,20 @@
     {
       "kind": "commits",
       "text": "observations 2026-10-21",
-      "at": "2026-10-21T06:10:00+01:00"
+      "at": "2026-10-21T06:10:00+01:00",
+      "routine": "nightly observations"
     },
     {
       "kind": "commits",
       "text": "observations 2026-10-20",
-      "at": "2026-10-20T06:10:00+01:00"
+      "at": "2026-10-20T06:10:00+01:00",
+      "routine": "nightly observations"
     },
     {
       "kind": "commits",
       "text": "observations 2026-10-19",
-      "at": "2026-10-19T06:10:00+01:00"
+      "at": "2026-10-19T06:10:00+01:00",
+      "routine": "nightly observations"
     }
   ]
 }

@@ -450,8 +450,8 @@ mod tests {
     #[test]
     fn a_dangling_track_is_caught() {
         let mut fx = default_set();
-        fx.learning.tracks.retain(|t| t.id != "microstructure");
-        assert!(fx.check().iter().any(|b| b.contains("no track `microstructure`")));
+        fx.learning.tracks.retain(|t| t.id != "linear-algebra");
+        assert!(fx.check().iter().any(|b| b.contains("no track `linear-algebra`")));
     }
 
     #[test]

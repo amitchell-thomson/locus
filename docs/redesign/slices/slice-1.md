@@ -660,6 +660,11 @@ items, they would crowd out actual interesting work by me."
   use it." The use log records each open; unopened for two weeks once live, it is cut or
   rethought.
 
+**Round 5, 23 Oct. The Application screen (begun).** "Get rid of chores, I do not need them":
+the chores section is gone from the Project view, and `Chore`, `ProjectView.chores` and
+`Home.chores_fit` from the contract and every fixture. (The task type "chore" in the taxonomy is
+kairos's and stays until he says otherwise.)
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

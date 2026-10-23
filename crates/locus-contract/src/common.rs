@@ -1,6 +1,6 @@
 //! Types more than one screen shows: the taxonomy, the registry, sessions, chores, finds, jobs.
 
-use chrono::{DateTime, FixedOffset, NaiveDate};
+use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
 
 pub type Time = DateTime<FixedOffset>;
@@ -137,16 +137,6 @@ pub enum SessionState {
     Failed,
     Done,
     Idle,
-}
-
-/// A short thing you tend to put off, offered in a gap (plan B.1). Owned by kairos.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Chore {
-    pub title: String,
-    pub minutes: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub due: Option<NaiveDate>,
 }
 
 /// What kind of thing an item in New, Changes or Search is; each has its D.2 glyph.

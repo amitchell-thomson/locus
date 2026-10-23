@@ -1,6 +1,6 @@
 //! The Project view and the three screens it opens: Decisions, Answered, Changes.
 
-use crate::common::{Chore, Item, ItemKind, Session, Time};
+use crate::common::{Item, ItemKind, Session, Time};
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
@@ -23,9 +23,6 @@ pub struct ProjectView {
     /// Only this project's sessions.
     #[serde(default)]
     pub sessions: Vec<Session>,
-    /// The chores that fit the gap you are in.
-    #[serde(default)]
-    pub chores: Vec<Chore>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub graph: Option<BranchGraph>,
     /// The questions that matter most, from the dossier's front page (plan C.6): the bigger

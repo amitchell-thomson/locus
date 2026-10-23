@@ -17,6 +17,7 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │─ open questions · from the dossier ─────────────────────────────────────────────────────────│
 │   1  How large is barrier control's real advantage? It depends on how coherence decays      │
 │      during a pulse, which needs RIKEN's echo decay curve.                                  │
+│   2  Should the phase ladder still run every round?                                         │
 │                                                                                             │
 │─ branches · 4 branches · 2 to 4 shown · ← → older and newer ────────────────────────── [g] ─│
 │   main ◂─┬─────────────┴──────────────┬──────────────┬──────────────────────────────── now  │
@@ -25,16 +26,15 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │          7 Oct         10 Oct                        13 Oct                        19 Oct   │
 │                                                                                             │
 │   readout-adapter  Planned how QUAST reads out on real hardware: it        open · 2 commits │
-│                    thresholds each shot's sensor signal itself, the way…                    │
+│                    thresholds each shot's sensor signal itself, the way                     │
+│                    ANITA does, and hands the loop counts. Feeding raw…                      │
 │                                                                                             │
 │─ decisions · 7 · 1 to re-check · full log [d] ──────────────────────────────────────────────│
 │   󱉶 The units at stage 1: the µeV core kept, the scale fixed by convent… 󰅸 re-check   7 Oct │
 │                                                                                             │
 │─ sessions · 2 · 2 live ─────────────────────────────────────────────────────────────── [s] ─│
 │   󰹇 battery (bg) needs you 35m   wants to run the full battery on the server (about… ⏎ jump │
-│                                                                                             │
-│─ chores · for a gap while you wait ─────────────────────────────────────────────────── [c] ─│
-│   󰝖 put a load of laundry on                                                          5 min │
+│   󰓦 main chat    working   12m   running the barrier tests after folding in RIKEN's slope   │
 │                                                                                             │
 │─ ask ───────────────────────────────────────────────────────────── 󱜾 answered 3, 1 new [a] ─│
 │   ask › ␣ to ask about this project · the answer comes back here                            │

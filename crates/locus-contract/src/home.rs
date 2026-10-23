@@ -14,8 +14,6 @@ pub struct Home {
     /// The next calendar item, one line; none when the day is clear.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next: Option<Next>,
-    /// How many chores fit today's gaps.
-    pub chores_fit: u32,
     pub mail: MailLine,
     /// The attended project: the current kairos work block's, or the one marked with `m`.
     #[serde(default, skip_serializing_if = "Option::is_none")]

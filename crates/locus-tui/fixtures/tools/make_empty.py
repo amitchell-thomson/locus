@@ -28,7 +28,7 @@ def main() -> None:
                             "description": "Every section empty: the same registry as default, with nothing in it."})
     for f in ("taxonomy.json", "registry.json"):
         write(f, json.loads((SRC / f).read_text()))
-    write("home.json", {"chores_fit": 0, "mail": {"need_reply": 0, "deadlines_proposed": 0}})
+    write("home.json", {"mail": {"need_reply": 0, "deadlines_proposed": 0}})
     write("work.json", {"week": [], "blocks_kept": 0, "blocks_planned": 0, "streak_days": 0,
                         "chart": {"from": "2026-08-30", "series": []}})
     write("system.json", {"running": [], "recent": [], "done_today": 0, "failed_today": 0})

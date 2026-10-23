@@ -1,6 +1,6 @@
 //! The Project view (Alt-2): one screen in every state. Where you are (now, the shortfall, what
 //! is new, next), the open questions, the branch graph (plan D.1), the decision log, this
-//! project's sessions, the chores that fit a gap, and the ask line.
+//! project's sessions, and the ask line.
 //!
 //! The same rules as Home (round 2, 22 Oct: "consistent section highlighting and spacing rules
 //! as in with home"): a blank line between sections, bright section titles, the focused section
@@ -25,7 +25,6 @@ pub const KEYS: &[(&str, &str)] = &[
     ("␣ or i", "ask about this project"),
     ("n", "the full timeline"),
     ("r", "mark the selected new item read"),
-    ("x", "a chore done"),
     ("d", "decisions: the full log"),
     ("a", "ask; ⏎ there opens answered"),
     ("o", "the dossier"),
@@ -58,9 +57,6 @@ fn new_answer<'a>(app: &'a App, v: &ProjectView) -> Option<(usize, &'a locus_con
         .max_by_key(|(_, a)| a.at)
 }
 
-fn chore_key(view: &ProjectView, i: usize) -> String {
-    format!("chore:{}:{i}", view.project)
-}
 
 fn is_unread(app: &App, view: &ProjectView, i: usize) -> bool {
     view.new.get(i).is_some_and(|it| it.unread) && app.marked(&new_key(view, i)).is_none()
@@ -156,7 +152,7 @@ pub fn section_len(app: &App, sec: char) -> usize {
         'd' => shown(app, 'd').len(),
         's' => v.sessions.len(),
         'a' => 1,
-        _ => v.chores.len(),
+        _ => 0,
     }
 }
 
@@ -210,7 +206,6 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     // useful height, then spare rows go to whichever has more to show, and only what is left
     // becomes space above the ask line.
     let ss = v.sessions.len() as u16;
-    let ch = v.chores.len() as u16;
     let nn = v.new.len() as u16;
     let nd = decisions(app, v).map_or(0, |d| d.items.len()) as u16;
     // A re-check carries its reason on a line of its own.
@@ -223,7 +218,6 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     let mins = [
         if has_graph { graph_need(app, v, w, 3, 3) } else { 0 },
         1 + ss.clamp(1, 3) + u16::from(ss > 3),
-        1 + ch.clamp(1, 3),
         // What is new, inside where you are: three rows, the last counting the rest (round 2l).
         if nn > 3 { 3 } else { nn.max(1) },
         if has_dec {
@@ -235,7 +229,6 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     let wants = [
         if has_graph { graph_need(app, v, w, 8, 30) } else { 0 },
         1 + ss.max(1),
-        1 + ch.max(1),
         nn.max(1),
         if has_dec { 1 + nd.max(1) + nr } else { 0 },
     ];
@@ -243,23 +236,22 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     // ask line and the gaps.
     let mut fixed = base
         + question_lines.len() as u16
-        + 5
+        + 4
         + u16::from(!question_lines.is_empty())
         + u16::from(has_graph)
         + u16::from(has_dec);
     let mut heights = mins;
     // Short of room even for those, the sections give way a row at a time, decisions first,
-    // then what is new, chores, the branch's story, sessions, each down to a heading and one
+    // then what is new, the branch's story, sessions, each down to a heading and one
     // row, so the open questions always draw.
     let floors = [
         if has_graph { graph_need(app, v, w, 2, 0) } else { 0 },
-        2,
         2,
         1,
         u16::from(has_dec) * 2,
     ];
     let mut over = (fixed + heights.iter().sum::<u16>()).saturating_sub(inner.height);
-    for i in [4usize, 3, 2, 0, 1] {
+    for i in [3usize, 2, 0, 1] {
         let give = heights[i].saturating_sub(floors[i]).min(over);
         heights[i] -= give;
         over -= give;
@@ -273,19 +265,19 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     }
     let _ = base;
     let mut spare = inner.height.saturating_sub(fixed + heights.iter().sum::<u16>());
-    // What is new first (everything new should show), then sessions, chores, decisions, the
+    // What is new first (everything new should show), then sessions, decisions, the
     // branch's story; an open branch is what you are reading, so it takes spare rows first.
     let order = if app.lane_open && app.focus == Some('g') {
-        [0usize, 3, 1, 2, 4]
+        [0usize, 2, 1, 3]
     } else {
-        [3, 1, 2, 4, 0]
+        [2, 1, 3, 0]
     };
     for i in order {
         let more = wants[i].saturating_sub(heights[i]).min(spare);
         heights[i] += more;
         spare -= more;
     }
-    let [graph_h, ses_h, ch_h, new_h, dec_h] = heights;
+    let [graph_h, ses_h, new_h, dec_h] = heights;
     let (where_lines, new_shown) = where_you_are(app, v, w, usize::from(new_h), tight);
     app.shown.borrow_mut().insert((ScreenId::Project, 'y'), new_shown);
     let gap = Constraint::Length(1);
@@ -300,16 +292,13 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         Constraint::Length(dec_h),
         if has_dec { gap } else { none },
         Constraint::Length(ses_h),
-        gap,
-        Constraint::Length(ch_h),
         // What is still spare sits here, so the ask line is always at the foot (round 2b).
         Constraint::Min(1),
         Constraint::Length(2),
     ])
     .split(inner);
-    let (where_r, q_r, graph_r, dec_r, ses_r, ch_r, spare_r, ask_r) = (
-        rects[0], rects[2], rects[4], rects[6], rects[8], rects[10], rects[11], rects[12],
-    );
+    let (where_r, q_r, graph_r, dec_r, ses_r, spare_r, ask_r) =
+        (rects[0], rects[2], rects[4], rects[6], rects[8], rects[9], rects[10]);
     crate::ui::summary_box(f, spare_r, project_summary(app, v));
 
     lines(f, where_r, where_lines);
@@ -321,7 +310,6 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         draw_decisions(f, dec_r, app, v);
     }
     draw_sessions(f, ses_r, app, v);
-    draw_chores(f, ch_r, app, v);
     draw_ask(f, ask_r, app, v);
 
     let focused = match app.focus {
@@ -330,7 +318,6 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         Some('g') => Some(graph_r),
         Some('d') => Some(dec_r),
         Some('s') => Some(ses_r),
-        Some('c') => Some(ch_r),
         Some('a') => Some(ask_r),
         _ => None,
     };
@@ -1273,38 +1260,6 @@ fn draw_sessions(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
     lines(f, area, out);
 }
 
-/// Chores are life admin that fits a gap while Claude works (round 2: "laundry, or responding to
-/// an email, or picking up furniture"), the same list on every project.
-fn draw_chores(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
-    let focus = app.focus == Some('c');
-    let mut out = vec![rule("chores", "for a gap while you wait", Some('c'), focus, area.width)];
-    let sel = focus.then(|| app.sel('c'));
-    for (i, ch) in v
-        .chores
-        .iter()
-        .enumerate()
-        .take(usize::from(area.height.saturating_sub(1)))
-    {
-        let done = app.marked(&chore_key(v, i)) == Some(&Mark::Done);
-        let mut right = vec![Span::styled(format!("{} min ", ch.minutes), dim())];
-        if let Some(d) = ch.due {
-            right.insert(0, Span::styled(format!("due {}   ", day(d)), st("peach")));
-        }
-        out.push(row(
-            vec![
-                pointer(i, sel),
-                Span::styled(format!(" {} ", glyph::CHORES), st("teal")),
-                Span::styled(ch.title.clone(), if done { struck(text()) } else { text() }),
-            ],
-            right,
-            area.width,
-        ));
-    }
-    if v.chores.is_empty() {
-        out.push(Line::from(Span::styled("   none fit now", dim())));
-    }
-    lines(f, area, out);
-}
 
 fn draw_ask(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
     // Tab reaches it like any section, and focused its whole rule lights (round 2l).
@@ -1417,21 +1372,6 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
         (Some('s'), KeyCode::Enter) => {
             if let Some(s) = sorted_sessions(&v).get(app.sel('s')) {
                 app.note = Some(format!("would jump your project window to \"{}\"", s.name));
-            }
-        }
-        (Some('c'), KeyCode::Char('x')) => {
-            let i = app.sel('c');
-            if let Some(ch) = v.chores.get(i) {
-                app.mark(
-                    chore_key(&v, i),
-                    Mark::Done,
-                    format!("done: would tell kairos \"{}\"", ch.title),
-                );
-            }
-        }
-        (Some('c'), KeyCode::Enter) => {
-            if let Some(ch) = v.chores.get(app.sel('c')) {
-                app.note = Some(format!("would open \"{}\" in kairos", ch.title));
             }
         }
         // ← and → walk the branches from anywhere on the page (round 2d), focusing the graph.

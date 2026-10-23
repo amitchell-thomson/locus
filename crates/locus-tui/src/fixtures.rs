@@ -478,7 +478,7 @@ mod tests {
     #[test]
     fn an_unknown_field_fails_the_load() {
         let r: Result<Home, _> = serde_json::from_str(
-            r#"{"chores_fit":0,"mail":{"need_reply":0,"deadlines_proposed":0},"atended":"quast"}"#,
+            r#"{"mail":{"need_reply":0,"deadlines_proposed":0},"atended":"quast"}"#,
         );
         assert!(r.unwrap_err().to_string().contains("unknown field `atended`"));
     }

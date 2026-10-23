@@ -146,7 +146,6 @@ const PROJECT: &[Section] = &[
     s('g', "branches", None),
     s('d', "decisions", Some(S::Decisions)),
     s('s', "sessions", None),
-    s('c', "chores", None),
     s('a', "ask", None),
 ];
 // The log's states down the left, then the entry on the right (round 2q). A state with no

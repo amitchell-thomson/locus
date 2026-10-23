@@ -350,7 +350,8 @@ default_category = "note"                           # category for folders not i
 # chain; marks map to corpus documents by content hash of the bundle's PDF bytes.
 annotate_transcribe    = true                       # transcribe new reading-annotation ink (billed vision)
 annotate_max_transcribe = 8                         # per-run cap; the rest wait a tick (skips already-read ink)
-# Built-in map (2026-08): engineering -> coursework, projects -> project, careers -> career.
+# Built-in map: engineering -> coursework, projects -> project, careers -> career, studies ->
+# coursework (the plan's Notes/studies/<course>/ tree, 2026-10).
 # quantum_ml is deliberately NOT coursework any more — it became a research internship, so what he
 # writes there is his own thinking, the same reading as brevan_howard.
 # folder_category = { rough_notes = "note", projects = "project", careers = "career" }

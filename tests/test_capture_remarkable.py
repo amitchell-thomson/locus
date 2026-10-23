@@ -119,6 +119,8 @@ _MIGRATED_FIND = "\n".join([
     "[f] /Notes/quantum_ml/week 3 notes",
     "[d] /Notes/careers",
     "[f] /Notes/careers/CV thoughts",
+    "[d] /Notes/studies/B15 Control Systems",
+    "[f] /Notes/studies/B15 Control Systems/lecture 4",
     "[d] /Reading/In-Progress",
     "[f] /Reading/In-Progress/Advanced Portfolio Management",
     "[d] /Daily",
@@ -128,6 +130,7 @@ _MIGRATED_STAT = {
     "/Notes/engineering/B14 Vibrations": {"ID": "u-eng", "Name": "B14 Vibrations"},
     "/Notes/quantum_ml/week 3 notes": {"ID": "u-qml", "Name": "week 3 notes"},
     "/Notes/careers/CV thoughts": {"ID": "u-car", "Name": "CV thoughts"},
+    "/Notes/studies/B15 Control Systems/lecture 4": {"ID": "u-stu", "Name": "lecture 4"},
     "/Reading/In-Progress/Advanced Portfolio Management": {"ID": "u-book", "Name": "APM"},
     "/Daily/2026-08-02": {"ID": "u-daily", "Name": "2026-08-02"},
 }
@@ -159,13 +162,16 @@ def test_topic_folder_keys_below_the_notes_root():
 
 
 def test_categories_survive_the_reorganisation(tmp_path: Path):
-    for uuid in ("u-eng", "u-qml", "u-car"):
+    for uuid in ("u-eng", "u-qml", "u-car", "u-stu"):
         (tmp_path / f"{uuid}.pdf").write_bytes(b"%PDF-1.4")
     items, unmapped = identify_staged(tmp_path, runner=_migrated_runner())
     by_uuid = {i.uuid: i for i in items}
     assert by_uuid["u-eng"].category == "coursework"   # lecture annotations stay study material
     assert by_uuid["u-qml"].category == "note"         # research internship, not coursework
     assert by_uuid["u-car"].category == "career"       # was silently falling through to `note`
+    # the plan's tree: a course folder sits one level deeper, and the category is still `studies`
+    assert by_uuid["u-stu"].folder == "studies"
+    assert by_uuid["u-stu"].category == "coursework"
     assert not unmapped
 
 

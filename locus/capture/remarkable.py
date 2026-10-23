@@ -44,6 +44,9 @@ DEFAULT_FOLDER_CATEGORY: dict[str, str] = {
     "engineering": "coursework",  # handwritten lecture annotations = study material
     "projects": "project",         # notes tied to a project
     "careers": "career",
+    # The plan's notes tree (C.9, Slice 0.5): `Notes/studies/<course>/` is lecture and course
+    # writing. Unmapped, it fell through to `note` with no error.
+    "studies": "coursework",
 }
 # Folders whose documents are NOT Loop-A handwriting capture: `trash` (deleted), `Daily` and
 # `Reading` (Locus's own delivery targets — ingesting our own pushed pages as though they were

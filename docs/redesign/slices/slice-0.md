@@ -162,7 +162,13 @@ non-excluded document on each run (about 80 cloud calls every 30 minutes), which
 - Every push records the content hash of the PDF it sent, which is what makes the second row
   known rather than guessed. The PDFs already on the device from earlier pushes are recorded
   once, from the push log and the `Inbox` listing.
-- Area folders are matched case-insensitively (`Studies` and `studies`).
+- **Folder levels** (Alec, 23 Oct: nesting inside courses and projects, e.g. a course's
+  submodules from Canvas): level 1 is the area (`Studies`, `Projects`, `Careers`, matched
+  case-insensitively); level 2 is the course, repo or application, matched to the registry by
+  name; anything deeper is his own organisation and decides nothing. The full device path is
+  stored with each capture so the Canvas pull (Slice 7) can map submodules later. A level-2
+  folder that matches nothing in the registry keeps its area and is named by `locus status`,
+  never filed under nothing silently.
 - The receiver unit leaves `deploy/systemd/enabled`; the tablet agent is left where it is.
 - Backfill: everything changed since 1 Aug is captured, under the existing per-run
   transcription cap, so the billed catch-up spreads over a few ticks.

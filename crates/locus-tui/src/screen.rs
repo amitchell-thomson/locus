@@ -10,6 +10,7 @@ use std::fmt;
 pub enum ScreenId {
     Home,
     Project,
+    Application,
     System,
     Budget,
     Explore,
@@ -39,9 +40,10 @@ const fn s(letter: char, title: &'static str, detail: Option<ScreenId>) -> Secti
 }
 
 impl ScreenId {
-    pub const ALL: [ScreenId; 16] = [
+    pub const ALL: [ScreenId; 17] = [
         ScreenId::Home,
         ScreenId::Project,
+        ScreenId::Application,
         ScreenId::System,
         ScreenId::Budget,
         ScreenId::Explore,
@@ -75,6 +77,7 @@ impl ScreenId {
             ScreenId::Search => "search",
             ScreenId::WorkChart => "work",
             ScreenId::Prep => "prep",
+            ScreenId::Application => "application",
             ScreenId::Learning => "learning",
             ScreenId::Review => "review",
         }
@@ -101,6 +104,7 @@ impl ScreenId {
             ScreenId::Search => "search",
             ScreenId::WorkChart => "work · 8 weeks",
             ScreenId::Prep => "interview prep",
+            ScreenId::Application => "application",
             ScreenId::Learning => "learning",
             ScreenId::Review => "weekly review",
         }
@@ -120,6 +124,7 @@ impl ScreenId {
             ScreenId::Explore => EXPLORE,
             ScreenId::Learning => LEARNING,
             ScreenId::Prep => PREP,
+            ScreenId::Application => APPLICATION,
             _ => &[],
         }
     }
@@ -158,6 +163,15 @@ const DECISIONS: &[Section] = &[
     s('x', "replaced", None),
     s('e', "the entry", None),
     s('a', "ask about this decision", None),
+];
+// An application's page (round 5): where you are, the timeline, prep, the questions you were
+// asked, the ask line.
+const APPLICATION: &[Section] = &[
+    s('y', "where you are", None),
+    s('t', "timeline", None),
+    s('p', "prep", Some(S::Prep)),
+    s('q', "questions you were asked", None),
+    s('a', "ask", None),
 ];
 const SYSTEM: &[Section] = &[
     s('r', "running", None),

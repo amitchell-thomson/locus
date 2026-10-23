@@ -2,7 +2,7 @@
   "project": "jump",
   "stage": "not offered after the final round",
   "where_you_are": {
-    "state": "Final round on 1 Oct, in person: maths, programming, data science, trader. Not offered.",
+    "state": "Final round on 1 Oct, onsite in London, after a coding first round on 16 Sep. Not offered.",
     "next": "carry the prep forward: optimisation and linear algebra were the weakest tracks in its log"
   },
   "new": [],
@@ -10,5 +10,144 @@
   "status": {
     "stage": "not offered",
     "since": "2026-10-01"
+  },
+  "application": {
+    "role": "Summer 2027 internship, London",
+    "stages": [
+      {
+        "name": "recruiter outreach",
+        "date": "2026-05-28",
+        "state": "done"
+      },
+      {
+        "name": "intro call",
+        "date": "2026-06-03",
+        "state": "done"
+      },
+      {
+        "name": "office visit / coffee",
+        "date": "2026-09-07",
+        "state": "done"
+      },
+      {
+        "name": "applied",
+        "date": "2026-09-08",
+        "state": "done"
+      },
+      {
+        "name": "first interview (coding)",
+        "date": "2026-09-16",
+        "state": "done"
+      },
+      {
+        "name": "final round (onsite)",
+        "date": "2026-10-01",
+        "state": "done"
+      },
+      {
+        "name": "not offered",
+        "state": "done"
+      }
+    ],
+    "events": [
+      {
+        "at": "2026-05-28T20:34:19+01:00",
+        "kind": "mail",
+        "text": "A Jump recruiter reached out, interested in your market-modelling and commodities data work",
+        "detail": [
+          "Asked for a short call; the team is US-based so after 4pm UK."
+        ]
+      },
+      {
+        "at": "2026-05-29T16:01:13+01:00",
+        "kind": "mail",
+        "text": "Intro call fixed for Wed 3 June, 5:45pm UK"
+      },
+      {
+        "at": "2026-06-03T17:45:00+01:00",
+        "kind": "call",
+        "text": "Intro call with two members of the recruiting team"
+      },
+      {
+        "at": "2026-06-03T18:48:38+01:00",
+        "kind": "submission",
+        "text": "Sent your updated CV and LNG dashboard screenshots after the call"
+      },
+      {
+        "at": "2026-06-05T17:27:38+01:00",
+        "kind": "mail",
+        "text": "Recruiter passed your materials on: 'see you in London this summer'"
+      },
+      {
+        "at": "2026-07-17T17:18:56+01:00",
+        "kind": "mail",
+        "text": "Recruiter offered dates for a summer quant dinner; you kept 27 Aug and 3 Sep free"
+      },
+      {
+        "at": "2026-08-19T16:16:13+01:00",
+        "kind": "mail",
+        "text": "Dinner described as a casual chance to meet Jump quants, nothing to prepare"
+      },
+      {
+        "at": "2026-08-25T13:47:26+01:00",
+        "kind": "mail",
+        "text": "Recruiter proposed a separate coffee with a commodities-team quant who could not make the dinner",
+        "detail": [
+          "Coffee offered for 1 or 2 Sep; you said 2 Sep evening."
+        ]
+      },
+      {
+        "at": "2026-09-07T12:53:00+01:00",
+        "kind": "call",
+        "text": "Visited the Jump London office, hosted by the commodities-team quant"
+      },
+      {
+        "at": "2026-09-07T20:13:52+01:00",
+        "kind": "submission",
+        "text": "CV version for the Jump Trading Summer 2027 application tagged",
+        "detail": [
+          "A cover letter followed on the morning of 8 Sep."
+        ]
+      },
+      {
+        "at": "2026-09-08T13:19:03+01:00",
+        "kind": "submission",
+        "text": "Application received by Jump (automatic acknowledgement)"
+      },
+      {
+        "at": "2026-09-14T21:50:03+01:00",
+        "kind": "mail",
+        "text": "First interview confirmed for Wed 16 Sep, 3pm UK, on Zoom with a CoderPad link"
+      },
+      {
+        "at": "2026-09-16T15:00:00+01:00",
+        "kind": "interview",
+        "text": "First interview: video call with live coding in CoderPad"
+      },
+      {
+        "at": "2026-09-18T19:45:18+01:00",
+        "kind": "mail",
+        "text": "Recruiter asked for a call about next steps; you said the interview went well and was fun"
+      },
+      {
+        "at": "2026-09-22T16:00:00+01:00",
+        "kind": "call",
+        "text": "Next-steps call with the recruiter"
+      },
+      {
+        "at": "2026-09-25T14:47:21+01:00",
+        "kind": "mail",
+        "text": "Onsite final round confirmed for Thu 1 Oct, 11:00 to about 4:45pm, at the London office",
+        "detail": [
+          "Asked for laptop and keyboard preference; you replied the same day."
+        ]
+      },
+      {
+        "at": "2026-10-01T10:40:00+01:00",
+        "kind": "interview",
+        "text": "Onsite final round at Jump London (signed in 10:40)"
+      }
+    ],
+    "questions": []
   }
 }

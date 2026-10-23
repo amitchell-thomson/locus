@@ -13,8 +13,9 @@ use locus_tui::uselog::UseLog;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use unicode_width::UnicodeWidthStr;
 
-const PROJECT_SCREENS: [ScreenId; 5] = [
+const PROJECT_SCREENS: [ScreenId; 6] = [
     ScreenId::Project,
+    ScreenId::Application,
     ScreenId::Decisions,
     ScreenId::Answered,
     ScreenId::Changes,

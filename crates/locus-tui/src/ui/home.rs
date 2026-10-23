@@ -498,15 +498,29 @@ fn draw_careers(f: &mut Frame, area: Rect, app: &App) {
                 text(),
             )),
         }
-        let g = if p.kind == ProjectKind::Repo {
-            glyph::DOSSIER
+        // An application shows its stage's icon; a closed one is dim, so what is still open
+        // stands out (round 5).
+        let status = pf.and_then(|pf| pf.view.status.as_ref());
+        let closed = p.kind == ProjectKind::Application && status.is_some_and(|s| s.turn.is_none());
+        let (g, gc) = if p.kind == ProjectKind::Repo {
+            (glyph::DOSSIER, "peach")
         } else {
-            glyph::MAIL
+            crate::ui::application::stage_glyph(status.map_or("", |s| s.stage.as_str()))
         };
+        let nw = ids
+            .iter()
+            .filter_map(|id| fx.registry.get(id).map(|p| p.name.width()))
+            .max()
+            .unwrap_or(12)
+            .min(usize::from(area.width) / 2)
+            + 1;
         let left = vec![
             pointer(i, sel),
-            Span::styled(format!(" {g} "), st("peach")),
-            Span::styled(format!("{:<13}", crate::ui::truncate(&p.name, 12)), bold(st("peach"))),
+            Span::styled(format!(" {g} "), st(gc)),
+            Span::styled(
+                format!("{:<nw$}", crate::ui::truncate(&p.name, nw - 1)),
+                if closed { st("overlay1") } else { bold(st("peach")) },
+            ),
         ];
         let mut left = left;
         left.extend(stage);

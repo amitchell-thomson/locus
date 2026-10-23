@@ -39,6 +39,10 @@ pub struct ProjectView {
     /// interview 4, final round, offer made, rejected").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<Status>,
+    /// An application's own record: its stages, its timeline from mail, the calendar and what
+    /// you sent, and the questions you were asked (round 5). Only an application has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub application: Option<Application>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -318,4 +322,92 @@ impl ProjectView {
     pub fn has_recheck(&self) -> bool {
         self.new.iter().any(|i| i.unread && i.kind == ItemKind::Recheck)
     }
+}
+
+/// What the Application screen shows beyond where you are (round 5, 23 Oct: "a timeline view
+/// built from the emails/ kairos/ submissions etc ... would need to look different than the git
+/// branches as it is a different concept").
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Application {
+    /// The programme, one line: `Quantitative Research Internship, London, summer 2027`.
+    pub role: String,
+    /// The stages in order, past and to come.
+    pub stages: Vec<Stage>,
+    /// Everything dated, oldest first: mail, interviews, assessments, what you sent.
+    #[serde(default)]
+    pub events: Vec<AppEvent>,
+    /// The questions you were asked, by round, pinned down with you after the interview
+    /// (round 5: "definitely capture the questions I was asked ... my rough notes during the
+    /// interview are not reliable enough, so it should be something I interact with").
+    #[serde(default)]
+    pub questions: Vec<AskedQuestion>,
+    /// The next dated thing, if one is known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next: Option<NextDate>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Stage {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub date: Option<NaiveDate>,
+    pub state: StageState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StageState {
+    Done,
+    Current,
+    Upcoming,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AppEvent {
+    pub at: Time,
+    pub kind: AppEventKind,
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub detail: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AppEventKind {
+    Mail,
+    Interview,
+    Assessment,
+    Submission,
+    Call,
+    Outcome,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AskedQuestion {
+    /// The round it was asked in: `final round · trader`.
+    pub round: String,
+    pub text: String,
+    /// The track it bears on, so it can feed your learning.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub track: Option<String>,
+    /// `draft` from your notes until you have pinned it down; then `confirmed`.
+    pub state: QuestionState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QuestionState {
+    Draft,
+    Confirmed,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NextDate {
+    pub at: Time,
+    pub what: String,
 }

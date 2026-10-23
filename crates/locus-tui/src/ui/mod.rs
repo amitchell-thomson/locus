@@ -2,6 +2,7 @@
 //! borders, blue focus. Each screen is a module with `draw`, `key` (its own keys, tried before
 //! the global ones) and `KEYS` (what the `?` overlay lists); the footer is shared.
 
+pub mod application;
 pub mod approve;
 pub mod changes;
 pub mod decisions;
@@ -44,6 +45,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         ScreenId::Search => review::draw_search(f, body, app),
         ScreenId::WorkChart => work::draw_chart(f, body, app),
         ScreenId::Prep => learning::draw_prep(f, body, app),
+        ScreenId::Application => application::draw(f, body, app),
         ScreenId::Learning => learning::draw(f, body, app),
         ScreenId::Review => review::draw(f, body, app),
     }
@@ -67,6 +69,7 @@ pub fn screen_key(app: &mut App, k: KeyEvent) -> bool {
         ScreenId::Search | ScreenId::Review => review::key(app, k),
         ScreenId::WorkChart => false,
         ScreenId::Prep | ScreenId::Learning => learning::key(app, k),
+        ScreenId::Application => application::key(app, k),
     }
 }
 
@@ -81,6 +84,7 @@ pub fn flows(s: ScreenId) -> bool {
             | ScreenId::System
             | ScreenId::Learning
             | ScreenId::Prep
+            | ScreenId::Application
     )
 }
 
@@ -96,6 +100,7 @@ pub fn section_len(app: &App, sec: char) -> usize {
     match app.screen() {
         ScreenId::Home => home::section_len(app, sec),
         ScreenId::Project => project::section_len(app, sec),
+        ScreenId::Application => application::section_len(app, sec),
         ScreenId::Decisions => decisions::section_len(app, sec),
         ScreenId::System => match sec {
             'r' => app.fixtures.system.running.len(),
@@ -135,6 +140,7 @@ pub fn screen_keys(s: ScreenId) -> &'static [(&'static str, &'static str)] {
         ScreenId::Search => review::SEARCH_KEYS,
         ScreenId::WorkChart => &[],
         ScreenId::Prep => learning::PREP_KEYS,
+        ScreenId::Application => application::KEYS,
         ScreenId::Learning => learning::KEYS,
         ScreenId::Review => review::KEYS,
     }

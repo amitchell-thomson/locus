@@ -664,6 +664,29 @@ items, they would crowd out actual interesting work by me."
 the chores section is gone from the Project view, and `Chore`, `ProjectView.chores` and
 `Home.chores_fit` from the contract and every fixture. (The task type "chore" in the taxonomy is
 kairos's and stays until he says otherwise.)
+- An application has a screen of its own (`ScreenId::Application`): "other than the now, new and
+  next section, I do not want this page looking like the projects page as that could be a source
+  of confusion." Top to bottom: where you are; the timeline ("built from the emails/ kairos/
+  submissions ... would need to look different than the git branches as it is a different
+  concept, but I do still want it to be visually appealing, we have a lot of space"): one track
+  through the stages, done solid, the current stage lit, what is to come dashed, every mail,
+  interview, assessment and submission on its day, today marked, and the events listed under
+  it; then prep (the plan's round and date, time used, weakest tracks, outcome; `p` opens it,
+  replacing the centred headline); then the questions you were asked, with `r` to recall one
+  in a short chat ("definitely capture the questions I was asked ... my rough notes during the
+  interview are not reliable enough"); the ask line. Whose move and the stage's icon sit at the
+  far right of the top border.
+- `ProjectView.application`: role, stages (dated, done/current/upcoming), events (mail,
+  interview, assessment, submission, call, outcome), questions asked (draft until confirmed,
+  each with its track), and the next date.
+- Real data: eight applications from his mail ("you may search gmail ... and my oxford mail"),
+  calendar and CV repo, with specific titles ("Jump Trading Internship, G-Research Spring,
+  G-Research ML Grant, Millennium internship etc"): Millennium QD Internship 2027 (final round
+  16 Oct, waiting), G-Research Spring 2027, G-Research AI/ML Challenges, Brevan Howard
+  Internship 2027 (return offer accepted) and 2026, Jump Trading Internship 2027 (not offered),
+  Citadel FI&M Trading 2027, Meet Millennium 2026. No interview questions are in the mail, so
+  each starts with none.
+- Home's careers: full names, each application's stage icon, closed ones dim.
 
 ## Report
 

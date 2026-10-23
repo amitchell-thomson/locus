@@ -169,8 +169,18 @@ impl App {
         {
             return;
         }
+        // An application has a page of its own (round 5), never the Project view's.
+        let application = self
+            .fixtures
+            .registry
+            .get(&id)
+            .is_some_and(|p| p.kind == locus_contract::ProjectKind::Application);
         self.viewing = Some(id);
-        self.open(ScreenId::Project);
+        self.open(if application {
+            ScreenId::Application
+        } else {
+            ScreenId::Project
+        });
     }
 
     pub fn open(&mut self, screen: ScreenId) {

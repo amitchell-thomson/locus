@@ -1,0 +1,168 @@
+{
+  "project": "millennium",
+  "stage": "final round done · waiting",
+  "where_you_are": {
+    "state": "Final round on 16 Oct, after a technical interview on 23 Sep and a second on 8 Oct. It went very well, in your words.",
+    "next": "hear back: you hope early next week; no Millennium mail since 15 Oct"
+  },
+  "new": [],
+  "sessions": [],
+  "status": {
+    "stage": "final round done",
+    "since": "2026-10-16",
+    "turn": "them"
+  },
+  "application": {
+    "role": "2027 Quantitative Developer Intern, London",
+    "stages": [
+      {
+        "name": "invited to apply / early assessment",
+        "date": "2026-07-15",
+        "state": "done"
+      },
+      {
+        "name": "online assessment (AmplifyME)",
+        "date": "2026-07-22",
+        "state": "done"
+      },
+      {
+        "name": "online assessment (Criteria)",
+        "date": "2026-08-10",
+        "state": "done"
+      },
+      {
+        "name": "first discussion",
+        "state": "done"
+      },
+      {
+        "name": "technical interview",
+        "date": "2026-09-23",
+        "state": "done"
+      },
+      {
+        "name": "second interview",
+        "date": "2026-10-08",
+        "state": "done"
+      },
+      {
+        "name": "final round",
+        "date": "2026-10-16",
+        "state": "done"
+      },
+      {
+        "name": "outcome",
+        "state": "upcoming"
+      }
+    ],
+    "events": [
+      {
+        "at": "2026-07-15T17:25:29+01:00",
+        "kind": "mail",
+        "text": "Invited (after attending Millennium events) to an early technical assessment for the 2027 Quantitative Summer Internship, London"
+      },
+      {
+        "at": "2026-07-16T09:33:17+01:00",
+        "kind": "assessment",
+        "text": "Assessment set: AmplifyME Market Making Dataset, 2 hours, Python",
+        "detail": [
+          "Tips given: data structures, algorithms, object-oriented programming."
+        ]
+      },
+      {
+        "at": "2026-07-22T16:37:34+01:00",
+        "kind": "assessment",
+        "text": "Completed the AmplifyME assessment"
+      },
+      {
+        "at": "2026-08-03T10:14:32+01:00",
+        "kind": "mail",
+        "text": "Moved forward to a Criteria assessment (about 40 minutes, 7 days to complete)"
+      },
+      {
+        "at": "2026-08-10T02:56:48+01:00",
+        "kind": "assessment",
+        "text": "Completed the Criteria assessment"
+      },
+      {
+        "at": "2026-09-08T16:31:58+01:00",
+        "kind": "mail",
+        "text": "Invited to schedule the next interview round for the 2027 Quantitative Developer Intern, London role",
+        "detail": [
+          "More technical than before, and tailored to the teams considering you."
+        ]
+      },
+      {
+        "at": "2026-09-11T09:47:53+01:00",
+        "kind": "mail",
+        "text": "Interview booked for 15 Sep, 9:30 (45 min, video plus live coding)"
+      },
+      {
+        "at": "2026-09-14T16:10:00+01:00",
+        "kind": "mail",
+        "text": "Millennium switched interviewer and asked you to rebook",
+        "detail": [
+          "Rebooked for 17 Sep, then moved twice more by Millennium on 16 Sep."
+        ]
+      },
+      {
+        "at": "2026-09-16T12:02:00+01:00",
+        "kind": "mail",
+        "text": "Interview settled for 23 Sep, 10:00-10:45"
+      },
+      {
+        "at": "2026-09-23T10:00:00+01:00",
+        "kind": "interview",
+        "text": "Technical interview (45 min, live coding)"
+      },
+      {
+        "at": "2026-09-28T17:38:00+01:00",
+        "kind": "mail",
+        "text": "Invited to schedule the next interview round"
+      },
+      {
+        "at": "2026-09-28T21:19:00+01:00",
+        "kind": "mail",
+        "text": "Booked 30 Sep; you asked what kind of interview it is, since it is only 30 minutes"
+      },
+      {
+        "at": "2026-09-29T10:51:00+01:00",
+        "kind": "mail",
+        "text": "Moved to 1 Oct, 9:00; told to expect a technical interview plus your experience and motivation for Millennium",
+        "detail": [
+          "You asked to move it because of the Jump onsite that day; booked 7 Oct instead."
+        ]
+      },
+      {
+        "at": "2026-10-01T09:40:00+01:00",
+        "kind": "mail",
+        "text": "Millennium swapped the interviewer again and asked you to rebook; booked 8 Oct, 9:00"
+      },
+      {
+        "at": "2026-10-08T09:00:00+01:00",
+        "kind": "interview",
+        "text": "Second interview (30 min, technical plus experience and motivation)"
+      },
+      {
+        "at": "2026-10-12T11:00:00+01:00",
+        "kind": "mail",
+        "text": "Invited to schedule the next interview round"
+      },
+      {
+        "at": "2026-10-15T00:01:45+01:00",
+        "kind": "submission",
+        "text": "October 2026 CV, Millennium copy, released"
+      },
+      {
+        "at": "2026-10-15T00:20:00+01:00",
+        "kind": "mail",
+        "text": "Final interview booked for 16 Oct, 4:00-4:30pm"
+      },
+      {
+        "at": "2026-10-16T16:00:00+01:00",
+        "kind": "interview",
+        "text": "Final round interview"
+      }
+    ],
+    "questions": []
+  }
+}

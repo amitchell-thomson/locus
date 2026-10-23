@@ -1,0 +1,51 @@
+{
+  "project": "citadel",
+  "stage": "not progressed after the online test",
+  "where_you_are": {
+    "state": "A HackerRank test on 29 Jul; not progressed on 28 Aug.",
+    "next": "nothing: closed"
+  },
+  "new": [],
+  "sessions": [],
+  "status": {
+    "stage": "rejected",
+    "since": "2026-08-28"
+  },
+  "application": {
+    "role": "Trading, Fixed Income & Macro, 2027 hiring",
+    "stages": [
+      {
+        "name": "applied",
+        "state": "done"
+      },
+      {
+        "name": "online assessment (HackerRank)",
+        "date": "2026-07-29",
+        "state": "done"
+      },
+      {
+        "name": "rejected",
+        "date": "2026-08-28",
+        "state": "done"
+      }
+    ],
+    "events": [
+      {
+        "at": "2026-07-16T16:51:54+01:00",
+        "kind": "assessment",
+        "text": "HackerRank trading assessment invitation (30 min, 10 days)"
+      },
+      {
+        "at": "2026-07-29T12:16:26+01:00",
+        "kind": "assessment",
+        "text": "Completed the HackerRank assessment"
+      },
+      {
+        "at": "2026-08-28T15:36:35+01:00",
+        "kind": "outcome",
+        "text": "Citadel will not move forward for Trading"
+      }
+    ],
+    "questions": []
+  }
+}

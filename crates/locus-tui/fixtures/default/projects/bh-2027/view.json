@@ -1,0 +1,87 @@
+{
+  "project": "bh-2027",
+  "stage": "offer accepted · contract pending",
+  "where_you_are": {
+    "state": "Return offer on 20 Aug for 21 Jun to 27 Aug 2027, accepted on 26 Aug; documents sent on 4 Oct.",
+    "next": "the contract and the screening check; no mail since 5 Oct"
+  },
+  "new": [],
+  "sessions": [],
+  "status": {
+    "stage": "offer accepted",
+    "since": "2026-08-26",
+    "turn": "them"
+  },
+  "application": {
+    "role": "2027 Summer Internship Programme, offered as a return after the 2026 internship, London",
+    "stages": [
+      {
+        "name": "return requested",
+        "date": "2026-07-28",
+        "state": "done"
+      },
+      {
+        "name": "approval",
+        "date": "2026-07-29",
+        "state": "done"
+      },
+      {
+        "name": "offer",
+        "date": "2026-08-20",
+        "state": "done"
+      },
+      {
+        "name": "accepted",
+        "date": "2026-08-26",
+        "state": "done"
+      },
+      {
+        "name": "contract / checks",
+        "state": "current"
+      }
+    ],
+    "events": [
+      {
+        "at": "2026-07-28T22:07:57+01:00",
+        "kind": "mail",
+        "text": "Asked the graduate team to put on record your desk head's request that you return next summer"
+      },
+      {
+        "at": "2026-07-29T17:12:52+01:00",
+        "kind": "mail",
+        "text": "Graduate team: return offers go through an approval process"
+      },
+      {
+        "at": "2026-08-13T16:30:00+01:00",
+        "kind": "call",
+        "text": "Catch-up call with the graduate recruiter"
+      },
+      {
+        "at": "2026-08-20T11:20:45+01:00",
+        "kind": "outcome",
+        "text": "Offer for the 2027 Summer Internship Programme, conditional on an online-activity screening check"
+      },
+      {
+        "at": "2026-08-26T20:02:38+01:00",
+        "kind": "mail",
+        "text": "Accepted the offer and consented to the screening check"
+      },
+      {
+        "at": "2026-09-02T13:03:04+01:00",
+        "kind": "mail",
+        "text": "Graduate team asked for ID and address documents to draft the contract"
+      },
+      {
+        "at": "2026-10-04T00:43:11+01:00",
+        "kind": "submission",
+        "text": "Sent the requested documents; says you have seen the offer documents"
+      },
+      {
+        "at": "2026-10-05T09:47:39+01:00",
+        "kind": "mail",
+        "text": "Graduate team acknowledged"
+      }
+    ],
+    "questions": []
+  }
+}

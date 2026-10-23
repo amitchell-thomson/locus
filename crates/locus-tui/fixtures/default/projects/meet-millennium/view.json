@@ -1,0 +1,99 @@
+{
+  "project": "meet-millennium",
+  "stage": "attended · closed",
+  "where_you_are": {
+    "state": "The insight day on 16 Apr, after a HackerRank test in February; it led to the invitation for the 2027 internship.",
+    "next": "nothing: closed on 27 Jul when the 2027 process began"
+  },
+  "new": [],
+  "sessions": [],
+  "status": {
+    "stage": "complete",
+    "since": "2026-07-27"
+  },
+  "application": {
+    "role": "Meet Millennium 2026 London, a one-day insight programme, London",
+    "stages": [
+      {
+        "name": "applied",
+        "state": "done"
+      },
+      {
+        "name": "online assessment (HackerRank)",
+        "date": "2026-02-20",
+        "state": "done"
+      },
+      {
+        "name": "invited",
+        "date": "2026-03-06",
+        "state": "done"
+      },
+      {
+        "name": "attended",
+        "date": "2026-04-16",
+        "state": "done"
+      },
+      {
+        "name": "closed",
+        "date": "2026-07-27",
+        "state": "done"
+      }
+    ],
+    "events": [
+      {
+        "at": "2026-01-29T17:59:00+00:00",
+        "kind": "mail",
+        "text": "Registered on the Millennium careers site"
+      },
+      {
+        "at": "2026-02-13T18:23:34+00:00",
+        "kind": "mail",
+        "text": "Asked to take a HackerRank technical assessment for Meet Millennium 2026 London"
+      },
+      {
+        "at": "2026-02-16T14:58:00+00:00",
+        "kind": "assessment",
+        "text": "HackerRank assessment invitation"
+      },
+      {
+        "at": "2026-02-20T12:37:00+00:00",
+        "kind": "assessment",
+        "text": "Completed the HackerRank assessment"
+      },
+      {
+        "at": "2026-03-06T16:56:18+00:00",
+        "kind": "outcome",
+        "text": "Invited to Meet Millennium on 16 April after review of application and assessment"
+      },
+      {
+        "at": "2026-03-09T11:29:46+00:00",
+        "kind": "mail",
+        "text": "Accepted the invitation"
+      },
+      {
+        "at": "2026-04-16T09:00:00+01:00",
+        "kind": "call",
+        "text": "Attended Meet Millennium, a full day at the London office"
+      },
+      {
+        "at": "2026-06-16T17:00:00+01:00",
+        "kind": "call",
+        "text": "Millennium 'Demystifying the Recruitment Process' webinar"
+      },
+      {
+        "at": "2026-06-28T14:35:33+01:00",
+        "kind": "submission",
+        "text": "Returned the Meet Millennium interests questionnaire"
+      },
+      {
+        "at": "2026-07-27T00:18:56+01:00",
+        "kind": "outcome",
+        "text": "Workday closed the 'Meet Millennium Quant 2026 London' application as not progressing",
+        "detail": [
+          "The 2027 internship process carried on regardless."
+        ]
+      }
+    ],
+    "questions": []
+  }
+}

@@ -75,7 +75,12 @@ fn main() -> Result<()> {
         // opened from Home with --project.
         let project_screen = matches!(
             screen,
-            ScreenId::Project | ScreenId::Decisions | ScreenId::Answered | ScreenId::Changes | ScreenId::Prep
+            ScreenId::Project
+                | ScreenId::Application
+                | ScreenId::Decisions
+                | ScreenId::Answered
+                | ScreenId::Changes
+                | ScreenId::Prep
         );
         let root = if project_screen && cli.project.is_none() {
             ScreenId::Project

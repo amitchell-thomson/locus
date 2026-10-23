@@ -1,0 +1,156 @@
+{
+  "project": "bh-2026",
+  "stage": "complete",
+  "where_you_are": {
+    "state": "The Quantitative Investment Strategies internship, from 22 Jun 2026; it led to the 2027 return offer.",
+    "next": "nothing: complete"
+  },
+  "new": [],
+  "sessions": [],
+  "status": {
+    "stage": "internship complete",
+    "since": "2026-07-27"
+  },
+  "application": {
+    "role": "Quantitative Investment Strategies internship, London",
+    "stages": [
+      {
+        "name": "introduction / advice",
+        "date": "2025-09-18",
+        "state": "done"
+      },
+      {
+        "name": "call with graduate recruitment",
+        "date": "2025-10-17",
+        "state": "done"
+      },
+      {
+        "name": "applied",
+        "date": "2025-10-18",
+        "state": "done"
+      },
+      {
+        "name": "online assessments",
+        "date": "2025-10-26",
+        "state": "done"
+      },
+      {
+        "name": "offer (call)",
+        "date": "2025-11-10",
+        "state": "done"
+      },
+      {
+        "name": "contract signed",
+        "date": "2025-11-21",
+        "state": "done"
+      },
+      {
+        "name": "pre-start checks and onboarding",
+        "date": "2026-05-19",
+        "state": "done"
+      },
+      {
+        "name": "internship",
+        "date": "2026-06-22",
+        "state": "done"
+      },
+      {
+        "name": "complete",
+        "state": "done"
+      }
+    ],
+    "events": [
+      {
+        "at": "2025-09-18T19:21:27+01:00",
+        "kind": "mail",
+        "text": "Wrote to a senior Brevan Howard contact asking for career advice",
+        "detail": [
+          "Passed on to the graduate team; the programme's senior sponsor and head of graduate recruitment replied on 9 Oct."
+        ]
+      },
+      {
+        "at": "2025-10-09T23:04:01+01:00",
+        "kind": "mail",
+        "text": "Head of graduate recruitment offered a 15-minute call on the hiring process"
+      },
+      {
+        "at": "2025-10-17T12:00:00+01:00",
+        "kind": "call",
+        "text": "Call with the head of graduate recruitment"
+      },
+      {
+        "at": "2025-10-18T18:00:00+01:00",
+        "kind": "submission",
+        "text": "Applied for the Quantitative Investment Strategies internship, London",
+        "detail": [
+          "You chose it over Macro Trading after the call."
+        ]
+      },
+      {
+        "at": "2025-10-24T11:46:00+01:00",
+        "kind": "assessment",
+        "text": "Three assessments set: HackerRank Python test, Predictive Index behavioural and cognitive"
+      },
+      {
+        "at": "2025-10-26T12:13:08+00:00",
+        "kind": "assessment",
+        "text": "Completed all three assessments"
+      },
+      {
+        "at": "2025-11-10T20:00:00+00:00",
+        "kind": "outcome",
+        "text": "Offered an internship on a call with a graduate recruiter (3pm New York time)",
+        "detail": [
+          "Accepted at once."
+        ]
+      },
+      {
+        "at": "2025-11-21T16:15:23+00:00",
+        "kind": "submission",
+        "text": "Signed the offer letter and intern employment contract"
+      },
+      {
+        "at": "2026-01-22T10:29:51+00:00",
+        "kind": "mail",
+        "text": "Background screening requested"
+      },
+      {
+        "at": "2026-02-16T17:42:51+00:00",
+        "kind": "submission",
+        "text": "Signed a re-issued offer letter and employment contract",
+        "detail": [
+          "The recruiter had flagged on 12 Feb that the contract might not have reached you."
+        ]
+      },
+      {
+        "at": "2026-04-21T11:52:02+01:00",
+        "kind": "mail",
+        "text": "Second background-screening request"
+      },
+      {
+        "at": "2026-05-19T17:33:19+01:00",
+        "kind": "mail",
+        "text": "Onboarding actions set in Workday before the first day"
+      },
+      {
+        "at": "2026-06-18T14:00:00+01:00",
+        "kind": "call",
+        "text": "Pre-start call with the graduate team; first-day details sent"
+      },
+      {
+        "at": "2026-06-22T09:30:00+01:00",
+        "kind": "mail",
+        "text": "First day of the internship at the London office"
+      },
+      {
+        "at": "2026-07-27T17:00:00+01:00",
+        "kind": "outcome",
+        "text": "Internship finished: last in the office on 27 Jul",
+        "detail": [
+          "Your desk head asked for you back next summer."
+        ]
+      }
+    ],
+    "questions": []
+  }
+}

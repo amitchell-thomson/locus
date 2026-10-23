@@ -14,6 +14,11 @@ other.
 - Branch graphs: quast, nabla, OQTS, CV from their git histories (`tools/branch_graph.py`;
   quast's branches merged by fast-forward were read from their reflogs). locus's August merges
   came from branches whose names did not survive, so those lanes carry the merge subject.
+- The applications (8): stages, dates and events from your mail (Gmail and Oxford, read through
+  keryx's local mirror, 23 Oct), your calendar and the CV repo's tags; condensed, with no
+  addresses, links, IDs or other people's names. Jump's "not offered", Millennium's "went very
+  well" and its final-round label are your words; where-you-are lines are written by hand from
+  the findings.
 - locus's Changes: its real git history from 19 Oct to the snapshot, each commit's subject as the
   line and its message as the detail, with the six answers joined in (`tools/project_changes.py`).
   nabla's nightly observation commits are marked routine, so they fold.

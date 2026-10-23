@@ -1,0 +1,42 @@
+---
+source: crates/locus-tui/tests/dump.rs
+expression: "dump::render(&a, 95, 38).unwrap()"
+---
+╭ 󱓟 quast · barrier control ───────────────────────────────────────────────────── 󰆤 following ╮
+│─ where you are · 3 unread · full timeline since mon 19 [n] ─────────────────────────────────│
+│   now        Barrier control: the exchange law is learned in 2.3 minutes a tune-up, honest  │
+│              on every run (step 6, 16 Oct).                                                 │
+│   shortfall  RIKEN's measured exchange slope is 2.6x shallower than the prior assumes, and  │
+│              nothing uses it yet.                                                           │
+│   new        answer     󱜾 delayed acceptance · answered from your margin · links Mo… 󰅸   5h │
+│              find, idea 󰭎 Bayesian optimisation tunes double-dot barriers with abou… 󰅸   1d │
+│              + 3 more                                                                       │
+│   ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌   │
+│   next ▸     fold RIKEN's slope and charging-energy numbers into the prior, then rerun the  │
+│              battery before trying any new method                                           │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│─ prep · no plan yet ────────────────────────────────────────────────────────────────────────│
+│   no plan for this one · give an interview's details and your time, and one is drawn up     │
+│                                                                                             │
+│─ questions you were asked · 0 · recall one [r] ─────────────────────────────────────── [q] ─│
+│   none yet · after an interview, r starts a short chat to pin down what you were asked      │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│─ ask ───────────────────────────────────────────────────────────── 󱜾 answered 3, 1 new [a] ─│
+│   ask › ␣ to ask about this project · the answer comes back here                            │
+╰─────────────────────────────────────────────────────────────────────────────────────────────╯
+ ⏎ open · ⇥ sections · l log · / search · ? keys

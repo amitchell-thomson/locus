@@ -85,27 +85,6 @@
       "active": true
     },
     {
-      "id": "jump",
-      "name": "Jump Trading",
-      "area": "Careers",
-      "kind": "application",
-      "active": true
-    },
-    {
-      "id": "gresearch",
-      "name": "G-Research",
-      "area": "Careers",
-      "kind": "application",
-      "active": true
-    },
-    {
-      "id": "millennium",
-      "name": "Millennium",
-      "area": "Careers",
-      "kind": "application",
-      "active": false
-    },
-    {
       "id": "3yp",
       "name": "3YP",
       "area": "Studies",
@@ -170,6 +149,62 @@
       "name": "B20 Machine Learning",
       "area": "Studies",
       "kind": "course",
+      "active": true
+    },
+    {
+      "id": "millennium",
+      "name": "Millennium QD Internship 2027",
+      "area": "Careers",
+      "kind": "application",
+      "active": true
+    },
+    {
+      "id": "gresearch",
+      "name": "G-Research Spring 2027",
+      "area": "Careers",
+      "kind": "application",
+      "active": true
+    },
+    {
+      "id": "gresearch-ml",
+      "name": "G-Research AI/ML Challenges",
+      "area": "Careers",
+      "kind": "application",
+      "active": true
+    },
+    {
+      "id": "bh-2027",
+      "name": "Brevan Howard Internship 2027",
+      "area": "Careers",
+      "kind": "application",
+      "active": true
+    },
+    {
+      "id": "jump",
+      "name": "Jump Trading Internship 2027",
+      "area": "Careers",
+      "kind": "application",
+      "active": true
+    },
+    {
+      "id": "citadel",
+      "name": "Citadel FI&M Trading 2027",
+      "area": "Careers",
+      "kind": "application",
+      "active": true
+    },
+    {
+      "id": "bh-2026",
+      "name": "Brevan Howard Internship 2026",
+      "area": "Careers",
+      "kind": "application",
+      "active": true
+    },
+    {
+      "id": "meet-millennium",
+      "name": "Meet Millennium 2026",
+      "area": "Careers",
+      "kind": "application",
       "active": true
     }
   ]

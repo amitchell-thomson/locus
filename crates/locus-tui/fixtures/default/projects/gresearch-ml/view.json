@@ -1,0 +1,65 @@
+{
+  "project": "gresearch-ml",
+  "stage": "applied · applications close 29 Oct",
+  "where_you_are": {
+    "state": "Applied by 16 Oct: two terms from November of AI/ML problems, compute credits and a prize pot.",
+    "next": "the decision, after applications close on 29 Oct"
+  },
+  "new": [],
+  "sessions": [],
+  "status": {
+    "stage": "applied",
+    "since": "2026-10-16",
+    "turn": "them"
+  },
+  "application": {
+    "role": "Team challenge programme over two terms from November: 16 open AI/ML problems, compute credits, share of a £5,000 prize pot. Probably what you calls the 'G-Research ML Grant', Oxford",
+    "stages": [
+      {
+        "name": "applied",
+        "date": "2026-10-16",
+        "state": "done"
+      },
+      {
+        "name": "applications close",
+        "date": "2026-10-29",
+        "state": "upcoming"
+      },
+      {
+        "name": "outcome",
+        "state": "upcoming"
+      },
+      {
+        "name": "programme starts (November)",
+        "state": "upcoming"
+      }
+    ],
+    "events": [
+      {
+        "at": "2026-10-13T10:55:23+01:00",
+        "kind": "mail",
+        "text": "Engineering department announced the AI/ML Challenges with G-Research; applications close 29 Oct"
+      },
+      {
+        "at": "2026-10-16T12:30:00+01:00",
+        "kind": "submission",
+        "text": "Worked on the AI/ML Challenges application (calendar block)"
+      },
+      {
+        "at": "2026-10-16T13:34:13+01:00",
+        "kind": "submission",
+        "text": "Told the G-Research events team you have applied to the AI/ML Challenges"
+      },
+      {
+        "at": "2026-10-19T16:40:59+01:00",
+        "kind": "mail",
+        "text": "Oxford Edge sent the programme details to the society; applications close 29 Oct"
+      }
+    ],
+    "questions": [],
+    "next": {
+      "at": "2026-10-29T23:59:00+00:00",
+      "what": "applications close"
+    }
+  }
+}

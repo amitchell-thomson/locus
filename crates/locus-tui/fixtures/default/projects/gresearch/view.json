@@ -1,22 +1,54 @@
 {
   "project": "gresearch",
-  "stage": "applied · no interview yet",
+  "stage": "applied · under review",
   "where_you_are": {
-    "state": "Applied with the G-Research CV (17 Oct); won their Quant Challenge this month.",
-    "next": "when an interview is offered, give its details and your time, and a prep plan is drawn up"
+    "state": "Applied on 17 Oct with the G-Research CV, two days after winning the first round of their Quant Challenge.",
+    "next": "hear back; the 2026 edition turned you down on 7 Oct 2025"
   },
-  "new": [
-    {
-      "kind": "mail",
-      "text": "G-Research: application received",
-      "at": "2026-10-18T09:12:00+01:00",
-      "unread": false
-    }
-  ],
+  "new": [],
   "sessions": [],
   "status": {
     "stage": "applied",
     "since": "2026-10-17",
     "turn": "them"
+  },
+  "application": {
+    "role": "Spring into Quant Finance 2027",
+    "stages": [
+      {
+        "name": "applied",
+        "date": "2026-10-17",
+        "state": "done"
+      },
+      {
+        "name": "review",
+        "state": "current"
+      },
+      {
+        "name": "outcome",
+        "state": "upcoming"
+      }
+    ],
+    "events": [
+      {
+        "at": "2026-10-15T17:30:00+01:00",
+        "kind": "call",
+        "text": "G-Research Quant Challenge, a campus event (cointegration challenge)",
+        "detail": [
+          "You won round one (a gift-card prize, 16 Oct). It is a campus event, not a stage of this application."
+        ]
+      },
+      {
+        "at": "2026-10-17T14:22:00+01:00",
+        "kind": "submission",
+        "text": "G-Research CV variant released (projects above experience; Quant Challenge win added)"
+      },
+      {
+        "at": "2026-10-17T14:27:30+01:00",
+        "kind": "submission",
+        "text": "Application received for Spring into Quant Finance 2027; G-Research will review"
+      }
+    ],
+    "questions": []
   }
 }

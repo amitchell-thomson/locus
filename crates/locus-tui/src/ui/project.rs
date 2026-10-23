@@ -57,7 +57,6 @@ fn new_answer<'a>(app: &'a App, v: &ProjectView) -> Option<(usize, &'a locus_con
         .max_by_key(|(_, a)| a.at)
 }
 
-
 fn is_unread(app: &App, view: &ProjectView, i: usize) -> bool {
     view.new.get(i).is_some_and(|it| it.unread) && app.marked(&new_key(view, i)).is_none()
 }
@@ -125,6 +124,12 @@ fn decision_order(ds: &locus_contract::Decisions) -> Vec<usize> {
 /// this is the first new item's place.
 fn first_new(v: &ProjectView) -> usize {
     1 + usize::from(v.where_you_are.as_ref().is_some_and(|w| w.short.is_some()))
+}
+
+/// Where you are's selectable rows on a screen that draws it (the Project view, an application).
+pub(crate) fn section_len_where(app: &App, screen: ScreenId, v: &ProjectView) -> usize {
+    let drawn = app.shown.borrow().get(&(screen, 'y')).map_or(0, |v| v.len());
+    first_new(v) + drawn + usize::from(v.where_you_are.is_some())
 }
 
 /// What a section drew, recorded by the draw so the arrows walk only that.
@@ -338,7 +343,13 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
 /// now, shortfall, new, next"). New is read more than worked in, so it has no section of its
 /// own; its rows are still walkable, and Enter still opens one. `budget` is the rows new was
 /// given (0 measures the rest); the new items drawn are returned for the arrows.
-fn where_you_are(app: &App, v: &ProjectView, w: u16, budget: usize, tight: bool) -> (Vec<Line<'static>>, Vec<usize>) {
+pub(crate) fn where_you_are(
+    app: &App,
+    v: &ProjectView,
+    w: u16,
+    budget: usize,
+    tight: bool,
+) -> (Vec<Line<'static>>, Vec<usize>) {
     // Tight, on a short window, each part keeps one line so the sections below still draw.
     let body = usize::from(w).saturating_sub(16);
     let fit = |t: &str, n: usize| -> Vec<String> {
@@ -360,8 +371,10 @@ fn where_you_are(app: &App, v: &ProjectView, w: u16, budget: usize, tight: bool)
     } else {
         String::new()
     };
+    // An application's timeline is on its own page, so it names no key here (round 5).
     let extra = more_rows(app, v)
         .into_iter()
+        .filter(|_| v.application.is_none())
         .find(|r| r.0 == "n")
         .map(|(k, _, _, name, state)| {
             let full = format!("{lead} · {name} {state} [{k}]");
@@ -1260,10 +1273,14 @@ fn draw_sessions(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
     lines(f, area, out);
 }
 
-
-fn draw_ask(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
+pub(crate) fn draw_ask(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
     // Tab reaches it like any section, and focused its whole rule lights (round 2l).
     let asking = matches!(app.mode, Mode::Ask(_)) || app.focus == Some('a');
+    let what = if v.application.is_some() {
+        "application"
+    } else {
+        "project"
+    };
     let left = match &app.mode {
         Mode::Ask(q) => vec![
             Span::styled("   ask › ", st("mauve")),
@@ -1275,7 +1292,7 @@ fn draw_ask(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
         _ if app.focus == Some('a') => vec![
             Span::styled("   ask › ", dim()),
             Span::styled("␣", keyst()),
-            Span::styled(" to ask about this project · ", dim()),
+            Span::styled(format!(" to ask about this {what} · "), dim()),
             Span::styled("⏎", keyst()),
             // With an answer waiting, Enter opens it (round 2o).
             Span::styled(
@@ -1289,7 +1306,7 @@ fn draw_ask(f: &mut Frame, area: Rect, app: &App, v: &ProjectView) {
         _ => vec![
             Span::styled("   ask › ", dim()),
             Span::styled("␣", keyst()),
-            Span::styled(" to ask about this project · the answer comes back here", dim()),
+            Span::styled(format!(" to ask about this {what} · the answer comes back here"), dim()),
         ],
     };
     // What was asked before sits at the right of the ask rule (round 2e); a reaches the line

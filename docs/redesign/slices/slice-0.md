@@ -134,7 +134,7 @@ Social, Travel with Errands; Studies, Projects and Careers filter as whole areas
 Per D6: how to upload the rewritten skill so it works on every machine and client, then a
 discussion: which other skills are worth having, versus carrying everything in the MCP tools.
 
-### 0.12 Notebook capture from the cloud (added 23 Oct, approved)
+### 0.12 Capture from the cloud (added 23 Oct, approved)
 Found during 0.5: nothing has reached the capture staging directory since 1 Aug. The agent on
 the tablet that pushed renders to `locus-remarkable-receiver` has stopped (a tablet update is
 the likely cause), so handwritten notebooks (Loop A) have not reached the library for twelve
@@ -142,30 +142,86 @@ weeks, and Loop B's change detection, which keys on the same renders, has seen n
 Reading marks are still recorded by the hourly cloud sweep. Separately, capture stats every
 non-excluded document on each run (about 80 cloud calls every 30 minutes), which fits the HTTP
 429s in the logs.
-- Capture reads from the reMarkable cloud, as reading ink already does: one `rmapi ls -l` per
-  folder for modified times; a document whose time moved since its last capture is fetched as
-  a bundle (`data/cache/rmdoc/`) and rendered with `capture/rmdoc` (blank canvas for a native
-  notebook) into the staging directory as `<uuid>.pdf`. Loop A and Loop B are unchanged
-  downstream. No per-document `stat`; back off on 429 and never read a missing entry as a
-  deletion (§14).
-- What is captured as his writing: `/Notes/**` and notebooks at the root (`Jot`). Excluded:
-  `Inbox`, `Docs`, `Archive`, `Daily`, `Admin`, `trash`; `Reading` stays Loop B's.
+- **Source:** the reMarkable cloud, as reading ink already is. One `rmapi ls -l` per folder for
+  modified times; a document whose time moved since its last capture is fetched as a bundle
+  (`data/cache/rmdoc/`). No per-document `stat`; back off on 429 and never read a missing
+  entry as a deletion (§14).
+- **What a document is decides how it is read** (Alec, 23 Oct: "pdfs are source, notebooks are
+  my writing, and any pdf claude sends should have my notes AND what my notes where about
+  ingested. Notes on their own are often meaningless"). Inside the area folders (`Studies/`,
+  `Projects/`, `Careers/`) and at the root (`Jot`):
+
+  | Document | Read as |
+  |---|---|
+  | a notebook (no PDF in the bundle, `RmDoc.is_notebook`) | his writing: rendered and captured by Loop A as now, area from the folder |
+  | a PDF Locus sent (its content hash is recorded at push) | Claude's document, never ingested itself; his ink on it is read as marks, and each note is promoted WITH the passage it was written against (`promote_reading_notes`, the passage quoted as context, never as his words) |
+  | any other PDF (a sheet, slides, a paper) | a source, ingested from the bundle's bytes with the folder's area; his ink on it read as marks and promoted the same way |
+
+  The same rule applies to a Locus PDF in `Inbox/`, so ink he writes before filing it is not
+  lost. Excluded: `Admin`, `Archive`, `trash`; `Reading` stays Loop B's.
+- Every push records the content hash of the PDF it sent, which is what makes the second row
+  known rather than guessed. The PDFs already on the device from earlier pushes are recorded
+  once, from the push log and the `Inbox` listing.
+- Area folders are matched case-insensitively (`Studies` and `studies`).
 - The receiver unit leaves `deploy/systemd/enabled`; the tablet agent is left where it is.
 - Backfill: everything changed since 1 Aug is captured, under the existing per-run
   transcription cap, so the billed catch-up spreads over a few ticks.
-- **Check:** a page written in Jot is printed by `locus list` within an hour; a margin note
-  written on a document in `Reading/In-Progress` is transcribed; one capture run's journal
-  printed showing its cloud call count; a day of `locus-capture` logs with no 429.
+- **Check:** a page written in Jot is printed by `locus list` within an hour; a note written
+  in the margin of a Locus PDF is printed by `locus` search together with the passage beside
+  it, and that PDF's own text is not in the library; a sheet PDF put in a course folder is
+  printed by `locus list` as a source; one capture run's journal printed showing its cloud call
+  count; a day of `locus-capture` logs with no 429.
 
 ### 0.5b Tablet tidy (added 23 Oct)
-Leave the tablet with one clear home for everything: `Inbox` (from Claude, not yet read), `Jot`,
-`Notes` (his writing, by area), `Docs` (documents Claude wrote, filed by area once read),
-`Reading`, `Admin` (paperwork), `Archive` (retired: the daily pages, old proposals). Moves are
-done with `rmapi mv`, which keeps each document's id, so marks stay attached. The mapping is
-agreed with Alec before anything moves; nothing is deleted. **Check:** `rmapi ls` printed for
-the root and each folder.
+One home per thing, by area, at the root (Alec, 23 Oct: two high-level places for course
+material "seems complicated"). Inside a folder, notebooks are his and PDFs are sources or
+Claude's documents (0.12), so nothing needs a separate tree.
 
----
+```
+Inbox/      new from Claude, not yet read; he files each into its area once read
+Jot         capture notebook
+Studies/    one folder per course (exact Canvas names)
+Projects/   quast, nabla, locus, oqts
+Careers/    general, Jump Trading, G-Research, Millennium
+Reading/    In-Progress, Finished, Proposed
+Admin/      paperwork
+Archive/    retired: the daily pages, old proposals
+```
+
+Moves are done with `rmapi mv`, which keeps each document's id, so marks stay attached; nothing
+is deleted. Rows marked ? are open until Alec answers them, and nothing moves before he agrees.
+
+| Now | Goes to |
+|---|---|
+| `Notes/studies/*`, `Notes/careers/*`, `Notes/projects/*` (made in 0.5) | `Studies/`, `Careers/`, `Projects/`; then `Notes/` is removed when empty |
+| `Daily/` | `Archive/Daily` |
+| `Reading/Proposed` (9 from 31 Jul) | `Archive/Proposed` |
+| `Personal/Millennium Criteria` | `Careers/Millennium` |
+| `Personal/logo ideas` | ? which project; then `Personal/` is removed |
+| `Feedback` (root notebook) | ? |
+| `Notes/engineering/3YP` | `Studies/B3 Group Design Project` |
+| `Notes/engineering/B4 Information Engineering Systems` | ? `Studies/B14 Information Engineering Systems` if B4 is a typo |
+| `Notes/engineering/Modules`, `optimisation` | ? |
+| `Notes/oqts/Sponsor Notes`, `Notes/projects/oqts/OXDAQ` | `Projects/oqts` |
+| `Notes/projects/pour-runbook` | ? |
+| `Notes/jump_trading/*`, `Notes/rough_notes/Jump call` | `Careers/Jump Trading` |
+| `Notes/rough_notes/G-Research` | `Careers/G-Research` |
+| `Notes/rough_notes/Jane Steet Social` | `Careers/general` |
+| `Notes/rough_notes/Recommendations` | ? |
+| `Notes/rough_notes/Locus taxonomy` | `Projects/locus` |
+| `Notes/brevan_howard/*` | ? `Careers/Brevan Howard` |
+| `Notes/quantum_ml/*` | ? `Projects/quast` |
+| Inbox: OXDAQ milestone 1, OXDAQ specification v2.1 | `Projects/oqts` |
+| Inbox: quantum dot primers (2), QADAPT Decoded, two-qubit gate, barrier control, QUAST physics and people, QUAST dossier | `Projects/quast` |
+| Inbox: Jump and Millennium question set, Jump error log v2 | `Careers/Jump Trading` |
+| Inbox: Millennium Interview Prep (margin) | `Careers/Millennium` |
+| Inbox: Locus design brief v1, plan v2, screens v2, plan v3, information and links, How a deploy reaches the server | `Projects/locus` |
+| Inbox: S1 Tracking ICU patients (22 Oct) | stays if unread, else `Studies/B18 Biomedical Modelling and Monitoring` |
+
+The `Notes` root setting (`[capture].notes_root`) and the category map follow the new folders in
+0.12, so the order is: 0.12's code deployed first, then the moves, so that no capture run sees
+a half-moved tablet with the old rules. **Check:** `rmapi ls` printed for the root and each
+folder, listed twice (a rate-limited listing can leave entries out).
 
 ## Departures from the plan
 

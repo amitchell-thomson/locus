@@ -20,7 +20,7 @@
       "why": "you chose the crowd over a network in quast; the essay argues the other side, well", "minutes": 12, "at": "2026-10-19T08:00:00+01:00" },
     { "id": "f-1018-mip", "kind": "reading", "title": "Market Microstructure in Practice, chapter 3: queue position",
       "summary": "How queue position, not price, decides fills for a passive order, and how to estimate it from public data.",
-      "why": "microstructure is on your internship goal and is the weakest track in it", "minutes": 40, "at": "2026-10-18T08:00:00+01:00" },
+      "why": "market microstructure is your weakest track, and nabla's cost model rests on it", "minutes": 40, "at": "2026-10-18T08:00:00+01:00" },
     { "id": "f-1017-tanker", "kind": "new_project", "title": "A Kalman nowcast on tanker-flow data",
       "summary": "Nowcast weekly LNG exports from daily vessel positions with a state-space model, scored against the official release.",
       "why": "Tanker-Flow's null result was on the raw signal; a nowcast asks a narrower question it may answer", "differs": "a new project, not a fix",

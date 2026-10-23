@@ -1,37 +1,6 @@
 {
   "goals": [
     {
-      "id": "jump-internship",
-      "title": "Jump internship preparation",
-      "state": "proposed",
-      "syllabus": [
-        {
-          "track": "backprop",
-          "what": "derive it by hand for a two-layer network, then check against autograd",
-          "hours": 6.0,
-          "from": "Deep Learning ch. 6 (read 8 Oct)"
-        },
-        {
-          "track": "pytorch",
-          "what": "tensors, autograd and a training loop from scratch, then a small model on your own data",
-          "hours": 8.0,
-          "from": "the PyTorch workshop repository and its tutorials"
-        },
-        {
-          "track": "microstructure",
-          "what": "order books, queue position, impact and the cost of trading",
-          "hours": 10.0,
-          "from": "Market Microstructure in Practice (in Explore) · nabla's cost model"
-        },
-        {
-          "track": "algorithms",
-          "what": "keep the named weakness moving: two mediums a week",
-          "hours": 6.0,
-          "from": "LeetCode by topic"
-        }
-      ]
-    },
-    {
       "id": "svd",
       "title": "personal learning",
       "state": "active",
@@ -309,16 +278,6 @@
     }
   ],
   "sheets": [
-    {
-      "id": "internship-1",
-      "title": "backprop by hand: a two-layer network",
-      "tracks": [
-        "backprop"
-      ],
-      "sent": "2026-10-24",
-      "state": "draft",
-      "questions": 4
-    },
     {
       "id": "jump-7",
       "title": "Jump sheet 7 · final light set",

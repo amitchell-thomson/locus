@@ -1,19 +1,11 @@
 {
   "project": "jump",
-  "stage": "offer accepted · internship 2027",
+  "stage": "not offered after the final round",
   "where_you_are": {
-    "state": "Final round on 1 Oct, in person: maths, programming, data science, trader. Offer accepted.",
-    "short": "Before the internship: PyTorch, backprop and market microstructure, all untested so far.",
-    "next": "agree the internship syllabus (Learning) so its sessions reach kairos"
+    "state": "Final round on 1 Oct, in person: maths, programming, data science, trader. Not offered.",
+    "next": "carry the prep forward: optimisation and linear algebra were the weakest tracks in its log"
   },
-  "new": [
-    {
-      "kind": "idea",
-      "text": "learning goal proposed: ready for the Jump Trading internship · syllabus to agree",
-      "at": "2026-10-24T09:00:00+01:00",
-      "unread": true
-    }
-  ],
+  "new": [],
   "sessions": [],
   "chores": [
     {
@@ -31,7 +23,7 @@
     }
   ],
   "status": {
-    "stage": "offer accepted · internship 2027",
-    "since": "2026-10-06"
+    "stage": "not offered",
+    "since": "2026-10-01"
   }
 }

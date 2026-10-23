@@ -134,6 +134,37 @@ Social, Travel with Errands; Studies, Projects and Careers filter as whole areas
 Per D6: how to upload the rewritten skill so it works on every machine and client, then a
 discussion: which other skills are worth having, versus carrying everything in the MCP tools.
 
+### 0.12 Notebook capture from the cloud (added 23 Oct, approved)
+Found during 0.5: nothing has reached the capture staging directory since 1 Aug. The agent on
+the tablet that pushed renders to `locus-remarkable-receiver` has stopped (a tablet update is
+the likely cause), so handwritten notebooks (Loop A) have not reached the library for twelve
+weeks, and Loop B's change detection, which keys on the same renders, has seen nothing either.
+Reading marks are still recorded by the hourly cloud sweep. Separately, capture stats every
+non-excluded document on each run (about 80 cloud calls every 30 minutes), which fits the HTTP
+429s in the logs.
+- Capture reads from the reMarkable cloud, as reading ink already does: one `rmapi ls -l` per
+  folder for modified times; a document whose time moved since its last capture is fetched as
+  a bundle (`data/cache/rmdoc/`) and rendered with `capture/rmdoc` (blank canvas for a native
+  notebook) into the staging directory as `<uuid>.pdf`. Loop A and Loop B are unchanged
+  downstream. No per-document `stat`; back off on 429 and never read a missing entry as a
+  deletion (§14).
+- What is captured as his writing: `/Notes/**` and notebooks at the root (`Jot`). Excluded:
+  `Inbox`, `Docs`, `Archive`, `Daily`, `Admin`, `trash`; `Reading` stays Loop B's.
+- The receiver unit leaves `deploy/systemd/enabled`; the tablet agent is left where it is.
+- Backfill: everything changed since 1 Aug is captured, under the existing per-run
+  transcription cap, so the billed catch-up spreads over a few ticks.
+- **Check:** a page written in Jot is printed by `locus list` within an hour; a margin note
+  written on a document in `Reading/In-Progress` is transcribed; one capture run's journal
+  printed showing its cloud call count; a day of `locus-capture` logs with no 429.
+
+### 0.5b Tablet tidy (added 23 Oct)
+Leave the tablet with one clear home for everything: `Inbox` (from Claude, not yet read), `Jot`,
+`Notes` (his writing, by area), `Docs` (documents Claude wrote, filed by area once read),
+`Reading`, `Admin` (paperwork), `Archive` (retired: the daily pages, old proposals). Moves are
+done with `rmapi mv`, which keeps each document's id, so marks stay attached. The mapping is
+agreed with Alec before anything moves; nothing is deleted. **Check:** `rmapi ls` printed for
+the root and each folder.
+
 ---
 
 ## Departures from the plan

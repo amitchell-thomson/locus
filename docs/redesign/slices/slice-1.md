@@ -687,6 +687,9 @@ kairos's and stays until he says otherwise.)
   Citadel FI&M Trading 2027, Meet Millennium 2026. No interview questions are in the mail, so
   each starts with none.
 - Home's careers: full names, each application's stage icon, closed ones dim.
+- "Add also accepted to citadel FI&M Challenge, just for humoring my ego": the Citadel FI&M
+  Central Bank Challenge 2026, from the mail: applied 31 Jan, selected 11 Mar (invite-only),
+  team confirmed 23 Mar, kick-off 25 Mar, the challenge in London 23 to 25 Apr.
 
 ## Report
 

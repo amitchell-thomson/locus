@@ -24,9 +24,9 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │   󰄵 Brevan Howard Interns… offer accepted   │    󱀄 B15  Control Systems               not…  │
 │   󰅘 Jump Trading Internsh… not offered ·…   │    󱀄 B16  Software Engineering Systems  not…  │
 │   󰅘 Citadel FI&M Trading … rejected · 28…   │    󱀄 B18  Biomedical Modelling and Mon… not…  │
-│   󰄵 Brevan Howard Interns… internship co…   │    󱀄 B20  Machine Learning              not…  │
-│   󰄵 Meet Millennium 2026   complete · 27…   │    ─────────────────────────────────────────  │
-│                                             │    󰌵 learning                           1 … L │
+│   󰄵 Citadel FI&M Central … accepted · co…   │    󱀄 B20  Machine Learning              not…  │
+│   󰄵 Brevan Howard Interns… internship co…   │    ─────────────────────────────────────────  │
+│   󰄵 Meet Millennium 2026   complete · 27…   │    󰌵 learning                           1 … L │
 │                                                                                             │
 │─ explore · 7 finds · full, so the scout is waiting for you ─────────────────────────── [e] ─│
 │   for projects +3  󰭎 quast  Bayes-opt barrier tuning, 3x fewer measurements          15 min │

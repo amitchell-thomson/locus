@@ -194,6 +194,13 @@
       "active": true
     },
     {
+      "id": "citadel-cbc",
+      "name": "Citadel FI&M Central Bank Challenge 2026",
+      "area": "Careers",
+      "kind": "application",
+      "active": true
+    },
+    {
       "id": "bh-2026",
       "name": "Brevan Howard Internship 2026",
       "area": "Careers",

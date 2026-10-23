@@ -1,0 +1,98 @@
+{
+  "project": "citadel-cbc",
+  "stage": "accepted · competed in London",
+  "where_you_are": {
+    "state": "Selected for the first London Central Bank Challenge, invite-only: four of you as one team, presenting to Citadel's Fixed Income and Macro team, 23 to 25 Apr.",
+    "next": "nothing: complete"
+  },
+  "new": [],
+  "sessions": [],
+  "status": {
+    "stage": "accepted · competed",
+    "since": "2026-04-25"
+  },
+  "application": {
+    "role": "Fixed Income & Macro Central Bank Challenge, London 2026: a team presentation competition, by invitation",
+    "stages": [
+      {
+        "name": "applied",
+        "date": "2026-01-31",
+        "state": "done"
+      },
+      {
+        "name": "selected",
+        "date": "2026-03-11",
+        "state": "done"
+      },
+      {
+        "name": "team confirmed",
+        "date": "2026-03-23",
+        "state": "done"
+      },
+      {
+        "name": "kick-off",
+        "date": "2026-03-25",
+        "state": "done"
+      },
+      {
+        "name": "the challenge",
+        "date": "2026-04-23",
+        "state": "done"
+      },
+      {
+        "name": "complete",
+        "date": "2026-04-25",
+        "state": "done"
+      }
+    ],
+    "events": [
+      {
+        "at": "2026-01-31T12:23:00+00:00",
+        "kind": "submission",
+        "text": "Application received"
+      },
+      {
+        "at": "2026-03-11T18:58:00+00:00",
+        "kind": "outcome",
+        "text": "Selected for the 2026 FI&M Central Bank Challenge",
+        "detail": [
+          "Invite-only; Citadel covered travel and the hotel."
+        ]
+      },
+      {
+        "at": "2026-03-16T19:15:00+00:00",
+        "kind": "mail",
+        "text": "Attendance confirmed; a mandatory kick-off call set for 25 Mar"
+      },
+      {
+        "at": "2026-03-23T14:18:00+00:00",
+        "kind": "mail",
+        "text": "Team 8 confirmed: four students competing together"
+      },
+      {
+        "at": "2026-03-25T17:00:00+00:00",
+        "kind": "call",
+        "text": "Kick-off call: the challenge question and guidelines",
+        "detail": [
+          "Every team member presents; the teams prepared until 23 Apr."
+        ]
+      },
+      {
+        "at": "2026-04-14T15:33:00+01:00",
+        "kind": "mail",
+        "text": "Final logistics for London"
+      },
+      {
+        "at": "2026-04-23T09:00:00+01:00",
+        "kind": "interview",
+        "text": "The challenge in London, 23 to 25 Apr: your team presented"
+      },
+      {
+        "at": "2026-04-25T07:54:00+01:00",
+        "kind": "mail",
+        "text": "Thanked for coming: \"you are all winners\""
+      }
+    ],
+    "questions": []
+  }
+}

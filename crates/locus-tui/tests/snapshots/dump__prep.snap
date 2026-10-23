@@ -4,7 +4,7 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 ---
 ╭ Jump Trading · trading internship, 2027 · final round 1 Oct ────────────────────── esc back ╮
 │ budget 30 h by 1 Oct · 27.5 h used ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━───                     │
-│ outcome offer · internship in 2027                                                          │
+│ outcome not offered after the final round                                                   │
 │─ the round ─────────────────────────────────────────────────────────────────────────────────│
 │ maths         linear algebra, optimisation, linear regress… pad or whiteboard, in front of… │
 │ programming   LeetCode style                                Python, shared editor           │

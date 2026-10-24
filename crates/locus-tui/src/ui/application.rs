@@ -188,7 +188,8 @@ fn draw_timeline(f: &mut Frame, area: Rect, app: &App, a: &Application, strip_h:
     let w = usize::from(area.width);
     let mut out = vec![rule(
         "timeline",
-        &format!("{} events · mail, calendar, what you sent", a.events.len()),
+        // A key for the marks on the track (round 5c: "what are the green dots").
+        &format!("{} events · ● stage done · ◉ now · ○ to come · ▲ today", a.events.len()),
         Some('t'),
         focus,
         area.width,

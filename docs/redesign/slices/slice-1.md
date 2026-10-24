@@ -740,6 +740,8 @@ their scores, the weakest tracks, and the next planned session (or, once closed,
 "Mark jump trading not offered internship after final round as having happened on the 22nd
 october": the outcome is dated 22 Oct, on the timeline and in its status. **The Application
 screen: done for now.**
+"What are the green dots": the stages done; the timeline's heading now carries a key (● stage
+done · ◉ now · ○ to come · ▲ today).
 
 ## Report
 

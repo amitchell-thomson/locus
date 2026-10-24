@@ -1,6 +1,6 @@
 # kairos joins locus
 
-**State:** approved 2026-10-24 · **Written:** 2026-10-24 · **Runs in:** `locus slice 1`
+**State:** done 2026-10-24 (K-e, archiving the old repository, due 31 Oct) · **Written:** 2026-10-24 · **Runs in:** `locus slice 1`
 **Decision:** [ADR-008](../../decisions/ADR-008-kairos-joins-locus.md). **From:** Slice 1's
 Calendar round (slice-1.md, round 6). **Takes over:** Slice 0's step 0.8 (kairos on the shared
 taxonomy), which Slice 0 drops when you confirm it to that session.
@@ -136,4 +136,58 @@ K4 and K5), then K6, then K7 to K9 (the joining). Each step ends with its check 
 commit of its own; the slice 1 design rounds carry on around it.
 
 ## Report
-*(written when it is done: each check's evidence, anything that went differently, decisions taken)*
+
+Run 24 Oct 2026, in one go at your request ("do the entire spec now in one go"). Every step is a
+commit of its own; the full suite ends at 355 tests passing, clippy `-D warnings` clean, and
+`kairos/scripts/ci.sh` green.
+
+### Each check's evidence
+
+| Step | Commit | Evidence |
+|---|---|---|
+| K1 move in | 0ec2f9c, 7c06753 | kairos 283/283 tests before and after; `kairos/scripts/ci.sh` ok from `kairos/`; TUI frames (week, agenda, tasks, month at 170x45, on a frozen copy of your data) byte-identical. |
+| K2 deploy | e6cd2b4 | `locus-kairosd.service` active on the server, built from this repository; the old `kairosd.service` retired (backup beside it); `kairos doctor` clean on both machines; a write and its undo through MCP on the moved daemon (`cs-189bd00250`, created then undone). |
+| K3 taxonomy | 153c159 | `taxonomy/areas.toml`, `taxonomy/registry.toml`; tests that the files load and that an entry outside the taxonomy is named; both fixture sets read them; kairosd serves `GET /api/taxonomy` (test). Slice 0 had the path already. |
+| K4 calendars | 312f406 | Live configs converted on both machines (backups `config.toml.bak-2026-10-24-areas`); doctor: "keys are the locus taxonomy (from kairosd)"; the legend reads `1 Studies 2 Projects 3 Careers │ 4 Personal ▸ 5 Family 6 Sport 7 Social 8 Errands`. Re-filing: see below. |
+| K5 due dates | f1b2207 | Deadline tests rewritten to due dates and green; the migration tested end to end; on the live calendars there were no ⚑ events, so it proposes nothing; a task's due date drawn as ⚑ in the week view (test). |
+| K6 TUI | f20a055 | Snapshots reviewed and updated; frame dumps at your kairos window's 145x40 before and after (kept out of the repository, since they show your calendar): before, 06:00 to 23:00 at one row an hour with 14 empty rows below; after, two rows an hour from 08:00, ▲ marking the hidden early hours. Key table in `kairos/docs/tui.md`. |
+| K7 one registry | f171fdb | Live: `cs-323d212cf6` linked quast, locus, nabla, tanker-flow, and oxdaq to OQTS (oxdaq is OQTS's component), and added CV and 3YP; `list_projects` shows the registry's projects with measured time. |
+| K8 linked | 91133b0, 9c78e36 | Live: your 16 Oct "Millennium Interview", linked with `kairos edit --locus millennium` (kairos's own record, no iCloud write), appears on Millennium's timeline (19 events → 20); Home's next event and the rhythm grid (12.9 h this week then) come from kairosd (`--dump --live`). The single-writer tests still green. |
+| K9 chores | 1b5b9b2 | Home at 95, 120 and 170 columns with a chore that fits now: nothing on the top line cut or pushed out (at 95 there is no room, so it is not named; at 120 by name; at 170 with its minutes); a put-off chore in waiting for you at all three. |
+
+### What went differently
+
+- **K2's write-and-undo check** used a project (kairos's own record) rather than the test
+  calendar: the test calendar was removed from the live config on 13 Oct.
+- **K4: iCloud calendars were not renamed.** kairos's keys are its own names for them, and the
+  two whose names changed are now pinned to their collection id, so renaming them on iCloud (for
+  the phone) is safe and optional. Your Personal calendar had only ten events, all past: the
+  Millennium recruitment talk (16 Jun) to Careers is **waiting for your approval**
+  (`cs-397358ab1c`); "Travel to Oli's" to Social **applied at once**, because kairos rates moving
+  its own events as low risk, so it was not shown to you first (undo: `cs-5c021a872d`). The rest
+  are errands and stay in Errands, which is the old Personal calendar. No event was suggested for
+  Family: moving one there shares it with your family.
+- **K6: details moved to `v`**, since Enter opens a linked item in locus (K8).
+- **K6: worked time is measured from Claude Code's transcripts** in kairos-store, a stand-in for
+  locus's own session measure (Slice 3's hooks). Time worked through the project view's `n`
+  (a session you place) still counts after its check-in, so the two can overlap.
+- **K7's matching was applied rather than listed first.** Every match is exact (an id, a name, or
+  a component's name) and one changeset undoes it all. Only aulos (done) matches nothing.
+- **K9: "put off" counts missed check-ins.** A skipped block is not recorded against its task.
+
+### Decisions taken (yours to overrule)
+
+- Personal's digit is 4 and Family 5; the streams are 6 to 8 (`[tui] personal_index`,
+  `family_index`).
+- Old key names stay as aliases (Engineering = Studies, Personal and Inbox = Errands), so done
+  tasks, scripts and habits keep working with no data migration.
+- Proposed project time is off by default, with its code and tests kept.
+- A due date with nothing to plan (`kairos deadline`) is a task with estimate 0.
+- The locus window lays the live calendar over the fixtures only in the running window and with
+  `--dump --live`, never in tests.
+
+### Still to do
+
+- **K-e:** archive github.com/amitchell-thomson/kairos after a week of the moved build running
+  cleanly, so on or after **31 Oct** (`gh repo archive amitchell-thomson/kairos`). The server's
+  `~/server-projects/kairos` checkout can go then too.

@@ -788,6 +788,11 @@ check-ins daily, adds events himself, and never uses the phone. Decided:
   tasks placed into real gaps, surfaced on Home (the moment line when one fits now; waiting for
   you when overdue or put off); the day's height filled with more hours at an even height rather
   than taller ones. To be carried out under a "kairos joins locus" spec, for his approval.
+- Agreed (24 Oct): all three open parts as recommended; chores on Home's top line, "but there is
+  already a fair amount up there, so would want to make sure it is not crowded out"; "Kairos
+  should also migrate into the locus repo, I want everything as one system ... (keryx will later
+  too)" (ADR-008); "this session should take all of the taxonomy work". Spec:
+  [kairos-joins-locus.md](kairos-joins-locus.md), draft for approval.
 
 ## Report
 

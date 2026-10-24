@@ -1178,3 +1178,40 @@ fn proposing() -> Constraints {
     c.projects.enabled = true;
     c
 }
+
+#[test]
+fn a_chore_takes_the_smallest_gap_it_fits_not_the_long_ones() {
+    // Spec K9: chores are life admin for a gap; the long free stretches stay for work. The
+    // morning is long and free, the afternoon has a short gap after lunch: the chore takes that.
+    let c = constraints();
+    let mut chore = task("laundry", 20, Some("2026-10-12 22:00"));
+    chore.apply_type(c.task_type("chore").unwrap());
+    let day = vec![
+        busy("2026-10-12 10:30", "2026-10-12 12:45"),
+        busy("2026-10-12 14:20", "2026-10-12 18:45"),
+    ];
+    let p = run_plan("2026-10-12 08:00", &[chore], &day, &[]);
+    let b = p.create.iter().find(|b| b.task_id == "laundry").unwrap();
+    assert_eq!(b.minutes(), 20);
+    // The gap between the busy times either side, lunch (a meal in the profile) counted.
+    let mut around = day.clone();
+    around.push(busy("2026-10-12 12:45", "2026-10-12 13:30"));
+    let before = around
+        .iter()
+        .filter(|x| x.end <= b.start)
+        .map(|x| x.end)
+        .max()
+        .unwrap_or(b.start);
+    let after = around
+        .iter()
+        .filter(|x| x.start >= b.end)
+        .map(|x| x.start)
+        .min()
+        .unwrap_or(b.end);
+    assert!(
+        (after - before).num_minutes() < 90,
+        "{} in a {} min gap",
+        local(b.start),
+        (after - before).num_minutes()
+    );
+}

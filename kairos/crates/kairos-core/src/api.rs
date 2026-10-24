@@ -529,3 +529,23 @@ pub struct WorkedReq {
     pub to: DateTime<Utc>,
     pub spans: Vec<WorkedSpan>,
 }
+
+/// An open chore (spec K9): a task of type chore, for locus's Home.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChoreItem {
+    pub id: String,
+    pub title: String,
+    /// Minutes it still needs.
+    pub minutes: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub due: Option<DateTime<Utc>>,
+    /// Blocks for it you checked in as missed: how many times it was put off.
+    #[serde(default)]
+    pub put_off: u32,
+    /// Past its due date and still open.
+    #[serde(default)]
+    pub overdue: bool,
+    /// You are in a gap now that it fits (nothing busy from now until it would be done).
+    #[serde(default)]
+    pub fits_now: bool,
+}

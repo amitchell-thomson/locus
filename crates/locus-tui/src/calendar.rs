@@ -56,6 +56,14 @@ impl Live {
         }
     }
 
+    /// Open chores (spec K9).
+    pub fn chores(&self) -> Vec<kairos_core::api::ChoreItem> {
+        match self.daemon.chores() {
+            Ok(Ok(v)) => v,
+            _ => Vec::new(),
+        }
+    }
+
     pub fn area_of(&self, key: &str) -> Option<String> {
         self.cfg.key(key).map(|k| k.area().to_string())
     }
@@ -73,6 +81,23 @@ fn kind_of(title: &str) -> AppEventKind {
     } else {
         AppEventKind::Call
     }
+}
+
+/// Chores onto Home (spec K9): the one that fits the gap you are in now (the most put off), and
+/// those overdue or put off for "waiting for you".
+pub fn apply_chores(fx: &mut Fixtures, chores: &[kairos_core::api::ChoreItem]) {
+    let chore = |c: &kairos_core::api::ChoreItem| locus_contract::Chore {
+        title: c.title.clone(),
+        minutes: c.minutes,
+        put_off: c.put_off,
+        overdue: c.overdue,
+    };
+    fx.home.chore_now = chores.iter().find(|c| c.fits_now).map(chore);
+    fx.home.chores_waiting = chores
+        .iter()
+        .filter(|c| c.overdue || c.put_off > 0)
+        .map(chore)
+        .collect();
 }
 
 /// Lay the calendar over the fixtures. `area_of` maps a kairos key to its locus area.
@@ -221,5 +246,55 @@ mod tests {
         apply(&mut fx, &cal, |_| None, now);
         let events = &fx.projects["millennium"].view.application.as_ref().unwrap().events;
         assert_eq!(events.iter().filter(|e| e.calendar.is_some()).count(), 1);
+    }
+}
+
+#[cfg(test)]
+mod chore_tests {
+    use crate::app::App;
+    use crate::fixtures::{Fixtures, resolve};
+    use crate::screen::ScreenId;
+    use crate::uselog::UseLog;
+
+    fn home(fx: Fixtures, w: u16) -> Vec<String> {
+        let app = App::new(fx, ScreenId::Home, UseLog::off());
+        crate::dump::render(&app, w, 40)
+            .unwrap()
+            .lines()
+            .map(String::from)
+            .collect()
+    }
+
+    #[test]
+    fn a_chore_on_the_top_line_never_pushes_anything_out() {
+        // Spec K9's check: at 95, 120 and 170 columns, with a chore that fits now, everything
+        // the top line showed without it is still there, uncut; a put-off chore waits for you.
+        let base = Fixtures::load(&resolve("default")).unwrap();
+        let mut with = base.clone();
+        let laundry = kairos_core::api::ChoreItem {
+            id: "t-1".into(),
+            title: "laundry".into(),
+            minutes: 20,
+            due: None,
+            put_off: 2,
+            overdue: false,
+            fits_now: true,
+        };
+        super::apply_chores(&mut with, &[laundry]);
+        let mut shown_somewhere = false;
+        for w in [95u16, 120, 170] {
+            let (a, b) = (home(base.clone(), w), home(with.clone(), w));
+            // Every word of the top line without the chore is on the top line with it.
+            for word in a[0]
+                .split(|c: char| c == '─' || c.is_whitespace())
+                .filter(|s| s.len() > 1)
+            {
+                assert!(b[0].contains(word), "{w} cols: {word:?} lost:\n{}\n{}", a[0], b[0]);
+            }
+            shown_somewhere |= b[0].contains("laundry");
+            let waiting = b.iter().any(|l| l.contains("laundry (put off 2×)"));
+            assert!(waiting, "{w} cols: not waiting for you:\n{}", b.join("\n"));
+        }
+        assert!(shown_somewhere, "a wide window has room for it");
     }
 }

@@ -214,7 +214,8 @@ pub fn router(st: AppState, mcp: Option<Router<AppState>>) -> Router {
         .route("/api/checkin", get(checkin_items).post(checkin))
         .route("/api/status", get(status))
         .route("/api/taxonomy", get(taxonomy))
-        .route("/api/worked", post(set_worked));
+        .route("/api/worked", post(set_worked))
+        .route("/api/chores", get(chores));
     let mut protected = api;
     if let Some(m) = mcp {
         protected = protected.merge(m);
@@ -657,6 +658,11 @@ async fn checkin_items(State(st): State<AppState>) -> HResult<Vec<api::CheckinIt
 
 async fn checkin(State(st): State<AppState>, Json(req): Json<api::CheckinReq>) -> HResult<api::PlanResp> {
     Ok(Json(with_engine(&st, move |e| e.checkin(&req)).await?))
+}
+
+/// Open chores for locus's Home (spec K9).
+async fn chores(State(st): State<AppState>) -> HResult<Vec<api::ChoreItem>> {
+    Ok(Json(with_engine(&st, move |e| e.chores()).await?))
 }
 
 /// A machine's measured project time (spec K6), from its Claude sessions.

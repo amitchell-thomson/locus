@@ -176,7 +176,12 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         gap,
         Constraint::Min(3),
         gap,
-        Constraint::Length(2),
+        // A third line for chores overdue or put off (spec K9), only when there are any.
+        Constraint::Length(if app.fixtures.home.chores_waiting.is_empty() {
+            2
+        } else {
+            3
+        }),
         gap,
         Constraint::Length(3),
     ])
@@ -318,6 +323,21 @@ fn draw_border(f: &mut Frame, area: Rect, app: &App) -> Rect {
             break;
         }
     }
+    // A chore that fits the gap you are in (spec K9) takes only the room left once the moment,
+    // the jobs, the review, the next event and mail have theirs: it never pushes one out.
+    if let Some(c) = &fx.home.chore_now {
+        for text in [
+            format!("  {} {} · {}m fits now ", glyph::CHORES, c.title, c.minutes),
+            format!("  {} {} ", glyph::CHORES, c.title),
+        ] {
+            let mut with = mid.clone();
+            with.push(Span::styled(text, st("green")));
+            if fits(&with, &right) {
+                mid = with;
+                break;
+            }
+        }
+    }
     let block = ratatui::widgets::Block::default()
         .borders(ratatui::widgets::Borders::ALL)
         .border_type(ratatui::widgets::BorderType::Rounded)
@@ -368,6 +388,31 @@ fn draw_waiting(f: &mut Frame, area: Rect, app: &App) {
             vec![]
         };
         out.push(row(left, right, area.width));
+    }
+    // Chores overdue or put off (spec K9), most put off first.
+    let ch = &app.fixtures.home.chores_waiting;
+    if !ch.is_empty() {
+        let names: Vec<String> = ch
+            .iter()
+            .map(|c| match (c.put_off, c.overdue) {
+                (0, true) => format!("{} (overdue)", c.title),
+                (0, false) => c.title.clone(),
+                (n, _) => format!("{} (put off {n}×)", c.title),
+            })
+            .collect();
+        out.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(
+                format!(
+                    " {} {} chore{}   ",
+                    glyph::CHORES,
+                    ch.len(),
+                    if ch.len() == 1 { "" } else { "s" }
+                ),
+                bold(st("green")),
+            ),
+            Span::styled(names.join(SEP), text()),
+        ]));
     }
     lines(f, area, out);
 }

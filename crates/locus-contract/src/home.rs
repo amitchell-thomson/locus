@@ -21,6 +21,26 @@ pub struct Home {
     /// The weekly review is in its slot and has not been done.
     #[serde(default)]
     pub review_ready: bool,
+    /// A chore that fits the gap you are in now (spec K9): named on the top line only when there
+    /// is room left after everything else there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chore_now: Option<Chore>,
+    /// Chores overdue or put off, for "waiting for you" (spec K9).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub chores_waiting: Vec<Chore>,
+}
+
+/// A chore from kairos (a task of type chore): life admin for a gap.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Chore {
+    pub title: String,
+    pub minutes: u32,
+    /// How many times its block was missed.
+    #[serde(default)]
+    pub put_off: u32,
+    #[serde(default)]
+    pub overdue: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

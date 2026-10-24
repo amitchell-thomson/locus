@@ -398,6 +398,9 @@ fn ordered_needs<'t>(input: &PlanInput<'_>, tasks: &'t [Task], g: &Grid<'_>, hor
 }
 
 /// Score of a placement for a task: higher is better.
+/// The task type for life admin that fits into gaps (ADR-006): laundry, a parcel.
+pub const CHORE: &str = "chore";
+
 fn score(g: &Grid<'_>, t: &Task, i: usize, len: usize) -> i64 {
     let local = g.at(i).with_timezone(&g.tz);
     let m = (local.hour() * 60 + local.minute()) as u16;
@@ -408,6 +411,13 @@ fn score(g: &Grid<'_>, t: &Task, i: usize, len: usize) -> i64 {
         i64::from(b.saturating_sub(a))
     };
     let mut sc = 0;
+    // A chore (spec K9) is life admin for a gap: never the deep-work hours, whatever its priority.
+    if t.kind.as_deref() == Some(CHORE) {
+        if let Some(p) = g.c.profile_for(local.date_naive()) {
+            sc -= 4 * p.deep_work.iter().map(|w| overlap(w.start, w.end)).sum::<i64>();
+        }
+        return sc;
+    }
     if let Some(w) = t.preferred_window.as_deref().and_then(|w| g.c.window(w)) {
         sc += 4 * overlap(w.start, w.end);
     }
@@ -451,6 +461,20 @@ impl State {
             focus: BTreeMap::new(),
             chunks: BTreeMap::new(),
         }
+    }
+
+    /// Free slots around `[i, i+len)`: the gap it would sit in (a chore wants the smallest).
+    fn gap_len(&self, i: usize, len: usize) -> usize {
+        let free = |k: usize| self.usable[k] && !self.taken[k];
+        let mut a = i;
+        while a > 0 && free(a - 1) {
+            a -= 1;
+        }
+        let mut b = (i + len).min(self.taken.len());
+        while b < self.taken.len() && free(b) {
+            b += 1;
+        }
+        b - a
     }
 
     /// Length (slots) of the back-to-back run `[i, i+len)` would sit in:
@@ -638,7 +662,11 @@ fn find_chunk(g: &Grid<'_>, st: &State, n: &Need<'_>, remaining: usize, tier: Ti
             } else if rest > 0 && rest < crumb && len >= crumb + (crumb - rest) {
                 len -= crumb - rest;
             }
-            let sc = score(g, t, j, len);
+            let mut sc = score(g, t, j, len);
+            // A chore takes the smallest gap it fits, leaving the long ones for work.
+            if t.kind.as_deref() == Some(CHORE) {
+                sc -= 10 * st.gap_len(j, len) as i64;
+            }
             // Longest (up to target) first, then fit, then earliest.
             if best.is_none_or(|(bf, bs, _, _)| (fits, sc) > (bf, bs)) {
                 best = Some((fits, sc, j, len));

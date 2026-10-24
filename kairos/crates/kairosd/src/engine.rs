@@ -2195,6 +2195,48 @@ impl Engine {
         Ok(Some(id.to_string()))
     }
 
+    /// Open chores (spec K9), for locus's Home: how long each needs, how often it was put off,
+    /// whether it is overdue, and whether it fits the gap you are in now. Most put off first.
+    pub fn chores(&self) -> Result<Vec<api::ChoreItem>> {
+        let now = self.now();
+        let tz = self.tz();
+        let checkins = self.db.checkins(false)?;
+        let mut v: Vec<api::ChoreItem> = self
+            .db
+            .tasks(Some(TaskStatus::Open))?
+            .into_iter()
+            .filter(|t| t.kind.as_deref() == Some(kairos_core::sched::CHORE))
+            .map(|t| {
+                let minutes = if t.remaining_min > 0 {
+                    t.remaining_min
+                } else {
+                    t.estimate_min
+                }
+                .max(5);
+                let due = t.due.map(|d| d.instant(tz));
+                let fits_now = self
+                    .find_free(now, now + Duration::hours(4), i64::from(minutes))
+                    .ok()
+                    .and_then(|s| s.first().cloned())
+                    .is_some_and(|s| s.start <= now + Duration::minutes(5));
+                api::ChoreItem {
+                    put_off: checkins
+                        .iter()
+                        .filter(|c| c.task_id == t.id && c.outcome == Some(Outcome::Missed))
+                        .count() as u32,
+                    overdue: due.is_some_and(|d| d < now),
+                    id: t.id,
+                    title: t.title,
+                    minutes,
+                    due,
+                    fits_now,
+                }
+            })
+            .collect();
+        v.sort_by_key(|c| (std::cmp::Reverse((c.overdue, c.put_off)), c.due));
+        Ok(v)
+    }
+
     /// Open projects kairos has that the registry does not (shown by `kairos doctor`).
     pub fn unregistered(&self) -> Result<Vec<String>> {
         if self.registry.is_none() {

@@ -72,6 +72,7 @@ fn main() -> Result<()> {
         let live = locus_tui::calendar::Live::connect().context("no kairos config, or kairosd unreachable")?;
         let cal = live.fetch(chrono::Utc::now()).context("kairosd did not answer")?;
         locus_tui::calendar::apply(&mut fx, &cal, |k| live.area_of(k), chrono::Utc::now());
+        locus_tui::calendar::apply_chores(&mut fx, &live.chores());
     }
     if let Some(name) = cli.dump {
         let Some(screen) = ScreenId::from_name(&name) else {
@@ -254,7 +255,7 @@ fn run(mut app: App) -> Result<()> {
         std::thread::spawn(move || {
             loop {
                 if let Some(cal) = live.fetch(chrono::Utc::now())
-                    && cal_tx.send(cal).is_err()
+                    && cal_tx.send((cal, live.chores())).is_err()
                 {
                     return;
                 }
@@ -269,10 +270,11 @@ fn run(mut app: App) -> Result<()> {
     let result = (|| -> Result<()> {
         while !app.quit {
             app.tick(focus.poll(), Instant::now());
-            if let Ok(cal) = cal_rx.try_recv()
+            if let Ok((cal, chores)) = cal_rx.try_recv()
                 && let Some(live) = app.calendar.clone()
             {
                 locus_tui::calendar::apply(&mut app.fixtures, &cal, |k| live.area_of(k), chrono::Utc::now());
+                locus_tui::calendar::apply_chores(&mut app.fixtures, &chores);
             }
             if app.stack.first() == Some(&ScreenId::Home)
                 && let Some(id) = inbox.poll()

@@ -15,7 +15,11 @@
     "role": "Trading, Fixed Income & Macro, 2027 hiring",
     "stages": [
       {
-        "name": "online assessment (HackerRank)",
+        "name": "applied",
+        "state": "start"
+      },
+      {
+        "name": "HackerRank",
         "date": "2026-07-29",
         "state": "done"
       },

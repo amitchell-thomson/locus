@@ -15,14 +15,9 @@
     "role": "Quantitative Investment Strategies internship, London",
     "stages": [
       {
-        "name": "introduction / advice",
-        "date": "2025-09-18",
-        "state": "done"
-      },
-      {
-        "name": "call with graduate recruitment",
-        "date": "2025-10-17",
-        "state": "done"
+        "name": "applied",
+        "date": "2025-10-18",
+        "state": "start"
       },
       {
         "name": "online assessments",
@@ -30,18 +25,13 @@
         "state": "done"
       },
       {
-        "name": "offer (call)",
+        "name": "offer",
         "date": "2025-11-10",
         "state": "done"
       },
       {
-        "name": "contract signed",
+        "name": "accepted",
         "date": "2025-11-21",
-        "state": "done"
-      },
-      {
-        "name": "pre-start checks and onboarding",
-        "date": "2026-05-19",
         "state": "done"
       },
       {
@@ -51,6 +41,7 @@
       },
       {
         "name": "complete",
+        "date": "2026-07-27",
         "state": "done"
       }
     ],

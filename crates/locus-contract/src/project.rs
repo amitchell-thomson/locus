@@ -359,6 +359,9 @@ pub struct Stage {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StageState {
+    /// Where the application itself began, applied or invited: a mark of its own on the track,
+    /// not a step passed (round 5e).
+    Start,
     Done,
     Current,
     Upcoming,

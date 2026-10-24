@@ -1,16 +1,15 @@
 {
   "project": "bh-2027",
-  "stage": "offer accepted · contract pending",
+  "stage": "offer accepted · contract signed",
   "where_you_are": {
-    "state": "Return offer on 20 Aug for 21 Jun to 27 Aug 2027, accepted on 26 Aug; documents sent on 4 Oct.",
-    "next": "the contract and the screening check; no mail since 5 Oct"
+    "state": "Return offer on 20 Aug, accepted on 26 Aug; the contract is signed, you think; documents sent on 4 Oct.",
+    "next": "the internship, 21 Jun to 27 Aug 2027"
   },
   "new": [],
   "sessions": [],
   "status": {
-    "stage": "offer accepted",
-    "since": "2026-08-26",
-    "turn": "them"
+    "stage": "contract signed",
+    "since": "2026-08-26"
   },
   "application": {
     "role": "2027 Summer Internship Programme, offered as a return after the 2026 internship, London",
@@ -18,12 +17,7 @@
       {
         "name": "return requested",
         "date": "2026-07-28",
-        "state": "done"
-      },
-      {
-        "name": "approval",
-        "date": "2026-07-29",
-        "state": "done"
+        "state": "start"
       },
       {
         "name": "offer",
@@ -36,8 +30,13 @@
         "state": "done"
       },
       {
-        "name": "contract / checks",
-        "state": "current"
+        "name": "contract signed",
+        "state": "done"
+      },
+      {
+        "name": "internship",
+        "date": "2027-06-21",
+        "state": "upcoming"
       }
     ],
     "events": [

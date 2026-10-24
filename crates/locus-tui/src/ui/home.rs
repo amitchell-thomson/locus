@@ -501,7 +501,16 @@ fn draw_careers(f: &mut Frame, area: Rect, app: &App) {
         // An application shows its stage's icon; a closed one is dim, so what is still open
         // stands out (round 5).
         let status = pf.and_then(|pf| pf.view.status.as_ref());
-        let closed = p.kind == ProjectKind::Application && status.is_some_and(|s| s.turn.is_none());
+        // Closed: nothing left to come, no stage current or upcoming.
+        let closed = p.kind == ProjectKind::Application
+            && pf.and_then(|pf| pf.view.application.as_ref()).is_some_and(|a| {
+                a.stages.iter().all(|s| {
+                    !matches!(
+                        s.state,
+                        locus_contract::StageState::Current | locus_contract::StageState::Upcoming
+                    )
+                })
+            });
         let (g, gc) = if p.kind == ProjectKind::Repo {
             (glyph::DOSSIER, "peach")
         } else {

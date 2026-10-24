@@ -15,34 +15,24 @@
     "role": "Summer 2027 internship, London",
     "stages": [
       {
-        "name": "recruiter outreach",
-        "date": "2026-05-28",
-        "state": "done"
+        "name": "applied",
+        "date": "2026-09-08",
+        "state": "start"
       },
       {
-        "name": "intro call",
-        "date": "2026-06-03",
-        "state": "done"
-      },
-      {
-        "name": "office visit / coffee",
-        "date": "2026-09-07",
-        "state": "done"
-      },
-      {
-        "name": "first interview (coding)",
+        "name": "first interview",
         "date": "2026-09-16",
         "state": "done"
       },
       {
-        "name": "final round (onsite)",
+        "name": "final round",
         "date": "2026-10-01",
         "state": "done"
       },
       {
         "name": "not offered",
-        "state": "done",
-        "date": "2026-10-22"
+        "date": "2026-10-22",
+        "state": "done"
       }
     ],
     "events": [

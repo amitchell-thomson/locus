@@ -747,6 +747,18 @@ counts as completing a stage": "applied" is no longer a stage on any application
 an event (its own icon on the track), and an undated stage with nothing before it starts at the
 application's submission.
 
+**Round 5e, 24 Oct. What gets a dot.** Agreed rule: a dot is a step that moved the application
+on: each assessment or interview round sat, each decision that advanced you (invited, selected,
+offered, your acceptance), the outcome, and the start of the internship or programme itself.
+Logistics (booking, rescheduling, confirmations, kick-offs, documents, internal approval) and
+informal contact (outreach, intro calls, visits, dinners) stay events on the track. Applying,
+or being invited, is `StageState::Start`: a ◆ of its own, "applied" back on the track but not as
+a step passed, and wherever it falls (Jump's came after the outreach and the office visit). His
+corrections: Millennium's first discussion, technical interview and second interview were all
+technical interviews (now technical interview 1 to 3); the Brevan Howard 2027 contract is
+signed ("I think"), with the internship on 21 Jun 2027 still to come. An undated step passed is
+never drawn after today; an application is closed on Home when no stage is current or to come.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

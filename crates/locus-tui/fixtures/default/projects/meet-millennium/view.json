@@ -15,7 +15,11 @@
     "role": "Meet Millennium 2026 London, a one-day insight programme, London",
     "stages": [
       {
-        "name": "online assessment (HackerRank)",
+        "name": "applied",
+        "state": "start"
+      },
+      {
+        "name": "HackerRank",
         "date": "2026-02-20",
         "state": "done"
       },
@@ -25,13 +29,8 @@
         "state": "done"
       },
       {
-        "name": "attended",
+        "name": "the insight day",
         "date": "2026-04-16",
-        "state": "done"
-      },
-      {
-        "name": "closed",
-        "date": "2026-07-27",
         "state": "done"
       }
     ],

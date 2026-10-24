@@ -16,6 +16,11 @@
     "role": "Spring into Quant Finance 2027",
     "stages": [
       {
+        "name": "applied",
+        "date": "2026-10-17",
+        "state": "start"
+      },
+      {
         "name": "review",
         "state": "current"
       },

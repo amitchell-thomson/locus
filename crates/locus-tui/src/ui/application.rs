@@ -40,7 +40,7 @@ pub fn stage_glyph(stage: &str) -> (&'static str, &'static str) {
     let s = stage.to_lowercase();
     if s.contains("not offered") || s.contains("reject") || s.contains("withdrawn") {
         (glyph::FAILED, "red")
-    } else if s.contains("accepted") || s.contains("complete") {
+    } else if s.contains("accepted") || s.contains("complete") || s.contains("signed") {
         (glyph::DONE, "green")
     } else if s.contains("offer") {
         (glyph::APPROVE, "green")
@@ -189,7 +189,10 @@ fn draw_timeline(f: &mut Frame, area: Rect, app: &App, a: &Application, strip_h:
     let mut out = vec![rule(
         "timeline",
         // A key for the marks on the track (round 5c: "what are the green dots").
-        &format!("{} events · ● stage done · ◉ now · ○ to come · ▲ today", a.events.len()),
+        &format!(
+            "{} events · ◆ applied · ● step passed · ◉ now · ○ to come · ▲ today",
+            a.events.len()
+        ),
         Some('t'),
         focus,
         area.width,
@@ -245,6 +248,12 @@ fn draw_timeline(f: &mut Frame, area: Rect, app: &App, a: &Application, strip_h:
                         .map_or(start, |e| e.at.date_naive()),
                 }
             }
+        };
+        // A step already passed, or the start, is never drawn in the future (round 5e).
+        let d = if s.date.is_none() && matches!(s.state, StageState::Done | StageState::Start) {
+            d.min(now)
+        } else {
+            d
         };
         stage_d.push(d);
     }
@@ -333,6 +342,7 @@ fn draw_timeline(f: &mut Frame, area: Rect, app: &App, a: &Application, strip_h:
     for (i, s) in a.stages.iter().enumerate() {
         let sx = stage_x[i];
         let (ch, style) = match s.state {
+            StageState::Start => ('◆', st("lavender")),
             StageState::Done => ('●', st("green")),
             StageState::Current => ('◉', bold(st("blue"))),
             StageState::Upcoming => ('○', st("overlay1")),
@@ -342,7 +352,7 @@ fn draw_timeline(f: &mut Frame, area: Rect, app: &App, a: &Application, strip_h:
         }
         let ls = match s.state {
             StageState::Current => bold(st("blue")),
-            StageState::Done => text(),
+            StageState::Done | StageState::Start => text(),
             StageState::Upcoming => dim(),
         };
         let (row, lx, label) = &placed[i];

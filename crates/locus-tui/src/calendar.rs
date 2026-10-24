@@ -112,10 +112,11 @@ pub fn apply(fx: &mut Fixtures, cal: &[Instance], area_of: impl Fn(&str) -> Opti
                         let (s, e) = (at(start), at(end));
                         (s.date_naive() == date).then(|| WorkSpan {
                             start: s.time(),
+                            // Past midnight: it ends with the day on the grid.
                             end: if e.date_naive() == date {
                                 e.time()
                             } else {
-                                chrono::NaiveTime::MIN
+                                chrono::NaiveTime::from_hms_opt(23, 59, 0).unwrap_or(chrono::NaiveTime::MIN)
                             },
                             // The worked bar's title is the registry name; the grid wants the id.
                             project: reg

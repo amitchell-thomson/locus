@@ -165,7 +165,9 @@ non-excluded document on each run (about 80 cloud calls every 30 minutes), which
 - **Folder levels** (Alec, 23 Oct: nesting inside courses and projects, e.g. a course's
   submodules from Canvas): level 1 is the area (`Studies`, `Projects`, `Careers`, matched
   case-insensitively); level 2 is the course, repo or application, matched to the registry by
-  name; anything deeper is his own organisation and decides nothing. The full device path is
+  name (in `Careers`, against an application's `company`, falling back to its name, since a
+  firm's folder spans its applications); anything deeper is his own organisation and decides
+  nothing. The full device path is
   stored with each capture so the Canvas pull (Slice 7) can map submodules later. A level-2
   folder that matches nothing in the registry keeps its area and is named by `locus status`,
   never filed under nothing silently.

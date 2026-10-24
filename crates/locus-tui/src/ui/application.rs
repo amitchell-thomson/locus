@@ -236,7 +236,13 @@ fn draw_timeline(f: &mut Frame, area: Rect, app: &App, a: &Application, strip_h:
                         last_dated + chrono::Duration::days(step * ahead)
                     }
                     (Some((_, d0)), None) => d0 + chrono::Duration::days(1),
-                    (None, _) => start,
+                    // Nothing dated before it: it began when you applied, if that is on the
+                    // timeline (round 5d: applying is an event, not a stage).
+                    (None, _) => a
+                        .events
+                        .iter()
+                        .find(|e| e.kind == AppEventKind::Submission)
+                        .map_or(start, |e| e.at.date_naive()),
                 }
             }
         };

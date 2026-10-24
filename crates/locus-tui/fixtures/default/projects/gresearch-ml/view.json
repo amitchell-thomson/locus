@@ -16,11 +16,6 @@
     "role": "Team challenge programme over two terms from November: 16 open AI/ML problems, compute credits, share of a £5,000 prize pot. Probably what you calls the 'G-Research ML Grant', Oxford",
     "stages": [
       {
-        "name": "applied",
-        "date": "2026-10-16",
-        "state": "done"
-      },
-      {
         "name": "applications close",
         "date": "2026-10-29",
         "state": "upcoming"

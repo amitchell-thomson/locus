@@ -742,6 +742,10 @@ october": the outcome is dated 22 Oct, on the timeline and in its status. **The 
 screen: done for now.**
 "What are the green dots": the stages done; the timeline's heading now carries a key (● stage
 done · ◉ now · ○ to come · ▲ today).
+"What are the two green dots around office visit? ... I do not think sending off the application
+counts as completing a stage": "applied" is no longer a stage on any application; sending it is
+an event (its own icon on the track), and an undated stage with nothing before it starts at the
+application's submission.
 
 ## Report
 

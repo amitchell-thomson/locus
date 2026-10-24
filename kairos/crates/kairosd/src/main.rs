@@ -166,10 +166,17 @@ async fn main() -> Result<()> {
         notifier,
         direct: false,
         replan_soon: true,
+        // The locus registry (spec K7): kairos's projects are its repos.
+        registry: kairos_store::taxonomy::local().ok().map(|s| s.registry),
     };
     let mut engine = engine;
     // Projects used to have their own tables (before 2026-10-14).
     engine.migrate_projects().context("migrating projects")?;
+    match engine.sync_registry() {
+        Ok(Some(cs)) => tracing::info!("{}", cs.summary),
+        Ok(None) => {}
+        Err(e) => tracing::warn!("projects from the registry: {e}"),
+    }
     // ⚑ events from before due dates were task attributes (spec K5): proposed once for approval.
     if let Err(e) = engine.migrate_deadlines() {
         tracing::warn!("migrating deadlines: {e}");

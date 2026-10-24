@@ -147,6 +147,9 @@ pub struct Engine {
     /// An event changed under the plan: replan as soon as the current
     /// request is done (see [`Engine::replan_if_needed`]).
     pub replan_soon: bool,
+    /// The locus registry (spec K7), read from `taxonomy/registry.toml`: kairos's projects are
+    /// its repos. `None` (tests, or the file unreadable) leaves projects as kairos keeps them.
+    pub registry: Option<locus_contract::Registry>,
 }
 
 /// A loaded snapshot of all calendars.
@@ -2080,7 +2083,103 @@ impl Engine {
     }
 
     fn project_view(&self, t: &Task) -> Project {
-        Project::of(t, self.projects_key().as_deref())
+        let mut p = Project::of(t, self.projects_key().as_deref());
+        // A linked project shows the registry's name: one name in every app.
+        if let (Some(id), Some(reg)) = (&t.registry, &self.registry)
+            && let Some(e) = reg.get(id)
+        {
+            p.name = e.name.clone();
+        }
+        p
+    }
+
+    /// Bring kairos's projects in line with the locus registry (spec K7), in one changeset: a
+    /// project whose name is a registry repo's (its id, name or a component's name) is linked to
+    /// it; a registry repo with no project gets one (active if the registry says so, else
+    /// paused). Projects that match nothing stay as they are, and `unregistered` names them.
+    /// Run at start and every few minutes, so an edit to registry.toml arrives by itself.
+    pub fn sync_registry(&mut self) -> Result<Option<Changeset>> {
+        let Some(reg) = self.registry.clone() else {
+            return Ok(None);
+        };
+        let now = self.now();
+        let mut projects: Vec<Task> = self
+            .db
+            .projects()?
+            .into_iter()
+            .filter(|p| p.status != TaskStatus::Dropped)
+            .collect();
+        let mut ops = Vec::new();
+        let mut linked = Vec::new();
+        for p in projects.iter_mut().filter(|p| p.registry.is_none()) {
+            if let Some(e) = project::registry_match(&p.title, &reg)
+                && !self
+                    .db
+                    .projects()?
+                    .iter()
+                    .any(|o| o.registry.as_deref() == Some(e.id.as_str()))
+                && !linked.iter().any(|(_, id): &(String, String)| id == &e.id)
+            {
+                let mut after = p.clone();
+                after.registry = Some(e.id.clone());
+                after.updated_at = now;
+                linked.push((p.title.clone(), e.id.clone()));
+                ops.push(Op::UpdateTask {
+                    before: Box::new(p.clone()),
+                    after: Box::new(after.clone()),
+                });
+                *p = after;
+            }
+        }
+        let key = self.projects_key().unwrap_or_default();
+        let mut made = Vec::new();
+        for e in reg
+            .projects
+            .iter()
+            .filter(|e| e.kind == locus_contract::ProjectKind::Repo)
+        {
+            if projects.iter().any(|p| p.registry.as_deref() == Some(e.id.as_str())) {
+                continue;
+            }
+            let status = if e.active {
+                ProjectStatus::Active
+            } else {
+                ProjectStatus::Paused
+            };
+            let area_key = self.cfg.key(&e.area).map(|k| k.name.clone()).unwrap_or(key.clone());
+            let mut t = project::new_task(&e.name, status, "", &area_key, Author::Claude, now);
+            t.registry = Some(e.id.clone());
+            made.push(e.name.clone());
+            ops.push(Op::CreateTask { after: Box::new(t) });
+        }
+        if ops.is_empty() {
+            return Ok(None);
+        }
+        let mut parts = Vec::new();
+        if !linked.is_empty() {
+            let l: Vec<String> = linked.iter().map(|(t, id)| format!("{t} = {id}")).collect();
+            parts.push(format!("linked {}", l.join(", ")));
+        }
+        if !made.is_empty() {
+            parts.push(format!("added {}", made.join(", ")));
+        }
+        let world = self.world(1)?;
+        let summary = format!("Projects from the locus registry: {}", parts.join("; "));
+        self.propose(&world, Author::Claude, ops, summary).map(Some)
+    }
+
+    /// Open projects kairos has that the registry does not (shown by `kairos doctor`).
+    pub fn unregistered(&self) -> Result<Vec<String>> {
+        if self.registry.is_none() {
+            return Ok(Vec::new());
+        }
+        Ok(self
+            .db
+            .projects()?
+            .into_iter()
+            .filter(|p| p.status == TaskStatus::Open && p.registry.is_none())
+            .map(|p| p.title)
+            .collect())
     }
 
     /// Project sessions among `instances`: `(instance, project id)`. A
@@ -2189,6 +2288,29 @@ impl Engine {
                 }
             }
         }
+        // Measured time (spec K6): worked spans from Claude sessions, by registry id. They are
+        // what was done, so they count without a check-in.
+        let spans = self.worked(
+            kairos_core::time::resolve_local(month_ago.and_time(NaiveTime::MIN), tz),
+            now,
+        )?;
+        let week_start = kairos_core::time::resolve_local(monday.and_time(NaiveTime::MIN), tz);
+        for s in spans {
+            let Some(it) = items
+                .iter_mut()
+                .find(|p| p.project.registry.as_deref() == Some(s.project.as_str()))
+            else {
+                continue;
+            };
+            let mins = (s.end - s.start).num_minutes().max(0) as u32;
+            it.month_min += mins;
+            if s.start >= week_start {
+                it.week_min += mins;
+            }
+            if it.last_worked.is_none_or(|l| l < s.end) {
+                it.last_worked = Some(s.end);
+            }
+        }
         Ok((items, upcoming))
     }
 
@@ -2244,14 +2366,35 @@ impl Engine {
     }
 
     pub fn create_project(&mut self, author: Author, req: &api::CreateProjectReq) -> Result<Project> {
-        let name = req.name.trim();
+        let mut name = req.name.trim().to_string();
         if name.is_empty() {
             return Err(EngineError::BadRequest("a project needs a name".into()));
         }
+        // New projects come from the registry (spec K7), never from kairos alone.
+        let mut registry = None;
+        if let Some(reg) = &self.registry {
+            let Some(e) = project::registry_match(&name, reg) else {
+                return Err(EngineError::BadRequest(format!(
+                    "{name:?} is not in the locus registry: add it to taxonomy/registry.toml (one list of \
+                     projects for every app), then it appears here by itself"
+                )));
+            };
+            if self
+                .db
+                .projects()?
+                .iter()
+                .any(|p| p.registry.as_deref() == Some(e.id.as_str()))
+            {
+                return Err(EngineError::BadRequest(format!("{} is already a project", e.name)));
+            }
+            name = e.name.clone();
+            registry = Some(e.id.clone());
+        }
+        let name = name.as_str();
         self.project_name_free(name, None)?;
         let status = Self::project_status(req.status.as_deref())?.unwrap_or_default();
         let key = self.project_key(req.key.as_deref())?;
-        let t = project::new_task(
+        let mut t = project::new_task(
             name,
             status,
             req.note.as_deref().unwrap_or(""),
@@ -2259,6 +2402,7 @@ impl Engine {
             author,
             self.now(),
         );
+        t.registry = registry;
         let world = self.world(1)?;
         self.propose(
             &world,

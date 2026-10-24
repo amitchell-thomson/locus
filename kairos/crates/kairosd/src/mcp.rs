@@ -34,11 +34,11 @@ themselves: an open task with remaining_min 0 has used its planned time — ask 
 (\"only managed 20 min of furniture\"), find it with list_checkins and record it with checkin; work outside a block is \
 log_work. Unanswered blocks wait, and count as done after a week. Only create a specific block when Alec asks for a specific slot (create_event with \
 task_id makes a pinned block).\n\
-PROJECTS: open-ended work with no deadline (a project is a task of kind project; list_projects shows each with time \
-spent this week/month, time waiting for a check-in and the next session). Its calendar time is sessions (◇): plan one \
-with plan_project_time when Alec asks for a slot, or accept proposed time (list_proposals) — the scheduler never places \
-them. Time spent is only what's checked in on its sessions and on the blocks of tasks that belong to it (create_task \
-project=…). Events count only when linked: attribute_to_project (no uids = suggestions to confirm).\n\
+PROJECTS: kairos's projects are the locus registry's repos (taxonomy/registry.toml): one list for every app, \
+so create_project only accepts a registry name, and a repo added to the registry appears by itself. list_projects \
+shows each with time spent this week/month: time measured from Alec's Claude sessions in that repo (no check-in) plus \
+checked-in blocks of tasks that belong to it (create_task project=…). To set time aside for a project, plan a task of \
+it; kairos no longer proposes project time.\n\
 TIMES: ISO 8601 ('2026-10-16T17:00', with or without offset; Europe/London assumed) or plain dates for all-day; \
 natural forms like 'fri 17:00' also work but ambiguous input is rejected. Keys: {KEYS}.\n\
 BULK: for more than one event, find them with search_events, then make ONE update_events / delete_events / \

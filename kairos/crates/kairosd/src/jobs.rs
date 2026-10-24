@@ -148,10 +148,17 @@ impl Jobs {
                         to: now + chrono::Duration::minutes(1),
                         spans,
                     };
-                    if let Ok(mut e) = eng.lock()
-                        && let Err(err) = e.set_worked(&req)
-                    {
-                        tracing::warn!("worked time: {err}");
+                    if let Ok(mut e) = eng.lock() {
+                        if let Err(err) = e.set_worked(&req) {
+                            tracing::warn!("worked time: {err}");
+                        }
+                        // The registry may have changed with a deploy (spec K7).
+                        e.registry = Some(shared.registry.clone());
+                        match e.sync_registry() {
+                            Ok(Some(cs)) => tracing::info!("{}", cs.summary),
+                            Ok(None) => {}
+                            Err(err) => tracing::warn!("projects from the registry: {err}"),
+                        }
                     }
                 })
                 .await;

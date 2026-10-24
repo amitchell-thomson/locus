@@ -162,6 +162,7 @@ overlay = "imported"
             notifier: Box::new(self.rec.clone()),
             direct: false,
             replan_soon: false,
+            registry: None,
         }
     }
 

@@ -2462,6 +2462,7 @@ fn projects_from_before_they_were_tasks_are_migrated() {
         status,
         note: "n".into(),
         key: key.map(String::from),
+        registry: None,
         created_at: now,
         updated_at: now,
     };
@@ -2553,4 +2554,78 @@ fn not_going_frees_your_time_for_the_scheduler() {
     )
     .unwrap();
     assert!(busy(&mut e));
+}
+
+#[test]
+fn projects_are_the_registry_repos() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    // kairos's own list from before: one matches by name, one by a component's name, one by
+    // nothing at all.
+    for n in ["quast", "oxdaq", "aulos"] {
+        e.create_project(
+            Author::Alec,
+            &kairos_core::api::CreateProjectReq {
+                name: n.into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    }
+    e.registry = Some(
+        locus_contract::taxonomy::load(&locus_contract::taxonomy::root())
+            .unwrap()
+            .registry,
+    );
+    let cs = e.sync_registry().unwrap().unwrap();
+    assert_eq!(cs.status, Status::Applied);
+    assert!(
+        cs.summary.contains("quast = quast") && cs.summary.contains("oxdaq = oqts"),
+        "{}",
+        cs.summary
+    );
+    assert!(e.sync_registry().unwrap().is_none(), "nothing more to do");
+    let ps = e.projects().unwrap();
+    let by_reg = |id: &str| ps.iter().find(|p| p.project.registry.as_deref() == Some(id)).unwrap();
+    // Linked projects take the registry's name; every registry repo is a project.
+    assert_eq!(by_reg("oqts").project.name, "OQTS");
+    for id in ["quast", "nabla", "locus", "oqts", "cv", "3yp", "tanker-flow"] {
+        by_reg(id);
+    }
+    assert_eq!(
+        by_reg("tanker-flow").project.status,
+        kairos_core::project::ProjectStatus::Paused,
+        "inactive in the registry"
+    );
+    assert_eq!(e.unregistered().unwrap(), ["aulos"]);
+    // New projects come from the registry.
+    let err = e
+        .create_project(
+            Author::Alec,
+            &kairos_core::api::CreateProjectReq {
+                name: "a brand new thing".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+    assert!(err.to_string().contains("taxonomy/registry.toml"), "{err}");
+    // Measured time counts for its registry project, no check-in needed.
+    e.set_worked(&kairos_core::api::WorkedReq {
+        machine: "mac".into(),
+        from: at("2026-10-01 00:00"),
+        to: at("2026-10-13 00:00"),
+        spans: vec![kairos_core::api::WorkedSpan {
+            project: "locus".into(),
+            start: at("2026-10-12 08:00"),
+            end: at("2026-10-12 09:30"),
+        }],
+    })
+    .unwrap();
+    env.set_now("2026-10-12 12:00");
+    let ps = e.projects().unwrap();
+    let locus = ps
+        .iter()
+        .find(|p| p.project.registry.as_deref() == Some("locus"))
+        .unwrap();
+    assert_eq!((locus.week_min, locus.month_min), (90, 90));
 }

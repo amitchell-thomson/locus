@@ -1536,14 +1536,28 @@ fn doctor(ctx: &Ctx, p: &Paint) -> Result<()> {
         Ok(d) => {
             if d.healthy() {
                 match d.status()? {
-                    Ok(s) => println!(
-                        "{ok} kairosd {} {}",
-                        p.dim(d.base()),
-                        p.dim(&format!(
-                            "· live={} · {} pending · {} open tasks",
-                            s["live"], s["pending_changesets"], s["open_tasks"]
-                        ))
-                    ),
+                    Ok(s) => {
+                        println!(
+                            "{ok} kairosd {} {}",
+                            p.dim(d.base()),
+                            p.dim(&format!(
+                                "· live={} · {} pending · {} open tasks",
+                                s["live"], s["pending_changesets"], s["open_tasks"]
+                            ))
+                        );
+                        // Projects kairos has that the locus registry does not (spec K7).
+                        let names: Vec<&str> = s["unregistered_projects"]
+                            .as_array()
+                            .map(|v| v.iter().filter_map(|x| x.as_str()).collect())
+                            .unwrap_or_default();
+                        if !names.is_empty() {
+                            println!(
+                                "{warn} projects not in the locus registry: {} {}",
+                                names.join(", "),
+                                p.dim("(add them to taxonomy/registry.toml, or mark them done)")
+                            );
+                        }
+                    }
                     Err(e) => {
                         problems += 1;
                         println!("{bad} kairosd auth: {e}");

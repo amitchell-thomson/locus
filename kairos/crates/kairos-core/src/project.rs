@@ -67,6 +67,9 @@ pub struct Project {
     /// e.g. Engineering for the 3rd-year project.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<String>,
+    /// The locus registry entry this project is (spec K7): one list of projects for every app.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registry: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -84,6 +87,7 @@ impl Project {
             },
             note: t.notes.clone(),
             key: (!t.key.is_empty() && Some(t.key.as_str()) != projects_key).then(|| t.key.clone()),
+            registry: t.registry.clone(),
             created_at: t.created_at,
             updated_at: t.updated_at,
         }
@@ -109,6 +113,20 @@ pub fn set_status(t: &mut Task, s: ProjectStatus) {
         t.status = TaskStatus::Open;
         t.stage = Some(s);
     }
+}
+
+/// The registry repo a kairos project is, by name (spec K7): its id, its name, or the name of one
+/// of its components (`oxdaq` is part of OQTS), compared without case. Never a guess beyond that.
+pub fn registry_match<'a>(name: &str, reg: &'a locus_contract::Registry) -> Option<&'a locus_contract::Project> {
+    let n = name.trim().to_lowercase();
+    reg.projects
+        .iter()
+        .filter(|p| p.kind == locus_contract::ProjectKind::Repo)
+        .find(|p| {
+            p.id.to_lowercase() == n
+                || p.name.to_lowercase() == n
+                || p.components.iter().any(|c| c.name.to_lowercase() == n)
+        })
 }
 
 #[cfg(test)]

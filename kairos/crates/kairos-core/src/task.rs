@@ -100,6 +100,9 @@ pub struct Task {
     /// Projects only (`kind = "project"`): active / next / paused while open.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stage: Option<crate::project::ProjectStatus>,
+    /// Projects only: the locus registry entry it is (spec K7, `taxonomy/registry.toml`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registry: Option<String>,
     pub created_by: Author,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -160,6 +163,7 @@ impl Task {
             notes: String::new(),
             project_id: None,
             stage: None,
+            registry: None,
             created_by,
             created_at: now,
             updated_at: now,

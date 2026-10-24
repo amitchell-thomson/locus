@@ -702,6 +702,7 @@ async fn status(State(st): State<AppState>) -> HResult<serde_json::Value> {
             "test_calendar": e.cfg.test_calendar,
             "pending_changesets": pending,
             "open_tasks": open,
+            "unregistered_projects": e.unregistered()?,
             "newest_item": newest,
             "now": e.now(),
         }))

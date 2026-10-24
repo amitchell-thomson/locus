@@ -498,6 +498,7 @@ fn project(
             status,
             note: String::new(),
             key: None,
+            registry: None,
             created_at: t,
             updated_at: t,
         },

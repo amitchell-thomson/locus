@@ -712,6 +712,14 @@ kairos's and stays until he says otherwise.)
   the skills; an application's prep section shows the goals that serve it. This is ADR-006 as
   written ("goal ... linked to a course, application, or nothing"; "prep plan: a goal tied to
   one application"); the screens are brought back to it. The name stays "goals".
+- Goals are opt-in, never made per course ("does that mean we have learning goals for all of my
+  courses ... could crowd the other (more extracurricular) ones out ... I have my problem sheets
+  so will likely not be asking claude to write me more problems for those"). Courses keep their
+  own machinery (sheets, deadlines, kairos blocks, Canvas and the course view later) and live in
+  Studies; a course gets a goal only when you ask for one for something it does not give you,
+  such as exam revision with practice beyond the problem sheets, dated by the exam. Skills move
+  only through practice logged in Learning, not through coursework, so they stay honest about
+  what has been seen.
 
 ## Report
 

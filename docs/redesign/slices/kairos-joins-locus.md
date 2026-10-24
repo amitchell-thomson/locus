@@ -57,7 +57,8 @@ and the moves that touch iCloud are shown to you before they are applied.
 
 ### K3 The taxonomy file
 - `taxonomy/areas.toml` (areas, Personal's streams, kinds, task types) and `taxonomy/registry.toml`
-  (repos, courses, applications, with area and kind), per ADR-006; the fixture registry and the
+  (repos, courses, applications, with area and kind, and for an application its company, which
+  the tablet's per-firm Careers folders match on), per ADR-006; the fixture registry and the
   contract read from them; kairos reads them (directly on the server, through kairosd's API on the
   laptop, a cached copy offline).
 - **Check:** a test that every fixture and kairos config name resolves in the file; Slice 0 told

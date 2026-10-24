@@ -156,63 +156,72 @@
       "name": "Millennium QD Internship 2027",
       "area": "Careers",
       "kind": "application",
-      "active": true
+      "active": true,
+      "company": "Millennium"
     },
     {
       "id": "gresearch",
       "name": "G-Research Spring 2027",
       "area": "Careers",
       "kind": "application",
-      "active": true
+      "active": true,
+      "company": "G-Research"
     },
     {
       "id": "gresearch-ml",
       "name": "G-Research AI/ML Challenges",
       "area": "Careers",
       "kind": "application",
-      "active": true
+      "active": true,
+      "company": "G-Research"
     },
     {
       "id": "bh-2027",
       "name": "Brevan Howard Internship 2027",
       "area": "Careers",
       "kind": "application",
-      "active": true
+      "active": true,
+      "company": "Brevan Howard"
     },
     {
       "id": "jump",
       "name": "Jump Trading Internship 2027",
       "area": "Careers",
       "kind": "application",
-      "active": true
+      "active": true,
+      "company": "Jump Trading"
     },
     {
       "id": "citadel",
       "name": "Citadel FI&M Trading 2027",
       "area": "Careers",
       "kind": "application",
-      "active": true
+      "active": true,
+      "company": "Citadel"
     },
     {
       "id": "citadel-cbc",
       "name": "Citadel FI&M Central Bank Challenge 2026",
       "area": "Careers",
       "kind": "application",
-      "active": true
+      "active": true,
+      "company": "Citadel"
     },
     {
       "id": "bh-2026",
       "name": "Brevan Howard Internship 2026",
       "area": "Careers",
       "kind": "application",
-      "active": true
+      "active": true,
+      "company": "Brevan Howard"
     },
     {
       "id": "meet-millennium",
       "name": "Meet Millennium 2026",
       "area": "Careers",
       "kind": "application",
-      "active": true
+      "active": true,
+      "company": "Millennium"
     }
   ]
 }

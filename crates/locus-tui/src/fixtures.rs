@@ -315,6 +315,13 @@ impl Fixtures {
             }
         }
 
+        // Every application names its company: the tablet's Careers folders are per company,
+        // and capture matches a folder to it (Slice 0, 0.12).
+        for p in &self.registry.projects {
+            if p.kind == ProjectKind::Application && p.company.is_none() {
+                bad.push(format!("registry.json: application `{}` has no company", p.id));
+            }
+        }
         for (id, pf) in &self.projects {
             let named = [
                 Some(("view", pf.view.project.as_str())),

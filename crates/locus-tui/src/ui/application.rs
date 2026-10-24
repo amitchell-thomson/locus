@@ -477,6 +477,20 @@ fn prep(app: &App, v: &ProjectView, w: u16) -> Vec<Line<'static>> {
     ));
     spans.push(Span::styled(format!("{SEP}{} sessions logged", p.log.len()), dim()));
     out.push(Line::from(spans));
+    // What it covered last: the most recent sessions, each with its score (round 5b: "last
+    // topics covered").
+    let recent: Vec<String> = p
+        .log
+        .iter()
+        .take(3)
+        .map(|x| format!("{} {} {}/{}", date(x.date), x.track, x.right, x.problems))
+        .collect();
+    if !recent.is_empty() {
+        out.push(Line::from(vec![
+            Span::styled(format!("   {:<14}", "last covered"), dim()),
+            Span::styled(recent.join(SEP), text()),
+        ]));
+    }
     // The tracks it drew on, weakest first, with your confidence in each now.
     let mut tracks: Vec<(String, f32)> = p
         .topics

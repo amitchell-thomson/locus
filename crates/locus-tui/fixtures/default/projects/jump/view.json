@@ -2,14 +2,14 @@
   "project": "jump",
   "stage": "not offered after the final round",
   "where_you_are": {
-    "state": "Final round on 1 Oct, onsite in London, after a coding first round on 16 Sep. Not offered.",
+    "state": "Final round on 1 Oct, onsite in London, after a coding first round on 16 Sep. Not offered: you heard on 22 Oct.",
     "next": "carry the prep forward: optimisation and linear algebra were the weakest tracks in its log"
   },
   "new": [],
   "sessions": [],
   "status": {
     "stage": "not offered",
-    "since": "2026-10-01"
+    "since": "2026-10-22"
   },
   "application": {
     "role": "Summer 2027 internship, London",
@@ -46,7 +46,8 @@
       },
       {
         "name": "not offered",
-        "state": "done"
+        "state": "done",
+        "date": "2026-10-22"
       }
     ],
     "events": [
@@ -146,6 +147,11 @@
         "at": "2026-10-01T10:40:00+01:00",
         "kind": "interview",
         "text": "Onsite final round at Jump London (signed in 10:40)"
+      },
+      {
+        "at": "2026-10-22T12:00:00+01:00",
+        "kind": "outcome",
+        "text": "Not offered after the final round"
       }
     ],
     "questions": []

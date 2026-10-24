@@ -734,6 +734,13 @@ cells apart, since one draws wider than a cell. The selection is a place in the 
 first: ↓ goes older and down the list, ← older and → newer along the track. The events list takes
 whatever height is spare, so a fuller prep section shrinks it rather than the page.
 
+**Round 5b, 24 Oct.** "The prep view should show more detail about prep, with last topics
+covered, weakest, next session plan etc": prep shows time used, the last sessions covered with
+their scores, the weakest tracks, and the next planned session (or, once closed, the outcome).
+"Mark jump trading not offered internship after final round as having happened on the 22nd
+october": the outcome is dated 22 Oct, on the timeline and in its status. **The Application
+screen: done for now.**
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

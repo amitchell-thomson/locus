@@ -725,6 +725,15 @@ kairos's and stays until he says otherwise.)
   helped teach me". Kept apart from practice-moved confidence (a stated level with its source),
   and added when Learning is built, not now.
 
+**Round 5a, 24 Oct. The timeline, polished.** "The moving through events is confusing, as the
+icons do not highlight very clearly and look slightly offset wrongly when they are, and then the
+highlighting of the text below when you press the down arrow moves up which is
+counterintuitive." The selected icon turns bright blue and a pointer row under it names it
+("▲ 16 Oct · interview"), between the icons and the stage dates so the dates stay; icons sit two
+cells apart, since one draws wider than a cell. The selection is a place in the list, newest
+first: ↓ goes older and down the list, ← older and → newer along the track. The events list takes
+whatever height is spare, so a fuller prep section shrinks it rather than the page.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

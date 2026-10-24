@@ -242,7 +242,12 @@ fn draw_timeline(f: &mut Frame, area: Rect, app: &App, a: &Application, strip_h:
         stage_d.push(d);
     }
     let stage_x: Vec<usize> = stage_d.iter().map(|&d| x(d)).collect();
-    let sel = focus.then(|| app.sel('t').min(a.events.len().saturating_sub(1)));
+    // The selection is a place in the list below, newest first, so ↓ goes older and down the
+    // list, and ← (older) and → (newer) follow the track (round 5a: "when you press the down
+    // arrow [the highlight] moves up which is counterintuitive"). `sel` is the event it names.
+    let n_ev = a.events.len();
+    let pos = focus.then(|| app.sel('t').min(n_ev.saturating_sub(1)));
+    let sel = pos.map(|k| n_ev - 1 - k);
     let blank = || vec![(' ', Style::default()); w];
     // Rows: stage names (two rows, alternating so they never collide), the track, the events,
     // the dates.
@@ -353,25 +358,52 @@ fn draw_timeline(f: &mut Frame, area: Rect, app: &App, a: &Application, strip_h:
             put(&mut when, tx, "today", st("peach"));
         }
     }
-    // Every event on its day; events on the same day stack to the right.
-    let mut used = vec![false; w];
+    // Every event on its day, two cells apart (an icon draws wider than one cell, so packed tight
+    // they ran into each other); events on the same day stack to the right. The selected one is
+    // drawn bright, and a pointer under it names it (round 5a: "the icons do not highlight very
+    // clearly and look slightly offset wrongly when they are").
+    let mut used = vec![false; w + 2];
+    let mut sel_x = None;
     for (i, e) in a.events.iter().enumerate() {
         let (g, gc) = event_glyph(e.kind);
         let mut ex = x(e.at.date_naive());
-        while ex < w && used[ex] {
+        while ex < w && (used[ex] || used[ex + 1]) {
             ex += 1;
         }
         if ex >= w {
             continue;
         }
         used[ex] = true;
+        used[ex + 1] = true;
         let style = if sel == Some(i) {
-            bold(st(gc)).bg(c("surface1"))
+            sel_x = Some(ex);
+            bold(st("blue"))
         } else {
             st(gc)
         };
         if let Some(ch) = g.chars().next() {
             marks[ex] = (ch, style);
+        }
+    }
+    let mut cursor = blank();
+    if let (Some(sx), Some(i)) = (sel_x, sel) {
+        let e = &a.events[i];
+        let kind = match e.kind {
+            AppEventKind::Mail => "mail",
+            AppEventKind::Interview => "interview",
+            AppEventKind::Assessment => "assessment",
+            AppEventKind::Submission => "sent",
+            AppEventKind::Call => "call",
+            AppEventKind::Outcome => "outcome",
+        };
+        // The arrow sits under the icon; the label runs right of it, or, near the right edge,
+        // ends at it.
+        let what = format!("{} · {kind}", date(e.at.date_naive()));
+        if sx + 2 + what.width() <= w {
+            put(&mut cursor, sx, &format!("▲ {what}"), bold(st("blue")));
+        } else {
+            let lx = (sx + 1).saturating_sub(what.width() + 2);
+            put(&mut cursor, lx, &format!("{what} ▲"), bold(st("blue")));
         }
     }
     let to_line = |row: Vec<(char, Style)>| {
@@ -385,14 +417,17 @@ fn draw_timeline(f: &mut Frame, area: Rect, app: &App, a: &Application, strip_h:
     out.push(to_line(names[0].clone()));
     out.push(to_line(track));
     out.push(to_line(marks));
+    // The pointer row sits between the icons and the stage dates, blank until you walk the
+    // timeline, so the dates stay put.
+    out.push(to_line(cursor));
     out.push(to_line(when));
-    let _ = strip_h;
     out.push(Line::from(""));
+    let _ = strip_h;
     // The events, newest first, the selected one lit; its detail on the same line.
     let mut ix: Vec<usize> = (0..a.events.len()).collect();
     ix.reverse();
     let room = usize::from(area.height).saturating_sub(out.len());
-    let pos = sel.and_then(|s| ix.iter().position(|&i| i == s)).unwrap_or(0);
+    let pos = pos.unwrap_or(0);
     let first = pos.saturating_sub(room.saturating_sub(1));
     for (k, &i) in ix.iter().enumerate().skip(first).take(room) {
         let e = &a.events[i];
@@ -537,7 +572,8 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
         // ← and → walk the timeline from anywhere on the page, as they walk the branches.
         (_, KeyCode::Left | KeyCode::Right) if n > 0 => {
             app.focus = Some('t');
-            let d = if k.code == KeyCode::Left { -1 } else { 1 };
+            // The list is newest first: ← is older, further down it; → is newer.
+            let d = if k.code == KeyCode::Left { 1 } else { -1 };
             app.move_sel('t', n, d);
         }
         (_, KeyCode::Char('p')) => {

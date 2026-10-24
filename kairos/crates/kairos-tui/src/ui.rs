@@ -820,11 +820,11 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
     let rph: i64 = if needed(ext0, ext0 + 60, 2) <= nrows { 2 } else { 0 };
     let (mut h0, mut h1) = (ext0, ext1);
     if rph > 0 && needed(ext0, ext1, rph) <= nrows {
-        // Spare rows add hours: towards 06:00–24:00.
+        // Spare rows add hours, never blank rows: on to midnight, then earlier into the morning.
         loop {
             if h1 < 24 * 60 && needed(h0, h1 + 60, rph) <= nrows {
                 h1 += 60;
-            } else if h0 > 6 * 60 && needed(h0 - 60, h1, rph) <= nrows {
+            } else if h0 > 0 && needed(h0 - 60, h1, rph) <= nrows {
                 h0 -= 60;
             } else {
                 break;

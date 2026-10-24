@@ -89,14 +89,28 @@ pub fn parse_kairos_request(s: &str) -> Option<(NaiveDate, Option<String>)> {
     Some((day, it.next().map(String::from)))
 }
 
-/// Bring a tmux session forward on this client (`locus`, `kairos`). False outside tmux or when
-/// there is no such session: the request still waits in the file for when it is opened.
-pub fn switch_to(session: &str) -> bool {
-    std::env::var_os("TMUX").is_some()
-        && std::process::Command::new("tmux")
-            .args(["switch-client", "-t", &format!("={session}")])
-            .status()
-            .is_ok_and(|s| s.success())
+fn tmux(args: &[&str]) -> bool {
+    std::process::Command::new("tmux")
+        .args(args)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+/// Bring the other app forward on this client: `locus` is the locus session's home window,
+/// `kairos` its calendar window (`locus-session.sh`), else a session of that name. False outside
+/// tmux or when neither exists: the request still waits in the file for when it is opened.
+pub fn switch_to(app: &str) -> bool {
+    if std::env::var_os("TMUX").is_none() {
+        return false;
+    }
+    let view = if app == "kairos" { "calendar" } else { "home" };
+    let target = format!("=locus:={view}");
+    if tmux(&["select-window", "-t", &target]) {
+        return tmux(&["switch-client", "-t", &target]);
+    }
+    tmux(&["switch-client", "-t", &format!("={app}")])
 }
 
 #[cfg(test)]

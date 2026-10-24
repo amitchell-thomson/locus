@@ -177,6 +177,8 @@ fn default_task_types() -> Vec<TaskType> {
         t("sheet", Some(300), 120, 180, 60, true),
         t("coursework", None, 120, 180, 60, true),
         t("admin", Some(45), 30, 60, 30, false),
+        // Life admin for a gap (laundry, a parcel; ADR-006): short, one go, placed into real gaps.
+        t("chore", Some(20), 10, 30, 10, false),
     ]
 }
 

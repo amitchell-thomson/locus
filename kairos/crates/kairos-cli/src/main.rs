@@ -152,7 +152,7 @@ enum Cmd {
         #[arg(long)]
         matching: Option<String>,
     },
-    /// Add a ⚑ deadline: kairos deadline "B4 sheet" fri 17:00 --key Studies
+    /// Add a ⚑ due date (a task with only the date): kairos deadline "Apps close" fri 17:00 --key Careers
     Deadline {
         title: String,
         #[arg(required = true, num_args = 1..)]
@@ -226,7 +226,7 @@ enum TaskCmd {
         title: String,
         #[arg(long)]
         key: String,
-        /// sheet | coursework | admin (block sizes; default: admin up to 1 h, else sheet).
+        /// sheet | coursework | admin | chore (block sizes; default: admin up to 1 h, else sheet).
         #[arg(long = "type")]
         kind: Option<String>,
         /// Estimate (90m, 4h, 1h30); default: the type's.
@@ -302,7 +302,9 @@ impl Ctx {
         resolve_local(d.and_time(NaiveTime::MIN), self.tz)
     }
     fn index(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Index> {
-        Ok(cache::get(&self.cfg, Some(&self.path), self.now, from, to)?.0)
+        let mut idx = cache::get(&self.cfg, Some(&self.path), self.now, from, to)?.0;
+        idx.add_due_marks(&kairos_store::sync::read_tasks(&self.cfg), self.tz);
+        Ok(idx)
     }
     fn daemon(&self) -> Result<Daemon> {
         // Typed by a person on a terminal → their own edits apply directly.
@@ -1342,6 +1344,9 @@ fn sync(ctx: &Ctx, p: &Paint, local: bool) -> Result<()> {
             }
             Ok(Err(e)) => println!("{warn} sidecar: {e}"),
             Err(e) => println!("{warn} sidecar: {e}"),
+        }
+        if kairos_store::sync::pull_tasks(&ctx.cfg) {
+            println!("{ok} open tasks from kairosd (due dates)");
         }
     }
     let (from, to) = cache::default_window(&ctx.cfg, ctx.now);

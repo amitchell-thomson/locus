@@ -39,6 +39,14 @@ ideal_max_minutes = 60
 min_block_minutes = 30
 splittable = false
 
+[[task_types]]
+name = "chore"              # life admin for a gap: laundry, a parcel (one short go)
+estimate_minutes = 20
+ideal_min_minutes = 10
+ideal_max_minutes = 30
+min_block_minutes = 10
+splittable = false
+
 # Proposed project time: free gaps offered (greyed out in the TUI) to accept or drop.
 [projects]
 enabled = true

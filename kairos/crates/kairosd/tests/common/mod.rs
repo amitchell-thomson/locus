@@ -185,6 +185,16 @@ overlay = "imported"
         fs::write(self.coll(cal).join(format!("{uid}.ics")), text).unwrap();
     }
 
+    /// A ⚑ deadline event as kairos wrote them before due dates became task attributes (K5).
+    pub fn legacy_deadline(&self, cal: &str, uid: &str, title: &str, due: &str, task_id: &str) {
+        let f = |s: &str| at(s).format("%Y%m%dT%H%M%SZ").to_string();
+        let text = format!(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//kairos//EN\r\nBEGIN:VEVENT\r\nUID:{uid}\r\nDTSTAMP:20261001T000000Z\r\nDTSTART:{0}\r\nDTEND:{0}\r\nSUMMARY:⚑ {title}\r\nTRANSP:TRANSPARENT\r\nX-KAIROS-KIND:deadline\r\nX-KAIROS-CREATED-BY:claude\r\nX-KAIROS-TASK-ID:{task_id}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+            f(due)
+        );
+        fs::write(self.coll(cal).join(format!("{uid}.ics")), text).unwrap();
+    }
+
     pub fn feed(&self, text: &str) {
         let d = self.root().join("data/feeds");
         fs::create_dir_all(&d).unwrap();

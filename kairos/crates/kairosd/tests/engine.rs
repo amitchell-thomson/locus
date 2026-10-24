@@ -480,7 +480,7 @@ fn b4(estimate: u32, due: &str) -> CreateTaskReq {
 }
 
 #[test]
-fn b4_sheet_due_friday_gets_deadline_and_blocks() {
+fn b4_sheet_due_friday_gets_a_due_date_and_blocks() {
     let env = Env::new(true);
     env.phone_event(
         "Engineering",
@@ -496,11 +496,19 @@ fn b4_sheet_due_friday_gets_deadline_and_blocks() {
     assert!(plan.shortfalls.is_empty(), "{:?}", plan.shortfalls);
     assert_eq!(plan.changeset.as_ref().unwrap().status, Status::Applied);
     let eng = env.read_all("Engineering");
-    // Deadline: ⚑, zero-length, alarms −1 day and −2 h, linked to the task.
-    assert!(eng.contains("SUMMARY:⚑ B4 problem sheet"));
-    assert!(eng.contains("DTSTART;TZID=Europe/London:20261016T170000\r\nDTEND;TZID=Europe/London:20261016T170000"));
-    assert!(eng.contains("TRIGGER:-P1D") && eng.contains("TRIGGER:-PT2H"));
-    assert!(eng.contains(&format!("X-KAIROS-TASK-ID:{}", r.task.id)));
+    // The due date is the task's (K5): no ⚑ event on the calendar, a ⚑ mark drawn from the task.
+    assert!(!eng.contains("SUMMARY:⚑"), "{eng}");
+    assert_eq!(r.task.deadline_uid, None);
+    let marks = kairos_core::task::due_marks(
+        &e.db.tasks(None).unwrap(),
+        at("2026-10-12 00:00"),
+        at("2026-10-19 00:00"),
+        e.tz(),
+    );
+    assert_eq!(marks.len(), 1);
+    assert_eq!(marks[0].title, "⚑ B4 problem sheet");
+    assert_eq!(marks[0].meta.task_id.as_deref(), Some(r.task.id.as_str()));
+    assert!(matches!(marks[0].span, kairos_core::model::Span::Timed { start, .. } if start == at("2026-10-16 17:00")));
     // Blocks: 240 min total, all before Fri 15:00 (2 h lead), none during the lecture.
     let world = e.world(14).unwrap();
     let blocks: Vec<_> = world
@@ -677,22 +685,17 @@ fn dropping_a_task_removes_all_its_blocks_at_once() {
     assert_eq!(d.changesets.len(), 1);
     assert_eq!(d.changesets[0].status, Status::Applied);
     assert!(
-        d.changesets[0]
-            .summary
-            .contains(&format!("{n} scheduled blocks and its deadline")),
+        d.changesets[0].summary.contains(&format!("{n} scheduled blocks")),
         "{}",
         d.changesets[0].summary
     );
     assert_eq!(blocks_of(&mut e, &id), 0);
-    assert!(
-        !env.read_all("Engineering").contains("SUMMARY:⚑ B4 problem sheet"),
-        "deadline dropped too"
-    );
-    // One undo brings the task, every block and the deadline back.
+    // One undo brings the task (with its due date) and every block back.
     e.undo(&d.changesets[0].changeset_id).unwrap();
-    assert_eq!(e.db.task_get(&id).unwrap().unwrap().status, TaskStatus::Open);
+    let t = e.db.task_get(&id).unwrap().unwrap();
+    assert_eq!(t.status, TaskStatus::Open);
+    assert!(t.due.is_some());
     assert_eq!(blocks_of(&mut e, &id), n);
-    assert!(env.read_all("Engineering").contains("SUMMARY:⚑ B4 problem sheet"));
 }
 
 #[test]
@@ -704,7 +707,12 @@ fn deleting_a_deadline_removes_its_task_and_planned_time() {
     let id = r.task.id.clone();
     let n = blocks_of(&mut e, &id);
     assert!(n >= 2, "{n}");
-    let deadline = r.task.deadline_uid.clone().unwrap();
+    // A ⚑ event from before K5, still linked to its task.
+    let deadline = "old-deadline".to_string();
+    env.legacy_deadline("Engineering", &deadline, "B4 problem sheet", "2026-10-16 17:00", &id);
+    let mut t = e.db.task_get(&id).unwrap().unwrap();
+    t.deadline_uid = Some(deadline.clone());
+    e.db.task_put(&t).unwrap();
     e.direct = true;
     let cs = e.delete_event(Author::Alec, None, &deadline).unwrap();
     e.direct = false;
@@ -826,7 +834,12 @@ fn deadline_deletion_needs_approval() {
     let env = Env::new(true);
     let mut e = env.engine();
     let r = e.create_task(Author::Claude, &b4(60, "fri 17:00")).unwrap();
-    let uid = r.task.deadline_uid.clone().unwrap();
+    // A ⚑ event from before K5, still linked to its task.
+    let uid = "old-deadline".to_string();
+    env.legacy_deadline("Engineering", &uid, "B4 problem sheet", "2026-10-16 17:00", &r.task.id);
+    let mut t = e.db.task_get(&r.task.id).unwrap().unwrap();
+    t.deadline_uid = Some(uid.clone());
+    e.db.task_put(&t).unwrap();
     let cs = e.delete_event(Author::Claude, None, &uid).unwrap();
     assert_eq!(cs.status, Status::Pending);
     // A task's ⚑ takes the task with it, so it's a task drop (still Alec's call).
@@ -839,13 +852,25 @@ fn deadline_deletion_needs_approval() {
 }
 
 #[test]
-fn changing_due_moves_the_deadline_event() {
+fn changing_due_moves_the_mark_and_retires_an_old_deadline_event() {
     let env = Env::new(true);
     let mut e = env.engine();
     let r = e.create_task(Author::Claude, &b4(60, "fri 17:00")).unwrap();
+    env.legacy_deadline(
+        "Engineering",
+        "old-deadline",
+        "B4 problem sheet",
+        "2026-10-16 17:00",
+        &r.task.id,
+    );
+    let mut t = e.db.task_get(&r.task.id).unwrap().unwrap();
+    t.deadline_uid = Some("old-deadline".into());
+    e.db.task_put(&t).unwrap();
+    // You change the date (removing an old ⚑ event is a deadline delete: yours to make).
+    e.direct = true;
     let u = e
         .update_task(
-            Author::Claude,
+            Author::Alec,
             &r.task.id,
             &kairos_core::api::UpdateTaskReq {
                 due: Some("2026-10-20 12:00".into()),
@@ -854,10 +879,47 @@ fn changing_due_moves_the_deadline_event() {
         )
         .unwrap();
     assert_eq!(u.changesets[0].status, Status::Applied);
+    // The old ⚑ event goes; the date lives on the task, where the mark is drawn from.
+    assert!(!env.read_all("Engineering").contains("⚑"));
+    let t = e.db.task_get(&r.task.id).unwrap().unwrap();
+    assert_eq!(t.deadline_uid, None);
+    assert_eq!(t.due.map(|d| d.instant(e.tz())), Some(at("2026-10-20 12:00")));
+}
+
+#[test]
+fn old_deadline_events_migrate_to_due_dates_in_one_changeset() {
+    let env = Env::new(true);
+    let mut e = env.engine();
     assert!(
-        env.read_all("Engineering")
-            .contains("DTSTART;TZID=Europe/London:20261020T120000")
+        e.migrate_deadlines().unwrap().is_none(),
+        "nothing to migrate proposes nothing"
     );
+    let r = e.create_task(Author::Claude, &b4(60, "fri 17:00")).unwrap();
+    env.legacy_deadline(
+        "Engineering",
+        "linked",
+        "B4 problem sheet",
+        "2026-10-16 17:00",
+        &r.task.id,
+    );
+    env.legacy_deadline("Personal", "loose", "G-Research closes", "2026-10-30 23:00", "gone");
+    let cs = e.migrate_deadlines().unwrap().unwrap();
+    // Claude proposes, you approve: it deletes events.
+    assert_eq!(cs.status, Status::Pending);
+    assert!(cs.summary.contains("2 ⚑ event(s)"), "{}", cs.summary);
+    assert!(e.migrate_deadlines().unwrap().is_none(), "proposed once");
+    e.direct = true;
+    e.approve(&cs.id).unwrap();
+    assert!(!env.read_all("Engineering").contains("⚑") && !env.read_all("Personal").contains("⚑"));
+    let loose =
+        e.db.tasks(None)
+            .unwrap()
+            .into_iter()
+            .find(|t| t.title == "G-Research closes")
+            .unwrap();
+    assert_eq!(loose.key, "Personal");
+    assert_eq!(loose.estimate_min, 0);
+    assert_eq!(loose.due.map(|d| d.instant(e.tz())), Some(at("2026-10-30 23:00")));
 }
 
 #[test]
@@ -1892,7 +1954,7 @@ fn renaming_or_rekeying_a_task_carries_to_its_blocks_and_deadline() {
         "nothing left behind in Engineering:\n{eng}"
     );
     let per = env.read_all("Personal");
-    assert!(per.contains("SUMMARY:⚑ B4 sheet 3"), "{per}");
+    assert!(!per.contains("SUMMARY:⚑"), "{per}");
     assert!(per.matches("SUMMARY:☐ B4 sheet 3").count() >= 2, "{per}");
 }
 

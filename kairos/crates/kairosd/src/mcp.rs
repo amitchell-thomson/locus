@@ -24,8 +24,8 @@ deleting deadlines, dropping tasks, or more than 8 operations at once (the sched
 to read-only imports (Google feeds, holidays) are refused. You cannot approve changes: tell Alec what is pending and \
 let him approve in the TUI, CLI or on his phone. Every write returns {changeset_id, risk, status, summary}.\n\
 SCHEDULING: don't hand-place work blocks. Create/update tasks with a type (sheet = problem sheet, ~5 h in 2–3 h \
-blocks; coursework = estimate required, revised at check-ins; admin = admin/errands, one 30–60 min go), an estimate \
-and a deadline, then call plan; the deterministic scheduler spreads work over the days before the deadline, moves it \
+blocks; coursework = estimate required, revised at check-ins; admin = admin/errands, one 30–60 min go; chore = life admin for a gap, ~20 min), an estimate \
+and a due date (the task's own attribute: no calendar event is made), then call plan; the deterministic scheduler spreads work over the days before the deadline, moves it \
 out of the way of new events by itself, and reports shortfalls (\"2.5 h short before Fri 17:00\") with options and \
 squeezes (\"40 min squeezed into a short gap\", \"…into the last 2 h before Fri 17:00\": fits, but only just) and \
 learned estimates (\"planning 6 h for 4 h left\") — relay those honestly. Tasks never finish by \
@@ -329,12 +329,14 @@ pub struct CreateTaskArgs {
     pub title: String,
     pub key: String,
     /// Task type: sheet (problem sheets, ~5 h), coursework (estimate required;
-    /// revised at check-ins), admin (admin/errands, one 30–60 min go). Sets
+    /// revised at check-ins), admin (admin/errands, one 30–60 min go), chore (life admin for
+    /// a gap: laundry, a parcel; ~20 min). Sets
     /// block sizes. Default: admin up to 1 h, else sheet.
     pub kind: Option<String>,
     /// Estimated minutes of work (omit to use the type's default).
     pub estimate_min: Option<u32>,
-    /// Deadline: date (all-day) or time. Creates a ⚑ deadline event too.
+    /// Due date: date (end of that day) or time. The task's attribute, drawn as ⚑ on its day;
+    /// no calendar event is made.
     pub due: Option<String>,
     pub earliest_start: Option<String>,
     /// 1 high … 3 low (default 2).
@@ -354,7 +356,7 @@ pub struct UpdateTaskArgs {
     /// Task id or unique title prefix.
     pub id: String,
     pub title: Option<String>,
-    /// Task type (sheet | coursework | admin): resets block sizes.
+    /// Task type (sheet | coursework | admin | chore): resets block sizes.
     pub kind: Option<String>,
     pub key: Option<String>,
     pub estimate_min: Option<u32>,
@@ -748,7 +750,7 @@ impl KairosMcp {
     }
 
     #[tool(
-        description = "Create a task with an estimate (and optional deadline, which also creates a ⚑ deadline event). Low risk. Then runs the scheduler and returns the plan, including any shortfall."
+        description = "Create a task with an estimate and an optional due date (the task's own; no calendar event). Low risk. Then runs the scheduler and returns the plan, including any shortfall."
     )]
     async fn create_task(&self, Parameters(a): Parameters<CreateTaskArgs>) -> Result<CallToolResult, ErrorData> {
         let req = api::CreateTaskReq {
@@ -938,7 +940,7 @@ impl KairosMcp {
     }
 
     #[tool(
-        description = "Create a ⚑ deadline event (all-day for a date, zero-length with alarms for a time). Low risk."
+        description = "A ⚑ due date: with task_id, sets that task's due date; without, makes a task with only the date and no planned work (e.g. applications close on Friday). Never a calendar event. Low risk."
     )]
     async fn create_deadline(&self, Parameters(a): Parameters<DeadlineArgs>) -> Result<CallToolResult, ErrorData> {
         let req = api::DeadlineReq {

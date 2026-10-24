@@ -167,6 +167,54 @@ impl Task {
     }
 }
 
+/// A task's due date drawn on its day (spec K5: the date is the task's attribute, not an
+/// event). The ⚑ mark the TUI and CLI show, built here and never written to a calendar:
+/// open tasks with a due date in `[from, to)`, as instances of kind deadline that carry the task
+/// id, so every key that acts on a ⚑ acts on the task.
+pub fn due_marks(tasks: &[Task], from: DateTime<Utc>, to: DateTime<Utc>, tz: Tz) -> Vec<crate::model::Instance> {
+    use crate::model::{EventKind, Instance, Meta, Span};
+    tasks
+        .iter()
+        .filter(|t| t.status == TaskStatus::Open && t.stage.is_none())
+        .filter_map(|t| {
+            let due = t.due?;
+            let at = due.instant(tz);
+            if at < from || at >= to {
+                return None;
+            }
+            let span = match due {
+                Due::Date(d) => Span::AllDay {
+                    start: d,
+                    end: d.succ_opt().unwrap_or(d),
+                },
+                Due::At(t) => Span::Timed { start: t, end: t },
+            };
+            Some(Instance {
+                uid: format!("due-{}", t.id),
+                recurrence_id: None,
+                source: "tasks".into(),
+                overlay: crate::config::Overlay::Personal,
+                key: Some(t.key.clone()),
+                title: format!("⚑ {}", t.title),
+                location: None,
+                description: None,
+                span,
+                recurring: false,
+                transparent: true,
+                tentative: false,
+                meta: Meta {
+                    kind: EventKind::Deadline,
+                    task_id: Some(t.id.clone()),
+                    created_by: Some(t.created_by),
+                    ..Meta::default()
+                },
+                href: None,
+                alarms: Vec::new(),
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

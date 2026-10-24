@@ -279,7 +279,21 @@ impl App {
 
     /// Visible clusters in `[from, to)`, honouring filter and search.
     pub fn clusters(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<Cluster> {
-        let inst = self.index.between(from, to, self.tz);
+        let mut inst = self.index.between(from, to, self.tz);
+        // Due dates are the tasks' own (spec K5): drawn as ⚑ here, never stored as events. A
+        // task whose old ⚑ event is still on the calendar shows that one instead.
+        let marks = kairos_core::task::due_marks(&self.tasks, from, to, self.tz)
+            .into_iter()
+            .filter(|m| {
+                let legacy = self
+                    .tasks
+                    .iter()
+                    .find(|t| m.meta.task_id.as_deref() == Some(t.id.as_str()))
+                    .and_then(|t| t.deadline_uid.as_deref());
+                !legacy.is_some_and(|u| inst.iter().any(|i| i.uid == u)) && !inst.iter().any(|i| i.uid == m.uid)
+            })
+            .collect::<Vec<_>>();
+        inst.extend(marks);
         let mut v = view_with(inst, |id| self.index.kind_of(id), &self.filter, self.tz);
         if let Some(q) = self.search.as_deref().filter(|q| !q.is_empty()) {
             let q = q.to_lowercase();

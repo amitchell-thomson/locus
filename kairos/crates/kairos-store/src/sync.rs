@@ -94,6 +94,35 @@ pub fn pull_sidecar(cfg: &Config) -> bool {
     crate::load::write_sidecar_json(cfg, &side).is_ok()
 }
 
+/// Where the last copy of the open tasks fetched from kairosd is kept: the CLI draws their due
+/// dates from it when it reads the local cache (`kairos next`, `today`).
+pub fn tasks_path(cfg: &Config) -> std::path::PathBuf {
+    cfg.cache_dir().join("tasks.json")
+}
+
+/// The open tasks as last fetched (empty if never).
+pub fn read_tasks(cfg: &Config) -> Vec<kairos_core::task::Task> {
+    std::fs::read_to_string(tasks_path(cfg))
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
+/// Fetch kairosd's open tasks into the local copy.
+pub fn pull_tasks(cfg: &Config) -> bool {
+    let Ok(d) = crate::client::Daemon::from_config(cfg) else {
+        return false;
+    };
+    let Ok(Ok(tasks)) = d.tasks("open") else {
+        return false;
+    };
+    let Ok(text) = serde_json::to_string(&tasks) else {
+        return false;
+    };
+    let _ = std::fs::create_dir_all(cfg.cache_dir());
+    std::fs::write(tasks_path(cfg), text).is_ok()
+}
+
 pub fn run_full(cfg: &Config) -> FullSync {
     let cmd = cfg.sync.full_cmd.trim();
     if cmd.is_empty() {

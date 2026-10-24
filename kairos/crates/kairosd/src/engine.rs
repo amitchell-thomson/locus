@@ -284,7 +284,9 @@ impl Engine {
 
     /// The instance index for `[from, to)`, as clients draw it.
     pub fn index(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<cache::Index> {
-        Ok(cache::build(&self.cfg, None, &self.db.meta_all()?, from, to)?)
+        let mut idx = cache::build(&self.cfg, None, &self.db.meta_all()?, from, to)?;
+        idx.add_due_marks(&self.db.tasks(Some(TaskStatus::Open))?, self.tz());
+        Ok(idx)
     }
 
     fn source(&self, id: &str) -> Result<Source> {
@@ -1577,42 +1579,12 @@ impl Engine {
 
     // ------------------------------------------------------------ deadlines & tasks
 
-    fn deadline_op(
-        &self,
-        title: &str,
-        due: Due,
-        key: &str,
-        task_id: Option<&str>,
-        author: Author,
-    ) -> Result<(Op, String)> {
-        let (target, origin_key) = self.target_for_key(key)?;
-        let uid = build::new_uid();
-        let meta = Meta {
-            created_by: Some(author),
-            task_id: task_id.map(String::from),
-            origin_key,
-            ..Default::default()
-        };
-        let ev = build::deadline(&uid, title, due, meta, &self.cfg.deadlines.alarms_minutes_before);
-        let after = build::event_file(&ev, self.tz(), self.now());
-        Ok((
-            Op::CreateEvent {
-                item: Item {
-                    source: target.id,
-                    href: vdir::href_for_uid(&uid),
-                },
-                uid: uid.clone(),
-                after,
-            },
-            uid,
-        ))
-    }
-
+    /// A ⚑ deadline (spec K5): a due date on a task, never a calendar event. With `task_id` it
+    /// sets that task's due date; without, it makes a task with nothing to plan, only the date.
     pub fn create_deadline(&mut self, author: Author, req: &api::DeadlineReq) -> Result<Changeset> {
         let world = self.world(60)?;
         let due = api::parse_time(&req.due, self.tz(), self.now())?.as_due();
-        let (op, uid) = self.deadline_op(&req.title, due, &req.key, req.task_id.as_deref(), author)?;
-        let mut ops = vec![op];
+        let mut ops = Vec::new();
         if let Some(tid) = &req.task_id {
             let before = self
                 .db
@@ -1620,12 +1592,22 @@ impl Engine {
                 .ok_or_else(|| EngineError::NotFound(format!("task {tid}")))?;
             let mut after = before.clone();
             after.due = Some(due);
-            after.deadline_uid = Some(uid);
             after.updated_at = self.now();
             ops.push(Op::UpdateTask {
                 before: Box::new(before),
                 after: Box::new(after),
             });
+        } else {
+            let key = self
+                .cfg
+                .key(&req.key)
+                .ok_or_else(|| EngineError::BadRequest(format!("unknown key {:?}", req.key)))?
+                .name
+                .clone();
+            let mut t = Task::new(req.title.trim(), &key, 0, author, self.now());
+            t.remaining_min = 0;
+            t.due = Some(due);
+            ops.push(Op::CreateTask { after: Box::new(t) });
         }
         self.propose(
             &world,
@@ -1633,6 +1615,75 @@ impl Engine {
             ops,
             format!("Deadline ⚑ {} {}", req.title, due.describe(self.tz())),
         )
+    }
+
+    /// ⚑ events from before K5 become their tasks' due dates, in one changeset proposed for
+    /// approval: a linked one is deleted (its task already carries the date), an unlinked one
+    /// becomes a task with only that date. None to migrate proposes nothing.
+    pub fn migrate_deadlines(&mut self) -> Result<Option<Changeset>> {
+        let world = self.world(400)?;
+        let now = self.now();
+        let tasks = self.db.tasks(None)?;
+        let mut ops = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for i in self.events(now - chrono::Duration::days(60), now + chrono::Duration::days(400))? {
+            if i.meta.kind != EventKind::Deadline || !seen.insert((i.source.clone(), i.uid.clone())) {
+                continue;
+            }
+            let Ok(loc) = self.locate(&world, Some(&i.source), &i.uid) else {
+                continue;
+            };
+            let linked = i
+                .meta
+                .task_id
+                .as_deref()
+                .and_then(|id| tasks.iter().find(|t| t.id == id));
+            match linked {
+                Some(t) if t.due.is_some() => {
+                    let mut after = t.clone();
+                    after.deadline_uid = None;
+                    after.updated_at = now;
+                    ops.push(Op::UpdateTask {
+                        before: Box::new(t.clone()),
+                        after: Box::new(after),
+                    });
+                }
+                _ => {
+                    let title = i.title.trim_start_matches('⚑').trim().to_string();
+                    let key = i
+                        .key
+                        .clone()
+                        .unwrap_or_else(|| self.cfg.default_key().map(|k| k.name.clone()).unwrap_or_default());
+                    let mut t = Task::new(&title, &key, 0, Author::Claude, now);
+                    t.remaining_min = 0;
+                    t.due = Some(match i.span {
+                        kairos_core::model::Span::AllDay { start, .. } => Due::Date(start),
+                        kairos_core::model::Span::Timed { start, .. } => Due::At(start),
+                    });
+                    ops.push(Op::CreateTask { after: Box::new(t) });
+                }
+            }
+            ops.push(Op::DeleteEvent {
+                item: Item {
+                    source: loc.source.id.clone(),
+                    href: loc.href.clone(),
+                },
+                uid: loc.series.uid.clone(),
+                before: loc.text,
+            });
+        }
+        let n = ops.iter().filter(|o| matches!(o, Op::DeleteEvent { .. })).count();
+        let summary = format!("Deadlines become due dates: {n} ⚑ event(s) move onto their tasks");
+        // Proposed once: a restart while it waits for approval does not propose it again.
+        let waiting = self
+            .db
+            .cs_list(Some(Status::Pending), 100)?
+            .iter()
+            .any(|c| c.summary.starts_with("Deadlines become due dates"));
+        if ops.is_empty() || waiting {
+            return Ok(None);
+        }
+        self.propose(&world, Author::Claude, ops, summary).map(Some)
     }
 
     pub fn create_task(&mut self, author: Author, req: &api::CreateTaskReq) -> Result<api::TaskResp> {
@@ -1649,11 +1700,17 @@ impl Engine {
         if let Some(ty) = &ty {
             t.apply_type(ty);
         }
-        if t.estimate_min == 0 {
+        // No estimate is allowed only for a bare due date (`kairos deadline`): nothing to plan.
+        let bare_due = req.estimate_min == 0 && req.kind.is_none() && req.due.is_some();
+        if t.estimate_min == 0 && !bare_due {
             return Err(EngineError::BadRequest(format!(
                 "estimate required{}",
                 ty.map(|t| format!(" for {}", t.name)).unwrap_or_default()
             )));
+        }
+        if bare_due {
+            t.estimate_min = 0;
+            t.remaining_min = 0;
         }
         if let Some(k) = self.cfg.key(&req.key) {
             t.key = k.name.clone();
@@ -1698,18 +1755,10 @@ impl Engine {
             t.project_id = Some(self.find_project(p)?.id);
         }
         let world = self.world(60)?;
-        let mut ops = Vec::new();
-        if let (Some(due), true) = (t.due, req.create_deadline.unwrap_or(true)) {
-            let (op, uid) = self.deadline_op(&t.title, due, &t.key, Some(&t.id), author)?;
-            t.deadline_uid = Some(uid);
-            ops.push(op);
-        }
-        ops.insert(
-            0,
-            Op::CreateTask {
-                after: Box::new(t.clone()),
-            },
-        );
+        // The due date stays on the task: no ⚑ event is written (spec K5).
+        let ops = vec![Op::CreateTask {
+            after: Box::new(t.clone()),
+        }];
         let summary = format!(
             "Task {:?} ({} min{})",
             t.title,
@@ -1816,27 +1865,10 @@ impl Engine {
                 .deadline_uid
                 .as_deref()
                 .and_then(|u| self.locate(&world, None, u).ok());
+            // A due date is the task's attribute, not an event (ADR-006, spec K5): a ⚑ event
+            // left from before goes when the date is touched; none is ever made.
             match (existing, t.due) {
-                (Some(loc), Some(due)) => {
-                    let ev = build::deadline(&loc.series.uid, &t.title, due, Meta::default(), &[]);
-                    let edit = Edit {
-                        time: Some(ev.time),
-                        title: Some(ev.title),
-                        ..Default::default()
-                    };
-                    let after = build::edit_file(&loc.text, &loc.series.uid, &edit, tz, now)
-                        .map_err(|e| EngineError::BadRequest(e.to_string()))?;
-                    ops.push(Op::UpdateEvent {
-                        item: Item {
-                            source: loc.source.id.clone(),
-                            href: loc.href.clone(),
-                        },
-                        uid: loc.series.uid.clone(),
-                        before: loc.text,
-                        after,
-                    });
-                }
-                (Some(loc), None) => {
+                (Some(loc), _) => {
                     ops.push(Op::DeleteEvent {
                         item: Item {
                             source: loc.source.id.clone(),
@@ -1847,12 +1879,7 @@ impl Engine {
                     });
                     t.deadline_uid = None;
                 }
-                (None, Some(due)) => {
-                    let (op, uid) = self.deadline_op(&t.title, due, &t.key, Some(&t.id), author)?;
-                    t.deadline_uid = Some(uid);
-                    ops.push(op);
-                }
-                (None, None) => {}
+                (None, _) => t.deadline_uid = None,
             }
         }
         // A new title or calendar carries through to the task's future blocks

@@ -43,6 +43,28 @@ pub struct Index {
 }
 
 impl Index {
+    /// Draw open tasks' due dates as ⚑ marks (spec K5: the date is the task's, never an event).
+    /// Added when the index is read, not stored with it, so a changed task shows at once. A task
+    /// whose old ⚑ event is still on a calendar keeps that one.
+    pub fn add_due_marks(&mut self, tasks: &[kairos_core::task::Task], tz: chrono_tz::Tz) {
+        let marks = kairos_core::task::due_marks(tasks, self.from, self.to, tz);
+        for m in marks {
+            let legacy = tasks
+                .iter()
+                .find(|t| m.meta.task_id.as_deref() == Some(t.id.as_str()))
+                .and_then(|t| t.deadline_uid.clone());
+            let shown = self
+                .instances
+                .iter()
+                .any(|i| i.uid == m.uid || legacy.as_deref() == Some(i.uid.as_str()));
+            if !shown {
+                self.instances.push(m);
+            }
+        }
+        self.instances
+            .sort_by(|a, b| a.start(tz).cmp(&b.start(tz)).then_with(|| a.title.cmp(&b.title)));
+    }
+
     pub fn kind_of(&self, id: &str) -> Option<SourceKind> {
         self.sources.iter().find(|s| s.id == id).map(|s| s.kind)
     }

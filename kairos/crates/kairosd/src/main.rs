@@ -170,6 +170,10 @@ async fn main() -> Result<()> {
     let mut engine = engine;
     // Projects used to have their own tables (before 2026-10-14).
     engine.migrate_projects().context("migrating projects")?;
+    // ⚑ events from before due dates were task attributes (spec K5): proposed once for approval.
+    if let Err(e) = engine.migrate_deadlines() {
+        tracing::warn!("migrating deadlines: {e}");
+    }
     let st = AppState {
         engine: Arc::new(Mutex::new(engine)),
         token: Arc::new(token),

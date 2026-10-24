@@ -321,7 +321,8 @@ async fn mcp_tools_and_no_approve_tool() {
     let v = tool_text(&r);
     assert_eq!(v["task"]["title"], "B4 problem sheet");
     assert_eq!(v["plan"]["changeset"]["status"], "applied", "{v}");
-    assert!(env.read_all("Engineering").contains("⚑ B4 problem sheet"));
+    assert_eq!(v["task"]["due"]["value"], "2026-10-16T16:00:00Z", "{v}");
+    assert!(!env.read_all("Engineering").contains("⚑"), "a due date is not an event");
 
     // Engine errors come back as tool errors Claude can read.
     let r = rpc(

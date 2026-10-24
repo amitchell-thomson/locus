@@ -17,7 +17,7 @@ crates into this repository and left moving kairos and keryx in as a later decis
 kairos moves into this repository as sub-apps of one system: its crates join the workspace with
 their history, its spec and notes alongside the redesign's, and it deploys through this
 repository. It speaks locus's taxonomy: its calendars are the areas (Studies, Projects, Careers
-whole; Personal as its streams, Family, Sport, Social, Travel and errands), a due date is a task's
+whole; Personal as its streams, Family, Sport, Social, Errands), a due date is a task's
 attribute, a task has one type (sheet, coursework, admin, chore). It reads projects from the locus
 registry rather than keeping its own list, and the two link both ways: what is added in one shows
 in the other, and an item in one opens in the other. kairosd stays the only writer to iCloud; locus

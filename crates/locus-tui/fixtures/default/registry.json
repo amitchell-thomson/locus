@@ -222,6 +222,21 @@
       "kind": "application",
       "active": true,
       "company": "Millennium"
+    },
+    {
+      "id": "tanker-flow",
+      "name": "Tanker-flow",
+      "area": "Projects",
+      "kind": "repo",
+      "active": false
+    },
+    {
+      "id": "jane-street",
+      "name": "Jane Street",
+      "area": "Careers",
+      "kind": "application",
+      "company": "Jane Street",
+      "active": false
     }
   ]
 }

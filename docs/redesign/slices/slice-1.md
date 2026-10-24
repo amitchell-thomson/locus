@@ -763,7 +763,7 @@ never drawn after today; an application is closed on Home when no stage is curre
 check-ins daily, adds events himself, and never uses the phone. Decided:
 - "The taxonomies definitely need to match": kairos's calendars become the areas, "with family
   expanded into its threads and the others stay merged as the high level area" (Studies,
-  Projects, Careers; Personal as its streams: Family, Sport, Social, Travel and errands); due
+  Projects, Careers; Personal as its streams: Family, Sport, Social, Errands); due
   dates as attributes and one task type each, as ADR-006.
 - Opting out of his own events: "greying them out slightly like we have with opting in to family
   events ... a lecture that is written down but I do not need to go to"; not going frees the
@@ -792,7 +792,8 @@ check-ins daily, adds events himself, and never uses the phone. Decided:
   already a fair amount up there, so would want to make sure it is not crowded out"; "Kairos
   should also migrate into the locus repo, I want everything as one system ... (keryx will later
   too)" (ADR-008); "this session should take all of the taxonomy work". Spec:
-  [kairos-joins-locus.md](kairos-joins-locus.md), draft for approval.
+  [kairos-joins-locus.md](kairos-joins-locus.md), approved 24 Oct with every decision as
+  recommended; the stream is "Errands"; Tanker-flow and Jane Street join the registry.
 
 ## Report
 

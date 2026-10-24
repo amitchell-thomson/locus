@@ -21,7 +21,7 @@ life) and a kind (a shape of thing), so 3YP looked as if it belonged in three pl
 **Everything in locus carries two independent labels, and one taxonomy serves every app.**
 
 - **Area**: which part of your life it belongs to. Studies, Projects, Careers, Personal; Personal
-  splits into streams (Family, Sport, Social, Travel and errands) and is filtered by stream, the
+  splits into streams (Family, Sport, Social, Errands) and is filtered by stream, the
   others whole (plan B.3). An item has exactly one area (info.tex).
 - **Kind**: what shape of thing it is, which decides the machinery it gets and the screen that
   shows it. A kind never implies an area, and an area never implies a kind.
@@ -71,7 +71,7 @@ but the word "thread" in older notes, which no longer names anything in locus.
 | **repo** | 3YP (does B3's work) | quast, nabla, locus (with kairos and keryx), OQTS | CV | |
 | **course** | B1 Engineering Computation, B2 Engineering in Society, B3 Group Design Project, B14 Information Engineering Systems, B15 Control Systems, B16 Software Engineering Systems, B18 Biomedical Modelling and Monitoring, B20 Machine Learning | | | |
 | **application** | | | Jump, G-Research, Millennium | |
-| **task** (type, due date) | sheet: B15 sheet 3, due fri; coursework: a lab report | admin: book an ARC GPU slot | admin: return internship paperwork, due 31 Oct | chore: laundry, the parcel (Travel and errands) |
+| **task** (type, due date) | sheet: B15 sheet 3, due fri; coursework: a lab report | admin: book an ARC GPU slot | admin: return internship paperwork, due 31 Oct | chore: laundry, the parcel (Errands) |
 | **event** | a lecture, the 3YP briefing | a supervisor meeting | an interview | Futsal (Sport) |
 | **mail thread** | the 3YP group thread | RIKEN's numbers | a recruiter's email | family (Family) |
 | **source** | lecture slides, a textbook | a tuning paper | a firm's report | |

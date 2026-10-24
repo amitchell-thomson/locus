@@ -1,6 +1,6 @@
 # kairos joins locus
 
-**State:** draft, for your approval · **Written:** 2026-10-24 · **Runs in:** `locus slice 1`
+**State:** approved 2026-10-24 · **Written:** 2026-10-24 · **Runs in:** `locus slice 1`
 **Decision:** [ADR-008](../../decisions/ADR-008-kairos-joins-locus.md). **From:** Slice 1's
 Calendar round (slice-1.md, round 6). **Takes over:** Slice 0's step 0.8 (kairos on the shared
 taxonomy), which Slice 0 drops when you confirm it to that session.
@@ -18,10 +18,18 @@ and the moves that touch iCloud are shown to you before they are applied.
 
 ## Decisions only you can make
 
+**Answered 24 Oct 2026:** all as recommended (K-a a, K-b a, K-c a, K-e a, with the old repository
+archived once this work is done). The Personal stream is named **Errands** ("note errands should
+be 'Errands'"). K-d: **Tanker-flow** is a Projects repo ("one of my biggest projects that is just
+about finished", on the server at `~/server-projects/tanker-flow`); **Jane Street** is a Careers
+entry with its company and no application yet ("just notes from an event I went to, have not
+applied yet, may decide to, may not"). Both are in the registry, inactive until there is a view
+to give them.
+
 | # | Question | Options | Recommendation |
 |---|---|---|---|
 | K-a | Where kairos sits in the repository | a. `kairos/` as a directory, its history kept (git subtree), its crates members of the one workspace · b. its crates moved into `crates/` beside locus's | **a.** Keeps its spec, notes and scripts together and its history readable; one workspace either way. |
-| K-b | Your Personal calendar's events, when Personal becomes its streams | a. each event shown in one list with a suggested stream (Family, Sport, Social, Travel and errands), approved as one changeset · b. all to Travel and errands, re-file by hand later | **a.** One review, then done. |
+| K-b | Your Personal calendar's events, when Personal becomes its streams | a. each event shown in one list with a suggested stream (Family, Sport, Social, Errands), approved as one changeset · b. all to Errands, re-file by hand later | **a.** One review, then done. |
 | K-c | The registry file | a. `taxonomy/registry.toml` and `taxonomy/areas.toml` in this repo, read directly on the server and through kairosd on the laptop until the HTTP service exists · b. wait for the HTTP service | **a.** Unblocks this and Slice 0's tablet capture (0.12), which matches folders to registry names. |
 | K-d | Registry entries the tablet has and the fixtures lack | Careers/Jane Street, Projects/Tanker-flow | Tell me what each is (an application? a past project?) and I add them. |
 | K-e | The old kairos repository | a. archived (read-only) after a week of the moved build running cleanly · b. kept | **a.** |
@@ -66,7 +74,7 @@ and the moves that touch iCloud are shown to you before they are applied.
 
 ### K4 Calendars become the areas
 - Studies (was Engineering), Projects, Careers, and Personal's streams: Family, Sport, Social,
-  Travel and errands (new); Personal's own events re-filed per K-b. kairos's keys, filters (`1`–`4`
+  Errands (new); Personal's own events re-filed per K-b. kairos's keys, filters (`1`–`4`
   areas, streams under Personal) and day-load rule follow.
 - **Check:** the changeset printed, approved by you, applied; the TUI's filter row showing the
   areas; a sample of re-filed events printed with their old and new calendars.

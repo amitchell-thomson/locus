@@ -10,7 +10,7 @@ expression: "render_to_string(&a, 100, 30)"
 │─────────│         t  today                                                             │─────────│
 │11:00▲┊  │       ↑ ↓  select; past the first or last, scroll the day's hours            │         │
 │      ┊  │  Tab ⇧Tab  week → day → month → agenda (and back)                            │         │
-│      ┄┄┄│     Enter  details / expand duplicates ⧉                                     │┄┄┄┄┄┄┄┄┄│
+│      ┄┄┄│ Enter · v  open a linked item in locus, else details · details ⧉             │┄┄┄┄┄┄┄┄┄│
 │12:00 ┊  │         w  week: Mon–Sun ↔ Mon–Fri (wider)                                   │         │
 │      ┊  │     1 2 3  show/hide Studies · Projects · Careers                            │         │
 │13:00 ┊  │   4 · 5–8  show/hide all of Personal · Family, Sport, Social, Errands        │         │

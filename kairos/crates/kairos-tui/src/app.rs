@@ -750,7 +750,18 @@ impl App {
                 };
                 self.sel = 0;
             }
-            Key::Enter => self.expanded = !self.expanded,
+            // Enter on an item linked to locus opens it there (spec K8); otherwise, and `v`
+            // always, the details.
+            Key::Enter => {
+                let link = (!self.expanded && matches!(self.view, View::Week | View::Day | View::Month | View::Agenda))
+                    .then(|| self.selected().and_then(|c| self.locus_link(&c.primary)))
+                    .flatten();
+                match link {
+                    Some(id) => self.open_in_locus(&id),
+                    None => self.expanded = !self.expanded,
+                }
+            }
+            Key::Char('v') => self.expanded = !self.expanded,
             Key::Char('p') => self.filter.personal = !self.filter.personal,
             Key::Char('f') => self.filter.family = !self.filter.family,
             Key::Char('b') => self.filter.background = !self.filter.background,
@@ -2093,7 +2104,77 @@ impl App {
                 },
             },
         };
-        h.join(" · ")
+        let hints = h.join(" · ");
+        // A linked item opens in locus (spec K8).
+        if matches!(self.view, View::Week | View::Day | View::Month | View::Agenda)
+            && let Some(i) = self.selected().map(|c| c.primary)
+            && self.locus_link(&i).is_some()
+        {
+            return if hints.is_empty() {
+                "⏎ open in locus".into()
+            } else {
+                format!("⏎ open in locus · {hints}")
+            };
+        }
+        hints
+    }
+
+    /// The locus item an item belongs to (spec K8): its own link, else its task's, else its
+    /// project's registry entry.
+    pub fn locus_link(&self, i: &Instance) -> Option<String> {
+        if let Some(l) = &i.meta.locus {
+            return Some(l.clone());
+        }
+        if let Some(tid) = &i.meta.task_id
+            && let Some(t) = self.tasks.iter().chain(self.done_tasks.iter()).find(|t| &t.id == tid)
+            && let Some(l) = t.locus.clone().or_else(|| {
+                let pid = t.project_id.as_ref()?;
+                self.projects
+                    .iter()
+                    .find(|p| &p.project.id == pid)?
+                    .project
+                    .registry
+                    .clone()
+            })
+        {
+            return Some(l);
+        }
+        let pid = i.meta.project_id.as_ref()?;
+        self.projects
+            .iter()
+            .find(|p| &p.project.id == pid)?
+            .project
+            .registry
+            .clone()
+    }
+
+    /// Open a day at an event, as locus asks (spec K8): the day view, the event selected.
+    pub fn open_day(&mut self, day: NaiveDate, uid: Option<&str>) {
+        self.view = View::Day;
+        self.cursor = day;
+        self.expanded = false;
+        self.day_top.set(None);
+        self.sel = uid
+            .and_then(|u| self.day_clusters(day).iter().position(|c| c.all().any(|i| i.uid == u)))
+            .unwrap_or(0);
+    }
+
+    /// Ask the locus window to open `id`, and bring its tmux session forward.
+    fn open_in_locus(&mut self, id: &str) {
+        match locus_contract::link::OpenFile::locus().write(id) {
+            Ok(()) => {
+                let shown = locus_contract::link::switch_to("locus");
+                self.set_message(
+                    if shown {
+                        format!("opened {id} in locus")
+                    } else {
+                        format!("asked locus to open {id} (its window isn't open here)")
+                    },
+                    false,
+                );
+            }
+            Err(e) => self.set_message(format!("couldn't ask locus: {e}"), true),
+        }
     }
 
     /// Plan project time by hand (for `project`, or the first active one).

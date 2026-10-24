@@ -9,8 +9,11 @@ publish.workspace = true
 [dependencies]
 locus-contract.workspace = true
 locus-theme.workspace = true
+kairos-core.workspace = true
+kairos-store.workspace = true
 anyhow.workspace = true
 chrono.workspace = true
+chrono-tz.workspace = true
 clap.workspace = true
 crossterm.workspace = true
 ratatui.workspace = true

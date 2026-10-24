@@ -38,6 +38,9 @@ struct Cli {
     /// With --dump: open this project as Home's project list does (for one with no tmux session).
     #[arg(long, value_name = "ID")]
     project: Option<String>,
+    /// With --dump: lay the live calendar over the fixtures first, as the window does (spec K8).
+    #[arg(long)]
+    live: bool,
     /// Print what has been used, per screen and key, and exit.
     #[arg(long)]
     use_report: bool,
@@ -64,7 +67,12 @@ fn main() -> Result<()> {
     if cli.timing {
         return timing(&cli.fixtures, &cli.size);
     }
-    let fx = Fixtures::load(&fixtures::resolve(&cli.fixtures))?;
+    let mut fx = Fixtures::load(&fixtures::resolve(&cli.fixtures))?;
+    if cli.live && cli.dump.is_some() {
+        let live = locus_tui::calendar::Live::connect().context("no kairos config, or kairosd unreachable")?;
+        let cal = live.fetch(chrono::Utc::now()).context("kairosd did not answer")?;
+        locus_tui::calendar::apply(&mut fx, &cal, |k| live.area_of(k), chrono::Utc::now());
+    }
     if let Some(name) = cli.dump {
         let Some(screen) = ScreenId::from_name(&name) else {
             let all: Vec<_> = ScreenId::ALL.iter().map(|s| s.name()).collect();
@@ -238,10 +246,42 @@ fn run(mut app: App) -> Result<()> {
     let mut peek = follow::PeekFile::new(follow::state_dir());
     let mut focus = FocusFile::new(follow::state_dir());
     app.tick(focus.poll(), Instant::now());
+    // The calendar, live (spec K8): fetched from kairosd every minute on a thread of its own and
+    // laid over the fixtures; the fixtures stand when kairosd does not answer.
+    let (cal_tx, cal_rx) = std::sync::mpsc::channel();
+    if let Some(live) = locus_tui::calendar::Live::connect().map(std::sync::Arc::new) {
+        app.calendar = Some(live.clone());
+        std::thread::spawn(move || {
+            loop {
+                if let Some(cal) = live.fetch(chrono::Utc::now())
+                    && cal_tx.send(cal).is_err()
+                {
+                    return;
+                }
+                std::thread::sleep(Duration::from_secs(60));
+            }
+        });
+    }
+    // Items kairos asks to open (spec K8). Only Home's window answers: an application opens on
+    // its own page there, a repo in the Project window.
+    let mut inbox = locus_contract::link::OpenFile::locus();
     let mut terminal = ratatui::try_init()?;
     let result = (|| -> Result<()> {
         while !app.quit {
             app.tick(focus.poll(), Instant::now());
+            if let Ok(cal) = cal_rx.try_recv()
+                && let Some(live) = app.calendar.clone()
+            {
+                locus_tui::calendar::apply(&mut app.fixtures, &cal, |k| live.area_of(k), chrono::Utc::now());
+            }
+            if app.stack.first() == Some(&ScreenId::Home)
+                && let Some(id) = inbox.poll()
+                && app.fixtures.registry.get(&id).is_some()
+            {
+                app.stack.truncate(1);
+                app.focus = None;
+                app.open_project(id);
+            }
             if let Some(change) = peek.poll()
                 && app.stack.first() == Some(&ScreenId::Project)
             {

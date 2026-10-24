@@ -443,6 +443,9 @@ fn peek(app: &App, cl: &Cluster) -> String {
     if cl.is_merged() {
         parts.push(format!("⧉ {}", cl.others.len() + 1));
     }
+    if let Some(l) = app.locus_link(i) {
+        parts.push(format!("→ {l}"));
+    }
     match phase(app, i) {
         Phase::Now if !i.span.is_all_day() => {
             parts.push(format!("now, until {}", i.end(tz).with_timezone(&tz).format("%H:%M")))
@@ -1985,7 +1988,7 @@ fn help(f: &mut Frame, app: &App, area: Rect) {
         ("t", "today"),
         ("↑ ↓", "select; past the first or last, scroll the day's hours"),
         ("Tab ⇧Tab", "week → day → month → agenda (and back)"),
-        ("Enter", "details / expand duplicates ⧉"),
+        ("Enter · v", "open a linked item in locus, else details · details ⧉"),
         ("w", "week: Mon–Sun ↔ Mon–Fri (wider)"),
         ("1 2 3", "show/hide Studies · Projects · Careers"),
         ("4 · 5–8", "show/hide all of Personal · Family, Sport, Social, Errands"),

@@ -142,6 +142,9 @@ enum Cmd {
         /// Your own events: you're not going (true/false); greyed, no longer blocks the scheduler.
         #[arg(long)]
         not_going: Option<bool>,
+        /// The locus item it belongs to: a registry id (`millennium`, `b15`); "" clears.
+        #[arg(long)]
+        locus: Option<String>,
     },
     /// Delete an event.
     Rm { uid: String },
@@ -472,6 +475,7 @@ fn run() -> Result<()> {
             notes,
             blocking,
             not_going,
+            locus,
         } => {
             let (inst, _) = resolve_uid(&ctx, &uid)?;
             let req = api::UpdateEventReq {
@@ -486,6 +490,7 @@ fn run() -> Result<()> {
                 description: notes,
                 blocking,
                 not_going,
+                locus,
             };
             let d = ctx.daemon()?;
             match d.update_event(&inst.source, &inst.uid, &req)? {

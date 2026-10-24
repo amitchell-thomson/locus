@@ -1037,3 +1037,29 @@ fn worked_time_is_a_faint_bar_not_an_event() {
     assert!(s.contains("worked · locus"), "{s}");
     assert!(s.matches('▕').count() >= 3, "{s}");
 }
+
+#[test]
+fn a_linked_item_says_where_it_opens_and_locus_can_open_a_day() {
+    // Spec K8. Enter itself is not pressed here: it would bring the locus session forward.
+    let (mut a, _t) = app("2026-10-19T08:00:00+01:00");
+    let mut idx = a.index.clone();
+    let monday = now("2026-10-19T00:00:00+01:00");
+    let squash = idx
+        .instances
+        .iter_mut()
+        .find(|i| i.title.contains("Squash") && i.span.bounds(chrono_tz::UTC).0 >= monday)
+        .unwrap();
+    squash.meta.locus = Some("millennium".into());
+    let (uid, day) = (squash.uid.clone(), squash.start(a.tz).with_timezone(&a.tz).date_naive());
+    a.set_index(idx);
+    // Locus asks for that day and event: the day view opens with it selected.
+    a.open_day(day, Some(&uid));
+    assert_eq!(a.view, kairos_tui::app::View::Day);
+    assert_eq!(a.selected().unwrap().primary.uid, uid);
+    assert!(a.key_hints().starts_with("⏎ open in locus"), "{}", a.key_hints());
+    let s = render_to_string(&a, 120, 30);
+    assert!(s.contains("→ millennium"), "{s}");
+    // v still shows the details.
+    a.key(Key::Char('v'));
+    assert!(a.expanded);
+}

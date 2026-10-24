@@ -103,6 +103,10 @@ pub struct Task {
     /// Projects only: the locus registry entry it is (spec K7, `taxonomy/registry.toml`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub registry: Option<String>,
+    /// The locus item it belongs to (spec K8): a course for a sheet, an application for its
+    /// paperwork, a repo. A registry id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locus: Option<String>,
     pub created_by: Author,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -164,6 +168,7 @@ impl Task {
             project_id: None,
             stage: None,
             registry: None,
+            locus: None,
             created_by,
             created_at: now,
             updated_at: now,

@@ -26,6 +26,8 @@ use unicode_width::UnicodeWidthStr;
 pub const KEYS: &[(&str, &str)] = &[
     ("← →", "walk the timeline"),
     ("p", "the full prep plan"),
+    ("o", "open the selected event's day in kairos"),
+    ("c", "put the next date on your calendar (through kairos)"),
     ("r", "recall a question you were asked: a chat helps you pin it down"),
     ("␣", "ask about this application"),
 ];
@@ -619,6 +621,53 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 "would start a short chat here to pin down a question you were asked: the round, the wording, what you answered"
                     .into(),
             )
+        }
+        // The calendar, both ways (spec K8): open an event's day in kairos, or put the next
+        // date on the calendar through kairosd. Outside the live window these only say what they
+        // would do, so a test or a dump never moves a tmux client or writes a calendar.
+        (_, KeyCode::Char('o')) => {
+            let Some(e) = v
+                .application
+                .as_ref()
+                .and_then(|a| a.events.get(app.sel('t').min(n.saturating_sub(1))))
+            else {
+                app.note = Some("no event to open".into());
+                return true;
+            };
+            let req = locus_contract::link::kairos_request(e.at.date_naive(), e.calendar.as_deref());
+            if app.in_session {
+                let sent = locus_contract::link::OpenFile::kairos().write(&req).is_ok();
+                let shown = sent && locus_contract::link::switch_to("kairos");
+                app.note = Some(match (sent, shown) {
+                    (true, true) => format!("opened {} in kairos", e.at.format("%a %-d %b")),
+                    (true, false) => "asked kairos to open it (its session isn't running)".into(),
+                    _ => "couldn't ask kairos (no state directory)".into(),
+                });
+            } else {
+                app.note = Some(format!("would open kairos at {}", e.at.format("%a %-d %b")));
+            }
+        }
+        (_, KeyCode::Char('c')) => {
+            let Some(next) = v.application.as_ref().and_then(|a| a.next.clone()) else {
+                app.note = Some("no next date to put on the calendar".into());
+                return true;
+            };
+            let on = v.application.as_ref().is_some_and(|a| {
+                a.events
+                    .iter()
+                    .any(|e| e.calendar.is_some() && e.at.date_naive() == next.at.date_naive())
+            });
+            app.note = Some(if on {
+                "already on your calendar".into()
+            } else {
+                match app.calendar.clone() {
+                    Some(live) => match live.add(&next.what, next.at, "Careers", &v.project) {
+                        Ok(s) => format!("on your calendar: {s}"),
+                        Err(e) => format!("kairos said no: {e}"),
+                    },
+                    None => format!("would put {} on your calendar ({})", next.what, next.at.format("%a %-d %b %H:%M")),
+                }
+            });
         }
         (_, KeyCode::Char(' ' | 'i')) => app.start_ask(),
         (Some('a'), KeyCode::Enter) => app.open(ScreenId::Answered),

@@ -117,7 +117,14 @@ pub fn run(cfg: Config, path: PathBuf) -> Result<(), String> {
         // Until the first fetch answers, assume kairosd is there.
         let mut online = poller.is_some();
         let mut write_done = chrono::DateTime::<Utc>::MIN_UTC;
+        // Days locus asks to open (spec K8).
+        let mut inbox = locus_contract::link::OpenFile::kairos();
         loop {
+            if let Some(req) = inbox.poll()
+                && let Some((day, uid)) = locus_contract::link::parse_kairos_request(&req)
+            {
+                app.open_day(day, uid.as_deref());
+            }
             app.now = Utc::now() + skew;
             terminal.draw(|f| ui::draw(f, &app)).map_err(|e| e.to_string())?;
             // Remote state (pending approvals, tasks) every 30 s; first time right after the first frame.

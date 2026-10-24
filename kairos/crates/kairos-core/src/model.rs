@@ -96,6 +96,11 @@ pub struct Meta {
     /// scheduler, the way a Family event you haven't opted into doesn't (spec K6).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub not_going: bool,
+    /// The locus item this event belongs to (spec K8): a registry id (`millennium`, `b15`,
+    /// `quast`). An interview on an application's timeline is that event. Sidecar-only, like
+    /// `blocking`: kept across rewrites, never an iCloud edit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locus: Option<String>,
     /// A block Alec placed explicitly; the scheduler never moves it.
     #[serde(default)]
     pub pinned: bool,
@@ -123,6 +128,7 @@ impl Meta {
             adopted_from: get("ADOPTED-FROM").map(String::from),
             blocking: truthy("BLOCKING"),
             not_going: truthy("NOT-GOING"),
+            locus: get("LOCUS").map(String::from),
             pinned: truthy("PINNED"),
             project_id: get("PROJECT-ID").map(String::from),
         }
@@ -156,6 +162,9 @@ impl Meta {
         if self.not_going {
             c.push(P::new("X-KAIROS-NOT-GOING", "true"));
         }
+        if let Some(l) = &self.locus {
+            c.push(P::text("X-KAIROS-LOCUS", l));
+        }
         if self.pinned {
             c.push(P::new("X-KAIROS-PINNED", "true"));
         }
@@ -179,6 +188,7 @@ impl Meta {
             adopted_from: sidecar.adopted_from.clone().or_else(|| self.adopted_from.clone()),
             blocking: sidecar.blocking || self.blocking,
             not_going: sidecar.not_going || self.not_going,
+            locus: sidecar.locus.clone().or_else(|| self.locus.clone()),
             pinned: sidecar.pinned || self.pinned,
             project_id: sidecar.project_id.clone().or_else(|| self.project_id.clone()),
         }
@@ -381,6 +391,7 @@ mod tests {
             adopted_from: None,
             blocking: false,
             not_going: false,
+            locus: None,
             pinned: true,
             project_id: Some("p-1".into()),
         };

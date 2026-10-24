@@ -3,6 +3,7 @@
 //! the process except tmux (spec, "Rules for the prototype").
 
 pub mod app;
+pub mod calendar;
 pub mod dump;
 pub mod fixtures;
 pub mod follow;

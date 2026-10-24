@@ -81,6 +81,9 @@ pub struct CreateEventReq {
     /// Repeat (e.g. weekly during term).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repeat: Option<Repeat>,
+    /// The locus item it belongs to (a registry id: `millennium`, `b15`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locus: Option<String>,
 }
 
 /// A repeating event: every day or week from the start, either during term
@@ -120,6 +123,9 @@ pub struct UpdateEventReq {
     /// Your own events: you're not going (sidecar flag; greyed, no longer blocks the scheduler).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub not_going: Option<bool>,
+    /// The locus item it belongs to, a registry id ("" = none). Sidecar-only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locus: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -195,6 +201,9 @@ pub struct CreateTaskReq {
     /// Run the scheduler afterwards (default true).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plan: Option<bool>,
+    /// The locus item it belongs to (a registry id).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locus: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -233,6 +242,9 @@ pub struct UpdateTaskReq {
     pub project: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plan: Option<bool>,
+    /// The locus item it belongs to ("" = none).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locus: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]

@@ -188,6 +188,9 @@ pub struct CreateEventArgs {
     pub term_only: Option<bool>,
     /// With repeat_every: last date (inclusive); omit for no end (or the end of the last term).
     pub repeat_until: Option<String>,
+    /// The locus item it belongs to: a registry id (an application like "millennium", a course
+    /// like "b15", a repo like "quast"). "" clears it. Not a calendar edit.
+    pub locus: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -206,6 +209,9 @@ pub struct UpdateEventArgs {
     /// Alec isn't going (true) or is again (false): greyed, and no longer blocks his time.
     /// Not a calendar edit (kairos's own record), so it never needs approval.
     pub not_going: Option<bool>,
+    /// The locus item it belongs to: a registry id (an application like "millennium", a course
+    /// like "b15", a repo like "quast"). "" clears it. Not a calendar edit.
+    pub locus: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -352,6 +358,9 @@ pub struct CreateTaskArgs {
     pub notes: Option<String>,
     /// The project it belongs to (id or name; "" = none on update).
     pub project: Option<String>,
+    /// The locus item it belongs to: a registry id (an application like "millennium", a course
+    /// like "b15", a repo like "quast"). "" clears it. Not a calendar edit.
+    pub locus: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -376,6 +385,9 @@ pub struct UpdateTaskArgs {
     pub notes: Option<String>,
     /// The project it belongs to (id or name; "" = none on update).
     pub project: Option<String>,
+    /// The locus item it belongs to: a registry id (an application like "millennium", a course
+    /// like "b15", a repo like "quast"). "" clears it. Not a calendar edit.
+    pub locus: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -617,6 +629,7 @@ impl KairosMcp {
                     description: u.description,
                     blocking: None,
                     not_going: None,
+                    locus: None,
                 },
             })
             .collect();
@@ -681,6 +694,7 @@ impl KairosMcp {
                 term_only: a.term_only.unwrap_or(false),
                 until: a.repeat_until,
             }),
+            locus: a.locus,
         };
         self.run(move |e| e.create_event(Author::Claude, &req).map(|c| WriteResult::from(&c)))
             .await
@@ -699,6 +713,7 @@ impl KairosMcp {
             description: a.description,
             blocking: None,
             not_going: a.not_going,
+            locus: a.locus,
         };
         self.run(move |e| {
             e.update_event(Author::Claude, a.source.as_deref(), &a.uid, &req)?
@@ -774,6 +789,7 @@ impl KairosMcp {
             project: a.project,
             create_deadline: None,
             plan: Some(true),
+            locus: a.locus,
         };
         self.run(move |e| e.create_task(Author::Claude, &req)).await
     }
@@ -798,6 +814,7 @@ impl KairosMcp {
             notes: a.notes,
             project: a.project,
             plan: Some(true),
+            locus: a.locus,
         };
         self.run(move |e| e.update_task(Author::Claude, &a.id, &req)).await
     }

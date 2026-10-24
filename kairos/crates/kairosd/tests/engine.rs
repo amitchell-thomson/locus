@@ -2629,3 +2629,70 @@ fn projects_are_the_registry_repos() {
         .unwrap();
     assert_eq!((locus.week_min, locus.month_min), (90, 90));
 }
+
+#[test]
+fn an_event_names_its_locus_item_without_touching_icloud() {
+    let env = Env::new(true);
+    env.phone_event(
+        "Personal",
+        "intv",
+        "Millennium final round",
+        "2026-10-16 10:00",
+        "2026-10-16 11:00",
+    );
+    let mut e = env.engine();
+    e.registry = Some(
+        locus_contract::taxonomy::load(&locus_contract::taxonomy::root())
+            .unwrap()
+            .registry,
+    );
+    let before = env.read_all("Personal");
+    let set = |e: &mut kairosd::engine::Engine, l: &str| {
+        e.update_event(
+            Author::Claude,
+            None,
+            "intv",
+            &kairos_core::api::UpdateEventReq {
+                locus: Some(l.into()),
+                ..Default::default()
+            },
+        )
+    };
+    assert!(
+        set(&mut e, "millennium").unwrap().is_none(),
+        "kairos's own record: no changeset"
+    );
+    assert_eq!(env.read_all("Personal"), before, "nothing written to the calendar");
+    let linked = |e: &kairosd::engine::Engine| {
+        e.events(at("2026-10-16 00:00"), at("2026-10-17 00:00"))
+            .unwrap()
+            .into_iter()
+            .find(|i| i.uid == "intv")
+            .and_then(|i| i.meta.locus)
+    };
+    assert_eq!(linked(&e).as_deref(), Some("millennium"));
+    // Only registry items: a typo is refused, not stored.
+    assert!(set(&mut e, "milennium").unwrap_err().to_string().contains("registry"));
+    // An event made from locus carries its link from the start.
+    e.create_event(
+        Author::Claude,
+        &CreateEventReq {
+            title: "Jump call".into(),
+            start: "2026-10-20T15:00".into(),
+            duration_min: Some(30),
+            key: Some("Personal".into()),
+            locus: Some("jump".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let made = e
+        .events(at("2026-10-20 00:00"), at("2026-10-21 00:00"))
+        .unwrap()
+        .into_iter()
+        .find(|i| i.title == "Jump call")
+        .unwrap();
+    assert_eq!(made.meta.locus.as_deref(), Some("jump"));
+    assert!(set(&mut e, "").unwrap().is_none());
+    assert_eq!(linked(&e), None, "cleared");
+}

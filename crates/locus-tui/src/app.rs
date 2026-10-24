@@ -90,6 +90,9 @@ pub struct App {
     /// Running as a window of the locus session (set by locus-session.sh), so Home can hand a
     /// project to the Project window instead of opening it in place.
     pub in_session: bool,
+    /// kairosd, when the window runs live (spec K8): what locus puts on the calendar goes
+    /// through it. `None` in tests and dumps.
+    pub calendar: Option<std::sync::Arc<crate::calendar::Live>>,
     /// The project Home asked the Project window to show, until Esc.
     pub peek: Option<String>,
     /// For a section that draws only some of its items, the ones drawn, in order: the arrows
@@ -133,6 +136,7 @@ impl App {
             image: RefCell::new(None),
             frame: 0,
             in_session: false,
+            calendar: None,
             peek: None,
             shown: RefCell::new(HashMap::new()),
             lane_open: false,
@@ -495,6 +499,24 @@ mod tests {
 
     fn press(app: &mut App, code: KeyCode) {
         app.on_key(KeyEvent::new(code, KeyModifiers::NONE));
+    }
+
+    #[test]
+    fn the_application_page_reaches_the_calendar_only_when_live() {
+        // Spec K8: `o` opens an event's day in kairos, `c` puts the next date on the calendar.
+        // Outside the live window (this test) neither touches tmux, a file or kairosd.
+        let mut a = app();
+        a.open_project("millennium".into());
+        assert_eq!(a.screen(), ScreenId::Application);
+        press(&mut a, KeyCode::Char('o'));
+        assert!(
+            a.note.as_deref().is_some_and(|n| n.starts_with("would open kairos at")),
+            "{:?}",
+            a.note
+        );
+        press(&mut a, KeyCode::Char('c'));
+        let n = a.note.clone().unwrap_or_default();
+        assert!(n.starts_with("would put") || n.starts_with("no next date"), "{n}");
     }
 
     #[test]

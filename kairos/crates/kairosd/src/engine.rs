@@ -780,6 +780,9 @@ impl Engine {
         if let Some(old) = self.db.meta_get(source, uid)? {
             m.blocking |= old.blocking;
             m.not_going |= old.not_going;
+            if m.locus.is_none() {
+                m.locus = old.locus;
+            }
             // So is the project a session counts for.
             if m.project_id.is_none() {
                 m.project_id = old.project_id;
@@ -1055,6 +1058,7 @@ impl Engine {
         let time = self.parse_span(&req.start, req.end.as_deref(), req.duration_min)?;
         let mut meta = self.author_meta(author);
         meta.origin_key = origin_key;
+        meta.locus = self.locus_ref(req.locus.as_deref())?;
         if let Some(tid) = &req.task_id {
             self.db
                 .task_get(tid)?
@@ -1266,7 +1270,7 @@ impl Engine {
         req: &api::UpdateEventReq,
     ) -> Result<Option<(Op, String)>> {
         let loc = self.locate(world, source, uid)?;
-        if req.blocking.is_some() || req.not_going.is_some() {
+        if req.blocking.is_some() || req.not_going.is_some() || req.locus.is_some() {
             // Sidecar-only flags (no iCloud write): a Family event opting in to block the
             // scheduler, or one of yours you're not going to.
             let mut m = self.db.meta_get(&loc.source.id, uid)?.unwrap_or_default();
@@ -1275,6 +1279,9 @@ impl Engine {
             }
             if let Some(n) = req.not_going {
                 m.not_going = n;
+            }
+            if let Some(l) = &req.locus {
+                m.locus = self.locus_ref(Some(l))?;
             }
             self.db.meta_set(&loc.source.id, uid, &m)?;
             // Time it blocked is free now (or blocked again): the plan follows.
@@ -1843,6 +1850,7 @@ impl Engine {
             t.preferred_window = Some(w.clone());
         }
         t.notes = req.notes.clone().unwrap_or_default();
+        t.locus = self.locus_ref(req.locus.as_deref())?;
         if let Some(p) = req.project.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
             t.project_id = Some(self.find_project(p)?.id);
         }
@@ -1940,6 +1948,9 @@ impl Engine {
         }
         if let Some(n) = &req.notes {
             t.notes = n.clone();
+        }
+        if let Some(l) = &req.locus {
+            t.locus = self.locus_ref(Some(l))?;
         }
         if let Some(p) = req.project.as_deref().map(str::trim) {
             t.project_id = if p.is_empty() {
@@ -2166,6 +2177,22 @@ impl Engine {
         let world = self.world(1)?;
         let summary = format!("Projects from the locus registry: {}", parts.join("; "));
         self.propose(&world, Author::Claude, ops, summary).map(Some)
+    }
+
+    /// A locus item named on an event or task (spec K8): a registry id, checked against the
+    /// registry when kairosd has one. `""` clears.
+    fn locus_ref(&self, id: Option<&str>) -> Result<Option<String>> {
+        let Some(id) = id.map(str::trim).filter(|s| !s.is_empty()) else {
+            return Ok(None);
+        };
+        if let Some(reg) = &self.registry
+            && reg.get(id).is_none()
+        {
+            return Err(EngineError::BadRequest(format!(
+                "{id:?} is not in the locus registry (taxonomy/registry.toml)"
+            )));
+        }
+        Ok(Some(id.to_string()))
     }
 
     /// Open projects kairos has that the registry does not (shown by `kairos doctor`).

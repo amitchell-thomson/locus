@@ -375,6 +375,10 @@ pub struct AppEvent {
     pub text: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub detail: Vec<String>,
+    /// The calendar event this is (spec K8): a kairos event uid. An interview on the timeline
+    /// is that event, and `o` opens it in kairos.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub calendar: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

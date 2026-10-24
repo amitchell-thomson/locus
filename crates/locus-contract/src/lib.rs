@@ -13,6 +13,7 @@ pub mod common;
 pub mod explore;
 pub mod home;
 pub mod learning;
+pub mod link;
 pub mod project;
 pub mod review;
 pub mod system;

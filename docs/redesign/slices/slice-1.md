@@ -690,6 +690,18 @@ kairos's and stays until he says otherwise.)
 - "Add also accepted to citadel FI&M Challenge, just for humoring my ego": the Citadel FI&M
   Central Bank Challenge 2026, from the mail: applied 31 Jan, selected 11 Mar (invite-only),
   team confirmed 23 Mar, kick-off 25 Mar, the challenge in London 23 to 25 Apr.
+- Interview prep, settled for the Learning round ("I am also confused on how interview prep
+  (general) vs interview prep (jump trading) is treated"; "I like that idea"): two layers, no
+  standing goal. **Tracks are your skills**, the general layer: confidence, history, misses,
+  and what interviews asked ("asked by Jump ×2"). **Each application has its own prep plan**,
+  dated by its interview, shown in its page's prep section (before a plan: your weakest skills;
+  while preparing: time, today's session, its tracks with what the plan has moved, and "from
+  before", questions other firms asked on those tracks; closed: what it moved, the outcome).
+  Learning lists the plans in an "interview prep" group that opens the application, and goals
+  only for what you choose to learn for, so the Jump plan no longer doubles as a goal. A
+  question you were asked names its track: it shows on that skill and seeds the next plan. A
+  standing "interview readiness" goal is added only if regular practice between applications
+  turns out to be wanted.
 
 ## Report
 

@@ -1,10 +1,11 @@
-# The locus Rust workspace: the locus window and the crates shared with kairos and keryx.
-# Those two depend on crates here by git, pinned to a commit (`rev = "…"`); bump it deliberately.
-# eco-dates and locus-theme came from the `locus-shared` repo (formerly `eco`) on 19 Oct 2026
-# (ADR-004).
+# The locus Rust workspace: the locus window, kairos (moved in with its history on 24 Oct 2026,
+# ADR-008) and the crates they share. keryx still depends on crates here by git, pinned to a
+# commit (`rev = "…"`); bump it deliberately. eco-dates and locus-theme came from the
+# `locus-shared` repo (formerly `eco`) on 19 Oct 2026 (ADR-004).
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+members = ["crates/*", "kairos/crates/*", "kairos/xtask"]
+default-members = ["crates/*", "kairos/crates/*"]
 
 [workspace.package]
 version = "0.1.0"
@@ -16,9 +17,12 @@ publish = false
 eco-dates = { path = "crates/eco-dates" }
 locus-contract = { path = "crates/locus-contract" }
 locus-theme = { path = "crates/locus-theme" }
+kairos-core = { path = "kairos/crates/kairos-core" }
+kairos-store = { path = "kairos/crates/kairos-store" }
+kairos-tui = { path = "kairos/crates/kairos-tui" }
 anyhow = "1"
 chrono = { version = "0.4.45", features = ["serde"] }
-clap = { version = "4.6", features = ["derive"] }
+clap = { version = "4.6", features = ["derive", "env"] }
 crossterm = "0.29"
 ratatui = "0.30"
 ratatui-image = { version = "11.1.0", default-features = false, features = ["crossterm"] }
@@ -29,6 +33,21 @@ thiserror = "2"
 unicode-width = "0.2"
 insta = "1.49"
 tempfile = "3"
+chrono-tz = { version = "0.10", features = ["serde"] }
+rrule = "0.14"
+strsim = "0.11"
+toml = "1"
+unicode-segmentation = "1"
+rusqlite = { version = "0.40", features = ["bundled"] }
+sha2 = "0.11"
+hmac = "0.13"
+hex = "0.4"
+uuid = { version = "1", features = ["v4", "serde"] }
+proptest = "1.12"
+tracing = "0.1"
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "blocking", "json", "gzip", "http2"] }
+filetime = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
@@ -37,3 +56,6 @@ unsafe_code = "forbid"
 unwrap_used = "deny"
 expect_used = "deny"
 dbg_macro = "deny"
+
+[profile.release]
+debug = "line-tables-only"

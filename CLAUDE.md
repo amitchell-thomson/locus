@@ -539,7 +539,10 @@ locus/
 ├── pyproject.toml (uv; extras: rerank, mathocr, reading, tui) · alembic.ini · config.toml
 ├── Cargo.toml · crates/  # the Rust workspace (ADR-004): locus-tui (the locus window, Slice 1)
 │                       #   locus-contract (what each screen shows) · locus-theme (Mocha +
-│                       #   the D.2 glyphs) · eco-dates; kairos and keryx pin the last two by rev
+│                       #   the D.2 glyphs) · eco-dates; keryx pins the last two by rev
+├── kairos/             # the calendar (ADR-008, moved in with its history 2026-10-24): its
+│                       #   crates are workspace members; SPEC.md, docs/, its own CLAUDE.md
+├── taxonomy/           # areas.toml + registry.toml: the one taxonomy and registry (ADR-006)
 ├── locus/
 │   ├── cli.py              # the product surface (all commands)
 │   ├── config.py           # typed config; API key via env/.env only
@@ -750,3 +753,26 @@ Custom GUI · cloud storage of corpus content · multi-user/auth · local models
   tree" or "failed to create user token", and a partial tree build makes `ls` UNDER-REPORT — a
   document that is really there simply does not appear. Do not read a missing entry as a
   deletion, and back off rather than retrying in a loop.
+
+---
+
+## 15. kairos (the calendar, `kairos/`)
+
+Moved in 2026-10-24 (ADR-008, spec `docs/redesign/slices/kairos-joins-locus.md`). Its own notes,
+layout and deployment state are in [`kairos/CLAUDE.md`](kairos/CLAUDE.md) and its spec in
+`kairos/SPEC.md`; `kairos/scripts/ci.sh` is the gate (fmt, clippy -D warnings, every test in the
+workspace, the 5k-event perf budgets). Its invariants are invariants of this repository:
+
+- **Single writer.** Only kairosd writes to iCloud. Everything else, locus included, writes calendar
+  items through kairosd's API, never around it.
+- **The live guard.** With `live = false` new events go to the test calendar and ops on any other
+  calendar are refused, checked at propose and at apply.
+- **Every write is a changeset** with full before and after images; apply checks preconditions;
+  undo refuses with a diff if the item was edited elsewhere.
+- **Risk is computed, never supplied** (`risk::assess` over facts the engine gathers). MCP has no
+  approve tool. Only your own interactive edits (TUI, CLI on a TTY) skip approval.
+- **Lossless edits.** Unknown iCalendar properties survive every rewrite; the sidecar is
+  authoritative for kairos's metadata, `X-KAIROS-*` only mirrors it.
+- **Check-ins wait for you.** Nothing is decided the next morning; tasks finish only when you say so.
+- **The scheduler never overbooks**: shortfalls and squeezes are reported, never hidden.
+

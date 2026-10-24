@@ -11,8 +11,8 @@ kairos-core.workspace = true
 kairos-store.workspace = true
 chrono.workspace = true
 chrono-tz.workspace = true
-crossterm = "0.29"
-ratatui = "0.30"
+crossterm.workspace = true
+ratatui.workspace = true
 serde_json.workspace = true
 unicode-width.workspace = true
 

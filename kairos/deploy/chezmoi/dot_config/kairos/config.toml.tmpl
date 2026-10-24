@@ -6,6 +6,8 @@ timezone = "Europe/London"
 # `test_calendar` — re-add a source for it first (see config/config.example.toml).
 live = true
 test_calendar = "ZZ-kairos-test"
+# Events and tasks without a key go here.
+inbox = "Errands"
 
 [paths]
 vdir = "~/.local/share/kairos/vdir"
@@ -65,17 +67,22 @@ terms = [
   { name = "TT", start = "2027-04-25" },
 ]
 
+# Keys are the locus areas (taxonomy/areas.toml, ADR-008): Studies, Projects, Careers whole, and
+# Personal as its streams (Sport, Social, Errands; Family is the shared calendar below). `index`
+# is the TUI digit; 4 shows/hides all of Personal, 5 Family (`[tui] personal_index`,
+# `family_index`). `aliases` are earlier names that still resolve (stored tasks, old commands).
 [[keys]]
-name = "Personal"
+name = "Studies"
 index = 1
-colour = "lavender"
-calendar = "personal"
-
-[[keys]]
-name = "Engineering"
-index = 2
 colour = "blue"
 calendar = "engineering"
+aliases = ["Engineering"]
+
+[[keys]]
+name = "Projects"
+index = 2
+colour = "maroon"
+calendar = "projects"
 
 [[keys]]
 name = "Careers"
@@ -84,24 +91,26 @@ colour = "peach"
 calendar = "careers"
 
 [[keys]]
-name = "Projects"
-index = 4
-colour = "maroon"
-calendar = "projects"
-
-[[keys]]
 name = "Sport"
-index = 5
+index = 6
 colour = "green"
 calendar = "sport"
+area = "Personal"
 
 [[keys]]
 name = "Social"
-index = 6
+index = 7
 colour = "pink"
 calendar = "social"
+area = "Personal"
 
-{{- range $id, $name := dict "personal" "Personal" "engineering" "Engineering" "careers" "Careers" "projects" "Projects" "sport" "Sport" "social" "Social" }}
+[[keys]]
+name = "Errands"
+index = 8
+colour = "lavender"
+calendar = "personal"
+area = "Personal"
+aliases = ["Personal", "Inbox"]
 
 [[sources]]
 id = "{{ $id }}"

@@ -67,13 +67,33 @@ pub struct Source {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct KeyDef {
+    /// An area of the locus taxonomy (Studies, Projects, Careers) or a stream of one (Sport,
+    /// Errands under Personal): kairos's calendars are the areas (ADR-008).
     pub name: String,
-    /// 1–7: the TUI toggle key.
+    /// 1–9: the TUI toggle key. `tui.personal_index` and `tui.family_index` are taken.
     pub index: u8,
     pub colour: Rgb,
     /// Source id of the iCloud calendar that holds this key's events.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub calendar: Option<String>,
+    /// The area a stream belongs to (`Personal` for Sport); none when the key is an area itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub area: Option<String>,
+    /// Earlier names that still resolve to this key (`Engineering` for Studies), so stored
+    /// tasks, old commands and the iCloud calendar's own name keep working after the rename.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub aliases: Vec<String>,
+}
+
+impl KeyDef {
+    /// The area this key's events belong to: its own name, or the area its stream is under.
+    pub fn area(&self) -> &str {
+        self.area.as_deref().unwrap_or(&self.name)
+    }
+
+    fn answers_to(&self, name: &str) -> bool {
+        self.name.eq_ignore_ascii_case(name) || self.aliases.iter().any(|a| a.eq_ignore_ascii_case(name))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -116,6 +136,19 @@ pub struct TuiSettings {
     /// Events starting within this many minutes get an "in 25m" marker.
     #[serde(default = "default_soon_minutes")]
     pub soon_minutes: u32,
+    /// The digit that shows/hides the whole Personal area (its streams and Family).
+    #[serde(default = "default_personal_index")]
+    pub personal_index: u8,
+    /// The digit that shows/hides Family (also `f`).
+    #[serde(default = "default_family_index")]
+    pub family_index: u8,
+}
+
+fn default_personal_index() -> u8 {
+    4
+}
+fn default_family_index() -> u8 {
+    5
 }
 
 fn default_soon_minutes() -> u32 {
@@ -158,6 +191,8 @@ impl Default for TuiSettings {
             section_hours: default_section_hours(),
             terms: Vec::new(),
             soon_minutes: default_soon_minutes(),
+            personal_index: default_personal_index(),
+            family_index: default_family_index(),
         }
     }
 }
@@ -381,6 +416,9 @@ pub struct Config {
     pub tui: TuiSettings,
     #[serde(default)]
     pub keys: Vec<KeyDef>,
+    /// Where events and tasks without a key go (`Errands`); else the key with the lowest index.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inbox: Option<String>,
     #[serde(default)]
     pub sources: Vec<Source>,
 }
@@ -408,9 +446,9 @@ pub enum ConfigError {
     UnknownKeySource { key: String, source_id: String },
     #[error("duplicate key name {0:?}")]
     DuplicateKey(String),
-    #[error("key {key:?}: index {index} must be 1–7 and unique")]
+    #[error("key {key:?}: index {index} must be 1–9, unique, and not the Personal or Family digit")]
     KeyIndex { key: String, index: u8 },
-    #[error("more than 7 keys defined ({0})")]
+    #[error("more than 9 keys defined ({0})")]
     TooManyKeys(usize),
     #[error("source {0:?}: read-only (ics_readonly) sources must have writable = false")]
     ReadonlyWritable(String),
@@ -445,7 +483,7 @@ impl Config {
         if self.timezone.parse::<Tz>().is_err() {
             errs.push(ConfigError::Timezone(self.timezone.clone()));
         }
-        if self.keys.len() > 7 {
+        if self.keys.len() > 9 {
             errs.push(ConfigError::TooManyKeys(self.keys.len()));
         }
         let mut key_names = HashSet::new();
@@ -454,7 +492,11 @@ impl Config {
             if !key_names.insert(k.name.to_lowercase()) {
                 errs.push(ConfigError::DuplicateKey(k.name.clone()));
             }
-            if !(1..=7).contains(&k.index) || !key_idx.insert(k.index) {
+            if !(1..=9).contains(&k.index)
+                || !key_idx.insert(k.index)
+                || k.index == self.tui.personal_index
+                || k.index == self.tui.family_index
+            {
                 errs.push(ConfigError::KeyIndex {
                     key: k.name.clone(),
                     index: k.index,
@@ -500,6 +542,14 @@ impl Config {
         if fam > 1 {
             errs.push(ConfigError::MultipleFamily(fam));
         }
+        if let Some(i) = &self.inbox
+            && self.key(i).is_none()
+        {
+            errs.push(ConfigError::UnknownKey {
+                source_id: "inbox".into(),
+                key: i.clone(),
+            });
+        }
         for k in &self.keys {
             if let Some(src) = &k.calendar
                 && !self.sources.iter().any(|s| &s.id == src)
@@ -517,13 +567,43 @@ impl Config {
         self.timezone.parse().unwrap_or(chrono_tz::Europe::London)
     }
 
+    /// A key by its name or one of its earlier names.
     pub fn key(&self, name: &str) -> Option<&KeyDef> {
-        self.keys.iter().find(|k| k.name.eq_ignore_ascii_case(name))
+        self.keys
+            .iter()
+            .find(|k| k.name.eq_ignore_ascii_case(name))
+            .or_else(|| self.keys.iter().find(|k| k.answers_to(name)))
     }
 
-    /// The inbox: key 1, where events without an explicit key land.
+    /// The inbox, where events without an explicit key land: `inbox`, else the lowest index.
     pub fn default_key(&self) -> Option<&KeyDef> {
-        self.keys.iter().min_by_key(|k| k.index)
+        self.inbox
+            .as_deref()
+            .and_then(|i| self.key(i))
+            .or_else(|| self.keys.iter().min_by_key(|k| k.index))
+    }
+
+    /// The keys a name means, lower-cased: a key (or an earlier name of one) means itself, an
+    /// area means every key in it (`Personal` → Sport, Social, Errands). Unknown names mean none.
+    pub fn keys_named(&self, names: &[String]) -> Vec<String> {
+        let mut out = Vec::new();
+        for n in names {
+            // An area first: `Personal` is both an area and an earlier name of Errands.
+            let area: Vec<String> = self
+                .keys
+                .iter()
+                .filter(|k| k.area.is_some() && k.area().eq_ignore_ascii_case(n))
+                .map(|k| k.name.to_lowercase())
+                .collect();
+            if !area.is_empty() {
+                out.extend(area);
+            } else if let Some(k) = self.key(n) {
+                out.push(k.name.to_lowercase());
+            }
+        }
+        out.sort();
+        out.dedup();
+        out
     }
 
     pub fn source(&self, id: &str) -> Option<&Source> {
@@ -536,11 +616,9 @@ impl Config {
         if let Some(id) = &k.calendar {
             return self.source(id);
         }
-        self.sources.iter().find(|s| {
-            s.writable
-                && s.kind == SourceKind::Icloud
-                && s.key.as_deref().is_some_and(|sk| sk.eq_ignore_ascii_case(key))
-        })
+        self.sources
+            .iter()
+            .find(|s| s.writable && s.kind == SourceKind::Icloud && s.key.as_deref().is_some_and(|sk| k.answers_to(sk)))
     }
 
     pub fn family_source(&self) -> Option<&Source> {
@@ -555,6 +633,42 @@ impl Config {
     }
     pub fn cache_dir(&self) -> PathBuf {
         expand_home(&self.paths.cache)
+    }
+
+    /// Where the keys disagree with the locus taxonomy (ADR-008), in words: a key that is neither
+    /// an area nor a stream, a stream filed under the wrong area, a stream with no calendar.
+    pub fn taxonomy_problems(&self, t: &locus_contract::Taxonomy) -> Vec<String> {
+        let mut bad = Vec::new();
+        for k in &self.keys {
+            match t.area_of(&k.name) {
+                None => bad.push(format!(
+                    "key {:?} is neither an area nor a stream in taxonomy/areas.toml",
+                    k.name
+                )),
+                Some(a) if !a.id.eq_ignore_ascii_case(k.area()) => bad.push(format!(
+                    "key {:?} is filed under {:?}, but the taxonomy puts it under {:?}",
+                    k.name,
+                    k.area(),
+                    a.id
+                )),
+                Some(_) => {}
+            }
+        }
+        for a in &t.areas {
+            if a.streams.is_empty() {
+                if self.key(&a.id).is_none() {
+                    bad.push(format!("area {:?} has no calendar", a.id));
+                }
+                continue;
+            }
+            for s in &a.streams {
+                let family = s.eq_ignore_ascii_case("Family") && self.family_source().is_some();
+                if !family && self.key(s).is_none() {
+                    bad.push(format!("stream {s:?} of {:?} has no calendar", a.id));
+                }
+            }
+        }
+        bad
     }
 
     /// Default config path: `$KAIROS_CONFIG` or `~/.config/kairos/config.toml`.
@@ -579,6 +693,42 @@ pub fn expand_home(p: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_example_keys_are_the_locus_taxonomy() {
+        let shared = locus_contract::taxonomy::load(&locus_contract::taxonomy::root()).unwrap();
+        let c = example();
+        assert!(c.validate().is_empty(), "{:?}", c.validate());
+        assert_eq!(c.taxonomy_problems(&shared.taxonomy), Vec::<String>::new());
+        assert_eq!(c.default_key().map(|k| k.name.as_str()), Some("Errands"));
+    }
+
+    #[test]
+    fn earlier_names_and_areas_resolve() {
+        let c = example();
+        assert_eq!(c.key("Engineering").map(|k| k.name.as_str()), Some("Studies"));
+        assert_eq!(c.key("personal").map(|k| k.name.as_str()), Some("Errands"));
+        assert_eq!(c.keys_named(&["Personal".into()]), ["errands", "social", "sport"]);
+        assert_eq!(
+            c.keys_named(&["Engineering".into(), "Careers".into()]),
+            ["careers", "studies"]
+        );
+        assert_eq!(
+            c.source_for_key("Engineering").map(|s| s.id.as_str()),
+            Some("engineering")
+        );
+    }
+
+    #[test]
+    fn a_key_outside_the_taxonomy_is_named() {
+        let shared = locus_contract::taxonomy::load(&locus_contract::taxonomy::root()).unwrap();
+        let mut c = example();
+        c.keys[0].name = "Engineering".into();
+        c.keys[0].aliases.clear();
+        let bad = c.taxonomy_problems(&shared.taxonomy);
+        assert!(bad.iter().any(|b| b.contains("\"Engineering\" is neither")), "{bad:?}");
+        assert!(bad.iter().any(|b| b.contains("\"Studies\" has no calendar")), "{bad:?}");
+    }
 
     #[test]
     fn oxford_term_weeks() {
@@ -681,7 +831,9 @@ mod tests {
     fn rejects_bad_key_index() {
         let e = with(|c| c.keys[1].index = c.keys[0].index);
         assert!(e.iter().any(|x| matches!(x, ConfigError::KeyIndex { .. })), "{e:?}");
-        let e = with(|c| c.keys[0].index = 9);
+        let e = with(|c| c.keys[0].index = 10);
+        assert!(e.iter().any(|x| matches!(x, ConfigError::KeyIndex { .. })), "{e:?}");
+        let e = with(|c| c.keys[0].index = c.tui.personal_index);
         assert!(e.iter().any(|x| matches!(x, ConfigError::KeyIndex { .. })), "{e:?}");
     }
 
@@ -694,14 +846,14 @@ mod tests {
     #[test]
     fn rejects_too_many_keys() {
         let e = with(|c| {
-            while c.keys.len() < 8 {
+            while c.keys.len() < 10 {
                 let mut k = c.keys[0].clone();
                 k.index = c.keys.len() as u8 + 1;
                 k.name = format!("Extra{}", k.index);
                 c.keys.push(k);
             }
         });
-        assert!(e.iter().any(|x| matches!(x, ConfigError::TooManyKeys(8))), "{e:?}");
+        assert!(e.iter().any(|x| matches!(x, ConfigError::TooManyKeys(10))), "{e:?}");
     }
 
     #[test]

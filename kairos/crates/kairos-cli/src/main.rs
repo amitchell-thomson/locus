@@ -152,7 +152,7 @@ enum Cmd {
         #[arg(long)]
         matching: Option<String>,
     },
-    /// Add a ⚑ deadline: kairos deadline "B4 sheet" fri 17:00 --key Engineering
+    /// Add a ⚑ deadline: kairos deadline "B4 sheet" fri 17:00 --key Studies
     Deadline {
         title: String,
         #[arg(required = true, num_args = 1..)]
@@ -221,7 +221,7 @@ enum Cmd {
 
 #[derive(Subcommand)]
 enum TaskCmd {
-    /// Add: kairos task add "B4 sheet" --key Engineering --type sheet --due "fri 17:00"
+    /// Add: kairos task add "B4 sheet" --key Studies --type sheet --due "fri 17:00"
     Add {
         title: String,
         #[arg(long)]
@@ -321,14 +321,16 @@ impl Ctx {
             f.imported = has("imported");
         }
         if !v.keys.is_empty() {
-            // Keys are Personal calendars: `--key Engineering` alone means just those.
+            // Keys are Personal calendars: `--key Studies` alone means just those.
             if v.overlays.is_empty() {
                 f.family = false;
                 f.background = false;
                 f.imported = false;
             }
+            // An area names all its keys (`--key Personal`: Sport, Social, Errands).
+            let wanted = self.cfg.keys_named(&v.keys);
             for k in &self.cfg.keys {
-                if !v.keys.iter().any(|x| x.eq_ignore_ascii_case(&k.name)) {
+                if !wanted.contains(&k.name.to_lowercase()) {
                     f.hidden_keys.insert(k.name.to_lowercase());
                 }
             }
@@ -1389,6 +1391,32 @@ fn doctor(ctx: &Ctx, p: &Paint) -> Result<()> {
             format!("writes only go to {}", ctx.cfg.test_calendar)
         })
     );
+    // The keys must be the locus areas and Personal's streams (ADR-008).
+    match kairos_store::taxonomy::get(&ctx.cfg) {
+        Some((shared, from)) => {
+            let issues = ctx.cfg.taxonomy_problems(&shared.taxonomy);
+            let whence = match from {
+                kairos_store::taxonomy::From::Daemon => "from kairosd",
+                kairos_store::taxonomy::From::Cache => "cached copy (kairosd unreachable)",
+                kairos_store::taxonomy::From::Checkout => "this checkout's files",
+            };
+            if issues.is_empty() {
+                println!(
+                    "{ok} keys are the locus taxonomy {}",
+                    p.dim(&format!(
+                        "({whence}; {} registry entries)",
+                        shared.registry.projects.len()
+                    ))
+                );
+            } else {
+                problems += issues.len();
+                for b in issues {
+                    println!("{bad} taxonomy: {b}");
+                }
+            }
+        }
+        None => println!("{warn} taxonomy: not reachable (kairosd, cache or checkout)"),
+    }
     let cons = ctx.path.parent().map(|d| d.join("constraints.toml"));
     match cons.as_ref().map(std::fs::read_to_string) {
         Some(Ok(t)) => match kairos_core::constraints::Constraints::from_toml(&t) {

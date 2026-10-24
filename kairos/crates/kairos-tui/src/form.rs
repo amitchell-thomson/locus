@@ -81,7 +81,7 @@ const DUR_HINT: &str = "60m · 1h30 · 2h (empty = 1h)";
 const KEY_HINT: &str = "←/→ or type the first letter";
 /// The Project picker's "no project".
 pub const NO_PROJECT: &str = "none";
-const CAL_HINT: &str = "where its sessions go, e.g. Engineering for the 3rd-year project — ←/→";
+const CAL_HINT: &str = "where its sessions go, e.g. Studies for the 3rd-year project — ←/→";
 const STATUS_HINT: &str = "active (now) · next (soon) · paused · done — ←/→";
 const TITLE_HINT: &str = "or all at once: Squash @ tue 19:00 #Sport for 90m";
 

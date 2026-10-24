@@ -1,5 +1,6 @@
 ---
-source: crates/kairos-tui/tests/snapshots.rs
+source: kairos/crates/kairos-tui/tests/snapshots.rs
+assertion_line: 122
 expression: s
 ---
 ╭─────────────────────────────────────── Friday 23 October ────────────────────────────────────────╮
@@ -30,5 +31,5 @@ expression: s
 │21:00 ┊                                                                                           │
 │      ┊                                                                                           │
 │      ┊                                                                                           │
-╰ ● all day · Collections · Personal ──────────────────────── e edit · m move · d delete · s share ╯
- DAY  p Private ▸ 1 Personal  6 OQTS  │ f Family                                           ? help
+╰ ● all day · Collections · Errands ───────────────────────── e edit · m move · d delete · s share ╯
+ DAY  3 Careers  │ 4 Personal ▸ 5 Family  8 Errands                                        ? help

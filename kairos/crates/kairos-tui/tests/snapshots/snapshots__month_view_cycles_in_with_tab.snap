@@ -1,5 +1,6 @@
 ---
-source: crates/kairos-tui/tests/snapshots.rs
+source: kairos/crates/kairos-tui/tests/snapshots.rs
+assertion_line: 844
 expression: s
 ---
 ╭──────────────────────────────────────────────────── October 2026 ────────────────────────────────────────────────────╮
@@ -34,5 +35,5 @@ expression: s
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-╰ ┆ 09:00–10:30 · 󰄱 B4 sheet · Personal · in 1h ─────────────────────────────────── n start · m move · d skip · e edit ╯
- MONTH  p Private ▸ 1 Personal  6 OQTS  │ f Family                                                             ? help
+╰ ┆ 09:00–10:30 · 󰄱 B4 sheet · Errands · in 1h ──────────────────────────────────── n start · m move · d skip · e edit ╯
+ MONTH  3 Careers  │ 4 Personal ▸ 5 Family  8 Errands                                                          ? help

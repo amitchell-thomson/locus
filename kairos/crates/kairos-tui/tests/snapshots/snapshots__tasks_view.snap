@@ -1,5 +1,6 @@
 ---
-source: crates/kairos-tui/tests/snapshots.rs
+source: kairos/crates/kairos-tui/tests/snapshots.rs
+assertion_line: 243
 expression: "render_to_string(&a, 110, 12)"
 ---
 ╭────────────────────────────────────────────────── Tasks ───────────────────────────────────────────────────╮
@@ -13,4 +14,4 @@ expression: "render_to_string(&a, 110, 12)"
 │                                                                                                            │
 │                                                                                                            │
 ╰────────────────────────────────────────────────── e edit · D done · W log work · + time · n start · d drop ╯
- TASKS  p Private ▸ 1 Personal  6 OQTS  │ f Family                                                   ? help
+ TASKS  3 Careers  │ 4 Personal ▸ 5 Family  8 Errands                                                ? help

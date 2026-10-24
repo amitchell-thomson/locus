@@ -77,6 +77,36 @@ impl Filter {
             self.hidden_keys.insert(k);
         }
     }
+
+    /// Whether anything of an area shows: one of its keys, or Family for Personal.
+    pub fn area_on(&self, c: &Config, area: &str) -> bool {
+        let personal = area.eq_ignore_ascii_case("Personal");
+        (personal && self.family)
+            || (self.personal
+                && c.keys
+                    .iter()
+                    .any(|k| k.area().eq_ignore_ascii_case(area) && !self.hidden_keys.contains(&k.name.to_lowercase())))
+    }
+
+    /// Show or hide a whole area at once (`4` for Personal: its streams and Family). Anything
+    /// of it showing hides all of it; nothing showing shows all of it.
+    pub fn toggle_area(&mut self, c: &Config, area: &str) {
+        let hide = self.area_on(c, area);
+        for k in c.keys.iter().filter(|k| k.area().eq_ignore_ascii_case(area)) {
+            let n = k.name.to_lowercase();
+            if hide {
+                self.hidden_keys.insert(n);
+            } else {
+                self.hidden_keys.remove(&n);
+            }
+        }
+        if area.eq_ignore_ascii_case("Personal") {
+            self.family = !hide;
+        }
+        if !hide {
+            self.personal = true;
+        }
+    }
 }
 
 /// Display precedence: Family > iCloud personal > read-only personal import

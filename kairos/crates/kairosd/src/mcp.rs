@@ -54,21 +54,26 @@ pub struct KairosMcp {
     instructions: String,
 }
 
-/// The instructions with the configured keys ("Personal (default), Engineering, …").
+/// The instructions with the configured keys ("Studies, Projects, Careers, and Personal's streams …").
 pub fn instructions(cfg: &kairos_core::config::Config) -> String {
     let mut keys = cfg.keys.clone();
     keys.sort_by_key(|k| k.index);
-    let list: Vec<String> = keys
-        .iter()
-        .enumerate()
-        .map(|(n, k)| {
-            if n == 0 {
-                format!("{} (default)", k.name)
-            } else {
-                k.name.clone()
-            }
-        })
-        .collect();
+    let inbox = cfg.default_key().map(|k| k.name.clone());
+    let name = |k: &kairos_core::config::KeyDef| {
+        if Some(&k.name) == inbox.as_ref() {
+            format!("{} (default)", k.name)
+        } else {
+            k.name.clone()
+        }
+    };
+    let mut list: Vec<String> = keys.iter().filter(|k| k.area.is_none()).map(name).collect();
+    let streams: Vec<String> = keys.iter().filter(|k| k.area.is_some()).map(name).collect();
+    if !streams.is_empty() {
+        list.push(format!(
+            "and Personal's streams {} (Family is the shared calendar)",
+            streams.join(", ")
+        ));
+    }
     INSTRUCTIONS.replace("{KEYS}", &list.join(", "))
 }
 
@@ -220,7 +225,7 @@ pub struct SearchEventsArgs {
     pub query: Option<String>,
     /// Text that must appear in the location.
     pub location: Option<String>,
-    /// Only these keys (e.g. ["Engineering"]). Default: all of Alec's keys.
+    /// Only these keys (e.g. ["Studies"], or an area: ["Personal"] = its streams). Default: all of Alec's keys.
     pub keys: Option<Vec<String>>,
     /// Also search the shared Family calendar (read-only except share). Default false.
     pub include_family: Option<bool>,
@@ -444,7 +449,7 @@ pub struct CreateProjectArgs {
     pub status: Option<String>,
     /// One line: what it is, or the next step.
     pub note: Option<String>,
-    /// The calendar its sessions go in (default Projects), e.g. Engineering.
+    /// The calendar its sessions go in (default Projects), e.g. Studies.
     pub key: Option<String>,
 }
 
@@ -492,7 +497,7 @@ impl KairosMcp {
         self.run(move |e| {
             let (from, to) = window(e, a.from.as_deref(), a.to.as_deref(), 7)?;
             let overlays: Vec<String> = a.overlays.unwrap_or_else(|| vec!["personal".into(), "family".into()]);
-            let keys = a.keys.map(|k| k.iter().map(|x| x.to_lowercase()).collect::<Vec<_>>());
+            let keys = a.keys.map(|k| e.cfg.keys_named(&k));
             let evs: Vec<_> = e
                 .events(from, to)?
                 .into_iter()
@@ -524,7 +529,7 @@ impl KairosMcp {
                 .map(str::to_lowercase)
                 .collect();
             let loc = a.location.as_deref().map(str::to_lowercase);
-            let keys = a.keys.map(|k| k.iter().map(|x| x.to_lowercase()).collect::<Vec<_>>());
+            let keys = a.keys.map(|k| e.cfg.keys_named(&k));
             let family = a.include_family.unwrap_or(false);
             let mut rows: Vec<SearchRow> = Vec::new();
             let mut seen: std::collections::HashMap<(String, String), usize> = Default::default();

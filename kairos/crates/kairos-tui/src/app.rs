@@ -727,11 +727,15 @@ impl App {
             Key::Char('f') => self.filter.family = !self.filter.family,
             Key::Char('b') => self.filter.background = !self.filter.background,
             Key::Char('i') => self.filter.imported = !self.filter.imported,
-            Key::Char(c @ '1'..='7') => {
+            Key::Char(c @ '1'..='9') => {
                 let idx = c as u8 - b'0';
                 if let Some(k) = self.cfg.keys.iter().find(|k| k.index == idx) {
                     let name = k.name.clone();
                     self.filter.toggle_key(&name);
+                } else if idx == self.cfg.tui.personal_index {
+                    self.filter.toggle_area(&self.cfg, "Personal");
+                } else if idx == self.cfg.tui.family_index {
+                    self.filter.family = !self.filter.family;
                 }
             }
             Key::Char('/') => self.mode = Mode::Prompt(PromptKind::Search, self.search.clone().unwrap_or_default()),
@@ -2393,7 +2397,7 @@ pub fn parse_add(s: &str) -> Option<(String, String, Option<String>, Option<u32>
     (!title.is_empty() && !when.is_empty()).then(|| (title.to_string(), when.join(" "), key, dur))
 }
 
-/// `B4 sheet #Engineering ~4h due fri 17:00` → (title, key, minutes, due)
+/// `B4 sheet #Studies ~4h due fri 17:00` → (title, key, minutes, due)
 pub fn parse_task(s: &str) -> Option<(String, String, u32, Option<String>)> {
     let (head, due) = match s.split_once(" due ") {
         Some((h, d)) => (h, Some(d.trim().to_string())),
@@ -2445,34 +2449,39 @@ pub fn overlay_flags(app: &App) -> Vec<(String, String, bool, kairos_core::colou
             names.join("+")
         }
     };
-    // Alec's own calendars form group 0, "Private" (drawn as "p Private ▸
-    // 1 Personal …"; not "Personal", which is also key 1's name), Family
-    // group 1, read-only feeds group 2.
-    let mut v = vec![(
-        "p".to_string(),
-        "Private".to_string(),
-        app.filter.personal,
-        kairos_core::colour::Rgb::mocha("lavender"),
-        0,
-    )];
+    // The areas (ADR-008) form group 0: "1 Studies  2 Projects  3 Careers"; Personal is group 1,
+    // drawn "4 Personal ▸ 5 Family  6 Sport  7 Social  8 Errands" (its streams follow the ▸);
+    // read-only feeds group 2. `p` still hides all your own calendars at once, unlisted.
+    let shown = |k: &kairos_core::config::KeyDef| {
+        app.filter.personal && !app.filter.hidden_keys.contains(&k.name.to_lowercase())
+    };
     let mut keys = app.cfg.keys.clone();
     keys.sort_by_key(|k| k.index);
-    for k in keys {
-        v.push((
-            k.index.to_string(),
-            k.name.clone(),
-            app.filter.personal && !app.filter.hidden_keys.contains(&k.name.to_lowercase()),
-            k.colour,
-            0,
-        ));
+    let (streams, areas): (Vec<_>, Vec<_>) = keys.into_iter().partition(|k| k.area.is_some());
+    let mut v = Vec::new();
+    for k in &areas {
+        v.push((k.index.to_string(), k.name.clone(), shown(k), k.colour, 0));
     }
     v.push((
-        "f".to_string(),
+        app.cfg.tui.personal_index.to_string(),
+        "Personal".to_string(),
+        app.filter.area_on(&app.cfg, "Personal"),
+        kairos_core::colour::Rgb::mocha("lavender"),
+        1,
+    ));
+    let mut tail = vec![(
+        app.cfg.tui.family_index,
         "Family".to_string(),
         app.filter.family,
         app.cfg.overlays.family_colour,
-        1,
-    ));
+    )];
+    for k in &streams {
+        tail.push((k.index, k.name.clone(), shown(k), k.colour));
+    }
+    tail.sort_by_key(|t| t.0);
+    for (i, n, on, col) in tail {
+        v.push((i.to_string(), n, on, col, 1));
+    }
     if app.cfg.sources.iter().any(|s| s.overlay == Overlay::Background) {
         v.push((
             "b".to_string(),

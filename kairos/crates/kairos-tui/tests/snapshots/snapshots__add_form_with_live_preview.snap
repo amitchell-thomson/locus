@@ -1,5 +1,6 @@
 ---
-source: crates/kairos-tui/tests/snapshots.rs
+source: kairos/crates/kairos-tui/tests/snapshots.rs
+assertion_line: 281
 expression: "render_to_string(&a, 100, 30)"
 ---
 ╭──────────────────────────────────── Week 43 · 19 Oct–25 Oct ─────────────────────────────────────╮
@@ -15,12 +16,12 @@ expression: "render_to_string(&a, 100, 30)"
 │11:00 ┊      │      When  today 19:00                                               │             │
 │      ┄┄┄┄┄┄┄│  Duration  90m█                                                      │┄┄┄┄┄┄┄┄┄┄┄┄┄│
 │12:00 ┊      │            60m · 1h30 · 2h (empty = 1h)                              │             │
-│13:00 ┊      │  Calendar  ◀ ● Personal ▶                                            │             │
+│13:00 ┊      │  Calendar  ◀ ● Errands ▶                                             │             │
 │14:00 ┊      │  Location                                                            │             │
 │15:00 ┊      │     Notes                                                            │             │
 │16:00 ┊      │    Repeat  ◀ no ▶                                                    │             │
 │17:00 ┊      │                                                                      │             │
-│      ┄┄┄┄┄┄┄│  → Mon 19 Oct 19:00–20:30 · Personal                                 │┄┄┄┄┄┄┄┄┄┄┄┄┄│
+│      ┄┄┄┄┄┄┄│  → Mon 19 Oct 19:00–20:30 · Errands                                  │┄┄┄┄┄┄┄┄┄┄┄┄┄│
 │18:00 ┊      │                                                                      │             │
 │19:00 ┊▌Squas│  Tab next · ⇧Tab back · Enter save · Esc cancel                      │▌Sunday Sq…  │
 │20:00 ┊      ╰──────────────────────────────────────────────────────────────────────╯             │
@@ -30,5 +31,5 @@ expression: "render_to_string(&a, 100, 30)"
 │23:00 ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 │      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 │      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
-╰ ● 19:00–20:00 · Squash · Personal ───────────────────────── e edit · m move · d delete · s share ╯
+╰ ● 19:00–20:00 · Squash · Errands ────────────────────────── e edit · m move · d delete · s share ╯
  new event 

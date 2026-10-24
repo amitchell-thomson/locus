@@ -1,5 +1,6 @@
 ---
-source: crates/kairos-tui/tests/snapshots.rs
+source: kairos/crates/kairos-tui/tests/snapshots.rs
+assertion_line: 129
 expression: "render_to_string(&a, 100, 40)"
 ---
 ╭───────────────────────────────────── Agenda · 15 Oct–28 Oct ─────────────────────────────────────╮
@@ -7,38 +8,38 @@ expression: "render_to_string(&a, 100, 40)"
 │ 19:05–20:00 ● OQTS speaker event ⧉  · Family                                                     │
 │                                                                                                  │
 │Fri 16 Oct · tomorrow                                                                             │
-│ 10:00–11:00 ● A1 Mathematics Lecture  · LR1 · Personal                                           │
-│ 10:00–11:00 ● A2 Electronics Lecture  · LR3 · OQTS                                               │
-│ 18:00–19:00 ● OQTS committee meeting! ⧉  · Personal                                              │
+│ 10:00–11:00 ● A1 Mathematics Lecture  · LR1 · Errands                                            │
+│ 10:00–11:00 ● A2 Electronics Lecture  · LR3 · Careers                                            │
+│ 18:00–19:00 ● OQTS committee meeting! ⧉  · Errands                                               │
 │                                                                                                  │
 │Sun 18 Oct                                                                                        │
-│ 19:00–20:00 ● Sunday Squash  · Iffley Road · Personal                                            │
+│ 19:00–20:00 ● Sunday Squash  · Iffley Road · Errands                                             │
 │                                                                                                  │
 │Mon 19 Oct                                                                                        │
-│ 19:00–20:00 ● Squash  · Personal                                                                 │
+│ 19:00–20:00 ● Squash  · Errands                                                                  │
 │                                                                                                  │
 │Tue 20 Oct                                                                                        │
-│ 10:00–11:00 ● B4 Lecture  · Personal                                                             │
+│ 10:00–11:00 ● B4 Lecture  · Errands                                                              │
 │                                                                                                  │
 │Wed 21 Oct                                                                                        │
-│ 09:00–10:30 ┆ 󰄱 B4 sheet  · Personal                                                             │
-│ 19:00–20:00 ● Squash  · OQTS                                                                     │
+│ 09:00–10:30 ┆ 󰄱 B4 sheet  · Errands                                                              │
+│ 19:00–20:00 ● Squash  · Careers                                                                  │
 │                                                                                                  │
 │Thu 22 Oct                                                                                        │
-│ 14:00–15:00 ● B4 Lecture ⧉  · OQTS                                                               │
+│ 14:00–15:00 ● B4 Lecture ⧉  · Careers                                                            │
 │                                                                                                  │
 │Fri 23 Oct                                                                                        │
-│ all day     ● Collections  · Personal                                                            │
-│ all day     ● Lake District trip  · Personal                                                     │
-│ all day     ● ⚑ Lab report  · Personal                                                           │
-│ 17:00       ● ⚑ B4 sheet  · Personal                                                             │
+│ all day     ● Collections  · Errands                                                             │
+│ all day     ● Lake District trip  · Errands                                                      │
+│ all day     ● ⚑ Lab report  · Errands                                                            │
+│ 17:00       ● ⚑ B4 sheet  · Errands                                                              │
 │                                                                                                  │
 │Sat 24 Oct                                                                                        │
-│ all day     ● Lake District trip  · Personal                                                     │
+│ all day     ● Lake District trip  · Errands                                                      │
 │                                                                                                  │
 │Sun 25 Oct                                                                                        │
-│ all day     ● Lake District trip  · Personal                                                     │
-│ 19:00–20:00 ● Sunday Squash  · Iffley Road · Personal                                            │
+│ all day     ● Lake District trip  · Errands                                                      │
+│ 19:00–20:00 ● Sunday Squash  · Iffley Road · Errands                                             │
 │                                                                                                  │
 ╰───────────────────────────────────────────────────────────────────────────────────── B attending ╯
- AGENDA  p Private ▸ 1 Personal  6 OQTS  │ f Family                                        ? help
+ AGENDA  3 Careers  │ 4 Personal ▸ 5 Family  8 Errands                                     ? help

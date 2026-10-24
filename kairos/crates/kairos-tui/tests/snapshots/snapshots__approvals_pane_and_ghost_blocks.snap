@@ -1,5 +1,6 @@
 ---
-source: crates/kairos-tui/tests/snapshots.rs
+source: kairos/crates/kairos-tui/tests/snapshots.rs
+assertion_line: 223
 expression: s
 ---
 ╭─────────────── Approvals · 1 ────────────────╮╭──────────────────────────────── diff ────────────────────────────────╮
@@ -25,4 +26,4 @@ expression: s
 │                                              ││                                                                      │
 │                                              ││                                                                      │
 ╰──────────────────────── y approve · n reject ╯╰──────────────────────────────────────────────────────────────────────╯
- APPROVALS  p Private ▸ 1 Personal  6 OQTS  │ f Family                                           ◌ 1 pending · ? help
+ APPROVALS  3 Careers  │ 4 Personal ▸ 5 Family  8 Errands                                        ◌ 1 pending · ? help

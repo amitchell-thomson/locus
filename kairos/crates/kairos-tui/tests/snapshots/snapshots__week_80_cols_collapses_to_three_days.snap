@@ -1,5 +1,6 @@
 ---
-source: crates/kairos-tui/tests/snapshots.rs
+source: kairos/crates/kairos-tui/tests/snapshots.rs
+assertion_line: 109
 expression: s
 ---
 ╭────────────────────────── Week 43 · 21 Oct–23 Oct ───────────────────────────╮
@@ -24,5 +25,5 @@ expression: s
 │19:00 ┊▌Squash                ┊                       ┊                       │
 │20:00 ┊                       ┊                       ┊                       │
 │21:00 ┊                       ┊                       ┊                       │
-╰ ● 14:00–15:00 · B4 Lecture · OQTS · ⧉ 2 ─────────────────────────────────────╯
- WEEK  p Private ▸ 1 Personal  6 OQTS  │ f Family                      ? help
+╰ ● 14:00–15:00 · B4 Lecture · Careers · ⧉ 2 ──────────────────────────────────╯
+ WEEK  3 Careers  │ 4 Personal ▸ 5 Family  8 Errands                   ? help

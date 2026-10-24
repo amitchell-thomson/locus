@@ -43,6 +43,7 @@ fn setup(dir: &std::path::Path) -> Config {
     }
     let toml = format!(
         r#"
+inbox = "Errands"
 [paths]
 vdir = "{root}/vdir"
 data = "{root}/data"
@@ -50,26 +51,28 @@ cache = "{root}/cache"
 [sync]
 full_cmd = ""
 [[keys]]
-name = "Personal"
-index = 1
-colour = "lavender"
+name = "Careers"
+index = 3
+colour = "peach"
 [[keys]]
-name = "OQTS"
-index = 6
-colour = "mauve"
+name = "Errands"
+index = 8
+colour = "lavender"
+area = "Personal"
+aliases = ["Personal"]
 [[sources]]
 id = "personal"
 kind = "icloud"
 calendar = "Personal"
 overlay = "personal"
-key = "Personal"
+key = "Errands"
 writable = true
 [[sources]]
 id = "oqts"
 kind = "icloud"
 calendar = "OQTS"
 overlay = "personal"
-key = "OQTS"
+key = "Careers"
 writable = true
 [[sources]]
 id = "family"

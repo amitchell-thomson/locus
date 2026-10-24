@@ -2212,7 +2212,7 @@ fn status_bar(f: &mut Frame, app: &App, area: Rect) {
         } else {
             push(buf, &mut x, &shown, st);
         }
-        if key == "p" {
+        if name == "Personal" {
             push(buf, &mut x, " ▸ ", Style::default().fg(c("overlay1")).bg(c("surface0")));
         } else {
             push(buf, &mut x, "  ", bg);

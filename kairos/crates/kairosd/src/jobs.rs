@@ -138,7 +138,7 @@ impl Jobs {
                     let now = chrono::Utc::now();
                     let spans = kairos_store::worked::scan(
                         &kairos_store::worked::claude_root(),
-                        &cache.join("worked-scan.json"),
+                        &cache.join(kairos_store::worked::STATE_FILE),
                         &shared.registry,
                         now,
                     );

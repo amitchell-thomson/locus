@@ -363,6 +363,7 @@ impl Engine {
                     tentative: false,
                     meta: Meta {
                         kind: EventKind::Worked,
+                        activity: s.activity,
                         ..Meta::default()
                     },
                     href: None,

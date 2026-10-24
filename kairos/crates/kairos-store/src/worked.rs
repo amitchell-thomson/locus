@@ -21,6 +21,8 @@ use std::path::{Path, PathBuf};
 pub const GAP_MIN: i64 = 10;
 /// A span is at least this long (one prompt and a quick answer is still a sitting).
 pub const MIN_SPAN_MIN: i64 = 5;
+/// The scan's state in the cache directory (v2: spans carry their activity).
+pub const STATE_FILE: &str = "worked-scan-v2.json";
 /// Spans older than this are forgotten.
 pub const KEEP_DAYS: i64 = 30;
 
@@ -29,6 +31,9 @@ struct FileState {
     offset: u64,
     project: Option<String>,
     open: Option<(DateTime<Utc>, DateTime<Utc>)>,
+    /// Lines per ten minutes of the open span.
+    #[serde(default)]
+    activity: Vec<u16>,
     spans: Vec<WorkedSpan>,
 }
 
@@ -53,12 +58,25 @@ pub fn project_for_cwd(cwd: &str, reg: &Registry) -> Option<String> {
 }
 
 fn close(st: &mut FileState) {
+    let activity = std::mem::take(&mut st.activity);
     if let (Some((s, e)), Some(p)) = (st.open.take(), st.project.clone()) {
         st.spans.push(WorkedSpan {
             project: p,
             start: s,
             end: e.max(s + Duration::minutes(MIN_SPAN_MIN)),
+            activity,
         });
+    }
+}
+
+/// Count a line at `ts` in the open span's activity.
+fn count(st: &mut FileState, ts: DateTime<Utc>) {
+    if let Some((s, _)) = st.open {
+        let slot = ((ts - s).num_minutes().max(0) / 10) as usize;
+        if st.activity.len() <= slot {
+            st.activity.resize(slot + 1, 0);
+        }
+        st.activity[slot] = st.activity[slot].saturating_add(1);
     }
 }
 
@@ -96,11 +114,16 @@ fn read_file(path: &Path, st: &mut FileState, reg: &Registry) -> std::io::Result
         let typed = kind == "user" && v["origin"]["kind"].as_str() == Some("human");
         let active = typed || kind == "assistant" || kind == "user";
         match st.open {
-            Some((s, e)) if active && ts >= e && ts - e <= gap => st.open = Some((s, ts)),
-            Some((s, e)) if active && ts < e => st.open = Some((s.min(ts), e)),
+            Some((s, e)) if active && ts >= e && ts - e <= gap => {
+                st.open = Some((s, ts));
+                count(st, ts);
+            }
+            // A line from inside the span (logs are not always in order): it counts there.
+            Some((s, e)) if active && ts >= s && ts < e => count(st, ts),
             _ if typed => {
                 close(st);
                 st.open = Some((ts, ts));
+                count(st, ts);
             }
             _ => {}
         }
@@ -157,6 +180,7 @@ pub fn scan(root: &Path, state_path: &Path, reg: &Registry, now: DateTime<Utc>) 
                 project: p,
                 start: s,
                 end: e.max(s + Duration::minutes(MIN_SPAN_MIN)),
+                activity: st.activity.clone(),
             });
         }
     }
@@ -169,13 +193,25 @@ pub fn scan(root: &Path, state_path: &Path, reg: &Registry, now: DateTime<Utc>) 
     merge(all)
 }
 
-/// Overlapping spans of the same project become one (two sessions at once are one sitting).
+/// Overlapping spans of the same project become one (two sessions at once are one sitting),
+/// their activity added slot by slot. A resumed session repeats its history in a new file, so
+/// identical spans count once.
 pub fn merge(mut v: Vec<WorkedSpan>) -> Vec<WorkedSpan> {
-    v.sort_by(|a, b| (&a.project, a.start).cmp(&(&b.project, b.start)));
+    v.sort_by(|a, b| (&a.project, a.start, a.end).cmp(&(&b.project, b.start, b.end)));
+    v.dedup_by(|b, a| a.project == b.project && a.start == b.start && a.end == b.end);
     let mut out: Vec<WorkedSpan> = Vec::new();
     for s in v {
         match out.last_mut() {
-            Some(l) if l.project == s.project && s.start <= l.end => l.end = l.end.max(s.end),
+            Some(l) if l.project == s.project && s.start <= l.end => {
+                let off = ((s.start - l.start).num_minutes().max(0) / 10) as usize;
+                if l.activity.len() < off + s.activity.len() {
+                    l.activity.resize(off + s.activity.len(), 0);
+                }
+                for (i, n) in s.activity.iter().enumerate() {
+                    l.activity[off + i] = l.activity[off + i].saturating_add(*n);
+                }
+                l.end = l.end.max(s.end);
+            }
             _ => out.push(s),
         }
     }
@@ -186,12 +222,7 @@ pub fn merge(mut v: Vec<WorkedSpan>) -> Vec<WorkedSpan> {
 /// Measure this machine's sessions and send them to kairosd (the Mac's `kairos sync`).
 pub fn push(cfg: &kairos_core::config::Config, machine: &str, now: DateTime<Utc>) -> Option<usize> {
     let (shared, _) = crate::taxonomy::get(cfg)?;
-    let spans = scan(
-        &claude_root(),
-        &cfg.cache_dir().join("worked-scan.json"),
-        &shared.registry,
-        now,
-    );
+    let spans = scan(&claude_root(), &cfg.cache_dir().join(STATE_FILE), &shared.registry, now);
     let req = kairos_core::api::WorkedReq {
         machine: machine.into(),
         from: now - Duration::days(KEEP_DAYS),

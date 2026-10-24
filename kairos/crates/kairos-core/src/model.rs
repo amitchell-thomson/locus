@@ -101,6 +101,10 @@ pub struct Meta {
     /// `blocking`: kept across rewrites, never an iCloud edit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locus: Option<String>,
+    /// Worked time only (`EventKind::Worked`): activity per ten minutes from its start. Never
+    /// written to a calendar.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub activity: Vec<u16>,
     /// A block Alec placed explicitly; the scheduler never moves it.
     #[serde(default)]
     pub pinned: bool,
@@ -129,6 +133,7 @@ impl Meta {
             blocking: truthy("BLOCKING"),
             not_going: truthy("NOT-GOING"),
             locus: get("LOCUS").map(String::from),
+            activity: Vec::new(),
             pinned: truthy("PINNED"),
             project_id: get("PROJECT-ID").map(String::from),
         }
@@ -189,6 +194,7 @@ impl Meta {
             blocking: sidecar.blocking || self.blocking,
             not_going: sidecar.not_going || self.not_going,
             locus: sidecar.locus.clone().or_else(|| self.locus.clone()),
+            activity: Vec::new(),
             pinned: sidecar.pinned || self.pinned,
             project_id: sidecar.project_id.clone().or_else(|| self.project_id.clone()),
         }
@@ -392,6 +398,7 @@ mod tests {
             blocking: false,
             not_going: false,
             locus: None,
+            activity: Vec::new(),
             pinned: true,
             project_id: Some("p-1".into()),
         };

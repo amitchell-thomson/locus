@@ -518,6 +518,10 @@ pub struct WorkedSpan {
     pub project: String,
     pub start: DateTime<Utc>,
     pub end: DateTime<Utc>,
+    /// How busy it was: lines of the session in each ten minutes from `start` (prompts, replies,
+    /// tool calls), so the rhythm grid can shade it light to deep.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub activity: Vec<u16>,
 }
 
 /// One machine's measured spans for a window, replacing what it sent before for that window.

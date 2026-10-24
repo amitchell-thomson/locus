@@ -125,32 +125,76 @@ pub fn apply(fx: &mut Fixtures, cal: &[Instance], area_of: impl Fn(&str) -> Opti
     let worked: Vec<&Instance> = cal.iter().filter(|i| i.meta.kind == EventKind::Worked).collect();
     if !worked.is_empty() {
         let reg = &fx.registry;
+        // Each span in half hours, shaded by how busy that half hour was (░ ▒ ▓ █): its lines
+        // of session against the quartiles of this week's half hours, so a quiet week and a
+        // frantic one both use the four fills.
+        struct Piece {
+            date: chrono::NaiveDate,
+            start: chrono::NaiveTime,
+            end: chrono::NaiveTime,
+            project: String,
+            lines: Option<u32>,
+        }
+        let mut pieces = Vec::new();
+        for i in &worked {
+            let Span::Timed { start, end } = i.span else { continue };
+            let project = reg
+                .projects
+                .iter()
+                .find(|p| p.name == i.title)
+                .map_or_else(|| i.title.clone(), |p| p.id.clone());
+            let mut t = start;
+            let mut k = 0usize;
+            while t < end {
+                let next = (t + Duration::minutes(30)).min(end);
+                let (s, e) = (at(t), at(next));
+                if s.date_naive() >= monday {
+                    let lines = (!i.meta.activity.is_empty())
+                        .then(|| i.meta.activity.iter().skip(k * 3).take(3).map(|n| u32::from(*n)).sum());
+                    pieces.push(Piece {
+                        date: s.date_naive(),
+                        start: s.time(),
+                        // Past midnight: it ends with the day on the grid.
+                        end: if e.date_naive() == s.date_naive() {
+                            e.time()
+                        } else {
+                            chrono::NaiveTime::from_hms_opt(23, 59, 0).unwrap_or(chrono::NaiveTime::MIN)
+                        },
+                        project: project.clone(),
+                        lines,
+                    });
+                }
+                t = next;
+                k += 1;
+            }
+        }
+        let mut counts: Vec<u32> = pieces.iter().filter_map(|p| p.lines).collect();
+        counts.sort_unstable();
+        let q = |f: f64| {
+            counts
+                .get(((counts.len().saturating_sub(1)) as f64 * f) as usize)
+                .copied()
+                .unwrap_or(0)
+        };
+        let (q1, q2, q3) = (q(0.25), q(0.5), q(0.75));
+        let intensity = |l: Option<u32>| match l {
+            None => 2,
+            Some(n) if n <= q1 => 1,
+            Some(n) if n <= q2 => 2,
+            Some(n) if n <= q3 => 3,
+            Some(_) => 4,
+        };
         fx.work.week = (0..=(today - monday).num_days())
             .map(|d| {
                 let date = monday + Duration::days(d);
-                let spans = worked
+                let spans = pieces
                     .iter()
-                    .filter_map(|i| {
-                        let Span::Timed { start, end } = i.span else {
-                            return None;
-                        };
-                        let (s, e) = (at(start), at(end));
-                        (s.date_naive() == date).then(|| WorkSpan {
-                            start: s.time(),
-                            // Past midnight: it ends with the day on the grid.
-                            end: if e.date_naive() == date {
-                                e.time()
-                            } else {
-                                chrono::NaiveTime::from_hms_opt(23, 59, 0).unwrap_or(chrono::NaiveTime::MIN)
-                            },
-                            // The worked bar's title is the registry name; the grid wants the id.
-                            project: reg
-                                .projects
-                                .iter()
-                                .find(|p| p.name == i.title)
-                                .map_or_else(|| i.title.clone(), |p| p.id.clone()),
-                            intensity: 3,
-                        })
+                    .filter(|p| p.date == date)
+                    .map(|p| WorkSpan {
+                        start: p.start,
+                        end: p.end,
+                        project: p.project.clone(),
+                        intensity: intensity(p.lines),
                     })
                     .collect();
                 WorkDay { date, spans }
@@ -223,6 +267,8 @@ mod tests {
         };
         let worked = Meta {
             kind: EventKind::Worked,
+            // Ten-minute counts: a quiet half hour, a busy one, a middling one.
+            activity: vec![1, 1, 1, 20, 20, 20, 5, 5, 5],
             ..Meta::default()
         };
         let cal = vec![
@@ -237,8 +283,9 @@ mod tests {
             ("Millennium final interview", "Careers")
         );
         let today = fx.work.week.last().unwrap();
-        assert_eq!(today.spans.len(), 1);
-        assert_eq!(today.spans[0].project, "locus");
+        assert!(today.spans.iter().all(|s| s.project == "locus"));
+        let shades: Vec<u8> = today.spans.iter().map(|s| s.intensity).collect();
+        assert_eq!(shades, [1, 4, 2], "half hours shaded by how busy they were");
         let events = &fx.projects["millennium"].view.application.as_ref().unwrap().events;
         let e = events.iter().find(|e| e.calendar.as_deref() == Some("intv")).unwrap();
         assert_eq!(e.kind, AppEventKind::Interview);

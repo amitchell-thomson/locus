@@ -1137,8 +1137,9 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             };
             put(buf, x0, grid_y + *r0 as u16, w, &text, st);
         }
-        // Worked time (spec K6): a faint bar down the column's right edge, measured from your
-        // Claude sessions after the fact. Never selectable, never in the way of an event.
+        // Worked time (spec K6): measured from your Claude sessions after the fact, drawn on the
+        // day's own left guide (so it reads as that day's) in a faint tint of the project's area,
+        // in place of the dotted guide. Never selectable, never over an event.
         for wk in app.worked_on(*d) {
             let (s, e) = wk.span.bounds(tz);
             let r0 = row_of(s, *d).max(0);
@@ -1148,20 +1149,21 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
                 .as_deref()
                 .and_then(|k| app.cfg.key(k))
                 .map_or(c("overlay0"), |k| rgb(k.colour));
-            let st = Style::default().fg(fade(col, 0.55));
-            let x = x0 + w.saturating_sub(1);
+            let st = Style::default().fg(fade(col, 0.72));
+            let x = col_x(k);
             for r in r0..r1 {
                 let y = grid_y + r as u16;
-                if buf[(x, y)].symbol() == " " {
-                    buf.set_string(x, y, "▕", st);
+                if buf[(x, y)].symbol() == "┊" {
+                    buf.set_string(x, y, "│", st);
                 }
             }
             if single && r0 < r1 {
                 let text = format!("worked · {} ", wk.title);
                 let tw = text.width() as u16;
-                let tx = x.saturating_sub(tw);
+                let right = x0 + w.saturating_sub(1);
+                let tx = right.saturating_sub(tw);
                 let y = grid_y + r0 as u16;
-                if tx > x0 && (tx..x).all(|xx| buf[(xx, y)].symbol() == " ") {
+                if tx > x0 && (tx..right).all(|xx| buf[(xx, y)].symbol() == " ") {
                     put(buf, tx, y, tw, &text, st);
                 }
             }
@@ -1669,7 +1671,7 @@ fn projects(f: &mut Frame, app: &App, area: Rect) {
     }
     if app.projects.is_empty() {
         lines.push(Line::from(TSpan::styled(
-            "No projects yet. a adds one; proposed project time ◌ then suggests the one you've spent least time on.",
+            "No projects yet: they are the repositories in the locus registry (taxonomy/registry.toml).",
             Style::default().fg(c("overlay1")),
         )));
     }
@@ -1680,6 +1682,39 @@ fn projects(f: &mut Frame, app: &App, area: Rect) {
         .find(|k| k.name == "Projects")
         .map_or(c("mauve"), |k| rgb(k.colour));
     let fmt = |m: u32| crate::form::fmt_minutes(i64::from(m));
+    // Columns sized from what is in them, using the width there is: the name, then the note, then
+    // the time, each as wide as its longest entry until the window runs out (nothing cut short
+    // while there is room to the right).
+    let time_of = |p: &kairos_core::api::ProjectItem| {
+        let mut time = vec![format!("{} this week", fmt(p.week_min))];
+        if p.month_min > p.week_min {
+            time.push(format!("{} in 30 days", fmt(p.month_min)));
+        }
+        if p.unconfirmed_min > 0 {
+            time.push(format!("{} to check in", fmt(p.unconfirmed_min)));
+        }
+        match p.last_worked {
+            Some(t) => time.push(format!("last {}", t.with_timezone(&app.tz).format("%a %-d %b"))),
+            None => time.push("not worked on yet".into()),
+        }
+        if let Some(n) = p.next_session {
+            time.push(format!("next {}", n.with_timezone(&app.tz).format("%a %H:%M")));
+        }
+        time.join(" · ")
+    };
+    let avail = inner.width as usize;
+    let name_w = app
+        .projects
+        .iter()
+        .map(|p| p.project.name.width())
+        .max()
+        .unwrap_or(10)
+        .clamp(8, 30);
+    let time_w = app.projects.iter().map(|p| time_of(p).width()).max().unwrap_or(0);
+    let note_max = app.projects.iter().map(|p| p.project.note.width()).max().unwrap_or(0);
+    let note_w = note_max
+        .min(avail.saturating_sub(2 + name_w + 2 + time_w + 2))
+        .max(20.min(note_max));
     let mut k = 0usize;
     for st in ProjectStatus::ALL {
         let group: Vec<&kairos_core::api::ProjectItem> =
@@ -1712,28 +1747,25 @@ fn projects(f: &mut Frame, app: &App, area: Rect) {
                 Style::default().fg(c("text"))
             };
             let dim = if sel { base } else { Style::default().fg(c("overlay1")) };
-            let mut time = vec![format!("{} this week", fmt(p.week_min))];
-            if p.month_min > p.week_min {
-                time.push(format!("{} in 30 days", fmt(p.month_min)));
-            }
-            if p.unconfirmed_min > 0 {
-                time.push(format!("{} to check in", fmt(p.unconfirmed_min)));
-            }
-            match p.last_worked {
-                Some(t) => time.push(format!("last {}", t.with_timezone(&app.tz).format("%a %-d %b"))),
-                None => time.push("not worked on yet".into()),
-            }
-            if let Some(n) = p.next_session {
-                time.push(format!("next {}", n.with_timezone(&app.tz).format("%a %H:%M")));
-            }
+            // Each project in its area's colour (CV in Careers, 3YP in Studies).
+            let pcol = p
+                .project
+                .key
+                .as_deref()
+                .and_then(|k| app.cfg.key(k))
+                .map_or(col, |k| rgb(k.colour));
+            let pad = |s: String, w: usize| {
+                let n = w.saturating_sub(s.width());
+                format!("{s}{}", " ".repeat(n))
+            };
             lines.push(Line::from(vec![
                 TSpan::styled(
                     if faded { "○ " } else { "● " },
-                    if sel { base } else { Style::default().fg(col) },
+                    if sel { base } else { Style::default().fg(pcol) },
                 ),
-                TSpan::styled(format!("{:<22} ", fit(&p.project.name, 22)), base),
-                TSpan::styled(format!("{:<34} ", fit(&p.project.note, 34)), dim),
-                TSpan::styled(time.join(" · "), dim),
+                TSpan::styled(format!("{}  ", pad(fit(&p.project.name, name_w), name_w)), base),
+                TSpan::styled(format!("{}  ", pad(fit(&p.project.note, note_w), note_w)), dim),
+                TSpan::styled(time_of(p), dim),
             ]));
             // Its open tasks (their checked-in time counts for it too).
             for t in app
@@ -1751,7 +1783,10 @@ fn projects(f: &mut Frame, app: &App, area: Rect) {
                         format!("{} ", kairos_core::build::TODO_ICON),
                         Style::default().fg(app.cfg.key(&t.key).map_or(c("text"), |k| rgb(k.colour))),
                     ),
-                    TSpan::styled(fit(&t.title, 30), Style::default().fg(c("subtext0"))),
+                    TSpan::styled(
+                        fit(&t.title, avail.saturating_sub(30).max(20)),
+                        Style::default().fg(c("subtext0")),
+                    ),
                     TSpan::styled(
                         format!("{due} · {} left", fmt(t.remaining_min)),
                         Style::default().fg(c("overlay0")),

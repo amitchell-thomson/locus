@@ -1035,7 +1035,7 @@ fn worked_time_is_a_faint_bar_not_an_event() {
     );
     let s = render_to_string(&a, 100, 40);
     assert!(s.contains("worked · locus"), "{s}");
-    assert!(s.matches('▕').count() >= 3, "{s}");
+    assert!(s.matches('│').count() >= 3, "{s}");
 }
 
 #[test]

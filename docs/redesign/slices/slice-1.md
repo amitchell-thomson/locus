@@ -702,6 +702,16 @@ kairos's and stays until he says otherwise.)
   question you were asked names its track: it shows on that skill and seeds the next plan. A
   standing "interview readiness" goal is added only if regular practice between applications
   turns out to be wanted.
+- Then merged ("goals are more general things I would like to learn, and interview prep is
+  exclusively for interviews. Should they be merged? As internship prep doesnt really seem to
+  fit under either"): **one list, goals: anything you are learning for**, each with what it
+  serves (an application, a course, or nothing), a date if it has one, and the skills it draws
+  on. An interview plan is a goal that serves an application with an interview date, and only
+  it carries the format and rounds; internship prep is a goal serving an accepted offer, dated
+  by its start. Learning shows one goals list (each row naming what it serves and its date) over
+  the skills; an application's prep section shows the goals that serve it. This is ADR-006 as
+  written ("goal ... linked to a course, application, or nothing"; "prep plan: a goal tied to
+  one application"); the screens are brought back to it. The name stays "goals".
 
 ## Report
 

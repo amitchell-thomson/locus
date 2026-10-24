@@ -3,7 +3,7 @@ source: kairos/crates/kairos-tui/tests/snapshots.rs
 assertion_line: 243
 expression: "render_to_string(&a, 110, 12)"
 ---
-╭────────────────────────────────────────────────── Tasks ───────────────────────────────────────────────────╮
+╭ kairos ────────────────────────────────────────── Tasks ───────────────────────────────────────────────────╮
 │● B4 problem sheet             ━━━━━━━●──── 150/240 min · due Fri 23 Oct 17:00                              │
 │● Careers essay                ●─────────── 0/120 min · no deadline                                         │
 │                                                                                                            │

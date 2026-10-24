@@ -202,6 +202,8 @@ pub struct App {
     pub patches: Vec<LocalPatch>,
     /// (uid, blocking, made, until): Family "block my time" flags set from the TUI.
     pub blocking_overrides: Vec<(String, bool, DateTime<Utc>, DateTime<Utc>)>,
+    /// (uid, not going, made, until): "not going" set from the TUI on your own events.
+    pub going_overrides: Vec<(String, bool, DateTime<Utc>, DateTime<Utc>)>,
     pub deferred: Vec<Deferred>,
     pub tz: Tz,
     pub now: DateTime<Utc>,
@@ -233,6 +235,11 @@ pub struct App {
     pub wants_sync: bool,
     /// Week view shows Mon–Fri only (wider columns).
     pub work_week: bool,
+    /// The week/day grid's first shown minute when you scrolled it (↑/↓ past the first or last
+    /// item); `None` = placed by itself around the selection or now.
+    pub day_top: std::cell::Cell<Option<i64>>,
+    /// What the last drawn grid showed: (first minute, end minute, the day's extent from, to).
+    pub grid: std::cell::Cell<(i64, i64, i64, i64)>,
 }
 
 pub fn midnight(d: NaiveDate, tz: Tz) -> DateTime<Utc> {
@@ -266,8 +273,11 @@ impl App {
             quit: false,
             wants_sync: false,
             work_week: false,
+            day_top: std::cell::Cell::new(None),
+            grid: std::cell::Cell::new((0, 24 * 60, 0, 24 * 60)),
             patches: Vec::new(),
             blocking_overrides: Vec::new(),
+            going_overrides: Vec::new(),
             deferred: Vec::new(),
             cfg,
         }
@@ -294,6 +304,8 @@ impl App {
             })
             .collect::<Vec<_>>();
         inst.extend(marks);
+        // Worked time is drawn as bars of its own (`worked_on`), never as events.
+        inst.retain(|i| i.meta.kind != EventKind::Worked);
         let mut v = view_with(inst, |id| self.index.kind_of(id), &self.filter, self.tz);
         if let Some(q) = self.search.as_deref().filter(|q| !q.is_empty()) {
             let q = q.to_lowercase();
@@ -307,42 +319,13 @@ impl App {
         v
     }
 
-    /// Proposed project time in `[from, to)` as (greyed, selectable) events.
-    fn proposal_clusters(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> Vec<Cluster> {
-        if !self.filter.personal {
-            return Vec::new();
-        }
-        let q = self.search.as_deref().map(str::to_lowercase).filter(|q| !q.is_empty());
-        self.proposals
-            .iter()
-            .filter(|p| p.start < to && p.end > from)
-            .filter(|p| q.as_ref().is_none_or(|q| p.title.to_lowercase().contains(q)))
-            .map(|p| Cluster {
-                primary: Instance {
-                    uid: p.id.clone(),
-                    recurrence_id: None,
-                    source: "proposal".into(),
-                    overlay: Overlay::Personal,
-                    key: None,
-                    title: p.title.clone(),
-                    location: None,
-                    description: Some("proposed project time — y accept · d drop".into()),
-                    span: Span::Timed {
-                        start: p.start,
-                        end: p.end,
-                    },
-                    recurring: false,
-                    transparent: true,
-                    tentative: false,
-                    meta: Meta {
-                        kind: EventKind::Proposal,
-                        ..Default::default()
-                    },
-                    href: None,
-                    alarms: Vec::new(),
-                },
-                others: Vec::new(),
-            })
+    /// Worked-time spans on day `d` (spec K6), from kairosd's index.
+    pub fn worked_on(&self, d: NaiveDate) -> Vec<Instance> {
+        let (from, to) = (midnight(d, self.tz), midnight(d + Duration::days(1), self.tz));
+        self.index
+            .between(from, to, self.tz)
+            .into_iter()
+            .filter(|i| i.meta.kind == EventKind::Worked && (self.filter.personal || self.filter.family))
             .collect()
     }
 
@@ -351,7 +334,6 @@ impl App {
         let mut v: Vec<Cluster> = self
             .clusters(from, to)
             .into_iter()
-            .chain(self.proposal_clusters(from, to))
             .filter(|c| c.primary.span.local_dates(self.tz).contains(&d))
             .collect();
         v.sort_by_key(|c| (!c.primary.span.is_all_day(), c.primary.start(self.tz)));
@@ -496,12 +478,15 @@ impl App {
     pub fn set_server_index(&mut self, idx: Index, requested: DateTime<Utc>) {
         self.patches.retain(|p| p.made >= requested);
         self.blocking_overrides.retain(|o| o.2 >= requested);
+        self.going_overrides.retain(|o| o.2 >= requested);
         self.set_index(idx);
     }
 
     /// Patches or overrides that an index requested at `requested` replaces.
     pub fn has_patches_before(&self, requested: DateTime<Utc>) -> bool {
-        self.patches.iter().any(|p| p.made < requested) || self.blocking_overrides.iter().any(|o| o.2 < requested)
+        self.patches.iter().any(|p| p.made < requested)
+            || self.blocking_overrides.iter().any(|o| o.2 < requested)
+            || self.going_overrides.iter().any(|o| o.2 < requested)
     }
 
     /// Replace the index (after a reload) and re-apply recent local patches.
@@ -512,6 +497,12 @@ impl App {
         for (uid, on, _, _) in &self.blocking_overrides {
             for i in self.index.instances.iter_mut().filter(|i| &i.uid == uid) {
                 i.meta.blocking = *on;
+            }
+        }
+        self.going_overrides.retain(|o| o.3 > now);
+        for (uid, off, _, _) in &self.going_overrides {
+            for i in self.index.instances.iter_mut().filter(|i| &i.uid == uid) {
+                i.meta.not_going = *off;
             }
         }
         self.patches.retain(|p| p.until > now);
@@ -536,6 +527,17 @@ impl App {
             .push((uid.to_string(), on, now, now + Duration::seconds(90)));
         for i in self.index.instances.iter_mut().filter(|i| i.uid == uid) {
             i.meta.blocking = on;
+        }
+    }
+
+    /// Show "not going" on one of your events at once, kept over reloads until kairosd agrees.
+    fn set_not_going_local(&mut self, uid: &str, off: bool) {
+        self.going_overrides.retain(|o| o.0 != uid);
+        let now = Utc::now();
+        self.going_overrides
+            .push((uid.to_string(), off, now, now + Duration::seconds(90)));
+        for i in self.index.instances.iter_mut().filter(|i| i.uid == uid) {
+            i.meta.not_going = off;
         }
     }
 
@@ -705,28 +707,40 @@ impl App {
                 self.search = None;
             }
             Key::Char('?') => self.mode = Mode::Help,
-            Key::Char('h') | Key::Left => self.shift(-1),
-            Key::Char('l') | Key::Right => self.shift(1),
-            Key::Char('H') => self.shift(-7),
-            Key::Char('L') => self.shift(7),
+            // Arrows and Tab move, as everywhere in locus (spec K6): ←/→ days, Shift-←/→ weeks.
+            Key::Left => self.shift(-1),
+            Key::Right => self.shift(1),
+            Key::ShiftLeft => self.shift(-7),
+            Key::ShiftRight => self.shift(7),
             Key::Char('t') => {
                 self.cursor = self.today();
                 self.sel = 0;
             }
-            Key::Char('j') | Key::Down => {
-                if n > 0 {
-                    self.sel = (self.sel + 1).min(n - 1);
+            // ↑/↓ walk the items; past the first or last they scroll the day's hours.
+            Key::Down => {
+                if n > 0 && self.sel + 1 < n {
+                    self.sel += 1;
+                    self.day_top.set(None);
+                } else {
+                    self.scroll_day(1);
                 }
             }
-            Key::Char('k') | Key::Up => self.sel = self.sel.saturating_sub(1),
-            Key::Tab => {
-                // week → day → month → week
-                self.view = match self.view {
-                    View::Week => View::Day,
-                    View::Day => View::Month,
-                    _ => View::Week,
-                };
+            Key::Up => {
+                if self.sel > 0 {
+                    self.sel -= 1;
+                    self.day_top.set(None);
+                } else {
+                    self.scroll_day(-1);
+                }
+            }
+            Key::Tab | Key::BackTab => {
+                // week → day → month → agenda → week (Shift-Tab back)
+                const ORDER: [View; 4] = [View::Week, View::Day, View::Month, View::Agenda];
+                let at = ORDER.iter().position(|v| *v == self.view).unwrap_or(0);
+                let step = if k == Key::Tab { 1 } else { ORDER.len() - 1 };
+                self.view = ORDER[(at + step) % ORDER.len()];
                 self.sel = 0;
+                self.day_top.set(None);
             }
             Key::Char('g') => {
                 self.view = if self.view == View::Agenda {
@@ -763,7 +777,7 @@ impl App {
                 self.sel = 0;
                 self.refresh_remote();
             }
-            Key::Char('R') => {
+            Key::Char('P') => {
                 self.view = View::Projects;
                 self.sel = 0;
                 self.refresh_remote();
@@ -818,6 +832,19 @@ impl App {
                 self.set_message("nothing to undo", true);
             }
             _ => self.contextual(k),
+        }
+    }
+
+    /// Scroll the week/day grid an hour (spec K6: every hour the same height, more hours rather
+    /// than taller ones, so a long day scrolls instead of squashing).
+    fn scroll_day(&mut self, dir: i64) {
+        if !matches!(self.view, View::Week | View::Day) {
+            return;
+        }
+        let (h0, h1, e0, e1) = self.grid.get();
+        let top = (h0 + dir * 60).clamp(e0, (e1 - (h1 - h0)).max(e0));
+        if top != h0 {
+            self.day_top.set(Some(top));
         }
     }
 
@@ -951,12 +978,12 @@ impl App {
                         self.mode = Mode::Confirm(Confirm::DropTask(t.id.clone()));
                         self.set_message(format!("drop “{}”? y/N", t.title), false);
                     }
-                    Key::Char('P') => self.plan(),
+                    Key::Char('S') => self.plan(),
                     _ => {}
                 }
             }
             View::Week | View::Day | View::Month | View::Agenda => {
-                if k == Key::Char('P') {
+                if k == Key::Char('S') {
                     self.plan();
                     return;
                 }
@@ -1074,6 +1101,42 @@ impl App {
                     Key::Char('d') => {
                         self.mode = Mode::Confirm(Confirm::Delete);
                         self.set_message(format!("delete “{}”? y/N", i.title), false);
+                    }
+                    // Not going to one of your own events (spec K6): greyed, and it stops
+                    // blocking the scheduler, as a Family event does until you opt in.
+                    Key::Char('B') if i.overlay == Overlay::Personal && i.meta.kind == EventKind::Event => {
+                        if self.daemon.is_none() {
+                            return self.set_message("kairosd not configured — writes unavailable", true);
+                        }
+                        let off = !i.meta.not_going;
+                        self.set_not_going_local(&i.uid, off);
+                        self.set_message(
+                            if off {
+                                format!("not going to “{}”: your time is free (B again to undo)", i.title)
+                            } else {
+                                format!("going to “{}” again", i.title)
+                            },
+                            false,
+                        );
+                        self.deferred.push(Box::new(move |app: &mut App| {
+                            let req = api::UpdateEventReq {
+                                not_going: Some(off),
+                                ..Default::default()
+                            };
+                            let failed = match app.with_daemon(|d| d.update_event(&i.source, &i.uid, &req)) {
+                                Some(Ok(Ok(_))) => None,
+                                Some(Ok(Err(e))) => Some(e.to_string()),
+                                Some(Err(e)) => Some(e.to_string()),
+                                None => Some("kairosd not configured".into()),
+                            };
+                            match failed {
+                                None => app.wants_sync = true,
+                                Some(e) => {
+                                    app.set_not_going_local(&i.uid, !off);
+                                    app.set_message(e, true);
+                                }
+                            }
+                        }));
                     }
                     Key::Char('B') if i.overlay == Overlay::Family => {
                         if self.daemon.is_none() {
@@ -1874,10 +1937,10 @@ impl App {
             Key::Char('x') | Key::Char('m') => self.check_in(t, "missed"),
             Key::Char('F') | Key::Char('f') => self.check_in(t, "finished"),
             Key::Char('+') => self.mode = Mode::Form(Form::took_longer(t)),
-            Key::Char('s') | Key::Char('j') | Key::Down => {
+            Key::Char('s') | Key::Down => {
                 self.mode = Mode::Checkin((i + 1).min(open.len().saturating_sub(1)));
             }
-            Key::Char('k') | Key::Up => self.mode = Mode::Checkin(i.saturating_sub(1)),
+            Key::Up => self.mode = Mode::Checkin(i.saturating_sub(1)),
             Key::Esc | Key::Char('q') => {}
             _ => self.mode = Mode::Checkin(i),
         }
@@ -1917,13 +1980,13 @@ impl App {
     fn pick_project_key(&mut self, proposal: String, sel: usize, k: Key) {
         let opts = self.pick_options(&proposal);
         match k {
-            Key::Char('j') | Key::Down | Key::Tab => {
+            Key::Down | Key::Tab => {
                 self.mode = Mode::PickProject {
                     proposal,
                     sel: (sel + 1).min(opts.len().saturating_sub(1)),
                 };
             }
-            Key::Char('k') | Key::Up | Key::BackTab => {
+            Key::Up | Key::BackTab => {
                 self.mode = Mode::PickProject {
                     proposal,
                     sel: sel.saturating_sub(1),
@@ -2445,6 +2508,8 @@ pub enum Key {
     Down,
     Left,
     Right,
+    ShiftLeft,
+    ShiftRight,
 }
 
 /// Status-bar legend: (toggle key, name, shown?, colour, group).
@@ -2518,7 +2583,10 @@ pub fn overlay_flags(app: &App) -> Vec<(String, String, bool, kairos_core::colou
 }
 
 pub fn is_dimmed(i: &Instance) -> bool {
-    matches!(i.overlay, Overlay::Imported | Overlay::Background) || i.tentative || i.meta.kind == EventKind::Proposal
+    matches!(i.overlay, Overlay::Imported | Overlay::Background)
+        || i.tentative
+        || i.meta.kind == EventKind::Proposal
+        || i.meta.not_going
 }
 
 /// The most important thing a plan has to say: a shortfall, else a squeeze.

@@ -909,7 +909,7 @@ fn new_event_moves_only_the_displaced_work() {
 
 #[test]
 fn proposals_fill_comfortable_gaps_after_task_work() {
-    let c = constraints();
+    let c = proposing();
     let tasks = [typed("b4", "sheet", 180, Some("2026-10-13 23:00"))];
     let b = lectures();
     let input = PlanInput {
@@ -955,7 +955,7 @@ fn proposals_fill_comfortable_gaps_after_task_work() {
 
 #[test]
 fn no_proposals_when_disabled() {
-    let mut c = constraints();
+    let mut c = proposing();
     c.projects.enabled = false;
     let input = PlanInput {
         now: at("2026-10-12 08:00"),
@@ -972,7 +972,7 @@ fn no_proposals_when_disabled() {
 
 #[test]
 fn one_project_session_a_day_in_its_longest_gap() {
-    let c = constraints();
+    let c = proposing();
     let b = lectures();
     let input = PlanInput {
         now: at("2026-10-12 07:00"),
@@ -1043,7 +1043,7 @@ fn social_and_sport_dont_count_toward_the_day_load() {
 
 #[test]
 fn proposals_start_at_nine_at_the_earliest() {
-    let c = constraints();
+    let c = proposing();
     let input = PlanInput {
         now: at("2026-10-12 07:00"),
         tz: London,
@@ -1067,7 +1067,7 @@ fn proposals_start_at_nine_at_the_earliest() {
 #[test]
 fn weekends_start_at_ten() {
     // Friday night: the sheet's blocks and the weekend's proposals start ≥ 10:00.
-    let c = constraints();
+    let c = proposing();
     let tasks = [typed("b4", "sheet", 300, Some("2026-10-19 12:00"))];
     let input = PlanInput {
         now: at("2026-10-16 22:00"),
@@ -1170,4 +1170,11 @@ fn a_long_free_evening_beats_a_short_gap_for_the_second_block() {
     );
     assert!(p.squeezed.is_empty(), "{:?}", p.squeezed);
     assert_eq!(total(&p, "tute"), 360);
+}
+
+/// The proposer is off by default since spec K6; these tests exercise it switched on.
+fn proposing() -> Constraints {
+    let mut c = constraints();
+    c.projects.enabled = true;
+    c
 }

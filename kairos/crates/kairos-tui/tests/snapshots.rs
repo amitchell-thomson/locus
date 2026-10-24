@@ -114,8 +114,8 @@ fn day_view_with_deadline_marker_and_task_block() {
     let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
     a.key(Key::Tab);
     insta::assert_snapshot!(render_to_string(&a, 100, 30));
-    a.key(Key::Char('l'));
-    a.key(Key::Char('l'));
+    a.key(Key::Right);
+    a.key(Key::Right);
     let s = render_to_string(&a, 100, 30);
     assert!(s.contains("⚑ Lab report"), "all-day deadline in the strip:\n{s}");
     assert!(s.contains("⚑ 17:00 B4 sheet"), "timed deadline marker:\n{s}");
@@ -148,9 +148,9 @@ fn toggles_hide_and_reveal() {
         c[0].primary.source, "personal",
         "hiding Family reveals the personal copy"
     );
-    a.key(Key::Char('6'));
+    a.key(Key::Char('3'));
     let c = a.day_clusters(a.cursor);
-    assert!(c.iter().all(|c| c.primary.key.as_deref() != Some("OQTS")));
+    assert!(c.iter().all(|c| c.primary.key.as_deref() != Some("Careers")));
     a.key(Key::Char('p'));
     assert!(a.day_clusters(a.cursor).is_empty());
 }
@@ -174,13 +174,13 @@ fn search_filters() {
 #[test]
 fn navigation() {
     let (mut a, _t) = app("2026-10-15T08:00:00+01:00");
-    a.key(Key::Char('l'));
+    a.key(Key::Right);
     assert_eq!(a.cursor.to_string(), "2026-10-16");
-    a.key(Key::Char('L'));
+    a.key(Key::ShiftRight);
     assert_eq!(a.cursor.to_string(), "2026-10-23");
     a.key(Key::Char('t'));
     assert_eq!(a.cursor.to_string(), "2026-10-15");
-    a.key(Key::Char('H'));
+    a.key(Key::ShiftLeft);
     assert_eq!(a.cursor.to_string(), "2026-10-08");
 }
 
@@ -330,8 +330,8 @@ fn selected_timed_deadline_is_a_red_block() {
     use ratatui::{Terminal, backend::TestBackend};
     let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
     a.key(Key::Tab);
-    a.key(Key::Char('l'));
-    a.key(Key::Char('l'));
+    a.key(Key::Right);
+    a.key(Key::Right);
     let red = kairos_tui::ui::selected_style(kairos_tui::ui::c("red")).bg.unwrap();
     // Background of the cell holding the timed deadline's ⚑, if drawn.
     let flag_bg = |a: &App| {
@@ -376,8 +376,8 @@ fn deadline_over_a_selected_event_stays_unhighlighted() {
     .unwrap();
     let mut a = load(cfg, &t.path().join("config.toml"), now("2026-10-21T08:00:00+01:00")).unwrap();
     a.key(Key::Tab);
-    a.key(Key::Char('l'));
-    a.key(Key::Char('l'));
+    a.key(Key::Right);
+    a.key(Key::Right);
     a.sel = a
         .day_clusters(a.cursor)
         .iter()
@@ -455,9 +455,9 @@ fn selected_deadline_highlights_its_work_blocks() {
     };
     let blue = kairos_tui::ui::linked_style(kairos_tui::ui::c("lavender")).bg.unwrap(); // linked: a tint of its own colour
     // Off Wednesday (where the block itself would be selected) and off the deadline.
-    a.key(Key::Char('l'));
+    a.key(Key::Right);
     assert_ne!(block_bg(&a), blue);
-    a.key(Key::Char('l'));
+    a.key(Key::Right);
     a.sel = a
         .day_clusters(a.cursor)
         .iter()
@@ -467,9 +467,9 @@ fn selected_deadline_highlights_its_work_blocks() {
 }
 
 #[test]
-fn proposed_project_time_is_grey_selectable_and_asks_what_to_work_on() {
-    use kairos_tui::app::{Mode, PickOption};
-    use ratatui::{Terminal, backend::TestBackend};
+fn proposed_project_time_is_no_longer_drawn() {
+    // Spec K6: project time is measured from your Claude sessions, or a work block you place;
+    // kairos no longer proposes ◌ time, even if a proposal were still in its state.
     let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
     a.key(Key::Tab); // day view
     a.proposals = vec![kairos_core::api::ProposalItem {
@@ -480,30 +480,8 @@ fn proposed_project_time_is_grey_selectable_and_asks_what_to_work_on() {
         project_id: None,
     }];
     let s = render_to_string(&a, 100, 30);
-    assert!(s.contains("◌ Project time?"), "{s}");
-    // Grey, never the key colours.
-    let mut term = Terminal::new(TestBackend::new(100, 30)).unwrap();
-    term.draw(|f| kairos_tui::ui::draw(f, &a)).unwrap();
-    let buf = term.backend().buffer().clone();
-    let at = (0..30u16)
-        .flat_map(|y| (0..99u16).map(move |x| (x, y)))
-        .find(|&(x, y)| buf[(x, y)].symbol() == "◌" && buf[(x + 2, y)].symbol() == "P")
-        .unwrap();
-    assert_eq!(buf[at].fg, kairos_tui::ui::c("overlay1"));
-    // Select it: y asks what to work on; Esc leaves it.
-    a.sel = a
-        .day_clusters(a.cursor)
-        .iter()
-        .position(|c| c.primary.uid == "p1")
-        .unwrap();
-    let s = render_to_string(&a, 100, 30);
-    assert!(s.contains("proposed project time: y accept · d drop"), "{s}");
-    a.key(Key::Char('y'));
-    assert!(matches!(&a.mode, Mode::PickProject { proposal, sel: 0 } if proposal == "p1"));
-    // No projects yet: a new one, or just "Project time".
-    assert_eq!(a.pick_options("p1"), [PickOption::New, PickOption::Plain]);
-    a.key(Key::Esc);
-    assert_eq!(a.proposals.len(), 1);
+    assert!(!s.contains("◌ Project time"), "{s}");
+    assert!(a.day_clusters(a.cursor).iter().all(|c| c.primary.uid != "p1"));
 }
 
 fn project(
@@ -534,7 +512,7 @@ fn project(
 #[test]
 fn projects_view_and_picking_one_for_proposed_time() {
     use kairos_core::project::ProjectStatus;
-    use kairos_tui::app::{Mode, PickOption, View};
+    use kairos_tui::app::{Mode, View};
     let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
     a.projects = vec![
         project("p-k", "kairos", ProjectStatus::Active, 150),
@@ -554,7 +532,7 @@ fn projects_view_and_picking_one_for_proposed_time() {
     t.project_id = Some("p-k".into());
     a.tasks.push(t);
     // R: the Projects view, grouped by status, with time spent.
-    a.key(Key::Char('R'));
+    a.key(Key::Char('P'));
     assert_eq!(a.view, View::Projects);
     let s = render_to_string(&a, 130, 24);
     for want in [
@@ -594,55 +572,9 @@ fn projects_view_and_picking_one_for_proposed_time() {
     let Mode::Form(f) = &a.mode else { panic!("no form") };
     assert_eq!((f.title(), f.get("Name")), ("edit project", "kairos"));
     a.key(Key::Esc);
-    // Proposed time suggests the neglected one; y lists it first, then the
-    // other active and next projects, a new one, or none.
+    // P again from Projects is a no-op; Esc goes back to the week.
     a.key(Key::Esc);
-    a.key(Key::Tab);
-    a.proposals = vec![kairos_core::api::ProposalItem {
-        id: "p1".into(),
-        start: now("2026-10-21T14:00:00+01:00"),
-        end: now("2026-10-21T16:00:00+01:00"),
-        title: "email TUI".into(),
-        project_id: Some("p-m".into()),
-    }];
-    let s = render_to_string(&a, 100, 30);
-    assert!(s.contains("◌ email TUI?"), "{s}");
-    a.sel = a
-        .day_clusters(a.cursor)
-        .iter()
-        .position(|c| c.primary.uid == "p1")
-        .unwrap();
-    a.key(Key::Char('y'));
-    let names: Vec<String> = a
-        .pick_options("p1")
-        .into_iter()
-        .map(|o| match o {
-            PickOption::Project { name, .. } => name,
-            PickOption::New => "new".into(),
-            PickOption::Plain => "plain".into(),
-        })
-        .collect();
-    assert_eq!(names, ["email TUI", "kairos", "Locus", "new", "plain"]);
-    let s = render_to_string(&a, 100, 30);
-    assert!(s.contains("Wed 14:00–16:00: work on…"), "{s}");
-    assert!(s.contains("email TUI  (least time lately)"), "{s}");
-    assert!(s.contains("Locus  (next)"), "{s}");
-    a.key(Key::Char('j'));
-    assert!(matches!(&a.mode, Mode::PickProject { sel: 1, .. }));
-    a.key(Key::Esc);
-    assert!(matches!(a.mode, Mode::Normal));
-    // A project session took longer: only how long (no "what's left").
-    let f = kairos_tui::form::Form::took_longer(kairos_tui::app::CheckinTarget {
-        uid: "s1".into(),
-        title: "kairos".into(),
-        planned_min: 120,
-        ask_remaining: false,
-        remaining_min: 0,
-        from_list: false,
-        project: true,
-    });
-    assert_eq!(f.fields.len(), 1);
-    assert_eq!(a.form_preview(&f).unwrap(), "3h spent");
+    assert_eq!(a.view, View::Week);
 }
 
 #[test]
@@ -767,8 +699,8 @@ fn keys_do_what_the_hints_say_for_each_kind_of_item() {
     a.key(Key::Char('n')); // cancel
     // Its ⚑ (Fri 23): e opens the task's form at Due; m moves the deadline; d removes
     // it with all the task's planned time (drops the task).
-    a.key(Key::Char('l'));
-    a.key(Key::Char('l'));
+    a.key(Key::Right);
+    a.key(Key::Right);
     pick(&mut a, &|i| i.title.contains("B4 sheet"));
     assert_eq!(a.key_hints(), "e edit · m move · d remove · n start");
     a.key(Key::Char('e'));
@@ -789,14 +721,19 @@ fn keys_do_what_the_hints_say_for_each_kind_of_item() {
     let Mode::Form(f) = &a.mode else { panic!("no form") };
     assert_eq!(f.title(), "new task");
     a.key(Key::Esc);
-    // Tab: week → day → month → week; g: agenda.
+    // Tab: week → day → month → agenda → week; Shift-Tab back.
     a.view = View::Week;
     a.key(Key::Tab);
     assert_eq!(a.view, View::Day);
     a.key(Key::Tab);
     assert_eq!(a.view, View::Month);
     a.key(Key::Tab);
+    assert_eq!(a.view, View::Agenda);
+    a.key(Key::Tab);
     assert_eq!(a.view, View::Week);
+    a.key(Key::BackTab);
+    assert_eq!(a.view, View::Agenda);
+    a.view = View::Week;
     a.key(Key::Char('g'));
     assert_eq!(a.view, View::Agenda);
 }
@@ -821,7 +758,7 @@ fn tasks_view_keys_d_drops_capital_d_finishes_o_reopens() {
     a.key(Key::Char('d'));
     assert!(matches!(&a.mode, Mode::Confirm(Confirm::DropTask(id)) if id == "t-1"));
     a.key(Key::Char('n'));
-    a.key(Key::Char('j')); // onto the finished one
+    a.key(Key::Down); // onto the finished one
     assert_eq!(a.sel, 1);
     assert_eq!(a.key_hints(), "o reopen");
     a.key(Key::Char('o'));
@@ -842,9 +779,11 @@ fn month_view_cycles_in_with_tab() {
         "work blocks keep their dashed mark and box:\n{s}"
     );
     insta::assert_snapshot!(s);
-    // j/k/h/l work as elsewhere; Tab goes back to the week.
-    a.key(Key::Char('l'));
+    // The arrows work as elsewhere; Tab goes on to the agenda, then back to the week.
+    a.key(Key::Right);
     assert_eq!(a.cursor.to_string(), "2026-10-22");
+    a.key(Key::Tab);
+    assert_eq!(a.view, View::Agenda);
     a.key(Key::Tab);
     assert_eq!(a.view, View::Week);
 }
@@ -997,4 +936,103 @@ fn a_title_cut_short_by_a_tag_ends_in_an_ellipsis() {
     // With a second row it wraps instead.
     let lines = kairos_tui::ui::wrap_first_narrow("󰄱 Populate Calendar", 12, 16, 2);
     assert_eq!(lines, ["󰄱 Populate", "Calendar"]);
+}
+
+#[test]
+fn every_hour_is_the_same_height_and_the_day_scrolls() {
+    // Spec K6: two rows an hour on any screen; a day that does not fit scrolls rather than
+    // squashing, ↑/↓ past the first or last item moving it an hour.
+    let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
+    a.key(Key::Tab); // day view
+    let short = render_to_string(&a, 100, 24);
+    let rows_per_hour = |s: &str| {
+        let hours: Vec<usize> = s
+            .lines()
+            .enumerate()
+            .filter(|(_, l)| l.strip_prefix('│').is_some_and(|r| r.get(2..5) == Some(":00")))
+            .map(|(i, _)| i)
+            .collect();
+        hours.windows(2).map(|w| w[1] - w[0]).min().unwrap_or(0)
+    };
+    assert!(rows_per_hour(&short) >= 2, "{short}");
+    let (h0, h1, e0, e1) = a.grid.get();
+    assert!(
+        h0 > e0 || h1 < e1,
+        "a short window shows part of the day: {:?}",
+        a.grid.get()
+    );
+    // Past the last item, ↓ scrolls an hour later.
+    let n = a.day_clusters(a.cursor).len();
+    for _ in 0..n + 1 {
+        a.key(Key::Down);
+    }
+    render_to_string(&a, 100, 24);
+    assert!(a.grid.get().0 > h0 || h1 == e1, "{:?} -> {:?}", (h0, h1), a.grid.get());
+    // A tall screen shows more hours, not taller ones.
+    let tall = render_to_string(&a, 100, 60);
+    assert_eq!(rows_per_hour(&tall), rows_per_hour(&short), "{tall}");
+}
+
+#[test]
+fn a_tasks_due_date_is_drawn_as_a_flag_on_its_day() {
+    // Spec K5: the date is the task's attribute, not an event on any calendar.
+    let (mut a, _t) = app("2026-10-19T08:00:00+01:00");
+    let mut t = kairos_core::task::Task::new(
+        "B15 sheet 3",
+        "Studies",
+        300,
+        kairos_core::model::Author::Alec,
+        now("2026-10-19T08:00:00+01:00"),
+    );
+    t.due = Some(kairos_core::task::Due::At(now("2026-10-23T12:00:00+01:00")));
+    a.tasks.push(t.clone());
+    let s = render_to_string(&a, 140, 34);
+    assert!(s.contains("⚑ 12:00 B15 shee"), "{s}");
+    let fri = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+    let mark = a
+        .day_clusters(fri)
+        .into_iter()
+        .find(|c| c.primary.title.contains("B15 sheet 3"))
+        .unwrap();
+    assert_eq!(mark.primary.meta.task_id.as_deref(), Some(t.id.as_str()));
+}
+
+#[test]
+fn worked_time_is_a_faint_bar_not_an_event() {
+    let (mut a, _t) = app("2026-10-21T18:00:00+01:00");
+    a.key(Key::Tab); // day view
+    let mut idx = a.index.clone();
+    idx.instances.push(kairos_core::model::Instance {
+        uid: "worked-locus-1".into(),
+        recurrence_id: None,
+        source: "worked".into(),
+        overlay: kairos_core::config::Overlay::Personal,
+        key: Some("Careers".into()),
+        title: "locus".into(),
+        location: None,
+        description: None,
+        span: kairos_core::model::Span::Timed {
+            start: now("2026-10-21T14:00:00+01:00"),
+            end: now("2026-10-21T16:00:00+01:00"),
+        },
+        recurring: false,
+        transparent: true,
+        tentative: false,
+        meta: kairos_core::model::Meta {
+            kind: kairos_core::model::EventKind::Worked,
+            ..Default::default()
+        },
+        href: None,
+        alarms: Vec::new(),
+    });
+    a.set_index(idx);
+    assert!(
+        a.day_clusters(a.cursor)
+            .iter()
+            .all(|c| c.primary.uid != "worked-locus-1"),
+        "not selectable"
+    );
+    let s = render_to_string(&a, 100, 40);
+    assert!(s.contains("worked · locus"), "{s}");
+    assert!(s.matches('▕').count() >= 3, "{s}");
 }

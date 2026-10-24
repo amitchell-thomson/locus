@@ -15,6 +15,7 @@ pub mod load;
 pub mod sync;
 pub mod taxonomy;
 pub mod vdir;
+pub mod worked;
 
 use std::path::{Path, PathBuf};
 

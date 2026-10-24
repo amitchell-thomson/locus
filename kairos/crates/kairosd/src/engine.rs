@@ -286,7 +286,87 @@ impl Engine {
     pub fn index(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<cache::Index> {
         let mut idx = cache::build(&self.cfg, None, &self.db.meta_all()?, from, to)?;
         idx.add_due_marks(&self.db.tasks(Some(TaskStatus::Open))?, self.tz());
+        let worked = self.worked_instances(from, to)?;
+        if !worked.is_empty() {
+            idx.instances.extend(worked);
+            let tz = self.tz();
+            idx.instances
+                .sort_by(|a, b| a.start(tz).cmp(&b.start(tz)).then_with(|| a.title.cmp(&b.title)));
+        }
         Ok(idx)
+    }
+
+    /// Store one machine's measured spans for a window (spec K6), replacing what it sent for
+    /// that window before. Kept in kairos's own store: never a calendar write.
+    pub fn set_worked(&mut self, req: &api::WorkedReq) -> Result<usize> {
+        let k = format!("worked.{}", req.machine);
+        let mut v: Vec<api::WorkedSpan> = self
+            .db
+            .kv_get(&k)?
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default();
+        let keep = self.now() - Duration::days(kairos_store::worked::KEEP_DAYS);
+        v.retain(|s| s.end >= keep && (s.end <= req.from || s.start >= req.to));
+        v.extend(req.spans.iter().filter(|s| s.end > s.start).cloned());
+        v.sort_by_key(|s| s.start);
+        let text = serde_json::to_string(&v).map_err(|e| EngineError::BadRequest(e.to_string()))?;
+        self.db.kv_set(&k, &text)?;
+        Ok(req.spans.len())
+    }
+
+    /// Every machine's spans overlapping `[from, to)`, merged per project.
+    pub fn worked(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<api::WorkedSpan>> {
+        let mut all = Vec::new();
+        for m in ["mac", "server"] {
+            if let Some(t) = self.db.kv_get(&format!("worked.{m}"))?
+                && let Ok(v) = serde_json::from_str::<Vec<api::WorkedSpan>>(&t)
+            {
+                all.extend(v.into_iter().filter(|s| s.start < to && s.end > from));
+            }
+        }
+        Ok(kairos_store::worked::merge(all))
+    }
+
+    /// Worked spans as faint, non-blocking instances in their project's area colour.
+    fn worked_instances(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<Vec<Instance>> {
+        let spans = self.worked(from, to)?;
+        if spans.is_empty() {
+            return Ok(Vec::new());
+        }
+        let reg = kairos_store::taxonomy::local().ok().map(|s| s.registry);
+        Ok(spans
+            .into_iter()
+            .map(|s| {
+                let entry = reg.as_ref().and_then(|r| r.get(&s.project));
+                let key = entry
+                    .and_then(|p| self.cfg.key(&p.area))
+                    .or_else(|| self.cfg.key("Projects"))
+                    .map(|k| k.name.clone());
+                Instance {
+                    uid: format!("worked-{}-{}", s.project, s.start.timestamp()),
+                    recurrence_id: None,
+                    source: "worked".into(),
+                    overlay: Overlay::Personal,
+                    key,
+                    title: entry.map_or_else(|| s.project.clone(), |p| p.name.clone()),
+                    location: None,
+                    description: Some("measured from your Claude sessions".into()),
+                    span: Span::Timed {
+                        start: s.start,
+                        end: s.end,
+                    },
+                    recurring: false,
+                    transparent: true,
+                    tentative: false,
+                    meta: Meta {
+                        kind: EventKind::Worked,
+                        ..Meta::default()
+                    },
+                    href: None,
+                    alarms: Vec::new(),
+                }
+            })
+            .collect())
     }
 
     fn source(&self, id: &str) -> Result<Source> {
@@ -696,6 +776,7 @@ impl Engine {
         // `blocking` is a sidecar-only preference; never lose it on rewrite.
         if let Some(old) = self.db.meta_get(source, uid)? {
             m.blocking |= old.blocking;
+            m.not_going |= old.not_going;
             // So is the project a session counts for.
             if m.project_id.is_none() {
                 m.project_id = old.project_id;
@@ -1182,11 +1263,19 @@ impl Engine {
         req: &api::UpdateEventReq,
     ) -> Result<Option<(Op, String)>> {
         let loc = self.locate(world, source, uid)?;
-        if let Some(b) = req.blocking {
-            // Sidecar-only flag (no iCloud write): Family events opting in to block the scheduler.
+        if req.blocking.is_some() || req.not_going.is_some() {
+            // Sidecar-only flags (no iCloud write): a Family event opting in to block the
+            // scheduler, or one of yours you're not going to.
             let mut m = self.db.meta_get(&loc.source.id, uid)?.unwrap_or_default();
-            m.blocking = b;
+            if let Some(b) = req.blocking {
+                m.blocking = b;
+            }
+            if let Some(n) = req.not_going {
+                m.not_going = n;
+            }
             self.db.meta_set(&loc.source.id, uid, &m)?;
+            // Time it blocked is free now (or blocked again): the plan follows.
+            self.replan_soon = true;
             if req.title.is_none()
                 && req.start.is_none()
                 && req.end.is_none()
@@ -3618,7 +3707,7 @@ impl Engine {
 /// Does this instance block time for the scheduler?
 pub fn is_busy(i: &Instance) -> bool {
     let overlay_ok = match i.overlay {
-        Overlay::Personal => true,
+        Overlay::Personal => !i.meta.not_going,
         Overlay::Family => i.meta.blocking,
         Overlay::Background | Overlay::Imported => false,
     };

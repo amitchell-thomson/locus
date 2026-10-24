@@ -361,6 +361,10 @@ impl Daemon {
     pub fn checkin(&self, r: &api::CheckinReq) -> Result<std::result::Result<api::PlanResp, Rejected>> {
         self.post("/api/checkin", r)
     }
+    pub fn post_worked(&self, r: &api::WorkedReq) -> Result<std::result::Result<serde_json::Value, Rejected>> {
+        self.post("/api/worked", r)
+    }
+
     pub fn status(&self) -> Result<std::result::Result<serde_json::Value, Rejected>> {
         self.get("/api/status")
     }

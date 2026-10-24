@@ -4,18 +4,28 @@
 
 ## Views and moving around
 
+Arrows and Tab, as in the locus window (spec K6, 2026-10-24; `hjkl` are gone).
+
 | Key | |
 |---|---|
-| `Tab` | week → day → month |
-| `g` | agenda |
-| `h` `l` / `H` `L` | day / week back, forward |
+| `Tab` / `Shift-Tab` | week → day → month → agenda (and back) |
+| `←` `→` / `Shift-←` `Shift-→` | day / week back, forward |
+| `↑` `↓` | select the previous / next item; past the first or last, scroll the day an hour |
 | `t` | today |
-| `j` `k` | select the next / previous item |
 | `Enter` | details; expands duplicates ⧉ |
 | `w` | week: Mon–Sun ↔ Mon–Fri (wider columns) |
-| `p` `f` | show/hide Private (all your calendars) · Family |
-| `1`–`6` | show/hide one calendar (Personal, Engineering, Careers, Projects, Sport, Social) |
+| `1` `2` `3` | show/hide Studies · Projects · Careers |
+| `4` · `5`–`8` | show/hide all of Personal · its streams Family, Sport, Social, Errands |
+| `p` `f` | show/hide everything of yours · Family |
 | `/` `r` `q` | search · sync now · quit |
+
+**Every hour is the same height** (two rows). A taller window shows more hours, never taller ones;
+a day that doesn't fit shows `▲` / `▼` beside the hours and scrolls with `↑` / `↓` past the first or
+last item. It opens on the selected item, else now, else the first thing that day.
+
+**The calendars are the locus areas** (ADR-008): Studies, Projects, Careers, and Personal as its
+streams. Old names still work wherever you type a calendar (`Engineering` is Studies, `Personal`
+or `Inbox` is Errands), and an area name means all of it (`kairos week --key Personal`).
 
 ## Changing things
 
@@ -23,17 +33,21 @@ Your own edits here apply straight away (no approval); `u` undoes the last one, 
 
 | Key | |
 |---|---|
-| `a` | add: `e` event · `t` task · `p` project time (a form; `Tab` between fields) |
-| `e` · `K` · `m` | edit · change calendar · move. On a ⚑ deadline these act on the task's deadline |
-| `d` | remove: delete an event · skip a work block (kairos plans that time elsewhere) · on a task's ⚑, remove the task with its deadline and all its planned time (past, checked-in blocks stay) |
+| `a` | add: `e` event · `t` task (a form; `Tab` between fields) |
+| `e` · `K` · `m` | edit · change calendar · move. On a ⚑ these act on the task's due date |
+| `d` | remove: delete an event · skip a work block (kairos plans that time elsewhere) · on a task's ⚑, remove the task with its due date and all its planned time (past, checked-in blocks stay) |
 | `s` | share an event to Family (asks first) |
-| `B` | Family event: whether you're attending (blocks the scheduler or not) |
-| `y` | accept proposed project time ◌ (asks what you'll work on) · approve a pending change |
+| `B` | going or not. Your own events: not going greys it and frees the time for the scheduler. Family events: whether it blocks your time |
+| `y` | approve a pending change |
 | `n` | start the selected task now: a block from now, the rest reflows |
-| `P` | run the scheduler |
-| `T` | tasks: `D` done · `W` log work · `+` more time · `o` reopen · `e` edit · `n` start |
+| `S` | run the scheduler |
+| `T` | tasks: `D` done · `W` log work · `+` more time · `o` reopen · `e` edit · `n` start · `S` plan |
 | `A` | changes waiting for approval (from Claude or scripts) |
-| `R` | projects (below) |
+| `P` | projects (below) |
+
+**A due date is the task's own** (spec K5): the ⚑ on its day is drawn from the task, never written
+to a calendar. `kairos deadline "Apps close" fri 17:00 --key Careers` makes a task with only the
+date. Task types: sheet, coursework, admin, chore (a short errand for a gap).
 
 ## Check-ins
 
@@ -51,34 +65,28 @@ A work block or project session that has ended waits for you to say how it went:
 
 The same answers work from the phone (evening push → check-in page, including "took longer"), `kairos checkin` (`l` = took longer), or by telling Claude (MCP `checkin` with `outcome: "longer"` / `log_work`).
 
-## Projects (`R`)
+## Projects (`P`)
 
-Your projects, grouped **Active** (working on now) · **Next** (should be working on) · **Paused** · **Done**, each with its note and the time spent: this week, last 30 days, when you last worked on it, and the next session planned.
+Your projects, grouped **Active** · **Next** · **Paused** · **Done**, each with its note and the time
+spent: this week, last 30 days, when you last worked on it.
 
 | Key | |
 |---|---|
-| `n` | plan time for it yourself (when, how long) — an event in Projects, counted as its session |
-| `a` | add a project (name, status, calendar, note) — the calendar is where its sessions go, e.g. Engineering for the 3rd-year project (default Projects) |
-| `e` | edit it |
-| `s` | next status: active → next → paused → done → active |
-| `d` | delete it (its sessions stay on the calendar) |
+| `a` | add a project · `e` edit · `s` next status · `d` delete |
 
-A project's time is what you **checked in**, never what was planned. Its sessions (accepted proposed time, time you planned with `n`, or events Claude attributed to it) wait for a check-in like work blocks, with the same keys: `y` done · `c` partly · `+` took longer · `x` missed (the session is removed) · `F` the project is finished. Sessions not checked in yet show as "to check in" and don't count until you answer; after a week they count as done.
-
-Tasks can belong to a project (the Project field in a task's form): they're listed under it here, and their checked-in block time counts as the project's time.
-
-Existing events can count for a project too (e.g. "Quantum Research" as QUAST work): ask Claude to attribute them (`attribute_to_project`; it can suggest events titled with the project's name). Renaming a project (or changing its calendar) carries through to its sessions still to come that carry its name, in one undoable change.
-
-**Freed time:** deleting, shortening or moving an event away (here or on the phone) re-plans work from 2 h ahead, so blocks move into the gap; blocks you placed (pinned) stay.
-
-**Proposed project time** (◌, greyed) suggests the active project you've spent least time on lately. `y` opens a picker with that one first, then your other active and next projects, `+ new project…`, or just "Project time". Choosing a *next* project makes it active.
+**Time on a project is measured, not planned** (spec K6). It comes from your Claude sessions: a
+span opens at a prompt you typed in a session whose folder is that project's repository and runs
+until it goes quiet for ten minutes. It is drawn after the fact as a faint bar down the right edge
+of the day (`worked · locus` beside it in the day view), with nothing to check in. The Mac sends its
+sessions on every `kairos sync`; kairosd measures the server's every five minutes. To set time aside
+for a project, place an ordinary work block for one of its tasks; it gets the usual check-in. Proposed
+time (◌) and the session diamonds are gone.
 
 ## Reading a work block
 
 - **Left edge:** `┆` kairos may move it · `╏` you placed it (pinned) · `▌` ordinary events and anything in the past.
 - **Box (tasks):** 󰄱 to do · 󰡖 over, waiting for a check-in · 󰄵 done. (Stored titles use ☐ / ✓ so the phone shows them too.)
-- **Diamond (project sessions):** ◇ planned · ◈ over, waiting for a check-in · ◆ done — the same on the phone. Boxes are work to finish; diamonds are time put into a project.
 - Titles are italic. A block starting off the grid (e.g. 10:15) shows a dim `:15`; a title cut short beside a tag ends in `…`.
 - **Bottom edge**, on the selected block: for a future block `task: X/Y done by then · Z left after`; for a past or current block `task: X/Y done · Z left`. Key hints sit on the right.
 - **Selection:** the selected item is filled in its own colour; other blocks of the same task get a lighter tint; pending approvals stay blue.
-- ◌ marks proposed project time, titled with the suggested project (only in kairos until you accept it with `y`, or drop it with `d`).
+- Greyed: an event you aren't going to (`B`), a Family event you haven't opted into, or tentative.

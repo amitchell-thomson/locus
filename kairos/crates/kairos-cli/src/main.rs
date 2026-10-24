@@ -139,6 +139,9 @@ enum Cmd {
         /// Family events: block the scheduler (true/false).
         #[arg(long)]
         blocking: Option<bool>,
+        /// Your own events: you're not going (true/false); greyed, no longer blocks the scheduler.
+        #[arg(long)]
+        not_going: Option<bool>,
     },
     /// Delete an event.
     Rm { uid: String },
@@ -468,6 +471,7 @@ fn run() -> Result<()> {
             location,
             notes,
             blocking,
+            not_going,
         } => {
             let (inst, _) = resolve_uid(&ctx, &uid)?;
             let req = api::UpdateEventReq {
@@ -481,6 +485,7 @@ fn run() -> Result<()> {
                 location,
                 description: notes,
                 blocking,
+                not_going,
             };
             let d = ctx.daemon()?;
             match d.update_event(&inst.source, &inst.uid, &req)? {
@@ -1347,6 +1352,10 @@ fn sync(ctx: &Ctx, p: &Paint, local: bool) -> Result<()> {
         }
         if kairos_store::sync::pull_tasks(&ctx.cfg) {
             println!("{ok} open tasks from kairosd (due dates)");
+        }
+        // This machine's Claude sessions as project time (spec K6); the server measures its own.
+        if let Some(n) = kairos_store::worked::push(&ctx.cfg, "mac", ctx.now) {
+            println!("{ok} worked time: {n} span(s) from your Claude sessions");
         }
     }
     let (from, to) = cache::default_window(&ctx.cfg, ctx.now);

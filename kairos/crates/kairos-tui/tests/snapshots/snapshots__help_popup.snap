@@ -3,33 +3,33 @@ source: kairos/crates/kairos-tui/tests/snapshots.rs
 assertion_line: 250
 expression: "render_to_string(&a, 100, 30)"
 ---
-╭──────────────────────────────────── Week 43 · 19 Oct–25 Oct ─────────────────────────────────────╮
+╭ kairos ──────────────────────────── Week 43 · 19 Oct–25 Oct ─────────────────────────────────────╮
 │       Mon 19       Tue 20       Wed 21       Thu 22       Fri 23       Sat 24       Sun 25       │
-│                                                          ▌Lake District trip                     │
 │         ╭──────────────────────────────────── keys ────────────────────────────────────╮         │
-│─────────│ h l / H L  day / week back, forward                                          │─────────│
-│06:00 ┊  │         t  today                                                             │         │
-│07:00 ┊  │       j k  select                                                            │         │
-│08:00 ●──│   Tab · g  week → day → month · agenda                                       │         │
-│09:00 ┊  │     Enter  details / expand duplicates ⧉                                     │         │
-│10:00 ┊  │         w  week: Mon–Sun ↔ Mon–Fri (wider)                                   │         │
-│11:00 ┊  │       p f  show/hide: Private (all yours), Family                            │         │
-│      ┄┄┄│       1–2  show/hide one calendar (see the bar below)                        │┄┄┄┄┄┄┄┄┄│
-│12:00 ┊  │         a  add: e event · t task (a form; Tab between fields)                │         │
-│13:00 ┊  │     e K m  edit (K: its calendar) · move — on a ⚑: the task's deadline       │         │
-│14:00 ┊  │         d  remove: event · skip work block · ⚑ with all its work · drop      │         │
-│15:00 ┊  │         s  share an event to Family                                          │         │
-│16:00 ┊  │         B  Family event: attending / not                                     │         │
-│17:00 ┊  │         y  accept proposed project time ◌ (pick the project) · approve       │         │
-│      ┄┄┄│         n  start the selected task now (plan reflows)                        │┄┄┄┄┄┄┄┄┄│
-│18:00 ┊  │     T A R  tasks (D done · W log · + more · o reopen) · approvals · projects │         │
-│19:00 ┊▌S│ y c + x F  past block: done · partly · took longer · missed · task finished  │day Sq…  │
-│20:00 ┊  │         W  log work on a task (ending now) — for work that wasn't in a block │         │
-│21:00 ┊  │       P C  run the scheduler · check in on everything waiting                │         │
-│      ┄┄┄│         u  undo your last change (and the replan after it)                   │┄┄┄┄┄┄┄┄┄│
-│22:00 ┊  │     / r q  search · sync now · quit                                          │         │
-│23:00 ┊  ╰──────────────────────────────────────────────────────────────────────────────╯         │
+│         │ ← → ⇧← ⇧→  day · week back, forward                                          │         │
+│─────────│         t  today                                                             │─────────│
+│11:00▲┊  │       ↑ ↓  select; past the first or last, scroll the day's hours            │         │
+│      ┊  │  Tab ⇧Tab  week → day → month → agenda (and back)                            │         │
+│      ┄┄┄│     Enter  details / expand duplicates ⧉                                     │┄┄┄┄┄┄┄┄┄│
+│12:00 ┊  │         w  week: Mon–Sun ↔ Mon–Fri (wider)                                   │         │
+│      ┊  │     1 2 3  show/hide Studies · Projects · Careers                            │         │
+│13:00 ┊  │   4 · 5–8  show/hide all of Personal · Family, Sport, Social, Errands        │         │
+│      ┊  │       p f  show/hide: all yours, Family                                      │         │
+│14:00 ┊  │         a  add: e event · t task (a form; Tab between fields)                │         │
+│      ┊  │     e K m  edit (K: its calendar) · move — on a ⚑: the task's due date       │         │
+│15:00 ┊  │         d  remove: event · skip work block · ⚑ with all its work · drop      │         │
+│      ┊  │         s  share an event to Family                                          │         │
+│16:00 ┊  │         B  going or not: yours (greyed, time freed) · Family (blocks)        │         │
+│      ┊  │         y  approve the selected pending change                               │         │
+│17:00 ┊  │         n  start the selected task now (plan reflows)                        │         │
+│      ┊  │     T A P  tasks (D done · W log · + more · o reopen) · approvals · projects │         │
+│      ┄┄┄│ y c + x F  past block: done · partly · took longer · missed · task finished  │┄┄┄┄┄┄┄┄┄│
+│18:00 ┊  │         W  log work on a task (ending now) — for work that wasn't in a block │         │
+│      ┊  │       S C  run the scheduler · check in on everything waiting                │         │
+│19:00 ┊▌S│         u  undo your last change (and the replan after it)                   │day      │
+│      ┊▌ │     / r q  search · sync now · quit                                          │ash      │
+│20:00 ┊  ╰──────────────────────────────────────────────────────────────────────────────╯         │
 │      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
-│      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
+│21:00 ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 ╰ ● 19:00–20:00 · Squash · Errands ────────────────────────── e edit · m move · d delete · s share ╯
  WEEK  3 Careers  │ 4 Personal ▸ 5 Family  8 Errands                                       ? help

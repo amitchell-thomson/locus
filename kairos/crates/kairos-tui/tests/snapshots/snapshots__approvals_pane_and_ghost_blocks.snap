@@ -3,7 +3,7 @@ source: kairos/crates/kairos-tui/tests/snapshots.rs
 assertion_line: 223
 expression: s
 ---
-╭─────────────── Approvals · 1 ────────────────╮╭──────────────────────────────── diff ────────────────────────────────╮
+╭ kairos ─────── Approvals · 1 ────────────────╮╭──────────────────────────────── diff ────────────────────────────────╮
 │◌ Update "Squash" → Tue 20 Oct 18:30–19:30    ││Update "Squash" → Tue 20 Oct 18:30–19:30                              │
 │                                              ││cs-ghost · by claude · Sun 18 Oct 10:00                               │
 │                                              ││! changes an event not created by kairos                              │

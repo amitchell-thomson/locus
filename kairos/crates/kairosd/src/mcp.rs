@@ -203,6 +203,9 @@ pub struct UpdateEventArgs {
     pub location: Option<String>,
     /// Notes (DESCRIPTION). Empty string clears them.
     pub description: Option<String>,
+    /// Alec isn't going (true) or is again (false): greyed, and no longer blocks his time.
+    /// Not a calendar edit (kairos's own record), so it never needs approval.
+    pub not_going: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -613,6 +616,7 @@ impl KairosMcp {
                     location: u.location,
                     description: u.description,
                     blocking: None,
+                    not_going: None,
                 },
             })
             .collect();
@@ -694,6 +698,7 @@ impl KairosMcp {
             location: a.location,
             description: a.description,
             blocking: None,
+            not_going: a.not_going,
         };
         self.run(move |e| {
             e.update_event(Author::Claude, a.source.as_deref(), &a.uid, &req)?

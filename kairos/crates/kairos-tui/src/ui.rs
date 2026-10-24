@@ -125,18 +125,30 @@ pub fn linked_style(col: Color) -> Style {
         .add_modifier(Modifier::BOLD)
 }
 
+/// A view's frame. The main (focused) one carries `kairos` on the left of the border, as
+/// locus's screens name themselves, with the view's own title (the week, the day) kept in the
+/// centre (spec K6); a side panel (the diff beside approvals) has only its title.
 fn panel(title: &str, focus: bool) -> Block<'static> {
-    Block::default()
+    let mut b = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(if focus { c("blue") } else { c("overlay0") }))
-        .title(
+        .border_style(Style::default().fg(if focus { c("blue") } else { c("overlay0") }));
+    if focus {
+        b = b.title(
             Line::from(TSpan::styled(
-                format!(" {title} "),
-                Style::default().fg(c("blue")).add_modifier(Modifier::BOLD),
+                " kairos ",
+                Style::default().fg(c("text")).add_modifier(Modifier::BOLD),
             ))
-            .alignment(Alignment::Center),
-        )
+            .alignment(Alignment::Left),
+        );
+    }
+    b.title(
+        Line::from(TSpan::styled(
+            format!(" {title} "),
+            Style::default().fg(c("blue")).add_modifier(Modifier::BOLD),
+        ))
+        .alignment(Alignment::Center),
+    )
 }
 
 fn popup_block(title: &str) -> Block<'static> {
@@ -165,12 +177,12 @@ fn label(app: &App, i: &Instance) -> String {
         EventKind::Deadline => format!("⚑ {}", t.trim_start_matches('⚑').trim()),
         // Work: a box — 󰄱 to do (also past, until checked in), 󰄵 done.
         EventKind::TaskBlock => kairos_core::build::block_label(t, i.end(app.tz) <= app.now),
-        // Project sessions: diamonds — ◇ planned, ◈ waiting for a check-in, ◆ done.
-        EventKind::Event if i.meta.project_id.is_some() => {
-            kairos_core::build::session_label(t, i.end(app.tz) <= app.now)
-        }
+        // Project sessions from before K6 lose their diamonds: time on a project is measured
+        // (worked bars) or a work block you place, not a separate kind of event.
+        EventKind::Event if i.meta.project_id.is_some() => kairos_core::build::bare_block_title(t).to_string(),
         EventKind::Event => t.to_string(),
         EventKind::Proposal => format!("◌ {t}?"),
+        EventKind::Worked => format!("worked · {t}"),
     }
 }
 
@@ -276,6 +288,7 @@ pub enum Phase {
 /// Family events you're not attending (TUI `B`) never get now/soon emphasis.
 fn attending(i: &Instance) -> bool {
     i.meta.kind != EventKind::Proposal
+        && !i.meta.not_going
         && (i.overlay != Overlay::Family || i.meta.origin_key.is_some() || i.meta.blocking)
 }
 
@@ -776,10 +789,11 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
         }
     }
     let nrows = rows as i64;
-    // Layout: 2 rows per hour (1 if space is short), with a divider row at
-    // each section boundary (config `tui.section_hours`, default 12/18/22:
-    // morning, afternoon, evening, night). Events crossing a boundary run
-    // through it; events ending exactly on it stop above it.
+    // Layout: every hour two rows (spec K6, "even hour height"), with a divider row at
+    // each section boundary (config `tui.section_hours`, default 12/18/22: morning, afternoon,
+    // evening, night). A tall window shows more hours, never taller ones; a day that does not
+    // fit scrolls (↑/↓ past the first or last item) instead of squashing to one row an hour.
+    // Events crossing a boundary run through it; events ending exactly on it stop above it.
     let sections: Vec<i64> = app
         .cfg
         .tui
@@ -794,36 +808,52 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
         sections.iter().filter(|&&x| a < x && x < b).count() as i64
     };
     let needed = |a: i64, b: i64, rph: i64| (b - a) / 60 * rph + gaps_between(a, b);
-    let usual = if e0 <= e1 {
+    // The day's extent: the usual day (08–22) and every event in view.
+    let (ext0, ext1) = if e0 <= e1 {
         (e0.min(8 * 60), e1.max(22 * 60))
     } else {
         (8 * 60, 22 * 60)
     };
-    let tight = if e0 <= e1 { (e0, e1.max(e0 + 60)) } else { usual };
-    let mut layout = None;
-    'pick: for rph in [2, 1] {
-        for (a, b) in [usual, tight] {
-            if needed(a, b, rph) <= nrows {
-                layout = Some((rph, a, b));
-                break 'pick;
+    let rph: i64 = if needed(ext0, ext0 + 60, 2) <= nrows { 2 } else { 0 };
+    let (mut h0, mut h1) = (ext0, ext1);
+    if rph > 0 && needed(ext0, ext1, rph) <= nrows {
+        // Spare rows add hours: towards 06:00–24:00.
+        loop {
+            if h1 < 24 * 60 && needed(h0, h1 + 60, rph) <= nrows {
+                h1 += 60;
+            } else if h0 > 6 * 60 && needed(h0 - 60, h1, rph) <= nrows {
+                h0 -= 60;
+            } else {
+                break;
             }
         }
-    }
-    let (rph, mut h0, mut h1) = layout.unwrap_or((0, tight.0, tight.1));
-    if rph > 0 {
-        // Spare rows add hours: towards the usual day, then 06:00–24:00.
-        for (lo, hi) in [(8 * 60, 22 * 60), (6 * 60, 24 * 60)] {
-            loop {
-                if h1 < hi && needed(h0, h1 + 60, rph) <= nrows {
-                    h1 += 60;
-                } else if h0 > lo && needed(h0 - 60, h1, rph) <= nrows {
-                    h0 -= 60;
-                } else {
-                    break;
+    } else if rph > 0 {
+        // Not all of it fits: a window of whole hours, scrolled to where you are.
+        let anchor = app.day_top.get().unwrap_or_else(|| {
+            let sel_start = app.selected().and_then(|c| match c.primary.span {
+                Span::Timed { start, .. } => {
+                    let l = start.with_timezone(&tz);
+                    days.contains(&l.date_naive()).then(|| l.hour() as i64 * 60 - 60)
                 }
-            }
+                Span::AllDay { .. } => None,
+            });
+            let now_l = app.now.with_timezone(&tz);
+            let now_start = days
+                .contains(&now_l.date_naive())
+                .then(|| now_l.hour() as i64 * 60 - 60);
+            // Else the first timed thing in view, else the usual morning.
+            let first = (e0 <= e1).then(|| e0 - 60);
+            sel_start.or(now_start).or(first).unwrap_or(8 * 60)
+        });
+        let mut len = 60;
+        while ext0 + len < ext1 && needed(anchor.max(ext0), anchor.max(ext0) + len + 60, rph) <= nrows {
+            len += 60;
         }
+        h0 = (anchor / 60 * 60).clamp(ext0, (ext1 - len).max(ext0));
+        h1 = h0 + len;
     }
+    let (h0, h1) = (h0, h1);
+    app.grid.set((h0, h1, ext0.min(h0), ext1.max(h1)));
     let span = (h1 - h0).max(60);
     let nrows = nrows as usize;
     let row_of_min = |m: i64| -> i64 {
@@ -880,6 +910,28 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             buf.set_string(x, grid_y + r as u16, "┊", Style::default().fg(c("surface0")));
         }
     }
+    // Hours above or below the window: a mark beside the first or last hour shown.
+    let (_, _, x0_ext, x1_ext) = app.grid.get();
+    if rph > 0 && h0 > x0_ext {
+        put(
+            buf,
+            inner.x + gutter - 1,
+            grid_y,
+            1,
+            "▲",
+            Style::default().fg(c("overlay1")),
+        );
+    }
+    if rph > 0 && h1 < x1_ext && nrows > 0 {
+        put(
+            buf,
+            inner.x + gutter - 1,
+            grid_y + nrows as u16 - 1,
+            1,
+            "▼",
+            Style::default().fg(c("overlay1")),
+        );
+    }
     let mut hour = (h0 + 59) / 60 * 60;
     while hour < h1 {
         let r = row_of_min(hour);
@@ -908,7 +960,9 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
                 // End row rounds down like the start, so back-to-back events never
                 // share a row (which would split them into side-by-side lanes).
                 let r1 = end_row(s, e, *d).clamp(r0 as i64 + 1, nrows as i64) as usize;
-                (row_of(s, *d) < nrows as i64).then_some((r0, r1, cl))
+                // Scrolled out of the window (above or below it): not drawn, `▲`/`▼` say so.
+                let visible = row_of(s, *d) < nrows as i64 && end_row(s, e, *d) > 0;
+                visible.then_some((r0, r1, cl))
             })
             .collect();
         let deadlines_first: Vec<(usize, usize, &Cluster)> =
@@ -1079,6 +1133,35 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
                 format!("⚑ {t} {title}{when} ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             };
             put(buf, x0, grid_y + *r0 as u16, w, &text, st);
+        }
+        // Worked time (spec K6): a faint bar down the column's right edge, measured from your
+        // Claude sessions after the fact. Never selectable, never in the way of an event.
+        for wk in app.worked_on(*d) {
+            let (s, e) = wk.span.bounds(tz);
+            let r0 = row_of(s, *d).max(0);
+            let r1 = end_row(s, e, *d).min(nrows as i64);
+            let col = wk
+                .key
+                .as_deref()
+                .and_then(|k| app.cfg.key(k))
+                .map_or(c("overlay0"), |k| rgb(k.colour));
+            let st = Style::default().fg(fade(col, 0.55));
+            let x = x0 + w.saturating_sub(1);
+            for r in r0..r1 {
+                let y = grid_y + r as u16;
+                if buf[(x, y)].symbol() == " " {
+                    buf.set_string(x, y, "▕", st);
+                }
+            }
+            if single && r0 < r1 {
+                let text = format!("worked · {} ", wk.title);
+                let tw = text.width() as u16;
+                let tx = x.saturating_sub(tw);
+                let y = grid_y + r0 as u16;
+                if tx > x0 && (tx..x).all(|xx| buf[(xx, y)].symbol() == " ") {
+                    put(buf, tx, y, tw, &text, st);
+                }
+            }
         }
         // Ghost blocks (pending changes).
         for g in ghosts
@@ -1892,31 +1975,30 @@ fn approvals(f: &mut Frame, app: &App, area: Rect) {
 fn help(f: &mut Frame, app: &App, area: Rect) {
     let has = |o: Overlay| app.cfg.sources.iter().any(|s| s.overlay == o);
     let toggles = match (has(Overlay::Background), has(Overlay::Imported)) {
-        (true, true) => ("p f b i", "show/hide: Private (all yours), Family, holidays, imported"),
-        (true, false) => ("p f b", "show/hide: Private (all yours), Family, holidays"),
-        (false, true) => ("p f i", "show/hide: Private (all yours), Family, imported"),
-        (false, false) => ("p f", "show/hide: Private (all yours), Family"),
+        (true, true) => ("p f b i", "show/hide: all yours, Family, holidays, imported"),
+        (true, false) => ("p f b", "show/hide: all yours, Family, holidays"),
+        (false, true) => ("p f i", "show/hide: all yours, Family, imported"),
+        (false, false) => ("p f", "show/hide: all yours, Family"),
     };
-    let n = app.cfg.keys.len();
-    let calendars = format!("1–{n}");
     let rows = [
-        ("h l / H L", "day / week back, forward"),
+        ("← → ⇧← ⇧→", "day · week back, forward"),
         ("t", "today"),
-        ("j k", "select"),
-        ("Tab · g", "week → day → month · agenda"),
+        ("↑ ↓", "select; past the first or last, scroll the day's hours"),
+        ("Tab ⇧Tab", "week → day → month → agenda (and back)"),
         ("Enter", "details / expand duplicates ⧉"),
         ("w", "week: Mon–Sun ↔ Mon–Fri (wider)"),
+        ("1 2 3", "show/hide Studies · Projects · Careers"),
+        ("4 · 5–8", "show/hide all of Personal · Family, Sport, Social, Errands"),
         toggles,
-        (calendars.as_str(), "show/hide one calendar (see the bar below)"),
         ("a", "add: e event · t task (a form; Tab between fields)"),
-        ("e K m", "edit (K: its calendar) · move — on a ⚑: the task's deadline"),
+        ("e K m", "edit (K: its calendar) · move — on a ⚑: the task's due date"),
         ("d", "remove: event · skip work block · ⚑ with all its work · drop"),
         ("s", "share an event to Family"),
-        ("B", "Family event: attending / not"),
-        ("y", "accept proposed project time ◌ (pick the project) · approve"),
+        ("B", "going or not: yours (greyed, time freed) · Family (blocks)"),
+        ("y", "approve the selected pending change"),
         ("n", "start the selected task now (plan reflows)"),
         (
-            "T A R",
+            "T A P",
             "tasks (D done · W log · + more · o reopen) · approvals · projects",
         ),
         (
@@ -1924,7 +2006,7 @@ fn help(f: &mut Frame, app: &App, area: Rect) {
             "past block: done · partly · took longer · missed · task finished",
         ),
         ("W", "log work on a task (ending now) — for work that wasn't in a block"),
-        ("P C", "run the scheduler · check in on everything waiting"),
+        ("S C", "run the scheduler · check in on everything waiting"),
         ("u", "undo your last change (and the replan after it)"),
         ("/ r q", "search · sync now · quit"),
     ];

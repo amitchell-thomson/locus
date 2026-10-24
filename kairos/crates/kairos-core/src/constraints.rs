@@ -186,7 +186,8 @@ fn default_task_types() -> Vec<TaskType> {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Projects {
-    #[serde(default = "yes")]
+    /// Off unless switched on (spec K6: project time is measured, not proposed).
+    #[serde(default)]
     pub enabled: bool,
     #[serde(default = "default_project_title")]
     pub title: String,
@@ -218,7 +219,7 @@ fn default_project_per_day() -> u32 {
 impl Default for Projects {
     fn default() -> Projects {
         Projects {
-            enabled: true,
+            enabled: false,
             title: default_project_title(),
             key: None,
             min_minutes: default_project_min(),

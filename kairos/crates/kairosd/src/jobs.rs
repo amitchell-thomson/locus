@@ -57,9 +57,19 @@ pub fn morning_text(e: &Engine) -> String {
             let mark = match i.meta.kind {
                 EventKind::Deadline => "⚑ ",
                 EventKind::TaskBlock => "┆ ",
-                EventKind::Event | EventKind::Proposal => "",
+                EventKind::Event | EventKind::Proposal | EventKind::Worked => "",
             };
             lines.push(format!("{when} {mark}{}", i.title.trim_start_matches("⚑ ")));
+        }
+    }
+    // Due today (spec K5: the tasks' own dates, not events).
+    if let Ok(open) = e.db.tasks(Some(kairos_core::task::TaskStatus::Open)) {
+        for m in kairos_core::task::due_marks(&open, from, to, tz) {
+            let when = match m.span {
+                Span::AllDay { .. } => "today".to_string(),
+                Span::Timed { start, .. } => start.with_timezone(&tz).format("%H:%M").to_string(),
+            };
+            lines.push(format!("{when} {}", m.title));
         }
     }
     // Blocks waiting for a check-in.
@@ -112,7 +122,40 @@ impl Jobs {
             let ntfy = self.ntfy.clone();
             let do_sync = self.sync_every_min > 0 && minutes.is_multiple_of(self.sync_every_min);
             let do_feeds = self.feeds_every_min > 0 && minutes.is_multiple_of(self.feeds_every_min);
+            let do_worked = minutes.is_multiple_of(5);
             minutes += 1;
+            if do_worked {
+                // The server's own Claude sessions (spec K6): read outside the engine lock, since
+                // a first scan reads every recent transcript.
+                let eng = self.engine.clone();
+                let _ = tokio::task::spawn_blocking(move || {
+                    let Some(cache) = eng.lock().ok().map(|e| e.cfg.cache_dir()) else {
+                        return;
+                    };
+                    let Ok(shared) = kairos_store::taxonomy::local() else {
+                        return;
+                    };
+                    let now = chrono::Utc::now();
+                    let spans = kairos_store::worked::scan(
+                        &kairos_store::worked::claude_root(),
+                        &cache.join("worked-scan.json"),
+                        &shared.registry,
+                        now,
+                    );
+                    let req = kairos_core::api::WorkedReq {
+                        machine: "server".into(),
+                        from: now - chrono::Duration::days(kairos_store::worked::KEEP_DAYS),
+                        to: now + chrono::Duration::minutes(1),
+                        spans,
+                    };
+                    if let Ok(mut e) = eng.lock()
+                        && let Err(err) = e.set_worked(&req)
+                    {
+                        tracing::warn!("worked time: {err}");
+                    }
+                })
+                .await;
+            }
             let r = tokio::task::spawn_blocking(move || -> Result<(), String> {
                 let mut e = eng.lock().map_err(|_| "engine lock poisoned".to_string())?;
                 if do_feeds {

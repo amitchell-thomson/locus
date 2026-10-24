@@ -1219,6 +1219,8 @@ fn moving_a_work_block_by_hand_pins_it() {
 fn project_time_is_proposed_accepted_and_dropped() {
     let env = Env::new(true);
     let mut e = env.engine();
+    // The proposer is off since spec K6; this exercises it switched on.
+    e.constraints.projects.enabled = true;
     env.phone_event("Sport", "rowing", "Rowing", "2026-10-13 17:00", "2026-10-13 18:00");
     e.plan(false, Author::Scheduler).unwrap();
     let props = e.proposals().unwrap();
@@ -1290,6 +1292,8 @@ fn project_time_suggests_neglected_projects_and_tracks_time_spent() {
     use kairos_core::project::ProjectStatus;
     let env = Env::new(true);
     let mut e = env.engine();
+    // The proposer is off since spec K6; this exercises it switched on.
+    e.constraints.projects.enabled = true;
     let mk = |e: &mut kairosd::engine::Engine, name: &str, status: &str| {
         e.create_project(
             Author::Alec,
@@ -2508,4 +2512,45 @@ fn projects_from_before_they_were_tasks_are_migrated() {
     // Once only: the old tables are gone.
     assert_eq!(e.db.legacy_projects().unwrap(), (vec![], vec![]));
     assert_eq!(e.migrate_projects().unwrap(), 0);
+}
+
+#[test]
+fn not_going_frees_your_time_for_the_scheduler() {
+    let env = Env::new(true);
+    env.phone_event("Personal", "drinks", "Drinks", "2026-10-12 09:00", "2026-10-12 17:00");
+    let mut e = env.engine();
+    let busy = |e: &mut kairosd::engine::Engine| {
+        e.events(at("2026-10-12 00:00"), at("2026-10-13 00:00"))
+            .unwrap()
+            .iter()
+            .any(|i| i.uid == "drinks" && kairosd::engine::is_busy(i))
+    };
+    assert!(busy(&mut e));
+    // You aren't going: kairos's own record, no calendar write and no approval.
+    let r = e
+        .update_event(
+            Author::Claude,
+            None,
+            "drinks",
+            &kairos_core::api::UpdateEventReq {
+                not_going: Some(true),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(r.is_none(), "no changeset: nothing on iCloud changes");
+    assert!(e.replan_soon);
+    assert!(!busy(&mut e));
+    assert!(env.read_all("Personal").contains("SUMMARY:Drinks"), "the event stays");
+    e.update_event(
+        Author::Claude,
+        None,
+        "drinks",
+        &kairos_core::api::UpdateEventReq {
+            not_going: Some(false),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert!(busy(&mut e));
 }

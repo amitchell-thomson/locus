@@ -67,6 +67,8 @@ fn map_key(k: event::KeyEvent) -> Option<Key> {
         KeyCode::Backspace => Key::Backspace,
         KeyCode::Up => Key::Up,
         KeyCode::Down => Key::Down,
+        KeyCode::Left if k.modifiers.contains(KeyModifiers::SHIFT) => Key::ShiftLeft,
+        KeyCode::Right if k.modifiers.contains(KeyModifiers::SHIFT) => Key::ShiftRight,
         KeyCode::Left => Key::Left,
         KeyCode::Right => Key::Right,
         _ => return None,

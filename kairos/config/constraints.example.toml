@@ -49,7 +49,9 @@ splittable = false
 
 # Proposed project time: free gaps offered (greyed out in the TUI) to accept or drop.
 [projects]
-enabled = true
+# Off since spec K6 (2026-10-24): project time is measured from your Claude sessions, or a work
+# block you place; kairos no longer proposes it.
+enabled = false
 title = "Project time"
 key = "Projects"      # accepted sessions go to this calendar
 min_minutes = 60

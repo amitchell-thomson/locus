@@ -117,6 +117,9 @@ pub struct UpdateEventReq {
     /// Family events only: whether it blocks the scheduler (sidecar flag; not an iCloud write).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blocking: Option<bool>,
+    /// Your own events: you're not going (sidecar flag; greyed, no longer blocks the scheduler).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub not_going: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -494,4 +497,23 @@ mod tests {
         );
         assert!(parse_time("sun 9", London, now).is_err(), "today is Sunday: ambiguous");
     }
+}
+
+/// Time worked on a project, measured after the fact from Claude sessions (spec K6). `project` is
+/// a locus registry id.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkedSpan {
+    pub project: String,
+    pub start: DateTime<Utc>,
+    pub end: DateTime<Utc>,
+}
+
+/// One machine's measured spans for a window, replacing what it sent before for that window.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WorkedReq {
+    /// Where the sessions ran (`mac`, `server`): each machine's spans are kept apart.
+    pub machine: String,
+    pub from: DateTime<Utc>,
+    pub to: DateTime<Utc>,
+    pub spans: Vec<WorkedSpan>,
 }

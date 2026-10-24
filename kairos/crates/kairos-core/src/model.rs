@@ -17,6 +17,9 @@ pub enum EventKind {
     /// Proposed project time (kairosd only, never written to a calendar;
     /// shown greyed in the TUI to accept or drop).
     Proposal,
+    /// Time worked on a project, measured from your Claude sessions after the fact (spec K6):
+    /// never written to a calendar, never blocks, no check-in; drawn as a faint bar.
+    Worked,
 }
 
 impl EventKind {
@@ -26,6 +29,7 @@ impl EventKind {
             EventKind::Deadline => "deadline",
             EventKind::TaskBlock => "task_block",
             EventKind::Proposal => "proposal",
+            EventKind::Worked => "worked",
         }
     }
     pub fn parse(s: &str) -> Option<EventKind> {
@@ -34,6 +38,7 @@ impl EventKind {
             "deadline" => Some(EventKind::Deadline),
             "task_block" | "task-block" => Some(EventKind::TaskBlock),
             "proposal" => Some(EventKind::Proposal),
+            "worked" => Some(EventKind::Worked),
             _ => None,
         }
     }
@@ -87,6 +92,10 @@ pub struct Meta {
     /// Family events: opt in to blocking the scheduler.
     #[serde(default)]
     pub blocking: bool,
+    /// Your own events: you're not going (TUI `B`). Drawn greyed, and it no longer blocks the
+    /// scheduler, the way a Family event you haven't opted into doesn't (spec K6).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub not_going: bool,
     /// A block Alec placed explicitly; the scheduler never moves it.
     #[serde(default)]
     pub pinned: bool,
@@ -113,6 +122,7 @@ impl Meta {
             origin_key: get("ORIGIN-KEY").map(String::from),
             adopted_from: get("ADOPTED-FROM").map(String::from),
             blocking: truthy("BLOCKING"),
+            not_going: truthy("NOT-GOING"),
             pinned: truthy("PINNED"),
             project_id: get("PROJECT-ID").map(String::from),
         }
@@ -143,6 +153,9 @@ impl Meta {
         if self.blocking {
             c.push(P::new("X-KAIROS-BLOCKING", "true"));
         }
+        if self.not_going {
+            c.push(P::new("X-KAIROS-NOT-GOING", "true"));
+        }
         if self.pinned {
             c.push(P::new("X-KAIROS-PINNED", "true"));
         }
@@ -165,6 +178,7 @@ impl Meta {
             origin_key: sidecar.origin_key.clone().or_else(|| self.origin_key.clone()),
             adopted_from: sidecar.adopted_from.clone().or_else(|| self.adopted_from.clone()),
             blocking: sidecar.blocking || self.blocking,
+            not_going: sidecar.not_going || self.not_going,
             pinned: sidecar.pinned || self.pinned,
             project_id: sidecar.project_id.clone().or_else(|| self.project_id.clone()),
         }
@@ -366,6 +380,7 @@ mod tests {
             origin_key: Some("Sport".into()),
             adopted_from: None,
             blocking: false,
+            not_going: false,
             pinned: true,
             project_id: Some("p-1".into()),
         };

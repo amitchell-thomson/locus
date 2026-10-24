@@ -87,6 +87,7 @@ pub fn title_of(i: &Instance) -> String {
         EventKind::TaskBlock => kairos_core::build::block_label(t, i.span.bounds(chrono_tz::UTC).1 <= now()),
         EventKind::Event => t.to_string(),
         EventKind::Proposal => format!("◌ {t}?"),
+        EventKind::Worked => format!("worked · {t}"),
     }
 }
 

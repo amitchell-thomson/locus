@@ -52,12 +52,21 @@ cargo run -p kairos-tui --example frame -- <config> <rfc3339-now> <w> <h> [keys]
 ```
 `KAIROS_NOW=<rfc3339>` fixes "now" for the CLI (tests, screenshots). `KAIROS_CONFIG` overrides the config path.
 
-## Deployment state (2026-10-13)
+## Deployment state (2026-10-24: built and deployed from the locus repository)
+
+Since 2026-10-24 kairos lives in the locus repository (`kairos/`, ADR-008) and reaches the server
+only through locus's `deploy/deploy.sh`: `deploy/server-sync.sh` runs `cargo install --locked` for
+kairosd and kairos when Rust sources moved, and manages the unit as `locus-kairosd.service`
+(`deploy/systemd/`). The old `kairosd.service` was retired then (backup kept beside it). On the Mac,
+`cargo install --locked --path kairos/crates/kairos-cli` from the locus checkout. The notes below
+predate the move; paths to `~/server-projects/kairos` are the archived repository.
+
+### Before the move (2026-10-13)
 
 - compute-node: repo at `~/server-projects/kairos`; `kairosd` + `kairos` in `~/.cargo/bin`; `systemctl --user` unit `kairosd` **running with live = true since 2026-10-11**, bound to `100.117.10.28:7420` (Tailscale only; the server's own CLI uses that IP because `compute-node` resolves to 127.0.1.1 there). vdirsyncer 0.21 in `~/.local/share/kairos/venv` (symlinked into `~/.local/bin`), read-write. Secrets in `~/.config/kairos/secrets/` (api-token, ntfy-topic, apple-id, icloud-app-password). The `test` (ZZ-kairos-test) source was removed from the live configs 2026-10-13 (backup `config.toml.bak-2026-10-13`); re-add it before ever setting `live = false`.
 - Mac: `kairos` via `cargo install`; the local copy is an rsync of the server's vdir (`sync.full_cmd`; vdirsyncer is no longer used on the Mac); launchd agent `com.kairos.sync` runs `kairos sync` every 60 s (log `~/Library/Logs/kairos-sync.log`). Keychain: kairos-api-token, kairos-icloud, kairos-apple-id. chezmoi, tmux and zsh snippets NOT applied (Alec's call); `deploy/chezmoi/…/config.toml.tmpl` renders to the Mac's live config.
 - Phone: ntfy app subscribed, iPhone reaches kairosd over Tailscale (Alec, 2026-10-13).
-- Update the server: `cd ~/server-projects/kairos && git pull && cargo install --locked --path crates/kairosd && cargo install --locked --path crates/kairos-cli && systemctl --user restart kairosd`.
+- Update the server: `deploy/deploy.sh` from the laptop's locus checkout (was: a pull and two `cargo install`s in `~/server-projects/kairos`).
 
 ## Phase status
 

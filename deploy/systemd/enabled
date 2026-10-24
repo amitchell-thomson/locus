@@ -11,3 +11,5 @@ locus-maintain.timer
 locus-watch.timer
 # Long-running: restarted on every deploy that moves the code.
 locus-remarkable-receiver.service
+# The calendar daemon (kairos, ADR-008): restarted only when its build ran, not on every deploy.
+locus-kairosd.service

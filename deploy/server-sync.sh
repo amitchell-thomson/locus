@@ -41,6 +41,30 @@ fi
 echo "== uv sync --all-extras"
 uv sync --all-extras --quiet
 
+# 1b. The Rust binaries (kairos, ADR-008). Built when Rust sources or the lockfile moved, or a
+#     binary is missing; `--locked` so the server runs exactly the lockfile the laptop tested.
+#     `cargo install` replaces the binary in ~/.cargo/bin atomically; the running daemon keeps
+#     its old inode until step 5 restarts it.
+kairos_built=0
+if grep -qE '^(kairos/|crates/|Cargo\.(toml|lock)$)' <<<"$changed_files" \
+   || [[ ! -x "$HOME/.cargo/bin/kairosd" || ! -x "$HOME/.cargo/bin/kairos" ]]; then
+  echo "== cargo install kairosd, kairos"
+  cargo install --quiet --locked --path kairos/crates/kairosd
+  cargo install --quiet --locked --path kairos/crates/kairos-cli
+  kairos_built=1
+fi
+
+# 1c. One-time (2026-10-24): kairosd's unit was `kairosd.service`, installed by hand from the old
+#     kairos repository. It becomes locus-kairosd.service (step 3); stop the old one first so the
+#     two never hold the port together. Remove this block once the server has run it.
+if [[ -e "$UNITDIR/kairosd.service" ]]; then
+  echo "== one-time: kairosd.service -> locus-kairosd.service"
+  systemctl --user disable --now kairosd.service || true
+  mv "$UNITDIR/kairosd.service" "$UNITDIR/kairosd.service.bak-2026-10-24"
+  systemctl --user daemon-reload
+  kairos_built=1
+fi
+
 # 2. Schema. Backup first, then migrate, only when a migration arrived; otherwise the schema
 #    would move whenever the next ingest or `locus mcp` happened to call migrate().
 if grep -q '^locus/db/migrations/versions/' <<<"$changed_files"; then
@@ -98,8 +122,15 @@ for unit in "${wanted[@]}"; do
   for c in "${changed_units[@]+"${changed_units[@]}"}"; do
     [[ "$c" == "$unit" ]] && unit_changed=1
   done
+  # kairosd is compiled, so a code move matters to it only when its build ran (step 1b).
+  moved=0
+  if [[ "$unit" == locus-kairosd.service ]]; then
+    ((kairos_built)) && moved=1
+  elif [[ "$old" != "$new" ]]; then
+    moved=1
+  fi
   if [[ "$unit" == *.timer && $unit_changed == 1 ]] \
-     || [[ "$unit" == *.service && ( $unit_changed == 1 || "$old" != "$new" ) ]]; then
+     || [[ "$unit" == *.service && ( $unit_changed == 1 || $moved == 1 ) ]]; then
     systemctl --user restart "$unit"
     restarted+=("$unit")
   fi
@@ -121,4 +152,9 @@ for unit in "${restarted[@]+"${restarted[@]}"}"; do
   echo
   systemctl --user status "$unit" --no-pager --lines=0 | head -4
 done
+if command -v kairos >/dev/null; then
+  echo
+  echo "== kairos doctor"
+  kairos doctor || status=1
+fi
 exit $status

@@ -2618,6 +2618,7 @@ fn projects_are_the_registry_repos() {
             project: "locus".into(),
             start: at("2026-10-12 08:00"),
             end: at("2026-10-12 09:30"),
+            activity: Vec::new(),
         }],
     })
     .unwrap();

@@ -1,0 +1,116 @@
+# kairos scheduler constraints — copy to ~/.config/kairos/constraints.toml on compute-node.
+# Times are local (Europe/London), HH:MM.
+
+slot_minutes = 10           # placement granularity
+horizon_days = 14           # look-ahead for tasks without a deadline
+min_lead_minutes = 15       # never schedule within the next 15 min
+squeeze_block_minutes = 40  # shortest block when squeezing into a gap (1 h gap − 10 min travel each side)
+
+# Events in these calendars don't count toward max_day_load_hours.
+day_load_excludes = ["Social", "Sport"]
+
+# No work for a while after these calendars' events (tired, showering).
+# Only the scheduler's own work is kept out; fixed events (lectures) stay put.
+[[recovery]]
+key = "Sport"
+minutes = 60
+
+# Kinds of task. Blocks aim for ideal_min..ideal_max; shorter (down to
+# min_block) only when the ideal doesn't fit; shorter still (down to
+# squeeze_block_minutes) only as a warned-about squeeze.
+[[task_types]]
+name = "sheet"              # problem sheets
+estimate_minutes = 300
+ideal_min_minutes = 120
+ideal_max_minutes = 180
+min_block_minutes = 60
+
+[[task_types]]
+name = "coursework"         # estimate required; revised at check-ins
+ideal_min_minutes = 120
+ideal_max_minutes = 180
+min_block_minutes = 60
+
+[[task_types]]
+name = "admin"              # admin and errands: one go
+estimate_minutes = 45
+ideal_min_minutes = 30
+ideal_max_minutes = 60
+min_block_minutes = 30
+splittable = false
+
+# Proposed project time: free gaps offered (greyed out in the TUI) to accept or drop.
+[projects]
+enabled = true
+title = "Project time"
+key = "Projects"      # accepted sessions go to this calendar
+min_minutes = 60
+max_minutes = 180
+days_ahead = 7
+max_per_day = 1       # days with an accepted session get no more proposals
+earliest = "09:00"    # proposed sessions start no earlier
+
+# Named windows tasks can prefer via `preferred_window`.
+[[windows]]
+name = "morning"
+start = "08:00"
+end = "12:00"
+
+[[windows]]
+name = "afternoon"
+start = "12:00"
+end = "17:00"
+
+[[windows]]
+name = "evening"
+start = "17:00"
+end = "22:00"
+
+# Oxford 2026–27 full terms, plus 0th week (verify against the University calendar).
+[[profiles]]
+name = "term"
+dates = [
+  { from = "2026-10-04", to = "2026-12-05" },
+  { from = "2027-01-10", to = "2027-03-13" },
+  { from = "2027-04-18", to = "2027-06-19" },
+]
+day_window = { start = "08:30", end = "22:00" }
+weekend_start = "10:00"   # Saturdays and Sundays start later
+sleep = { start = "23:30", end = "07:30" }
+meals = [
+  { name = "lunch", start = "12:45", end = "13:30" },
+  { name = "dinner", start = "18:45", end = "19:30" },
+]
+max_focus_hours_per_day = 6.0
+deep_work = [{ start = "09:00", end = "12:30" }]
+buffer_minutes = 10
+buffer_location_change_minutes = 30
+no_schedule = [
+  { days = ["sat"], start = "18:00", end = "24:00" },
+]
+deadline_lead_hours = 2   # aim to finish this early; work squeezed into the last 2 h is allowed but warned about
+max_continuous_minutes = 180  # comfort: back-to-back events + work at most 3 h…
+break_minutes = 30            # …without a break of at least 30 min
+max_day_load_hours = 10.0     # comfort: events + work per day (not day_load_excludes)
+
+# Fallback (no dates): everything outside term.
+[[profiles]]
+name = "vacation"
+day_window = { start = "09:30", end = "21:00" }
+weekend_start = "10:00"   # Saturdays and Sundays start later
+sleep = { start = "00:00", end = "08:30" }
+meals = [
+  { name = "lunch", start = "13:00", end = "14:00" },
+  { name = "dinner", start = "19:00", end = "20:00" },
+]
+max_focus_hours_per_day = 4.0
+deep_work = [{ start = "10:00", end = "13:00" }]
+buffer_minutes = 10
+buffer_location_change_minutes = 30
+no_schedule = [
+  { days = ["sat", "sun"], start = "00:00", end = "24:00" },
+]
+deadline_lead_hours = 2   # aim to finish this early; work squeezed into the last 2 h is allowed but warned about
+max_continuous_minutes = 180  # comfort: back-to-back events + work at most 3 h…
+break_minutes = 30            # …without a break of at least 30 min
+max_day_load_hours = 10.0     # comfort: events + work per day (not day_load_excludes)

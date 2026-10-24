@@ -1,0 +1,27 @@
+[package]
+name = "kairos-store"
+description = "vdir loading, cache index, SQLite (sidecar, tasks, changesets), ICS feeds"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+kairos-core.workspace = true
+chrono.workspace = true
+chrono-tz.workspace = true
+hex.workspace = true
+reqwest.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+filetime.workspace = true
+
+[lints]
+workspace = true

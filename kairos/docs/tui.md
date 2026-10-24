@@ -1,0 +1,84 @@
+# The kairos TUI
+
+`kairos` (or `kairos tui`). `?` shows the keys in the app; this page also explains what's drawn.
+
+## Views and moving around
+
+| Key | |
+|---|---|
+| `Tab` | week → day → month |
+| `g` | agenda |
+| `h` `l` / `H` `L` | day / week back, forward |
+| `t` | today |
+| `j` `k` | select the next / previous item |
+| `Enter` | details; expands duplicates ⧉ |
+| `w` | week: Mon–Sun ↔ Mon–Fri (wider columns) |
+| `p` `f` | show/hide Private (all your calendars) · Family |
+| `1`–`6` | show/hide one calendar (Personal, Engineering, Careers, Projects, Sport, Social) |
+| `/` `r` `q` | search · sync now · quit |
+
+## Changing things
+
+Your own edits here apply straight away (no approval); `u` undoes the last one, including the replan after it.
+
+| Key | |
+|---|---|
+| `a` | add: `e` event · `t` task · `p` project time (a form; `Tab` between fields) |
+| `e` · `K` · `m` | edit · change calendar · move. On a ⚑ deadline these act on the task's deadline |
+| `d` | remove: delete an event · skip a work block (kairos plans that time elsewhere) · on a task's ⚑, remove the task with its deadline and all its planned time (past, checked-in blocks stay) |
+| `s` | share an event to Family (asks first) |
+| `B` | Family event: whether you're attending (blocks the scheduler or not) |
+| `y` | accept proposed project time ◌ (asks what you'll work on) · approve a pending change |
+| `n` | start the selected task now: a block from now, the rest reflows |
+| `P` | run the scheduler |
+| `T` | tasks: `D` done · `W` log work · `+` more time · `o` reopen · `e` edit · `n` start |
+| `A` | changes waiting for approval (from Claude or scripts) |
+| `R` | projects (below) |
+
+## Check-ins
+
+A work block or project session that has ended waits for you to say how it went: no answer is decided for you. The status bar shows **N to check in · C** while anything waits. Blocks nobody answers count as done after a week (`notify.autodone_after_days`).
+
+| Key (on a past block) | |
+|---|---|
+| `y` | done: the block gets ✓ |
+| `c` | partly: asks how many minutes; the block is trimmed to that and the rest of the time is planned again |
+| `x` or `d` | missed: the block is removed and its time planned again |
+| `F` | done, and the whole task is finished |
+| `+` | took longer: a form for the time you actually spent, how much more you think it needs (0 = finished), and optionally a date to plan it from. The ✓ block grows to the time spent (into free time), and the rest is planned again |
+| `C` | every block waiting for a check-in, any day |
+| `W` | log work that wasn't in a block (a ✓ block ending now) |
+
+The same answers work from the phone (evening push → check-in page, including "took longer"), `kairos checkin` (`l` = took longer), or by telling Claude (MCP `checkin` with `outcome: "longer"` / `log_work`).
+
+## Projects (`R`)
+
+Your projects, grouped **Active** (working on now) · **Next** (should be working on) · **Paused** · **Done**, each with its note and the time spent: this week, last 30 days, when you last worked on it, and the next session planned.
+
+| Key | |
+|---|---|
+| `n` | plan time for it yourself (when, how long) — an event in Projects, counted as its session |
+| `a` | add a project (name, status, calendar, note) — the calendar is where its sessions go, e.g. Engineering for the 3rd-year project (default Projects) |
+| `e` | edit it |
+| `s` | next status: active → next → paused → done → active |
+| `d` | delete it (its sessions stay on the calendar) |
+
+A project's time is what you **checked in**, never what was planned. Its sessions (accepted proposed time, time you planned with `n`, or events Claude attributed to it) wait for a check-in like work blocks, with the same keys: `y` done · `c` partly · `+` took longer · `x` missed (the session is removed) · `F` the project is finished. Sessions not checked in yet show as "to check in" and don't count until you answer; after a week they count as done.
+
+Tasks can belong to a project (the Project field in a task's form): they're listed under it here, and their checked-in block time counts as the project's time.
+
+Existing events can count for a project too (e.g. "Quantum Research" as QUAST work): ask Claude to attribute them (`attribute_to_project`; it can suggest events titled with the project's name). Renaming a project (or changing its calendar) carries through to its sessions still to come that carry its name, in one undoable change.
+
+**Freed time:** deleting, shortening or moving an event away (here or on the phone) re-plans work from 2 h ahead, so blocks move into the gap; blocks you placed (pinned) stay.
+
+**Proposed project time** (◌, greyed) suggests the active project you've spent least time on lately. `y` opens a picker with that one first, then your other active and next projects, `+ new project…`, or just "Project time". Choosing a *next* project makes it active.
+
+## Reading a work block
+
+- **Left edge:** `┆` kairos may move it · `╏` you placed it (pinned) · `▌` ordinary events and anything in the past.
+- **Box (tasks):** 󰄱 to do · 󰡖 over, waiting for a check-in · 󰄵 done. (Stored titles use ☐ / ✓ so the phone shows them too.)
+- **Diamond (project sessions):** ◇ planned · ◈ over, waiting for a check-in · ◆ done — the same on the phone. Boxes are work to finish; diamonds are time put into a project.
+- Titles are italic. A block starting off the grid (e.g. 10:15) shows a dim `:15`; a title cut short beside a tag ends in `…`.
+- **Bottom edge**, on the selected block: for a future block `task: X/Y done by then · Z left after`; for a past or current block `task: X/Y done · Z left`. Key hints sit on the right.
+- **Selection:** the selected item is filled in its own colour; other blocks of the same task get a lighter tint; pending approvals stay blue.
+- ◌ marks proposed project time, titled with the suggested project (only in kairos until you accept it with `y`, or drop it with `d`).

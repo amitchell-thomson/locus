@@ -1,0 +1,123 @@
+# kairos config — managed by chezmoi (source: kairos/deploy/chezmoi).
+# Secrets never live here: *_cmd fields print them at runtime.
+
+timezone = "Europe/London"
+# Live since 2026-10-11. With live = false kairosd writes only to
+# `test_calendar` — re-add a source for it first (see config/config.example.toml).
+live = true
+test_calendar = "ZZ-kairos-test"
+
+[paths]
+vdir = "~/.local/share/kairos/vdir"
+data = "~/.local/share/kairos"
+cache = "~/.cache/kairos"
+
+[daemon]
+url = "http://compute-node:7420"
+{{- if eq .chezmoi.os "darwin" }}
+token_cmd = "security find-generic-password -w -s kairos-api-token"
+{{- else }}
+token_cmd = "cat ~/.config/kairos/secrets/api-token"
+# kairosd listens on the Tailscale interface only.
+bind = "100.117.10.28:7420"
+{{- end }}
+
+[sync]
+{{- if eq .chezmoi.os "darwin" }}
+# The Mac never writes to iCloud. It copies the server's calendar files (fresh
+# the moment kairosd applies a change) over Tailscale.
+collection_cmd = ""
+full_cmd = "rsync -a --delete compute-node:.local/share/kairos/vdir/ ~/.local/share/kairos/vdir/"
+{{- else }}
+# Push one collection after each write; full two-way sync every `every_minutes`.
+collection_cmd = "vdirsyncer sync {collection}"
+full_cmd = "vdirsyncer sync && vdirsyncer metasync"
+every_minutes = 2
+{{- end }}
+pair = "icloud"
+stale_after_minutes = 15
+
+[notify]
+server = "https://ntfy.sh"
+topic_cmd = "cat ~/.config/kairos/secrets/ntfy-topic"
+public_url = "http://compute-node:7420"
+morning_summary = "07:30"
+evening_checkin = "21:30"
+autodone_at = "09:00"
+
+[deadlines]
+alarms_minutes_before = [1440, 120]
+
+[overlays]
+family_colour = "yellow"
+background_colour = "overlay1"
+imported_colour = "overlay0"
+
+[tui]
+# Section dividers in the week/day grid: morning | afternoon | evening | night.
+section_hours = [12, 18, 22]
+# Events starting within this many minutes get an "in 25m" marker.
+soon_minutes = 60
+# Oxford terms: `start` = Sunday of 1st week (shown as "1st week MT" in the title bar).
+terms = [
+  { name = "MT", start = "2026-10-11" },
+  { name = "HT", start = "2027-01-17" },
+  { name = "TT", start = "2027-04-25" },
+]
+
+[[keys]]
+name = "Personal"
+index = 1
+colour = "lavender"
+calendar = "personal"
+
+[[keys]]
+name = "Engineering"
+index = 2
+colour = "blue"
+calendar = "engineering"
+
+[[keys]]
+name = "Careers"
+index = 3
+colour = "peach"
+calendar = "careers"
+
+[[keys]]
+name = "Projects"
+index = 4
+colour = "maroon"
+calendar = "projects"
+
+[[keys]]
+name = "Sport"
+index = 5
+colour = "green"
+calendar = "sport"
+
+[[keys]]
+name = "Social"
+index = 6
+colour = "pink"
+calendar = "social"
+
+{{- range $id, $name := dict "personal" "Personal" "engineering" "Engineering" "careers" "Careers" "projects" "Projects" "sport" "Sport" "social" "Social" }}
+
+[[sources]]
+id = "{{ $id }}"
+kind = "icloud"
+calendar = "{{ $name }}"
+overlay = "personal"
+key = "{{ $name }}"
+writable = true
+{{- end }}
+
+[[sources]]
+id = "family"
+kind = "icloud"
+calendar = "Family"
+overlay = "family"
+writable = true
+
+# Read-only .ics feeds (kind = "ics_readonly", overlay = "background" or
+# "imported") can be added here; none are in use.

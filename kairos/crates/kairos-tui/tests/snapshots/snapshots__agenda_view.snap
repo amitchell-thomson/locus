@@ -1,0 +1,44 @@
+---
+source: crates/kairos-tui/tests/snapshots.rs
+expression: "render_to_string(&a, 100, 40)"
+---
+╭───────────────────────────────────── Agenda · 15 Oct–28 Oct ─────────────────────────────────────╮
+│Thu 15 Oct · today                                                                                │
+│ 19:05–20:00 ● OQTS speaker event ⧉  · Family                                                     │
+│                                                                                                  │
+│Fri 16 Oct · tomorrow                                                                             │
+│ 10:00–11:00 ● A1 Mathematics Lecture  · LR1 · Personal                                           │
+│ 10:00–11:00 ● A2 Electronics Lecture  · LR3 · OQTS                                               │
+│ 18:00–19:00 ● OQTS committee meeting! ⧉  · Personal                                              │
+│                                                                                                  │
+│Sun 18 Oct                                                                                        │
+│ 19:00–20:00 ● Sunday Squash  · Iffley Road · Personal                                            │
+│                                                                                                  │
+│Mon 19 Oct                                                                                        │
+│ 19:00–20:00 ● Squash  · Personal                                                                 │
+│                                                                                                  │
+│Tue 20 Oct                                                                                        │
+│ 10:00–11:00 ● B4 Lecture  · Personal                                                             │
+│                                                                                                  │
+│Wed 21 Oct                                                                                        │
+│ 09:00–10:30 ┆ 󰄱 B4 sheet  · Personal                                                             │
+│ 19:00–20:00 ● Squash  · OQTS                                                                     │
+│                                                                                                  │
+│Thu 22 Oct                                                                                        │
+│ 14:00–15:00 ● B4 Lecture ⧉  · OQTS                                                               │
+│                                                                                                  │
+│Fri 23 Oct                                                                                        │
+│ all day     ● Collections  · Personal                                                            │
+│ all day     ● Lake District trip  · Personal                                                     │
+│ all day     ● ⚑ Lab report  · Personal                                                           │
+│ 17:00       ● ⚑ B4 sheet  · Personal                                                             │
+│                                                                                                  │
+│Sat 24 Oct                                                                                        │
+│ all day     ● Lake District trip  · Personal                                                     │
+│                                                                                                  │
+│Sun 25 Oct                                                                                        │
+│ all day     ● Lake District trip  · Personal                                                     │
+│ 19:00–20:00 ● Sunday Squash  · Iffley Road · Personal                                            │
+│                                                                                                  │
+╰───────────────────────────────────────────────────────────────────────────────────── B attending ╯
+ AGENDA  p Private ▸ 1 Personal  6 OQTS  │ f Family                                        ? help

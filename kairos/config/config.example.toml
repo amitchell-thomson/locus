@@ -1,0 +1,170 @@
+# kairos config — copy to ~/.config/kairos/config.toml (chezmoi template in deploy/).
+# Secrets (secret iCal URLs, tokens) are never written here: use *_cmd fields
+# that print them, e.g. from the macOS Keychain or systemd credentials.
+
+timezone = "Europe/London"
+# Until this is true, kairosd writes ONLY to `test_calendar`.
+live = false
+test_calendar = "ZZ-kairos-test"
+
+[paths]
+vdir = "~/.local/share/kairos/vdir"
+data = "~/.local/share/kairos"
+cache = "~/.cache/kairos"
+
+[daemon]
+url = "http://compute-node:7420"
+token_cmd = "security find-generic-password -w -s kairos-api-token"
+
+[sync]
+collection_cmd = "vdirsyncer sync {collection}"
+full_cmd = "vdirsyncer sync"
+pair = "icloud"
+stale_after_minutes = 15
+
+[notify]
+server = "https://ntfy.sh"
+topic_cmd = "cat ~/.config/kairos/secrets/ntfy-topic"
+public_url = "http://compute-node:7420"
+morning_summary = "07:30"
+evening_checkin = "21:30"
+autodone_at = "09:00"        # when the daily tidy-up runs…
+autodone_after_days = 7       # …counting blocks nobody checked in on as done after a week
+
+[deadlines]
+alarms_minutes_before = [1440, 120]
+
+[overlays]
+family_colour = "yellow"
+background_colour = "overlay1"
+imported_colour = "overlay0"
+show_background = false
+show_imported = false
+
+[tui]
+# Section dividers in the week/day grid: morning | afternoon | evening | night.
+section_hours = [12, 18, 22]
+# Events starting within this many minutes get an "in 25m" marker.
+soon_minutes = 60
+# Oxford terms: `start` = Sunday of 1st week (shown as "1st week MT" in the title bar).
+terms = [
+  { name = "MT", start = "2026-10-11" },
+  { name = "HT", start = "2027-01-17" },
+  { name = "TT", start = "2027-04-25" },
+]
+
+# Keys: one iCloud calendar each. `index` is the TUI toggle key (1–7).
+[[keys]]
+name = "Personal"
+index = 1
+colour = "lavender"
+calendar = "personal"
+
+[[keys]]
+name = "Engineering"
+index = 2
+colour = "blue"
+calendar = "engineering"
+
+[[keys]]
+name = "Careers"
+index = 3
+colour = "peach"
+calendar = "careers"
+
+[[keys]]
+name = "Projects"
+index = 4
+colour = "maroon"
+calendar = "projects"
+
+[[keys]]
+name = "Sport"
+index = 5
+colour = "green"
+calendar = "sport"
+
+[[keys]]
+name = "Social"
+index = 6
+colour = "pink"
+calendar = "social"
+
+[[sources]]
+id = "personal"
+kind = "icloud"
+calendar = "Personal"
+overlay = "personal"
+key = "Personal"
+writable = true
+
+[[sources]]
+id = "projects"
+kind = "icloud"
+calendar = "Projects"
+overlay = "personal"
+key = "Projects"
+writable = true
+
+[[sources]]
+id = "engineering"
+kind = "icloud"
+calendar = "Engineering"
+overlay = "personal"
+key = "Engineering"
+writable = true
+
+[[sources]]
+id = "careers"
+kind = "icloud"
+calendar = "Careers"
+overlay = "personal"
+key = "Careers"
+writable = true
+
+[[sources]]
+id = "sport"
+kind = "icloud"
+calendar = "Sport"
+overlay = "personal"
+key = "Sport"
+writable = true
+
+[[sources]]
+id = "social"
+kind = "icloud"
+calendar = "Social"
+overlay = "personal"
+key = "Social"
+writable = true
+
+[[sources]]
+id = "family"
+kind = "icloud"
+calendar = "Family"
+overlay = "family"
+# Writable only through share_to_family; the risk policy forbids anything else.
+writable = true
+
+[[sources]]
+id = "test"
+kind = "icloud"
+calendar = "ZZ-kairos-test"
+overlay = "personal"
+key = "Personal"
+writable = true
+
+# --- read-only .ics feeds (examples; Alec's live config uses none) ---
+[[sources]]
+id = "uk-holidays"
+name = "Holidays"
+kind = "ics_readonly"
+url = "https://calendar.google.com/calendar/ical/en.uk%23holiday%40group.v.calendar.google.com/public/basic.ics"
+overlay = "background"
+
+[[sources]]
+id = "gmail"
+name = "Gmail"
+kind = "ics_readonly"
+url_cmd = "security find-generic-password -w -s kairos-ics-gmail"
+overlay = "imported"

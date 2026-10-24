@@ -1,0 +1,50 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "xtask"]
+default-members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+publish = false
+
+[workspace.dependencies]
+kairos-core = { path = "crates/kairos-core" }
+kairos-store = { path = "crates/kairos-store" }
+kairos-tui = { path = "crates/kairos-tui" }
+anyhow = "1"
+chrono = { version = "0.4.45", features = ["serde"] }
+chrono-tz = { version = "0.10", features = ["serde"] }
+clap = { version = "4.6", features = ["derive", "env"] }
+rrule = "0.14"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+strsim = "0.11"
+thiserror = "2"
+toml = "1"
+unicode-segmentation = "1"
+unicode-width = "0.2"
+rusqlite = { version = "0.40", features = ["bundled"] }
+sha2 = "0.11"
+hmac = "0.13"
+hex = "0.4"
+uuid = { version = "1", features = ["v4", "serde"] }
+tempfile = "3"
+insta = "1.49"
+proptest = "1.12"
+tracing = "0.1"
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "blocking", "json", "gzip", "http2"] }
+filetime = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+dbg_macro = "deny"
+
+[profile.release]
+debug = "line-tables-only"

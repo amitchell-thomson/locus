@@ -1630,6 +1630,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "insta",
+ "locus-contract",
  "proptest",
  "rrule",
  "serde",
@@ -1650,6 +1651,7 @@ dependencies = [
  "filetime",
  "hex",
  "kairos-core",
+ "locus-contract",
  "reqwest",
  "rusqlite",
  "serde",
@@ -1689,6 +1691,7 @@ dependencies = [
  "hmac",
  "kairos-core",
  "kairos-store",
+ "locus-contract",
  "reqwest",
  "rmcp",
  "schemars",
@@ -1800,6 +1803,8 @@ dependencies = [
  "chrono",
  "serde",
  "serde_json",
+ "thiserror 2.0.21",
+ "toml",
 ]
 
 [[package]]

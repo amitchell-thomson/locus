@@ -13,6 +13,7 @@ pub mod db;
 pub mod feeds;
 pub mod load;
 pub mod sync;
+pub mod taxonomy;
 pub mod vdir;
 
 use std::path::{Path, PathBuf};

@@ -15,6 +15,7 @@ path = "src/main.rs"
 
 [dependencies]
 kairos-core.workspace = true
+locus-contract.workspace = true
 kairos-store.workspace = true
 anyhow.workspace = true
 axum = "0.8"

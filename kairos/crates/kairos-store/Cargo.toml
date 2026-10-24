@@ -8,6 +8,7 @@ publish.workspace = true
 
 [dependencies]
 kairos-core.workspace = true
+locus-contract.workspace = true
 chrono.workspace = true
 chrono-tz.workspace = true
 hex.workspace = true

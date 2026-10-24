@@ -1,8 +1,0 @@
-{
-  "areas": [
-    { "id": "Studies", "colour": "blue" },
-    { "id": "Projects", "colour": "maroon" },
-    { "id": "Careers", "colour": "peach" },
-    { "id": "Personal", "colour": "lavender", "streams": ["Family", "Sport", "Social", "Errands"], "filter_by_stream": true }
-  ]
-}

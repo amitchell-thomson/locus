@@ -1,0 +1,55 @@
+# The taxonomy (ADR-006): every item carries an area (which part of your life it belongs to) and
+# a kind (what shape of thing it is), independently. One file for every app: locus reads it, and
+# kairos's calendars are these areas (ADR-008), Personal as its streams.
+#
+# `colour` is the Mocha colour kairos and locus draw the area in. Personal is filtered by stream;
+# the others whole.
+
+[[areas]]
+id = "Studies"
+colour = "blue"
+
+[[areas]]
+id = "Projects"
+colour = "maroon"
+
+[[areas]]
+id = "Careers"
+colour = "peach"
+
+[[areas]]
+id = "Personal"
+colour = "lavender"
+streams = ["Family", "Sport", "Social", "Errands"]
+filter_by_stream = true
+
+# Kinds of registry entry (registry.toml). Everything else has a kind too (task, event, mail
+# thread, source, ...; ADR-006), but only these three are registered.
+[[kinds]]
+id = "repo"
+about = "a repository you work in: sessions, chats, change records, a decision log, a dossier"
+
+[[kinds]]
+id = "course"
+about = "a course you take: notes, lectures, deadlines, sheets, topic tracks"
+
+[[kinds]]
+id = "application"
+about = "a pursuit with stages, owned by a company: dates, mail, a prep plan"
+
+# A task has one type; a due date is its attribute, never a kind of its own (ADR-006).
+[[task_types]]
+id = "sheet"
+about = "a weekly problem or tutorial sheet, planned as about five hours in two or three blocks"
+
+[[task_types]]
+id = "coursework"
+about = "assessed work needing its own estimate: a lab report, a 3YP milestone"
+
+[[task_types]]
+id = "admin"
+about = "a one-sitting errand, 30 to 60 minutes"
+
+[[task_types]]
+id = "chore"
+about = "life admin for a gap: laundry, a parcel; short, placed into real gaps"

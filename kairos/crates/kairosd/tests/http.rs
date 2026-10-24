@@ -466,3 +466,32 @@ async fn index_for_the_tui_with_etag() {
     .unwrap();
     assert_eq!(titles, vec!["Squash".to_string()]);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn serves_the_locus_taxonomy() {
+    let env = Env::new(true);
+    let (base, _h, _) = start(&env).await;
+    let v: Value = client()
+        .get(format!("{base}/api/taxonomy"))
+        .bearer_auth(TOKEN)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let areas: Vec<&str> = v["taxonomy"]["areas"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(areas, ["Studies", "Projects", "Careers", "Personal"]);
+    assert!(
+        v["registry"]["projects"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["id"] == "tanker-flow")
+    );
+}

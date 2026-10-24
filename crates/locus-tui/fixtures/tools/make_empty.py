@@ -1,4 +1,5 @@
-"""Write the `empty` set from the default one: the same registry and taxonomy, every section empty.
+"""Write the `empty` set from the default one: every section empty (the registry and taxonomy are
+the shared ones in taxonomy/ at the repository root, read by every set).
 
     python3 make_empty.py
 
@@ -8,6 +9,7 @@ and changes files, emptied, so an empty list is drawn rather than "this project 
 
 import json
 import shutil
+import tomllib
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent.parent
@@ -26,8 +28,6 @@ def main() -> None:
         shutil.rmtree(DST)
     write("manifest.json", {"name": "empty", "now": NOW,
                             "description": "Every section empty: the same registry as default, with nothing in it."})
-    for f in ("taxonomy.json", "registry.json"):
-        write(f, json.loads((SRC / f).read_text()))
     write("home.json", {"mail": {"need_reply": 0, "deadlines_proposed": 0}})
     write("work.json", {"week": [], "blocks_kept": 0, "blocks_planned": 0, "streak_days": 0,
                         "chart": {"from": "2026-08-30", "series": []}})
@@ -43,7 +43,7 @@ def main() -> None:
     write("review.json", {"from": "2026-10-19", "to": "2026-10-25", "steps": ["todo"] * 5,
                           "week": {"blocks_kept": 0, "blocks_planned": 0, "budget_pct": 0.0},
                           "explore": {"left": 0}, "locus": {}})
-    registry = json.loads((SRC / "registry.json").read_text())
+    registry = tomllib.loads((HERE.parent.parent.parent / "taxonomy" / "registry.toml").read_text())
     for p in registry["projects"]:
         if not p["active"]:
             continue

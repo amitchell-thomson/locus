@@ -1,0 +1,214 @@
+# The registry: one entry for each thing you work on (ADR-006). The one copy, read by locus
+# (the fixtures and, later, the HTTP service) and by kairos (kairosd serves it at /api/taxonomy;
+# the Mac keeps a cached copy for offline). Areas and streams must be the ones in areas.toml.
+#
+# Names are stable: Slice 0's tablet capture matches folder names to `name` (courses) and to
+# `company` (applications), so a rename is a decision, not a tidy-up. `active = false` is
+# registered but not shown on Home.
+
+# ── repo ────────────────────────────────────────────────────────────────────────────────────────
+# Repositories you work in: the Project window shows and follows these.
+
+[[projects]]
+id = "quast"
+name = "quast"
+area = "Projects"
+kind = "repo"
+active = true
+depth = "field"
+sessions = ["quast"]
+
+[[projects]]
+id = "nabla"
+name = "nabla"
+area = "Projects"
+kind = "repo"
+active = true
+depth = "design"
+sessions = ["nabla"]
+
+[[projects]]
+id = "locus"
+name = "locus"
+area = "Projects"
+kind = "repo"
+active = true
+depth = "design"
+sessions = ["locus-dev", "kairos", "keryx"]
+components = [{ name = "locus", repo = "locus" }, { name = "kairos (calendar)", repo = "kairos" }, { name = "keryx (mail)", repo = "keryx" }]
+
+[[projects]]
+id = "oqts"
+name = "OQTS"
+area = "Projects"
+kind = "repo"
+active = true
+depth = "outcome"
+sessions = ["oqts"]
+components = [{ name = "oxdaq", repo = "oqts/oxdaq-core" }, { name = "platform", repo = "oqts/oqts-platform" }, { name = "website", repo = "oqts/oqts-site" }]
+
+[[projects]]
+id = "cv"
+name = "CV"
+area = "Careers"
+kind = "repo"
+active = true
+sessions = ["cv"]
+
+[[projects]]
+id = "3yp"
+name = "3YP"
+area = "Studies"
+kind = "repo"
+course = "b3"
+active = true
+sessions = ["B3-Project"]
+
+[[projects]]
+id = "tanker-flow"
+name = "Tanker-flow"
+area = "Projects"
+kind = "repo"
+active = false
+
+# ── course ──────────────────────────────────────────────────────────────────────────────────────
+# Courses. Names exactly as on Canvas: the tablet capture matches its folders on them.
+
+[[projects]]
+id = "b1"
+name = "B1 Engineering Computation"
+area = "Studies"
+kind = "course"
+active = true
+
+[[projects]]
+id = "b2"
+name = "B2 Engineering in Society"
+area = "Studies"
+kind = "course"
+active = true
+
+[[projects]]
+id = "b3"
+name = "B3 Group Design Project"
+area = "Studies"
+kind = "course"
+active = true
+
+[[projects]]
+id = "b14"
+name = "B14 Information Engineering Systems"
+area = "Studies"
+kind = "course"
+active = true
+
+[[projects]]
+id = "b15"
+name = "B15 Control Systems"
+area = "Studies"
+kind = "course"
+active = true
+
+[[projects]]
+id = "b16"
+name = "B16 Software Engineering Systems"
+area = "Studies"
+kind = "course"
+active = true
+
+[[projects]]
+id = "b18"
+name = "B18 Biomedical Modelling and Monitoring"
+area = "Studies"
+kind = "course"
+active = true
+
+[[projects]]
+id = "b20"
+name = "B20 Machine Learning"
+area = "Studies"
+kind = "course"
+active = true
+
+# ── application ─────────────────────────────────────────────────────────────────────────────────
+# Applications, each with its company: the tablet's Careers folders are per company.
+
+[[projects]]
+id = "millennium"
+name = "Millennium QD Internship 2027"
+area = "Careers"
+kind = "application"
+company = "Millennium"
+active = true
+
+[[projects]]
+id = "gresearch"
+name = "G-Research Spring 2027"
+area = "Careers"
+kind = "application"
+company = "G-Research"
+active = true
+
+[[projects]]
+id = "gresearch-ml"
+name = "G-Research AI/ML Challenges"
+area = "Careers"
+kind = "application"
+company = "G-Research"
+active = true
+
+[[projects]]
+id = "bh-2027"
+name = "Brevan Howard Internship 2027"
+area = "Careers"
+kind = "application"
+company = "Brevan Howard"
+active = true
+
+[[projects]]
+id = "jump"
+name = "Jump Trading Internship 2027"
+area = "Careers"
+kind = "application"
+company = "Jump Trading"
+active = true
+
+[[projects]]
+id = "citadel"
+name = "Citadel FI&M Trading 2027"
+area = "Careers"
+kind = "application"
+company = "Citadel"
+active = true
+
+[[projects]]
+id = "citadel-cbc"
+name = "Citadel FI&M Central Bank Challenge 2026"
+area = "Careers"
+kind = "application"
+company = "Citadel"
+active = true
+
+[[projects]]
+id = "bh-2026"
+name = "Brevan Howard Internship 2026"
+area = "Careers"
+kind = "application"
+company = "Brevan Howard"
+active = true
+
+[[projects]]
+id = "meet-millennium"
+name = "Meet Millennium 2026"
+area = "Careers"
+kind = "application"
+company = "Millennium"
+active = true
+
+[[projects]]
+id = "jane-street"
+name = "Jane Street"
+area = "Careers"
+kind = "application"
+company = "Jane Street"
+active = false

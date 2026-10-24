@@ -16,6 +16,7 @@ pub mod learning;
 pub mod project;
 pub mod review;
 pub mod system;
+pub mod taxonomy;
 
 pub use common::*;
 pub use explore::*;

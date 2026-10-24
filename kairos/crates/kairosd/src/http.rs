@@ -212,7 +212,8 @@ pub fn router(st: AppState, mcp: Option<Router<AppState>>) -> Router {
             get(index).layer(tower_http::compression::CompressionLayer::new()),
         )
         .route("/api/checkin", get(checkin_items).post(checkin))
-        .route("/api/status", get(status));
+        .route("/api/status", get(status))
+        .route("/api/taxonomy", get(taxonomy));
     let mut protected = api;
     if let Some(m) = mcp {
         protected = protected.merge(m);
@@ -655,6 +656,22 @@ async fn checkin_items(State(st): State<AppState>) -> HResult<Vec<api::CheckinIt
 
 async fn checkin(State(st): State<AppState>, Json(req): Json<api::CheckinReq>) -> HResult<api::PlanResp> {
     Ok(Json(with_engine(&st, move |e| e.checkin(&req)).await?))
+}
+
+/// The locus taxonomy and registry (`taxonomy/` in the checkout kairosd was built from; ADR-008),
+/// read afresh each time so a deploy that changes them needs no restart. The Mac reads them here.
+async fn taxonomy() -> HResult<locus_contract::taxonomy::Shared> {
+    locus_contract::taxonomy::load(&locus_contract::taxonomy::root())
+        .map(Json)
+        .map_err(|e| {
+            HttpError(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ApiError {
+                    error: e.to_string(),
+                    reasons: vec![],
+                },
+            )
+        })
 }
 
 async fn status(State(st): State<AppState>) -> HResult<serde_json::Value> {

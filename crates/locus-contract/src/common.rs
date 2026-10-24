@@ -10,6 +10,38 @@ pub type Time = DateTime<FixedOffset>;
 #[serde(deny_unknown_fields)]
 pub struct Taxonomy {
     pub areas: Vec<Area>,
+    /// The kinds a registry entry can have (ADR-006), with what each gets.
+    #[serde(default)]
+    pub kinds: Vec<Named>,
+    /// A task's one type (sheet, coursework, admin, chore); a due date is its attribute.
+    #[serde(default)]
+    pub task_types: Vec<Named>,
+}
+
+/// An id with a line saying what it is (a kind, a task type).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Named {
+    pub id: String,
+    pub about: String,
+}
+
+impl Taxonomy {
+    pub fn area(&self, id: &str) -> Option<&Area> {
+        self.areas.iter().find(|a| a.id == id)
+    }
+
+    /// Whether `name` is an area or a stream of one (`Studies`, `Errands`).
+    pub fn resolves(&self, name: &str) -> bool {
+        self.area_of(name).is_some()
+    }
+
+    /// The area a name belongs to: an area is its own, a stream its parent's (`Sport` -> Personal).
+    pub fn area_of(&self, name: &str) -> Option<&Area> {
+        self.areas
+            .iter()
+            .find(|a| a.id == name || a.streams.iter().any(|s| s == name))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

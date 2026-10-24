@@ -3,7 +3,7 @@
 //! `crates/locus-tui/fixtures/<name>/`:
 //!
 //! ```text
-//! manifest.json taxonomy.json registry.json
+//! manifest.json
 //! home.json work.json system.json usage.json explore.json approve.json autolog.json
 //! search.json learning.json review.json
 //! ink/<name>.json                      one per mark waiting in the approve list
@@ -11,6 +11,9 @@
 //! projects/<id>/view.json              every active project
 //! projects/<id>/{decisions,answered,changes}.json   where the project has them
 //! ```
+//!
+//! The taxonomy and the registry are not part of a set: every set reads the one copy in
+//! `taxonomy/` at the repository root (ADR-008, spec K3), the same files kairos reads.
 //!
 //! Loading is strict: every contract refuses unknown fields, and `check` then cross-references
 //! the files (a project id, a track, an ink fixture named in one file must exist in another), so
@@ -67,7 +70,8 @@ pub fn resolve(set: &str) -> PathBuf {
 
 impl Fixtures {
     pub fn load(dir: &Path) -> Result<Fixtures> {
-        let registry: Registry = read(dir, "registry.json")?;
+        let shared = locus_contract::taxonomy::load(&locus_contract::taxonomy::root())?;
+        let registry = shared.registry;
         let mut projects = BTreeMap::new();
         for p in registry.projects.iter().filter(|p| p.active) {
             let base = format!("projects/{}", p.id);
@@ -84,7 +88,7 @@ impl Fixtures {
         Ok(Fixtures {
             dir: dir.to_path_buf(),
             manifest: read(dir, "manifest.json")?,
-            taxonomy: read(dir, "taxonomy.json")?,
+            taxonomy: shared.taxonomy,
             registry,
             home: read(dir, "home.json")?,
             work: read(dir, "work.json")?,
@@ -118,8 +122,8 @@ impl Fixtures {
     /// reported as unread rather than passing as OK.
     pub fn read_files(&self) -> BTreeSet<String> {
         let mut out: BTreeSet<String> = [
-            "manifest", "taxonomy", "registry", "home", "work", "system", "usage", "explore", "approve", "autolog",
-            "search", "learning", "review",
+            "manifest", "home", "work", "system", "usage", "explore", "approve", "autolog", "search", "learning",
+            "review",
         ]
         .iter()
         .map(|f| format!("{f}.json"))
@@ -149,25 +153,25 @@ impl Fixtures {
         let tracks: BTreeSet<&str> = self.learning.tracks.iter().map(|t| t.id.as_str()).collect();
         let project = |what: &str, id: &str, bad: &mut Vec<String>| {
             if !ids.contains(id) {
-                bad.push(format!("{what}: no project `{id}` in registry.json"));
+                bad.push(format!("{what}: no project `{id}` in taxonomy/registry.toml"));
             }
         };
 
         if ids.len() != self.registry.projects.len() {
-            bad.push("registry.json: a project id appears twice".into());
+            bad.push("registry.toml: a project id appears twice".into());
         }
         let mut sessions = BTreeSet::new();
         for p in &self.registry.projects {
             match self.taxonomy.areas.iter().find(|a| a.id == p.area) {
                 None => bad.push(format!(
-                    "registry.json: {} has area `{}`, not in taxonomy.json",
+                    "registry.toml: {} has area `{}`, not in taxonomy/areas.toml",
                     p.id, p.area
                 )),
                 Some(a) => {
                     if let Some(s) = &p.stream
                         && !a.streams.contains(s)
                     {
-                        bad.push(format!("registry.json: {} has stream `{s}`, not under {}", p.id, a.id));
+                        bad.push(format!("registry.toml: {} has stream `{s}`, not under {}", p.id, a.id));
                     }
                 }
             }
@@ -175,13 +179,13 @@ impl Fixtures {
                 && self.registry.get(c).is_none_or(|x| x.kind != ProjectKind::Course)
             {
                 bad.push(format!(
-                    "registry.json: {} is linked to `{c}`, which is not a course",
+                    "registry.toml: {} is linked to `{c}`, which is not a course",
                     p.id
                 ));
             }
             for s in &p.sessions {
                 if !sessions.insert(s.as_str()) {
-                    bad.push(format!("registry.json: session `{s}` belongs to two projects"));
+                    bad.push(format!("registry.toml: session `{s}` belongs to two projects"));
                 }
             }
         }
@@ -192,7 +196,7 @@ impl Fixtures {
         if let Some(n) = &self.home.next
             && !self.taxonomy.areas.iter().any(|a| a.id == n.area)
         {
-            bad.push(format!("home.json next: area `{}` not in taxonomy.json", n.area));
+            bad.push(format!("home.json next: area `{}` not in taxonomy/areas.toml", n.area));
         }
         for d in &self.work.week {
             for s in &d.spans {
@@ -303,7 +307,7 @@ impl Fixtures {
                 Some(r) if r.kind == ProjectKind::Application => {}
                 Some(_) => bad.push(format!("prep/{name}.json: {} is not an application", p.opportunity)),
                 None => bad.push(format!(
-                    "prep/{name}.json: no project `{}` in registry.json",
+                    "prep/{name}.json: no project `{}` in taxonomy/registry.toml",
                     p.opportunity
                 )),
             }
@@ -319,7 +323,7 @@ impl Fixtures {
         // and capture matches a folder to it (Slice 0, 0.12).
         for p in &self.registry.projects {
             if p.kind == ProjectKind::Application && p.company.is_none() {
-                bad.push(format!("registry.json: application `{}` has no company", p.id));
+                bad.push(format!("registry.toml: application `{}` has no company", p.id));
             }
         }
         for (id, pf) in &self.projects {

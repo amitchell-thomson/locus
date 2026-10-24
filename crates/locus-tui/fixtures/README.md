@@ -48,4 +48,5 @@ session (keryx); a calendar item across the clocks going back (Futsal, Sunday 25
 
 ## empty
 
-The same registry with every section empty (`tools/make_empty.py`, regenerated from default).
+Every section empty (`tools/make_empty.py`, regenerated from default). Neither set carries the
+taxonomy or the registry: both read the one copy in `taxonomy/` at the repository root.

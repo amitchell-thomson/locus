@@ -720,6 +720,10 @@ kairos's and stays until he says otherwise.)
   such as exam revision with practice beyond the problem sheets, dated by the exam. Skills move
   only through practice logged in Learning, not through coursework, so they stay honest about
   what has been seen.
+- Later (seed): skills acquired outside the system, from the engineering degree and elsewhere,
+  so the skills list is "honest about my full range of skills, not just the ones claude has
+  helped teach me". Kept apart from practice-moved confidence (a stated level with its source),
+  and added when Learning is built, not now.
 
 ## Report
 

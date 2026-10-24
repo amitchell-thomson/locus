@@ -759,6 +759,36 @@ technical interviews (now technical interview 1 to 3); the Brevan Howard 2027 co
 signed ("I think"), with the internship on 21 Jun 2027 still to come. An undated step passed is
 never drawn after today; an application is closed on Home when no stage is current or to come.
 
+**Round 6, 24 Oct. Calendar (kairos): his decisions.** He uses the week view and the TUI's
+check-ins daily, adds events himself, and never uses the phone. Decided:
+- "The taxonomies definitely need to match": kairos's calendars become the areas, "with family
+  expanded into its threads and the others stay merged as the high level area" (Studies,
+  Projects, Careers; Personal as its streams: Family, Sport, Social, Travel and errands); due
+  dates as attributes and one task type each, as ADR-006.
+- Opting out of his own events: "greying them out slightly like we have with opting in to family
+  events ... a lecture that is written down but I do not need to go to"; not going frees the
+  time for the scheduler.
+- Keys as the rest of locus: "use arrows and tab, not the hj etc"; `P` for projects ("makes more
+  sense than R").
+- "Keep what we have in the center, but put a kairos title on the left hand side."
+- "We should match up the two project registries, kairos should read everything that it can off
+  locus."
+- "Kairos should DEFINITELY link to locus ... events added in one should show in the other and
+  vice versa."
+- He does not like the ◇/◆ project-time icons, and is unsure how planned project time should
+  work: "the most faithful log of actual project time is seen in the home display, measured from
+  claude chats, but I do also want to start actually doing proper work blocks focussing on one
+  project at a time ... I want to keep things simple-ish."
+- Chores: "I should be able to have the ability to schedule annoying to do's, but I am not sure
+  where I should see them ... the whole point is that this system should help encourage me to
+  just get them done rather than procrastinating." (Chores were removed from the Project view in
+  round 5; they remain kairos tasks.)
+- Open, with recommendations given: project time as measured time from locus (faint bars, no
+  check-in) plus optional focus blocks, no proposed time or diamonds; chores as kairos chore
+  tasks placed into real gaps, surfaced on Home (the moment line when one fits now; waiting for
+  you when overdue or put off); the day's height filled with more hours at an even height rather
+  than taller ones. To be carried out under a "kairos joins locus" spec, for his approval.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

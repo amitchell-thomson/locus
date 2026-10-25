@@ -174,19 +174,27 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         gap,
         Constraint::Length(n_side + 1),
         gap,
-        Constraint::Min(3),
+        // Explore takes what is left: at the smallest window one find, never a project's row.
+        Constraint::Min(2),
         gap,
-        // A third line for chores overdue or put off (spec K9), only when there are any.
+        // Waiting for you: approvals, then tasks (spec E7, its own key d), then chores overdue
+        // or put off (spec K9) when there are any.
         Constraint::Length(if app.fixtures.home.chores_waiting.is_empty() {
-            2
-        } else {
             3
+        } else {
+            4
         }),
         gap,
         Constraint::Length(3),
     ])
     .split(inner);
     let (work_r, proj_r, side_r, exp_r, wait_r, sys_r) = (rects[0], rects[2], rects[4], rects[6], rects[8], rects[10]);
+    // The tasks line is the waiting section's second row; `d` focuses that row alone.
+    let task_r = Rect {
+        y: wait_r.y + 2,
+        height: 1,
+        ..wait_r
+    };
 
     draw_waiting(f, wait_r, app);
     work::draw_week(f, work_r, app, app.focus == Some('w'));
@@ -230,6 +238,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     // coloured rule alone, without boxing every section (round 1b).
     let focused = match app.focus {
         Some('a') => Some(wait_r),
+        Some('d') => Some(task_r),
         Some('w') => Some(work_r),
         Some('p') => Some(proj_r),
         Some('c') => Some(side_r),
@@ -350,6 +359,51 @@ fn draw_border(f: &mut Frame, area: Rect, app: &App) -> Rect {
     inner
 }
 
+/// Tasks as one line in waiting for you (spec E7; round 7: "any important view being shown
+/// somehow on home"): how many are open, the next three by due date, and how many are due within
+/// two days. The whole page is a key away (`d`); a course's next due also shows in Studies,
+/// beside the course.
+fn tasks_line(app: &App, width: u16) -> Line<'static> {
+    let focus = app.focus == Some('d');
+    let now = app.fixtures.now();
+    let open = crate::ui::tasks::open(app);
+    if open.is_empty() {
+        return row(
+            vec![pointer(0, focus.then_some(0)), Span::styled(" ☐ nothing to do", dim())],
+            vec![Span::styled("[d] ", dim())],
+            width,
+        );
+    }
+    let mut by_due: Vec<_> = open.iter().collect();
+    by_due.sort_by_key(|t| (t.due.is_none(), t.due));
+    let soon = open
+        .iter()
+        .filter(|t| {
+            t.due
+                .is_some_and(|d| (d.date_naive() - now.date_naive()).num_days() <= 2)
+        })
+        .count();
+    let next: Vec<String> = by_due
+        .iter()
+        .take(3)
+        .map(|t| match t.due {
+            Some(d) => format!("{} {}", t.title, d.format("%a").to_string().to_lowercase()),
+            None => t.title.clone(),
+        })
+        .collect();
+    let left = vec![
+        pointer(0, focus.then_some(0)),
+        Span::styled(format!(" ☐ {} open   ", open.len()), bold(text())),
+        Span::styled(next.join(SEP), text()),
+    ];
+    let mut right = Vec::new();
+    if soon > 0 {
+        right.push(Span::styled(format!("{soon} due within two days  "), st("peach")));
+    }
+    right.push(Span::styled("[d] ", dim()));
+    row(left, right, width)
+}
+
 /// The approve list as one line that draws the eye; the items themselves are on the approve
 /// page (round 1: "I would rather see the approves in the approve window, with a smaller
 /// summary in a different location").
@@ -389,6 +443,7 @@ fn draw_waiting(f: &mut Frame, area: Rect, app: &App) {
         };
         out.push(row(left, right, area.width));
     }
+    out.push(tasks_line(app, area.width));
     // Chores overdue or put off (spec K9), most put off first.
     let ch = &app.fixtures.home.chores_waiting;
     if !ch.is_empty() {
@@ -830,7 +885,7 @@ fn draw_explore(f: &mut Frame, area: Rect, app: &App) {
     lines(f, area, out);
 }
 
-fn area_colour(app: &App, area: &str) -> &'static str {
+pub(crate) fn area_colour(app: &App, area: &str) -> &'static str {
     match app
         .fixtures
         .taxonomy

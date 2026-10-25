@@ -827,16 +827,21 @@ impl App {
                 }
             }
             Key::Char('/') => self.mode = Mode::Prompt(PromptKind::Search, self.search.clone().unwrap_or_default()),
+            // Tasks and projects are overviewed in the locus window (spec E7): T and P open them
+            // there, and fall back to kairos's own lists when the locus window is not running.
             Key::Char('T') => {
-                self.view = View::Tasks;
-                self.sel = 0;
-                self.refresh_remote();
+                if !self.open_in_locus_view("tasks") {
+                    self.view = View::Tasks;
+                    self.sel = 0;
+                    self.refresh_remote();
+                }
             }
             Key::Char('A') => {
                 self.view = View::Approvals;
                 self.sel = 0;
                 self.refresh_remote();
             }
+            Key::Char('P') if self.open_in_locus_view("home:p") => {}
             Key::Char('P') => {
                 self.view = View::Projects;
                 self.sel = 0;
@@ -2418,6 +2423,19 @@ impl App {
         self.sel = uid
             .and_then(|u| self.day_clusters(day).iter().position(|c| c.all().any(|i| i.uid == u)))
             .unwrap_or(0);
+    }
+
+    /// Open a locus view (`tasks`, `home:p`) when the locus window is running here; false when
+    /// it is not (no tmux, no locus session), so kairos shows its own list instead.
+    fn open_in_locus_view(&mut self, view: &str) -> bool {
+        if locus_contract::link::OpenFile::locus().write(view).is_err() || !locus_contract::link::switch_to("locus") {
+            return false;
+        }
+        self.set_message(
+            format!("opened {} in locus", if view == "tasks" { "tasks" } else { "projects" }),
+            false,
+        );
+        true
     }
 
     /// Ask the locus window to open `id`, and bring its tmux session forward.

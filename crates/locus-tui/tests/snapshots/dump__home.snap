@@ -1,5 +1,6 @@
 ---
 source: crates/locus-tui/tests/dump.rs
+assertion_line: 159
 expression: "dump::render(&a, 95, 38).unwrap()"
 ---
 ╭ locus · home ───────────── sat 24 oct · 21:40   󰓦 3   review · W ───── 󰃭 futsal in 21h  󰇮 2 ╮
@@ -30,10 +31,10 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │                                                                                             │
 │─ explore · 7 finds · full, so the scout is waiting for you ─────────────────────────── [e] ─│
 │   for projects +3  󰭎 quast  Bayes-opt barrier tuning, 3x fewer measurements          15 min │
-│   to read +1       󱀄        The Bitter Lesson                                        12 min │
 │                                                                                             │
 │─ waiting for you ───────────────────────────────────────────────────────────────────── [a] ─│
 │   󰴹 6 to approve   2 to file · 1 mail · 1 deadline · 1 ink to place · 1 stop askin… 󰅸 2 new │
+│   ☐ 1 open   send HR signed employee form                                               [d] │
 │                                                                                             │
 │─ system ────────────────────────────────────────────────────────────────────────────── [s] ─│
 │   running  󰓦 dossier quast   │   󰓦 scout reading   │   󰁪 chan… 󰄵 14 done today   󰅘 1 failed │

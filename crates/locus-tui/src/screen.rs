@@ -25,6 +25,7 @@ pub enum ScreenId {
     Prep,
     Learning,
     Review,
+    Tasks,
 }
 
 /// A part of a screen that a letter focuses; Enter on it opens `detail`, if it has one.
@@ -40,7 +41,7 @@ const fn s(letter: char, title: &'static str, detail: Option<ScreenId>) -> Secti
 }
 
 impl ScreenId {
-    pub const ALL: [ScreenId; 17] = [
+    pub const ALL: [ScreenId; 18] = [
         ScreenId::Home,
         ScreenId::Project,
         ScreenId::Application,
@@ -58,6 +59,7 @@ impl ScreenId {
         ScreenId::Prep,
         ScreenId::Learning,
         ScreenId::Review,
+        ScreenId::Tasks,
     ];
 
     /// The name used on the command line and in the use log.
@@ -80,6 +82,7 @@ impl ScreenId {
             ScreenId::Application => "application",
             ScreenId::Learning => "learning",
             ScreenId::Review => "review",
+            ScreenId::Tasks => "tasks",
         }
     }
 
@@ -107,6 +110,7 @@ impl ScreenId {
             ScreenId::Application => "application",
             ScreenId::Learning => "learning",
             ScreenId::Review => "weekly review",
+            ScreenId::Tasks => "tasks",
         }
     }
 
@@ -139,6 +143,7 @@ const HOME: &[Section] = &[
     s('t', "studies", None),
     s('e', "explore", Some(S::Explore)),
     s('a', "waiting for you", Some(S::Approve)),
+    s('d', "tasks", Some(S::Tasks)),
     s('s', "system", Some(S::System)),
 ];
 // Decisions (d), Answered (a) and prep (p) open from the Project view by their own keys: they

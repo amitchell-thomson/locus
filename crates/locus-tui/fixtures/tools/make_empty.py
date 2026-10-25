@@ -40,6 +40,7 @@ def main() -> None:
     write("autolog.json", {"entries": []})
     write("search.json", {"query": "", "scope": "everything", "hits": []})
     write("learning.json", {"goals": [], "tracks": [], "sheets": []})
+    write("tasks.json", {"tasks": []})
     write("review.json", {"from": "2026-10-19", "to": "2026-10-25", "steps": ["todo"] * 5,
                           "week": {"blocks_kept": 0, "blocks_planned": 0, "budget_pct": 0.0},
                           "explore": {"left": 0}, "locus": {}})

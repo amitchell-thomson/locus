@@ -17,6 +17,7 @@ pub mod link;
 pub mod project;
 pub mod review;
 pub mod system;
+pub mod tasks;
 pub mod taxonomy;
 
 pub use common::*;
@@ -26,6 +27,7 @@ pub use learning::*;
 pub use project::*;
 pub use review::*;
 pub use system::*;
+pub use tasks::*;
 
 use serde::{Deserialize, Serialize};
 

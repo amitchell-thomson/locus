@@ -5,7 +5,7 @@
 //! ```text
 //! manifest.json
 //! home.json work.json system.json usage.json explore.json approve.json autolog.json
-//! search.json learning.json review.json
+//! search.json learning.json review.json tasks.json
 //! ink/<name>.json                      one per mark waiting in the approve list
 //! prep/<opportunity>.json              one per opportunity with a plan
 //! projects/<id>/view.json              every active project
@@ -40,6 +40,7 @@ pub struct Fixtures {
     pub search: Search,
     pub learning: Learning,
     pub review: Review,
+    pub tasks: Tasks,
     pub ink: BTreeMap<String, InkConfirm>,
     pub prep: BTreeMap<String, Prep>,
     pub projects: BTreeMap<String, ProjectFixture>,
@@ -100,6 +101,7 @@ impl Fixtures {
             search: read(dir, "search.json")?,
             learning: read(dir, "learning.json")?,
             review: read(dir, "review.json")?,
+            tasks: read(dir, "tasks.json")?,
             ink: read_dir(dir, "ink")?,
             prep: read_dir(dir, "prep")?,
             projects,
@@ -123,7 +125,7 @@ impl Fixtures {
     pub fn read_files(&self) -> BTreeSet<String> {
         let mut out: BTreeSet<String> = [
             "manifest", "home", "work", "system", "usage", "explore", "approve", "autolog", "search", "learning",
-            "review",
+            "review", "tasks",
         ]
         .iter()
         .map(|f| format!("{f}.json"))

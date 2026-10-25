@@ -56,6 +56,26 @@ impl Live {
         }
     }
 
+    /// Every task kairos holds, open and done this week (spec E7).
+    pub fn tasks(&self) -> Vec<kairos_core::api::TaskOverview> {
+        match self.daemon.tasks_overview() {
+            Ok(Ok(v)) => v,
+            _ => Vec::new(),
+        }
+    }
+
+    /// Mark a task done, from the Tasks page (your keypress, as in kairos).
+    pub fn complete(&self, id: &str) -> Result<(), String> {
+        let d = Daemon::from_config(&self.cfg)
+            .map_err(|e| e.to_string())?
+            .interactive(true);
+        match d.complete_task(id, None) {
+            Ok(Ok(_)) => Ok(()),
+            Ok(Err(e)) => Err(e.to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
     /// Open chores (spec K9).
     pub fn chores(&self) -> Vec<kairos_core::api::ChoreItem> {
         match self.daemon.chores() {
@@ -81,6 +101,82 @@ fn kind_of(title: &str) -> AppEventKind {
     } else {
         AppEventKind::Call
     }
+}
+
+/// kairos's tasks onto the Tasks page (spec E7), and each course's next due onto Studies, so
+/// what is due shows on Home where it belongs. `area_of` maps a kairos key to its area.
+pub fn apply_tasks(
+    fx: &mut Fixtures,
+    tasks: &[kairos_core::api::TaskOverview],
+    area_of: impl Fn(&str) -> Option<String>,
+) {
+    let off = fx.now().offset().to_owned();
+    let at = |t: DateTime<Utc>| t.with_timezone(&off);
+    let items: Vec<locus_contract::TaskItem> = tasks
+        .iter()
+        .map(|o| {
+            let t = &o.task;
+            let entry = t.locus.as_deref().and_then(|l| fx.registry.get(l));
+            let (due, due_is_date) = match t.due {
+                Some(kairos_core::task::Due::At(d)) => (Some(at(d)), false),
+                Some(kairos_core::task::Due::Date(d)) => (
+                    d.and_hms_opt(23, 59, 0)
+                        .and_then(|n| n.and_local_timezone(off).single()),
+                    true,
+                ),
+                None => (None, false),
+            };
+            locus_contract::TaskItem {
+                id: t.id.clone(),
+                title: t.title.clone(),
+                for_id: t.locus.clone(),
+                for_label: entry.map_or_else(|| t.key.clone(), |p| p.name.clone()),
+                area: entry
+                    .map(|p| p.area.clone())
+                    .or_else(|| area_of(&t.key))
+                    .unwrap_or_else(|| "Personal".into()),
+                due,
+                due_is_date,
+                before: o.before_title.clone(),
+                left_min: t.remaining_min,
+                estimate_min: t.estimate_min,
+                next_block: o.next_block.map(at),
+                put_off: o.put_off,
+                done: (t.status == kairos_core::task::TaskStatus::Done).then(|| at(t.updated_at)),
+            }
+        })
+        .collect();
+    // A course's open tasks with a due date are what Studies shows as due.
+    let courses: Vec<String> = fx
+        .registry
+        .projects
+        .iter()
+        .filter(|p| p.kind == ProjectKind::Course)
+        .map(|p| p.id.clone())
+        .collect();
+    for id in courses {
+        let Some(pf) = fx.projects.get_mut(&id) else { continue };
+        let mut due: Vec<locus_contract::Due> = items
+            .iter()
+            .filter(|t| t.done.is_none() && t.for_id.as_deref() == Some(id.as_str()))
+            .filter_map(|t| {
+                Some(locus_contract::Due {
+                    title: t.title.clone(),
+                    kind: if t.title.to_lowercase().contains("sheet") {
+                        locus_contract::DueKind::Sheet
+                    } else {
+                        locus_contract::DueKind::Coursework
+                    },
+                    at: t.due?.date_naive(),
+                })
+            })
+            .collect();
+        if !due.is_empty() {
+            due.sort_by_key(|d| d.at);
+            pf.view.due = due;
+        }
+    }
+    fx.tasks.tasks = items;
 }
 
 /// Chores onto Home (spec K9): the one that fits the gap you are in now (the most put off), and
@@ -343,5 +439,96 @@ mod chore_tests {
             assert!(waiting, "{w} cols: not waiting for you:\n{}", b.join("\n"));
         }
         assert!(shown_somewhere, "a wide window has room for it");
+    }
+}
+
+#[cfg(test)]
+mod task_tests {
+    use crate::app::App;
+    use crate::fixtures::{Fixtures, resolve};
+    use crate::screen::ScreenId;
+    use crate::uselog::UseLog;
+    use chrono::{DateTime, Utc};
+    use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn task(
+        id: &str,
+        title: &str,
+        key: &str,
+        locus: Option<&str>,
+        due: Option<&str>,
+    ) -> kairos_core::api::TaskOverview {
+        let now: DateTime<Utc> = "2026-10-24T09:00:00Z".parse().unwrap();
+        let mut t = kairos_core::task::Task::new(title, key, 300, kairos_core::model::Author::Alec, now);
+        t.id = id.into();
+        t.locus = locus.map(String::from);
+        t.due = due.map(|d| kairos_core::task::Due::At(d.parse().unwrap()));
+        kairos_core::api::TaskOverview {
+            task: t,
+            next_block: Some("2026-10-25T13:00:00Z".parse().unwrap()),
+            put_off: 0,
+            before_title: None,
+        }
+    }
+
+    #[test]
+    fn tasks_are_grouped_by_what_they_are_for_and_a_courses_due_shows_in_studies() {
+        // Spec E7: the Tasks page, and Home showing it (the line in waiting for you, the
+        // course's next due in Studies).
+        let mut fx = Fixtures::load(&resolve("default")).unwrap();
+        let tasks = vec![
+            task(
+                "t-1",
+                "B15 sheet 4",
+                "Studies",
+                Some("b15"),
+                Some("2026-10-30T16:00:00Z"),
+            ),
+            task("t-2", "laundry", "Errands", None, None),
+            task(
+                "t-3",
+                "Millennium prep",
+                "Careers",
+                Some("millennium"),
+                Some("2026-10-27T09:00:00Z"),
+            ),
+        ];
+        super::apply_tasks(&mut fx, &tasks, |k| (k == "Errands").then(|| "Personal".into()));
+        assert_eq!(fx.tasks.tasks.len(), 3);
+        let b15 = fx.tasks.tasks.iter().find(|t| t.id == "t-1").unwrap();
+        assert_eq!(
+            (b15.for_label.as_str(), b15.area.as_str()),
+            ("B15 Control Systems", "Studies")
+        );
+        assert_eq!(fx.projects["b15"].view.due[0].title, "B15 sheet 4");
+        let mut app = App::new(fx, ScreenId::Home, UseLog::off());
+        let home = crate::dump::render(&app, 120, 40).unwrap();
+        assert!(home.contains("☐ 3 open"), "{home}");
+        // d focuses the line; Enter opens the page.
+        app.on_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
+        app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(app.screen(), ScreenId::Tasks);
+        let page = crate::dump::render(&app, 120, 40).unwrap();
+        // The group due soonest first: Millennium, then B15, then Errands (no due date).
+        let pos = |s: &str| page.find(s).unwrap_or_else(|| panic!("{s} missing:\n{page}"));
+        assert!(pos("Millennium QD Internship 2027") < pos("B15 Control Systems"));
+        assert!(pos("B15 Control Systems") < pos("Errands"));
+        assert!(
+            page.contains("next sun 14:00") || page.contains("next sun 13:00"),
+            "{page}"
+        );
+        // Outside the live window Enter and d only say what they would do.
+        app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(
+            app.note.as_deref().is_some_and(|n| n.starts_with("would open kairos")),
+            "{:?}",
+            app.note
+        );
+        app.on_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
+        assert!(
+            app.note.as_deref().is_some_and(|n| n.starts_with("would mark")),
+            "{:?}",
+            app.note
+        );
     }
 }

@@ -561,3 +561,17 @@ pub struct ChoreItem {
     #[serde(default)]
     pub fits_now: bool,
 }
+
+/// A task as locus's Tasks page shows it (spec E7): the task, when it is next planned, and how
+/// often it was put off.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TaskOverview {
+    pub task: Task,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_block: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub put_off: u32,
+    /// The title of the event it is planned before (an interview), if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before_title: Option<String>,
+}

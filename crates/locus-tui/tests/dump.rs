@@ -219,7 +219,7 @@ fn home_arrows_follow_what_is_drawn() {
     let order: Vec<char> = ScreenId::Home.sections().iter().map(|s| s.letter).collect();
     assert_eq!(
         order,
-        vec!['w', 'p', 'c', 't', 'e', 'a', 's'],
+        vec!['w', 'p', 'c', 't', 'e', 'a', 'd', 's'],
         "the drawn order, top to bottom"
     );
     dump::render(&a, 95, 38).unwrap();
@@ -233,6 +233,8 @@ fn home_arrows_follow_what_is_drawn() {
         a.on_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     }
     assert_eq!(a.focus, Some('a'), "past the last drawn find, into waiting for you");
+    a.on_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    assert_eq!(a.focus, Some('d'), "then its tasks line");
     a.on_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     assert_eq!(a.focus, Some('s'));
 }

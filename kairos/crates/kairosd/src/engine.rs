@@ -2344,6 +2344,46 @@ impl Engine {
         Ok(v)
     }
 
+    /// Every open task and those done since Monday, for locus's Tasks page (spec E7): when each
+    /// is next planned, how often it was put off (blocks checked in as missed), and the event it
+    /// is planned before.
+    pub fn tasks_overview(&self) -> Result<Vec<api::TaskOverview>> {
+        let now = self.now();
+        let tz = self.tz();
+        let today = now.with_timezone(&tz).date_naive();
+        let monday = today - Duration::days(i64::from(chrono::Datelike::weekday(&today).num_days_from_monday()));
+        let week = kairos_core::time::resolve_local(monday.and_time(NaiveTime::MIN), tz);
+        let events = self.events(now - Duration::days(1), now + Duration::days(60))?;
+        let checkins = self.db.checkins(false)?;
+        let mut tasks = self.db.tasks(Some(TaskStatus::Open))?;
+        tasks.extend(
+            self.db
+                .tasks(Some(TaskStatus::Done))?
+                .into_iter()
+                .filter(|t| t.updated_at >= week),
+        );
+        Ok(tasks
+            .into_iter()
+            .map(|t| api::TaskOverview {
+                next_block: events
+                    .iter()
+                    .filter(|i| i.meta.kind == EventKind::TaskBlock && i.meta.task_id.as_deref() == Some(t.id.as_str()))
+                    .map(|i| i.span.bounds(tz).0)
+                    .filter(|s| *s >= now)
+                    .min(),
+                put_off: checkins
+                    .iter()
+                    .filter(|c| c.task_id == t.id && c.outcome == Some(Outcome::Missed))
+                    .count() as u32,
+                before_title: t
+                    .before
+                    .as_ref()
+                    .and_then(|u| events.iter().find(|i| &i.uid == u).map(|i| i.title.clone())),
+                task: t,
+            })
+            .collect())
+    }
+
     /// Open projects kairos has that the registry does not (shown by `kairos doctor`).
     pub fn unregistered(&self) -> Result<Vec<String>> {
         if self.registry.is_none() {

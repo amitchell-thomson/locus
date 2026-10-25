@@ -73,6 +73,7 @@ fn main() -> Result<()> {
         let cal = live.fetch(chrono::Utc::now()).context("kairosd did not answer")?;
         locus_tui::calendar::apply(&mut fx, &cal, |k| live.area_of(k), chrono::Utc::now());
         locus_tui::calendar::apply_chores(&mut fx, &live.chores());
+        locus_tui::calendar::apply_tasks(&mut fx, &live.tasks(), |k| live.area_of(k));
     }
     if let Some(name) = cli.dump {
         let Some(screen) = ScreenId::from_name(&name) else {
@@ -255,7 +256,7 @@ fn run(mut app: App) -> Result<()> {
         std::thread::spawn(move || {
             loop {
                 if let Some(cal) = live.fetch(chrono::Utc::now())
-                    && cal_tx.send((cal, live.chores())).is_err()
+                    && cal_tx.send((cal, live.chores(), live.tasks())).is_err()
                 {
                     return;
                 }
@@ -270,19 +271,26 @@ fn run(mut app: App) -> Result<()> {
     let result = (|| -> Result<()> {
         while !app.quit {
             app.tick(focus.poll(), Instant::now());
-            if let Ok((cal, chores)) = cal_rx.try_recv()
+            if let Ok((cal, chores, tasks)) = cal_rx.try_recv()
                 && let Some(live) = app.calendar.clone()
             {
                 locus_tui::calendar::apply(&mut app.fixtures, &cal, |k| live.area_of(k), chrono::Utc::now());
                 locus_tui::calendar::apply_chores(&mut app.fixtures, &chores);
+                locus_tui::calendar::apply_tasks(&mut app.fixtures, &tasks, |k| live.area_of(k));
             }
             if app.stack.first() == Some(&ScreenId::Home)
-                && let Some(id) = inbox.poll()
-                && app.fixtures.registry.get(&id).is_some()
+                && let Some(req) = inbox.poll()
             {
+                // An item (a registry id), the Tasks page, or a section of Home (`home:p`).
                 app.stack.truncate(1);
                 app.focus = None;
-                app.open_project(id);
+                if req == "tasks" {
+                    app.open(ScreenId::Tasks);
+                } else if let Some(sec) = req.strip_prefix("home:").and_then(|s| s.chars().next()) {
+                    app.focus = Some(sec);
+                } else if app.fixtures.registry.get(&req).is_some() {
+                    app.open_project(req);
+                }
             }
             if let Some(change) = peek.poll()
                 && app.stack.first() == Some(&ScreenId::Project)

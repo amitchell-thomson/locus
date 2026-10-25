@@ -14,6 +14,7 @@ pub mod project;
 pub mod projectdetail;
 pub mod review;
 pub mod system;
+pub mod tasks;
 pub mod widgets;
 pub mod work;
 
@@ -48,6 +49,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         ScreenId::Application => application::draw(f, body, app),
         ScreenId::Learning => learning::draw(f, body, app),
         ScreenId::Review => review::draw(f, body, app),
+        ScreenId::Tasks => tasks::draw(f, body, app),
     }
     draw_footer(f, footer, app);
     if app.keys_open {
@@ -70,6 +72,7 @@ pub fn screen_key(app: &mut App, k: KeyEvent) -> bool {
         ScreenId::WorkChart => false,
         ScreenId::Prep | ScreenId::Learning => learning::key(app, k),
         ScreenId::Application => application::key(app, k),
+        ScreenId::Tasks => tasks::key(app, k),
     }
 }
 
@@ -143,6 +146,7 @@ pub fn screen_keys(s: ScreenId) -> &'static [(&'static str, &'static str)] {
         ScreenId::Application => application::KEYS,
         ScreenId::Learning => learning::KEYS,
         ScreenId::Review => review::KEYS,
+        ScreenId::Tasks => tasks::KEYS,
     }
 }
 

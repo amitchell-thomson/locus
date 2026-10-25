@@ -215,7 +215,8 @@ pub fn router(st: AppState, mcp: Option<Router<AppState>>) -> Router {
         .route("/api/status", get(status))
         .route("/api/taxonomy", get(taxonomy))
         .route("/api/worked", post(set_worked))
-        .route("/api/chores", get(chores));
+        .route("/api/chores", get(chores))
+        .route("/api/tasks/overview", get(tasks_overview));
     let mut protected = api;
     if let Some(m) = mcp {
         protected = protected.merge(m);
@@ -658,6 +659,11 @@ async fn checkin_items(State(st): State<AppState>) -> HResult<Vec<api::CheckinIt
 
 async fn checkin(State(st): State<AppState>, Json(req): Json<api::CheckinReq>) -> HResult<api::PlanResp> {
     Ok(Json(with_engine(&st, move |e| e.checkin(&req)).await?))
+}
+
+/// Every task for locus's Tasks page (spec E7).
+async fn tasks_overview(State(st): State<AppState>) -> HResult<Vec<api::TaskOverview>> {
+    Ok(Json(with_engine(&st, move |e| e.tasks_overview()).await?))
 }
 
 /// Open chores for locus's Home (spec K9).

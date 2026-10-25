@@ -839,6 +839,14 @@ with no time or in the past. Explore at the smallest window is a one-line summar
 its items under the count. "In the task view it should be a that adds tasks ... it should say
 it somewhere": a on the Tasks page, said in its top border; + on Home's tasks, said in its rule.
 
+**Round 7c, 25 Oct.** "We have now got two approve windows ... we have a strict no
+duplication of roles policy." kairos's changes waiting for you are now in locus's Approve
+("calendar changes", y and n through kairosd), and kairos's `A` opens it there; kairos's own
+list stays only for when the locus window is not running. From a side note: a date from mail
+for a firm with two live applications was skipped unless the subject named the year; it is now
+told apart by the subject, then the mail, and failing both offered with the choice yours
+(←/→ in Approve), never guessed and never skipped.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

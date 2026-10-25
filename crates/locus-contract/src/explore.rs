@@ -119,6 +119,9 @@ pub enum ApproveKind {
     /// A date found in your mail (an interview booked or moved), to put on the calendar linked
     /// to its application (spec E6).
     Date,
+    /// A change to your calendar waiting for you (a kairos changeset from Claude or a script):
+    /// one approve place, here, not a second list in kairos (round 7c).
+    Calendar,
 }
 
 /// A date from mail, and what accepting it does: a new event, or moving the one already there.
@@ -137,6 +140,10 @@ pub struct MailDate {
     /// of the event to move.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub moves: Option<(String, String)>,
+    /// When the mail could be about more than one of the firm's applications: all of them,
+    /// `for_id` the one chosen so far (←/→ in Approve). Never guessed for you.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub choices: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -157,6 +164,9 @@ pub struct ApproveItem {
     /// For a date from mail: the date and what accepting it does.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub date: Option<MailDate>,
+    /// For a calendar change: the kairos changeset id to approve or refuse.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changeset: Option<String>,
 }
 
 impl Approve {

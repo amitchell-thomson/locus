@@ -45,7 +45,7 @@ Your own edits here apply straight away (no approval); `u` undoes the last one, 
 | `n` | start the selected task now: a block from now, the rest reflows |
 | `S` | run the scheduler |
 | `T` | tasks: the Tasks page in the locus window (grouped by what each is for, with due, left, next block, put off); kairos's own list (`D` done · `W` log work · `+` more time · `o` reopen · `e` edit · `n` start) only when the locus window is not running |
-| `A` | changes waiting for approval (from Claude or scripts) |
+| `A` | changes waiting for approval (from Claude or scripts): locus's Approve page, the one approve place (kairos's own list only when the locus window is not running) |
 | `P` | projects: Home's projects section in the locus window (kairos's own list below only when the locus window is not running) |
 
 **A due date is the task's own** (spec K5): the ⚑ on its day is drawn from the task, never written

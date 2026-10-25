@@ -836,6 +836,9 @@ impl App {
                     self.refresh_remote();
                 }
             }
+            // Approve is the one approve place (round 7c): A opens it in the locus window, and
+            // kairos's own list only when the locus window is not running.
+            Key::Char('A') if self.open_in_locus_view("approve") => {}
             Key::Char('A') => {
                 self.view = View::Approvals;
                 self.sel = 0;
@@ -2444,10 +2447,12 @@ impl App {
         if locus_contract::link::OpenFile::locus().write(view).is_err() || !locus_contract::link::switch_to("locus") {
             return false;
         }
-        self.set_message(
-            format!("opened {} in locus", if view == "tasks" { "tasks" } else { "projects" }),
-            false,
-        );
+        let what = match view {
+            "tasks" => "tasks",
+            "approve" => "approve",
+            _ => "projects",
+        };
+        self.set_message(format!("opened {what} in locus"), false);
         true
     }
 

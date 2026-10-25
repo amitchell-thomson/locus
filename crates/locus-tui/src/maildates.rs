@@ -228,6 +228,8 @@ pub struct Booking {
     pub sent: DateTime<FixedOffset>,
     pub at: DateTime<FixedOffset>,
     pub minutes: u32,
+    /// Every application it could be for, when the mail does not say which (`for_id` first).
+    pub choices: Vec<String>,
 }
 
 /// Words that make a mail about a date to keep (a booking, a rebooking, an invitation).
@@ -279,8 +281,9 @@ pub fn own_text(body: &str) -> String {
         .join("\n")
 }
 
-/// Which of a company's applications a mail is about: the one whose year is in the subject, or
-/// the only one. Several and no year to tell them apart: none (nothing offered on a guess).
+/// Which of a company's applications a mail is about: the one whose year is in the subject (or,
+/// failing that, the mail), or the only one. Several and nothing to tell them apart: none, and
+/// the caller offers the date with every one as a choice for you to make.
 fn which<'a>(apps: &[&'a locus_contract::Project], subject: &str) -> Option<&'a locus_contract::Project> {
     if apps.len() == 1 {
         return apps.first().copied();
@@ -355,11 +358,15 @@ pub fn scan(reg: &Registry, now: DateTime<Utc>, days: i64, past: bool) -> Vec<Bo
             if !squash(&subject).contains(&firm) && !squash(&sender).contains(&firm) {
                 continue;
             }
-            let Some(app) = which(&apps, &subject) else { continue };
             let Some(sent) = m["date"].as_str().and_then(|d| DateTime::parse_from_rfc3339(d).ok()) else {
                 continue;
             };
             let own = own_text(m["body"].as_str().unwrap_or(""));
+            // Told apart by the subject, then by the mail itself; else you choose in Approve.
+            let (app, choices) = match which(&apps, &subject).or_else(|| which(&apps, &own)) {
+                Some(a) => (a, Vec::new()),
+                None => (apps[0], apps.iter().map(|p| p.id.clone()).collect()),
+            };
             let when = stated_dates(&format!("{subject}\n{own}"), sent)
                 .into_iter()
                 .filter_map(|s| {
@@ -377,6 +384,7 @@ pub fn scan(reg: &Registry, now: DateTime<Utc>, days: i64, past: bool) -> Vec<Bo
                 sent,
                 at,
                 minutes: minutes.unwrap_or(60),
+                choices,
             });
         }
     }

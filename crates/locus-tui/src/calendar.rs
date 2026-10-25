@@ -68,6 +68,26 @@ impl Live {
         }
     }
 
+    /// Changes to the calendar waiting for you (round 7c: Approve is the one place for them).
+    pub fn pending(&self) -> Vec<kairos_core::changeset::Changeset> {
+        match self.daemon.changesets(Some("pending"), 50) {
+            Ok(Ok(v)) => v,
+            _ => Vec::new(),
+        }
+    }
+
+    /// Approve or refuse one (your keypress in Approve, as `y`/`n` in kairos was).
+    pub fn decide(&self, id: &str, yes: bool) -> Result<String, String> {
+        let d = Daemon::from_config(&self.cfg)
+            .map_err(|e| e.to_string())?
+            .interactive(true);
+        match d.decide(id, if yes { "approve" } else { "reject" }) {
+            Ok(Ok(r)) => Ok(r.summary),
+            Ok(Err(e)) => Err(e.to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
     /// Every task kairos holds, open and done this week (spec E7).
     pub fn tasks(&self) -> Vec<kairos_core::api::TaskOverview> {
         match self.daemon.tasks_overview() {
@@ -258,7 +278,7 @@ pub fn apply_dates(fx: &mut Fixtures, bookings: &[crate::maildates::Booking], ca
         let end = b.at + Duration::minutes(i64::from(b.minutes));
         let when = format!("{}–{}", b.at.format("%a %-d %b %H:%M"), end.format("%H:%M"));
         let name = fx.registry.get(&b.for_id).map_or(b.company.clone(), |p| p.name.clone());
-        let text = match linked {
+        let mut text = match linked {
             Some(e) => format!(
                 "{name} · move “{}” to {when} (rebooked, mail of {})",
                 e.title,
@@ -269,6 +289,10 @@ pub fn apply_dates(fx: &mut Fixtures, bookings: &[crate::maildates::Booking], ca
                 b.sent.format("%-d %b")
             ),
         };
+        // The mail does not say which of the firm's applications: you choose (←/→).
+        if b.choices.len() > 1 {
+            text.push_str(" · which application? ←/→");
+        }
         items.push(locus_contract::ApproveItem {
             text,
             to: Some("calendar".into()),
@@ -282,7 +306,9 @@ pub fn apply_dates(fx: &mut Fixtures, bookings: &[crate::maildates::Booking], ca
                 minutes: b.minutes,
                 thread: b.thread.clone(),
                 moves: linked.map(|e| (e.source.clone(), e.uid.clone())),
+                choices: b.choices.clone(),
             }),
+            changeset: None,
         });
     }
     fx.approve
@@ -293,6 +319,35 @@ pub fn apply_dates(fx: &mut Fixtures, bookings: &[crate::maildates::Booking], ca
             0,
             locus_contract::ApproveGroup {
                 kind: locus_contract::ApproveKind::Date,
+                items,
+            },
+        );
+    }
+}
+
+/// kairos's changes waiting for you onto Approve (round 7c: one approve place, no second list
+/// in kairos).
+pub fn apply_pending(fx: &mut Fixtures, pending: &[kairos_core::changeset::Changeset]) {
+    fx.approve
+        .groups
+        .retain(|g| g.kind != locus_contract::ApproveKind::Calendar);
+    let items: Vec<locus_contract::ApproveItem> = pending
+        .iter()
+        .map(|c| locus_contract::ApproveItem {
+            text: c.summary.lines().next().unwrap_or("").to_string(),
+            to: None,
+            from: format!("kairos · {}", c.author.as_str()),
+            new: true,
+            opens: None,
+            date: None,
+            changeset: Some(c.id.clone()),
+        })
+        .collect();
+    if !items.is_empty() {
+        fx.approve.groups.insert(
+            0,
+            locus_contract::ApproveGroup {
+                kind: locus_contract::ApproveKind::Calendar,
                 items,
             },
         );
@@ -680,6 +735,7 @@ mod date_tests {
             sent: DateTime::parse_from_rfc3339(sent).unwrap(),
             at: DateTime::parse_from_rfc3339(at).unwrap(),
             minutes: 45,
+            choices: Vec::new(),
         }
     }
 
@@ -763,5 +819,67 @@ mod date_tests {
         let no = vec![format!("millennium {s2}")];
         super::apply_dates(&mut fx, &b, &on, &no);
         assert!(dates(&fx).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod approve_tests {
+    use crate::app::App;
+    use crate::fixtures::{Fixtures, resolve};
+    use crate::maildates::Booking;
+    use crate::screen::ScreenId;
+    use crate::uselog::UseLog;
+    use chrono::{DateTime, Duration, FixedOffset, Utc};
+    use locus_contract::ApproveKind;
+    use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    #[test]
+    fn calendar_changes_and_unsure_dates_are_approved_in_one_place() {
+        // Round 7c: kairos's changes waiting for you are in Approve, the one approve place; a
+        // date whose mail does not say which application asks you, never guesses.
+        let mut fx = Fixtures::load(&resolve("default")).unwrap();
+        let now: DateTime<Utc> = "2026-10-25T10:00:00Z".parse().unwrap();
+        let cs = kairos_core::changeset::Changeset {
+            id: "cs-1".into(),
+            author: kairos_core::model::Author::Claude,
+            created_at: now,
+            ops: Vec::new(),
+            risk: kairos_core::changeset::Risk::High,
+            reasons: Vec::new(),
+            status: kairos_core::changeset::Status::Pending,
+            summary: "Move \"B14 Image Processing\" to Mon 26 Oct 09:00".into(),
+            error: None,
+            decided_at: None,
+        };
+        super::apply_pending(&mut fx, &[cs]);
+        let g = fx
+            .approve
+            .groups
+            .iter()
+            .find(|g| g.kind == ApproveKind::Calendar)
+            .unwrap();
+        assert_eq!(g.items[0].changeset.as_deref(), Some("cs-1"));
+        let soon = (Utc::now() + Duration::days(3)).with_timezone(&FixedOffset::east_opt(3600).unwrap());
+        let b = Booking {
+            for_id: "gresearch".into(),
+            company: "G-Research".into(),
+            subject: "Interview confirmation".into(),
+            thread: "personal:2".into(),
+            sent: soon - Duration::days(2),
+            at: soon,
+            minutes: 45,
+            choices: vec!["gresearch".into(), "gresearch-ml".into()],
+        };
+        super::apply_dates(&mut fx, &[b], &[], &[]);
+        let mut app = App::new(fx, ScreenId::Home, UseLog::off());
+        app.open(ScreenId::Approve);
+        let rows = crate::ui::home::approve_rows(&app);
+        let at = rows.iter().position(|r| r.1.contains("which application?")).unwrap();
+        app.sel.insert((ScreenId::Approve, ' '), at);
+        let before = rows[at].1.clone();
+        app.on_key(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE));
+        let after = crate::ui::home::approve_rows(&app)[at].1.clone();
+        assert_ne!(before, after, "→ picks the other application");
+        assert!(after.contains("G-Research AI/ML Challenges"), "{after}");
     }
 }

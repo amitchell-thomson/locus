@@ -19,6 +19,10 @@ use ratatui_image::{FilterType, Resize, StatefulImage};
 pub const KEYS: &[(&str, &str)] = &[
     ("y n", "approve or refuse"),
     ("Y", "approve the whole group"),
+    (
+        "← →",
+        "a date from mail: which application it is for, when the mail did not say",
+    ),
     ("⏎", "an ink item: where does it point?"),
 ];
 pub const LOG_KEYS: &[(&str, &str)] = &[("u", "undo")];
@@ -32,6 +36,7 @@ fn group_name(k: ApproveKind) -> &'static str {
         ApproveKind::Ink => "ink",
         ApproveKind::StopAsking => "stop asking?",
         ApproveKind::Date => "dates from mail",
+        ApproveKind::Calendar => "calendar changes",
     }
 }
 
@@ -272,6 +277,61 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                         .clone()
                         .map(|d| (g, i, d))
                 });
+            // Which application a date is for, when the mail did not say (←/→ through them).
+            if let (Some((g, i, d)), KeyCode::Left | KeyCode::Right) = (&date, k.code)
+                && d.choices.len() > 1
+            {
+                let n = d.choices.len();
+                let at = d.choices.iter().position(|c| *c == d.for_id).unwrap_or(0);
+                let next = if k.code == KeyCode::Right {
+                    (at + 1) % n
+                } else {
+                    (at + n - 1) % n
+                };
+                let id = d.choices[next].clone();
+                let name = app.fixtures.registry.get(&id).map_or(id.clone(), |p| p.name.clone());
+                let old = app
+                    .fixtures
+                    .registry
+                    .get(&d.for_id)
+                    .map_or(d.for_id.clone(), |p| p.name.clone());
+                let it = &mut app.fixtures.approve.groups[*g].items[*i];
+                it.text = it.text.replacen(&old, &name, 1);
+                if let Some(x) = it.date.as_mut() {
+                    x.for_id = id;
+                }
+                return true;
+            }
+            // A calendar change from kairos (round 7c): approved or refused here, the one place.
+            let changeset = key
+                .strip_prefix("approve:")
+                .and_then(|r| r.split_once(':'))
+                .and_then(|(g, i)| {
+                    let g: usize = g.parse().ok()?;
+                    let i: usize = i.parse().ok()?;
+                    app.fixtures
+                        .approve
+                        .groups
+                        .get(g)?
+                        .items
+                        .get(i)?
+                        .changeset
+                        .clone()
+                        .map(|c| (g, i, c))
+                });
+            if let (Some((g, i, id)), KeyCode::Char(c @ ('y' | 'n'))) = (changeset, k.code)
+                && let Some(live) = app.calendar.clone()
+            {
+                match live.decide(&id, c == 'y') {
+                    Ok(msg) => {
+                        app.fixtures.approve.groups[g].items.remove(i);
+                        app.fixtures.approve.groups.retain(|x| !x.items.is_empty());
+                        app.note = Some(format!("{}: {msg}", if c == 'y' { "approved" } else { "refused" }));
+                    }
+                    Err(e) => app.note = Some(format!("kairos said no: {e}")),
+                }
+                return true;
+            }
             if let (Some((g, i, d)), KeyCode::Char(c @ ('y' | 'n'))) = (date, k.code)
                 && let Some(live) = app.calendar.clone()
             {

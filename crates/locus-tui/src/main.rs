@@ -95,6 +95,7 @@ fn main() -> Result<()> {
         locus_tui::calendar::apply_tasks(&mut fx, &live.tasks(), |k| live.area_of(k), |k| live.key_name(k));
         let bookings = locus_tui::maildates::scan(&fx.registry, chrono::Utc::now(), 45, false);
         locus_tui::calendar::apply_dates(&mut fx, &bookings, &cal, &locus_tui::maildates::dismissed());
+        locus_tui::calendar::apply_pending(&mut fx, &live.pending());
     }
     if let Some(name) = cli.dump {
         let Some(screen) = ScreenId::from_name(&name) else {
@@ -284,7 +285,7 @@ fn run(mut app: App) -> Result<()> {
                 }
                 if let Some(cal) = live.fetch(chrono::Utc::now())
                     && cal_tx
-                        .send((cal, live.chores(), live.tasks(), bookings.clone()))
+                        .send((cal, live.chores(), live.tasks(), bookings.clone(), live.pending()))
                         .is_err()
                 {
                     return;
@@ -300,9 +301,10 @@ fn run(mut app: App) -> Result<()> {
     let result = (|| -> Result<()> {
         while !app.quit {
             app.tick(focus.poll(), Instant::now());
-            if let Ok((cal, chores, tasks, bookings)) = cal_rx.try_recv()
+            if let Ok((cal, chores, tasks, bookings, pending)) = cal_rx.try_recv()
                 && let Some(live) = app.calendar.clone()
             {
+                locus_tui::calendar::apply_pending(&mut app.fixtures, &pending);
                 let dismissed = locus_tui::maildates::dismissed();
                 locus_tui::calendar::apply_dates(&mut app.fixtures, &bookings, &cal, &dismissed);
                 locus_tui::calendar::apply(&mut app.fixtures, &cal, |k| live.area_of(k), chrono::Utc::now());
@@ -317,6 +319,8 @@ fn run(mut app: App) -> Result<()> {
                 app.focus = None;
                 if req == "tasks" {
                     app.open(ScreenId::Tasks);
+                } else if req == "approve" {
+                    app.open(ScreenId::Approve);
                 } else if let Some(sec) = req.strip_prefix("home:").and_then(|s| s.chars().next()) {
                     app.focus = Some(sec);
                 } else if app.fixtures.registry.get(&req).is_some() {

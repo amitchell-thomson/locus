@@ -472,6 +472,7 @@ fn draw_approve(f: &mut Frame, area: Rect, app: &App) {
                 locus_contract::ApproveKind::Ink => "ink",
                 locus_contract::ApproveKind::StopAsking => "stop asking?",
                 locus_contract::ApproveKind::Date => "to the calendar",
+                locus_contract::ApproveKind::Calendar => "calendar change",
             };
             format!("{} {name}", g.items.len())
         })

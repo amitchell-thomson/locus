@@ -11,7 +11,12 @@ opt() { tmux show -gqv "$1"; }
 state=$(opt @locus-state-dir); state=${state:-$HOME/.local/state/locus}
 case $state in "~"*) state=$HOME${state#\~} ;; esac
 bin=$(opt @locus-tui-bin); bin=${bin:-$repo/target/release/locus-tui}
-kairos=$(opt @locus-kairos-cmd); kairos=${kairos:-kairos tui}
+# kairos from the same build as locus-tui (L8): this checkout's release build when there is one
+# (`cargo build --release -p locus-tui -p kairos-cli`), else the one on PATH.
+kairos=$(opt @locus-kairos-cmd)
+if [ -z "$kairos" ]; then
+    if [ -x "$repo/target/release/kairos" ]; then kairos="'$repo/target/release/kairos' tui"; else kairos="kairos tui"; fi
+fi
 keryx=$(opt @locus-keryx-cmd)
 if [ -z "$keryx" ]; then
     if command -v keryx >/dev/null 2>&1; then keryx=keryx; else keryx=$HOME/local-projects/keryx/target/release/keryx; fi

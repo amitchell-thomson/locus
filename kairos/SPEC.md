@@ -161,7 +161,7 @@ iCloud ⇄ vdirsyncer on the server ⇄ kairosd, the only writer. The Mac keeps 
 (rsync every minute) for the CLI and for the TUI when the server is unreachable. kairosd and the
 CLI are built from this repository and deployed by `deploy/deploy.sh` (unit
 `locus-kairosd.service`). Semantic rules (DST, all-day ends, recurrence, dedup, the risk table,
-the scheduler) each have tests; `kairos/scripts/ci.sh` is the gate.
+the scheduler) each have tests; `scripts/ci.sh` (at the root) is the gate.
 
 ### Rules for times and repeats
 

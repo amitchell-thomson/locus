@@ -49,48 +49,27 @@ Data flow: iCloud ⇄ vdirsyncer (rw, compute-node only) ⇄ server vdir. The TU
 ## Running things
 
 ```sh
-scripts/ci.sh                      # fmt --check, clippy -D warnings, all tests, perf budgets (release)
+../scripts/ci.sh                   # (repo root) fmt --check, clippy -D warnings, all tests, perf budgets (release)
 cargo test -p kairos-core          # semantics: DST, all-day, recurrence, dedup, risk table, scheduler (incl. proptests)
 cargo test -p kairosd              # engine end-to-end (definition-of-done flows), HTTP, MCP (+ restart mid-session)
 cargo test -p kairos-tui           # insta snapshots; review changes with `cargo insta review`
 cargo test --release -p kairos-cli --test perf -- --nocapture   # 5k-event budgets
 cargo xtask anonymise fixtures/raw fixtures/golden --salt <random>
-cargo run -p kairos-tui --example frame -- <config> <rfc3339-now> <w> <h> [keys]   # render one TUI frame as text
+kairos tui --dump week --size 95x38 [--press "right v"] [--keys]   # one frame of your calendar as text (L8)
 ```
 `KAIROS_NOW=<rfc3339>` fixes "now" for the CLI (tests, screenshots). `KAIROS_CONFIG` overrides the config path.
 
-## Deployment state (2026-10-24: built and deployed from the locus repository)
+## Where it runs
 
-Since 2026-10-24 kairos lives in the locus repository (`kairos/`, ADR-008) and reaches the server
-only through locus's `deploy/deploy.sh`: `deploy/server-sync.sh` runs `cargo install --locked` for
-kairosd and kairos when Rust sources moved, and manages the unit as `locus-kairosd.service`
-(`deploy/systemd/`). The old `kairosd.service` was retired then (backup kept beside it). On the Mac,
-`cargo install --locked --path kairos/crates/kairos-cli` from the locus checkout. The notes below
-predate the move; paths to `~/server-projects/kairos` are the archived repository.
+Built and deployed from the locus repository like the rest of it: `kairos/docs/deploy.md` says
+where each piece is. In short: kairosd on compute-node as `locus-kairosd.service` (live since
+2026-10-11, Tailscale only, `100.117.10.28:7420`; the server's own CLI uses that IP because
+`compute-node` resolves to 127.0.1.1 there), vdirsyncer read-write there only; the Mac keeps an
+rsync of the server's copy (launchd `com.kairos.sync`, every 60 s) and runs `kairos` from
+`cargo install`. The test calendar source was removed from the live configs on 2026-10-13; re-add
+it before ever setting `live = false`. The build history (phases 0 to 9, Oct 2026) is in git.
 
-### Before the move (2026-10-13)
-
-- compute-node: repo at `~/server-projects/kairos`; `kairosd` + `kairos` in `~/.cargo/bin`; `systemctl --user` unit `kairosd` **running with live = true since 2026-10-11**, bound to `100.117.10.28:7420` (Tailscale only; the server's own CLI uses that IP because `compute-node` resolves to 127.0.1.1 there). vdirsyncer 0.21 in `~/.local/share/kairos/venv` (symlinked into `~/.local/bin`), read-write. Secrets in `~/.config/kairos/secrets/` (api-token, ntfy-topic, apple-id, icloud-app-password). The `test` (ZZ-kairos-test) source was removed from the live configs 2026-10-13 (backup `config.toml.bak-2026-10-13`); re-add it before ever setting `live = false`.
-- Mac: `kairos` via `cargo install`; the local copy is an rsync of the server's vdir (`sync.full_cmd`; vdirsyncer is no longer used on the Mac); launchd agent `com.kairos.sync` runs `kairos sync` every 60 s (log `~/Library/Logs/kairos-sync.log`). Keychain: kairos-api-token, kairos-icloud, kairos-apple-id. chezmoi, tmux and zsh snippets NOT applied (Alec's call); `deploy/chezmoi/…/config.toml.tmpl` renders to the Mac's live config.
-- Phone: ntfy app subscribed, iPhone reaches kairosd over Tailscale (Alec, 2026-10-13).
-- Update the server: `deploy/deploy.sh` from the laptop's locus checkout (was: a pull and two `cargo install`s in `~/server-projects/kairos`).
-
-## Phase status
-
-| Phase | Status |
-|---|---|
-| 0 Cleanup & scaffolding | Done; migration done by Alec 2026-10-11. Golden fixtures from real exports still to do. |
-| 1 Sync plumbing | Done and verified (see findings). Emptied collections handled: kairos's own deletes push with `--force-delete` for that collection; collections emptied on iCloud are followed (`kairos_store::sync`). |
-| 2 Core read path | Done (25 fixture-based semantic tests + unit tests). |
-| 3 CLI + tmux/shell | Done; budgets met (5k events: next 8.5 ms, today 8.9 ms, TUI first frame 4.6 ms on M-series, release). |
-| 4 TUI | Done (all views, toggles, dedup expansion, ghost blocks, check-in, snapshots). |
-| 5 Write path | Done (risk table tests, changesets, undo, live guard, approvals in CLI/TUI/phone links). |
-| 6 Tasks & scheduler | Done (EDF+slack, chunking, stability, shortfalls, check-ins, auto-done, estimate log). |
-| 7 MCP | Done (stateless Streamable HTTP; restart-mid-session test). Check-ins, log work, start, reopen and project-time tools added 2026-10-13. Registration: `docs/claude-usage.md`. |
-| 8 Phone | Done, then cut back (2026-10-25, plan B.4: "just noise"): ntfy pushes, approve buttons and the check-in page removed; the phone shows the iCloud calendars and takes events, and the Shortcut adds tasks. |
-| 9 Remote MCP (optional) | Not started (needs OAuth). |
-
-## Phase 1 findings (`scripts/verify-icloud.sh`, 2026-10-11)
+## Phase 1 findings (`deploy/kairos/verify-icloud.sh`, 2026-10-11)
 
 - Family calendar discoverable over CalDAV: **yes** (collection id is a 64-hex hash; 225 items). Also discovered: `Erinnerungen ⚠️` (legacy reminders, VTODO only, ignored).
 - `X-KAIROS-*` survives iCloud round-trip: **yes**
@@ -98,6 +77,9 @@ predate the move; paths to `~/server-projects/kairos` are the archived repositor
 - Tailscale: Mac ↔ compute-node ✓ (API reachable at http://compute-node:7420); iPhone (`phone`) ✓ (confirmed by Alec 2026-10-13).
 
 ## Decisions log
+
+New decisions go in the repository's `docs/decisions/` as ADRs, as every locus decision does
+(L8); what follows is the log from before kairos moved in.
 
 - Project sessions, proposed project time, the ntfy pushes and the phone pages removed (2026-10-25, your call and plan B.4): one way to set time aside for a project (a task for it), one place to check in (the calendar), one place to approve (locus's Approve). Project time no longer double counts a block worked through Claude.
 

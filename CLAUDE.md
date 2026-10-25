@@ -760,7 +760,7 @@ Custom GUI · cloud storage of corpus content · multi-user/auth · local models
 
 Moved in 2026-10-24 (ADR-008, spec `docs/redesign/slices/kairos-joins-locus.md`). Its own notes,
 layout and deployment state are in [`kairos/CLAUDE.md`](kairos/CLAUDE.md) and its spec in
-`kairos/SPEC.md`; `kairos/scripts/ci.sh` is the gate (fmt, clippy -D warnings, every test in the
+`kairos/SPEC.md`; `scripts/ci.sh` (at the root) is the gate (fmt, clippy -D warnings, every test in the
 workspace, the 5k-event perf budgets). Its invariants are invariants of this repository:
 
 - **Single writer.** Only kairosd writes to iCloud. Everything else, locus included, writes calendar

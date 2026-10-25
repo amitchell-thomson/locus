@@ -99,6 +99,8 @@ pub fn run(cfg: Config, path: PathBuf) -> Result<(), String> {
         .unwrap_or_else(chrono::Duration::zero);
     let now = Utc::now() + skew;
     let mut app = load(cfg.clone(), &path, now)?;
+    app.uselog = locus_contract::uselog::UseLog::new(locus_contract::uselog::default_path());
+    app.uselog.record(&format!("calendar:{}", app.view.name()), "open");
     app.daemon = Daemon::from_config(&cfg).ok().map(|d| d.interactive(true));
     let (tx, rx) = mpsc::channel::<()>();
     // kairosd's index, fetched in the background: (requested at, result).

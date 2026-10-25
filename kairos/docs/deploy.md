@@ -1,78 +1,54 @@
 # Deploying kairos
 
+kairos is built and deployed from the locus repository like the rest of locus (ADR-008, L8).
+
 ```
 iPhone / Calendar.app ─┐
                  iCloud (truth)
         ┌───────────┴────────────┐
- vdirsyncer rw (compute-node)   vdirsyncer read-only (Mac, launchd every 3 min)
+ vdirsyncer rw (compute-node)   rsync of the server's copy (Mac, launchd every 60 s)
         │                        │
  kairosd :7420 (Tailscale)  ◄── kairos CLI / TUI writes (HTTP + bearer)
         ▲  MCP /mcp  ◄── Claude Code
-        ▲  /api/tasks ◄── iOS Shortcut
+        ▲  /api/…    ◄── the locus window (tasks, chores, Approve), the iOS Shortcut
 ```
 
-## compute-node (server) — already done on 2026-10-11
+## Where things are
 
-```sh
-cd ~/server-projects && gh repo clone amitchell-thomson/kairos && cd kairos
-cargo install --locked --path crates/kairosd && cargo install --locked --path crates/kairos-cli
-python3 -m venv ~/.local/share/kairos/venv && ~/.local/share/kairos/venv/bin/pip install vdirsyncer
-ln -sf ~/.local/share/kairos/venv/bin/vdirsyncer ~/.local/bin/vdirsyncer
-# config: deploy/chezmoi/dot_config/kairos/config.toml.tmpl (linux branch) → ~/.config/kairos/config.toml
-#         deploy/chezmoi/dot_config/vdirsyncer/config.tmpl (linux branch) → ~/.config/vdirsyncer/config
-#         config/constraints.example.toml → ~/.config/kairos/constraints.toml
-# secrets: ~/.config/kairos/secrets/{api-token,ntfy-topic} generated (chmod 600)
-cp deploy/chezmoi/dot_config/systemd/user/kairosd.service ~/.config/systemd/user/
-systemctl --user daemon-reload && systemctl --user enable --now kairosd   # lingering is already on
-```
+| What | Where |
+|---|---|
+| The server's unit | `deploy/systemd/locus-kairosd.service`, enabled in `deploy/systemd/enabled` |
+| Getting code to the server | `deploy/deploy.sh` from the laptop: push, pull on the server, then `deploy/server-sync.sh` runs `cargo install --locked` for kairosd and kairos when Rust sources moved, restarts the unit and runs `kairos doctor` |
+| The Mac's config, launchd agent, vdirsyncer config | `deploy/kairos/chezmoi/` (templates; rendered by hand on the Mac, chezmoi itself not applied) |
+| Optional tmux segment and shell summary | `deploy/kairos/tmux.conf.snippet`, `deploy/kairos/zshrc.snippet` (not applied) |
+| Setup scripts | `deploy/kairos/install-chezmoi.sh`, `store-secrets.sh`, `verify-icloud.sh` |
+| The CI gate | `scripts/ci.sh` at the repository root |
 
-iCloud secrets `~/.config/kairos/secrets/{apple-id,icloud-app-password}` (docs/migration.md §5) are in place; to re-check:
+On the Mac: `cargo install --locked --path kairos/crates/kairos-cli` from the locus checkout puts
+`kairos` on your PATH; the locus window's calendar runs it.
 
-```sh
-cd ~/server-projects/kairos && scripts/verify-icloud.sh     # discover, sync, Family check, X-KAIROS round-trip
-systemctl --user restart kairosd
-journalctl --user -u kairosd -f                              # structured logs
-```
+## Setup, as it was done (2026-10-11)
 
-Updating: `git pull && cargo install --locked --path crates/kairosd && cargo install --locked --path crates/kairos-cli && systemctl --user restart kairosd`.
-
-## Mac
-
-```sh
-cd ~/local-projects/kairos
-cargo install --locked --path crates/kairos-cli        # → ~/.cargo/bin/kairos
-brew install vdirsyncer                                 # or: uv tool install vdirsyncer
-scripts/install-chezmoi.sh && chezmoi diff && chezmoi apply   # config, vdirsyncer (read-only), launchd agent
-# Keychain entries: docs/migration.md §5 (kairos-icloud, kairos-apple-id, kairos-api-token, kairos-ics-*)
-yes | vdirsyncer discover icloud && vdirsyncer sync && vdirsyncer metasync
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kairos.sync.plist
-kairos sync && kairos doctor
-```
-Done on Alec's Mac 2026-10-11, except chezmoi itself: the launchd agent and config were rendered from the templates by hand (`chezmoi execute-template < …tmpl` reproduces `~/.config/kairos/config.toml`). The tmux segment (`deploy/tmux.conf.snippet`) and shell summary (`deploy/zshrc.snippet`) are optional and not applied.
-
-## Going live (done 2026-10-11)
-
-1. `scripts/verify-icloud.sh` passes, including `--after-phone-edit`; record results in CLAUDE.md.
-2. Try a few writes from the CLI and Claude while `live = false` — they appear in **ZZ-kairos-test** on the phone.
-3. Set `live = true` in the server config (`~/.config/kairos/config.toml`, or the chezmoi template) and `systemctl --user restart kairosd`. (`kairosd --live` does the same for one run.)
-4. Once live, the `test` source can go (ZZ-kairos-test was deleted on iCloud); keep it only while `live = false`.
+Secrets live in the macOS Keychain or `~/.config/kairos/secrets` (0600), never in the repository:
+the API token, the iCloud app password and Apple ID (`docs/migration.md` §5). vdirsyncer runs
+read-write on the server only. `deploy/kairos/verify-icloud.sh` checks discovery, sync, the
+Family calendar and that `X-KAIROS-*` properties survive a round trip and a phone edit; its
+results are in `kairos/CLAUDE.md`. kairos has been live (`live = true`) since 2026-10-11.
 
 ## Claude Code
 
-`docs/claude-usage.md` (one `claude mcp add` command). The repo skill is `.claude/skills/kairos/SKILL.md`.
+`docs/claude-usage.md` (one `claude mcp add` command). The skill is `kairos/.claude/skills/kairos/`.
 
 ## Phone
 
 The phone shows the synced iCloud calendars and takes events added there; nothing else (plan B.4).
-The ntfy pushes, their Approve/Reject buttons and the check-in page were removed on 2026-10-25:
-changes are approved in locus's Approve, check-ins happen in the calendar. The ntfy app can be
-unsubscribed.
+The ntfy pushes, their approve buttons and the check-in page were removed on 2026-10-25: changes
+are approved in locus's Approve, check-ins happen in the calendar.
 
 - Shortcut (adds a task over Tailscale): `docs/shortcut.md`.
 
 ## Security notes
 
-- kairosd binds the Tailscale IP only; everything except `/healthz` and HMAC-signed `/a/…` and `/checkin…` links needs the bearer token.
-- Signed links only approve/reject the one changeset they were made for (HMAC over `id:action`); GET only shows a confirmation page, so link previews can't approve anything.
-- Secrets live in the macOS Keychain or `~/.config/kairos/secrets` (0600), never in the repo; secret feed URLs are redacted from errors.
-- Phase 9 (public MCP for claude.ai) is deliberately not enabled: it needs proper OAuth.
+- kairosd binds the Tailscale IP only; everything except `/healthz` needs the bearer token.
+- Secret feed URLs are redacted from errors.
+- A public MCP for claude.ai is deliberately not enabled: it needs proper OAuth.

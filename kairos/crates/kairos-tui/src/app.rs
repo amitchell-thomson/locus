@@ -176,6 +176,8 @@ pub struct App {
     pub projects: Vec<api::ProjectItem>,
     /// What things can be for (ADR-009): the registry's items and Personal's streams.
     pub fors: Vec<ForOption>,
+    /// What was used, into locus's one use log (L8); off in tests and dumps.
+    pub uselog: locus_contract::uselog::UseLog,
     /// Finished tasks, most recent first (the tasks view's Completed section).
     pub done_tasks: Vec<Task>,
     /// Squeezed work blocks (from a dry-run plan): (task id, start, reasons).
@@ -259,6 +261,7 @@ impl App {
             checkins: Vec::new(),
             projects: Vec::new(),
             fors: build_fors(&cfg, kairos_store::taxonomy::get(&cfg).map(|(s, _)| s).as_ref()),
+            uselog: locus_contract::uselog::UseLog::off(),
             done_tasks: Vec::new(),
             squeezed: Vec::new(),
             daemon,
@@ -629,6 +632,11 @@ impl App {
     // ------------------------------------------------------------ keys
 
     pub fn key(&mut self, k: Key) {
+        let name = match k {
+            Key::Char(c) => c.to_string(),
+            other => format!("{other:?}").to_lowercase(),
+        };
+        self.uselog.record(&format!("calendar:{}", self.view.name()), &name);
         let mode = std::mem::replace(&mut self.mode, Mode::Normal);
         match mode {
             Mode::Help => {}

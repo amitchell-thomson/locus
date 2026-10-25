@@ -221,8 +221,21 @@ enum Cmd {
     },
     /// Check config, sync freshness, daemon reachability.
     Doctor,
-    /// Full-screen TUI.
-    Tui,
+    /// Full-screen TUI; `--dump` prints a view as text instead, as locus-tui's does (L8).
+    Tui {
+        /// Print this view as text and exit: week, day, month or agenda.
+        #[arg(long, value_name = "VIEW")]
+        dump: Option<String>,
+        /// With --dump: the window size.
+        #[arg(long, default_value = "155x43")]
+        size: String,
+        /// With --dump: draw the keys overlay on top.
+        #[arg(long)]
+        keys: bool,
+        /// With --dump: keys to press first, by name, space-separated: `right enter`, `v`.
+        #[arg(long, value_name = "KEYS")]
+        press: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -403,7 +416,12 @@ fn run() -> Result<()> {
     let p = Paint::auto();
     // Bare `kairos` in a terminal opens the calendar; piped, it prints today.
     let default_cmd = if std::io::IsTerminal::is_terminal(&std::io::stdout()) {
-        Cmd::Tui
+        Cmd::Tui {
+            dump: None,
+            size: String::new(),
+            keys: false,
+            press: None,
+        }
     } else {
         Cmd::Today {
             compact: false,
@@ -665,8 +683,50 @@ fn run() -> Result<()> {
         Cmd::Checkin => checkin(&ctx, &p),
         Cmd::Sync { local } => sync(&ctx, &p, local),
         Cmd::Doctor => doctor(&ctx, &p),
-        Cmd::Tui => kairos_tui::run(ctx.cfg.clone(), ctx.path.clone()).map_err(|e| anyhow!("{e}")),
+        Cmd::Tui {
+            dump: Some(view),
+            size,
+            keys,
+            press,
+        } => dump_tui(&ctx, &view, &size, keys, press.as_deref()),
+        Cmd::Tui { .. } => kairos_tui::run(ctx.cfg.clone(), ctx.path.clone()).map_err(|e| anyhow!("{e}")),
     }
+}
+
+/// `kairos tui --dump week --size 95x38 --press "right v"`: one frame of your calendar as text
+/// (from the local copy, read only), for looking at a change without a terminal.
+fn dump_tui(ctx: &Ctx, view: &str, size: &str, keys: bool, press: Option<&str>) -> Result<()> {
+    use kairos_tui::app::{Key, Mode, View};
+    let (w, h) = size
+        .split_once('x')
+        .and_then(|(w, h)| Some((w.parse::<u16>().ok()?, h.parse::<u16>().ok()?)))
+        .ok_or_else(|| anyhow!("--size: like 95x38"))?;
+    let mut app = kairos_tui::load(ctx.cfg.clone(), &ctx.path, ctx.now).map_err(|e| anyhow!("{e}"))?;
+    app.view = match view {
+        "week" => View::Week,
+        "day" => View::Day,
+        "month" => View::Month,
+        "agenda" => View::Agenda,
+        other => bail!("--dump: no view {other:?} (week, day, month, agenda)"),
+    };
+    for name in press.unwrap_or("").split_whitespace() {
+        app.key(match name {
+            "enter" => Key::Enter,
+            "esc" => Key::Esc,
+            "tab" => Key::Tab,
+            "up" => Key::Up,
+            "down" => Key::Down,
+            "left" => Key::Left,
+            "right" => Key::Right,
+            c if c.chars().count() == 1 => Key::Char(c.chars().next().unwrap_or(' ')),
+            other => bail!("--press: no key {other:?}"),
+        });
+    }
+    if keys {
+        app.mode = Mode::Help;
+    }
+    print!("{}", kairos_tui::render_to_string(&app, w, h));
+    Ok(())
 }
 
 fn parse_instant(ctx: &Ctx, s: &str) -> Result<DateTime<Utc>> {

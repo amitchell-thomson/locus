@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Phase 1 verification, run on compute-node once the iCloud secrets exist.
-#   scripts/verify-icloud.sh                    discover + sync, Family check, X-KAIROS round-trip
-#   scripts/verify-icloud.sh --after-phone-edit re-check X-KAIROS after editing the test event on the iPhone
+#   deploy/kairos/verify-icloud.sh                    discover + sync, Family check, X-KAIROS round-trip
+#   deploy/kairos/verify-icloud.sh --after-phone-edit re-check X-KAIROS after editing the test event on the iPhone
 # Writes only to ZZ-kairos-test (kairosd must be running with live = false).
 set -euo pipefail
 VDIR="$HOME/.local/share/kairos/vdir"
@@ -78,5 +78,5 @@ ok "event reached iCloud ($(basename "$(dirname "$f")"))"
 if grep -q '^X-KAIROS-CREATED-BY' "$f"; then ok "X-KAIROS-* survived the iCloud round-trip"; else bad "iCloud stripped X-KAIROS-* (sidecar remains authoritative)"; fi
 echo
 echo "Next: on the iPhone, open 'kairos round-trip test' (tomorrow 12:00, ZZ-kairos-test), change its title, wait a minute, then run:"
-echo "  scripts/verify-icloud.sh --after-phone-edit"
+echo "  deploy/kairos/verify-icloud.sh --after-phone-edit"
 echo "Undo the test event afterwards: kairos undo $id"

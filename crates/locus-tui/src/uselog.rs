@@ -1,69 +1,8 @@
-//! What was used (plan R9): every screen opened and key pressed, one JSON line each, local only.
-//! Read at the start of each design round with `--use-report`, so a round starts from what Alec
-//! actually reached for rather than what he remembers reaching for.
+//! What was used (plan R9): the log itself is locus-contract's, shared with kairos (L8); this
+//! is the report read at the start of each design round (`--use-report`).
 
-use anyhow::Result;
-use serde::{Deserialize, Serialize};
+pub use locus_contract::uselog::{Entry, UseLog, default_path};
 use std::collections::BTreeMap;
-use std::fs::OpenOptions;
-use std::io::Write;
-use std::path::PathBuf;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Entry {
-    pub ts: String,
-    pub screen: String,
-    /// The key pressed, or `open` when the screen was opened.
-    pub key: String,
-}
-
-/// `$LOCUS_TUI_USE_LOG`, else `$XDG_STATE_HOME/locus/tui-use.jsonl`, else `~/.local/state/...`.
-pub fn default_path() -> Option<PathBuf> {
-    if let Some(p) = std::env::var_os("LOCUS_TUI_USE_LOG") {
-        return Some(PathBuf::from(p));
-    }
-    let state = std::env::var_os("XDG_STATE_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state")))?;
-    Some(state.join("locus/tui-use.jsonl"))
-}
-
-/// Appends entries; a log that cannot be written is switched off, never fatal (R5: the window
-/// must not die over its own bookkeeping).
-#[derive(Debug, Default)]
-pub struct UseLog {
-    path: Option<PathBuf>,
-}
-
-impl UseLog {
-    pub fn new(path: Option<PathBuf>) -> UseLog {
-        UseLog { path }
-    }
-
-    pub fn off() -> UseLog {
-        UseLog { path: None }
-    }
-
-    pub fn record(&mut self, screen: &str, key: &str) {
-        let Some(path) = &self.path else { return };
-        let entry = Entry {
-            ts: chrono::Local::now().to_rfc3339(),
-            screen: screen.into(),
-            key: key.into(),
-        };
-        let ok = (|| -> Result<()> {
-            if let Some(dir) = path.parent() {
-                std::fs::create_dir_all(dir)?;
-            }
-            let mut f = OpenOptions::new().create(true).append(true).open(path)?;
-            writeln!(f, "{}", serde_json::to_string(&entry)?)?;
-            Ok(())
-        })();
-        if ok.is_err() {
-            self.path = None;
-        }
-    }
-}
 
 /// Counts per screen, and per key within each screen, most used first.
 pub fn report(text: &str) -> String {

@@ -67,13 +67,8 @@ pub fn busy(last_key: Option<Instant>, now: Instant, detail_open: bool) -> bool 
 /// `$LOCUS_STATE_DIR`, else `$XDG_STATE_HOME/locus`, else `~/.local/state/locus`. The tmux
 /// snippet's `@locus-state-dir` must name the same place.
 pub fn state_dir() -> Option<PathBuf> {
-    if let Some(p) = std::env::var_os("LOCUS_STATE_DIR") {
-        return Some(PathBuf::from(p));
-    }
-    let state = std::env::var_os("XDG_STATE_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state")))?;
-    Some(state.join("locus"))
+    // One definition, the contract's, shared with kairos (L8).
+    locus_contract::link::state_dir()
 }
 
 /// Reads `<state>/focus` when it changes. A missing or unreadable file means "no news", never

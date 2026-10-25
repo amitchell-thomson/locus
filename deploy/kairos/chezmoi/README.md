@@ -11,4 +11,4 @@ Library/LaunchAgents/com.kairos.sync.plist
 {{ end }}
 ```
 
-`scripts/install-chezmoi.sh` does both. See `docs/deploy.md`.
+`deploy/kairos/install-chezmoi.sh` does both. See `kairos/docs/deploy.md`.

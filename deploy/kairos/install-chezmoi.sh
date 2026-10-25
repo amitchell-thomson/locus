@@ -3,7 +3,7 @@
 # Review with `chezmoi diff`, then `chezmoi apply`.
 set -euo pipefail
 SRC="$(chezmoi source-path)"
-HERE="$(cd "$(dirname "$0")/.." && pwd)/deploy/chezmoi"
+HERE="$(cd "$(dirname "$0")" && pwd)/chezmoi"
 mkdir -p "$SRC/dot_config/kairos" "$SRC/dot_config/vdirsyncer" "$SRC/dot_config/systemd/user" "$SRC/Library/LaunchAgents"
 cp "$HERE/dot_config/kairos/config.toml.tmpl" "$SRC/dot_config/kairos/"
 cp "$HERE/dot_config/kairos/constraints.toml" "$SRC/dot_config/kairos/"

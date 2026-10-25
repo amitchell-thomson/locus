@@ -19,6 +19,7 @@ pub mod review;
 pub mod system;
 pub mod tasks;
 pub mod taxonomy;
+pub mod uselog;
 
 pub use common::*;
 pub use explore::*;

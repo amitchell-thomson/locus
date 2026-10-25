@@ -12,4 +12,4 @@ kairos plan | changes --pending | approve <id> | undo <id> | doctor
 
 - What it does: `SPEC.md` · architecture & invariants: `CLAUDE.md`
 - Setup: `docs/migration.md` → `docs/deploy.md` · Claude: `docs/claude-usage.md` · TUI keys & legend: `docs/tui.md` · phone: `docs/shortcut.md` · JSON: `docs/json.md`
-- Tests: `scripts/ci.sh`
+- Tests: `scripts/ci.sh` at the repository root

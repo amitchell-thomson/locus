@@ -192,10 +192,6 @@ pub fn due_marks(tasks: &[Task], from: DateTime<Utc>, to: DateTime<Utc>, tz: Tz)
         .filter(|t| t.status == TaskStatus::Open && t.stage.is_none())
         .filter_map(|t| {
             let due = t.due?;
-            let at = due.instant(tz);
-            if at < from || at >= to {
-                return None;
-            }
             let span = match due {
                 Due::Date(d) => Span::AllDay {
                     start: d,
@@ -203,6 +199,16 @@ pub fn due_marks(tasks: &[Task], from: DateTime<Utc>, to: DateTime<Utc>, tz: Tz)
                 },
                 Due::At(t) => Span::Timed { start: t, end: t },
             };
+            // In the window by the day it is drawn on: a date alone is due at the end of its
+            // day, which is the next day's midnight, and must still show on its own day.
+            let (s, e) = span.bounds(tz);
+            let inside = match due {
+                Due::Date(_) => s < to && e > from,
+                Due::At(at) => at >= from && at < to,
+            };
+            if !inside {
+                return None;
+            }
             Some(Instance {
                 uid: format!("due-{}", t.id),
                 recurrence_id: None,

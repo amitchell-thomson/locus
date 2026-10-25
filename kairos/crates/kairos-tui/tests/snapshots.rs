@@ -1143,3 +1143,47 @@ fn shift_arrows_nudge_the_selected_item() {
     a.key(Key::Char(']'));
     assert_eq!(a.cursor, c + chrono::Duration::days(7));
 }
+
+#[test]
+fn a_due_date_shows_at_its_time_or_at_the_top_without_one() {
+    // Spec E5: a flag on the day at its time; with no time, at the top with the all-day items.
+    let (mut a, _t) = app("2026-10-19T08:00:00+01:00");
+    let mk = |title: &str, due: kairos_core::task::Due| {
+        let mut t = kairos_core::task::Task::new(
+            title,
+            "Personal",
+            60,
+            kairos_core::model::Author::Alec,
+            now("2026-10-19T08:00:00+01:00"),
+        );
+        t.due = Some(due);
+        t
+    };
+    a.tasks.push(mk(
+        "Apps close",
+        kairos_core::task::Due::Date(chrono::NaiveDate::from_ymd_opt(2026, 10, 21).unwrap()),
+    ));
+    a.tasks.push(mk(
+        "Report in",
+        kairos_core::task::Due::At(now("2026-10-21T15:00:00+01:00")),
+    ));
+    a.key(Key::Right);
+    a.key(Key::Right);
+    a.key(Key::Tab); // Wed 21, day view
+    let s = render_to_string(&a, 100, 40);
+    let lines: Vec<&str> = s.lines().collect();
+    let rule = lines
+        .iter()
+        .position(|l| l.starts_with("│────"))
+        .unwrap_or_else(|| panic!("{s}"));
+    let top = lines
+        .iter()
+        .position(|l| l.contains("Apps close"))
+        .unwrap_or_else(|| panic!("{s}"));
+    let timed = lines
+        .iter()
+        .position(|l| l.contains("Report in"))
+        .unwrap_or_else(|| panic!("{s}"));
+    assert!(top < rule, "no time: at the top\n{s}");
+    assert!(timed > rule && lines[timed].contains("15:00"), "at its time\n{s}");
+}

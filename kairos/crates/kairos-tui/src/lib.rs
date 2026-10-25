@@ -122,10 +122,14 @@ pub fn run(cfg: Config, path: PathBuf) -> Result<(), String> {
         // Days locus asks to open (spec K8).
         let mut inbox = locus_contract::link::OpenFile::kairos();
         loop {
-            if let Some(req) = inbox.poll()
-                && let Some((day, uid)) = locus_contract::link::parse_kairos_request(&req)
-            {
-                app.open_day(day, uid.as_deref());
+            if let Some(req) = inbox.poll() {
+                // "add-task [for]": the add-task form, For filled (round 7a: one add form).
+                if let Some(rest) = req.strip_prefix("add-task") {
+                    let id = rest.trim();
+                    app.open_add_task_for((!id.is_empty()).then_some(id));
+                } else if let Some((day, uid)) = locus_contract::link::parse_kairos_request(&req) {
+                    app.open_day(day, uid.as_deref());
+                }
             }
             app.now = Utc::now() + skew;
             terminal.draw(|f| ui::draw(f, &app)).map_err(|e| e.to_string())?;

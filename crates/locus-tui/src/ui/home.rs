@@ -147,6 +147,12 @@ pub fn section_len(app: &App, sec: char) -> usize {
     match sec {
         'p' => project_rows(app).len(),
         'c' => career_rows(app).len(),
+        // Only the rows drawn; the draw records how many.
+        'd' => app
+            .shown
+            .borrow()
+            .get(&(ScreenId::Home, 'd'))
+            .map_or(task_rows(app).len().max(1), Vec::len),
         't' => study_rows(app).len() + 1,
         // Only the finds drawn; the draw records which they are.
         'e' => app
@@ -177,26 +183,33 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         // Explore takes what is left: at the smallest window one find, never a project's row.
         Constraint::Min(2),
         gap,
-        // Waiting for you: approvals, then tasks (spec E7, its own key d), then chores overdue
-        // or put off (spec K9) when there are any.
-        Constraint::Length(if app.fixtures.home.chores_waiting.is_empty() {
-            3
-        } else {
-            4
-        }),
+        // Approve and tasks side by side (round 7a), as careers and studies are: a title and
+        // two rows at the smallest window, a row more for each row of height, up to five.
+        Constraint::Length((3 + inner.height.saturating_sub(35)).min(6)),
         gap,
         Constraint::Length(3),
     ])
     .split(inner);
-    let (work_r, proj_r, side_r, exp_r, wait_r, sys_r) = (rects[0], rects[2], rects[4], rects[6], rects[8], rects[10]);
-    // The tasks line is the waiting section's second row; `d` focuses that row alone.
-    let task_r = Rect {
-        y: wait_r.y + 2,
-        height: 1,
-        ..wait_r
+    let (work_r, proj_r, side_r, exp_r, pair_r, sys_r) = (rects[0], rects[2], rects[4], rects[6], rects[8], rects[10]);
+    let [wait_r, pair_bar, task_r] = Layout::horizontal([
+        Constraint::Percentage(50),
+        Constraint::Length(3),
+        Constraint::Percentage(50),
+    ])
+    .areas(pair_r);
+    draw_approve(f, wait_r, app);
+    draw_tasks(f, task_r, app);
+    // The divider is tasks' edge, lit when tasks is focused (as studies' is).
+    let (col, top, side) = if app.focus == Some('d') {
+        (st("blue"), "━┳━", " ┃ ")
+    } else {
+        (st("surface2"), "─┬─", " │ ")
     };
-
-    draw_waiting(f, wait_r, app);
+    let mut div = vec![Line::from(Span::styled(top, col))];
+    for _ in 1..pair_bar.height {
+        div.push(Line::from(Span::styled(side, col)));
+    }
+    lines(f, pair_bar, div);
     work::draw_week(f, work_r, app, app.focus == Some('w'));
     draw_projects(f, proj_r, app);
     // Careers and learning side by side, a line between them (round 1c).
@@ -237,8 +250,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     // The focused section gets a thick blue bar on the frame's edge beside it: clearer than a
     // coloured rule alone, without boxing every section (round 1b).
     let focused = match app.focus {
-        Some('a') => Some(wait_r),
-        Some('d') => Some(task_r),
+        Some('a') => Some(pair_r),
         Some('w') => Some(work_r),
         Some('p') => Some(proj_r),
         Some('c') => Some(side_r),
@@ -359,116 +371,150 @@ fn draw_border(f: &mut Frame, area: Rect, app: &App) -> Rect {
     inner
 }
 
-/// Tasks as one line in waiting for you (spec E7; round 7: "any important view being shown
-/// somehow on home"): how many are open, the next three by due date, and how many are due within
-/// two days. The whole page is a key away (`d`); a course's next due also shows in Studies,
-/// beside the course.
-fn tasks_line(app: &App, width: u16) -> Line<'static> {
-    let focus = app.focus == Some('d');
-    let now = app.fixtures.now();
-    let open = crate::ui::tasks::open(app);
-    if open.is_empty() {
-        return row(
-            vec![pointer(0, focus.then_some(0)), Span::styled(" ☐ nothing to do", dim())],
-            vec![Span::styled("[d] ", dim())],
-            width,
-        );
-    }
-    let mut by_due: Vec<_> = open.iter().collect();
+/// The tasks Home lists (spec E7, round 7a): open ones by due date, then chores put off or
+/// overdue that are not among them; the rows `d` walks.
+pub fn task_rows(app: &App) -> Vec<(String, Option<locus_contract::Time>, u32, Option<String>)> {
+    let mut by_due: Vec<_> = crate::ui::tasks::open(app);
     by_due.sort_by_key(|t| (t.due.is_none(), t.due));
-    let soon = open
-        .iter()
-        .filter(|t| {
-            t.due
-                .is_some_and(|d| (d.date_naive() - now.date_naive()).num_days() <= 2)
-        })
-        .count();
-    let next: Vec<String> = by_due
-        .iter()
-        .take(3)
-        .map(|t| match t.due {
-            Some(d) => format!("{} {}", t.title, d.format("%a").to_string().to_lowercase()),
-            None => t.title.clone(),
-        })
+    let mut v: Vec<_> = by_due
+        .into_iter()
+        .map(|t| (t.title.clone(), t.due, t.put_off, t.for_id.clone()))
         .collect();
-    let left = vec![
-        pointer(0, focus.then_some(0)),
-        Span::styled(format!(" ☐ {} open   ", open.len()), bold(text())),
-        Span::styled(next.join(SEP), text()),
-    ];
-    let mut right = Vec::new();
-    if soon > 0 {
-        right.push(Span::styled(format!("{soon} due within two days  "), st("peach")));
+    for c in &app.fixtures.home.chores_waiting {
+        if !v.iter().any(|t| t.0 == c.title) {
+            v.push((c.title.clone(), None, c.put_off, None));
+        }
     }
-    right.push(Span::styled("[d] ", dim()));
-    row(left, right, width)
+    v
 }
 
-/// The approve list as one line that draws the eye; the items themselves are on the approve
-/// page (round 1: "I would rather see the approves in the approve window, with a smaller
-/// summary in a different location").
-fn draw_waiting(f: &mut Frame, area: Rect, app: &App) {
+/// Tasks beside approve (round 7a: "make tasks and approve be on the same line like careers and
+/// studies are"): one task a row with when it is due and how often it was put off, the rest
+/// counted; `+` adds one in kairos, For filled from the selected task (one form, kairos's).
+fn draw_tasks(f: &mut Frame, area: Rect, app: &App) {
+    let focus = app.focus == Some('d');
+    let now = app.fixtures.now();
+    let rows = task_rows(app);
+    let mut out = vec![rule("tasks", "", Some('d'), focus, area.width)];
+    let room = usize::from(area.height.saturating_sub(1));
+    if rows.is_empty() {
+        out.push(Line::from(Span::styled("   ☐ nothing to do · + adds one", dim())));
+        return lines(f, area, out);
+    }
+    let shown = if rows.len() > room {
+        room.saturating_sub(1)
+    } else {
+        rows.len()
+    };
+    app.shown
+        .borrow_mut()
+        .insert((ScreenId::Home, 'd'), (0..shown.max(1)).collect());
+    let sel = focus.then(|| app.sel('d').min(shown.saturating_sub(1)));
+    for (i, (title, due, put_off, _)) in rows.iter().take(shown).enumerate() {
+        let mut right = Vec::new();
+        if *put_off > 0 {
+            right.push(Span::styled(format!("put off {put_off}× "), st("peach")));
+        }
+        if let Some(d) = due {
+            let days = (d.date_naive() - now.date_naive()).num_days();
+            let when = match days {
+                i64::MIN..=-1 => "overdue".to_string(),
+                0 => "today".into(),
+                1 => "tomorrow".into(),
+                2..=6 => d.format("%a").to_string().to_lowercase(),
+                _ => day(d.date_naive()),
+            };
+            right.push(Span::styled(
+                format!("{when} "),
+                if days <= 2 { st("peach") } else { dim() },
+            ));
+        }
+        out.push(row(
+            vec![
+                pointer(i, sel),
+                Span::styled(" ☐ ", dim()),
+                Span::styled(title.clone(), text()),
+            ],
+            right,
+            area.width,
+        ));
+    }
+    if shown < rows.len() {
+        out.push(Line::from(Span::styled(
+            format!("     +{} more · ⏎ all of them", rows.len() - shown),
+            dim(),
+        )));
+    }
+    lines(f, area, out);
+}
+
+/// What waits for your approval, beside tasks: how many and how many new, then their kinds (the
+/// items themselves are on the approve page; round 1: "a smaller summary in a different location").
+fn draw_approve(f: &mut Frame, area: Rect, app: &App) {
     let focus = app.focus == Some('a');
     let ap = &app.fixtures.approve;
     let n = ap.len();
-    let mut out = vec![rule("waiting for you", "", Some('a'), focus, area.width)];
+    let mut out = vec![rule("approve", "", Some('a'), focus, area.width)];
     if n == 0 {
-        out.push(Line::from(Span::styled("  nothing waiting for your approval", dim())));
-    } else {
-        let kinds: Vec<String> = ap
-            .groups
-            .iter()
-            .filter(|g| !g.items.is_empty())
-            .map(|g| {
-                let name = match g.kind {
-                    locus_contract::ApproveKind::Filing => "to file",
-                    locus_contract::ApproveKind::Mail => "mail",
-                    locus_contract::ApproveKind::Deadline => "deadline",
-                    locus_contract::ApproveKind::Ink => "ink to place",
-                    locus_contract::ApproveKind::StopAsking => "stop asking?",
-                    locus_contract::ApproveKind::Date => "to the calendar",
-                };
-                format!("{} {name}", g.items.len())
-            })
-            .collect();
-        let left = vec![
-            pointer(0, focus.then_some(0)),
-            Span::styled(format!(" {} {n} to approve   ", glyph::APPROVE), bold(st("yellow"))),
-            Span::styled(kinds.join(SEP), text()),
-        ];
-        let new = ap.groups.iter().flat_map(|g| &g.items).filter(|i| i.new).count();
-        let right = if new > 0 {
-            vec![Span::styled(format!("{} {new} new ", glyph::UNREAD), st("peach"))]
-        } else {
-            vec![]
-        };
-        out.push(row(left, right, area.width));
+        out.push(Line::from(Span::styled("   nothing to approve", dim())));
+        return lines(f, area, out);
     }
-    out.push(tasks_line(app, area.width));
-    // Chores overdue or put off (spec K9), most put off first.
-    let ch = &app.fixtures.home.chores_waiting;
-    if !ch.is_empty() {
-        let names: Vec<String> = ch
-            .iter()
-            .map(|c| match (c.put_off, c.overdue) {
-                (0, true) => format!("{} (overdue)", c.title),
-                (0, false) => c.title.clone(),
-                (n, _) => format!("{} (put off {n}×)", c.title),
-            })
-            .collect();
-        out.push(Line::from(vec![
-            Span::raw("  "),
-            Span::styled(
-                format!(
-                    " {} {} chore{}   ",
-                    glyph::CHORES,
-                    ch.len(),
-                    if ch.len() == 1 { "" } else { "s" }
-                ),
-                bold(st("green")),
-            ),
-            Span::styled(names.join(SEP), text()),
-        ]));
+    let new = ap.groups.iter().flat_map(|g| &g.items).filter(|i| i.new).count();
+    let mut right = Vec::new();
+    if new > 0 {
+        right.push(Span::styled(format!("{} {new} new ", glyph::UNREAD), st("peach")));
+    }
+    out.push(row(
+        vec![
+            pointer(0, focus.then_some(0)),
+            Span::styled(format!(" {} {n} to approve", glyph::APPROVE), bold(st("yellow"))),
+        ],
+        right,
+        area.width,
+    ));
+    // The kinds, as many rows as there is room for.
+    let kinds: Vec<String> = ap
+        .groups
+        .iter()
+        .filter(|g| !g.items.is_empty())
+        .map(|g| {
+            let name = match g.kind {
+                locus_contract::ApproveKind::Filing => "to file",
+                locus_contract::ApproveKind::Mail => "mail",
+                locus_contract::ApproveKind::Deadline => "deadline",
+                locus_contract::ApproveKind::Ink => "ink to place",
+                locus_contract::ApproveKind::StopAsking => "stop asking?",
+                locus_contract::ApproveKind::Date => "to the calendar",
+            };
+            format!("{} {name}", g.items.len())
+        })
+        .collect();
+    let width = usize::from(area.width).saturating_sub(6);
+    let mut line = String::new();
+    let mut rows = Vec::new();
+    for k in kinds {
+        if !line.is_empty() && line.width() + SEP.width() + k.width() > width {
+            rows.push(std::mem::take(&mut line));
+        }
+        if !line.is_empty() {
+            line.push_str(SEP);
+        }
+        line.push_str(&k);
+    }
+    if !line.is_empty() {
+        rows.push(line);
+    }
+    let fit = usize::from(area.height.saturating_sub(2));
+    // Kinds that did not fit are counted on the last row drawn.
+    let hidden: usize = rows.iter().skip(fit).map(|r| r.split(SEP).count()).sum();
+    let mut rows: Vec<String> = rows.into_iter().take(fit).collect();
+    if hidden > 0
+        && let Some(last) = rows.last_mut()
+    {
+        last.push_str(&format!("{SEP}+{hidden}"));
+    }
+    for r in rows {
+        out.push(Line::from(vec![Span::raw("     "), Span::styled(r, text())]));
     }
     lines(f, area, out);
 }
@@ -963,6 +1009,31 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
         }
         (Some('t'), KeyCode::Left) => {
             app.focus = Some('c');
+            true
+        }
+        // Approve and tasks too (round 7a).
+        (Some('a'), KeyCode::Right) => {
+            app.focus = Some('d');
+            true
+        }
+        (Some('d'), KeyCode::Left) => {
+            app.focus = Some('a');
+            true
+        }
+        // A task opens the Tasks page on it.
+        (Some('d'), KeyCode::Enter) => {
+            let title = task_rows(app).get(app.sel('d')).map(|t| t.0.clone());
+            let at = title.and_then(|t| crate::ui::tasks::open(app).iter().position(|x| x.title == t));
+            app.open(ScreenId::Tasks);
+            app.sel.insert((ScreenId::Tasks, ' '), at.unwrap_or(0));
+            true
+        }
+        // + adds a task in kairos, For filled from the selected task (one form: kairos's).
+        (_, KeyCode::Char('+')) => {
+            let for_id = (app.focus == Some('d'))
+                .then(|| task_rows(app).get(app.sel('d')).and_then(|t| t.3.clone()))
+                .flatten();
+            crate::ui::tasks::add_in_kairos(app, for_id);
             true
         }
         (Some('p'), KeyCode::Enter) => {

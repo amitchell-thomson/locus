@@ -555,8 +555,9 @@ mod chore_tests {
                 assert!(b[0].contains(word), "{w} cols: {word:?} lost:\n{}\n{}", a[0], b[0]);
             }
             shown_somewhere |= b[0].contains("laundry");
-            let waiting = b.iter().any(|l| l.contains("laundry (put off 2×)"));
-            assert!(waiting, "{w} cols: not waiting for you:\n{}", b.join("\n"));
+            // A chore put off is listed with the tasks, saying so.
+            let listed = b.iter().any(|l| l.contains("laundry") && l.contains("put off 2×"));
+            assert!(listed, "{w} cols: not among the tasks:\n{}", b.join("\n"));
         }
         assert!(shown_somewhere, "a wide window has room for it");
     }
@@ -617,7 +618,7 @@ mod task_tests {
             &mut fx,
             &tasks,
             |k| (k == "Errands").then(|| "Personal".into()),
-            String::from,
+            |k: &str| k.to_string(),
         );
         assert_eq!(fx.tasks.tasks.len(), 3);
         let b15 = fx.tasks.tasks.iter().find(|t| t.id == "t-1").unwrap();
@@ -628,8 +629,12 @@ mod task_tests {
         assert_eq!(fx.projects["b15"].view.due[0].title, "B15 sheet 4");
         let mut app = App::new(fx, ScreenId::Home, UseLog::off());
         let home = crate::dump::render(&app, 120, 40).unwrap();
-        assert!(home.contains("☐ 3 open"), "{home}");
-        // d focuses the line; Enter opens the page.
+        // Home lists them beside approve, soonest due first.
+        assert!(
+            home.contains("☐ Millennium prep") && home.contains("☐ B15 sheet 4"),
+            "{home}"
+        );
+        // d focuses tasks; Enter opens the page on the selected one.
         app.on_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
         app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         assert_eq!(app.screen(), ScreenId::Tasks);

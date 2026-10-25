@@ -821,6 +821,14 @@ set and do not feel like they match the taxonomy we worked so hard to pin down."
   and tasks are crowded near the top weirdly." Recommendations in the spec
   [calendar-entry.md](calendar-entry.md).
 
+**Round 7a, 25 Oct. Approve and tasks on Home.** "Can we make the ability to add tasks in the
+task view on home as well (say no if you would recommend not doing this), but definitely make
+tasks and waiting for you (change the name of waiting for you to approve), be on the same line
+like careers and studies are." Done: approve (count, new, its kinds) and tasks (one a row, due
+and put off, the rest counted) side by side, growing with the window; chores are listed with the
+tasks. Adding: not a second form in locus; `+` (on Home's tasks or the Tasks page) opens
+kairos's add-task form in the calendar window with For filled from the selected task.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

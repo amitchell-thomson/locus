@@ -32,9 +32,9 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │─ explore · 7 finds · full, so the scout is waiting for you ─────────────────────────── [e] ─│
 │   for projects +3  󰭎 quast  Bayes-opt barrier tuning, 3x fewer measurements          15 min │
 │                                                                                             │
-│─ waiting for you ───────────────────────────────────────────────────────────────────── [a] ─│
-│   󰴹 6 to approve   2 to file · 1 mail · 1 deadline · 1 ink to place · 1 stop askin… 󰅸 2 new │
-│   ☐ 1 open   send HR signed employee form                                               [d] │
+│─ approve ──────────────────────────── [a] ──┬── tasks ──────────────────────────────── [d] ─│
+│   󰴹 6 to approve                   󰅸 2 new  │    ☐ send HR signed employee form             │
+│     2 to file · 1 mail · 1 deadline · +2    │                                               │
 │                                                                                             │
 │─ system ────────────────────────────────────────────────────────────────────────────── [s] ─│
 │   running  󰓦 dossier quast   │   󰓦 scout reading   │   󰁪 chan… 󰄵 14 done today   󰅘 1 failed │

@@ -2536,6 +2536,25 @@ impl App {
         )
     }
 
+    /// The add-task form with For filled from a registry id or stream (locus's `+`).
+    pub fn open_add_task_for(&mut self, for_id: Option<&str>) {
+        self.open_add(true);
+        let label = for_id.and_then(|id| {
+            self.fors
+                .iter()
+                .find(|o| o.locus.as_deref() == Some(id) || o.id == id)
+                .map(|o| o.label.clone())
+        });
+        if let Mode::Form(f) = &mut self.mode {
+            if let Some(l) = label
+                && let Some(fld) = f.fields.iter_mut().find(|x| x.label == "For")
+            {
+                fld.value = l;
+            }
+            f.focus = 0;
+        }
+    }
+
     /// Open the add form: a task, or an event (prefilled with the cursor day).
     fn open_add(&mut self, task: bool) {
         let keys = self.key_names();

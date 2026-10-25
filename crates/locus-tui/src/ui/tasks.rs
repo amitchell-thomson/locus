@@ -18,7 +18,32 @@ pub const KEYS: &[(&str, &str)] = &[
     ("↑ ↓", "walk the open tasks"),
     ("⏎", "open its next block (or its due day) in kairos"),
     ("d", "done (through kairos)"),
+    ("+", "add a task in kairos, for the same thing as the selected one"),
 ];
+
+/// Add a task in kairos's form (round 7a: one add form, kairos's), For filled when known: the
+/// calendar window comes forward with the form open.
+pub fn add_in_kairos(app: &mut App, for_id: Option<String>) {
+    let req = match &for_id {
+        Some(id) => format!("add-task {id}"),
+        None => "add-task".to_string(),
+    };
+    let what = for_id
+        .as_deref()
+        .and_then(|id| app.fixtures.registry.get(id).map(|p| p.name.clone()))
+        .map_or(String::new(), |n| format!(" for {n}"));
+    if app.in_session {
+        let sent = locus_contract::link::OpenFile::kairos().write(&req).is_ok();
+        let shown = sent && locus_contract::link::switch_to("kairos");
+        app.note = Some(if shown {
+            format!("adding a task{what} in kairos")
+        } else {
+            "asked kairos to add a task (the calendar window isn't open)".into()
+        });
+    } else {
+        app.note = Some(format!("would open kairos's add-task form{what}"));
+    }
+}
 
 /// The open tasks in the order drawn: grouped by what they are for, the group due soonest first,
 /// within it by due date.
@@ -173,6 +198,10 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
         return true;
     }
     let Some(t) = tasks.get(app.sel(' ').min(tasks.len().saturating_sub(1))).cloned() else {
+        if k.code == KeyCode::Char('+') {
+            add_in_kairos(app, None);
+            return true;
+        }
         return matches!(k.code, KeyCode::Enter | KeyCode::Char('d'));
     };
     match k.code {
@@ -192,6 +221,7 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 app.note = Some(format!("would open kairos at {}", at.format("%a %-d %b")));
             }
         }
+        KeyCode::Char('+') => add_in_kairos(app, t.for_id.clone()),
         KeyCode::Char('d') => {
             app.note = Some(match app.calendar.clone() {
                 Some(live) => match live.complete(&t.id) {

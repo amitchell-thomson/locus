@@ -232,7 +232,7 @@ fn home_arrows_follow_what_is_drawn() {
     for _ in 0..drawn {
         a.on_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     }
-    assert_eq!(a.focus, Some('a'), "past the last drawn find, into waiting for you");
+    assert_eq!(a.focus, Some('a'), "past the last drawn find, into approve");
     a.on_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     assert_eq!(a.focus, Some('d'), "then its tasks line");
     a.on_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));

@@ -142,7 +142,7 @@ const HOME: &[Section] = &[
     s('c', "careers", None),
     s('t', "studies", None),
     s('e', "explore", Some(S::Explore)),
-    s('a', "waiting for you", Some(S::Approve)),
+    s('a', "approve", Some(S::Approve)),
     s('d', "tasks", Some(S::Tasks)),
     s('s', "system", Some(S::System)),
 ];

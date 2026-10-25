@@ -1,6 +1,6 @@
 # Adding to the calendar: what it is for, moving, linking, dates
 
-**State:** approved 2026-10-25 · **Written:** 2026-10-25 · **Runs in:** `locus slice 1`
+**State:** done 2026-10-25 · **Written:** 2026-10-25 · **Runs in:** `locus slice 1`
 **Decision:** [ADR-009](../../decisions/ADR-009-for-not-type.md) (proposed). **From:** Slice 1's
 round 7 (slice-1.md). **Builds on:** [kairos-joins-locus.md](kairos-joins-locus.md) (done).
 
@@ -91,4 +91,31 @@ E1 and E2 first (they change what adding asks), then E3 to E5, then E7, then E6 
 mail side). Each step is a commit of its own.
 
 ## Report
-*(written when it is done)*
+
+Run 25 Oct 2026, every step, as approved. 366 tests, clippy clean; deployed, and the locus
+session's windows restarted on the new builds.
+
+| Step | Commit | Evidence |
+|---|---|---|
+| E1 For | 0ad5d6a | Form tests (type-ahead order, completion); TUI test (For offered from the registry, matches drawn as you type, L opens the link form); `kairos task add --for`. |
+| E2 planning | 0ad5d6a | Engine test: B15 sheet 4 → 5 h in blocks; laundry → 20 min chore; Millennium prep 3 h → blocks; 40 min → one go; a 3YP task joins its project; a long task with no estimate asks for one. |
+| E3 nudging | 3332940 | Test of where a nudge lands (30 min, a day, the time kept); `[` `]` weeks; help and docs. |
+| E4 prep | c36a8b3 | Engine test: prep bound to its linked interview; the interview moved; the prep's due date follows. |
+| E5 due dates | 99fa1b0 | A real bug found by the check: a due date with no time showed on no day at all (it fell at the next day's midnight). Fixed; test with both kinds on one day. |
+| E7 overviews | 4e49a35, 8120885 | Home at 95x38 keeps every row with the tasks line; overlay and page tests; live dump of your tasks (one open, eight done this week). |
+| E6 mail | f141d86 | `--scan-mail 120` on your mail: Jump 16 Sep 15:00, every Millennium round with its length (the final 16 Oct 16:00, 30 min), Jump's visits, Citadel's assessment; quoted headers, "electronically" and a society's sponsor list no longer misread; Approve overlay tests. |
+
+### What went differently
+- **The tasks line sits in "waiting for you"** (its second row, its own key `d`), not as a
+  section of its own: at 95x38 a separate section pushed a project and two applications off
+  Home. Explore gives up its second find at the smallest window.
+- **The Application page's `c` still adds only the next date.** Any other date is added in kairos
+  with For set to the application, which now does the linking; a second form in locus would
+  duplicate it.
+- **Family is not a For.** It is the shared calendar; a family event goes in through `s` (share),
+  as before. A birthday is Social, or shared to Family.
+- **kairos's own task and project lists stay** as the fallback when the locus window is not
+  running.
+- **Dates from mail are read without a model**, so a date offered is a date the mail states; a
+  firm with two live applications and no year in the subject offers nothing rather than guess.
+

@@ -550,6 +550,20 @@ fn projects_view_lists_projects_by_status_with_time_spent() {
 }
 
 #[test]
+fn an_old_project_sessions_diamond_is_not_drawn() {
+    let (a, _t) = app("2026-10-21T08:00:00+01:00");
+    let mut i = a
+        .index
+        .instances
+        .iter()
+        .find(|i| i.meta.kind == kairos_core::model::EventKind::Event)
+        .unwrap()
+        .clone();
+    i.title = "◆ locus".into();
+    assert_eq!(kairos_tui::ui::label(&a, &i), "locus");
+}
+
+#[test]
 fn squeezed_work_blocks_carry_a_warning() {
     let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
     a.key(Key::Tab);

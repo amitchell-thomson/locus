@@ -168,13 +168,15 @@ fn centred(area: Rect, w: u16, h: u16) -> Rect {
     Rect::new(area.x + (area.width - w) / 2, area.y + (area.height - h) / 2, w, h)
 }
 
-fn label(app: &App, i: &Instance) -> String {
+pub fn label(app: &App, i: &Instance) -> String {
     let t = i.title.trim();
     match i.meta.kind {
         EventKind::Deadline => format!("⚑ {}", t.trim_start_matches('⚑').trim()),
         // Work: a box — 󰄱 to do (also past, until checked in), 󰄵 done.
         EventKind::TaskBlock => kairos_core::build::block_label(t, i.end(app.tz) <= app.now),
-        EventKind::Event => t.to_string(),
+        // Project sessions (removed 2026-10-25) stored a diamond in the title; their events are
+        // still on the calendar and are drawn as the ordinary events they now are.
+        EventKind::Event => t.trim_start_matches(['◇', '◈', '◆']).trim_start().to_string(),
         EventKind::Worked => format!("worked · {t}"),
     }
 }

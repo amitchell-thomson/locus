@@ -1,6 +1,6 @@
 # kairos joins locus
 
-**State:** done 2026-10-24 (K-e, archiving the old repository, due 31 Oct) · **Written:** 2026-10-24 · **Runs in:** `locus slice 1`
+**State:** done 2026-10-24 (K-e, the old repository archived 25 Oct, early, at your word) · **Written:** 2026-10-24 · **Runs in:** `locus slice 1`
 **Decision:** [ADR-008](../../decisions/ADR-008-kairos-joins-locus.md). **From:** Slice 1's
 Calendar round (slice-1.md, round 6). **Takes over:** Slice 0's step 0.8 (kairos on the shared
 taxonomy), which Slice 0 drops when you confirm it to that session.

@@ -1,6 +1,6 @@
 # kairos as a locus app: one look, one set of keys, one contract
 
-**State:** L1 to L8 done 2026-10-25; L9 waiting for you · **Written:** 2026-10-25 · **Runs in:** `locus slice 1`
+**State:** done 2026-10-25 · **Written:** 2026-10-25 · **Runs in:** `locus slice 1`
 **From:** your words, 25 Oct 2026: "kairos should cleanly be integrated with locus, and be treated
 like any other locus app, with the same structure, practice and formatting / same contracts /
 shared data / ui look etc... Everything should be consistent. Just because kairos was made first
@@ -142,6 +142,13 @@ and the locus window's three views restarted on the new builds.
 | L3 colours | 4efa2e6 | Stream colours in areas.toml; config test (a config that disagrees is named; the taxonomy wins); doctor on both machines: no disagreement. |
 | L4, L5 keys, words | 8ac8227, 29ab789 | `locus_theme::SHARED_KEYS`; kairos's hints and locus's Tasks page tested against it. `set_due`, `kairos due`; "due date" in what you read. |
 | L8 structure | 4fd051f | `kairos tui --dump`; `scripts/ci.sh` at the root; `deploy/kairos/`; the session starts kairos from the release build; one `state_dir`; one use log (kairos writes `calendar:<view>`). |
+
+| L9 outside | (no commit) | Your go-ahead, 25 Oct: "Link the claude skill properly, close the old tmux session, remove the ntfy lines, and just archive the old one now." `~/.claude/skills/kairos` points at `locus/kairos/.claude/skills/kairos`; the `kairos` tmux session is closed (its Claude was idle); the server config's ntfy lines are gone (backup `config.toml.bak-2026-10-25-ntfy`, kairosd restarted, doctor clean); `amitchell-thomson/kairos` is archived on GitHub, after checking it was clean, pushed, and its last commit is in locus's history. The checkouts `~/local-projects/kairos` and `~/server-projects/kairos` are still on disk. |
+
+Afterwards, from your use (25 Oct): Enter on `L` did nothing for a B14 lecture. Two bugs: the
+link form was checked for a title it does not have ("Title is empty"), and typing into a For
+that already named something appended to it. Both fixed (52f0766), and kairosd now links each
+Studies event whose title starts with a course code to that course, by itself (74 linked).
 
 ### What went differently
 - **L7 went first** (before the look), so the restyle did not have to cover lists about to go.

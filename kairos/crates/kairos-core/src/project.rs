@@ -1,7 +1,8 @@
 //! Projects: what Alec is working on, or should be. A project is stored as
 //! a task of kind `project` (no deadline, no estimate, never scheduled);
-//! [`Project`] is the view the API and the TUI's Projects list use. Its time
-//! on the calendar is sessions: events linked by `Meta.project_id`.
+//! [`Project`] is the view the API and the TUI's Projects list use. Each one is
+//! a locus registry repository. Its time is measured (Claude sessions in the repository) and
+//! checked in on the blocks of its tasks; it has no events of its own.
 
 use crate::model::Author;
 use crate::task::{PROJECT_KIND, Task, TaskStatus};
@@ -11,7 +12,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ProjectStatus {
-    /// Working on it now (proposed project time suggests these).
+    /// Working on it now.
     #[default]
     Active,
     /// Should be working on it soon.
@@ -63,8 +64,8 @@ pub struct Project {
     /// One line: what it is, or the next step.
     #[serde(default)]
     pub note: String,
-    /// The calendar (key) its sessions go in (default: the projects key),
-    /// e.g. Engineering for the 3rd-year project.
+    /// The calendar (key) its tasks' work goes in (default: the projects key),
+    /// e.g. Studies for the 3rd-year project.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<String>,
     /// The locus registry entry this project is (spec K7): one list of projects for every app.
@@ -76,7 +77,7 @@ pub struct Project {
 
 impl Project {
     /// The project view of a project task. `projects_key` is the default
-    /// calendar for sessions; a project in it reports `key: None`.
+    /// calendar for its work; a project in it reports `key: None`.
     pub fn of(t: &Task, projects_key: Option<&str>) -> Project {
         Project {
             id: t.id.clone(),
@@ -94,7 +95,7 @@ impl Project {
     }
 }
 
-/// A new project, as a task (`key` = the calendar its sessions go in).
+/// A new project, as a task (`key` = the calendar its tasks' work goes in).
 pub fn new_task(name: &str, status: ProjectStatus, note: &str, key: &str, by: Author, now: DateTime<Utc>) -> Task {
     let mut t = Task::new(name.trim(), key, 0, by, now);
     t.id = format!("p-{}", &uuid::Uuid::new_v4().simple().to_string()[..8]);

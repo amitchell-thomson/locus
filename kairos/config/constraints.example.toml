@@ -47,18 +47,11 @@ ideal_max_minutes = 30
 min_block_minutes = 10
 splittable = false
 
-# Proposed project time: free gaps offered (greyed out in the TUI) to accept or drop.
+# Projects: the calendar a project's work goes in when it names none. Time is set aside for a
+# project by planning a task for it; its time spent is measured (Claude sessions in its
+# repository) and checked in on its tasks' blocks. (The proposer's old settings are ignored.)
 [projects]
-# Off since spec K6 (2026-10-24): project time is measured from your Claude sessions, or a work
-# block you place; kairos no longer proposes it.
-enabled = false
-title = "Project time"
-key = "Projects"      # accepted sessions go to this calendar
-min_minutes = 60
-max_minutes = 180
-days_ahead = 7
-max_per_day = 1       # days with an accepted session get no more proposals
-earliest = "09:00"    # proposed sessions start no earlier
+key = "Projects"
 
 # Named windows tasks can prefer via `preferred_window`.
 [[windows]]

@@ -1,5 +1,5 @@
 //! ntfy push: approval requests (Approve/Reject buttons → signed links),
-//! morning summary, evening check-in.
+//! morning summary, evening check-in reminder (you check in from the calendar, `C`).
 
 use crate::engine::Notifier;
 use kairos_core::changeset::Changeset;
@@ -22,14 +22,6 @@ impl Ntfy {
             "{}/a/{id}/{action}?sig={}",
             self.public_url.trim_end_matches('/'),
             crate::http::sign(&self.sign_key, &format!("{id}:{action}"))
-        )
-    }
-
-    pub fn checkin_url(&self, day: &str) -> String {
-        format!(
-            "{}/checkin?day={day}&sig={}",
-            self.public_url.trim_end_matches('/'),
-            crate::http::sign(&self.sign_key, &format!("checkin:{day}"))
         )
     }
 

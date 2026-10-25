@@ -31,9 +31,6 @@ pub struct EventFacts {
     pub recurring: bool,
     pub start: DateTime<Utc>,
     pub end: DateTime<Utc>,
-    /// A project session kairos made (an accepted proposal): check-ins
-    /// record on it like on a work block.
-    pub project_session: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -152,7 +149,7 @@ pub fn is_checkin_record_op(op: &OpFacts, now: DateTime<Utc>) -> bool {
             .as_ref()
             .is_some_and(|a| a.kind == EventKind::TaskBlock && a.end <= now && !a.recurring);
     }
-    let recordable = |e: &EventFacts| e.kind == EventKind::TaskBlock || e.project_session;
+    let recordable = |e: &EventFacts| e.kind == EventKind::TaskBlock;
     matches!(op.action, Action::Update | Action::Delete)
         && op
             .before
@@ -302,7 +299,6 @@ mod tests {
             recurring,
             start,
             end: start + Duration::hours(1),
-            project_session: false,
         })
     }
     fn op(

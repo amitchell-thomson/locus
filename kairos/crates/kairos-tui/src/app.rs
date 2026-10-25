@@ -7,7 +7,7 @@ use kairos_core::changeset::{Changeset, Op, Status, WriteResult};
 use kairos_core::config::{Config, Overlay};
 use kairos_core::dates::{self, When};
 use kairos_core::dedup::Cluster;
-use kairos_core::model::{EventKind, Instance, Meta, Span};
+use kairos_core::model::{EventKind, Instance, Span};
 use kairos_core::normalize::series_from_calendars;
 use kairos_core::task::Task;
 use kairos_core::time::resolve_local;
@@ -62,10 +62,6 @@ pub enum PromptKind {
         task_id: String,
         title: String,
     },
-    /// Accepting proposed project time for a new project: its name.
-    NewProject {
-        proposal: String,
-    },
     /// More time for a task (its planned time is used up, or it grew).
     MoreTime {
         id: String,
@@ -90,7 +86,6 @@ impl PromptKind {
             PromptKind::Partial { .. } => "partly done — how long did you work? (e.g. 45m)",
             PromptKind::Remaining { .. } => "how much is left? (e.g. 3h, 0 = finished)",
             PromptKind::LogWork { .. } => "log work — how long, ending now? (e.g. 40m)",
-            PromptKind::NewProject { .. } => "new project — name (this time goes to it)",
             PromptKind::MoreTime { .. } => "how much more time? (e.g. 2h)",
             PromptKind::MoveDeadline { .. } => "deadline (when, e.g. fri 17:00)",
             PromptKind::Reopen { .. } => "reopen — how much is left? (e.g. 2h)",
@@ -109,20 +104,8 @@ pub enum Confirm {
     Skip,
     /// Remove a task's deadline (the task stays, with no deadline).
     ClearDue(String),
-    /// Delete a project (its sessions stay on the calendar).
+    /// Delete a project.
     DeleteProject(String),
-}
-
-/// A choice when accepting proposed project time.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PickOption {
-    Project {
-        id: String,
-        name: String,
-    },
-    New,
-    /// No project: just the proposal's generic title.
-    Plain,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,11 +118,6 @@ pub enum Mode {
     Checkin(usize),
     /// `a` in the calendar: an event or a task?
     AddChoice,
-    /// Accepting proposed project time: which project?
-    PickProject {
-        proposal: String,
-        sel: usize,
-    },
 }
 
 /// A block being checked in (from the C list or the calendar).
@@ -152,8 +130,6 @@ pub struct CheckinTarget {
     pub remaining_min: u32,
     /// Opened from the C list: go back to it afterwards.
     pub from_list: bool,
-    /// A project session (no "what's left"; F finishes the project).
-    pub project: bool,
 }
 
 impl CheckinTarget {
@@ -165,7 +141,6 @@ impl CheckinTarget {
             ask_remaining: item.ask_remaining,
             remaining_min: item.remaining_min,
             from_list,
-            project: item.project,
         }
     }
 }
@@ -220,8 +195,6 @@ pub struct App {
     pub tasks: Vec<Task>,
     pub pending: Vec<Changeset>,
     pub checkins: Vec<api::CheckinItem>,
-    /// Proposed project time (greyed; accept or drop).
-    pub proposals: Vec<api::ProposalItem>,
     /// Projects (active, next, paused, done) with time spent.
     pub projects: Vec<api::ProjectItem>,
     /// What things can be for (ADR-009): the registry's items and Personal's streams.
@@ -307,7 +280,6 @@ impl App {
             tasks: Vec::new(),
             pending: Vec::new(),
             checkins: Vec::new(),
-            proposals: Vec::new(),
             projects: Vec::new(),
             fors: build_fors(&cfg, kairos_store::taxonomy::get(&cfg).map(|(s, _)| s).as_ref()),
             done_tasks: Vec::new(),
@@ -491,9 +463,6 @@ impl App {
         }
         if let Ok(Ok(c)) = d.checkin_items() {
             self.checkins = c;
-        }
-        if let Ok(Ok(p)) = d.proposals() {
-            self.proposals = p;
         }
         if let Ok(Ok(p)) = d.projects() {
             self.projects = p;
@@ -727,11 +696,9 @@ impl App {
                 }
             }
             Mode::Checkin(i) => self.checkin_key(i, k),
-            Mode::PickProject { proposal, sel } => self.pick_project_key(proposal, sel, k),
             Mode::AddChoice => match k {
                 Key::Char('e') => self.open_add(false),
                 Key::Char('t') => self.open_add(true),
-                Key::Char('p') => self.open_add_session(None),
                 _ => self.message = None,
             },
             Mode::Normal => self.normal(k),
@@ -924,7 +891,6 @@ impl App {
                     return;
                 };
                 match k {
-                    Key::Char('n') => self.open_add_session(Some(p.name.clone())),
                     Key::Char('e') => {
                         self.message = None;
                         let k = self.projects_key();
@@ -944,10 +910,7 @@ impl App {
                     }
                     Key::Char('d') => {
                         self.mode = Mode::Confirm(Confirm::DeleteProject(p.id.clone()));
-                        self.set_message(
-                            format!("delete project “{}”? (its sessions stay on the calendar) y/N", p.name),
-                            false,
-                        );
+                        self.set_message(format!("delete project “{}”? y/N", p.name), false);
                     }
                     _ => {}
                 }
@@ -1068,21 +1031,6 @@ impl App {
                     self.mode = Mode::Form(
                         Form::link(i.source.clone(), i.uid.clone(), task, &current).with_fors(self.fors_recent_first()),
                     );
-                    return;
-                }
-                if i.meta.kind == EventKind::Proposal {
-                    // Proposed project time: accept (then say what to work on) or drop.
-                    match k {
-                        Key::Char('y') => {
-                            self.message = None;
-                            self.mode = Mode::PickProject {
-                                proposal: i.uid.clone(),
-                                sel: 0,
-                            };
-                        }
-                        Key::Char('d') => self.reject_proposal(&i.uid),
-                        _ => {}
-                    }
                     return;
                 }
                 // A work block that has started and isn't checked in: check it
@@ -1532,28 +1480,6 @@ impl App {
             }
             return;
         }
-        if let PromptKind::NewProject { proposal } = &kind {
-            if buf.is_empty() {
-                return;
-            }
-            let req = api::CreateProjectReq {
-                name: buf.clone(),
-                ..Default::default()
-            };
-            match self.with_daemon(|d| d.create_project(&req)) {
-                Some(Ok(Ok(p))) => {
-                    let req = api::AcceptProposalReq {
-                        project_id: Some(p.id.clone()),
-                        title: None,
-                    };
-                    self.accept_proposal(proposal.clone(), req, p.name);
-                }
-                Some(Ok(Err(e))) => self.set_message(e.to_string(), true),
-                Some(Err(e)) => self.set_message(e.to_string(), true),
-                None => {}
-            }
-            return;
-        }
         if buf.is_empty() && kind != PromptKind::Search {
             return;
         }
@@ -1561,7 +1487,6 @@ impl App {
             PromptKind::Remaining { .. }
             | PromptKind::Partial { .. }
             | PromptKind::LogWork { .. }
-            | PromptKind::NewProject { .. }
             | PromptKind::MoreTime { .. }
             | PromptKind::MoveDeadline { .. }
             | PromptKind::Reopen { .. } => {}
@@ -1669,7 +1594,7 @@ impl App {
         let Some(i) = self.selected().map(|c| c.primary) else {
             return Ok(None);
         };
-        if matches!(i.meta.kind, EventKind::Proposal | EventKind::Worked) {
+        if i.meta.kind == EventKind::Worked {
             return Ok(None);
         }
         // A work block on a whole day (from before kairos refused them) becomes a timed one at
@@ -1743,30 +1668,12 @@ impl App {
                 )),
                 None => Err("For: type what it belongs to".into()),
             },
-            FormKind::AddSession => {
-                let when = f.get("When");
-                if when.is_empty() {
-                    return Err("When: e.g. thu 14:00".into());
-                }
-                let dur = match f.get("Duration") {
-                    "" => 120,
-                    d => dates::parse_minutes(d).map_err(|_| "Duration: e.g. 90m, 2h".to_string())?,
-                };
-                match dates::parse_when(when, self.today()).map_err(|e| e.to_string())? {
-                    When::Date(_) => Err("When: give a time too, e.g. thu 14:00".into()),
-                    When::DateTime(n) => {
-                        let s = resolve_local(n, self.tz);
-                        let e = s + Duration::minutes(i64::from(dur));
-                        Ok(format!("{} · {}", describe_span(s, e, self.tz), f.get("Project")))
-                    }
-                }
-            }
             FormKind::AddProject | FormKind::EditProject { .. } => {
                 if f.get("Name").is_empty() {
                     return Err("Name: what the project is called".into());
                 }
                 Ok(match f.get("Status") {
-                    "active" => "active: working on it now — project time suggests it".to_string(),
+                    "active" => "active: working on it now".to_string(),
                     "next" => "next: should be working on it soon".to_string(),
                     "paused" => "paused: on hold".to_string(),
                     _ => "done: finished, kept as a record".to_string(),
@@ -1876,31 +1783,6 @@ impl App {
     }
 
     fn submit_form(&mut self, f: Form) {
-        if f.kind == FormKind::AddSession {
-            if let Err(e) = self.form_preview(&f) {
-                self.set_message(e, true);
-                self.mode = Mode::Form(f);
-                return;
-            }
-            let start = match self.when_str(f.get("When")) {
-                Ok(s) => s,
-                Err(e) => return self.set_message(e, true),
-            };
-            let req = api::SessionReq {
-                start,
-                end: None,
-                duration_min: dates::parse_minutes(f.get("Duration")).ok(),
-            };
-            let project = f.get("Project").to_string();
-            // Close the form and say so first, then do the round trip.
-            self.set_message(format!("◇ planning {project}…"), false);
-            self.deferred.push(Box::new(move |app: &mut App| {
-                if let Some(r) = app.with_daemon(|d| d.create_session(&project, &req)) {
-                    app.write_result(r);
-                }
-            }));
-            return;
-        }
         if let FormKind::AddProject | FormKind::EditProject { .. } = &f.kind {
             let name = f.get("Name").to_string();
             if name.is_empty() {
@@ -1949,12 +1831,7 @@ impl App {
                 return;
             }
             let spent = dates::parse_minutes(f.get("Spent")).ok();
-            // A project session asks only how long it took.
-            let needs = if t.project {
-                None
-            } else {
-                dates::parse_minutes(f.get("Needs")).ok()
-            };
+            let needs = dates::parse_minutes(f.get("Needs")).ok();
             let from = match f.get("From") {
                 "" => None,
                 w => match self.when_str(w) {
@@ -2135,10 +2012,7 @@ impl App {
                     }
                 }
             }
-            FormKind::TookLonger { .. }
-            | FormKind::AddProject
-            | FormKind::EditProject { .. }
-            | FormKind::AddSession => {}
+            FormKind::TookLonger { .. } | FormKind::AddProject | FormKind::EditProject { .. } => {}
             FormKind::Link { source, uid, task } => {
                 let Some(o) = f.chosen_for().cloned() else {
                     return self.set_message("For: type what it belongs to", true);
@@ -2239,83 +2113,6 @@ impl App {
         }
     }
 
-    /// What accepting proposal `id` can go to: its suggested project first,
-    /// the other active and next projects, then a new one, or none.
-    pub fn pick_options(&self, id: &str) -> Vec<PickOption> {
-        use kairos_core::project::ProjectStatus;
-        let suggested = self
-            .proposals
-            .iter()
-            .find(|p| p.id == id)
-            .and_then(|p| p.project_id.clone());
-        let mut out: Vec<PickOption> = Vec::new();
-        let mut push = |p: &kairos_core::project::Project| {
-            out.push(PickOption::Project {
-                id: p.id.clone(),
-                name: p.name.clone(),
-            })
-        };
-        if let Some(s) = self.projects.iter().find(|p| Some(&p.project.id) == suggested.as_ref()) {
-            push(&s.project);
-        }
-        for st in [ProjectStatus::Active, ProjectStatus::Next, ProjectStatus::Paused] {
-            for p in self.projects.iter().filter(|p| p.project.status == st) {
-                if Some(&p.project.id) != suggested.as_ref() {
-                    push(&p.project);
-                }
-            }
-        }
-        out.push(PickOption::New);
-        out.push(PickOption::Plain);
-        out
-    }
-
-    fn pick_project_key(&mut self, proposal: String, sel: usize, k: Key) {
-        let opts = self.pick_options(&proposal);
-        match k {
-            Key::Down | Key::Tab => {
-                self.mode = Mode::PickProject {
-                    proposal,
-                    sel: (sel + 1).min(opts.len().saturating_sub(1)),
-                };
-            }
-            Key::Up | Key::BackTab => {
-                self.mode = Mode::PickProject {
-                    proposal,
-                    sel: sel.saturating_sub(1),
-                };
-            }
-            Key::Enter | Key::Char('y') => match opts.get(sel).cloned() {
-                Some(PickOption::Project { id, name }) => {
-                    let req = api::AcceptProposalReq {
-                        project_id: Some(id),
-                        title: None,
-                    };
-                    self.accept_proposal(proposal, req, name);
-                }
-                Some(PickOption::New) => {
-                    self.message = None;
-                    self.mode = Mode::Prompt(PromptKind::NewProject { proposal }, String::new());
-                }
-                Some(PickOption::Plain) | None => {
-                    let title = self.cfg_project_title();
-                    let req = api::AcceptProposalReq {
-                        title: Some(title.clone()),
-                        project_id: None,
-                    };
-                    self.accept_proposal(proposal, req, title);
-                }
-            },
-            Key::Esc | Key::Char('q') => self.message = None,
-            _ => self.mode = Mode::PickProject { proposal, sel },
-        }
-    }
-
-    /// The generic title of project time ("Project time").
-    fn cfg_project_title(&self) -> String {
-        "Project time".to_string()
-    }
-
     fn update_project_and_report(&mut self, id: &str, req: &api::UpdateProjectReq) {
         match self.with_daemon(|d| d.update_project(id, req)) {
             Some(Ok(Ok(r))) => {
@@ -2361,13 +2158,12 @@ impl App {
                 if self.projects.is_empty() {
                     &["a add project"]
                 } else {
-                    &["n plan time", "a add", "e edit", "s status", "d delete"]
+                    &["a add", "e edit", "s status", "d delete"]
                 }
             }
             View::Week | View::Day | View::Month | View::Agenda => match self.selected().map(|c| c.primary) {
                 None => &["a add"],
                 Some(i) => match (i.meta.kind, i.overlay) {
-                    (EventKind::Proposal, _) => &["y accept", "d drop"],
                     (EventKind::Deadline, _) if i.meta.task_id.is_some() => {
                         &["e edit", "m move", "d remove", "n start"]
                     }
@@ -2401,8 +2197,8 @@ impl App {
         hints
     }
 
-    /// The locus item an item belongs to (spec K8): its own link, else its task's, else its
-    /// project's registry entry.
+    /// The locus item an item belongs to (spec K8): its own link, else its task's (or the
+    /// task's project's registry entry).
     pub fn locus_link(&self, i: &Instance) -> Option<String> {
         if let Some(l) = &i.meta.locus {
             return Some(l.clone());
@@ -2421,13 +2217,7 @@ impl App {
         {
             return Some(l);
         }
-        let pid = i.meta.project_id.as_ref()?;
-        self.projects
-            .iter()
-            .find(|p| &p.project.id == pid)?
-            .project
-            .registry
-            .clone()
+        None
     }
 
     /// Open a day at an event, as locus asks (spec K8): the day view, the event selected.
@@ -2472,28 +2262,6 @@ impl App {
             }
             Err(e) => self.set_message(format!("couldn't ask locus: {e}"), true),
         }
-    }
-
-    /// Plan project time by hand (for `project`, or the first active one).
-    fn open_add_session(&mut self, project: Option<String>) {
-        use kairos_core::project::ProjectStatus;
-        let names: Vec<String> = self
-            .projects
-            .iter()
-            .filter(|p| p.project.status != ProjectStatus::Done)
-            .map(|p| p.project.name.clone())
-            .collect();
-        if names.is_empty() {
-            self.mode = Mode::Normal;
-            return self.set_message("no projects yet — add one in R first", true);
-        }
-        let first = project.unwrap_or_else(|| names[0].clone());
-        self.message = None;
-        self.mode = Mode::Form(Form::add_session(
-            names,
-            &first,
-            when_prefill(self.cursor, self.today()),
-        ));
     }
 
     /// A task's edit form with its Project picker.
@@ -2635,114 +2403,14 @@ impl App {
         }));
     }
 
-    fn accept_proposal(&mut self, id: String, req: api::AcceptProposalReq, title: String) {
-        if self.daemon.is_none() {
-            return self.set_message("kairosd not configured — writes unavailable", true);
-        }
-        let Some(p) = self.proposals.iter().find(|p| p.id == id).cloned() else {
-            return;
-        };
-        self.proposals.retain(|x| x.id != id);
-        // Stand-in until the real event syncs back.
-        let key = self.cfg.default_key().map(|k| k.name.clone());
-        let source = key.as_deref().and_then(|k| self.source_for_key(k)).unwrap_or_default();
-        self.patches.push(LocalPatch {
-            uid: format!("accepted:{id}"),
-            inst: Some(Instance {
-                uid: format!("accepted:{id}"),
-                recurrence_id: None,
-                source,
-                overlay: Overlay::Personal,
-                key,
-                title: title.clone(),
-                location: None,
-                description: None,
-                span: Span::Timed {
-                    start: p.start,
-                    end: p.end,
-                },
-                recurring: false,
-                transparent: false,
-                tentative: false,
-                meta: Meta::default(),
-                href: None,
-                alarms: Vec::new(),
-            }),
-            made: Utc::now(),
-            until: Utc::now() + Duration::seconds(120),
-        });
-        let idx = self.index.clone();
-        self.set_index(idx);
-        let tz = self.tz;
-        self.set_message(
-            format!(
-                "✓ {title} {}–{}",
-                p.start.with_timezone(&tz).format("%a %H:%M"),
-                p.end.with_timezone(&tz).format("%H:%M")
-            ),
-            false,
-        );
-        self.deferred.push(Box::new(move |app: &mut App| {
-            let failed = match app.with_daemon(|d| d.accept_proposal(&id, &req)) {
-                Some(Ok(Ok(_))) => None,
-                Some(Ok(Err(e))) => Some(e.to_string()),
-                Some(Err(e)) => Some(e.to_string()),
-                None => Some("kairosd not configured".into()),
-            };
-            match failed {
-                None => app.wants_sync = true,
-                Some(e) => {
-                    app.patches.retain(|x| x.uid != format!("accepted:{id}"));
-                    app.proposals.push(p);
-                    app.proposals.sort_by_key(|x| x.start);
-                    let idx = app.index.clone();
-                    app.set_index(idx);
-                    app.set_message(e, true);
-                }
-            }
-        }));
-    }
-
-    fn reject_proposal(&mut self, id: &str) {
-        if self.daemon.is_none() {
-            return self.set_message("kairosd not configured — writes unavailable", true);
-        }
-        let Some(p) = self.proposals.iter().find(|p| p.id == id).cloned() else {
-            return;
-        };
-        self.proposals.retain(|x| x.id != id);
-        self.sel = self.sel.saturating_sub(1);
-        self.set_message("dropped proposed project time", false);
-        let id = id.to_string();
-        self.deferred.push(Box::new(move |app: &mut App| {
-            let failed = match app.with_daemon(|d| d.reject_proposal(&id)) {
-                Some(Ok(Ok(_))) => None,
-                Some(Ok(Err(e))) => Some(e.to_string()),
-                Some(Err(e)) => Some(e.to_string()),
-                None => Some("kairosd not configured".into()),
-            };
-            if let Some(e) = failed {
-                app.proposals.push(p);
-                app.proposals.sort_by_key(|x| x.start);
-                app.set_message(e, true);
-            }
-        }));
-    }
-
     /// What a check-in needs about a block (from the C list's data if it's
     /// there, else from the block and its task).
-    /// A work block or project session that has started and isn't
-    /// checked in yet.
+    /// A work block that has started and isn't checked in yet.
     pub fn awaits_checkin(&self, i: &Instance) -> bool {
         if kairos_core::build::is_checked_in(&i.title) || i.start(self.tz) > self.now {
             return false;
         }
         i.meta.kind == EventKind::TaskBlock
-            || i.meta.project_id.is_some()
-            || self
-                .checkins
-                .iter()
-                .any(|c| c.project && c.block_uid == i.uid && c.outcome.is_none())
     }
 
     fn checkin_target(&self, i: &Instance) -> CheckinTarget {
@@ -2763,7 +2431,6 @@ impl App {
             ask_remaining: task.is_some_and(|t| t.kind.as_deref() == Some("coursework") || planned >= t.remaining_min),
             remaining_min: task.map_or(0, |t| t.remaining_min),
             from_list: false,
-            project: i.meta.project_id.is_some(),
         }
     }
 
@@ -3011,10 +2678,7 @@ pub fn overlay_flags(app: &App) -> Vec<(String, String, bool, kairos_core::colou
 }
 
 pub fn is_dimmed(i: &Instance) -> bool {
-    matches!(i.overlay, Overlay::Imported | Overlay::Background)
-        || i.tentative
-        || i.meta.kind == EventKind::Proposal
-        || i.meta.not_going
+    matches!(i.overlay, Overlay::Imported | Overlay::Background) || i.tentative || i.meta.not_going
 }
 
 /// The most important thing a plan has to say: a shortfall, else a squeeze.
@@ -3051,7 +2715,7 @@ mod tests {
             recurring: false,
             transparent: false,
             tentative: false,
-            meta: Meta {
+            meta: kairos_core::model::Meta {
                 kind: EventKind::TaskBlock,
                 flex: true,
                 ..Default::default()

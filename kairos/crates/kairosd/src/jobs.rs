@@ -57,7 +57,7 @@ pub fn morning_text(e: &Engine) -> String {
             let mark = match i.meta.kind {
                 EventKind::Deadline => "⚑ ",
                 EventKind::TaskBlock => "┆ ",
-                EventKind::Event | EventKind::Proposal | EventKind::Worked => "",
+                EventKind::Event | EventKind::Worked => "",
             };
             lines.push(format!("{when} {mark}{}", i.title.trim_start_matches("⚑ ")));
         }
@@ -197,17 +197,16 @@ impl Jobs {
                     if daily(&e, "checkin", &e.cfg.notify.evening_checkin.clone()) {
                         let items = e.checkin_items().unwrap_or_default();
                         if !items.is_empty() {
-                            let day = e.now().with_timezone(&e.tz()).date_naive().to_string();
                             let list: Vec<String> = items
                                 .iter()
                                 .map(|i| format!("• {} ({} min)", i.title, i.planned_min))
                                 .collect();
                             let msg = format!(
-                                "{}\nNo rush: they wait until you check in (counted as done after {} days).",
+                                "{}\nCheck in from the calendar (C). No rush: they wait (counted as done after {} days).",
                                 list.join("\n"),
                                 e.cfg.notify.autodone_after_days
                             );
-                            let body = n.simple("kairos · check-in", &msg, Some(("Check in", n.checkin_url(&day))));
+                            let body = n.simple("kairos · check-in", &msg, None);
                             if let Err(err) = n.send(&body) {
                                 tracing::warn!("check-in push: {err}");
                             }
@@ -228,8 +227,7 @@ impl Jobs {
 
 /// Full sync, then replan: events may have changed on iCloud (phone,
 /// Calendar.app, Family). The plan is stable, so this only moves work an
-/// event now displaces (or that can come out of a squeeze), and refreshes
-/// proposed project time.
+/// event now displaces (or that can come out of a squeeze).
 fn tick_sync(e: &mut Engine) -> Result<(), String> {
     let r = kairos_store::sync::run_full(&e.cfg);
     for pc in &r.followed_empty {

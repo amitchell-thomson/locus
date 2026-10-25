@@ -1216,414 +1216,6 @@ fn moving_a_work_block_by_hand_pins_it() {
 }
 
 #[test]
-fn project_time_is_proposed_accepted_and_dropped() {
-    let env = Env::new(true);
-    let mut e = env.engine();
-    // The proposer is off since spec K6; this exercises it switched on.
-    e.constraints.projects.enabled = true;
-    env.phone_event("Sport", "rowing", "Rowing", "2026-10-13 17:00", "2026-10-13 18:00");
-    e.plan(false, Author::Scheduler).unwrap();
-    let props = e.proposals().unwrap();
-    assert!(!props.is_empty());
-    let day = |t: chrono::DateTime<chrono::Utc>| t.with_timezone(&chrono_tz::Europe::London).date_naive();
-    let mut days: Vec<_> = props.iter().map(|p| day(p.start)).collect();
-    days.dedup();
-    assert_eq!(days.len(), props.len(), "at most one a day");
-    for p in &props {
-        let m = (p.end - p.start).num_minutes();
-        assert!((60..=180).contains(&m), "{m}");
-        assert_eq!(p.title, "Project time");
-        // Never in the hour after sport.
-        assert!(
-            p.end <= at("2026-10-13 17:00") || p.start >= at("2026-10-13 19:00"),
-            "{} – {}",
-            london(p.start),
-            london(p.end)
-        );
-    }
-    // Dry runs don't touch proposals; a replan with nothing new keeps them.
-    e.plan(true, Author::Scheduler).unwrap();
-    e.plan(false, Author::Scheduler).unwrap();
-    assert_eq!(e.proposals().unwrap(), props);
-    // Accept the first as "kairos TUI work": an event in the default key.
-    e.direct = true;
-    let w = e
-        .accept_proposal(
-            Author::Alec,
-            &props[0].id,
-            &kairos_core::api::AcceptProposalReq {
-                title: Some("kairos TUI work".into()),
-                project_id: None,
-            },
-        )
-        .unwrap();
-    e.direct = false;
-    assert_eq!(w.status, Status::Applied);
-    assert!(env.read_all("Personal").contains("SUMMARY:kairos TUI work"));
-    // Drop the second: it isn't proposed again.
-    e.reject_proposal(&props[1].id).unwrap();
-    e.replan_if_needed().unwrap();
-    e.plan(false, Author::Scheduler).unwrap();
-    let after = e.proposals().unwrap();
-    assert!(after.iter().all(|p| p.id != props[0].id && p.id != props[1].id));
-    // The accepted day gets no more; the dropped day may get another slot.
-    assert!(after.iter().all(|p| day(p.start) != day(props[0].start)));
-    // Also when the proposals table has forgotten the acceptance (sessions
-    // accepted before it was recorded): the event itself marks the day.
-    e.db.proposals_replace(&[], at("2026-10-12 08:00")).unwrap();
-    e.db.proposal_set_status(&props[0].id, "gone").unwrap();
-    e.plan(false, Author::Scheduler).unwrap();
-    assert!(
-        e.proposals()
-            .unwrap()
-            .iter()
-            .all(|p| day(p.start) != day(props[0].start))
-    );
-    assert!(
-        after.iter().all(|p| p.end <= props[1].start || p.start >= props[1].end),
-        "re-proposed over a dropped span"
-    );
-    assert!(matches!(e.reject_proposal("nope"), Err(EngineError::NotFound(_))));
-}
-
-#[test]
-fn project_time_suggests_neglected_projects_and_tracks_time_spent() {
-    use kairos_core::api::{AcceptProposalReq, CreateProjectReq, UpdateProjectReq};
-    use kairos_core::project::ProjectStatus;
-    let env = Env::new(true);
-    let mut e = env.engine();
-    // The proposer is off since spec K6; this exercises it switched on.
-    e.constraints.projects.enabled = true;
-    let mk = |e: &mut kairosd::engine::Engine, name: &str, status: &str| {
-        e.create_project(
-            Author::Alec,
-            &CreateProjectReq {
-                name: name.into(),
-                status: Some(status.into()),
-                note: None,
-                key: None,
-            },
-        )
-        .unwrap()
-    };
-    let kairos = mk(&mut e, "kairos", "active");
-    let t0 = *env.now.lock().unwrap();
-    *env.now.lock().unwrap() = t0 + Duration::minutes(1);
-    let mail = mk(&mut e, "email TUI", "active");
-    *env.now.lock().unwrap() = t0;
-    let locus = mk(&mut e, "Locus", "next");
-    assert!(
-        e.create_project(
-            Author::Alec,
-            &CreateProjectReq {
-                name: "KAIROS".into(),
-                ..Default::default()
-            }
-        )
-        .is_err()
-    );
-    e.plan(false, Author::Scheduler).unwrap();
-    let props = e.proposals().unwrap();
-    assert!(props.len() >= 3, "{props:?}");
-    // Active projects only, in turn (nothing worked yet: oldest first).
-    let names: Vec<&str> = props.iter().take(3).map(|p| p.title.as_str()).collect();
-    assert_eq!(names, ["kairos", "email TUI", "kairos"]);
-    assert_eq!(props[0].project_id.as_deref(), Some(kairos.id.as_str()));
-    // y on the first: the suggested project.
-    e.direct = true;
-    e.accept_proposal(Author::Alec, &props[0].id, &AcceptProposalReq::default())
-        .unwrap();
-    // The second, picked from the list: Locus (next → active, it's under way).
-    e.accept_proposal(
-        Author::Alec,
-        &props[1].id,
-        &AcceptProposalReq {
-            project_id: Some("locus".into()),
-            title: None,
-        },
-    )
-    .unwrap();
-    e.direct = false;
-    assert!(env.read_all("Personal").contains("SUMMARY:◇ kairos"));
-    assert!(env.read_all("Personal").contains("SUMMARY:◇ Locus"));
-    assert_eq!(e.find_project("Locus").unwrap().stage, Some(ProjectStatus::Active));
-    // With kairos and Locus planned, the neglected one comes first now.
-    e.plan(false, Author::Scheduler).unwrap();
-    assert_eq!(e.proposals().unwrap()[0].title, "email TUI");
-    // After the kairos session: nothing counts until Alec checks in — it
-    // waits in the check-in list (as a project session).
-    let mins = (props[0].end - props[0].start).num_minutes() as u32;
-    *env.now.lock().unwrap() = props[1].start - Duration::minutes(1);
-    let items = e.projects().unwrap();
-    let k = items.iter().find(|p| p.project.id == kairos.id).unwrap();
-    assert_eq!((k.month_min, k.unconfirmed_min, k.last_worked), (0, mins, None));
-    let l = items.iter().find(|p| p.project.id == locus.id).unwrap();
-    assert_eq!((l.month_min, l.next_session), (0, Some(props[1].start)));
-    let item = e
-        .checkin_items()
-        .unwrap()
-        .into_iter()
-        .find(|c| c.project && c.task_id == kairos.id)
-        .unwrap();
-    assert_eq!((item.title.as_str(), item.planned_min), ("kairos", mins));
-    // Partly: 45 min. That's what counts, and the calendar shows it (✓, trimmed),
-    // without asking for approval.
-    e.checkin(&CheckinReq {
-        block_uid: item.block_uid.clone(),
-        outcome: "partial".into(),
-        actual_min: Some(45),
-        remaining_min: None,
-        not_before: None,
-    })
-    .unwrap();
-    assert!(e.db.cs_list(Some(Status::Pending), 10).unwrap().is_empty());
-    let k = e
-        .projects()
-        .unwrap()
-        .into_iter()
-        .find(|p| p.project.id == kairos.id)
-        .unwrap();
-    assert_eq!(
-        (k.month_min, k.unconfirmed_min, k.last_worked),
-        (45, 0, Some(props[0].start))
-    );
-    let ev = e
-        .world(14)
-        .unwrap()
-        .instances
-        .into_iter()
-        .find(|i| i.uid == item.block_uid)
-        .unwrap();
-    assert_eq!(ev.title, "◆ kairos", "sessions get diamonds, not the task tick");
-    assert_eq!(ev.meta.project_id.as_deref(), Some(kairos.id.as_str()));
-    assert_eq!(
-        (ev.span.bounds(chrono_tz::Europe::London).1 - props[0].start).num_minutes(),
-        45
-    );
-    assert!(e.checkin_items().unwrap().iter().all(|c| c.block_uid != item.block_uid));
-    let mins = 45;
-    // Renamed: still its sessions (linked, not matched by title). Like a
-    // task's blocks, sessions still to come take the new name; this one is
-    // history and keeps the name it had.
-    let r = e
-        .update_project(
-            Author::Claude,
-            &kairos.id,
-            &UpdateProjectReq {
-                name: Some("kairos calendar".into()),
-                ..Default::default()
-            },
-        )
-        .unwrap();
-    assert_eq!(r.changeset.status, Status::Applied);
-    let ev = e
-        .world(14)
-        .unwrap()
-        .instances
-        .into_iter()
-        .find(|i| i.uid == item.block_uid)
-        .unwrap();
-    assert_eq!(ev.title, "◆ kairos");
-    let k = e
-        .projects()
-        .unwrap()
-        .into_iter()
-        .find(|p| p.project.id == kairos.id)
-        .unwrap();
-    assert_eq!(k.month_min, mins);
-    // Done projects aren't suggested.
-    e.update_project(
-        Author::Claude,
-        "email",
-        &UpdateProjectReq {
-            status: Some("done".into()),
-            ..Default::default()
-        },
-    )
-    .unwrap();
-    assert!(
-        e.proposals()
-            .unwrap()
-            .iter()
-            .all(|p| p.project_id.as_deref() != Some(mail.id.as_str()))
-    );
-    // Deleting is dropping it like a task: Claude can delete a finished
-    // project at once; an open one waits for Alec.
-    assert_eq!(
-        e.delete_project(Author::Claude, &mail.id).unwrap().status,
-        Status::Applied
-    );
-    assert_eq!(
-        e.delete_project(Author::Claude, &locus.id).unwrap().status,
-        Status::Pending
-    );
-    assert_eq!(e.projects().unwrap().len(), 2);
-    // The Locus session is missed: removed from the calendar, nothing counts.
-    *env.now.lock().unwrap() = props[1].end + Duration::minutes(5);
-    let item = e
-        .checkin_items()
-        .unwrap()
-        .into_iter()
-        .find(|c| c.task_id == locus.id)
-        .unwrap();
-    e.checkin(&CheckinReq {
-        block_uid: item.block_uid.clone(),
-        outcome: "missed".into(),
-        actual_min: None,
-        remaining_min: None,
-        not_before: None,
-    })
-    .unwrap();
-    assert!(e.world(14).unwrap().instances.iter().all(|i| i.uid != item.block_uid));
-    let l = e
-        .projects()
-        .unwrap()
-        .into_iter()
-        .find(|p| p.project.id == locus.id)
-        .unwrap();
-    assert_eq!((l.month_min, l.unconfirmed_min), (0, 0));
-}
-
-#[test]
-fn project_time_planned_by_hand_and_existing_events_attributed() {
-    use kairos_core::api::{CreateProjectReq, SessionReq};
-    let env = Env::new(true);
-    let mut e = env.engine();
-    let quast = e
-        .create_project(
-            Author::Alec,
-            &CreateProjectReq {
-                name: "QUAST".into(),
-                status: Some("next".into()),
-                note: None,
-                key: None,
-            },
-        )
-        .unwrap();
-    // Alec plans Thu 14:00 for 90 min himself.
-    e.direct = true;
-    let w = e
-        .create_session(
-            Author::Alec,
-            "quast",
-            &SessionReq {
-                start: at("2026-10-15 14:00").to_rfc3339(),
-                end: None,
-                duration_min: Some(90),
-            },
-        )
-        .unwrap();
-    e.direct = false;
-    assert_eq!(w.status, Status::Applied);
-    assert!(env.read_all("Personal").contains("SUMMARY:◇ QUAST"));
-    let p = e.projects().unwrap().remove(0);
-    assert_eq!(p.project.id, quast.id);
-    assert_eq!(p.next_session, Some(at("2026-10-15 14:00")));
-    assert_eq!(p.project.status, kairos_core::project::ProjectStatus::Active);
-    // An existing "Quantum Research" event counts as QUAST work once attributed:
-    // it waits for a check-in, then counts.
-    env.phone_event(
-        "Personal",
-        "qr",
-        "Quantum Research",
-        "2026-10-12 09:00",
-        "2026-10-12 11:00",
-    );
-    assert_eq!(e.link_sessions("QUAST", &["qr".to_string()]).unwrap(), 1);
-    assert!(matches!(
-        e.link_sessions("QUAST", &["nope".to_string()]),
-        Err(EngineError::NotFound(_))
-    ));
-    env.set_now("2026-10-12 12:00");
-    let item = e
-        .checkin_items()
-        .unwrap()
-        .into_iter()
-        .find(|c| c.block_uid == "qr")
-        .unwrap();
-    assert!(item.project);
-    e.checkin(&CheckinReq {
-        block_uid: "qr".into(),
-        outcome: "done".into(),
-        actual_min: None,
-        remaining_min: None,
-        not_before: None,
-    })
-    .unwrap();
-    let p = e.projects().unwrap().remove(0);
-    assert_eq!(p.month_min, 120);
-    assert!(
-        e.db.cs_list(Some(Status::Pending), 10).unwrap().is_empty(),
-        "his own event isn't edited, so nothing waits"
-    );
-    // The 3rd-year project lives in Engineering: its sessions go there, and
-    // its tasks' checked-in blocks count as its time.
-    let typ = e
-        .create_project(
-            Author::Alec,
-            &CreateProjectReq {
-                name: "3YP".into(),
-                status: None,
-                note: None,
-                key: Some("Engineering".into()),
-            },
-        )
-        .unwrap();
-    assert_eq!(typ.key.as_deref(), Some("Engineering"));
-    e.direct = true;
-    e.create_session(
-        Author::Alec,
-        "3YP",
-        &SessionReq {
-            start: at("2026-10-16 10:00").to_rfc3339(),
-            end: None,
-            duration_min: Some(60),
-        },
-    )
-    .unwrap();
-    e.direct = false;
-    assert!(env.read_all("Engineering").contains("SUMMARY:◇ 3YP"));
-    let r = e
-        .create_task(
-            Author::Alec,
-            &CreateTaskReq {
-                title: "3YP interim report".into(),
-                key: "Engineering".into(),
-                estimate_min: 120,
-                due: Some("2026-10-23 17:00".into()),
-                project: Some("3yp".into()),
-                ..Default::default()
-            },
-        )
-        .unwrap();
-    assert_eq!(r.task.project_id.as_deref(), Some(typ.id.as_str()));
-    let b = r.plan.unwrap().created[0].clone();
-    *env.now.lock().unwrap() = b.end + Duration::minutes(5);
-    let uid = e
-        .checkin_items()
-        .unwrap()
-        .into_iter()
-        .find(|c| c.task_id == r.task.id)
-        .unwrap()
-        .block_uid;
-    e.checkin(&CheckinReq {
-        block_uid: uid,
-        outcome: "partial".into(),
-        actual_min: Some(50),
-        remaining_min: None,
-        not_before: None,
-    })
-    .unwrap();
-    let p = e
-        .projects()
-        .unwrap()
-        .into_iter()
-        .find(|p| p.project.id == typ.id)
-        .unwrap();
-    assert_eq!(p.month_min, 50, "the task's checked-in time counts for its project");
-}
-
-#[test]
 fn weekly_term_time_event_is_one_series_per_term() {
     let env = Env::new(true);
     let mut e = env.engine();
@@ -2353,166 +1945,133 @@ fn finished_at_checkin_completes_the_task_and_earlier_blocks_wait_to_be_checked_
 }
 
 #[test]
-fn renaming_a_project_retitles_its_sessions() {
-    use kairos_core::api::{CreateProjectReq, SessionReq, UpdateProjectReq};
+fn project_time_is_measured_and_checked_in_and_an_hour_counts_once() {
+    // A block of a task for the project, worked through Claude: the check-in and the measured
+    // span describe the same hour, and it used to be counted twice.
     let env = Env::new(true);
     let mut e = env.engine();
-    e.create_project(
-        Author::Alec,
-        &CreateProjectReq {
-            name: "3YP".into(),
-            status: None,
-            note: None,
-            key: Some("Engineering".into()),
-        },
-    )
-    .unwrap();
-    e.direct = true;
-    e.create_session(
-        Author::Alec,
-        "3YP",
-        &SessionReq {
-            start: at("2026-10-16 10:00").to_rfc3339(),
-            end: None,
-            duration_min: Some(60),
-        },
-    )
-    .unwrap();
-    e.direct = false;
-    // Made on the phone and attributed: one titled with the name, one not.
-    env.phone_event("Engineering", "phone", "3YP", "2026-10-14 09:00", "2026-10-14 10:00");
-    env.phone_event(
-        "Engineering",
-        "lab",
-        "Lab write-up",
-        "2026-10-15 09:00",
-        "2026-10-15 10:00",
+    e.registry = Some(
+        locus_contract::taxonomy::load(&locus_contract::taxonomy::root())
+            .unwrap()
+            .registry,
     );
-    assert_eq!(e.link_sessions("3yp", &["phone".into(), "lab".into()]).unwrap(), 2);
-    // Claude renames it: one changeset with the project and its sessions,
-    // waiting for Alec because it edits an event he made himself.
+    e.sync_registry().unwrap();
+    env.set_now("2026-10-12 07:00");
     let r = e
-        .update_project(
-            Author::Claude,
-            "3yp",
-            &UpdateProjectReq {
-                name: Some("Third-year project".into()),
-                ..Default::default()
-            },
-        )
-        .unwrap();
-    assert_eq!((r.changeset.status, r.changeset.risk), (Status::Pending, Risk::High));
-    assert_eq!(
-        e.find_project("3yp").unwrap().title,
-        "3YP",
-        "nothing changes until approved"
-    );
-    e.reject(&r.changeset.changeset_id).unwrap();
-    // Alec renames it himself: the sessions titled with the name follow,
-    // diamond kept; the attributed "Lab write-up" keeps its title.
-    e.direct = true;
-    let r = e
-        .update_project(
+        .create_task(
             Author::Alec,
-            "3yp",
-            &UpdateProjectReq {
-                name: Some("3YP report".into()),
+            &CreateTaskReq {
+                title: "locus Approve page".into(),
+                key: "Engineering".into(),
+                estimate_min: 300,
+                due: Some("2026-10-16 17:00".into()),
+                project: Some("locus".into()),
                 ..Default::default()
             },
         )
         .unwrap();
-    e.direct = false;
-    assert_eq!(r.changeset.status, Status::Applied);
-    assert_eq!(r.project.name, "3YP report");
-    let eng = env.read_all("Engineering");
-    assert!(eng.contains("SUMMARY:◇ 3YP report"), "{eng}");
-    assert!(eng.contains("SUMMARY:3YP report"), "{eng}");
-    assert!(eng.contains("SUMMARY:Lab write-up"), "{eng}");
-    // One undo puts the name and the sessions back.
-    e.undo(&r.changeset.changeset_id).unwrap();
-    assert_eq!(e.find_project("3yp").unwrap().title, "3YP");
-    assert!(
-        env.read_all("Engineering").contains("SUMMARY:◇ 3YP\r\n")
-            || env.read_all("Engineering").contains("SUMMARY:◇ 3YP\n")
+    let mut blocks = r.plan.unwrap().created;
+    blocks.sort_by_key(|b| b.start);
+    let (b, next) = (blocks[0].clone(), blocks[1].clone());
+    let planned = (b.end - b.start).num_minutes() as u32;
+    let locus = |e: &kairosd::engine::Engine| {
+        e.projects()
+            .unwrap()
+            .into_iter()
+            .find(|p| p.project.registry.as_deref() == Some("locus"))
+            .unwrap()
+    };
+    *env.now.lock().unwrap() = b.end + Duration::minutes(5);
+    let p = locus(&e);
+    assert_eq!((p.week_min, p.unconfirmed_min), (0, planned), "waiting for a check-in");
+    assert_eq!(p.next_block, Some(next.start));
+    let uid = e
+        .checkin_items()
+        .unwrap()
+        .into_iter()
+        .find(|c| c.task_id == r.task.id)
+        .unwrap()
+        .block_uid;
+    e.checkin(&CheckinReq {
+        block_uid: uid,
+        outcome: "done".into(),
+        actual_min: None,
+        remaining_min: None,
+        not_before: None,
+    })
+    .unwrap();
+    // Claude was open from half an hour before the block to an hour into it.
+    e.set_worked(&kairos_core::api::WorkedReq {
+        machine: "mac".into(),
+        from: at("2026-10-01 00:00"),
+        to: b.end + Duration::minutes(5),
+        spans: vec![kairos_core::api::WorkedSpan {
+            project: "locus".into(),
+            start: b.start - Duration::minutes(30),
+            end: b.start + Duration::minutes(60),
+            activity: Vec::new(),
+        }],
+    })
+    .unwrap();
+    let p = locus(&e);
+    assert_eq!(p.unconfirmed_min, 0);
+    assert_eq!(
+        (p.week_min, p.month_min),
+        (planned + 30, planned + 30),
+        "once, not {}",
+        planned * 2 + 30
     );
-    // Changing only the status touches no events.
-    let r = e
-        .update_project(
-            Author::Claude,
-            "3YP",
-            &UpdateProjectReq {
-                status: Some("paused".into()),
-                ..Default::default()
-            },
-        )
-        .unwrap();
-    assert_eq!(r.changeset.status, Status::Applied);
-    assert_eq!(e.db.cs_get(&r.changeset.changeset_id).unwrap().unwrap().ops.len(), 1);
+    assert_eq!(p.last_worked, Some(b.end));
 }
 
 #[test]
-fn projects_from_before_they_were_tasks_are_migrated() {
-    use kairos_core::project::{Project, ProjectStatus};
+fn old_project_sessions_keep_their_project_as_what_they_are_for() {
     let env = Env::new(true);
-    let mut e = env.engine();
-    let now = at("2026-10-01 09:00");
-    let mk = |id: &str, name: &str, status: ProjectStatus, key: Option<&str>| Project {
-        id: id.into(),
-        name: name.into(),
-        status,
-        note: "n".into(),
-        key: key.map(String::from),
-        registry: None,
-        created_at: now,
-        updated_at: now,
-    };
-    // A linked session (by the old table) and one counted by its title.
+    env.phone_event("Engineering", "s1", "◆ quast", "2026-10-05 10:00", "2026-10-05 12:00");
     env.phone_event(
-        "Personal",
-        "linked",
-        "Deep work",
-        "2026-10-12 09:00",
-        "2026-10-12 10:00",
+        "Engineering",
+        "s2",
+        "Quantum research",
+        "2026-10-06 10:00",
+        "2026-10-06 12:00",
     );
-    env.phone_event("Engineering", "titled", "3YP", "2026-10-13 09:00", "2026-10-13 10:00");
-    env.phone_event("Personal", "other", "3YP", "2026-10-13 11:00", "2026-10-13 12:00");
-    e.db.legacy_projects_put(
-        &[
-            mk("p-quast", "QUAST", ProjectStatus::Paused, None),
-            mk("p-3yp", "3YP", ProjectStatus::Active, Some("Engineering")),
-            mk("p-old", "Old", ProjectStatus::Done, None),
-        ],
-        &[("linked".into(), "p-quast".into())],
-    )
-    .unwrap();
-    assert_eq!(e.migrate_projects().unwrap(), 2);
-    let ps = e.projects().unwrap();
-    let names: Vec<(&str, ProjectStatus)> = ps.iter().map(|p| (p.project.name.as_str(), p.project.status)).collect();
-    assert_eq!(
-        names,
-        vec![
-            ("3YP", ProjectStatus::Active),
-            ("QUAST", ProjectStatus::Paused),
-            ("Old", ProjectStatus::Done)
-        ]
+    let mut e = env.engine();
+    e.registry = Some(
+        locus_contract::taxonomy::load(&locus_contract::taxonomy::root())
+            .unwrap()
+            .registry,
     );
-    assert_eq!(ps[0].project.key.as_deref(), Some("Engineering"));
-    // Same ids, links now on the events; the wrong calendar's "3YP" isn't one.
-    let w = e.world(14).unwrap();
-    let pid = |uid: &str| {
-        w.instances
-            .iter()
-            .find(|i| i.uid == uid)
-            .and_then(|i| i.meta.project_id.clone())
+    e.sync_registry().unwrap();
+    let quast = e
+        .projects()
+        .unwrap()
+        .into_iter()
+        .find(|p| p.project.registry.as_deref() == Some("quast"))
+        .unwrap();
+    let source = e
+        .events(at("2026-10-05 00:00"), at("2026-10-07 00:00"))
+        .unwrap()
+        .into_iter()
+        .find(|i| i.uid == "s1")
+        .unwrap()
+        .source;
+    // As kairosd left them: s1 a plain session, s2 a session already linked to something else.
+    e.db.session_link_put(&source, "s1", &kairos_core::model::Meta::default(), &quast.project.id)
+        .unwrap();
+    let m = kairos_core::model::Meta {
+        locus: Some("nabla".into()),
+        ..Default::default()
     };
-    assert_eq!(pid("linked").as_deref(), Some("p-quast"));
-    assert_eq!(pid("titled").as_deref(), Some("p-3yp"));
-    assert_eq!(pid("other"), None);
-    // Projects aren't tasks to the task list or the scheduler.
-    assert!(e.db.tasks(None).unwrap().is_empty());
-    // Once only: the old tables are gone.
-    assert_eq!(e.db.legacy_projects().unwrap(), (vec![], vec![]));
-    assert_eq!(e.migrate_projects().unwrap(), 0);
+    e.db.session_link_put(&source, "s2", &m, &quast.project.id).unwrap();
+    assert_eq!(e.retire_sessions().unwrap(), 1);
+    let locus_of = |uid: &str| e.db.meta_get(&source, uid).unwrap().and_then(|m| m.locus);
+    assert_eq!(locus_of("s1").as_deref(), Some("quast"));
+    assert_eq!(
+        locus_of("s2").as_deref(),
+        Some("nabla"),
+        "a link it already had is kept"
+    );
+    assert!(e.db.retire_sessions().unwrap().is_empty(), "the old field is gone");
 }
 
 #[test]

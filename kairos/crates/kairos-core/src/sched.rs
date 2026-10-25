@@ -36,9 +36,6 @@
 //! when time was freed (`reflow_after`): then every unpinned block from
 //! that time on is planned afresh, so work moves into the gap (Alec,
 //! 2026-10-14), unless that would be worse on (shortfall, squeezed minutes).
-//!
-//! **Proposals.** [`propose`] fills the free gaps left after task work with
-//! proposed project time (comfort rules on, same daily cap).
 
 use crate::constraints::{Constraints, Hm, Profile};
 use crate::task::{Due, Task, TaskStatus};
@@ -1067,80 +1064,6 @@ pub fn plan(input: &PlanInput<'_>) -> Plan {
         }
     }
     best
-}
-
-/// A proposed stretch of project time.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Proposal {
-    pub start: DateTime<Utc>,
-    pub end: DateTime<Utc>,
-}
-
-/// Proposed project time: from `projects.earliest` (09:00) on each of the next `projects.days_ahead` days,
-/// up to `projects.max_per_day` sessions (the longest comfortable gaps, up to
-/// `max_minutes`, at least `min_minutes`; earliest on ties) in the time
-/// `plan`'s task work leaves free, within the daily work cap.
-/// `avoid`: spans Alec dropped — never proposed again. `taken_days`: days
-/// that already have an accepted session (no more proposals there).
-pub fn propose(
-    input: &PlanInput<'_>,
-    plan: &Plan,
-    avoid: &[(DateTime<Utc>, DateTime<Utc>)],
-    taken_days: &[NaiveDate],
-) -> Vec<Proposal> {
-    let pc = &input.constraints.projects;
-    if !pc.enabled {
-        return Vec::new();
-    }
-    let horizon = input.now + Duration::days(i64::from(pc.days_ahead));
-    let mut g = Grid::build(input, horizon);
-    for (a, b) in avoid {
-        g.block_out(*a, *b);
-    }
-    // Not before `projects.earliest` (09:00) local time.
-    for i in 0..g.n {
-        let l = g.at(i).with_timezone(&g.tz);
-        if (l.hour() * 60 + l.minute()) < u32::from(pc.earliest.minutes()) {
-            g.usable[i] = false;
-        }
-    }
-    let blocks: Vec<&Block> = plan.keep.iter().chain(&plan.create).collect();
-    let mut st = state_with(&g, &blocks);
-    let min = g.slots(i64::from(pc.min_minutes)).max(1);
-    let max = g.slots(i64::from(pc.max_minutes)).max(min);
-    let id = "\u{0}project";
-    let mut out = Vec::new();
-    let mut days: Vec<NaiveDate> = g.date.clone();
-    days.dedup();
-    for day in days {
-        if taken_days.contains(&day) {
-            continue;
-        }
-        for _ in 0..pc.max_per_day {
-            // The day's longest comfortable gap (capped), earliest on ties.
-            let mut best: Option<(usize, usize)> = None; // (len, start)
-            for i in (0..g.n).filter(|&i| g.date[i] == day) {
-                if !st.can_place(&g, id, i, min, true) {
-                    continue;
-                }
-                let mut len = min;
-                while len < max && g.date[(i + len).min(g.n - 1)] == day && st.can_place(&g, id, i, len + 1, true) {
-                    len += 1;
-                }
-                if best.is_none_or(|(bl, _)| len > bl) {
-                    best = Some((len, i));
-                }
-            }
-            let Some((len, i)) = best else { break };
-            st.place(&g, id, i, len);
-            out.push(Proposal {
-                start: g.at(i),
-                end: g.at(i + len),
-            });
-        }
-    }
-    out.sort_by_key(|p| p.start);
-    out
 }
 
 #[cfg(test)]

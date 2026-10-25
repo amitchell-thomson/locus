@@ -356,10 +356,6 @@ pub struct CheckinItem {
     /// Ask "how much is left?" (coursework, whose estimates move a lot).
     #[serde(default)]
     pub ask_remaining: bool,
-    /// A project session (task_id is the project's id): no "what's left",
-    /// and "finished" finishes the project.
-    #[serde(default)]
-    pub project: bool,
     /// The task's remaining minutes now.
     #[serde(default)]
     pub remaining_min: u32,
@@ -378,30 +374,8 @@ pub struct StartTaskReq {
     pub minutes: Option<u32>,
 }
 
-/// Proposed project time, waiting for Alec to accept or drop it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ProposalItem {
-    pub id: String,
-    pub start: DateTime<Utc>,
-    pub end: DateTime<Utc>,
-    /// The suggested project's name, or "Project time" when there's none.
-    pub title: String,
-    /// The suggested project: the active one with least time lately.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub project_id: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub struct AcceptProposalReq {
-    /// What to work on (default: the suggested project, else the proposal's title).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    /// The project to work on (wins over `title`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub project_id: Option<String>,
-}
-
-/// A project with the time spent on it (from linked sessions).
+/// A project with the time spent on it: measured from your Claude sessions in its repository,
+/// and checked in on the blocks of its tasks, overlapping time counted once.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProjectItem {
     #[serde(flatten)]
@@ -410,31 +384,14 @@ pub struct ProjectItem {
     pub week_min: u32,
     /// Minutes over the last 30 days.
     pub month_min: u32,
-    /// Past sessions not checked in yet (not counted above until they are).
+    /// Past blocks of its tasks not checked in yet (not counted above until they are).
     #[serde(default)]
     pub unconfirmed_min: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_worked: Option<DateTime<Utc>>,
-    /// The next session planned for it.
+    /// The next block planned for one of its tasks.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub next_session: Option<DateTime<Utc>>,
-}
-
-/// Alec plans project time himself: a session for the project.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub struct SessionReq {
-    pub start: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub end: Option<String>,
-    /// Default 2 h.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub duration_min: Option<u32>,
-}
-
-/// Count existing events (e.g. "Quantum Research") as a project's sessions.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub struct LinkSessionsReq {
-    pub uids: Vec<String>,
+    pub next_block: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -445,7 +402,7 @@ pub struct CreateProjectReq {
     pub status: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
-    /// The calendar its sessions go in (default: Projects).
+    /// The calendar its tasks' work goes in (default: Projects).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<String>,
 }
@@ -458,14 +415,13 @@ pub struct UpdateProjectReq {
     pub status: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
-    /// The calendar its sessions go in ("" = the default, Projects).
+    /// The calendar its tasks' work goes in ("" = the default, Projects).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<String>,
 }
 
 /// A project after an update (as it will be once `changeset` applies, if
-/// it's waiting for approval). A new name or calendar carries through to
-/// its sessions still to come, in the same changeset.
+/// it's waiting for approval).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UpdateProjectResp {
     #[serde(flatten)]

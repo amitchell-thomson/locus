@@ -193,6 +193,17 @@ async fn signed_links_approve_from_phone() {
         .unwrap();
     assert!(done.contains("applied"), "{done}");
     assert!(env.items("Sport").is_empty());
+    // There is no phone check-in page any more (2026-10-25): you check in from the calendar.
+    // An old link now reaches only the token-protected API, which refuses it.
+    let day = "2026-10-12";
+    let csig = st.sign(&format!("checkin:{day}"));
+    let old = c
+        .get(format!("{base}/checkin?day={day}&sig={csig}"))
+        .send()
+        .await
+        .unwrap()
+        .status();
+    assert!(matches!(old.as_u16(), 401 | 404), "{old}");
 }
 
 async fn rpc(c: &reqwest::Client, base: &str, id: u64, method: &str, params: Value) -> Value {
@@ -295,9 +306,6 @@ async fn mcp_tools_and_no_approve_tool() {
         "checkin",
         "log_work",
         "start_task",
-        "list_proposals",
-        "accept_proposal",
-        "reject_proposal",
         "list_projects",
         "create_project",
         "update_project",
@@ -308,6 +316,16 @@ async fn mcp_tools_and_no_approve_tool() {
         !names.iter().any(|n| n.contains("approve")),
         "there must be no approve tool"
     );
+    // Proposed project time and project sessions were removed (2026-10-25).
+    for gone in [
+        "list_proposals",
+        "accept_proposal",
+        "reject_proposal",
+        "plan_project_time",
+        "attribute_to_project",
+    ] {
+        assert!(!names.contains(&gone), "{gone} should be gone: {names:?}");
+    }
 
     // "Add a B4 problem sheet due Friday 17:00, about 4 hours"
     let r = rpc(

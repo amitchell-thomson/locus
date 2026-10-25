@@ -291,18 +291,6 @@ impl Daemon {
         )
     }
 
-    pub fn proposals(&self) -> Result<std::result::Result<Vec<api::ProposalItem>, Rejected>> {
-        self.get("/api/proposals")
-    }
-
-    pub fn accept_proposal(
-        &self,
-        id: &str,
-        req: &api::AcceptProposalReq,
-    ) -> Result<std::result::Result<WriteResult, Rejected>> {
-        self.post(&format!("/api/proposals/{}/accept", enc(id)), req)
-    }
-
     pub fn projects(&self) -> Result<std::result::Result<Vec<api::ProjectItem>, Rejected>> {
         self.get("/api/projects")
     }
@@ -322,20 +310,8 @@ impl Daemon {
         self.patch(&format!("/api/projects/{}", enc(id)), req)
     }
 
-    pub fn create_session(
-        &self,
-        project: &str,
-        req: &api::SessionReq,
-    ) -> Result<std::result::Result<WriteResult, Rejected>> {
-        self.post(&format!("/api/projects/{}/sessions", enc(project)), req)
-    }
-
     pub fn delete_project(&self, id: &str) -> Result<std::result::Result<WriteResult, Rejected>> {
         self.delete(&format!("/api/projects/{}", enc(id)))
-    }
-
-    pub fn reject_proposal(&self, id: &str) -> Result<std::result::Result<serde_json::Value, Rejected>> {
-        self.post(&format!("/api/proposals/{id}/reject"), &serde_json::json!({}))
     }
 
     pub fn changesets(

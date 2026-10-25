@@ -170,13 +170,13 @@ async fn main() -> Result<()> {
         registry: kairos_store::taxonomy::local().ok().map(|s| s.registry),
     };
     let mut engine = engine;
-    // Projects used to have their own tables (before 2026-10-14).
-    engine.migrate_projects().context("migrating projects")?;
     match engine.sync_registry() {
         Ok(Some(cs)) => tracing::info!("{}", cs.summary),
         Ok(None) => {}
         Err(e) => tracing::warn!("projects from the registry: {e}"),
     }
+    // Project sessions were removed (2026-10-25): their events keep the link as what they are for.
+    engine.retire_sessions().context("retiring project sessions")?;
     // ⚑ events from before due dates were task attributes (spec K5): proposed once for approval.
     if let Err(e) = engine.migrate_deadlines() {
         tracing::warn!("migrating deadlines: {e}");

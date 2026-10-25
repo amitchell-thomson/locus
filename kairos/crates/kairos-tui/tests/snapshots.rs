@@ -466,24 +466,6 @@ fn selected_deadline_highlights_its_work_blocks() {
     assert_eq!(block_bg(&a), blue, "the deadline's work block lights up");
 }
 
-#[test]
-fn proposed_project_time_is_no_longer_drawn() {
-    // Spec K6: project time is measured from your Claude sessions, or a work block you place;
-    // kairos no longer proposes ◌ time, even if a proposal were still in its state.
-    let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
-    a.key(Key::Tab); // day view
-    a.proposals = vec![kairos_core::api::ProposalItem {
-        id: "p1".into(),
-        start: now("2026-10-21T14:00:00+01:00"),
-        end: now("2026-10-21T16:00:00+01:00"),
-        title: "Project time".into(),
-        project_id: None,
-    }];
-    let s = render_to_string(&a, 100, 30);
-    assert!(!s.contains("◌ Project time"), "{s}");
-    assert!(a.day_clusters(a.cursor).iter().all(|c| c.primary.uid != "p1"));
-}
-
 fn project(
     id: &str,
     name: &str,
@@ -506,12 +488,12 @@ fn project(
         month_min: week,
         unconfirmed_min: 0,
         last_worked: (week > 0).then(|| now("2026-10-20T14:00:00+01:00")),
-        next_session: None,
+        next_block: None,
     }
 }
 
 #[test]
-fn projects_view_and_picking_one_for_proposed_time() {
+fn projects_view_lists_projects_by_status_with_time_spent() {
     use kairos_core::project::ProjectStatus;
     use kairos_tui::app::{Mode, View};
     let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
@@ -550,18 +532,7 @@ fn projects_view_and_picking_one_for_proposed_time() {
     ] {
         assert!(s.contains(want), "{want:?} missing:\n{s}");
     }
-    assert_eq!(a.key_hints(), "n plan time · a add · e edit · s status · d delete");
-    // n: plan project time for the selected project by hand.
-    a.key(Key::Char('n'));
-    let Mode::Form(f) = &a.mode else { panic!("no form") };
-    assert_eq!(
-        (f.title(), f.get("Project"), f.get("Duration")),
-        ("project time", "kairos", "2h")
-    );
-    let mut f = f.clone();
-    f.fields[1].value = "thu 14:00".into();
-    assert_eq!(a.form_preview(&f).unwrap(), "Thu 22 Oct 14:00–16:00 · kairos");
-    a.key(Key::Esc);
+    assert_eq!(a.key_hints(), "a add · e edit · s status · d delete");
     // a: the new-project form; e: edit the selected one.
     a.key(Key::Char('a'));
     let Mode::Form(f) = &a.mode else { panic!("no form") };
@@ -921,7 +892,6 @@ fn past_blocks_wait_for_a_check_in_right_on_the_calendar() {
         outcome: None,
         ask_remaining: false,
         remaining_min: 90,
-        project: false,
     }];
     a.message = None;
     let s = render_to_string(&a, 130, 30);

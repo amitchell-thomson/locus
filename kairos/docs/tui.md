@@ -54,7 +54,7 @@ date. Task types: sheet, coursework, admin, chore (a short errand for a gap).
 
 ## Check-ins
 
-A work block or project session that has ended waits for you to say how it went: no answer is decided for you. The status bar shows **N to check in · C** while anything waits. Blocks nobody answers count as done after a week (`notify.autodone_after_days`).
+A work block that has ended waits for you to say how it went: no answer is decided for you. The status bar shows **N to check in · C** while anything waits. Blocks nobody answers count as done after a week (`notify.autodone_after_days`).
 
 | Key (on a past block) | |
 |---|---|
@@ -66,7 +66,7 @@ A work block or project session that has ended waits for you to say how it went:
 | `C` | every block waiting for a check-in, any day |
 | `W` | log work that wasn't in a block (a ✓ block ending now) |
 
-The same answers work from the phone (evening push → check-in page, including "took longer"), `kairos checkin` (`l` = took longer), or by telling Claude (MCP `checkin` with `outcome: "longer"` / `log_work`).
+The same answers work from `kairos checkin` (`l` = took longer) or by telling Claude (MCP `checkin` with `outcome: "longer"` / `log_work`). The evening push on the phone only reminds you; there is no phone check-in page (removed 2026-10-25).
 
 ## Projects (`P`)
 
@@ -79,11 +79,13 @@ spent: this week, last 30 days, when you last worked on it.
 
 **Time on a project is measured, not planned** (spec K6). It comes from your Claude sessions: a
 span opens at a prompt you typed in a session whose folder is that project's repository and runs
-until it goes quiet for ten minutes. It is drawn after the fact as a faint bar down the right edge
+until it goes quiet for ten minutes. It is drawn after the fact as a faint bar down the left edge
 of the day (`worked · locus` beside it in the day view), with nothing to check in. The Mac sends its
 sessions on every `kairos sync`; kairosd measures the server's every five minutes. To set time aside
-for a project, place an ordinary work block for one of its tasks; it gets the usual check-in. Proposed
-time (◌) and the session diamonds are gone.
+for a project, plan a task for it (For = the project); its blocks get the usual check-in. A project's
+time counts the measured sessions and the checked-in blocks together, an hour once even when both
+cover it. There are no project sessions or proposed time any more (removed 2026-10-25); old session
+events stay on the calendar, linked to their project as what they are for.
 
 ## Reading a work block
 

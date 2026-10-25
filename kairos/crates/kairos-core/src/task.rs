@@ -132,9 +132,8 @@ impl Task {
         }
     }
 
-    /// A project: open-ended work with no deadline or estimate. Its time on
-    /// the calendar is sessions (events linked by `Meta.project_id`), placed
-    /// by hand or accepted from proposals, never by the scheduler.
+    /// A project: open-ended work with no deadline or estimate, never scheduled itself. Time is
+    /// set aside for it by planning a task for it (`project_id`).
     pub fn is_project(&self) -> bool {
         self.kind.as_deref() == Some(PROJECT_KIND)
     }

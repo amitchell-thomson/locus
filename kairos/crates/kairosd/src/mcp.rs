@@ -22,7 +22,7 @@ changes are QUEUED FOR ALEC'S APPROVAL (status=pending): editing/moving/deleting
 anything recurring, anything starting within 2 hours (except the scheduler's own work blocks), events that clash with fixed events, sharing to Family, \
 deleting deadlines, dropping tasks, or more than 8 operations at once (the scheduler's own blocks don't count). Writes to Family (except share_to_family) and \
 to read-only imports (Google feeds, holidays) are refused. You cannot approve changes: tell Alec what is pending and \
-let him approve in the TUI, CLI or on his phone. Every write returns {changeset_id, risk, status, summary}.\n\
+let him approve it in locus's Approve (or from the phone notification). Every write returns {changeset_id, risk, status, summary}.\n\
 SCHEDULING: don't hand-place work blocks. Create/update tasks saying what each is for (locus: a registry id \
 such as b15, millennium or quast; or the key Errands, Sport, Social for personal things), an estimate (how long in \
 total) and a due date (the task's own attribute: no calendar event is made); how it is planned follows from the \
@@ -39,8 +39,8 @@ task_id makes a pinned block).\n\
 PROJECTS: kairos's projects are the locus registry's repos (taxonomy/registry.toml): one list for every app, \
 so create_project only accepts a registry name, and a repo added to the registry appears by itself. list_projects \
 shows each with time spent this week/month: time measured from Alec's Claude sessions in that repo (no check-in) plus \
-checked-in blocks of tasks that belong to it (create_task project=…). To set time aside for a project, plan a task of \
-it; kairos no longer proposes project time.\n\
+checked-in blocks of tasks that belong to it (create_task project=…). To set time aside for a project, plan a task for \
+it.\n\
 TIMES: ISO 8601 ('2026-10-16T17:00', with or without offset; Europe/London assumed) or plain dates for all-day; \
 natural forms like 'fri 17:00' also work but ambiguous input is rejected. Keys: {KEYS}.\n\
 BULK: for more than one event, find them with search_events, then make ONE update_events / delete_events / \
@@ -456,42 +456,14 @@ pub struct StartTaskArgs {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct AcceptProposalArgs {
-    /// Proposal id (from list_proposals).
-    pub id: String,
-    /// The project (id or name) Alec will work on (default: the suggested one).
-    pub project: Option<String>,
-    /// Or just a title, when it isn't one of his projects.
-    pub title: Option<String>,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct CreateProjectArgs {
     pub name: String,
     /// active (default: working on it now) | next (should be soon) | paused | done
     pub status: Option<String>,
     /// One line: what it is, or the next step.
     pub note: Option<String>,
-    /// The calendar its sessions go in (default Projects), e.g. Studies.
+    /// The calendar its tasks' work goes in (default Projects), e.g. Studies.
     pub key: Option<String>,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct SessionArgs {
-    /// Project id or name.
-    pub project: String,
-    pub start: String,
-    pub end: Option<String>,
-    /// Default 120.
-    pub duration_min: Option<u32>,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct LinkSessionsArgs {
-    /// Project id or name.
-    pub project: String,
-    /// Event uids (from search_events) to count as its sessions.
-    pub uids: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -502,7 +474,7 @@ pub struct UpdateProjectArgs {
     /// active | next | paused | done
     pub status: Option<String>,
     pub note: Option<String>,
-    /// The calendar its sessions go in ("" = Projects).
+    /// The calendar its tasks' work goes in ("" = Projects).
     pub key: Option<String>,
 }
 
@@ -834,7 +806,7 @@ impl KairosMcp {
     }
 
     #[tool(
-        description = "Work blocks and project sessions (project: true) waiting for a check-in (every unanswered past one, plus today's), with planned minutes and the task's remaining time. ask_remaining = ask Alec how much is left. A project's time spent is what's checked in. Read-only."
+        description = "Work blocks waiting for a check-in (every unanswered past one, plus today's), with planned minutes and the task's remaining time. ask_remaining = ask Alec how much is left. Read-only."
     )]
     async fn list_checkins(&self) -> Result<CallToolResult, ErrorData> {
         self.run(|e| e.checkin_items()).await
@@ -869,7 +841,7 @@ impl KairosMcp {
     }
 
     #[tool(
-        description = "Alec's projects (active = working on now, next = should be soon, paused, done) with time spent this week / last 30 days, last worked and next session. Read-only."
+        description = "Alec's projects (active = working on now, next = should be soon, paused, done) with time spent this week / last 30 days (measured Claude sessions in its repository and checked-in blocks of its tasks, overlaps counted once), last worked and the next block of its tasks. Read-only."
     )]
     async fn list_projects(&self) -> Result<CallToolResult, ErrorData> {
         self.run(|e| e.projects()).await
@@ -887,50 +859,7 @@ impl KairosMcp {
     }
 
     #[tool(
-        description = "Plan project time Alec asks for: an event in the Projects calendar titled with the project, counted as its session (normal risk rules)."
-    )]
-    async fn plan_project_time(&self, Parameters(a): Parameters<SessionArgs>) -> Result<CallToolResult, ErrorData> {
-        let req = api::SessionReq {
-            start: a.start,
-            end: a.end,
-            duration_min: a.duration_min,
-        };
-        self.run(move |e| e.create_session(Author::Claude, &a.project, &req))
-            .await
-    }
-
-    #[tool(
-        description = "Count existing events as a project's sessions (e.g. 'Quantum Research' is work on the QUAST project); their check-ins become the project's time. Doesn't change the calendar. Only linked events count (a title alone doesn't): with no uids it links nothing and returns suggestions, unlinked events titled with the project's name (last 30 days, next 14) — confirm with Alec before linking."
-    )]
-    async fn attribute_to_project(
-        &self,
-        Parameters(a): Parameters<LinkSessionsArgs>,
-    ) -> Result<CallToolResult, ErrorData> {
-        self.run(move |e| {
-            let tz = e.tz();
-            if a.uids.is_empty() {
-                let s: Vec<serde_json::Value> = e
-                    .session_suggestions(&a.project)?
-                    .iter()
-                    .map(|i| {
-                        let (start, end) = i.span.bounds(tz);
-                        serde_json::json!({
-                            "uid": i.uid, "title": i.title, "key": i.key,
-                            "start": start.with_timezone(&tz).to_rfc3339(),
-                            "end": end.with_timezone(&tz).to_rfc3339(),
-                        })
-                    })
-                    .collect();
-                return Ok(serde_json::json!({ "linked": 0, "suggestions": s }));
-            }
-            e.link_sessions(&a.project, &a.uids)
-                .map(|n| serde_json::json!({ "linked": n }))
-        })
-        .await
-    }
-
-    #[tool(
-        description = "Rename a project, change its status (active/next/paused/done), note or calendar. A project is a task without a deadline: this is a task update, and a new name or calendar carries through to its sessions still to come (one changeset; editing sessions Alec made himself needs his approval)."
+        description = "Rename a project, change its status (active/next/paused/done), note or calendar. A project is a task without a due date: this is a task update (one changeset)."
     )]
     async fn update_project(&self, Parameters(a): Parameters<UpdateProjectArgs>) -> Result<CallToolResult, ErrorData> {
         let req = api::UpdateProjectReq {
@@ -940,33 +869,6 @@ impl KairosMcp {
             key: a.key,
         };
         self.run(move |e| e.update_project(Author::Claude, &a.id, &req)).await
-    }
-
-    #[tool(
-        description = "Proposed project time (kept by kairos only, not on the calendar until Alec accepts), each suggesting the active project he's spent least time on lately. Read-only."
-    )]
-    async fn list_proposals(&self) -> Result<CallToolResult, ErrorData> {
-        self.run(|e| e.proposals()).await
-    }
-
-    #[tool(
-        description = "Accept a project-time proposal when Alec says so: it becomes an event in the Projects calendar, titled with the project (default: the suggested one) and counted toward its time (normal risk rules)."
-    )]
-    async fn accept_proposal(
-        &self,
-        Parameters(a): Parameters<AcceptProposalArgs>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let req = api::AcceptProposalReq {
-            title: a.title,
-            project_id: a.project,
-        };
-        self.run(move |e| e.accept_proposal(Author::Claude, &a.id, &req)).await
-    }
-
-    #[tool(description = "Drop a project-time proposal (that time isn't proposed again).")]
-    async fn reject_proposal(&self, Parameters(a): Parameters<IdArgs>) -> Result<CallToolResult, ErrorData> {
-        self.run(move |e| e.reject_proposal(&a.id).map(|()| serde_json::json!({"ok": true})))
-            .await
     }
 
     #[tool(

@@ -7,7 +7,7 @@ use crate::load::Sidecar;
 use chrono::{DateTime, NaiveDate, Utc};
 use kairos_core::changeset::{Changeset, Status};
 use kairos_core::model::Meta;
-use kairos_core::project::{Project, ProjectStatus};
+use kairos_core::project::ProjectStatus;
 use kairos_core::task::{Task, TaskStatus};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
@@ -55,12 +55,6 @@ CREATE TABLE IF NOT EXISTS estimate_log (
     actual_min   INTEGER NOT NULL,
     completed_at TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS proposals (
-    id     TEXT PRIMARY KEY,
-    start  TEXT NOT NULL,
-    end    TEXT NOT NULL,
-    status TEXT NOT NULL
-);
 CREATE TABLE IF NOT EXISTS skips (
     changeset TEXT NOT NULL,
     start     TEXT NOT NULL,
@@ -75,11 +69,8 @@ CREATE TABLE IF NOT EXISTS kv (
 /// A skipped work-block slot: `(changeset, start, end)`.
 pub type SkipRow = (String, DateTime<Utc>, DateTime<Utc>);
 
-/// Old projects and their `(event_uid, project_id)` session links.
-pub type LegacyProjects = (Vec<Project>, Vec<(String, String)>);
-
-/// Proposed project time: `(id, start, end, status)`.
-pub type ProposalRow = (String, DateTime<Utc>, DateTime<Utc>, String);
+/// An event linked to a project as one of its sessions: `(source, uid, project id)`.
+pub type SessionLink = (String, String, String);
 
 /// Outcome of a planned block, from the evening check-in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -441,118 +432,40 @@ impl Db {
         Ok(out)
     }
 
-    // ---------------------------------------------------------------- proposals
+    // ---------------------------------------------------------------- retired sessions
 
-    /// Status `proposed` | `rejected` | `accepted`.
-    pub fn proposals(&self) -> Result<Vec<ProposalRow>> {
-        let mut st = self
-            .conn
-            .prepare("SELECT id, start, end, status FROM proposals ORDER BY start")?;
+    /// Project sessions and proposed project time were removed on 2026-10-25 (time on a project
+    /// is measured, and set aside by planning a task for it). This returns the events still
+    /// linked to a project as sessions (`project_id` in their sidecar JSON, a field `Meta` no
+    /// longer has), and drops the tables only the removed code used: proposals, and the
+    /// `projects`/`project_sessions` tables from before projects were tasks.
+    pub fn retire_sessions(&self) -> Result<Vec<SessionLink>> {
+        let mut st = self.conn.prepare(
+            "SELECT source, uid, json_extract(json, '$.project_id') FROM meta
+             WHERE json_extract(json, '$.project_id') IS NOT NULL",
+        )?;
         let rows = st.query_map([], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-                r.get::<_, String>(3)?,
-            ))
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
         })?;
-        let parse = |s: &str| {
-            DateTime::parse_from_rfc3339(s)
-                .map(|t| t.with_timezone(&Utc))
-                .unwrap_or_default()
-        };
         let mut out = Vec::new();
         for r in rows {
-            let (id, a, b, s) = r?;
-            out.push((id, parse(&a), parse(&b), s));
+            out.push(r?);
         }
+        self.conn.execute_batch(
+            "DROP TABLE IF EXISTS proposals; DROP TABLE IF EXISTS projects; DROP TABLE IF EXISTS project_sessions;",
+        )?;
         Ok(out)
     }
 
-    /// Replace the open proposals with `spans`, keeping rejected and accepted
-    /// ones (never re-proposed); forget anything that has ended.
-    pub fn proposals_replace(
-        &self,
-        spans: &[(String, DateTime<Utc>, DateTime<Utc>)],
-        now: DateTime<Utc>,
-    ) -> Result<()> {
-        self.conn
-            .execute("DELETE FROM proposals WHERE status = 'proposed'", [])?;
-        self.conn
-            .execute("DELETE FROM proposals WHERE end <= ?1", params![now.to_rfc3339()])?;
-        for (id, a, b) in spans {
-            self.conn.execute(
-                "INSERT OR IGNORE INTO proposals(id, start, end, status) VALUES (?1, ?2, ?3, 'proposed')",
-                params![id, a.to_rfc3339(), b.to_rfc3339()],
-            )?;
-        }
-        Ok(())
-    }
-
-    pub fn proposal_set_status(&self, id: &str, status: &str) -> Result<bool> {
-        let n = self
-            .conn
-            .execute("UPDATE proposals SET status = ?2 WHERE id = ?1", params![id, status])?;
-        Ok(n > 0)
-    }
-
-    // ---------------------------------------------------------------- legacy projects
-
-    /// Projects and session links from before projects were tasks (the
-    /// `projects` and `project_sessions` tables), for the one-off migration.
-    pub fn legacy_projects(&self) -> Result<LegacyProjects> {
-        let has = |t: &str| -> Result<bool> {
-            Ok(self.conn.query_row(
-                "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
-                params![t],
-                |r| r.get::<_, i64>(0),
-            )? > 0)
-        };
-        let mut projects = Vec::new();
-        if has("projects")? {
-            let mut st = self.conn.prepare("SELECT json FROM projects")?;
-            let rows = st.query_map([], |r| r.get::<_, String>(0))?;
-            for r in rows {
-                projects.push(serde_json::from_str(&r?)?);
-            }
-        }
-        let mut links = Vec::new();
-        if has("project_sessions")? {
-            let mut st = self
-                .conn
-                .prepare("SELECT event_uid, project_id FROM project_sessions")?;
-            let rows = st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
-            for r in rows {
-                links.push(r?);
-            }
-        }
-        Ok((projects, links))
-    }
-
-    pub fn drop_legacy_projects(&self) -> Result<()> {
-        self.conn
-            .execute_batch("DROP TABLE IF EXISTS projects; DROP TABLE IF EXISTS project_sessions;")?;
-        Ok(())
-    }
-
-    /// Test helper: the old tables, as an older kairosd left them.
-    pub fn legacy_projects_put(&self, projects: &[Project], links: &[(String, String)]) -> Result<()> {
-        self.conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, json TEXT NOT NULL);
-             CREATE TABLE IF NOT EXISTS project_sessions (event_uid TEXT PRIMARY KEY, project_id TEXT NOT NULL);",
+    /// Test helper: an event's sidecar as kairosd left it before sessions were retired.
+    pub fn session_link_put(&self, source: &str, uid: &str, m: &Meta, project_id: &str) -> Result<()> {
+        let mut v = serde_json::to_value(m)?;
+        v["project_id"] = serde_json::Value::String(project_id.into());
+        self.conn.execute(
+            "INSERT INTO meta(source, uid, json) VALUES (?1, ?2, ?3)
+             ON CONFLICT(source, uid) DO UPDATE SET json = excluded.json",
+            params![source, uid, v.to_string()],
         )?;
-        for p in projects {
-            self.conn.execute(
-                "INSERT INTO projects(id, json) VALUES (?1, ?2)",
-                params![p.id, serde_json::to_string(p)?],
-            )?;
-        }
-        for (u, p) in links {
-            self.conn.execute(
-                "INSERT INTO project_sessions(event_uid, project_id) VALUES (?1, ?2)",
-                params![u, p],
-            )?;
-        }
         Ok(())
     }
 

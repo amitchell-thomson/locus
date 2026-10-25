@@ -483,7 +483,6 @@ impl Engine {
             recurring: series.is_recurring(),
             start: m.start.instant(tz),
             end: m.end.instant(tz),
-            project_session: meta.project_id.is_some(),
         })
     }
 
@@ -783,10 +782,6 @@ impl Engine {
             m.not_going |= old.not_going;
             if m.locus.is_none() {
                 m.locus = old.locus;
-            }
-            // So is the project a session counts for.
-            if m.project_id.is_none() {
-                m.project_id = old.project_id;
             }
         }
         if m == Meta::default() {
@@ -2104,82 +2099,10 @@ impl Engine {
         Ok(resp)
     }
 
-    // ------------------------------------------------------------ proposed project time
-
-    /// Recompute proposed project time around `p`'s task work (rejected
-    /// spans are never proposed again).
-    fn refresh_proposals(
-        &mut self,
-        input: &PlanInput<'_>,
-        p: &sched::Plan,
-        session_days: &[chrono::NaiveDate],
-    ) -> Result<()> {
-        let rows = self.db.proposals()?;
-        let avoid: Vec<(DateTime<Utc>, DateTime<Utc>)> =
-            rows.iter().filter(|r| r.3 == "rejected").map(|r| (r.1, r.2)).collect();
-        // One project session a day: days with an accepted one get no more.
-        let taken: Vec<chrono::NaiveDate> = rows
-            .iter()
-            .filter(|r| r.3 == "accepted")
-            .map(|r| r.1.with_timezone(&input.tz).date_naive())
-            .chain(session_days.iter().copied())
-            .collect();
-        let spans: Vec<(String, DateTime<Utc>, DateTime<Utc>)> = sched::propose(input, p, &avoid, &taken)
-            .into_iter()
-            .map(|x| {
-                (
-                    format!("p{}-{}", x.start.timestamp() / 60, (x.end - x.start).num_minutes()),
-                    x.start,
-                    x.end,
-                )
-            })
-            .collect();
-        self.db.proposals_replace(&spans, input.now)?;
-        Ok(())
-    }
-
-    /// Open proposals, soonest first, each suggesting an active project:
-    /// the most neglected first (least time this week, counting sessions
-    /// already planned; then longest since last worked), in turn.
-    pub fn proposals(&self) -> Result<Vec<api::ProposalItem>> {
-        let now = self.now();
-        let title = self.constraints.projects.title.clone();
-        let (items, upcoming) = self.project_stats()?;
-        let mut order: Vec<&api::ProjectItem> = items
-            .iter()
-            .filter(|p| p.project.status == ProjectStatus::Active)
-            .collect();
-        order.sort_by_key(|p| {
-            (
-                p.week_min + p.unconfirmed_min + upcoming.get(&p.project.id).copied().unwrap_or(0),
-                p.last_worked,
-                p.project.created_at,
-                p.project.name.to_lowercase(),
-            )
-        });
-        Ok(self
-            .db
-            .proposals()?
-            .into_iter()
-            .filter(|r| r.3 == "proposed" && r.2 > now)
-            .enumerate()
-            .map(|(k, (id, start, end, _))| {
-                let suggested = (!order.is_empty()).then(|| order[k % order.len()]);
-                api::ProposalItem {
-                    id,
-                    start,
-                    end,
-                    title: suggested.map_or_else(|| title.clone(), |p| p.project.name.clone()),
-                    project_id: suggested.map(|p| p.project.id.clone()),
-                }
-            })
-            .collect())
-    }
-
     // ------------------------------------------------------------ projects
 
     /// Projects are tasks of kind `project`; this is the calendar their
-    /// sessions default to.
+    /// tasks' work defaults to.
     fn projects_key(&self) -> Option<String> {
         self.constraints
             .projects
@@ -2456,25 +2379,16 @@ impl Engine {
             .collect())
     }
 
-    /// Project sessions among `instances`: `(instance, project id)`. A
-    /// session is any timed event linked to a project (`Meta.project_id`:
-    /// planned or accepted through kairos, or attributed).
-    fn sessions_in<'a>(&self, instances: &'a [Instance]) -> Vec<(&'a Instance, String)> {
-        instances
-            .iter()
-            .filter(|i| matches!(i.span, Span::Timed { .. }) && i.meta.kind != EventKind::TaskBlock)
-            .filter_map(|i| Some((i, i.meta.project_id.clone()?)))
-            .collect()
-    }
-
-    /// Projects with the time spent on them (what was checked in on their
-    /// sessions and on their tasks' blocks), and each project's minutes
-    /// planned in the next 7 days.
-    fn project_stats(&self) -> Result<(Vec<api::ProjectItem>, std::collections::HashMap<String, u32>)> {
+    /// Projects with the time spent on them. Time spent is what happened, never the plan: Claude sessions measured in the
+    /// project's repository (spec K6), and what was checked in on the blocks of its tasks (and,
+    /// before 2026-10-25, on its sessions). The two overlap whenever a block was worked through
+    /// Claude, so they are merged as spans of time and an hour is counted once; adding them
+    /// counted it twice.
+    pub fn projects(&self) -> Result<Vec<api::ProjectItem>> {
+        use std::collections::HashMap;
         let projects = self.db.projects()?;
-        let mut upcoming = std::collections::HashMap::new();
         if projects.is_empty() {
-            return Ok((Vec::new(), upcoming));
+            return Ok(Vec::new());
         }
         let now = self.now();
         let tz = self.tz();
@@ -2483,7 +2397,7 @@ impl Engine {
         let mut w = Vec::new();
         let instances = kairos_core::view::instances(
             &loaded.sources,
-            now - Duration::days(30),
+            now - Duration::days(31),
             now + Duration::days(14),
             tz,
             &mut w,
@@ -2496,7 +2410,16 @@ impl Engine {
             .collect();
         let today = now.with_timezone(&tz).date_naive();
         let monday = today - Duration::days(i64::from(chrono::Datelike::weekday(&today).num_days_from_monday()));
-        let month_ago = today - Duration::days(30);
+        let week_start = kairos_core::time::resolve_local(monday.and_time(NaiveTime::MIN), tz);
+        let month_start = kairos_core::time::resolve_local((today - Duration::days(30)).and_time(NaiveTime::MIN), tz);
+        // Task id -> project id; a project's own id maps to itself (check-ins on its old sessions).
+        let project_of: HashMap<String, String> = self
+            .db
+            .tasks(None)?
+            .into_iter()
+            .filter_map(|t| Some((t.id, t.project_id?)))
+            .chain(projects.iter().map(|p| (p.id.clone(), p.id.clone())))
+            .collect();
         let mut items: Vec<api::ProjectItem> = projects
             .iter()
             .map(|t| api::ProjectItem {
@@ -2505,92 +2428,80 @@ impl Engine {
                 month_min: 0,
                 unconfirmed_min: 0,
                 last_worked: None,
-                next_session: None,
+                next_block: None,
             })
             .collect();
-        // Sessions: over and waiting for a check-in, or still to come.
-        let mut started: std::collections::HashMap<&str, DateTime<Utc>> = std::collections::HashMap::new();
-        for (i, pid) in self.sessions_in(&instances) {
+        // Blocks of its tasks: over and waiting for a check-in, or still to come.
+        let mut started: HashMap<&str, DateTime<Utc>> = HashMap::new();
+        for i in &instances {
             let Span::Timed { start, end } = i.span else { continue };
-            started.insert(i.uid.as_str(), start);
-            let Some(it) = items.iter_mut().find(|p| p.project.id == pid) else {
+            started.entry(i.uid.as_str()).or_insert(start);
+            if i.meta.kind != EventKind::TaskBlock {
+                continue;
+            }
+            let Some(pid) = i.meta.task_id.as_ref().and_then(|t| project_of.get(t)) else {
+                continue;
+            };
+            let Some(it) = items.iter_mut().find(|p| &p.project.id == pid) else {
                 continue;
             };
             if start < now {
                 if !answered.contains(i.uid.as_str()) && !build::is_checked_in(&i.title) {
                     it.unconfirmed_min += (end.min(now) - start).num_minutes().max(0) as u32;
                 }
-            } else {
-                if it.next_session.is_none_or(|n| start < n) {
-                    it.next_session = Some(start);
-                }
-                if start < now + Duration::days(7) {
-                    *upcoming.entry(it.project.id.clone()).or_insert(0) += (end - start).num_minutes().max(0) as u32;
-                }
+            } else if it.next_block.is_none_or(|n| start < n) {
+                it.next_block = Some(start);
             }
         }
-        // Time spent is what Alec checked in, never what was planned: on the
-        // project's sessions, and on the blocks of its tasks.
-        let project_of: std::collections::HashMap<String, String> = self
-            .db
-            .tasks(None)?
-            .into_iter()
-            .filter_map(|t| Some((t.id, t.project_id?)))
-            .chain(projects.iter().map(|p| (p.id.clone(), p.id.clone())))
-            .collect();
+        // What happened, as spans per project.
+        let mut spans: HashMap<String, Vec<Stretch>> = HashMap::new();
         for c in &checkins {
             let (Some(_), Some(pid)) = (c.outcome, project_of.get(&c.task_id)) else {
                 continue;
             };
-            let Some(it) = items.iter_mut().find(|p| &p.project.id == pid) else {
+            let actual = c.actual_min.unwrap_or(0);
+            if actual == 0 {
+                continue;
+            }
+            let start = started
+                .get(c.block_uid.as_str())
+                .copied()
+                .unwrap_or_else(|| kairos_core::time::resolve_local(c.day.and_time(NaiveTime::MIN), tz));
+            spans
+                .entry(pid.clone())
+                .or_default()
+                .push((start, start + Duration::minutes(i64::from(actual))));
+        }
+        for s in self.worked(month_start, now)? {
+            if let Some(p) = items
+                .iter()
+                .find(|p| p.project.registry.as_deref() == Some(s.project.as_str()))
+            {
+                spans.entry(p.project.id.clone()).or_default().push((s.start, s.end));
+            }
+        }
+        let within = |m: &[Stretch], from: DateTime<Utc>| -> u32 {
+            m.iter()
+                .map(|(a, b)| (*b.min(&now) - *a.max(&from)).num_minutes().max(0) as u32)
+                .sum()
+        };
+        for it in &mut items {
+            let Some(mut v) = spans.remove(&it.project.id) else {
                 continue;
             };
-            let actual = c.actual_min.unwrap_or(0);
-            if c.day >= month_ago {
-                it.month_min += actual;
-            }
-            if c.day >= monday {
-                it.week_min += actual;
-            }
-            if actual > 0 {
-                let t = started
-                    .get(c.block_uid.as_str())
-                    .copied()
-                    .unwrap_or_else(|| kairos_core::time::resolve_local(c.day.and_time(NaiveTime::MIN), tz));
-                if it.last_worked.is_none_or(|l| l < t) {
-                    it.last_worked = Some(t);
+            v.sort_unstable();
+            let mut merged: Vec<Stretch> = Vec::new();
+            for (a, b) in v {
+                match merged.last_mut() {
+                    Some(last) if a <= last.1 => last.1 = last.1.max(b),
+                    _ => merged.push((a, b)),
                 }
             }
+            it.week_min = within(&merged, week_start);
+            it.month_min = within(&merged, month_start);
+            it.last_worked = merged.last().map(|x| x.1);
         }
-        // Measured time (spec K6): worked spans from Claude sessions, by registry id. They are
-        // what was done, so they count without a check-in.
-        let spans = self.worked(
-            kairos_core::time::resolve_local(month_ago.and_time(NaiveTime::MIN), tz),
-            now,
-        )?;
-        let week_start = kairos_core::time::resolve_local(monday.and_time(NaiveTime::MIN), tz);
-        for s in spans {
-            let Some(it) = items
-                .iter_mut()
-                .find(|p| p.project.registry.as_deref() == Some(s.project.as_str()))
-            else {
-                continue;
-            };
-            let mins = (s.end - s.start).num_minutes().max(0) as u32;
-            it.month_min += mins;
-            if s.start >= week_start {
-                it.week_min += mins;
-            }
-            if it.last_worked.is_none_or(|l| l < s.end) {
-                it.last_worked = Some(s.end);
-            }
-        }
-        Ok((items, upcoming))
-    }
-
-    /// Every project (active, next, paused, done) with time spent.
-    pub fn projects(&self) -> Result<Vec<api::ProjectItem>> {
-        Ok(self.project_stats()?.0)
+        Ok(items)
     }
 
     /// A project by id or unique case-insensitive name (prefix).
@@ -2689,9 +2600,8 @@ impl Engine {
         Ok(self.project_view(&t))
     }
 
-    /// Rename a project, change its status, note or calendar: a task update,
-    /// so a new name or calendar carries through to its sessions still to
-    /// come (one changeset, one undo).
+    /// Rename a project, change its status, note or calendar: a task update (one changeset, one
+    /// undo).
     pub fn update_project(
         &mut self,
         author: Author,
@@ -2718,13 +2628,10 @@ impl Engine {
         }
         t.updated_at = self.now();
         let world = self.world(60)?;
-        let mut ops = vec![Op::UpdateTask {
+        let ops = vec![Op::UpdateTask {
             before: Box::new(before.clone()),
             after: Box::new(t.clone()),
         }];
-        if t.title != before.title || t.key != before.key {
-            ops.extend(self.follow_task_ops(&world, &t, &before, &[])?);
-        }
         let summary = if t.title != before.title {
             format!("Rename project {:?} to {:?}", before.title, t.title)
         } else {
@@ -2753,101 +2660,7 @@ impl Engine {
         }
     }
 
-    /// The calendar a project's sessions go in.
-    fn session_key(&self, p: &Task) -> Option<String> {
-        Some(p.key.clone())
-            .filter(|k| self.cfg.key(k).is_some())
-            .or_else(|| self.projects_key())
-    }
-
-    /// Planning time for a "next" project means it's under way.
-    fn project_under_way(&mut self, p: &Task) -> Result<()> {
-        if p.status == TaskStatus::Open && p.stage == Some(ProjectStatus::Next) {
-            let mut x = p.clone();
-            x.stage = Some(ProjectStatus::Active);
-            x.updated_at = self.now();
-            self.db.task_put(&x)?;
-        }
-        Ok(())
-    }
-
-    /// Plan project time by hand: an event in the project's calendar, titled
-    /// with the project and linked to it as a session (normal risk rules).
-    pub fn create_session(&mut self, author: Author, project: &str, req: &api::SessionReq) -> Result<WriteResult> {
-        let p = self.find_project(project)?;
-        let cs = self.create_event(
-            author,
-            &api::CreateEventReq {
-                title: build::session_title(&p.title),
-                start: req.start.clone(),
-                end: req.end.clone(),
-                duration_min: req.duration_min.or(Some(120)).filter(|_| req.end.is_none()),
-                key: self.session_key(&p),
-                description: Some(PROJECT_MARK.into()),
-                ..Default::default()
-            },
-        )?;
-        self.link_created(&cs, &p.id)?;
-        self.project_under_way(&p)?;
-        self.replan_soon = true;
-        Ok(WriteResult::from(&cs))
-    }
-
-    /// Count existing events as a project's sessions (time spent comes from
-    /// their check-ins). Returns how many were linked.
-    pub fn link_sessions(&mut self, project: &str, uids: &[String]) -> Result<usize> {
-        let p = self.find_project(project)?;
-        let world = self.world(60)?;
-        let mut n = 0;
-        for uid in uids {
-            let src = self.locate(&world, None, uid)?.source.id;
-            self.link_session(&src, uid, &p.id)?;
-            n += 1;
-        }
-        Ok(n)
-    }
-
-    /// Events that look like a project's sessions but aren't linked: titled
-    /// with its name, in the last 30 days or the next 14 (for "attribute").
-    pub fn session_suggestions(&self, project: &str) -> Result<Vec<Instance>> {
-        let p = self.find_project(project)?;
-        let world = self.world(14)?;
-        let name = p.title.trim().to_lowercase();
-        let since = self.now() - Duration::days(30);
-        let mut seen = std::collections::HashSet::new();
-        Ok(world
-            .instances
-            .iter()
-            .filter(|i| i.meta.project_id.is_none() && i.meta.kind == EventKind::Event && i.start(self.tz()) >= since)
-            .filter(|i| build::bare_block_title(&i.title).to_lowercase().contains(&name))
-            .filter(|i| seen.insert(i.uid.clone()))
-            .cloned()
-            .collect())
-    }
-
-    /// Link an event as a project's session. The link lives in the sidecar
-    /// (authoritative, preserved on rewrites), so the TUI draws it as a
-    /// session too.
-    fn link_session(&mut self, source: &str, uid: &str, project_id: &str) -> Result<()> {
-        let mut m = self.db.meta_get(source, uid)?.unwrap_or_default();
-        m.project_id = Some(project_id.to_string());
-        self.db.meta_set(source, uid, &m)?;
-        Ok(())
-    }
-
-    /// Link the event a changeset created as a project's session.
-    fn link_created(&mut self, cs: &Changeset, project_id: &str) -> Result<()> {
-        if let Some((src, uid)) = cs.ops.iter().find_map(|o| match o {
-            Op::CreateEvent { item, uid, .. } => Some((item.source.clone(), uid.clone())),
-            _ => None,
-        }) {
-            self.link_session(&src, &uid, project_id)?;
-        }
-        Ok(())
-    }
-
-    /// Delete a project: dropped like a task (its sessions stay on the
-    /// calendar; their time just isn't counted anywhere).
+    /// Delete a project: dropped like a task.
     pub fn delete_project(&mut self, author: Author, id: &str) -> Result<WriteResult> {
         let before = self.find_project(id)?;
         let mut t = before.clone();
@@ -2866,122 +2679,31 @@ impl Engine {
         Ok(WriteResult::from(&cs))
     }
 
-    /// One-off: projects and session links from before projects were tasks.
-    /// Projects become project tasks (same ids, so check-ins still count);
-    /// links move into the sidecar, and so do events that counted only
-    /// because they were titled with a project's name. Then the old tables go.
-    pub fn migrate_projects(&mut self) -> Result<usize> {
-        let (old, links) = self.db.legacy_projects()?;
-        if old.is_empty() && links.is_empty() {
-            self.db.drop_legacy_projects()?;
-            return Ok(0);
-        }
-        let pkey = self.projects_key();
-        for p in &old {
-            if self.db.task_get(&p.id)?.is_some() {
-                continue;
-            }
-            let key = match p.key.clone().filter(|k| self.cfg.key(k).is_some()) {
-                Some(k) => k,
-                None => self.project_key(None)?,
-            };
-            let mut t = project::new_task(&p.name, p.status, &p.note, &key, Author::Alec, p.created_at);
-            t.id = p.id.clone();
-            t.updated_at = p.updated_at;
-            self.db.task_put(&t)?;
-        }
-        let world = self.world(1)?;
+    /// One-off, at start: project sessions were removed on 2026-10-25. An event still linked to
+    /// a project as its session keeps that link as what it is for (`Meta.locus`, the project's
+    /// registry id) unless it already says, so it still opens in locus and nothing it recorded
+    /// is lost; rewriting its sidecar drops the old field. Returns how many were relinked.
+    pub fn retire_sessions(&mut self) -> Result<usize> {
+        let links = self.db.retire_sessions()?;
         let mut n = 0;
-        let mut linked: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for (uid, pid) in &links {
-            let Ok(loc) = self.locate(&world, None, uid) else {
-                continue;
-            };
-            self.link_session(&loc.source.id, uid, pid)?;
-            linked.insert(uid.clone());
-            n += 1;
-        }
-        for s in &world.loaded.sources {
-            for e in &s.series {
-                let Some(m) = &e.master else { continue };
-                if linked.contains(&e.uid) || m.meta.project_id.is_some() {
-                    continue;
-                }
-                let bare = build::bare_block_title(&m.summary);
-                let hit = old.iter().find(|p| {
-                    let key = p.key.clone().or_else(|| pkey.clone());
-                    key.is_some() && s.key == key && p.name.trim().eq_ignore_ascii_case(bare)
-                });
-                if let Some(p) = hit {
-                    self.link_session(&s.id, &e.uid, &p.id)?;
-                    n += 1;
-                }
+        for (source, uid, pid) in links {
+            let mut m = self.db.meta_get(&source, &uid)?.unwrap_or_default();
+            if m.locus.is_none()
+                && let Some(reg) = self.db.task_get(&pid)?.and_then(|p| p.registry)
+            {
+                m.locus = Some(reg);
+                n += 1;
+            }
+            if m == Meta::default() {
+                self.db.meta_delete(&source, &uid)?;
+            } else {
+                self.db.meta_set(&source, &uid, &m)?;
             }
         }
-        self.db.drop_legacy_projects()?;
-        tracing::info!(projects = old.len(), sessions = n, "migrated projects to tasks");
+        if n > 0 {
+            tracing::info!(events = n, "project sessions retired: linked to their projects instead");
+        }
         Ok(n)
-    }
-
-    /// Accept proposed project time: it becomes an event (titled with what
-    /// to work on) in the projects key.
-    pub fn accept_proposal(&mut self, author: Author, id: &str, req: &api::AcceptProposalReq) -> Result<WriteResult> {
-        let p = self
-            .proposals()?
-            .into_iter()
-            .find(|p| p.id == id)
-            .ok_or_else(|| EngineError::NotFound(format!("proposal {id}")))?;
-        // What to work on: the project picked, a project's name typed, the
-        // suggested project — or just a title.
-        let typed = req.title.as_deref().map(str::trim).filter(|t| !t.is_empty());
-        let project = match (&req.project_id, typed) {
-            (Some(pid), _) => Some(self.find_project(pid)?),
-            (None, Some(t)) => self
-                .db
-                .projects()?
-                .into_iter()
-                .find(|x| x.title.eq_ignore_ascii_case(t)),
-            (None, None) => match &p.project_id {
-                Some(pid) => self.find_project(pid).ok(),
-                None => None,
-            },
-        };
-        let title = project
-            .as_ref()
-            .map(|x| build::session_title(&x.title))
-            .or(typed.map(str::to_string))
-            .unwrap_or_else(|| p.title.clone());
-        let key = match &project {
-            Some(x) => self.session_key(x),
-            None => self.projects_key(),
-        };
-        let cs = self.create_event(
-            author,
-            &api::CreateEventReq {
-                title,
-                start: p.start.to_rfc3339(),
-                end: Some(p.end.to_rfc3339()),
-                // The project's calendar, else the projects key (else the default key).
-                key,
-                description: Some(PROJECT_MARK.into()),
-                ..Default::default()
-            },
-        )?;
-        self.db.proposal_set_status(id, "accepted")?;
-        if let Some(x) = project {
-            self.link_created(&cs, &x.id)?;
-            self.project_under_way(&x)?;
-        }
-        self.replan_soon = true;
-        Ok(WriteResult::from(&cs))
-    }
-
-    /// Drop proposed project time; that span isn't proposed again.
-    pub fn reject_proposal(&mut self, id: &str) -> Result<()> {
-        if !self.db.proposal_set_status(id, "rejected")? {
-            return Err(EngineError::NotFound(format!("proposal {id}")));
-        }
-        Ok(())
     }
 
     fn task_type(&self, name: &str) -> Result<Option<kairos_core::constraints::TaskType>> {
@@ -3373,25 +3095,13 @@ impl Engine {
             })
             .collect();
         let (target, _) = self.target_for_key(&t.key)?;
-        // A task's blocks still to come; a project's sessions still to come
-        // that are titled with its name (one Alec attributed under another
-        // title keeps it) and are in its calendar (or they stay put).
-        let mut uids: Vec<(String, bool)> = if t.is_project() {
-            let old_target = self.target_for_key(&before.key).map(|x| x.0.id).unwrap_or_default();
-            self.sessions_in(&world.instances)
-                .into_iter()
-                .filter(|(i, pid)| pid == &t.id && i.span.bounds(tz).1 > now)
-                .filter(|(i, _)| build::bare_block_title(&i.title).eq_ignore_ascii_case(before.title.trim()))
-                .filter(|(i, _)| t.key == before.key || i.source == old_target)
-                .map(|(i, _)| (i.uid.clone(), false))
-                .collect()
-        } else {
-            self.blocks(world)
-                .into_iter()
-                .filter(|(b, _)| b.task_id == t.id && b.end > now)
-                .filter_map(|(b, _)| b.uid.map(|u| (u, false)))
-                .collect()
-        };
+        // The task's blocks still to come.
+        let mut uids: Vec<(String, bool)> = self
+            .blocks(world)
+            .into_iter()
+            .filter(|(b, _)| b.task_id == t.id && b.end > now)
+            .filter_map(|(b, _)| b.uid.map(|u| (u, false)))
+            .collect();
         uids.dedup();
         if let Some(d) = &t.deadline_uid {
             uids.push((d.clone(), true));
@@ -3539,8 +3249,7 @@ impl Engine {
             .map(|c| c.block_uid)
             .collect();
         let mut n = 0;
-        // Work blocks and project sessions alike.
-        for (b, inst) in self.checkin_blocks(&world) {
+        for (b, inst) in self.blocks(&world) {
             let Some(uid) = b.uid.clone() else { continue };
             if b.end > boundary || answered.contains(&uid) || build::is_checked_in(&inst.title) {
                 continue;
@@ -3551,10 +3260,9 @@ impl Engine {
         Ok(n)
     }
 
-    /// Record a check-in on a work block or a project session: the time
-    /// counts (for the task's remaining, or the project's time spent) and the
-    /// calendar shows it — except on events kairos didn't make (Alec's own,
-    /// attributed to a project) or repeating ones, which aren't touched.
+    /// Record a check-in on a work block: the time counts (for the task's remaining, and its
+    /// project's time spent) and the calendar shows it, except on repeating events, which aren't
+    /// touched.
     fn answer_checkin(
         &mut self,
         uid: &str,
@@ -3598,29 +3306,6 @@ impl Engine {
             self.record_checkin(uid, b, outcome, actual)?;
         }
         Ok(())
-    }
-
-    /// Everything that gets a check-in: work blocks, and project sessions
-    /// (their `task_id` is the project's).
-    fn checkin_blocks(&self, world: &World) -> Vec<(Block, Instance)> {
-        let mut out = self.blocks(world);
-        out.extend(self.sessions_in(&world.instances).into_iter().filter_map(|(i, pid)| {
-            let Span::Timed { start, end } = i.span else {
-                return None;
-            };
-            Some((
-                Block {
-                    uid: Some(i.uid.clone()),
-                    task_id: pid,
-                    start,
-                    end,
-                    pinned: true,
-                    why: None,
-                },
-                i.clone(),
-            ))
-        }));
-        out
     }
 
     /// Make the calendar show what happened to a checked-in block: `✓` in
@@ -3671,19 +3356,7 @@ impl Engine {
                     end
                 });
                 let edit = Edit {
-                    title: (!build::is_checked_in(&title)).then(|| {
-                        if self
-                            .db
-                            .task_get(&b.task_id)
-                            .ok()
-                            .flatten()
-                            .is_some_and(|t| t.is_project())
-                        {
-                            build::session_done_title(&title)
-                        } else {
-                            build::done_block_title(&title)
-                        }
-                    }),
+                    title: (!build::is_checked_in(&title)).then(|| build::done_block_title(&title)),
                     time: match longer {
                         Some(end) if end > b.end => Some(NewTime::Timed { start: b.start, end }),
                         _ => (actual > 0 && i64::from(actual) < planned).then(|| NewTime::Timed {
@@ -3718,7 +3391,7 @@ impl Engine {
         Ok(())
     }
 
-    /// Today's blocks and project sessions for the check-in.
+    /// Today's blocks for the check-in.
     pub fn checkin_items(&self) -> Result<Vec<api::CheckinItem>> {
         let now = self.now();
         let tz = self.tz();
@@ -3728,7 +3401,7 @@ impl Engine {
         let mut out = Vec::new();
         // Today's started blocks (answered or not), and every earlier block
         // still unanswered (the last week; older ones were auto-done).
-        for (b, inst) in self.checkin_blocks(&world) {
+        for (b, inst) in self.blocks(&world) {
             if b.start > now {
                 continue;
             }
@@ -3742,7 +3415,6 @@ impl Engine {
                 continue;
             }
             let task = self.db.task_get(&b.task_id)?;
-            let project = task.as_ref().is_some_and(|t| t.is_project());
             out.push(api::CheckinItem {
                 block_uid: uid,
                 task_id: b.task_id.clone(),
@@ -3752,20 +3424,15 @@ impl Engine {
                 planned_min: b.minutes().max(0) as u32,
                 outcome,
                 // Coursework (estimates move), or this block uses up what's
-                // left: "finished, or how much more?". Projects have no estimate.
+                // left: "finished, or how much more?".
                 ask_remaining: match &task {
-                    Some(t) if !project => {
+                    Some(t) => {
                         let used = (b.minutes().max(0) as f32 / self.ratio_for(t)?).round() as u32;
                         t.kind.as_deref() == Some("coursework") || used >= t.remaining_min
                     }
-                    _ => false,
+                    None => false,
                 },
-                remaining_min: if project {
-                    0
-                } else {
-                    task.as_ref().map_or(0, |t| t.remaining_min)
-                },
-                project,
+                remaining_min: task.as_ref().map_or(0, |t| t.remaining_min),
             });
         }
         out.sort_by_key(|c| c.start);
@@ -3794,30 +3461,11 @@ impl Engine {
         })?;
         let world = self.world(1)?;
         let (b, inst) = self
-            .checkin_blocks(&world)
+            .blocks(&world)
             .into_iter()
             .find(|(b, _)| b.uid.as_deref() == Some(req.block_uid.as_str()))
             .ok_or_else(|| EngineError::NotFound(format!("block {}", req.block_uid)))?;
         self.answer_checkin(&req.block_uid, &b, recordable(&inst), outcome, req.actual_min)?;
-        // A project session: "finished" finishes the project; there's no
-        // estimate to revise.
-        if let Some(p) = self.db.task_get(&b.task_id)?.filter(|t| t.is_project()) {
-            if finished && p.status == TaskStatus::Open {
-                let mut done = p.clone();
-                project::set_status(&mut done, ProjectStatus::Done);
-                done.updated_at = self.now();
-                self.propose(
-                    &world,
-                    Author::Scheduler,
-                    vec![Op::UpdateTask {
-                        before: Box::new(p),
-                        after: Box::new(done.clone()),
-                    }],
-                    format!("Finished project {:?}", done.title),
-                )?;
-            }
-            return self.plan(false, Author::Scheduler);
-        }
         // "How much is left?": the new remaining estimate (coursework).
         if let Some(r) = req.remaining_min
             && let Some(mut t) = self.db.task_get(&b.task_id)?
@@ -3967,17 +3615,6 @@ impl Engine {
             reflow_after,
         };
         let p = sched::plan(&input);
-        if !dry_run {
-            // Days that already have an accepted session (also ones accepted
-            // before accepted proposals were recorded): marked by the description.
-            let session_days: Vec<chrono::NaiveDate> = world
-                .instances
-                .iter()
-                .filter(|i| i.description.as_deref() == Some(PROJECT_MARK))
-                .map(|i| i.start(tz).with_timezone(&tz).date_naive())
-                .collect();
-            self.refresh_proposals(&input, &p, &session_days)?;
-        }
         let mut delete: Vec<Block> = p.delete.clone();
         for (b, _) in &blocks {
             if b.start >= now
@@ -4226,7 +3863,9 @@ fn plan_summary(r: &api::PlanResp, tz: Tz) -> String {
     s
 }
 
-/// Description of an accepted project session (how a day is known to have one).
+/// A stretch of time worked: `(start, end)`.
+type Stretch = (DateTime<Utc>, DateTime<Utc>);
+
 /// The busy spans the last plan saw (to notice freed time).
 const BUSY_KEY: &str = "plan.busy_spans";
 
@@ -4248,13 +3887,10 @@ fn merged_spans(busy: &[Busy], from: DateTime<Utc>) -> Vec<(i64, i64)> {
     out
 }
 
-/// Does a check-in show on this event? Only on ones kairos made (not Alec's
-/// own, attributed to a project) and not on a repeating series.
+/// Does a check-in show on this event? Only on ones kairos made and not on a repeating series.
 fn recordable(i: &Instance) -> bool {
     i.meta.created_by.is_some() && !i.recurring
 }
-
-const PROJECT_MARK: &str = "Project time (accepted kairos proposal)";
 
 fn fmt_min(m: u32) -> String {
     match (m / 60, m % 60) {

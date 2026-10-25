@@ -25,8 +25,6 @@ pub enum FormKind {
     EditProject {
         id: String,
     },
-    /// Plan project time by hand.
-    AddSession,
     /// Link an event or task to a locus item afterwards (`L`).
     Link {
         source: String,
@@ -109,7 +107,7 @@ pub const WHEN_HINT: &str = "tue 19:00 · 23 oct 2pm · tomorrow 9am · a date a
 const DUR_HINT: &str = "60m · 1h30 · 2h (empty = 1h)";
 /// The Project picker's "no project".
 pub const NO_PROJECT: &str = "none";
-const CAL_HINT: &str = "where its sessions go, e.g. Studies for the 3rd-year project — ←/→";
+const CAL_HINT: &str = "where its tasks' work goes, e.g. Studies for the 3rd-year project — ←/→";
 const STATUS_HINT: &str = "active (now) · next (soon) · paused · done — ←/→";
 const FOR_HINT: &str = "type to find: b15 · mil · errands — ←/→ through the matches";
 const TITLE_HINT: &str = "or all at once: Squash @ tue 19:00 #Sport for 90m";
@@ -349,25 +347,11 @@ impl Form {
             FormKind::EditTask { .. } => "edit task",
             FormKind::TookLonger { .. } => "took longer",
             FormKind::AddProject => "new project",
-            FormKind::AddSession => "project time",
             FormKind::EditProject { .. } => "edit project",
         }
     }
 
-    /// Plan project time: which project (←/→ over `projects`), when, how long.
-    pub fn add_session(projects: Vec<String>, project: &str, when: String) -> Form {
-        Form::new(
-            FormKind::AddSession,
-            vec![
-                field("Project", project, FieldKind::Key, "←/→ or type the first letter"),
-                field("When", when, FieldKind::When, "thu 14:00 · tomorrow 10am"),
-                field("Duration", "2h", FieldKind::Duration, "1h · 90m · 3h"),
-            ],
-            projects,
-        )
-    }
-
-    /// `keys`: calendars for its sessions; `default_key` the projects one.
+    /// `keys`: calendars for its tasks' work; `default_key` the projects one.
     pub fn add_project(keys: Vec<String>, default_key: &str) -> Form {
         Form::new(
             FormKind::AddProject,
@@ -402,18 +386,6 @@ impl Form {
     /// "Took longer": time spent, how much more, plan it from when.
     pub fn took_longer(t: crate::app::CheckinTarget) -> Form {
         let spent = fmt_minutes(i64::from(t.planned_min + 60));
-        if t.project {
-            return Form::new(
-                FormKind::TookLonger { t },
-                vec![field(
-                    "Spent",
-                    spent,
-                    FieldKind::Duration,
-                    "time actually spent on it: 3h · 2h30",
-                )],
-                Vec::new(),
-            );
-        }
         let more = fmt_minutes(i64::from(t.remaining_min.saturating_sub(t.planned_min).max(60)));
         Form::new(
             FormKind::TookLonger { t },

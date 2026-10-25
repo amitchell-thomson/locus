@@ -908,115 +908,6 @@ fn new_event_moves_only_the_displaced_work() {
 }
 
 #[test]
-fn proposals_fill_comfortable_gaps_after_task_work() {
-    let c = proposing();
-    let tasks = [typed("b4", "sheet", 180, Some("2026-10-13 23:00"))];
-    let b = lectures();
-    let input = PlanInput {
-        now: at("2026-10-12 08:00"),
-        tz: London,
-        constraints: &c,
-        tasks: &tasks,
-        busy: &b,
-        existing: &[],
-        unavailable: &[],
-        reflow_after: None,
-    };
-    let p = plan(&input);
-    let props = propose(&input, &p, &[], &[]);
-    assert!(!props.is_empty());
-    let horizon = at("2026-10-12 08:00") + Duration::days(7);
-    let mut per_day: BTreeMap<NaiveDate, i64> = BTreeMap::new();
-    for x in &p.create {
-        *per_day.entry(x.start.with_timezone(&London).date_naive()).or_default() += x.minutes();
-    }
-    for x in &props {
-        let m = (x.end - x.start).num_minutes();
-        assert!((60..=180).contains(&m), "{m}");
-        assert!(x.end <= horizon);
-        for y in b
-            .iter()
-            .map(|z| (z.start, z.end))
-            .chain(p.create.iter().map(|z| (z.start, z.end)))
-        {
-            assert!(x.end <= y.0 || x.start >= y.1, "proposal {} overlaps", local(x.start));
-        }
-        *per_day.entry(x.start.with_timezone(&London).date_naive()).or_default() += m;
-    }
-    for (d, m) in per_day {
-        assert!(m <= 6 * 60, "{d}: {m} min of work incl. proposals");
-    }
-    // Deterministic, and a rejected span is never proposed again.
-    assert_eq!(propose(&input, &p, &[], &[]), props);
-    let gone = (props[0].start, props[0].end);
-    let again = propose(&input, &p, &[gone], &[]);
-    assert!(again.iter().all(|x| x.end <= gone.0 || x.start >= gone.1));
-}
-
-#[test]
-fn no_proposals_when_disabled() {
-    let mut c = proposing();
-    c.projects.enabled = false;
-    let input = PlanInput {
-        now: at("2026-10-12 08:00"),
-        tz: London,
-        constraints: &c,
-        tasks: &[],
-        busy: &[],
-        existing: &[],
-        unavailable: &[],
-        reflow_after: None,
-    };
-    assert!(propose(&input, &plan(&input), &[], &[]).is_empty());
-}
-
-#[test]
-fn one_project_session_a_day_in_its_longest_gap() {
-    let c = proposing();
-    let b = lectures();
-    let input = PlanInput {
-        now: at("2026-10-12 07:00"),
-        tz: London,
-        constraints: &c,
-        tasks: &[],
-        busy: &b,
-        existing: &[],
-        unavailable: &[],
-        reflow_after: None,
-    };
-    let p = plan(&input);
-    let props = propose(&input, &p, &[], &[]);
-    let mut days: Vec<NaiveDate> = props
-        .iter()
-        .map(|x| x.start.with_timezone(&London).date_naive())
-        .collect();
-    let n = days.len();
-    days.dedup();
-    assert_eq!(
-        days.len(),
-        n,
-        "one a day: {:?}",
-        props.iter().map(|x| local(x.start)).collect::<Vec<_>>()
-    );
-    assert_eq!(n, 7);
-    // Lecture days (09–11, 14–16): the longest comfortable gap is after dinner.
-    let mon = &props[0];
-    assert_eq!(
-        (local(mon.start), (mon.end - mon.start).num_minutes()),
-        ("Mon 12 19:30".to_string(), 150)
-    );
-    // A day with an accepted session gets none.
-    let mon_day = mon.start.with_timezone(&London).date_naive();
-    let again = propose(&input, &p, &[], &[mon_day]);
-    assert!(
-        again
-            .iter()
-            .all(|x| x.start.with_timezone(&London).date_naive() != mon_day)
-    );
-    assert_eq!(again.len(), 6);
-}
-
-#[test]
 fn social_and_sport_dont_count_toward_the_day_load() {
     // 9 h of social on Monday wouldn't leave room under the 10 h load if it
     // counted; it doesn't, so a 2 h block still fits around it that day.
@@ -1042,32 +933,9 @@ fn social_and_sport_dont_count_toward_the_day_load() {
 }
 
 #[test]
-fn proposals_start_at_nine_at_the_earliest() {
-    let c = proposing();
-    let input = PlanInput {
-        now: at("2026-10-12 07:00"),
-        tz: London,
-        constraints: &c,
-        tasks: &[],
-        busy: &[],
-        existing: &[],
-        unavailable: &[],
-        reflow_after: None,
-    };
-    let props = propose(&input, &plan(&input), &[], &[]);
-    assert_eq!(props.len(), 7);
-    for x in &props {
-        let l = x.start.with_timezone(&London);
-        assert!(l.hour() >= 9, "{}", local(x.start));
-    }
-    // An empty day: 09:00–12:00 (the first longest gap).
-    assert_eq!(local(props[0].start), "Mon 12 09:00");
-}
-
-#[test]
 fn weekends_start_at_ten() {
-    // Friday night: the sheet's blocks and the weekend's proposals start ≥ 10:00.
-    let c = proposing();
+    // Friday night: the sheet's blocks start ≥ 10:00.
+    let c = constraints();
     let tasks = [typed("b4", "sheet", 300, Some("2026-10-19 12:00"))];
     let input = PlanInput {
         now: at("2026-10-16 22:00"),
@@ -1093,9 +961,6 @@ fn weekends_start_at_ten() {
         assert!(b.start.with_timezone(&London).hour() >= 10, "{}", local(b.start));
     }
     assert_eq!(local(p.create[0].start), "Sat 17 10:00");
-    for x in propose(&input, &p, &[], &[]).iter().filter(|x| weekend(x.start)) {
-        assert!(x.start.with_timezone(&London).hour() >= 10, "{}", local(x.start));
-    }
 }
 
 #[test]
@@ -1170,13 +1035,6 @@ fn a_long_free_evening_beats_a_short_gap_for_the_second_block() {
     );
     assert!(p.squeezed.is_empty(), "{:?}", p.squeezed);
     assert_eq!(total(&p, "tute"), 360);
-}
-
-/// The proposer is off by default since spec K6; these tests exercise it switched on.
-fn proposing() -> Constraints {
-    let mut c = constraints();
-    c.projects.enabled = true;
-    c
 }
 
 #[test]

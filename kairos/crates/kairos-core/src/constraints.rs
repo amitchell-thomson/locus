@@ -182,66 +182,15 @@ fn default_task_types() -> Vec<TaskType> {
     ]
 }
 
-/// Proposed project time: free gaps offered (greyed) for Alec to accept or drop.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+/// Projects: the calendar a project's work goes in when it names none (`key`). The proposer
+/// that offered project time was removed (2026-10-25: project time is measured, and set aside by
+/// planning a task for the project), so its old settings (`enabled`, `title`, `min_minutes`,
+/// `max_minutes`, `days_ahead`, `max_per_day`, `earliest`) are read and ignored: a config written
+/// before still loads. Hence no `deny_unknown_fields` here.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct Projects {
-    /// Off unless switched on (spec K6: project time is measured, not proposed).
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default = "default_project_title")]
-    pub title: String,
-    /// Calendar key accepted project time goes to (default: the default key).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<String>,
-    #[serde(default = "default_project_min")]
-    pub min_minutes: u32,
-    #[serde(default = "default_project_max")]
-    pub max_minutes: u32,
-    #[serde(default = "default_project_days")]
-    pub days_ahead: u16,
-    /// Proposed sessions per day (days with an accepted one get no more).
-    #[serde(default = "default_project_per_day")]
-    pub max_per_day: u32,
-    /// Proposed sessions start no earlier than this.
-    #[serde(default = "default_project_earliest")]
-    pub earliest: Hm,
-}
-
-fn default_project_earliest() -> Hm {
-    Hm(9 * 60)
-}
-
-fn default_project_per_day() -> u32 {
-    1
-}
-
-impl Default for Projects {
-    fn default() -> Projects {
-        Projects {
-            enabled: false,
-            title: default_project_title(),
-            key: None,
-            min_minutes: default_project_min(),
-            max_minutes: default_project_max(),
-            days_ahead: default_project_days(),
-            max_per_day: default_project_per_day(),
-            earliest: default_project_earliest(),
-        }
-    }
-}
-
-fn default_project_title() -> String {
-    "Project time".into()
-}
-fn default_project_min() -> u32 {
-    60
-}
-fn default_project_max() -> u32 {
-    180
-}
-fn default_project_days() -> u16 {
-    7
 }
 
 fn default_buffer() -> u16 {

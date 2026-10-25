@@ -40,9 +40,6 @@ const PAST_FADE: f32 = 0.35;
 const FAMILY_FADE: f32 = 0.45;
 
 fn colour_of(app: &App, i: &Instance) -> Color {
-    if i.meta.kind == EventKind::Proposal {
-        return c("overlay1");
-    }
     let r = match i.overlay {
         Overlay::Background => app.cfg.overlays.background_colour,
         Overlay::Imported => app.cfg.overlays.imported_colour,
@@ -177,11 +174,7 @@ fn label(app: &App, i: &Instance) -> String {
         EventKind::Deadline => format!("⚑ {}", t.trim_start_matches('⚑').trim()),
         // Work: a box — 󰄱 to do (also past, until checked in), 󰄵 done.
         EventKind::TaskBlock => kairos_core::build::block_label(t, i.end(app.tz) <= app.now),
-        // Project sessions from before K6 lose their diamonds: time on a project is measured
-        // (worked bars) or a work block you place, not a separate kind of event.
-        EventKind::Event if i.meta.project_id.is_some() => kairos_core::build::bare_block_title(t).to_string(),
         EventKind::Event => t.to_string(),
-        EventKind::Proposal => format!("◌ {t}?"),
         EventKind::Worked => format!("worked · {t}"),
     }
 }
@@ -287,9 +280,7 @@ pub enum Phase {
 
 /// Family events you're not attending (TUI `B`) never get now/soon emphasis.
 fn attending(i: &Instance) -> bool {
-    i.meta.kind != EventKind::Proposal
-        && !i.meta.not_going
-        && (i.overlay != Overlay::Family || i.meta.origin_key.is_some() || i.meta.blocking)
+    !i.meta.not_going && (i.overlay != Overlay::Family || i.meta.origin_key.is_some() || i.meta.blocking)
 }
 
 pub fn phase(app: &App, i: &Instance) -> Phase {
@@ -425,10 +416,6 @@ fn peek(app: &App, cl: &Cluster) -> String {
         }
         return parts.join(" · ");
     }
-    if i.meta.kind == EventKind::Proposal {
-        parts.push("proposed project time: y accept · d drop".into());
-        return parts.join(" · ");
-    }
     if let Some(l) = &i.location {
         parts.push(l.clone());
     }
@@ -482,7 +469,6 @@ pub fn draw(f: &mut Frame, app: &App) {
         Mode::Help => help(f, app, main),
         Mode::Checkin(i) => checkin(f, app, main, *i),
         Mode::Form(form) => form_popup(f, app, main, form),
-        Mode::PickProject { proposal, sel } => pick_project(f, app, main, proposal, *sel),
         _ => {}
     }
     status_bar(f, app, status);
@@ -1697,7 +1683,7 @@ fn projects(f: &mut Frame, app: &App, area: Rect) {
             Some(t) => time.push(format!("last {}", t.with_timezone(&app.tz).format("%a %-d %b"))),
             None => time.push("not worked on yet".into()),
         }
-        if let Some(n) = p.next_session {
+        if let Some(n) = p.next_block {
             time.push(format!("next {}", n.with_timezone(&app.tz).format("%a %H:%M")));
         }
         time.join(" · ")
@@ -1796,62 +1782,6 @@ fn projects(f: &mut Frame, app: &App, area: Rect) {
         }
     }
     f.render_widget(Paragraph::new(lines), inner);
-}
-
-/// Accepting proposed project time: pick the project.
-fn pick_project(f: &mut Frame, app: &App, area: Rect, proposal: &str, sel: usize) {
-    use crate::app::PickOption;
-    let mut lines = vec![];
-    if let Some(p) = app.proposals.iter().find(|p| p.id == proposal) {
-        lines.push(Line::from(TSpan::styled(
-            format!(
-                "{}–{}: work on…",
-                p.start.with_timezone(&app.tz).format("%a %H:%M"),
-                p.end.with_timezone(&app.tz).format("%H:%M")
-            ),
-            Style::default().fg(c("text")).add_modifier(Modifier::BOLD),
-        )));
-        lines.push(Line::raw(""));
-    }
-    let suggested = app
-        .proposals
-        .iter()
-        .find(|p| p.id == proposal)
-        .and_then(|p| p.project_id.clone());
-    for (k, o) in app.pick_options(proposal).iter().enumerate() {
-        let label = match o {
-            PickOption::Project { id, name } => {
-                let mut s = name.clone();
-                if Some(id) == suggested.as_ref() {
-                    s.push_str("  (least time lately)");
-                } else if let Some(p) = app.projects.iter().find(|p| &p.project.id == id)
-                    && p.project.status != kairos_core::project::ProjectStatus::Active
-                {
-                    s.push_str(&format!("  ({})", p.project.status.as_str()));
-                }
-                s
-            }
-            PickOption::New => "+ new project…".to_string(),
-            PickOption::Plain => "just “Project time”".to_string(),
-        };
-        let st = if k == sel {
-            Style::default()
-                .fg(c("base"))
-                .bg(c("blue"))
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(c("text"))
-        };
-        lines.push(Line::from(TSpan::styled(format!(" {label} "), st)));
-    }
-    lines.push(Line::raw(""));
-    lines.push(Line::from(TSpan::styled(
-        "j/k choose · Enter accept · Esc cancel",
-        Style::default().fg(c("overlay0")),
-    )));
-    let r = centred(area, 56, lines.len() as u16 + 2);
-    f.render_widget(Clear, r);
-    f.render_widget(Paragraph::new(lines).block(popup_block("project time")), r);
 }
 
 fn approvals(f: &mut Frame, app: &App, area: Rect) {

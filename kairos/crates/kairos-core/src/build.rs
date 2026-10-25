@@ -38,58 +38,26 @@ pub struct NewEvent {
     pub rrule: Option<String>,
 }
 
-/// The bare task title of a work block ("☐ B4 sheet" / "✓ B4 sheet" → "B4 sheet").
+/// The bare task title of a work block ("☐ B4 sheet" / "✓ B4 sheet" → "B4 sheet"). The
+/// diamonds (◇ ◈ ◆) are stripped too: project sessions, removed 2026-10-25, were titled with
+/// them, and those events are still on the calendar.
 pub fn bare_block_title(t: &str) -> &str {
     t.trim_start().trim_start_matches(['☐', '✓', '◇', '◈', '◆']).trim()
 }
 
-/// Project sessions use diamonds (tasks use boxes): ◇ planned, ◈ over and
-/// waiting for a check-in (drawn only), ◆ checked in. Plain Unicode, so the
-/// phone shows the same.
-pub const SESSION_TODO: &str = "◇";
-pub const SESSION_WAITING: &str = "◈";
-pub const SESSION_DONE: &str = "◆";
-
-/// A planned project session: "◇ quast".
-pub fn session_title(t: &str) -> String {
-    format!("{SESSION_TODO} {}", bare_block_title(t))
-}
-
-/// A project session checked in: "◆ quast".
-pub fn session_done_title(t: &str) -> String {
-    format!("{SESSION_DONE} {}", bare_block_title(t))
-}
-
-/// A session or block retitled, keeping its leading box/diamond:
-/// ("◆ quast", "QUAST thesis") → "◆ QUAST thesis"; no icon → just the name.
+/// A block retitled, keeping its leading box: ("✓ B4", "B4 sheet") → "✓ B4 sheet"; no box →
+/// just the name.
 pub fn retitle_block(stored: &str, name: &str) -> String {
-    let icon = stored
-        .trim_start()
-        .chars()
-        .next()
-        .filter(|c| ['☐', '✓', '◇', '◈', '◆'].contains(c));
+    let icon = stored.trim_start().chars().next().filter(|c| ['☐', '✓'].contains(c));
     match icon {
         Some(c) => format!("{c} {}", name.trim()),
         None => name.trim().to_string(),
     }
 }
 
-/// Has this work block or session been checked in (✓ / ◆)?
+/// Has this work block been checked in (✓)?
 pub fn is_checked_in(title: &str) -> bool {
-    let t = title.trim_start();
-    t.starts_with('✓') || t.starts_with('◆')
-}
-
-/// A project session's title as the TUI draws it.
-pub fn session_label(stored: &str, ended: bool) -> String {
-    let icon = if is_checked_in(stored) {
-        SESSION_DONE
-    } else if ended {
-        SESSION_WAITING
-    } else {
-        SESSION_TODO
-    };
-    format!("{icon} {}", bare_block_title(stored))
+    title.trim_start().starts_with('✓')
 }
 
 /// Terminal boxes (Nerd Font checkboxes: same size, centred) for work blocks;
@@ -349,22 +317,12 @@ pub fn set_meta_file(text: &str, meta: &Meta) -> Result<String, EditError> {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn sessions_use_diamonds_tasks_use_boxes() {
-        assert_eq!(session_title("quast"), "◇ quast");
-        assert_eq!(session_done_title("◇ quast"), "◆ quast");
-        assert_eq!(session_label("◇ quast", false), "◇ quast");
-        assert_eq!(session_label("◇ quast", true), "◈ quast");
-        assert_eq!(session_label("◆ quast", true), "◆ quast");
-        // Renaming a project keeps each session's diamond.
-        assert_eq!(retitle_block("◆ quast", "QUAST thesis"), "◆ QUAST thesis");
-        assert_eq!(retitle_block(" ◇ quast", "QUAST"), "◇ QUAST");
+    fn blocks_keep_their_box_and_old_diamonds_are_read_past() {
+        assert_eq!(retitle_block("✓ B4", "B4 sheet"), "✓ B4 sheet");
+        assert_eq!(retitle_block(" ☐ B4", "B4 sheet"), "☐ B4 sheet");
         assert_eq!(retitle_block("quast", "QUAST"), "QUAST");
-        // A linked event made on the phone (no diamond stored) still draws one.
-        assert_eq!(session_label("Quantum Research", true), "◈ Quantum Research");
-        for t in ["✓ B4", "◆ quast", "  ◆ quast"] {
-            assert!(is_checked_in(t), "{t}");
-        }
-        assert!(!is_checked_in("☐ B4") && !is_checked_in("◇ quast"));
+        assert!(is_checked_in("✓ B4") && is_checked_in("  ✓ B4"));
+        assert!(!is_checked_in("☐ B4") && !is_checked_in("◆ quast"));
         assert_eq!(bare_block_title("◈ quast"), "quast");
         assert_eq!(bare_block_title("☐ B4 sheet"), "B4 sheet");
     }

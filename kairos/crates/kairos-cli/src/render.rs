@@ -86,7 +86,6 @@ pub fn title_of(i: &Instance) -> String {
         // Work: 󰄱 to do, 󰄵 done (the line's marker says who placed it).
         EventKind::TaskBlock => kairos_core::build::block_label(t, i.span.bounds(chrono_tz::UTC).1 <= now()),
         EventKind::Event => t.to_string(),
-        EventKind::Proposal => format!("◌ {t}?"),
         EventKind::Worked => format!("worked · {t}"),
     }
 }

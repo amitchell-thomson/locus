@@ -1,5 +1,5 @@
 //! HTTP API (`/api/...`), health check, and signed one-tap links used by
-//! ntfy action buttons and the phone check-in page.
+//! ntfy action buttons (approve or reject a change from the phone).
 
 use crate::engine::{Engine, EngineError};
 use axum::extract::{Path, Query, Request, State};
@@ -189,16 +189,11 @@ pub fn router(st: AppState, mcp: Option<Router<AppState>>) -> Router {
         .route("/api/tasks/{id}/drop", post(drop_task))
         .route("/api/deadlines", post(create_deadline))
         .route("/api/plan", post(plan))
-        .route("/api/proposals", get(list_proposals))
         .route("/api/projects", get(list_projects).post(create_project))
         .route(
             "/api/projects/{id}",
             axum::routing::patch(update_project).delete(delete_project),
         )
-        .route("/api/projects/{id}/sessions", post(create_session))
-        .route("/api/projects/{id}/link", post(link_sessions))
-        .route("/api/proposals/{id}/accept", post(accept_proposal))
-        .route("/api/proposals/{id}/reject", post(reject_proposal))
         .route("/api/changesets", get(list_changesets))
         .route("/api/changesets/{id}", get(get_changeset))
         .route("/api/changesets/{id}/approve", post(approve))
@@ -225,9 +220,6 @@ pub fn router(st: AppState, mcp: Option<Router<AppState>>) -> Router {
     Router::new()
         .route("/healthz", get(|| async { "ok" }))
         .route("/a/{id}/{action}", get(signed_page).post(signed_action))
-        .route("/checkin", get(checkin_page))
-        .route("/checkin/{uid}/{outcome}", post(checkin_signed))
-        .route("/checkin/{uid}", post(checkin_form))
         .merge(protected)
         .with_state(st)
 }
@@ -501,54 +493,9 @@ async fn update_project(
     ))
 }
 
-async fn create_session(
-    State(st): State<AppState>,
-    h: HeaderMap,
-    Path(id): Path<String>,
-    Json(req): Json<api::SessionReq>,
-) -> HResult<WriteResult> {
-    let a = author(&h);
-    Ok(Json(
-        with_engine_as(&st, &h, move |e| e.create_session(a, &id, &req)).await?,
-    ))
-}
-
-async fn link_sessions(
-    State(st): State<AppState>,
-    Path(id): Path<String>,
-    Json(req): Json<api::LinkSessionsReq>,
-) -> HResult<serde_json::Value> {
-    let n = with_engine(&st, move |e| e.link_sessions(&id, &req.uids)).await?;
-    Ok(Json(serde_json::json!({ "linked": n })))
-}
-
 async fn delete_project(State(st): State<AppState>, h: HeaderMap, Path(id): Path<String>) -> HResult<WriteResult> {
     let a = author(&h);
     Ok(Json(with_engine_as(&st, &h, move |e| e.delete_project(a, &id)).await?))
-}
-
-// ---------------------------------------------------------------- proposed project time
-
-async fn list_proposals(State(st): State<AppState>) -> HResult<Vec<api::ProposalItem>> {
-    Ok(Json(with_engine(&st, move |e| e.proposals()).await?))
-}
-
-async fn accept_proposal(
-    State(st): State<AppState>,
-    h: HeaderMap,
-    Path(id): Path<String>,
-    body: Option<Json<api::AcceptProposalReq>>,
-) -> HResult<WriteResult> {
-    let req = body.map(|b| b.0).unwrap_or_default();
-    let a = author(&h);
-    Ok(Json(
-        with_engine_as(&st, &h, move |e| e.accept_proposal(a, &id, &req)).await?,
-    ))
-}
-
-async fn reject_proposal(State(st): State<AppState>, Path(id): Path<String>) -> HResult<serde_json::Value> {
-    with_engine(&st, move |e| e.reject_proposal(&id)).await?;
-    Ok(Json(serde_json::json!({"ok": true})))
 }
 
 // ---------------------------------------------------------------- changesets
@@ -836,165 +783,4 @@ async fn signed_action(
             ),
         ),
     })
-}
-
-/// Signed key for today's check-in page.
-pub fn checkin_sig(st: &AppState, day: &str) -> String {
-    st.sign(&format!("checkin:{day}"))
-}
-
-#[derive(Deserialize)]
-struct DaySig {
-    day: String,
-    sig: String,
-}
-
-async fn checkin_page(State(st): State<AppState>, Query(q): Query<DaySig>) -> Result<Html<String>, HttpError> {
-    if !ct_eq(&q.sig, &checkin_sig(&st, &q.day)) {
-        return Err(HttpError(
-            StatusCode::FORBIDDEN,
-            ApiError {
-                error: "bad link".into(),
-                reasons: vec![],
-            },
-        ));
-    }
-    let (items, tz) = with_engine(&st, move |e| Ok((e.checkin_items()?, e.tz()))).await?;
-    let mut body = String::from("<h1>How did it go?</h1>");
-    if items.is_empty() {
-        body.push_str("<div class=card class=muted>Nothing to check in.</div>");
-    }
-    for it in items {
-        let when = format!(
-            "{} {}–{}",
-            it.start.with_timezone(&tz).format("%a"),
-            it.start.with_timezone(&tz).format("%H:%M"),
-            it.end.with_timezone(&tz).format("%H:%M")
-        );
-        if let Some(o) = &it.outcome {
-            body.push_str(&format!(
-                "<div class=card><b>{}</b><div class=muted>{when} · <b>{o}</b></div></div>",
-                esc(&it.title)
-            ));
-            continue;
-        }
-        // One form per block: done / finished / missed, or partly with how long;
-        // coursework (and a block that uses up the task) also asks what's left.
-        let finished = if it.project {
-            "Finished project"
-        } else {
-            "Finished task"
-        };
-        // A project session: no "what's left"; took longer = how long.
-        let longer = if it.project {
-            "<div class=muted>Took longer: spent <input name=spent placeholder=\"e.g. 3h\" size=6> \
-             <button name=outcome value=longer class=mid>Save</button></div>"
-        } else {
-            "<div class=muted>Took longer: spent <input name=spent placeholder=\"e.g. 3h\" size=6> \
-             still needs <input name=more placeholder=\"e.g. 1h\" size=6> \
-             from <input name=from placeholder=\"optional, e.g. sat\" size=10> \
-             <button name=outcome value=longer class=mid>Save</button></div>"
-        };
-        let left = if it.ask_remaining {
-            "<div class=muted>Left on the task: <input name=left placeholder=\"e.g. 3h (0 = finished)\" size=14></div>"
-        } else {
-            ""
-        };
-        body.push_str(&format!(
-            "<div class=card><b>{}</b><div class=muted>{when} · {} min</div>\
-             <form method=post action=\"/checkin/{}?day={}&sig={}\">\
-             <button name=outcome value=done class=ok>Done</button> \
-             <button name=outcome value=finished class=ok>{finished}</button> \
-             <button name=outcome value=missed class=no>Missed</button>\
-             <div class=muted>Partly: <input name=minutes inputmode=numeric placeholder=\"how long, e.g. 45m\" size=14> \
-             <button name=outcome value=partial class=mid>Save</button></div>{left}{longer}</form></div>",
-            esc(&it.title),
-            it.planned_min,
-            esc(&it.block_uid),
-            esc(&q.day),
-            esc(&q.sig)
-        ));
-    }
-    Ok(page("kairos check-in", &body))
-}
-
-#[derive(Deserialize)]
-struct CheckinForm {
-    outcome: String,
-    minutes: Option<String>,
-    left: Option<String>,
-    /// "Took longer": time spent, how much more it needs, plan it from.
-    spent: Option<String>,
-    more: Option<String>,
-    from: Option<String>,
-}
-
-/// The phone page's form: done / finished / missed, partly with minutes,
-/// and what's left (coursework).
-async fn checkin_form(
-    State(st): State<AppState>,
-    Path(uid): Path<String>,
-    Query(q): Query<DaySig>,
-    axum::Form(f): axum::Form<CheckinForm>,
-) -> Result<Response, HttpError> {
-    if !ct_eq(&q.sig, &checkin_sig(&st, &q.day)) {
-        return Err(HttpError(
-            StatusCode::FORBIDDEN,
-            ApiError {
-                error: "bad link".into(),
-                reasons: vec![],
-            },
-        ));
-    }
-    let mins = |s: &Option<String>| {
-        s.as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .and_then(|s| kairos_core::dates::parse_minutes(s).ok())
-    };
-    let longer = f.outcome == "longer";
-    let req = api::CheckinReq {
-        block_uid: uid,
-        outcome: f.outcome.clone(),
-        actual_min: match f.outcome.as_str() {
-            "partial" => mins(&f.minutes),
-            "longer" => mins(&f.spent),
-            _ => None,
-        },
-        remaining_min: if longer { mins(&f.more) } else { mins(&f.left) },
-        not_before: if longer {
-            f.from.clone().filter(|s| !s.trim().is_empty())
-        } else {
-            None
-        },
-    };
-    with_engine(&st, move |e| e.checkin(&req)).await?;
-    let to = format!("/checkin?day={}&sig={}", q.day, q.sig);
-    Ok((StatusCode::SEE_OTHER, [(header::LOCATION, to)]).into_response())
-}
-
-async fn checkin_signed(
-    State(st): State<AppState>,
-    Path((uid, outcome)): Path<(String, String)>,
-    Query(q): Query<DaySig>,
-) -> Result<Response, HttpError> {
-    if !ct_eq(&q.sig, &checkin_sig(&st, &q.day)) {
-        return Err(HttpError(
-            StatusCode::FORBIDDEN,
-            ApiError {
-                error: "bad link".into(),
-                reasons: vec![],
-            },
-        ));
-    }
-    let req = api::CheckinReq {
-        block_uid: uid,
-        outcome,
-        actual_min: None,
-        remaining_min: None,
-        not_before: None,
-    };
-    with_engine(&st, move |e| e.checkin(&req)).await?;
-    let to = format!("/checkin?day={}&sig={}", q.day, q.sig);
-    Ok((StatusCode::SEE_OTHER, [(header::LOCATION, to)]).into_response())
 }

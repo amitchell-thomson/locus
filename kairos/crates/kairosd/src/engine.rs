@@ -1853,6 +1853,20 @@ impl Engine {
         }
         t.notes = req.notes.clone().unwrap_or_default();
         t.locus = locus.clone();
+        // Prep before its interview (spec E4): due at the event's start, following it. Named
+        // outright, or for an application with no due date given, its next event on the calendar.
+        let before = match req.before.as_deref().filter(|b| !b.is_empty()) {
+            Some(b) => Some(b.to_string()),
+            None if t.due.is_none() => locus.as_deref().and_then(|l| self.next_event_for(l).ok().flatten()),
+            None => None,
+        };
+        if let Some(uid) = before {
+            let start = self
+                .event_start(&uid)?
+                .ok_or_else(|| EngineError::NotFound(format!("event {uid}")))?;
+            t.due = Some(Due::At(start));
+            t.before = Some(uid);
+        }
         // A task for a repo belongs to that project: its time counts there (ADR-009).
         if let Some(l) = &locus
             && let Some(p) = self
@@ -1963,6 +1977,17 @@ impl Engine {
         }
         if let Some(l) = &req.locus {
             t.locus = self.locus_ref(Some(l))?;
+        }
+        if let Some(b) = &req.before {
+            if b.is_empty() {
+                t.before = None;
+            } else {
+                let start = self
+                    .event_start(b)?
+                    .ok_or_else(|| EngineError::NotFound(format!("event {b}")))?;
+                t.before = Some(b.clone());
+                t.due = Some(Due::At(start));
+            }
         }
         if let Some(p) = req.project.as_deref().map(str::trim) {
             t.project_id = if p.is_empty() {
@@ -2189,6 +2214,76 @@ impl Engine {
         let world = self.world(1)?;
         let summary = format!("Projects from the locus registry: {}", parts.join("; "));
         self.propose(&world, Author::Claude, ops, summary).map(Some)
+    }
+
+    /// When an event starts, if it is on the calendar in the next four months.
+    fn event_start(&self, uid: &str) -> Result<Option<DateTime<Utc>>> {
+        let now = self.now();
+        Ok(self
+            .events(now - Duration::days(1), now + Duration::days(120))?
+            .into_iter()
+            .find(|i| i.uid == uid && i.meta.kind == EventKind::Event)
+            .map(|i| i.span.bounds(self.tz()).0))
+    }
+
+    /// The next event on the calendar for an application (an interview), to plan its prep before.
+    fn next_event_for(&self, locus: &str) -> Result<Option<String>> {
+        let is_app = self
+            .registry
+            .as_ref()
+            .and_then(|r| r.get(locus))
+            .is_some_and(|p| p.kind == locus_contract::ProjectKind::Application);
+        if !is_app {
+            return Ok(None);
+        }
+        let now = self.now();
+        let tz = self.tz();
+        Ok(self
+            .events(now, now + Duration::days(60))?
+            .into_iter()
+            .filter(|i| i.meta.kind == EventKind::Event && i.meta.locus.as_deref() == Some(locus))
+            .min_by_key(|i| i.span.bounds(tz).0)
+            .map(|i| i.uid))
+    }
+
+    /// Prep follows its interview (spec E4): every open task planned before an event takes that
+    /// event's start as its due date again when the event has moved. One changeset, the
+    /// scheduler's, before each plan.
+    fn follow_before(&mut self) -> Result<()> {
+        let tasks: Vec<Task> = self
+            .db
+            .tasks(Some(TaskStatus::Open))?
+            .into_iter()
+            .filter(|t| t.before.is_some())
+            .collect();
+        let mut ops = Vec::new();
+        let mut moved = Vec::new();
+        for t in tasks {
+            let Some(uid) = &t.before else { continue };
+            let Some(start) = self.event_start(uid)? else { continue };
+            if t.due.map(|d| d.instant(self.tz())) == Some(start) {
+                continue;
+            }
+            let mut after = t.clone();
+            after.due = Some(Due::At(start));
+            after.updated_at = self.now();
+            moved.push(t.title.clone());
+            ops.push(Op::UpdateTask {
+                before: Box::new(t),
+                after: Box::new(after),
+            });
+        }
+        if ops.is_empty() {
+            return Ok(());
+        }
+        let world = self.world(1)?;
+        self.propose(
+            &world,
+            Author::Scheduler,
+            ops,
+            format!("Moved with its event: {}", moved.join(", ")),
+        )?;
+        Ok(())
     }
 
     /// A locus item named on an event or task (spec K8): a registry id, checked against the
@@ -3658,6 +3753,7 @@ impl Engine {
     pub fn plan(&mut self, dry_run: bool, author: Author) -> Result<api::PlanResp> {
         if !dry_run {
             self.settle()?;
+            self.follow_before()?;
         }
         let now = self.now();
         let tz = self.tz();

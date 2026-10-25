@@ -107,6 +107,10 @@ pub struct Task {
     /// paperwork, a repo. A registry id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locus: Option<String>,
+    /// Planned before an event (spec E4: prep before its interview): the event's uid. Its due
+    /// date is the event's start and follows it when the event moves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before: Option<String>,
     pub created_by: Author,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -169,6 +173,7 @@ impl Task {
             stage: None,
             registry: None,
             locus: None,
+            before: None,
             created_by,
             created_at: now,
             updated_at: now,

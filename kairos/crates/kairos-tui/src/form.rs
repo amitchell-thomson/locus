@@ -71,6 +71,8 @@ pub struct ForOption {
     pub locus: Option<String>,
     /// A course (its sheets get the five-hour default).
     pub course: bool,
+    /// An application (its prep is planned before its next event).
+    pub application: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -650,6 +652,7 @@ mod tests {
             key: key.into(),
             locus: locus.then(|| id.to_string()),
             course: id.starts_with('b'),
+            application: id == "millennium",
         };
         vec![
             o("b15", "B15 Control Systems", "Studies", true),

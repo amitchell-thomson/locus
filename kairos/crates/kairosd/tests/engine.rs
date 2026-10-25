@@ -2751,3 +2751,63 @@ fn how_a_task_is_planned_follows_from_its_estimate_and_what_it_is_for() {
     let err = add(&mut e, "3YP report", "Engineering", 0, Some("3yp")).unwrap_err();
     assert!(err.to_string().contains("how long"), "{err}");
 }
+
+#[test]
+fn prep_is_planned_before_its_interview_and_moves_with_it() {
+    // Spec E4: "move interview should move its prep".
+    let env = Env::new(true);
+    env.phone_event(
+        "Personal",
+        "intv",
+        "Millennium final round",
+        "2026-10-16 10:00",
+        "2026-10-16 11:00",
+    );
+    let mut e = env.engine();
+    e.registry = Some(
+        locus_contract::taxonomy::load(&locus_contract::taxonomy::root())
+            .unwrap()
+            .registry,
+    );
+    e.update_event(
+        Author::Alec,
+        None,
+        "intv",
+        &kairos_core::api::UpdateEventReq {
+            locus: Some("millennium".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    // Prep for the application, no due date: planned before its next event, the interview.
+    let r = e
+        .create_task(
+            Author::Alec,
+            &CreateTaskReq {
+                title: "Millennium prep".into(),
+                key: "Engineering".into(),
+                estimate_min: 180,
+                locus: Some("millennium".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(r.task.before.as_deref(), Some("intv"));
+    assert_eq!(r.task.due.map(|d| d.instant(e.tz())), Some(at("2026-10-16 10:00")));
+    // The interview moves to the Monday after: the prep's due date follows, and its work.
+    e.direct = true;
+    e.update_event(
+        Author::Alec,
+        None,
+        "intv",
+        &kairos_core::api::UpdateEventReq {
+            start: Some("2026-10-19T14:00".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    e.direct = false;
+    e.plan(false, Author::Scheduler).unwrap();
+    let t = e.db.task_get(&r.task.id).unwrap().unwrap();
+    assert_eq!(t.due.map(|d| d.instant(e.tz())), Some(at("2026-10-19 14:00")));
+}

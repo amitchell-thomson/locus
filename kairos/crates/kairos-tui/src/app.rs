@@ -261,6 +261,7 @@ pub fn build_fors(cfg: &Config, shared: Option<&locus_contract::taxonomy::Shared
                     key,
                     locus: Some(p.id.clone()),
                     course: p.kind == locus_contract::ProjectKind::Course,
+                    application: p.kind == locus_contract::ProjectKind::Application,
                 },
             ));
         }
@@ -276,6 +277,7 @@ pub fn build_fors(cfg: &Config, shared: Option<&locus_contract::taxonomy::Shared
                 key: k.name.clone(),
                 locus: None,
                 course: false,
+                application: false,
             },
         ));
     }
@@ -1801,9 +1803,23 @@ impl App {
                     e => dates::parse_minutes(e).map_err(|_| "Estimate: e.g. 4h or 90m".to_string())?,
                 };
                 let ty = if est <= 60 { "in one go" } else { "in 2–3 h blocks" };
-                let due = match f.get("Due") {
-                    "" => "no deadline".to_string(),
-                    d => match dates::parse_when(d, self.today()).map_err(|e| e.to_string())? {
+                // For an application with no due date: before its next event (spec E4).
+                let next_event = target.filter(|o| o.application).and_then(|o| {
+                    let l = o.locus.as_deref()?;
+                    self.index
+                        .instances
+                        .iter()
+                        .filter(|i| i.meta.locus.as_deref() == Some(l) && i.start(self.tz) > self.now)
+                        .min_by_key(|i| i.start(self.tz))
+                });
+                let due = match (f.get("Due"), next_event) {
+                    ("", Some(i)) => format!(
+                        "before {} {} (moves with it)",
+                        i.title,
+                        i.start(self.tz).with_timezone(&self.tz).format("%a %-d %b %H:%M")
+                    ),
+                    ("", None) => "no deadline".to_string(),
+                    (d, _) => match dates::parse_when(d, self.today()).map_err(|e| e.to_string())? {
                         When::Date(d) => format!("due {}", d.format("%a %-d %b")),
                         When::DateTime(n) => format!("due {}", n.format("%a %-d %b %H:%M")),
                     },

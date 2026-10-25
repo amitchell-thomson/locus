@@ -201,6 +201,10 @@ pub struct CreateTaskReq {
     /// Run the scheduler afterwards (default true).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plan: Option<bool>,
+    /// Plan it before this event (its uid): due at the event's start, following it when it moves.
+    /// `""` clears (update only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before: Option<String>,
     /// The locus item it belongs to (a registry id).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locus: Option<String>,
@@ -242,6 +246,10 @@ pub struct UpdateTaskReq {
     pub project: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plan: Option<bool>,
+    /// Plan it before this event (its uid): due at the event's start, following it when it moves.
+    /// `""` clears (update only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before: Option<String>,
     /// The locus item it belongs to ("" = none).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locus: Option<String>,

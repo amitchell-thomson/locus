@@ -361,6 +361,9 @@ pub struct CreateTaskArgs {
     /// The locus item it belongs to: a registry id (an application like "millennium", a course
     /// like "b15", a repo like "quast"). "" clears it. Not a calendar edit.
     pub locus: Option<String>,
+    /// Plan it before this event (its uid from search_events), e.g. prep before an interview:
+    /// due at the event's start, and it follows the event when that moves. "" clears.
+    pub before: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -388,6 +391,9 @@ pub struct UpdateTaskArgs {
     /// The locus item it belongs to: a registry id (an application like "millennium", a course
     /// like "b15", a repo like "quast"). "" clears it. Not a calendar edit.
     pub locus: Option<String>,
+    /// Plan it before this event (its uid from search_events), e.g. prep before an interview:
+    /// due at the event's start, and it follows the event when that moves. "" clears.
+    pub before: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -790,6 +796,7 @@ impl KairosMcp {
             create_deadline: None,
             plan: Some(true),
             locus: a.locus,
+            before: a.before,
         };
         self.run(move |e| e.create_task(Author::Claude, &req)).await
     }
@@ -815,6 +822,7 @@ impl KairosMcp {
             project: a.project,
             plan: Some(true),
             locus: a.locus,
+            before: a.before,
         };
         self.run(move |e| e.update_task(Author::Claude, &a.id, &req)).await
     }

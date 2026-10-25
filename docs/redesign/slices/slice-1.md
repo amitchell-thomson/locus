@@ -857,6 +857,15 @@ check in. kairos's SPEC.md now describes kairos as it is. "kairos should cleanly
 with locus, and be treated like any other locus app": the gaps are listed as a spec,
 [kairos-as-a-locus-app.md](kairos-as-a-locus-app.md), for your approval.
 
+**Round 7e, 25 Oct.** "I agree with all recommendations, for look my preference is to make the
+border grey like the rest, but keep the week heading in the middle blue." The powerline bar: "not
+sure at all", so asked with three mockups; chosen: no legend, the footer as locus's, saying only
+what is hidden and what waits. The event detail ("the engineering label is outdated ... the
+duplicates has never fired ... I would rather see the taxonomy clearly laid out, with a clear idea
+of what it is linked to. The by alec vs by agent is really good"): area › stream, what it is for
+and its kind, its task, made by you, Claude or the scheduler; copies only when there are any.
+kairos-as-a-locus-app L1 to L8 done (report in that spec).
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

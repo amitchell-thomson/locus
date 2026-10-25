@@ -1,6 +1,6 @@
 # kairos as a locus app: one look, one set of keys, one contract
 
-**State:** approved 2026-10-25, in progress · **Written:** 2026-10-25 · **Runs in:** `locus slice 1`
+**State:** L1 to L8 done 2026-10-25; L9 waiting for you · **Written:** 2026-10-25 · **Runs in:** `locus slice 1`
 **From:** your words, 25 Oct 2026: "kairos should cleanly be integrated with locus, and be treated
 like any other locus app, with the same structure, practice and formatting / same contracts /
 shared data / ui look etc... Everything should be consistent. Just because kairos was made first
@@ -129,4 +129,29 @@ L1 and L2 together (the look), then L3, L4 and L5 (small), L7 before L6 (fewer c
 then L8, then L9 with you.
 
 ## Report
-*(when the steps are done)*
+
+Run 25 Oct 2026, L1 to L8, as approved (all recommendations; grey frame, blue week heading; no
+legend in the footer). 357 tests, clippy clean, `scripts/ci.sh` green from the root; deployed,
+and the locus window's three views restarted on the new builds.
+
+| Step | Commit | Evidence |
+|---|---|---|
+| L7 one home per role | 2dbc973 | kairos's view list is week, day, month, agenda; `T` `P` `A` only open locus. What only kairos's task list did moved to locus's Tasks page (e edits in kairos's form, n starts it now, x drops it after asking); test of the keys. |
+| L6 one contract | 2dbc973 | kairosd serves `TaskItem` and `Chore`; engine test of the labels (B15 Control Systems, Studies; a date-only due at 23:59). `DueKind` went (nothing read it). kairos-core's date parser was a byte-for-byte copy of eco-dates; it now is eco-dates. |
+| L1, L2 the look | 8ac8227 | locus-theme holds the frame, title, hints, fit and box glyphs, used by both. Dumps of the week and the event detail on your calendar (`kairos tui --dump`). Detail test: area, for, task, made by; no duplicates line without copies. |
+| L3 colours | 4efa2e6 | Stream colours in areas.toml; config test (a config that disagrees is named; the taxonomy wins); doctor on both machines: no disagreement. |
+| L4, L5 keys, words | 8ac8227, 29ab789 | `locus_theme::SHARED_KEYS`; kairos's hints and locus's Tasks page tested against it. `set_due`, `kairos due`; "due date" in what you read. |
+| L8 structure | 4fd051f | `kairos tui --dump`; `scripts/ci.sh` at the root; `deploy/kairos/`; the session starts kairos from the release build; one `state_dir`; one use log (kairos writes `calendar:<view>`). |
+
+### What went differently
+- **L7 went first** (before the look), so the restyle did not have to cover lists about to go.
+- **The shared-key test covers the Tasks page, not every locus screen.** It found clashes inside
+  locus that predate kairos: `d` opens decisions on the Project view and means discuss in the
+  weekly review, `?` is "ask why" in the review, `x` writes a note in ink confirm. Those came
+  from your design rounds, so they are yours to settle.
+- **kairos's engine tests still say Engineering**: your iCloud calendar is still called that, and
+  the tests check that the old name resolves to Studies.
+- **The dump runs on your calendar** (the local copy, read only), not on fixtures: kairos has no
+  fixture set of the kind locus-tui has, and your own week is what a design check wants.
+- **Deploy files are in `deploy/kairos/`**, not split into `mac/` and `server/`: the server's
+  unit was already in `deploy/systemd/`, so only the Mac side moved.

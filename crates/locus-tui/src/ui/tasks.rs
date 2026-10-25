@@ -6,7 +6,7 @@
 use crate::app::App;
 use crate::ui::home::area_colour;
 use crate::ui::widgets::*;
-use crate::ui::{esc_back, frame, lines, title};
+use crate::ui::{frame, lines, title};
 use locus_contract::{TaskItem, Time};
 use locus_theme::SEP;
 use ratatui::Frame;
@@ -18,7 +18,10 @@ pub const KEYS: &[(&str, &str)] = &[
     ("↑ ↓", "walk the open tasks"),
     ("⏎", "open its next block (or its due day) in kairos"),
     ("d", "done (through kairos)"),
-    ("+", "add a task in kairos, for the same thing as the selected one"),
+    (
+        "a",
+        "add a task in kairos's form, for the same thing as the selected one",
+    ),
 ];
 
 /// Add a task in kairos's form (round 7a: one add form, kairos's), For filled when known: the
@@ -117,13 +120,20 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     } else {
         format!("{} open", tasks.len())
     };
-    let inner = frame(f, area, title("tasks", &extra), Some(esc_back()));
+    // The add key, said where you look for it (round 7b), beside esc.
+    let right = Line::from(vec![
+        Span::styled(" a", crate::ui::widgets::keyst()),
+        Span::styled(" add a task  ", dim()),
+        Span::styled("esc", crate::ui::widgets::keyst()),
+        Span::styled(" back ", dim()),
+    ]);
+    let inner = frame(f, area, title("tasks", &extra), Some(right));
     let w = inner.width;
     let sel = app.sel(' ').min(tasks.len().saturating_sub(1));
     let mut out: Vec<Line<'static>> = vec![Line::from("")];
     if tasks.is_empty() {
         out.push(Line::from(Span::styled(
-            "   nothing to do: add a task in kairos (a, t), saying what it is for",
+            "   nothing to do: a adds a task (in kairos's form), saying what it is for",
             dim(),
         )));
     }
@@ -198,7 +208,7 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
         return true;
     }
     let Some(t) = tasks.get(app.sel(' ').min(tasks.len().saturating_sub(1))).cloned() else {
-        if k.code == KeyCode::Char('+') {
+        if matches!(k.code, KeyCode::Char('a' | '+')) {
             add_in_kairos(app, None);
             return true;
         }
@@ -221,7 +231,7 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 app.note = Some(format!("would open kairos at {}", at.format("%a %-d %b")));
             }
         }
-        KeyCode::Char('+') => add_in_kairos(app, t.for_id.clone()),
+        KeyCode::Char('a' | '+') => add_in_kairos(app, t.for_id.clone()),
         KeyCode::Char('d') => {
             app.note = Some(match app.calendar.clone() {
                 Some(live) => match live.complete(&t.id) {

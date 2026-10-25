@@ -522,8 +522,8 @@ mod tests {
     #[test]
     fn letter_focuses_enter_opens_esc_backs_out() {
         let mut a = app();
-        press(&mut a, KeyCode::Char('s'));
-        assert_eq!(a.focus, Some('s'));
+        press(&mut a, KeyCode::Char('y'));
+        assert_eq!(a.focus, Some('y'));
         press(&mut a, KeyCode::Enter);
         assert_eq!(a.screen(), ScreenId::System);
         assert_eq!(a.focus, None);

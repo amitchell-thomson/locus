@@ -2811,3 +2811,51 @@ fn prep_is_planned_before_its_interview_and_moves_with_it() {
     let t = e.db.task_get(&r.task.id).unwrap().unwrap();
     assert_eq!(t.due.map(|d| d.instant(e.tz())), Some(at("2026-10-19 14:00")));
 }
+
+#[test]
+fn a_work_block_stays_timed_and_moves_until_checked_in() {
+    // Round 7b: blocks put on a whole day or in the past by accident were hard to move.
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e.create_task(Author::Claude, &b4(120, "fri 17:00")).unwrap();
+    let id = r.task.id.clone();
+    let blocks = |e: &mut kairosd::engine::Engine| {
+        e.events(at("2026-10-12 00:00"), at("2026-10-20 00:00"))
+            .unwrap()
+            .into_iter()
+            .filter(|i| i.meta.task_id.as_deref() == Some(id.as_str()) && i.meta.kind == EventKind::TaskBlock)
+            .collect::<Vec<_>>()
+    };
+    let b = blocks(&mut e).into_iter().next().unwrap();
+    let before = b.span.bounds(e.tz());
+    e.direct = true;
+    // A date alone: the same time of day on that day, still timed.
+    e.update_event(
+        Author::Alec,
+        None,
+        &b.uid,
+        &kairos_core::api::UpdateEventReq {
+            start: Some("2026-10-15".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let moved = blocks(&mut e).into_iter().find(|x| x.uid == b.uid).unwrap();
+    assert!(!moved.span.is_all_day());
+    let (s, en) = moved.span.bounds(e.tz());
+    assert_eq!(s.with_timezone(&e.tz()).time(), before.0.with_timezone(&e.tz()).time());
+    assert_eq!(en - s, before.1 - before.0);
+    // Placing one by hand needs a time.
+    let err = e
+        .create_event(
+            Author::Alec,
+            &CreateEventReq {
+                title: "B4 problem sheet".into(),
+                start: "2026-10-16".into(),
+                task_id: Some(id.clone()),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+    assert!(err.to_string().contains("needs a time"), "{err}");
+}

@@ -1057,6 +1057,22 @@ impl Engine {
         };
         let (target, origin_key) = self.target_for_key(&key)?;
         let time = self.parse_span(&req.start, req.end.as_deref(), req.duration_min)?;
+        // A work block you place has a time, and is not in the past (round 7b).
+        if req.task_id.is_some() {
+            match time {
+                NewTime::AllDay { .. } => {
+                    return Err(EngineError::BadRequest(
+                        "a work block needs a time, e.g. mon 10:00".into(),
+                    ));
+                }
+                NewTime::Timed { start, .. } if start < self.now() - Duration::minutes(5) => {
+                    return Err(EngineError::BadRequest(
+                        "that's in the past: pick a time from now on".into(),
+                    ));
+                }
+                NewTime::Timed { .. } => {}
+            }
+        }
         let mut meta = self.author_meta(author);
         meta.origin_key = origin_key;
         meta.locus = self.locus_ref(req.locus.as_deref())?;
@@ -1317,11 +1333,53 @@ impl Engine {
                 Some(self.parse_span(&start, e.as_deref(), d)?)
             }
         };
-        // A work block that has started is history: check in instead.
-        if time.is_some() && master.meta.kind == EventKind::TaskBlock && master.start.instant(tz) <= self.now() {
-            return Err(EngineError::BadRequest(
-                "that work block has already started — check in on it (C) instead of moving it".into(),
-            ));
+        let block = master.meta.kind == EventKind::TaskBlock;
+        // A work block is never all day (round 7b: an all-day block stuck on a Monday): a date
+        // alone moves it to that day at its own time of day, its length kept.
+        let time = match time {
+            Some(NewTime::AllDay { start: d, .. }) if block => {
+                let (s0, e0) = (master.start.instant(tz), master.end.instant(tz));
+                let all_day_before = matches!(master.start, kairos_core::time::DtValue::Date(_));
+                let at = if all_day_before {
+                    NaiveTime::from_hms_opt(9, 0, 0).unwrap_or(NaiveTime::MIN)
+                } else {
+                    s0.with_timezone(&tz).time()
+                };
+                let len = if all_day_before { Duration::hours(1) } else { e0 - s0 };
+                let start = kairos_core::time::resolve_local(d.and_time(at), tz);
+                Some(NewTime::Timed {
+                    start,
+                    end: start + len,
+                })
+            }
+            // From all day to a time: an hour, unless a length was given, not the whole day's.
+            Some(NewTime::Timed { start, .. })
+                if block
+                    && matches!(master.start, kairos_core::time::DtValue::Date(_))
+                    && req.end.is_none()
+                    && req.duration_min.is_none() =>
+            {
+                Some(NewTime::Timed {
+                    start,
+                    end: start + Duration::hours(1),
+                })
+            }
+            t => t,
+        };
+        if block && time.is_some() {
+            // A block that has started is history once you have checked in on it; before
+            // that it can still be moved (one placed in the past by mistake, or moved back to
+            // when you really did the work before checking in).
+            let answered = self
+                .db
+                .checkins(false)?
+                .iter()
+                .any(|c| c.block_uid == uid && c.outcome.is_some());
+            if master.start.instant(tz) <= self.now() && (answered || build::is_checked_in(&master.summary)) {
+                return Err(EngineError::BadRequest(
+                    "you've checked in on that block, so it is history: check in again (C) to change it".into(),
+                ));
+            }
         }
         // Moving a work block by hand pins it: the scheduler won't move it back.
         let meta = (time.is_some() && master.meta.kind == EventKind::TaskBlock).then(|| {

@@ -1634,7 +1634,7 @@ impl App {
                 .push(Box::new(move |app: &mut App| app.update_task_and_report(&tid, &req)));
             return;
         }
-        let start = if i.span.is_all_day() {
+        let start = if i.span.is_all_day() && i.meta.kind != EventKind::TaskBlock {
             day.format("%Y-%m-%d").to_string()
         } else {
             new_start.to_rfc3339()
@@ -1669,10 +1669,23 @@ impl App {
         if matches!(i.meta.kind, EventKind::Proposal | EventKind::Worked) {
             return Ok(None);
         }
-        if i.span.is_all_day() && minutes % (24 * 60) != 0 {
+        // A work block on a whole day (from before kairos refused them) becomes a timed one at
+        // 09:00 that day, then moves (round 7b).
+        let block = i.meta.kind == EventKind::TaskBlock;
+        if i.span.is_all_day() && !block && minutes % (24 * 60) != 0 {
             return Err("an all-day item moves by days: Shift-←/→".into());
         }
         let (s, _) = i.span.bounds(self.tz);
+        let s = if i.span.is_all_day() && block {
+            resolve_local(
+                s.with_timezone(&self.tz)
+                    .date_naive()
+                    .and_time(NaiveTime::from_hms_opt(9, 0, 0).unwrap_or(NaiveTime::MIN)),
+                self.tz,
+            )
+        } else {
+            s
+        };
         let new_start = s + Duration::minutes(minutes);
         let day = new_start.with_timezone(&self.tz).date_naive();
         Ok(Some((i, new_start, day)))

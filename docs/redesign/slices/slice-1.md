@@ -829,6 +829,16 @@ and put off, the rest counted) side by side, growing with the window; chores are
 tasks. Adding: not a second form in locus; `+` (on Home's tasks or the Tasks page) opens
 kairos's add-task form in the calendar window with For filled from the selected task.
 
+**Round 7b, 25 Oct.** "Studies should be s, tasks should be t, change system to fill around"
+(system is y). "Ran into an issue where if I accidentally scheduled tasks for the past, or as
+whole day tasks, it then became very troublesome to move them around after that": a work block
+given a date alone had become an all-day item, and a block in the past refused to move. Now a
+block is never all day (a date alone keeps its time of day; an old all-day one becomes an hour
+at 09:00 when moved), can be moved until you have checked in on it, and cannot be placed by hand
+with no time or in the past. Explore at the smallest window is a one-line summary; approve lists
+its items under the count. "In the task view it should be a that adds tasks ... it should say
+it somewhere": a on the Tasks page, said in its top border; + on Home's tasks, said in its rule.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

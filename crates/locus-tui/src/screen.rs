@@ -140,11 +140,11 @@ const HOME: &[Section] = &[
     s('w', "work", Some(S::WorkChart)),
     s('p', "projects", Some(S::Project)),
     s('c', "careers", None),
-    s('t', "studies", None),
+    s('s', "studies", None),
     s('e', "explore", Some(S::Explore)),
     s('a', "approve", Some(S::Approve)),
-    s('d', "tasks", Some(S::Tasks)),
-    s('s', "system", Some(S::System)),
+    s('t', "tasks", Some(S::Tasks)),
+    s('y', "system", Some(S::System)),
 ];
 // Decisions (d), Answered (a) and prep (p) open from the Project view by their own keys: they
 // are screens, not panes on it.

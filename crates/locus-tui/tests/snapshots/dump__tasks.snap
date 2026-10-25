@@ -3,7 +3,7 @@ source: crates/locus-tui/tests/dump.rs
 assertion_line: 159
 expression: "dump::render(&a, 95, 38).unwrap()"
 ---
-╭ tasks · 1 open ─────────────────────────────────────────────────────────────────── esc back ╮
+╭ tasks · 1 open ───────────────────────────────────────────────────── a add a task  esc back ╮
 │                                                                                             │
 │  ● Errands                                                                                  │
 │▌    ☐ send HR signed employee form                               10m left · not planned yet │

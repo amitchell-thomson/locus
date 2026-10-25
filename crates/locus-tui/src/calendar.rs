@@ -634,8 +634,8 @@ mod task_tests {
             home.contains("☐ Millennium prep") && home.contains("☐ B15 sheet 4"),
             "{home}"
         );
-        // d focuses tasks; Enter opens the page on the selected one.
-        app.on_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE));
+        // t focuses tasks; Enter opens the page on the selected one.
+        app.on_key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE));
         app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         assert_eq!(app.screen(), ScreenId::Tasks);
         let page = crate::dump::render(&app, 120, 40).unwrap();

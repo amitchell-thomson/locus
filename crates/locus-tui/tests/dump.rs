@@ -219,7 +219,7 @@ fn home_arrows_follow_what_is_drawn() {
     let order: Vec<char> = ScreenId::Home.sections().iter().map(|s| s.letter).collect();
     assert_eq!(
         order,
-        vec!['w', 'p', 'c', 't', 'e', 'a', 'd', 's'],
+        vec!['w', 'p', 'c', 's', 'e', 'a', 't', 'y'],
         "the drawn order, top to bottom"
     );
     dump::render(&a, 95, 38).unwrap();
@@ -234,9 +234,9 @@ fn home_arrows_follow_what_is_drawn() {
     }
     assert_eq!(a.focus, Some('a'), "past the last drawn find, into approve");
     a.on_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
-    assert_eq!(a.focus, Some('d'), "then its tasks line");
+    assert_eq!(a.focus, Some('t'), "then tasks, beside it");
     a.on_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
-    assert_eq!(a.focus, Some('s'));
+    assert_eq!(a.focus, Some('y'));
 }
 
 /// Enter on a branch opens its change records under the graph; ↑ ↓ scroll them, Esc closes.

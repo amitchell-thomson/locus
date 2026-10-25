@@ -36,6 +36,13 @@ impl Taxonomy {
         self.area_of(name).is_some()
     }
 
+    /// The Mocha colour of an area or a stream (`Studies` blue, `Sport` green): the one place
+    /// both apps take colours from (L3).
+    pub fn colour_of(&self, name: &str) -> Option<&str> {
+        let a = self.area_of(name)?;
+        Some(a.stream_colours.get(name).map_or(a.colour.as_str(), String::as_str))
+    }
+
     /// The area a name belongs to: an area is its own, a stream its parent's (`Sport` -> Personal).
     pub fn area_of(&self, name: &str) -> Option<&Area> {
         self.areas
@@ -56,6 +63,9 @@ pub struct Area {
     /// Whether filters split this area into its streams (only Personal, 17 Oct).
     #[serde(default)]
     pub filter_by_stream: bool,
+    /// Each stream's Mocha colour (Sport `green`); a stream without one takes the area's.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub stream_colours: std::collections::BTreeMap<String, String>,
 }
 
 /// The registry (plan B.2: the shared root owns it): one entry for each thing you work on,

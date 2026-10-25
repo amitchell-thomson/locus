@@ -155,8 +155,11 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
             last = Some(t.for_label.as_str());
             out.push(Line::from(vec![
                 Span::raw("  "),
-                Span::styled("● ", st(area_colour(app, &t.area))),
-                Span::styled(t.for_label.clone(), bold(st(area_colour(app, &t.area)))),
+                Span::styled("● ", st(area_colour(app, t.stream.as_deref().unwrap_or(&t.area)))),
+                Span::styled(
+                    t.for_label.clone(),
+                    bold(st(area_colour(app, t.stream.as_deref().unwrap_or(&t.area)))),
+                ),
             ]));
         }
         let mut right = Vec::new();

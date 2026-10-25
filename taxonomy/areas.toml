@@ -2,8 +2,9 @@
 # a kind (what shape of thing it is), independently. One file for every app: locus reads it, and
 # kairos's calendars are these areas (ADR-008), Personal as its streams.
 #
-# `colour` is the Mocha colour kairos and locus draw the area in. Personal is filtered by stream;
-# the others whole.
+# `colour` is the Mocha colour kairos and locus draw the area in, and `stream_colours` each of
+# Personal's streams (L3: one place for every app's colours; kairos's config no longer sets
+# them). Personal is filtered by stream; the others whole.
 
 [[areas]]
 id = "Studies"
@@ -22,6 +23,7 @@ id = "Personal"
 colour = "lavender"
 streams = ["Family", "Sport", "Social", "Errands"]
 filter_by_stream = true
+stream_colours = { Family = "yellow", Sport = "green", Social = "pink", Errands = "lavender" }
 
 # Kinds of registry entry (registry.toml). Everything else has a kind too (task, event, mail
 # thread, source, ...; ADR-006), but only these three are registered.

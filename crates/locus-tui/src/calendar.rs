@@ -611,6 +611,7 @@ mod task_tests {
             for_id: locus.map(String::from),
             for_label: for_.0.into(),
             area: for_.1.into(),
+            stream: None,
             due: due.map(at),
             due_is_date: false,
             before: None,

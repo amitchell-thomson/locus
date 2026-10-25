@@ -2379,6 +2379,10 @@ impl Engine {
                         .map(|p| p.area.clone())
                         .or_else(|| key.map(|k| k.area.clone().unwrap_or_else(|| k.name.clone())))
                         .unwrap_or_else(|| "Personal".into()),
+                    stream: match entry {
+                        Some(p) => p.stream.clone(),
+                        None => key.filter(|k| k.area.is_some()).map(|k| k.name.clone()),
+                    },
                     due,
                     due_is_date,
                     left_min: t.remaining_min,

@@ -378,8 +378,12 @@ fn main() {
 fn run() -> Result<()> {
     let cli = Cli::parse();
     let path = cli.config.clone().unwrap_or_else(Config::default_path);
-    let cfg =
+    let mut cfg =
         Config::load(&path).with_context(|| format!("loading {} (see config/config.example.toml)", path.display()))?;
+    // Colours come from the taxonomy (L3), read without the network so `next --tmux` stays fast.
+    if let Some(shared) = kairos_store::taxonomy::cached(&cfg) {
+        cfg.apply_taxonomy(&shared.taxonomy);
+    }
     let errs = cfg.validate();
     if !errs.is_empty() && !matches!(cli.cmd, Some(Cmd::Doctor)) {
         bail!(
@@ -1451,7 +1455,11 @@ fn doctor(ctx: &Ctx, p: &Paint) -> Result<()> {
     // The keys must be the locus areas and Personal's streams (ADR-008).
     match kairos_store::taxonomy::get(&ctx.cfg) {
         Some((shared, from)) => {
-            let issues = ctx.cfg.taxonomy_problems(&shared.taxonomy);
+            let mut issues = ctx.cfg.taxonomy_problems(&shared.taxonomy);
+            // Colours set in the config that the taxonomy overrides (L3).
+            if let Ok(mut raw) = Config::load(&ctx.path) {
+                issues.extend(raw.apply_taxonomy(&shared.taxonomy));
+            }
             let whence = match from {
                 kairos_store::taxonomy::From::Daemon => "from kairosd",
                 kairos_store::taxonomy::From::Cache => "cached copy (kairosd unreachable)",

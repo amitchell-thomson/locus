@@ -24,6 +24,9 @@ pub struct TaskItem {
     pub for_label: String,
     /// The area, for its colour.
     pub area: String,
+    /// Personal's stream (`Sport`), whose colour it takes; none for a whole area.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub due: Option<Time>,
     /// The due date has no time (it shows with the day's all-day items).

@@ -40,6 +40,14 @@ pub fn get(cfg: &Config) -> Option<(Shared, From)> {
     taxonomy::load(&taxonomy::root()).ok().map(|s| (s, From::Checkout))
 }
 
+/// Without the network (for colours at every start, L3): the cached copy, else the checkout's.
+pub fn cached(cfg: &Config) -> Option<Shared> {
+    std::fs::read_to_string(cache_path(cfg))
+        .ok()
+        .and_then(|text| serde_json::from_str::<Shared>(&text).ok())
+        .or_else(|| taxonomy::load(&taxonomy::root()).ok())
+}
+
 /// The server's own read: the checkout's files, no network.
 pub fn local() -> Result<Shared, taxonomy::Error> {
     taxonomy::load(&taxonomy::root())

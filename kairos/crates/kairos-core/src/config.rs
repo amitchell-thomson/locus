@@ -72,6 +72,9 @@ pub struct KeyDef {
     pub name: String,
     /// 1–9: the TUI toggle key. `tui.personal_index` and `tui.family_index` are taken.
     pub index: u8,
+    /// Its colour. Taken from `taxonomy/areas.toml` (L3, `Config::apply_taxonomy`), so a config
+    /// need not set it; one set here that disagrees is named by `kairos doctor`.
+    #[serde(default = "default_key_colour")]
     pub colour: Rgb,
     /// Source id of the iCloud calendar that holds this key's events.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -109,6 +112,10 @@ pub struct OverlaySettings {
     pub show_background: bool,
     #[serde(default)]
     pub show_imported: bool,
+}
+
+fn default_key_colour() -> Rgb {
+    Rgb::mocha("text")
 }
 
 fn default_family_colour() -> Rgb {
@@ -650,6 +657,33 @@ impl Config {
         bad
     }
 
+    /// Take every calendar's colour, and Family's, from the taxonomy (L3: one place for every
+    /// app's colours). Returns, in words, the colours the config set that the taxonomy
+    /// overrides, for `kairos doctor`.
+    pub fn apply_taxonomy(&mut self, t: &locus_contract::Taxonomy) -> Vec<String> {
+        let mut differ = Vec::new();
+        let set = |name: &str, current: &mut Rgb, differ: &mut Vec<String>| {
+            let Some(col) = t.colour_of(name).and_then(|c| c.parse::<Rgb>().ok()) else {
+                return;
+            };
+            if *current != col && *current != default_key_colour() {
+                differ.push(format!(
+                    "{name}'s colour in the config ({}) is not the taxonomy's ({}); the taxonomy's is used",
+                    current.hex(),
+                    col.hex()
+                ));
+            }
+            *current = col;
+        };
+        for k in &mut self.keys {
+            set(&k.name.clone(), &mut k.colour, &mut differ);
+        }
+        let mut fam = self.overlays.family_colour;
+        set("Family", &mut fam, &mut differ);
+        self.overlays.family_colour = fam;
+        differ
+    }
+
     /// Default config path: `$KAIROS_CONFIG` or `~/.config/kairos/config.toml`.
     pub fn default_path() -> PathBuf {
         if let Ok(p) = std::env::var("KAIROS_CONFIG") {
@@ -707,6 +741,24 @@ mod tests {
         let bad = c.taxonomy_problems(&shared.taxonomy);
         assert!(bad.iter().any(|b| b.contains("\"Engineering\" is neither")), "{bad:?}");
         assert!(bad.iter().any(|b| b.contains("\"Studies\" has no calendar")), "{bad:?}");
+    }
+
+    #[test]
+    fn colours_come_from_the_taxonomy_and_a_config_that_disagrees_is_named() {
+        let shared = locus_contract::taxonomy::load(&locus_contract::taxonomy::root()).unwrap();
+        let mut c = example();
+        assert!(
+            c.apply_taxonomy(&shared.taxonomy).is_empty(),
+            "the example sets no colours"
+        );
+        let sport = |c: &Config| c.keys.iter().find(|k| k.name == "Sport").unwrap().colour;
+        assert_eq!(sport(&c), Rgb::mocha("green"));
+        assert_eq!(c.overlays.family_colour, Rgb::mocha("yellow"));
+        let mut c = example();
+        c.keys.iter_mut().find(|k| k.name == "Sport").unwrap().colour = Rgb::mocha("red");
+        let notes = c.apply_taxonomy(&shared.taxonomy);
+        assert!(notes.iter().any(|n| n.starts_with("Sport's colour")), "{notes:?}");
+        assert_eq!(sport(&c), Rgb::mocha("green"), "the taxonomy's wins");
     }
 
     #[test]

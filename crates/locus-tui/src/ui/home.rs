@@ -953,21 +953,14 @@ fn draw_explore(f: &mut Frame, area: Rect, app: &App) {
     lines(f, area, out);
 }
 
+/// The Mocha colour of an area or one of Personal's streams, from the taxonomy (L3: the one
+/// place kairos takes its colours from too).
 pub(crate) fn area_colour(app: &App, area: &str) -> &'static str {
-    match app
-        .fixtures
-        .taxonomy
-        .areas
+    let name = app.fixtures.taxonomy.colour_of(area).unwrap_or("text");
+    locus_theme::MOCHA
         .iter()
-        .find(|a| a.id == area)
-        .map(|a| a.colour.as_str())
-    {
-        Some("blue") => "blue",
-        Some("maroon") => "maroon",
-        Some("peach") => "peach",
-        Some("lavender") => "lavender",
-        _ => "text",
-    }
+        .find(|(n, _)| n.eq_ignore_ascii_case(name))
+        .map_or("text", |(n, _)| n)
 }
 
 /// Two lines: what is running now (pulsing), and the budget with both limits named in words

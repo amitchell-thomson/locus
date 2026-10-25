@@ -66,6 +66,10 @@ async fn main() -> Result<()> {
     let args = Args::parse();
     let cfg_path = args.config.unwrap_or_else(Config::default_path);
     let mut cfg = Config::load(&cfg_path).with_context(|| format!("loading {}", cfg_path.display()))?;
+    // Colours come from the taxonomy (L3).
+    if let Ok(shared) = kairos_store::taxonomy::local() {
+        cfg.apply_taxonomy(&shared.taxonomy);
+    }
     let errs = cfg.validate();
     if !errs.is_empty() {
         for e in &errs {

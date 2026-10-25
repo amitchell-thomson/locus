@@ -51,7 +51,6 @@ autodone_at = "09:00"
 alarms_minutes_before = [1440, 120]
 
 [overlays]
-family_colour = "yellow"
 background_colour = "overlay1"
 imported_colour = "overlay0"
 
@@ -71,43 +70,38 @@ terms = [
 # Personal as its streams (Sport, Social, Errands; Family is the shared calendar below). `index`
 # is the TUI digit; 4 shows/hides all of Personal, 5 Family (`[tui] personal_index`,
 # `family_index`). `aliases` are earlier names that still resolve (stored tasks, old commands).
+# Colours are not set here: every app takes them from taxonomy/areas.toml (L3).
 [[keys]]
 name = "Studies"
 index = 1
-colour = "blue"
 calendar = "engineering"
 aliases = ["Engineering"]
 
 [[keys]]
 name = "Projects"
 index = 2
-colour = "maroon"
 calendar = "projects"
 
 [[keys]]
 name = "Careers"
 index = 3
-colour = "peach"
 calendar = "careers"
 
 [[keys]]
 name = "Sport"
 index = 6
-colour = "green"
 calendar = "sport"
 area = "Personal"
 
 [[keys]]
 name = "Social"
 index = 7
-colour = "pink"
 calendar = "social"
 area = "Personal"
 
 [[keys]]
 name = "Errands"
 index = 8
-colour = "lavender"
 calendar = "personal"
 area = "Personal"
 aliases = ["Personal", "Inbox"]

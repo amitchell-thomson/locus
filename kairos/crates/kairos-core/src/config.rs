@@ -308,23 +308,13 @@ impl Default for SyncSettings {
     }
 }
 
+/// When check-ins come up. There are no pushes to the phone any more (plan B.4, "just noise";
+/// removed 2026-10-25), so the ntfy settings written before (`server`, `topic_cmd`, `token_cmd`,
+/// `public_url`, `morning_summary`) are read and ignored: a config written before still loads.
+/// Hence no `deny_unknown_fields` here.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct NotifySettings {
-    /// ntfy server, e.g. `https://ntfy.sh`.
-    #[serde(default = "default_ntfy_server")]
-    pub server: String,
-    /// Command printing the (secret) topic name.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub topic_cmd: Option<String>,
-    /// Command printing an ntfy access token, if the topic is protected.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub token_cmd: Option<String>,
-    /// URL the phone uses to reach kairosd over Tailscale (for action buttons).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub public_url: Option<String>,
-    #[serde(default = "default_morning")]
-    pub morning_summary: String,
+    /// After this time the TUI opens the check-in list once a day, if anything waits.
     #[serde(default = "default_checkin")]
     pub evening_checkin: String,
     /// When the daily tidy-up runs that counts week-old unanswered blocks
@@ -342,12 +332,6 @@ fn default_autodone_days() -> u32 {
     7
 }
 
-fn default_ntfy_server() -> String {
-    "https://ntfy.sh".into()
-}
-fn default_morning() -> String {
-    "07:30".into()
-}
 fn default_checkin() -> String {
     "21:30".into()
 }
@@ -358,11 +342,6 @@ fn default_autodone() -> String {
 impl Default for NotifySettings {
     fn default() -> Self {
         NotifySettings {
-            server: default_ntfy_server(),
-            topic_cmd: None,
-            token_cmd: None,
-            public_url: None,
-            morning_summary: default_morning(),
             evening_checkin: default_checkin(),
             autodone_at: default_autodone(),
             autodone_after_days: default_autodone_days(),

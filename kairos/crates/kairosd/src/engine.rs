@@ -87,11 +87,6 @@ pub trait Syncer: Send {
     fn sync_collections(&self, collections: &[SyncTarget]);
 }
 
-/// Sends approval requests etc. Tests use a recording fake.
-pub trait Notifier: Send {
-    fn pending(&self, cs: &Changeset);
-}
-
 pub struct ShellSyncer {
     pub cmd: String,
 }
@@ -128,11 +123,6 @@ pub fn collection_cmd(template: &str, t: &SyncTarget) -> String {
     template.replace("{collection}", &arg)
 }
 
-pub struct NoNotifier;
-impl Notifier for NoNotifier {
-    fn pending(&self, _cs: &Changeset) {}
-}
-
 pub struct Engine {
     pub cfg: Config,
     pub cfg_path: Option<PathBuf>,
@@ -143,7 +133,6 @@ pub struct Engine {
     /// The current request comes from Alec at a keyboard (set per request by
     /// the HTTP layer; never by MCP). His own edits then skip approval.
     pub direct: bool,
-    pub notifier: Box<dyn Notifier>,
     /// An event changed under the plan: replan as soon as the current
     /// request is done (see [`Engine::replan_if_needed`]).
     pub replan_soon: bool,
@@ -659,8 +648,8 @@ impl Engine {
         if cs.risk == Risk::Low {
             self.apply(&mut cs)?;
         } else {
+            // Waits for you in locus's Approve (the one place changes are approved).
             tracing::info!(id = %cs.id, reasons = ?cs.reasons, "changeset pending approval");
-            self.notifier.pending(&cs);
         }
         Ok(cs)
     }

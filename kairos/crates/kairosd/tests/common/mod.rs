@@ -2,10 +2,9 @@
 
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use chrono_tz::Europe::London;
-use kairos_core::changeset::Changeset;
 use kairos_core::config::Config;
 use kairos_core::constraints::Constraints;
-use kairosd::engine::{Engine, Notifier, SyncTarget, Syncer, collection_cmd};
+use kairosd::engine::{Engine, SyncTarget, Syncer, collection_cmd};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -18,7 +17,6 @@ pub fn at(s: &str) -> DateTime<Utc> {
 #[derive(Clone, Default)]
 pub struct Recorder {
     pub synced: Arc<Mutex<Vec<String>>>,
-    pub pending: Arc<Mutex<Vec<String>>>,
 }
 
 impl Syncer for Recorder {
@@ -29,12 +27,6 @@ impl Syncer for Recorder {
             .extend(c.iter().map(|t| collection_cmd("{collection}", t)));
     }
 }
-impl Notifier for Recorder {
-    fn pending(&self, cs: &Changeset) {
-        self.pending.lock().unwrap().push(cs.id.clone());
-    }
-}
-
 pub struct Env {
     pub dir: tempfile::TempDir,
     pub now: Arc<Mutex<DateTime<Utc>>>,
@@ -159,7 +151,6 @@ overlay = "imported"
             db,
             clock: Arc::new(move || *now.lock().unwrap()),
             syncer: Box::new(self.rec.clone()),
-            notifier: Box::new(self.rec.clone()),
             direct: false,
             replan_soon: false,
             registry: None,

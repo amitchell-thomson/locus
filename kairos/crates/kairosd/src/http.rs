@@ -1,15 +1,14 @@
-//! HTTP API (`/api/...`), health check, and signed one-tap links used by
-//! ntfy action buttons (approve or reject a change from the phone).
+//! HTTP API (`/api/...`) and the health check. Nothing here is a page for the phone: changes are
+//! approved in locus's Approve, and you check in from the calendar (2026-10-25).
 
 use crate::engine::{Engine, EngineError};
 use axum::extract::{Path, Query, Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::middleware::{self, Next};
-use axum::response::{Html, IntoResponse, Response};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Duration, Utc};
-use hmac::{Hmac, KeyInit, Mac};
 use kairos_core::api::{self, ApiError};
 use kairos_core::changeset::{Changeset, Status, WriteResult};
 use kairos_core::model::Author;
@@ -22,22 +21,6 @@ use std::sync::{Arc, Mutex};
 pub struct AppState {
     pub engine: Arc<Mutex<Engine>>,
     pub token: Arc<String>,
-    /// Key for signed approval / check-in links.
-    pub sign_key: Arc<Vec<u8>>,
-}
-
-impl AppState {
-    pub fn sign(&self, msg: &str) -> String {
-        sign(&self.sign_key, msg)
-    }
-}
-
-pub fn sign(key: &[u8], msg: &str) -> String {
-    let Ok(mut mac) = <Hmac<Sha256> as KeyInit>::new_from_slice(key) else {
-        return String::new();
-    };
-    mac.update(msg.as_bytes());
-    hex::encode(mac.finalize().into_bytes())[..32].to_string()
 }
 
 fn ct_eq(a: &str, b: &str) -> bool {
@@ -219,7 +202,6 @@ pub fn router(st: AppState, mcp: Option<Router<AppState>>) -> Router {
     let protected = protected.layer(middleware::from_fn_with_state(st.clone(), auth));
     Router::new()
         .route("/healthz", get(|| async { "ok" }))
-        .route("/a/{id}/{action}", get(signed_page).post(signed_action))
         .merge(protected)
         .with_state(st)
 }
@@ -668,119 +650,4 @@ async fn status(State(st): State<AppState>) -> HResult<serde_json::Value> {
     })
     .await?;
     Ok(Json(r))
-}
-
-// ---------------------------------------------------------------- signed links (phone)
-
-#[derive(Deserialize)]
-struct Sig {
-    sig: String,
-}
-
-fn page(title: &str, body: &str) -> Html<String> {
-    Html(format!(
-        r#"<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{title}</title><style>
-:root{{color-scheme:dark}}body{{font:16px -apple-system,system-ui,sans-serif;background:#1e1e2e;color:#cdd6f4;margin:0;padding:20px;max-width:560px}}
-h1{{font-size:20px;color:#89b4fa}}.card{{background:#313244;border-radius:12px;padding:14px;margin:12px 0}}
-.muted{{color:#7f849c}}button{{font:inherit;border:0;border-radius:10px;padding:10px 16px;margin:4px 6px 0 0;color:#1e1e2e;font-weight:600}}
-.ok{{background:#a6e3a1}}.no{{background:#f38ba8}}.mid{{background:#f9e2af}}pre{{white-space:pre-wrap;color:#a6adc8}}</style></head>
-<body>{body}</body></html>"#
-    ))
-}
-
-fn esc(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}
-
-/// GET shows a confirmation page (so link previews can't approve anything).
-async fn signed_page(
-    State(st): State<AppState>,
-    Path((id, action)): Path<(String, String)>,
-    Query(q): Query<Sig>,
-) -> Result<Html<String>, HttpError> {
-    if !matches!(action.as_str(), "approve" | "reject") || !ct_eq(&q.sig, &st.sign(&format!("{id}:{action}"))) {
-        return Err(HttpError(
-            StatusCode::FORBIDDEN,
-            ApiError {
-                error: "bad link".into(),
-                reasons: vec![],
-            },
-        ));
-    }
-    let cs = with_engine(&st, {
-        let id = id.clone();
-        move |e| {
-            e.db.cs_get(&id)?
-                .ok_or_else(|| EngineError::NotFound(format!("changeset {id}")))
-        }
-    })
-    .await?;
-    let ops: String = cs.ops.iter().map(|o| format!("• {}\n", esc(&o.describe()))).collect();
-    let btn = if action == "approve" {
-        "<button class=ok>Approve</button>"
-    } else {
-        "<button class=no>Reject</button>"
-    };
-    Ok(page(
-        "kairos",
-        &format!(
-            "<h1>{}</h1><div class=card><b>{}</b><p class=muted>status: {} · risk: {}</p><pre>{}</pre><p class=muted>{}</p></div>
-<form method=post action=\"/a/{}/{}?sig={}\">{btn}</form>",
-            if action == "approve" { "Approve change?" } else { "Reject change?" },
-            esc(&cs.summary),
-            cs.status.as_str(),
-            cs.risk.as_str(),
-            ops,
-            esc(&cs.reasons.join("; ")),
-            esc(&id),
-            esc(&action),
-            esc(&q.sig)
-        ),
-    ))
-}
-
-async fn signed_action(
-    State(st): State<AppState>,
-    Path((id, action)): Path<(String, String)>,
-    Query(q): Query<Sig>,
-) -> Result<Html<String>, HttpError> {
-    if !matches!(action.as_str(), "approve" | "reject") || !ct_eq(&q.sig, &st.sign(&format!("{id}:{action}"))) {
-        return Err(HttpError(
-            StatusCode::FORBIDDEN,
-            ApiError {
-                error: "bad link".into(),
-                reasons: vec![],
-            },
-        ));
-    }
-    let r = with_engine(&st, move |e| {
-        if action == "approve" {
-            e.approve(&id)
-        } else {
-            e.reject(&id)
-        }
-    })
-    .await;
-    Ok(match r {
-        Ok(cs) => page(
-            "kairos",
-            &format!(
-                "<h1>{}</h1><div class=card>{}</div>",
-                cs.status.as_str(),
-                esc(&cs.summary)
-            ),
-        ),
-        Err(HttpError(_, e)) => page(
-            "kairos",
-            &format!(
-                "<h1>Couldn't do that</h1><div class=card>{}<pre>{}</pre></div>",
-                esc(&e.error),
-                esc(&e.reasons.join("\n"))
-            ),
-        ),
-    })
 }

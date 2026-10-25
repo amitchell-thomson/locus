@@ -23,7 +23,6 @@ chrono.workspace = true
 chrono-tz.workspace = true
 clap.workspace = true
 hex.workspace = true
-hmac.workspace = true
 reqwest = { workspace = true }
 rmcp = { version = "3.5", features = ["server", "macros", "transport-streamable-http-server", "schemars"] }
 schemars = "1"

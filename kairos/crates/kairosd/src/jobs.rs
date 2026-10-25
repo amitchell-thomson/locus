@@ -1,16 +1,13 @@
-//! Background jobs: feed fetches, periodic sync + replan on collisions,
-//! morning summary, evening check-in, auto-done settlement.
+//! Background jobs: feed fetches, periodic sync + replan on collisions, measured project time,
+//! auto-done settlement. No pushes to the phone (plan B.4: "just noise"; removed 2026-10-25).
 
 use crate::engine::Engine;
-use crate::notify::Ntfy;
-use chrono::{DateTime, Duration, NaiveTime, Utc};
+use chrono::{DateTime, Utc};
 use kairos_core::constraints::Hm;
-use kairos_core::model::{Author, EventKind, Span};
 use std::sync::{Arc, Mutex};
 
 pub struct Jobs {
     pub engine: Arc<Mutex<Engine>>,
-    pub ntfy: Option<Ntfy>,
     /// Run `sync.full_cmd` every this many minutes (0 = never).
     pub sync_every_min: u64,
     pub feeds_every_min: u64,
@@ -36,82 +33,6 @@ fn daily(e: &Engine, key: &str, hm: &str) -> bool {
     true
 }
 
-pub fn morning_text(e: &Engine) -> String {
-    let tz = e.tz();
-    let now = e.now();
-    let today = now.with_timezone(&tz).date_naive();
-    let from = kairos_core::time::resolve_local(today.and_time(NaiveTime::MIN), tz);
-    let to = from + Duration::days(1);
-    let mut lines = Vec::new();
-    if let Ok(evs) = e.events(from, to) {
-        for i in evs.iter().filter(|i| {
-            matches!(
-                i.overlay,
-                kairos_core::config::Overlay::Personal | kairos_core::config::Overlay::Family
-            )
-        }) {
-            let when = match i.span {
-                Span::AllDay { .. } => "all day".to_string(),
-                Span::Timed { start, .. } => start.with_timezone(&tz).format("%H:%M").to_string(),
-            };
-            let mark = match i.meta.kind {
-                EventKind::Deadline => "⚑ ",
-                EventKind::TaskBlock => "┆ ",
-                EventKind::Event | EventKind::Worked => "",
-            };
-            lines.push(format!("{when} {mark}{}", i.title.trim_start_matches("⚑ ")));
-        }
-    }
-    // Due today (spec K5: the tasks' own dates, not events).
-    if let Ok(open) = e.db.tasks(Some(kairos_core::task::TaskStatus::Open)) {
-        for m in kairos_core::task::due_marks(&open, from, to, tz) {
-            let when = match m.span {
-                Span::AllDay { .. } => "today".to_string(),
-                Span::Timed { start, .. } => start.with_timezone(&tz).format("%H:%M").to_string(),
-            };
-            lines.push(format!("{when} {}", m.title));
-        }
-    }
-    // Blocks waiting for a check-in.
-    if let Ok(items) = e.checkin_items() {
-        let n = items.iter().filter(|i| i.outcome.is_none()).count();
-        if n > 0 {
-            lines.push(format!("{n} block{} to check in", if n == 1 { "" } else { "s" }));
-        }
-    }
-    // Tasks whose planned time is used up: finished, or how much more?
-    if let Ok(open) = e.db.tasks(Some(kairos_core::task::TaskStatus::Open)) {
-        for t in open.iter().filter(|t| t.remaining_min == 0) {
-            lines.push(format!(
-                "{}: planned time used up — finished, or how much more?",
-                t.title
-            ));
-        }
-    }
-    if let Ok(pending) = e.db.cs_list(Some(kairos_core::changeset::Status::Pending), 50)
-        && !pending.is_empty()
-    {
-        lines.push(format!("{} change(s) waiting for approval", pending.len()));
-    }
-    if let Ok(applied) = e.db.cs_since(now - Duration::days(1)) {
-        let auto: Vec<_> = applied
-            .iter()
-            .filter(|c| c.status == kairos_core::changeset::Status::Applied && c.author != Author::Alec)
-            .collect();
-        if !auto.is_empty() {
-            lines.push(format!(
-                "{} automatic change(s) since yesterday (kairos changes)",
-                auto.len()
-            ));
-        }
-    }
-    if lines.is_empty() {
-        "Nothing scheduled today.".into()
-    } else {
-        lines.join("\n")
-    }
-}
-
 impl Jobs {
     pub async fn run(self) {
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
@@ -119,7 +40,6 @@ impl Jobs {
         loop {
             tick.tick().await;
             let eng = self.engine.clone();
-            let ntfy = self.ntfy.clone();
             let do_sync = self.sync_every_min > 0 && minutes.is_multiple_of(self.sync_every_min);
             let do_feeds = self.feeds_every_min > 0 && minutes.is_multiple_of(self.feeds_every_min);
             let do_worked = minutes.is_multiple_of(5);
@@ -185,32 +105,6 @@ impl Jobs {
                         Ok(n) if n > 0 => tracing::info!("auto-done {n} week-old unanswered block(s)"),
                         Ok(_) => {}
                         Err(err) => tracing::warn!("settle: {err}"),
-                    }
-                }
-                if let Some(n) = &ntfy {
-                    if daily(&e, "morning", &e.cfg.notify.morning_summary.clone()) {
-                        let body = n.simple("kairos · today", &morning_text(&e), None);
-                        if let Err(err) = n.send(&body) {
-                            tracing::warn!("morning push: {err}");
-                        }
-                    }
-                    if daily(&e, "checkin", &e.cfg.notify.evening_checkin.clone()) {
-                        let items = e.checkin_items().unwrap_or_default();
-                        if !items.is_empty() {
-                            let list: Vec<String> = items
-                                .iter()
-                                .map(|i| format!("• {} ({} min)", i.title, i.planned_min))
-                                .collect();
-                            let msg = format!(
-                                "{}\nCheck in from the calendar (C). No rush: they wait (counted as done after {} days).",
-                                list.join("\n"),
-                                e.cfg.notify.autodone_after_days
-                            );
-                            let body = n.simple("kairos · check-in", &msg, None);
-                            if let Err(err) = n.send(&body) {
-                                tracing::warn!("check-in push: {err}");
-                            }
-                        }
                     }
                 }
                 Ok(())

@@ -25,11 +25,8 @@ pair = "icloud"
 stale_after_minutes = 15
 
 [notify]
-server = "https://ntfy.sh"
-topic_cmd = "cat ~/.config/kairos/secrets/ntfy-topic"
-public_url = "http://compute-node:7420"
-morning_summary = "07:30"
-evening_checkin = "21:30"
+# No pushes to the phone (removed 2026-10-25); older ntfy settings here are ignored.
+evening_checkin = "21:30"     # after this the TUI opens the check-in list once a day
 autodone_at = "09:00"        # when the daily tidy-up runs…
 autodone_after_days = 7       # …counting blocks nobody checked in on as done after a week
 

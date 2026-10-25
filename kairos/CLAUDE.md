@@ -8,7 +8,7 @@ Terminal calendar + task scheduler on top of iCloud. Spec: `SPEC.md`. Alec check
 |---|---|
 | `kairos-core` | Pure logic, no network/SQLite. `config` (schema + validation), `constraints`, `ics` (lossless RFC 5545 parser/writer), `time` (DST rules), `normalize` (VEVENT → series), `expand` (recurrence), `dedup`, `view` (overlays/filters), `dates` (natural input), `risk` (§6 policy), `sched` (§7 scheduler), `build` (writing events), `changeset`, `task`, `api` (shared request/response types). |
 | `kairos-store` | Disk + network for reads: `vdir` (vdirsyncer layout, atomic writes), `load`, `cache` (instance index behind `next`/`today`/TUI), `db` (SQLite: sidecar, tasks, changesets, check-ins), `feeds` (Google ICS conditional GET), `client` (blocking kairosd client). |
-| `kairosd` | Single writer. `engine` (intents → changesets → risk → apply/approve/reject/undo; tasks; plan; check-ins), `http` (axum API + signed approve/reject links for the phone), `mcp` (rmcp, stateless Streamable HTTP), `notify` (ntfy), `jobs` (sync, feeds, morning/evening pushes, auto-done). |
+| `kairosd` | Single writer. `engine` (intents → changesets → risk → apply/approve/reject/undo; tasks; plan; check-ins), `http` (axum API), `mcp` (rmcp, stateless Streamable HTTP), `jobs` (sync, feeds, measured project time, registry, auto-done). No phone pushes or pages (removed 2026-10-25). |
 | `kairos-cli` | `kairos` binary (all commands, `--json`, `next --tmux`, `doctor`, `sync`, `tui`). |
 | `kairos-tui` | ratatui front end (`app` = state/keys, testable; `ui` = drawing). |
 | `xtask` | `cargo xtask anonymise`, `cargo xtask check-fixtures`. |
@@ -87,7 +87,7 @@ predate the move; paths to `~/server-projects/kairos` are the archived repositor
 | 5 Write path | Done (risk table tests, changesets, undo, live guard, approvals in CLI/TUI/phone links). |
 | 6 Tasks & scheduler | Done (EDF+slack, chunking, stability, shortfalls, check-ins, auto-done, estimate log). |
 | 7 MCP | Done (stateless Streamable HTTP; restart-mid-session test). Check-ins, log work, start, reopen and project-time tools added 2026-10-13. Registration: `docs/claude-usage.md`. |
-| 8 Phone | Done: ntfy approvals and summaries; Shortcut steps in `docs/shortcut.md`; ntfy subscribed and Tailscale reachability confirmed. The phone check-in page was removed 2026-10-25 (you check in from the calendar, `C`; the evening push only reminds). |
+| 8 Phone | Done, then cut back (2026-10-25, plan B.4: "just noise"): ntfy pushes, approve buttons and the check-in page removed; the phone shows the iCloud calendars and takes events, and the Shortcut adds tasks. |
 | 9 Remote MCP (optional) | Not started (needs OAuth). |
 
 ## Phase 1 findings (`scripts/verify-icloud.sh`, 2026-10-11)
@@ -99,7 +99,7 @@ predate the move; paths to `~/server-projects/kairos` are the archived repositor
 
 ## Decisions log
 
-- Project sessions, proposed project time and the phone check-in page removed (2026-10-25, your call): one way to set time aside for a project (a task for it), one place to check in (the calendar). Project time no longer double counts a block worked through Claude.
+- Project sessions, proposed project time, the ntfy pushes and the phone pages removed (2026-10-25, your call and plan B.4): one way to set time aside for a project (a task for it), one place to check in (the calendar), one place to approve (locus's Approve). Project time no longer double counts a block worked through Claude.
 
 - Keys (2026-10-24, superseding 2026-10-12): the locus areas (see Invariants). Before:
 - Keys (2026-10-12): **Personal** (1, default, lavender; iCloud calendar renamed from Inbox, CalDAV id `home`), Engineering (2), Careers (3, includes OQTS), **Projects** (4, maroon `#eba0ac`; accepted project time — `[projects] key`), Sport (5), Social (6). Travel and OQTS were deleted on iCloud (empty), and ZZ-kairos-test is gone from iCloud too (only used when `live = false`). Events without a key go to key 1 (`Config::default_key`), not a hard-coded name. "personal" is also the *overlay* name. MCP instructions list the keys from config.

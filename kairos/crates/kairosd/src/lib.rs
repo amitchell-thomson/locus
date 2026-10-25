@@ -4,4 +4,3 @@ pub mod engine;
 pub mod http;
 pub mod jobs;
 pub mod mcp;
-pub mod notify;

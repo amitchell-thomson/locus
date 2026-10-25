@@ -8,7 +8,7 @@ iPhone / Calendar.app ─┐
         │                        │
  kairosd :7420 (Tailscale)  ◄── kairos CLI / TUI writes (HTTP + bearer)
         ▲  MCP /mcp  ◄── Claude Code
-        ▲  /api/tasks ◄── iOS Shortcut, ntfy action buttons
+        ▲  /api/tasks ◄── iOS Shortcut
 ```
 
 ## compute-node (server) — already done on 2026-10-11
@@ -63,10 +63,12 @@ Done on Alec's Mac 2026-10-11, except chezmoi itself: the launchd agent and conf
 
 ## Phone
 
-Both done (ntfy subscribed; iPhone on the tailnet and reaching kairosd).
+The phone shows the synced iCloud calendars and takes events added there; nothing else (plan B.4).
+The ntfy pushes, their Approve/Reject buttons and the check-in page were removed on 2026-10-25:
+changes are approved in locus's Approve, check-ins happen in the calendar. The ntfy app can be
+unsubscribed.
 
-- ntfy app → subscribe to the topic in `~/.config/kairos/secrets/ntfy-topic` on `https://ntfy.sh` (the topic name is the secret — keep it unguessable). Approve/Reject buttons hit signed one-shot URLs on kairosd over Tailscale; the evening check-in opens a small page there.
-- Shortcut: `docs/shortcut.md`.
+- Shortcut (adds a task over Tailscale): `docs/shortcut.md`.
 
 ## Security notes
 

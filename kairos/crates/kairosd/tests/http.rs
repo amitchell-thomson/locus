@@ -13,7 +13,6 @@ fn state(env: &Env) -> AppState {
     AppState {
         engine: Arc::new(Mutex::new(env.engine())),
         token: Arc::new(TOKEN.into()),
-        sign_key: Arc::new(b"sign-key".to_vec()),
     }
 }
 
@@ -134,7 +133,9 @@ async fn create_list_and_errors() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn signed_links_approve_from_phone() {
+async fn a_change_waits_for_approval_and_nothing_is_served_to_the_phone() {
+    // One approve place (2026-10-25): locus's Approve, through the token-protected API. The
+    // signed one-tap links and the check-in page for the phone are gone.
     let env = Env::new(true);
     env.phone_event("Sport", "squash", "Squash", "2026-10-15 19:00", "2026-10-15 20:00");
     let st = state(&env);
@@ -153,57 +154,25 @@ async fn signed_links_approve_from_phone() {
         .unwrap();
     assert_eq!(r["status"], "pending");
     let id = r["changeset_id"].as_str().unwrap().to_string();
-    // Bad signature, or a reject-signature used for approve: refused.
-    assert_eq!(
-        c.post(format!("{base}/a/{id}/approve?sig=nope"))
-            .send()
-            .await
-            .unwrap()
-            .status(),
-        403
-    );
-    let rej = st.sign(&format!("{id}:reject"));
-    assert_eq!(
-        c.post(format!("{base}/a/{id}/approve?sig={rej}"))
-            .send()
-            .await
-            .unwrap()
-            .status(),
-        403
-    );
-    // GET only shows a confirmation page (link previews can't approve).
-    let sig = st.sign(&format!("{id}:approve"));
-    let page = c
-        .get(format!("{base}/a/{id}/approve?sig={sig}"))
+    for old in [
+        format!("{base}/a/{id}/approve?sig=x"),
+        format!("{base}/checkin?day=2026-10-12&sig=x"),
+    ] {
+        let status = c.get(&old).send().await.unwrap().status().as_u16();
+        assert!(matches!(status, 401 | 404), "{old}: {status}");
+    }
+    assert!(!env.items("Sport").is_empty(), "nothing applied without you");
+    let done: Value = c
+        .post(format!("{base}/api/changesets/{id}/approve"))
+        .bearer_auth(TOKEN)
         .send()
         .await
         .unwrap()
-        .text()
+        .json()
         .await
         .unwrap();
-    assert!(page.contains("Approve change?"));
-    assert!(!env.items("Sport").is_empty());
-    let done = c
-        .post(format!("{base}/a/{id}/approve?sig={sig}"))
-        .send()
-        .await
-        .unwrap()
-        .text()
-        .await
-        .unwrap();
-    assert!(done.contains("applied"), "{done}");
+    assert_eq!(done["status"], "applied", "{done}");
     assert!(env.items("Sport").is_empty());
-    // There is no phone check-in page any more (2026-10-25): you check in from the calendar.
-    // An old link now reaches only the token-protected API, which refuses it.
-    let day = "2026-10-12";
-    let csig = st.sign(&format!("checkin:{day}"));
-    let old = c
-        .get(format!("{base}/checkin?day={day}&sig={csig}"))
-        .send()
-        .await
-        .unwrap()
-        .status();
-    assert!(matches!(old.as_u16(), 401 | 404), "{old}");
 }
 
 async fn rpc(c: &reqwest::Client, base: &str, id: u64, method: &str, params: Value) -> Value {

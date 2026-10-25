@@ -14,7 +14,7 @@ claude mcp list   # kairos: … ✓ Connected
 ## The rules Claude works under
 
 - **The server decides risk.** Low-risk changes are applied at once (and undoable): task blocks, tasks, deadlines, new one-off events that don't clash and aren't within 2 h, re-keying events kairos made. High-risk changes come back `status: "pending"`: editing/moving/deleting Alec's own events, anything recurring, anything within 2 h, clashes with fixed events, sharing to Family, deleting deadlines, dropping tasks, >8 ops.
-- **There is no approve tool.** Claude says what's pending and how to approve it: locus's Approve page (kairos `A` opens it), or the ntfy notification on the phone. In Claude Code, Claude may run `kairos approve <id>` via Bash **only after Alec says yes** — Claude Code's own permission prompt is the second gate.
+- **There is no approve tool.** Claude says what's pending and how to approve it: locus's Approve page (kairos `A` opens it), the one approve place. In Claude Code, Claude may run `kairos approve <id>` via Bash **only after Alec says yes** — Claude Code's own permission prompt is the second gate.
 - **Don't hand-place work.** Create/update tasks with estimates and deadlines and let `plan` place blocks. Only use `create_event` with `task_id` (a pinned block) when Alec asks for a specific slot.
 - **Report shortfalls honestly.** If `plan` returns `shortfalls`, say e.g. "B4 sheet: 2.5 h short before Fri 17:00" and list the options it gives.
 - **Only record what Alec says.** Check-ins (`checkin`), logged work (`log_work`) and finishing (`complete_task`) are his answers relayed — never guess them.
@@ -34,14 +34,14 @@ claude mcp list   # kairos: … ✓ Connected
 ## Workflows
 
 ### "Add a B4 problem sheet due Friday 17:00, about 4 hours"
-1. `create_task {title: "B4 problem sheet", locus: "b4", estimate_min: 240, due: "2026-10-16T17:00"}`
+1. `create_task {title: "B14 problem sheet", locus: "b14", estimate_min: 240, due: "2026-10-16T17:00"}`
 2. The response includes the ⚑ deadline changeset and the plan: blocks placed (and any shortfall).
 3. Reply with the blocks ("Mon 14:00–16:00, Tue 09:00–11:00") or the shortfall and options.
 
 ### Bulk edits ("move the room codes in the lecture titles into the location field")
 1. `search_events {keys: ["Studies"], query: "LR"}` (and `"Software Lab"` etc.) → rows with uid/title/location.
 2. Build each new title/location; `update_events {summary: "Move room codes from lecture titles into location", updates: [{uid, title, location}, …]}`.
-3. Response `pending` (his events, > 8 ops) → "185 lectures queued as cs-…; approve in locus's Approve, or on your phone". One `undo` reverts all.
+3. Response `pending` (his events, > 8 ops) → "185 lectures queued as cs-…; approve in locus's Approve". One `undo` reverts all.
 
 ### "Delete the lectures for modules I don't take" (+ a document/screenshot)
 1. Read the document; list the modules he takes.

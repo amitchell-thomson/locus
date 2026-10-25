@@ -252,7 +252,11 @@ fn clash_with_fixed_event_needs_approval() {
     assert_eq!(cs.status, Status::Pending);
     assert!(cs.reasons.iter().any(|r| r.contains("overlaps")));
     assert!(env.items("Personal").is_empty());
-    assert_eq!(env.rec.pending.lock().unwrap().len(), 1, "push notification sent");
+    assert_eq!(
+        e.db.cs_list(Some(Status::Pending), 10).unwrap().len(),
+        1,
+        "waits in Approve"
+    );
 }
 
 // ------------------------------------------------------------ high risk: Alec's own events
@@ -1341,10 +1345,6 @@ fn tasks_never_finish_by_themselves() {
     let t = e.db.task_get(&r.task.id).unwrap().unwrap();
     assert_eq!((t.status, t.remaining_min), (TaskStatus::Open, 0));
     assert!(e.db.estimates().unwrap().is_empty(), "nothing learned from a guess");
-    assert!(
-        kairosd::jobs::morning_text(&e)
-            .contains("B4 problem sheet: planned time used up — finished, or how much more?")
-    );
     // Alec says it needs 2 h more (deadline moved on, the old one is past): planned again.
     let u = e
         .update_task(

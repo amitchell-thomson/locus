@@ -2710,6 +2710,68 @@ impl Engine {
         Ok(WriteResult::from(&cs))
     }
 
+    /// Lectures and other course events link to their course by themselves: an unlinked event
+    /// in Studies whose title starts with a course's code (`B14 Image Processing #3`, the code
+    /// being the first word of the course's registry name) gets that course as what it is for.
+    /// Sidecar only, like `L` (nothing written to iCloud); an event you linked yourself is never
+    /// changed. Run at start and every five minutes, so new timetable events link as they come.
+    /// Returns how many it linked. (Your words, 25 Oct: "I want all of my lectures to be linked
+    /// to the proper area, so they show up neatly on the studies page for that course.")
+    pub fn link_courses(&mut self) -> Result<usize> {
+        let Some(reg) = self.registry.clone() else {
+            return Ok(0);
+        };
+        let codes: Vec<(String, String)> = reg
+            .projects
+            .iter()
+            .filter(|p| p.kind == locus_contract::ProjectKind::Course)
+            .filter_map(|p| Some((p.name.split_whitespace().next()?.to_uppercase(), p.id.clone())))
+            .collect();
+        if codes.is_empty() {
+            return Ok(0);
+        }
+        let world = self.world(120)?;
+        let mut n = 0;
+        for src in &world.loaded.sources {
+            let studies = src
+                .key
+                .as_deref()
+                .and_then(|k| self.cfg.key(k))
+                .is_some_and(|k| k.area() == "Studies");
+            if !studies {
+                continue;
+            }
+            for e in &src.series {
+                let Some(m) = e.master.as_ref().or(e.overrides.first()) else {
+                    continue;
+                };
+                if m.meta.kind != EventKind::Event || m.meta.locus.is_some() {
+                    continue;
+                }
+                let first = m
+                    .summary
+                    .split_whitespace()
+                    .next()
+                    .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_uppercase())
+                    .unwrap_or_default();
+                let Some((_, id)) = codes.iter().find(|(code, _)| *code == first) else {
+                    continue;
+                };
+                let mut meta = self.db.meta_get(&src.id, &e.uid)?.unwrap_or_default();
+                if meta.locus.is_some() {
+                    continue;
+                }
+                meta.locus = Some(id.clone());
+                self.db.meta_set(&src.id, &e.uid, &meta)?;
+                n += 1;
+            }
+        }
+        if n > 0 {
+            tracing::info!(events = n, "course events linked to their courses");
+        }
+        Ok(n)
+    }
+
     /// One-off, at start: project sessions were removed on 2026-10-25. An event still linked to
     /// a project as its session keeps that link as what it is for (`Meta.locus`, the project's
     /// registry id) unless it already says, so it still opens in locus and nothing it recorded

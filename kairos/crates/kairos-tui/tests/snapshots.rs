@@ -959,6 +959,22 @@ fn adding_asks_what_it_is_for_and_l_links_afterwards() {
         panic!("L opens the link form")
     };
     assert_eq!(f.title(), "what is it for");
+    // Typing and Enter submit it (a check for a title, which the link form has none of, made
+    // Enter do nothing: 25 Oct, a B14 lecture).
+    for c in "b15".chars() {
+        a.key(Key::Char(c));
+    }
+    a.key(Key::Enter);
+    assert!(
+        !matches!(a.mode, Mode::Form(_)),
+        "Enter closes the link form: {:?}",
+        a.message
+    );
+    assert!(
+        !a.message.as_ref().is_some_and(|(m, _)| m.contains("Title")),
+        "{:?}",
+        a.message
+    );
 }
 
 #[test]

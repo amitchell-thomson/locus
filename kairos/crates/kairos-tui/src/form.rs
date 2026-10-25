@@ -489,6 +489,13 @@ impl Form {
             Key::Left if kind.is_picker() => self.cycle_key(-1),
             Key::Right if kind.is_picker() => self.cycle_key(1),
             Key::Char(c) if kind.is_picker() => self.jump_key(c),
+            // Typing over a complete For (what it was, prefilled: "Errands") starts afresh, so
+            // "b14" finds B14 rather than "Errandsb14" finding nothing.
+            Key::Char(c)
+                if kind == FieldKind::For && self.fors.iter().any(|o| o.label == self.fields[self.focus].value) =>
+            {
+                self.fields[self.focus].value = c.to_string();
+            }
             Key::Char(c) => self.fields[self.focus].value.push(c),
             Key::Backspace if !kind.is_picker() => {
                 self.fields[self.focus].value.pop();

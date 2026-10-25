@@ -90,10 +90,11 @@ index = 2
 colour = "green"
 calendar = "sport"
 [[keys]]
-name = "Engineering"
+name = "Studies"
 index = 3
 colour = "blue"
 calendar = "engineering"
+aliases = ["Engineering"]
 [[sources]]
 id = "personal"
 kind = "icloud"

@@ -131,6 +131,9 @@ async fn main() -> Result<()> {
     }
     // Project sessions were removed (2026-10-25): their events keep the link as what they are for.
     engine.retire_sessions().context("retiring project sessions")?;
+    if let Err(e) = engine.link_courses() {
+        tracing::warn!("linking course events: {e}");
+    }
     // ⚑ events from before due dates were task attributes (spec K5): proposed once for approval.
     if let Err(e) = engine.migrate_deadlines() {
         tracing::warn!("migrating deadlines: {e}");

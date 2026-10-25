@@ -79,6 +79,9 @@ impl Jobs {
                             Ok(None) => {}
                             Err(err) => tracing::warn!("projects from the registry: {err}"),
                         }
+                        if let Err(err) = e.link_courses() {
+                            tracing::warn!("linking course events: {err}");
+                        }
                     }
                 })
                 .await;

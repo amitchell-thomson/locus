@@ -2465,3 +2465,71 @@ fn tasks_and_chores_go_to_locus_as_its_own_types() {
         "{chores:?}"
     );
 }
+
+#[test]
+fn lectures_link_to_their_course_by_its_code() {
+    let env = Env::new(true);
+    env.phone_event(
+        "Engineering",
+        "l1",
+        "B14 Image Processing #3",
+        "2026-10-22 09:00",
+        "2026-10-22 10:00",
+    );
+    env.phone_event(
+        "Engineering",
+        "l2",
+        "B1: Engineering Computation lab",
+        "2026-10-22 11:00",
+        "2026-10-22 13:00",
+    );
+    env.phone_event(
+        "Engineering",
+        "l3",
+        "B14 lecture, linked by hand",
+        "2026-10-23 09:00",
+        "2026-10-23 10:00",
+    );
+    env.phone_event("Engineering", "l4", "Library", "2026-10-23 14:00", "2026-10-23 15:00");
+    env.phone_event(
+        "Personal",
+        "l5",
+        "B14 revision with friends",
+        "2026-10-24 14:00",
+        "2026-10-24 15:00",
+    );
+    let mut e = env.engine();
+    e.registry = Some(
+        locus_contract::taxonomy::load(&locus_contract::taxonomy::root())
+            .unwrap()
+            .registry,
+    );
+    let src = |e: &kairosd::engine::Engine, uid: &str| {
+        e.events(at("2026-10-22 00:00"), at("2026-10-25 00:00"))
+            .unwrap()
+            .into_iter()
+            .find(|i| i.uid == uid)
+            .unwrap()
+    };
+    let l3 = src(&e, "l3");
+    e.db.meta_set(
+        &l3.source,
+        "l3",
+        &kairos_core::model::Meta {
+            locus: Some("b15".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(e.link_courses().unwrap(), 2);
+    assert_eq!(src(&e, "l1").meta.locus.as_deref(), Some("b14"));
+    assert_eq!(
+        src(&e, "l2").meta.locus.as_deref(),
+        Some("b1"),
+        "B1: matches B1, not B14"
+    );
+    assert_eq!(src(&e, "l3").meta.locus.as_deref(), Some("b15"), "your own link stays");
+    assert_eq!(src(&e, "l4").meta.locus, None);
+    assert_eq!(src(&e, "l5").meta.locus, None, "only Studies events");
+    assert_eq!(e.link_courses().unwrap(), 0, "nothing more to do");
+}

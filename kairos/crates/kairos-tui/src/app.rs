@@ -1569,7 +1569,9 @@ impl App {
             let outcome = if needs == Some(0) { "finished" } else { "longer" };
             return self.send_checkin_full(&t.clone(), outcome, spent, needs, from);
         }
-        if f.get("Title").is_empty() {
+        // The link form (L) has no title: only what it is for. Checking one here made Enter on it
+        // answer "Title is empty" and do nothing (25 Oct, a B14 lecture).
+        if !matches!(f.kind, FormKind::Link { .. }) && f.get("Title").is_empty() {
             self.set_message("Title is empty", true);
             self.mode = Mode::Form(f);
             return;

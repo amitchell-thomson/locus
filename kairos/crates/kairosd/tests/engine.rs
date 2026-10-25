@@ -2418,3 +2418,50 @@ fn a_work_block_stays_timed_and_moves_until_checked_in() {
         .unwrap_err();
     assert!(err.to_string().contains("needs a time"), "{err}");
 }
+
+#[test]
+fn tasks_and_chores_go_to_locus_as_its_own_types() {
+    // L6: kairosd serves the Tasks page's and Home's types, labels worked out here from the
+    // registry, so locus converts nothing.
+    let env = Env::new(true);
+    let mut e = env.engine();
+    e.registry = Some(
+        locus_contract::taxonomy::load(&locus_contract::taxonomy::root())
+            .unwrap()
+            .registry,
+    );
+    e.sync_registry().unwrap();
+    for (title, key, locus, due) in [
+        ("B15 sheet 4", "Engineering", Some("b15"), Some("2026-10-30")),
+        ("laundry", "Personal", None, None),
+    ] {
+        e.create_task(
+            Author::Alec,
+            &CreateTaskReq {
+                title: title.into(),
+                key: key.into(),
+                locus: locus.map(String::from),
+                due: due.map(String::from),
+                plan: Some(false),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    }
+    let items = e.tasks_overview().unwrap();
+    let b15 = items.iter().find(|t| t.title == "B15 sheet 4").unwrap();
+    assert_eq!(
+        (b15.for_id.as_deref(), b15.for_label.as_str(), b15.area.as_str()),
+        (Some("b15"), "B15 Control Systems", "Studies")
+    );
+    assert!(b15.due_is_date, "a date alone");
+    assert_eq!(
+        b15.due.unwrap().format("%Y-%m-%d %H:%M").to_string(),
+        "2026-10-30 23:59"
+    );
+    let chores = e.chores().unwrap();
+    assert!(
+        chores.iter().any(|c| c.title == "laundry" && c.id.starts_with("t-")),
+        "{chores:?}"
+    );
+}

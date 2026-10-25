@@ -49,20 +49,7 @@ pub struct ProjectView {
 #[serde(deny_unknown_fields)]
 pub struct Due {
     pub title: String,
-    pub kind: DueKind,
     pub at: NaiveDate,
-}
-
-/// What kind of thing is due. A sheet is its own kind because it is planned differently: a
-/// weekly problem sheet is about five hours in two or three blocks (kairos's `sheet`), where
-/// coursework needs its own estimate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DueKind {
-    Sheet,
-    Coursework,
-    Report,
-    Exam,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

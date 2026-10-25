@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 chrono.workspace = true
 locus-contract.workspace = true
+eco-dates.workspace = true
 chrono-tz.workspace = true
 rrule.workspace = true
 serde.workspace = true

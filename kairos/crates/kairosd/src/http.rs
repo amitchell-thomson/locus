@@ -591,12 +591,12 @@ async fn checkin(State(st): State<AppState>, Json(req): Json<api::CheckinReq>) -
 }
 
 /// Every task for locus's Tasks page (spec E7).
-async fn tasks_overview(State(st): State<AppState>) -> HResult<Vec<api::TaskOverview>> {
+async fn tasks_overview(State(st): State<AppState>) -> HResult<Vec<locus_contract::TaskItem>> {
     Ok(Json(with_engine(&st, move |e| e.tasks_overview()).await?))
 }
 
 /// Open chores for locus's Home (spec K9).
-async fn chores(State(st): State<AppState>) -> HResult<Vec<api::ChoreItem>> {
+async fn chores(State(st): State<AppState>) -> HResult<Vec<locus_contract::Chore>> {
     Ok(Json(with_engine(&st, move |e| e.chores()).await?))
 }
 

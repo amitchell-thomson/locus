@@ -90,6 +90,9 @@ pub struct App {
     /// Running as a window of the locus session (set by locus-session.sh), so Home can hand a
     /// project to the Project window instead of opening it in place.
     pub in_session: bool,
+    /// A key that asks first (drop a task): the item it was pressed on; the same key again on
+    /// the same item does it, any other key forgets it.
+    pub armed: Option<String>,
     /// kairosd, when the window runs live (spec K8): what locus puts on the calendar goes
     /// through it. `None` in tests and dumps.
     pub calendar: Option<std::sync::Arc<crate::calendar::Live>>,
@@ -136,6 +139,7 @@ impl App {
             image: RefCell::new(None),
             frame: 0,
             in_session: false,
+            armed: None,
             calendar: None,
             peek: None,
             shown: RefCell::new(HashMap::new()),

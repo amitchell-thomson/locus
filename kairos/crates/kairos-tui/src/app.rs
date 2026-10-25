@@ -23,9 +23,6 @@ pub enum View {
     Day,
     Month,
     Agenda,
-    Tasks,
-    Approvals,
-    Projects,
 }
 
 impl View {
@@ -35,9 +32,6 @@ impl View {
             View::Day => "day",
             View::Month => "month",
             View::Agenda => "agenda",
-            View::Tasks => "tasks",
-            View::Approvals => "approvals",
-            View::Projects => "projects",
         }
     }
 }
@@ -62,19 +56,9 @@ pub enum PromptKind {
         task_id: String,
         title: String,
     },
-    /// More time for a task (its planned time is used up, or it grew).
-    MoreTime {
-        id: String,
-        title: String,
-    },
     /// Move a task's deadline (from its ⚑).
     MoveDeadline {
         task_id: String,
-    },
-    /// Reopen a finished task: how much is left?
-    Reopen {
-        id: String,
-        title: String,
     },
 }
 
@@ -86,9 +70,7 @@ impl PromptKind {
             PromptKind::Partial { .. } => "partly done — how long did you work? (e.g. 45m)",
             PromptKind::Remaining { .. } => "how much is left? (e.g. 3h, 0 = finished)",
             PromptKind::LogWork { .. } => "log work — how long, ending now? (e.g. 40m)",
-            PromptKind::MoreTime { .. } => "how much more time? (e.g. 2h)",
             PromptKind::MoveDeadline { .. } => "deadline (when, e.g. fri 17:00)",
-            PromptKind::Reopen { .. } => "reopen — how much is left? (e.g. 2h)",
         }
     }
 }
@@ -104,8 +86,6 @@ pub enum Confirm {
     Skip,
     /// Remove a task's deadline (the task stays, with no deadline).
     ClearDue(String),
-    /// Delete a project.
-    DeleteProject(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -144,9 +124,6 @@ impl CheckinTarget {
         }
     }
 }
-
-/// Finished tasks listed (and selectable) in the tasks view.
-pub const DONE_SHOWN: usize = 12;
 
 /// A pending change drawn as a ghost block.
 #[derive(Debug, Clone, PartialEq)]
@@ -378,7 +355,6 @@ impl App {
         match self.view {
             View::Agenda => self.agenda_rows().into_iter().nth(self.sel).map(|(_, c)| c),
             View::Week | View::Day | View::Month => self.day_clusters(self.cursor).into_iter().nth(self.sel),
-            _ => None,
         }
     }
 
@@ -386,9 +362,6 @@ impl App {
         match self.view {
             View::Agenda => self.agenda_rows().len(),
             View::Week | View::Day | View::Month => self.day_clusters(self.cursor).len(),
-            View::Tasks => self.tasks.len() + self.done_tasks.len().min(DONE_SHOWN),
-            View::Approvals => self.pending.len(),
-            View::Projects => self.projects.len(),
         }
     }
 
@@ -710,13 +683,7 @@ impl App {
         match k {
             Key::Char('q') | Key::Esc if self.expanded => self.expanded = false,
             Key::Char('q') => self.quit = true,
-            Key::Esc => {
-                if matches!(self.view, View::Tasks | View::Approvals | View::Projects) {
-                    self.view = View::Week;
-                    self.sel = 0;
-                }
-                self.search = None;
-            }
+            Key::Esc => self.search = None,
             Key::Char('?') => self.mode = Mode::Help,
             // Arrows and Tab move, as everywhere in locus (spec K6): ←/→ days, [ ] weeks.
             Key::Left => self.shift(-1),
@@ -794,29 +761,11 @@ impl App {
                 }
             }
             Key::Char('/') => self.mode = Mode::Prompt(PromptKind::Search, self.search.clone().unwrap_or_default()),
-            // Tasks and projects are overviewed in the locus window (spec E7): T and P open them
-            // there, and fall back to kairos's own lists when the locus window is not running.
-            Key::Char('T') => {
-                if !self.open_in_locus_view("tasks") {
-                    self.view = View::Tasks;
-                    self.sel = 0;
-                    self.refresh_remote();
-                }
-            }
-            // Approve is the one approve place (round 7c): A opens it in the locus window, and
-            // kairos's own list only when the locus window is not running.
-            Key::Char('A') if self.open_in_locus_view("approve") => {}
-            Key::Char('A') => {
-                self.view = View::Approvals;
-                self.sel = 0;
-                self.refresh_remote();
-            }
-            Key::Char('P') if self.open_in_locus_view("home:p") => {}
-            Key::Char('P') => {
-                self.view = View::Projects;
-                self.sel = 0;
-                self.refresh_remote();
-            }
+            // Tasks, projects and Approve have one home each, in the locus window (spec E7, round
+            // 7c, L7): T, P and A open them there.
+            Key::Char('T') => self.open_locus_page("tasks"),
+            Key::Char('A') => self.open_locus_page("approve"),
+            Key::Char('P') => self.open_locus_page("home:p"),
             Key::Char('C') => {
                 self.refresh_remote();
                 if self.checkins.iter().any(|c| c.outcome.is_none()) {
@@ -831,16 +780,8 @@ impl App {
                 self.set_message("syncing…", false);
             }
             Key::Char('a') => {
-                if self.view == View::Projects {
-                    self.message = None;
-                    let k = self.projects_key();
-                    self.mode = Mode::Form(Form::add_project(self.key_names(), &k));
-                } else if self.view == View::Tasks {
-                    self.open_add(true);
-                } else {
-                    self.mode = Mode::AddChoice;
-                    self.set_message("add: e event · t task · p project time (Esc cancels)", false);
-                }
+                self.mode = Mode::AddChoice;
+                self.set_message("add: e event · t task (Esc cancels)", false);
             }
             Key::Char('w') => {
                 self.work_week = !self.work_week;
@@ -886,133 +827,6 @@ impl App {
     /// Keys whose meaning depends on the view / selection.
     fn contextual(&mut self, k: Key) {
         match self.view {
-            View::Projects => {
-                let Some(p) = self.projects.get(self.sel).map(|p| p.project.clone()) else {
-                    return;
-                };
-                match k {
-                    Key::Char('e') => {
-                        self.message = None;
-                        let k = self.projects_key();
-                        self.mode = Mode::Form(Form::edit_project(self.key_names(), &k, &p));
-                    }
-                    Key::Char('s') => {
-                        let next = p.status.cycle();
-                        let req = api::UpdateProjectReq {
-                            status: Some(next.as_str().into()),
-                            ..Default::default()
-                        };
-                        self.update_project_and_report(&p.id, &req);
-                        // Keep the same project selected after re-sorting.
-                        if let Some(k) = self.projects.iter().position(|x| x.project.id == p.id) {
-                            self.sel = k;
-                        }
-                    }
-                    Key::Char('d') => {
-                        self.mode = Mode::Confirm(Confirm::DeleteProject(p.id.clone()));
-                        self.set_message(format!("delete project “{}”? y/N", p.name), false);
-                    }
-                    _ => {}
-                }
-            }
-            View::Approvals => {
-                let Some(cs) = self.pending.get(self.sel).cloned() else {
-                    return;
-                };
-                let action = match k {
-                    Key::Char('y') => "approve",
-                    Key::Char('n') => "reject",
-                    _ => return,
-                };
-                if let Some(r) = self.with_daemon(|d| d.decide(&cs.id, action)) {
-                    self.write_result(r);
-                    self.sel = self.sel.min(self.pending.len().saturating_sub(1));
-                }
-            }
-            View::Tasks => {
-                // Finished tasks (listed after the open ones): o reopens.
-                if self.sel >= self.tasks.len() {
-                    if let Some(t) = self.done_tasks.get(self.sel - self.tasks.len()).cloned()
-                        && k == Key::Char('o')
-                    {
-                        self.message = None;
-                        self.mode = Mode::Prompt(
-                            PromptKind::Reopen {
-                                id: t.id,
-                                title: t.title,
-                            },
-                            String::new(),
-                        );
-                    }
-                    return;
-                }
-                let Some(t) = self.tasks.get(self.sel).cloned() else {
-                    return;
-                };
-                match k {
-                    Key::Char('D') => {
-                        if let Some(r) = self.with_daemon(|d| d.complete_task(&t.id, None)) {
-                            match r {
-                                Ok(Ok(r)) => {
-                                    if r.changesets.first().is_some_and(|w| w.status == Status::Applied) {
-                                        let now = self.now;
-                                        let gone: Vec<String> = self
-                                            .index
-                                            .instances
-                                            .iter()
-                                            .filter(|i| {
-                                                i.meta.task_id.as_deref() == Some(t.id.as_str())
-                                                    && i.start(self.tz) >= now
-                                            })
-                                            .map(|i| i.uid.clone())
-                                            .collect();
-                                        for uid in gone {
-                                            self.patch_local(&uid, |_| false);
-                                        }
-                                    }
-                                    self.set_message(format!("✓ done: {}", t.title), false);
-                                    self.wants_sync = true;
-                                    self.refresh_remote();
-                                }
-                                Ok(Err(e)) => self.set_message(e.to_string(), true),
-                                Err(e) => self.set_message(e.to_string(), true),
-                            }
-                        }
-                    }
-                    Key::Char('n') => self.start_now(t.id.clone(), t.title.clone()),
-                    Key::Char('W') => {
-                        self.message = None;
-                        self.mode = Mode::Prompt(
-                            PromptKind::LogWork {
-                                task_id: t.id.clone(),
-                                title: t.title.clone(),
-                            },
-                            String::new(),
-                        );
-                    }
-                    Key::Char('e') => {
-                        self.message = None;
-                        let f = self.task_form(&t);
-                        self.mode = Mode::Form(f);
-                    }
-                    Key::Char('+') => {
-                        self.message = None;
-                        self.mode = Mode::Prompt(
-                            PromptKind::MoreTime {
-                                id: t.id.clone(),
-                                title: t.title.clone(),
-                            },
-                            String::new(),
-                        );
-                    }
-                    Key::Char('d') => {
-                        self.mode = Mode::Confirm(Confirm::DropTask(t.id.clone()));
-                        self.set_message(format!("drop “{}”? y/N", t.title), false);
-                    }
-                    Key::Char('S') => self.plan(),
-                    _ => {}
-                }
-            }
             View::Week | View::Day | View::Month | View::Agenda => {
                 if k == Key::Char('S') {
                     self.plan();
@@ -1250,12 +1064,6 @@ impl App {
 
     fn confirmed(&mut self, c: Confirm) {
         match c {
-            Confirm::DeleteProject(id) => {
-                if let Some(r) = self.with_daemon(|d| d.delete_project(&id)) {
-                    self.write_result(r);
-                    self.sel = self.sel.min(self.projects.len().saturating_sub(1));
-                }
-            }
             Confirm::Delete => {
                 if let Some(cl) = self.selected() {
                     let i = cl.primary;
@@ -1434,52 +1242,6 @@ impl App {
             };
             return self.update_task_and_report(&task_id.clone(), &req);
         }
-        if let PromptKind::Reopen { id, .. } = &kind {
-            let Ok(left) = dates::parse_minutes(&buf) else {
-                self.set_message("how much is left: e.g. 2h, 90m", true);
-                self.mode = Mode::Prompt(kind.clone(), buf);
-                return;
-            };
-            let req = api::UpdateTaskReq {
-                reopen: Some(true),
-                remaining_min: Some(left),
-                ..Default::default()
-            };
-            self.update_task_and_report(&id.clone(), &req);
-            self.sel = 0;
-            return;
-        }
-        if let PromptKind::MoreTime { id, title } = &kind {
-            let Ok(more) = dates::parse_minutes(&buf) else {
-                self.set_message("more time: e.g. 2h, 90m", true);
-                self.mode = Mode::Prompt(kind.clone(), buf);
-                return;
-            };
-            let cur = self.tasks.iter().find(|t| &t.id == id).map_or(0, |t| t.remaining_min);
-            let req = api::UpdateTaskReq {
-                remaining_min: Some(cur + more),
-                ..Default::default()
-            };
-            let title = title.clone();
-            match self.with_daemon(|d| d.update_task(id, &req)) {
-                Some(Ok(Ok(r))) => {
-                    let warn = r.plan.as_ref().and_then(plan_warning).unwrap_or_default();
-                    self.set_message(
-                        format!(
-                            "✓ {title}: +{} planned{warn}",
-                            crate::form::fmt_minutes(i64::from(more))
-                        ),
-                        !warn.is_empty(),
-                    );
-                    self.wants_sync = true;
-                    self.refresh_remote();
-                }
-                Some(Ok(Err(e))) => self.set_message(e.to_string(), true),
-                Some(Err(e)) => self.set_message(e.to_string(), true),
-                None => {}
-            }
-            return;
-        }
         if buf.is_empty() && kind != PromptKind::Search {
             return;
         }
@@ -1487,9 +1249,7 @@ impl App {
             PromptKind::Remaining { .. }
             | PromptKind::Partial { .. }
             | PromptKind::LogWork { .. }
-            | PromptKind::MoreTime { .. }
-            | PromptKind::MoveDeadline { .. }
-            | PromptKind::Reopen { .. } => {}
+            | PromptKind::MoveDeadline { .. } => {}
             PromptKind::Search => {
                 self.search = if buf.is_empty() { None } else { Some(buf) };
             }
@@ -1668,17 +1428,6 @@ impl App {
                 )),
                 None => Err("For: type what it belongs to".into()),
             },
-            FormKind::AddProject | FormKind::EditProject { .. } => {
-                if f.get("Name").is_empty() {
-                    return Err("Name: what the project is called".into());
-                }
-                Ok(match f.get("Status") {
-                    "active" => "active: working on it now".to_string(),
-                    "next" => "next: should be working on it soon".to_string(),
-                    "paused" => "paused: on hold".to_string(),
-                    _ => "done: finished, kept as a record".to_string(),
-                })
-            }
             FormKind::TookLonger { .. } => {
                 let spent = dates::parse_minutes(f.get("Spent")).map_err(|_| "Spent: e.g. 3h or 2h30".to_string())?;
                 if !f.fields.iter().any(|x| x.label == "Needs") {
@@ -1783,47 +1532,6 @@ impl App {
     }
 
     fn submit_form(&mut self, f: Form) {
-        if let FormKind::AddProject | FormKind::EditProject { .. } = &f.kind {
-            let name = f.get("Name").to_string();
-            if name.is_empty() {
-                self.set_message("Name is empty", true);
-                self.mode = Mode::Form(f);
-                return;
-            }
-            let (status, note) = (f.get("Status").to_string(), f.get("Note").to_string());
-            let key = Some(f.get("Calendar").to_string());
-            if let FormKind::EditProject { id } = &f.kind {
-                let req = api::UpdateProjectReq {
-                    name: Some(name),
-                    status: Some(status),
-                    note: Some(note),
-                    key,
-                };
-                return self.update_project_and_report(&id.clone(), &req);
-            }
-            let req = api::CreateProjectReq {
-                name,
-                status: Some(status),
-                note: Some(note),
-                key,
-            };
-            match self.with_daemon(|d| d.create_project(&req)) {
-                Some(Ok(Ok(p))) => {
-                    self.set_message(format!("✓ project {} · {}", p.name, p.status.as_str()), false);
-                    self.refresh_remote();
-                    if let Some(k) = self.projects.iter().position(|x| x.project.id == p.id) {
-                        self.sel = k;
-                    }
-                }
-                Some(Ok(Err(e))) => {
-                    self.set_message(e.to_string(), true);
-                    self.mode = Mode::Form(f);
-                }
-                Some(Err(e)) => self.set_message(e.to_string(), true),
-                None => {}
-            }
-            return;
-        }
         if let FormKind::TookLonger { t } = &f.kind {
             if let Err(e) = self.form_preview(&f) {
                 self.set_message(e, true);
@@ -2012,7 +1720,7 @@ impl App {
                     }
                 }
             }
-            FormKind::TookLonger { .. } | FormKind::AddProject | FormKind::EditProject { .. } => {}
+            FormKind::TookLonger { .. } => {}
             FormKind::Link { source, uid, task } => {
                 let Some(o) = f.chosen_for().cloned() else {
                     return self.set_message("For: type what it belongs to", true);
@@ -2113,54 +1821,10 @@ impl App {
         }
     }
 
-    fn update_project_and_report(&mut self, id: &str, req: &api::UpdateProjectReq) {
-        match self.with_daemon(|d| d.update_project(id, req)) {
-            Some(Ok(Ok(r))) => {
-                let p = &r.project;
-                if r.changeset.status == Status::Pending {
-                    self.set_message(
-                        format!("◌ needs approval: {} (A to review)", r.changeset.summary),
-                        false,
-                    );
-                } else {
-                    self.set_message(format!("✓ {} · {}", p.name, p.status.as_str()), false);
-                }
-                self.wants_sync = true;
-                self.refresh_remote();
-            }
-            Some(Ok(Err(e))) => self.set_message(e.to_string(), true),
-            Some(Err(e)) => self.set_message(e.to_string(), true),
-            None => {}
-        }
-    }
-
     /// The keys that do something for what's selected, for the bottom-right
     /// edge ("e edit · m move · d delete").
     pub fn key_hints(&self) -> String {
         let h: &[&str] = match self.view {
-            View::Tasks => {
-                if self.sel < self.tasks.len() {
-                    &["e edit", "D done", "W log work", "+ time", "n start", "d drop"]
-                } else if self.sel < self.tasks.len() + self.done_tasks.len().min(DONE_SHOWN) {
-                    &["o reopen"]
-                } else {
-                    &["a add task"]
-                }
-            }
-            View::Approvals => {
-                if self.pending.is_empty() {
-                    &[]
-                } else {
-                    &["y approve", "n reject"]
-                }
-            }
-            View::Projects => {
-                if self.projects.is_empty() {
-                    &["a add project"]
-                } else {
-                    &["a add", "e edit", "s status", "d delete"]
-                }
-            }
             View::Week | View::Day | View::Month | View::Agenda => match self.selected().map(|c| c.primary) {
                 None => &["a add"],
                 Some(i) => match (i.meta.kind, i.overlay) {
@@ -2233,6 +1897,13 @@ impl App {
 
     /// Open a locus view (`tasks`, `home:p`) when the locus window is running here; false when
     /// it is not (no tmux, no locus session), so kairos shows its own list instead.
+    /// Open one of locus's pages (`tasks`, `approve`, `home:p`) in the locus window.
+    fn open_locus_page(&mut self, view: &str) {
+        if !self.open_in_locus_view(view) {
+            self.set_message("the locus window isn't running (Alt-1 opens it)", true);
+        }
+    }
+
     fn open_in_locus_view(&mut self, view: &str) -> bool {
         if locus_contract::link::OpenFile::locus().write(view).is_err() || !locus_contract::link::switch_to("locus") {
             return false;
@@ -2314,12 +1985,20 @@ impl App {
         Form::edit_task(self.key_names(), t, self.tz, &label).with_fors(self.fors_recent_first())
     }
 
-    /// The calendar project sessions go in by default.
-    fn projects_key(&self) -> String {
-        self.cfg.keys.iter().find(|k| k.name == "Projects").map_or_else(
-            || self.cfg.default_key().map(|k| k.name.clone()).unwrap_or_default(),
-            |k| k.name.clone(),
-        )
+    /// A task's edit form, as locus's Tasks page asks for it (`e` there; L7: one task list,
+    /// locus's, and one edit form, kairos's).
+    pub fn open_edit_task(&mut self, id: &str) {
+        let Some(t) = self
+            .tasks
+            .iter()
+            .chain(self.done_tasks.iter())
+            .find(|t| t.id == id)
+            .cloned()
+        else {
+            return self.set_message("that task isn't here yet: r refreshes", true);
+        };
+        self.message = None;
+        self.mode = Mode::Form(self.task_form(&t));
     }
 
     /// The add-task form with For filled from a registry id or stream (locus's `+`).

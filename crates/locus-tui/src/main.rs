@@ -92,7 +92,7 @@ fn main() -> Result<()> {
         let cal = live.fetch(chrono::Utc::now()).context("kairosd did not answer")?;
         locus_tui::calendar::apply(&mut fx, &cal, |k| live.area_of(k), chrono::Utc::now());
         locus_tui::calendar::apply_chores(&mut fx, &live.chores());
-        locus_tui::calendar::apply_tasks(&mut fx, &live.tasks(), |k| live.area_of(k), |k| live.key_name(k));
+        locus_tui::calendar::apply_tasks(&mut fx, &live.tasks());
         let bookings = locus_tui::maildates::scan(&fx.registry, chrono::Utc::now(), 45, false);
         locus_tui::calendar::apply_dates(&mut fx, &bookings, &cal, &locus_tui::maildates::dismissed());
         locus_tui::calendar::apply_pending(&mut fx, &live.pending());
@@ -309,7 +309,7 @@ fn run(mut app: App) -> Result<()> {
                 locus_tui::calendar::apply_dates(&mut app.fixtures, &bookings, &cal, &dismissed);
                 locus_tui::calendar::apply(&mut app.fixtures, &cal, |k| live.area_of(k), chrono::Utc::now());
                 locus_tui::calendar::apply_chores(&mut app.fixtures, &chores);
-                locus_tui::calendar::apply_tasks(&mut app.fixtures, &tasks, |k| live.area_of(k), |k| live.key_name(k));
+                locus_tui::calendar::apply_tasks(&mut app.fixtures, &tasks);
             }
             if app.stack.first() == Some(&ScreenId::Home)
                 && let Some(req) = inbox.poll()

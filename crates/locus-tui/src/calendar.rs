@@ -89,7 +89,7 @@ impl Live {
     }
 
     /// Every task kairos holds, open and done this week (spec E7).
-    pub fn tasks(&self) -> Vec<kairos_core::api::TaskOverview> {
+    pub fn tasks(&self) -> Vec<locus_contract::TaskItem> {
         match self.daemon.tasks_overview() {
             Ok(Ok(v)) => v,
             _ => Vec::new(),
@@ -108,8 +108,32 @@ impl Live {
         }
     }
 
+    /// Drop a task, from the Tasks page (asked first there).
+    pub fn drop_task(&self, id: &str) -> Result<(), String> {
+        let d = Daemon::from_config(&self.cfg)
+            .map_err(|e| e.to_string())?
+            .interactive(true);
+        match d.drop_task(id) {
+            Ok(Ok(_)) => Ok(()),
+            Ok(Err(e)) => Err(e.to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    /// Start a task now: a block from now, the rest planned around it.
+    pub fn start(&self, id: &str) -> Result<(), String> {
+        let d = Daemon::from_config(&self.cfg)
+            .map_err(|e| e.to_string())?
+            .interactive(true);
+        match d.start_task(id, None) {
+            Ok(Ok(_)) => Ok(()),
+            Ok(Err(e)) => Err(e.to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
     /// Open chores (spec K9).
-    pub fn chores(&self) -> Vec<kairos_core::api::ChoreItem> {
+    pub fn chores(&self) -> Vec<locus_contract::Chore> {
         match self.daemon.chores() {
             Ok(Ok(v)) => v,
             _ => Vec::new(),
@@ -157,49 +181,9 @@ fn kind_of(title: &str) -> AppEventKind {
 }
 
 /// kairos's tasks onto the Tasks page (spec E7), and each course's next due onto Studies, so
-/// what is due shows on Home where it belongs. `area_of` maps a kairos key to its area.
-pub fn apply_tasks(
-    fx: &mut Fixtures,
-    tasks: &[kairos_core::api::TaskOverview],
-    area_of: impl Fn(&str) -> Option<String>,
-    key_name: impl Fn(&str) -> String,
-) {
-    let off = fx.now().offset().to_owned();
-    let at = |t: DateTime<Utc>| t.with_timezone(&off);
-    let items: Vec<locus_contract::TaskItem> = tasks
-        .iter()
-        .map(|o| {
-            let t = &o.task;
-            let entry = t.locus.as_deref().and_then(|l| fx.registry.get(l));
-            let (due, due_is_date) = match t.due {
-                Some(kairos_core::task::Due::At(d)) => (Some(at(d)), false),
-                Some(kairos_core::task::Due::Date(d)) => (
-                    d.and_hms_opt(23, 59, 0)
-                        .and_then(|n| n.and_local_timezone(off).single()),
-                    true,
-                ),
-                None => (None, false),
-            };
-            locus_contract::TaskItem {
-                id: t.id.clone(),
-                title: t.title.clone(),
-                for_id: t.locus.clone(),
-                for_label: entry.map_or_else(|| key_name(&t.key), |p| p.name.clone()),
-                area: entry
-                    .map(|p| p.area.clone())
-                    .or_else(|| area_of(&t.key))
-                    .unwrap_or_else(|| "Personal".into()),
-                due,
-                due_is_date,
-                before: o.before_title.clone(),
-                left_min: t.remaining_min,
-                estimate_min: t.estimate_min,
-                next_block: o.next_block.map(at),
-                put_off: o.put_off,
-                done: (t.status == kairos_core::task::TaskStatus::Done).then(|| at(t.updated_at)),
-            }
-        })
-        .collect();
+/// what is due shows on Home where it belongs. kairosd sends them as the page's own type (L6).
+pub fn apply_tasks(fx: &mut Fixtures, items: &[locus_contract::TaskItem]) {
+    let items = items.to_vec();
     // A course's open tasks with a due date are what Studies shows as due.
     let courses: Vec<String> = fx
         .registry
@@ -216,11 +200,6 @@ pub fn apply_tasks(
             .filter_map(|t| {
                 Some(locus_contract::Due {
                     title: t.title.clone(),
-                    kind: if t.title.to_lowercase().contains("sheet") {
-                        locus_contract::DueKind::Sheet
-                    } else {
-                        locus_contract::DueKind::Coursework
-                    },
                     at: t.due?.date_naive(),
                 })
             })
@@ -356,19 +335,9 @@ pub fn apply_pending(fx: &mut Fixtures, pending: &[kairos_core::changeset::Chang
 
 /// Chores onto Home (spec K9): the one that fits the gap you are in now (the most put off), and
 /// those overdue or put off for "waiting for you".
-pub fn apply_chores(fx: &mut Fixtures, chores: &[kairos_core::api::ChoreItem]) {
-    let chore = |c: &kairos_core::api::ChoreItem| locus_contract::Chore {
-        title: c.title.clone(),
-        minutes: c.minutes,
-        put_off: c.put_off,
-        overdue: c.overdue,
-    };
-    fx.home.chore_now = chores.iter().find(|c| c.fits_now).map(chore);
-    fx.home.chores_waiting = chores
-        .iter()
-        .filter(|c| c.overdue || c.put_off > 0)
-        .map(chore)
-        .collect();
+pub fn apply_chores(fx: &mut Fixtures, chores: &[locus_contract::Chore]) {
+    fx.home.chore_now = chores.iter().find(|c| c.fits_now).cloned();
+    fx.home.chores_waiting = chores.iter().filter(|c| c.overdue || c.put_off > 0).cloned().collect();
 }
 
 /// Lay the calendar over the fixtures. `area_of` maps a kairos key to its locus area.
@@ -589,7 +558,7 @@ mod chore_tests {
         // the top line showed without it is still there, uncut; a put-off chore waits for you.
         let base = Fixtures::load(&resolve("default")).unwrap();
         let mut with = base.clone();
-        let laundry = kairos_core::api::ChoreItem {
+        let laundry = locus_contract::Chore {
             id: "t-1".into(),
             title: "laundry".into(),
             minutes: 20,
@@ -627,23 +596,29 @@ mod task_tests {
     use chrono::{DateTime, Utc};
     use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+    /// A task as kairosd sends it (its labels worked out there, from the registry).
     fn task(
         id: &str,
         title: &str,
-        key: &str,
+        for_: (&str, &str),
         locus: Option<&str>,
         due: Option<&str>,
-    ) -> kairos_core::api::TaskOverview {
-        let now: DateTime<Utc> = "2026-10-24T09:00:00Z".parse().unwrap();
-        let mut t = kairos_core::task::Task::new(title, key, 300, kairos_core::model::Author::Alec, now);
-        t.id = id.into();
-        t.locus = locus.map(String::from);
-        t.due = due.map(|d| kairos_core::task::Due::At(d.parse().unwrap()));
-        kairos_core::api::TaskOverview {
-            task: t,
-            next_block: Some("2026-10-25T13:00:00Z".parse().unwrap()),
+    ) -> locus_contract::TaskItem {
+        let at = |s: &str| s.parse::<DateTime<Utc>>().unwrap().fixed_offset();
+        locus_contract::TaskItem {
+            id: id.into(),
+            title: title.into(),
+            for_id: locus.map(String::from),
+            for_label: for_.0.into(),
+            area: for_.1.into(),
+            due: due.map(at),
+            due_is_date: false,
+            before: None,
+            left_min: 300,
+            estimate_min: 300,
+            next_block: Some(at("2026-10-25T13:00:00Z")),
             put_off: 0,
-            before_title: None,
+            done: None,
         }
     }
 
@@ -656,25 +631,20 @@ mod task_tests {
             task(
                 "t-1",
                 "B15 sheet 4",
-                "Studies",
+                ("B15 Control Systems", "Studies"),
                 Some("b15"),
                 Some("2026-10-30T16:00:00Z"),
             ),
-            task("t-2", "laundry", "Errands", None, None),
+            task("t-2", "laundry", ("Errands", "Personal"), None, None),
             task(
                 "t-3",
                 "Millennium prep",
-                "Careers",
+                ("Millennium QD Internship 2027", "Careers"),
                 Some("millennium"),
                 Some("2026-10-27T09:00:00Z"),
             ),
         ];
-        super::apply_tasks(
-            &mut fx,
-            &tasks,
-            |k| (k == "Errands").then(|| "Personal".into()),
-            |k: &str| k.to_string(),
-        );
+        super::apply_tasks(&mut fx, &tasks);
         assert_eq!(fx.tasks.tasks.len(), 3);
         let b15 = fx.tasks.tasks.iter().find(|t| t.id == "t-1").unwrap();
         assert_eq!(

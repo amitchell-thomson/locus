@@ -2274,11 +2274,11 @@ impl Engine {
 
     /// Open chores (spec K9), for locus's Home: how long each needs, how often it was put off,
     /// whether it is overdue, and whether it fits the gap you are in now. Most put off first.
-    pub fn chores(&self) -> Result<Vec<api::ChoreItem>> {
+    pub fn chores(&self) -> Result<Vec<locus_contract::Chore>> {
         let now = self.now();
         let tz = self.tz();
         let checkins = self.db.checkins(false)?;
-        let mut v: Vec<api::ChoreItem> = self
+        let mut v: Vec<locus_contract::Chore> = self
             .db
             .tasks(Some(TaskStatus::Open))?
             .into_iter()
@@ -2296,7 +2296,7 @@ impl Engine {
                     .ok()
                     .and_then(|s| s.first().cloned())
                     .is_some_and(|s| s.start <= now + Duration::minutes(5));
-                api::ChoreItem {
+                locus_contract::Chore {
                     put_off: checkins
                         .iter()
                         .filter(|c| c.task_id == t.id && c.outcome == Some(Outcome::Missed))
@@ -2305,7 +2305,7 @@ impl Engine {
                     id: t.id,
                     title: t.title,
                     minutes,
-                    due,
+                    due: due.map(|d| d.with_timezone(&tz).fixed_offset()),
                     fits_now,
                 }
             })
@@ -2314,10 +2314,11 @@ impl Engine {
         Ok(v)
     }
 
-    /// Every open task and those done since Monday, for locus's Tasks page (spec E7): when each
-    /// is next planned, how often it was put off (blocks checked in as missed), and the event it
-    /// is planned before.
-    pub fn tasks_overview(&self) -> Result<Vec<api::TaskOverview>> {
+    /// Every open task and those done since Monday, for locus's Tasks page (spec E7), as the
+    /// page's own contract type (L6): what it is for and its area (from the registry, else its
+    /// calendar), when it is due and next planned, how often it was put off (blocks checked in
+    /// as missed), and the event it is planned before.
+    pub fn tasks_overview(&self) -> Result<Vec<locus_contract::TaskItem>> {
         let now = self.now();
         let tz = self.tz();
         let today = now.with_timezone(&tz).date_naive();
@@ -2332,24 +2333,61 @@ impl Engine {
                 .into_iter()
                 .filter(|t| t.updated_at >= week),
         );
+        let at = |t: DateTime<Utc>| t.with_timezone(&tz).fixed_offset();
         Ok(tasks
             .into_iter()
-            .map(|t| api::TaskOverview {
-                next_block: events
-                    .iter()
-                    .filter(|i| i.meta.kind == EventKind::TaskBlock && i.meta.task_id.as_deref() == Some(t.id.as_str()))
-                    .map(|i| i.span.bounds(tz).0)
-                    .filter(|s| *s >= now)
-                    .min(),
-                put_off: checkins
-                    .iter()
-                    .filter(|c| c.task_id == t.id && c.outcome == Some(Outcome::Missed))
-                    .count() as u32,
-                before_title: t
-                    .before
-                    .as_ref()
-                    .and_then(|u| events.iter().find(|i| &i.uid == u).map(|i| i.title.clone())),
-                task: t,
+            .map(|t| {
+                let entry = t
+                    .locus
+                    .as_deref()
+                    .and_then(|l| self.registry.as_ref().and_then(|r| r.get(l)));
+                let key = self.cfg.key(&t.key);
+                let (due, due_is_date) = match t.due {
+                    Some(Due::At(d)) => (Some(at(d)), false),
+                    Some(Due::Date(d)) => (
+                        Some(at(kairos_core::time::resolve_local(
+                            d.and_time(NaiveTime::from_hms_opt(23, 59, 0).unwrap_or(NaiveTime::MIN)),
+                            tz,
+                        ))),
+                        true,
+                    ),
+                    None => (None, false),
+                };
+                locus_contract::TaskItem {
+                    next_block: events
+                        .iter()
+                        .filter(|i| {
+                            i.meta.kind == EventKind::TaskBlock && i.meta.task_id.as_deref() == Some(t.id.as_str())
+                        })
+                        .map(|i| i.span.bounds(tz).0)
+                        .filter(|s| *s >= now)
+                        .min()
+                        .map(at),
+                    put_off: checkins
+                        .iter()
+                        .filter(|c| c.task_id == t.id && c.outcome == Some(Outcome::Missed))
+                        .count() as u32,
+                    before: t
+                        .before
+                        .as_ref()
+                        .and_then(|u| events.iter().find(|i| &i.uid == u).map(|i| i.title.clone())),
+                    for_label: entry
+                        .map(|p| p.name.clone())
+                        .or_else(|| key.map(|k| k.name.clone()))
+                        .unwrap_or_else(|| t.key.clone()),
+                    area: entry
+                        .map(|p| p.area.clone())
+                        .or_else(|| key.map(|k| k.area.clone().unwrap_or_else(|| k.name.clone())))
+                        .unwrap_or_else(|| "Personal".into()),
+                    due,
+                    due_is_date,
+                    left_min: t.remaining_min,
+                    estimate_min: t.estimate_min,
+                    done: (t.status == TaskStatus::Done).then(|| at(t.updated_at)),
+                    for_id: t.locus.clone(),
+                    title: t.title,
+                    id: t.id,
+                }
             })
             .collect())
     }

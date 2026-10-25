@@ -30,17 +30,28 @@ pub struct Home {
     pub chores_waiting: Vec<Chore>,
 }
 
-/// A chore from kairos (a task of type chore): life admin for a gap.
+/// A chore from kairos (a task of type chore): life admin for a gap. kairosd serves it as is
+/// (`GET /api/chores`, L6: one type, not a kairos copy converted).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Chore {
+    /// kairos's task id.
+    #[serde(default)]
+    pub id: String,
     pub title: String,
+    /// Minutes it still needs.
     pub minutes: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub due: Option<Time>,
     /// How many times its block was missed.
     #[serde(default)]
     pub put_off: u32,
+    /// Past its due date and still open.
     #[serde(default)]
     pub overdue: bool,
+    /// You are in a gap now that it fits (nothing busy from now until it would be done).
+    #[serde(default)]
+    pub fits_now: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

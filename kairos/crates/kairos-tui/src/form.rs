@@ -21,10 +21,6 @@ pub enum FormKind {
     TookLonger {
         t: crate::app::CheckinTarget,
     },
-    AddProject,
-    EditProject {
-        id: String,
-    },
     /// Link an event or task to a locus item afterwards (`L`).
     Link {
         source: String,
@@ -46,8 +42,6 @@ pub enum FieldKind {
     Repeat,
     /// Optional time (task due).
     OptWhen,
-    /// Picks a project status (←/→ or first letter).
-    Status,
     /// Picks a project ("none" or one of `Form::projects`).
     Project,
     /// What it is for (ADR-009): typed, with type-ahead over `Form::fors`; ←/→ through the
@@ -107,8 +101,6 @@ pub const WHEN_HINT: &str = "tue 19:00 · 23 oct 2pm · tomorrow 9am · a date a
 const DUR_HINT: &str = "60m · 1h30 · 2h (empty = 1h)";
 /// The Project picker's "no project".
 pub const NO_PROJECT: &str = "none";
-const CAL_HINT: &str = "where its tasks' work goes, e.g. Studies for the 3rd-year project — ←/→";
-const STATUS_HINT: &str = "active (now) · next (soon) · paused · done — ←/→";
 const FOR_HINT: &str = "type to find: b15 · mil · errands — ←/→ through the matches";
 const TITLE_HINT: &str = "or all at once: Squash @ tue 19:00 #Sport for 90m";
 
@@ -346,41 +338,7 @@ impl Form {
             FormKind::AddTask => "new task",
             FormKind::EditTask { .. } => "edit task",
             FormKind::TookLonger { .. } => "took longer",
-            FormKind::AddProject => "new project",
-            FormKind::EditProject { .. } => "edit project",
         }
-    }
-
-    /// `keys`: calendars for its tasks' work; `default_key` the projects one.
-    pub fn add_project(keys: Vec<String>, default_key: &str) -> Form {
-        Form::new(
-            FormKind::AddProject,
-            vec![
-                field("Name", "", FieldKind::Text, "what it's called: kairos · email TUI"),
-                field("Status", "active", FieldKind::Status, STATUS_HINT),
-                field("Calendar", default_key, FieldKind::Key, CAL_HINT),
-                field("Note", "", FieldKind::Text, "optional: what it is, or the next step"),
-            ],
-            keys,
-        )
-    }
-
-    pub fn edit_project(keys: Vec<String>, default_key: &str, p: &kairos_core::project::Project) -> Form {
-        Form::new(
-            FormKind::EditProject { id: p.id.clone() },
-            vec![
-                field("Name", p.name.clone(), FieldKind::Text, ""),
-                field("Status", p.status.as_str(), FieldKind::Status, STATUS_HINT),
-                field(
-                    "Calendar",
-                    p.key.clone().unwrap_or_else(|| default_key.to_string()),
-                    FieldKind::Key,
-                    CAL_HINT,
-                ),
-                field("Note", p.note.clone(), FieldKind::Text, "empty = none"),
-            ],
-            keys,
-        )
     }
 
     /// "Took longer": time spent, how much more, plan it from when.
@@ -467,10 +425,6 @@ impl Form {
             FieldKind::Repeat => REPEATS.iter().map(|s| s.to_string()).collect(),
             FieldKind::Project => std::iter::once(NO_PROJECT.to_string())
                 .chain(self.projects.iter().cloned())
-                .collect(),
-            FieldKind::Status => kairos_core::project::ProjectStatus::ALL
-                .iter()
-                .map(|s| s.as_str().to_string())
                 .collect(),
             _ => self.keys.clone(),
         }
@@ -570,7 +524,7 @@ impl FieldKind {
     pub fn is_picker(self) -> bool {
         matches!(
             self,
-            FieldKind::Key | FieldKind::Type | FieldKind::Repeat | FieldKind::Status | FieldKind::Project
+            FieldKind::Key | FieldKind::Type | FieldKind::Repeat | FieldKind::Project
         )
     }
 }

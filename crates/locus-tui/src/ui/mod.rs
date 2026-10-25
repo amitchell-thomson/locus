@@ -59,6 +59,10 @@ pub fn draw(f: &mut Frame, app: &App) {
 
 /// The screen's own keys, tried before the global ones. True when the key was used.
 pub fn screen_key(app: &mut App, k: KeyEvent) -> bool {
+    // A key that asks first is armed only on the Tasks page; anywhere else it is forgotten.
+    if app.screen() != ScreenId::Tasks {
+        app.armed = None;
+    }
     match app.screen() {
         ScreenId::Home => home::key(app, k),
         ScreenId::Project => project::key(app, k),

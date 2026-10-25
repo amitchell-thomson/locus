@@ -212,35 +212,11 @@ fn pending_move() -> Changeset {
 }
 
 #[test]
-fn approvals_pane_and_ghost_blocks() {
+fn a_pending_change_shows_as_a_ghost_block() {
     let (mut a, _t) = app("2026-10-19T08:00:00+01:00");
     a.pending = vec![pending_move()];
     let week = render_to_string(&a, 140, 34);
     assert!(week.contains("◌"), "ghost block for the pending change:\n{week}");
-    a.view = kairos_tui::app::View::Approvals;
-    let s = render_to_string(&a, 120, 24);
-    assert!(s.contains("+ DTSTART;TZID=Europe/London:20261020T183000"), "{s}");
-    insta::assert_snapshot!(s);
-}
-
-#[test]
-fn tasks_view() {
-    let (mut a, _t) = app("2026-10-19T08:00:00+01:00");
-    let mut t = Task::new(
-        "B4 problem sheet",
-        "Personal",
-        240,
-        Author::Claude,
-        now("2026-10-12T08:00:00Z"),
-    );
-    t.id = "t-1".into();
-    t.remaining_min = 90;
-    t.due = Some(Due::At(now("2026-10-23T16:00:00Z")));
-    let mut t2 = Task::new("Careers essay", "OQTS", 120, Author::Alec, now("2026-10-12T08:00:00Z"));
-    t2.id = "t-2".into();
-    a.tasks = vec![t, t2];
-    a.view = kairos_tui::app::View::Tasks;
-    insta::assert_snapshot!(render_to_string(&a, 110, 12));
 }
 
 #[test]
@@ -466,89 +442,6 @@ fn selected_deadline_highlights_its_work_blocks() {
     assert_eq!(block_bg(&a), blue, "the deadline's work block lights up");
 }
 
-fn project(
-    id: &str,
-    name: &str,
-    status: kairos_core::project::ProjectStatus,
-    week: u32,
-) -> kairos_core::api::ProjectItem {
-    let t = now("2026-10-01T09:00:00+01:00");
-    kairos_core::api::ProjectItem {
-        project: kairos_core::project::Project {
-            id: id.into(),
-            name: name.into(),
-            status,
-            note: String::new(),
-            key: None,
-            registry: None,
-            created_at: t,
-            updated_at: t,
-        },
-        week_min: week,
-        month_min: week,
-        unconfirmed_min: 0,
-        last_worked: (week > 0).then(|| now("2026-10-20T14:00:00+01:00")),
-        next_block: None,
-    }
-}
-
-#[test]
-fn projects_view_lists_projects_by_status_with_time_spent() {
-    use kairos_core::project::ProjectStatus;
-    use kairos_tui::app::{Mode, View};
-    let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
-    a.projects = vec![
-        project("p-k", "kairos", ProjectStatus::Active, 150),
-        project("p-m", "email TUI", ProjectStatus::Active, 0),
-        project("p-l", "Locus", ProjectStatus::Next, 0),
-        project("p-o", "old site", ProjectStatus::Done, 0),
-    ];
-    a.projects[0].project.note = "next: phase 9 gateway".into();
-    a.projects[1].unconfirmed_min = 60;
-    let mut t = kairos_core::task::Task::new(
-        "3YP interim report",
-        "Engineering",
-        120,
-        kairos_core::model::Author::Alec,
-        now("2026-10-01T09:00:00+01:00"),
-    );
-    t.project_id = Some("p-k".into());
-    a.tasks.push(t);
-    // R: the Projects view, grouped by status, with time spent.
-    a.key(Key::Char('P'));
-    assert_eq!(a.view, View::Projects);
-    let s = render_to_string(&a, 130, 24);
-    for want in [
-        "Active — working on now · 2",
-        "Next — should be working on · 1",
-        "Done · 1",
-        "kairos",
-        "next: phase 9 gateway",
-        "2h30 this week",
-        "last Tue 20 Oct",
-        "not worked on yet",
-        "1h to check in",
-        "3YP interim report",
-    ] {
-        assert!(s.contains(want), "{want:?} missing:\n{s}");
-    }
-    assert_eq!(a.key_hints(), "a add · e edit · s status · d delete");
-    // a: the new-project form; e: edit the selected one.
-    a.key(Key::Char('a'));
-    let Mode::Form(f) = &a.mode else { panic!("no form") };
-    assert_eq!(f.title(), "new project");
-    assert_eq!(f.get("Status"), "active");
-    assert_eq!(a.form_preview(f), Err("Name: what the project is called".into()));
-    a.key(Key::Esc);
-    a.key(Key::Char('e'));
-    let Mode::Form(f) = &a.mode else { panic!("no form") };
-    assert_eq!((f.title(), f.get("Name")), ("edit project", "kairos"));
-    a.key(Key::Esc);
-    // P again from Projects is a no-op; Esc goes back to the week.
-    a.key(Key::Esc);
-    assert_eq!(a.view, View::Week);
-}
-
 #[test]
 fn an_old_project_sessions_diamond_is_not_drawn() {
     let (a, _t) = app("2026-10-21T08:00:00+01:00");
@@ -583,7 +476,7 @@ fn squeezed_work_blocks_carry_a_warning() {
 }
 
 #[test]
-fn tasks_view_lists_completed_tasks_and_edits_a_task() {
+fn a_task_edited_from_locus_opens_kairos_s_form() {
     use kairos_tui::app::Mode;
     let (mut a, _t) = app("2026-10-19T08:00:00+01:00");
     let mut t = Task::new(
@@ -608,15 +501,8 @@ fn tasks_view_lists_completed_tasks_and_edits_a_task() {
     done.updated_at = now("2026-10-12T21:46:00Z");
     a.tasks = vec![t];
     a.done_tasks = vec![done];
-    a.view = kairos_tui::app::View::Tasks;
-    let s = render_to_string(&a, 110, 14);
-    assert!(s.contains("Completed · 1"), "{s}");
-    assert!(
-        s.contains("󰄵 Populate calendar") && s.contains("finished Mon 12 Oct · 30m of 30m planned"),
-        "{s}"
-    );
-    // e edits the task; clearing Due means no deadline.
-    a.key(Key::Char('e'));
+    // locus's Tasks page asks for its edit form ("edit-task t-1"); clearing Due means no due date.
+    a.open_edit_task("t-1");
     let Mode::Form(f) = &a.mode else { panic!("no form") };
     assert_eq!(f.get("Due"), "2026-10-12 23:59");
     assert_eq!(f.get("Left"), "1h");
@@ -722,33 +608,6 @@ fn keys_do_what_the_hints_say_for_each_kind_of_item() {
     a.view = View::Week;
     a.key(Key::Char('g'));
     assert_eq!(a.view, View::Agenda);
-}
-
-#[test]
-fn tasks_view_keys_d_drops_capital_d_finishes_o_reopens() {
-    use kairos_tui::app::{Confirm, Mode, PromptKind, View};
-    let (mut a, _t) = app("2026-10-19T08:00:00+01:00");
-    let mut t = Task::new("Open one", "Personal", 60, Author::Alec, now("2026-10-12T08:00:00Z"));
-    t.id = "t-1".into();
-    let mut done = Task::new("Done one", "Personal", 30, Author::Alec, now("2026-10-12T08:00:00Z"));
-    done.id = "t-0".into();
-    done.status = kairos_core::task::TaskStatus::Done;
-    a.tasks = vec![t];
-    a.done_tasks = vec![done];
-    a.view = View::Tasks;
-    a.sel = 0;
-    assert_eq!(
-        a.key_hints(),
-        "e edit · D done · W log work · + time · n start · d drop"
-    );
-    a.key(Key::Char('d'));
-    assert!(matches!(&a.mode, Mode::Confirm(Confirm::DropTask(id)) if id == "t-1"));
-    a.key(Key::Char('n'));
-    a.key(Key::Down); // onto the finished one
-    assert_eq!(a.sel, 1);
-    assert_eq!(a.key_hints(), "o reopen");
-    a.key(Key::Char('o'));
-    assert!(matches!(&a.mode, Mode::Prompt(PromptKind::Reopen { id, .. }, _) if id == "t-0"));
 }
 
 #[test]

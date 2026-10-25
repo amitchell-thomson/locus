@@ -301,3 +301,33 @@ fn decisions_page_names_decisions_by_title_and_follows_links() {
 fn press(a: &mut App, code: KeyCode) {
     a.on_key(KeyEvent::new(code, KeyModifiers::NONE));
 }
+
+/// The Tasks page is the one task list (L7): e asks kairos for its edit form, x asks before it
+/// drops, and anything else in between forgets the x.
+#[test]
+fn tasks_page_edits_in_kairos_and_asks_before_dropping() {
+    let key = |a: &mut App, c: char| a.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+    let mut a = app("default", ScreenId::Tasks);
+    let first = locus_tui::ui::tasks::open(&a)[0].clone();
+    let n = locus_tui::ui::tasks::open(&a).len();
+    key(&mut a, 'e');
+    assert_eq!(
+        a.note.as_deref(),
+        Some(format!("would ask kairos: edit-task {}", first.id).as_str())
+    );
+    key(&mut a, 'x');
+    assert!(
+        a.note.as_deref().unwrap_or("").contains("x again drops it"),
+        "{:?}",
+        a.note
+    );
+    key(&mut a, 'e');
+    key(&mut a, 'x');
+    assert_eq!(
+        locus_tui::ui::tasks::open(&a).len(),
+        n,
+        "e in between: the first x is forgotten"
+    );
+    key(&mut a, 'x');
+    assert_eq!(locus_tui::ui::tasks::open(&a).len(), n - 1, "x twice drops it");
+}

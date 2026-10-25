@@ -1,6 +1,6 @@
 # kairos as a locus app: one look, one set of keys, one contract
 
-**State:** proposed, waiting for your approval · **Written:** 2026-10-25 · **Runs in:** `locus slice 1`
+**State:** approved 2026-10-25, in progress · **Written:** 2026-10-25 · **Runs in:** `locus slice 1`
 **From:** your words, 25 Oct 2026: "kairos should cleanly be integrated with locus, and be treated
 like any other locus app, with the same structure, practice and formatting / same contracts /
 shared data / ui look etc... Everything should be consistent. Just because kairos was made first
@@ -21,6 +21,14 @@ as a description of kairos today.
 ---
 
 ## Decisions only you can make
+
+**Answered 25 Oct 2026:** "I agree with all recommendations, for look my preference is to make the
+border grey like the rest, but keep the week heading in the middle blue so it stands out." The
+powerline bar: no legend; the footer is locus's hints row and says only what is hidden (the
+digits are in `?` keys). The event detail: "I feel like the engineering label is outdated, and
+that line could be better, also the duplicates has never fired, so having that line in the view
+is redundant too. I would rather see the taxonomy clearly laid out, with a clear idea of what it
+is linked to. The by alec vs by agent is really good" (added to L2).
 
 | # | Question | Options | Recommendation |
 |---|---|---|---|
@@ -53,6 +61,12 @@ as a description of kairos today.
   `hints()`; the powerline bar becomes locus's footer (the area legend stays as a quiet row);
   empty states in locus's dim lowercase; notes in peach; dates in locus's format (`fri 17:00`,
   `12 oct`); the keys overlay grouped as locus's is ("this screen · everywhere · symbols").
+- The bar at the bottom: the view pill and the legend go; the footer is `⏎ open · ⇥ view · [ ]
+  week · ? keys`, with what is hidden (`hidden: careers · 3`) and what waits (`2 to check in · C`)
+  as notes. The centred week title stays blue; the border is grey like locus's.
+- The event detail lays out the taxonomy: area (› stream), what it is for (the registry item and
+  its kind; ⏎ opens it), its task (time left, due), and who made it (you, Claude, the scheduler).
+  The duplicates line shows only when there are copies; the old calendar name goes.
 - **Check:** dumps of kairos's week and day at 95 × 38 and 155 × 43, beside Home and Tasks at the
   same sizes, for you to look at.
 

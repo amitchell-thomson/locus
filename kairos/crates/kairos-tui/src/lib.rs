@@ -127,6 +127,9 @@ pub fn run(cfg: Config, path: PathBuf) -> Result<(), String> {
                 if let Some(rest) = req.strip_prefix("add-task") {
                     let id = rest.trim();
                     app.open_add_task_for((!id.is_empty()).then_some(id));
+                } else if let Some(id) = req.strip_prefix("edit-task ") {
+                    app.refresh_remote();
+                    app.open_edit_task(id.trim());
                 } else if let Some((day, uid)) = locus_contract::link::parse_kairos_request(&req) {
                     app.open_day(day, uid.as_deref());
                 }

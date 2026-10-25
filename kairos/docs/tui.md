@@ -9,7 +9,9 @@ Arrows and Tab, as in the locus window (spec K6, 2026-10-24; `hjkl` are gone).
 | Key | |
 |---|---|
 | `Tab` / `Shift-Tab` | week → day → month → agenda (and back) |
-| `←` `→` / `Shift-←` `Shift-→` | day / week back, forward |
+| `←` `→` / `[` `]` | day / week back, forward |
+| `Shift-↑` `Shift-↓` | nudge the selected item 30 minutes earlier, later (a ⚑ moves its task's due time) |
+| `Shift-←` `Shift-→` | nudge the selected item a day (all-day items move only by days) |
 | `↑` `↓` | select the previous / next item; past the first or last, scroll the day an hour |
 | `t` | today |
 | `Enter` | details; expands duplicates ⧉ |
@@ -33,8 +35,9 @@ Your own edits here apply straight away (no approval); `u` undoes the last one, 
 
 | Key | |
 |---|---|
-| `a` | add: `e` event · `t` task (a form; `Tab` between fields) |
-| `e` · `K` · `m` | edit · change calendar · move. On a ⚑ these act on the task's due date |
+| `a` | add: `e` event · `t` task (a form; `Tab` between fields). **For** says what it is for: type a few letters (`b15`, `mil`, `err`) and the first match is taken, `←/→` through the others; its calendar follows from it (ADR-009). A task needs only how long it takes: an hour or less is planned in one go, longer in 2–3 h blocks, a course's sheet 5 h and an errand 20 min if you leave it empty |
+| `e` · `K` · `m` | edit · what it's for · move. On a ⚑ these act on the task's due date |
+| `L` | say what something is for afterwards (the same type-ahead); Enter then opens it in locus |
 | `d` | remove: delete an event · skip a work block (kairos plans that time elsewhere) · on a task's ⚑, remove the task with its due date and all its planned time (past, checked-in blocks stay) |
 | `s` | share an event to Family (asks first) |
 | `B` | going or not. Your own events: not going greys it and frees the time for the scheduler. Family events: whether it blocks your time |

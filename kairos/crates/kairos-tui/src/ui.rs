@@ -2019,7 +2019,8 @@ fn help(f: &mut Frame, app: &App, area: Rect) {
         (false, false) => ("p f", "show/hide: all yours, Family"),
     };
     let rows = [
-        ("← → ⇧← ⇧→", "day · week back, forward"),
+        ("← → · [ ]", "day · week back, forward"),
+        ("⇧↑↓ ⇧←→", "nudge the selected item 30 min · a day"),
         ("t", "today"),
         ("↑ ↓", "select; past the first or last, scroll the day's hours"),
         ("Tab ⇧Tab", "week → day → month → agenda (and back)"),
@@ -2029,7 +2030,10 @@ fn help(f: &mut Frame, app: &App, area: Rect) {
         ("4 · 5–8", "show/hide all of Personal · Family, Sport, Social, Errands"),
         toggles,
         ("a", "add: e event · t task (a form; Tab between fields)"),
-        ("e K m", "edit (K: its calendar) · move — on a ⚑: the task's due date"),
+        (
+            "e K m L",
+            "edit (K: what it's for) · move · L: say what it's for (links to locus)",
+        ),
         ("d", "remove: event · skip work block · ⚑ with all its work · drop"),
         ("s", "share an event to Family"),
         ("B", "going or not: yours (greyed, time freed) · Family (blocks)"),

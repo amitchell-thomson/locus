@@ -176,11 +176,11 @@ fn navigation() {
     let (mut a, _t) = app("2026-10-15T08:00:00+01:00");
     a.key(Key::Right);
     assert_eq!(a.cursor.to_string(), "2026-10-16");
-    a.key(Key::ShiftRight);
+    a.key(Key::Char(']'));
     assert_eq!(a.cursor.to_string(), "2026-10-23");
     a.key(Key::Char('t'));
     assert_eq!(a.cursor.to_string(), "2026-10-15");
-    a.key(Key::ShiftLeft);
+    a.key(Key::Char('['));
     assert_eq!(a.cursor.to_string(), "2026-10-08");
 }
 
@@ -1116,4 +1116,30 @@ fn adding_asks_what_it_is_for_and_l_links_afterwards() {
         panic!("L opens the link form")
     };
     assert_eq!(f.title(), "what is it for");
+}
+
+#[test]
+fn shift_arrows_nudge_the_selected_item() {
+    // Spec E3: Shift-↑/↓ 30 minutes, Shift-←/→ a day; weeks with [ ].
+    let (mut a, _t) = app("2026-10-19T08:00:00+01:00");
+    a.key(Key::Tab); // day view, Mon 19
+    let sel = a
+        .day_clusters(a.cursor)
+        .into_iter()
+        .position(|c| c.primary.title.contains("Squash"))
+        .unwrap();
+    a.sel = sel;
+    let (i, start, day) = a.nudge_target(30).unwrap().unwrap();
+    assert_eq!(start - i.span.bounds(a.tz).0, chrono::Duration::minutes(30));
+    assert_eq!(day, a.cursor);
+    let (_, start, day) = a.nudge_target(24 * 60).unwrap().unwrap();
+    assert_eq!(day, a.cursor.succ_opt().unwrap());
+    assert_eq!(start.with_timezone(&a.tz).format("%H:%M").to_string(), "19:00");
+    // Without kairosd the key says so and changes nothing.
+    a.key(Key::ShiftDown);
+    assert!(a.message.as_ref().is_some_and(|m| m.0.contains("kairosd")));
+    // [ ] move a week.
+    let c = a.cursor;
+    a.key(Key::Char(']'));
+    assert_eq!(a.cursor, c + chrono::Duration::days(7));
 }

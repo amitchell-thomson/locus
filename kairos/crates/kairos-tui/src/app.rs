@@ -749,11 +749,16 @@ impl App {
                 self.search = None;
             }
             Key::Char('?') => self.mode = Mode::Help,
-            // Arrows and Tab move, as everywhere in locus (spec K6): ←/→ days, Shift-←/→ weeks.
+            // Arrows and Tab move, as everywhere in locus (spec K6): ←/→ days, [ ] weeks.
             Key::Left => self.shift(-1),
             Key::Right => self.shift(1),
-            Key::ShiftLeft => self.shift(-7),
-            Key::ShiftRight => self.shift(7),
+            Key::Char('[') => self.shift(-7),
+            Key::Char(']') => self.shift(7),
+            // Nudging the selected item (spec E3): Shift-↑/↓ 30 minutes, Shift-←/→ a day.
+            Key::ShiftUp => self.nudge(-30),
+            Key::ShiftDown => self.nudge(30),
+            Key::ShiftLeft => self.nudge(-24 * 60),
+            Key::ShiftRight => self.nudge(24 * 60),
             Key::Char('t') => {
                 self.cursor = self.today();
                 self.sel = 0;
@@ -1581,6 +1586,100 @@ impl App {
                     }
                 }));
             }
+        }
+    }
+
+    /// Move the selected item by `minutes` (spec E3): an event or block to a new start, a task's
+    /// ⚑ to a new due time; all-day ones by whole days. One changeset each, with an undo; a block
+    /// you nudge stays where you put it. The selection follows it, onto the next day if need be.
+    pub fn nudge(&mut self, minutes: i64) {
+        let (i, new_start, day) = match self.nudge_target(minutes) {
+            Ok(Some(t)) => t,
+            Ok(None) => return,
+            Err(e) => return self.set_message(e, false),
+        };
+        if self.daemon.is_none() {
+            return self.set_message("kairosd not configured — writes unavailable", true);
+        }
+        let tz = self.tz;
+        // A task's flag: its due date moves.
+        if i.meta.kind == EventKind::Deadline
+            && let Some(tid) = i.meta.task_id.clone()
+        {
+            let due = if i.span.is_all_day() {
+                day.format("%Y-%m-%d").to_string()
+            } else {
+                new_start.to_rfc3339()
+            };
+            let req = api::UpdateTaskReq {
+                due: Some(due),
+                ..Default::default()
+            };
+            if let Some(t) = self.tasks.iter_mut().find(|t| t.id == tid) {
+                t.due = Some(if i.span.is_all_day() {
+                    kairos_core::task::Due::Date(day)
+                } else {
+                    kairos_core::task::Due::At(new_start)
+                });
+            }
+            self.follow(day, &i.uid);
+            self.deferred
+                .push(Box::new(move |app: &mut App| app.update_task_and_report(&tid, &req)));
+            return;
+        }
+        let start = if i.span.is_all_day() {
+            day.format("%Y-%m-%d").to_string()
+        } else {
+            new_start.to_rfc3339()
+        };
+        let req = api::UpdateEventReq {
+            start: Some(start.clone()),
+            ..Default::default()
+        };
+        self.patch_local(&i.uid, |x| {
+            retime(x, &start, None, tz);
+            true
+        });
+        self.follow(day, &i.uid);
+        self.deferred.push(Box::new(move |app: &mut App| {
+            if let Some(r) = app.with_daemon(|d| d.update_event(&i.source, &i.uid, &req).map(|r| r.map(to_write)))
+                && !app.write_applied(r)
+            {
+                app.unpatch(Some(i.clone()), &i.uid);
+            }
+        }));
+    }
+
+    /// Where a nudge would put the selected item: (it, its new start, its new day). `Ok(None)`
+    /// when nothing nudgeable is selected; `Err` says why not.
+    pub fn nudge_target(&self, minutes: i64) -> Result<Option<(Instance, DateTime<Utc>, NaiveDate)>, String> {
+        if !matches!(self.view, View::Week | View::Day) {
+            return Ok(None);
+        }
+        let Some(i) = self.selected().map(|c| c.primary) else {
+            return Ok(None);
+        };
+        if matches!(i.meta.kind, EventKind::Proposal | EventKind::Worked) {
+            return Ok(None);
+        }
+        if i.span.is_all_day() && minutes % (24 * 60) != 0 {
+            return Err("an all-day item moves by days: Shift-←/→".into());
+        }
+        let (s, _) = i.span.bounds(self.tz);
+        let new_start = s + Duration::minutes(minutes);
+        let day = new_start.with_timezone(&self.tz).date_naive();
+        Ok(Some((i, new_start, day)))
+    }
+
+    /// Keep `uid` selected after it moved to `day`.
+    fn follow(&mut self, day: NaiveDate, uid: &str) {
+        self.cursor = day;
+        if let Some(k) = self
+            .day_clusters(day)
+            .iter()
+            .position(|c| c.all().any(|x| x.uid == uid))
+        {
+            self.sel = k;
         }
     }
 
@@ -2766,6 +2865,8 @@ pub enum Key {
     Right,
     ShiftLeft,
     ShiftRight,
+    ShiftUp,
+    ShiftDown,
 }
 
 /// Status-bar legend: (toggle key, name, shown?, colour, group).

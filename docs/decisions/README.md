@@ -23,3 +23,4 @@ format every repository will share, checked so an edit can never break it, is ch
 | [ADR-006](ADR-006-what-the-registry-holds.md) | One global taxonomy: every item has an area (where) and a kind (what); registry kinds repo, course, application; the Project window shows repos only | accepted |
 | [ADR-007](ADR-007-two-windows-build-and-question.md) | The project window builds; the locus window questions and learns, and follow-ups stay there | accepted |
 | [ADR-008](ADR-008-kairos-joins-locus.md) | kairos moves into this repository as a sub-app, speaks locus's taxonomy, reads its registry, and links both ways | accepted |
+| [ADR-009](ADR-009-for-not-type.md) | Adding anything asks what it is for (a registry item or a Personal stream, by type-ahead); how a task is planned follows from its estimate, not a chosen type | proposed |

@@ -795,6 +795,32 @@ check-ins daily, adds events himself, and never uses the phone. Decided:
   [kairos-joins-locus.md](kairos-joins-locus.md), approved 24 Oct with every decision as
   recommended; the stream is "Errands"; Tanker-flow and Jane Street join the registry.
 
+**Round 7, 25 Oct. Adding to the calendar, moving, linking, dates.** After using the moved
+kairos: "the link to locus and the usability every day of adding tasks/ moving them around/
+linking things to locus still feels clunky." On task types: "I still have to enter a type of
+sheet coursework or admin and there are more things than that ... those feel like a restrictive
+set and do not feel like they match the taxonomy we worked so hard to pin down." Agreed:
+- **For** replaces Calendar and Type when adding: type-ahead over the registry and Personal's
+  streams ("Type ahead is useful, I like that"); the calendar follows from the item's area.
+- **How it is planned comes from the estimate**, not a type (an hour or less in one sitting,
+  longer in 2 to 3 hour blocks, a course's sheet its five-hour default).
+- **No quick-add line**: "no need for quick add like we have for date/ time parser, happy filling
+  in the fields, it is quick."
+- **Nudging**: Shift-↑/↓ moves the selected item 30 minutes, Shift-←/→ a day ("that makes things
+  quicker").
+- **Linking afterwards** (`L`, the same type-ahead): "a good redundancy to have."
+- **Dates from mail**: "DEFINITELELY dates from mail, that is super useful" (keryx finds a booking
+  or a rebooking; Approve offers it, linked, on the calendar).
+- A dentist appointment is Errands; a birthday Social or Family.
+- **Moving an interview moves its prep.**
+- **Due dates**: a flag on the day at their time; a due date with no time at the top with the
+  other all-day items.
+- Open: "setting tasks like prep for sheets", and whether projects and tasks need a proper
+  overview page on Home: "I do not like having a self contained project viewer in kairos, that
+  does not seem like the right home, and the task viewer currently takes up none of the screen
+  and tasks are crowded near the top weirdly." Recommendations in the spec
+  [calendar-entry.md](calendar-entry.md).
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

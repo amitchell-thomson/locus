@@ -112,6 +112,11 @@ impl Live {
         }
     }
 
+    /// A key's current name (`Engineering` from an old task is Studies now).
+    pub fn key_name(&self, key: &str) -> String {
+        self.cfg.key(key).map_or_else(|| key.to_string(), |k| k.name.clone())
+    }
+
     pub fn area_of(&self, key: &str) -> Option<String> {
         self.cfg.key(key).map(|k| k.area().to_string())
     }
@@ -137,6 +142,7 @@ pub fn apply_tasks(
     fx: &mut Fixtures,
     tasks: &[kairos_core::api::TaskOverview],
     area_of: impl Fn(&str) -> Option<String>,
+    key_name: impl Fn(&str) -> String,
 ) {
     let off = fx.now().offset().to_owned();
     let at = |t: DateTime<Utc>| t.with_timezone(&off);
@@ -158,7 +164,7 @@ pub fn apply_tasks(
                 id: t.id.clone(),
                 title: t.title.clone(),
                 for_id: t.locus.clone(),
-                for_label: entry.map_or_else(|| t.key.clone(), |p| p.name.clone()),
+                for_label: entry.map_or_else(|| key_name(&t.key), |p| p.name.clone()),
                 area: entry
                     .map(|p| p.area.clone())
                     .or_else(|| area_of(&t.key))
@@ -607,7 +613,12 @@ mod task_tests {
                 Some("2026-10-27T09:00:00Z"),
             ),
         ];
-        super::apply_tasks(&mut fx, &tasks, |k| (k == "Errands").then(|| "Personal".into()));
+        super::apply_tasks(
+            &mut fx,
+            &tasks,
+            |k| (k == "Errands").then(|| "Personal".into()),
+            String::from,
+        );
         assert_eq!(fx.tasks.tasks.len(), 3);
         let b15 = fx.tasks.tasks.iter().find(|t| t.id == "t-1").unwrap();
         assert_eq!(

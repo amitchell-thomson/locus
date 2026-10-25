@@ -847,6 +847,16 @@ for a firm with two live applications was skipped unless the subject named the y
 told apart by the subject, then the mail, and failing both offered with the choice yours
 (←/→ in Approve), never guessed and never skipped.
 
+**Round 7d, 25 Oct.** "Do 3 and 4 ... get rid of the phone check in page, we do not need that."
+Project sessions and proposed project time are gone: time is set aside for a project by a task
+for it, and its time spent merges measured Claude sessions with checked-in blocks, so an hour
+worked through Claude in a block counts once (it counted twice); old session events keep their
+project as what they are for. The phone check-in page went, and with it the ntfy pushes and the
+phone approve links, as plan B.4 already said ("just noise"): one approve place, one place to
+check in. kairos's SPEC.md now describes kairos as it is. "kairos should cleanly be integrated
+with locus, and be treated like any other locus app": the gaps are listed as a spec,
+[kairos-as-a-locus-app.md](kairos-as-a-locus-app.md), for your approval.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

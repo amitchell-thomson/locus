@@ -41,6 +41,10 @@ struct Cli {
     /// With --dump: lay the live calendar over the fixtures first, as the window does (spec K8).
     #[arg(long)]
     live: bool,
+    /// Print the interview dates found in the last N days of mail for each application (read-only;
+    /// spec E6), past ones included, and exit.
+    #[arg(long, value_name = "DAYS")]
+    scan_mail: Option<i64>,
     /// Print what has been used, per screen and key, and exit.
     #[arg(long)]
     use_report: bool,
@@ -61,6 +65,21 @@ fn main() -> Result<()> {
         print!("{}", uselog::report(&text));
         return Ok(());
     }
+    if let Some(days) = cli.scan_mail {
+        let shared = locus_contract::taxonomy::load(&locus_contract::taxonomy::root())?;
+        for b in locus_tui::maildates::scan(&shared.registry, chrono::Utc::now(), days, true) {
+            println!(
+                "{:<14} {}  {} min  · from “{}” ({}, mail of {})",
+                b.for_id,
+                b.at.format("%a %-d %b %H:%M"),
+                b.minutes,
+                b.subject,
+                b.thread,
+                b.sent.format("%-d %b")
+            );
+        }
+        return Ok(());
+    }
     if cli.validate_fixtures {
         return validate();
     }
@@ -74,6 +93,8 @@ fn main() -> Result<()> {
         locus_tui::calendar::apply(&mut fx, &cal, |k| live.area_of(k), chrono::Utc::now());
         locus_tui::calendar::apply_chores(&mut fx, &live.chores());
         locus_tui::calendar::apply_tasks(&mut fx, &live.tasks(), |k| live.area_of(k));
+        let bookings = locus_tui::maildates::scan(&fx.registry, chrono::Utc::now(), 45, false);
+        locus_tui::calendar::apply_dates(&mut fx, &bookings, &cal, &locus_tui::maildates::dismissed());
     }
     if let Some(name) = cli.dump {
         let Some(screen) = ScreenId::from_name(&name) else {
@@ -253,10 +274,18 @@ fn run(mut app: App) -> Result<()> {
     let (cal_tx, cal_rx) = std::sync::mpsc::channel();
     if let Some(live) = locus_tui::calendar::Live::connect().map(std::sync::Arc::new) {
         app.calendar = Some(live.clone());
+        let registry = app.fixtures.registry.clone();
         std::thread::spawn(move || {
-            loop {
+            let mut bookings = Vec::new();
+            for minute in 0u64.. {
+                // Dates from mail (spec E6): keryx's local copy, read every ten minutes.
+                if minute % 10 == 0 {
+                    bookings = locus_tui::maildates::scan(&registry, chrono::Utc::now(), 45, false);
+                }
                 if let Some(cal) = live.fetch(chrono::Utc::now())
-                    && cal_tx.send((cal, live.chores(), live.tasks())).is_err()
+                    && cal_tx
+                        .send((cal, live.chores(), live.tasks(), bookings.clone()))
+                        .is_err()
                 {
                     return;
                 }
@@ -271,9 +300,11 @@ fn run(mut app: App) -> Result<()> {
     let result = (|| -> Result<()> {
         while !app.quit {
             app.tick(focus.poll(), Instant::now());
-            if let Ok((cal, chores, tasks)) = cal_rx.try_recv()
+            if let Ok((cal, chores, tasks, bookings)) = cal_rx.try_recv()
                 && let Some(live) = app.calendar.clone()
             {
+                let dismissed = locus_tui::maildates::dismissed();
+                locus_tui::calendar::apply_dates(&mut app.fixtures, &bookings, &cal, &dismissed);
                 locus_tui::calendar::apply(&mut app.fixtures, &cal, |k| live.area_of(k), chrono::Utc::now());
                 locus_tui::calendar::apply_chores(&mut app.fixtures, &chores);
                 locus_tui::calendar::apply_tasks(&mut app.fixtures, &tasks, |k| live.area_of(k));

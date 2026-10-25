@@ -116,6 +116,27 @@ pub enum ApproveKind {
     Ink,
     /// "You approved this kind N times: do it automatically?"
     StopAsking,
+    /// A date found in your mail (an interview booked or moved), to put on the calendar linked
+    /// to its application (spec E6).
+    Date,
+}
+
+/// A date from mail, and what accepting it does: a new event, or moving the one already there.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MailDate {
+    /// The application it is for (a registry id).
+    pub for_id: String,
+    /// The event's title: `Millennium interview`.
+    pub title: String,
+    pub at: crate::Time,
+    pub minutes: u32,
+    /// The mail it was read from (`personal:11801`).
+    pub thread: String,
+    /// When the calendar already has this application's event at another time: (source, uid)
+    /// of the event to move.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moves: Option<(String, String)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -133,6 +154,9 @@ pub struct ApproveItem {
     /// For an ink item: the ink-confirm fixture it opens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opens: Option<String>,
+    /// For a date from mail: the date and what accepting it does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub date: Option<MailDate>,
 }
 
 impl Approve {

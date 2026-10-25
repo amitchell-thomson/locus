@@ -426,6 +426,7 @@ fn draw_waiting(f: &mut Frame, area: Rect, app: &App) {
                     locus_contract::ApproveKind::Deadline => "deadline",
                     locus_contract::ApproveKind::Ink => "ink to place",
                     locus_contract::ApproveKind::StopAsking => "stop asking?",
+                    locus_contract::ApproveKind::Date => "to the calendar",
                 };
                 format!("{} {name}", g.items.len())
             })

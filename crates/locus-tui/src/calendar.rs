@@ -38,10 +38,22 @@ impl Live {
     /// Put something on the calendar for a locus item, through kairosd (your keypress: it applies
     /// as your own edit would, with an undo in kairos).
     pub fn add(&self, title: &str, at: DateTime<FixedOffset>, key: &str, locus: &str) -> Result<String, String> {
+        self.add_for(title, at, 60, key, locus)
+    }
+
+    /// The same, `minutes` long (a date from mail says how long).
+    pub fn add_for(
+        &self,
+        title: &str,
+        at: DateTime<FixedOffset>,
+        minutes: u32,
+        key: &str,
+        locus: &str,
+    ) -> Result<String, String> {
         let req = kairos_core::api::CreateEventReq {
             title: title.into(),
             start: at.to_rfc3339(),
-            duration_min: Some(60),
+            duration_min: Some(minutes),
             key: Some(key.into()),
             locus: Some(locus.into()),
             ..Default::default()
@@ -81,6 +93,22 @@ impl Live {
         match self.daemon.chores() {
             Ok(Ok(v)) => v,
             _ => Vec::new(),
+        }
+    }
+
+    /// Move an event to `at` through kairosd (a date from mail that moved).
+    pub fn move_to(&self, source: &str, uid: &str, at: DateTime<FixedOffset>) -> Result<String, String> {
+        let req = kairos_core::api::UpdateEventReq {
+            start: Some(at.to_rfc3339()),
+            ..Default::default()
+        };
+        let d = Daemon::from_config(&self.cfg)
+            .map_err(|e| e.to_string())?
+            .interactive(true);
+        match d.update_event(source, uid, &req) {
+            Ok(Ok(v)) => Ok(v["summary"].as_str().unwrap_or("moved").to_string()),
+            Ok(Err(e)) => Err(e.to_string()),
+            Err(e) => Err(e.to_string()),
         }
     }
 
@@ -177,6 +205,92 @@ pub fn apply_tasks(
         }
     }
     fx.tasks.tasks = items;
+}
+
+/// Dates found in mail onto Approve (spec E6): for each application, its newest booking still
+/// to come, unless the calendar already has it (an event at that time linked to the
+/// application, or titled with the firm) or you said no to it. When the application's linked
+/// event is at another time, accepting moves that event instead of adding one.
+pub fn apply_dates(fx: &mut Fixtures, bookings: &[crate::maildates::Booking], cal: &[Instance], dismissed: &[String]) {
+    let mut newest: Vec<&crate::maildates::Booking> = Vec::new();
+    for b in bookings {
+        match newest.iter_mut().find(|n| n.for_id == b.for_id) {
+            Some(n) if b.sent > n.sent => *n = b,
+            Some(_) => {}
+            None => newest.push(b),
+        }
+    }
+    let squash = |s: &str| {
+        s.chars()
+            .filter(|c| c.is_alphanumeric())
+            .collect::<String>()
+            .to_lowercase()
+    };
+    let mut items = Vec::new();
+    for b in newest {
+        let at = b.at.with_timezone(&Utc);
+        if dismissed
+            .iter()
+            .any(|d| d == &format!("{} {}", b.for_id, b.at.to_rfc3339()))
+        {
+            continue;
+        }
+        let near = |i: &Instance| (i.span.bounds(chrono_tz::Europe::London).0 - at).num_minutes().abs() <= 5;
+        let there = cal.iter().any(|i| {
+            near(i)
+                && (i.meta.locus.as_deref() == Some(b.for_id.as_str())
+                    || squash(&i.title).contains(&squash(&b.company)))
+        });
+        if there {
+            continue;
+        }
+        let linked = cal
+            .iter()
+            .filter(|i| i.meta.locus.as_deref() == Some(b.for_id.as_str()) && i.meta.kind == EventKind::Event)
+            .find(|i| i.span.bounds(chrono_tz::Europe::London).0 > Utc::now());
+        let title = crate::maildates::title_for(&b.company, &b.subject);
+        let end = b.at + Duration::minutes(i64::from(b.minutes));
+        let when = format!("{}–{}", b.at.format("%a %-d %b %H:%M"), end.format("%H:%M"));
+        let name = fx.registry.get(&b.for_id).map_or(b.company.clone(), |p| p.name.clone());
+        let text = match linked {
+            Some(e) => format!(
+                "{name} · move “{}” to {when} (rebooked, mail of {})",
+                e.title,
+                b.sent.format("%-d %b")
+            ),
+            None => format!(
+                "{name} · {title} {when} → calendar (mail of {})",
+                b.sent.format("%-d %b")
+            ),
+        };
+        items.push(locus_contract::ApproveItem {
+            text,
+            to: Some("calendar".into()),
+            from: "keryx".into(),
+            new: true,
+            opens: None,
+            date: Some(locus_contract::MailDate {
+                for_id: b.for_id.clone(),
+                title,
+                at: b.at,
+                minutes: b.minutes,
+                thread: b.thread.clone(),
+                moves: linked.map(|e| (e.source.clone(), e.uid.clone())),
+            }),
+        });
+    }
+    fx.approve
+        .groups
+        .retain(|g| g.kind != locus_contract::ApproveKind::Date);
+    if !items.is_empty() {
+        fx.approve.groups.insert(
+            0,
+            locus_contract::ApproveGroup {
+                kind: locus_contract::ApproveKind::Date,
+                items,
+            },
+        );
+    }
 }
 
 /// Chores onto Home (spec K9): the one that fits the gap you are in now (the most put off), and
@@ -530,5 +644,108 @@ mod task_tests {
             "{:?}",
             app.note
         );
+    }
+}
+
+#[cfg(test)]
+mod date_tests {
+    use crate::fixtures::{Fixtures, resolve};
+    use crate::maildates::Booking;
+    use chrono::{DateTime, Duration, FixedOffset, Utc};
+    use kairos_core::model::{EventKind, Instance, Meta, Span};
+    use locus_contract::ApproveKind;
+
+    fn booking(for_id: &str, company: &str, at: &str, sent: &str) -> Booking {
+        Booking {
+            for_id: for_id.into(),
+            company: company.into(),
+            subject: format!("{company} | Interview Confirmation"),
+            thread: "personal:1".into(),
+            sent: DateTime::parse_from_rfc3339(sent).unwrap(),
+            at: DateTime::parse_from_rfc3339(at).unwrap(),
+            minutes: 45,
+        }
+    }
+
+    fn event(uid: &str, title: &str, at: &str, locus: Option<&str>) -> Instance {
+        let s: DateTime<Utc> = at.parse().unwrap();
+        Instance {
+            uid: uid.into(),
+            recurrence_id: None,
+            source: "careers".into(),
+            overlay: kairos_core::config::Overlay::Personal,
+            key: Some("Careers".into()),
+            title: title.into(),
+            location: None,
+            description: None,
+            span: Span::Timed {
+                start: s,
+                end: s + Duration::minutes(45),
+            },
+            recurring: false,
+            transparent: false,
+            tentative: false,
+            meta: Meta {
+                kind: EventKind::Event,
+                locus: locus.map(String::from),
+                ..Meta::default()
+            },
+            href: None,
+            alarms: Vec::new(),
+        }
+    }
+
+    fn dates(fx: &Fixtures) -> Vec<String> {
+        fx.approve
+            .groups
+            .iter()
+            .filter(|g| g.kind == ApproveKind::Date)
+            .flat_map(|g| g.items.iter().map(|i| i.text.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn a_booking_is_offered_once_and_a_rebooking_moves_the_event() {
+        // Spec E6, on bookings dated in the future.
+        let soon = (Utc::now() + Duration::days(3)).with_timezone(&FixedOffset::east_opt(3600).unwrap());
+        let later = soon + Duration::days(1);
+        let (s1, s2) = (soon.to_rfc3339(), later.to_rfc3339());
+        let mut fx = Fixtures::load(&resolve("default")).unwrap();
+        // New: offered, with its time and length.
+        super::apply_dates(
+            &mut fx,
+            &[booking("millennium", "Millennium", &s1, "2026-10-20T10:00:00+01:00")],
+            &[],
+            &[],
+        );
+        let d = dates(&fx);
+        assert_eq!(d.len(), 1);
+        assert!(
+            d[0].contains("Millennium interview") && d[0].contains("→ calendar"),
+            "{d:?}"
+        );
+        // Already on the calendar (linked, at that time): nothing offered.
+        let on = vec![event("e1", "Millennium final round", &s1, Some("millennium"))];
+        super::apply_dates(
+            &mut fx,
+            &[booking("millennium", "Millennium", &s1, "2026-10-20T10:00:00+01:00")],
+            &on,
+            &[],
+        );
+        assert!(dates(&fx).is_empty());
+        // Rebooked: the newest mail names another time; accepting moves the linked event.
+        let b = vec![
+            booking("millennium", "Millennium", &s1, "2026-10-20T10:00:00+01:00"),
+            booking("millennium", "Millennium", &s2, "2026-10-21T10:00:00+01:00"),
+        ];
+        super::apply_dates(&mut fx, &b, &on, &[]);
+        let d = dates(&fx);
+        assert!(d[0].contains("move “Millennium final round”"), "{d:?}");
+        let item = &fx.approve.groups[0].items[0];
+        assert_eq!(item.date.as_ref().unwrap().moves, Some(("careers".into(), "e1".into())));
+        // Said no to: not offered again.
+        let no = vec![format!("millennium {s2}")];
+        super::apply_dates(&mut fx, &b, &on, &no);
+        assert!(dates(&fx).is_empty());
     }
 }

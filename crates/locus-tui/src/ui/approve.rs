@@ -31,6 +31,7 @@ fn group_name(k: ApproveKind) -> &'static str {
         ApproveKind::Deadline => "deadlines",
         ApproveKind::Ink => "ink",
         ApproveKind::StopAsking => "stop asking?",
+        ApproveKind::Date => "dates from mail",
     }
 }
 
@@ -253,6 +254,47 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
             let Some((key, text, to, opens)) = rows.get(app.sel(' ')).cloned() else {
                 return false;
             };
+            // A date from mail (spec E6): y puts it on the calendar (or moves its event) through
+            // kairosd, n says no for good; outside the live window both only say what they would do.
+            let date = key
+                .strip_prefix("approve:")
+                .and_then(|r| r.split_once(':'))
+                .and_then(|(g, i)| {
+                    let g: usize = g.parse().ok()?;
+                    let i: usize = i.parse().ok()?;
+                    app.fixtures
+                        .approve
+                        .groups
+                        .get(g)?
+                        .items
+                        .get(i)?
+                        .date
+                        .clone()
+                        .map(|d| (g, i, d))
+                });
+            if let (Some((g, i, d)), KeyCode::Char(c @ ('y' | 'n'))) = (date, k.code)
+                && let Some(live) = app.calendar.clone()
+            {
+                let r = if c == 'n' {
+                    crate::maildates::dismiss(&d.for_id, d.at)
+                        .map(|_| "not putting it on the calendar".to_string())
+                        .map_err(|e| e.to_string())
+                } else {
+                    match &d.moves {
+                        Some((source, uid)) => live.move_to(source, uid, d.at),
+                        None => live.add_for(&d.title, d.at, d.minutes, "Careers", &d.for_id),
+                    }
+                };
+                match r {
+                    Ok(msg) => {
+                        app.fixtures.approve.groups[g].items.remove(i);
+                        app.fixtures.approve.groups.retain(|x| !x.items.is_empty());
+                        app.note = Some(msg);
+                    }
+                    Err(e) => app.note = Some(format!("kairos said no: {e}")),
+                }
+                return true;
+            }
             match k.code {
                 KeyCode::Char(c @ ('y' | 'n')) => approve_one(app, key, &text, to.as_deref(), c == 'y'),
                 KeyCode::Char('Y') => {

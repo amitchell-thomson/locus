@@ -69,7 +69,7 @@ enum Cmd {
         #[command(flatten)]
         v: ViewOpts,
     },
-    /// Next event (or a deadline within 24 h).
+    /// Next event (or a due date within 24 h).
     Next {
         /// tmux status-line segment.
         #[arg(long)]
@@ -77,7 +77,7 @@ enum Cmd {
         #[arg(long)]
         json: bool,
         /// Only an event starting within this long (e.g. 60m); otherwise print
-        /// nothing — a deadline due within 24 h still shows. Keeps a tmux
+        /// nothing — a due date within 24 h still shows. Keeps a tmux
         /// segment empty until it's worth a glance.
         #[arg(long)]
         within: Option<String>,
@@ -158,8 +158,8 @@ enum Cmd {
         #[arg(long)]
         matching: Option<String>,
     },
-    /// Add a ⚑ due date (a task with only the date): kairos deadline "Apps close" fri 17:00 --key Careers
-    Deadline {
+    /// Add a ⚑ due date (a task with only the date): kairos due "Apps close" fri 17:00 --key Careers
+    Due {
         title: String,
         #[arg(required = true, num_args = 1..)]
         when: Vec<String>,
@@ -285,7 +285,7 @@ enum TaskCmd {
         est: Option<String>,
         #[arg(long)]
         remaining: Option<String>,
-        /// New deadline ("" clears).
+        /// New due date ("" clears).
         #[arg(long)]
         due: Option<String>,
         #[arg(long)]
@@ -561,7 +561,7 @@ fn run() -> Result<()> {
             let d = ctx.daemon()?;
             report(&p, &d, d.adopt(&inst.source, &inst.uid, &key)?)
         }
-        Cmd::Deadline { title, when, key, task } => {
+        Cmd::Due { title, when, key, task } => {
             let req = api::DeadlineReq {
                 title,
                 due: ctx.when(&when.join(" "))?,

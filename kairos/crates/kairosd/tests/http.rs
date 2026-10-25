@@ -266,7 +266,7 @@ async fn mcp_tools_and_no_approve_tool() {
         "create_task",
         "update_task",
         "complete_task",
-        "create_deadline",
+        "set_due",
         "plan",
         "list_changesets",
         "get_changeset",

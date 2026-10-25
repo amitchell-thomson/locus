@@ -1057,3 +1057,22 @@ fn an_items_detail_lays_out_its_area_what_it_is_for_its_task_and_who_made_it() {
     }
     assert!(!s.contains("no duplicates") && !s.contains("copies"), "{s}");
 }
+
+/// L4: a shared key means here what it means in locus (d done, x remove, + add).
+#[test]
+fn shared_keys_keep_their_meaning_on_every_kind_of_item() {
+    let (mut a, _t) = app("2026-10-21T11:00:00+01:00");
+    let mut t = Task::new("B4 sheet", "Personal", 240, Author::Claude, now("2026-10-12T08:00:00Z"));
+    t.id = "task-b4".into();
+    t.due = Some(Due::At(now("2026-10-23T16:00:00Z")));
+    a.tasks = vec![t];
+    for _ in 0..7 {
+        for sel in 0..a.day_clusters(a.cursor).len() {
+            a.sel = sel;
+            for (k, what) in a.key_hint_pairs() {
+                assert!(locus_theme::keeps_shared_meaning(k, what), "{k} means {what:?}");
+            }
+        }
+        a.key(Key::Right);
+    }
+}

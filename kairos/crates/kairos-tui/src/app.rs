@@ -2302,27 +2302,6 @@ pub fn parse_add(s: &str) -> Option<(String, String, Option<String>, Option<u32>
     (!title.is_empty() && !when.is_empty()).then(|| (title.to_string(), when.join(" "), key, dur))
 }
 
-/// `B4 sheet #Studies ~4h due fri 17:00` → (title, key, minutes, due)
-pub fn parse_task(s: &str) -> Option<(String, String, u32, Option<String>)> {
-    let (head, due) = match s.split_once(" due ") {
-        Some((h, d)) => (h, Some(d.trim().to_string())),
-        None => (s, None),
-    };
-    let mut title = Vec::new();
-    let mut key = None;
-    let mut est = None;
-    for w in head.split_whitespace() {
-        if let Some(k) = w.strip_prefix('#') {
-            key = Some(k.to_string());
-        } else if let Some(e) = w.strip_prefix('~') {
-            est = dates::parse_minutes(e).ok();
-        } else {
-            title.push(w);
-        }
-    }
-    Some((title.join(" "), key?, est?, due)).filter(|t| !t.0.is_empty())
-}
-
 /// Terminal-independent key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Key {
@@ -2473,23 +2452,5 @@ mod tests {
             Some(("Coffee".into(), "tomorrow 9".into(), None, None))
         );
         assert_eq!(parse_add("no at sign"), None);
-    }
-
-    #[test]
-    fn task_syntax() {
-        assert_eq!(
-            parse_task("B4 problem sheet #Engineering ~4h due fri 17:00"),
-            Some((
-                "B4 problem sheet".into(),
-                "Engineering".into(),
-                240,
-                Some("fri 17:00".into())
-            ))
-        );
-        assert_eq!(
-            parse_task("Essay #Careers ~90m"),
-            Some(("Essay".into(), "Careers".into(), 90, None))
-        );
-        assert_eq!(parse_task("Essay ~90m"), None, "key required");
     }
 }

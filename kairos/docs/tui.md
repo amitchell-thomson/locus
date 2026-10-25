@@ -49,7 +49,7 @@ Your own edits here apply straight away (no approval); `u` undoes the last one, 
 | `P` | projects: Home's projects section in the locus window (kairos's own list below only when the locus window is not running) |
 
 **A due date is the task's own** (spec K5): the ⚑ on its day is drawn from the task, never written
-to a calendar. `kairos deadline "Apps close" fri 17:00 --key Careers` makes a task with only the
+to a calendar. `kairos due "Apps close" fri 17:00 --key Careers` makes a task with only the
 date. Task types: sheet, coursework, admin, chore (a short errand for a gap).
 
 ## Check-ins

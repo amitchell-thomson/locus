@@ -8,6 +8,27 @@
 
 pub mod glyph;
 
+/// Keys that mean the same thing in every app (L4): `d` is done, `x` removes (asking first),
+/// `+` adds, `esc` goes back, `/` searches, `?` shows the keys. Each app's key lists are tested
+/// against this, so a key cannot come to mean two things again (it did: `d` was done on locus's
+/// Tasks page and drop in kairos).
+pub const SHARED_KEYS: &[(&str, &[&str])] = &[
+    ("d", &["done"]),
+    ("x", &["remove", "drop", "skip", "delete", "missed"]),
+    ("+", &["add"]),
+    ("esc", &["back", "cancel", "later"]),
+    ("/", &["search"]),
+    ("?", &["keys"]),
+];
+
+/// Whether a hint `(key, what)` keeps the shared meaning of its key (true for keys not shared).
+pub fn keeps_shared_meaning(key: &str, what: &str) -> bool {
+    SHARED_KEYS
+        .iter()
+        .find(|(k, _)| *k == key)
+        .is_none_or(|(_, words)| words.iter().any(|w| what.contains(w)))
+}
+
 use ratatui::layout::Alignment;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};

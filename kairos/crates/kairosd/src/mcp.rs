@@ -17,17 +17,17 @@ use serde::{Deserialize, Serialize};
 
 pub const INSTRUCTIONS: &str = "kairos manages Alec's calendar (iCloud is the source of truth) and his tasks.\n\
 RISK POLICY (decided by the server, never by you): low-risk changes are applied immediately and can be undone \
-(task blocks, tasks, deadlines, new one-off events that don't clash, re-keying events kairos created). High-risk \
+(task blocks, tasks, due dates, new one-off events that don't clash, re-keying events kairos created). High-risk \
 changes are QUEUED FOR ALEC'S APPROVAL (status=pending): editing/moving/deleting events Alec created himself, \
 anything recurring, anything starting within 2 hours (except the scheduler's own work blocks), events that clash with fixed events, sharing to Family, \
-deleting deadlines, dropping tasks, or more than 8 operations at once (the scheduler's own blocks don't count). Writes to Family (except share_to_family) and \
+removing due dates, dropping tasks, or more than 8 operations at once (the scheduler's own blocks don't count). Writes to Family (except share_to_family) and \
 to read-only imports (Google feeds, holidays) are refused. You cannot approve changes: tell Alec what is pending and \
 let him approve it in locus's Approve. Every write returns {changeset_id, risk, status, summary}.\n\
 SCHEDULING: don't hand-place work blocks. Create/update tasks saying what each is for (locus: a registry id \
 such as b15, millennium or quast; or the key Errands, Sport, Social for personal things), an estimate (how long in \
 total) and a due date (the task's own attribute: no calendar event is made); how it is planned follows from the \
 estimate (an hour or less in one go, a short Errands task as a chore in a gap, longer in 2–3 h blocks, a course's \
-sheet 5 h by default), so leave kind unset unless Alec says otherwise. Then call plan; the deterministic scheduler spreads work over the days before the deadline, moves it \
+sheet 5 h by default), so leave kind unset unless Alec says otherwise. Then call plan; the deterministic scheduler spreads work over the days before the due date, moves it \
 out of the way of new events by itself, and reports shortfalls (\"2.5 h short before Fri 17:00\") with options and \
 squeezes (\"40 min squeezed into a short gap\", \"…into the last 2 h before Fri 17:00\": fits, but only just) and \
 learned estimates (\"planning 6 h for 4 h left\") — relay those honestly. Tasks never finish by \
@@ -376,7 +376,7 @@ pub struct UpdateTaskArgs {
     pub key: Option<String>,
     pub estimate_min: Option<u32>,
     pub remaining_min: Option<u32>,
-    /// Empty string clears the deadline.
+    /// Empty string clears the due date.
     pub due: Option<String>,
     /// Reopen a finished task (Alec says it wasn't finished); give remaining_min too.
     pub reopen: Option<bool>,
@@ -701,7 +701,7 @@ impl KairosMcp {
         .await
     }
 
-    #[tool(description = "Delete an event. Deleting Alec's own events or deadlines needs his approval.")]
+    #[tool(description = "Delete an event. Deleting Alec's own events needs his approval.")]
     async fn delete_event(&self, Parameters(a): Parameters<EventRefArgs>) -> Result<CallToolResult, ErrorData> {
         self.run(move |e| {
             e.delete_event(Author::Claude, a.source.as_deref(), &a.uid)
@@ -732,7 +732,7 @@ impl KairosMcp {
         .await
     }
 
-    #[tool(description = "List tasks (default: open), ordered by deadline.")]
+    #[tool(description = "List tasks (default: open), ordered by due date.")]
     async fn list_tasks(&self, Parameters(a): Parameters<ListTasksArgs>) -> Result<CallToolResult, ErrorData> {
         self.run(move |e| {
             let st = match a.status.as_deref() {
@@ -774,7 +774,7 @@ impl KairosMcp {
     }
 
     #[tool(
-        description = "Update a task (estimate, remaining, deadline, priority, chunking…). Low risk; replans afterwards."
+        description = "Update a task (estimate, remaining, due date, priority, chunking…). Low risk; replans afterwards."
     )]
     async fn update_task(&self, Parameters(a): Parameters<UpdateTaskArgs>) -> Result<CallToolResult, ErrorData> {
         let req = api::UpdateTaskReq {
@@ -874,7 +874,7 @@ impl KairosMcp {
     #[tool(
         description = "A ⚑ due date: with task_id, sets that task's due date; without, makes a task with only the date and no planned work (e.g. applications close on Friday). Never a calendar event. Low risk."
     )]
-    async fn create_deadline(&self, Parameters(a): Parameters<DeadlineArgs>) -> Result<CallToolResult, ErrorData> {
+    async fn set_due(&self, Parameters(a): Parameters<DeadlineArgs>) -> Result<CallToolResult, ErrorData> {
         let req = api::DeadlineReq {
             title: a.title,
             due: a.due,
@@ -886,7 +886,7 @@ impl KairosMcp {
     }
 
     #[tool(
-        description = "Run the scheduler over open tasks. Keeps existing blocks where possible; reports blocks moved, per-task shortfalls with options, and tasks squeezed into the last hours before their deadline (deadline_lead_hours, default 2). dry_run previews without writing."
+        description = "Run the scheduler over open tasks. Keeps existing blocks where possible; reports blocks moved, per-task shortfalls with options, and tasks squeezed into the last hours before their due date (deadline_lead_hours, default 2). dry_run previews without writing."
     )]
     async fn plan(&self, Parameters(a): Parameters<PlanArgs>) -> Result<CallToolResult, ErrorData> {
         self.run(move |e| e.plan(a.dry_run.unwrap_or(false), Author::Scheduler))

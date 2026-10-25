@@ -26,7 +26,7 @@ claude mcp list   # kairos: … ✓ Connected
 |---|---|
 | Read | `list_events`, `search_events`, `find_free`, `list_tasks`, `list_checkins`, `list_changesets`, `get_changeset` |
 | Events | `create_event`, `update_event`, `delete_event`, `move_event`, `share_to_family`; batches: `update_events`, `delete_events`, `move_events` |
-| Tasks | `create_task`, `update_task` (incl. `reopen`), `complete_task`, `create_deadline`, `start_task`, `log_work`, `plan` |
+| Tasks | `create_task`, `update_task` (incl. `reopen`), `complete_task`, `set_due`, `start_task`, `log_work`, `plan` |
 | Check-ins | `list_checkins`, `checkin` (done / partial + `actual_min` / longer + `actual_min`, `remaining_min`, `not_before` / missed / finished) |
 | Projects | `list_projects` (time spent: measured Claude sessions in its repository plus checked-in blocks of its tasks, overlaps counted once), `create_project` (registry names only), `update_project` (status active / next / paused / done). Time is set aside for a project by a task for it (`create_task` with `locus` or `project`) |
 | Undo | `undo` |
@@ -35,7 +35,7 @@ claude mcp list   # kairos: … ✓ Connected
 
 ### "Add a B4 problem sheet due Friday 17:00, about 4 hours"
 1. `create_task {title: "B14 problem sheet", locus: "b14", estimate_min: 240, due: "2026-10-16T17:00"}`
-2. The response includes the ⚑ deadline changeset and the plan: blocks placed (and any shortfall).
+2. The response includes the plan: blocks placed (and any shortfall).
 3. Reply with the blocks ("Mon 14:00–16:00, Tue 09:00–11:00") or the shortfall and options.
 
 ### Bulk edits ("move the room codes in the lecture titles into the location field")

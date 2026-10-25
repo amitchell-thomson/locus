@@ -331,3 +331,18 @@ fn tasks_page_edits_in_kairos_and_asks_before_dropping() {
     key(&mut a, 'x');
     assert_eq!(locus_tui::ui::tasks::open(&a).len(), n - 1, "x twice drops it");
 }
+
+/// L4: where tasks are, a shared key means what it means in kairos (d done, x remove, + add).
+/// Other screens' letters (d for decisions on the Project view, d discuss in the review, x a
+/// note in ink confirm) came from the design rounds and are raised with you, not changed here.
+#[test]
+fn shared_keys_keep_their_meaning_where_tasks_are() {
+    for screen in [ScreenId::Tasks] {
+        for (k, what) in locus_tui::ui::screen_keys(screen) {
+            assert!(
+                locus_theme::keeps_shared_meaning(k, what),
+                "{screen}: {k} means {what:?}, not what it means everywhere"
+            );
+        }
+    }
+}

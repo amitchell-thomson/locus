@@ -566,7 +566,7 @@ mod tests {
     use super::*;
 
     fn keys() -> Vec<String> {
-        ["Inbox", "Engineering", "Careers", "Sport", "Social"]
+        ["Errands", "Studies", "Careers", "Sport", "Social"]
             .map(String::from)
             .to_vec()
     }

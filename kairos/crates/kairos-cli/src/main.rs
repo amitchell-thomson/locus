@@ -227,15 +227,21 @@ enum Cmd {
 
 #[derive(Subcommand)]
 enum TaskCmd {
-    /// Add: kairos task add "B4 sheet" --key Studies --type sheet --due "fri 17:00"
+    /// Add: kairos task add "B15 sheet 4" --for b15 --due "fri 17:00" (ADR-009: what it is for;
+    /// how it is planned follows from --est)
     Add {
         title: String,
+        /// What it is for: a registry item (b15, millennium, quast) or a stream (errands, sport,
+        /// social). Its calendar follows from it.
+        #[arg(long = "for")]
+        for_: Option<String>,
+        /// A calendar instead of --for (the inbox if neither).
         #[arg(long)]
-        key: String,
-        /// sheet | coursework | admin | chore (block sizes; default: admin up to 1 h, else sheet).
+        key: Option<String>,
+        /// Override how it is planned: sheet | coursework | admin | chore (normally derived).
         #[arg(long = "type")]
         kind: Option<String>,
-        /// Estimate (90m, 4h, 1h30); default: the type's.
+        /// Estimate (90m, 4h, 1h30); an hour or less is one sitting, longer is split.
         #[arg(long)]
         est: Option<String>,
         #[arg(long)]
@@ -1093,6 +1099,7 @@ fn task(ctx: &Ctx, p: &Paint, cmd: TaskCmd) -> Result<()> {
     match cmd {
         TaskCmd::Add {
             title,
+            for_,
             key,
             kind,
             est,
@@ -1104,9 +1111,11 @@ fn task(ctx: &Ctx, p: &Paint, cmd: TaskCmd) -> Result<()> {
             max_chunk,
             notes,
         } => {
+            let (key, locus) = resolve_for(&ctx.cfg, for_.as_deref(), key)?;
             let req = api::CreateTaskReq {
                 title,
                 key,
+                locus,
                 estimate_min: est.map(|x| mins(&x)).transpose()?.unwrap_or(0),
                 kind,
                 due: due.map(|x| ctx.when(&x)).transpose()?,
@@ -1383,6 +1392,35 @@ fn sync(ctx: &Ctx, p: &Paint, local: bool) -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// `--for` (ADR-009): a registry item or a Personal stream → (calendar, link). Without it, the
+/// calendar given, else the inbox.
+fn resolve_for(
+    cfg: &kairos_core::config::Config,
+    for_: Option<&str>,
+    key: Option<String>,
+) -> Result<(String, Option<String>)> {
+    let inbox = || cfg.default_key().map(|k| k.name.clone()).unwrap_or_default();
+    let Some(f) = for_.map(str::trim).filter(|f| !f.is_empty()) else {
+        return Ok((key.unwrap_or_else(inbox), None));
+    };
+    if let Some(k) = cfg.key(f).filter(|k| k.area.is_some()) {
+        return Ok((k.name.clone(), None));
+    }
+    let shared = kairos_store::taxonomy::get(cfg).map(|(s, _)| s);
+    let fors = kairos_tui::app::build_fors(cfg, shared.as_ref());
+    let fl = f.to_lowercase();
+    let hit = fors
+        .iter()
+        .find(|o| o.id == fl || o.label.eq_ignore_ascii_case(f))
+        .or_else(|| fors.iter().find(|o| o.label.to_lowercase().starts_with(&fl)));
+    match hit {
+        Some(o) => Ok((key.unwrap_or_else(|| o.key.clone()), o.locus.clone())),
+        None => Err(anyhow!(
+            "--for {f:?}: not a registry item or a stream (errands, sport, social)"
+        )),
+    }
 }
 
 fn doctor(ctx: &Ctx, p: &Paint) -> Result<()> {

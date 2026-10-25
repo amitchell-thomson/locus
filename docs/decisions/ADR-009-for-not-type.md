@@ -1,6 +1,6 @@
 # ADR-009 — A task says what it is for; how it is planned follows from its estimate
 
-**Status:** proposed
+**Status:** accepted
 **Date:** 2026-10-25
 **Your words:** "I still have to enter a type of sheet coursework or admin and there are more things than that - what if I am scheduling laundry, or need to do interview prep, or whatever, those feel like a restrictive set and do not feel like they match the taxonomy we worked so hard to pin down"; "Type ahead is useful, I like that" (25 Oct 2026, Slice 1 round 7)
 **Builds on:** ADR-006, ADR-008

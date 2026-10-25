@@ -23,9 +23,11 @@ anything recurring, anything starting within 2 hours (except the scheduler's own
 deleting deadlines, dropping tasks, or more than 8 operations at once (the scheduler's own blocks don't count). Writes to Family (except share_to_family) and \
 to read-only imports (Google feeds, holidays) are refused. You cannot approve changes: tell Alec what is pending and \
 let him approve in the TUI, CLI or on his phone. Every write returns {changeset_id, risk, status, summary}.\n\
-SCHEDULING: don't hand-place work blocks. Create/update tasks with a type (sheet = problem sheet, ~5 h in 2–3 h \
-blocks; coursework = estimate required, revised at check-ins; admin = admin/errands, one 30–60 min go; chore = life admin for a gap, ~20 min), an estimate \
-and a due date (the task's own attribute: no calendar event is made), then call plan; the deterministic scheduler spreads work over the days before the deadline, moves it \
+SCHEDULING: don't hand-place work blocks. Create/update tasks saying what each is for (locus: a registry id \
+such as b15, millennium or quast; or the key Errands, Sport, Social for personal things), an estimate (how long in \
+total) and a due date (the task's own attribute: no calendar event is made); how it is planned follows from the \
+estimate (an hour or less in one go, a short Errands task as a chore in a gap, longer in 2–3 h blocks, a course's \
+sheet 5 h by default), so leave kind unset unless Alec says otherwise. Then call plan; the deterministic scheduler spreads work over the days before the deadline, moves it \
 out of the way of new events by itself, and reports shortfalls (\"2.5 h short before Fri 17:00\") with options and \
 squeezes (\"40 min squeezed into a short gap\", \"…into the last 2 h before Fri 17:00\": fits, but only just) and \
 learned estimates (\"planning 6 h for 4 h left\") — relay those honestly. Tasks never finish by \
@@ -337,10 +339,8 @@ pub struct ListTasksArgs {
 pub struct CreateTaskArgs {
     pub title: String,
     pub key: String,
-    /// Task type: sheet (problem sheets, ~5 h), coursework (estimate required;
-    /// revised at check-ins), admin (admin/errands, one 30–60 min go), chore (life admin for
-    /// a gap: laundry, a parcel; ~20 min). Sets
-    /// block sizes. Default: admin up to 1 h, else sheet.
+    /// Normally leave unset: how it is planned follows from the estimate and what it is for
+    /// (ADR-009). Only to override: sheet | coursework | admin | chore.
     pub kind: Option<String>,
     /// Estimated minutes of work (omit to use the type's default).
     pub estimate_min: Option<u32>,

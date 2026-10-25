@@ -15,7 +15,7 @@ use kairos_core::view::{Filter, view_with};
 use kairos_store::cache::Index;
 use kairos_store::client::{Daemon, Rejected};
 
-use crate::form::{Form, FormAction, FormKind, describe_span, when_prefill};
+use crate::form::{ForOption, Form, FormAction, FormKind, describe_span, when_prefill};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
@@ -224,6 +224,8 @@ pub struct App {
     pub proposals: Vec<api::ProposalItem>,
     /// Projects (active, next, paused, done) with time spent.
     pub projects: Vec<api::ProjectItem>,
+    /// What things can be for (ADR-009): the registry's items and Personal's streams.
+    pub fors: Vec<ForOption>,
     /// Finished tasks, most recent first (the tasks view's Completed section).
     pub done_tasks: Vec<Task>,
     /// Squeezed work blocks (from a dry-run plan): (task id, start, reasons).
@@ -240,6 +242,45 @@ pub struct App {
     pub day_top: std::cell::Cell<Option<i64>>,
     /// What the last drawn grid showed: (first minute, end minute, the day's extent from, to).
     pub grid: std::cell::Cell<(i64, i64, i64, i64)>,
+}
+
+/// What things can be for (ADR-009): every registry item, in its area's calendar, then
+/// Personal's streams that have a calendar (Family is the shared calendar: `s` shares to it).
+/// Active items first; inactive ones (a finished project) last.
+pub fn build_fors(cfg: &Config, shared: Option<&locus_contract::taxonomy::Shared>) -> Vec<ForOption> {
+    let fallback = cfg.default_key().map(|k| k.name.clone()).unwrap_or_default();
+    let mut v: Vec<(bool, ForOption)> = Vec::new();
+    if let Some(s) = shared {
+        for p in &s.registry.projects {
+            let key = cfg.key(&p.area).map_or_else(|| fallback.clone(), |k| k.name.clone());
+            v.push((
+                p.active,
+                ForOption {
+                    id: p.id.clone(),
+                    label: p.name.clone(),
+                    key,
+                    locus: Some(p.id.clone()),
+                    course: p.kind == locus_contract::ProjectKind::Course,
+                },
+            ));
+        }
+    }
+    let mut keys = cfg.keys.clone();
+    keys.sort_by_key(|k| k.index);
+    for k in keys.iter().filter(|k| k.area.is_some()) {
+        v.push((
+            true,
+            ForOption {
+                id: k.name.to_lowercase(),
+                label: k.name.clone(),
+                key: k.name.clone(),
+                locus: None,
+                course: false,
+            },
+        ));
+    }
+    v.sort_by_key(|(active, _)| !*active);
+    v.into_iter().map(|(_, o)| o).collect()
 }
 
 pub fn midnight(d: NaiveDate, tz: Tz) -> DateTime<Utc> {
@@ -266,6 +307,7 @@ impl App {
             checkins: Vec::new(),
             proposals: Vec::new(),
             projects: Vec::new(),
+            fors: build_fors(&cfg, kairos_store::taxonomy::get(&cfg).map(|(s, _)| s).as_ref()),
             done_tasks: Vec::new(),
             squeezed: Vec::new(),
             daemon,
@@ -972,7 +1014,7 @@ impl App {
                     }
                     Key::Char('e') => {
                         self.message = None;
-                        let f = self.task_form_projects(Form::edit_task(self.key_names(), &t, self.tz), &t);
+                        let f = self.task_form(&t);
                         self.mode = Mode::Form(f);
                     }
                     Key::Char('+') => {
@@ -1000,6 +1042,19 @@ impl App {
                 }
                 let Some(c) = self.selected() else { return };
                 let i = c.primary.clone();
+                // L: say what it is for afterwards (ADR-009), with the same type-ahead.
+                if k == Key::Char('L') && i.meta.kind != EventKind::Worked {
+                    let task = i.meta.task_id.clone();
+                    let current = match task.as_ref().and_then(|t| self.tasks.iter().find(|x| &x.id == t)) {
+                        Some(t) => self.for_label(t.locus.as_deref(), Some(&t.key)),
+                        None => self.for_label(i.meta.locus.as_deref(), i.key.as_deref()),
+                    };
+                    self.message = None;
+                    self.mode = Mode::Form(
+                        Form::link(i.source.clone(), i.uid.clone(), task, &current).with_fors(self.fors_recent_first()),
+                    );
+                    return;
+                }
                 if i.meta.kind == EventKind::Proposal {
                     // Proposed project time: accept (then say what to work on) or drop.
                     match k {
@@ -1061,8 +1116,8 @@ impl App {
                     match k {
                         Key::Char('e') | Key::Char('K') => match self.tasks.iter().find(|t| t.id == tid).cloned() {
                             Some(t) => {
-                                let mut f = self.task_form_projects(Form::edit_task(self.key_names(), &t, self.tz), &t);
-                                f.focus_on(if k == Key::Char('K') { "Calendar" } else { "Due" });
+                                let mut f = self.task_form(&t);
+                                f.focus_on(if k == Key::Char('K') { "For" } else { "Due" });
                                 self.message = None;
                                 self.mode = Mode::Form(f);
                             }
@@ -1101,9 +1156,11 @@ impl App {
                 }
                 match k {
                     Key::Char('e') | Key::Char('K') => {
-                        let mut f = Form::edit_event(self.key_names(), &i, self.tz);
+                        let label = self.for_label(i.meta.locus.as_deref(), i.key.as_deref());
+                        let mut f =
+                            Form::edit_event(self.key_names(), &i, self.tz, &label).with_fors(self.fors_recent_first());
                         if k == Key::Char('K') {
-                            f.focus_on("Calendar");
+                            f.focus_on("For");
                         }
                         self.message = None;
                         self.mode = Mode::Form(f);
@@ -1535,8 +1592,35 @@ impl App {
 
     /// How the form's time fields were understood, or why they weren't.
     pub fn form_preview(&self, f: &Form) -> Result<String, String> {
-        let key = f.get("Calendar");
+        // What it is for (ADR-009): shown as "for B15 Control Systems"; empty is your inbox.
+        let has_for = f.fields.iter().any(|x| x.label == "For");
+        if has_for && !f.get("For").is_empty() && f.chosen_for().is_none() {
+            return Err(format!(
+                "For: nothing called “{}” (a course, an application, a project, or Errands, Sport, Social)",
+                f.get("For")
+            ));
+        }
+        let key = match f.chosen_for() {
+            Some(o) => format!("for {}", o.label),
+            None if has_for => format!(
+                "for {}",
+                self.cfg.default_key().map(|k| k.name.clone()).unwrap_or_default()
+            ),
+            None => f.get("Calendar").to_string(),
+        };
         match f.kind {
+            FormKind::Link { .. } => match f.chosen_for() {
+                Some(o) => Ok(format!(
+                    "for {}{}",
+                    o.label,
+                    if o.locus.is_some() {
+                        " · opens there in locus"
+                    } else {
+                        ""
+                    }
+                )),
+                None => Err("For: type what it belongs to".into()),
+            },
             FormKind::AddSession => {
                 let when = f.get("When");
                 if when.is_empty() {
@@ -1602,21 +1686,22 @@ impl App {
                     },
                 };
                 Ok(format!(
-                    "{} left · {} · {due} · {key}",
-                    crate::form::fmt_minutes(i64::from(left)),
-                    f.get("Type")
+                    "{} left · {due} · {key}",
+                    crate::form::fmt_minutes(i64::from(left))
                 ))
             }
             FormKind::AddTask => {
-                let ty = f.get("Type");
+                // How it is planned follows from the estimate (ADR-009).
+                let target = f.chosen_for();
+                let course = target.is_some_and(|o| o.course);
+                let errand = target.is_none_or(|o| o.locus.is_none());
                 let est = match f.get("Estimate") {
-                    "" => match ty {
-                        "sheet" => 300,
-                        "admin" => 45,
-                        _ => return Err("Estimate: coursework needs one (e.g. 6h)".into()),
-                    },
+                    "" if course && f.get("Title").to_lowercase().contains("sheet") => 300,
+                    "" if errand => 20,
+                    "" => return Err("Estimate: how long in total (e.g. 3h or 45m)".into()),
                     e => dates::parse_minutes(e).map_err(|_| "Estimate: e.g. 4h or 90m".to_string())?,
                 };
+                let ty = if est <= 60 { "in one go" } else { "in 2–3 h blocks" };
                 let due = match f.get("Due") {
                     "" => "no deadline".to_string(),
                     d => match dates::parse_when(d, self.today()).map_err(|e| e.to_string())? {
@@ -1625,7 +1710,7 @@ impl App {
                     },
                 };
                 Ok(format!(
-                    "{} of {ty} · {due} · {key}",
+                    "{} {ty} · {due} · {key}",
                     crate::form::fmt_minutes(i64::from(est))
                 ))
             }
@@ -1762,11 +1847,13 @@ impl App {
                     Ok(s) => s,
                     Err(e) => return self.set_message(e, true),
                 };
+                let target = f.chosen_for().cloned();
                 let req = api::CreateEventReq {
                     title: f.get("Title").to_string(),
                     start,
                     duration_min: dur(f.get("Duration")),
-                    key: opt(f.get("Calendar")),
+                    key: target.as_ref().map(|o| o.key.clone()),
+                    locus: target.and_then(|o| o.locus),
                     location: opt(f.get("Location")),
                     description: opt(f.get("Notes")),
                     repeat: crate::form::repeat_of(f.get("Repeat")),
@@ -1787,15 +1874,27 @@ impl App {
                     None
                 };
                 let changed = |l: &str| f.changed(l).then(|| f.get(l).to_string());
+                // A new For: its link, and its calendar when that differs (ADR-009).
+                let target = f.changed("For").then(|| f.chosen_for().cloned()).flatten();
+                let current_key = self
+                    .index
+                    .instances
+                    .iter()
+                    .find(|i| i.uid == uid)
+                    .and_then(|i| i.key.clone());
                 let req = api::UpdateEventReq {
                     title: changed("Title"),
                     start,
                     duration_min: if time_changed { dur(f.get("Duration")) } else { None },
                     location: changed("Location"),
                     description: changed("Notes"),
+                    locus: target.as_ref().map(|o| o.locus.clone().unwrap_or_default()),
                     ..Default::default()
                 };
-                let rekey = f.changed("Calendar").then(|| f.get("Calendar").to_string());
+                let rekey = target
+                    .as_ref()
+                    .map(|o| o.key.clone())
+                    .filter(|k| current_key.as_deref().is_none_or(|c| !c.eq_ignore_ascii_case(k)));
                 if req == api::UpdateEventReq::default() && rekey.is_none() {
                     return self.set_message("no changes", false);
                 }
@@ -1863,10 +1962,11 @@ impl App {
                 } else {
                     None
                 };
+                let target = f.changed("For").then(|| f.chosen_for().cloned()).flatten();
                 let req = api::UpdateTaskReq {
                     title: changed("Title"),
-                    key: changed("Calendar"),
-                    kind: changed("Type"),
+                    key: target.as_ref().map(|o| o.key.clone()),
+                    locus: target.as_ref().map(|o| o.locus.clone().unwrap_or_default()),
                     remaining_min: if f.changed("Left") { dur(f.get("Left")) } else { None },
                     due,
                     project: f.changed("Project").then(|| match f.get("Project") {
@@ -1903,19 +2003,65 @@ impl App {
             | FormKind::AddProject
             | FormKind::EditProject { .. }
             | FormKind::AddSession => {}
+            FormKind::Link { source, uid, task } => {
+                let Some(o) = f.chosen_for().cloned() else {
+                    return self.set_message("For: type what it belongs to", true);
+                };
+                let locus = o.locus.clone().unwrap_or_default();
+                let r = match &task {
+                    Some(id) => self.with_daemon(|d| {
+                        d.update_task(
+                            id,
+                            &api::UpdateTaskReq {
+                                locus: Some(locus.clone()),
+                                key: Some(o.key.clone()),
+                                ..Default::default()
+                            },
+                        )
+                        .map(|r| r.map(|_| ()))
+                    }),
+                    None => self.with_daemon(|d| {
+                        d.update_event(
+                            &source,
+                            &uid,
+                            &api::UpdateEventReq {
+                                locus: Some(locus.clone()),
+                                ..Default::default()
+                            },
+                        )
+                        .map(|r| r.map(|_| ()))
+                    }),
+                };
+                match r {
+                    Some(Ok(Ok(()))) => {
+                        if task.is_none() {
+                            for i in self.index.instances.iter_mut().filter(|i| i.uid == uid) {
+                                i.meta.locus = o.locus.clone();
+                            }
+                        }
+                        self.set_message(format!("✓ for {}", o.label), false);
+                        self.wants_sync = true;
+                        self.refresh_remote();
+                    }
+                    Some(Ok(Err(e))) => self.set_message(e.to_string(), true),
+                    Some(Err(e)) => self.set_message(e.to_string(), true),
+                    None => {}
+                }
+            }
             FormKind::AddTask => {
                 let due = match opt(f.get("Due")).map(|d| self.when_str(&d)).transpose() {
                     Ok(d) => d,
                     Err(e) => return self.set_message(e, true),
                 };
+                let target = f.chosen_for().cloned();
+                let default = self.cfg.default_key().map(|k| k.name.clone()).unwrap_or_default();
                 let req = api::CreateTaskReq {
                     title: f.get("Title").to_string(),
-                    key: f.get("Calendar").to_string(),
+                    key: target.as_ref().map_or(default, |o| o.key.clone()),
+                    // How it is planned follows from the estimate (ADR-009): kairosd derives it.
                     estimate_min: dur(f.get("Estimate")).unwrap_or(0),
-                    kind: Some(f.get("Type").to_string()).filter(|k| !k.is_empty()),
                     due,
-                    project: Some(f.get("Project").to_string())
-                        .filter(|p| !p.is_empty() && p != crate::form::NO_PROJECT),
+                    locus: target.and_then(|o| o.locus),
                     ..Default::default()
                 };
                 if let Some(r) = self.with_daemon(|d| d.create_task(&req)) {
@@ -2199,23 +2345,54 @@ impl App {
         ));
     }
 
-    /// Projects a task can belong to (not done), by name.
-    fn open_project_names(&self) -> Vec<String> {
-        self.projects
+    /// A task's edit form with its Project picker.
+    /// The For options, the items your open tasks and recent events are for first (ADR-009).
+    pub fn fors_recent_first(&self) -> Vec<ForOption> {
+        let mut recent: Vec<(DateTime<Utc>, String)> = self
+            .tasks
             .iter()
-            .filter(|p| p.project.status != kairos_core::project::ProjectStatus::Done)
-            .map(|p| p.project.name.clone())
-            .collect()
+            .filter_map(|t| Some((t.updated_at, t.locus.clone()?)))
+            .collect();
+        recent.extend(self.index.instances.iter().filter_map(|i| {
+            let l = i.meta.locus.clone()?;
+            Some((i.start(self.tz), l))
+        }));
+        recent.sort_by(|a, b| b.0.cmp(&a.0));
+        let mut order: Vec<String> = Vec::new();
+        for (_, id) in recent {
+            if !order.contains(&id) {
+                order.push(id);
+            }
+        }
+        let mut v = self.fors.clone();
+        v.sort_by_key(|o| {
+            o.locus
+                .as_ref()
+                .and_then(|l| order.iter().position(|x| x == l))
+                .unwrap_or(usize::MAX)
+        });
+        v
     }
 
-    /// A task's edit form with its Project picker.
-    fn task_form_projects(&self, f: Form, t: &kairos_core::task::Task) -> Form {
-        let current = t
-            .project_id
-            .as_ref()
-            .and_then(|id| self.projects.iter().find(|p| &p.project.id == id))
-            .map(|p| p.project.name.clone());
-        f.with_project(self.open_project_names(), current.as_deref())
+    /// What an item is for, as the For field shows it: its link's label, else its stream's.
+    pub fn for_label(&self, locus: Option<&str>, key: Option<&str>) -> String {
+        if let Some(l) = locus
+            && let Some(o) = self.fors.iter().find(|o| o.locus.as_deref() == Some(l))
+        {
+            return o.label.clone();
+        }
+        key.and_then(|k| {
+            self.fors
+                .iter()
+                .find(|o| o.locus.is_none() && o.key.eq_ignore_ascii_case(k))
+        })
+        .map(|o| o.label.clone())
+        .unwrap_or_default()
+    }
+
+    fn task_form(&self, t: &kairos_core::task::Task) -> Form {
+        let label = self.for_label(t.locus.as_deref(), Some(&t.key));
+        Form::edit_task(self.key_names(), t, self.tz, &label).with_fors(self.fors_recent_first())
     }
 
     /// The calendar project sessions go in by default.
@@ -2229,13 +2406,11 @@ impl App {
     /// Open the add form: a task, or an event (prefilled with the cursor day).
     fn open_add(&mut self, task: bool) {
         let keys = self.key_names();
-        let default = self.cfg.default_key().map(|k| k.name.clone()).unwrap_or_default();
         self.message = None;
         self.mode = Mode::Form(if task {
-            let names = self.open_project_names();
-            Form::add_task(keys, &default).with_project(names, None)
+            Form::add_task(keys).with_fors(self.fors_recent_first())
         } else {
-            Form::add_event(keys, &default, when_prefill(self.cursor, self.today()))
+            Form::add_event(keys, when_prefill(self.cursor, self.today())).with_fors(self.fors_recent_first())
         });
     }
 

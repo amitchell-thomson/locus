@@ -1,6 +1,6 @@
 # Adding to the calendar: what it is for, moving, linking, dates
 
-**State:** draft, for your approval · **Written:** 2026-10-25 · **Runs in:** `locus slice 1`
+**State:** approved 2026-10-25 · **Written:** 2026-10-25 · **Runs in:** `locus slice 1`
 **Decision:** [ADR-009](../../decisions/ADR-009-for-not-type.md) (proposed). **From:** Slice 1's
 round 7 (slice-1.md). **Builds on:** [kairos-joins-locus.md](kairos-joins-locus.md) (done).
 
@@ -12,6 +12,11 @@ Approve, linked; and projects and tasks each have one overview, in the locus win
 ---
 
 ## Decisions only you can make
+
+**Answered 25 Oct 2026:** all as recommended ("all as recommended, approved, go ahead and do all
+of them"). On E-b: "I especially like the tasks view idea on home, and would want to nail down how
+that gets shown on home, so we stay along the design standard of any important view being shown
+somehow on home."
 
 | # | Question | Options | Recommendation |
 |---|---|---|---|

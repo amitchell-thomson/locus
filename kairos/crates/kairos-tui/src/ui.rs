@@ -2155,6 +2155,33 @@ fn form_popup(f: &mut Frame, app: &App, area: Rect, form: &Form) {
             }
         }
         lines.push(Line::from(spans));
+        // For (ADR-009): what it would be, as you type: the matches, the first one taken.
+        if focus && fld.kind == FieldKind::For && !form.fors.is_empty() {
+            let matches = form.for_matches(&fld.value);
+            let mut m: Vec<TSpan> = vec![TSpan::raw(format!("{:>label_w$}  ", ""))];
+            if matches.is_empty() {
+                m.push(TSpan::styled("nothing matches", Style::default().fg(c("peach"))));
+            }
+            let mut used = label_w + 2;
+            for (n, o) in matches.iter().take(5).enumerate() {
+                let col = app.cfg.key(&o.key).map_or(c("text"), |k| rgb(k.colour));
+                let text = format!("{}{} ", if n == 0 { "" } else { "· " }, o.label);
+                if used + text.width() + 2 > val_w + label_w + 2 {
+                    break;
+                }
+                used += text.width() + 2;
+                m.push(TSpan::styled("● ", Style::default().fg(col)));
+                m.push(TSpan::styled(
+                    text,
+                    if n == 0 {
+                        Style::default().fg(c("text")).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(c("overlay1"))
+                    },
+                ));
+            }
+            lines.push(Line::from(m));
+        }
         if focus && !fld.hint.is_empty() {
             lines.push(Line::from(TSpan::styled(
                 format!("{:>label_w$}  {}", "", fit(fld.hint, val_w)),

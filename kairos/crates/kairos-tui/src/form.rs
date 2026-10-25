@@ -27,6 +27,12 @@ pub enum FormKind {
     },
     /// Plan project time by hand.
     AddSession,
+    /// Link an event or task to a locus item afterwards (`L`).
+    Link {
+        source: String,
+        uid: String,
+        task: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,6 +52,25 @@ pub enum FieldKind {
     Status,
     /// Picks a project ("none" or one of `Form::projects`).
     Project,
+    /// What it is for (ADR-009): typed, with type-ahead over `Form::fors`; ←/→ through the
+    /// matches. Leaving the field completes it to the first match.
+    For,
+}
+
+/// One answer to "what is it for" (ADR-009): a registry item (a course, an application, a repo)
+/// or one of Personal's streams. Its calendar follows from it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ForOption {
+    /// The registry id, or the stream's name.
+    pub id: String,
+    /// What is shown and typed against: `B15 Control Systems`, `Millennium QD Internship 2027`.
+    pub label: String,
+    /// The calendar (key) it goes in.
+    pub key: String,
+    /// The registry id to link to (none for a stream).
+    pub locus: Option<String>,
+    /// A course (its sheets get the five-hour default).
+    pub course: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,6 +92,8 @@ pub struct Form {
     pub keys: Vec<String>,
     /// Project names, for a task's Project picker.
     pub projects: Vec<String>,
+    /// What things can be for, most recently used first (ADR-009).
+    pub fors: Vec<ForOption>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,11 +105,11 @@ pub enum FormAction {
 
 pub const WHEN_HINT: &str = "tue 19:00 · 23 oct 2pm · tomorrow 9am · a date alone = all day";
 const DUR_HINT: &str = "60m · 1h30 · 2h (empty = 1h)";
-const KEY_HINT: &str = "←/→ or type the first letter";
 /// The Project picker's "no project".
 pub const NO_PROJECT: &str = "none";
 const CAL_HINT: &str = "where its sessions go, e.g. Studies for the 3rd-year project — ←/→";
 const STATUS_HINT: &str = "active (now) · next (soon) · paused · done — ←/→";
+const FOR_HINT: &str = "type to find: b15 · mil · errands — ←/→ through the matches";
 const TITLE_HINT: &str = "or all at once: Squash @ tue 19:00 #Sport for 90m";
 
 fn field(label: &'static str, value: impl Into<String>, kind: FieldKind, hint: &'static str) -> Field {
@@ -104,7 +131,77 @@ impl Form {
             original,
             keys,
             projects: Vec::new(),
+            fors: Vec::new(),
         }
+    }
+
+    /// Give the form its For options.
+    pub fn with_fors(mut self, fors: Vec<ForOption>) -> Form {
+        self.fors = fors;
+        self
+    }
+
+    /// The options matching what is typed in For, best first: the id or a word of the label
+    /// starting with it, then anything containing it. Empty: all of them.
+    pub fn for_matches(&self, q: &str) -> Vec<&ForOption> {
+        let q = q.trim().to_lowercase();
+        if q.is_empty() {
+            return self.fors.iter().collect();
+        }
+        let starts = |o: &ForOption| {
+            o.id.to_lowercase().starts_with(&q)
+                || o.label.to_lowercase().starts_with(&q)
+                || o.label.to_lowercase().split_whitespace().any(|w| w.starts_with(&q))
+        };
+        let mut v: Vec<&ForOption> = self.fors.iter().filter(|o| starts(o)).collect();
+        v.extend(
+            self.fors
+                .iter()
+                .filter(|o| !starts(o) && o.label.to_lowercase().contains(&q)),
+        );
+        v
+    }
+
+    /// What For names: an exact label (or id), else the first match; none when empty.
+    pub fn chosen_for(&self) -> Option<&ForOption> {
+        let v = self.get("For");
+        if v.is_empty() {
+            return None;
+        }
+        self.fors
+            .iter()
+            .find(|o| o.label.eq_ignore_ascii_case(v) || o.id.eq_ignore_ascii_case(v))
+            .or_else(|| self.for_matches(v).into_iter().next())
+    }
+
+    /// Complete the For field to what it names, when leaving it.
+    fn complete_for(&mut self) {
+        if self.fields[self.focus].kind != FieldKind::For {
+            return;
+        }
+        if let Some(o) = self.chosen_for().map(|o| o.label.clone()) {
+            self.fields[self.focus].value = o;
+        }
+    }
+
+    /// ←/→ in For: through the matches of what was typed (all of them once it is complete).
+    fn cycle_for(&mut self, step: isize) {
+        let v = self.fields[self.focus].value.clone();
+        let exact = self.fors.iter().any(|o| o.label == v);
+        let opts: Vec<String> = if exact {
+            self.fors.iter().map(|o| o.label.clone()).collect()
+        } else {
+            self.for_matches(&v).into_iter().map(|o| o.label.clone()).collect()
+        };
+        if opts.is_empty() {
+            return;
+        }
+        let n = opts.len() as isize;
+        let cur = opts
+            .iter()
+            .position(|o| *o == v)
+            .map_or(if step > 0 { -1 } else { 0 }, |p| p as isize);
+        self.fields[self.focus].value = opts[(cur + step).rem_euclid(n) as usize].clone();
     }
 
     /// Add a Project picker (tasks): "none" or one of `projects`.
@@ -124,14 +221,14 @@ impl Form {
         self
     }
 
-    pub fn add_event(keys: Vec<String>, default_key: &str, when: String) -> Form {
+    pub fn add_event(keys: Vec<String>, when: String) -> Form {
         Form::new(
             FormKind::AddEvent,
             vec![
                 field("Title", "", FieldKind::Text, TITLE_HINT),
                 field("When", when, FieldKind::When, WHEN_HINT),
                 field("Duration", "", FieldKind::Duration, DUR_HINT),
-                field("Calendar", default_key, FieldKind::Key, KEY_HINT),
+                field("For", "", FieldKind::For, FOR_HINT),
                 field("Location", "", FieldKind::Text, "optional"),
                 field("Notes", "", FieldKind::Text, "optional"),
                 field(
@@ -145,7 +242,8 @@ impl Form {
         )
     }
 
-    pub fn edit_event(keys: Vec<String>, i: &Instance, tz: Tz) -> Form {
+    /// `for_label`: what it is for now (its link's label, else its calendar's name).
+    pub fn edit_event(keys: Vec<String>, i: &Instance, tz: Tz, for_label: &str) -> Form {
         let (when, dur) = match i.span {
             Span::AllDay { start, .. } => (start.format("%Y-%m-%d").to_string(), String::new()),
             Span::Timed { start, end } => (
@@ -162,7 +260,7 @@ impl Form {
                 field("Title", i.title.clone(), FieldKind::Text, ""),
                 field("When", when, FieldKind::When, WHEN_HINT),
                 field("Duration", dur, FieldKind::Duration, DUR_HINT),
-                field("Calendar", i.key.clone().unwrap_or_default(), FieldKind::Key, KEY_HINT),
+                field("For", for_label, FieldKind::For, FOR_HINT),
                 field(
                     "Location",
                     i.location.clone().unwrap_or_default(),
@@ -180,7 +278,7 @@ impl Form {
         )
     }
 
-    pub fn edit_task(keys: Vec<String>, t: &kairos_core::task::Task, tz: Tz) -> Form {
+    pub fn edit_task(keys: Vec<String>, t: &kairos_core::task::Task, tz: Tz, for_label: &str) -> Form {
         let due = match t.due {
             None => String::new(),
             Some(kairos_core::task::Due::Date(d)) => d.format("%Y-%m-%d").to_string(),
@@ -190,13 +288,7 @@ impl Form {
             FormKind::EditTask { id: t.id.clone() },
             vec![
                 field("Title", t.title.clone(), FieldKind::Text, ""),
-                field("Calendar", t.key.clone(), FieldKind::Key, KEY_HINT),
-                field(
-                    "Type",
-                    t.kind.clone().unwrap_or_else(|| "sheet".into()),
-                    FieldKind::Type,
-                    "sheet · coursework · admin — ←/→ (resets block sizes)",
-                ),
+                field("For", for_label, FieldKind::For, FOR_HINT),
                 field(
                     "Left",
                     fmt_minutes(i64::from(t.remaining_min)),
@@ -214,23 +306,17 @@ impl Form {
         )
     }
 
-    pub fn add_task(keys: Vec<String>, default_key: &str) -> Form {
+    pub fn add_task(keys: Vec<String>) -> Form {
         Form::new(
             FormKind::AddTask,
             vec![
                 field("Title", "", FieldKind::Text, "what needs doing"),
-                field("Calendar", default_key, FieldKind::Key, KEY_HINT),
-                field(
-                    "Type",
-                    "sheet",
-                    FieldKind::Type,
-                    "sheet (2–3 h blocks) · coursework · admin (one go) — ←/→",
-                ),
+                field("For", "", FieldKind::For, FOR_HINT),
                 field(
                     "Estimate",
                     "",
                     FieldKind::Duration,
-                    "how long in total: 4h · 90m · empty = the type's default",
+                    "how long in total: 4h · 20m (an hour or less in one go, longer in 2–3 h blocks)",
                 ),
                 field(
                     "Due",
@@ -243,8 +329,18 @@ impl Form {
         )
     }
 
+    /// Link something to a locus item afterwards (`L`).
+    pub fn link(source: String, uid: String, task: Option<String>, current: &str) -> Form {
+        Form::new(
+            FormKind::Link { source, uid, task },
+            vec![field("For", current, FieldKind::For, FOR_HINT)],
+            Vec::new(),
+        )
+    }
+
     pub fn title(&self) -> &'static str {
         match self.kind {
+            FormKind::Link { .. } => "what is it for",
             FormKind::AddEvent => "new event",
             FormKind::EditEvent { .. } => "edit event",
             FormKind::AddTask => "new task",
@@ -383,10 +479,9 @@ impl Form {
             self.set("Duration", fmt_minutes(i64::from(d)));
         }
         if let Some(k) = key
-            && let Some(name) = self.keys.iter().find(|n| n.eq_ignore_ascii_case(&k))
+            && let Some(o) = self.for_matches(&k).first().map(|o| o.label.clone())
         {
-            let name = name.clone();
-            self.set("Calendar", name);
+            self.set("For", o);
         }
         true
     }
@@ -447,15 +542,22 @@ impl Form {
                 if self.focus == 0 {
                     self.expand_quick();
                 }
+                self.complete_for();
                 return FormAction::Submit;
             }
             Key::Tab | Key::Down => {
                 if self.focus == 0 {
                     self.expand_quick();
                 }
+                self.complete_for();
                 self.focus = (self.focus + 1) % n;
             }
-            Key::BackTab | Key::Up => self.focus = (self.focus + n - 1) % n,
+            Key::BackTab | Key::Up => {
+                self.complete_for();
+                self.focus = (self.focus + n - 1) % n;
+            }
+            Key::Left if kind == FieldKind::For => self.cycle_for(-1),
+            Key::Right if kind == FieldKind::For => self.cycle_for(1),
             Key::Left if kind.is_picker() => self.cycle_key(-1),
             Key::Right if kind.is_picker() => self.cycle_key(1),
             Key::Char(c) if kind.is_picker() => self.jump_key(c),
@@ -541,9 +643,27 @@ mod tests {
             .to_vec()
     }
 
+    fn fors() -> Vec<ForOption> {
+        let o = |id: &str, label: &str, key: &str, locus: bool| ForOption {
+            id: id.into(),
+            label: label.into(),
+            key: key.into(),
+            locus: locus.then(|| id.to_string()),
+            course: id.starts_with('b'),
+        };
+        vec![
+            o("b15", "B15 Control Systems", "Studies", true),
+            o("millennium", "Millennium QD Internship 2027", "Careers", true),
+            o("b1", "B1 Engineering Computation", "Studies", true),
+            o("sport", "Sport", "Sport", false),
+            o("social", "Social", "Social", false),
+            o("errands", "Errands", "Errands", false),
+        ]
+    }
+
     #[test]
-    fn typing_tab_and_key_picker() {
-        let mut f = Form::add_event(keys(), "Inbox", "today ".into());
+    fn typing_tab_and_for_type_ahead() {
+        let mut f = Form::add_event(keys(), "today ".into()).with_fors(fors());
         for c in "Squash".chars() {
             f.key(Key::Char(c));
         }
@@ -554,24 +674,43 @@ mod tests {
         assert_eq!(f.get("When"), "today 19:00");
         f.key(Key::Tab);
         f.key(Key::Tab);
-        assert_eq!(f.fields[f.focus].label, "Calendar");
+        assert_eq!(f.fields[f.focus].label, "For");
+        // Type-ahead: "mil" finds Millennium, a word's start ("control") finds B15.
         f.key(Key::Char('s'));
-        assert_eq!(f.get("Calendar"), "Sport");
-        f.key(Key::Char('s'));
-        assert_eq!(f.get("Calendar"), "Social", "same letter cycles");
-        f.key(Key::Right);
-        assert_eq!(f.get("Calendar"), "Inbox", "wraps");
-        f.key(Key::Left);
-        assert_eq!(f.get("Calendar"), "Social");
+        let ids: Vec<&str> = f.for_matches("s").iter().map(|o| o.id.as_str()).collect();
+        assert_eq!(ids, ["b15", "sport", "social", "millennium", "errands"]);
+        f.key(Key::Char('p'));
+        assert_eq!(f.chosen_for().map(|o| o.id.as_str()), Some("sport"));
+        // ←/→ through the matches; leaving the field completes it.
+        f.key(Key::Backspace);
+        f.key(Key::Backspace);
+        for c in "mil".chars() {
+            f.key(Key::Char(c));
+        }
+        f.key(Key::Tab);
         f.key(Key::BackTab);
-        assert_eq!(f.fields[f.focus].label, "Duration");
+        assert_eq!(f.get("For"), "Millennium QD Internship 2027");
+        assert_eq!(f.chosen_for().map(|o| o.key.as_str()), Some("Careers"));
+        f.key(Key::Right);
+        assert_ne!(f.get("For"), "Millennium QD Internship 2027", "→ moves on");
         assert_eq!(f.key(Key::Enter), FormAction::Submit);
         assert_eq!(f.key(Key::Esc), FormAction::Cancel);
     }
 
     #[test]
+    fn for_matches_starts_before_contains() {
+        let f = Form::add_task(keys()).with_fors(fors());
+        let ids = |q: &str| f.for_matches(q).iter().map(|o| o.id.clone()).collect::<Vec<_>>();
+        assert_eq!(ids("control"), ["b15"]);
+        assert_eq!(ids("b1"), ["b15", "b1"], "the id and the label's start");
+        assert_eq!(ids("err"), ["errands"]);
+        assert_eq!(ids("ystem"), ["b15"], "anything containing it, last");
+        assert_eq!(ids("").len(), 6);
+    }
+
+    #[test]
     fn quick_syntax_in_title_fills_fields() {
-        let mut f = Form::add_event(keys(), "Inbox", "today ".into());
+        let mut f = Form::add_event(keys(), "today ".into()).with_fors(fors());
         for c in "Squash @ tue 19:00 #sport for 90m".chars() {
             f.key(Key::Char(c));
         }
@@ -579,7 +718,7 @@ mod tests {
         assert_eq!(f.get("Title"), "Squash");
         assert_eq!(f.get("When"), "tue 19:00");
         assert_eq!(f.get("Duration"), "1h30");
-        assert_eq!(f.get("Calendar"), "Sport");
+        assert_eq!(f.get("For"), "Sport");
     }
 
     #[test]

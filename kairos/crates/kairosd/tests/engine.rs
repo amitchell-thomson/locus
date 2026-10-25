@@ -2697,3 +2697,57 @@ fn an_event_names_its_locus_item_without_touching_icloud() {
     assert!(set(&mut e, "").unwrap().is_none());
     assert_eq!(linked(&e), None, "cleared");
 }
+
+#[test]
+fn how_a_task_is_planned_follows_from_its_estimate_and_what_it_is_for() {
+    // ADR-009: you say what it is for and how long; kairos works out how to plan it.
+    let env = Env::new(true);
+    let mut e = env.engine();
+    e.registry = Some(
+        locus_contract::taxonomy::load(&locus_contract::taxonomy::root())
+            .unwrap()
+            .registry,
+    );
+    e.sync_registry().unwrap();
+    let add = |e: &mut kairosd::engine::Engine, title: &str, key: &str, est: u32, locus: Option<&str>| {
+        e.create_task(
+            Author::Alec,
+            &CreateTaskReq {
+                title: title.into(),
+                key: key.into(),
+                estimate_min: est,
+                locus: locus.map(String::from),
+                plan: Some(false),
+                ..Default::default()
+            },
+        )
+    };
+    // A course's sheet with no estimate: five hours in blocks.
+    let t = add(&mut e, "B15 sheet 4", "Engineering", 0, Some("b15")).unwrap().task;
+    assert_eq!((t.kind.as_deref(), t.estimate_min), (Some("sheet"), 300));
+    assert_eq!(t.locus.as_deref(), Some("b15"));
+    // An errand with no estimate: a short chore for a gap.
+    let t = add(&mut e, "laundry", "Personal", 0, None).unwrap().task;
+    assert_eq!((t.kind.as_deref(), t.estimate_min), (Some("chore"), 20));
+    // Interview prep: three hours, in two to three hour blocks.
+    let t = add(&mut e, "Millennium prep", "Engineering", 180, Some("millennium"))
+        .unwrap()
+        .task;
+    assert_eq!(t.kind.as_deref(), Some("coursework"));
+    // An hour or less: one sitting.
+    let t = add(&mut e, "Email the 3YP group", "Engineering", 40, Some("3yp"))
+        .unwrap()
+        .task;
+    assert_eq!(t.kind.as_deref(), Some("admin"));
+    // A task for a repo belongs to its project.
+    let p = e
+        .projects()
+        .unwrap()
+        .into_iter()
+        .find(|p| p.project.registry.as_deref() == Some("3yp"))
+        .unwrap();
+    assert_eq!(t.project_id.as_deref(), Some(p.project.id.as_str()));
+    // Anything longer with no estimate asks for one.
+    let err = add(&mut e, "3YP report", "Engineering", 0, Some("3yp")).unwrap_err();
+    assert!(err.to_string().contains("how long"), "{err}");
+}

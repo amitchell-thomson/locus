@@ -1793,9 +1793,10 @@ impl Engine {
         let now = self.now();
         let tz = self.tz();
         let mut t = Task::new(req.title.trim(), &req.key, req.estimate_min, author, now);
+        let locus = self.locus_ref(req.locus.as_deref())?;
         let ty = match &req.kind {
             Some(k) => self.task_type(k)?,
-            None => self.inferred_type(req.estimate_min),
+            None => self.planned_type(req.estimate_min, locus.as_deref(), &req.key, &req.title),
         };
         if let Some(ty) = &ty {
             t.apply_type(ty);
@@ -1803,10 +1804,10 @@ impl Engine {
         // No estimate is allowed only for a bare due date (`kairos deadline`): nothing to plan.
         let bare_due = req.estimate_min == 0 && req.kind.is_none() && req.due.is_some();
         if t.estimate_min == 0 && !bare_due {
-            return Err(EngineError::BadRequest(format!(
-                "estimate required{}",
-                ty.map(|t| format!(" for {}", t.name)).unwrap_or_default()
-            )));
+            return Err(EngineError::BadRequest(match ty {
+                Some(t) => format!("estimate required for {}", t.name),
+                None => "how long will it take in total? (an estimate, e.g. 3h or 45m)".into(),
+            }));
         }
         if bare_due {
             t.estimate_min = 0;
@@ -1851,7 +1852,17 @@ impl Engine {
             t.preferred_window = Some(w.clone());
         }
         t.notes = req.notes.clone().unwrap_or_default();
-        t.locus = self.locus_ref(req.locus.as_deref())?;
+        t.locus = locus.clone();
+        // A task for a repo belongs to that project: its time counts there (ADR-009).
+        if let Some(l) = &locus
+            && let Some(p) = self
+                .db
+                .projects()?
+                .into_iter()
+                .find(|p| p.registry.as_deref() == Some(l.as_str()))
+        {
+            t.project_id = Some(p.id);
+        }
         if let Some(p) = req.project.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
             t.project_id = Some(self.find_project(p)?.id);
         }
@@ -2796,6 +2807,42 @@ impl Engine {
     }
 
     /// Type for a task given none: up to an hour is admin, longer is a sheet.
+    /// How a task is planned, from its estimate and what it is for (ADR-009): an hour or less
+    /// in one sitting (a short Personal one a chore, placed into a gap), longer in blocks of two
+    /// to three hours; a course's sheet with no estimate its five hours; a Personal errand with
+    /// none twenty minutes. `None` when it needs an estimate it was not given.
+    fn planned_type(
+        &self,
+        estimate_min: u32,
+        locus: Option<&str>,
+        key: &str,
+        title: &str,
+    ) -> Option<kairos_core::constraints::TaskType> {
+        let course = locus
+            .and_then(|l| {
+                self.registry
+                    .as_ref()?
+                    .get(l)
+                    .map(|p| p.kind == locus_contract::ProjectKind::Course)
+            })
+            .unwrap_or(false);
+        let personal = self
+            .cfg
+            .key(key)
+            .is_some_and(|k| k.area().eq_ignore_ascii_case("Personal"));
+        let sheet = course && title.to_lowercase().contains("sheet");
+        let name = match estimate_min {
+            0 if sheet => "sheet",
+            0 if personal => kairos_core::sched::CHORE,
+            0 => return None,
+            m if m <= 30 && personal => kairos_core::sched::CHORE,
+            m if m <= 60 => "admin",
+            _ if sheet => "sheet",
+            _ => "coursework",
+        };
+        self.constraints.task_type(name).cloned()
+    }
+
     fn inferred_type(&self, estimate_min: u32) -> Option<kairos_core::constraints::TaskType> {
         let name = if estimate_min > 0 && estimate_min <= 60 {
             "admin"

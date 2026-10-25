@@ -16,12 +16,12 @@ expression: "render_to_string(&a, 100, 30)"
 │13:00 ┊      │      When  today 19:00                                               │             │
 │      ┊      │  Duration  90m█                                                      │             │
 │14:00 ┊      │            60m · 1h30 · 2h (empty = 1h)                              │             │
-│      ┊      │  Calendar  ◀ ● Errands ▶                                             │             │
+│      ┊      │       For                                                            │             │
 │15:00 ┊      │  Location                                                            │             │
 │      ┊      │     Notes                                                            │             │
 │16:00 ┊      │    Repeat  ◀ no ▶                                                    │             │
 │      ┊      │                                                                      │             │
-│17:00 ┊      │  → Mon 19 Oct 19:00–20:30 · Errands                                  │             │
+│17:00 ┊      │  → Mon 19 Oct 19:00–20:30 · for Errands                              │             │
 │      ┊      │                                                                      │             │
 │      ┄┄┄┄┄┄┄│  Tab next · ⇧Tab back · Enter save · Esc cancel                      │┄┄┄┄┄┄┄┄┄┄┄┄┄│
 │18:00 ┊      ╰──────────────────────────────────────────────────────────────────────╯             │

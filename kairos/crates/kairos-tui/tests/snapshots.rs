@@ -635,8 +635,8 @@ fn tasks_view_lists_completed_tasks_and_edits_a_task() {
     let Mode::Form(f) = &a.mode else { panic!("no form") };
     assert_eq!(f.get("Due"), "2026-10-12 23:59");
     assert_eq!(f.get("Left"), "1h");
-    for _ in 0..4 {
-        a.key(Key::Tab); // → Due
+    for _ in 0..3 {
+        a.key(Key::Tab); // Title → For → Left → Due
     }
     for _ in 0..16 {
         a.key(Key::Backspace);
@@ -1062,4 +1062,58 @@ fn a_linked_item_says_where_it_opens_and_locus_can_open_a_day() {
     // v still shows the details.
     a.key(Key::Char('v'));
     assert!(a.expanded);
+}
+
+#[test]
+fn adding_asks_what_it_is_for_and_l_links_afterwards() {
+    // ADR-009 / spec E1: For, by type-ahead over the registry and Personal's streams, in place of
+    // a calendar and a type; how it is planned follows from the estimate.
+    use kairos_tui::app::Mode;
+    let (mut a, _t) = app("2026-10-19T08:00:00+01:00");
+    assert!(a.fors.iter().any(|o| o.id == "b15"), "the registry's items are offered");
+    a.key(Key::Char('a'));
+    a.key(Key::Char('t'));
+    for c in "B15 sheet 4".chars() {
+        a.key(Key::Char(c));
+    }
+    a.key(Key::Tab);
+    for c in "b15".chars() {
+        a.key(Key::Char(c));
+    }
+    let s = render_to_string(&a, 120, 34);
+    assert!(s.contains("● B15 Control Systems"), "the matches as you type:\n{s}");
+    let Mode::Form(f) = &a.mode else { panic!("no form") };
+    let p = a.form_preview(f).unwrap();
+    assert!(
+        p.contains("5h in 2–3 h blocks") && p.contains("for B15 Control Systems"),
+        "{p}"
+    );
+    assert!(!f.fields.iter().any(|x| x.label == "Type" || x.label == "Calendar"));
+    // An errand needs nothing but its name.
+    a.key(Key::Esc);
+    a.key(Key::Char('a'));
+    a.key(Key::Char('t'));
+    for c in "laundry".chars() {
+        a.key(Key::Char(c));
+    }
+    a.key(Key::Tab);
+    for c in "err".chars() {
+        a.key(Key::Char(c));
+    }
+    let Mode::Form(f) = &a.mode else { panic!("no form") };
+    assert!(
+        a.form_preview(f).unwrap().starts_with("20m in one go"),
+        "{:?}",
+        a.form_preview(f)
+    );
+    a.key(Key::Esc);
+    // L on an event: the same For, for linking afterwards.
+    a.key(Key::Esc);
+    let n = a.day_clusters(a.cursor).len();
+    assert!(n > 0);
+    a.key(Key::Char('L'));
+    let Mode::Form(f) = &a.mode else {
+        panic!("L opens the link form")
+    };
+    assert_eq!(f.title(), "what is it for");
 }

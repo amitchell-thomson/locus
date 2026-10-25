@@ -62,9 +62,9 @@ pub fn is_checked_in(title: &str) -> bool {
 
 /// Terminal boxes (Nerd Font checkboxes: same size, centred) for work blocks;
 /// the stored titles keep ☐ / ✓ so the phone (no Nerd Font) shows a box too.
-pub const TODO_ICON: &str = "\u{f0131}"; // nf-md-checkbox_blank_outline
-pub const WAITING_ICON: &str = "\u{f0856}"; // nf-md-checkbox_intermediate: over, not checked in
-pub const DONE_ICON: &str = "\u{f0135}"; // nf-md-checkbox_marked
+pub const TODO_ICON: &str = locus_theme::glyph::TODO_BOX;
+pub const WAITING_ICON: &str = locus_theme::glyph::WAITING_BOX;
+pub const DONE_ICON: &str = locus_theme::glyph::DONE;
 
 /// A work block's title as the TUI/CLI draw it: to do (the outline box),
 /// over but waiting for a check-in (the box with a dash), checked in (the

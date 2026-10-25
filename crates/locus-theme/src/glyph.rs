@@ -18,6 +18,10 @@ pub const IDLE: &str = "\u{f0904}";
 pub const DONE: &str = "\u{f0135}";
 pub const FAILED: &str = "\u{f0158}";
 
+// A task's box (kairos's work blocks, the Tasks page): to do, over but not checked in, done.
+pub const TODO_BOX: &str = "\u{f0131}";
+pub const WAITING_BOX: &str = "\u{f0856}";
+
 // Decision status.
 pub const RECHECK: &str = "\u{f1276}";
 pub const HOLDING: &str = "\u{f033e}";
@@ -50,6 +54,8 @@ pub const ALL: &[(&str, &str)] = &[
     ("needs you", NEEDS_YOU),
     ("idle", IDLE),
     ("done", DONE),
+    ("to do", TODO_BOX),
+    ("over, not checked in", WAITING_BOX),
     ("failed", FAILED),
     ("decision: re-check", RECHECK),
     ("decision: holding", HOLDING),
@@ -85,6 +91,6 @@ mod tests {
             assert!(u32::from(chars[0]) >= 0xF0000, "{name} is not plane 15");
             assert!(seen.insert(*g), "{name} duplicates another glyph");
         }
-        assert_eq!(ALL.len(), 27);
+        assert_eq!(ALL.len(), 29);
     }
 }

@@ -1,10 +1,9 @@
 ---
 source: kairos/crates/kairos-tui/tests/snapshots.rs
-assertion_line: 109
 expression: s
 ---
-╭ kairos ────────────────── Week 43 · 21 Oct–23 Oct ───────────────────────────╮
-│       Wed 21                  Thu 22                  Fri 23                 │
+╭ kairos ────────────────── week 43 · 21 Oct–23 Oct ───────────────────────────╮
+│       wed 21                  thu 22                  fri 23                 │
 │                                                      ▌Collections            │
 │                                                      ▎+2 more                │
 │──────────────────────────────────────────────────────────────────────────────│
@@ -26,4 +25,4 @@ expression: s
 │20:00 ┊                       ┊                       ┊                       │
 │     ▼┊                       ┊                       ┊                       │
 ╰ ● 14:00–15:00 · B4 Lecture · Careers · ⧉ 2 ──────────────────────────────────╯
- WEEK  3 Careers  │ 4 Personal ▸ 5 Family  8 Errands                   ? help
+ ⏎ open · ⇥ view · [ ] week · ? keys

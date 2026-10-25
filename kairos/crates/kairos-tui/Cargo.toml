@@ -10,6 +10,7 @@ publish.workspace = true
 kairos-core.workspace = true
 kairos-store.workspace = true
 locus-contract.workspace = true
+locus-theme.workspace = true
 chrono.workspace = true
 chrono-tz.workspace = true
 crossterm.workspace = true

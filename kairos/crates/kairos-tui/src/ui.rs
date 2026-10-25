@@ -1,7 +1,8 @@
-//! Drawing. Theme: Catppuccin Mocha, transparent background (Color::Reset),
-//! rounded borders, blue focus / mauve popups, ` · ` separators, `…` truncation.
+//! Drawing, in the look every locus app shares (locus-theme, L1/L2): Catppuccin Mocha on a
+//! transparent background, rounded grey frames, mauve popups, ` · ` separators, `…` truncation,
+//! key hints as blue keys with dim words.
 
-use crate::app::{App, Confirm, Mode, PromptKind, View, is_deadline, is_dimmed, overlay_flags};
+use crate::app::{App, Mode, PromptKind, View, is_deadline, is_dimmed, overlay_flags};
 use crate::form::{FieldKind, Form};
 use chrono::{DateTime, Datelike, Duration, NaiveDate, Timelike, Utc};
 use kairos_core::colour::Rgb;
@@ -13,26 +14,13 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span as TSpan};
-use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap};
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
+use unicode_width::UnicodeWidthStr;
 
-pub fn c(name: &str) -> Color {
-    rgb(Rgb::mocha(name))
-}
+pub use locus_theme::{c, fade, fit};
+
 pub fn rgb(r: Rgb) -> Color {
     Color::Rgb(r.0, r.1, r.2)
-}
-
-/// Blend a colour towards the Mocha base (0 = unchanged, 1 = base).
-pub fn fade(col: Color, t: f32) -> Color {
-    let Rgb(br, bg, bb) = Rgb::mocha("base");
-    match col {
-        Color::Rgb(r, g, b) => {
-            let m = |a: u8, z: u8| (f32::from(a) + (f32::from(z) - f32::from(a)) * t).round() as u8;
-            Color::Rgb(m(r, br), m(g, bg), m(b, bb))
-        }
-        c => c,
-    }
 }
 
 /// How much past days and not-attending Family events recede.
@@ -56,28 +44,6 @@ fn colour_of(app: &App, i: &Instance) -> Color {
     rgb(r)
 }
 
-/// Truncate to `w` columns with `…`.
-pub fn fit(s: &str, w: usize) -> String {
-    if s.width() <= w {
-        return s.to_string();
-    }
-    if w == 0 {
-        return String::new();
-    }
-    let mut out = String::new();
-    let mut used = 0;
-    for ch in s.chars() {
-        let cw = ch.width().unwrap_or(0);
-        if used + cw + 1 > w {
-            break;
-        }
-        out.push(ch);
-        used += cw;
-    }
-    out.push('…');
-    out
-}
-
 fn put(buf: &mut Buffer, x: u16, y: u16, w: u16, s: &str, style: Style) {
     if w == 0 {
         return;
@@ -86,21 +52,17 @@ fn put(buf: &mut Buffer, x: u16, y: u16, w: u16, s: &str, style: Style) {
     buf.set_stringn(x, y, &s, w as usize, style);
 }
 
-/// The keys for what's selected, on the bottom-right edge — unless the
+/// The keys for what's selected, on the bottom-right edge in locus's hint format — unless the
 /// window is too narrow to keep ~40 columns for the details on the left.
 fn with_hints<'a>(block: Block<'a>, app: &App, width: u16) -> Block<'a> {
-    let h = app.key_hints();
-    if h.is_empty() || (width as usize) < h.width() + 48 {
+    let pairs = app.key_hint_pairs();
+    let mut line = locus_theme::hints(&pairs);
+    if pairs.is_empty() || (width as usize) < line.width() + 48 {
         return block;
     }
-    block.title_bottom(
-        Line::from(vec![
-            TSpan::styled(" ", Style::default()),
-            TSpan::styled(h, Style::default().fg(c("overlay1"))),
-            TSpan::styled(" ", Style::default()),
-        ])
-        .right_aligned(),
-    )
+    line.spans.insert(0, TSpan::raw(" "));
+    line.spans.push(TSpan::raw(" "));
+    block.title_bottom(line.right_aligned())
 }
 
 /// The selected item: a solid fill in its own colour, softened a little so
@@ -122,24 +84,12 @@ pub fn linked_style(col: Color) -> Style {
         .add_modifier(Modifier::BOLD)
 }
 
-/// A view's frame. The main (focused) one carries `kairos` on the left of the border, as
-/// locus's screens name themselves, with the view's own title (the week, the day) kept in the
-/// centre (spec K6); a side panel (the diff beside approvals) has only its title.
-fn panel(title: &str, focus: bool) -> Block<'static> {
-    let mut b = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(if focus { c("blue") } else { c("overlay0") }));
-    if focus {
-        b = b.title(
-            Line::from(TSpan::styled(
-                " kairos ",
-                Style::default().fg(c("text")).add_modifier(Modifier::BOLD),
-            ))
-            .alignment(Alignment::Left),
-        );
-    }
-    b.title(
+/// A view's frame: locus's grey screen frame, `kairos` on the left as locus's screens name
+/// themselves, and the view's own title (the week, the day) in the centre in blue so it stands
+/// out (spec K6; your call 25 Oct: "make the border grey like the rest, but keep the week
+/// heading in the middle blue").
+fn panel(title: &str) -> Block<'static> {
+    locus_theme::screen(locus_theme::title("kairos", ""), None).title(
         Line::from(TSpan::styled(
             format!(" {title} "),
             Style::default().fg(c("blue")).add_modifier(Modifier::BOLD),
@@ -149,17 +99,16 @@ fn panel(title: &str, focus: bool) -> Block<'static> {
 }
 
 fn popup_block(title: &str) -> Block<'static> {
-    Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(c("mauve")))
-        .title(
-            Line::from(TSpan::styled(
-                format!(" {title} "),
-                Style::default().fg(c("mauve")).add_modifier(Modifier::BOLD),
-            ))
-            .alignment(Alignment::Center),
-        )
+    locus_theme::popup(title)
+}
+
+/// A date the locus way: the day lowercase, the month as written (`fri 23 Oct`, `sunday 25
+/// October`), as locus's screens write them (L2).
+fn lower_day(s: &str) -> String {
+    match s.split_once(' ') {
+        Some((day, rest)) => format!("{} {rest}", day.to_lowercase()),
+        None => s.to_lowercase(),
+    }
 }
 
 fn centred(area: Rect, w: u16, h: u16) -> Rect {
@@ -346,7 +295,7 @@ fn task_progress(app: &App, i: &Instance) -> Option<String> {
         let f = |m: u32| crate::form::fmt_minutes(i64::from(m));
         let due = t
             .due
-            .map_or_else(|| "no deadline".to_string(), |d| format!("due {}", d.describe(app.tz)));
+            .map_or_else(|| "no due date".to_string(), |d| format!("due {}", d.describe(app.tz)));
         let (s, e) = i.span.bounds(app.tz);
         if s > app.now {
             // This task's work before this block that isn't counted yet:
@@ -555,10 +504,10 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
     };
     let last = first + Duration::days(ndays as i64 - 1);
     let mut title = if single {
-        app.cursor.format("%A %-d %B").to_string()
+        lower_day(&app.cursor.format("%A %-d %B").to_string())
     } else {
         format!(
-            "Week {} · {}–{}",
+            "week {} · {}–{}",
             first.iso_week().week(),
             first.format("%-d %b"),
             last.format("%-d %b")
@@ -568,7 +517,7 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
     if let Some(w) = app.cfg.tui.term_week(app.cursor) {
         title.push_str(&format!(" · {w}"));
     }
-    let mut block = with_hints(panel(&title, true), app, area.width);
+    let mut block = with_hints(panel(&title), app, area.width);
     if let Some(cl) = app.selected() {
         let h = app.key_hints().width() as u16;
         let room = if area.width >= h + 48 {
@@ -607,7 +556,7 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
         let x = col_x(k);
         let col_w = col_w_of(k);
         let mut label = if col_w >= 10 {
-            d.format("%a %-d").to_string()
+            lower_day(&d.format("%a %-d").to_string())
         } else {
             d.format("%-d").to_string()
         };
@@ -1218,7 +1167,7 @@ fn month(f: &mut Frame, app: &App, area: Rect) {
     if let Some(w) = app.cfg.tui.term_week(cur) {
         title.push_str(&format!(" · {w}"));
     }
-    let mut block = with_hints(panel(&title, true), app, area.width);
+    let mut block = with_hints(panel(&title), app, area.width);
     if let Some(cl) = app.selected() {
         let h = app.key_hints().width() as u16;
         let room = if area.width >= h + 48 {
@@ -1357,7 +1306,7 @@ fn month(f: &mut Frame, app: &App, area: Rect) {
 fn agenda(f: &mut Frame, app: &App, area: Rect) {
     let (a, b) = app.agenda_days();
     let block = with_hints(
-        panel(&format!("Agenda · {}–{}", a.format("%-d %b"), b.format("%-d %b")), true),
+        panel(&format!("agenda · {}–{}", a.format("%-d %b"), b.format("%-d %b"))),
         app,
         area.width,
     );
@@ -1381,7 +1330,7 @@ fn agenda(f: &mut Frame, app: &App, area: Rect) {
                 ""
             };
             lines.push(Line::from(TSpan::styled(
-                format!("{}{tag}", d.format("%a %-d %b")),
+                format!("{}{tag}", lower_day(&d.format("%a %-d %b").to_string())),
                 Style::default().fg(c("blue")).add_modifier(Modifier::BOLD),
             )));
             last = Some(*d);
@@ -1393,7 +1342,7 @@ fn agenda(f: &mut Frame, app: &App, area: Rect) {
     }
     if rows.is_empty() {
         lines.push(Line::from(TSpan::styled(
-            "Nothing scheduled.",
+            "nothing scheduled",
             Style::default().fg(c("overlay1")),
         )));
     }
@@ -1476,18 +1425,18 @@ fn details(f: &mut Frame, app: &App, area: Rect, cl: &Cluster) {
     let when = match i.span {
         Span::AllDay { start, end } => {
             if end - start <= Duration::days(1) {
-                start.format("%a %-d %b · all day").to_string()
+                lower_day(&start.format("%a %-d %b · all day").to_string())
             } else {
                 format!(
                     "{} – {} · all day",
-                    start.format("%a %-d %b"),
-                    (end - Duration::days(1)).format("%a %-d %b")
+                    lower_day(&start.format("%a %-d %b").to_string()),
+                    lower_day(&(end - Duration::days(1)).format("%a %-d %b").to_string())
                 )
             }
         }
         Span::Timed { start, end } => format!(
             "{} – {}",
-            start.with_timezone(&tz).format("%a %-d %b %H:%M"),
+            lower_day(&start.with_timezone(&tz).format("%a %-d %b %H:%M").to_string()),
             end.with_timezone(&tz).format("%H:%M")
         ),
     };
@@ -1495,50 +1444,133 @@ fn details(f: &mut Frame, app: &App, area: Rect, cl: &Cluster) {
     if let Some(l) = &i.location {
         lines.push(Line::from(TSpan::styled(l.clone(), Style::default().fg(c("subtext0")))));
     }
-    let mut facts = vec![format!("{} · {}", i.overlay.as_str(), i.colour_key().unwrap_or("—"))];
-    if let Some(a) = i.meta.created_by {
-        facts.push(format!("by {}", a.as_str()));
-    }
-    if i.recurring {
-        facts.push("recurring".into());
-    }
-    if i.meta.flex {
-        facts.push("flex".into());
-    }
-    lines.push(Line::from(TSpan::styled(
-        facts.join(" · "),
-        Style::default().fg(c("overlay1")),
-    )));
+    // What it is in the taxonomy and what it is linked to, row by row (your call 25 Oct: "I
+    // would rather see the taxonomy clearly laid out, with a clear idea of what it is linked
+    // to"), then who made it.
+    let row = |name: &str, value: Vec<TSpan<'static>>| {
+        let mut v = vec![TSpan::styled(format!("{name:<9}"), locus_theme::dim())];
+        v.extend(value);
+        Line::from(v)
+    };
+    let text = |s: String| TSpan::styled(s, Style::default().fg(c("text")));
+    let dimmed = |s: String| TSpan::styled(s, locus_theme::dim());
     lines.push(Line::raw(""));
-    lines.push(Line::from(TSpan::styled(
-        if cl.is_merged() {
-            format!("⧉ {} copies (showing the highest-precedence one)", cl.others.len() + 1)
-        } else {
-            "no duplicates".into()
+    // Area, and its stream for Personal: Studies · Personal › Errands · Personal › Family.
+    let key = i.colour_key();
+    let area_name = match i.overlay {
+        Overlay::Family => "Personal › Family".to_string(),
+        Overlay::Background => "a background calendar".to_string(),
+        Overlay::Imported => "imported (read only)".to_string(),
+        Overlay::Personal => match key.and_then(|k| app.cfg.key(k)) {
+            Some(k) => match &k.area {
+                Some(a) => format!("{a} › {}", k.name),
+                None => k.name.clone(),
+            },
+            None => key.unwrap_or("—").to_string(),
         },
-        Style::default().fg(c("mauve")),
-    )));
-    for o in cl.all() {
-        lines.push(Line::from(vec![
-            TSpan::styled("● ", Style::default().fg(colour_of(app, o))),
-            TSpan::styled(format!("{} ", o.source), Style::default().fg(c("text"))),
-            TSpan::styled(
-                format!("{} · {}", o.overlay.as_str(), fit(&o.title, 30)),
-                Style::default().fg(c("overlay1")),
-            ),
-        ]));
+    };
+    lines.push(row(
+        "area",
+        vec![
+            TSpan::styled("● ", Style::default().fg(colour_of(app, i))),
+            text(area_name),
+        ],
+    ));
+    // What it is for: the registry item (and its kind), else not linked yet.
+    let link = app.locus_link(i);
+    let for_ = match link
+        .as_deref()
+        .and_then(|l| app.fors.iter().find(|o| o.locus.as_deref() == Some(l)))
+    {
+        Some(o) => {
+            let kind = if o.course {
+                "course"
+            } else if o.application {
+                "application"
+            } else {
+                "project"
+            };
+            vec![
+                text(o.label.clone()),
+                dimmed(format!(" · {kind}")),
+                TSpan::styled("   ⏎", locus_theme::keyst()),
+                dimmed(" opens it in locus".into()),
+            ]
+        }
+        None => match link {
+            Some(l) => vec![text(l)],
+            None => vec![
+                dimmed("not linked to anything yet  ".into()),
+                TSpan::styled("L", locus_theme::keyst()),
+                dimmed(" says what it is for".into()),
+            ],
+        },
+    };
+    lines.push(row("for", for_));
+    // Its task, for a work block or a due date.
+    if let Some(p) = task_progress(app, i) {
+        let title = i
+            .meta
+            .task_id
+            .as_deref()
+            .and_then(|id| app.tasks.iter().chain(app.done_tasks.iter()).find(|t| t.id == id))
+            .map(|t| t.title.clone())
+            .unwrap_or_default();
+        let p = p.trim_start_matches("task: ").to_string();
+        lines.push(row("task", vec![text(title), dimmed(format!(" · {p}"))]));
     }
-    lines.push(Line::raw(""));
-    lines.push(Line::from(TSpan::styled(
-        format!("uid {}", i.uid),
-        Style::default().fg(c("overlay0")),
-    )));
+    // Who made it: you, or an agent.
+    let by = match i.meta.created_by {
+        Some(kairos_core::model::Author::Alec) => "you, in kairos".to_string(),
+        Some(kairos_core::model::Author::Claude) => "Claude (an agent)".to_string(),
+        Some(kairos_core::model::Author::Scheduler) => "the scheduler (kairos)".to_string(),
+        None => "you, on the phone or in Calendar".to_string(),
+    };
+    let mut flags = Vec::new();
+    if i.recurring {
+        flags.push("repeats");
+    }
+    if is_slot(i, app.now) {
+        flags.push("kairos may move it");
+    } else if i.meta.pinned {
+        flags.push("you placed it");
+    }
+    if i.meta.not_going {
+        flags.push("not going");
+    }
+    if i.overlay == Overlay::Family {
+        flags.push(if i.meta.blocking {
+            "blocks your time"
+        } else {
+            "doesn't block your time"
+        });
+    }
+    let mut made = vec![text(by)];
+    if !flags.is_empty() {
+        made.push(dimmed(format!(" · {}", flags.join(" · "))));
+    }
+    lines.push(row("made by", made));
+    // Copies, only when there are any.
+    if cl.is_merged() {
+        lines.push(Line::raw(""));
+        lines.push(Line::from(TSpan::styled(
+            format!("⧉ {} copies, showing the one that wins", cl.others.len() + 1),
+            Style::default().fg(c("mauve")),
+        )));
+        for o in cl.all() {
+            lines.push(Line::from(vec![
+                TSpan::styled("  ● ", Style::default().fg(colour_of(app, o))),
+                TSpan::styled(format!("{} ", o.source), Style::default().fg(c("text"))),
+                TSpan::styled(fit(&o.title, 30), locus_theme::dim()),
+            ]));
+        }
+    }
     let h = (lines.len() as u16 + 2).min(area.height);
-    let r = centred(area, 64, h);
+    let r = centred(area, 74, h);
     f.render_widget(Clear, r);
     f.render_widget(
         Paragraph::new(lines)
-            .block(popup_block("event"))
+            .block(popup_block("event").padding(ratatui::widgets::Padding::horizontal(1)))
             .wrap(Wrap { trim: true }),
         r,
     );
@@ -1546,61 +1578,85 @@ fn details(f: &mut Frame, app: &App, area: Rect, cl: &Cluster) {
 
 // ---------------------------------------------------------------- popups
 
+/// The keys overlay, as locus's (L2): this screen, everywhere, symbols. The digit filters are
+/// here with each area in its colour, since the footer no longer carries a legend.
 fn help(f: &mut Frame, app: &App, area: Rect) {
-    let has = |o: Overlay| app.cfg.sources.iter().any(|s| s.overlay == o);
-    let toggles = match (has(Overlay::Background), has(Overlay::Imported)) {
-        (true, true) => ("p f b i", "show/hide: all yours, Family, holidays, imported"),
-        (true, false) => ("p f b", "show/hide: all yours, Family, holidays"),
-        (false, true) => ("p f i", "show/hide: all yours, Family, imported"),
-        (false, false) => ("p f", "show/hide: all yours, Family"),
+    let key = locus_theme::keyst();
+    let text = Style::default().fg(c("text"));
+    let dim = locus_theme::dim();
+    let pair = |k: &str, what: &str| {
+        Line::from(vec![
+            TSpan::styled(format!("  {k:<10}"), key),
+            TSpan::styled(what.to_string(), text),
+        ])
     };
-    let rows = [
-        ("← → · [ ]", "day · week back, forward"),
+    let mut lines = vec![Line::from(TSpan::styled(" this screen", dim))];
+    for (k, what) in [
+        ("← → [ ]", "day · week back, forward"),
         ("⇧↑↓ ⇧←→", "nudge the selected item 30 min · a day"),
-        ("t", "today"),
-        ("↑ ↓", "select; past the first or last, scroll the day's hours"),
-        ("Tab ⇧Tab", "week → day → month → agenda (and back)"),
-        ("Enter · v", "open a linked item in locus, else details · details ⧉"),
-        ("w", "week: Mon–Sun ↔ Mon–Fri (wider)"),
-        ("1 2 3", "show/hide Studies · Projects · Careers"),
-        ("4 · 5–8", "show/hide all of Personal · Family, Sport, Social, Errands"),
-        toggles,
-        ("a", "add: e event · t task (a form; Tab between fields)"),
+        ("↑ ↓", "select; past the first or last, scroll the hours"),
+        ("⇥ ⇧⇥", "week → day → month → agenda"),
+        ("t w", "today · week Mon–Sun or Mon–Fri"),
+        ("+", "add an event or a task (it asks what it is for)"),
+        ("e m L", "edit · move · say what it is for"),
+        ("d x", "done (a task) · remove (asks first)"),
+        ("y c l", "a past block: done · partly · took longer"),
+        ("n W S", "start a task now · log work · run the scheduler"),
+        ("s B", "share to Family · going or not"),
+        ("C u r", "check in · undo · sync"),
+        ("T P A", "tasks · projects · approve, in locus"),
+    ] {
+        lines.push(pair(k, what));
+    }
+    // The filters: each digit with its area or stream, in its colour.
+    let mut legend = vec![TSpan::styled(format!("  {:<10}", "1–8 p f"), key)];
+    for (k, name, _, col, _) in overlay_flags(app) {
+        legend.push(TSpan::styled(format!("{k} "), dim));
+        legend.push(TSpan::styled(
+            format!("{}  ", name.to_lowercase()),
+            Style::default().fg(rgb(col)),
+        ));
+    }
+    lines.push(Line::from(legend));
+    lines.push(Line::from(vec![
+        TSpan::raw(format!("  {:<10}", "")),
+        TSpan::styled("show or hide each; p all yours, f Family", dim),
+    ]));
+    lines.push(Line::raw(""));
+    lines.push(Line::from(TSpan::styled(" everywhere", dim)));
+    for (k, what) in [
+        ("⏎", "open in locus, else the details"),
+        ("esc", "back"),
+        ("/", "search"),
+        ("?", "keys"),
+        ("alt-1…4", "home · project · calendar · mail"),
+    ] {
+        lines.push(pair(k, what));
+    }
+    lines.push(Line::raw(""));
+    lines.push(Line::from(TSpan::styled(" symbols", dim)));
+    for (sym, what) in [
         (
-            "e K m L",
-            "edit (K: what it's for) · move · L: say what it's for (links to locus)",
+            format!(
+                "{} {} {}",
+                locus_theme::glyph::TODO_BOX,
+                locus_theme::glyph::WAITING_BOX,
+                locus_theme::glyph::DONE
+            ),
+            "a work block: to do · over, not checked in · done",
         ),
-        ("d", "remove: event · skip work block · ⚑ with all its work · drop"),
-        ("s", "share an event to Family"),
-        ("B", "going or not: yours (greyed, time freed) · Family (blocks)"),
-        ("y", "approve the selected pending change"),
-        ("n", "start the selected task now (plan reflows)"),
-        (
-            "T A P",
-            "tasks (D done · W log · + more · o reopen) · approvals · projects",
-        ),
-        (
-            "y c + x F",
-            "past block: done · partly · took longer · missed · task finished",
-        ),
-        ("W", "log work on a task (ending now) — for work that wasn't in a block"),
-        ("S C", "run the scheduler · check in on everything waiting"),
-        ("u", "undo your last change (and the replan after it)"),
-        ("/ r q", "search · sync now · quit"),
-    ];
-    let lines: Vec<Line> = rows
-        .iter()
-        .map(|(k, d)| {
-            Line::from(vec![
-                TSpan::styled(
-                    format!("{k:>10}  "),
-                    Style::default().fg(c("blue")).add_modifier(Modifier::BOLD),
-                ),
-                TSpan::styled(*d, Style::default().fg(c("text"))),
-            ])
-        })
-        .collect();
-    let r = centred(area, 80, rows.len() as u16 + 2);
+        ("┆ ╏ ▌".to_string(), "kairos may move it · you placed it · an event"),
+        ("⚑".to_string(), "a task's due date"),
+        ("◌".to_string(), "a change waiting in Approve"),
+        ("⧉".to_string(), "copies of one event (only the winner is drawn)"),
+    ] {
+        lines.push(Line::from(vec![
+            TSpan::styled(format!("  {sym:<10}"), key),
+            TSpan::styled(what, text),
+        ]));
+    }
+    let h = (lines.len() as u16 + 2).min(area.height);
+    let r = centred(area, 80, h);
     f.render_widget(Clear, r);
     f.render_widget(Paragraph::new(lines).block(popup_block("keys")), r);
 }
@@ -1635,10 +1691,15 @@ fn checkin(f: &mut Frame, app: &App, area: Rect, i: usize) {
         )));
     }
     lines.push(Line::raw(""));
-    lines.push(Line::from(TSpan::styled(
-        "y done · c partly · + took longer · x missed · F finished · j next · Esc later",
-        Style::default().fg(c("overlay0")),
-    )));
+    lines.push(locus_theme::hints(&[
+        ("y", "done"),
+        ("c", "partly"),
+        ("l", "took longer"),
+        ("x", "missed"),
+        ("d", "task done"),
+        ("↓", "next"),
+        ("esc", "later"),
+    ]));
     let r = centred(area, 60, lines.len() as u16 + 2);
     f.render_widget(Clear, r);
     f.render_widget(Paragraph::new(lines).block(popup_block("check-in")), r);
@@ -1736,10 +1797,9 @@ fn form_popup(f: &mut Frame, app: &App, area: Rect, form: &Form) {
     };
     lines.push(Line::from(preview));
     lines.push(Line::raw(""));
-    lines.push(Line::from(TSpan::styled(
-        "  Tab next · ⇧Tab back · Enter save · Esc cancel",
-        Style::default().fg(c("overlay0")),
-    )));
+    let mut keys = locus_theme::hints(&[("⇥", "next"), ("⇧⇥", "back"), ("⏎", "save"), ("esc", "cancel")]);
+    keys.spans.insert(0, TSpan::raw("  "));
+    lines.push(keys);
     let h = (lines.len() as u16 + 2).min(area.height);
     let r = centred(area, w, h);
     f.render_widget(Clear, r);
@@ -1753,190 +1813,96 @@ fn form_popup(f: &mut Frame, app: &App, area: Rect, form: &Form) {
 
 // ---------------------------------------------------------------- status bar
 
+/// The footer, as locus's (L2; your call 25 Oct: no legend, say only what is hidden): the keys
+/// that always work on the left; on the right the message, else what is hidden by the digit
+/// filters and what waits for you. While typing or answering, what finishes it.
 fn status_bar(f: &mut Frame, app: &App, area: Rect) {
-    let buf = f.buffer_mut();
-    let y = area.y;
-    let mut x = area.x;
-    let push = |buf: &mut Buffer, x: &mut u16, s: &str, st: Style| {
-        let w = s.width() as u16;
-        if *x + w <= area.x + area.width {
-            buf.set_string(*x, y, s, st);
-            *x += w;
-        }
-    };
-    match &app.mode {
+    let (left, typed): (Line<'static>, Option<Line<'static>>) = match &app.mode {
         Mode::Prompt(kind, b) => {
-            push(
-                buf,
-                &mut x,
-                &format!(
-                    " {} ",
-                    if *kind == PromptKind::Search {
-                        "search"
-                    } else {
-                        kind.label()
-                    }
-                ),
-                Style::default()
-                    .fg(c("base"))
-                    .bg(c("mauve"))
-                    .add_modifier(Modifier::BOLD),
-            );
-            push(buf, &mut x, "\u{e0b0}", Style::default().fg(c("mauve")));
-            push(buf, &mut x, &format!(" {b}█"), Style::default().fg(c("text")));
-            return;
-        }
-        Mode::Form(form) => {
-            push(
-                buf,
-                &mut x,
-                &format!(" {} ", form.title()),
-                Style::default()
-                    .fg(c("base"))
-                    .bg(c("mauve"))
-                    .add_modifier(Modifier::BOLD),
-            );
-            push(buf, &mut x, "\u{e0b0}", Style::default().fg(c("mauve")));
-            if let Some((m, err)) = &app.message {
-                push(
-                    buf,
-                    &mut x,
-                    &format!(" {m}"),
-                    Style::default().fg(if *err { c("red") } else { c("text") }),
-                );
-            }
-            return;
-        }
-        Mode::Confirm(cf) => {
-            let q = match cf {
-                Confirm::Delete => "delete?",
-                Confirm::Share => "share to Family?",
-                Confirm::Undo(_) => "undo?",
-                Confirm::DropTask(_) => "drop task?",
-                Confirm::Skip => "skip block?",
-                Confirm::ClearDue(_) => "remove deadline?",
+            let label = if *kind == PromptKind::Search {
+                "search"
+            } else {
+                kind.label()
             };
-            push(
-                buf,
-                &mut x,
-                &format!(" {q} "),
-                Style::default()
-                    .fg(c("base"))
-                    .bg(c("peach"))
-                    .add_modifier(Modifier::BOLD),
-            );
-            push(buf, &mut x, "\u{e0b0}", Style::default().fg(c("peach")));
-            if let Some((m, _)) = &app.message {
-                push(buf, &mut x, &format!(" {m}"), Style::default().fg(c("text")));
-            }
-            return;
+            (
+                locus_theme::hints(&[("⏎", "done"), ("esc", "cancel")]),
+                Some(Line::from(vec![
+                    TSpan::styled(format!("{label}: "), locus_theme::dim()),
+                    TSpan::styled(format!("{b}█"), Style::default().fg(c("text"))),
+                ])),
+            )
         }
-        _ => {}
-    }
-    push(
-        buf,
-        &mut x,
-        &format!(" {} ", app.view.name().to_uppercase()),
-        Style::default()
-            .fg(c("base"))
-            .bg(c("blue"))
-            .add_modifier(Modifier::BOLD),
-    );
-    push(
-        buf,
-        &mut x,
-        "\u{e0b0}",
-        Style::default().fg(c("blue")).bg(c("surface0")),
-    );
-    // Legend: toggle key + name; hidden ones are struck through. Names shrink to fit.
-    let flags = overlay_flags(app);
-    let room = (area.x + area.width).saturating_sub(x + 12) as usize;
-    let full: usize = flags.iter().map(|f| f.0.width() + f.1.width() + 3).sum::<usize>() + 2;
-    let short_len = |n: &str| n.chars().take(3).collect::<String>();
-    let shortw: usize = flags
-        .iter()
-        .map(|f| f.0.width() + short_len(&f.1).width() + 3)
-        .sum::<usize>()
-        + 2;
-    let mode = if full <= room {
-        0
-    } else if shortw <= room {
-        1
-    } else {
-        2
+        Mode::Form(_) => (
+            locus_theme::hints(&[("⇥", "next field"), ("⏎", "save"), ("esc", "cancel")]),
+            None,
+        ),
+        Mode::Confirm(_) => (locus_theme::hints(&[("y", "yes"), ("any other key", "no")]), None),
+        Mode::AddChoice => (
+            locus_theme::hints(&[("e", "event"), ("t", "task"), ("esc", "cancel")]),
+            None,
+        ),
+        _ => (
+            locus_theme::hints(&[("⏎", "open"), ("⇥", "view"), ("[ ]", "week"), ("?", "keys")]),
+            None,
+        ),
     };
-    let bg = Style::default().bg(c("surface0"));
-    push(buf, &mut x, " ", bg);
-    let mut prev_group = None;
-    for (key, name, on, col, group) in flags {
-        let key = key.as_str();
-        if prev_group.is_some() && prev_group != Some(group) {
-            push(buf, &mut x, "│ ", Style::default().fg(c("surface2")).bg(c("surface0")));
-        }
-        prev_group = Some(group);
-        push(buf, &mut x, key, Style::default().fg(c("overlay1")).bg(c("surface0")));
-        let shown = match mode {
-            0 => format!(" {name}"),
-            1 => format!(" {}", short_len(&name)),
-            _ => String::new(),
-        };
-        let st = if on {
-            Style::default()
-                .fg(rgb(col))
-                .bg(c("surface0"))
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default()
-                .fg(c("surface2"))
-                .bg(c("surface0"))
-                .add_modifier(Modifier::CROSSED_OUT)
-        };
-        if mode == 2 {
-            // Letters only: colour the key itself.
-            x -= key.width() as u16;
-            push(buf, &mut x, key, st);
-        } else {
-            push(buf, &mut x, &shown, st);
-        }
-        if name == "Personal" {
-            push(buf, &mut x, " ▸ ", Style::default().fg(c("overlay1")).bg(c("surface0")));
-        } else {
-            push(buf, &mut x, "  ", bg);
-        }
+    let mut spans = vec![TSpan::raw(" ")];
+    spans.extend(left.spans);
+    if let Some(t) = typed {
+        spans.push(TSpan::raw("   "));
+        spans.extend(t.spans);
+    } else if let Some(q) = &app.search {
+        spans.push(TSpan::styled(format!("   /{q}"), Style::default().fg(c("yellow"))));
     }
-    if let Some(q) = &app.search {
-        push(
-            buf,
-            &mut x,
-            &format!("/{q} "),
-            Style::default().fg(c("yellow")).bg(c("surface0")),
-        );
-    }
-    push(buf, &mut x, "\u{e0b0}", Style::default().fg(c("surface0")));
-    // Right side: message, else pending + help hint.
-    let (text, st) = match &app.message {
-        Some((m, true)) => (format!(" {m} "), Style::default().fg(c("red"))),
-        Some((m, false)) => (format!(" {m} "), Style::default().fg(c("green"))),
+    let left = Line::from(spans);
+    let used = left.width() as u16;
+    f.render_widget(Paragraph::new(left), area);
+    // Right: the message, else what is hidden and what waits for you.
+    let right = match &app.message {
+        Some((m, _)) => m.clone(),
         None => {
             let mut parts = Vec::new();
+            let hidden = hidden_filters(app);
+            if !hidden.is_empty() {
+                parts.push(format!("hidden: {}", hidden.join(" · ")));
+            }
             let n = app.to_check_in();
             if n > 0 {
                 parts.push(format!("{n} to check in · C"));
             }
             if !app.pending.is_empty() {
-                parts.push(format!("◌ {} pending", app.pending.len()));
+                parts.push(format!("{} to approve · A", app.pending.len()));
             }
             if app.daemon_error.is_some() {
                 parts.push("kairosd offline".into());
             }
             if !app.index.missing.is_empty() {
-                parts.push(format!("{} source(s) not synced", app.index.missing.len()));
+                parts.push(format!("{} calendar(s) not synced", app.index.missing.len()));
             }
-            parts.push("? help".into());
-            (format!(" {} ", parts.join(" · ")), Style::default().fg(c("overlay1")))
+            parts.join("   ")
         }
     };
-    let w = text.width() as u16;
-    let start = (area.x + area.width).saturating_sub(w).max(x);
-    put(buf, start, y, area.x + area.width - start, &text, st);
+    let room = area.width.saturating_sub(used + 2);
+    if room > 4 && !right.is_empty() {
+        let text = fit(&right, room as usize);
+        let w = text.width() as u16 + 1;
+        let r = Rect::new(area.x + area.width - w, area.y, w, 1);
+        f.render_widget(
+            Paragraph::new(TSpan::styled(format!("{text} "), Style::default().fg(c("peach")))),
+            r,
+        );
+    }
+}
+
+/// What the digit filters hide, lowercase with its key (`careers 3`); a hidden Personal is said
+/// once, not with each of its streams.
+fn hidden_filters(app: &App) -> Vec<String> {
+    let flags = overlay_flags(app);
+    let personal_off = flags.iter().any(|f| f.1 == "Personal" && !f.2);
+    flags
+        .iter()
+        .filter(|f| !f.2)
+        .filter(|f| !(personal_off && f.4 == 1 && f.1 != "Personal"))
+        .map(|f| format!("{} {}", f.1.to_lowercase(), f.0))
+        .collect()
 }

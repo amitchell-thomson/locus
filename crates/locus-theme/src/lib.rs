@@ -71,6 +71,87 @@ pub const SEP: &str = " · ";
 /// What a truncated string ends with.
 pub const ELLIPSIS: char = '…';
 
+/// Text in a Mocha colour.
+pub fn st(name: &str) -> Style {
+    Style::default().fg(c(name))
+}
+
+/// Quiet text: hint words, empty states, secondary facts.
+pub fn dim() -> Style {
+    st("overlay1")
+}
+
+/// A key, in a hint: blue, not bold.
+pub fn keyst() -> Style {
+    st("blue")
+}
+
+pub fn bold(s: Style) -> Style {
+    s.add_modifier(Modifier::BOLD)
+}
+
+/// Key hints, the one format for every app (L2): `y tick · n strike`, the key blue, the words
+/// dim.
+pub fn hints(pairs: &[(&str, &str)]) -> Line<'static> {
+    let mut spans = Vec::new();
+    for (i, (k, what)) in pairs.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled(SEP, dim()));
+        }
+        spans.push(Span::styled(k.to_string(), keyst()));
+        spans.push(Span::styled(format!(" {what}"), dim()));
+    }
+    Line::from(spans)
+}
+
+/// A screen title: ` name · extra `, the name bold, the extra dim.
+pub fn title(name: &str, extra: &str) -> Line<'static> {
+    if extra.is_empty() {
+        return Line::from(Span::styled(format!(" {name} "), bold(st("text"))));
+    }
+    Line::from(vec![
+        Span::styled(format!(" {name}"), bold(st("text"))),
+        Span::styled(format!("{SEP}{extra} "), dim()),
+    ])
+}
+
+/// A screen's frame: rounded, grey (overlay0), its title on the left and an optional corner
+/// on the right.
+pub fn screen(title: Line<'static>, right: Option<Line<'static>>) -> Block<'static> {
+    let mut b = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(st("overlay0"))
+        .title(title.left_aligned());
+    if let Some(r) = right {
+        b = b.title(r.right_aligned());
+    }
+    b
+}
+
+/// Cut `s` to `width` display columns, ending with `…` when cut.
+pub fn fit(s: &str, width: usize) -> String {
+    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+    if s.width() <= width {
+        return s.to_string();
+    }
+    if width == 0 {
+        return String::new();
+    }
+    let mut out = String::new();
+    let mut used = 0;
+    for ch in s.chars() {
+        let cw = ch.width().unwrap_or(0);
+        if used + cw + 1 > width {
+            break;
+        }
+        out.push(ch);
+        used += cw;
+    }
+    out.push(ELLIPSIS);
+    out
+}
+
 /// A panel: rounded border, blue when focused, overlay0 otherwise; the title centred.
 pub fn panel(title: &str, focus: bool) -> Block<'static> {
     Block::default()

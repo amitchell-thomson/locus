@@ -1,10 +1,9 @@
 ---
 source: kairos/crates/kairos-tui/tests/snapshots.rs
-assertion_line: 116
 expression: "render_to_string(&a, 100, 30)"
 ---
-╭ kairos ────────────────────────────── Wednesday 21 October ──────────────────────────────────────╮
-│       Wed 21                                                                                     │
+╭ kairos ────────────────────────────── wednesday 21 October ──────────────────────────────────────╮
+│       wed 21                                                                                     │
 │──────────────────────────────────────────────────────────────────────────────────────────────────│
 │08:00 ●────────────────────────────────────────────────────────────────────────────────────────── │
 │      ┊                                                                                           │
@@ -31,5 +30,5 @@ expression: "render_to_string(&a, 100, 30)"
 │18:00 ┊                                                                                           │
 │      ┊                                                                                           │
 │     ▼┊▌Squash                                                                                    │
-╰ ┆ 09:00–10:30 · 󰄱 B4 sheet · Errands · in 1h ──────────────── n start · m move · d skip · e edit ╯
- DAY  3 Careers  │ 4 Personal ▸ 5 Family  8 Errands                                        ? help
+╰ ┆ 09:00–10:30 · 󰄱 B4 sheet · Errands · in 1h ─────── n start · m move · e edit · d done · x skip ╯
+ ⏎ open · ⇥ view · [ ] week · ? keys

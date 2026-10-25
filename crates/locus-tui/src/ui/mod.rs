@@ -20,7 +20,7 @@ pub mod work;
 
 use crate::app::{App, Mode};
 use crate::screen::ScreenId;
-use locus_theme::{SEP, c};
+use locus_theme::c;
 use ratatui::Frame;
 use ratatui::crossterm::event::KeyEvent;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -154,31 +154,16 @@ pub fn screen_keys(s: ScreenId) -> &'static [(&'static str, &'static str)] {
     }
 }
 
-/// The screen's outer frame with its title, and the area inside it.
+/// The screen's outer frame with its title, and the area inside it (locus-theme's `screen`,
+/// the frame kairos draws too).
 pub fn frame(f: &mut Frame, area: Rect, title: Line<'static>, right: Option<Line<'static>>) -> Rect {
-    let mut b = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(c("overlay0")))
-        .title(title.left_aligned());
-    if let Some(r) = right {
-        b = b.title(r.right_aligned());
-    }
+    let b = locus_theme::screen(title, right);
     let inner = b.inner(area);
     f.render_widget(b, area);
     inner
 }
 
-/// A plain screen title: ` name · extra `.
-pub fn title(name: &str, extra: &str) -> Line<'static> {
-    let mut spans = vec![Span::styled(format!(" {name} "), widgets::bold(st("text")))];
-    if !extra.is_empty() {
-        spans.pop();
-        spans.push(Span::styled(format!(" {name}"), widgets::bold(st("text"))));
-        spans.push(Span::styled(format!("{SEP}{extra} "), dim()));
-    }
-    Line::from(spans)
-}
+pub use locus_theme::{hints, title};
 
 /// `esc back` in a detail screen's top-right corner.
 pub fn esc_back() -> Line<'static> {
@@ -228,19 +213,6 @@ pub fn ask_rule(title: &str, lit: bool, keys: &[(&str, &str)], tail: &str, width
     left.extend(right);
     left.push(tail);
     Line::from(left)
-}
-
-/// Hints along the bottom of a screen: `y tick · n strike`.
-pub fn hints(pairs: &[(&str, &str)]) -> Line<'static> {
-    let mut spans = Vec::new();
-    for (i, (k, what)) in pairs.iter().enumerate() {
-        if i > 0 {
-            spans.push(Span::styled(SEP, dim()));
-        }
-        spans.push(Span::styled(k.to_string(), keyst()));
-        spans.push(Span::styled(format!(" {what}"), dim()));
-    }
-    Line::from(spans)
 }
 
 /// The Project view's title: the project the view is on, by the registry; a session the

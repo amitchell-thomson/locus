@@ -105,7 +105,7 @@ fn week_wide() {
 fn week_80_cols_collapses_to_three_days() {
     let (a, _t) = app("2026-10-22T08:00:00+01:00");
     let s = render_to_string(&a, 80, 24);
-    assert!(s.contains("Wed 21") && s.contains("Thu 22") && s.contains("Fri 23") && !s.contains("Mon 19"));
+    assert!(s.contains("wed 21") && s.contains("thu 22") && s.contains("fri 23") && !s.contains("mon 19"));
     insta::assert_snapshot!(s);
 }
 
@@ -229,7 +229,7 @@ fn help_popup() {
 #[test]
 fn writes_without_daemon_explain_themselves() {
     let (mut a, _t) = app("2026-10-19T08:00:00+01:00");
-    a.key(Key::Char('a'));
+    a.key(Key::Char('+'));
     for ch in "Coffee @ tomorrow 10:00".chars() {
         a.key(Key::Char(ch));
     }
@@ -241,7 +241,7 @@ fn writes_without_daemon_explain_themselves() {
 #[test]
 fn add_form_with_live_preview() {
     let (mut a, _t) = app("2026-10-19T08:00:00+01:00");
-    a.key(Key::Char('a'));
+    a.key(Key::Char('+'));
     a.key(Key::Char('e'));
     for ch in "Squash".chars() {
         a.key(Key::Char(ch));
@@ -262,7 +262,7 @@ fn work_week_shows_five_wider_days() {
     let (mut a, _t) = app("2026-10-22T08:00:00+01:00");
     a.key(Key::Char('w'));
     let s = render_to_string(&a, 140, 34);
-    assert!(s.contains("Fri 23") && !s.contains("Sat 24"), "{s}");
+    assert!(s.contains("fri 23") && !s.contains("sat 24"), "{s}");
 }
 
 #[test]
@@ -514,7 +514,7 @@ fn a_task_edited_from_locus_opens_kairos_s_form() {
     }
     let Mode::Form(f) = &a.mode else { panic!("no form") };
     assert_eq!(f.get("Due"), "");
-    assert!(a.form_preview(f).unwrap().contains("no deadline"));
+    assert!(a.form_preview(f).unwrap().contains("no due date"));
 }
 
 #[test]
@@ -563,18 +563,18 @@ fn keys_do_what_the_hints_say_for_each_kind_of_item() {
     let pick = |a: &mut App, pred: &dyn Fn(&kairos_core::model::Instance) -> bool| {
         a.sel = a.day_clusters(a.cursor).iter().position(|c| pred(&c.primary)).unwrap();
     };
-    // Work block (Wed 21): hints, and d = skip.
+    // Work block (Wed 21): hints, and x = skip (L4: x removes, d is done).
     pick(&mut a, &|i| i.meta.kind == kairos_core::model::EventKind::TaskBlock);
-    assert_eq!(a.key_hints(), "n start · m move · d skip · e edit");
-    a.key(Key::Char('d'));
+    assert_eq!(a.key_hints(), "n start · m move · e edit · d done · x skip");
+    a.key(Key::Char('x'));
     assert!(matches!(a.mode, Mode::Confirm(Confirm::Skip)));
     a.key(Key::Char('n')); // cancel
-    // Its ⚑ (Fri 23): e opens the task's form at Due; m moves the deadline; d removes
-    // it with all the task's planned time (drops the task).
+    // Its ⚑ (Fri 23): e opens the task's form at Due; m moves the due date; x drops the task
+    // with all its planned time.
     a.key(Key::Right);
     a.key(Key::Right);
     pick(&mut a, &|i| i.title.contains("B4 sheet"));
-    assert_eq!(a.key_hints(), "e edit · m move · d remove · n start");
+    assert_eq!(a.key_hints(), "d done · e edit · m move · n start · x drop");
     a.key(Key::Char('e'));
     let Mode::Form(f) = &a.mode else { panic!("no form") };
     assert_eq!(f.title(), "edit task");
@@ -583,11 +583,11 @@ fn keys_do_what_the_hints_say_for_each_kind_of_item() {
     a.key(Key::Char('m'));
     assert!(matches!(&a.mode, Mode::Prompt(PromptKind::MoveDeadline { task_id }, _) if task_id == "task-b4"));
     a.key(Key::Esc);
-    a.key(Key::Char('d'));
+    a.key(Key::Char('x'));
     assert!(matches!(&a.mode, Mode::Confirm(Confirm::DropTask(id)) if id == "task-b4"));
     a.key(Key::Char('n'));
-    // a: event or task?
-    a.key(Key::Char('a'));
+    // +: event or task?
+    a.key(Key::Char('+'));
     assert!(matches!(a.mode, Mode::AddChoice));
     a.key(Key::Char('t'));
     let Mode::Form(f) = &a.mode else { panic!("no form") };
@@ -647,10 +647,10 @@ fn work_blocks_are_italic_and_say_where_their_task_stands() {
         .iter()
         .position(|c| c.primary.meta.task_id.as_deref() == Some("task-b4"))
         .unwrap();
-    let s = render_to_string(&a, 130, 30);
+    let s = render_to_string(&a, 150, 30);
     // A future block: where the task will stand when it starts.
     assert!(
-        s.contains("task: 1h30/4h done by then · 1h left after · no deadline"),
+        s.contains("task: 1h30/4h done by then · 1h left after · no due date"),
         "{s}"
     );
     // With another of its blocks earlier (1 h), that counts too.
@@ -669,9 +669,9 @@ fn work_blocks_are_italic_and_say_where_their_task_stands() {
         end: now("2026-10-20T20:00:00+01:00"),
     };
     a.index.instances.push(earlier);
-    let s = render_to_string(&a, 130, 30);
+    let s = render_to_string(&a, 150, 30);
     assert!(
-        s.contains("task: 2h30/4h done by then · done after this · no deadline"),
+        s.contains("task: 2h30/4h done by then · done after this · no due date"),
         "{s}"
     );
     a.sel = usize::from(a.sel == 0); // something else selected, so the block isn't highlighted
@@ -726,13 +726,13 @@ fn past_blocks_wait_for_a_check_in_right_on_the_calendar() {
         s.contains(&format!("▌{} B4 sheet", kairos_core::build::WAITING_ICON)),
         "{s}"
     );
-    assert_eq!(a.key_hints(), "y done · c partly · + longer · x missed · F finished");
+    assert_eq!(a.key_hints(), "y done · c partly · l longer · x missed · d task done");
     // c asks how long (prefilled with half the block).
     a.key(Key::Char('c'));
     assert!(matches!(&a.mode, Mode::Prompt(PromptKind::Partial { t }, b) if t.title == "B4 sheet" && b == "45m"));
     a.key(Key::Esc);
-    // + took longer: a form for time spent, what it still needs, and from when.
-    a.key(Key::Char('+'));
+    // l took longer: a form for time spent, what it still needs, and from when.
+    a.key(Key::Char('l'));
     let Mode::Form(f) = &a.mode else { panic!("no form") };
     assert_eq!(f.title(), "took longer");
     assert_eq!(f.get("Spent"), "2h30");
@@ -914,7 +914,7 @@ fn adding_asks_what_it_is_for_and_l_links_afterwards() {
     use kairos_tui::app::Mode;
     let (mut a, _t) = app("2026-10-19T08:00:00+01:00");
     assert!(a.fors.iter().any(|o| o.id == "b15"), "the registry's items are offered");
-    a.key(Key::Char('a'));
+    a.key(Key::Char('+'));
     a.key(Key::Char('t'));
     for c in "B15 sheet 4".chars() {
         a.key(Key::Char(c));
@@ -934,7 +934,7 @@ fn adding_asks_what_it_is_for_and_l_links_afterwards() {
     assert!(!f.fields.iter().any(|x| x.label == "Type" || x.label == "Calendar"));
     // An errand needs nothing but its name.
     a.key(Key::Esc);
-    a.key(Key::Char('a'));
+    a.key(Key::Char('+'));
     a.key(Key::Char('t'));
     for c in "laundry".chars() {
         a.key(Key::Char(c));
@@ -1029,4 +1029,31 @@ fn a_due_date_shows_at_its_time_or_at_the_top_without_one() {
         .unwrap_or_else(|| panic!("{s}"));
     assert!(top < rule, "no time: at the top\n{s}");
     assert!(timed > rule && lines[timed].contains("15:00"), "at its time\n{s}");
+}
+
+#[test]
+fn an_items_detail_lays_out_its_area_what_it_is_for_its_task_and_who_made_it() {
+    // Your call 25 Oct: the taxonomy laid out, what it is linked to, and who made it; the
+    // duplicates line only when there are copies.
+    let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
+    let mut t = Task::new("B4 sheet", "Personal", 240, Author::Claude, now("2026-10-12T08:00:00Z"));
+    t.id = "task-b4".into();
+    a.tasks = vec![t];
+    a.key(Key::Tab); // day view
+    a.sel = a
+        .day_clusters(a.cursor)
+        .iter()
+        .position(|c| c.primary.meta.task_id.as_deref() == Some("task-b4"))
+        .unwrap();
+    a.key(Key::Char('v'));
+    let s = render_to_string(&a, 120, 34);
+    for want in [
+        "area     ●",
+        "for      not linked to anything yet",
+        "task     B4 sheet",
+        "made by  the scheduler (kairos)",
+    ] {
+        assert!(s.contains(want), "{want:?} missing:\n{s}");
+    }
+    assert!(!s.contains("no duplicates") && !s.contains("copies"), "{s}");
 }

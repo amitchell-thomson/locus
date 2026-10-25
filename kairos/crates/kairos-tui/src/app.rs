@@ -70,7 +70,7 @@ impl PromptKind {
             PromptKind::Partial { .. } => "partly done — how long did you work? (e.g. 45m)",
             PromptKind::Remaining { .. } => "how much is left? (e.g. 3h, 0 = finished)",
             PromptKind::LogWork { .. } => "log work — how long, ending now? (e.g. 40m)",
-            PromptKind::MoveDeadline { .. } => "deadline (when, e.g. fri 17:00)",
+            PromptKind::MoveDeadline { .. } => "due (when, e.g. fri 17:00)",
         }
     }
 }
@@ -779,9 +779,10 @@ impl App {
                 self.refresh_remote();
                 self.set_message("syncing…", false);
             }
-            Key::Char('a') => {
+            // + adds, as everywhere in locus (L4).
+            Key::Char('+') => {
                 self.mode = Mode::AddChoice;
-                self.set_message("add: e event · t task (Esc cancels)", false);
+                self.set_message("add: e event · t task (esc cancels)", false);
             }
             Key::Char('w') => {
                 self.work_week = !self.work_week;
@@ -847,11 +848,12 @@ impl App {
                     );
                     return;
                 }
-                // A work block that has started and isn't checked in: check it
-                // in right here (y done · c partly · + took longer · x/d missed · F finished).
-                if self.awaits_checkin(&i) && matches!(k, Key::Char('y' | 'c' | 'x' | 'd' | 'F' | '+')) {
+                // A work block that has started and isn't checked in: check it in right here
+                // (y done · c partly · l took longer · x missed · d the task is done; L4: d is
+                // done and x removes, as everywhere in locus).
+                if self.awaits_checkin(&i) && matches!(k, Key::Char('y' | 'c' | 'x' | 'd' | 'l')) {
                     let t = self.checkin_target(&i);
-                    if k == Key::Char('+') {
+                    if k == Key::Char('l') {
                         self.message = None;
                         self.mode = Mode::Form(Form::took_longer(t));
                         return;
@@ -859,7 +861,7 @@ impl App {
                     let outcome = match k {
                         Key::Char('y') => "done",
                         Key::Char('c') => "partial",
-                        Key::Char('F') => "finished",
+                        Key::Char('d') => "finished",
                         _ => "missed",
                     };
                     return self.check_in(t, outcome);
@@ -885,7 +887,16 @@ impl App {
                     }
                     return;
                 }
-                // A task's ⚑ edits the task's deadline, not just the event.
+                // d on a task's block or ⚑: the task is done (L4: d is done everywhere a task is).
+                if k == Key::Char('d')
+                    && let Some(tid) = i.meta.task_id.clone()
+                    && self.tasks.iter().any(|t| t.id == tid)
+                {
+                    let title =
+                        kairos_core::build::bare_block_title(i.title.trim_start_matches('⚑').trim()).to_string();
+                    return self.complete_task_now(&tid, &title);
+                }
+                // A task's ⚑ edits the task's due date, not just the event.
                 if i.meta.kind == EventKind::Deadline
                     && let Some(tid) = i.meta.task_id.clone()
                 {
@@ -907,23 +918,23 @@ impl App {
                         // Removing an open task's deadline removes the task and
                         // all its planned time (Alec, 2026-10-13); a finished
                         // task just loses its ⚑.
-                        Key::Char('d') if self.tasks.iter().any(|t| t.id == tid) => {
+                        Key::Char('x') if self.tasks.iter().any(|t| t.id == tid) => {
                             self.mode = Mode::Confirm(Confirm::DropTask(tid));
                             self.set_message(
-                                format!("remove “{title}”: its deadline and all its planned time? y/N"),
+                                format!("drop “{title}”: its due date and all its planned time? y/N"),
                                 false,
                             );
                         }
-                        Key::Char('d') => {
+                        Key::Char('x') => {
                             self.mode = Mode::Confirm(Confirm::ClearDue(tid));
-                            self.set_message(format!("remove the deadline of finished “{title}”? y/N"), false);
+                            self.set_message(format!("remove the due date of finished “{title}”? y/N"), false);
                         }
                         _ => {}
                     }
                     return;
                 }
-                // `d` on a work block skips it: the work is planned elsewhere.
-                if i.meta.kind == EventKind::TaskBlock && k == Key::Char('d') {
+                // `x` on a work block skips it: the work is planned elsewhere.
+                if i.meta.kind == EventKind::TaskBlock && k == Key::Char('x') {
                     self.mode = Mode::Confirm(Confirm::Skip);
                     self.set_message(
                         format!("skip this “{}” block? (the work is planned elsewhere) y/N", i.title),
@@ -943,7 +954,7 @@ impl App {
                         self.mode = Mode::Form(f);
                     }
                     Key::Char('m') => self.mode = Mode::Prompt(PromptKind::Move, String::new()),
-                    Key::Char('d') => {
+                    Key::Char('x') => {
                         self.mode = Mode::Confirm(Confirm::Delete);
                         self.set_message(format!("delete “{}”? y/N", i.title), false);
                     }
@@ -1457,7 +1468,7 @@ impl App {
             FormKind::EditTask { .. } => {
                 let left = dates::parse_minutes(f.get("Left")).map_err(|_| "Left: e.g. 3h or 90m".to_string())?;
                 let due = match f.get("Due") {
-                    "" => "no deadline".to_string(),
+                    "" => "no due date".to_string(),
                     d => match dates::parse_when(d, self.today()).map_err(|e| e.to_string())? {
                         When::Date(d) => format!("due {}", d.format("%a %-d %b")),
                         When::DateTime(n) => format!("due {}", n.format("%a %-d %b %H:%M")),
@@ -1495,7 +1506,7 @@ impl App {
                         i.title,
                         i.start(self.tz).with_timezone(&self.tz).format("%a %-d %b %H:%M")
                     ),
-                    ("", None) => "no deadline".to_string(),
+                    ("", None) => "no due date".to_string(),
                     (d, _) => match dates::parse_when(d, self.today()).map_err(|e| e.to_string())? {
                         When::Date(d) => format!("due {}", d.format("%a %-d %b")),
                         When::DateTime(n) => format!("due {}", n.format("%a %-d %b %H:%M")),
@@ -1807,11 +1818,12 @@ impl App {
         let t = CheckinTarget::of(item, true);
         match k {
             // Same keys as on a block in the calendar (p is the Private toggle there).
-            Key::Char('y') | Key::Char('d') => self.check_in(t, "done"),
-            Key::Char('c') | Key::Char('p') => self.check_in(t, "partial"),
-            Key::Char('x') | Key::Char('m') => self.check_in(t, "missed"),
-            Key::Char('F') | Key::Char('f') => self.check_in(t, "finished"),
-            Key::Char('+') => self.mode = Mode::Form(Form::took_longer(t)),
+            // The same keys as on a past block in the calendar (L4).
+            Key::Char('y') => self.check_in(t, "done"),
+            Key::Char('c') => self.check_in(t, "partial"),
+            Key::Char('x') => self.check_in(t, "missed"),
+            Key::Char('d') => self.check_in(t, "finished"),
+            Key::Char('l') => self.mode = Mode::Form(Form::took_longer(t)),
             Key::Char('s') | Key::Down => {
                 self.mode = Mode::Checkin((i + 1).min(open.len().saturating_sub(1)));
             }
@@ -1821,44 +1833,61 @@ impl App {
         }
     }
 
-    /// The keys that do something for what's selected, for the bottom-right
-    /// edge ("e edit · m move · d delete").
-    pub fn key_hints(&self) -> String {
-        let h: &[&str] = match self.view {
-            View::Week | View::Day | View::Month | View::Agenda => match self.selected().map(|c| c.primary) {
-                None => &["a add"],
-                Some(i) => match (i.meta.kind, i.overlay) {
-                    (EventKind::Deadline, _) if i.meta.task_id.is_some() => {
-                        &["e edit", "m move", "d remove", "n start"]
-                    }
-                    (EventKind::TaskBlock, _) if kairos_core::build::is_checked_in(&i.title) => &["W log more work"],
-                    _ if self.awaits_checkin(&i) => &["y done", "c partly", "+ longer", "x missed", "F finished"],
-                    (EventKind::TaskBlock, _) => &["n start", "m move", "d skip", "e edit"],
-                    (_, Overlay::Family) if i.meta.origin_key.is_none() => {
-                        if i.meta.blocking {
-                            &["B not attending"]
-                        } else {
-                            &["B attending"]
-                        }
-                    }
-                    (_, Overlay::Background | Overlay::Imported) => &[],
-                    _ => &["e edit", "m move", "d delete", "s share"],
-                },
-            },
+    /// The keys that do something for what's selected, for the bottom edge, as `(key, what)`
+    /// pairs drawn the locus way (L2): `e edit · m move · x remove`.
+    pub fn key_hint_pairs(&self) -> Vec<(&'static str, &'static str)> {
+        let mut v: Vec<(&'static str, &'static str)> = Vec::new();
+        let Some(i) = self.selected().map(|c| c.primary) else {
+            return vec![("+", "add")];
         };
-        let hints = h.join(" · ");
         // A linked item opens in locus (spec K8).
-        if matches!(self.view, View::Week | View::Day | View::Month | View::Agenda)
-            && let Some(i) = self.selected().map(|c| c.primary)
-            && self.locus_link(&i).is_some()
-        {
-            return if hints.is_empty() {
-                "⏎ open in locus".into()
-            } else {
-                format!("⏎ open in locus · {hints}")
-            };
+        if self.locus_link(&i).is_some() {
+            v.push(("⏎", "open in locus"));
         }
-        hints
+        let h: &[(&str, &str)] = match (i.meta.kind, i.overlay) {
+            (EventKind::Deadline, _) if i.meta.task_id.is_some() => &[
+                ("d", "done"),
+                ("e", "edit"),
+                ("m", "move"),
+                ("n", "start"),
+                ("x", "drop"),
+            ],
+            (EventKind::TaskBlock, _) if kairos_core::build::is_checked_in(&i.title) => &[("W", "log more work")],
+            _ if self.awaits_checkin(&i) => &[
+                ("y", "done"),
+                ("c", "partly"),
+                ("l", "longer"),
+                ("x", "missed"),
+                ("d", "task done"),
+            ],
+            (EventKind::TaskBlock, _) => &[
+                ("n", "start"),
+                ("m", "move"),
+                ("e", "edit"),
+                ("d", "done"),
+                ("x", "skip"),
+            ],
+            (_, Overlay::Family) if i.meta.origin_key.is_none() => {
+                if i.meta.blocking {
+                    &[("B", "not attending")]
+                } else {
+                    &[("B", "attending")]
+                }
+            }
+            (_, Overlay::Background | Overlay::Imported) => &[],
+            _ => &[("e", "edit"), ("m", "move"), ("s", "share"), ("x", "delete")],
+        };
+        v.extend_from_slice(h);
+        v
+    }
+
+    /// The same, as text (`e edit · m move`).
+    pub fn key_hints(&self) -> String {
+        self.key_hint_pairs()
+            .iter()
+            .map(|(k, w)| format!("{k} {w}"))
+            .collect::<Vec<_>>()
+            .join(" · ")
     }
 
     /// The locus item an item belongs to (spec K8): its own link, else its task's (or the
@@ -1895,8 +1924,6 @@ impl App {
             .unwrap_or(0);
     }
 
-    /// Open a locus view (`tasks`, `home:p`) when the locus window is running here; false when
-    /// it is not (no tmux, no locus session), so kairos shows its own list instead.
     /// Open one of locus's pages (`tasks`, `approve`, `home:p`) in the locus window.
     fn open_locus_page(&mut self, view: &str) {
         if !self.open_in_locus_view(view) {
@@ -1983,6 +2010,35 @@ impl App {
     fn task_form(&self, t: &kairos_core::task::Task) -> Form {
         let label = self.for_label(t.locus.as_deref(), Some(&t.key));
         Form::edit_task(self.key_names(), t, self.tz, &label).with_fors(self.fors_recent_first())
+    }
+
+    /// Mark a task done from its block or ⚑: its blocks still to come go at once.
+    fn complete_task_now(&mut self, id: &str, title: &str) {
+        let Some(r) = self.with_daemon(|d| d.complete_task(id, None)) else {
+            return;
+        };
+        match r {
+            Ok(Ok(r)) => {
+                if r.changesets.first().is_some_and(|w| w.status == Status::Applied) {
+                    let now = self.now;
+                    let gone: Vec<String> = self
+                        .index
+                        .instances
+                        .iter()
+                        .filter(|i| i.meta.task_id.as_deref() == Some(id) && i.start(self.tz) >= now)
+                        .map(|i| i.uid.clone())
+                        .collect();
+                    for uid in gone {
+                        self.patch_local(&uid, |_| false);
+                    }
+                }
+                self.set_message(format!("✓ done: {title}"), false);
+                self.wants_sync = true;
+                self.refresh_remote();
+            }
+            Ok(Err(e)) => self.set_message(e.to_string(), true),
+            Err(e) => self.set_message(e.to_string(), true),
+        }
     }
 
     /// A task's edit form, as locus's Tasks page asks for it (`e` there; L7: one task list,

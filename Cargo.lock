@@ -1607,6 +1607,7 @@ dependencies = [
  "eco-dates",
  "insta",
  "locus-contract",
+ "locus-theme",
  "proptest",
  "rrule",
  "serde",
@@ -1649,6 +1650,7 @@ dependencies = [
  "kairos-core",
  "kairos-store",
  "locus-contract",
+ "locus-theme",
  "ratatui",
  "serde_json",
  "tempfile",
@@ -1789,6 +1791,7 @@ name = "locus-theme"
 version = "0.1.0"
 dependencies = [
  "ratatui",
+ "unicode-width",
 ]
 
 [[package]]

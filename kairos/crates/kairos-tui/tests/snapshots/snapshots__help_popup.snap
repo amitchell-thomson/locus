@@ -1,35 +1,34 @@
 ---
 source: kairos/crates/kairos-tui/tests/snapshots.rs
-assertion_line: 250
 expression: "render_to_string(&a, 100, 30)"
 ---
-╭ kairos ──────────────────────────── Week 43 · 19 Oct–25 Oct ─────────────────────────────────────╮
-│       Mon 19       Tue 20       Wed 21       Thu 22       Fri 23       Sat 24       Sun 25       │
-│         ╭──────────────────────────────────── keys ────────────────────────────────────╮         │
-│         │ ← → · [ ]  day · week back, forward                                          │         │
-│─────────│   ⇧↑↓ ⇧←→  nudge the selected item 30 min · a day                            │─────────│
-│11:00▲┊  │         t  today                                                             │         │
-│      ┊  │       ↑ ↓  select; past the first or last, scroll the day's hours            │         │
-│      ┄┄┄│  Tab ⇧Tab  week → day → month → agenda (and back)                            │┄┄┄┄┄┄┄┄┄│
-│12:00 ┊  │ Enter · v  open a linked item in locus, else details · details ⧉             │         │
-│      ┊  │         w  week: Mon–Sun ↔ Mon–Fri (wider)                                   │         │
-│13:00 ┊  │     1 2 3  show/hide Studies · Projects · Careers                            │         │
-│      ┊  │   4 · 5–8  show/hide all of Personal · Family, Sport, Social, Errands        │         │
-│14:00 ┊  │       p f  show/hide: all yours, Family                                      │         │
-│      ┊  │         a  add: e event · t task (a form; Tab between fields)                │         │
-│15:00 ┊  │   e K m L  edit (K: what it's for) · move · L: say what it's for (links to lo│         │
-│      ┊  │         d  remove: event · skip work block · ⚑ with all its work · drop      │         │
-│16:00 ┊  │         s  share an event to Family                                          │         │
-│      ┊  │         B  going or not: yours (greyed, time freed) · Family (blocks)        │         │
-│17:00 ┊  │         y  approve the selected pending change                               │         │
-│      ┊  │         n  start the selected task now (plan reflows)                        │         │
-│      ┄┄┄│     T A P  tasks (D done · W log · + more · o reopen) · approvals · projects │┄┄┄┄┄┄┄┄┄│
-│18:00 ┊  │ y c + x F  past block: done · partly · took longer · missed · task finished  │         │
-│      ┊  │         W  log work on a task (ending now) — for work that wasn't in a block │         │
-│19:00 ┊▌S│       S C  run the scheduler · check in on everything waiting                │day      │
-│      ┊▌ │         u  undo your last change (and the replan after it)                   │ash      │
-│20:00 ┊  │     / r q  search · sync now · quit                                          │         │
-│      ┊  ╰──────────────────────────────────────────────────────────────────────────────╯         │
-│21:00 ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
-╰ ● 19:00–20:00 · Squash · Errands ────────────────────────── e edit · m move · d delete · s share ╯
- WEEK  3 Careers  │ 4 Personal ▸ 5 Family  8 Errands                                       ? help
+╭ kairos ─╭──────────────────────────────────── keys ────────────────────────────────────╮─────────╮
+│       mo│ this screen                                                                  │25       │
+│         │  ← → [ ]   day · week back, forward                                          │         │
+│         │  ⇧↑↓ ⇧←→   nudge the selected item 30 min · a day                            │         │
+│─────────│  ↑ ↓       select; past the first or last, scroll the hours                  │─────────│
+│11:00▲┊  │  ⇥ ⇧⇥      week → day → month → agenda                                       │         │
+│      ┊  │  t w       today · week Mon–Sun or Mon–Fri                                   │         │
+│      ┄┄┄│  +         add an event or a task (it asks what it is for)                   │┄┄┄┄┄┄┄┄┄│
+│12:00 ┊  │  e m L     edit · move · say what it is for                                  │         │
+│      ┊  │  d x       done (a task) · remove (asks first)                               │         │
+│13:00 ┊  │  y c l     a past block: done · partly · took longer                         │         │
+│      ┊  │  n W S     start a task now · log work · run the scheduler                   │         │
+│14:00 ┊  │  s B       share to Family · going or not                                    │         │
+│      ┊  │  C u r     check in · undo · sync                                            │         │
+│15:00 ┊  │  T P A     tasks · projects · approve, in locus                              │         │
+│      ┊  │  1–8 p f   3 careers  4 personal  5 family  8 errands                        │         │
+│16:00 ┊  │            show or hide each; p all yours, f Family                          │         │
+│      ┊  │                                                                              │         │
+│17:00 ┊  │ everywhere                                                                   │         │
+│      ┊  │  ⏎         open in locus, else the details                                   │         │
+│      ┄┄┄│  esc       back                                                              │┄┄┄┄┄┄┄┄┄│
+│18:00 ┊  │  /         search                                                            │         │
+│      ┊  │  ?         keys                                                              │         │
+│19:00 ┊▌S│  alt-1…4   home · project · calendar · mail                                  │day      │
+│      ┊▌ │                                                                              │ash      │
+│20:00 ┊  │ symbols                                                                      │         │
+│      ┊  │  󰄱 󰡖 󰄵     a work block: to do · over, not checked in · done                 │         │
+│21:00 ┊  │  ┆ ╏ ▌     kairos may move it · you placed it · an event                     │         │
+╰ ● 19:00–╰──────────────────────────────────────────────────────────────────────────────╯x delete ╯
+ ⏎ open · ⇥ view · [ ] week · ? keys

@@ -121,7 +121,7 @@ fn budgets_on_5k_events() {
             .with_timezone(&chrono::Utc);
         let app = kairos_tui::load(cfg, &t.path().join("config.toml"), now).unwrap();
         let frame = kairos_tui::render_to_string(&app, 160, 48);
-        assert!(frame.contains("Week"));
+        assert!(frame.contains("week"));
         tui.push(t1.elapsed());
     }
     tui.sort();

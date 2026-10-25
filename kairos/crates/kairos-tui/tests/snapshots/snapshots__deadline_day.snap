@@ -1,10 +1,9 @@
 ---
 source: kairos/crates/kairos-tui/tests/snapshots.rs
-assertion_line: 122
 expression: s
 ---
-╭ kairos ─────────────────────────────── Friday 23 October ────────────────────────────────────────╮
-│       Fri 23                                                                                     │
+╭ kairos ─────────────────────────────── friday 23 October ────────────────────────────────────────╮
+│       fri 23                                                                                     │
 │      ▌Collections                                                                                │
 │      ▌Lake District trip                                                                         │
 │      ▌⚑ Lab report                                                                               │
@@ -31,5 +30,5 @@ expression: s
 │21:00 ┊                                                                                           │
 │      ┊                                                                                           │
 │      ┊                                                                                           │
-╰ ● all day · Collections · Errands ───────────────────────── e edit · m move · d delete · s share ╯
- DAY  3 Careers  │ 4 Personal ▸ 5 Family  8 Errands                                        ? help
+╰ ● all day · Collections · Errands ───────────────────────── e edit · m move · s share · x delete ╯
+ ⏎ open · ⇥ view · [ ] week · ? keys

@@ -6,24 +6,11 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use unicode_width::UnicodeWidthStr;
 
-pub fn st(col: &str) -> Style {
-    Style::default().fg(c(col))
-}
-
-pub fn dim() -> Style {
-    st("overlay1")
-}
+// The look's pieces come from locus-theme, shared with kairos (L1).
+pub use locus_theme::{bold, dim, keyst, st};
 
 pub fn text() -> Style {
     st("text")
-}
-
-pub fn keyst() -> Style {
-    st("blue")
-}
-
-pub fn bold(s: Style) -> Style {
-    s.add_modifier(Modifier::BOLD)
 }
 
 pub fn struck(s: Style) -> Style {

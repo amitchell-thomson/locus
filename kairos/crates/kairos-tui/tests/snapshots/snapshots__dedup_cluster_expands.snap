@@ -1,29 +1,28 @@
 ---
 source: kairos/crates/kairos-tui/tests/snapshots.rs
-assertion_line: 139
 expression: s
 ---
-╭ kairos ──────────────────────────── Week 42 · 12 Oct–18 Oct ─────────────────────────────────────╮
-│       Mon 12       Tue 13       Wed 14       Thu 15       Fri 16       Sat 17       Sun 18       │
+╭ kairos ──────────────────────────── week 42 · 12 Oct–18 Oct ─────────────────────────────────────╮
+│       mon 12       tue 13       wed 14       thu 15       fri 16       sat 17       sun 18       │
 │──────────────────────────────────────────────────────────────────────────────────────────────────│
 │10:00▲┊            ┊▌B4         ┊            ┊            ┊▌A1  ▌A2    ┊            ┊             │
 │      ┊            ┊▌Lecture    ┊            ┊            ┊▌Ma… ▌El…   ┊            ┊             │
 │11:00 ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 │      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 │      ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄│
-│12:00 ┊          ╭─────────────────────────── event ────────────────────────────╮   ┊             │
-│      ┊          │OQTS speaker event                                            │   ┊             │
-│13:00 ┊          │Thu 15 Oct 19:05 – 20:00                                      │   ┊             │
-│      ┊          │family · —                                                    │   ┊             │
-│14:00 ┊          │                                                              │   ┊             │
-│      ┊          │⧉ 3 copies (showing the highest-precedence one)               │   ┊             │
-│15:00 ┊          │● family family · OQTS speaker event                          │   ┊             │
-│      ┊          │● personal personal · OQTS Speaker Event                      │   ┊             │
-│16:00 ┊          │● oqts personal · OQTS Speaker Event                          │   ┊             │
-│      ┊          │                                                              │   ┊             │
-│17:00 ┊          │uid family-dentist@kairos.test                                │   ┊             │
-│      ┊          ╰──────────────────────────────────────────────────────────────╯   ┊             │
-│      ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄│
+│12:00 ┊     ╭──────────────────────────────── event ─────────────────────────────────╮            │
+│      ┊     │ OQTS speaker event                                                     │            │
+│13:00 ┊     │ thu 15 Oct 19:05 – 20:00                                               │            │
+│      ┊     │                                                                        │            │
+│14:00 ┊     │ area     ● Personal › Family                                           │            │
+│      ┊     │ for      not linked to anything yet  L says what it is for             │            │
+│15:00 ┊     │ made by  you, on the phone or in Calendar · doesn't block your time    │            │
+│      ┊     │                                                                        │            │
+│16:00 ┊     │ ⧉ 3 copies, showing the one that wins                                  │            │
+│      ┊     │ ● family OQTS speaker event                                            │            │
+│17:00 ┊     │ ● personal OQTS Speaker Event                                          │            │
+│      ┊     │ ● oqts OQTS Speaker Event                                              │            │
+│      ┄┄┄┄┄┄╰────────────────────────────────────────────────────────────────────────╯┄┄┄┄┄┄┄┄┄┄┄┄│
 │18:00 ┊            ┊            ┊            ┊            ┊▌OQTS       ┊            ┊             │
 │      ┊            ┊            ┊            ┊            ┊▌committe…  ┊            ┊             │
 │19:00 ┊            ┊            ┊            ┊▌OQTS  :05  ┊            ┊            ┊▌Sunday      │
@@ -32,4 +31,4 @@ expression: s
 │      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 │21:00 ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 ╰ ● 19:05–20:00 · OQTS speaker event · Family · ⧉ 3 ────────────────────────────────── B attending ╯
- WEEK  3 Careers  │ 4 Personal ▸ 5 Family  8 Errands                                       ? help
+ ⏎ open · ⇥ view · [ ] week · ? keys

@@ -4,35 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
-/// Catppuccin Mocha palette, `(name, hex)`.
-pub const MOCHA: &[(&str, &str)] = &[
-    ("rosewater", "#f5e0dc"),
-    ("flamingo", "#f2cdcd"),
-    ("pink", "#f5c2e7"),
-    ("mauve", "#cba6f7"),
-    ("red", "#f38ba8"),
-    ("maroon", "#eba0ac"),
-    ("peach", "#fab387"),
-    ("yellow", "#f9e2af"),
-    ("green", "#a6e3a1"),
-    ("teal", "#94e2d5"),
-    ("sky", "#89dceb"),
-    ("sapphire", "#74c7ec"),
-    ("blue", "#89b4fa"),
-    ("lavender", "#b4befe"),
-    ("text", "#cdd6f4"),
-    ("subtext1", "#bac2de"),
-    ("subtext0", "#a6adc8"),
-    ("overlay2", "#9399b2"),
-    ("overlay1", "#7f849c"),
-    ("overlay0", "#6c7086"),
-    ("surface2", "#585b70"),
-    ("surface1", "#45475a"),
-    ("surface0", "#313244"),
-    ("base", "#1e1e2e"),
-    ("mantle", "#181825"),
-    ("crust", "#11111b"),
-];
+// The palette is locus-theme's (L1): one Mocha table for every app.
+use locus_theme::MOCHA;
 
 /// An RGB colour.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -64,10 +37,10 @@ impl FromStr for Rgb {
     type Err = ColourError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.trim();
-        let hex = match MOCHA.iter().find(|(n, _)| n.eq_ignore_ascii_case(s)) {
-            Some((_, h)) => *h,
-            None => s,
-        };
+        if let Some((_, (r, g, b))) = MOCHA.iter().find(|(n, _)| n.eq_ignore_ascii_case(s)) {
+            return Ok(Rgb(*r, *g, *b));
+        }
+        let hex = s;
         let h = hex.strip_prefix('#').ok_or_else(|| ColourError(s.to_string()))?;
         if h.len() != 6 || !h.chars().all(|c| c.is_ascii_hexdigit()) {
             return Err(ColourError(s.to_string()));

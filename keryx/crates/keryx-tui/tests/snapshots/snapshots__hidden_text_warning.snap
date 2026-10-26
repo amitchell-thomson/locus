@@ -2,7 +2,7 @@
 source: keryx/crates/keryx-tui/tests/snapshots.rs
 expression: s
 ---
-╭ mail  all · personal · oxford · oqts · oqts shared ───────────────── reading ╮
+╭ keryx ───────── all · personal · oxford · oqts · oqts shared ─────── reading ╮
 │ Your account needs attention  personal                                       │
 │                                                                              │
 │ ▎ Deals <deals@promo.example.com> · sun 11 oct 2026, 07:00                   │

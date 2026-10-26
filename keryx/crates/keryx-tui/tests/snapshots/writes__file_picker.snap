@@ -2,7 +2,7 @@
 source: keryx/crates/keryx-tui/tests/writes.rs
 expression: "render_to_string(&mut a, 80, 16)"
 ---
-╭ mail  all · personal · oxford · oqts · oqts shared ──────────────────────────╮
+╭ keryx ───────── all · personal · oxford · oqts · oqts shared ────────────────╮
 │ today ────────────────────────────────────────────────────────────────────── │
 │ ▎ Trai╭──────────────────── done: what is it for ────────────────────╮ 08:30 │
 │ ▎  You│ ⏎ takes the guess · type to choose another                   │oxford │

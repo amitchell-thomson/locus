@@ -64,7 +64,7 @@ impl App {
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect, sel: usize) {
     let title = Line::from(vec![
-        Span::styled(" mail ", locus_theme::bold(locus_theme::st("text"))),
+        Span::styled(" keryx ", locus_theme::bold(locus_theme::st("text"))),
         Span::styled("· filed by itself ", locus_theme::dim()),
     ]);
     let block = locus_theme::screen(title, None);

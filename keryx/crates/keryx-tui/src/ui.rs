@@ -64,8 +64,9 @@ pub fn draw_writing(f: &mut Frame, app: &App, editor: Option<&crate::pane::Pane>
 }
 
 /// The top edge: ` mail ` and every inbox, the one shown highlighted, the others greyed.
+/// The frame's top-left title: keryx, then the list you are in or your search.
 fn header(app: &App) -> Line<'static> {
-    let mut spans = vec![Span::styled(" mail ", locus_theme::bold(locus_theme::st("text")))];
+    let mut spans = vec![Span::styled(" keryx ", locus_theme::bold(locus_theme::st("text")))];
     if let Some(q) = &app.search {
         spans.push(Span::styled(
             format!("· search: {} ", fit(q, 30)),
@@ -77,6 +78,12 @@ fn header(app: &App) -> Line<'static> {
             locus_theme::dim(),
         ));
     }
+    Line::from(spans)
+}
+
+/// Every inbox, named in the middle of the top edge: the ones shown highlighted, the rest grey.
+fn inbox_tabs(app: &App) -> Line<'static> {
+    let mut spans = Vec::new();
     let names: Vec<String> = std::iter::once("all".to_string())
         .chain(app.cfg.accounts.iter().map(|a| a.name.to_lowercase()))
         .collect();
@@ -149,7 +156,7 @@ fn mail(f: &mut Frame, app: &App, area: Rect, editor: Option<&crate::pane::Pane>
         ))),
         None => (new > 0).then(|| Line::from(Span::styled(format!(" {new} new "), locus_theme::st("peach")))),
     };
-    let block = locus_theme::screen(header(app), right);
+    let block = locus_theme::screen(header(app), right).title(inbox_tabs(app).centered());
     let inner = block.inner(area);
     f.render_widget(block, area);
     if inner.width < 10 || inner.height == 0 {

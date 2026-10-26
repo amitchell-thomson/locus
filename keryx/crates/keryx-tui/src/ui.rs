@@ -969,40 +969,79 @@ fn help(f: &mut Frame, area: Rect) {
     f.render_widget(Paragraph::new(lines).block(popup_block("keys")), r);
 }
 
+/// `g`: where to go, in two columns (round 7): your lists on the left in small groups, the
+/// areas on the right in their colours, Personal's streams under their own heading.
 fn goto(f: &mut Frame, app: &App, area: Rect) {
-    let mut rows: Vec<(String, String, Option<ratatui::style::Color>)> = vec![
-        ("i".into(), "Inbox".into(), None),
-        ("r".into(), "Needs reply".into(), None),
-        ("t".into(), "Sent".into(), None),
-        ("v".into(), "Archive".into(), None),
-        ("a".into(), "All mail".into(), None),
-        ("c".into(), "Claude runs".into(), None),
-        ("d".into(), "Drafts".into(), None),
-        ("l".into(), "Filed by itself".into(), None),
-    ];
-    for (i, (name, col)) in app.goto_folders().into_iter().enumerate() {
-        rows.push(((i + 1).to_string(), name, Some(col)));
+    let key = |k: &str| Span::styled(format!(" {k}  "), locus_theme::bold(locus_theme::st("blue")));
+    let head = |t: &str| Line::from(Span::styled(format!(" {t}"), locus_theme::dim()));
+    let entry = |k: &str, name: &str, col: ratatui::style::Color| {
+        Line::from(vec![key(k), Span::styled(name.to_string(), Style::default().fg(col))])
+    };
+    let text = c("text");
+    let mut left = vec![head("mail")];
+    for group in [
+        &[("i", "Inbox"), ("r", "Needs reply"), ("d", "Drafts")][..],
+        &[("t", "Sent"), ("v", "Archive"), ("a", "All mail")][..],
+        &[("l", "Filed by itself"), ("c", "Claude runs")][..],
+    ] {
+        left.push(Line::raw(""));
+        left.extend(group.iter().map(|(k, n)| entry(k, n, text)));
     }
-    let w = 34.min(area.width);
-    let h = (rows.len() as u16 + 2).min(area.height);
+
+    let folders = app.goto_folders();
+    let streams: Vec<String> = app
+        .shared
+        .as_ref()
+        .map(|s| {
+            s.taxonomy
+                .areas
+                .iter()
+                .filter(|a| a.filter_by_stream)
+                .flat_map(|a| a.streams.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    let parent = app.shared.as_ref().and_then(|s| {
+        s.taxonomy
+            .areas
+            .iter()
+            .find(|a| a.filter_by_stream)
+            .map(|a| a.id.to_lowercase())
+    });
+    let mut right = vec![head(if app.shared.is_some() { "areas" } else { "keys" }), Line::raw("")];
+    let mut in_streams = false;
+    for (i, (name, col)) in folders.iter().enumerate() {
+        if streams.contains(name) && !in_streams {
+            in_streams = true;
+            right.push(Line::raw(""));
+            right.push(head(parent.as_deref().unwrap_or("personal")));
+        }
+        right.push(entry(&(i + 1).to_string(), name, *col));
+    }
+
+    let (lw, rw) = (24u16, 22u16);
+    let w = (lw + rw + 3).min(area.width);
+    let h = (left.len().max(right.len()) as u16 + 3).min(area.height);
     let r = centred(area, w, h);
     f.render_widget(Clear, r);
     let block = popup_block("go to");
     let inner = block.inner(r);
     f.render_widget(block, r);
-    let lines: Vec<Line> = rows
-        .into_iter()
-        .map(|(k, name, col)| {
-            Line::from(vec![
-                Span::styled(
-                    format!(" {k}  "),
-                    Style::default().fg(c("blue")).add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(name, Style::default().fg(col.unwrap_or(c("text")))),
-            ])
-        })
-        .collect();
-    f.render_widget(Paragraph::new(lines), inner);
+    let inner = Rect::new(inner.x, inner.y + 1, inner.width, inner.height.saturating_sub(1));
+    f.render_widget(
+        Paragraph::new(left),
+        Rect::new(inner.x, inner.y, lw.min(inner.width), inner.height),
+    );
+    if inner.width > lw + 1 {
+        for y in inner.y..inner.y + inner.height {
+            f.buffer_mut()
+                .set_string(inner.x + lw, y, "│", locus_theme::st("surface1"));
+        }
+        f.render_widget(
+            Paragraph::new(right),
+            Rect::new(inner.x + lw + 2, inner.y, inner.width - lw - 2, inner.height),
+        );
+    }
 }
 
 /// `o`: the thread's attachments, the highlighted one lit; `⏎` opens it, the list stays.

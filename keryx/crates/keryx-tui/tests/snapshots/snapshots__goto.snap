@@ -4,21 +4,21 @@ expression: "render_to_string(&mut a, 80, 20)"
 ---
 ╭ mail  all · personal · oxford · oqts · oqts shared ──────────────────────────╮
 │ today ────────────────────────────────────────────────────────────────────── │
-│ ▎ Trains             ╭──────────── go to ─────────────╮                08:30 │
-│ ▎  Your e-ticket: Oxf│ i  Inbox                       │               oxford │
-│ ▎ Trains             │ r  Needs reply                 │                08:30 │
-│ ▎  Your e-ticket: Oxf│ t  Sent                        │             personal │
-│                      │ v  Archive                     │                      │
-│ yesterday ───────────│ a  All mail                    │───────────────────── │
-│   Lecturer           │ c  Claude runs                 │                󰁦 tue │
-│    Society minutes   │ d  Drafts                      │               oxford │
-│   Lecturer           │ l  Filed by itself             │                󰁦 tue │
-│    Broken file       │ 1  Admin                       │               oxford │
-│ ▎ Lecturer           │ 2  Engineering                 │                󰁦 tue │
-│ ▎  B4 problem sheet 3│ 3  Careers                     │               oxford │
-│ ▎ Jane Doe           │ 4  Travel                      │                  tue │
-│ ▎  Lab partner for Th│ 5  OQTS                        │               oxford │
-│ ▎ Prof Smith (2)     │ 6  JCR Treasurer               │                  tue │
-│ ▎  Cancelled: Project╰────────────────────────────────╯               oxford │
+│ ▎ Trains     ╭──────────────────── go to ────────────────────╮         08:30 │
+│ ▎  Your e-tic│                                               │        oxford │
+│ ▎ Trains     │ mail                   │  keys                │         08:30 │
+│ ▎  Your e-tic│                        │                      │      personal │
+│              │ i  Inbox               │  1  Admin            │               │
+│ yesterday ───│ r  Needs reply         │  2  Engineering      │────────────── │
+│   Lecturer   │ d  Drafts              │  3  Careers          │         󰁦 tue │
+│    Society mi│                        │  4  Travel           │        oxford │
+│   Lecturer   │ t  Sent                │  5  OQTS             │         󰁦 tue │
+│    Broken fil│ v  Archive             │  6  JCR Treasurer    │        oxford │
+│ ▎ Lecturer   │ a  All mail            │                      │         󰁦 tue │
+│ ▎  B4 problem│                        │                      │        oxford │
+│ ▎ Jane Doe   │ l  Filed by itself     │                      │           tue │
+│ ▎  Lab partne│ c  Claude runs         │                      │        oxford │
+│ ▎ Prof Smith ╰───────────────────────────────────────────────╯           tue │
+│ ▎  Cancelled: Project meeting                                         oxford │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  ⏎ open · r reply · d done · m for · f needs reply · ? keys

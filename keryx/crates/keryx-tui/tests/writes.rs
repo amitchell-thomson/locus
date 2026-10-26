@@ -1121,3 +1121,13 @@ fn kept_drafts_are_listed_under_g_d_and_enter_reopens_one() {
         }
     );
 }
+
+#[test]
+fn go_to_has_your_lists_on_the_left_and_the_areas_on_the_right() {
+    let (mut a, _f) = app();
+    with_taxonomy(&mut a);
+    keys(&mut a, &[Key::Char('g')]);
+    insta::assert_snapshot!("goto_areas", render_to_string(&mut a, 80, 22));
+    keys(&mut a, &[Key::Char('3')]);
+    assert_eq!(a.view, keryx_store::view::View::Key("Careers".into()));
+}

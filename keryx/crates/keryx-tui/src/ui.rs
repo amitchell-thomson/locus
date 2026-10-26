@@ -216,6 +216,8 @@ fn day_heading(ts: i64, now: chrono::DateTime<chrono_tz::Tz>) -> String {
 
 /// What the list draws, top to bottom.
 enum Row {
+    /// The inbox's needs-reply section (round 5).
+    Reply,
     Day(String),
     Since(String),
     Blank,
@@ -228,9 +230,22 @@ fn list_rows(app: &App) -> Vec<Row> {
     let mut day = String::new();
     let mut since_drawn = false;
     let since = app.seen_since;
-    for (i, r) in app.rows.iter().enumerate() {
+    // The inbox's needs-reply threads lead, under their own heading, then a gap.
+    let replies = if app.reply_first() {
+        app.rows.iter().take_while(|r| r.needs_reply.is_some()).count()
+    } else {
+        0
+    };
+    for i in 0..replies {
+        if i == 0 {
+            out.push(Row::Reply);
+        }
+        out.push(Row::Thread(i, true));
+        out.push(Row::Thread(i, false));
+    }
+    for (i, r) in app.rows.iter().enumerate().skip(replies) {
         let d = day_heading(r.date, app.now);
-        if since.is_some_and(|s| r.date <= s) && !since_drawn && i > 0 {
+        if since.is_some_and(|s| r.date <= s) && !since_drawn && i > replies {
             let at = since.and_then(|s| {
                 use chrono::TimeZone;
                 app.now.timezone().timestamp_opt(s, 0).single()
@@ -287,6 +302,17 @@ fn list(f: &mut Frame, app: &App, area: Rect) {
     for (k, row) in rows.iter().enumerate().skip(first).take(h) {
         let y = area.y + (k - first) as u16;
         let line = match row {
+            Row::Reply => {
+                let label = " needs reply ".to_string();
+                let peach = c("peach");
+                Line::from(vec![
+                    Span::styled(label.clone(), locus_theme::bold(Style::default().fg(peach))),
+                    Span::styled(
+                        "─".repeat(w.saturating_sub(label.width() + 1)),
+                        Style::default().fg(fade(peach, 0.6)),
+                    ),
+                ])
+            }
             // A day: its name in lavender and a rule across the column (your round of 26 Oct).
             Row::Day(d) => {
                 let label = format!(" {d} ");
@@ -354,7 +380,8 @@ fn row_who(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
     let mark = if marked {
         Span::styled("▸", locus_theme::st("blue"))
     } else if r.unread {
-        Span::styled("●", locus_theme::st("peach"))
+        // Unread: a thin blue bar (round 5), beside needs reply's peach one when both.
+        Span::styled("▏", locus_theme::st("blue"))
     } else {
         Span::raw(" ")
     };

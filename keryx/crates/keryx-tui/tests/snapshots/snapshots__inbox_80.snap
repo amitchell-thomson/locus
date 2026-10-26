@@ -4,9 +4,9 @@ expression: "render_to_string(&mut app(), 80, 24)"
 ---
 ╭ mail  all · personal · oxford · oqts · oqts shared ──────────────────────────╮
 │ today ────────────────────────────────────────────────────────────────────── │
-│ ● Trains                                                               08:30 │
+│ ▏ Trains                                                               08:30 │
 │    Your e-ticket: Oxford to London, Fri 23 Oct                        oxford │
-│ ● Trains                                                               08:30 │
+│ ▏ Trains                                                               08:30 │
 │    Your e-ticket: Oxford to London, Fri 23 Oct                      personal │
 │                                                                              │
 │ yesterday ────────────────────────────────────────────────────────────────── │
@@ -14,11 +14,11 @@ expression: "render_to_string(&mut app(), 80, 24)"
 │    Society minutes                                                    oxford │
 │   Lecturer                                                             󰁦 tue │
 │    Broken file                                                        oxford │
-│ ● Lecturer                                                             󰁦 tue │
+│ ▏ Lecturer                                                             󰁦 tue │
 │    B4 problem sheet 3                                                 oxford │
-│ ● Jane Doe                                                               tue │
+│ ▏ Jane Doe                                                               tue │
 │    Lab partner for Thursday?                                          oxford │
-│ ● Prof Smith (2)                                                         tue │
+│ ▏ Prof Smith (2)                                                         tue │
 │    Cancelled: Project meeting                                         oxford │
 │                                                                              │
 │ monday ───────────────────────────────────────────────────────────────────── │

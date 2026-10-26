@@ -209,6 +209,11 @@ impl App {
         app
     }
 
+    /// Whether the list opens on a needs-reply section: the inbox, not a search or another list.
+    pub fn reply_first(&self) -> bool {
+        self.view == View::Inbox && self.search.is_none()
+    }
+
     /// Threads in the list that came since you last looked.
     pub fn new_count(&self) -> usize {
         match self.seen_since {
@@ -295,18 +300,16 @@ impl App {
         };
         match res {
             Ok(mut rows) => {
-                // Within each day, what needs a reply first (round 4): it is what you act on.
-                let tz = self.now.timezone();
-                let day = |t: i64| {
-                    use chrono::TimeZone;
-                    tz.timestamp_opt(t, 0).single().map(|d| d.date_naive())
-                };
-                rows.sort_by(|a, b| {
-                    day(b.date)
-                        .cmp(&day(a.date))
-                        .then(b.needs_reply.is_some().cmp(&a.needs_reply.is_some()))
-                        .then(b.date.cmp(&a.date))
-                });
+                // The inbox opens on what needs a reply, as a section of its own, then the days
+                // (round 4 and 5): it is what you act on. Other lists are by date alone.
+                if self.reply_first() {
+                    rows.sort_by(|a, b| {
+                        b.needs_reply
+                            .is_some()
+                            .cmp(&a.needs_reply.is_some())
+                            .then(b.date.cmp(&a.date))
+                    });
+                }
                 self.rows = rows;
                 self.search_error = None;
             }

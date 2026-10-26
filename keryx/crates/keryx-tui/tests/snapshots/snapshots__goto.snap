@@ -4,9 +4,9 @@ expression: "render_to_string(&mut a, 80, 20)"
 ---
 ╭ mail  all · personal · oxford · oqts · oqts shared ──────────────────────────╮
 │ today ────────────────────────────────────────────────────────────────────── │
-│ ● Trains             ╭──────────── go to ─────────────╮                08:30 │
+│ ▏ Trains             ╭──────────── go to ─────────────╮                08:30 │
 │    Your e-ticket: Oxf│ i  Inbox                       │               oxford │
-│ ● Trains             │ r  Needs reply                 │                08:30 │
+│ ▏ Trains             │ r  Needs reply                 │                08:30 │
 │    Your e-ticket: Oxf│ t  Sent                        │             personal │
 │                      │ v  Archive                     │                      │
 │ yesterday ───────────│ a  All mail                    │───────────────────── │
@@ -14,11 +14,11 @@ expression: "render_to_string(&mut a, 80, 20)"
 │    Society minutes   │ l  Filed by itself             │               oxford │
 │   Lecturer           │ 1  Admin                       │                󰁦 tue │
 │    Broken file       │ 2  Engineering                 │               oxford │
-│ ● Lecturer           │ 3  Careers                     │                󰁦 tue │
+│ ▏ Lecturer           │ 3  Careers                     │                󰁦 tue │
 │    B4 problem sheet 3│ 4  Travel                      │               oxford │
-│ ● Jane Doe           │ 5  OQTS                        │                  tue │
+│ ▏ Jane Doe           │ 5  OQTS                        │                  tue │
 │    Lab partner for Th│ 6  JCR Treasurer               │               oxford │
-│ ● Prof Smith (2)     ╰────────────────────────────────╯                  tue │
+│ ▏ Prof Smith (2)     ╰────────────────────────────────╯                  tue │
 │    Cancelled: Project meeting                                         oxford │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  ⏎ open · r reply · d done · m for · f needs reply · ? keys

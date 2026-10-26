@@ -248,3 +248,33 @@ fn new_since_you_last_looked_is_a_rule_and_a_count() {
     keys(&mut a, &[Key::Down]);
     assert_eq!(a.seen_since, Some(a.now.timestamp() - 31 * 60));
 }
+
+#[test]
+fn the_inbox_opens_on_what_needs_a_reply_then_a_gap_then_the_days() {
+    let mut a = app();
+    let lab = a
+        .rows
+        .iter()
+        .find(|r| r.subject == "Lab partner for Thursday?")
+        .unwrap()
+        .clone();
+    a.db.set_tag(&keryx_store::state::Tag {
+        account: lab.account.clone(),
+        thread_id: lab.thread_id.clone(),
+        kind: "needs_reply".into(),
+        reason: "asks about Thursday".into(),
+        author: "alec".into(),
+        created_at: 0,
+    })
+    .unwrap();
+    a.reload();
+    a.sel = 0;
+    let s = render_to_string(&mut a, 80, 30);
+    let lines: Vec<&str> = s.lines().collect();
+    assert!(lines[1].contains("needs reply"), "{s}");
+    assert!(lines[3].contains("Lab partner for Thursday?"), "{s}");
+    assert!(lines[2].contains('▌'), "the peach bar: {s}");
+    assert_eq!(lines[4].trim_matches(|c| c == '│' || c == ' '), "", "a gap: {s}");
+    assert!(lines[5].contains("today"), "{s}");
+    assert!(s.contains('▏'), "unread is a thin bar: {s}");
+}

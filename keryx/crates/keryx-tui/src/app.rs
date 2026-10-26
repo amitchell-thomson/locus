@@ -142,6 +142,8 @@ pub struct App {
     pub shared: Option<locus_contract::taxonomy::Shared>,
     /// The highlighted row of the attachment list (`o`).
     pub att_sel: usize,
+    /// Threads opened in this session: shown as read whatever the mirror says yet.
+    pub read_here: BTreeSet<String>,
     /// What each thread is marked for (`m`): (account, thread) → (kind, target).
     pub marks: keryx_store::state::Marks,
     /// Where `:q` keeps a changed mail (set by the running TUI; `None` in tests unless set).
@@ -196,6 +198,7 @@ impl App {
             writing: None,
             drafts_dir: None,
             att_sel: 0,
+            read_here: BTreeSet::new(),
             marks: std::collections::HashMap::new(),
             shared: None,
             hold: None,
@@ -212,6 +215,11 @@ impl App {
     /// Whether the list opens on a needs-reply section: the inbox, not a search or another list.
     pub fn reply_first(&self) -> bool {
         self.view == View::Inbox && self.search.is_none()
+    }
+
+    /// Whether a row reads as unread: unread in the mirror and not opened here since.
+    pub fn is_unread(&self, r: &ThreadRow) -> bool {
+        r.unread && !self.read_here.contains(&r.r#ref)
     }
 
     /// Threads in the list that came since you last looked.
@@ -481,7 +489,9 @@ impl App {
         if self.open.is_some() {
             self.mode = Mode::Thread;
             self.queue_task_status();
-            // Opening a thread marks it read (Alec, 2026-10-14).
+            // Opening a thread marks it read (Alec, 2026-10-14). The row stops showing unread at
+            // once (round 6), whether or not the change reaches the mailbox (live = false).
+            self.read_here.insert(r.r#ref.clone());
             if r.unread {
                 self.deferred.push(Job::Triage {
                     req: keryx_store::api::TriageReq {

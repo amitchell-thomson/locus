@@ -6,12 +6,12 @@ expression: "render_to_string(&mut a, 80, 14)"
 │    Society minutes                                                    oxford │
 │   Lecturer                                                             󰁦 tue │
 │    Broken file                                                        oxford │
-│ ▏ Lecturer   ╭──────────── snooze 1 thread until ─────────────╮        󰁦 tue │
-│    B4 problem│ 1  Later today           Wed 14 Oct, 18:00     │       oxford │
-│ ▏ Jane Doe   │ 2  Tomorrow morning      Thu 15 Oct, 08:00     │          tue │
-│    Lab partne│ 3  Monday morning        Mon 19 Oct, 08:00     │       oxford │
-│ ▏ Prof Smith │ 4  Pick…                                       │          tue │
-│    Cancelled:╰────────────────────────────────────────────────╯       oxford │
+│ ▎ Lecturer   ╭──────────── snooze 1 thread until ─────────────╮        󰁦 tue │
+│ ▎  B4 problem│ 1  Later today           Wed 14 Oct, 18:00     │       oxford │
+│ ▎ Jane Doe   │ 2  Tomorrow morning      Thu 15 Oct, 08:00     │          tue │
+│ ▎  Lab partne│ 3  Monday morning        Mon 19 Oct, 08:00     │       oxford │
+│ ▎ Prof Smith │ 4  Pick…                                       │          tue │
+│ ▎  Cancelled:╰────────────────────────────────────────────────╯       oxford │
 │                                                                              │
 │ monday ───────────────────────────────────────────────────────────────────── │
 ╰──────────────────────────────────────────────────────────────────────────────╯

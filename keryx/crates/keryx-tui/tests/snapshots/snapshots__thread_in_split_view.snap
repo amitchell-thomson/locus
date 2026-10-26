@@ -4,22 +4,22 @@ expression: "render_to_string(&mut a, 140, 26)"
 ---
 ╭ mail  all · personal · oxford · oqts · oqts shared ───────────────────────────────────────────────────────────────────────────── reading ╮
 │ today ────────────────────────────────────── │ B4 problem sheet 3  oxford                                                                │
-│ ▏ Trains                               08:30 │                                                                                           │
-│    Your e-ticket: Oxford to London, … oxford │ ▎ Lecturer <lecturer@eng.example.ac.uk> · tue 13 oct 2026, 12:00                          │
-│ ▏ Trains                               08:30 │ ▎                                                                                         │
-│    Your e-ticket: Oxford to London… personal │ ▎ Please see the attached file.                                                           │
+│ ▎ Trains                               08:30 │                                                                                           │
+│ ▎  Your e-ticket: Oxford to London, … oxford │ ▎ Lecturer <lecturer@eng.example.ac.uk> · tue 13 oct 2026, 12:00                          │
+│ ▎ Trains                               08:30 │ ▎                                                                                         │
+│ ▎  Your e-ticket: Oxford to London… personal │ ▎ Please see the attached file.                                                           │
 │                                              │ ▎ 󰁦 sheet3.pdf · 625 B                                                                    │
 │ yesterday ────────────────────────────────── │                                                                                           │
 │   Lecturer                             󰁦 tue │                                                                                           │
 │    Society minutes                    oxford │                                                                                           │
 │   Lecturer                             󰁦 tue │                                                                                           │
 │    Broken file                        oxford │                                                                                           │
-│ ▏ Lecturer                             󰁦 tue │                                                                                           │
+│   Lecturer                             󰁦 tue │                                                                                           │
 │    B4 problem sheet 3                 oxford │                                                                                           │
-│ ▏ Jane Doe                               tue │                                                                                           │
-│    Lab partner for Thursday?          oxford │                                                                                           │
-│ ▏ Prof Smith (2)                         tue │                                                                                           │
-│    Cancelled: Project meeting         oxford │                                                                                           │
+│ ▎ Jane Doe                               tue │                                                                                           │
+│ ▎  Lab partner for Thursday?          oxford │                                                                                           │
+│ ▎ Prof Smith (2)                         tue │                                                                                           │
+│ ▎  Cancelled: Project meeting         oxford │                                                                                           │
 │                                              │                                                                                           │
 │ monday ───────────────────────────────────── │                                                                                           │
 │   Jane Doe (2)                           mon │                                                                                           │

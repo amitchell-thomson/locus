@@ -379,9 +379,8 @@ fn row_who(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
     let marked = app.marked.contains(&r.r#ref);
     let mark = if marked {
         Span::styled("▸", locus_theme::st("blue"))
-    } else if r.unread {
-        // Unread: a thin blue bar (round 5), beside needs reply's peach one when both.
-        Span::styled("▏", locus_theme::st("blue"))
+    } else if app.is_unread(r) {
+        unread_bar(app, r)
     } else {
         Span::raw(" ")
     };
@@ -394,7 +393,7 @@ fn row_who(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
     let room = width.saturating_sub(3 + rw);
     let who = fit(&who, room);
     let gap = room.saturating_sub(who.width());
-    let who_style = if r.unread {
+    let who_style = if app.is_unread(r) {
         Style::default().fg(c("text"))
     } else {
         Style::default().fg(c("subtext0"))
@@ -411,6 +410,16 @@ fn row_who(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
 }
 
 /// A thread's second line: the subject, quieter, and its account in the all view.
+/// Unread (rounds 5, 6): a blue bar down both of the row's lines, beside needs reply's peach
+/// one when both; gone once you open the thread.
+fn unread_bar(app: &App, r: &ThreadRow) -> Span<'static> {
+    if app.is_unread(r) {
+        Span::styled("▎", locus_theme::st("blue"))
+    } else {
+        Span::raw(" ")
+    }
+}
+
 /// Needs reply (round 4: the one attention marker): a peach bar down the row's left edge.
 fn reply_bar(r: &ThreadRow) -> Span<'static> {
     if r.needs_reply.is_some() {
@@ -457,7 +466,8 @@ fn row_subject(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
     let gap = room.saturating_sub(subject.width());
     let mut spans = vec![
         reply_bar(r),
-        Span::raw("   "),
+        unread_bar(app, r),
+        Span::raw("  "),
         Span::styled(subject, locus_theme::st("overlay1")),
         Span::raw(" ".repeat(gap + 1)),
     ];

@@ -276,5 +276,28 @@ fn the_inbox_opens_on_what_needs_a_reply_then_a_gap_then_the_days() {
     assert!(lines[2].contains('▌'), "the peach bar: {s}");
     assert_eq!(lines[4].trim_matches(|c| c == '│' || c == ' '), "", "a gap: {s}");
     assert!(lines[5].contains("today"), "{s}");
-    assert!(s.contains('▏'), "unread is a thin bar: {s}");
+    assert!(s.contains('▎'), "unread is a blue bar: {s}");
+}
+
+#[test]
+fn the_unread_bar_runs_down_both_lines_and_goes_once_you_read() {
+    let mut a = app();
+    a.sel = a.rows.iter().position(|r| r.unread).unwrap();
+    let subject = a.rows[a.sel].subject.clone();
+    a.width = 80;
+    let s = render_to_string(&mut a, 80, 30);
+    let lines: Vec<&str> = s.lines().collect();
+    let at = lines.iter().position(|l| l.contains(subject.as_str())).unwrap();
+    assert!(
+        lines[at].contains('▎') && lines[at - 1].contains('▎'),
+        "both lines: {s}"
+    );
+    keys(&mut a, &[Key::Enter, Key::Esc]);
+    let s = render_to_string(&mut a, 80, 30);
+    let lines: Vec<&str> = s.lines().collect();
+    let at = lines.iter().position(|l| l.contains(subject.as_str())).unwrap();
+    assert!(
+        !lines[at].contains('▎') && !lines[at - 1].contains('▎'),
+        "read now: {s}"
+    );
 }

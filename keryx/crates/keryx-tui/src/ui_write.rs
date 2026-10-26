@@ -128,10 +128,11 @@ pub fn file(f: &mut Frame, app: &App, area: Rect, p: &crate::file_for::ForPicker
         lines.push(Line::from(spans));
     }
     let n = app.targets().len();
-    let title = if n == 1 {
-        "done: what is it for".to_string()
-    } else {
-        format!("done, {n} threads: what are they for")
+    let title = match (p.mark, n) {
+        (true, 1) => "what is it for · stays in your inbox".to_string(),
+        (true, _) => format!("{n} threads: what are they for · they stay in your inbox"),
+        (false, 1) => "done: what is it for".to_string(),
+        (false, _) => format!("done, {n} threads: what are they for"),
     };
     popup(f, area, &title, w, lines);
 }

@@ -31,4 +31,4 @@ expression: "render_to_string(&mut app(), 200, 30)"
 │   Stranger                               sun │                                                                                                                                                       │
 │    Urgent request                     oxford │                                                                                                                                                       │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- ⏎ open · r reply · d done · b list · ? keys
+ ⏎ open · r reply · d done · m for · f needs reply · ? keys

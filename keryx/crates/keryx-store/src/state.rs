@@ -197,6 +197,9 @@ pub struct Tag {
     pub created_at: i64,
 }
 
+/// What threads are marked for: (account, thread) → (kind `item` | `folder`, target).
+pub type Marks = std::collections::HashMap<(String, String), (String, String)>;
+
 /// A thread linked to something in another app (a kairos task or event).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Link {
@@ -400,22 +403,45 @@ impl Db {
     /// `item`, target the registry id. Filing again replaces it; `None` clears it (filed for a
     /// stream such as Errands, which is no item).
     pub fn set_item(&self, account: &str, thread_id: &str, item: Option<(&str, &str)>, at: i64) -> Result<(), DbError> {
+        self.set_for(account, thread_id, item.map(|(id, title)| ("item", id, title)), at)
+    }
+
+    /// What a thread is for, marked with or without filing it (`m`, round 4): a registry item
+    /// (`kind = item`, target its id) or a stream or area (`kind = folder`, target its name).
+    /// One mark a thread; `None` clears it.
+    pub fn set_for(
+        &self,
+        account: &str,
+        thread_id: &str,
+        f: Option<(&str, &str, &str)>,
+        at: i64,
+    ) -> Result<(), DbError> {
         self.conn().execute(
-            "DELETE FROM links WHERE account = ?1 AND thread_id = ?2 AND app = 'locus' AND kind = 'item'",
+            "DELETE FROM links WHERE account = ?1 AND thread_id = ?2 AND app = 'locus'
+             AND kind IN ('item', 'folder')",
             params![account, thread_id],
         )?;
-        if let Some((id, title)) = item {
+        if let Some((kind, target, title)) = f {
             self.add_link(&Link {
                 account: account.into(),
                 thread_id: thread_id.into(),
                 app: "locus".into(),
-                kind: "item".into(),
-                target: id.into(),
+                kind: kind.into(),
+                target: target.into(),
                 title: title.into(),
                 created_at: at,
             })?;
         }
         Ok(())
+    }
+
+    /// Every thread's mark: (account, thread) → (kind, target), for the list's tags.
+    pub fn fors(&self) -> Result<Marks, DbError> {
+        let mut st = self.conn().prepare(
+            "SELECT account, thread_id, kind, target FROM links WHERE app = 'locus' AND kind IN ('item', 'folder')",
+        )?;
+        let rows = st.query_map([], |r| Ok(((r.get(0)?, r.get(1)?), (r.get(2)?, r.get(3)?))))?;
+        Ok(rows.collect::<Result<_, _>>()?)
     }
 
     /// The registry item a thread was filed for.

@@ -136,6 +136,10 @@ impl Daemon for Fake {
         self.log(format!("untag {r}"));
         Ok(())
     }
+    fn mark_for(&self, r: &str, id: Option<&str>) -> Result<()> {
+        self.log(format!("for {} {r}", id.unwrap_or("-")));
+        Ok(())
+    }
     fn sync(&self) -> Result<()> {
         self.log("sync".into());
         Ok(())
@@ -363,24 +367,46 @@ fn done_files_for_what_it_is_for_with_the_guess_chosen() {
 }
 
 #[test]
-fn flag_unread_undo_tag() {
+fn needs_reply_unread_undo() {
     let (mut a, f) = app();
     let r = select(&mut a, "Lab partner for Thursday?");
-    keys(
-        &mut a,
-        &[Key::Char('f'), Key::Char('U'), Key::Char('u'), Key::Char('N')],
-    );
+    keys(&mut a, &[Key::Char('f'), Key::Char('U'), Key::Char('u')]);
     let calls = f.take();
-    assert_eq!(calls[0], format!(r#"triage {{"action":"flag","on":true}} ["{r}"]"#));
+    // f is needs reply now (round 4); keryx no longer flags.
+    assert_eq!(calls[0], format!("tag {r}"));
     assert_eq!(calls[1], format!(r#"triage {{"action":"read","on":false}} ["{r}"]"#));
     assert_eq!(calls[2], "undo");
-    assert_eq!(calls[3], format!("tag {r}"));
-    // Flagged thread: f unflags.
-    let fr = select(&mut a, "RE: Reimbursement");
-    keys(&mut a, &[Key::Char('f')]);
+}
+
+#[test]
+fn m_marks_what_it_is_for_and_it_stays_then_d_files_it_there() {
+    let (mut a, f) = app();
+    with_taxonomy(&mut a);
+    let lab = select(&mut a, "Lab partner for Thursday?");
+    keys(&mut a, &[Key::Char('m')]);
+    let s = render_to_string(&mut a, 90, 16);
+    assert!(s.contains("stays in your inbox"), "{s}");
+    for c in "b14".chars() {
+        a.key(Key::Char(c));
+    }
+    keys(&mut a, &[Key::Enter]);
+    assert_eq!(f.take(), vec![format!("for b14 {lab}")], "only marked: nothing moves");
+    assert!(a.rows.iter().any(|x| x.r#ref == lab), "still in the inbox");
+    // What keryxd records, read back as the list reloads.
+    let (acc, tid) = keryx_core::model::parse_thread_ref(&lab).unwrap();
+    a.db.set_for(acc, tid, Some(("item", "b14", "B14")), 0).unwrap();
+    a.reload();
+    assert!(
+        render_to_string(&mut a, 90, 30).contains("b14"),
+        "its tag shows on the row"
+    );
+    // d now files it for its mark, with no question.
+    keys(&mut a, &[Key::Char('d')]);
     assert_eq!(
         f.take(),
-        vec![format!(r#"triage {{"action":"flag","on":false}} ["{fr}"]"#)]
+        vec![format!(
+            r#"triage {{"action":"file","key":"Studies","item":"b14"}} ["{lab}"]"#
+        )]
     );
 }
 

@@ -33,6 +33,8 @@ pub trait Daemon: Send {
     fn undo_review(&self, review: &str) -> Result<UndoReview>;
     fn tag(&self, r: &str, reason: &str) -> Result<()>;
     fn untag(&self, r: &str) -> Result<()>;
+    /// Mark what a thread is for without filing it (`None` clears).
+    fn mark_for(&self, r: &str, id: Option<&str>) -> Result<()>;
     fn sync(&self) -> Result<()>;
     fn send(&self, r: &SendReq) -> Result<Changeset>;
     fn approve(&self, id: &str) -> Result<Changeset>;
@@ -189,6 +191,10 @@ impl Daemon for Client {
     }
     fn untag(&self, r: &str) -> Result<()> {
         let _: Value = self.send(reqwest::Method::DELETE, &format!("/api/tags/{r}"), None::<&Value>)?;
+        Ok(())
+    }
+    fn mark_for(&self, r: &str, id: Option<&str>) -> Result<()> {
+        let _: Value = self.post("/api/for", &json!({ "ref": r, "id": id }))?;
         Ok(())
     }
     fn sync(&self) -> Result<()> {

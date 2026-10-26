@@ -15,6 +15,8 @@ pub enum Job {
         quiet: bool,
     },
     UndoLast,
+    /// `m`: what the threads are for, kept in keryx; nothing moves.
+    MarkFor(Vec<String>, Option<String>),
     Decide {
         proposal: String,
         decision: Decision,
@@ -163,16 +165,17 @@ impl App {
                     self.message = Some(("cancelling the send…".into(), false));
                 }
             }
-            // Done: filed for what it is for, the guess chosen (X7).
-            Key::Char('d') | Key::Char('m') => self.open_for_picker(),
+            // Done: filed for what it is for: the mark when there is one, else the picker (X7).
+            Key::Char('d') => self.done(),
+            // What it is for, staying in the inbox (round 4).
+            Key::Char('m') => self.open_for_picker(true),
             Key::Char('s') if self.cfg.snooze.enabled => self.mode = Mode::Snooze(None),
+            // Needs reply is the one attention marker (round 4); keryx no longer flags.
             Key::Char('f') => {
-                let on = !self
-                    .rows
-                    .iter()
-                    .filter(|r| self.targets().contains(&r.r#ref))
-                    .all(|r| r.flagged);
-                self.triage(Intent::Flag { on }, if on { "flagging" } else { "unflagging" });
+                for r in self.targets() {
+                    let tagged = self.rows.iter().any(|x| x.r#ref == r && x.needs_reply.is_some());
+                    self.deferred.push(if tagged { Job::Untag(r) } else { Job::Tag(r) });
+                }
             }
             Key::Char('U') => self.triage(Intent::Read { on: false }, "marking unread"),
             Key::Char('u') => {
@@ -186,12 +189,6 @@ impl App {
                         self.marked.insert(r);
                     }
                     self.move_sel_by(1);
-                }
-            }
-            Key::Char('N') => {
-                for r in self.targets() {
-                    let tagged = self.rows.iter().any(|x| x.r#ref == r && x.needs_reply.is_some());
-                    self.deferred.push(if tagged { Job::Untag(r) } else { Job::Tag(r) });
                 }
             }
             // One approve place (keryx-joins-locus X2): drafts and cleanups wait in locus's Approve.
@@ -277,6 +274,11 @@ impl App {
                     .map(|o| (!quiet).then_some(o.summary))
                     .map_err(|e| e.to_string()),
                 Job::UndoLast => d.undo_last().map(|c| Some(c.summary)).map_err(|e| e.to_string()),
+                Job::MarkFor(refs, id) => refs
+                    .iter()
+                    .try_for_each(|r| d.mark_for(r, id.as_deref()))
+                    .map(|_| None)
+                    .map_err(|e| e.to_string()),
                 Job::Decide { proposal, decision } => {
                     d.decide(proposal, decision).map(|_| None).map_err(|e| e.to_string())
                 }
@@ -300,7 +302,7 @@ impl App {
                     .map_err(|e| e.to_string()),
                 Job::Tag(r) => d
                     .tag(r, "tagged by Alec")
-                    .map(|_| Some("tagged: needs reply".into()))
+                    .map(|_| Some("needs reply".into()))
                     .map_err(|e| e.to_string()),
                 Job::Untag(r) => d
                     .untag(r)

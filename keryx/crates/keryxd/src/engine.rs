@@ -655,6 +655,38 @@ impl Engine {
         Ok(())
     }
 
+    /// `m`: mark what a thread is for without moving it (round 4). `id` is an option's id from
+    /// [`keryx_store::item::options`] (`b14`, `errands`, `studies`); `None` clears the mark.
+    /// keryx's own record: nothing on the mail server changes.
+    pub fn mark_for(&mut self, r: &str, id: Option<&str>) -> Result<()> {
+        let (account, thread, _) = self.thread(r)?;
+        let f = match id {
+            None => None,
+            Some(id) => {
+                let shared = self
+                    .shared
+                    .as_ref()
+                    .ok_or_else(|| EngineError::BadRequest("no locus taxonomy".into()))?;
+                let o = keryx_store::item::options(shared)
+                    .into_iter()
+                    .find(|o| o.id.eq_ignore_ascii_case(id))
+                    .ok_or_else(|| EngineError::BadRequest(format!("nothing called {id:?} to be for")))?;
+                Some(match o.item {
+                    Some(item) => ("item", item, o.label),
+                    None => ("folder", o.folder, o.label),
+                })
+            }
+        };
+        let now = self.now();
+        self.db.set_for(
+            &account,
+            &thread,
+            f.as_ref().map(|(k, t, l)| (*k, t.as_str(), l.as_str())),
+            now,
+        )?;
+        Ok(())
+    }
+
     /// Check preconditions, then apply every op. On a source failure the ops
     /// already done are reverted (best effort) and the changeset fails.
     pub fn apply(&mut self, cs: &mut Changeset) -> Result<()> {

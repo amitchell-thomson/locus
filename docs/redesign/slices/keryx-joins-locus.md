@@ -218,6 +218,10 @@ X5.
 ### X8 Claude on your mail (per X-c)
 - The locus job: what needs a reply and why, drafts for the clear-cut ones, dates and tasks found
   in mail, into Approve.
+- **What mail is for, inferred** (your note of 26 Oct: "in the future I will want a locus job to
+  infer what emails are for itself, and leave any unsure ones for me to do"): the job marks
+  threads for their item (`m`'s record, nothing moves), only where it is sure; the unsure ones
+  stay unmarked for you. Its marks are listed like the automatic filings, and undoable.
 - **Check:** one real run, its items in Approve, what it cost.
 
 ### X9 Rounds with you
@@ -226,6 +230,19 @@ Each change after X5 is reviewed in use; every round recorded in slice-1.md.
 ## Order
 X1, X2 and X3 (no change to your mail), then X4 with you, then X5 and X6, then X7 and X8, then the
 rounds. X8 and the clear-out wait for Slice 0's budget logging if that is not in yet.
+
+## Rounds after X7 (26 Oct, with you at the screen)
+
+- **Round 2:** attachments open (a wrong path, not Mail); `^o` checks a file in the attach
+  picker; reading a thread is magenta throughout; days ruled; a real address dropdown in
+  Neovim; the cursor follows Neovim's mode; your own addresses shown.
+- **Round 3:** arrows over a thread's attachments; Oxford's `From:` shows your college address
+  while Mail sends as before.
+- **Round 4:** the inbox holds what is new, needs action or is needed soon, and **what a thread is
+  for is separate from being done with it**: `m` marks what it is for and it stays in the inbox
+  (its tag on the row, on its item's page at once, keryx's own record); `d` files it for its mark,
+  or asks. **Needs reply is the one attention marker** (`f`, a peach bar, first in its day);
+  keryx no longer flags. Go-to lost Flagged. An item's page lists its inbox threads first.
 
 ## Report
 *(when the steps are done)*

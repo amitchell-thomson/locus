@@ -285,14 +285,15 @@ the needs-reply reason, suggestions and linked tasks sit above the messages.
 | `↑` `↓` / `j` `k` · `⏎` · `esc` | move · read a thread · back |
 | `⇥` `⇧⇥` | the next or previous inbox |
 | `b` | hide or show the list |
-| `d` (`m`) | done: filed for what it is for (X7). A picker over the registry items, Personal's streams, the plain areas and "for nothing" (archive), keryx's guess first with its reason; `⏎` takes it, typing picks another. Never deletes |
-| `v` | mark for a batch (`d` `f` then act on every marked thread) |
-| `f` `U` `N` `L` | flag · unread · needs-reply mark · unsubscribe |
+| `d` | done: filed for what it is for (X7): its mark when it has one, with no question; else a picker over the registry items, Personal's streams, the plain areas and "for nothing" (archive), keryx's guess first with its reason. Never deletes |
+| `m` | mark what it is for, and it stays in the inbox (round 4): a tag on the row, and on its item's page at once. keryx's own record; the mail does not move |
+| `v` | select for a batch (`d` `m` `f` then act on every selected thread) |
+| `f` `U` `L` | needs reply on or off (the one attention marker: a peach bar, first in its day; keryx no longer flags) · unread · unsubscribe |
 | `r` `R` `F` `+` | reply · reply all · forward · write a new mail, in your Neovim (below) |
 | `t` `i` `w` · `y` `n` | a kairos task · an invite to the calendar · reply with free times · on a suggestion: create · dismiss |
 | `u` | undo the last change; during a send's hold, cancel it |
 | `A` | locus's Approve (drafts and cleanup proposals wait there; keryx has no approve screen) |
-| `g` | go to: `i` inbox · `r` needs reply · `f` flagged · `t` sent · `v` archive · `a` all · `c` Claude runs · `l` filed by itself · `1…7` the taxonomy folders |
+| `g` | go to: `i` inbox · `r` needs reply · `t` sent · `v` archive · `a` all · `c` Claude runs · `l` filed by itself · `1…7` the taxonomy folders |
 | `/` · `^R` · `?` · `q` | search (§7) · sync now · keys · quit |
 
 **Writing** (X6) is your Neovim, run on a terminal inside the right pane with the list beside

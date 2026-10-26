@@ -126,6 +126,7 @@ pub fn router(st: AppState, mcp: Option<Router<AppState>>) -> Router {
         .route("/api/reviews/{id}/undo", post(undo_review))
         .route("/api/proposals/{id}/decide", post(decide))
         .route("/api/tags", post(tag))
+        .route("/api/for", post(mark_for))
         .route("/api/tags/{thread}", axum::routing::delete(untag))
         .route("/api/feedback", get(feedback))
         .route("/api/send", post(send))
@@ -299,6 +300,19 @@ async fn decide(
     let w = who(&h);
     let cs = with_engine(&st, move |e| e.decide(&id, d, w)).await?;
     Ok(Json(json!({ "changeset": cs })))
+}
+
+#[derive(Deserialize)]
+struct ForReq {
+    r#ref: String,
+    #[serde(default)]
+    id: Option<String>,
+}
+
+/// `m`: what a thread is for, kept in keryx; the mail does not move (round 4).
+async fn mark_for(State(st): State<AppState>, Json(f): Json<ForReq>) -> HResult<Value> {
+    with_engine(&st, move |e| e.mark_for(&f.r#ref, f.id.as_deref())).await?;
+    Ok(Json(json!({"ok": true})))
 }
 
 #[derive(Deserialize)]

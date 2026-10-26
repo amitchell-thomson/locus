@@ -342,9 +342,6 @@ fn row_who(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
     } else if r.linked {
         right.push(Span::styled(format!("{ICON_TASK} "), Style::default().fg(c("green"))));
     }
-    if r.flagged {
-        right.push(Span::styled(format!("{ICON_FLAG} "), Style::default().fg(c("red"))));
-    }
     if r.has_attachment {
         right.push(Span::styled(
             format!("{ICON_ATTACH} "),
@@ -354,13 +351,14 @@ fn row_who(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
     right.push(Span::styled(format!("{date} "), locus_theme::dim()));
     let rw: usize = right.iter().map(|s| s.content.width()).sum();
     let marked = app.marked.contains(&r.r#ref);
-    let lead = if marked {
-        Span::styled(" ▸", locus_theme::st("blue"))
+    let mark = if marked {
+        Span::styled("▸", locus_theme::st("blue"))
     } else if r.unread {
-        Span::styled(" ●", locus_theme::st("peach"))
+        Span::styled("●", locus_theme::st("peach"))
     } else {
-        Span::raw("  ")
+        Span::raw(" ")
     };
+    let lead = mark;
     let who = if r.count > 1 {
         format!("{} ({})", r.who, r.count)
     } else {
@@ -375,6 +373,7 @@ fn row_who(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
         Style::default().fg(c("subtext0"))
     };
     let mut spans = vec![
+        reply_bar(r),
         lead,
         Span::raw(" "),
         Span::styled(who, who_style),
@@ -385,10 +384,37 @@ fn row_who(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
 }
 
 /// A thread's second line: the subject, quieter, and its account in the all view.
+/// Needs reply (round 4: the one attention marker): a peach bar down the row's left edge.
+fn reply_bar(r: &ThreadRow) -> Span<'static> {
+    if r.needs_reply.is_some() {
+        Span::styled("▌", locus_theme::st("peach"))
+    } else {
+        Span::raw(" ")
+    }
+}
+
+/// What a thread is marked for (`m`), short, in its area's colour: `b14`, `errands`.
+fn mark_tag(app: &App, r: &ThreadRow) -> Option<Span<'static>> {
+    let (kind, target) = app.marks.get(&(r.account.clone(), r.thread_id.clone()))?;
+    let shared = app.shared.as_ref();
+    let colour_name = match kind.as_str() {
+        "item" => shared.and_then(|s| s.registry.get(target)).and_then(|p| {
+            let area = p.stream.as_deref().unwrap_or(&p.area);
+            shared.and_then(|s| s.taxonomy.colour_of(area))
+        }),
+        _ => shared.and_then(|s| s.taxonomy.colour_of(target)),
+    };
+    let col = colour_name.map_or(c("text"), c);
+    Some(Span::styled(
+        format!("{} ", target.to_lowercase()),
+        Style::default().fg(col),
+    ))
+}
+
 fn row_subject(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
     let mut right: Vec<Span<'static>> = Vec::new();
-    if r.needs_reply.is_some() {
-        right.push(Span::styled("↩ ", Style::default().fg(c("mauve"))));
+    if let Some(t) = mark_tag(app, r) {
+        right.push(t);
     }
     if app.account == 0
         && let Some(a) = app.cfg.account(&r.account)
@@ -403,7 +429,8 @@ fn row_subject(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
     let subject = fit(&r.subject, room);
     let gap = room.saturating_sub(subject.width());
     let mut spans = vec![
-        Span::raw("    "),
+        reply_bar(r),
+        Span::raw("   "),
         Span::styled(subject, locus_theme::st("overlay1")),
         Span::raw(" ".repeat(gap + 1)),
     ];
@@ -779,12 +806,13 @@ fn footer(f: &mut Frame, app: &App, area: Rect) {
         ],
         Mode::File(_) => vec![("⏎", "file"), ("↑ ↓", "move"), ("esc", "back")],
         Mode::Attachments => vec![("↑ ↓", "move"), ("⏎", "open"), ("esc", "back")],
-        _ if !app.marked.is_empty() => vec![("d", "done"), ("f", "flag"), ("esc", "unmark")],
+        _ if !app.marked.is_empty() => vec![("d", "done"), ("m", "for"), ("f", "needs reply"), ("esc", "unmark")],
         _ => vec![
             ("⏎", "open"),
             ("r", "reply"),
             ("d", "done"),
-            ("b", "list"),
+            ("m", "for"),
+            ("f", "needs reply"),
             ("?", "keys"),
         ],
     };
@@ -860,10 +888,14 @@ fn help(f: &mut Frame, area: Rect) {
         ("↑ ↓  ⏎ esc", "move · read a thread · back"),
         ("⇥ ⇧⇥", "the next or previous inbox (all, then each account)"),
         ("b", "hide or show the list"),
-        ("g", "go to a list: inbox, needs reply, flagged, sent, runs"),
+        (
+            "g",
+            "go to: inbox, needs reply, sent, archive, filed by itself, folders",
+        ),
         ("r R F +", "reply · reply all · forward · write a new mail"),
-        ("d", "done: filed for what it is for (m too)"),
-        ("f U N L", "flag · unread · needs-reply mark · unsubscribe"),
+        ("d", "done: filed for its mark, else for what you choose"),
+        ("m", "mark what it is for; it stays in your inbox"),
+        ("f U L", "needs reply on or off · unread · unsubscribe"),
         ("t i w", "a task · an invite to the calendar · reply with free times"),
         ("v u", "mark for a batch · undo the last change"),
         ("z o", "the whole conversation · open an attachment"),
@@ -901,7 +933,6 @@ fn goto(f: &mut Frame, app: &App, area: Rect) {
     let mut rows: Vec<(String, String, Option<ratatui::style::Color>)> = vec![
         ("i".into(), "Inbox".into(), None),
         ("r".into(), "Needs reply".into(), None),
-        ("f".into(), "Flagged".into(), None),
         ("t".into(), "Sent".into(), None),
         ("v".into(), "Archive".into(), None),
         ("a".into(), "All mail".into(), None),

@@ -123,6 +123,8 @@ impl Mirror {
                         who: other.from.as_ref().map(|f| f.short().to_string()).unwrap_or_default(),
                         at: last.date,
                         unread: msgs.iter().any(|m| !m.read),
+                        in_inbox: msgs.iter().any(|m| m.in_inbox),
+                        needs_reply: self.db.tag(&a, &t, "needs_reply").ok().flatten().is_some(),
                     })
                 })
                 .collect();
@@ -170,9 +172,13 @@ pub struct Filed {
     pub who: String,
     pub at: i64,
     pub unread: bool,
+    /// Still in your inbox: marked for this item (`m`) but not done.
+    pub in_inbox: bool,
+    pub needs_reply: bool,
 }
 
-/// Filed mail onto its item's page (X7): an unread thread joins New, and an application's
+/// An item's mail onto its page (X7, round 4): what is still in your inbox joins New, first and
+/// said so ("needs reply" or "in your inbox"), as does anything unread; an application's
 /// timeline gets every thread as a mail event, each once. A course's own page is a later
 /// design session; until then its mail shows in New like any item's.
 pub fn apply_filed(fx: &mut Fixtures, filed: &BTreeMap<String, Vec<Filed>>) {
@@ -183,10 +189,19 @@ pub fn apply_filed(fx: &mut Fixtures, filed: &BTreeMap<String, Vec<Filed>>) {
                 continue;
             };
             let text = format!("{}: {}", f.who, f.subject);
-            if f.unread && !p.view.new.iter().any(|i| i.kind == ItemKind::Mail && i.text == text) {
+            let shown = match (f.needs_reply, f.in_inbox) {
+                (true, _) => format!("needs reply · {text}"),
+                (false, true) => format!("in your inbox · {text}"),
+                _ => text.clone(),
+            };
+            // A mark changes as you act (marked, replied, done): the page keeps one line.
+            p.view
+                .new
+                .retain(|i| !(i.kind == ItemKind::Mail && i.text.ends_with(&text)));
+            if f.unread || f.in_inbox {
                 p.view.new.push(Item {
                     kind: ItemKind::Mail,
-                    text: text.clone(),
+                    text: shown,
                     at,
                     unread: true,
                     detail: vec![],
@@ -208,7 +223,11 @@ pub fn apply_filed(fx: &mut Fixtures, filed: &BTreeMap<String, Vec<Filed>>) {
                 });
             }
         }
-        p.view.new.sort_by_key(|i| std::cmp::Reverse(i.at));
+        // Your inbox's threads first, then newest first.
+        let waiting = |i: &Item| {
+            i.kind == ItemKind::Mail && (i.text.starts_with("needs reply · ") || i.text.starts_with("in your inbox · "))
+        };
+        p.view.new.sort_by_key(|i| (!waiting(i), std::cmp::Reverse(i.at)));
         if let Some(app) = &mut p.view.application {
             app.events.sort_by_key(|e| e.at);
         }
@@ -382,12 +401,16 @@ mod tests {
                     who: "Recruiting".into(),
                     at: 1_793_000_000,
                     unread: true,
+                    in_inbox: false,
+                    needs_reply: false,
                 },
                 Filed {
                     subject: "Application received".into(),
                     who: "Recruiting".into(),
                     at: 1_790_000_000,
                     unread: false,
+                    in_inbox: true,
+                    needs_reply: true,
                 },
             ],
         )]
@@ -398,7 +421,15 @@ mod tests {
         let app = p.view.application.as_ref().unwrap();
         assert_eq!(app.events.len(), before + 2, "each thread once on the timeline");
         assert!(app.events.windows(2).all(|w| w[0].at <= w[1].at), "oldest first");
-        assert_eq!(p.view.new.len(), new_before + 1, "only the unread one is new");
+        assert_eq!(
+            p.view.new.len(),
+            new_before + 2,
+            "the unread one and the one in your inbox"
+        );
+        assert_eq!(
+            p.view.new[0].text, "needs reply · Recruiting: Application received",
+            "what waits in your inbox comes first"
+        );
         assert!(p.view.new.iter().any(|i| i.text == "Recruiting: Your interview slot"));
     }
 }

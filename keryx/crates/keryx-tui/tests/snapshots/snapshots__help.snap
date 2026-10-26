@@ -7,10 +7,11 @@ expression: "render_to_string(&mut a, 80, 20)"
 │  ↑ ↓  ⏎ esc  move · read a thread · back                                     │
 │  ⇥ ⇧⇥        the next or previous inbox (all, then each account)             │
 │  b           hide or show the list                                           │
-│  g           go to a list: inbox, needs reply, flagged, sent, runs           │
+│  g           go to: inbox, needs reply, sent, archive, filed by itself, folde│
 │  r R F +     reply · reply all · forward · write a new mail                  │
-│  d           done: filed for what it is for (m too)                          │
-│  f U N L     flag · unread · needs-reply mark · unsubscribe                  │
+│  d           done: filed for its mark, else for what you choose              │
+│  m           mark what it is for; it stays in your inbox                     │
+│  f U L       needs reply on or off · unread · unsubscribe                    │
 │  t i w       a task · an invite to the calendar · reply with free times      │
 │  v u         mark for a batch · undo the last change                         │
 │  z o         the whole conversation · open an attachment                     │
@@ -20,5 +21,4 @@ expression: "render_to_string(&mut a, 80, 20)"
 │  /           search                                                          │
 │  ?           keys                                                            │
 │  q           quit                                                            │
-│  alt-1…4     home · project · calendar · mail                                │
 ╰──────────────────────────────────────────────────────────────────────────────╯

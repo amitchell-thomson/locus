@@ -142,6 +142,8 @@ pub struct App {
     pub shared: Option<locus_contract::taxonomy::Shared>,
     /// The highlighted row of the attachment list (`o`).
     pub att_sel: usize,
+    /// What each thread is marked for (`m`): (account, thread) → (kind, target).
+    pub marks: keryx_store::state::Marks,
     /// Where `:q` keeps a changed mail (set by the running TUI; `None` in tests unless set).
     pub drafts_dir: Option<PathBuf>,
     /// A send in its hold: (changeset id, sends at).
@@ -194,6 +196,7 @@ impl App {
             writing: None,
             drafts_dir: None,
             att_sel: 0,
+            marks: std::collections::HashMap::new(),
             shared: None,
             hold: None,
             task_status: std::collections::HashMap::new(),
@@ -291,7 +294,19 @@ impl App {
             None => view::list(&self.db, &self.cfg, &self.view, &f).map_err(|e| e.to_string()),
         };
         match res {
-            Ok(rows) => {
+            Ok(mut rows) => {
+                // Within each day, what needs a reply first (round 4): it is what you act on.
+                let tz = self.now.timezone();
+                let day = |t: i64| {
+                    use chrono::TimeZone;
+                    tz.timestamp_opt(t, 0).single().map(|d| d.date_naive())
+                };
+                rows.sort_by(|a, b| {
+                    day(b.date)
+                        .cmp(&day(a.date))
+                        .then(b.needs_reply.is_some().cmp(&a.needs_reply.is_some()))
+                        .then(b.date.cmp(&a.date))
+                });
                 self.rows = rows;
                 self.search_error = None;
             }
@@ -310,6 +325,7 @@ impl App {
         // Marks on threads that left the list are dropped.
         let refs: BTreeSet<String> = self.rows.iter().map(|r| r.r#ref.clone()).collect();
         self.marked.retain(|r| refs.contains(r));
+        self.marks = self.db.fors().unwrap_or_default();
         self.preview = None;
     }
 
@@ -576,8 +592,12 @@ impl App {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| "attachment".into());
         let path = dir.join(&name);
+        // Written beside and renamed into place, so a viewer (or a second `o`) never reads a
+        // half-written file.
+        let part = dir.join(format!(".{name}.{}", uuid::Uuid::new_v4().simple()));
         if std::fs::create_dir_all(&dir)
-            .and_then(|_| std::fs::write(&path, &bytes))
+            .and_then(|_| std::fs::write(&part, &bytes))
+            .and_then(|_| std::fs::rename(&part, &path))
             .is_err()
         {
             self.message = Some(("couldn't save the attachment".into(), true));
@@ -627,7 +647,6 @@ impl App {
         }
         let v = match k {
             Key::Char('i') => View::Inbox,
-            Key::Char('f') => View::Flagged,
             Key::Char('t') => View::Sent,
             Key::Char('r') => View::NeedsReply,
             Key::Char('s') if self.cfg.snooze.enabled => View::Snoozed,

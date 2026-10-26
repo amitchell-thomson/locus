@@ -1325,3 +1325,23 @@ fn not_live_only_test_mail_is_filed_on_arrival() {
         "no failed changesets left behind"
     );
 }
+
+#[test]
+fn marking_what_a_thread_is_for_moves_nothing() {
+    let (mut e, fake) = engine();
+    with_taxonomy(&mut e);
+    let lab = r(&e, "Lab partner for Thursday?");
+    let (a, t) = parse_thread_ref(&lab).unwrap();
+    e.mark_for(&lab, Some("b14")).unwrap();
+    assert!(fake.calls.lock().unwrap().is_empty() && in_inbox(&e, &lab));
+    assert_eq!(e.db.item_of(a, t).unwrap().as_deref(), Some("b14"));
+    e.mark_for(&lab, Some("errands")).unwrap();
+    assert_eq!(e.db.item_of(a, t).unwrap(), None, "a stream is no item");
+    assert_eq!(
+        e.db.fors().unwrap().get(&(a.to_string(), t.to_string())),
+        Some(&("folder".to_string(), "Errands".to_string()))
+    );
+    assert!(e.mark_for(&lab, Some("nope")).is_err());
+    e.mark_for(&lab, None).unwrap();
+    assert!(e.db.fors().unwrap().is_empty());
+}

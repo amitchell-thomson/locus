@@ -11,7 +11,7 @@ expression: "render_to_string(&mut a, 80, 24)"
 │ ▎                                                                            │
 │ ▎ Let's split the report into three parts.                                   │
 │                                                                              │
-│ ▎ you · mon 12 oct 2026, 11:00                                               │
+│ ▎ you <newc7370@ox.ac.uk> · mon 12 oct 2026, 11:00                           │
 │ ▎ to Jane Doe, Sam, Team                                                     │
 │ ▎                                                                            │
 │ ▎ I'll take part two.                                                        │

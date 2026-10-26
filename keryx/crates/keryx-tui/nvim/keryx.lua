@@ -48,6 +48,11 @@ local function header_end()
   return 0
 end
 
+-- keryx's colours, from your colourscheme's own groups.
+vim.api.nvim_set_hl(0, "KeryxHeader", { link = "Statement", default = true })
+vim.api.nvim_set_hl(0, "KeryxAddress", { link = "Special", default = true })
+vim.api.nvim_set_hl(0, "KeryxOwn", { link = "Function", default = true })
+
 -- Sizes beside Attach: lines, a rule under the headers, the marker drawn quietly.
 local ns = vim.api.nvim_create_namespace("keryx")
 local function human(n)
@@ -64,6 +69,23 @@ local function decorate()
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   local stop = header_end()
   for i = 1, stop do
+    -- The header's field names, and the addresses on it, read as such.
+    local key = lines[i]:match("^(%a+:)")
+    if key then
+      vim.api.nvim_buf_set_extmark(buf, ns, i - 1, 0, { end_col = #key, hl_group = "KeryxHeader" })
+      local from = 1
+      while true do
+        local s, e = lines[i]:find("[%w%._%%+%-]+@[%w%.%-]+%.%a+", from)
+        if not s then
+          break
+        end
+        vim.api.nvim_buf_set_extmark(buf, ns, i - 1, s - 1, {
+          end_col = e,
+          hl_group = key == "From:" and "KeryxOwn" or "KeryxAddress",
+        })
+        from = e + 1
+      end
+    end
     local p = lines[i]:match("^Attach:%s*(.-)%s*$")
     if p and p ~= "" then
       local st = vim.uv.fs_stat(vim.fn.expand(p))
@@ -153,7 +175,9 @@ function _G.KeryxComplete(findstart, base)
   return items
 end
 
--- blink.cmp, when your config has it: a source registered for this buffer's filetype only.
+-- blink.cmp, when your config has it: on the header lines only keryx's source (addresses on
+-- To/Cc/Bcc, your accounts on From, file paths on Attach), so the menu is a list of people and
+-- not words from the buffer; in the body your usual sources. Set in this Neovim only.
 local here = debug.getinfo(1, "S").source:sub(2):match("(.*/)") or "./"
 vim.opt.runtimepath:append(here)
 vim.api.nvim_create_autocmd("InsertEnter", {
@@ -161,9 +185,40 @@ vim.api.nvim_create_autocmd("InsertEnter", {
   once = true,
   callback = function()
     local ok, blink = pcall(require, "blink.cmp")
-    if ok and blink.add_source_provider then
-      pcall(blink.add_source_provider, "keryx", { name = "keryx", module = "keryx_blink" })
-      pcall(blink.add_filetype_source, "mail", "keryx")
+    if not (ok and blink.add_source_provider) then
+      return
+    end
+    pcall(blink.add_source_provider, "keryx", {
+      name = "Mail",
+      module = "keryx_blink",
+      min_keyword_length = 0,
+      score_offset = 100,
+    })
+    local okc, config = pcall(require, "blink.cmp.config")
+    if okc then
+      config.sources.per_filetype.mail = function()
+        local row = vim.api.nvim_win_get_cursor(0)[1]
+        if row <= header_end() then
+          local line = vim.api.nvim_get_current_line()
+          if line:match("^Attach:") then
+            return { "path" }
+          end
+          return { "keryx" }
+        end
+        return { inherit_defaults = true }
+      end
+    end
+  end,
+})
+-- Within the header, show the menu as you type, without waiting for a keyword.
+vim.api.nvim_create_autocmd("TextChangedI", {
+  buffer = buf,
+  callback = function()
+    if vim.api.nvim_win_get_cursor(0)[1] <= header_end() then
+      local ok, blink = pcall(require, "blink.cmp")
+      if ok and blink.show and not (blink.is_visible and blink.is_visible()) then
+        pcall(blink.show, { providers = { "keryx" } })
+      end
     end
   end,
 })

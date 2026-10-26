@@ -424,7 +424,7 @@ fn reply_flow_confirm_and_send() {
     let (text, purpose) = editor(&mut a);
     assert!(
         text.starts_with(
-            "From: oxford\nTo: Jane Doe <jane.doe@example.com>\nCc: \nBcc: \nSubject: Re: Lab partner for Thursday?\n"
+            "From: Oxford <newc7370@ox.ac.uk>\nTo: Jane Doe <jane.doe@example.com>\nCc: \nBcc: \nSubject: Re: Lab partner for Thursday?\n"
         ),
         "{text}"
     );
@@ -453,7 +453,7 @@ fn reply_all_when_alec_wrote_last() {
     let (text, _) = editor(&mut a);
     assert!(
         text.starts_with(
-            "From: oxford\nTo: Jane Doe <jane.doe@example.com>, Sam <sam@example.com>\nCc: Team <team@example.com>\n"
+            "From: Oxford <newc7370@ox.ac.uk>\nTo: Jane Doe <jane.doe@example.com>, Sam <sam@example.com>\nCc: Team <team@example.com>\n"
         ),
         "{text}"
     );
@@ -485,7 +485,7 @@ fn forward_and_compose() {
     a.key(Key::Char('F'));
     let (text, purpose) = editor(&mut a);
     assert!(
-        text.starts_with("From: oxford\nTo: \nCc: \nBcc: \nSubject: Fwd: Grüße\n"),
+        text.starts_with("From: Oxford <newc7370@ox.ac.uk>\nTo: \nCc: \nBcc: \nSubject: Fwd: Grüße\n"),
         "{text}"
     );
     assert!(text.contains("---------- Forwarded message ----------"));
@@ -711,7 +711,11 @@ fn w_puts_free_times_in_a_reply() {
         "{}",
         req.text
     );
-    assert!(req.text.starts_with("From: oxford\nTo: "), "{}", req.text);
+    assert!(
+        req.text.starts_with("From: Oxford <newc7370@ox.ac.uk>\nTo: "),
+        "{}",
+        req.text
+    );
     assert!(matches!(req.purpose, keryx_tui::send::Purpose::Reply { .. }));
 }
 
@@ -856,7 +860,7 @@ fn from_switches_the_account_for_new_mail_but_never_for_a_reply() {
     let (text, purpose) = editor(&mut a);
     let first = text.lines().next().unwrap().to_string();
     let typed = text
-        .replacen(&first, "From: personal", 1)
+        .replacen(&first, "From: Personal <alec.mitchellthomson@gmail.com>", 1)
         .replacen("To: ", "To: jane.doe@example.com", 1);
     a.editor_done(purpose, Ok(type_body(&typed, "Hello")));
     match &a.mode {
@@ -878,7 +882,10 @@ fn from_switches_the_account_for_new_mail_but_never_for_a_reply() {
     let (text, purpose) = editor(&mut a);
     a.editor_done(
         purpose.clone(),
-        Ok(type_body(&text.replacen("From: oxford", "From: nowhere", 1), "hi")),
+        Ok(type_body(
+            &text.replacen("From: Oxford <newc7370@ox.ac.uk>", "From: nowhere", 1),
+            "hi",
+        )),
     );
     let (again, _) = editor(&mut a);
     assert!(
@@ -887,7 +894,10 @@ fn from_switches_the_account_for_new_mail_but_never_for_a_reply() {
     );
     a.editor_done(
         purpose,
-        Ok(type_body(&text.replacen("From: oxford", "From: personal", 1), "hi")),
+        Ok(type_body(
+            &text.replacen("From: Oxford <newc7370@ox.ac.uk>", "From: personal", 1),
+            "hi",
+        )),
     );
     let (again, _) = editor(&mut a);
     assert!(

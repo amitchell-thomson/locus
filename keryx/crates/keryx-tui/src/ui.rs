@@ -572,7 +572,8 @@ fn message_lines(app: &App, open: &Open, i: usize, m: &Message, w: usize, full: 
     let bar = || Span::styled("▎ ", Style::default().fg(col));
     let body_w = w.saturating_sub(2);
     let who = match &m.from {
-        Some(a) if is_me(app, a) => "you".to_string(),
+        // You, and which of your addresses (your round of 26 Oct: not just the alias).
+        Some(a) if is_me(app, a) => format!("you <{}>", a.email),
         Some(a) => a.display(),
         None => "(no sender)".into(),
     };

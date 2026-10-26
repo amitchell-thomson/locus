@@ -82,8 +82,8 @@ impl Session {
         text: &str,
         purpose: Purpose,
         draft: Option<PathBuf>,
-        rows: u16,
-        cols: u16,
+        accounts: &[String],
+        (rows, cols): (u16, u16),
         background: &str,
     ) -> Result<Self, String> {
         let dir = std::env::temp_dir().join(format!("keryx-writing-{}", uuid::Uuid::new_v4().simple()));
@@ -114,6 +114,8 @@ impl Session {
             cmd.env("KERYX_DRAFT", d);
         }
         cmd.env("KERYX_BIN", keryx_bin());
+        // Your accounts as `Name <address>`, one a line: what the From: line offers.
+        cmd.env("KERYX_ACCOUNTS", accounts.join("\n"));
         if let Some(home) = std::env::var_os("HOME") {
             cmd.cwd(home);
         }
@@ -183,7 +185,7 @@ mod tests {
             script.to_string(),
             "sh".to_string(),
         ];
-        let mut s = Session::start(&editor, "To: \n\nhello\n", purpose(), draft, 10, 40, "#1e1e2e").unwrap();
+        let mut s = Session::start(&editor, "To: \n\nhello\n", purpose(), draft, &[], (10, 40), "#1e1e2e").unwrap();
         let t = Instant::now();
         loop {
             if let Some(f) = s.finished() {

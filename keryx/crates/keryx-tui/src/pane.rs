@@ -22,6 +22,10 @@ pub struct Answers {
     out: Vec<u8>,
     /// The background reported to OSC 11, as `rgb:rrrr/gggg/bbbb`.
     background: String,
+    /// The cursor shape the child last asked for (DECSCUSR `CSI n SP q`: 0–2 block, 3–4
+    /// underline, 5–6 bar). Neovim sets a block in normal mode and a bar in insert; the
+    /// parser does not draw cursors, so the run loop passes this on to your terminal.
+    pub cursor_shape: u16,
 }
 
 impl vt100::Callbacks for Answers {
@@ -34,6 +38,10 @@ impl vt100::Callbacks for Answers {
         c: char,
     ) {
         let first = params.first().and_then(|p| p.first()).copied().unwrap_or(0);
+        if i1 == Some(b' ') && c == 'q' {
+            self.cursor_shape = first;
+            return;
+        }
         match (i1, c, first) {
             // Primary device attributes: a VT220 with ANSI colour.
             (None, 'c', 0) => self.out.extend_from_slice(b"\x1b[?62;22c"),
@@ -89,6 +97,7 @@ impl Pane {
         let answers = Answers {
             out: Vec::new(),
             background: osc_colour(background),
+            cursor_shape: 0,
         };
         let parser = Arc::new(Mutex::new(vt100::Parser::new_with_callbacks(rows, cols, 0, answers)));
         let changed = Arc::new(AtomicBool::new(true));
@@ -179,6 +188,11 @@ impl Pane {
         } else {
             self.send(text.as_bytes());
         }
+    }
+
+    /// The cursor shape the child asked for (DECSCUSR's number).
+    pub fn cursor_shape(&self) -> u16 {
+        self.parser.lock().map(|p| p.callbacks().cursor_shape).unwrap_or(0)
     }
 
     /// `Some(success)` once the child has exited.
@@ -297,6 +311,15 @@ mod tests {
         assert_eq!(encode(KeyCode::Delete, none, false), b"\x1b[3~");
         assert_eq!(encode(KeyCode::F(5), none, false), b"\x1b[15~");
         assert_eq!(encode(KeyCode::F(1), none, false), b"\x1bOP");
+    }
+
+    #[test]
+    fn the_cursor_shape_the_child_asks_for_is_kept() {
+        let mut cmd = CommandBuilder::new("/bin/sh");
+        cmd.args(["-c", "printf '\\033[6 qbar'; sleep 2"]);
+        let pane = Pane::spawn(cmd, 4, 20, "#1e1e2e").unwrap();
+        wait(&pane, |s| s.contains("bar"));
+        assert_eq!(pane.cursor_shape(), 6);
     }
 
     #[test]

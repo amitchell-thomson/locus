@@ -123,6 +123,7 @@ pub fn run_at(cfg: Config, thread: Option<(String, String)>) -> Result<(), Strin
     app.shared = locus_contract::taxonomy::load(&locus_contract::taxonomy::root()).ok();
     let editor = writing::embeddable_editor();
     let mut session: Option<writing::Session> = None;
+    let mut cursor_shape: u16 = 0;
     app.daemon = keryx_store::client::Client::from_config(&cfg)
         .ok()
         .map(|c| Box::new(c.interactive(true)) as Box<dyn keryx_store::client::Daemon>);
@@ -151,6 +152,13 @@ pub fn run_at(cfg: Config, thread: Option<(String, String)>) -> Result<(), Strin
             terminal
                 .draw(|f| ui::draw_writing(f, &app, session.as_ref().map(|s| &s.pane)))
                 .map_err(|e| e.to_string())?;
+            // Your terminal's cursor takes the shape Neovim asks for (block, bar), and your own
+            // default again once the editor closes.
+            let shape = session.as_ref().map_or(0, |s| s.pane.cursor_shape());
+            if shape != cursor_shape {
+                let _ = crossterm::execute!(std::io::stdout(), cursor_style(shape));
+                cursor_shape = shape;
+            }
             if let Some(req) = app.editor_request.take() {
                 match &editor {
                     // Your Neovim in the right pane, the list beside it (X6).
@@ -158,8 +166,16 @@ pub fn run_at(cfg: Config, thread: Option<(String, String)>) -> Result<(), Strin
                         app.writing_started(req.purpose.clone());
                         let r = ui::writing_rect(&app, full);
                         let draft = app.draft_path(&req.purpose);
-                        match writing::Session::start(ed, &req.text, req.purpose, draft, r.height, r.width, &base_hex())
-                        {
+                        let accounts: Vec<String> = app.cfg.accounts.iter().map(|a| app.from_line(&a.id)).collect();
+                        match writing::Session::start(
+                            ed,
+                            &req.text,
+                            req.purpose,
+                            draft,
+                            &accounts,
+                            (r.height, r.width),
+                            &base_hex(),
+                        ) {
                             Ok(s) => session = Some(s),
                             Err(e) => {
                                 app.writing = None;
@@ -240,9 +256,27 @@ pub fn run_at(cfg: Config, thread: Option<(String, String)>) -> Result<(), Strin
         }
     })();
     drop(session);
-    let _ = crossterm::execute!(std::io::stdout(), crossterm::event::DisableBracketedPaste);
+    let _ = crossterm::execute!(
+        std::io::stdout(),
+        crossterm::event::DisableBracketedPaste,
+        crossterm::cursor::SetCursorStyle::DefaultUserShape
+    );
     ratatui::restore();
     result
+}
+
+/// DECSCUSR's number as crossterm's cursor style (0: your terminal's default).
+fn cursor_style(n: u16) -> crossterm::cursor::SetCursorStyle {
+    use crossterm::cursor::SetCursorStyle as S;
+    match n {
+        1 => S::BlinkingBlock,
+        2 => S::SteadyBlock,
+        3 => S::BlinkingUnderScore,
+        4 => S::SteadyUnderScore,
+        5 => S::BlinkingBar,
+        6 => S::SteadyBar,
+        _ => S::DefaultUserShape,
+    }
 }
 
 /// The theme's background, as `#rrggbb`, told to the editor when it asks.

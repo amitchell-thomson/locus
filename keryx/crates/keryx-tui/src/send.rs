@@ -228,9 +228,18 @@ impl App {
                 self.message = Some(("your kept draft · :cq throws it away".into(), false));
                 t
             }
-            None => compose::with_from(&text, purpose.account()),
+            None => compose::with_from(&text, &self.from_line(purpose.account())),
         };
         self.editor_request = Some(EditorRequest { text, purpose });
+    }
+
+    /// How an account reads on the `From:` line: its name and its address
+    /// (`Oxford <you@ox.ac.uk>`), never the bare id.
+    pub fn from_line(&self, account: &str) -> String {
+        match self.cfg.account(account) {
+            Some(a) => format!("{} <{}>", a.name, a.address),
+            None => account.to_string(),
+        }
     }
 
     pub fn draft_path(&self, purpose: &Purpose) -> Option<std::path::PathBuf> {
@@ -316,7 +325,11 @@ impl App {
         let Some(v) = from else {
             return Ok(purpose.account().to_string());
         };
-        let v = v.trim();
+        // `Oxford <you@ox.ac.uk>` names the account by its address; a bare name or id works too.
+        let v = match (v.find('<'), v.rfind('>')) {
+            (Some(i), Some(j)) if j > i => v[i + 1..j].trim(),
+            _ => v.trim(),
+        };
         let found = self.cfg.accounts.iter().find(|a| {
             a.id.eq_ignore_ascii_case(v)
                 || a.name.eq_ignore_ascii_case(v)

@@ -980,6 +980,14 @@ fn quitting_keeps_a_draft_that_r_reopens_and_sending_drops() {
     assert!(matches!(a.mode, Mode::ConfirmSend(_)));
     assert!(a.draft_path(&purpose).unwrap().exists(), "kept until it is sent");
     keys(&mut a, &[Key::Char('y')]);
+    assert!(a.draft_path(&purpose).unwrap().exists(), "in its hold: the draft stays");
+    // keryxd records the send as done; the next look settles it.
+    let (id, _) = a.sending.clone().expect("a send in its hold");
+    let mut done = cs(Status::Applied);
+    done.id = id;
+    a.db.save_changeset(&done).unwrap();
+    a.hold = None;
+    a.settle_send();
     assert!(!a.draft_path(&purpose).unwrap().exists(), "sent: the draft goes");
     assert!(f.take()[0].contains("Half a thought"));
 }
@@ -1164,4 +1172,32 @@ fn a_refused_send_keeps_your_mail_and_the_confirm_screen_warns_first() {
         typed,
         "nothing lost"
     );
+}
+
+#[test]
+fn after_the_hold_the_line_says_sent_or_why_not_and_the_draft_follows() {
+    let (mut a, _f) = app();
+    let dir = tempfile::tempdir().unwrap();
+    let draft = dir.path().join("new-oxford.eml");
+    for (status, error, said, kept) in [
+        (
+            Status::Failed,
+            Some("Mail: can't attach the file"),
+            "not sent: Mail: can't attach the file",
+            true,
+        ),
+        (Status::Applied, None, "sent", false),
+    ] {
+        std::fs::write(&draft, "To: me\n\nhi\n").unwrap();
+        let mut c = cs(status);
+        c.id = "cs-send".into();
+        c.error = error.map(str::to_string);
+        a.db.save_changeset(&c).unwrap();
+        a.sending = Some(("cs-send".into(), Some(draft.clone())));
+        a.hold = None;
+        a.settle_send();
+        assert!(a.message.as_ref().unwrap().0.starts_with(said), "{:?}", a.message);
+        assert_eq!(draft.exists(), kept);
+        assert!(a.sending.is_none());
+    }
 }

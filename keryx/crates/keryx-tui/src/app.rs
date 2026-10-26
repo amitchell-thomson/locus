@@ -148,6 +148,8 @@ pub struct App {
     pub shared: Option<locus_contract::taxonomy::Shared>,
     /// The highlighted row of the attachment list (`o`).
     pub att_sel: usize,
+    /// A send in its hold: (changeset id, the draft kept until it has gone).
+    pub sending: Option<(String, Option<PathBuf>)>,
     /// Inboxes added to the highlighted one with ⌥⇥.
     pub also: BTreeSet<usize>,
     /// Threads opened in this session: shown as read whatever the mirror says yet.
@@ -207,6 +209,7 @@ impl App {
             drafts_dir: None,
             att_sel: 0,
             also: BTreeSet::new(),
+            sending: None,
             read_here: BTreeSet::new(),
             marks: std::collections::HashMap::new(),
             shared: None,

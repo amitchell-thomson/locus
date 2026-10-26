@@ -189,6 +189,12 @@ pub fn step_args(acc: &Account, mid: &str, current: &str, step: &MailStep) -> Ve
 const SEND_SCRIPT: &str = r#"
 on run argv
   set {acctId, acctAddr, mid, toList, ccList, bccList, subj, body, files} to argv
+  -- Paths become file references here, outside Mail: inside its tell block `POSIX file` is
+  -- Mail's to resolve, and it fails with -10006 (the first live attachment, 26 Oct).
+  set fileRefs to {}
+  repeat with f in paragraphs of files
+    if (f as string) is not "" then set end of fileRefs to ((POSIX file (f as string)) as alias)
+  end repeat
   tell application "Mail"
     set acc to missing value
     try
@@ -233,10 +239,8 @@ on run argv
         if (a as string) is not "" then make new bcc recipient at end of bcc recipients with properties {address:(a as string)}
       end repeat
     end tell
-    repeat with f in paragraphs of files
-      if (f as string) is not "" then
-        tell content of msg to make new attachment with properties {file name:(POSIX file (f as string))} at after last paragraph
-      end if
+    repeat with fr in fileRefs
+      tell content of msg to make new attachment with properties {file name:(contents of fr)} at after last paragraph
     end repeat
     delay 1
     send msg

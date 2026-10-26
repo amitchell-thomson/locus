@@ -506,5 +506,39 @@ impl App {
             .as_ref()
             .and_then(|d| d.holding().ok().flatten())
             .and_then(|c| c.hold_until.map(|t| (c.id.clone(), t)));
+        self.settle_send();
+    }
+
+    /// Once a send's hold is over, say how it went: sent (its draft goes), or not sent and why
+    /// (its draft stays). Read from the mirror, where keryxd records the outcome.
+    pub fn settle_send(&mut self) {
+        let Some((id, draft)) = self.sending.clone() else {
+            return;
+        };
+        if self.hold.as_ref().is_some_and(|(h, _)| *h == id) {
+            return;
+        }
+        let Ok(Some(cs)) = self.db.changeset(&id) else { return };
+        match cs.status {
+            Status::Applied => {
+                if let Some(p) = &draft {
+                    let _ = std::fs::remove_file(p);
+                }
+                self.message = Some(("sent".into(), false));
+            }
+            Status::Failed => {
+                let why = cs.error.unwrap_or_default();
+                let kept = if draft.as_ref().is_some_and(|p| p.exists()) {
+                    " · your mail is kept in drafts (g d)"
+                } else {
+                    ""
+                };
+                self.message = Some((format!("not sent: {why}{kept}"), true));
+            }
+            Status::Undone | Status::Rejected => self.message = Some(("not sent".into(), false)),
+            // Still holding in the mirror (it lags keryxd by a moment): look again next time.
+            _ => return,
+        }
+        self.sending = None;
     }
 }

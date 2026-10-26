@@ -160,8 +160,16 @@ pub fn parse(text: &str, signature: Option<&str>, max_mb: u32) -> Result<Compose
     // in mail itself, so a long To: can put each address on its own line.
     let mut headers: Vec<String> = Vec::new();
     for line in lines.by_ref() {
-        if line.trim().is_empty() {
+        // Only an empty line ends the headers: an indented blank one is a continuation left
+        // behind after the last recipient.
+        if line.is_empty() || (line.trim().is_empty() && headers.is_empty()) {
             break;
+        }
+        if line.trim().is_empty() && !line.starts_with([' ', '\t']) {
+            break;
+        }
+        if line.trim().is_empty() {
+            continue;
         }
         match headers.last_mut() {
             Some(prev) if line.starts_with([' ', '\t']) => {
@@ -268,7 +276,7 @@ mod tests {
 
     #[test]
     fn a_header_can_run_over_indented_lines() {
-        let f = "To: Jane <jane@example.com>,\n    sam@example.com,\n\tbob@example.org\nSubject: Hi\n\nbody\n";
+        let f = "To: Jane <jane@example.com>,\n    sam@example.com,\n\tbob@example.org,\n    \nSubject: Hi\n\nbody\n";
         let c = parse(f, None, 25).unwrap();
         assert_eq!(c.to.len(), 3);
         assert_eq!(c.to[2].email, "bob@example.org");

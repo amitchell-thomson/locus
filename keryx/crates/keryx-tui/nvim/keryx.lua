@@ -184,6 +184,32 @@ vim.keymap.set("n", "gx", function()
   end
 end, { buffer = buf, desc = "keryx: open the attachment on this line" })
 
+-- After the last recipient: the empty indented line and its comma go, when you leave insert
+-- mode and before a write, so the header reads as you would type it.
+local function tidy_header()
+  local stop = header_end()
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, stop, false)
+  local out, changed = {}, false
+  for _, l in ipairs(lines) do
+    if l:match("^%s+$") then
+      changed = true
+    else
+      table.insert(out, l)
+    end
+  end
+  for i, l in ipairs(out) do
+    local nxt = out[i + 1]
+    if l:match(",%s*$") and not (nxt and nxt:match("^%s")) then
+      out[i] = l:gsub(",%s*$", "")
+      changed = true
+    end
+  end
+  if changed then
+    vim.api.nvim_buf_set_lines(buf, 0, stop, false, out)
+  end
+end
+vim.api.nvim_create_autocmd({ "InsertLeave", "BufWritePre" }, { buffer = buf, callback = tidy_header })
+
 -- keryx's ^a picker sends this.
 vim.api.nvim_create_user_command("KeryxAttach", function(o)
   local at = header_end()

@@ -268,6 +268,7 @@ impl App {
         let mut mailto: Option<(String, String, String, String)> = None;
         let mut free: Option<(String, String)> = None;
         let mut statuses = Vec::new();
+        let mut sending: Option<(String, Option<std::path::PathBuf>)> = None;
         for job in jobs {
             let res: Result<Option<String>, String> = match &job {
                 Job::Triage { req, quiet } => d
@@ -315,7 +316,11 @@ impl App {
                 Job::Send(r, draft) => d
                     .send(r)
                     .map(|c| {
-                        if let Some(p) = draft {
+                        // In its hold: the draft stays until the mail has gone (round 8, the
+                        // first attachment failed at send time and the line said "sending" on).
+                        if c.status == keryx_core::changeset::Status::Holding {
+                            sending = Some((c.id.clone(), draft.clone()));
+                        } else if let Some(p) = draft {
                             let _ = std::fs::remove_file(p);
                         }
                         Some(sent_message(&c))
@@ -416,6 +421,9 @@ impl App {
                 purpose: crate::send::Purpose::Compose { account },
                 req,
             }));
+        }
+        if sending.is_some() {
+            self.sending = sending;
         }
         self.refresh_hold();
         self.reload();

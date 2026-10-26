@@ -71,6 +71,9 @@ function M:get_completions(ctx, callback)
     return done(callback, {}, false)
   end
   local base = line:sub(start + 1, col)
+  -- Each recipient on its own line, lined up under the first ("To: " is four wide).
+  local key = line:match("^(%a+:)") or (_G.KeryxKeyAt and _G.KeryxKeyAt(ctx.cursor[1])) or "To:"
+  local next_line = ",\n" .. string.rep(" ", #key + 1)
   -- Your own accounts first (Personal, Oxford, OQTS), as the From: line names them; keryx
   -- addresses leaves your addresses out of the people.
   local own = {}
@@ -83,7 +86,7 @@ function M:get_completions(ctx, callback)
         hl = "KeryxOwn",
         detail = "you",
         filter = base,
-        text = acc .. ", ",
+        text = acc .. next_line,
         extra = { sortText = "0" .. acc },
       }))
     end
@@ -106,7 +109,7 @@ function M:get_completions(ctx, callback)
             detail = wrote,
             -- Keep keryx's order (the people you write to most first) and match on what you typed.
             filter = base,
-            text = c.display .. ", ",
+            text = c.display .. next_line,
             doc = string.format("**%s**\n\n`%s`\n\n%s · %s · last %s", c.name or c.email, c.email, wrote,
               string.format("%d from them", c.received or 0), ago(c.last)),
             extra = { sortText = string.format("1%04d", i) },

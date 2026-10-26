@@ -207,7 +207,7 @@ pub fn run_at(cfg: Config, thread: Option<(String, String)>) -> Result<(), Strin
                     stamp = s;
                     app.reload();
                 }
-                if app.hold.is_some() {
+                if app.hold.is_some() || app.sending.is_some() {
                     app.refresh_hold();
                 }
                 last_check = Instant::now();

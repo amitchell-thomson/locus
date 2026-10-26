@@ -10,7 +10,8 @@ use keryx_core::config::Config;
 use keryx_store::api::{Decision, ReviewItem};
 use keryx_store::client::{Client, Daemon};
 use keryx_store::state::{Action, ProposalStatus};
-use locus_contract::{ApproveGroup, ApproveItem, ApproveKind, MailDecision};
+use locus_contract::{AppEvent, AppEventKind, ApproveGroup, ApproveItem, ApproveKind, Item, ItemKind, MailDecision};
+use std::collections::BTreeMap;
 
 /// A connection to keryxd, from keryx's own config, as you (your keypresses in Approve).
 pub struct Live {
@@ -97,6 +98,43 @@ impl Mirror {
         Some(Mirror { cfg, db })
     }
 
+    /// Mail filed for each registry item (keryx-joins-locus X7), newest first, at most `per`
+    /// threads an item: what its page shows.
+    pub fn filed(&self, ids: &[String], per: usize) -> BTreeMap<String, Vec<Filed>> {
+        let own = self.cfg.own_addresses();
+        let mut out = BTreeMap::new();
+        for id in ids {
+            let mut v: Vec<Filed> = self
+                .db
+                .threads_for_item(id)
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|(a, t, _)| {
+                    let msgs = self.db.thread(&a, &t).ok()?;
+                    let first = msgs.first()?;
+                    let last = msgs.last()?;
+                    let other = msgs
+                        .iter()
+                        .rev()
+                        .find(|m| m.from.as_ref().is_some_and(|f| !own.contains(&f.key())))
+                        .or(msgs.last())?;
+                    Some(Filed {
+                        subject: first.subject.clone(),
+                        who: other.from.as_ref().map(|f| f.short().to_string()).unwrap_or_default(),
+                        at: last.date,
+                        unread: msgs.iter().any(|m| !m.read),
+                    })
+                })
+                .collect();
+            v.sort_by_key(|f| std::cmp::Reverse(f.at));
+            v.truncate(per);
+            if !v.is_empty() {
+                out.insert(id.clone(), v);
+            }
+        }
+        out
+    }
+
     pub fn search(&self, q: &str) -> Vec<keryx_store::view::ThreadRow> {
         let Ok(q) = keryx_core::query::parse(q, chrono::Utc::now().with_timezone(&self.cfg.tz())) else {
             return Vec::new();
@@ -123,6 +161,58 @@ fn action_text(a: &Action) -> String {
 /// Home's mail line: how many threads wait on your reply.
 pub fn apply_counts(fx: &mut Fixtures, need_reply: u32) {
     fx.home.mail.need_reply = need_reply;
+}
+
+/// One thread filed for an item.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Filed {
+    pub subject: String,
+    pub who: String,
+    pub at: i64,
+    pub unread: bool,
+}
+
+/// Filed mail onto its item's page (X7): an unread thread joins New, and an application's
+/// timeline gets every thread as a mail event, each once. A course's own page is a later
+/// design session; until then its mail shows in New like any item's.
+pub fn apply_filed(fx: &mut Fixtures, filed: &BTreeMap<String, Vec<Filed>>) {
+    for (id, threads) in filed {
+        let Some(p) = fx.projects.get_mut(id) else { continue };
+        for f in threads {
+            let Some(at) = chrono::DateTime::from_timestamp(f.at, 0).map(|t| t.fixed_offset()) else {
+                continue;
+            };
+            let text = format!("{}: {}", f.who, f.subject);
+            if f.unread && !p.view.new.iter().any(|i| i.kind == ItemKind::Mail && i.text == text) {
+                p.view.new.push(Item {
+                    kind: ItemKind::Mail,
+                    text: text.clone(),
+                    at,
+                    unread: true,
+                    detail: vec![],
+                    routine: None,
+                });
+            }
+            if let Some(app) = &mut p.view.application
+                && !app
+                    .events
+                    .iter()
+                    .any(|e| e.kind == AppEventKind::Mail && e.text == text)
+            {
+                app.events.push(AppEvent {
+                    at,
+                    kind: AppEventKind::Mail,
+                    text,
+                    detail: vec![],
+                    calendar: None,
+                });
+            }
+        }
+        p.view.new.sort_by_key(|i| std::cmp::Reverse(i.at));
+        if let Some(app) = &mut p.view.application {
+            app.events.sort_by_key(|e| e.at);
+        }
+    }
 }
 
 /// keryx's drafts and proposals onto Approve, replacing what an earlier pass put there.
@@ -271,5 +361,44 @@ mod tests {
                 .iter()
                 .all(|g| !matches!(g.kind, ApproveKind::MailSend | ApproveKind::MailFiling))
         );
+    }
+
+    #[test]
+    fn filed_mail_reaches_its_items_page_once() {
+        let mut fx = Fixtures::load(&resolve("default")).unwrap();
+        let before = fx.projects["millennium"]
+            .view
+            .application
+            .as_ref()
+            .unwrap()
+            .events
+            .len();
+        let new_before = fx.projects["millennium"].view.new.len();
+        let filed: BTreeMap<String, Vec<Filed>> = [(
+            "millennium".to_string(),
+            vec![
+                Filed {
+                    subject: "Your interview slot".into(),
+                    who: "Recruiting".into(),
+                    at: 1_793_000_000,
+                    unread: true,
+                },
+                Filed {
+                    subject: "Application received".into(),
+                    who: "Recruiting".into(),
+                    at: 1_790_000_000,
+                    unread: false,
+                },
+            ],
+        )]
+        .into();
+        apply_filed(&mut fx, &filed);
+        apply_filed(&mut fx, &filed);
+        let p = &fx.projects["millennium"];
+        let app = p.view.application.as_ref().unwrap();
+        assert_eq!(app.events.len(), before + 2, "each thread once on the timeline");
+        assert!(app.events.windows(2).all(|w| w[0].at <= w[1].at), "oldest first");
+        assert_eq!(p.view.new.len(), new_before + 1, "only the unread one is new");
+        assert!(p.view.new.iter().any(|i| i.text == "Recruiting: Your interview slot"));
     }
 }

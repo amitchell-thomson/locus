@@ -25,4 +25,4 @@ expression: "render_to_string(&mut a, 80, 24)"
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- r reply · R all · F forward · d done · m file · z everything · o attachment
+ r reply · R all · F forward · d done · z everything · o attachment · esc back

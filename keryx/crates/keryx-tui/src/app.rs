@@ -46,8 +46,8 @@ pub enum Mode {
     Attachments,
     /// Snooze picker; `Some(text)` while typing a time for *Pick…*.
     Snooze(Option<String>),
-    /// File-into-key picker.
-    File,
+    /// `d` / `m`: what the thread is for (X7), the guess chosen.
+    File(Box<crate::file_for::ForPicker>),
     /// Alec's composed message: `y` sends (after the hold), `e` edits, `n` drops.
     ConfirmSend(Box<crate::send::SendDraft>),
     /// `L`: how unsubscribing will happen; `y` to go ahead.
@@ -59,6 +59,10 @@ pub enum Mode {
     KairosForm(Box<crate::form::Form>),
     /// `g` → `c`: Claude's runs.
     Runs {
+        sel: usize,
+    },
+    /// `g` → `l`: what keryx filed by itself as it arrived (X-d).
+    Filed {
         sel: usize,
     },
     /// One run: everything it made.
@@ -134,6 +138,8 @@ pub struct App {
     pub editor_request: Option<crate::send::EditorRequest>,
     /// Writing a mail in the right pane (the run loop owns the editor itself).
     pub writing: Option<crate::send::Writing>,
+    /// locus's taxonomy and registry: what mail can be filed for (X7). `None`: `d` archives.
+    pub shared: Option<locus_contract::taxonomy::Shared>,
     /// Where `:q` keeps a changed mail (set by the running TUI; `None` in tests unless set).
     pub drafts_dir: Option<PathBuf>,
     /// A send in its hold: (changeset id, sends at).
@@ -185,6 +191,7 @@ impl App {
             editor_request: None,
             writing: None,
             drafts_dir: None,
+            shared: None,
             hold: None,
             task_status: std::collections::HashMap::new(),
             list_hidden: false,
@@ -392,12 +399,13 @@ impl App {
             Mode::Thread => self.thread_key(k),
             Mode::List => self.list_key(k),
             Mode::Snooze(input) => self.snooze_key(k, input),
-            Mode::File => self.file_key(k),
+            Mode::File(p) => self.for_key(k, *p),
             Mode::ConfirmSend(d) => self.confirm_send_key(k, *d),
             Mode::ConfirmUnsubscribe { r#ref, .. } => self.confirm_unsubscribe_key(k, r#ref),
             Mode::KairosForm(f) => self.form_key(k, *f),
             Mode::Runs { sel } => self.runs_key(k, sel),
             Mode::RunDetail { id, sel } => self.run_detail_key(k, id, sel),
+            Mode::Filed { sel } => self.filed_key(k, sel),
         }
     }
 
@@ -561,10 +569,39 @@ impl App {
         self.opened.push(path);
     }
 
+    /// What `g` then a digit opens: the taxonomy's folders (X7), with their colours; your
+    /// config's keys when there is no taxonomy. Older keys are a search away (`key:Admin`).
+    pub fn goto_folders(&self) -> Vec<(String, ratatui::style::Color)> {
+        match &self.shared {
+            Some(s) => locus_contract::fors::folders(&s.taxonomy)
+                .into_iter()
+                .take(9)
+                .map(|f| {
+                    let col = s
+                        .taxonomy
+                        .colour_of(&f)
+                        .map_or(crate::theme::c("text"), crate::theme::c);
+                    (f, col)
+                })
+                .collect(),
+            None => self
+                .cfg
+                .keys
+                .iter()
+                .take(9)
+                .map(|k| (k.name.clone(), crate::theme::rgb(k.colour)))
+                .collect(),
+        }
+    }
+
     fn goto_key(&mut self, k: Key) {
         self.mode = Mode::List;
         if k == Key::Char('c') {
             self.mode = Mode::Runs { sel: 0 };
+            return;
+        }
+        if k == Key::Char('l') {
+            self.mode = Mode::Filed { sel: 0 };
             return;
         }
         let v = match k {
@@ -575,10 +612,12 @@ impl App {
             Key::Char('s') if self.cfg.snooze.enabled => View::Snoozed,
             Key::Char('v') => View::Archive,
             Key::Char('a') => View::All,
-            Key::Char(c) if c.is_ascii_digit() && c != '0' => match self.cfg.keys.get(c as usize - '1' as usize) {
-                Some(k) => View::Key(k.name.clone()),
-                None => return,
-            },
+            Key::Char(c) if c.is_ascii_digit() && c != '0' => {
+                match self.goto_folders().get(c as usize - '1' as usize) {
+                    Some((name, _)) => View::Key(name.clone()),
+                    None => return,
+                }
+            }
             _ => return,
         };
         self.view = v;

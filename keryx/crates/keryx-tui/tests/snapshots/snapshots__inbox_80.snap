@@ -25,4 +25,4 @@ expression: "render_to_string(&mut app(), 80, 24)"
 │   Jane Doe (2)                                                           mon │
 │    Re: Group project plan                                             oxford │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- ⏎ open · r reply · d done · m file · b list · ? keys
+ ⏎ open · r reply · d done · b list · ? keys

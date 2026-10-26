@@ -101,6 +101,8 @@ fn main() -> Result<()> {
         }
         if let Some(m) = locus_tui::mail::Mirror::open() {
             locus_tui::mail::apply_counts(&mut fx, m.need_reply());
+            let ids: Vec<String> = fx.registry.projects.iter().map(|p| p.id.clone()).collect();
+            locus_tui::mail::apply_filed(&mut fx, &m.filed(&ids, 20));
         }
     }
     if let Some(name) = cli.dump {
@@ -304,10 +306,14 @@ fn run(mut app: App) -> Result<()> {
     let (mail_tx, mail_rx) = std::sync::mpsc::channel();
     if let Some(m) = locus_tui::mail::Live::connect().map(std::sync::Arc::new) {
         app.mail = Some(m.clone());
+        let ids: Vec<String> = app.fixtures.registry.projects.iter().map(|p| p.id.clone()).collect();
         std::thread::spawn(move || {
             loop {
-                let need = locus_tui::mail::Mirror::open().map_or(0, |x| x.need_reply());
-                if mail_tx.send((m.drafts(), m.proposals(), need)).is_err() {
+                let mirror = locus_tui::mail::Mirror::open();
+                let need = mirror.as_ref().map_or(0, |x| x.need_reply());
+                // What was filed for each item, for its page (keryx-joins-locus X7).
+                let filed = mirror.as_ref().map(|x| x.filed(&ids, 20)).unwrap_or_default();
+                if mail_tx.send((m.drafts(), m.proposals(), need, filed)).is_err() {
                     return;
                 }
                 std::thread::sleep(Duration::from_secs(60));
@@ -331,9 +337,10 @@ fn run(mut app: App) -> Result<()> {
                 locus_tui::calendar::apply_chores(&mut app.fixtures, &chores);
                 locus_tui::calendar::apply_tasks(&mut app.fixtures, &tasks);
             }
-            if let Ok((drafts, proposals, need)) = mail_rx.try_recv() {
+            if let Ok((drafts, proposals, need, filed)) = mail_rx.try_recv() {
                 locus_tui::mail::apply(&mut app.fixtures, &drafts, &proposals);
                 locus_tui::mail::apply_counts(&mut app.fixtures, need);
+                locus_tui::mail::apply_filed(&mut app.fixtures, &filed);
             }
             if app.stack.first() == Some(&ScreenId::Home)
                 && let Some(req) = inbox.poll()

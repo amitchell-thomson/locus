@@ -122,6 +122,10 @@ impl App {
         self.selected().map(|r| vec![r.r#ref.clone()]).unwrap_or_default()
     }
 
+    pub(crate) fn triage_intent(&mut self, intent: Intent, doing: &str) {
+        self.triage(intent, doing);
+    }
+
     fn triage(&mut self, intent: Intent, doing: &str) {
         let refs = self.targets();
         if refs.is_empty() {
@@ -159,15 +163,9 @@ impl App {
                     self.message = Some(("cancelling the send…".into(), false));
                 }
             }
-            Key::Char('d') => self.triage(Intent::Archive, "archiving"),
+            // Done: filed for what it is for, the guess chosen (X7).
+            Key::Char('d') | Key::Char('m') => self.open_for_picker(),
             Key::Char('s') if self.cfg.snooze.enabled => self.mode = Mode::Snooze(None),
-            Key::Char('m') => {
-                if self.file_keys().is_empty() {
-                    self.message = Some(("no key is mapped for this account (config [[keys]])".into(), true));
-                } else {
-                    self.mode = Mode::File;
-                }
-            }
             Key::Char('f') => {
                 let on = !self
                     .rows
@@ -207,22 +205,6 @@ impl App {
         true
     }
 
-    /// Keys usable for `m` on the targets: mapped on every target's account.
-    pub fn file_keys(&self) -> Vec<(usize, String)> {
-        let accounts: Vec<String> = self
-            .targets()
-            .iter()
-            .filter_map(|r| keryx_core::model::parse_thread_ref(r).map(|(a, _)| a.to_string()))
-            .collect();
-        self.cfg
-            .keys
-            .iter()
-            .enumerate()
-            .filter(|(_, k)| !accounts.is_empty() && accounts.iter().all(|a| k.folders.contains_key(a)))
-            .map(|(i, k)| (i + 1, k.name.clone()))
-            .collect()
-    }
-
     pub fn snooze_key(&mut self, k: Key, input: Option<String>) {
         let back = if self.open.is_some() { Mode::Thread } else { Mode::List };
         match (input, k) {
@@ -253,26 +235,6 @@ impl App {
                 Err(e) => self.message = Some((e, true)),
             },
             (Some(s), _) => self.mode = Mode::Snooze(Some(s)),
-        }
-    }
-
-    pub fn file_key(&mut self, k: Key) {
-        let back = if self.open.is_some() { Mode::Thread } else { Mode::List };
-        match k {
-            Key::Char(c) if c.is_ascii_digit() && c != '0' => {
-                let n = c as usize - '0' as usize;
-                if let Some((_, name)) = self.file_keys().into_iter().find(|(i, _)| *i == n) {
-                    self.mode = back;
-                    self.triage(
-                        Intent::File {
-                            key: name.clone(),
-                            item: None,
-                        },
-                        &format!("filing into {name}:"),
-                    );
-                }
-            }
-            _ => self.mode = back,
         }
     }
 

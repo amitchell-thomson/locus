@@ -317,26 +317,49 @@ fn snooze_presets_and_pick() {
     assert!(matches!(a.mode, Mode::Snooze(Some(_))));
 }
 
+fn with_taxonomy(a: &mut App) {
+    a.shared = Some(locus_contract::taxonomy::load(&locus_contract::taxonomy::root()).unwrap());
+}
+
 #[test]
-fn file_picker_only_offers_mapped_keys() {
+fn done_files_for_what_it_is_for_with_the_guess_chosen() {
     let (mut a, f) = app();
-    let r = select(&mut a, "Lab partner for Thursday?");
-    keys(&mut a, &[Key::Char('m')]);
-    let names: Vec<String> = a.file_keys().into_iter().map(|(_, n)| n).collect();
-    assert_eq!(names, vec!["Admin", "Engineering", "Careers", "OQTS", "JCR Treasurer"]);
-    insta::assert_snapshot!("file_picker", render_to_string(&mut a, 80, 12));
-    keys(&mut a, &[Key::Char('4')]);
-    assert!(f.take().is_empty(), "Travel isn't mapped for Oxford");
-    assert_eq!(a.mode, Mode::File, "picker stays open");
-    keys(&mut a, &[Key::Char('1')]);
+    with_taxonomy(&mut a);
+    // A receipt: guessed Errands, Enter takes it.
+    let ticket = select(&mut a, "Your e-ticket: Oxford to London, Fri 23 Oct");
+    keys(&mut a, &[Key::Char('d')]);
+    insta::assert_snapshot!("file_picker", render_to_string(&mut a, 80, 16));
+    keys(&mut a, &[Key::Enter]);
     assert_eq!(
         f.take(),
-        vec![format!(r#"triage {{"action":"file","key":"Admin"}} ["{r}"]"#)]
+        vec![format!(r#"triage {{"action":"file","key":"Errands"}} ["{ticket}"]"#)]
     );
-    // An account with no keys mapped says so.
-    select(&mut a, "Poster for the talk");
-    keys(&mut a, &[Key::Char('m')]);
-    assert!(a.message.as_ref().unwrap().0.contains("no key is mapped"));
+
+    // No guess: Enter chooses nothing until you type.
+    let lab = select(&mut a, "Lab partner for Thursday?");
+    keys(&mut a, &[Key::Char('d'), Key::Enter]);
+    assert!(f.take().is_empty() && matches!(a.mode, Mode::File(_)));
+    for c in "b14".chars() {
+        a.key(Key::Char(c));
+    }
+    keys(&mut a, &[Key::Enter]);
+    assert_eq!(
+        f.take(),
+        vec![format!(
+            r#"triage {{"action":"file","key":"Studies","item":"b14"}} ["{lab}"]"#
+        )]
+    );
+
+    // For nothing: archive only. Esc leaves without a change.
+    select(&mut a, "Lab partner for Thursday?");
+    keys(&mut a, &[Key::Char('m'), Key::Esc]);
+    assert!(f.take().is_empty() && a.mode == Mode::List);
+    keys(&mut a, &[Key::Char('d')]);
+    for c in "nothing".chars() {
+        a.key(Key::Char(c));
+    }
+    keys(&mut a, &[Key::Enter]);
+    assert_eq!(f.take(), vec![format!(r#"triage {{"action":"archive"}} ["{lab}"]"#)]);
 }
 
 #[test]
@@ -963,4 +986,51 @@ fn the_editor_draws_in_the_right_pane_with_the_list_beside_it() {
         "in the right pane: {s}"
     );
     assert!(s.contains(":w send") && s.contains(":q keep as a draft"), "{s}");
+}
+
+#[test]
+fn what_was_filed_by_itself_is_listed_and_u_puts_it_back() {
+    let (mut a, f) = app();
+    keys(&mut a, &[Key::Char('g'), Key::Char('l')]);
+    assert!(render_to_string(&mut a, 90, 6).contains("nothing yet"));
+    keys(&mut a, &[Key::Esc]);
+    let ticket = a
+        .rows
+        .iter()
+        .find(|r| r.subject.starts_with("Your e-ticket"))
+        .unwrap()
+        .clone();
+    let m = a.db.thread(&ticket.account, &ticket.thread_id).unwrap().remove(0);
+    let state = keryx_core::changeset::MsgState {
+        location: m.location.clone(),
+        read: m.read,
+        flagged: m.flagged,
+    };
+    let mut c = cs(Status::Applied);
+    c.id = "cs-auto".into();
+    c.author = Author::System;
+    c.interactive = false;
+    c.summary = "filed as it arrived, for Errands (1 thread)".into();
+    c.ops = vec![keryx_core::changeset::Op::State {
+        msg: keryx_core::changeset::MsgRef {
+            account: m.account.clone(),
+            thread_id: m.thread_id.clone(),
+            source_id: m.source_id.clone(),
+            message_id: m.message_id.clone(),
+        },
+        before: state.clone(),
+        after: state,
+    }];
+    a.db.save_changeset(&c).unwrap();
+    keys(&mut a, &[Key::Char('g')]);
+    assert!(render_to_string(&mut a, 80, 24).contains("Filed by itself"));
+    keys(&mut a, &[Key::Char('l')]);
+    let s = render_to_string(&mut a, 90, 6);
+    assert!(
+        s.contains("filed by itself") && s.contains("Errands") && s.contains("Your e-ticket"),
+        "{s}"
+    );
+    keys(&mut a, &[Key::Char('u')]);
+    a.run_deferred();
+    assert_eq!(f.take(), vec!["undo cs-auto"]);
 }

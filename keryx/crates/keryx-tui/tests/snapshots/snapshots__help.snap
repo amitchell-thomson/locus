@@ -9,7 +9,7 @@ expression: "render_to_string(&mut a, 80, 20)"
 │  b           hide or show the list                                           │
 │  g           go to a list: inbox, needs reply, flagged, sent, runs           │
 │  r R F +     reply · reply all · forward · write a new mail                  │
-│  d m         done (archive) · file it                                        │
+│  d           done: filed for what it is for (m too)                          │
 │  f U N L     flag · unread · needs-reply mark · unsubscribe                  │
 │  t i w       a task · an invite to the calendar · reply with free times      │
 │  v u         mark for a batch · undo the last change                         │

@@ -2,6 +2,8 @@
 //! without keryxd); writes will go to keryxd (Phase 4).
 
 pub mod app;
+pub mod file_for;
+pub mod filed;
 pub mod form;
 mod kairos;
 pub mod pane;
@@ -117,6 +119,8 @@ pub fn run_at(cfg: Config, thread: Option<(String, String)>) -> Result<(), Strin
     let mut app = App::new(cfg.clone(), db, now(&cfg));
     app.load_seen();
     app.drafts_dir = locus_contract::link::state_dir().map(|d| d.join("keryx-drafts"));
+    // What mail is filed for (X7): `d` archives plainly when the taxonomy cannot be read.
+    app.shared = locus_contract::taxonomy::load(&locus_contract::taxonomy::root()).ok();
     let editor = writing::embeddable_editor();
     let mut session: Option<writing::Session> = None;
     app.daemon = keryx_store::client::Client::from_config(&cfg)

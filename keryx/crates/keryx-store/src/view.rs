@@ -94,18 +94,37 @@ pub fn kairos_key(db: &Db, cfg: &Config, account: &str, msgs: &[Message]) -> Str
         .unwrap_or_else(|| "Personal".into())
 }
 
-/// Names of the keys a location is filed under.
+/// The taxonomy's folders (Studies, …, Errands), read once: mail filed for what it is for
+/// lives in them (keryx-joins-locus X7). Empty when the taxonomy cannot be read.
+pub fn taxonomy_folders() -> &'static [String] {
+    static F: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    F.get_or_init(|| {
+        locus_contract::taxonomy::load(&locus_contract::taxonomy::root())
+            .map(|s| locus_contract::fors::folders(&s.taxonomy))
+            .unwrap_or_default()
+    })
+}
+
+/// Names of the keys a location is filed under: your config's keys, and the taxonomy folders
+/// it is in.
 pub fn keys_of(cfg: &Config, account: &str, loc: &Location, labels: Option<&BTreeMap<String, String>>) -> Vec<String> {
     let names: Vec<String> = loc
         .all()
         .iter()
         .map(|m| labels.and_then(|l| l.get(*m)).cloned().unwrap_or_else(|| m.to_string()))
         .collect();
-    cfg.keys
+    let mut v: Vec<String> = cfg
+        .keys
         .iter()
         .filter(|k| k.folders.get(account).is_some_and(|f| names.iter().any(|n| n == f)))
         .map(|k| k.name.clone())
-        .collect()
+        .collect();
+    for f in taxonomy_folders() {
+        if names.iter().any(|n| n == f) && !v.contains(f) {
+            v.push(f.clone());
+        }
+    }
+    v
 }
 
 /// Lowercased addresses Alec has sent to (for automated detection and the

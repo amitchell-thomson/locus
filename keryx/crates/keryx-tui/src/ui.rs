@@ -40,6 +40,8 @@ pub fn draw_writing(f: &mut Frame, app: &App, editor: Option<&crate::pane::Pane>
         crate::ui_runs::runs(f, app, main);
     } else if matches!(app.mode, Mode::RunDetail { .. }) {
         crate::ui_runs::detail(f, app, main);
+    } else if let Mode::Filed { sel } = app.mode {
+        crate::filed::draw(f, app, main, sel);
     } else {
         mail(f, app, main, editor);
     }
@@ -52,7 +54,7 @@ pub fn draw_writing(f: &mut Frame, app: &App, editor: Option<&crate::pane::Pane>
         Mode::GoTo => goto(f, app, area),
         Mode::Attachments => attachments(f, app, area),
         Mode::Snooze(input) => crate::ui_write::snooze(f, app, area, input.as_deref()),
-        Mode::File => crate::ui_write::file(f, app, area),
+        Mode::File(p) => crate::ui_write::file(f, app, area, p),
         Mode::ConfirmUnsubscribe { how, .. } => crate::ui_send::confirm_unsubscribe(f, area, how),
         Mode::KairosForm(form) => crate::ui_kairos::form(f, app, area, form),
         _ => {}
@@ -747,7 +749,6 @@ fn footer(f: &mut Frame, app: &App, area: Rect) {
                 ("n", "dismiss"),
                 ("r", "reply"),
                 ("d", "done"),
-                ("m", "file"),
                 ("esc", "back"),
             ]
         }
@@ -756,17 +757,16 @@ fn footer(f: &mut Frame, app: &App, area: Rect) {
             ("R", "all"),
             ("F", "forward"),
             ("d", "done"),
-            ("m", "file"),
             ("z", "everything"),
             ("o", "attachment"),
             ("esc", "back"),
         ],
-        _ if !app.marked.is_empty() => vec![("d", "done"), ("m", "file"), ("f", "flag"), ("esc", "unmark")],
+        Mode::File(_) => vec![("⏎", "file"), ("↑ ↓", "move"), ("esc", "back")],
+        _ if !app.marked.is_empty() => vec![("d", "done"), ("f", "flag"), ("esc", "unmark")],
         _ => vec![
             ("⏎", "open"),
             ("r", "reply"),
             ("d", "done"),
-            ("m", "file"),
             ("b", "list"),
             ("?", "keys"),
         ],
@@ -845,7 +845,7 @@ fn help(f: &mut Frame, area: Rect) {
         ("b", "hide or show the list"),
         ("g", "go to a list: inbox, needs reply, flagged, sent, runs"),
         ("r R F +", "reply · reply all · forward · write a new mail"),
-        ("d m", "done (archive) · file it"),
+        ("d", "done: filed for what it is for (m too)"),
         ("f U N L", "flag · unread · needs-reply mark · unsubscribe"),
         ("t i w", "a task · an invite to the calendar · reply with free times"),
         ("v u", "mark for a batch · undo the last change"),
@@ -889,9 +889,10 @@ fn goto(f: &mut Frame, app: &App, area: Rect) {
         ("v".into(), "Archive".into(), None),
         ("a".into(), "All mail".into(), None),
         ("c".into(), "Claude runs".into(), None),
+        ("l".into(), "Filed by itself".into(), None),
     ];
-    for (i, k) in app.cfg.keys.iter().enumerate().take(9) {
-        rows.push(((i + 1).to_string(), k.name.clone(), Some(rgb(k.colour))));
+    for (i, (name, col)) in app.goto_folders().into_iter().enumerate() {
+        rows.push(((i + 1).to_string(), name, Some(col)));
     }
     let w = 34.min(area.width);
     let h = (rows.len() as u16 + 2).min(area.height);

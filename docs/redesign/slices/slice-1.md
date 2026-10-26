@@ -150,6 +150,9 @@ here (plan G and screens v2's own open questions):
 - the weekly review in use;
 - the new screens (Budget, Ink confirm, Learning) from scratch, since nothing on paper went
   before them.
+- a course's page (Studies), after keryx joins (26 Oct: "that needs a bit more work than just
+  adding a row"): its lectures from the calendar (each linked to its course since 25 Oct), its
+  sheets and due dates, notes and what Canvas will bring (Slice 7).
 
 No turn bound. The rounds end when you say the done-when holds.
 
@@ -865,6 +868,12 @@ duplicates has never fired ... I would rather see the taxonomy clearly laid out,
 of what it is linked to. The by alec vs by agent is really good"): area › stream, what it is for
 and its kind, its task, made by you, Claude or the scheduler; copies only when there are any.
 kairos-as-a-locus-app L1 to L8 done (report in that spec).
+
+**Round 7f, 26 Oct.** The key clashes inside locus, as recommended: ink confirm's general note is
+`0` (was `x`), the review's discuss is `c` (was `d`) and ask why is `w` (was `?`, which the
+review swallowed, so `?` never opened the keys there); `d` stays the decisions letter on the
+Project view while nothing there can be done. The shared-key test now covers every screen. The
+course page goes on the list of pages to refine, after keryx.
 
 ## Report
 

@@ -213,7 +213,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
                 out.push(Line::from(
                     [
                         vec![Span::raw("   ")],
-                        hints(&[("?", "ask why it was chosen"), ("o", "reopen"), ("→", "next")]).spans,
+                        hints(&[("w", "ask why it was chosen"), ("o", "reopen"), ("→", "next")]).spans,
                     ]
                     .concat(),
                 ));
@@ -246,7 +246,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
                 out.push(Line::from(
                     [
                         vec![Span::raw("   ")],
-                        hints(&[("p", "park"), ("d", "discuss"), ("x", "drop")]).spans,
+                        hints(&[("p", "park"), ("c", "discuss"), ("x", "drop")]).spans,
                     ]
                     .concat(),
                 ));
@@ -382,7 +382,8 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
             app.note = Some(format!("skipped step {}; nothing piles up", app.review_step));
             app.review_step = (app.review_step + 1).min(5);
         }
-        KeyCode::Char('?' | 'o' | 'p' | 'd' | 'x' | 'y' | 'n' | 'k') => {
+        // w why and c discuss (not ? and d, which mean keys and done everywhere: L4, 26 Oct).
+        KeyCode::Char('w' | 'o' | 'p' | 'c' | 'x' | 'y' | 'n' | 'k') => {
             app.note = Some("would act on it; the review records your answer".into());
         }
         KeyCode::Enter if app.review_step == 5 => app.note = Some("would ask kairos to plan these blocks".into()),

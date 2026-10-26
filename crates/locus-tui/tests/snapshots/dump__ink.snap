@@ -37,6 +37,6 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │ 3 D7 chosen Chosen: maximise mean fidelity over the crowd, continuous search, shortest      │
 │             among ties.                                                                     │
 │                                                                                             │
-│                                                        1-3 it points here · x a general note│
+│                                                        1-3 it points here · 0 a general note│
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯
  ⏎ open · ⇥ sections · l log · / search · ? keys

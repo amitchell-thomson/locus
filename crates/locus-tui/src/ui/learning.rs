@@ -19,7 +19,7 @@ pub const KEYS: &[(&str, &str)] = &[
     ("n", "a new goal"),
     ("m", "make a practice sheet for the selected track"),
 ];
-pub const PREP_KEYS: &[(&str, &str)] = &[("+", "log a session"), ("e", "change the details or the time")];
+pub const PREP_KEYS: &[(&str, &str)] = &[("+", "add a session you did"), ("e", "change the details or the time")];
 
 const SPARK: [&str; 8] = ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
 
@@ -344,7 +344,7 @@ pub fn draw_prep(f: &mut Frame, area: Rect, app: &App) {
     lines(
         f,
         foot,
-        vec![hints(&[("+", "log a session"), ("e", "details and time")]).right_aligned()],
+        vec![hints(&[("+", "add a session you did"), ("e", "details and time")]).right_aligned()],
     );
 }
 

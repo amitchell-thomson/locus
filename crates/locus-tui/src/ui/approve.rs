@@ -1,6 +1,6 @@
 //! The approve list (grouped by kind; `Y` approves a group), the live log of automatic actions
 //! (`l`, with undo), and ink confirm (C.5): the crop of a mark beside the passages it might point
-//! at; a number places it, `x` makes it a general note.
+//! at; a number places it, `0` makes it a general note (none of these passages).
 
 use crate::app::{App, Mark, nav};
 use crate::screen::ScreenId;
@@ -26,7 +26,7 @@ pub const KEYS: &[(&str, &str)] = &[
     ("⏎", "an ink item: where does it point?"),
 ];
 pub const LOG_KEYS: &[(&str, &str)] = &[("u", "undo")];
-pub const INK_KEYS: &[(&str, &str)] = &[("1 2 3", "it points here"), ("x", "a general note")];
+pub const INK_KEYS: &[(&str, &str)] = &[("1 2 3", "it points here"), ("0", "a general note: none of these")];
 
 fn group_name(k: ApproveKind) -> &'static str {
     match k {
@@ -201,7 +201,7 @@ pub fn draw_ink(f: &mut Frame, area: Rect, app: &App) {
     }
     lines(f, cand_r, out);
     let n = format!("1-{}", ink.candidates.len().max(1));
-    let pairs = [(n.as_str(), "it points here"), ("x", "a general note")];
+    let pairs = [(n.as_str(), "it points here"), ("0", "a general note")];
     lines(f, foot, vec![hints(&pairs).right_aligned()]);
 }
 
@@ -415,7 +415,8 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                     }
                     true
                 }
-                KeyCode::Char('x') => {
+                // 0, none of the passages (x removes everywhere else: L4, 26 Oct).
+                KeyCode::Char('0') => {
                     app.mark(
                         format!("ink:{name}"),
                         Mark::Read,

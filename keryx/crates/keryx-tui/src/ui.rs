@@ -141,6 +141,10 @@ fn mail(f: &mut Frame, app: &App, area: Rect, editor: Option<&crate::pane::Pane>
             format!(" {} ", w.purpose.label()),
             locus_theme::st("peach"),
         ))),
+        None if matches!(app.mode, Mode::Thread | Mode::Attachments) => Some(Line::from(Span::styled(
+            " reading ",
+            locus_theme::bold(locus_theme::st("mauve")),
+        ))),
         None => (new > 0).then(|| Line::from(Span::styled(format!(" {new} new "), locus_theme::st("peach")))),
     };
     let block = locus_theme::screen(header(app), right);
@@ -160,8 +164,8 @@ fn mail(f: &mut Frame, app: &App, area: Rect, editor: Option<&crate::pane::Pane>
         list(f, app, l);
         if p.right.width > 0 {
             for y in p.right.y..p.right.y + p.right.height {
-                f.buffer_mut()
-                    .set_string(p.right.x - 1, y, "│", locus_theme::st("surface1"));
+                let rule = if reading { "mauve" } else { "surface1" };
+                f.buffer_mut().set_string(p.right.x - 1, y, "│", locus_theme::st(rule));
             }
         }
     }
@@ -283,10 +287,18 @@ fn list(f: &mut Frame, app: &App, area: Rect) {
     for (k, row) in rows.iter().enumerate().skip(first).take(h) {
         let y = area.y + (k - first) as u16;
         let line = match row {
-            Row::Day(d) => Line::from(Span::styled(
-                format!(" {d}"),
-                locus_theme::bold(locus_theme::st("overlay1")),
-            )),
+            // A day: its name in lavender and a rule across the column (your round of 26 Oct).
+            Row::Day(d) => {
+                let label = format!(" {d} ");
+                let lav = c("lavender");
+                Line::from(vec![
+                    Span::styled(label.clone(), locus_theme::bold(Style::default().fg(lav))),
+                    Span::styled(
+                        "─".repeat(w.saturating_sub(label.width() + 1)),
+                        Style::default().fg(fade(lav, 0.6)),
+                    ),
+                ])
+            }
             Row::Since(t) => {
                 let label = format!(" new since {t} ");
                 Line::from(vec![
@@ -307,7 +319,14 @@ fn list(f: &mut Frame, app: &App, area: Rect) {
                 } else {
                     row_subject(app, r, w)
                 };
-                if sel { crate::theme::lit_row(l, !focus) } else { l }
+                if sel {
+                    crate::theme::lit_row(l, !focus)
+                } else if !focus {
+                    // Reading a thread: the rest of the list steps back.
+                    crate::theme::dimmed(l)
+                } else {
+                    l
+                }
             }
         };
         f.buffer_mut().set_line(area.x, y, &line, area.width);
@@ -507,10 +526,14 @@ pub fn thread_lines(app: &App, open: &Open, w: usize) -> Vec<Line<'static>> {
     let subject = open.msgs.last().map(|m| m.subject.clone()).unwrap_or_default();
     let (acc, col) = account_tag(app, &open.account);
     let acc = acc.to_lowercase();
+    // The subject is magenta while you read the thread, as its row in the list is.
+    let reading = matches!(app.mode, Mode::Thread | Mode::Attachments);
     out.push(Line::from(vec![
         Span::styled(
             fit(&subject, w.saturating_sub(acc.width() + 3)),
-            Style::default().fg(c("text")).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(if reading { c("mauve") } else { c("text") })
+                .add_modifier(Modifier::BOLD),
         ),
         Span::raw("  "),
         Span::styled(acc, Style::default().fg(fade(col, 0.2))),
@@ -714,7 +737,12 @@ fn thread(f: &mut Frame, app: &App, area: Rect, open: Option<&Open>) {
 fn footer(f: &mut Frame, app: &App, area: Rect) {
     let pairs: Vec<(&str, &str)> = match &app.mode {
         _ if app.writing.as_ref().is_some_and(|w| w.picker.is_some()) => {
-            vec![("⏎", "attach"), ("↑ ↓", "move"), ("esc", "back")]
+            vec![
+                ("⏎", "attach"),
+                ("^o", "open to check"),
+                ("↑ ↓", "move"),
+                ("esc", "back"),
+            ]
         }
         _ if app.writing.is_some() => {
             vec![

@@ -4,6 +4,7 @@
 --   :w  (or :wq, :x, ZZ)  send: keryx shows who it goes to, then the 10 s hold
 --   :q                    close; a changed mail is kept as a draft (r or + opens it again)
 --   :cq                   close and throw the draft away
+--   gx on an Attach: line open that file to check it
 --
 -- keryx passes KERYX_SENT (touched on a write, which means send), KERYX_DRAFT (where a kept
 -- draft goes) and KERYX_BIN (the keryx binary, for address completion).
@@ -98,6 +99,16 @@ vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "BufEnter", "VimRes
   callback = decorate,
 })
 decorate()
+
+-- gx on an Attach: line opens that file to check it (Preview for a PDF); elsewhere gx is yours.
+vim.keymap.set("n", "gx", function()
+  local p = vim.api.nvim_get_current_line():match("^Attach:%s*(.-)%s*$")
+  if p and p ~= "" then
+    vim.ui.open(vim.fn.expand(p))
+  else
+    vim.ui.open(vim.fn.expand("<cfile>"))
+  end
+end, { buffer = buf, desc = "keryx: open the attachment on this line" })
 
 -- keryx's ^a picker sends this.
 vim.api.nvim_create_user_command("KeryxAttach", function(o)

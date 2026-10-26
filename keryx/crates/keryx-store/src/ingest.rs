@@ -148,14 +148,8 @@ pub fn mailapp_account(
                                 }
                             }
                         };
-                        if let Some(path) = path.filter(|p| mailapp::is_partial(p)) {
-                            for a in &mut p.attachments {
-                                if let Some(f) = mailapp::attachment_file(path, row.rowid, &a.name)
-                                    && let Ok(meta) = std::fs::metadata(f)
-                                {
-                                    a.size = meta.len();
-                                }
-                            }
+                        if let Some(path) = path {
+                            disk_sizes(path, row.rowid, &mut p.attachments);
                         }
                         let thread_id = if row.conversation_id != 0 {
                             row.conversation_id.to_string()
@@ -213,6 +207,20 @@ pub fn mailapp_account(
     Ok(report)
 }
 
+/// A partial `.emlx`'s attachments live on disk beside it: their sizes come from there.
+fn disk_sizes(path: &std::path::Path, rowid: i64, atts: &mut [keryx_core::model::Attachment]) {
+    if !mailapp::is_partial(path) {
+        return;
+    }
+    for a in atts {
+        if let Some(f) = mailapp::attachment_file(path, rowid, &a.name)
+            && let Ok(meta) = std::fs::metadata(f)
+        {
+            a.size = meta.len();
+        }
+    }
+}
+
 /// Re-derive text for messages stored under an older [`TEXT_VERSION`],
 /// from the raw bytes already in the mirror (Gmail) or the `.emlx` path
 /// (Mail.app) — no network. Header-only rows (version 0) are left to ingest.
@@ -253,7 +261,11 @@ pub fn rederive(db: &mut Db) -> Result<usize, IngestError> {
                         received: old.date,
                     },
                 );
-                // Attachment sizes from disk (partial .emlx) are kept.
+                // A partial .emlx keeps its attachments on disk: their sizes are read there (a
+                // wrong path once left 3,277 of 3,491 at 0); otherwise a known size is kept.
+                if let (Some(p), Ok(rowid)) = (&path, sid.parse::<i64>()) {
+                    disk_sizes(std::path::Path::new(p), rowid, &mut m.attachments);
+                }
                 if m.attachments.len() == old.attachments.len() {
                     for (new, prev) in m.attachments.iter_mut().zip(&old.attachments) {
                         new.size = new.size.max(prev.size);

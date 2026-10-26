@@ -3,13 +3,13 @@ source: keryx/crates/keryx-tui/tests/snapshots.rs
 expression: "render_to_string(&mut a, 80, 20)"
 ---
 ╭ mail  all · personal · oxford · oqts · oqts shared ──────────────────────────╮
-│ today                                                                        │
+│ today ────────────────────────────────────────────────────────────────────── │
 │ ● Trains             ╭──────────── go to ─────────────╮                08:30 │
 │    Your e-ticket: Oxf│ i  Inbox                       │               oxford │
 │ ● Trains             │ r  Needs reply                 │                08:30 │
 │    Your e-ticket: Oxf│ f  Flagged                     │             personal │
 │                      │ t  Sent                        │                      │
-│ yesterday            │ v  Archive                     │                      │
+│ yesterday ───────────│ v  Archive                     │───────────────────── │
 │   Lecturer           │ a  All mail                    │                󰁦 tue │
 │    Society minutes   │ c  Claude runs                 │               oxford │
 │   Lecturer           │ l  Filed by itself             │                󰁦 tue │

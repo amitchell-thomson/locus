@@ -3,14 +3,14 @@ source: keryx/crates/keryx-tui/tests/snapshots.rs
 expression: "render_to_string(&mut a, 80, 12)"
 ---
 ╭ mail · search: from:jane  all · personal · oxford · oqts · oqts shared ──────╮
-│ yesterday                                                                    │
+│ yesterday ────────────────────────────────────────────────────────────────── │
 │ ● Jane Doe                                                               tue │
 │    Lab partner for Thursday?                                          oxford │
 │                                                                              │
-│ monday                                                                       │
+│ monday ───────────────────────────────────────────────────────────────────── │
 │   Jane Doe (2)                                                           mon │
 │    Re: Group project plan                                             oxford │
 │                                                                              │
-│ 6 oct                                                                        │
+│ 6 oct ────────────────────────────────────────────────────────────────────── │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  search: from:jane█   ⏎ keep · esc clear · ↑ ↓ move

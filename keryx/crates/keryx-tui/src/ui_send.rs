@@ -175,7 +175,7 @@ pub fn confirm_unsubscribe(f: &mut Frame, area: Rect, how: &str) {
 pub fn picker(f: &mut Frame, area: Rect, p: &crate::pick::Picker) {
     let r = centred(area, 84, 20);
     f.render_widget(Clear, r);
-    let block = popup_block("attach a file");
+    let block = popup_block("attach a file · ⏎ attach · ^o open to check · esc");
     let inner = block.inner(r);
     f.render_widget(block, r);
     let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
@@ -196,21 +196,51 @@ pub fn picker(f: &mut Frame, area: Rect, p: &crate::pick::Picker) {
     let rows = usize::from(inner.height.saturating_sub(2));
     let first = p.sel.saturating_sub(rows.saturating_sub(1));
     let w = usize::from(inner.width);
+    let now = std::time::SystemTime::now();
     for (i, file) in matches.iter().enumerate().skip(first).take(rows) {
-        let size = crate::ui::size(file.size);
-        let path = crate::pick::tilde(&file.path, home.as_deref());
-        let room = w.saturating_sub(size.len() + 4);
-        let style = if i == p.sel {
-            locus_theme::bold(locus_theme::st("blue"))
+        let chosen = i == p.sel;
+        let name = file
+            .path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let folder = file
+            .path
+            .parent()
+            .map(|d| crate::pick::tilde(d, home.as_deref()))
+            .unwrap_or_default();
+        let age = now
+            .duration_since(file.modified)
+            .map(|d| match d.as_secs() {
+                s if s < 3600 => format!("{} min", s / 60),
+                s if s < 86_400 => format!("{} h", s / 3600),
+                s => format!("{} d", s / 86_400),
+            })
+            .unwrap_or_default();
+        let right = format!("{age:>6}  {:>7}", crate::ui::size(file.size));
+        let room = w.saturating_sub(right.len() + 4);
+        let name = fit(&name, room);
+        let folder = fit(
+            &format!("  {folder}"),
+            room.saturating_sub(unicode_width::UnicodeWidthStr::width(name.as_str())),
+        );
+        let used = 3
+            + unicode_width::UnicodeWidthStr::width(name.as_str())
+            + unicode_width::UnicodeWidthStr::width(folder.as_str());
+        let lit = if chosen {
+            Style::default()
+                .fg(c("text"))
+                .bg(locus_theme::fade(c("blue"), 0.55))
+                .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(c("text"))
+            Style::default()
         };
-        let shown = fit(&path, room);
-        let gap = room.saturating_sub(unicode_width::UnicodeWidthStr::width(shown.as_str()));
         lines.push(Line::from(vec![
-            Span::styled(format!(" {shown}"), style),
-            Span::raw(" ".repeat(gap + 1)),
-            Span::styled(size, locus_theme::dim()),
+            Span::styled(if chosen { " ▸ " } else { "   " }, lit.fg(c("blue"))),
+            Span::styled(name, lit.fg(c("text")).add_modifier(Modifier::BOLD)),
+            Span::styled(folder, lit.fg(c("overlay1"))),
+            Span::styled(" ".repeat(w.saturating_sub(used + right.len())), lit),
+            Span::styled(right, lit.fg(c("overlay1"))),
         ]));
     }
     f.render_widget(Paragraph::new(lines), inner);

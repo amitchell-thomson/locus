@@ -2,7 +2,7 @@
 source: keryx/crates/keryx-tui/tests/snapshots.rs
 expression: s
 ---
-╭ mail  all · personal · oxford · oqts · oqts shared ──────────────────────────────────────────────╮
+╭ mail  all · personal · oxford · oqts · oqts shared ───────────────────────────────────── reading ╮
 │ Cancelled: Project meeting  oxford                                                               │
 │ 2 messages · Prof Smith                                                                          │
 │                                                                                                  │

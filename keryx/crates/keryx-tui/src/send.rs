@@ -285,12 +285,21 @@ impl App {
         }
     }
 
-    /// A key in the picker; `Some(path)` once a file is chosen.
+    /// A key in the picker; `Some(path)` once a file is chosen. `^o` opens the highlighted
+    /// file (Preview for a PDF) and keeps the picker open.
     pub fn picker_key(&mut self, k: Key) -> Option<std::path::PathBuf> {
+        let dry = self.dry_open;
         let w = self.writing.as_mut()?;
         let p = w.picker.as_mut()?;
         match p.key(k) {
             crate::pick::Picked::Still => None,
+            crate::pick::Picked::Open(path) => {
+                if !dry {
+                    let _ = std::process::Command::new("open").arg(&path).spawn();
+                }
+                self.opened.push(path);
+                None
+            }
             crate::pick::Picked::Cancelled => {
                 w.picker = None;
                 None

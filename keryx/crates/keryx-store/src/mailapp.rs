@@ -297,16 +297,26 @@ pub fn read_emlx(path: &Path) -> Result<Vec<u8>> {
     Ok(data[start..end].to_vec())
 }
 
-/// For a `.partial.emlx`, the on-disk file of the attachment called `name`
-/// (`Data/Attachments/<ROWID>/<part>/<name>`).
+/// For a `.partial.emlx`, the on-disk file of the attachment called `name`:
+/// `Attachments/<ROWID>/<part>/<name>` beside the message's own `Messages/` folder, so under the
+/// same numbered folders (`Data/3/1/Attachments/…` for message 13642). Looking under the top
+/// `Data/` only matched messages below 1000, and 2,657 of 2,820 attachments on the real store
+/// read as "not available locally" while all but 27 were on disk (26 Oct).
 pub fn attachment_file(emlx: &Path, rowid: i64, name: &str) -> Option<PathBuf> {
-    let data_dir = emlx.ancestors().find(|p| p.file_name().is_some_and(|n| n == "Data"))?;
-    let dir = data_dir.join("Attachments").join(rowid.to_string());
-    let rd = std::fs::read_dir(dir).ok()?;
-    for part in rd.flatten() {
+    let beside = emlx.parent()?.parent()?.join("Attachments").join(rowid.to_string());
+    for part in std::fs::read_dir(beside).ok()?.flatten() {
         let candidate = part.path().join(name);
         if candidate.is_file() {
             return Some(candidate);
+        }
+        // An inline image's bare name, saved with the extension Mail added (`<uuid>.png`).
+        if let Some(f) = std::fs::read_dir(part.path())
+            .ok()?
+            .flatten()
+            .map(|f| f.path())
+            .find(|f| f.is_file() && f.file_stem().is_some_and(|s| s.to_string_lossy() == name))
+        {
+            return Some(f);
         }
     }
     None
@@ -397,6 +407,28 @@ mod tests {
         assert_eq!(rows[0].physical, "[Gmail]/All Mail");
         assert_eq!(rows[0].labels, vec!["INBOX".to_string()]);
         assert!(!rows[0].read);
+    }
+
+    #[test]
+    fn attachments_beside_their_message_and_inline_images_by_bare_name() {
+        let d = tempfile::tempdir().unwrap();
+        let data = d.path().join("Data/5/1");
+        std::fs::create_dir_all(data.join("Messages")).unwrap();
+        let emlx = data.join("Messages/15768.partial.emlx");
+        std::fs::write(&emlx, b"0\n").unwrap();
+        let part = data.join("Attachments/15768/9");
+        std::fs::create_dir_all(&part).unwrap();
+        std::fs::write(part.join("prospectus.pdf"), b"%PDF").unwrap();
+        std::fs::write(part.join("520cf460.png"), b"png").unwrap();
+        assert_eq!(
+            attachment_file(&emlx, 15768, "prospectus.pdf"),
+            Some(part.join("prospectus.pdf"))
+        );
+        assert_eq!(
+            attachment_file(&emlx, 15768, "520cf460"),
+            Some(part.join("520cf460.png"))
+        );
+        assert_eq!(attachment_file(&emlx, 15768, "other.pdf"), None);
     }
 
     #[test]

@@ -3,13 +3,13 @@ source: keryx/crates/keryx-tui/tests/snapshots.rs
 expression: "render_to_string(&mut app(), 80, 24)"
 ---
 ╭ mail  all · personal · oxford · oqts · oqts shared ──────────────────────────╮
-│ today                                                                        │
+│ today ────────────────────────────────────────────────────────────────────── │
 │ ● Trains                                                               08:30 │
 │    Your e-ticket: Oxford to London, Fri 23 Oct                        oxford │
 │ ● Trains                                                               08:30 │
 │    Your e-ticket: Oxford to London, Fri 23 Oct                      personal │
 │                                                                              │
-│ yesterday                                                                    │
+│ yesterday ────────────────────────────────────────────────────────────────── │
 │   Lecturer                                                             󰁦 tue │
 │    Society minutes                                                    oxford │
 │   Lecturer                                                             󰁦 tue │
@@ -21,7 +21,7 @@ expression: "render_to_string(&mut app(), 80, 24)"
 │ ● Prof Smith (2)                                                         tue │
 │    Cancelled: Project meeting                                         oxford │
 │                                                                              │
-│ monday                                                                       │
+│ monday ───────────────────────────────────────────────────────────────────── │
 │   Jane Doe (2)                                                           mon │
 │    Re: Group project plan                                             oxford │
 ╰──────────────────────────────────────────────────────────────────────────────╯

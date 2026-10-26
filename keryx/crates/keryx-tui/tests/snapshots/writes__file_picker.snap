@@ -3,13 +3,13 @@ source: keryx/crates/keryx-tui/tests/writes.rs
 expression: "render_to_string(&mut a, 80, 16)"
 ---
 ╭ mail  all · personal · oxford · oqts · oqts shared ──────────────────────────╮
-│ today                                                                        │
+│ today ────────────────────────────────────────────────────────────────────── │
 │ ● Trai╭──────────────────── done: what is it for ────────────────────╮ 08:30 │
 │    You│ ⏎ takes the guess · type to choose another                   │oxford │
 │ ● Trai│                                                              │ 08:30 │
 │    You│ ▸ Errands  a receipt or a booking                    Errands │rsonal │
 │       │   quast                                             Projects │       │
-│ yester│   nabla                                             Projects │       │
+│ yester│   nabla                                             Projects │────── │
 │   Lect│   locus                                             Projects │ 󰁦 tue │
 │    Soc│   OQTS                                              Projects │oxford │
 │   Lect│   CV                                                 Careers │ 󰁦 tue │

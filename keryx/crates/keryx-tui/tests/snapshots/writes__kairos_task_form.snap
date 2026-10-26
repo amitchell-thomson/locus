@@ -3,13 +3,13 @@ source: keryx/crates/keryx-tui/tests/writes.rs
 expression: s
 ---
 ╭ mail  all · personal · oxford · oqts · oqts shared ──────────────────────────╮
-│ today                                                                        │
+│ today ────────────────────────────────────────────────────────────────────── │
 │ ● Trains                                                               08:30 │
 │    Your e-ticket: Oxford to London, Fri 23 Oct                        oxford │
 │ ● Trains                                                               08:30 │
 │    Your e-ticket: Oxford to London, Fri 23 Oct                      personal │
 │                                                                              │
-│ yesterday                                                                    │
+│ yesterday ────────────────────────────────────────────────────────────────── │
 │ ╭────────────────────────────── kairos task ───────────────────────────────╮ │
 │ │                                                                          │ │
 │ │    Title  Lab partner for Thursday?                                      │ │
@@ -27,7 +27,7 @@ expression: s
 │   Department Office                                                      mon │
 │    Coursework submission portal                                       oxford │
 │                                                                              │
-│ sunday                                                                       │
+│ sunday ───────────────────────────────────────────────────────────────────── │
 │   Stranger                                                               sun │
 │    Urgent request                                                     oxford │
 ╰──────────────────────────────────────────────────────────────────────────────╯

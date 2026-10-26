@@ -944,6 +944,10 @@ fn the_attach_picker_chooses_a_file() {
     for c in "form".chars() {
         assert_eq!(a.picker_key(Key::Char(c)), None);
     }
+    a.dry_open = true;
+    assert_eq!(a.picker_key(Key::Ctrl('o')), None, "^o opens to check");
+    assert_eq!(a.opened.last(), Some(&home.path().join("Documents/form.pdf")));
+    assert!(a.writing.as_ref().unwrap().picker.is_some(), "and the picker stays");
     assert_eq!(a.picker_key(Key::Enter), Some(home.path().join("Documents/form.pdf")));
     assert!(a.writing.as_ref().unwrap().picker.is_none());
 }

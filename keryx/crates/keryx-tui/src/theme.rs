@@ -87,6 +87,19 @@ pub fn lit_row(line: Line<'static>, reading: bool) -> Line<'static> {
     .style(st)
 }
 
+/// A list row stepped back while a thread is open: every colour faded towards the background.
+pub fn dimmed(line: Line<'static>) -> Line<'static> {
+    Line::from(
+        line.spans
+            .into_iter()
+            .map(|s| {
+                let fg = s.style.fg.unwrap_or(c("text"));
+                Span::styled(s.content, s.style.fg(fade(fg, 0.5)).remove_modifier(Modifier::BOLD))
+            })
+            .collect::<Vec<_>>(),
+    )
+}
+
 /// A pane: locus's grey screen frame with its title on the left (the frame is never blue: the
 /// selection says where you are).
 pub fn panel(title: &str, _focus: bool) -> Block<'static> {

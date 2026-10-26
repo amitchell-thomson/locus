@@ -30,6 +30,8 @@ pub struct Picker {
 pub enum Picked {
     Still,
     Chosen(PathBuf),
+    /// `^o`: open it to check, and stay in the picker.
+    Open(PathBuf),
     Cancelled,
 }
 
@@ -73,6 +75,11 @@ impl Picker {
                     Some(f) => Picked::Chosen(f.path.clone()),
                     None => Picked::Still,
                 };
+            }
+            Key::Ctrl('o') => {
+                if let Some(f) = self.matches().get(self.sel) {
+                    return Picked::Open(f.path.clone());
+                }
             }
             Key::Down | Key::Ctrl('n') | Key::Tab => {
                 self.sel = (self.sel + 1).min(self.matches().len().saturating_sub(1))

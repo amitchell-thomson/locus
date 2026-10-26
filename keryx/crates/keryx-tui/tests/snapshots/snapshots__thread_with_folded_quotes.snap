@@ -2,7 +2,7 @@
 source: keryx/crates/keryx-tui/tests/snapshots.rs
 expression: "render_to_string(&mut a, 80, 24)"
 ---
-╭ mail  all · personal · oxford · oqts · oqts shared ──────────────────────────╮
+╭ mail  all · personal · oxford · oqts · oqts shared ───────────────── reading ╮
 │ Re: Group project plan  oxford                                               │
 │ 2 messages · Jane Doe, you                                                   │
 │                                                                              │

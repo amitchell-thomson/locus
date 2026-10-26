@@ -19,7 +19,9 @@ use scraper::{ElementRef, Html, Node};
 
 /// Bump whenever the output of [`body_text`] changes; the mirror re-derives
 /// older messages.
-pub const TEXT_VERSION: u32 = 4;
+// 5 (26 Oct): no change to the text; partial messages' attachment sizes are re-read from
+// disk, where a wrong path had left most of them at 0.
+pub const TEXT_VERSION: u32 = 5;
 
 /// The normalised body, and whether hidden text was removed.
 pub fn body_text(p: &Parsed) -> (String, bool) {

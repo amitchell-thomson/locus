@@ -473,8 +473,11 @@ fn build(eml_dir: &Path, out: &Path) -> Result<()> {
                 msg_dir.join(format!("{}.partial.emlx", msg.rowid)),
                 emlx(&stripped, flags, msg.rowid),
             )?;
+            // Beside the message's own Messages/ folder, as Mail keeps them
+            // (`Data/2/1/Attachments/12345/…` for `Data/2/1/Messages/12345.partial.emlx`).
+            let beside = msg_dir.parent().unwrap_or(&dir).to_path_buf();
             for (part, name, bytes) in atts {
-                let adir = dir
+                let adir = beside
                     .join("Attachments")
                     .join(msg.rowid.to_string())
                     .join(part.to_string());
@@ -527,7 +530,7 @@ mod tests {
         assert_eq!(n as usize, messages().len());
         let partial = mbox_dir(&tmp.join("V10"), &MAILBOXES[0]).join("2/1/Messages/12345.partial.emlx");
         assert!(partial.exists());
-        let att = mbox_dir(&tmp.join("V10"), &MAILBOXES[0]).join("Attachments/12345");
+        let att = mbox_dir(&tmp.join("V10"), &MAILBOXES[0]).join("2/1/Attachments/12345");
         assert!(att.exists());
         std::fs::remove_dir_all(&tmp).unwrap();
     }

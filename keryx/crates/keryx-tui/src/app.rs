@@ -545,7 +545,17 @@ impl App {
         let a = &m.attachments[ai];
         let bytes = view::attachment_bytes(&self.db, m, a);
         let Some(bytes) = bytes else {
-            self.message = Some((format!("{} isn't available locally yet", a.name), true));
+            // Mail has not downloaded it (27 of 2,820 on the real store, 26 Oct): open the
+            // message in Mail, where it downloads, rather than stop at an error.
+            let id = m.message_id.trim_matches(|c| c == '<' || c == '>');
+            let url = format!("message://%3c{}%3e", id.replace('%', "%25"));
+            if !self.dry_open {
+                let _ = std::process::Command::new("open").arg(&url).spawn();
+            }
+            self.message = Some((
+                format!("Mail hasn't downloaded {} yet: opened the message in Mail", a.name),
+                false,
+            ));
             return;
         };
         let dir = std::env::temp_dir().join("keryx-attachments").join(&m.source_id);

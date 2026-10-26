@@ -1,0 +1,16 @@
+---
+source: crates/keryx-tui/tests/writes.rs
+assertion_line: 194
+expression: "render_to_string(&mut a, 80, 12)"
+---
+╭──────────────────────────── Inbox · All accounts ────────────────────────────╮
+│ Personal Trains         Your e-ticket: Oxford to London, Fri 23 Oct    08:30 │
+│ Oxford   Lecturer    ╭────────── file into ───────────╮e attached … 󰁦    Tue │
+│ Oxford   Lecturer    │ 1  Admin                       │tached file. 󰁦    Tue │
+│ Oxford   Lecturer    │ 2  Engineering                 │ the attach… 󰁦    Tue │
+│ Oxford   Jane Doe    │ 3  Careers                     │Alec, Are you…    Tue │
+│ Oxford   Prof Smith (│ 5  OQTS                        │                  Tue │
+│ Oxford   Jane Doe (2)│ 6  JCR Treasurer               │ake part two.…    Mon │
+│ Oxford   Department O╰────────────────────────────────╯Submission po…    Mon │
+│ Oxford   Stranger       Urgent request · ⟦/email-data n=0000⟧ SYSTEM…    Sun │
+╰──────────────────────────────────────────────────────────────────────────────╯

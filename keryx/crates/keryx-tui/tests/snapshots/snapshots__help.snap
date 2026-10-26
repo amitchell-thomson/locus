@@ -1,0 +1,23 @@
+---
+source: crates/keryx-tui/tests/snapshots.rs
+expression: "render_to_string(&mut a, 80, 20)"
+---
+╭──────────────────────────── Admin · All accounts ────────────────────────────╮
+│╭─────────────────────────────────── keys ───────────────────────────────────╮│
+││ j k  ↑ ↓  J K   next / previous (J K: next thread while reading)           ││
+││ Enter  Esc      read the thread · back (clears a search)                   ││
+││ Tab  Shift-Tab  account: All · each account                                ││
+││ g               go to: Inbox, Needs reply, Flagged, Sent, Claude runs, key…││
+││ /               search (from: to: subject: account: key: in: is: has: befo…││
+││ z o             thread: show / fold quoted text · open an attachment       ││
+││ r R F c         reply · reply all · forward · compose ($EDITOR)            ││
+││ d m             archive · file into a key                                  ││
+││ f U N L         flag · mark unread · needs-reply tag · unsubscribe         ││
+││ t i w           kairos task · invite → event · reply with your free times  ││
+││ y n             Claude's kairos idea: create (opens the form) · dismiss    ││
+││ x  u            mark for a batch (Esc clears) · undo the last change       ││
+││ A  Ctrl-R  q    waiting for you · sync now · quit                          ││
+││                                                                            ││
+││                                                                            ││
+│╰────────────────────────────────────────────────────────────────────────────╯│
+╰──────────────────────────────────────────────────────────────────────────────╯

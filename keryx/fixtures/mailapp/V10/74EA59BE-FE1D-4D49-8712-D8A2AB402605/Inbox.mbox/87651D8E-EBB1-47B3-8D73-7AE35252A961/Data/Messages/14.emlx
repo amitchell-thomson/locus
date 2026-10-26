@@ -1,0 +1,57 @@
+2248      
+From: Lecturer <lecturer@eng.example.ac.uk>
+To: newc7370@ox.ac.uk
+Subject: Society minutes
+Date: Tue, 13 Oct 2026 12:00:00 +0100
+Message-ID: <docx-24@eng.example.ac.uk>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="m1"
+
+--m1
+Content-Type: text/plain; charset=utf-8
+
+Please see the attached file.
+
+--m1
+Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document; name="minutes.docx"
+Content-Disposition: attachment; filename="minutes.docx"
+Content-Transfer-Encoding: base64
+
+UEsDBBQAAAAAAGd9Tl3mdcR+iwEAAIsBAAATAAAAW0NvbnRlbnRfVHlwZXNdLnhtbDw/eG1sIHZl
+cnNpb249IjEuMCI/PjxUeXBlcyB4bWxucz0iaHR0cDovL3NjaGVtYXMub3BlbnhtbGZvcm1hdHMu
+b3JnL3BhY2thZ2UvMjAwNi9jb250ZW50LXR5cGVzIj48RGVmYXVsdCBFeHRlbnNpb249InJlbHMi
+IENvbnRlbnRUeXBlPSJhcHBsaWNhdGlvbi92bmQub3BlbnhtbGZvcm1hdHMtcGFja2FnZS5yZWxh
+dGlvbnNoaXBzK3htbCIvPjxEZWZhdWx0IEV4dGVuc2lvbj0ieG1sIiBDb250ZW50VHlwZT0iYXBw
+bGljYXRpb24veG1sIi8+PE92ZXJyaWRlIFBhcnROYW1lPSIvd29yZC9kb2N1bWVudC54bWwiIENv
+bnRlbnRUeXBlPSJhcHBsaWNhdGlvbi92bmQub3BlbnhtbGZvcm1hdHMtb2ZmaWNlZG9jdW1lbnQu
+d29yZHByb2Nlc3NpbmdtbC5kb2N1bWVudC5tYWluK3htbCIvPjwvVHlwZXM+UEsDBBQAAAAAAGd9
+Tl1fM5VSBwEAAAcBAAALAAAAX3JlbHMvLnJlbHM8P3htbCB2ZXJzaW9uPSIxLjAiPz48UmVsYXRp
+b25zaGlwcyB4bWxucz0iaHR0cDovL3NjaGVtYXMub3BlbnhtbGZvcm1hdHMub3JnL3BhY2thZ2Uv
+MjAwNi9yZWxhdGlvbnNoaXBzIj48UmVsYXRpb25zaGlwIElkPSJySWQxIiBUeXBlPSJodHRwOi8v
+c2NoZW1hcy5vcGVueG1sZm9ybWF0cy5vcmcvb2ZmaWNlRG9jdW1lbnQvMjAwNi9yZWxhdGlvbnNo
+aXBzL29mZmljZURvY3VtZW50IiBUYXJnZXQ9IndvcmQvZG9jdW1lbnQueG1sIi8+PC9SZWxhdGlv
+bnNoaXBzPlBLAwQUAAAAAABnfU5dE0NjdxQBAAAUAQAAEQAAAHdvcmQvZG9jdW1lbnQueG1sPD94
+bWwgdmVyc2lvbj0iMS4wIj8+PHc6ZG9jdW1lbnQgeG1sbnM6dz0iaHR0cDovL3NjaGVtYXMub3Bl
+bnhtbGZvcm1hdHMub3JnL3dvcmRwcm9jZXNzaW5nbWwvMjAwNi9tYWluIj48dzpib2R5Pjx3OnA+
+PHc6cj48dzp0Pk1pbnV0ZXM6IHRoZSB0cmVhc3VyZXIgd2lsbCBjaXJjdWxhdGUgdGhlIGJ1ZGdl
+dCBieSBNb25kYXkuPC93OnQ+PC93OnI+PC93OnA+PHc6cD48dzpyPjx3OnQ+U2Vjb25kIHBhcmFn
+cmFwaC48L3c6dD48L3c6cj48L3c6cD48L3c6Ym9keT48L3c6ZG9jdW1lbnQ+UEsBAhQDFAAAAAAA
+Z31OXeZ1xH6LAQAAiwEAABMAAAAAAAAAAAAAAIABAAAAAFtDb250ZW50X1R5cGVzXS54bWxQSwEC
+FAMUAAAAAABnfU5dXzOVUgcBAAAHAQAACwAAAAAAAAAAAAAAgAG8AQAAX3JlbHMvLnJlbHNQSwEC
+FAMUAAAAAABnfU5dE0NjdxQBAAAUAQAAEQAAAAAAAAAAAAAAgAHsAgAAd29yZC9kb2N1bWVudC54
+bWxQSwUGAAAAAAMAAwC5AAAALwQAAAAA
+--m1--
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>date-last-viewed</key>
+	<integer>0</integer>
+	<key>date-received</key>
+	<integer>0</integer>
+	<key>flags</key>
+	<integer>1</integer>
+	<key>remote-id</key>
+	<string>14</string>
+</dict>
+</plist>

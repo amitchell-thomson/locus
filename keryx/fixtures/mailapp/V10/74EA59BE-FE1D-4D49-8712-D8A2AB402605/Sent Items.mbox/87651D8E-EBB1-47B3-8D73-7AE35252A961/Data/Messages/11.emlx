@@ -1,0 +1,30 @@
+508       
+From: Alec Mitchell-Thomson <newc7370@ox.ac.uk>
+To: Jane Doe <jane.doe@example.com>, Sam <sam@example.com>
+Cc: Team <team@example.com>, alec.mitchellthomson@gmail.com
+Subject: Re: Group project plan
+Date: Mon, 12 Oct 2026 11:00:00 +0100
+Message-ID: <thread-b@ox.ac.uk>
+In-Reply-To: <thread-a@example.com>
+References: <thread-a@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+I'll take part two.
+
+On Mon 12 Oct 2026 at 09:00, Jane Doe wrote:
+> Let's split the report into three parts.
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>date-last-viewed</key>
+	<integer>0</integer>
+	<key>date-received</key>
+	<integer>0</integer>
+	<key>flags</key>
+	<integer>1</integer>
+	<key>remote-id</key>
+	<string>11</string>
+</dict>
+</plist>

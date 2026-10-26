@@ -1,0 +1,35 @@
+464       
+From: Lecturer <lecturer@eng.example.ac.uk>
+To: newc7370@ox.ac.uk
+Subject: B4 problem sheet 3
+Date: Tue, 13 Oct 2026 12:00:00 +0100
+Message-ID: <pdf-23@eng.example.ac.uk>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="m1"
+
+--m1
+Content-Type: text/plain; charset=utf-8
+
+Please see the attached file.
+
+--m1
+Content-Type: application/pdf; name="sheet3.pdf"
+Content-Disposition: attachment; filename="sheet3.pdf"
+Content-Transfer-Encoding: base64
+
+
+--m1--
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>date-last-viewed</key>
+	<integer>0</integer>
+	<key>date-received</key>
+	<integer>0</integer>
+	<key>flags</key>
+	<integer>0</integer>
+	<key>remote-id</key>
+	<string>12345</string>
+</dict>
+</plist>

@@ -1,0 +1,27 @@
+---
+source: crates/keryx-tui/tests/snapshots.rs
+expression: "render_to_string(&mut a, 80, 24)"
+---
+╭─────────────────────────────────── Thread ───────────────────────────────────╮
+│ Re: Group project plan  Oxford                                               │
+│                                                                              │
+│ Jane Doe · Mon · Let's split the report into three parts.                    │
+│                                                                              │
+│ Alec Mitchell-Thomson <newc7370@ox.ac.uk>             Mon 12 Oct 2026, 11:00 │
+│ to Jane Doe <jane.doe@example.com>, Sam <sam@example.com>                    │
+│ cc Team <team@example.com>, alec.mitchellthomson@gmail.com                   │
+│                                                                              │
+│ I'll take part two.                                                          │
+│                                                                              │
+│ … quoted text (2 lines) · z show                                             │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰───────────────── r reply · d archive · t task · z quotes · Esc back · ? help ╯

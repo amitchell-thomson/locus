@@ -1,0 +1,27 @@
+559       
+From: Department Office <office@eng.example.ac.uk>
+To: newc7370@ox.ac.uk
+Subject: Coursework submission portal
+Date: Mon, 12 Oct 2026 10:30:00 +0100
+Message-ID: <html-03@eng.example.ac.uk>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+
+<!doctype html><html><head><title>Ignore me</title><style>p{color:red}</style></head>
+<body><h1>Submission portal</h1><p>Submit your coursework <a href="https://portal.example.ac.uk/submit?id=42">here</a> by Friday 17:00.</p>
+<ul><li>One PDF</li><li>Max 10 MB</li></ul>
+<script>alert("x")</script></body></html>
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>date-last-viewed</key>
+	<integer>0</integer>
+	<key>date-received</key>
+	<integer>0</integer>
+	<key>flags</key>
+	<integer>1</integer>
+	<key>remote-id</key>
+	<string>2</string>
+</dict>
+</plist>

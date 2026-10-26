@@ -1,0 +1,206 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+//! Layout snapshots (text only) over the fixture mirror at a fixed time.
+
+use chrono::TimeZone;
+use keryx_store::testkit::fixture_db;
+use keryx_tui::app::{App, Key, Mode};
+use keryx_tui::render_to_string;
+
+fn app() -> App {
+    let (cfg, db) = fixture_db();
+    let now = chrono_tz::Europe::London
+        .with_ymd_and_hms(2026, 10, 14, 15, 0, 0)
+        .unwrap();
+    // Fresh syncs, so no stale warnings unless a test asks for one.
+    for a in &cfg.accounts {
+        let state = db
+            .sync_state(&a.id)
+            .unwrap()
+            .map(|(s, _)| s)
+            .unwrap_or_else(|| "{}".into());
+        db.set_sync_state(&a.id, &state, now.timestamp()).unwrap();
+    }
+    let mut a = App::new(cfg, db, now);
+    a.dry_open = true;
+    a
+}
+
+fn keys(a: &mut App, ks: &[Key]) {
+    for k in ks {
+        a.key(*k);
+    }
+}
+
+fn type_str(a: &mut App, s: &str) {
+    for c in s.chars() {
+        a.key(Key::Char(c));
+    }
+}
+
+fn select(a: &mut App, subject: &str) {
+    a.sel = a
+        .rows
+        .iter()
+        .position(|r| r.subject == subject)
+        .unwrap_or_else(|| panic!("{subject} not in list"));
+}
+
+#[test]
+fn inbox_80() {
+    insta::assert_snapshot!(render_to_string(&mut app(), 80, 24));
+}
+
+#[test]
+fn inbox_120_with_reading_pane() {
+    insta::assert_snapshot!(render_to_string(&mut app(), 120, 30));
+}
+
+#[test]
+fn inbox_200() {
+    insta::assert_snapshot!(render_to_string(&mut app(), 200, 30));
+}
+
+#[test]
+fn thread_with_folded_quotes() {
+    let mut a = app();
+    select(&mut a, "Re: Group project plan");
+    keys(&mut a, &[Key::Enter]);
+    assert_eq!(a.mode, Mode::Thread);
+    insta::assert_snapshot!(render_to_string(&mut a, 80, 24));
+    keys(&mut a, &[Key::Char('z')]);
+    let shown = render_to_string(&mut a, 80, 24);
+    assert!(shown.contains("> Let's split the report"), "{shown}");
+    assert!(
+        shown.contains("Let's split the report into three parts."),
+        "earlier message expanded"
+    );
+}
+
+#[test]
+fn thread_in_split_view() {
+    let mut a = app();
+    select(&mut a, "B4 problem sheet 3");
+    keys(&mut a, &[Key::Enter]);
+    insta::assert_snapshot!(render_to_string(&mut a, 140, 26));
+}
+
+#[test]
+fn hidden_text_warning() {
+    let mut a = app();
+    select(&mut a, "Your account needs attention");
+    keys(&mut a, &[Key::Enter]);
+    let s = render_to_string(&mut a, 80, 16);
+    assert!(s.contains("⚠ hidden text was removed"), "{s}");
+    assert!(!s.contains("ignore previous"));
+    insta::assert_snapshot!(s);
+}
+
+#[test]
+fn invite_card() {
+    let mut a = app();
+    // The invite and its cancellation are one thread; the request is unread,
+    // so both messages are expanded.
+    select(&mut a, "Cancelled: Project meeting");
+    keys(&mut a, &[Key::Enter]);
+    let s = render_to_string(&mut a, 100, 30);
+    assert!(
+        s.contains("Project meeting · Thu 22 Oct, 14:00–15:00 · Thom Building, Room 2 · from Prof Smith"),
+        "{s}"
+    );
+    assert!(s.contains("Cancelled: Project meeting · Thu 22 Oct, 14:00"), "{s}");
+    insta::assert_snapshot!(s);
+}
+
+#[test]
+fn attachment_opens_from_partial_emlx() {
+    let mut a = app();
+    select(&mut a, "B4 problem sheet 3");
+    keys(&mut a, &[Key::Enter, Key::Char('o')]);
+    let p = a.opened.last().expect("opened");
+    assert!(p.ends_with("sheet3.pdf"));
+    assert!(std::fs::read(p).unwrap().starts_with(b"%PDF"));
+}
+
+#[test]
+fn attachment_from_full_emlx() {
+    let mut a = app();
+    select(&mut a, "Society minutes");
+    keys(&mut a, &[Key::Enter, Key::Char('o')]);
+    let p = a.opened.last().expect("opened");
+    assert!(std::fs::read(p).unwrap().starts_with(b"PK"));
+}
+
+#[test]
+fn live_search() {
+    let mut a = app();
+    keys(&mut a, &[Key::Char('/')]);
+    type_str(&mut a, "from:jane");
+    insta::assert_snapshot!(render_to_string(&mut a, 80, 12));
+    // An incomplete query keeps results and shows the problem.
+    type_str(&mut a, " \"unclosed");
+    let s = render_to_string(&mut a, 80, 12);
+    assert!(s.contains("unclosed quote"), "{s}");
+    keys(&mut a, &[Key::Esc]);
+    assert!(a.search.is_none());
+}
+
+#[test]
+fn unknown_operator_is_explained() {
+    let mut a = app();
+    keys(&mut a, &[Key::Char('/')]);
+    type_str(&mut a, "form:jane");
+    let s = render_to_string(&mut a, 120, 8);
+    assert!(s.contains("unknown search operator"), "{s}");
+}
+
+#[test]
+fn goto_and_help_popups() {
+    let mut a = app();
+    keys(&mut a, &[Key::Char('g')]);
+    insta::assert_snapshot!("goto", render_to_string(&mut a, 80, 20));
+    keys(&mut a, &[Key::Char('1')]);
+    assert_eq!(a.view, keryx_store::view::View::Key("Admin".into()));
+    let admin = render_to_string(&mut a, 80, 6);
+    assert!(
+        admin.contains("Your appointment is confirmed · Your appoint"),
+        "no redundant key tag: {admin}"
+    );
+    assert!(
+        admin.contains("Your receipt"),
+        "Gmail label filed under the key: {admin}"
+    );
+    keys(&mut a, &[Key::Char('?')]);
+    insta::assert_snapshot!("help", render_to_string(&mut a, 80, 20));
+}
+
+#[test]
+fn account_filter_cycles() {
+    let mut a = app();
+    keys(&mut a, &[Key::Tab]);
+    assert_eq!(a.account_label(), "Personal");
+    assert!(a.rows.iter().all(|r| r.account == "personal"));
+    let s = render_to_string(&mut a, 80, 10);
+    assert!(s.contains("Inbox · Personal"), "{s}");
+    keys(&mut a, &[Key::BackTab]);
+    assert_eq!(a.account_label(), "All accounts");
+}
+
+#[test]
+fn stale_sync_is_the_only_status() {
+    let mut a = app();
+    let now = a.now.timestamp();
+    let state = a.db.sync_state("personal").unwrap().unwrap().0;
+    a.db.set_sync_state("personal", &state, now - 14 * 60).unwrap();
+    a.reload();
+    let s = render_to_string(&mut a, 80, 6);
+    assert!(s.contains("Personal last synced 14 min ago"), "{s}");
+}
+
+#[test]
+fn empty_views_say_so() {
+    let mut a = app();
+    keys(&mut a, &[Key::Char('/')]);
+    type_str(&mut a, "\"no such words\"");
+    keys(&mut a, &[Key::Enter]);
+    assert!(render_to_string(&mut a, 60, 8).contains("No matches."));
+}

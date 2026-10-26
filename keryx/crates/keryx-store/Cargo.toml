@@ -1,0 +1,31 @@
+[package]
+name = "keryx-store"
+description = "Mirror DB (SQLite + FTS5), Mail.app and Gmail readers, kairos and keryxd clients"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+keryx-core.workspace = true
+chrono.workspace = true
+chrono-tz.workspace = true
+rusqlite.workspace = true
+reqwest.workspace = true
+base64.workspace = true
+sha2.workspace = true
+hex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[features]
+# Fixture mirror + fake Gmail transport for other crates' tests.
+testkit = []
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

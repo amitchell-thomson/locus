@@ -1,0 +1,2 @@
+<!-- The evening run is the morning prompt plus these steps (inserted before record_run). -->
+- **Evening extras**: `list_tags` and mention needs-reply threads older than 2 days in your summary. Then propose an **"Evening tidy"** with `propose_cleanup {title: "Evening tidy", …}`: archive threads Alec dealt with today (he replied, a task was made, or he read it and there's nothing to do). Proposals only: Alec decides them in keryx.

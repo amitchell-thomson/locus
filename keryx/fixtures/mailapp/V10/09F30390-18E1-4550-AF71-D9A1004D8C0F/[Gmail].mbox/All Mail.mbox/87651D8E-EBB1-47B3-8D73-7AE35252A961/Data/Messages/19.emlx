@@ -1,0 +1,35 @@
+629       
+From: Society <events@society.example.org>
+To: alec@oqts.org
+Subject: Poster for the talk
+Date: Mon, 05 Oct 2026 12:00:00 +0100
+Message-ID: <inline-10@society.example.org>
+MIME-Version: 1.0
+Content-Type: multipart/related; boundary="r1"
+
+--r1
+Content-Type: text/html; charset=utf-8
+
+<p>Here is the poster:</p><img src="cid:poster@x" alt="poster"><p>See you there.</p>
+--r1
+Content-Type: image/png; name="poster.png"
+Content-ID: <poster@x>
+Content-Disposition: inline; filename="poster.png"
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==
+--r1--
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>date-last-viewed</key>
+	<integer>0</integer>
+	<key>date-received</key>
+	<integer>0</integer>
+	<key>flags</key>
+	<integer>0</integer>
+	<key>remote-id</key>
+	<string>19</string>
+</dict>
+</plist>

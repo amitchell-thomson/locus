@@ -1,0 +1,35 @@
+From: Prof Smith <smith@eng.example.ac.uk>
+To: newc7370@ox.ac.uk
+Subject: Invitation: Project meeting
+Date: Mon, 12 Oct 2026 09:00:00 +0100
+Message-ID: <invite-11@eng.example.ac.uk>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="i1"
+
+--i1
+Content-Type: text/plain; charset=utf-8
+
+You have been invited to: Project meeting, Thu 22 Oct 15:00 (Vienna time).
+
+--i1
+Content-Type: text/calendar; charset=utf-8; method=REQUEST
+
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Example//EN
+METHOD:REQUEST
+BEGIN:VTIMEZONE
+TZID:Europe/Vienna
+END:VTIMEZONE
+BEGIN:VEVENT
+UID:meeting-11@eng.example.ac.uk
+DTSTAMP:20261012T080000Z
+DTSTART;TZID=Europe/Vienna:20261022T150000
+DTEND;TZID=Europe/Vienna:20261022T160000
+SUMMARY:Project meeting
+LOCATION:Thom Building\, Room 2
+ORGANIZER;CN=Prof Smith:mailto:smith@eng.example.ac.uk
+ATTENDEE;CN=Alec:mailto:newc7370@ox.ac.uk
+END:VEVENT
+END:VCALENDAR
+--i1--

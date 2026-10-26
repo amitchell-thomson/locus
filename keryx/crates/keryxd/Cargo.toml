@@ -1,0 +1,38 @@
+[package]
+name = "keryxd"
+description = "keryx daemon: the single writer (mirror, changesets, actions), HTTP API and MCP"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+keryx-core.workspace = true
+keryx-store.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+notify.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+sha2.workspace = true
+reqwest.workspace = true
+hex.workspace = true
+rusqlite.workspace = true
+axum = "0.8"
+rmcp = { version = "3.5", features = ["server", "macros", "transport-streamable-http-server", "schemars"] }
+schemars = "1"
+chrono.workspace = true
+chrono-tz.workspace = true
+tokio = { version = "1", features = ["full"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+tower = { version = "0.5", features = ["util"] }
+keryx-store = { workspace = true, features = ["testkit"] }
+
+[lints]
+workspace = true

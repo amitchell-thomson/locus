@@ -1,0 +1,20 @@
+From: Lecturer <lecturer@eng.example.ac.uk>
+To: newc7370@ox.ac.uk
+Subject: Broken file
+Date: Tue, 13 Oct 2026 12:00:00 +0100
+Message-ID: <bad-25@eng.example.ac.uk>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="m1"
+
+--m1
+Content-Type: text/plain; charset=utf-8
+
+Please see the attached file.
+
+--m1
+Content-Type: application/pdf; name="broken.pdf"
+Content-Disposition: attachment; filename="broken.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKAAFnYXJiYWdlIG5vdCBhIHBkZg==
+--m1--

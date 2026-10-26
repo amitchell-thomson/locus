@@ -1,0 +1,15 @@
+---
+source: crates/keryx-tui/tests/writes.rs
+expression: s
+---
+╭───────────────────────── morning run · Wed 14 Oct 2026, 08:00 ─────────────────────────╮
+│ done 1 cleared · 1 need reply                                                          │
+│ Jane asked about the lab; tagged.                                                      │
+│                                                                                        │
+│ cleared     Lab partner for Thursday?                                           applied│
+│ needs reply Lab partner for Thursday?                                                  │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+╰────────────────── Enter open · u undo a cleared thread · A drafts & reviews · Esc back ╯

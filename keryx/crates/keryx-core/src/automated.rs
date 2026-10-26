@@ -235,6 +235,7 @@ mod tests {
         let o = Overrides {
             always: vec!["@mailer.example.com".into(), "digest@ox.ac.uk".into()],
             never: vec!["@ox.ac.uk".into()],
+            ..Default::default()
         };
         let cl = |from: &str, h: &[(&str, &str)]| classify(&msg(from, h), &none(), &none(), &o);
         assert_eq!(cl("x@eu.mailer.example.com", &[]), Some(Reason::OverrideAlways));

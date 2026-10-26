@@ -11,6 +11,7 @@
 
 pub mod common;
 pub mod explore;
+pub mod fors;
 pub mod home;
 pub mod learning;
 pub mod link;

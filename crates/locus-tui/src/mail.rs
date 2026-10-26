@@ -113,7 +113,8 @@ impl Mirror {
 fn action_text(a: &Action) -> String {
     match a {
         Action::Archive => "archive".into(),
-        Action::File { key } => format!("file → {key}"),
+        Action::File { key, item: Some(i) } => format!("file → {key} ({i})"),
+        Action::File { key, .. } => format!("file → {key}"),
         Action::Snooze { .. } => "snooze".into(),
         Action::Keep { .. } => "keep".into(),
     }

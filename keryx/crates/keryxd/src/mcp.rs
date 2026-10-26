@@ -478,6 +478,7 @@ fn cleanup_action(e: &Engine, it: &CleanupItem) -> Result<Action, EngineError> {
                 .key
                 .clone()
                 .ok_or_else(|| EngineError::BadRequest("file needs key".into()))?,
+            item: None,
         },
         "snooze" => Action::Snooze {
             until: parse_time(
@@ -757,7 +758,8 @@ impl KeryxMcp {
 
     #[tool(description = "File threads under a key (and out of the inbox). Same policy as archive.")]
     async fn file(&self, Parameters(a): Parameters<FileArgs>) -> Result<CallToolResult, ErrorData> {
-        self.triage(Intent::File { key: a.key }, a.refs, a.summary).await
+        self.triage(Intent::File { key: a.key, item: None }, a.refs, a.summary)
+            .await
     }
 
     #[tool(

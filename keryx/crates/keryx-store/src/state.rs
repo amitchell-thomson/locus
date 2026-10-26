@@ -89,6 +89,9 @@ pub enum Action {
     Archive,
     File {
         key: String,
+        /// The registry item the thread is for (`b14`), linked when filed (X7).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        item: Option<String>,
     },
     Snooze {
         until: i64,
@@ -113,7 +116,8 @@ impl Action {
     pub fn group(&self) -> String {
         match self {
             Action::Archive => "Archive".into(),
-            Action::File { key } => format!("File → {key}"),
+            Action::File { key, item: Some(i) } => format!("File → {key} ({i})"),
+            Action::File { key, .. } => format!("File → {key}"),
             Action::Snooze { .. } => "Snooze".into(),
             Action::Keep { .. } => "Keep".into(),
         }
@@ -392,10 +396,61 @@ impl Db {
         Ok(())
     }
 
+    /// What a thread is for (keryx-joins-locus X7): one `links` row with app `locus`, kind
+    /// `item`, target the registry id. Filing again replaces it; `None` clears it (filed for a
+    /// stream such as Errands, which is no item).
+    pub fn set_item(&self, account: &str, thread_id: &str, item: Option<(&str, &str)>, at: i64) -> Result<(), DbError> {
+        self.conn().execute(
+            "DELETE FROM links WHERE account = ?1 AND thread_id = ?2 AND app = 'locus' AND kind = 'item'",
+            params![account, thread_id],
+        )?;
+        if let Some((id, title)) = item {
+            self.add_link(&Link {
+                account: account.into(),
+                thread_id: thread_id.into(),
+                app: "locus".into(),
+                kind: "item".into(),
+                target: id.into(),
+                title: title.into(),
+                created_at: at,
+            })?;
+        }
+        Ok(())
+    }
+
+    /// The registry item a thread was filed for.
+    pub fn item_of(&self, account: &str, thread_id: &str) -> Result<Option<String>, DbError> {
+        let mut st = self.conn().prepare(
+            "SELECT target FROM links WHERE account = ?1 AND thread_id = ?2 AND app = 'locus' AND kind = 'item'",
+        )?;
+        let mut rows = st.query_map(params![account, thread_id], |r| r.get::<_, String>(0))?;
+        Ok(rows.next().transpose()?)
+    }
+
+    /// Every thread filed for `item`, newest filing first: (account, thread id, filed at).
+    pub fn threads_for_item(&self, item: &str) -> Result<Vec<(String, String, i64)>, DbError> {
+        let mut st = self.conn().prepare(
+            "SELECT account, thread_id, created_at FROM links
+             WHERE app = 'locus' AND kind = 'item' AND target = ?1 ORDER BY created_at DESC",
+        )?;
+        let rows = st.query_map(params![item], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// Every (account, thread, item) filed for an item, for guessing by sender.
+    pub fn items(&self) -> Result<Vec<(String, String, String)>, DbError> {
+        let mut st = self
+            .conn()
+            .prepare("SELECT account, thread_id, target FROM links WHERE app = 'locus' AND kind = 'item'")?;
+        let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    /// A thread's kairos links (tasks and events made from it).
     pub fn links(&self, account: &str, thread_id: &str) -> Result<Vec<Link>, DbError> {
         let mut st = self.conn().prepare(
             "SELECT account, thread_id, app, kind, target, title, created_at FROM links
-             WHERE account = ?1 AND thread_id = ?2 ORDER BY created_at",
+             WHERE account = ?1 AND thread_id = ?2 AND app = 'kairos' ORDER BY created_at",
         )?;
         let rows = st.query_map(params![account, thread_id], |r| {
             Ok(Link {
@@ -411,9 +466,11 @@ impl Db {
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
-    /// Every thread with a link.
+    /// Every thread with a kairos link (the task mark in the list).
     pub fn linked_threads(&self) -> Result<std::collections::HashSet<(String, String)>, DbError> {
-        let mut st = self.conn().prepare("SELECT DISTINCT account, thread_id FROM links")?;
+        let mut st = self
+            .conn()
+            .prepare("SELECT DISTINCT account, thread_id FROM links WHERE app = 'kairos'")?;
         let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
@@ -749,7 +806,10 @@ mod tests {
             position: 0,
             account: "a".into(),
             thread_id: "t".into(),
-            action: Action::File { key: "Admin".into() },
+            action: Action::File {
+                key: "Admin".into(),
+                item: None,
+            },
             reason: "receipt".into(),
             fingerprint: "f".into(),
             status: ProposalStatus::Open,
@@ -793,6 +853,13 @@ mod tests {
         );
         let b: Action = serde_json::from_str(r#"{"action":"snooze","until":5}"#).unwrap();
         assert_eq!(b, Action::Snooze { until: 5 });
-        assert_eq!(Action::File { key: "Admin".into() }.group(), "File → Admin");
+        assert_eq!(
+            Action::File {
+                key: "Admin".into(),
+                item: None
+            }
+            .group(),
+            "File → Admin"
+        );
     }
 }

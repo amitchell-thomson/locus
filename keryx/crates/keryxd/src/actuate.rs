@@ -142,6 +142,29 @@ on run argv
 end run
 "#;
 
+/// Make a top-level mailbox unless it exists. On an Exchange account that is a folder; on a
+/// Gmail account read through Mail it is a label. Values only via argv.
+const MKBOX_SCRIPT: &str = r#"
+on run argv
+  set {acctId, acctAddr, boxName} to argv
+  tell application "Mail"
+    set acc to missing value
+    try
+      set acc to first account whose id is acctId
+    end try
+    if acc is missing value then
+      try
+        set acc to first account whose email addresses contains acctAddr
+      end try
+    end if
+    if acc is missing value then return "noaccount"
+    if exists mailbox boxName of acc then return "exists"
+    make new mailbox with properties {name:boxName} at acc
+    return "made"
+  end tell
+end run
+"#;
+
 /// The argv for one step (the box is where the message is now).
 pub fn step_args(acc: &Account, mid: &str, current: &str, step: &MailStep) -> Vec<String> {
     let (box_name, action, arg) = match step {
@@ -243,6 +266,11 @@ pub fn send_args(acc: &Account, o: &keryx_core::changeset::Outgoing) -> Vec<Stri
 }
 
 fn osascript(script: &str, args: &[String]) -> Result<String, String> {
+    osascript_answers(script, args, &["ok"])
+}
+
+/// Run `script`; any of `oks` is a success and is returned.
+fn osascript_answers(script: &str, args: &[String], oks: &[&str]) -> Result<String, String> {
     let out = Command::new("osascript")
         .arg("-")
         .args(args)
@@ -259,7 +287,7 @@ fn osascript(script: &str, args: &[String]) -> Result<String, String> {
         })
         .map_err(|e| format!("osascript: {e}"))?;
     let said = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if said == "ok" {
+    if oks.contains(&said.as_str()) {
         return Ok(said);
     }
     let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
@@ -394,6 +422,27 @@ impl Real {
 }
 
 impl Actuator for Real {
+    fn ensure_folder(&mut self, account: &Account, name: &str) -> Result<bool, String> {
+        match account.backend {
+            // Every account reads through Mail since 2026-10-20; the API path has no label maker.
+            Backend::Gmail => Err(format!(
+                "{}: making the Gmail label {name:?} is not built for the Gmail API backend; make it in Gmail once",
+                account.name
+            )),
+            Backend::Mailapp => {
+                Self::ensure_mail_running()?;
+                let args = vec![
+                    account.mailapp_account_id.clone().unwrap_or_default(),
+                    account.address.clone(),
+                    name.to_string(),
+                ];
+                osascript_answers(MKBOX_SCRIPT, &args, &["made", "exists"])
+                    .map(|said| said == "made")
+                    .map_err(|e| format!("making the folder {name:?} on {}: {e}", account.name))
+            }
+        }
+    }
+
     fn apply(
         &mut self,
         account: &Account,

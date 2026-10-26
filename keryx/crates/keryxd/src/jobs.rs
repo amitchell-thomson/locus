@@ -53,6 +53,11 @@ pub fn run(cfg: &Config, engine: Arc<Mutex<Engine>>, sync_now: mpsc::Receiver<()
                 if let Err(err) = e.expire_runs() {
                     tracing::warn!(error = %err, "expiring runs");
                 }
+                match e.file_arrivals() {
+                    Ok(0) => {}
+                    Ok(n) => tracing::info!(threads = n, "filed automated mail as it arrived"),
+                    Err(err) => tracing::warn!(error = %err, "filing on arrival"),
+                }
             });
             last_tick = Instant::now();
         }

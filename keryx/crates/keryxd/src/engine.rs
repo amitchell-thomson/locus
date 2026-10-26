@@ -87,6 +87,8 @@ pub trait Actuator: Send {
     fn send(&mut self, account: &Account, o: &keryx_core::changeset::Outgoing) -> std::result::Result<(), String>;
     /// RFC 8058 one-click unsubscribe (POST `List-Unsubscribe=One-Click`).
     fn unsubscribe(&mut self, url: &str) -> std::result::Result<(), String>;
+    /// Make the folder `name` on `account` unless it exists. `Ok(true)`: it was made.
+    fn ensure_folder(&mut self, account: &Account, name: &str) -> std::result::Result<bool, String>;
 }
 
 pub struct Engine {
@@ -99,6 +101,10 @@ pub struct Engine {
     pub kairos_note: String,
     /// The run whose token made the current MCP call (set per call).
     pub current_run: Option<keryx_store::runs::Run>,
+    /// locus's taxonomy and registry: where filed mail goes and what it can be for (X7).
+    pub shared: Option<locus_contract::taxonomy::Shared>,
+    /// Folders known to exist, per account, so each is made at most once per run.
+    ensured: HashSet<(String, String)>,
 }
 
 fn new_id(prefix: &str) -> String {
@@ -139,6 +145,8 @@ impl Engine {
             kairos: None,
             kairos_note: "no kairos client".into(),
             current_run: None,
+            shared: None,
+            ensured: HashSet::new(),
         })
     }
 
@@ -180,6 +188,56 @@ impl Engine {
         labels
             .get(&account.id)
             .and_then(|m| m.iter().find(|(_, n)| n.as_str() == name).map(|(id, _)| id.clone()))
+    }
+
+    /// The taxonomy folder `name` names (`studies` → `Studies`), if it is one.
+    pub fn taxonomy_folder(&self, name: &str) -> Option<String> {
+        let shared = self.shared.as_ref()?;
+        locus_contract::fors::folders(&shared.taxonomy)
+            .into_iter()
+            .find(|f| f.eq_ignore_ascii_case(name))
+    }
+
+    /// The mailbox (or label name) filing under `key` means on `account`: the folder your
+    /// config maps for it, else, for a taxonomy folder, its own name, made on first use (X-b).
+    fn folder_name(&self, key: &str, account: &Account) -> Result<String> {
+        let def = self.cfg.key(key);
+        if let Some(f) = def.and_then(|d| d.folders.get(&account.id)) {
+            return Ok(f.clone());
+        }
+        if let Some(t) = self.taxonomy_folder(key) {
+            return Ok(t);
+        }
+        Err(EngineError::BadRequest(match def {
+            Some(d) => format!("key {} isn't available on {} (no folder mapped)", d.name, account.name),
+            None => format!("no key {key:?}"),
+        }))
+    }
+
+    /// Before a message moves into a taxonomy folder, make sure the folder exists on its
+    /// account. Only taxonomy folders are ever made (keryx's SPEC §6 lifted for them alone).
+    fn ensure_folders(
+        &mut self,
+        account: &Account,
+        before: &MsgState,
+        after: &MsgState,
+    ) -> std::result::Result<(), String> {
+        for name in location::entered(&before.location, &after.location) {
+            if self.taxonomy_folder(&name).as_deref() != Some(name.as_str()) {
+                continue;
+            }
+            let k = (account.id.clone(), name.clone());
+            if self.ensured.contains(&k) {
+                continue;
+            }
+            if self.act.ensure_folder(account, &name)? {
+                tracing::info!(account = account.id, folder = name, "made a folder for filed mail");
+                self.note_run("folder", &format!("{}:{name}", account.id), Some(&account.id), None)
+                    .map_err(|e| e.to_string())?;
+            }
+            self.ensured.insert(k);
+        }
+        Ok(())
     }
 
     /// The ops an intent means for one thread.
@@ -236,18 +294,9 @@ impl Engine {
                     );
                 }
             }
-            Intent::File { key } => {
-                let def = self
-                    .cfg
-                    .key(key)
-                    .ok_or_else(|| EngineError::BadRequest(format!("no key {key:?}")))?;
-                let folder_name = def.folders.get(&account.id).ok_or_else(|| {
-                    EngineError::BadRequest(format!(
-                        "key {} isn't available on {} (no folder mapped)",
-                        def.name, account.name
-                    ))
-                })?;
-                let folder = self.label_id(account, folder_name).ok_or_else(|| {
+            Intent::File { key, .. } => {
+                let folder_name = self.folder_name(key, account)?;
+                let folder = self.label_id(account, &folder_name).ok_or_else(|| {
                     EngineError::BadRequest(format!("{}: no Gmail label named {folder_name:?}", account.name))
                 })?;
                 let inbox: Vec<&Message> = msgs
@@ -386,6 +435,12 @@ impl Engine {
         {
             return Err(EngineError::BadRequest("snooze time is in the past".into()));
         }
+        // An item is checked before anything moves: a filing must not succeed and then fail.
+        if let Intent::File { item: Some(id), .. } = &req.intent
+            && self.shared.as_ref().and_then(|s| s.registry.get(id)).is_none()
+        {
+            return Err(EngineError::BadRequest(format!("no registry item {id:?}")));
+        }
         let sent_to = view::sent_to(&self.db, &self.cfg)?;
         let mut out = TriageOutcome::default();
         let mut low: Vec<(String, Vec<Op>, ThreadFacts)> = Vec::new();
@@ -458,6 +513,9 @@ impl Engine {
                 for (r, _, _) in &low {
                     if let Some((a, t)) = parse_thread_ref(r) {
                         self.db.clear_tag(a, t, NEEDS_REPLY)?;
+                        if let Intent::File { item, .. } = &req.intent {
+                            self.link_item(a, t, item.as_deref())?;
+                        }
                     }
                 }
             }
@@ -466,7 +524,10 @@ impl Engine {
         if !high.is_empty() {
             let action = match &req.intent {
                 Intent::Archive => Some(Action::Archive),
-                Intent::File { key } => Some(Action::File { key: key.clone() }),
+                Intent::File { key, item } => Some(Action::File {
+                    key: key.clone(),
+                    item: item.clone(),
+                }),
                 Intent::Snooze { until } => Some(Action::Snooze { until: *until }),
                 _ => None,
             };
@@ -570,6 +631,30 @@ impl Engine {
         })
     }
 
+    /// Record what a filed thread is for (`None`: a stream, no item). An id the registry does
+    /// not know is refused rather than stored, so a page never lists mail under a ghost.
+    pub(crate) fn link_item(&mut self, account: &str, thread_id: &str, item: Option<&str>) -> Result<()> {
+        let title = match item {
+            None => None,
+            Some(id) => {
+                let p = self
+                    .shared
+                    .as_ref()
+                    .and_then(|s| s.registry.get(id))
+                    .ok_or_else(|| EngineError::BadRequest(format!("no registry item {id:?}")))?;
+                Some((p.id.clone(), p.name.clone()))
+            }
+        };
+        let now = self.now();
+        self.db.set_item(
+            account,
+            thread_id,
+            title.as_ref().map(|(i, n)| (i.as_str(), n.as_str())),
+            now,
+        )?;
+        Ok(())
+    }
+
     /// Check preconditions, then apply every op. On a source failure the ops
     /// already done are reverted (best effort) and the changeset fails.
     pub fn apply(&mut self, cs: &mut Changeset) -> Result<()> {
@@ -667,6 +752,7 @@ impl Engine {
                     Some(m) => msg_ref(m),
                     None => msg.clone(),
                 };
+                self.ensure_folders(&account, before, after)?;
                 match self.act.apply(&account, &msg, before, after)? {
                     Some(confirmed) => {
                         let in_inbox = location::in_inbox(&account, &confirmed.location);
@@ -960,7 +1046,7 @@ impl Engine {
     fn check_item(&self, item: &ProposeItem) -> Result<(String, String, Vec<Message>)> {
         let (a, t, msgs) = self.thread(&item.r#ref)?;
         match &item.action {
-            Action::File { key } => {
+            Action::File { key, .. } => {
                 let def = self
                     .cfg
                     .key(key)
@@ -991,7 +1077,10 @@ impl Engine {
     fn intent_of(action: &Action) -> Option<Intent> {
         match action {
             Action::Archive => Some(Intent::Archive),
-            Action::File { key } => Some(Intent::File { key: key.clone() }),
+            Action::File { key, item } => Some(Intent::File {
+                key: key.clone(),
+                item: item.clone(),
+            }),
             Action::Snooze { until } => Some(Intent::Snooze { until: *until }),
             Action::Keep { .. } => None,
         }

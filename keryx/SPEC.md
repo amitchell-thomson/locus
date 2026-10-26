@@ -182,7 +182,7 @@ The policy lives in `keryx-core::risk`, is evaluated by keryxd for every changes
 
 - **Alec, interactive** (TUI; CLI on a TTY; headers `x-keryx-author: alec` + `x-keryx-interactive: 1`): forbidden rules only (Alec, 2026-10-11 for kairos: "typing something and then approving myself would be weird"). Sends still get the confirm screen and the hold (§6.4).
 - **Claude** (MCP: always `claude`, never interactive), **scripts** (no TTY), and **any request without an author header** (unlike kairos, the default is `script`, not Alec): the full policy.
-- **system** (snooze wake-ups): low-risk in any number.
+- **system** (snooze wake-ups; automated mail filed as it arrives, X-d): low-risk in any number.
 - The interactive header is trusted like the bearer token. It guards against agents, not against someone holding the token.
 
 ### 6.2 Risk table
@@ -190,12 +190,13 @@ The policy lives in `keryx-core::risk`, is evaluated by keryxd for every changes
 | Operation | Forbidden | High (→ needs Alec: a pending send, or a cleanup proposal for triage) | Low (applied, undoable) |
 |---|---|---|---|
 | Permanently delete, trash, expunge, empty trash, mark spam | always (no code path) | | |
-| Filters, rules, forwarding, account settings, create label/folder | always | | |
+| Filters, rules, forwarding, account settings; creating any label or folder except the taxonomy's | always | | |
+| Creating a taxonomy folder (Studies, Projects, Careers, and Personal's streams Family, Sport, Social, Errands) on an account the first time mail is filed there (keryx-joins-locus X-b, 26 Oct 2026) | | | always, as part of the filing it serves; never deleted |
 | Any write to an account with `writable = false` | always | | |
 | Any write while `live = false` to a message without the `[keryx-test]` subject prefix; any `live = false` send to an address not Alec's own | always | | |
 | Send (reply, reply-all, forward, new) | | **always** for non-interactive authors | — |
 | Unsubscribe | non-interactive authors (it contacts the sender) | | Alec, after a confirm showing the method and target |
-| Archive / unarchive, file into key, snooze / unsnooze, flag / unflag, read / unread | | any thread that is **not automated** (people mail, §7); > 100 threads in one changeset (`risk.batch_threshold`); any **flagged** thread; any write to a `shared` account (OQTS shared, used with one other person: always) | every thread automated, unflagged, on a non-shared account, ≤ 100 |
+| Archive / unarchive, file (for an item or stream, into its area's folder; X7), snooze / unsnooze, flag / unflag, read / unread | | any thread that is **not automated** (people mail, §7); > 100 threads in one changeset (`risk.batch_threshold`); any **flagged** thread; any write to a `shared` account (OQTS shared, used with one other person: always) | every thread automated, unflagged, on a non-shared account, ≤ 100 |
 | Tags, suggestions, run records (keryx metadata) | | | always (they never touch a mailbox) |
 | Email → kairos task / deadline / event | non-interactive authors (Claude *suggests*; §4) | | Alec (kairos applies its own policy to its half) |
 

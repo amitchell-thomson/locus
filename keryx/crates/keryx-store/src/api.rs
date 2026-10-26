@@ -12,6 +12,9 @@ pub enum Intent {
     Unarchive,
     File {
         key: String,
+        /// The registry item the thread is for (`b14`), linked when filed (X7).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        item: Option<String>,
     },
     Flag {
         on: bool,
@@ -31,7 +34,8 @@ impl Intent {
         match self {
             Intent::Archive => "archive".into(),
             Intent::Unarchive => "move back to the inbox".into(),
-            Intent::File { key } => format!("file into {key}"),
+            Intent::File { key, item: Some(i) } => format!("file into {key} for {i}"),
+            Intent::File { key, .. } => format!("file into {key}"),
             Intent::Flag { on: true } => "flag".into(),
             Intent::Flag { on: false } => "unflag".into(),
             Intent::Read { on: true } => "mark read".into(),

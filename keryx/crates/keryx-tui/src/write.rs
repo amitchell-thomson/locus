@@ -263,7 +263,13 @@ impl App {
                 let n = c as usize - '0' as usize;
                 if let Some((_, name)) = self.file_keys().into_iter().find(|(i, _)| *i == n) {
                     self.mode = back;
-                    self.triage(Intent::File { key: name.clone() }, &format!("filing into {name}:"));
+                    self.triage(
+                        Intent::File {
+                            key: name.clone(),
+                            item: None,
+                        },
+                        &format!("filing into {name}:"),
+                    );
                 }
             }
             _ => self.mode = back,

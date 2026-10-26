@@ -198,7 +198,7 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Read { threads }) => write::triage(&load(&path)?, Intent::Read { on: true }, &threads),
         Some(Cmd::Unread { threads }) => write::triage(&load(&path)?, Intent::Read { on: false }, &threads),
         Some(Cmd::Snooze { when, threads }) => write::snooze(&load(&path)?, &when, &threads),
-        Some(Cmd::File { key, threads }) => write::triage(&load(&path)?, Intent::File { key }, &threads),
+        Some(Cmd::File { key, threads }) => write::triage(&load(&path)?, Intent::File { key, item: None }, &threads),
         Some(Cmd::Undo { id }) => write::undo(&load(&path)?, id.as_deref()),
         Some(Cmd::Changes { status, limit, json }) => write::changes(&load(&path)?, status.as_deref(), limit, json),
         Some(Cmd::Sync) => write::sync(&load(&path)?),

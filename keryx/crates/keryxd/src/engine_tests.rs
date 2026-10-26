@@ -14,6 +14,9 @@ struct Fake {
     fail_on: Arc<Mutex<Option<usize>>>,
     sent: Arc<Mutex<Vec<keryx_core::changeset::Outgoing>>>,
     unsubscribed: Arc<Mutex<Vec<String>>>,
+    /// Folders made, as (account, name); `existing` ones are only checked.
+    made: Arc<Mutex<Vec<(String, String)>>>,
+    existing: Arc<Mutex<Vec<(String, String)>>>,
 }
 
 impl Actuator for Fake {
@@ -43,6 +46,15 @@ impl Actuator for Fake {
     fn unsubscribe(&mut self, url: &str) -> std::result::Result<(), String> {
         self.unsubscribed.lock().unwrap().push(url.into());
         Ok(())
+    }
+    fn ensure_folder(&mut self, a: &Account, name: &str) -> std::result::Result<bool, String> {
+        let k = (a.id.clone(), name.to_string());
+        if self.existing.lock().unwrap().contains(&k) {
+            return Ok(false);
+        }
+        self.made.lock().unwrap().push(k.clone());
+        self.existing.lock().unwrap().push(k);
+        Ok(true)
     }
 }
 
@@ -346,7 +358,13 @@ fn filing_by_key_per_backend() {
     let gm = r(&e, "Café on Sunday");
     let out = e
         .triage(
-            req(Intent::File { key: "Admin".into() }, vec![ox.clone(), gm.clone()]),
+            req(
+                Intent::File {
+                    key: "Admin".into(),
+                    item: None,
+                },
+                vec![ox.clone(), gm.clone()],
+            ),
             Who::ALEC,
         )
         .unwrap();
@@ -370,7 +388,16 @@ fn filing_by_key_per_backend() {
     // A key not mapped on the account is skipped with the reason.
     let oq = r(&e, "Poster for the talk");
     let out = e
-        .triage(req(Intent::File { key: "Admin".into() }, vec![oq]), Who::ALEC)
+        .triage(
+            req(
+                Intent::File {
+                    key: "Admin".into(),
+                    item: None,
+                },
+                vec![oq],
+            ),
+            Who::ALEC,
+        )
         .unwrap();
     assert!(
         out.skipped[0].1.contains("isn't available on OQTS"),
@@ -495,7 +522,13 @@ fn cleanup_review_decisions() {
         vec![
             (a.clone(), Action::Archive),
             (b.clone(), Action::Archive),
-            (c.clone(), Action::File { key: "Admin".into() }),
+            (
+                c.clone(),
+                Action::File {
+                    key: "Admin".into(),
+                    item: None,
+                },
+            ),
             (
                 d.clone(),
                 Action::Keep {
@@ -603,7 +636,10 @@ fn proposals_validate_refs_and_keys() {
                     },
                     ProposeItem {
                         r#ref: a.clone(),
-                        action: Action::File { key: "Admin".into() },
+                        action: Action::File {
+                            key: "Admin".into(),
+                            item: None,
+                        },
                         reason: "x".into(),
                     },
                     ProposeItem {
@@ -942,8 +978,17 @@ fn kairos_task_as_alec_with_link_in_notes() {
 fn kairos_key_follows_the_threads_key() {
     let (mut e, k) = with_kairos();
     let t = r(&e, "Lab partner for Thursday?");
-    e.triage(req(Intent::File { key: "Careers".into() }, vec![t.clone()]), Who::ALEC)
-        .unwrap();
+    e.triage(
+        req(
+            Intent::File {
+                key: "Careers".into(),
+                item: None,
+            },
+            vec![t.clone()],
+        ),
+        Who::ALEC,
+    )
+    .unwrap();
     e.kairos_task(&task_req(&t), Who::ALEC).unwrap();
     assert_eq!(k.calls.lock().unwrap()[0].1["key"], "Careers");
     // An explicit key wins.
@@ -1133,4 +1178,150 @@ fn snoozing_off_is_refused() {
     assert!(matches!(out, Err(EngineError::Forbidden(m)) if m.contains("snoozing is off")));
     assert!(fake.calls.lock().unwrap().is_empty());
     assert!(in_inbox(&e, &t));
+}
+
+// ---------------- keryx-joins-locus X7: filed for what it is for ----------------
+
+fn with_taxonomy(e: &mut Engine) {
+    e.shared = Some(locus_contract::taxonomy::load(&locus_contract::taxonomy::root()).unwrap());
+}
+
+#[test]
+fn filing_for_an_item_goes_to_its_area_made_once_and_remembers_the_item() {
+    let (mut e, fake) = engine();
+    with_taxonomy(&mut e);
+    let lab = r(&e, "Lab partner for Thursday?");
+    let file = |item: &str| Intent::File {
+        key: "Studies".into(),
+        item: Some(item.into()),
+    };
+    let out = e.triage(req(file("b14"), vec![lab.clone()]), Who::ALEC).unwrap();
+    assert_eq!(out.applied.unwrap().status, Status::Applied);
+    assert_eq!(
+        *fake.made.lock().unwrap(),
+        vec![("oxford".to_string(), "Studies".to_string())],
+        "the folder is made on first use"
+    );
+    let (a, t) = parse_thread_ref(&lab).unwrap();
+    assert_eq!(e.db.item_of(a, t).unwrap().as_deref(), Some("b14"));
+    assert!(e.db.links(a, t).unwrap().is_empty(), "an item is not a kairos link");
+    assert!(fake.calls.lock().unwrap().iter().any(|(_, s)| matches!(&s.location,
+            Location::Mailboxes { physical, .. } if physical == "Studies")),);
+
+    // Another thread to the same folder: nothing is made again.
+    let other = r(&e, "Coursework submission portal");
+    e.triage(req(file("b15"), vec![other.clone()]), Who::ALEC).unwrap();
+    assert_eq!(fake.made.lock().unwrap().len(), 1);
+    let (a2, t2) = parse_thread_ref(&other).unwrap();
+    assert_eq!(
+        e.db.threads_for_item("b15").unwrap(),
+        vec![(a2.to_string(), t2.to_string(), NOW)]
+    );
+}
+
+#[test]
+fn an_unknown_item_moves_nothing_and_a_stream_clears_the_item() {
+    let (mut e, fake) = engine();
+    with_taxonomy(&mut e);
+    let lab = r(&e, "Lab partner for Thursday?");
+    let err = e
+        .triage(
+            req(
+                Intent::File {
+                    key: "Studies".into(),
+                    item: Some("no-such-item".into()),
+                },
+                vec![lab.clone()],
+            ),
+            Who::ALEC,
+        )
+        .unwrap_err();
+    assert!(err.to_string().contains("no registry item"), "{err}");
+    assert!(fake.calls.lock().unwrap().is_empty() && in_inbox(&e, &lab));
+
+    let (a, t) = parse_thread_ref(&lab).unwrap();
+    e.db.set_item(a, t, Some(("b14", "B14")), NOW).unwrap();
+    e.triage(
+        req(
+            Intent::File {
+                key: "errands".into(),
+                item: None,
+            },
+            vec![lab.clone()],
+        ),
+        Who::ALEC,
+    )
+    .unwrap();
+    assert_eq!(e.db.item_of(a, t).unwrap(), None);
+    assert_eq!(
+        *fake.made.lock().unwrap(),
+        vec![("oxford".to_string(), "Errands".to_string())]
+    );
+}
+
+#[test]
+fn only_taxonomy_folders_are_ever_made() {
+    let (mut e, fake) = engine();
+    with_taxonomy(&mut e);
+    let lab = r(&e, "Lab partner for Thursday?");
+    e.triage(
+        req(
+            Intent::File {
+                key: "Admin".into(),
+                item: None,
+            },
+            vec![lab],
+        ),
+        Who::ALEC,
+    )
+    .unwrap();
+    assert!(
+        fake.made.lock().unwrap().is_empty(),
+        "Admin is your folder, not one keryx may make"
+    );
+}
+
+#[test]
+fn automated_mail_is_filed_as_it_arrives_and_people_mail_never() {
+    let (mut e, fake) = engine();
+    with_taxonomy(&mut e);
+    assert_eq!(e.file_arrivals().unwrap(), 0, "the first run only sets the mark");
+    assert!(
+        fake.calls.lock().unwrap().is_empty(),
+        "the inbox of before is never swept"
+    );
+
+    // As if keryxd had started a week ago: everything since is an arrival.
+    e.db.set_meta("autofile.since", &(NOW - 7 * 86_400).to_string())
+        .unwrap();
+    let ticket = r(&e, "Your e-ticket: Oxford to London, Fri 23 Oct");
+    let lab = r(&e, "Lab partner for Thursday?");
+    let n = e.file_arrivals().unwrap();
+    assert!(n >= 1, "{n}");
+    assert!(!in_inbox(&e, &ticket), "a receipt went to Errands");
+    assert!(in_inbox(&e, &lab), "a person's mail is never moved");
+    assert!(fake.made.lock().unwrap().iter().any(|(_, f)| f == "Errands"));
+    let cs = e.db.changesets(None, 10).unwrap();
+    assert!(cs.iter().any(|c| c.author == keryx_core::changeset::Author::System
+        && c.summary.starts_with("filed as it arrived, for Errands")));
+    assert_eq!(e.file_arrivals().unwrap(), 0, "nothing new since");
+
+    e.cfg.automated.file_on_arrival = false;
+    e.db.set_meta("autofile.since", "0").unwrap();
+    assert_eq!(e.file_arrivals().unwrap(), 0, "off means off");
+}
+
+#[test]
+fn not_live_only_test_mail_is_filed_on_arrival() {
+    let (mut e, fake) = engine();
+    with_taxonomy(&mut e);
+    e.cfg.live = false;
+    e.db.set_meta("autofile.since", &(NOW - 7 * 86_400).to_string())
+        .unwrap();
+    assert_eq!(e.file_arrivals().unwrap(), 0);
+    assert!(fake.calls.lock().unwrap().is_empty());
+    assert!(
+        e.db.changesets(None, 10).unwrap().is_empty(),
+        "no failed changesets left behind"
+    );
 }

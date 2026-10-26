@@ -12,6 +12,7 @@ use std::time::Instant;
 
 mod actuate;
 mod engine;
+mod engine_file;
 mod engine_kairos;
 mod engine_runs;
 mod engine_send;
@@ -85,6 +86,11 @@ fn main() -> anyhow::Result<()> {
     let token = keryx_store::keychain::get("keryx-api-token")
         .context("no API token in the Keychain (docs/setup.md §5: keryx-api-token)")?;
     let mut engine = engine::Engine::new(cfg.clone(), db, Box::new(actuate::Real::new(cfg.clone())))?;
+    // Where filed mail goes and what it is for (keryx-joins-locus X7), as kairosd reads it.
+    match locus_contract::taxonomy::load(&locus_contract::taxonomy::root()) {
+        Ok(s) => engine.shared = Some(s),
+        Err(e) => tracing::warn!(error = %e, "no locus taxonomy: filing by area is off"),
+    }
     match keryx_store::kairos::Http::new(&cfg.kairos.url, &cfg.kairos.token_service) {
         Ok(k) => engine.kairos = Some(Box::new(k)),
         Err(e) => {

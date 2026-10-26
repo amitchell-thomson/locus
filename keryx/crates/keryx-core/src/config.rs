@@ -114,13 +114,28 @@ pub struct Gmail {
 }
 
 /// Overrides for automated-mail detection, by address or `@domain`.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Automated {
     #[serde(default)]
     pub always: Vec<String>,
     #[serde(default)]
     pub never: Vec<String>,
+    /// File automated mail for what it is for as it arrives (keryx-joins-locus X-d, your call
+    /// of 26 Oct: "Automated mail filed away straight away"). Only mail that arrives after
+    /// keryxd first runs with this on; never a person's mail; logged and undoable.
+    #[serde(default = "yes")]
+    pub file_on_arrival: bool,
+}
+
+impl Default for Automated {
+    fn default() -> Self {
+        Automated {
+            always: vec![],
+            never: vec![],
+            file_on_arrival: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -6,6 +6,7 @@ pub mod client;
 pub mod db;
 pub mod gmail;
 pub mod ingest;
+pub mod item;
 pub mod kairos;
 pub mod keychain;
 pub mod mailapp;

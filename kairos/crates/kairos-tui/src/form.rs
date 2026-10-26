@@ -136,22 +136,7 @@ impl Form {
     /// The options matching what is typed in For, best first: the id or a word of the label
     /// starting with it, then anything containing it. Empty: all of them.
     pub fn for_matches(&self, q: &str) -> Vec<&ForOption> {
-        let q = q.trim().to_lowercase();
-        if q.is_empty() {
-            return self.fors.iter().collect();
-        }
-        let starts = |o: &ForOption| {
-            o.id.to_lowercase().starts_with(&q)
-                || o.label.to_lowercase().starts_with(&q)
-                || o.label.to_lowercase().split_whitespace().any(|w| w.starts_with(&q))
-        };
-        let mut v: Vec<&ForOption> = self.fors.iter().filter(|o| starts(o)).collect();
-        v.extend(
-            self.fors
-                .iter()
-                .filter(|o| !starts(o) && o.label.to_lowercase().contains(&q)),
-        );
-        v
+        locus_contract::fors::matching(&self.fors, q, |o| (o.id.as_str(), o.label.as_str()))
     }
 
     /// What For names: an exact label (or id), else the first match; none when empty.

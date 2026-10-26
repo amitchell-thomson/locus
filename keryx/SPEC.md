@@ -253,75 +253,64 @@ Cleanup reviews have their own screen (§8.1, *Reviewing a cleanup*).
 
 ## 8. Interfaces
 
-### 8.1 TUI (bare `keryx`)
+### 8.1 TUI (bare `keryx`): locus's Mail view
 
-Layout: a list pane, with a reading pane on the right at ≥ 120 columns (a single pane below that, `Enter` opening the thread). Header: view name · account filter. The key hints that apply to the selection sit on the bottom-right edge, and `?` lists everything. The status bar only says things that need action: "2 waiting for approval · A", "Sending in 7 s · u cancel", "Mail isn't running, starting it…", "Gmail last synced 14 min ago" (only when stale > 5 min). No counters the list already shows (Alec, kairos UX feedback: no redundant indicators).
+Rewritten 26 Oct 2026 for keryx-joins-locus (X5 to X7); the slice spec has the reasoning.
 
-**Rows** (one list, newest first, across the filtered accounts; Alec, 2026-10-14): sender · subject · dim snippet · date. Unread = bold, and nothing else marks it. Thread count `(3)` when > 1. Icons and tags only when they say something:
-- 󰈻 flagged, 󰁦 attachment, 󰒲 snoozed (with the wake time in the Snoozed view), 󰄱 linked kairos task, ⚠ hidden text removed (thread view only);
-- **needs reply** (a mauve tag);
-- 󰄱? a kairos suggestion waiting;
-- a draft waiting for approval: ✎.
+**Layout.** One grey locus frame. Its top edge names every inbox (`all · personal · oxford ·
+oqts · oqts shared`): the one shown highlighted, the others greyed; `Tab` / `⇧Tab` move the
+highlight and the list follows. The corner says `N new` (mail since you last looked). Below
+that, the list takes about a third of the width (`b` hides it), then a rule, then the reading
+pane. Under 120 columns there is one pane at a time. The footer is locus's: the keys that
+work here on the left; on the right only what needs you (a send in its hold, what waits in
+Approve, a stale sync). When space is short the hints give way to the note, never the
+reverse.
 
-The account is a short coloured tag (`Oxford`, `OQTS`…) shown only in the *All* filter. A filed key is a coloured key name.
+**The list:** two quiet lines a thread, the sender then the subject; unread is a dot. Days
+are headings with white space between them. A peach rule marks **new since you last looked**:
+the last key before a break of half an hour, kept across restarts. A flag, an attachment, a
+linked kairos task (󰄱) or a waiting suggestion (󰄱?) show as one icon beside the date; the
+account tag shows only in *all*.
 
-**Thread view:** messages stacked oldest → newest, the latest expanded. At the top, if present:
-- the needs-reply reason (`needs reply: asks whether you can make Thursday`);
-- a suggestion line (`󰄱? kairos task: B4 sheet · due Fri 17:00 · ~5 h · y create · n dismiss`);
-- a waiting draft (`✎ Claude drafted a reply · A to review`).
+**The reading pane** is the conversation in the order it was written, top to bottom. Each
+writer has their own colour bar (you in blue) and a `who · date` line; earlier messages are
+cut to three lines until `z`; quotes and automated footers are folded; links read as
+`[n] site`, listed under the message; attachments are listed (`o` opens one). Invite cards,
+the needs-reply reason, suggestions and linked tasks sit above the messages.
 
-Each message shows a From / To / Cc / date header, an invite card if there is one, the normalised body (quotes folded into a dim `… quoted text (12 lines) · z show`), an attachment list (`o` opens one with macOS `open`, after writing it to a temp dir), and the numbered link list. A linked kairos task shows as `󰄱 kairos: B4 sheet · due Fri 17:00 · 2h left`.
-
-**Keys** (Alec chose the kairos-style map, 2026-10-14):
+**Keys** (locus's shared keys; keryx-joins-locus X2, X-e):
 
 | Key | Action |
 |---|---|
-| `j` `k` · `Enter` · `Esc` | next / previous · open thread · back |
-| `d` | archive (done). Like kairos's `d`, it removes from view, but it **never deletes** |
-| `s` | snooze → guided picker: *Later today (+3 h)* · *Tomorrow 08:00* · *Monday 08:00* · *Pick…* (natural date with live preview) |
-| `f` | flag / unflag |
-| `U` | mark unread (opening marks read) |
-| `m` | file into a key: picker of keys with their numbers, only those mapped for this account |
-| `x` | mark for a batch. `d` `s` `f` `m` then apply to every marked thread (one changeset, one undo) |
-| `t` | → kairos task: form with title (from subject), calendar (key's `kairos_key`, else Personal), type (sheet / coursework / admin), estimate, due (live feedback) |
-| `r` `R` | reply / reply all in `$EDITOR`, then confirm, then hold |
-| `F` | forward in `$EDITOR` (Alec only; not in MCP). Not in the original keymap: added because forwarding is common (§13) |
-| `w` | reply with times I'm free: form (window: this week / next week / pick; duration; how many), filled from kairos `find_free`, opens `$EDITOR` with the slots in the body |
-| `c` | compose |
-| `y` `n` | on a thread with a suggestion: create it (opens the kairos form, prefilled) · dismiss it |
-| `i` | on an invite: add the event to kairos (a form, prefilled, as `t`) |
-| `L` | unsubscribe (only shown on mail with `List-Unsubscribe`): asks first, showing how (one-click / email / "open this page") |
-| `N` | needs reply: tag / clear by hand |
-| `u` | undo last change; during a send hold, cancel the send |
-| `A` | waiting for you: sends to approve (`y` approve · `n` reject · `e` edit) and open cleanup reviews (`Enter` to review) |
-| `Tab` | account filter: All · Personal · Oxford · OQTS · OQTS shared |
-| `g` | go to: a small menu listing *i Inbox · r Needs reply · f Flagged · s Snoozed · t Sent · a All mail · c Claude runs* and the keys `1…` |
-| `/` | search, with live results as you type (§7 syntax; `?` inside shows operators) |
-| `Ctrl-R` | sync now (kairos uses `r`, but here `r` is reply) |
-| `q` | quit |
+| `↑` `↓` / `j` `k` · `⏎` · `esc` | move · read a thread · back |
+| `⇥` `⇧⇥` | the next or previous inbox |
+| `b` | hide or show the list |
+| `d` (`m`) | done: filed for what it is for (X7). A picker over the registry items, Personal's streams, the plain areas and "for nothing" (archive), keryx's guess first with its reason; `⏎` takes it, typing picks another. Never deletes |
+| `v` | mark for a batch (`d` `f` then act on every marked thread) |
+| `f` `U` `N` `L` | flag · unread · needs-reply mark · unsubscribe |
+| `r` `R` `F` `+` | reply · reply all · forward · write a new mail, in your Neovim (below) |
+| `t` `i` `w` · `y` `n` | a kairos task · an invite to the calendar · reply with free times · on a suggestion: create · dismiss |
+| `u` | undo the last change; during a send's hold, cancel it |
+| `A` | locus's Approve (drafts and cleanup proposals wait there; keryx has no approve screen) |
+| `g` | go to: `i` inbox · `r` needs reply · `f` flagged · `t` sent · `v` archive · `a` all · `c` Claude runs · `l` filed by itself · `1…7` the taxonomy folders |
+| `/` · `^R` · `?` · `q` | search (§7) · sync now · keys · quit |
 
-**`$EDITOR` file format** (reply/compose/forward): an editable header block (`To:`, `Cc:`, `Bcc:`, `Subject:`, any number of `Attach:`), a blank line, then the body with the account's signature, with the quote below a `-- keryx: text above this line is sent; the quote below is kept --` marker. Saving an empty body, or quitting without saving, cancels with "Nothing sent". Addresses or attachments that don't parse send you back to the editor with the error shown at the top of the file. The file has a fixed name pattern (`keryx-*.eml`) and `filetype=mail`.
+**Writing** (X6) is your Neovim, run on a terminal inside the right pane with the list beside
+it, and a Lua file keryx loads for that buffer only (your config is never edited). The file:
+`From:` (the account; changeable for a new mail or a forward), `To:`, `Cc:`, `Bcc:`,
+`Subject:`, any number of `Attach:` lines (each shows its size), a blank line, the body and
+signature, then the quote below a marker drawn as "the quote below is kept". `:w` sends (the
+confirm screen, then the 10 s hold), `:q` on a changed mail keeps a draft that `r` (or `+`)
+reopens, `:cq` throws it away, `^a` opens a picker over Downloads, Desktop and Documents.
+Addresses complete from `keryx addresses` (blink.cmp as you type, else `<C-x><C-u>`). Another
+editor runs full screen as before. `docs/nvim.md` has the details.
 
-**Address completion** (Alec uses Neovim): `keryx addresses [<prefix>] --json` returns matches from the address book (name, address, last used; people Alec writes to most first). `docs/nvim.md` ships a small Lua `completefunc` / blink.cmp source for `keryx-*.eml` buffers that calls it on `To:`/`Cc:`/`Bcc:` lines. Alec adds that to his config (chezmoi); keryx doesn't touch his dotfiles.
+**Filed by itself** (`g` `l`): what keryx filed as it arrived (§6.2, X-d), newest first, each
+undoable with `u`. **Claude runs** (`g` `c`) is the log of keryx's own scheduled runs, which
+the locus job replaces (X8).
 
-**Reviewing a cleanup** (`A` → a review): proposals grouped by action, largest group first: *Archive 180 · File → Admin 40 · Snooze 12 · Keep 30*. Each row shows sender · subject · date · Claude's reason, and the header shows how many are decided ("142 of 312 decided"). The reading pane (≥ 120 cols) previews the selected thread **without** marking it read.
-
-| Key | |
-|---|---|
-| `y` | accept (applied in the background; the row ticks) |
-| `n` | decline (the thread stays as it is) |
-| `c` | change: a picker of archive / file into key `1…` / snooze (presets) / keep; your choice is applied |
-| `x` then `y`/`n`/`c` | decide several marked rows at once |
-| `Y` | accept all remaining in this group: confirms with the count ("Archive 164 threads?"). Stale rows are skipped |
-| `Enter` | open the full thread (still doesn't mark it read) |
-| `u` | undo the last decision |
-| `q` / `Esc` | leave. Undecided rows stay open for later; the review is *done* when every row is decided |
-
-New proposals appear live while Claude is still working (the TUI refreshes from the mirror). The status bar says "Cleanup: 312 to review · A" while any review is open.
-
-**Claude runs view** (`g` → `c`): one line per run (time · what it did: "archived 23 · 4 need reply · 2 drafts · 1 suggestion"). `Enter` shows the run's summary and links to each changeset, draft and suggestion. A failed or missed run shows why ("Mac was asleep: ran at 09:12 on wake", "claude exited 1: …"). This is a log, not a banner. Nothing pops up (no redundant indicators): the tags, ✎ and 󰄱? marks in the list are what Alec sees.
-
-Works at 80 columns and scales up. Snapshot tests with `insta`. A `frame` example renders one frame as text, as in kairos.
+Works at 80 columns and scales up. Snapshot tests with `insta`; the `frame` example renders
+one frame of the real mirror as text.
 
 ### 8.2 CLI `keryx`
 

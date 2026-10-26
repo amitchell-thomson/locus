@@ -16,7 +16,7 @@ pub fn open_db(cfg: &Config) -> anyhow::Result<Db> {
     let path = cfg.db_path();
     if !path.exists() {
         bail!(
-            "no mirror at {} yet: start keryxd (scripts/install-daemon.sh) or run `keryxd --once`",
+            "no mirror at {} yet: start keryxd (deploy/keryx/install-daemon.sh) or run `keryxd --once`",
             path.display()
         );
     }

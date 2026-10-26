@@ -111,7 +111,7 @@ pub fn run_at(cfg: Config, thread: Option<(String, String)>) -> Result<(), Strin
     let path = cfg.db_path();
     if !path.exists() {
         return Err(format!(
-            "no mirror at {} yet: start keryxd (scripts/install-daemon.sh) or run `keryxd --once`",
+            "no mirror at {} yet: start keryxd (deploy/keryx/install-daemon.sh) or run `keryxd --once`",
             path.display()
         ));
     }

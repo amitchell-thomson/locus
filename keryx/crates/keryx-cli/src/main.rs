@@ -471,7 +471,7 @@ fn doctor(path: &std::path::Path) -> anyhow::Result<()> {
         Ok(c) => match c.status() {
             Err(e) => r.bad(
                 format!("keryxd isn't answering at {}: {e}", cfg.server_url()),
-                "scripts/install-daemon.sh, then `launchctl print gui/$(id -u)/com.keryx.daemon`",
+                "deploy/keryx/install-daemon.sh, then `launchctl print gui/$(id -u)/com.keryx.daemon`",
             ),
             Ok(_) => {
                 r.ok(format!("keryxd running at {}", cfg.server_url()));
@@ -512,7 +512,7 @@ fn doctor(path: &std::path::Path) -> anyhow::Result<()> {
         if agent.exists() {
             r.ok("scheduled runs installed (com.keryx.runs)");
         } else {
-            r.note("scheduled runs aren't installed yet: scripts/install-runs.sh");
+            r.note("scheduled runs aren't installed yet: deploy/keryx/install-runs.sh");
         }
         if let Ok(db) = Db::open_readonly(&cfg.db_path())
             && let Some(last) = db.runs(1).ok().and_then(|v| v.into_iter().next())

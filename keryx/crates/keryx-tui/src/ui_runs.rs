@@ -33,7 +33,7 @@ pub fn runs(f: &mut Frame, app: &App, area: Rect) {
     if list.is_empty() {
         f.render_widget(
             Paragraph::new(Line::from(Span::styled(
-                " No runs yet. They start at the [runs] times once scripts/install-runs.sh is installed.",
+                " No runs yet. They start at the [runs] times once deploy/keryx/install-runs.sh is installed.",
                 Style::default().fg(c("overlay1")),
             ))),
             inner,

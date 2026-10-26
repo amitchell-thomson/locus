@@ -229,3 +229,23 @@ rounds. X8 and the clear-out wait for Slice 0's budget logging if that is not in
 
 ## Report
 *(when the steps are done)*
+
+**Interim, 26 Oct 2026.** Done: X1, X2 (its check, a `[keryx-test]` draft sent from Approve,
+waits for X4), X3, X5, X6 and X7 apart from the clear-out. Waiting: X4 with you (the round
+trips, then `live = true`; X6's and X7's live checks ride on it); X8 and the clear-out, for
+Slice 0's budget logging (0.7, not built yet). Notes:
+
+- **X5, reading in order.** No redesign of its own: the conversation reads top to bottom
+  with a colour bar per writer (you in blue) and earlier messages cut to three lines until
+  `z`. For you to judge at the screen, as the answer asked.
+- **X6.** Your Neovim runs on a pty in the pane (portable-pty, vt100, tui-term) and draws
+  your LazyVim in about 200 ms. `:w` sends, `:q` keeps a draft, `:cq` throws it away; each
+  was driven through real Neovim before committing. Address completion comes through
+  blink.cmp, registered for that buffer only, since your config has no keryx snippet and is
+  never edited.
+- **X7.** The folder is the item's area, or for Personal its stream. keryx makes only those
+  folders, on first use (SPEC §6.2 now says so). The guess was read over your real inbox
+  (1,077 threads): it answered 316, and where it answered it was right except that bounce
+  notices counted as errands (30 of 85), now excluded. Filing on arrival started at 13:52
+  (its mark) and touches only `[keryx-test]` mail until live. Filed mail shows on its item's
+  page: New for an unread thread, and every thread on an application's timeline.

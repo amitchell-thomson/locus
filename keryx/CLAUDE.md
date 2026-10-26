@@ -1,6 +1,6 @@
 # keryx — notes for Claude
 
-Terminal email client (ratatui) with Claude access over MCP, for Alec's four accounts. Spec: `SPEC.md`. Second app in Alec's TUI ecosystem; **kairos** (`~/local-projects/kairos`) is the reference architecture: when in doubt, do what it does. Alec checks work through tests and acceptance criteria, so every semantic rule has a test.
+Terminal email client (ratatui) with Claude access over MCP, for Alec's four accounts: locus's Mail view (`Alt-4`). It moved into the locus repository on 26 Oct 2026 with its history (spec `docs/redesign/slices/keryx-joins-locus.md`); it is built, tested and deployed from there (`deploy/keryx/`). Spec: `SPEC.md`. Second app in Alec's TUI ecosystem; **kairos** (`~/local-projects/kairos`) is the reference architecture: when in doubt, do what it does. Alec checks work through tests and acceptance criteria, so every semantic rule has a test.
 
 ## Layout
 
@@ -11,7 +11,7 @@ Terminal email client (ratatui) with Claude access over MCP, for Alec's four acc
 | `keryxd` | Single writer, on the Mac. `engine` (intents → changesets → risk → apply / approve / reject / undo), `engine_send` (send hold, drafts), `engine_kairos` (tasks, events, free time, suggestions), `engine_runs` (run tokens, record_run, pushes), `http` (axum, bearer + run tokens), `phone` (signed approval pages), `mcp` (rmcp, stateless Streamable HTTP, per-run tool allowlist), `notify` (ntfy + link signing), `jobs` (Gmail history poll, Mail store watch, snooze wake-ups, hold queue, run expiry, review pushes), `actuate` (Gmail API, osascript). |
 | `keryx-cli` | `keryx` binary: bare = TUI; `inbox`, `search`, `show`, triage commands, `reply`, `changes`, `approve`, `doctor`, `auth gmail`, `--json`. |
 | `keryx-tui` | ratatui front end (`app` = state/keys, testable; `ui` = drawing). Theme copied from kairos-tui. |
-| `xtask` | `cargo xtask mailapp-fixture` (synthetic Envelope Index + emlx tree from the real schema). |
+| `xtask` (package `keryx-xtask`) | `cargo keryx-xtask mailapp-fixture` (synthetic Envelope Index + emlx tree from the real schema). |
 
 Data flow: Gmail API → keryxd → `~/.local/share/keryx/keryx.db`. Mail.app (Oxford, OQTS-Alec, OQTS shared) → `~/Library/Mail/V10` (read-only) → keryxd → DB. TUI/CLI read the DB; all writes go to keryxd HTTP (`<mac tailscale ip>:7421`) → source (Gmail API / AppleScript) → mirror updated from the source's confirmation. kairos at `compute-node:7420` for tasks and free time.
 
@@ -36,15 +36,15 @@ Data flow: Gmail API → keryxd → `~/.local/share/keryx/keryx.db`. Mail.app (O
 ## Running things
 
 ```sh
-scripts/ci.sh                 # fmt --check, clippy -D warnings, all tests, perf budgets (release)
+../scripts/ci.sh              # (repo root) fmt --check, clippy -D warnings, all tests, perf budgets (release)
 cargo test -p keryx-core      # semantics: MIME, hygiene, threading, reply-all, query, risk table
 cargo test -p keryxd          # engine end-to-end, HTTP, MCP (+ restart mid-session), mock kairos
 cargo test -p keryx-tui       # insta snapshots; review with `cargo insta review`
-cargo xtask mailapp-fixture   # rebuild fixtures/mailapp (synthetic Mail store) from fixtures/eml
+cargo keryx-xtask mailapp-fixture   # rebuild fixtures/mailapp (synthetic Mail store) from fixtures/eml
 cargo run -p keryx-tui --example frame -- <config> <rfc3339-now> <w> <h> [keys]   # one TUI frame as text (real mirror: don't paste it anywhere)
 cargo test --release -p keryx-cli --test perf -- --nocapture                      # 10k-message budgets
 ```
-Commit only when `scripts/ci.sh` **exits 0** — check its exit status, never a grep of its output (a piped grep once hid a clippy failure and a red commit was pushed, 5c1ce18; fixed in the next commit).
+Commit only when `scripts/ci.sh` (at the repository root) **exits 0** — check its exit status, never a grep of its output (a piped grep once hid a clippy failure and a red commit was pushed, 5c1ce18; fixed in the next commit).
 Use `/bin/ls` in scripts: Alec's shell aliases `ls` to eza, which can hang a non-interactive command.
 `KERYX_NOW=<rfc3339>` fixes "now"; `KERYX_CONFIG` overrides the config path.
 

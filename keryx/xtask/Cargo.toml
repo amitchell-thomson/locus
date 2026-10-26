@@ -1,5 +1,5 @@
 [package]
-name = "xtask"
+name = "keryx-xtask"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true

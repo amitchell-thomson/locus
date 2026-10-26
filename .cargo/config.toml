@@ -1,2 +1,3 @@
 [alias]
 xtask = "run --quiet --package xtask --"
+keryx-xtask = "run --quiet --package keryx-xtask --"

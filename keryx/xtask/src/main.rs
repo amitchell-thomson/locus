@@ -1,4 +1,4 @@
-//! `cargo xtask mailapp-fixture [out]`: build a synthetic Mac Mail store
+//! `cargo keryx-xtask mailapp-fixture [out]`: build a synthetic Mac Mail store
 //! (`V10/…`, `MailData/Envelope Index`, `.emlx` / `.partial.emlx`,
 //! `Attachments/`) from `fixtures/eml`, using the real Envelope Index column
 //! layout (checked against macOS 26, 2026-10-14). No real mail is involved.
@@ -247,7 +247,7 @@ fn main() -> Result<()> {
             println!("wrote {}", out.join("V10").display());
             Ok(())
         }
-        _ => bail!("usage: cargo xtask mailapp-fixture [out-dir]"),
+        _ => bail!("usage: cargo keryx-xtask mailapp-fixture [out-dir]"),
     }
 }
 

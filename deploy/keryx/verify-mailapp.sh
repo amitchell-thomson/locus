@@ -5,7 +5,7 @@
 # docs/setup.md §4). Prints one line per check; record the results in
 # CLAUDE.md "Environment findings".
 #
-# Usage: scripts/verify-mailapp.sh [--no-send]
+# Usage: deploy/keryx/verify-mailapp.sh [--no-send]
 set -uo pipefail
 
 ENVELOPE="$HOME/Library/Mail/V10/MailData/Envelope Index"
@@ -181,7 +181,7 @@ on run argv
 end run' "$ACC" "$INBOX" "$MID")
     [ "$r" = "ok" ] && ok "reply sent (check: it threads under the test mail, and whether the quote survived)" || bad "reply: $r"
 
-    PDF="$(cd "$(dirname "$0")/.." && pwd)/fixtures/eml/sheet3.pdf"
+    PDF="$(cd "$(dirname "$0")/../.." && pwd)/keryx/fixtures/eml/sheet3.pdf"
     [ -f "$PDF" ] || python3 -I -c "import base64,re,sys;s=open(sys.argv[1]).read();b=re.search(r'base64\n\n(.*?)--m1--',s,re.S).group(1);open(sys.argv[2],'wb').write(base64.b64decode(b))" "$(dirname "$PDF")/23-pdf-attachment.eml" "$PDF"
     r=$(as '
 on run argv
@@ -204,7 +204,7 @@ done
 
 echo
 echo "Also check by hand:"
-echo "  · Rebuild keryxd (cargo install --path crates/keryxd) and see if 'keryx doctor' still passes"
+echo "  · Rebuild keryxd (cargo install --path keryx/crates/keryxd) and see if 'keryx doctor' still passes"
 echo "    under launchd — i.e. Full Disk Access + Automation survive a rebuild."
 echo
 echo "$PASS passed, $FAIL failed"

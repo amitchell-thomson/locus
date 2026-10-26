@@ -17,9 +17,10 @@ kairos=$(opt @locus-kairos-cmd)
 if [ -z "$kairos" ]; then
     if [ -x "$repo/target/release/kairos" ]; then kairos="'$repo/target/release/kairos' tui"; else kairos="kairos tui"; fi
 fi
+# keryx likewise (moved in on 26 Oct): this checkout's release build, else the one on PATH.
 keryx=$(opt @locus-keryx-cmd)
 if [ -z "$keryx" ]; then
-    if command -v keryx >/dev/null 2>&1; then keryx=keryx; else keryx=$HOME/local-projects/keryx/target/release/keryx; fi
+    if [ -x "$repo/target/release/keryx" ]; then keryx="'$repo/target/release/keryx'"; else keryx=keryx; fi
 fi
 
 command_for() {

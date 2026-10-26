@@ -20,7 +20,7 @@ Personal Gmail goes through Mac Mail, like the OQTS accounts (Alec, 2026-10-20):
 First make keryx's API token (keryxd won't start without it), then install keryxd as a launchd agent (starts at login, restarts if it stops):
 ```sh
 security add-generic-password -U -s keryx-api-token -a "$USER" -w "$(openssl rand -hex 32)"
-cd ~/local-projects/keryx && scripts/install-daemon.sh
+cd ~/local-projects/locus && deploy/keryx/install-daemon.sh
 ```
 
 keryxd reads Mail's store and acts through AppleScript, so it needs two macOS permissions of its own (your terminal's don't carry over to a launchd agent):
@@ -36,7 +36,7 @@ Phase 1 checks whether these grants survive `cargo install` rebuilds. If they do
 
 From your phone or webmail, send yourself one email at each Mail account (newc7370@ox.ac.uk, alec@oqts.org, oqts@oqts.org) and one at your Gmail, each with a subject starting **`[keryx-test]`** and a small PDF attached. Then:
 ```sh
-scripts/verify-mailapp.sh
+deploy/keryx/verify-mailapp.sh
 ```
 It moves, flags and replies to *only* those test messages, and prints what worked.
 
@@ -64,7 +64,7 @@ kairos's token is already in the Keychain as `kairos-api-token`, and keryx reuse
    ```
 2. ntfy app on the iPhone → subscribe to that topic on `https://ntfy.sh` (separate from kairos's topic, so they group apart).
 3. In `config.toml`, `[server] bind` must be the Mac's Tailscale IP (`tailscale ip -4`), so the phone can reach the approval pages. Links are signed with a key derived from `keryx-api-token`; rotating the token invalidates old links.
-4. Restart keryxd (`scripts/install-daemon.sh`). `keryx doctor` should say "ntfy topic set".
+4. Restart keryxd (`deploy/keryx/install-daemon.sh`). `keryx doctor` should say "ntfy topic set".
 
 Approval pushes are **off** (`[notify] approvals = false`, Alec 2026-10-20): drafts are approved in keryx (`A`), the phone only gets the one push per run and per finished cleanup, and the pages show drafts without buttons. With `approvals = true`, each Claude draft pushes with buttons that open a confirmation page; nothing is approved until you press its button (link previews can't approve). If the Mac is asleep the page won't load and the draft stays pending.
 
@@ -72,7 +72,7 @@ Approval pushes are **off** (`[notify] approvals = false`, Alec 2026-10-20): dra
 
 1. Claude Code must be installed and logged in (`claude --version`). Runs use your subscription.
 2. Try one by hand: `keryx run morning --dry-run` (prompt + tool list), then `keryx run morning`. It shows in the TUI under `g` → `c`.
-3. Install the 08:00 / 18:00 agent: `scripts/install-runs.sh` (other times: `KERYX_MORNING=07:30 KERYX_EVENING=18:30 scripts/install-runs.sh`, and set the same in `[runs]`). A time missed while the Mac sleeps runs once on wake.
+3. Install the 08:00 / 18:00 agent: `deploy/keryx/install-runs.sh` (other times: `KERYX_MORNING=07:30 KERYX_EVENING=18:30 deploy/keryx/install-runs.sh`, and set the same in `[runs]`). A time missed while the Mac sleeps runs once on wake.
 4. Background cleanup whenever you like: `keryx cleanup` (all accounts) or `keryx cleanup --account oxford "be strict with society newsletters"`; review with `A`.
 5. Logs: `~/Library/Logs/keryx-runs.log`. Turn runs off with `[runs] enabled = false`.
 

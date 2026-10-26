@@ -1,11 +1,10 @@
 # The locus Rust workspace: the locus window, kairos (moved in with its history on 24 Oct 2026,
-# ADR-008) and the crates they share. keryx still depends on crates here by git, pinned to a
-# commit (`rev = "…"`); bump it deliberately. eco-dates and locus-theme came from the
-# `locus-shared` repo (formerly `eco`) on 19 Oct 2026 (ADR-004).
+# ADR-008), keryx (26 Oct 2026, the same way) and the crates they share. eco-dates and
+# locus-theme came from the `locus-shared` repo (formerly `eco`) on 19 Oct 2026 (ADR-004).
 [workspace]
 resolver = "3"
-members = ["crates/*", "kairos/crates/*", "kairos/xtask"]
-default-members = ["crates/*", "kairos/crates/*"]
+members = ["crates/*", "kairos/crates/*", "kairos/xtask", "keryx/crates/*", "keryx/xtask"]
+default-members = ["crates/*", "kairos/crates/*", "keryx/crates/*"]
 
 [workspace.package]
 version = "0.1.0"
@@ -20,6 +19,9 @@ locus-theme = { path = "crates/locus-theme" }
 kairos-core = { path = "kairos/crates/kairos-core" }
 kairos-store = { path = "kairos/crates/kairos-store" }
 kairos-tui = { path = "kairos/crates/kairos-tui" }
+keryx-core = { path = "keryx/crates/keryx-core" }
+keryx-store = { path = "keryx/crates/keryx-store" }
+keryx-tui = { path = "keryx/crates/keryx-tui" }
 anyhow = "1"
 chrono = { version = "0.4.45", features = ["serde"] }
 clap = { version = "4.6", features = ["derive", "env"] }
@@ -44,9 +46,12 @@ hex = "0.4"
 uuid = { version = "1", features = ["v4", "serde"] }
 proptest = "1.12"
 tracing = "0.1"
-reqwest = { version = "0.13", default-features = false, features = ["rustls", "blocking", "json", "gzip", "http2"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "blocking", "json", "gzip", "http2", "form"] }
 filetime = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+mail-parser = { version = "0.11", features = ["full_encoding"] }
+base64 = "0.22"
+notify = "8"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

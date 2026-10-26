@@ -32,6 +32,11 @@ pub struct Account {
     /// Other addresses that reach this account (count as Alec's for reply-all).
     #[serde(default)]
     pub aliases: Vec<String>,
+    /// The address shown for this account on the `From:` line, when it is not the one Mail
+    /// sends with (Oxford: your college address shown, your SSO address sent; your call of
+    /// 26 Oct). Sending is unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shown_address: Option<String>,
     pub backend: Backend,
     /// Mailapp: Mail's account UUID (`keryx doctor --discover` lists them).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -59,6 +64,7 @@ impl Account {
     pub fn addresses(&self) -> impl Iterator<Item = String> + '_ {
         std::iter::once(&self.address)
             .chain(self.aliases.iter())
+            .chain(self.shown_address.iter())
             .map(|a| a.trim().to_lowercase())
     }
 }

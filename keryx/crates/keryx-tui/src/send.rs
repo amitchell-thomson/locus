@@ -237,7 +237,7 @@ impl App {
     /// (`Oxford <you@ox.ac.uk>`), never the bare id.
     pub fn from_line(&self, account: &str) -> String {
         match self.cfg.account(account) {
-            Some(a) => format!("{} <{}>", a.name, a.address),
+            Some(a) => format!("{} <{}>", a.name, a.shown_address.as_deref().unwrap_or(&a.address)),
             None => account.to_string(),
         }
     }
@@ -335,6 +335,7 @@ impl App {
                 || a.name.eq_ignore_ascii_case(v)
                 || a.address.eq_ignore_ascii_case(v)
                 || a.aliases.iter().any(|x| x.eq_ignore_ascii_case(v))
+                || a.shown_address.as_deref().is_some_and(|x| x.eq_ignore_ascii_case(v))
         });
         let Some(a) = found else {
             let ids: Vec<&str> = self.cfg.accounts.iter().map(|a| a.id.as_str()).collect();

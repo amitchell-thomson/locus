@@ -778,6 +778,7 @@ fn footer(f: &mut Frame, app: &App, area: Rect) {
             ("esc", "back"),
         ],
         Mode::File(_) => vec![("⏎", "file"), ("↑ ↓", "move"), ("esc", "back")],
+        Mode::Attachments => vec![("↑ ↓", "move"), ("⏎", "open"), ("esc", "back")],
         _ if !app.marked.is_empty() => vec![("d", "done"), ("f", "flag"), ("esc", "unmark")],
         _ => vec![
             ("⏎", "open"),
@@ -932,38 +933,43 @@ fn goto(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Paragraph::new(lines), inner);
 }
 
+/// `o`: the thread's attachments, the highlighted one lit; `⏎` opens it, the list stays.
 fn attachments(f: &mut Frame, app: &App, area: Rect) {
     let Some(open) = &app.open else { return };
     let list = open.attachments();
-    let w = 60.min(area.width);
-    let h = (list.len().min(9) as u16 + 2).min(area.height);
+    let w = 64.min(area.width);
+    let rows = usize::from(area.height.saturating_sub(6)).clamp(3, 14);
+    let h = (list.len().min(rows) as u16 + 4).min(area.height);
     let r = centred(area, w, h);
     f.render_widget(Clear, r);
-    let block = popup_block("open which attachment?");
+    let block = popup_block("attachments · ⏎ open · esc back");
     let inner = block.inner(r);
     f.render_widget(block, r);
-    let lines: Vec<Line> = list
-        .iter()
-        .take(9)
-        .enumerate()
-        .map(|(n, &(mi, ai))| {
-            let a = &open.msgs[mi].attachments[ai];
-            Line::from(vec![
-                Span::styled(
-                    format!(" {}  ", n + 1),
-                    Style::default().fg(c("blue")).add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(
-                    fit(&a.name, inner.width.saturating_sub(16) as usize),
-                    Style::default().fg(c("text")),
-                ),
-                Span::styled(
-                    format!(" · {}", size(a.size)),
-                    Style::default().fg(fade(c("text"), 0.4)),
-                ),
-            ])
-        })
-        .collect();
+    let iw = usize::from(inner.width);
+    let first = app.att_sel.saturating_sub(rows.saturating_sub(1));
+    let mut lines: Vec<Line> = Vec::new();
+    for (n, &(mi, ai)) in list.iter().enumerate().skip(first).take(rows) {
+        let a = &open.msgs[mi].attachments[ai];
+        let chosen = n == app.att_sel;
+        let lit = if chosen {
+            Style::default()
+                .fg(c("text"))
+                .bg(fade(c("mauve"), 0.55))
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        let num = if n < 9 { format!(" {} ", n + 1) } else { "   ".into() };
+        let sz = format!("{:>8} ", size(a.size));
+        let name = fit(&a.name, iw.saturating_sub(num.len() + sz.len() + 2));
+        let gap = iw.saturating_sub(num.len() + name.width() + sz.len());
+        lines.push(Line::from(vec![
+            Span::styled(num, lit.fg(c("blue")).add_modifier(Modifier::BOLD)),
+            Span::styled(name, lit.fg(c("text"))),
+            Span::styled(" ".repeat(gap), lit),
+            Span::styled(sz, lit.fg(if chosen { c("text") } else { fade(c("text"), 0.4) })),
+        ]));
+    }
     f.render_widget(Paragraph::new(lines), inner);
 }
 

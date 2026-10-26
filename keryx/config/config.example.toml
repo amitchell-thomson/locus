@@ -21,6 +21,8 @@ colour = "lavender"
 id = "oxford"
 name = "Oxford"
 address = "newc7370@ox.ac.uk"
+# Optional: the address the From: line shows, when Mail sends with another (sending unchanged).
+# shown_address = "you@college.ox.ac.uk"
 backend = "mailapp"
 mailapp_account_id = "74EA59BE-FE1D-4D49-8712-D8A2AB402605"
 inbox_mailbox = "Inbox"

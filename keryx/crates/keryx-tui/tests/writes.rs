@@ -854,6 +854,22 @@ fn a_opens_locus_approve_and_keryx_has_no_approve_screen_of_its_own() {
 // ---------------- X6: writing in your Neovim, in the right pane ----------------
 
 #[test]
+fn the_from_line_shows_the_address_you_chose_and_sends_as_before() {
+    let (mut a, _f) = app();
+    let ox = a.cfg.accounts.iter_mut().find(|x| x.id == "oxford").unwrap();
+    ox.shown_address = Some("you@college.ox.ac.uk".into());
+    a.key(Key::Char('+'));
+    let (text, purpose) = editor(&mut a);
+    assert!(text.starts_with("From: Oxford <you@college.ox.ac.uk>\n"), "{text}");
+    let typed = text.replacen("To: ", "To: jane.doe@example.com", 1);
+    a.editor_done(purpose, Ok(type_body(&typed, "Hello")));
+    match &a.mode {
+        Mode::ConfirmSend(d) => assert_eq!(d.req.account, "oxford", "Mail still sends from the account"),
+        m => panic!("{m:?}"),
+    }
+}
+
+#[test]
 fn from_switches_the_account_for_new_mail_but_never_for_a_reply() {
     let (mut a, _f) = app();
     a.key(Key::Char('+'));

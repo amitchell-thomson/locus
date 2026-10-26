@@ -131,6 +131,29 @@ fn attachment_from_full_emlx() {
 }
 
 #[test]
+fn arrows_move_over_attachments_and_enter_opens_the_highlighted_one() {
+    let mut a = app();
+    select(&mut a, "Society minutes");
+    keys(&mut a, &[Key::Enter]);
+    let open = a.open.as_mut().unwrap();
+    let mut second = open.msgs[0].attachments[0].clone();
+    second.name = format!("copy of {}", second.name);
+    open.msgs[0].attachments.push(second);
+    keys(&mut a, &[Key::Char('o')]);
+    assert_eq!(a.mode, keryx_tui::app::Mode::Attachments);
+    let before = a.opened.len();
+    keys(&mut a, &[Key::Down]);
+    assert_eq!(a.att_sel, 1);
+    let s = render_to_string(&mut a, 90, 20);
+    assert!(s.contains("copy of"), "{s}");
+    keys(&mut a, &[Key::Up, Key::Enter]);
+    assert_eq!(a.opened.len(), before + 1, "⏎ opens the highlighted one");
+    assert_eq!(a.mode, keryx_tui::app::Mode::Attachments, "and the list stays");
+    keys(&mut a, &[Key::Esc]);
+    assert_eq!(a.mode, keryx_tui::app::Mode::Thread);
+}
+
+#[test]
 fn live_search() {
     let mut a = app();
     keys(&mut a, &[Key::Char('/')]);

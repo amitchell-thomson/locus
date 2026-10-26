@@ -140,6 +140,8 @@ pub struct App {
     pub writing: Option<crate::send::Writing>,
     /// locus's taxonomy and registry: what mail can be filed for (X7). `None`: `d` archives.
     pub shared: Option<locus_contract::taxonomy::Shared>,
+    /// The highlighted row of the attachment list (`o`).
+    pub att_sel: usize,
     /// Where `:q` keeps a changed mail (set by the running TUI; `None` in tests unless set).
     pub drafts_dir: Option<PathBuf>,
     /// A send in its hold: (changeset id, sends at).
@@ -191,6 +193,7 @@ impl App {
             editor_request: None,
             writing: None,
             drafts_dir: None,
+            att_sel: 0,
             shared: None,
             hold: None,
             task_status: std::collections::HashMap::new(),
@@ -507,7 +510,10 @@ impl App {
             Key::Char('o') => match open.attachments().len() {
                 0 => self.message = Some(("no attachments in this thread".into(), false)),
                 1 => self.open_attachment(0),
-                _ => self.mode = Mode::Attachments,
+                _ => {
+                    self.att_sel = 0;
+                    self.mode = Mode::Attachments;
+                }
             },
             // Next / previous thread without going back to the list.
             Key::Char('J') => {
@@ -523,15 +529,20 @@ impl App {
         }
     }
 
+    /// The attachment list (`o`): arrows (or `j` `k`) move, `⏎` opens the highlighted one, a
+    /// digit opens that one; the list stays open so you can check several. `esc` goes back.
     fn attachment_key(&mut self, k: Key) {
+        let n = self.open.as_ref().map_or(0, |o| o.attachments().len());
         match k {
-            Key::Char(c) if c.is_ascii_digit() && c != '0' => {
-                self.open_attachment(c as usize - '1' as usize);
-                if self.mode == Mode::Attachments {
-                    self.mode = Mode::Thread;
-                }
+            Key::Down | Key::Char('j') | Key::Tab => self.att_sel = (self.att_sel + 1).min(n.saturating_sub(1)),
+            Key::Up | Key::Char('k') | Key::BackTab => self.att_sel = self.att_sel.saturating_sub(1),
+            Key::Enter => self.open_attachment(self.att_sel),
+            Key::Char(c) if c.is_ascii_digit() && c != '0' && (c as usize - '1' as usize) < n => {
+                self.att_sel = c as usize - '1' as usize;
+                self.open_attachment(self.att_sel);
             }
-            _ => self.mode = Mode::Thread,
+            Key::Esc | Key::Char('q') | Key::Char('o') => self.mode = Mode::Thread,
+            _ => {}
         }
     }
 

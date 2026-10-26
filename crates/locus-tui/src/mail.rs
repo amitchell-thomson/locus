@@ -73,6 +73,42 @@ impl Live {
     }
 }
 
+/// keryx's mirror of your mail, opened read-only through its library (keryx-joins-locus X2: one
+/// workspace, so no `keryx` command run as a process). Only keryxd ever writes it.
+pub struct Mirror {
+    pub cfg: keryx_core::config::Config,
+    pub db: keryx_store::db::Db,
+}
+
+impl Mirror {
+    /// Threads in the inbox waiting on your reply (Home's mail line).
+    pub fn need_reply(&self) -> u32 {
+        let f = keryx_store::view::Filter {
+            accounts: vec![],
+            limit: 500,
+        };
+        keryx_store::view::list(&self.db, &self.cfg, &keryx_store::view::View::NeedsReply, &f)
+            .map_or(0, |v| v.iter().filter(|r| r.in_inbox).count() as u32)
+    }
+
+    pub fn open() -> Option<Mirror> {
+        let cfg = keryx_core::config::Config::load(&keryx_core::config::Config::default_path()).ok()?;
+        let db = keryx_store::db::Db::open_readonly(&cfg.db_path()).ok()?;
+        Some(Mirror { cfg, db })
+    }
+
+    pub fn search(&self, q: &str) -> Vec<keryx_store::view::ThreadRow> {
+        let Ok(q) = keryx_core::query::parse(q, chrono::Utc::now().with_timezone(&self.cfg.tz())) else {
+            return Vec::new();
+        };
+        let f = keryx_store::view::Filter {
+            accounts: vec![],
+            limit: 25,
+        };
+        keryx_store::view::search(&self.db, &self.cfg, &q, &f).unwrap_or_default()
+    }
+}
+
 /// What a proposal would do, in a few words.
 fn action_text(a: &Action) -> String {
     match a {
@@ -81,6 +117,11 @@ fn action_text(a: &Action) -> String {
         Action::Snooze { .. } => "snooze".into(),
         Action::Keep { .. } => "keep".into(),
     }
+}
+
+/// Home's mail line: how many threads wait on your reply.
+pub fn apply_counts(fx: &mut Fixtures, need_reply: u32) {
+    fx.home.mail.need_reply = need_reply;
 }
 
 /// keryx's drafts and proposals onto Approve, replacing what an earlier pass put there.

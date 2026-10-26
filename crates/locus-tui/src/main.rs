@@ -99,6 +99,9 @@ fn main() -> Result<()> {
         if let Some(m) = locus_tui::mail::Live::connect() {
             locus_tui::mail::apply(&mut fx, &m.drafts(), &m.proposals());
         }
+        if let Some(m) = locus_tui::mail::Mirror::open() {
+            locus_tui::mail::apply_counts(&mut fx, m.need_reply());
+        }
     }
     if let Some(name) = cli.dump {
         let Some(screen) = ScreenId::from_name(&name) else {
@@ -303,7 +306,8 @@ fn run(mut app: App) -> Result<()> {
         app.mail = Some(m.clone());
         std::thread::spawn(move || {
             loop {
-                if mail_tx.send((m.drafts(), m.proposals())).is_err() {
+                let need = locus_tui::mail::Mirror::open().map_or(0, |x| x.need_reply());
+                if mail_tx.send((m.drafts(), m.proposals(), need)).is_err() {
                     return;
                 }
                 std::thread::sleep(Duration::from_secs(60));
@@ -327,8 +331,9 @@ fn run(mut app: App) -> Result<()> {
                 locus_tui::calendar::apply_chores(&mut app.fixtures, &chores);
                 locus_tui::calendar::apply_tasks(&mut app.fixtures, &tasks);
             }
-            if let Ok((drafts, proposals)) = mail_rx.try_recv() {
+            if let Ok((drafts, proposals, need)) = mail_rx.try_recv() {
                 locus_tui::mail::apply(&mut app.fixtures, &drafts, &proposals);
+                locus_tui::mail::apply_counts(&mut app.fixtures, need);
             }
             if app.stack.first() == Some(&ScreenId::Home)
                 && let Some(req) = inbox.poll()

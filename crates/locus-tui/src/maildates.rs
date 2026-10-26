@@ -301,16 +301,8 @@ fn which<'a>(apps: &[&'a locus_contract::Project], subject: &str) -> Option<&'a 
     (hits.len() == 1).then(|| *hits[0])
 }
 
-fn keryx(args: &[&str]) -> Option<serde_json::Value> {
-    let out = std::process::Command::new("keryx").args(args).output().ok()?;
-    out.status
-        .success()
-        .then(|| serde_json::from_slice(&out.stdout).ok())
-        .flatten()
-}
-
 /// Bookings in the last `days` of mail for each active application, newest mail last. Reads
-/// keryx's local copy only (`keryx search`, `keryx show`): nothing in your mail changes.
+/// keryx's local copy only, read-only: nothing in your mail changes.
 /// `past`: also bookings already over (to judge the finder on old mail).
 pub fn scan(reg: &Registry, now: DateTime<Utc>, days: i64, past: bool) -> Vec<Booking> {
     let since = (now - Duration::days(days)).format("%Y-%m-%d").to_string();
@@ -323,6 +315,9 @@ pub fn scan(reg: &Registry, now: DateTime<Utc>, days: i64, past: bool) -> Vec<Bo
     companies.sort_unstable();
     companies.dedup();
     let mut out = Vec::new();
+    let Some(mirror) = crate::mail::Mirror::open() else {
+        return out;
+    };
     for company in companies {
         let apps: Vec<&locus_contract::Project> = reg
             .projects
@@ -330,38 +325,36 @@ pub fn scan(reg: &Registry, now: DateTime<Utc>, days: i64, past: bool) -> Vec<Bo
             .filter(|p| p.kind == ProjectKind::Application && p.active && p.company.as_deref() == Some(company))
             .collect();
         let q = format!("\"{company}\" after:{since}");
-        let Some(found) = keryx(&["search", &q, "--json", "--limit", "25"]) else {
-            continue;
-        };
-        for t in found["threads"].as_array().into_iter().flatten() {
-            let subject = t["subject"].as_str().unwrap_or("").to_string();
-            let snippet = t["snippet"].as_str().unwrap_or("");
+        for t in mirror.search(&q) {
+            let subject = t.subject.clone();
+            let snippet = t.snippet.as_str();
             if !about_a_date(&subject) && !about_a_date(snippet) {
                 continue;
             }
-            let Some(r) = t["ref"].as_str() else { continue };
-            let Some(thread) = keryx(&["show", r, "--json"]) else {
+            let Ok(thread) = mirror.db.thread(&t.account, &t.thread_id) else {
                 continue;
             };
             // The newest message in the thread says where things stand now.
-            let Some(m) = thread["messages"].as_array().and_then(|v| v.last()) else {
+            let Some(m) = thread.last() else {
                 continue;
             };
             // The firm is who it is from or what it is about, not a name in passing (a society's
             // drinks invitation lists its sponsors).
-            let sender = format!(
-                "{} {}",
-                m["from"]["name"].as_str().unwrap_or(""),
-                m["from"]["email"].as_str().unwrap_or("")
-            );
+            let sender = m
+                .from
+                .as_ref()
+                .map(|a| format!("{} {}", a.name.as_deref().unwrap_or(""), a.email))
+                .unwrap_or_default();
             let firm = squash(company);
             if !squash(&subject).contains(&firm) && !squash(&sender).contains(&firm) {
                 continue;
             }
-            let Some(sent) = m["date"].as_str().and_then(|d| DateTime::parse_from_rfc3339(d).ok()) else {
+            let Some(sent) =
+                DateTime::from_timestamp(m.date, 0).map(|t| t.with_timezone(&mirror.cfg.tz()).fixed_offset())
+            else {
                 continue;
             };
-            let own = own_text(m["body"].as_str().unwrap_or(""));
+            let own = own_text(&m.body_text);
             // Told apart by the subject, then by the mail itself; else you choose in Approve.
             let (app, choices) = match which(&apps, &subject).or_else(|| which(&apps, &own)) {
                 Some(a) => (a, Vec::new()),
@@ -380,7 +373,7 @@ pub fn scan(reg: &Registry, now: DateTime<Utc>, days: i64, past: bool) -> Vec<Bo
                 for_id: app.id.clone(),
                 company: company.to_string(),
                 subject,
-                thread: r.to_string(),
+                thread: t.r#ref.clone(),
                 sent,
                 at,
                 minutes: minutes.unwrap_or(60),

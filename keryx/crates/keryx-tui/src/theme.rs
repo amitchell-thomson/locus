@@ -63,12 +63,11 @@ pub fn wrap(s: &str, w: usize) -> Vec<String> {
     out
 }
 
-/// The selected row: a solid fill, dark bold text (as kairos).
+/// The selected row: a solid fill in the full colour, dark bold text. kairos softens its fill
+/// (15% towards the background); in the mail list that read as grey and the row was hard to
+/// find (your note of 26 Oct), so keryx's is the colour itself.
 pub fn selected_style(col: Color) -> Style {
-    Style::default()
-        .fg(c("base"))
-        .bg(fade(col, 0.15))
-        .add_modifier(Modifier::BOLD)
+    Style::default().fg(c("base")).bg(col).add_modifier(Modifier::BOLD)
 }
 
 /// The list's selection while you read beside it: a medium tint of the colour with light bold

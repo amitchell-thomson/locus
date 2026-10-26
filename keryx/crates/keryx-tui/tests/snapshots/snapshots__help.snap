@@ -7,7 +7,7 @@ expression: "render_to_string(&mut a, 80, 20)"
 │  ↑ ↓  ⏎ esc  move · read a thread · back                                     │
 │  ⇥ ⇧⇥        the next or previous inbox (all, then each account)             │
 │  b           hide or show the list                                           │
-│  g           go to: inbox, needs reply, sent, archive, filed by itself, folde│
+│  g           go to: inbox, needs reply, sent, archive, drafts, filed by itsel│
 │  r R F +     reply · reply all · forward · write a new mail                  │
 │  d           done: filed for its mark, else for what you choose              │
 │  m           mark what it is for; it stays in your inbox                     │

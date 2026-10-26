@@ -2,6 +2,7 @@
 //! without keryxd); writes will go to keryxd (Phase 4).
 
 pub mod app;
+pub mod drafts;
 pub mod file_for;
 pub mod filed;
 pub mod form;

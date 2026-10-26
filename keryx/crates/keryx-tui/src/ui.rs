@@ -42,6 +42,8 @@ pub fn draw_writing(f: &mut Frame, app: &App, editor: Option<&crate::pane::Pane>
         crate::ui_runs::detail(f, app, main);
     } else if let Mode::Filed { sel } = app.mode {
         crate::filed::draw(f, app, main, sel);
+    } else if let Mode::Drafts { sel } = app.mode {
+        crate::drafts::draw(f, app, main, sel);
     } else {
         mail(f, app, main, editor);
     }
@@ -843,6 +845,7 @@ fn footer(f: &mut Frame, app: &App, area: Rect) {
         ],
         Mode::File(_) => vec![("⏎", "file"), ("↑ ↓", "move"), ("esc", "back")],
         Mode::Attachments => vec![("↑ ↓", "move"), ("⏎", "open"), ("esc", "back")],
+        Mode::Drafts { .. } => vec![("↑ ↓", "move"), ("⏎", "open"), ("esc", "back")],
         _ if !app.marked.is_empty() => vec![("d", "done"), ("m", "for"), ("f", "needs reply"), ("esc", "unmark")],
         _ => vec![
             ("⏎", "open"),
@@ -927,7 +930,7 @@ fn help(f: &mut Frame, area: Rect) {
         ("b", "hide or show the list"),
         (
             "g",
-            "go to: inbox, needs reply, sent, archive, filed by itself, folders",
+            "go to: inbox, needs reply, sent, archive, drafts, filed by itself, folders",
         ),
         ("r R F +", "reply · reply all · forward · write a new mail"),
         ("d", "done: filed for its mark, else for what you choose"),
@@ -974,6 +977,7 @@ fn goto(f: &mut Frame, app: &App, area: Rect) {
         ("v".into(), "Archive".into(), None),
         ("a".into(), "All mail".into(), None),
         ("c".into(), "Claude runs".into(), None),
+        ("d".into(), "Drafts".into(), None),
         ("l".into(), "Filed by itself".into(), None),
     ];
     for (i, (name, col)) in app.goto_folders().into_iter().enumerate() {

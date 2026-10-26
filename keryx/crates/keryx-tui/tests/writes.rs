@@ -1090,3 +1090,34 @@ fn what_was_filed_by_itself_is_listed_and_u_puts_it_back() {
     a.run_deferred();
     assert_eq!(f.take(), vec!["undo cs-auto"]);
 }
+
+#[test]
+fn kept_drafts_are_listed_under_g_d_and_enter_reopens_one() {
+    let (mut a, _f) = app();
+    let dir = tempfile::tempdir().unwrap();
+    a.drafts_dir = Some(dir.path().to_path_buf());
+    keys(&mut a, &[Key::Char('g'), Key::Char('d')]);
+    assert!(render_to_string(&mut a, 90, 6).contains("no drafts"));
+    keys(&mut a, &[Key::Esc]);
+    let lab = select(&mut a, "Lab partner for Thursday?");
+    a.key(Key::Char('r'));
+    let (text, purpose) = editor(&mut a);
+    let half = type_body(&text, "Half a thought");
+    std::fs::write(a.draft_path(&purpose).unwrap(), &half).unwrap();
+    keys(&mut a, &[Key::Char('g'), Key::Char('d')]);
+    let s = render_to_string(&mut a, 100, 8);
+    assert!(
+        s.contains("drafts") && s.contains("reply") && s.contains("Re: Lab partner for Thursday?"),
+        "{s}"
+    );
+    keys(&mut a, &[Key::Enter]);
+    let (again, p) = editor(&mut a);
+    assert_eq!(again, half, "where you left it");
+    assert_eq!(
+        p,
+        Purpose::Reply {
+            r#ref: lab,
+            account: "oxford".into()
+        }
+    );
+}

@@ -65,6 +65,10 @@ pub enum Mode {
     Filed {
         sel: usize,
     },
+    /// `g` → `d`: the drafts you kept.
+    Drafts {
+        sel: usize,
+    },
     /// One run: everything it made.
     RunDetail {
         id: String,
@@ -436,6 +440,7 @@ impl App {
             Mode::Runs { sel } => self.runs_key(k, sel),
             Mode::RunDetail { id, sel } => self.run_detail_key(k, id, sel),
             Mode::Filed { sel } => self.filed_key(k, sel),
+            Mode::Drafts { sel } => self.drafts_key(k, sel),
         }
     }
 
@@ -652,6 +657,10 @@ impl App {
         self.mode = Mode::List;
         if k == Key::Char('c') {
             self.mode = Mode::Runs { sel: 0 };
+            return;
+        }
+        if k == Key::Char('d') {
+            self.mode = Mode::Drafts { sel: 0 };
             return;
         }
         if k == Key::Char('l') {

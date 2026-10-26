@@ -311,7 +311,7 @@ fn list(f: &mut Frame, app: &App, area: Rect) {
                     let st = if focus {
                         selected_style(c("blue"))
                     } else {
-                        Style::default().bg(c("surface0"))
+                        crate::theme::reading_selected_style(c("blue"))
                     };
                     l.patch_style(st)
                 } else {

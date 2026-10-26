@@ -71,6 +71,16 @@ pub fn selected_style(col: Color) -> Style {
         .add_modifier(Modifier::BOLD)
 }
 
+/// The list's selection while you read beside it: a medium tint of the colour with light bold
+/// text, as kairos marks what is linked to its selection. It was the grey `surface0`, which sat
+/// too close to the list's dim text to find (your note of 26 Oct).
+pub fn reading_selected_style(col: Color) -> Style {
+    Style::default()
+        .fg(c("text"))
+        .bg(fade(col, 0.55))
+        .add_modifier(Modifier::BOLD)
+}
+
 /// A pane: locus's grey screen frame with its title on the left (the frame is never blue: the
 /// selection says where you are).
 pub fn panel(title: &str, _focus: bool) -> Block<'static> {

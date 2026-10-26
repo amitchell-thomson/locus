@@ -153,7 +153,6 @@ pub fn router(st: AppState, mcp: Option<Router<AppState>>) -> Router {
     let api = api.layer(middleware::from_fn_with_state(st.clone(), auth));
     Router::new()
         .route("/healthz", get(|| async { "ok" }))
-        .merge(crate::phone::router())
         .merge(api)
         .with_state(st)
 }

@@ -490,12 +490,7 @@ fn doctor(path: &std::path::Path) -> anyhow::Result<()> {
         },
     }
 
-    // Phone pushes and scheduled runs.
-    if keryx_store::keychain::get("keryx-ntfy-topic").is_ok() {
-        r.ok("ntfy topic set (phone pushes on)");
-    } else {
-        r.note("no keryx-ntfy-topic in the Keychain: phone pushes are off (docs/setup.md §7)");
-    }
+    // Scheduled runs (nothing is pushed to the phone: removed 26 Oct 2026, plan B.4).
     if cfg.runs.enabled {
         let claude = std::process::Command::new(&cfg.runs.claude_bin)
             .arg("--version")

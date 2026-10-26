@@ -477,28 +477,7 @@ async fn no_tool_reaches_kairos_and_suggestions_wait_for_alec() {
     assert!(open.iter().all(|s| s.author == "claude"));
 }
 
-// ---- Phase 8 (phone) and Phase 9 (runs) ----
-
-#[derive(Clone, Default)]
-struct Pushes(Arc<Mutex<Vec<crate::notify::Push>>>);
-impl crate::notify::Notifier for Pushes {
-    fn push(&self, p: &crate::notify::Push) -> Result<(), String> {
-        self.0.lock().unwrap().push(p.clone());
-        Ok(())
-    }
-}
-
-fn phone_state() -> (AppState, Pushes) {
-    let st = state();
-    let p = Pushes::default();
-    {
-        let mut e = st.engine.lock().unwrap();
-        e.cfg.notify.approvals = true;
-        e.notifier = Some(Box::new(p.clone()));
-        e.links = Some(crate::notify::Links::new(TOKEN, "http://keryx.test"));
-    }
-    (st, p)
-}
+// ---- Phase 9 (runs) ----
 
 /// A JSON-RPC call with any bearer token; returns (status, body).
 async fn rpc_as(base: &str, token: &str, method: &str, params: Value) -> (u16, Value) {
@@ -535,92 +514,6 @@ async fn run_call(base: &str, token: &str, tool: &str, args: Value) -> Result<(S
     ))
 }
 
-fn draft(st: &AppState, r: &str) -> keryx_core::changeset::Changeset {
-    st.engine
-        .lock()
-        .unwrap()
-        .draft_reply(
-            &keryx_store::api::DraftReplyReq {
-                r#ref: r.into(),
-                body: "Yes, Thursday works.".into(),
-                reply_all: false,
-            },
-            Who::claude(),
-        )
-        .unwrap()
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn phone_links_show_on_get_and_act_only_on_post() {
-    let (st, pushes) = phone_state();
-    let r = find_ref(&st, "Lab partner for Thursday?");
-    let cs = draft(&st, &r);
-    let other = draft(&st, &find_ref(&st, "Re: Group project plan"));
-    // One push per draft, recipients in the title, buttons to signed pages.
-    let p = pushes.0.lock().unwrap().clone();
-    assert_eq!(p.len(), 2);
-    assert_eq!(p[0].title, "Send to Jane Doe <jane.doe@example.com>?");
-    assert!(p[0].message.contains("Yes, Thursday works."), "{}", p[0].message);
-    let approve = p[0].actions[0].1.clone();
-    assert!(approve.starts_with(&format!("http://keryx.test/a/{}/approve?s=", cs.id)));
-    let (base, _h, _) = start(st.clone()).await;
-    let path = approve.trim_start_matches("http://keryx.test");
-    let c = reqwest::Client::new();
-    // A link preview / prefetch (GET) shows the page and changes nothing.
-    for _ in 0..3 {
-        let page = c.get(format!("{base}{path}")).send().await.unwrap();
-        assert_eq!(page.status(), 200);
-        let html = page.text().await.unwrap();
-        assert!(
-            html.contains("Approve this send?") && html.contains("jane.doe@example.com"),
-            "{html}"
-        );
-        assert!(!html.contains("<script"), "no scripts");
-    }
-    let status = |id: &str| st.engine.lock().unwrap().db.changeset(id).unwrap().unwrap().status;
-    assert_eq!(status(&cs.id), keryx_core::changeset::Status::Pending);
-    // The signature only works for its own changeset and action.
-    let sig = path.split("s=").nth(1).unwrap();
-    for bad in [
-        format!("/a/{}/approve?s={sig}", other.id),
-        format!("/a/{}/reject?s={sig}", cs.id),
-        format!("/a/{}/approve?s=00", cs.id),
-    ] {
-        assert_eq!(
-            c.get(format!("{base}{bad}")).send().await.unwrap().status(),
-            403,
-            "{bad}"
-        );
-    }
-    let post = |id: String, action: &str, s: String| {
-        let c = c.clone();
-        let url = format!("{base}/a/{id}/{action}");
-        async move { c.post(url).form(&[("s", s)]).send().await.unwrap() }
-    };
-    assert_eq!(post(other.id.clone(), "approve", sig.to_string()).await.status(), 403);
-    assert_eq!(status(&other.id), keryx_core::changeset::Status::Pending);
-    // The page's button (POST) approves: holding, then the send goes out.
-    let r = post(cs.id.clone(), "approve", sig.to_string()).await;
-    assert_eq!(r.status(), 200);
-    assert!(r.text().await.unwrap().contains("Sending in 10 s"));
-    assert_eq!(status(&cs.id), keryx_core::changeset::Status::Holding);
-    // One-shot: approving again does nothing.
-    assert_eq!(post(cs.id.clone(), "approve", sig.to_string()).await.status(), 409);
-    // Reject the other from its own link.
-    let rej = st
-        .engine
-        .lock()
-        .unwrap()
-        .links
-        .as_ref()
-        .unwrap()
-        .sign(&other.id, "reject");
-    assert_eq!(post(other.id.clone(), "reject", rej).await.status(), 200);
-    assert_eq!(status(&other.id), keryx_core::changeset::Status::Rejected);
-    // No bearer token needed for pages, but the API still needs one.
-    assert_eq!(c.get(format!("{base}/api/status")).send().await.unwrap().status(), 401);
-}
-
 fn start_run(st: &AppState, kind: keryx_store::runs::RunKind) -> (String, String) {
     let (run, token) = st
         .engine
@@ -632,9 +525,9 @@ fn start_run(st: &AppState, kind: keryx_store::runs::RunKind) -> (String, String
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn morning_run_replay_one_push_and_everything_recorded() {
+async fn morning_run_replay_and_everything_recorded() {
     use keryx_store::runs::RunKind;
-    let (st, pushes) = phone_state();
+    let st = state();
     let lab = find_ref(&st, "Lab partner for Thursday?");
     let news = find_ref_in(&st, Some("personal"), "This week in engineering");
     let (run_id, token) = start_run(&st, RunKind::Morning);
@@ -706,8 +599,6 @@ async fn morning_run_replay_one_push_and_everything_recorded() {
             "{tool}: {r:?}"
         );
     }
-    // Drafts inside a run don't push on their own.
-    assert!(pushes.0.lock().unwrap().is_empty());
     // record_run only for its own run.
     let (t, err) = run_call(
         &base,
@@ -725,25 +616,10 @@ async fn morning_run_replay_one_push_and_everything_recorded() {
         json!({"run_id": run_id, "summary": "Quiet morning."}),
     )
     .await);
-    // Exactly one push, with the counts and the run page.
-    let p = pushes.0.lock().unwrap().clone();
-    assert_eq!(p.len(), 1, "{p:?}");
+    // The run's counts (no push any more: what it made waits in Approve).
     assert_eq!(
-        p[0].title,
-        "Morning: 1 cleared · 1 need reply · 1 draft to approve · 1 task suggestion · 1 proposal to review"
-    );
-    let link = p[0].click.clone().unwrap();
-    assert!(link.starts_with(&format!("http://keryx.test/r/{run_id}?s=")));
-    // The run page lists the draft with approve / reject.
-    let html = reqwest::get(format!("{base}{}", link.trim_start_matches("http://keryx.test")))
-        .await
-        .unwrap()
-        .text()
-        .await
-        .unwrap();
-    assert!(
-        html.contains("Thursday works for me.") && html.contains("Approve and send"),
-        "{html}"
+        st.engine.lock().unwrap().run_view(&run_id).unwrap().counts(),
+        "1 cleared · 1 need reply · 1 draft to approve · 1 task suggestion · 1 proposal to review"
     );
     // Everything is recorded against the run; the review and suggestion carry its id.
     {
@@ -768,7 +644,7 @@ async fn morning_run_replay_one_push_and_everything_recorded() {
 #[tokio::test(flavor = "multi_thread")]
 async fn cleanup_runs_only_propose_and_runs_expire() {
     use keryx_store::runs::RunKind;
-    let (st, pushes) = phone_state();
+    let st = state();
     let news = find_ref_in(&st, Some("personal"), "This week in engineering");
     let (run_id, token) = start_run(&st, RunKind::Cleanup);
     let (base, _h, _) = start(st.clone()).await;
@@ -791,7 +667,7 @@ async fn cleanup_runs_only_propose_and_runs_expire() {
     .await
     .unwrap();
     assert!(!err, "{t}");
-    // Past its time the run fails, pushes once, and the token stops working.
+    // Past its time the run fails and the token stops working.
     {
         let mut e = st.engine.lock().unwrap();
         e.clock = Box::new(|| 1_791_986_400 + 3 * 3600);
@@ -803,9 +679,6 @@ async fn cleanup_runs_only_propose_and_runs_expire() {
         run_call(&base, &token, "list_inbox", json!({})).await,
         Err("HTTP 401".into())
     );
-    let p = pushes.0.lock().unwrap().clone();
-    assert_eq!(p.len(), 1);
-    assert_eq!(p[0].title, "Cleanup run failed");
     // Claude can't start runs.
     let r = st
         .engine
@@ -813,64 +686,6 @@ async fn cleanup_runs_only_propose_and_runs_expire() {
         .unwrap()
         .start_run(RunKind::Morning, json!({}), Who::claude());
     assert!(matches!(r, Err(EngineError::Forbidden(_))));
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn an_interactive_cleanup_pushes_once_when_claude_stops() {
-    let (st, pushes) = phone_state();
-    let a = find_ref(&st, "Lab partner for Thursday?");
-    let (base, _h, _) = start(st.clone()).await;
-    initialize(&base).await;
-    let (t, err) = call(
-        &base,
-        "propose_cleanup",
-        json!({"title": "Oxford inbox", "items": [{"ref": a, "action": "archive", "reason": "answered"}]}),
-    )
-    .await;
-    assert!(!err, "{t}");
-    let mut e = st.engine.lock().unwrap();
-    assert_eq!(e.push_quiet_reviews().unwrap(), 0, "still arriving");
-    e.clock = Box::new(|| 1_791_986_400 + 300);
-    assert_eq!(e.push_quiet_reviews().unwrap(), 1);
-    assert_eq!(e.push_quiet_reviews().unwrap(), 0, "once");
-    let p = pushes.0.lock().unwrap().clone();
-    assert_eq!(p[0].title, "Cleanup ready: 1 proposal");
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn approvals_off_means_no_draft_push_and_pages_only_show() {
-    let (st, pushes) = phone_state();
-    st.engine.lock().unwrap().cfg.notify.approvals = false;
-    let cs = draft(&st, &find_ref(&st, "Lab partner for Thursday?"));
-    assert!(pushes.0.lock().unwrap().is_empty(), "no push for a draft");
-    let (base, _h, _) = start(st.clone()).await;
-    let sig = st
-        .engine
-        .lock()
-        .unwrap()
-        .links
-        .as_ref()
-        .unwrap()
-        .sign(&cs.id, "approve");
-    let html = reqwest::get(format!("{base}/a/{}/approve?s={sig}", cs.id))
-        .await
-        .unwrap()
-        .text()
-        .await
-        .unwrap();
-    assert!(
-        html.contains("Phone approvals are off") && !html.contains("<form"),
-        "{html}"
-    );
-    let r = reqwest::Client::new()
-        .post(format!("{base}/a/{}/approve", cs.id))
-        .form(&[("s", sig)])
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(r.status(), 409);
-    let status = st.engine.lock().unwrap().db.changeset(&cs.id).unwrap().unwrap().status;
-    assert_eq!(status, keryx_core::changeset::Status::Pending);
 }
 
 #[tokio::test(flavor = "multi_thread")]

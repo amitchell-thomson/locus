@@ -97,10 +97,6 @@ pub struct Engine {
     /// kairos's API (`None` when it isn't set up; `kairos_note` says why).
     pub kairos: Option<Box<dyn keryx_store::kairos::Kairos>>,
     pub kairos_note: String,
-    /// ntfy (None: pushes off, e.g. no `keryx-ntfy-topic`).
-    pub notifier: Option<Box<dyn crate::notify::Notifier>>,
-    /// Signs phone links (None: no API token yet, so no links).
-    pub links: Option<crate::notify::Links>,
     /// The run whose token made the current MCP call (set per call).
     pub current_run: Option<keryx_store::runs::Run>,
 }
@@ -142,8 +138,6 @@ impl Engine {
             clock: Box::new(crate::now),
             kairos: None,
             kairos_note: "no kairos client".into(),
-            notifier: None,
-            links: None,
             current_run: None,
         })
     }

@@ -114,20 +114,16 @@ impl Engine {
             warnings,
         };
         self.db.save_changeset(&cs)?;
-        if cs.status == Status::Pending {
-            if self.current_run.is_some() {
-                let thread = cs
-                    .outgoing()
-                    .and_then(|o| o.thread_id.clone().map(|t| (o.account.clone(), t)));
-                self.note_run(
-                    "draft",
-                    &cs.id,
-                    thread.as_ref().map(|(a, _)| a.as_str()),
-                    thread.as_ref().map(|(_, t)| t.as_str()),
-                )?;
-            } else {
-                self.push_draft(&cs);
-            }
+        if cs.status == Status::Pending && self.current_run.is_some() {
+            let thread = cs
+                .outgoing()
+                .and_then(|o| o.thread_id.clone().map(|t| (o.account.clone(), t)));
+            self.note_run(
+                "draft",
+                &cs.id,
+                thread.as_ref().map(|(a, _)| a.as_str()),
+                thread.as_ref().map(|(_, t)| t.as_str()),
+            )?;
         }
         Ok(cs)
     }
@@ -273,13 +269,13 @@ impl Engine {
     pub fn approve(&mut self, id: &str, who: Who) -> Result<Changeset> {
         if !who.direct() {
             return Err(EngineError::Forbidden(
-                "only Alec approves sends (TUI, a terminal, or his phone)".into(),
+                "only Alec approves sends (locus's Approve, the TUI or a terminal)".into(),
             ));
         }
         self.approve_unchecked(id)
     }
 
-    /// Approval from a signed phone link (the signature is the check).
+    /// The approval itself, once `approve` has checked who it is from.
     pub fn approve_unchecked(&mut self, id: &str) -> Result<Changeset> {
         let mut cs = self.pending_send(id)?;
         if cs.status != Status::Pending {

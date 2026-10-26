@@ -167,11 +167,11 @@ pub struct Kairos {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Notify {
+    /// Read and ignored: the ntfy pushes and the phone pages were removed on 26 Oct 2026 (plan
+    /// B.4, one approve place); kept so a config written before still loads.
     #[serde(default = "d_ntfy")]
     pub ntfy_server: String,
-    /// Push Claude's drafts to the phone with approve / reject links.
-    /// Off (Alec, 2026-10-20): drafts are approved in keryx only, and the
-    /// phone pages refuse to act.
+    /// Read and ignored, as `ntfy_server`.
     #[serde(default)]
     pub approvals: bool,
 }

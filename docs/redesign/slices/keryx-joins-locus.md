@@ -54,11 +54,11 @@ and mail stays untrusted data. Those three rules from keryx's own spec become ru
 ```
 ╭ mail · needs you 3 ────────────────────────────────────────────────────────────────── 4 accounts ╮
 │─ needs you ──────────────────────────────────────────────────────────────────────────────── [n] ─│
-│ ▸ an applicant    Following up on an event        asks if there's news   00:27  OQTS            │
+│ ▸ an applicant    Following up on an event         asks if there's news   00:27  OQTS            │
 │   a recruiter     Re: summer internship            waiting on your reply  sun    Oxford          │
 │   a society       A competition invitation         new                    sun    OQTS            │
 │─ for you to see ─────────────────────────────────────────────────────────────────────────── [s] ─│
-│   a committee     This week's agenda                  from a person, no ask  fri    Oxford          │
+│   a committee     This week's agenda               from a person, no ask  fri    Oxford          │
 │─ everything else · 41 ───────────────────────────────────────────────────────────────────── [e] ─│
 │   newsletters 17 · notifications 12 · receipts 4 · lists 8   ⏎ review · d clear all              │
 ╰ ⏎ open · d archive · m file for · r reply · t task · ? keys ─────────────────────────────────────╯

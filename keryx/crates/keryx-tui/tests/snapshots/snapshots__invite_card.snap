@@ -1,23 +1,20 @@
 ---
-source: crates/keryx-tui/tests/snapshots.rs
+source: keryx/crates/keryx-tui/tests/snapshots.rs
 expression: s
 ---
-╭───────────────────────────────────────────── Thread ─────────────────────────────────────────────╮
-│ Cancelled: Project meeting  Oxford                                                               │
+╭ mail  all · personal · oxford · oqts · oqts shared ──────────────────────────────────────────────╮
+│ Cancelled: Project meeting  oxford                                                               │
+│ 2 messages · Prof Smith                                                                          │
 │                                                                                                  │
-│ Prof Smith <smith@eng.example.ac.uk>                                      Mon 12 Oct 2026, 09:00 │
-│ to newc7370@ox.ac.uk                                                                             │
+│ ▎ Prof Smith <smith@eng.example.ac.uk> · mon 12 oct 2026, 09:00                                  │
+│ ▎ 󰃭 Project meeting · Thu 22 Oct, 14:00–15:00 · Thom Building, Room 2 · from Prof Smith          │
+│ ▎                                                                                                │
+│ ▎ You have been invited to: Project meeting, Thu 22 Oct 15:00 (Vienna time).                     │
 │                                                                                                  │
-│ 󰃭 Project meeting · Thu 22 Oct, 14:00–15:00 · Thom Building, Room 2 · from Prof Smith            │
-│                                                                                                  │
-│ You have been invited to: Project meeting, Thu 22 Oct 15:00 (Vienna time).                       │
-│                                                                                                  │
-│ Prof Smith <smith@eng.example.ac.uk>                                      Tue 13 Oct 2026, 09:00 │
-│ to newc7370@ox.ac.uk                                                                             │
-│                                                                                                  │
-│ 󰃭 Cancelled: Project meeting · Thu 22 Oct, 14:00                                                 │
-│                                                                                                  │
-│ (no text)                                                                                        │
+│ ▎ Prof Smith <smith@eng.example.ac.uk> · tue 13 oct 2026, 09:00                                  │
+│ ▎ 󰃭 Cancelled: Project meeting · Thu 22 Oct, 14:00                                               │
+│ ▎                                                                                                │
+│ ▎ (no text)                                                                                      │
 │                                                                                                  │
 │                                                                                                  │
 │                                                                                                  │
@@ -30,4 +27,8 @@ expression: s
 │                                                                                                  │
 │                                                                                                  │
 │                                                                                                  │
-╰───────────────────────────────────── r reply · d archive · t task · z quotes · Esc back · ? help ╯
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+ r reply · R all · F forward · d done · m file · z everything · o attachment · esc back

@@ -1,19 +1,20 @@
 ---
-source: crates/keryx-tui/tests/snapshots.rs
+source: keryx/crates/keryx-tui/tests/snapshots.rs
 expression: s
 ---
-╭─────────────────────────────────── Thread ───────────────────────────────────╮
-│ Your account needs attention  Personal                                       │
+╭ mail  all · personal · oxford · oqts · oqts shared ──────────────────────────╮
+│ Your account needs attention  personal                                       │
 │                                                                              │
-│ Deals <deals@promo.example.com>                       Sun 11 Oct 2026, 07:00 │
-│ to alec.mitchellthomson@gmail.com                                            │
-│ ⚠ hidden text was removed from this message                                  │
-│                                                                              │
-│ Visible text: please review your settings.                                   │
-│                                                                              │
+│ ▎ Deals <deals@promo.example.com> · sun 11 oct 2026, 07:00                   │
+│ ▎ ⚠ hidden text was removed                                                  │
+│ ▎                                                                            │
+│ ▎ Visible text: please review your settings.                                 │
 │                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │
-╰───────────────── r reply · d archive · t task · z quotes · Esc back · ? help ╯
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ r reply · R all · F forward · d done · m file · z everything · o attachment

@@ -226,6 +226,32 @@ fn drop_placeholders(l: &str) -> String {
     out
 }
 
+/// Each raw address in `line` becomes `[n]`, reusing the number of one already listed.
+fn number_raw(line: &str, links: &mut Vec<(usize, String, String)>) -> String {
+    if !line.contains("http://") && !line.contains("https://") {
+        return line.to_string();
+    }
+    line.split(' ')
+        .map(|w| {
+            if !(w.starts_with("http://") || w.starts_with("https://")) {
+                return w.to_string();
+            }
+            let url = unwrap_link(w.trim_end_matches(['.', ',', ';', ':']));
+            let n = match links.iter().find(|l| l.1 == url) {
+                Some(l) => l.0,
+                None => {
+                    let n = links.iter().map(|l| l.0).max().unwrap_or(0) + 1;
+                    let s = site(&url);
+                    links.push((n, url, s));
+                    n
+                }
+            };
+            format!("[{n}]")
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Where an automated mail's footer starts.
 const FOOTER: &[&str] = &[
     "unsubscribe",
@@ -259,8 +285,11 @@ pub fn readable(text: &str, automated: bool) -> Readable {
         }
         lines.truncate(at);
     }
-    let lines: Vec<String> = lines
-        .into_iter()
+    // A link whose text was its own address is still raw here: it gets a number too.
+    let numbered: Vec<String> = lines.iter().map(|l| number_raw(l, &mut links)).collect();
+    let lines: Vec<String> = numbered
+        .iter()
+        .map(String::as_str)
         .filter(|l| {
             let low = l.to_lowercase();
             !BROWSER_LINES.iter().any(|b| low.contains(b))
@@ -762,6 +791,14 @@ mod tests {
     }
 
     /// Every fixture's rendered body, in one reviewed snapshot.
+    #[test]
+    fn raw_addresses_left_in_the_text_get_numbers_and_rows_of_them_go() {
+        let body = "Intro https://a.example.com/x here\nhttps://t.example.com/1 https://t.example.com/2\nEnd https://a.example.com/x\n\nLinks:\n[1] https://a.example.com/x";
+        let r = readable(body, false);
+        assert_eq!(r.lines, vec!["Intro [1] here", "End [1]"]);
+        assert_eq!(r.links.iter().map(|l| l.0).collect::<Vec<_>>(), vec![1, 2, 3]);
+    }
+
     #[test]
     fn every_fixture_renders() {
         let dir = format!("{}/../../fixtures/eml", env!("CARGO_MANIFEST_DIR"));

@@ -176,7 +176,7 @@ impl App {
                 }
             }
             Key::Enter => match lines.get(sel) {
-                Some(l) if l.kind == "review" || l.kind == "draft" => self.mode = Mode::Approvals { sel: 0 },
+                Some(l) if l.kind == "review" || l.kind == "draft" => self.open_locus_approve(),
                 Some(ItemLine {
                     thread: Some((a, t)), ..
                 }) => {
@@ -200,7 +200,7 @@ impl App {
                     }
                 }
             }
-            Key::Char('A') => self.mode = Mode::Approvals { sel: 0 },
+            Key::Char('A') => self.open_locus_approve(),
             Key::Esc | Key::Char('q') => self.mode = Mode::Runs { sel: 0 },
             _ => {}
         }

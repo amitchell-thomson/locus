@@ -4,7 +4,6 @@
 
 use crate::app::App;
 use crate::theme::{c, centred, fit, panel, popup_block, wrap};
-use keryx_core::changeset::Outgoing;
 use keryx_core::model::Address;
 use keryx_store::api::SendReq;
 use ratatui::Frame;
@@ -149,42 +148,6 @@ pub fn confirm_send(f: &mut Frame, app: &App, area: Rect, r: &SendReq, warnings:
         area,
         "Send?",
         &format!("y send ({hold} s to cancel) · e edit · n don't send"),
-        lines,
-    );
-}
-
-pub fn approve_send(f: &mut Frame, app: &App, area: Rect, id: &str) {
-    let Some(cs) = app.db.changeset(id).ok().flatten() else {
-        return;
-    };
-    let Some(o): Option<&Outgoing> = cs.outgoing() else {
-        return;
-    };
-    let w = area.width.saturating_sub(4) as usize;
-    // Warnings again now (the thread may have moved on since drafting).
-    let sent_to = keryx_store::view::sent_to(&app.db, &app.cfg).unwrap_or_default();
-    let thread = match &o.thread_id {
-        Some(t) => app.db.thread(&o.account, t).unwrap_or_default(),
-        None => vec![],
-    };
-    let warnings = keryx_core::outgoing::warnings(o, &sent_to, &app.cfg.own_addresses(), &thread, cs.created_at);
-    let atts: Vec<(String, u64)> = o.attachments.iter().map(|a| (a.name.clone(), a.size)).collect();
-    let mut lines = vec![Line::from(vec![
-        Span::styled(
-            format!("Drafted by {} · ", cs.author.as_str()),
-            Style::default().fg(c("mauve")).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(cs.summary.clone(), Style::default().fg(c("subtext1"))),
-    ])];
-    lines.push(Line::raw(""));
-    lines.extend(message_lines(
-        app, &o.account, &o.to, &o.cc, &o.bcc, &atts, &o.subject, &o.body, &warnings, w,
-    ));
-    screen(
-        f,
-        area,
-        "Approve this send?",
-        "y approve · n reject · e edit · Esc back",
         lines,
     );
 }

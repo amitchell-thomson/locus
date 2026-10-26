@@ -1,27 +1,28 @@
 ---
-source: crates/keryx-tui/tests/snapshots.rs
+source: keryx/crates/keryx-tui/tests/snapshots.rs
 expression: "render_to_string(&mut a, 80, 24)"
 ---
-╭─────────────────────────────────── Thread ───────────────────────────────────╮
-│ Re: Group project plan  Oxford                                               │
+╭ mail  all · personal · oxford · oqts · oqts shared ──────────────────────────╮
+│ Re: Group project plan  oxford                                               │
+│ 2 messages · Jane Doe, you                                                   │
 │                                                                              │
-│ Jane Doe · Mon · Let's split the report into three parts.                    │
+│ ▎ Jane Doe <jane.doe@example.com> · mon 12 oct 2026, 09:00                   │
+│ ▎ to Sam, Team                                                               │
+│ ▎                                                                            │
+│ ▎ Let's split the report into three parts.                                   │
 │                                                                              │
-│ Alec Mitchell-Thomson <newc7370@ox.ac.uk>             Mon 12 Oct 2026, 11:00 │
-│ to Jane Doe <jane.doe@example.com>, Sam <sam@example.com>                    │
-│ cc Team <team@example.com>, alec.mitchellthomson@gmail.com                   │
-│                                                                              │
-│ I'll take part two.                                                          │
-│                                                                              │
-│ … quoted text (2 lines) · z show                                             │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
+│ ▎ you · mon 12 oct 2026, 11:00                                               │
+│ ▎ to Jane Doe, Sam, Team                                                     │
+│ ▎                                                                            │
+│ ▎ I'll take part two.                                                        │
+│ ▎                                                                            │
+│ ▎ … what it quoted (2 lines) · z shows                                       │
 │                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │
-╰───────────────── r reply · d archive · t task · z quotes · Esc back · ? help ╯
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ r reply · R all · F forward · d done · m file · z everything · o attachment

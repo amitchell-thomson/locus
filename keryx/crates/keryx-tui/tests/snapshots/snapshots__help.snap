@@ -1,23 +1,24 @@
 ---
-source: crates/keryx-tui/tests/snapshots.rs
+source: keryx/crates/keryx-tui/tests/snapshots.rs
 expression: "render_to_string(&mut a, 80, 20)"
 ---
-╭──────────────────────────── Admin · All accounts ────────────────────────────╮
-│╭─────────────────────────────────── keys ───────────────────────────────────╮│
-││ j k  ↑ ↓  J K   next / previous (J K: next thread while reading)           ││
-││ Enter  Esc      read the thread · back (clears a search)                   ││
-││ Tab  Shift-Tab  account: All · each account                                ││
-││ g               go to: Inbox, Needs reply, Flagged, Sent, Claude runs, key…││
-││ /               search (from: to: subject: account: key: in: is: has: befo…││
-││ z o             thread: show / fold quoted text · open an attachment       ││
-││ r R F c         reply · reply all · forward · compose ($EDITOR)            ││
-││ d m             archive · file into a key                                  ││
-││ f U N L         flag · mark unread · needs-reply tag · unsubscribe         ││
-││ t i w           kairos task · invite → event · reply with your free times  ││
-││ y n             Claude's kairos idea: create (opens the form) · dismiss    ││
-││ x  u            mark for a batch (Esc clears) · undo the last change       ││
-││ A  Ctrl-R  q    waiting for you · sync now · quit                          ││
-││                                                                            ││
-││                                                                            ││
-│╰────────────────────────────────────────────────────────────────────────────╯│
+╭──────────────────────────────────── keys ────────────────────────────────────╮
+│ this screen                                                                  │
+│  ↑ ↓  ⏎ esc  move · read a thread · back                                     │
+│  ⇥ ⇧⇥        the next or previous inbox (all, then each account)             │
+│  b           hide or show the list                                           │
+│  g           go to a list: inbox, needs reply, flagged, sent, runs           │
+│  r R F +     reply · reply all · forward · write a new mail                  │
+│  d m         done (archive) · file it                                        │
+│  f U N L     flag · unread · needs-reply mark · unsubscribe                  │
+│  t i w       a task · an invite to the calendar · reply with free times      │
+│  v u         mark for a batch · undo the last change                         │
+│  z o         the whole conversation · open an attachment                     │
+│  A ^R        approve, in locus · sync now                                    │
+│                                                                              │
+│ everywhere                                                                   │
+│  /           search                                                          │
+│  ?           keys                                                            │
+│  q           quit                                                            │
+│  alt-1…4     home · project · calendar · mail                                │
 ╰──────────────────────────────────────────────────────────────────────────────╯

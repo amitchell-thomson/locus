@@ -1,33 +1,34 @@
 ---
-source: crates/keryx-tui/tests/snapshots.rs
+source: keryx/crates/keryx-tui/tests/snapshots.rs
 expression: "render_to_string(&mut app(), 120, 30)"
 ---
-╭──────────── Inbox · All accounts ────────────╮╭─────────────────────────────── Thread ───────────────────────────────╮
-│ Oxford   Trains         Your e-ticke…  08:30 ││ Your e-ticket: Oxford to London, Fri 23 Oct  Oxford                  │
-│ Personal Trains         Your e-ticke…  08:30 ││                                                                      │
-│ Oxford   Lecturer       Society mi… 󰁦    Tue ││ Trains <no-reply@trains.example.co.uk>        Wed 14 Oct 2026, 08:30 │
-│ Oxford   Lecturer       Broken file 󰁦    Tue ││ to alec.mitchellthomson@gmail.com                                    │
-│ Oxford   Lecturer       B4 problem… 󰁦    Tue ││                                                                      │
-│ Oxford   Jane Doe       Lab partner …    Tue ││ (Mail hasn't downloaded this message yet, or it has no text)         │
-│ Oxford   Prof Smith (2) Cancelled: P…    Tue ││                                                                      │
-│ Oxford   Jane Doe (2)   Re: Group pr…    Mon ││                                                                      │
-│ Oxford   Department Of… Coursework s…    Mon ││                                                                      │
-│ Oxford   Stranger       Urgent reque…    Sun ││                                                                      │
-│ Personal Deals          Your accou… 󰈻    Sun ││                                                                      │
-│ Personal Tom            Café on Sund…    Sat ││                                                                      │
-│ OQTS sh… The Weekly     This week in…    Sat ││                                                                      │
-│ Personal The Weekly     This week in…    Sat ││                                                                      │
-│ Oxford   Treasurer      RE: Reimbu… 󰈻    Fri ││                                                                      │
-│ Oxford   Club           Training sch…    Thu ││                                                                      │
-│ Oxford   Jürgen         Grüße · Viel…    Thu ││                                                                      │
-│ Oxford   Élodie Martin  Réunion de l…  7 Oct ││                                                                      │
-│ OQTS     Society        Poster for… 󰁦  5 Oct ││                                                                      │
-│ Oxford   Ben            Hello · Hell…  5 Oct ││                                                                      │
-│ Oxford   Bob            Re: Budget     5 Oct ││                                                                      │
-│ Oxford   Ann            Hello · Hell…  5 Oct ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-╰──────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────────────────╯
+╭ mail  all · personal · oxford · oqts · oqts shared ──────────────────────────────────────────────────────────────────╮
+│ today                                 │ Your e-ticket: Oxford to London, Fri 23 Oct  oxford                          │
+│ ● Trains                        08:30 │                                                                              │
+│    Your e-ticket: Oxford to L… oxford │ ▎ Trains <no-reply@trains.example.co.uk> · wed 14 oct 2026, 08:30            │
+│ ● Trains                        08:30 │ ▎                                                                            │
+│    Your e-ticket: Oxford to… personal │ ▎ (Mail hasn't downloaded this message yet, or it has no text)               │
+│                                       │                                                                              │
+│ yesterday                             │                                                                              │
+│   Lecturer                      󰁦 tue │                                                                              │
+│    Society minutes             oxford │                                                                              │
+│   Lecturer                      󰁦 tue │                                                                              │
+│    Broken file                 oxford │                                                                              │
+│ ● Lecturer                      󰁦 tue │                                                                              │
+│    B4 problem sheet 3          oxford │                                                                              │
+│ ● Jane Doe                        tue │                                                                              │
+│    Lab partner for Thursday?   oxford │                                                                              │
+│ ● Prof Smith (2)                  tue │                                                                              │
+│    Cancelled: Project meeting  oxford │                                                                              │
+│                                       │                                                                              │
+│ monday                                │                                                                              │
+│   Jane Doe (2)                    mon │                                                                              │
+│    Re: Group project plan      oxford │                                                                              │
+│   Department Office               mon │                                                                              │
+│    Coursework submission port… oxford │                                                                              │
+│                                       │                                                                              │
+│ sunday                                │                                                                              │
+│   Stranger                        sun │                                                                              │
+│    Urgent request              oxford │                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ⏎ open · r reply · d done · m file · b list · ? keys

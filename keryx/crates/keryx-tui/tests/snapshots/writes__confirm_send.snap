@@ -1,9 +1,8 @@
 ---
-source: crates/keryx-tui/tests/writes.rs
-assertion_line: 456
+source: keryx/crates/keryx-tui/tests/writes.rs
 expression: "render_to_string(&mut a, 80, 20)"
 ---
-╭─────────────────────────────────── Send? ────────────────────────────────────╮
+╭ Send? ───────────────────────────────────────────────────────────────────────╮
 │ From     Oxford · newc7370@ox.ac.uk                                          │
 │ To       Jane Doe <jane.doe@example.com>                                     │
 │ Subject  Re: Lab partner for Thursday?                                       │
@@ -22,3 +21,4 @@ expression: "render_to_string(&mut a, 80, 20)"
 │                                                                              │
 │                                                                              │
 ╰───────────────────────────── y send (10 s to cancel) · e edit · n don't send ╯
+ ⏎ open · r reply · d done · m file · b list · ? keys

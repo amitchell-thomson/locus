@@ -9,7 +9,6 @@ use keryx_core::config::Config;
 use keryx_core::invite::{self, Invite};
 use keryx_core::mime;
 use keryx_core::model::Message;
-use keryx_store::api::ReviewView;
 use keryx_store::client::Daemon;
 use keryx_store::db::Db;
 use keryx_store::mailapp;
@@ -49,33 +48,8 @@ pub enum Mode {
     Snooze(Option<String>),
     /// File-into-key picker.
     File,
-    /// `A`: what's waiting for Alec (cleanup reviews).
-    Approvals {
-        sel: usize,
-    },
-    /// Deciding a cleanup review's proposals.
-    Review {
-        id: String,
-        sel: usize,
-    },
-    /// Choosing a different action for a proposal.
-    ReviewChange {
-        id: String,
-        sel: usize,
-    },
-    /// `Y`: confirm accepting a whole group.
-    ConfirmGroup {
-        id: String,
-        sel: usize,
-        group: String,
-        count: usize,
-    },
     /// Alec's composed message: `y` sends (after the hold), `e` edits, `n` drops.
     ConfirmSend(Box<crate::send::SendDraft>),
-    /// One of Claude's drafts: `y` approve · `n` reject · `e` edit.
-    ApproveSend {
-        id: String,
-    },
     /// `L`: how unsubscribing will happen; `y` to go ahead.
     ConfirmUnsubscribe {
         r#ref: String,
@@ -150,11 +124,7 @@ pub struct App {
     pub marked: BTreeSet<String>,
     /// Changes queued for keryxd (run after the frame is drawn).
     pub deferred: Vec<Job>,
-    /// The review being decided (read from the mirror).
-    pub review: Option<ReviewView>,
-    /// Proposals marked with `x` in the review.
-    pub review_marked: BTreeSet<String>,
-    /// Where Esc returns from a thread opened elsewhere (the review).
+    /// Where Esc returns from a thread opened elsewhere (a run's detail).
     pub back: Option<Mode>,
     /// Open proposals waiting for Alec (status bar).
     pub open_proposals: usize,
@@ -164,6 +134,16 @@ pub struct App {
     pub editor_request: Option<crate::send::EditorRequest>,
     /// A send in its hold: (changeset id, sends at).
     pub hold: Option<(String, i64)>,
+    /// `b`: the list hidden, the message taking the width.
+    pub list_hidden: bool,
+    /// Mail newer than this (Unix seconds) is new since you last looked: when you last pressed
+    /// a key before a break of half an hour or more (kept across restarts).
+    pub seen_since: Option<i64>,
+    /// When you last pressed a key (Unix seconds).
+    pub last_key: i64,
+    /// Where `last_key` is kept: set only by [`App::load_seen`], so an App made in a test never
+    /// writes your real file (a fixture "now" once moved your marker back twelve days).
+    pub seen_file: Option<PathBuf>,
     /// Live kairos task states, by task id (fetched when a thread opens).
     pub task_status: std::collections::HashMap<String, keryx_store::api::TaskStatus>,
 }
@@ -195,17 +175,60 @@ impl App {
             daemon: None,
             marked: BTreeSet::new(),
             deferred: Vec::new(),
-            review: None,
-            review_marked: BTreeSet::new(),
             back: None,
             open_proposals: 0,
             pending_sends: 0,
             editor_request: None,
             hold: None,
             task_status: std::collections::HashMap::new(),
+            list_hidden: false,
+            seen_since: None,
+            last_key: 0,
+            seen_file: None,
         };
         app.reload();
         app
+    }
+
+    /// Threads in the list that came since you last looked.
+    pub fn new_count(&self) -> usize {
+        match self.seen_since {
+            Some(s) => self.rows.iter().filter(|r| r.date > s).count(),
+            None => 0,
+        }
+    }
+
+    /// Where the time you last looked is kept (locus's state directory).
+    fn seen_path() -> Option<PathBuf> {
+        locus_contract::link::state_dir().map(|d| d.join("keryx-seen"))
+    }
+
+    /// Read when you last looked (the TUI's start).
+    pub fn load_seen(&mut self) {
+        self.seen_file = Self::seen_path();
+        if let Some(t) = self
+            .seen_file
+            .as_ref()
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .and_then(|s| s.trim().parse::<i64>().ok())
+        {
+            self.seen_since = Some(t);
+            self.last_key = t;
+        }
+    }
+
+    /// A key: after a break of 30 minutes or more, what you last saw moves up to then.
+    fn note_key(&mut self) {
+        let now = self.now.timestamp();
+        if self.last_key > 0 && now - self.last_key >= 30 * 60 {
+            self.seen_since = Some(self.last_key);
+        }
+        let write = now - self.last_key >= 60;
+        self.last_key = now;
+        if write && let Some(p) = &self.seen_file {
+            let _ = std::fs::create_dir_all(p.parent().unwrap_or(std::path::Path::new(".")));
+            let _ = std::fs::write(p, now.to_string());
+        }
     }
 
     pub fn split(&self) -> bool {
@@ -324,13 +347,7 @@ impl App {
 
     /// The thread shown in the reading pane (list or review selection), cached.
     pub fn ensure_preview(&mut self) {
-        let target = match &self.mode {
-            Mode::Review { sel, .. } | Mode::ReviewChange { sel, .. } | Mode::ConfirmGroup { sel, .. } => self
-                .review_selected(*sel)
-                .and_then(|i| self.review.as_ref().map(|v| v.items[i].r#ref.clone()))
-                .and_then(|r| keryx_core::model::parse_thread_ref(&r).map(|(a, t)| (a.to_string(), t.to_string()))),
-            _ => self.selected().map(|r| (r.account.clone(), r.thread_id.clone())),
-        };
+        let target = self.selected().map(|r| (r.account.clone(), r.thread_id.clone()));
         let Some((a, t)) = target else {
             self.preview = None;
             return;
@@ -357,6 +374,7 @@ impl App {
     }
 
     pub fn key(&mut self, k: Key) {
+        self.note_key();
         if self.message.is_some() && !matches!(self.mode, Mode::Search(_)) {
             self.message = None;
         }
@@ -369,12 +387,7 @@ impl App {
             Mode::List => self.list_key(k),
             Mode::Snooze(input) => self.snooze_key(k, input),
             Mode::File => self.file_key(k),
-            Mode::Approvals { sel } => self.approvals_key(k, sel),
-            Mode::Review { id, sel } => self.review_key(k, id, sel),
-            Mode::ReviewChange { id, sel } => self.review_change_key(k, id, sel),
-            Mode::ConfirmGroup { id, sel, group, .. } => self.confirm_group_key(k, id, sel, group),
             Mode::ConfirmSend(d) => self.confirm_send_key(k, *d),
-            Mode::ApproveSend { id } => self.approve_send_key(k, id),
             Mode::ConfirmUnsubscribe { r#ref, .. } => self.confirm_unsubscribe_key(k, r#ref),
             Mode::KairosForm(f) => self.form_key(k, *f),
             Mode::Runs { sel } => self.runs_key(k, sel),
@@ -399,6 +412,7 @@ impl App {
             Key::Char('g') => self.mode = Mode::GoTo,
             Key::Char('/') => self.mode = Mode::Search(self.search.clone().unwrap_or_default()),
             Key::Char('?') => self.mode = Mode::Help,
+            Key::Char('b') => self.list_hidden = !self.list_hidden,
             Key::Esc if !self.marked.is_empty() => self.marked.clear(),
             Key::Esc if self.search.is_some() => {
                 self.search = None;
@@ -471,6 +485,7 @@ impl App {
             Key::PageDown | Key::Char(' ') | Key::Ctrl('d') => open.scroll = open.scroll.saturating_add(15),
             Key::PageUp | Key::Ctrl('u') => open.scroll = open.scroll.saturating_sub(15),
             Key::Char('g') => open.scroll = 0,
+            Key::Char('b') => self.list_hidden = !self.list_hidden,
             Key::Char('z') => {
                 open.show_quotes = !open.show_quotes;
                 open.expand_all = open.show_quotes;
@@ -634,9 +649,6 @@ impl App {
                 )
             }
             Mode::List => "d archive · m file · r reply · t task · x mark · ? help".into(),
-            Mode::Review { .. } => {
-                "y accept · n decline · c change · x mark · Y accept group · Enter read · u undo".into()
-            }
             Mode::Search(_) => "Enter keep · Esc clear · ↑↓ move".into(),
             _ => String::new(),
         }

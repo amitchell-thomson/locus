@@ -1,54 +1,17 @@
-//! Theme: Catppuccin Mocha, transparent background (Color::Reset), rounded
-//! borders, blue focus / mauve popups, ` · ` separators, `…` truncation.
-//! Copied from kairos-tui `ui.rs` (shared-crate candidate: TUI kit, SPEC §11).
+//! The look, from locus-theme (keryx-joins-locus X2: one theme crate for every app): the
+//! palette, `fit`, frames and popups are locus's; what is left here are text helpers (`pad`,
+//! `wrap`) and the selection fill.
 
 use keryx_core::colour::Rgb;
-use ratatui::layout::{Alignment, Rect};
+use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders};
+use ratatui::widgets::Block;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-pub fn c(name: &str) -> Color {
-    rgb(Rgb::mocha(name))
-}
+pub use locus_theme::{c, fade, fit};
 
 pub fn rgb(r: Rgb) -> Color {
     Color::Rgb(r.0, r.1, r.2)
-}
-
-/// Blend a colour towards the Mocha base (0 = unchanged, 1 = base).
-pub fn fade(col: Color, t: f32) -> Color {
-    let Rgb(br, bg, bb) = Rgb::mocha("base");
-    match col {
-        Color::Rgb(r, g, b) => {
-            let m = |a: u8, z: u8| (f32::from(a) + (f32::from(z) - f32::from(a)) * t).round() as u8;
-            Color::Rgb(m(r, br), m(g, bg), m(b, bb))
-        }
-        c => c,
-    }
-}
-
-/// Truncate to `w` columns with `…`.
-pub fn fit(s: &str, w: usize) -> String {
-    if s.width() <= w {
-        return s.to_string();
-    }
-    if w == 0 {
-        return String::new();
-    }
-    let mut out = String::new();
-    let mut used = 0;
-    for ch in s.chars() {
-        let cw = ch.width().unwrap_or(0);
-        if used + cw + 1 > w {
-            break;
-        }
-        out.push(ch);
-        used += cw;
-    }
-    out.push('…');
-    out
 }
 
 /// Pad (or truncate) to exactly `w` columns.
@@ -108,32 +71,14 @@ pub fn selected_style(col: Color) -> Style {
         .add_modifier(Modifier::BOLD)
 }
 
-pub fn panel(title: &str, focus: bool) -> Block<'static> {
-    Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(if focus { c("blue") } else { c("overlay0") }))
-        .title(
-            Line::from(Span::styled(
-                format!(" {title} "),
-                Style::default().fg(c("blue")).add_modifier(Modifier::BOLD),
-            ))
-            .alignment(Alignment::Center),
-        )
+/// A pane: locus's grey screen frame with its title on the left (the frame is never blue: the
+/// selection says where you are).
+pub fn panel(title: &str, _focus: bool) -> Block<'static> {
+    locus_theme::screen(locus_theme::title(title, ""), None)
 }
 
 pub fn popup_block(title: &str) -> Block<'static> {
-    Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(c("mauve")))
-        .title(
-            Line::from(Span::styled(
-                format!(" {title} "),
-                Style::default().fg(c("mauve")).add_modifier(Modifier::BOLD),
-            ))
-            .alignment(Alignment::Center),
-        )
+    locus_theme::popup(title)
 }
 
 pub fn centred(area: Rect, w: u16, h: u16) -> Rect {

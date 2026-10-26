@@ -112,6 +112,7 @@ pub fn run_at(cfg: Config, thread: Option<(String, String)>) -> Result<(), Strin
     }
     let db = Db::open_readonly(&path).map_err(|e| e.to_string())?;
     let mut app = App::new(cfg.clone(), db, now(&cfg));
+    app.load_seen();
     app.daemon = keryx_store::client::Client::from_config(&cfg)
         .ok()
         .map(|c| Box::new(c.interactive(true)) as Box<dyn keryx_store::client::Daemon>);

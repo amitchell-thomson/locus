@@ -1,15 +1,15 @@
 ---
-source: crates/keryx-tui/tests/writes.rs
+source: keryx/crates/keryx-tui/tests/writes.rs
 expression: s
 ---
-╭──────────────────────────── Inbox · All accounts ────────────────────────────╮
-│ Oxford   Trains         Your e-ticket: Oxford to London, Fri 23 Oct    08:30 │
-│ Personal Trains         Your e-ticket: Oxford to London, Fri 23 Oct    08:30 │
-│ Oxford   Lecturer       Society minutes · Please see the attached … 󰁦    Tue │
-│ Oxford   Lecturer       Broken file · Please see the attached file. 󰁦    Tue │
-│ Oxford   Lecturer       B4 problem sheet 3 · Please see the attach… 󰁦    Tue │
-│ Oxford   Jane Doe       Lab partner for Thursday? · Hi Alec, Are you…    Tue │
-│ Oxford   Prof Smith (2) Cancelled: Project meeting                       Tue │
+╭ mail  all · personal · oxford · oqts · oqts shared ──────────────────────────╮
+│ today                                                                        │
+│ ● Trains                                                               08:30 │
+│    Your e-ticket: Oxford to London, Fri 23 Oct                        oxford │
+│ ● Trains                                                               08:30 │
+│    Your e-ticket: Oxford to London, Fri 23 Oct                      personal │
+│                                                                              │
+│ yesterday                                                                    │
 │ ╭────────────────────────────── kairos task ───────────────────────────────╮ │
 │ │                                                                          │ │
 │ │    Title  Lab partner for Thursday?                                      │ │
@@ -24,10 +24,11 @@ expression: s
 │ │                                                                          │ │
 │ │  Tab next · ⇧Tab back · Enter save · Esc cancel                          │ │
 │ ╰──────────────────────────────────────────────────────────────────────────╯ │
-│ Oxford   Ann            Hello · Hello from Ann.                        5 Oct │
+│   Department Office                                                      mon │
+│    Coursework submission portal                                       oxford │
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
+│ sunday                                                                       │
+│   Stranger                                                               sun │
+│    Urgent request                                                     oxford │
 ╰──────────────────────────────────────────────────────────────────────────────╯
+ ⏎ open · r reply · d done · m file · b list · ? keys

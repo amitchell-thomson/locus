@@ -5,8 +5,7 @@
 
 use crate::app::{App, Key, Mode};
 use chrono::{Datelike, Duration, NaiveTime, TimeZone, Weekday};
-use keryx_store::api::{Decision, Intent, ReviewView, TriageReq, UnsubscribeOutcome};
-use keryx_store::state::{self, Action, Keep, ProposalStatus};
+use keryx_store::api::{Decision, Intent, TriageReq, UnsubscribeOutcome};
 
 /// Work for keryxd, run after the key is drawn (so "archiving…" shows).
 #[derive(Debug, Clone, PartialEq)]
@@ -56,39 +55,6 @@ fn sent_message(c: &keryx_core::changeset::Changeset) -> String {
         keryx_core::changeset::Status::Pending => "draft waiting for approval".into(),
         s => s.as_str().into(),
     }
-}
-
-/// A line of the review screen.
-#[derive(Debug, Clone, PartialEq)]
-pub enum ReviewLine {
-    Header { group: String, open: usize, total: usize },
-    Item(usize),
-}
-
-/// Group order: largest group first, then by name; items keep their order.
-pub fn review_lines(v: &ReviewView) -> Vec<ReviewLine> {
-    let mut groups: Vec<(String, Vec<usize>)> = Vec::new();
-    for (i, it) in v.items.iter().enumerate() {
-        match groups.iter_mut().find(|(g, _)| *g == it.group) {
-            Some((_, v)) => v.push(i),
-            None => groups.push((it.group.clone(), vec![i])),
-        }
-    }
-    groups.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then(a.0.cmp(&b.0)));
-    let mut out = Vec::new();
-    for (g, items) in groups {
-        let open = items
-            .iter()
-            .filter(|&&i| v.items[i].proposal.status == ProposalStatus::Open)
-            .count();
-        out.push(ReviewLine::Header {
-            group: g,
-            open,
-            total: items.len(),
-        });
-        out.extend(items.into_iter().map(ReviewLine::Item));
-    }
-    out
 }
 
 /// Snooze presets: (label, unix time).
@@ -215,7 +181,8 @@ impl App {
                 self.deferred.push(Job::UndoLast);
                 self.message = Some(("undoing…".into(), false));
             }
-            Key::Char('x') if self.mode == Mode::List => {
+            // v marks (as in visual mode): x removes elsewhere in locus (keryx-joins-locus X-e).
+            Key::Char('v') if self.mode == Mode::List => {
                 if let Some(r) = self.selected().map(|r| r.r#ref.clone()) {
                     if !self.marked.remove(&r) {
                         self.marked.insert(r);
@@ -229,7 +196,8 @@ impl App {
                     self.deferred.push(if tagged { Job::Untag(r) } else { Job::Tag(r) });
                 }
             }
-            Key::Char('A') => self.mode = Mode::Approvals { sel: 0 },
+            // One approve place (keryx-joins-locus X2): drafts and cleanups wait in locus's Approve.
+            Key::Char('A') => self.open_locus_approve(),
             Key::Ctrl('r') => {
                 self.deferred.push(Job::Sync);
                 self.message = Some(("syncing…".into(), false));
@@ -302,223 +270,20 @@ impl App {
         }
     }
 
-    // ---------------- approvals and reviews ----------------
-
-    /// Open reviews: (id, title, open proposals, total).
-    pub fn open_reviews(&self) -> Vec<(String, String, usize, usize)> {
-        self.db
-            .reviews(Some("open"))
-            .unwrap_or_default()
-            .into_iter()
-            .map(|r| {
-                let ps = self.db.proposals(&r.id).unwrap_or_default();
-                let open = ps.iter().filter(|p| p.status == ProposalStatus::Open).count();
-                (r.id, r.title, open, ps.len())
-            })
-            .collect()
-    }
-
-    pub fn approvals_key(&mut self, k: Key, sel: usize) {
-        let sends = self.pending_sends();
-        if k == Key::Enter
-            && let Some(cs) = sends.get(sel)
-        {
-            self.mode = Mode::ApproveSend { id: cs.id.clone() };
-            return;
-        }
-        let sel_review = sel.saturating_sub(sends.len());
-        let list = self.open_reviews();
-        let total = sends.len() + list.len();
-        match k {
-            Key::Esc | Key::Char('q') | Key::Char('A') => self.mode = Mode::List,
-            Key::Char('j') | Key::Down => {
-                self.mode = Mode::Approvals {
-                    sel: (sel + 1).min(total.saturating_sub(1)),
-                }
-            }
-            Key::Char('k') | Key::Up => {
-                self.mode = Mode::Approvals {
-                    sel: sel.saturating_sub(1),
-                }
-            }
-            Key::Enter => {
-                if let Some((id, ..)) = list.get(sel_review) {
-                    self.load_review(id);
-                    let first = self.first_open_item();
-                    self.mode = Mode::Review {
-                        id: id.clone(),
-                        sel: first,
-                    };
-                }
-            }
-            _ => {}
-        }
-    }
-
-    pub fn load_review(&mut self, id: &str) {
-        self.review = state::review_view(&self.db, id).ok().flatten();
-    }
-
-    /// Item indices in screen order.
-    pub fn review_items(&self) -> Vec<usize> {
-        self.review
-            .as_ref()
-            .map(|v| {
-                review_lines(v)
-                    .into_iter()
-                    .filter_map(|l| match l {
-                        ReviewLine::Item(i) => Some(i),
-                        _ => None,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-
-    fn first_open_item(&self) -> usize {
-        let Some(v) = &self.review else { return 0 };
-        self.review_items()
-            .iter()
-            .position(|&i| v.items[i].proposal.status == ProposalStatus::Open)
-            .unwrap_or(0)
-    }
-
-    /// The selected item (index into `review.items`).
-    pub fn review_selected(&self, sel: usize) -> Option<usize> {
-        self.review_items().get(sel).copied()
-    }
-
-    /// Proposals the keys act on: marked ones, else the selection.
-    fn review_targets(&self, sel: usize) -> Vec<String> {
-        let Some(v) = &self.review else { return vec![] };
-        if !self.review_marked.is_empty() {
-            return self.review_marked.iter().cloned().collect();
-        }
-        self.review_selected(sel)
-            .map(|i| vec![v.items[i].proposal.id.clone()])
-            .unwrap_or_default()
-    }
-
-    fn decide(&mut self, sel: usize, d: Decision) {
-        for p in self.review_targets(sel) {
-            self.deferred.push(Job::Decide {
-                proposal: p,
-                decision: d.clone(),
-            });
-        }
-        self.review_marked.clear();
-    }
-
-    pub fn review_key(&mut self, k: Key, id: String, sel: usize) {
-        let n = self.review_items().len();
-        let next = (sel + 1).min(n.saturating_sub(1));
-        match k {
-            Key::Esc | Key::Char('q') => {
-                self.review = None;
-                self.review_marked.clear();
-                self.mode = Mode::Approvals { sel: 0 };
-            }
-            Key::Char('j') | Key::Down => self.mode = Mode::Review { id, sel: next },
-            Key::Char('k') | Key::Up => {
-                self.mode = Mode::Review {
-                    id,
-                    sel: sel.saturating_sub(1),
-                }
-            }
-            Key::Char('y') => {
-                self.decide(sel, Decision::Accept);
-                self.mode = Mode::Review { id, sel: next };
-            }
-            Key::Char('n') => {
-                self.decide(sel, Decision::Decline);
-                self.mode = Mode::Review { id, sel: next };
-            }
-            Key::Char('c') => self.mode = Mode::ReviewChange { id, sel },
-            Key::Char('x') => {
-                if let Some(i) = self.review_selected(sel)
-                    && let Some(v) = &self.review
-                {
-                    let p = v.items[i].proposal.id.clone();
-                    if !self.review_marked.remove(&p) {
-                        self.review_marked.insert(p);
-                    }
-                }
-                self.mode = Mode::Review { id, sel: next };
-            }
-            Key::Char('Y') => {
-                let Some(v) = &self.review else { return };
-                let Some(i) = self.review_selected(sel) else { return };
-                let group = v.items[i].group.clone();
-                let count = v
-                    .items
-                    .iter()
-                    .filter(|it| it.group == group && it.proposal.status == ProposalStatus::Open && !it.stale)
-                    .count();
-                if count > 0 {
-                    self.mode = Mode::ConfirmGroup { id, sel, group, count };
-                }
-            }
-            Key::Enter => {
-                let Some(v) = &self.review else { return };
-                let Some(i) = self.review_selected(sel) else { return };
-                let it = &v.items[i];
-                if let Some((a, t)) = keryx_core::model::parse_thread_ref(&it.r#ref) {
-                    // Reading from the review never marks the thread read.
-                    self.open = self.load_thread(a, t);
-                    if self.open.is_some() {
-                        self.back = Some(Mode::Review { id, sel });
-                        self.mode = Mode::Thread;
-                    }
-                }
-            }
-            Key::Char('u') => {
-                self.deferred.push(Job::UndoLast);
-                self.message = Some(("undoing the last decision…".into(), false));
-            }
-            _ => {}
-        }
-    }
-
-    pub fn review_change_key(&mut self, k: Key, id: String, sel: usize) {
-        let action = match k {
-            Key::Char('a') => Some(Action::Archive),
-            Key::Char('k') => Some(Action::Keep {
-                why: Keep::Action,
-                needs_reply: false,
-            }),
-            Key::Char('s') if self.cfg.snooze.enabled => {
-                snooze_presets(self).get(1).map(|(_, t)| Action::Snooze { until: *t })
-            }
-            Key::Char(c) if c.is_ascii_digit() && c != '0' => self
-                .cfg
-                .keys
-                .get(c as usize - '1' as usize)
-                .map(|k| Action::File { key: k.name.clone() }),
-            _ => None,
-        };
-        if let Some(a) = action {
-            self.decide(sel, Decision::Change(a));
-            let n = self.review_items().len();
-            self.mode = Mode::Review {
-                id,
-                sel: (sel + 1).min(n.saturating_sub(1)),
-            };
+    /// `A`: locus's Approve, in the locus window.
+    pub fn open_locus_approve(&mut self) {
+        let shown = locus_contract::link::OpenFile::locus().write("approve").is_ok()
+            && locus_contract::link::switch_to("locus");
+        self.message = Some(if shown {
+            ("opened approve in locus".into(), false)
         } else {
-            self.mode = Mode::Review { id, sel };
-        }
+            (
+                "drafts and cleanups wait in locus's Approve (Alt-1, then a)".into(),
+                false,
+            )
+        });
     }
 
-    pub fn confirm_group_key(&mut self, k: Key, id: String, sel: usize, group: String) {
-        if matches!(k, Key::Char('y') | Key::Enter) {
-            self.deferred.push(Job::AcceptGroup {
-                review: id.clone(),
-                group,
-            });
-        }
-        self.mode = Mode::Review { id, sel };
-    }
-
-    /// Run queued work against keryxd, then re-read the mirror.
     pub fn run_deferred(&mut self) {
         let jobs = std::mem::take(&mut self.deferred);
         if jobs.is_empty() {
@@ -670,9 +435,5 @@ impl App {
         }
         self.refresh_hold();
         self.reload();
-        if let Mode::Review { id, .. } = &self.mode {
-            let id = id.clone();
-            self.load_review(&id);
-        }
     }
 }

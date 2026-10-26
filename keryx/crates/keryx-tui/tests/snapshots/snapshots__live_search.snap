@@ -1,16 +1,16 @@
 ---
-source: crates/keryx-tui/tests/snapshots.rs
+source: keryx/crates/keryx-tui/tests/snapshots.rs
 expression: "render_to_string(&mut a, 80, 12)"
 ---
-╭────────────────────── Search: from:jane · All accounts ──────────────────────╮
-│ Oxford   Jane Doe       Lab partner for Thursday? · Hi Alec, Are you…    Tue │
-│ Oxford   Jane Doe (2)   Re: Group project plan · I'll take part two.…    Mon │
-│ Oxford   Jane Doe       Fwd: Room booking · See below. ---------- Fo…  6 Oct │
+╭ mail · search: from:jane  all · personal · oxford · oqts · oqts shared ──────╮
+│ yesterday                                                                    │
+│ ● Jane Doe                                                               tue │
+│    Lab partner for Thursday?                                          oxford │
 │                                                                              │
+│ monday                                                                       │
+│   Jane Doe (2)                                                           mon │
+│    Re: Group project plan                                             oxford │
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-╰──────────────────────────────────────────── Enter keep · Esc clear · ↑↓ move ╯
- search  from:jane█  3 threads
+│ 6 oct                                                                        │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ search: from:jane█   ⏎ keep · esc clear · ↑ ↓ move

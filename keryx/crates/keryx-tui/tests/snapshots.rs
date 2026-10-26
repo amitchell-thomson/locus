@@ -138,7 +138,7 @@ fn live_search() {
     insta::assert_snapshot!(render_to_string(&mut a, 80, 12));
     // An incomplete query keeps results and shows the problem.
     type_str(&mut a, " \"unclosed");
-    let s = render_to_string(&mut a, 80, 12);
+    let s = render_to_string(&mut a, 80, 14);
     assert!(s.contains("unclosed quote"), "{s}");
     keys(&mut a, &[Key::Esc]);
     assert!(a.search.is_none());
@@ -160,9 +160,9 @@ fn goto_and_help_popups() {
     insta::assert_snapshot!("goto", render_to_string(&mut a, 80, 20));
     keys(&mut a, &[Key::Char('1')]);
     assert_eq!(a.view, keryx_store::view::View::Key("Admin".into()));
-    let admin = render_to_string(&mut a, 80, 6);
+    let admin = render_to_string(&mut a, 80, 10);
     assert!(
-        admin.contains("Your appointment is confirmed · Your appoint"),
+        admin.contains("Your appointment is confirmed") && !admin.lines().skip(1).any(|l| l.contains("admin")),
         "no redundant key tag: {admin}"
     );
     assert!(
@@ -180,7 +180,7 @@ fn account_filter_cycles() {
     assert_eq!(a.account_label(), "Personal");
     assert!(a.rows.iter().all(|r| r.account == "personal"));
     let s = render_to_string(&mut a, 80, 10);
-    assert!(s.contains("Inbox · Personal"), "{s}");
+    assert!(s.contains("all · personal · oxford"), "every inbox is a tab: {s}");
     keys(&mut a, &[Key::BackTab]);
     assert_eq!(a.account_label(), "All accounts");
 }
@@ -192,8 +192,8 @@ fn stale_sync_is_the_only_status() {
     let state = a.db.sync_state("personal").unwrap().unwrap().0;
     a.db.set_sync_state("personal", &state, now - 14 * 60).unwrap();
     a.reload();
-    let s = render_to_string(&mut a, 80, 6);
-    assert!(s.contains("Personal last synced 14 min ago"), "{s}");
+    let s = render_to_string(&mut a, 120, 6);
+    assert!(s.contains("personal last synced 14 min ago"), "{s}");
 }
 
 #[test]
@@ -202,5 +202,26 @@ fn empty_views_say_so() {
     keys(&mut a, &[Key::Char('/')]);
     type_str(&mut a, "\"no such words\"");
     keys(&mut a, &[Key::Enter]);
-    assert!(render_to_string(&mut a, 60, 8).contains("No matches."));
+    assert!(render_to_string(&mut a, 60, 8).contains("nothing matches"));
+}
+
+#[test]
+fn new_since_you_last_looked_is_a_rule_and_a_count() {
+    let mut a = app();
+    let since = a.rows[2].date;
+    a.seen_since = Some(since);
+    assert_eq!(a.new_count(), 2);
+    let s = render_to_string(&mut a, 80, 14);
+    let lines: Vec<&str> = s.lines().collect();
+    let rule = lines.iter().position(|l| l.contains("new since")).expect("a rule");
+    let older = lines
+        .iter()
+        .position(|l| l.contains(&a.rows[2].subject))
+        .unwrap_or_else(|| panic!("{} not in {s}", a.rows[2].subject));
+    assert!(rule < older, "the rule sits above what you had seen: {s}");
+    assert!(s.contains("2 new"), "{s}");
+    // A key after half an hour away moves the marker to when you last pressed one.
+    a.last_key = a.now.timestamp() - 31 * 60;
+    keys(&mut a, &[Key::Down]);
+    assert_eq!(a.seen_since, Some(a.now.timestamp() - 31 * 60));
 }

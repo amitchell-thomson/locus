@@ -149,7 +149,7 @@ impl App {
                     }
                 }
             }
-            Key::Char('c') => {
+            Key::Char('+') => {
                 let account = match self.account {
                     0 => self
                         .selected()
@@ -276,45 +276,6 @@ impl App {
             .collect()
     }
 
-    pub fn approve_send_key(&mut self, k: Key, id: String) {
-        let Some(cs) = self.db.changeset(&id).ok().flatten() else {
-            self.mode = Mode::Approvals { sel: 0 };
-            return;
-        };
-        match k {
-            Key::Char('y') => {
-                self.deferred.push(Job::Approve(id));
-                self.mode = Mode::Approvals { sel: 0 };
-            }
-            Key::Char('n') => {
-                self.deferred.push(Job::Reject(id));
-                self.mode = Mode::Approvals { sel: 0 };
-            }
-            Key::Char('e') => {
-                if let Some(o) = cs.outgoing() {
-                    let mut text = compose::file(&o.to, &o.cc, &o.subject, None, "");
-                    // The draft's body goes where Alec types.
-                    text = text.replacen("\n\n\n", &format!("\n\n{}\n", o.body), 1);
-                    self.editor_request = Some(EditorRequest {
-                        text,
-                        purpose: Purpose::EditDraft {
-                            id,
-                            account: o.account.clone(),
-                            thread: o
-                                .thread_id
-                                .as_ref()
-                                .map(|t| keryx_core::model::thread_ref(&o.account, t)),
-                        },
-                    });
-                    self.mode = Mode::Approvals { sel: 0 };
-                }
-            }
-            Key::Esc | Key::Char('q') => self.mode = Mode::Approvals { sel: 0 },
-            _ => {}
-        }
-    }
-
-    /// `L`: work out how, and ask first.
     pub fn unsubscribe_key(&mut self) {
         let Some((r, msgs)) = self.compose_thread() else { return };
         let how = msgs.iter().rev().find_map(|m| unsubscribe::parse(&m.list_headers));

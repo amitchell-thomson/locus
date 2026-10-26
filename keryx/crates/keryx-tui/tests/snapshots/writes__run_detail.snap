@@ -1,8 +1,8 @@
 ---
-source: crates/keryx-tui/tests/writes.rs
+source: keryx/crates/keryx-tui/tests/writes.rs
 expression: s
 ---
-╭───────────────────────── morning run · Wed 14 Oct 2026, 08:00 ─────────────────────────╮
+╭ morning run · Wed 14 Oct 2026, 08:00 ──────────────────────────────────────────────────╮
 │ done 1 cleared · 1 need reply                                                          │
 │ Jane asked about the lab; tagged.                                                      │
 │                                                                                        │
@@ -13,3 +13,4 @@ expression: s
 │                                                                                        │
 │                                                                                        │
 ╰────────────────── Enter open · u undo a cleared thread · A drafts & reviews · Esc back ╯
+ ⏎ open · r reply · d done · m file · b list · ? keys

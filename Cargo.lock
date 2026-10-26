@@ -1969,6 +1969,8 @@ dependencies = [
  "insta",
  "keryx-core",
  "keryx-store",
+ "locus-contract",
+ "locus-theme",
  "ratatui",
  "serde_json",
  "unicode-width",

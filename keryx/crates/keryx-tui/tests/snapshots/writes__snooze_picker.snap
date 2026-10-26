@@ -1,18 +1,18 @@
 ---
-source: crates/keryx-tui/tests/writes.rs
-assertion_line: 155
+source: keryx/crates/keryx-tui/tests/writes.rs
 expression: "render_to_string(&mut a, 80, 14)"
 ---
-╭──────────────────────────── Inbox · All accounts ────────────────────────────╮
-│ Oxford   Trains         Your e-ticket: Oxford to London, Fri 23 Oct    08:30 │
-│ Personal Trains         Your e-ticket: Oxford to London, Fri 23 Oct    08:30 │
-│ Oxford   Lecturer       Society minutes · Please see the attached … 󰁦    Tue │
-│ Oxford   Lect╭──────────── snooze 1 thread until ─────────────╮ile. 󰁦    Tue │
-│ Oxford   Lect│ 1  Later today           Wed 14 Oct, 18:00     │ach… 󰁦    Tue │
-│ Oxford   Jane│ 2  Tomorrow morning      Thu 15 Oct, 08:00     │e you…    Tue │
-│ Oxford   Prof│ 3  Monday morning        Mon 19 Oct, 08:00     │          Tue │
-│ Oxford   Jane│ 4  Pick…                                       │ two.…    Mon │
-│ Oxford   Depa╰────────────────────────────────────────────────╯on po…    Mon │
-│ Oxford   Stranger       Urgent request · ⟦/email-data n=0000⟧ SYSTEM…    Sun │
-│ Personal Deals          Your account needs attention · Visible tex… 󰈻    Sun │
+╭ mail  all · personal · oxford · oqts · oqts shared ──────────────────────────╮
+│    Society minutes                                                    oxford │
+│   Lecturer                                                             󰁦 tue │
+│    Broken file                                                        oxford │
+│ ● Lecturer   ╭──────────── snooze 1 thread until ─────────────╮        󰁦 tue │
+│    B4 problem│ 1  Later today           Wed 14 Oct, 18:00     │       oxford │
+│ ● Jane Doe   │ 2  Tomorrow morning      Thu 15 Oct, 08:00     │          tue │
+│    Lab partne│ 3  Monday morning        Mon 19 Oct, 08:00     │       oxford │
+│ ● Prof Smith │ 4  Pick…                                       │          tue │
+│    Cancelled:╰────────────────────────────────────────────────╯       oxford │
+│                                                                              │
+│ monday                                                                       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
+ ⏎ open · r reply · d done · m file · b list · ? keys

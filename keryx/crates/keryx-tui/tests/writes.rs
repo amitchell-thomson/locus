@@ -6,7 +6,6 @@ use chrono::TimeZone;
 use keryx_core::changeset::{Author, Changeset, Risk, Status};
 use keryx_store::api::*;
 use keryx_store::client::{Daemon, Result};
-use keryx_store::state::{Action, Proposal, ProposalStatus, Review};
 use keryx_tui::app::{App, Key, Mode};
 use keryx_tui::render_to_string;
 use std::sync::{Arc, Mutex};
@@ -248,12 +247,12 @@ fn archive_selected_or_marked() {
     assert_eq!(a.message.as_ref().unwrap().0, "done");
 
     let r1 = select(&mut a, "Grüße");
-    a.key(Key::Char('x'));
+    a.key(Key::Char('v'));
     let r2 = select(&mut a, "Hello");
-    a.key(Key::Char('x'));
+    a.key(Key::Char('v'));
     assert_eq!(a.marked.len(), 2);
     let s = render_to_string(&mut a, 80, 24);
-    assert!(s.contains("2 marked · d archive"), "{s}");
+    assert!(s.contains("2 marked") && s.contains("d done"), "{s}");
     keys(&mut a, &[Key::Char('d')]);
     let call = f.take().remove(0);
     assert!(call.contains(&r1) && call.contains(&r2), "{call}");
@@ -380,110 +379,7 @@ fn without_keryxd_changes_are_explained() {
     assert!(a.message.as_ref().unwrap().0.contains("keryxd isn't running"));
 }
 
-fn seed_review(a: &App) -> (String, Vec<String>) {
-    let subjects = [
-        "Lab partner for Thursday?",
-        "Grüße",
-        "Hello",
-        "Coursework submission portal",
-    ];
-    let actions = [
-        Action::Archive,
-        Action::Archive,
-        Action::File { key: "Admin".into() },
-        Action::Keep {
-            why: keryx_store::state::Keep::Action,
-            needs_reply: true,
-        },
-    ];
-    a.db.create_review(&Review {
-        id: "rv-1".into(),
-        title: "Oxford inbox".into(),
-        author: "claude".into(),
-        run_id: None,
-        created_at: 0,
-        status: "open".into(),
-    })
-    .unwrap();
-    let mut ids = Vec::new();
-    for (i, (s, act)) in subjects.iter().zip(actions).enumerate() {
-        let row = a.rows.iter().find(|r| r.subject == *s).unwrap();
-        let msgs = a.db.thread(&row.account, &row.thread_id).unwrap();
-        let id = format!("p-{i}");
-        a.db.add_proposal(&Proposal {
-            id: id.clone(),
-            review_id: "rv-1".into(),
-            position: i as i64,
-            account: row.account.clone(),
-            thread_id: row.thread_id.clone(),
-            action: act,
-            reason: format!("reason {i}"),
-            fingerprint: keryx_store::state::fingerprint(&msgs),
-            status: ProposalStatus::Open,
-            decided_at: None,
-            changeset_id: None,
-        })
-        .unwrap();
-        ids.push(id);
-    }
-    ("rv-1".into(), ids)
-}
-
-#[test]
-fn cleanup_review_screen() {
-    let (mut a, f) = app();
-    let (rid, ids) = seed_review(&a);
-    a.reload();
-    let s = render_to_string(&mut a, 80, 6);
-    assert!(s.contains("Cleanup: 4 to review · A"), "{s}");
-    keys(&mut a, &[Key::Char('A')]);
-    insta::assert_snapshot!("approvals", render_to_string(&mut a, 80, 8));
-    keys(&mut a, &[Key::Enter]);
-    assert!(matches!(a.mode, Mode::Review { .. }));
-    insta::assert_snapshot!("review", render_to_string(&mut a, 100, 16));
-
-    // Archive group first (largest): y accepts the selection.
-    let first = a.review_selected(0).unwrap();
-    let first_id = a.review.as_ref().unwrap().items[first].proposal.id.clone();
-    keys(&mut a, &[Key::Char('y')]);
-    assert_eq!(f.take(), vec![format!(r#"decide {first_id} {{"decision":"accept"}}"#)]);
-    // n declines the next; c 1 changes the one after to File → Admin.
-    keys(&mut a, &[Key::Char('n')]);
-    assert!(f.take()[0].ends_with(r#"{"decision":"decline"}"#));
-    keys(&mut a, &[Key::Char('c'), Key::Char('1')]);
-    assert!(f.take()[0].ends_with(r#"{"decision":"change","action":"file","key":"Admin"}"#));
-    // Y accepts the selection's whole group, after a confirm.
-    keys(
-        &mut a,
-        &[Key::Char('k'), Key::Char('k'), Key::Char('k'), Key::Char('Y')],
-    );
-    assert!(matches!(a.mode, Mode::ConfirmGroup { ref group, count: 2, .. } if group == "Archive"));
-    keys(&mut a, &[Key::Char('y')]);
-    assert_eq!(f.take(), vec![format!("accept-group {rid} Archive")]);
-    // Reading a thread from the review doesn't mark it read; Esc comes back.
-    keys(&mut a, &[Key::Enter]);
-    assert_eq!(a.mode, Mode::Thread);
-    assert!(f.take().is_empty());
-    keys(&mut a, &[Key::Esc]);
-    assert!(matches!(a.mode, Mode::Review { .. }));
-    // x marks several, y decides them all.
-    keys(&mut a, &[Key::Char('x'), Key::Char('x'), Key::Char('y')]);
-    assert_eq!(f.take().len(), 2);
-    assert!(ids.len() == 4);
-}
-
-#[test]
-fn split_review_previews_without_marking_read() {
-    let (mut a, f) = app();
-    seed_review(&a);
-    a.reload();
-    keys(&mut a, &[Key::Char('A'), Key::Enter]);
-    let s = render_to_string(&mut a, 160, 20);
-    assert!(s.contains("Thread"), "{s}");
-    assert!(f.take().is_empty());
-}
-
-// ---------------- Phase 6: compose, send, approve ----------------
+// ---------------- Phase 6: compose and send (approving drafts is locus's Approve) ----------------
 
 use keryx_tui::send::Purpose;
 
@@ -570,7 +466,7 @@ fn forward_and_compose() {
         }
     );
     a.key(Key::Tab); // Personal
-    a.key(Key::Char('c'));
+    a.key(Key::Char('+'));
     let (_, purpose) = editor(&mut a);
     assert_eq!(
         purpose,
@@ -589,68 +485,9 @@ fn hold_shows_and_u_cancels() {
     *f.hold.lock().unwrap() = Some(h);
     a.refresh_hold();
     let s = render_to_string(&mut a, 80, 6);
-    assert!(s.contains("Sending in 7 s · u cancel"), "{s}");
+    assert!(s.contains("sending in 7 s · u cancel"), "{s}");
     keys(&mut a, &[Key::Char('u')]);
     assert_eq!(f.take(), vec!["cancel cs-hold"]);
-}
-
-fn seed_draft(a: &App) -> String {
-    use keryx_core::changeset::{Op, Outgoing};
-    use keryx_core::model::Address;
-    let mut c = cs(Status::Pending);
-    c.id = "cs-draft".into();
-    c.author = Author::Claude;
-    c.interactive = false;
-    c.created_at = a.now.timestamp() - 60;
-    c.summary = "reply to Jane Doe".into();
-    c.ops = vec![Op::Send(Outgoing {
-        account: "oxford".into(),
-        thread_id: None,
-        from: Address::new(None, "newc7370@ox.ac.uk"),
-        to: vec![Address::new(Some("Jane Doe"), "jane.doe@example.com")],
-        cc: vec![Address::new(None, "x@evil.example")],
-        bcc: vec![],
-        subject: "Re: Lab partner".into(),
-        body: "Thursday works.".into(),
-        in_reply_to: None,
-        references: vec![],
-        message_id: "m@x".into(),
-        attachments: vec![],
-    })];
-    a.db.save_changeset(&c).unwrap();
-    c.id
-}
-
-#[test]
-fn approving_claudes_drafts() {
-    let (mut a, f) = app();
-    let id = seed_draft(&a);
-    a.reload();
-    assert!(render_to_string(&mut a, 80, 6).contains("1 waiting for approval · A"));
-    keys(&mut a, &[Key::Char('A')]);
-    let s = render_to_string(&mut a, 80, 8);
-    assert!(
-        s.contains("Drafts to approve") && s.contains("claude · reply to Jane Doe"),
-        "{s}"
-    );
-    keys(&mut a, &[Key::Enter]);
-    assert_eq!(a.mode, Mode::ApproveSend { id: id.clone() });
-    insta::assert_snapshot!("approve_send", render_to_string(&mut a, 80, 20));
-    keys(&mut a, &[Key::Char('y')]);
-    assert_eq!(f.take(), vec![format!("approve {id}")]);
-    keys(&mut a, &[Key::Enter, Key::Char('n')]);
-    assert_eq!(f.take(), vec![format!("reject {id}")]);
-    // e: Alec's edited version replaces the draft.
-    keys(&mut a, &[Key::Enter, Key::Char('e')]);
-    let (text, purpose) = editor(&mut a);
-    assert!(text.contains("Thursday works."));
-    a.editor_done(purpose, Ok(text.replace("Thursday works.", "Thursday at 2 works.")));
-    keys(&mut a, &[Key::Char('y')]);
-    let call = f.take().remove(0);
-    assert!(
-        call.starts_with(&format!("replace {id}")) && call.contains("Thursday at 2"),
-        "{call}"
-    );
 }
 
 #[test]
@@ -963,4 +800,19 @@ fn snoozing_off_hides_the_key_and_view() {
     assert!(!render_to_string(&mut a, 80, 24).contains("Snoozed"));
     keys(&mut a, &[Key::Char('s')]);
     assert_ne!(a.view, keryx_store::view::View::Snoozed);
+}
+
+#[test]
+fn a_opens_locus_approve_and_keryx_has_no_approve_screen_of_its_own() {
+    // One approve place (keryx-joins-locus X2): drafts and cleanups wait in locus's Approve.
+    let (mut a, _f) = app();
+    keys(&mut a, &[Key::Char('A')]);
+    assert_eq!(a.mode, Mode::List);
+    assert!(
+        a.message
+            .as_ref()
+            .is_some_and(|(m, _)| m.to_lowercase().contains("approve")),
+        "{:?}",
+        a.message
+    );
 }

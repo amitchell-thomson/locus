@@ -10,11 +10,13 @@ publish.workspace = true
 keryx-core.workspace = true
 keryx-store.workspace = true
 eco-dates.workspace = true
+locus-contract.workspace = true
+locus-theme.workspace = true
 uuid.workspace = true
 chrono.workspace = true
 chrono-tz.workspace = true
-crossterm = "0.29"
-ratatui = "0.30"
+crossterm.workspace = true
+ratatui.workspace = true
 unicode-width.workspace = true
 serde_json.workspace = true
 

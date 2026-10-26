@@ -23,6 +23,8 @@ pub enum Key {
     Enter,
     Esc,
     Tab,
+    /// ⌥⇥: add the next inbox to the ones shown.
+    AltTab,
     BackTab,
     Backspace,
     Up,
@@ -146,6 +148,8 @@ pub struct App {
     pub shared: Option<locus_contract::taxonomy::Shared>,
     /// The highlighted row of the attachment list (`o`).
     pub att_sel: usize,
+    /// Inboxes added to the highlighted one with ⌥⇥.
+    pub also: BTreeSet<usize>,
     /// Threads opened in this session: shown as read whatever the mirror says yet.
     pub read_here: BTreeSet<String>,
     /// What each thread is marked for (`m`): (account, thread) → (kind, target).
@@ -202,6 +206,7 @@ impl App {
             writing: None,
             drafts_dir: None,
             att_sel: 0,
+            also: BTreeSet::new(),
             read_here: BTreeSet::new(),
             marks: std::collections::HashMap::new(),
             shared: None,
@@ -271,17 +276,26 @@ impl App {
         self.width >= SPLIT_WIDTH
     }
 
+    /// The inboxes shown: the highlighted one and any added with ⌥⇥ (1 + index into
+    /// `cfg.accounts`); empty means all of them.
+    pub fn shown_accounts(&self) -> Vec<usize> {
+        if self.account == 0 {
+            return vec![];
+        }
+        let mut v: Vec<usize> = self.also.iter().copied().collect();
+        v.push(self.account);
+        v.sort_unstable();
+        v.dedup();
+        v
+    }
+
     pub fn filter(&self) -> Filter {
         Filter {
-            accounts: match self.account {
-                0 => vec![],
-                i => self
-                    .cfg
-                    .accounts
-                    .get(i - 1)
-                    .map(|a| vec![a.id.clone()])
-                    .unwrap_or_default(),
-            },
+            accounts: self
+                .shown_accounts()
+                .into_iter()
+                .filter_map(|i| self.cfg.accounts.get(i - 1).map(|a| a.id.clone()))
+                .collect(),
             limit: LIST_LIMIT,
         }
     }
@@ -289,7 +303,12 @@ impl App {
     pub fn account_label(&self) -> String {
         match self.account {
             0 => "All accounts".into(),
-            i => self.cfg.accounts.get(i - 1).map(|a| a.name.clone()).unwrap_or_default(),
+            _ => self
+                .shown_accounts()
+                .into_iter()
+                .filter_map(|i| self.cfg.accounts.get(i - 1).map(|a| a.name.clone()))
+                .collect::<Vec<_>>()
+                .join(" + "),
         }
     }
 
@@ -457,6 +476,7 @@ impl App {
             Key::Char('G') => self.move_sel(isize::MAX / 2),
             Key::Enter => self.open_selected(),
             Key::Tab => self.cycle_account(1),
+            Key::AltTab => self.extend_account(),
             Key::BackTab => self.cycle_account(-1),
             Key::Char('g') => self.mode = Mode::GoTo,
             Key::Char('/') => self.mode = Mode::Search(self.search.clone().unwrap_or_default()),
@@ -514,6 +534,30 @@ impl App {
     fn cycle_account(&mut self, d: isize) {
         let n = self.cfg.accounts.len() as isize + 1;
         self.account = ((self.account as isize + d).rem_euclid(n)) as usize;
+        self.also.clear();
+        self.sel = 0;
+        self.reload();
+    }
+
+    /// ⌥⇥ (round 7): keep the inboxes shown and add the next one (personal + oxford, without
+    /// OQTS). From *all* it starts at the first; once every inbox is in, it goes back to one.
+    fn extend_account(&mut self) {
+        let n = self.cfg.accounts.len();
+        if n == 0 {
+            return;
+        }
+        if self.account == 0 {
+            self.account = 1;
+        } else if self.also.len() + 1 >= n {
+            self.also.clear();
+        } else {
+            self.also.insert(self.account);
+            let mut next = self.account % n + 1;
+            while self.also.contains(&next) {
+                next = next % n + 1;
+            }
+            self.account = next;
+        }
         self.sel = 0;
         self.reload();
     }
@@ -669,9 +713,9 @@ impl App {
         }
         let v = match k {
             Key::Char('i') => View::Inbox,
-            Key::Char('t') => View::Sent,
+            Key::Char('s') => View::Sent,
             Key::Char('r') => View::NeedsReply,
-            Key::Char('s') if self.cfg.snooze.enabled => View::Snoozed,
+            Key::Char('z') if self.cfg.snooze.enabled => View::Snoozed,
             Key::Char('v') => View::Archive,
             Key::Char('a') => View::All,
             Key::Char(c) if c.is_ascii_digit() && c != '0' => {

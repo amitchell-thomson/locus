@@ -12,7 +12,7 @@ expression: "render_to_string(&mut a, 80, 20)"
 │ yesterday ───│ r  Needs reply         │  2  Engineering      │────────────── │
 │   Lecturer   │ d  Drafts              │  3  Careers          │         󰁦 tue │
 │    Society mi│                        │  4  Travel           │        oxford │
-│   Lecturer   │ t  Sent                │  5  OQTS             │         󰁦 tue │
+│   Lecturer   │ s  Sent                │  5  OQTS             │         󰁦 tue │
 │    Broken fil│ v  Archive             │  6  JCR Treasurer    │        oxford │
 │ ▎ Lecturer   │ a  All mail            │                      │         󰁦 tue │
 │ ▎  B4 problem│                        │                      │        oxford │

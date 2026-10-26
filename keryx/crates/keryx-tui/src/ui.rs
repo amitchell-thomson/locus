@@ -85,7 +85,7 @@ fn header(app: &App) -> Line<'static> {
         if i > 0 {
             spans.push(Span::styled(" · ", locus_theme::st("overlay0")));
         }
-        spans.push(if i == app.account {
+        spans.push(if i == app.account || app.also.contains(&i) {
             Span::styled(n, locus_theme::bold(locus_theme::st("blue")))
         } else {
             Span::styled(n, locus_theme::st("overlay0"))
@@ -454,7 +454,7 @@ fn row_subject(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
     if let Some(t) = mark_tag(app, r) {
         right.push(t);
     }
-    if app.account == 0
+    if (app.account == 0 || !app.also.is_empty())
         && let Some(a) = app.cfg.account(&r.account)
     {
         right.push(Span::styled(
@@ -927,6 +927,7 @@ fn help(f: &mut Frame, area: Rect) {
     let screen: &[(&str, &str)] = &[
         ("↑ ↓  ⏎ esc", "move · read a thread · back"),
         ("⇥ ⇧⇥", "the next or previous inbox (all, then each account)"),
+        ("⌥⇥", "add the next inbox to the ones shown (⇥ goes back to one)"),
         ("b", "hide or show the list"),
         (
             "g",
@@ -981,7 +982,7 @@ fn goto(f: &mut Frame, app: &App, area: Rect) {
     let mut left = vec![head("mail")];
     for group in [
         &[("i", "Inbox"), ("r", "Needs reply"), ("d", "Drafts")][..],
-        &[("t", "Sent"), ("v", "Archive"), ("a", "All mail")][..],
+        &[("s", "Sent"), ("v", "Archive"), ("a", "All mail")][..],
         &[("l", "Filed by itself"), ("c", "Claude runs")][..],
     ] {
         left.push(Line::raw(""));

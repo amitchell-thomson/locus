@@ -70,6 +70,7 @@ fn map_key(k: event::KeyEvent) -> Option<Key> {
         KeyCode::Char(c) => Key::Char(c),
         KeyCode::Enter => Key::Enter,
         KeyCode::Esc => Key::Esc,
+        KeyCode::Tab if k.modifiers.contains(KeyModifiers::ALT) => Key::AltTab,
         KeyCode::Tab => Key::Tab,
         KeyCode::BackTab => Key::BackTab,
         KeyCode::Backspace => Key::Backspace,

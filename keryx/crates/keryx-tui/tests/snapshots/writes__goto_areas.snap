@@ -13,7 +13,7 @@ expression: "render_to_string(&mut a, 80, 22)"
 │   Lecturer   │ r  Needs reply         │  2  Projects         │         󰁦 tue │
 │    Society mi│ d  Drafts              │  3  Careers          │        oxford │
 │   Lecturer   │                        │                      │         󰁦 tue │
-│    Broken fil│ t  Sent                │  personal            │        oxford │
+│    Broken fil│ s  Sent                │  personal            │        oxford │
 │ ▎ Lecturer   │ v  Archive             │  4  Family           │         󰁦 tue │
 │ ▎  B4 problem│ a  All mail            │  5  Sport            │        oxford │
 │ ▎ Jane Doe   │                        │  6  Social           │           tue │

@@ -301,3 +301,27 @@ fn the_unread_bar_runs_down_both_lines_and_goes_once_you_read() {
         "read now: {s}"
     );
 }
+
+#[test]
+fn option_tab_adds_the_next_inbox_and_tab_goes_back_to_one() {
+    let mut a = app();
+    keys(&mut a, &[Key::Tab]);
+    assert_eq!(a.account_label(), "Personal");
+    keys(&mut a, &[Key::AltTab]);
+    assert_eq!(a.account_label(), "Personal + Oxford");
+    let accounts: std::collections::BTreeSet<&str> = a.rows.iter().map(|r| r.account.as_str()).collect();
+    assert_eq!(accounts, ["oxford", "personal"].into_iter().collect(), "no OQTS");
+    keys(&mut a, &[Key::AltTab, Key::AltTab]);
+    assert_eq!(a.account_label(), "Personal + Oxford + OQTS + OQTS shared");
+    keys(&mut a, &[Key::AltTab]);
+    assert_eq!(a.shown_accounts().len(), 1, "every inbox in: back to one");
+    keys(&mut a, &[Key::Tab]);
+    assert!(a.also.is_empty());
+}
+
+#[test]
+fn g_s_is_sent() {
+    let mut a = app();
+    keys(&mut a, &[Key::Char('g'), Key::Char('s')]);
+    assert_eq!(a.view, keryx_store::view::View::Sent);
+}

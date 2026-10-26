@@ -283,7 +283,7 @@ the needs-reply reason, suggestions and linked tasks sit above the messages.
 | Key | Action |
 |---|---|
 | `↑` `↓` / `j` `k` · `⏎` · `esc` | move · read a thread · back |
-| `⇥` `⇧⇥` | the next or previous inbox |
+| `⇥` `⇧⇥` · `⌥⇥` | the next or previous inbox · add the next inbox to the ones shown (personal and oxford together; `⇥` goes back to one) |
 | `b` | hide or show the list |
 | `d` | done: filed for what it is for (X7): its mark when it has one, with no question; else a picker over the registry items, Personal's streams, the plain areas and "for nothing" (archive), keryx's guess first with its reason. Never deletes |
 | `m` | mark what it is for, and it stays in the inbox (round 4): a tag on the row, and on its item's page at once. keryx's own record; the mail does not move |
@@ -293,7 +293,7 @@ the needs-reply reason, suggestions and linked tasks sit above the messages.
 | `t` `i` `w` · `y` `n` | a kairos task · an invite to the calendar · reply with free times · on a suggestion: create · dismiss |
 | `u` | undo the last change; during a send's hold, cancel it |
 | `A` | locus's Approve (drafts and cleanup proposals wait there; keryx has no approve screen) |
-| `g` | go to: `i` inbox · `r` needs reply · `t` sent · `v` archive · `a` all · `c` Claude runs · `l` filed by itself · `1…7` the taxonomy folders |
+| `g` | go to, in two columns: `i` inbox · `r` needs reply · `d` drafts · `s` sent · `v` archive · `a` all · `l` filed by itself · `c` Claude runs; and `1…7` the areas and Personal's streams |
 | `/` · `^R` · `?` · `q` | search (§7) · sync now · keys · quit |
 
 **Writing** (X6) is your Neovim, run on a terminal inside the right pane with the list beside

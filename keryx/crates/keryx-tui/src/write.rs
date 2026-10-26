@@ -29,7 +29,8 @@ pub enum Job {
     Tag(String),
     Untag(String),
     Sync,
-    Send(keryx_store::api::SendReq),
+    /// A send, and the draft that holds its text until keryxd takes it (kept when refused).
+    Send(keryx_store::api::SendReq, Option<std::path::PathBuf>),
     Replace(String, keryx_store::api::SendReq),
     Approve(String),
     Reject(String),
@@ -309,7 +310,20 @@ impl App {
                     .map(|_| Some("needs-reply tag cleared".into()))
                     .map_err(|e| e.to_string()),
                 Job::Sync => d.sync().map(|_| Some("syncing".into())).map_err(|e| e.to_string()),
-                Job::Send(r) => d.send(r).map(|c| Some(sent_message(&c))).map_err(|e| e.to_string()),
+                // The draft goes only once keryxd has the send; refused, your text stays (round 8:
+                // a refused send once took the only copy with it).
+                Job::Send(r, draft) => d
+                    .send(r)
+                    .map(|c| {
+                        if let Some(p) = draft {
+                            let _ = std::fs::remove_file(p);
+                        }
+                        Some(sent_message(&c))
+                    })
+                    .map_err(|e| match draft {
+                        Some(p) if p.exists() => format!("not sent: {e} · your mail is kept in drafts (g d)"),
+                        _ => format!("not sent: {e}"),
+                    }),
                 Job::Replace(id, r) => d
                     .replace(id, r)
                     .map(|c| Some(sent_message(&c)))

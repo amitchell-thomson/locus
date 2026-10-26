@@ -15,6 +15,8 @@ struct Fake {
     calls: Arc<Mutex<Vec<String>>>,
     hold: Arc<Mutex<Option<Changeset>>>,
     unsub: Arc<Mutex<Option<UnsubscribeOutcome>>>,
+    /// Refuse sends with this error (keryxd's live guard, say).
+    refuse_send: Arc<Mutex<Option<String>>>,
 }
 
 impl Fake {
@@ -145,6 +147,9 @@ impl Daemon for Fake {
         Ok(())
     }
     fn send(&self, r: &SendReq) -> Result<Changeset> {
+        if let Some(e) = self.refuse_send.lock().unwrap().clone() {
+            return Err(keryx_store::client::ClientError::Daemon(e));
+        }
         self.log(format!(
             "send {} to={:?} cc={:?} thread={:?} body={:?}",
             r.account,
@@ -1130,4 +1135,33 @@ fn go_to_has_your_lists_on_the_left_and_the_areas_on_the_right() {
     insta::assert_snapshot!("goto_areas", render_to_string(&mut a, 80, 22));
     keys(&mut a, &[Key::Char('3')]);
     assert_eq!(a.view, keryx_store::view::View::Key("Careers".into()));
+}
+
+#[test]
+fn a_refused_send_keeps_your_mail_and_the_confirm_screen_warns_first() {
+    use keryx_tui::writing::Finished;
+    let (mut a, f) = app();
+    a.cfg.live = false;
+    let dir = tempfile::tempdir().unwrap();
+    a.drafts_dir = Some(dir.path().to_path_buf());
+    a.key(Key::Char('+'));
+    let (text, purpose) = editor(&mut a);
+    a.writing_started(purpose.clone());
+    let typed = type_body(
+        &text.replacen("To: ", "To: someone@example.com", 1),
+        "Words worth keeping",
+    );
+    a.writing_finished(Finished::Send(typed.clone()));
+    let s = render_to_string(&mut a, 100, 24);
+    assert!(s.contains("isn't one of your addresses"), "warned before y: {s}");
+    *f.refuse_send.lock().unwrap() = Some("live = false: keryx only sends to your own addresses".into());
+    keys(&mut a, &[Key::Char('y')]);
+    a.run_deferred();
+    let msg = a.message.clone().unwrap().0;
+    assert!(msg.contains("not sent") && msg.contains("drafts (g d)"), "{msg}");
+    assert_eq!(
+        std::fs::read_to_string(a.draft_path(&purpose).unwrap()).unwrap(),
+        typed,
+        "nothing lost"
+    );
 }

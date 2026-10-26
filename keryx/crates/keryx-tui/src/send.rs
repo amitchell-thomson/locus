@@ -246,12 +246,6 @@ impl App {
         Some(self.drafts_dir.as_ref()?.join(purpose.draft_name()?))
     }
 
-    fn drop_draft(&self, purpose: &Purpose) {
-        if let Some(p) = self.draft_path(purpose) {
-            let _ = std::fs::remove_file(p);
-        }
-    }
-
     /// The run loop started the editor for `purpose`.
     pub fn writing_started(&mut self, purpose: Purpose) {
         self.writing = Some(Writing {
@@ -427,16 +421,26 @@ impl App {
             Some((a, t)) => self.db.thread(a, t).unwrap_or_default(),
             None => vec![],
         };
-        keryx_core::outgoing::warnings(&o, &sent_to, &self.cfg.own_addresses(), &thread, i64::MAX)
+        let own = self.cfg.own_addresses();
+        let mut w = keryx_core::outgoing::warnings(&o, &sent_to, &own, &thread, i64::MAX);
+        // Said before y, not after: keryxd refuses it while keryx is not live.
+        if !self.cfg.live {
+            for r in o.recipients().iter().filter(|r| !own.contains(*r)) {
+                w.push(format!(
+                    "live = false: {r} isn't one of your addresses, so keryxd will not send this"
+                ));
+            }
+        }
+        w
     }
 
     pub fn confirm_send_key(&mut self, k: Key, d: SendDraft) {
         match k {
             Key::Char('y') => {
-                self.drop_draft(&d.purpose);
+                let draft = self.draft_path(&d.purpose);
                 self.deferred.push(match &d.purpose {
                     Purpose::EditDraft { id, .. } => Job::Replace(id.clone(), d.req.clone()),
-                    _ => Job::Send(d.req.clone()),
+                    _ => Job::Send(d.req.clone(), draft),
                 });
                 self.mode = self.back.take().unwrap_or(Mode::List);
                 self.open = None;

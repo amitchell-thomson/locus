@@ -48,10 +48,38 @@ local function header_end()
   return 0
 end
 
+-- The header a line belongs to (`To:`), following indented lines back to the one they continue.
+local function key_at(row)
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, row, false)
+  for i = row, 1, -1 do
+    local key = (lines[i] or ""):match("^(%a+:)")
+    if key then
+      return key
+    end
+    if not (lines[i] or ""):match("^%s") then
+      return nil
+    end
+  end
+  return nil
+end
+_G.KeryxKeyAt = key_at
+
+-- The mail filetype hard-wraps at 72 columns as you type, which broke a long To: in two (and
+-- an unindented second half is no header at all). Lines wrap on screen instead.
+vim.bo[buf].textwidth = 0
+vim.bo[buf].formatoptions = vim.bo[buf].formatoptions:gsub("[tc]", "")
+-- Long headers wrap under themselves instead of running off the pane.
+vim.wo.wrap = true
+vim.wo.linebreak = true
+vim.wo.breakindent = true
+vim.wo.breakindentopt = "shift:4,sbr"
+vim.wo.showbreak = "↳ "
+
 -- keryx's colours, from your colourscheme's own groups.
 vim.api.nvim_set_hl(0, "KeryxHeader", { link = "Statement", default = true })
 vim.api.nvim_set_hl(0, "KeryxAddress", { link = "Special", default = true })
 vim.api.nvim_set_hl(0, "KeryxOwn", { link = "Function", default = true })
+vim.api.nvim_set_hl(0, "KeryxName", { link = "Identifier", default = true })
 
 -- Sizes beside Attach: lines, a rule under the headers, the marker drawn quietly.
 local ns = vim.api.nvim_create_namespace("keryx")
@@ -68,22 +96,46 @@ local function decorate()
   vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   local stop = header_end()
+  local current = nil
   for i = 1, stop do
-    -- The header's field names, and the addresses on it, read as such.
+    -- The header's field names, and each recipient on it (its name and its address), read as
+    -- such; indented lines continue the header above.
     local key = lines[i]:match("^(%a+:)")
+    local from = 1
     if key then
+      current = key
       vim.api.nvim_buf_set_extmark(buf, ns, i - 1, 0, { end_col = #key, hl_group = "KeryxHeader" })
-      local from = 1
-      while true do
-        local s, e = lines[i]:find("[%w%._%%+%-]+@[%w%.%-]+%.%a+", from)
-        if not s then
-          break
+      from = #key + 1
+    elseif not lines[i]:match("^%s") then
+      current = nil
+    end
+    if current == "To:" or current == "Cc:" or current == "Bcc:" or current == "From:" then
+      local line = lines[i]
+      while from <= #line do
+        local stop_at = line:find(",", from, true) or (#line + 1)
+        local entry = line:sub(from, stop_at - 1)
+        local name_s, addr_s, addr_e = entry:match("^%s*()[^<]-%s*()<[^>]*>()")
+        if addr_s then
+          if addr_s > name_s then
+            vim.api.nvim_buf_set_extmark(buf, ns, i - 1, from - 1 + name_s - 1, {
+              end_col = from - 1 + addr_s - 1,
+              hl_group = current == "From:" and "KeryxOwn" or "KeryxName",
+            })
+          end
+          vim.api.nvim_buf_set_extmark(buf, ns, i - 1, from - 1 + addr_s - 1, {
+            end_col = from - 1 + addr_e - 1,
+            hl_group = current == "From:" and "KeryxOwn" or "KeryxAddress",
+          })
+        else
+          local s, e = entry:find("[%w%._%%+%-]+@[%w%.%-]+%.%a+")
+          if s then
+            vim.api.nvim_buf_set_extmark(buf, ns, i - 1, from - 1 + s - 1, {
+              end_col = from - 1 + e,
+              hl_group = current == "From:" and "KeryxOwn" or "KeryxAddress",
+            })
+          end
         end
-        vim.api.nvim_buf_set_extmark(buf, ns, i - 1, s - 1, {
-          end_col = e,
-          hl_group = key == "From:" and "KeryxOwn" or "KeryxAddress",
-        })
-        from = e + 1
+        from = stop_at + 1
       end
     end
     local p = lines[i]:match("^Attach:%s*(.-)%s*$")
@@ -140,8 +192,9 @@ vim.api.nvim_create_user_command("KeryxAttach", function(o)
 end, { nargs = "+" })
 
 -- Addresses from your mail on To:, Cc: and Bcc: (<C-x><C-u>, or blink as you type).
-local function address_start(line, col)
-  if not (line:match("^To:") or line:match("^Cc:") or line:match("^Bcc:")) then
+local function address_start(line, col, row)
+  local key = line:match("^(%a+:)") or (row and key_at(row))
+  if not (key == "To:" or key == "Cc:" or key == "Bcc:") then
     return nil
   end
   local start = col
@@ -166,7 +219,8 @@ end
 function _G.KeryxComplete(findstart, base)
   local line = vim.api.nvim_get_current_line()
   if findstart == 1 then
-    return address_start(line, vim.api.nvim_win_get_cursor(0)[2]) or -3
+    local cur = vim.api.nvim_win_get_cursor(0)
+    return address_start(line, cur[2], cur[1]) or -3
   end
   local items = {}
   for _, c in ipairs(contacts(base)) do

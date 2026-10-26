@@ -156,11 +156,22 @@ fn expand(p: &str) -> PathBuf {
 pub fn parse(text: &str, signature: Option<&str>, max_mb: u32) -> Result<Composed, ComposeError> {
     let mut c = Composed::default();
     let mut lines = text.lines().skip_while(|l| l.starts_with(ERROR_PREFIX));
-    // Headers until the first blank line.
+    // Headers until the first blank line. An indented line continues the header above it, as
+    // in mail itself, so a long To: can put each address on its own line.
+    let mut headers: Vec<String> = Vec::new();
     for line in lines.by_ref() {
         if line.trim().is_empty() {
             break;
         }
+        match headers.last_mut() {
+            Some(prev) if line.starts_with([' ', '\t']) => {
+                prev.push(' ');
+                prev.push_str(line.trim());
+            }
+            _ => headers.push(line.to_string()),
+        }
+    }
+    for line in &headers {
         let Some((k, v)) = line.split_once(':') else {
             return Err(ComposeError::UnknownHeader(line.to_string()));
         };
@@ -253,6 +264,15 @@ mod tests {
         let f = file(&[a("jane@example.com")], &[], "Hi", Some("Alec\nNew College"), "> q");
         assert_eq!(parse(&f, Some("Alec\nNew College"), 25), Err(ComposeError::Empty));
         assert_eq!(parse("", None, 25), Err(ComposeError::Empty));
+    }
+
+    #[test]
+    fn a_header_can_run_over_indented_lines() {
+        let f = "To: Jane <jane@example.com>,\n    sam@example.com,\n\tbob@example.org\nSubject: Hi\n\nbody\n";
+        let c = parse(f, None, 25).unwrap();
+        assert_eq!(c.to.len(), 3);
+        assert_eq!(c.to[2].email, "bob@example.org");
+        assert_eq!(c.subject, "Hi");
     }
 
     #[test]

@@ -35,6 +35,8 @@ end
 local function item(label, start, col, row, opts)
   return vim.tbl_extend("force", {
     label = label,
+    -- On To/Cc/Bcc the next address follows straight on: ", " comes with it.
+    insertText = opts.text or label,
     filterText = opts.filter or label,
     kind_name = opts.kind_name,
     kind_icon = opts.icon,
@@ -42,7 +44,7 @@ local function item(label, start, col, row, opts)
     labelDetails = { description = opts.detail or "" },
     documentation = opts.doc and { kind = "markdown", value = opts.doc } or nil,
     textEdit = {
-      newText = label,
+      newText = opts.text or label,
       range = { start = { line = row, character = start }, ["end"] = { line = row, character = col } },
     },
   }, opts.extra or {})
@@ -64,18 +66,35 @@ function M:get_completions(ctx, callback)
     end
     return done(callback, items, false)
   end
-  local start = _G.KeryxAddressStart and _G.KeryxAddressStart(line, col)
+  local start = _G.KeryxAddressStart and _G.KeryxAddressStart(line, col, ctx.cursor[1])
   if not start then
     return done(callback, {}, false)
   end
   local base = line:sub(start + 1, col)
+  -- Your own accounts first (Personal, Oxford, OQTS), as the From: line names them; keryx
+  -- addresses leaves your addresses out of the people.
+  local own = {}
+  local low = base:lower()
+  for acc in (vim.env.KERYX_ACCOUNTS or ""):gmatch("[^\n]+") do
+    if low == "" or acc:lower():find(low, 1, true) then
+      table.insert(own, item(acc, start, col, row, {
+        kind_name = "Account",
+        icon = "󰀄",
+        hl = "KeryxOwn",
+        detail = "you",
+        filter = base,
+        text = acc .. ", ",
+        extra = { sortText = "0" .. acc },
+      }))
+    end
+  end
   if #base < 1 then
-    return done(callback, {}, true)
+    return done(callback, own, true)
   end
   vim.system({ _G.KeryxBin or "keryx", "addresses", base, "--json", "--limit", "20" }, { text = true }, function(out)
     vim.schedule(function()
       local ok, data = pcall(vim.json.decode, out.stdout or "")
-      local items = {}
+      local items = own
       if ok and type(data) == "table" and data.contacts then
         for i, c in ipairs(data.contacts) do
           local wrote = (c.sent or 0) > 0 and string.format("you wrote %d", c.sent)
@@ -87,9 +106,10 @@ function M:get_completions(ctx, callback)
             detail = wrote,
             -- Keep keryx's order (the people you write to most first) and match on what you typed.
             filter = base,
+            text = c.display .. ", ",
             doc = string.format("**%s**\n\n`%s`\n\n%s · %s · last %s", c.name or c.email, c.email, wrote,
               string.format("%d from them", c.received or 0), ago(c.last)),
-            extra = { sortText = string.format("%04d", i) },
+            extra = { sortText = string.format("1%04d", i) },
           }))
         end
       end

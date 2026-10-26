@@ -1,6 +1,11 @@
 //! Message text as keryx shows and stores it (SPEC §5.3–5.4).
 //!
-//! - Plain text wins over HTML when both exist.
+//! - Plain text wins over HTML when both exist, unless the plain part is a generated one (mostly
+//!   raw links, or "view this email in your browser"): then the HTML is used (X3, 26 Oct 2026).
+//! - Invisible padding (U+034F and the zero-width family) goes; wide and non-breaking spaces
+//!   become plain ones, so a newsletter's preheader leaves no rows of blanks.
+//! - Links in plain text become `[n]` too, with the same numbered list at the end; a tracking
+//!   redirect that carries the real address is listed as that address.
 //! - HTML is walked as a DOM: script/style/head/template/comments are
 //!   dropped; elements hidden by inline CSS or the `hidden` attribute are
 //!   dropped **and flagged** (`hidden_text_removed`) when they held text.
@@ -14,12 +19,15 @@ use scraper::{ElementRef, Html, Node};
 
 /// Bump whenever the output of [`body_text`] changes; the mirror re-derives
 /// older messages.
-pub const TEXT_VERSION: u32 = 3;
+pub const TEXT_VERSION: u32 = 4;
 
 /// The normalised body, and whether hidden text was removed.
 pub fn body_text(p: &Parsed) -> (String, bool) {
     if let Some(t) = &p.text_plain {
-        return (tidy(&sanitize(t)), false);
+        let plain = tidy(&spaces(&sanitize(t)));
+        if p.text_html.is_none() || !looks_generated(&plain) {
+            return (number_links(&plain), false);
+        }
     }
     match &p.text_html {
         Some(h) => {
@@ -28,6 +36,262 @@ pub fn body_text(p: &Parsed) -> (String, bool) {
         }
         None => (String::new(), false),
     }
+}
+
+/// Wide, figure and non-breaking spaces become plain spaces; a line of nothing but spaces
+/// becomes empty (preheader padding).
+pub fn spaces(s: &str) -> String {
+    s.lines()
+        .map(|l| {
+            let l: String = l
+                .chars()
+                .map(|c| match c {
+                    '\u{00A0}' | '\u{2000}'..='\u{200A}' | '\u{202F}' | '\u{205F}' | '\u{3000}' => ' ',
+                    c => c,
+                })
+                .collect();
+            if l.trim().is_empty() { String::new() } else { l }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// A plain part a mailing tool generated rather than wrote: mostly raw links, or one that
+/// sends you to the browser. Its HTML part reads better.
+pub fn looks_generated(plain: &str) -> bool {
+    let lower = plain.to_lowercase();
+    if BROWSER_LINES.iter().any(|b| lower.contains(b)) {
+        return true;
+    }
+    let url_chars: usize = plain
+        .split_whitespace()
+        .filter(|w| w.contains("http://") || w.contains("https://"))
+        .map(str::len)
+        .sum();
+    plain.len() > 200 && url_chars * 4 > plain.len()
+}
+
+/// Lines that only send you to a browser copy of the mail.
+const BROWSER_LINES: &[&str] = &[
+    "view this email in your browser",
+    "view this email in a browser",
+    "view in browser",
+    "view it in your browser",
+    "view this email online",
+    "view online version",
+    "trouble viewing this email",
+    "having trouble viewing",
+    "if you cannot see this email",
+    "if you can't see this email",
+    "can't see this email",
+    "web version",
+];
+
+/// Raw links in plain text become `[n]`, listed at the end as the HTML path lists them.
+pub fn number_links(text: &str) -> String {
+    let mut links: Vec<String> = Vec::new();
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(i) = rest.find("http://").into_iter().chain(rest.find("https://")).min() {
+        let (before, from) = rest.split_at(i);
+        let end = from
+            .find(|c: char| c.is_whitespace() || matches!(c, '>' | ')' | ']' | '"' | '\''))
+            .unwrap_or(from.len());
+        let url = from[..end].trim_end_matches(['.', ',', ';', ':']);
+        // `<https://…>` and `(https://…)`: the brackets go with the link.
+        let before = before.strip_suffix(['<', '(']).unwrap_or(before);
+        out.push_str(before);
+        // "here[1]" reads as "here [1]".
+        if out.chars().last().is_some_and(char::is_alphanumeric) {
+            out.push(' ');
+        }
+        let n = match links.iter().position(|l| l == url) {
+            Some(k) => k + 1,
+            None => {
+                links.push(url.to_string());
+                links.len()
+            }
+        };
+        out.push_str(&format!("[{n}]"));
+        let mut after = &from[url.len()..];
+        if before.len() < rest[..i].len() {
+            after = after.strip_prefix(['>', ')']).unwrap_or(after);
+        }
+        rest = after;
+    }
+    out.push_str(rest);
+    let mut text = tidy(&out);
+    if !links.is_empty() {
+        text.push_str("\n\nLinks:");
+        for (k, l) in links.iter().enumerate() {
+            text.push_str(&format!("\n[{}] {}", k + 1, unwrap_link(l)));
+        }
+    }
+    text
+}
+
+/// A tracking redirect that carries the real address in a parameter (`?url=https%3A%2F%2F…`)
+/// is its real address; anything else is itself.
+pub fn unwrap_link(url: &str) -> String {
+    let Some((_, query)) = url.split_once('?') else {
+        return url.to_string();
+    };
+    for pair in query.split('&') {
+        let Some((_, v)) = pair.split_once('=') else { continue };
+        let v = percent_decode(v);
+        if v.starts_with("http://") || v.starts_with("https://") {
+            return v;
+        }
+    }
+    url.to_string()
+}
+
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%'
+            && i + 2 < b.len()
+            && let Ok(x) = u8::from_str_radix(&s[i + 1..i + 3], 16)
+        {
+            out.push(x);
+            i += 3;
+        } else {
+            out.push(if b[i] == b'+' { b' ' } else { b[i] });
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// The site a link goes to, as shown in the reading pane: its registrable domain
+/// (`t.mail.example.com` → `example.com`, `www.ox.ac.uk` → `ox.ac.uk`), or `mail to …`.
+pub fn site(url: &str) -> String {
+    if let Some(a) = url.strip_prefix("mailto:") {
+        return format!("mail to {}", a.split('?').next().unwrap_or(a));
+    }
+    let host = url
+        .split_once("://")
+        .map_or(url, |(_, r)| r)
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or("")
+        .split(':')
+        .next()
+        .unwrap_or("")
+        .to_lowercase();
+    let labels: Vec<&str> = host.split('.').filter(|l| !l.is_empty()).collect();
+    let n = labels.len();
+    let keep = if n >= 3
+        && labels[n - 1].len() == 2
+        && matches!(labels[n - 2], "co" | "ac" | "org" | "gov" | "com" | "net" | "edu")
+    {
+        3
+    } else {
+        2
+    };
+    labels[n.saturating_sub(keep)..].join(".")
+}
+
+/// A body as the reading pane shows it (X3): the text without browser-only lines, the footer of
+/// automated mail folded away, and the links as numbers with their sites.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Readable {
+    pub lines: Vec<String>,
+    /// Lines folded away at the end (unsubscribe, address, legal), 0 if none.
+    pub footer: usize,
+    /// `(n, address, site)`.
+    pub links: Vec<(usize, String, String)>,
+}
+
+/// Image placeholders a mail program left in plain text (`[cid:image003.jpg@01D…]`,
+/// `[image: logo]`) go.
+fn drop_placeholders(l: &str) -> String {
+    let mut out = String::with_capacity(l.len());
+    let mut rest = l;
+    while let Some(i) = rest.find("[cid:").into_iter().chain(rest.find("[image:")).min() {
+        out.push_str(&rest[..i]);
+        match rest[i..].find(']') {
+            Some(j) => rest = &rest[i + j + 1..],
+            None => {
+                rest = "";
+            }
+        }
+    }
+    out.push_str(rest);
+    if out.trim().is_empty() && !l.trim().is_empty() {
+        return String::new();
+    }
+    out
+}
+
+/// Where an automated mail's footer starts.
+const FOOTER: &[&str] = &[
+    "unsubscribe",
+    "manage your preferences",
+    "update your preferences",
+    "email preferences",
+    "you are receiving this",
+    "you're receiving this",
+    "you received this",
+    "this email was sent to",
+    "this message was sent to",
+    "privacy policy",
+    "all rights reserved",
+    "©",
+    "copyright",
+];
+
+/// The body of `text` for reading. `automated`: fold its footer (never for a person's mail).
+pub fn readable(text: &str, automated: bool) -> Readable {
+    let mut lines: Vec<&str> = text.lines().collect();
+    let mut links = Vec::new();
+    if let Some(at) = lines.iter().rposition(|l| l.trim() == "Links:") {
+        for l in &lines[at + 1..] {
+            if let Some((n, url)) = l.trim().strip_prefix('[').and_then(|r| r.split_once("] "))
+                && let Ok(n) = n.parse::<usize>()
+            {
+                let url = unwrap_link(url);
+                let s = site(&url);
+                links.push((n, url, s));
+            }
+        }
+        lines.truncate(at);
+    }
+    let lines: Vec<String> = lines
+        .into_iter()
+        .filter(|l| {
+            let low = l.to_lowercase();
+            !BROWSER_LINES.iter().any(|b| low.contains(b))
+        })
+        .map(drop_placeholders)
+        // A line of nothing but link numbers was a row of image links.
+        .filter(|l| !l.trim().is_empty() || l.is_empty())
+        .filter(|l| {
+            let t = l.trim();
+            t.is_empty()
+                || !t
+                    .split_whitespace()
+                    .all(|w| w.starts_with('[') && w.ends_with(']') && w[1..w.len() - 1].parse::<usize>().is_ok())
+        })
+        .collect();
+    let mut lines = tidy(&lines.join("\n")).lines().map(str::to_string).collect::<Vec<_>>();
+    let mut footer = 0;
+    if automated && lines.len() > 6 {
+        let from = lines.len() / 2;
+        if let Some(i) = (from..lines.len()).find(|&i| {
+            let low = lines[i].to_lowercase();
+            FOOTER.iter().any(|f| low.contains(f))
+        }) {
+            footer = lines.len() - i;
+            lines.truncate(i);
+            while lines.last().is_some_and(|l| l.trim().is_empty() || l.trim() == "---") {
+                lines.pop();
+            }
+        }
+    }
+    Readable { lines, footer, links }
 }
 
 /// The first ~140 characters, whitespace collapsed.
@@ -110,6 +374,7 @@ pub fn is_invisible(c: char) -> bool {
             | '\u{2066}'..='\u{2069}'
             | '\u{FEFF}'
             | '\u{00AD}'
+            | '\u{034F}'
             | '\u{061C}'
             | '\u{180E}'
     )
@@ -445,6 +710,55 @@ mod tests {
     fn fixture(name: &str) -> (String, bool) {
         let path = format!("{}/../../fixtures/eml/{name}", env!("CARGO_MANIFEST_DIR"));
         body_text(&parse(&std::fs::read(path).unwrap()).unwrap())
+    }
+
+    #[test]
+    fn preheader_padding_leaves_nothing_behind() {
+        // A newsletter preheader: U+034F and figure spaces, row after row.
+        let pad = "\u{34f}\u{2007}".repeat(40);
+        let t = tidy(&spaces(&sanitize(&format!(
+            "Tips for the week.\n{pad}\n{pad}\n\nRead on."
+        ))));
+        assert_eq!(t, "Tips for the week.\n\nRead on.");
+    }
+
+    #[test]
+    fn plain_links_become_numbers_and_trackers_their_real_address() {
+        let t = number_links(
+            "See <https://t.example.com/r/?id=1&url=https%3A%2F%2Fexample.org%2Fpage> and (https://b.example.net/x). Again https://b.example.net/x",
+        );
+        assert!(t.starts_with("See [1] and [2]. Again [2]"), "{t}");
+        assert!(number_links("click here<https://example.org>.").starts_with("click here [1]."));
+        assert!(
+            t.ends_with("Links:\n[1] https://example.org/page\n[2] https://b.example.net/x"),
+            "{t}"
+        );
+    }
+
+    #[test]
+    fn a_generated_plain_part_gives_way_to_the_html() {
+        let urls = "https://t.example.com/r/?id=abcdefghijklmnopqrstuvwxyz0123456789 ".repeat(8);
+        assert!(looks_generated(&format!("Hello\n{urls}\nBye")));
+        assert!(looks_generated("Trouble viewing this email? View it in your browser."));
+        assert!(!looks_generated(
+            "Hi Alec,\n\nThursday works. See https://example.org for the room.\n\nThanks"
+        ));
+    }
+
+    #[test]
+    fn reading_drops_browser_lines_folds_the_footer_and_names_sites() {
+        let body = "View this email in your browser\nTitle\n\nOne\nTwo [1]\nThree\nFour\nFive\nSix\n\nUnsubscribe here [2]\n123 Street, Town\n\nLinks:\n[1] https://www.example.co.uk/a\n[2] https://t.mail.example.com/u";
+        let r = readable(body, true);
+        assert_eq!(r.lines.first().map(String::as_str), Some("Title"));
+        assert_eq!(r.lines.last().map(String::as_str), Some("Six"));
+        assert_eq!(r.footer, 2);
+        assert_eq!(r.links[0].2, "example.co.uk");
+        assert_eq!(r.links[1].2, "example.com");
+        // A person's mail keeps everything.
+        assert_eq!(readable(body, false).footer, 0);
+        assert_eq!(site("mailto:a@b.org?subject=x"), "mail to a@b.org");
+        let r = readable("Hello\n[cid:image003.jpg@01DD]Name here\n[3] [4]\nBye", false);
+        assert_eq!(r.lines, ["Hello", "Name here", "Bye"]);
     }
 
     /// Every fixture's rendered body, in one reviewed snapshot.

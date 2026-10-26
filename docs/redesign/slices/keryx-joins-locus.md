@@ -8,9 +8,11 @@ better to use than mail". **Builds on:** [kairos-joins-locus.md](kairos-joins-lo
 
 **Done when:** keryx is built, tested and deployed from this repository and looks and behaves like
 locus (one theme, one set of keys, one approve place, the taxonomy and registry); triage acts on
-your real mail; the Mail view (`Alt-4`) leads with what needs you rather than with everything that
-arrived; mail is filed by what it is for and shows on that item's page; and Claude's work on your
-mail (what needs a reply, drafts, dates and tasks) waits in Approve.
+your real mail; the inbox holds only what is new, everything else filed into the taxonomy and
+shown on that item's page; the Mail view is calm and readable (clean message text, a quiet list,
+what came since you last looked); you write and send mail inside it, in a Neovim editor, with the
+list still beside you; and Claude's work on your mail (filing, what needs a reply, drafts, dates
+and tasks) waits in Approve.
 
 Underneath that: nothing is ever deleted (keryx archives, it never trashes), Claude never sends,
 and mail stays untrusted data. Those three rules from keryx's own spec become rules of locus.
@@ -38,41 +40,119 @@ and mail stays untrusted data. Those three rules from keryx's own spec become ru
 
 ---
 
+## Round 1 with you (26 Oct)
+
+"I do not like the view you are proposing, I like having the new messages on the right, but it is
+still a little bit noisy, and just too dense." What you asked for, and where it is in the steps:
+
+| You said | In this spec |
+|---|---|
+| keep the list on the left and the message on the right; less noisy, less dense | the layout below; X5 |
+| "edit and send messages in a neovim style view within keryx itself, where I can still see the left bar" | compose in the right pane, X6 |
+| "hide and show the left bar" | `b`, X5 |
+| Tab to shift between inboxes, every inbox's name in the header, the one shown highlighted, the others greyed | the header tabs, X5 |
+| "how we get rid of all of the rubbish characters / broken formatting / links" | X3, answered below |
+| "how would I easily add attachments / change subject / etc... all the usual functions" | X6, answered below |
+| "a specific new since I last was here" | a rule in the list, X5 |
+| "mail in my inbox to be only new things, and everything else gets filed into the taxonomy" | the inbox rule, X7 |
+
+**The view** (the mockup is narrowed to fit here; at your window size the list is about a third):
+
+```
+╭ mail  all · personal · oxford · oqts · oqts shared ──────────────────────────── 3 new ╮
+│ today                          │ an applicant                          00:27 · oqts   │
+│ ● an applicant          00:27  │ Following up on an event                             │
+│   Following up on an event     │                                                      │
+│ ─ new since sat 22:10 ──────── │ Hello,                                               │
+│ ● a recruiter           sun    │                                                      │
+│   Re: summer internship        │ A short example of how a message reads, its          │
+│   a society             sun    │ paragraphs kept and its one link turned into         │
+│   A competition invitation     │ a number. [1]                                        │
+│                                │                                                      │
+│ friday                         │ … 2 earlier messages · z show                        │
+│   a committee           fri    │                                                      │
+│   This week's agenda           │ [1] example.org                                      │
+╰ ⏎ open · r reply · d done · m file · b list · ? keys ────────────────────────────────╯
+```
+
+- Two quiet lines a thread: who, then the subject; no snippet in the list (the message is on the
+  right). Unread is a dot, not bold everywhere. Days as headings, white space between them.
+- **New since you were last here**: a rule in the list at the moment you last left the Mail view,
+  and the count in the header.
+- **The header names every inbox**; `Tab` (and `⇧Tab`) moves the highlight, and the list follows.
+  The highlighted one is the inbox shown; the others are there, greyed.
+- `b` hides the list (the message takes the width) and shows it again.
+
+**Writing** (`r`, `R`, `+` new, `F` forward), the list still beside it:
+
+```
+╭ mail  all · personal · oxford · oqts · oqts shared ───────────────────── writing a reply ╮
+│ ● an applicant          00:27  │ From:    oqts                                          │
+│   Following up on an event     │ To:      an applicant                                  │
+│ ● a recruiter           sun    │ Cc:                                                    │
+│   Re: summer internship        │ Subject: Re: Following up on an event                  │
+│                                │ Attach:  ~/Documents/example.pdf  (212 kB)             │
+│                                │ ────────────────────────────────────────────────────── │
+│                                │ Hi,                                                    │
+│                                │                                                        │
+│                                │ Thanks for getting in touch. █                         │
+│                                │                                                        │
+│                                │ -- Alec                                                │
+│                                │ ┄ the quote below is kept ┄                            │
+╰ -- INSERT --        :w send · :q cancel · ^a attach · ^t to · ? keys ──────────────────╯
+```
+
+It is your Neovim, with your config, running inside the right-hand pane (X-g). The header block
+is part of the text: change the subject by editing the `Subject:` line, add people on `To:` and
+`Cc:` (with address completion from your mail, already written for Neovim), switch the account on
+`From:`. An attachment is an `Attach:` line, with file-path completion as you type; `^a` opens a
+file picker that adds the line for you. `:w` asks "send to an applicant from oqts? y", then the
+10-second hold you can undo with `u`; `:q` cancels and keeps a draft.
+
+**Cleaning the text of a mail** (X3), on your own newsletters before and after:
+- **Invisible characters** go: the preheader padding newsletters use (U+034F, zero-width spaces
+  and joiners, U+FEFF, soft hyphens) and anything a terminal would misdraw.
+- **The best part of the mail is used**: its plain-text version when it is a real one, else the
+  HTML turned into text that keeps paragraphs, headings and lists, never one long run.
+- **Links become numbers**: `[1]` in the text and the site name in a list at the end
+  (`[1] example.org`); tracking redirects are unwrapped to where they really go; image-only links,
+  "view this email in your browser" and the unsubscribe and postal-address footer fold away under
+  one line. `⏎` on a number opens it; `y` copies it.
+- Quoted earlier messages stay folded (`z` shows them), as now.
+
+**The inbox holds only what is new** (X7). Once you have read a thread and dealt with it, `d`
+(done) files it for what it is for, with keryx's guess already chosen (`B14`, `Millennium`,
+`Errands`); `⏎` takes the guess, typing picks another. Automated mail never needs to reach you:
+receipts, notifications and newsletters are filed for their item as they arrive (a GitHub mail for
+`quast` to QUAST; a Canvas mail for B14 to B14; a receipt to Errands), and a person's mail is
+never moved without you. Today's 1,065 inbox threads are cleared once: Claude proposes where each
+goes, grouped, in Approve, and you accept a group at a time.
+
+---
+
 ## Decisions only you can make
 
 | # | Question | Options | Recommendation |
 |---|---|---|---|
-| X-a | Acting on real mail | a. `live = true`, after a round trip on `[keryx-test]` mail from each account (archive, file, reply, undo, seen in Mail and on the phone within seconds) · b. stay read-only | **a.** Without it nothing you do in the Mail view sticks, which is the main reason it can't beat Mail. |
-| X-b | What the Mail view leads with | a. **needs you** first: mail from people and threads waiting on your reply, then one line per kind of automated mail with its count (`newsletters 23 · notifications 14 · receipts 6`), each opening to clear in one go · b. one list by date, as now | **a.** The people are what matters and they are the minority; the rest is cleared in batches, not read one by one. Mockup below. |
-| X-c | Claude's part | a. a locus background job, inside the budget (plan E): it marks what needs a reply and why, drafts the clear-cut replies, proposes archiving or filing automated mail, and finds dates and tasks; all of it waits in locus's Approve · b. keryx's own scheduled runs (08:00, 18:00) and its own review screen | **a.** One approve place and one budget, as for everything else; keryx's own review screen would be a second Approve. |
-| X-d | Filing | a. by **what it is for** (a registry item: B14, Millennium, QUAST; or an area or stream: Admin is Errands), each mapped to the folder it goes in on that account; a thread filed for an application or a course shows on its page · b. keep keryx's six keys (Admin, Engineering, Careers, Travel, OQTS, JCR Treasurer) | **a.** The same "For" as kairos (ADR-009). The server folders stay as they are; only what you choose changes. |
-| X-e | Marking several threads | a. `v` marks (as in visual mode), since `x` now removes everywhere · b. `space` | **a.** `space` asks on the Project view, and `x` would mean two things. |
-| X-f | The old keryx repository | a. archived once this is done (as kairos's was) · b. kept | **a.** |
-
-**Mockup for X-b** (the Mail view, narrowed to fit here):
-
-```
-╭ mail · needs you 3 ────────────────────────────────────────────────────────────────── 4 accounts ╮
-│─ needs you ──────────────────────────────────────────────────────────────────────────────── [n] ─│
-│ ▸ an applicant    Following up on an event         asks if there's news   00:27  OQTS            │
-│   a recruiter     Re: summer internship            waiting on your reply  sun    Oxford          │
-│   a society       A competition invitation         new                    sun    OQTS            │
-│─ for you to see ─────────────────────────────────────────────────────────────────────────── [s] ─│
-│   a committee     This week's agenda               from a person, no ask  fri    Oxford          │
-│─ everything else · 41 ───────────────────────────────────────────────────────────────────── [e] ─│
-│   newsletters 17 · notifications 12 · receipts 4 · lists 8   ⏎ review · d clear all              │
-╰ ⏎ open · d archive · m file for · r reply · t task · ? keys ─────────────────────────────────────╯
-```
+| X-a | Acting on real mail | a. `live = true`, after a round trip on `[keryx-test]` mail from each account (archive, file, reply, undo, seen in Mail and on the phone within seconds) · b. stay read-only | **a.** Without it nothing you do in the Mail view sticks. |
+| X-b | Where filed mail goes on the servers | a. folders that mirror the taxonomy (`Studies/B14`, `Careers/Millennium`, `Personal/Errands`), made on each account when first needed · b. your existing folders only (Admin, Careers, Travel, …), each item mapped onto one | **a.** Mail on the phone and in Mail is then filed exactly as in locus, and an item's mail is one folder. keryx's spec ruled out creating folders; this lifts that, for these folders only. |
+| X-c | Claude's part | a. a locus background job, inside the budget (plan E): the one-off clear-out of today's inbox, filing guesses for automated mail, what needs a reply and why, drafts for the clear-cut ones, dates and tasks; all of it in locus's Approve · b. keryx's own scheduled runs and review screen | **a.** One approve place and one budget. |
+| X-d | Automated mail as it arrives | a. filed for its item at once, low risk and undoable, listed in the automatic log (`l`) · b. proposed in Approve like everything else | **a.** "Inbox only new things": automated mail is never new to you, and approving each one would make Approve the new inbox. |
+| X-e | Marking several threads | a. `v` marks (as in visual mode), since `x` now removes everywhere · b. `space` | **a.** |
+| X-f | The old keryx repository | a. archived once this is done · b. kept | **a.** |
+| X-g | The editor | a. your real Neovim, run inside the right pane (a terminal inside keryx), so your config, motions and completion all work · b. a Vim-like editor written into keryx (the common motions only) | **a.** Anything less than your Neovim will feel wrong within a day; the address-completion source for it already exists. |
 
 ---
 
 ## Rules
 - **Nothing that works stops.** Each step leaves keryx building, its tests green and keryxd
-  running; your mail is touched only after X-a, and only by your own keys or what you approve.
+  running; your mail is touched only after X-a, and only by your own keys, by what you approve, or
+  (per X-d) by filing automated mail, each undoable and logged.
 - **Never delete. Claude never sends. Mail is untrusted.** keryx's rules, unchanged: no trash or
   expunge path; a draft Claude writes waits for you and sends only after your yes, with the 10 s
   hold; mail text reaches Claude only inside keryx's marked envelopes, and never reaches a
   terminal raw.
+- **A person's mail is yours.** Nothing moves mail from a person without you, as now.
 - **One writer each.** keryxd is the only writer to mail and to its mirror; kairosd stays the
   only writer to the calendar, and keryx reaches it through kairosd's API as locus does.
 - Each step is a commit with tests and clippy green; anything about how it looks or reads is
@@ -89,50 +169,54 @@ and mail stays untrusted data. Those three rules from keryx's own spec become ru
 - **Check:** `scripts/ci.sh` green from the root; `keryx doctor` all good from the new build.
 
 ### X2 One app (as kairos-as-a-locus-app did for kairos)
-- locus-theme for the look (grey frame, its title on the left, locus's footer, hints, lowercase
-  days); the shared keys (`d` done is archive, `x` removes nothing here so it goes, `v` marks per
-  X-e, `+` composes); "approve" not "approvals"; `kairos_key` and keys become For (per X-d).
-- One approve place: drafts waiting to send and cleanup proposals appear in locus's Approve (as
-  calendar changes did), and keryx's `A` opens it. The phone pages and ntfy pushes go (plan B.4).
+- locus-theme for the look; the shared keys (`d` done, `v` marks per X-e, `+` writes a new mail,
+  `x` gone); "approve" not "approvals"; filing keys become For (the same type-ahead as kairos).
+- One approve place: drafts waiting to send and filing proposals appear in locus's Approve, and
+  keryx's `A` opens it. The phone pages and ntfy pushes go (plan B.4).
 - One contract: what locus shows of mail (Home's mail line, an application's timeline, a course's
-  page) comes from keryx as locus-contract types; the date finder reads keryx through it rather
-  than running the `keryx` command.
-- **Check:** keryx's and locus's key lists pass the shared-key test; dumps at 95 × 38 and
-  155 × 43 beside Home; locus's Approve shows a `[keryx-test]` draft and sends it on `y`.
+  page) comes from keryx as locus-contract types; the date finder reads keryx through it.
+- **Check:** the shared-key test passes for keryx; locus's Approve shows a `[keryx-test]` draft
+  and sends it on `y`.
 
-### X3 Reading
-- Invisible preheader characters stripped; tracking links shown as their site (`[1] aaa.com`)
-  with the full address one key away; the account as a short coloured tag that never cuts.
-- **Check:** your real newsletters, before and after, as dumps.
+### X3 Clean text
+- As described above: invisible characters, the best part of the mail, links as numbers with
+  tracking unwrapped, footers folded.
+- **Check:** ten of your real newsletters and notices, before and after, as dumps (kept out of
+  the repository).
 
 ### X4 Live (per X-a)
 - The round trips on `[keryx-test]` mail from each account, then `live = true`.
-- **Check:** each round trip seen in Mail and on the phone, and undone with `u`.
+- **Check:** each seen in Mail and on the phone, and undone with `u`.
 
-### X5 The view (per X-b), first cut
-- Needs you, for you to see, everything else in kinds; built from keryx's own signals first
-  (sent to you by a person, a reply you owe, automated by headers), Claude's marks (X6) refining
-  them.
-- **Check:** your inbox as it is that day, in the three parts, for you to judge.
+### X5 The view
+- The layout above: two quiet lines a thread, days as headings, the new-since rule, the header
+  tabs with `Tab`/`⇧Tab`, `b` for the list.
+- **Check:** dumps at 95 × 38 and 155 × 43 on your inbox, for you to judge at the screen.
 
-### X6 Claude on your mail (per X-c)
-- A locus job, inside the budget: needs-reply marks with a reason, drafts for the clear-cut ones,
-  cleanup proposals for automated mail, dates and tasks found in mail (beside the date finder
-  already in Approve), each into Approve.
-- **Check:** one real run on your mail, its items in Approve, what it cost.
+### X6 Writing (per X-g)
+- Neovim in the right pane for reply, reply all, forward and new mail; the header block as above;
+  `^a` attachments; `:w` to send with the confirm and the hold; `:q` keeps a draft.
+- **Check:** a reply with an attachment and a changed subject sent to yourself from each
+  account, read on the phone with the attachment intact.
 
-### X7 Filing for (per X-d)
-- `m` asks what it is for (the same type-ahead as kairos); the thread goes to that account's
-  folder for it and shows on the item's page.
-- **Check:** a Millennium thread filed, seen in Mail's folder and on Millennium's timeline.
+### X7 The inbox holds only what is new (per X-b, X-d)
+- `d` files for what it is for, the guess chosen; automated mail filed as it arrives; the
+  folders made on first use; filed mail on its item's page (an application's timeline, a course).
+- The one-off clear-out (per X-c): Claude's proposals for today's inbox, grouped, in Approve.
+- **Check:** the inbox after the clear-out, counted; a week later, what reached it and what was
+  filed by itself.
 
-### X8 Rounds with you
-After X5, the Mail view is reviewed in use like every other screen: what you reach for, what you
-skip, what Mail still does better. Each round's changes are recorded in slice-1.md.
+### X8 Claude on your mail (per X-c)
+- The locus job: what needs a reply and why, drafts for the clear-cut ones, dates and tasks found
+  in mail, into Approve.
+- **Check:** one real run, its items in Approve, what it cost.
+
+### X9 Rounds with you
+Each change after X5 is reviewed in use; every round recorded in slice-1.md.
 
 ## Order
-X1, X2 and X3 (mechanical, no change to your mail), then X4 with you, then X5 to X7, then the
-rounds. X6 can wait for Slice 0's budget logging if that is not in yet.
+X1, X2 and X3 (no change to your mail), then X4 with you, then X5 and X6, then X7 and X8, then the
+rounds. X8 and the clear-out wait for Slice 0's budget logging if that is not in yet.
 
 ## Report
 *(when the steps are done)*

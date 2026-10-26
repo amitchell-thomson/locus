@@ -1,6 +1,6 @@
 # keryx joins locus: one app, then a mail view you would rather use than Mail
 
-**State:** proposed, waiting for your approval · **Written:** 2026-10-26 · **Runs in:** `locus slice 1`
+**State:** approved 2026-10-26, in progress · **Written:** 2026-10-26 · **Runs in:** `locus slice 1`
 **Decision:** [ADR-008](../../decisions/ADR-008-kairos-joins-locus.md) ("keryx will later too").
 **From:** your words, 26 Oct: "lets begin refining it to something I actually find easier and
 better to use than mail". **Builds on:** [kairos-joins-locus.md](kairos-joins-locus.md) and
@@ -131,6 +131,15 @@ goes, grouped, in Approve, and you accept a group at a time.
 ---
 
 ## Decisions only you can make
+
+**Answered 26 Oct 2026:** X-a, X-c, X-e, X-f, X-g as recommended ("agree with my real neovim, its
+colors match the theme"). X-b: folders for the areas and Personal's streams only, as the calendar
+has them ("I only need the same high level ones as calendar, ie the areas, and then personal's
+threads"): Studies, Projects, Careers, Errands, Sport, Social, Family; the item a thread is for
+(B14, Millennium) is kept by keryx and shows on its page. X-d: "Automated mail filed away straight
+away." Approve gets a redesign in the design sessions (added to slice-1.md). Reading a thread in
+order: "unless you have a great idea now, in that case just implement it and I will review"; see
+X5.
 
 | # | Question | Options | Recommendation |
 |---|---|---|---|

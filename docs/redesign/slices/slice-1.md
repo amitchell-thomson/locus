@@ -150,6 +150,8 @@ here (plan G and screens v2's own open questions):
 - the weekly review in use;
 - the new screens (Budget, Ink confirm, Learning) from scratch, since nothing on paper went
   before them.
+- Approve, redesigned (26 Oct: "we need to add a redesign of the approve page to the design
+  sessions"), now that calendar changes, dates from mail, mail drafts and filing all land there;
 - a course's page (Studies), after keryx joins (26 Oct: "that needs a bit more work than just
   adding a row"): its lectures from the calendar (each linked to its course since 25 Oct), its
   sheets and due dates, notes and what Canvas will bring (Slice 7).

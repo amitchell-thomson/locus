@@ -4,7 +4,7 @@
 //! right in the order it was written, and locus's footer. `b` hides the list.
 
 use crate::app::{App, Mode, Open};
-use crate::theme::{c, centred, fade, fit, popup_block, rgb, selected_style, wrap};
+use crate::theme::{c, centred, fade, fit, popup_block, rgb, wrap};
 use keryx_core::display::{date_full, date_label};
 use keryx_core::invite::{Invite, When};
 use keryx_core::model::{Address, Message};
@@ -307,16 +307,7 @@ fn list(f: &mut Frame, app: &App, area: Rect) {
                 } else {
                     row_subject(app, r, w)
                 };
-                if sel {
-                    let st = if focus {
-                        selected_style(c("blue"))
-                    } else {
-                        crate::theme::reading_selected_style(c("blue"))
-                    };
-                    l.patch_style(st)
-                } else {
-                    l
-                }
+                if sel { crate::theme::lit_row(l, !focus) } else { l }
             }
         };
         f.buffer_mut().set_line(area.x, y, &line, area.width);
@@ -404,11 +395,7 @@ fn row_subject(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
 /// Kept for tests and the runs view: one thread as a single line.
 pub fn row_line(app: &App, r: &ThreadRow, width: usize, _show_account: bool, selected: bool) -> Line<'static> {
     let l = row_who(app, r, width);
-    if selected {
-        l.patch_style(selected_style(c("blue")))
-    } else {
-        l
-    }
+    if selected { crate::theme::lit_row(l, false) } else { l }
 }
 
 fn account_tag(app: &App, account: &str) -> (String, ratatui::style::Color) {

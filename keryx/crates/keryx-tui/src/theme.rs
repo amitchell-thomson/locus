@@ -5,6 +5,7 @@
 use keryx_core::colour::Rgb;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span};
 use ratatui::widgets::Block;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
@@ -70,14 +71,20 @@ pub fn selected_style(col: Color) -> Style {
     Style::default().fg(c("base")).bg(col).add_modifier(Modifier::BOLD)
 }
 
-/// The list's selection while you read beside it: a medium tint of the colour with light bold
-/// text, as kairos marks what is linked to its selection. It was the grey `surface0`, which sat
-/// too close to the list's dim text to find (your note of 26 Oct).
-pub fn reading_selected_style(col: Color) -> Style {
-    Style::default()
-        .fg(c("text"))
-        .bg(fade(col, 0.55))
-        .add_modifier(Modifier::BOLD)
+/// The list's selected row (your call of 26 Oct, option 2): a medium tint with every piece of
+/// text on it bright and bold. Blue while you move through the list; mauve (magenta) while a
+/// thread is open, so the colour says you are reading. The fill alone was not enough: the
+/// row's dates, tags and subject keep their own dim greys unless each span is lit.
+pub fn lit_row(line: Line<'static>, reading: bool) -> Line<'static> {
+    let fill = fade(c(if reading { "mauve" } else { "blue" }), 0.55);
+    let st = Style::default().fg(c("text")).bg(fill).add_modifier(Modifier::BOLD);
+    Line::from(
+        line.spans
+            .into_iter()
+            .map(|s| Span::styled(s.content, st))
+            .collect::<Vec<_>>(),
+    )
+    .style(st)
 }
 
 /// A pane: locus's grey screen frame with its title on the left (the frame is never blue: the

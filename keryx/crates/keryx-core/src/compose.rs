@@ -1,6 +1,7 @@
 //! The `$EDITOR` file for replies, forwards and new mail (SPEC §8.1):
 //!
 //! ```text
+//! From: oxford
 //! To: Jane Doe <jane@example.com>
 //! Cc:
 //! Bcc:
@@ -26,6 +27,8 @@ pub const ERROR_PREFIX: &str = "# keryx: ";
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Composed {
+    /// `From:` as typed: an account's id, name or address (the TUI resolves it).
+    pub from: Option<String>,
     pub to: Vec<Address>,
     pub cc: Vec<Address>,
     pub bcc: Vec<Address>,
@@ -47,8 +50,12 @@ pub enum ComposeError {
     Attachment { path: String, why: String },
     #[error("attachments total {mb} MB; the limit is {limit} MB")]
     TooBig { mb: u64, limit: u32 },
-    #[error("unknown header {0:?}: use To, Cc, Bcc, Subject or Attach")]
+    #[error("unknown header {0:?}: use From, To, Cc, Bcc, Subject or Attach")]
     UnknownHeader(String),
+    #[error("no account {0:?} to send from: use one of {1}")]
+    UnknownAccount(String, String),
+    #[error("a reply goes from the account it came to ({0}): forward it (F) to send from another")]
+    ReplyFromOther(String),
 }
 
 fn list(v: &[Address]) -> String {
@@ -83,6 +90,12 @@ pub fn file_with_body(
         s.push_str(quote);
     }
     s
+}
+
+/// The file with a `From:` line naming the account it goes from (keryx-joins-locus X6: change it
+/// to send from another account).
+pub fn with_from(text: &str, account: &str) -> String {
+    format!("From: {account}\n{text}")
 }
 
 /// The file again, with the error explained at the top (and any earlier
@@ -153,6 +166,8 @@ pub fn parse(text: &str, signature: Option<&str>, max_mb: u32) -> Result<Compose
         };
         let v = v.trim();
         match k.trim().to_ascii_lowercase().as_str() {
+            "from" if !v.is_empty() => c.from = Some(v.to_string()),
+            "from" => {}
             "to" => c.to.extend(parse_addresses(v)?),
             "cc" => c.cc.extend(parse_addresses(v)?),
             "bcc" => c.bcc.extend(parse_addresses(v)?),
@@ -253,9 +268,11 @@ mod tests {
         assert!(matches!(parse(f, None, 25), Err(ComposeError::BadAddress(_))));
         assert_eq!(parse("To: \n\nbody\n", None, 25), Err(ComposeError::NoRecipients));
         assert!(matches!(
-            parse("From: me@x.com\n\nbody\n", None, 25),
+            parse("Reply-To: me@x.com\n\nbody\n", None, 25),
             Err(ComposeError::UnknownHeader(_))
         ));
+        let c = parse(&with_from("To: jane@example.com\n\nbody\n", "oxford"), None, 25).unwrap();
+        assert_eq!(c.from.as_deref(), Some("oxford"));
     }
 
     #[test]

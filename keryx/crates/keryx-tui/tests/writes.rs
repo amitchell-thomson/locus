@@ -400,7 +400,9 @@ fn reply_flow_confirm_and_send() {
     a.key(Key::Char('r'));
     let (text, purpose) = editor(&mut a);
     assert!(
-        text.starts_with("To: Jane Doe <jane.doe@example.com>\nCc: \nBcc: \nSubject: Re: Lab partner for Thursday?\n"),
+        text.starts_with(
+            "From: oxford\nTo: Jane Doe <jane.doe@example.com>\nCc: \nBcc: \nSubject: Re: Lab partner for Thursday?\n"
+        ),
         "{text}"
     );
     assert!(text.contains(keryx_core::compose::MARKER) && text.contains("> Are you free"));
@@ -427,7 +429,9 @@ fn reply_all_when_alec_wrote_last() {
     a.key(Key::Char('R'));
     let (text, _) = editor(&mut a);
     assert!(
-        text.starts_with("To: Jane Doe <jane.doe@example.com>, Sam <sam@example.com>\nCc: Team <team@example.com>\n"),
+        text.starts_with(
+            "From: oxford\nTo: Jane Doe <jane.doe@example.com>, Sam <sam@example.com>\nCc: Team <team@example.com>\n"
+        ),
         "{text}"
     );
 }
@@ -457,7 +461,10 @@ fn forward_and_compose() {
     select(&mut a, "Grüße");
     a.key(Key::Char('F'));
     let (text, purpose) = editor(&mut a);
-    assert!(text.starts_with("To: \nCc: \nBcc: \nSubject: Fwd: Grüße\n"), "{text}");
+    assert!(
+        text.starts_with("From: oxford\nTo: \nCc: \nBcc: \nSubject: Fwd: Grüße\n"),
+        "{text}"
+    );
     assert!(text.contains("---------- Forwarded message ----------"));
     assert_eq!(
         purpose,
@@ -681,7 +688,7 @@ fn w_puts_free_times_in_a_reply() {
         "{}",
         req.text
     );
-    assert!(req.text.starts_with("To: "), "{}", req.text);
+    assert!(req.text.starts_with("From: oxford\nTo: "), "{}", req.text);
     assert!(matches!(req.purpose, keryx_tui::send::Purpose::Reply { .. }));
 }
 
@@ -815,4 +822,145 @@ fn a_opens_locus_approve_and_keryx_has_no_approve_screen_of_its_own() {
         "{:?}",
         a.message
     );
+}
+
+// ---------------- X6: writing in your Neovim, in the right pane ----------------
+
+#[test]
+fn from_switches_the_account_for_new_mail_but_never_for_a_reply() {
+    let (mut a, _f) = app();
+    a.key(Key::Char('+'));
+    let (text, purpose) = editor(&mut a);
+    let first = text.lines().next().unwrap().to_string();
+    let typed = text
+        .replacen(&first, "From: personal", 1)
+        .replacen("To: ", "To: jane.doe@example.com", 1);
+    a.editor_done(purpose, Ok(type_body(&typed, "Hello")));
+    match &a.mode {
+        Mode::ConfirmSend(d) => {
+            assert_eq!(d.req.account, "personal");
+            assert_eq!(
+                d.purpose,
+                Purpose::Compose {
+                    account: "personal".into()
+                }
+            );
+        }
+        m => panic!("{m:?}"),
+    }
+
+    let (mut a, _f) = app();
+    select(&mut a, "Lab partner for Thursday?");
+    a.key(Key::Char('r'));
+    let (text, purpose) = editor(&mut a);
+    a.editor_done(
+        purpose.clone(),
+        Ok(type_body(&text.replacen("From: oxford", "From: nowhere", 1), "hi")),
+    );
+    let (again, _) = editor(&mut a);
+    assert!(
+        again.starts_with("# keryx: no account \"nowhere\" to send from"),
+        "{again}"
+    );
+    a.editor_done(
+        purpose,
+        Ok(type_body(&text.replacen("From: oxford", "From: personal", 1), "hi")),
+    );
+    let (again, _) = editor(&mut a);
+    assert!(
+        again.contains("a reply goes from the account it came to (oxford)"),
+        "{again}"
+    );
+}
+
+#[test]
+fn quitting_keeps_a_draft_that_r_reopens_and_sending_drops() {
+    use keryx_tui::writing::Finished;
+    let (mut a, f) = app();
+    let dir = tempfile::tempdir().unwrap();
+    a.drafts_dir = Some(dir.path().to_path_buf());
+    select(&mut a, "Lab partner for Thursday?");
+    a.key(Key::Char('r'));
+    let (text, purpose) = editor(&mut a);
+    a.writing_started(purpose.clone());
+    assert!(render_to_string(&mut a, 120, 10).contains("writing a reply"));
+    // What :q leaves behind (keryx.lua writes it), then the session's verdict.
+    let half = type_body(&text, "Half a thought");
+    std::fs::write(a.draft_path(&purpose).unwrap(), &half).unwrap();
+    a.writing_finished(Finished::Kept);
+    assert_eq!(a.message.as_ref().unwrap().0, "kept as a draft · r opens it again");
+    assert!(a.writing.is_none());
+
+    a.key(Key::Char('r'));
+    let (text, purpose) = editor(&mut a);
+    assert_eq!(text, half, "r opens the kept draft");
+    assert!(a.message.as_ref().unwrap().0.contains(":cq throws it away"));
+    a.writing_started(purpose.clone());
+    a.writing_finished(Finished::Send(type_body(&text, "and the rest")));
+    assert!(matches!(a.mode, Mode::ConfirmSend(_)));
+    assert!(a.draft_path(&purpose).unwrap().exists(), "kept until it is sent");
+    keys(&mut a, &[Key::Char('y')]);
+    assert!(!a.draft_path(&purpose).unwrap().exists(), "sent: the draft goes");
+    assert!(f.take()[0].contains("Half a thought"));
+}
+
+#[test]
+fn the_attach_picker_chooses_a_file() {
+    use keryx_tui::pick::Picker;
+    let (mut a, _f) = app();
+    let home = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(home.path().join("Documents")).unwrap();
+    std::fs::write(home.path().join("Documents/form.pdf"), b"%PDF").unwrap();
+    std::fs::write(home.path().join("Documents/notes.txt"), b"x").unwrap();
+    a.key(Key::Char('+'));
+    let (_, purpose) = editor(&mut a);
+    a.writing_started(purpose);
+    a.open_picker(Picker::scan(home.path()));
+    let s = render_to_string(&mut a, 100, 24);
+    assert!(s.contains("attach a file") && s.contains("⏎ attach"), "{s}");
+    for c in "form".chars() {
+        assert_eq!(a.picker_key(Key::Char(c)), None);
+    }
+    assert_eq!(a.picker_key(Key::Enter), Some(home.path().join("Documents/form.pdf")));
+    assert!(a.writing.as_ref().unwrap().picker.is_none());
+}
+
+#[test]
+fn the_editor_draws_in_the_right_pane_with_the_list_beside_it() {
+    use keryx_tui::pane::Pane;
+    use portable_pty::CommandBuilder;
+    let (mut a, _f) = app();
+    a.width = 120;
+    select(&mut a, "Lab partner for Thursday?");
+    a.key(Key::Char('r'));
+    let (_, purpose) = editor(&mut a);
+    a.writing_started(purpose);
+    let size = ratatui::layout::Rect::new(0, 0, 120, 14);
+    let r = keryx_tui::ui::writing_rect(&a, size);
+    assert!(r.x > 30 && r.width < 90, "{r:?}");
+    let mut cmd = CommandBuilder::new("/bin/sh");
+    cmd.args(["-c", "printf 'To: jane\\r\\nSubject: Re: Lab'; sleep 5"]);
+    let pane = Pane::spawn(cmd, r.height, r.width, "#1e1e2e").unwrap();
+    let start = std::time::Instant::now();
+    while !pane.with_screen(|s| s.contents()).unwrap().contains("Re: Lab") {
+        assert!(start.elapsed().as_secs() < 5);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 14)).unwrap();
+    term.draw(|f| keryx_tui::ui::draw_writing(f, &a, Some(&pane))).unwrap();
+    let buf = term.backend().buffer();
+    let rows: Vec<String> = (0..14)
+        .map(|y| (0..120).map(|x| buf[(x, y)].symbol().to_string()).collect::<String>())
+        .collect();
+    let s = rows.join("\n");
+    assert!(s.contains("writing a reply"), "{s}");
+    assert!(
+        rows[1].contains("To: jane") && rows[2].contains("Subject: Re: Lab"),
+        "{s}"
+    );
+    assert!(
+        rows[1].find("To: jane").unwrap() >= r.x as usize,
+        "in the right pane: {s}"
+    );
+    assert!(s.contains(":w send") && s.contains(":q keep as a draft"), "{s}");
 }

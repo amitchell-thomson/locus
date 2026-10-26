@@ -170,3 +170,48 @@ pub fn confirm_unsubscribe(f: &mut Frame, area: Rect, how: &str) {
     ];
     f.render_widget(Paragraph::new(lines), inner);
 }
+
+/// `^a` while writing: type part of a path, the newest matching files first.
+pub fn picker(f: &mut Frame, area: Rect, p: &crate::pick::Picker) {
+    let r = centred(area, 84, 20);
+    f.render_widget(Clear, r);
+    let block = popup_block("attach a file");
+    let inner = block.inner(r);
+    f.render_widget(block, r);
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled(" ", Style::default()),
+            Span::styled(format!("{}█", p.query), Style::default().fg(c("text"))),
+        ]),
+        Line::raw(""),
+    ];
+    let matches = p.matches();
+    if matches.is_empty() {
+        lines.push(Line::from(Span::styled(
+            " nothing matches in Downloads, Desktop or Documents",
+            locus_theme::dim(),
+        )));
+    }
+    let rows = usize::from(inner.height.saturating_sub(2));
+    let first = p.sel.saturating_sub(rows.saturating_sub(1));
+    let w = usize::from(inner.width);
+    for (i, file) in matches.iter().enumerate().skip(first).take(rows) {
+        let size = crate::ui::size(file.size);
+        let path = crate::pick::tilde(&file.path, home.as_deref());
+        let room = w.saturating_sub(size.len() + 4);
+        let style = if i == p.sel {
+            locus_theme::bold(locus_theme::st("blue"))
+        } else {
+            Style::default().fg(c("text"))
+        };
+        let shown = fit(&path, room);
+        let gap = room.saturating_sub(unicode_width::UnicodeWidthStr::width(shown.as_str()));
+        lines.push(Line::from(vec![
+            Span::styled(format!(" {shown}"), style),
+            Span::raw(" ".repeat(gap + 1)),
+            Span::styled(size, locus_theme::dim()),
+        ]));
+    }
+    f.render_widget(Paragraph::new(lines), inner);
+}

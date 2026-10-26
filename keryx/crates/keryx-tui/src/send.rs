@@ -36,7 +36,7 @@ pub enum Purpose {
 }
 
 impl Purpose {
-    fn account(&self) -> &str {
+    pub fn account(&self) -> &str {
         match self {
             Purpose::Reply { account, .. }
             | Purpose::Forward { account }
@@ -44,6 +44,45 @@ impl Purpose {
             | Purpose::EditDraft { account, .. } => account,
         }
     }
+    /// The same purpose from another account (new mail and forwards; a reply cannot move).
+    fn moved_to(&self, account: &str) -> Purpose {
+        match self {
+            Purpose::Forward { .. } => Purpose::Forward {
+                account: account.to_string(),
+            },
+            Purpose::Compose { .. } => Purpose::Compose {
+                account: account.to_string(),
+            },
+            other => other.clone(),
+        }
+    }
+
+    /// What the header says while writing.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Purpose::Reply { .. } => "writing a reply",
+            Purpose::Forward { .. } => "forwarding",
+            Purpose::Compose { .. } => "writing a new mail",
+            Purpose::EditDraft { .. } => "editing a draft",
+        }
+    }
+
+    /// The name a kept draft goes under: one per thread for a reply, one per account for a new
+    /// mail or a forward. A draft of Claude's is not kept here (it waits in Approve).
+    pub fn draft_name(&self) -> Option<String> {
+        let safe = |s: &str| -> String {
+            s.chars()
+                .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
+                .collect()
+        };
+        match self {
+            Purpose::Reply { r#ref, .. } => Some(format!("reply-{}.eml", safe(r#ref))),
+            Purpose::Forward { account } => Some(format!("forward-{}.eml", safe(account))),
+            Purpose::Compose { account } => Some(format!("new-{}.eml", safe(account))),
+            Purpose::EditDraft { .. } => None,
+        }
+    }
+
     fn thread(&self) -> Option<String> {
         match self {
             Purpose::Reply { r#ref, .. } => Some(r#ref.clone()),
@@ -57,6 +96,14 @@ impl Purpose {
 pub struct EditorRequest {
     pub text: String,
     pub purpose: Purpose,
+}
+
+/// Writing in the right pane: what for, where Esc-like endings return, and the `^a` picker.
+#[derive(Debug, Clone)]
+pub struct Writing {
+    pub purpose: Purpose,
+    pub back: Mode,
+    pub picker: Option<crate::pick::Picker>,
 }
 
 /// A composed message waiting for `y` on the confirm screen.
@@ -165,8 +212,116 @@ impl App {
             }
             _ => return false,
         };
-        self.editor_request = Some(req);
+        self.write(req.text, req.purpose);
         true
+    }
+
+    /// Open the editor on `text` for `purpose`: the account it goes from on a `From:` line, or
+    /// the draft you kept for it.
+    pub fn write(&mut self, text: String, purpose: Purpose) {
+        let kept = self
+            .draft_path(&purpose)
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .filter(|t| !t.trim().is_empty());
+        let text = match kept {
+            Some(t) => {
+                self.message = Some(("your kept draft · :cq throws it away".into(), false));
+                t
+            }
+            None => compose::with_from(&text, purpose.account()),
+        };
+        self.editor_request = Some(EditorRequest { text, purpose });
+    }
+
+    pub fn draft_path(&self, purpose: &Purpose) -> Option<std::path::PathBuf> {
+        Some(self.drafts_dir.as_ref()?.join(purpose.draft_name()?))
+    }
+
+    fn drop_draft(&self, purpose: &Purpose) {
+        if let Some(p) = self.draft_path(purpose) {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+
+    /// The run loop started the editor for `purpose`.
+    pub fn writing_started(&mut self, purpose: Purpose) {
+        self.writing = Some(Writing {
+            purpose,
+            back: self.mode.clone(),
+            picker: None,
+        });
+    }
+
+    /// The editor closed.
+    pub fn writing_finished(&mut self, how: crate::writing::Finished) {
+        use crate::writing::Finished;
+        let Some(w) = self.writing.take() else { return };
+        self.mode = w.back;
+        match how {
+            Finished::Send(text) => {
+                // Kept until it is sent, so `n` on the confirm screen loses nothing.
+                if let Some(p) = self.draft_path(&w.purpose) {
+                    let _ = std::fs::write(p, &text);
+                }
+                self.editor_done(w.purpose, Ok(text));
+            }
+            Finished::Kept => {
+                let again = if matches!(w.purpose, Purpose::Reply { .. }) {
+                    "r"
+                } else {
+                    "+"
+                };
+                self.message = Some((format!("kept as a draft · {again} opens it again"), false));
+            }
+            Finished::Discarded => self.message = Some(("draft thrown away".into(), false)),
+            Finished::Closed => self.message = Some(("nothing sent".into(), false)),
+        }
+    }
+
+    /// `^a` while writing: the picker over your recent files.
+    pub fn open_picker(&mut self, picker: crate::pick::Picker) {
+        if let Some(w) = &mut self.writing {
+            w.picker = Some(picker);
+        }
+    }
+
+    /// A key in the picker; `Some(path)` once a file is chosen.
+    pub fn picker_key(&mut self, k: Key) -> Option<std::path::PathBuf> {
+        let w = self.writing.as_mut()?;
+        let p = w.picker.as_mut()?;
+        match p.key(k) {
+            crate::pick::Picked::Still => None,
+            crate::pick::Picked::Cancelled => {
+                w.picker = None;
+                None
+            }
+            crate::pick::Picked::Chosen(path) => {
+                w.picker = None;
+                Some(path)
+            }
+        }
+    }
+
+    /// `From:` as typed, as an account id: its id, name or one of its addresses.
+    fn resolve_from(&self, purpose: &Purpose, from: Option<&str>) -> Result<String, ComposeError> {
+        let Some(v) = from else {
+            return Ok(purpose.account().to_string());
+        };
+        let v = v.trim();
+        let found = self.cfg.accounts.iter().find(|a| {
+            a.id.eq_ignore_ascii_case(v)
+                || a.name.eq_ignore_ascii_case(v)
+                || a.address.eq_ignore_ascii_case(v)
+                || a.aliases.iter().any(|x| x.eq_ignore_ascii_case(v))
+        });
+        let Some(a) = found else {
+            let ids: Vec<&str> = self.cfg.accounts.iter().map(|a| a.id.as_str()).collect();
+            return Err(ComposeError::UnknownAccount(v.to_string(), ids.join(", ")));
+        };
+        if matches!(purpose, Purpose::Reply { .. } | Purpose::EditDraft { .. }) && a.id != purpose.account() {
+            return Err(ComposeError::ReplyFromOther(purpose.account().to_string()));
+        }
+        Ok(a.id.clone())
     }
 
     /// The editor closed with `result` (the saved file, or why it failed).
@@ -192,6 +347,17 @@ impl App {
                 });
             }
             Ok(c) => {
+                let account = match self.resolve_from(&purpose, c.from.as_deref()) {
+                    Ok(a) => a,
+                    Err(e) => {
+                        self.editor_request = Some(EditorRequest {
+                            text: compose::with_error(&text, &e),
+                            purpose,
+                        });
+                        return;
+                    }
+                };
+                let purpose = purpose.moved_to(&account);
                 let req = SendReq {
                     account: account.clone(),
                     thread: purpose.thread(),
@@ -244,6 +410,7 @@ impl App {
     pub fn confirm_send_key(&mut self, k: Key, d: SendDraft) {
         match k {
             Key::Char('y') => {
+                self.drop_draft(&d.purpose);
                 self.deferred.push(match &d.purpose {
                     Purpose::EditDraft { id, .. } => Job::Replace(id.clone(), d.req.clone()),
                     _ => Job::Send(d.req.clone()),

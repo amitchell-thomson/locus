@@ -23,6 +23,11 @@ pub const ICON_SNOOZE: &str = "󰒲";
 pub const ICON_TASK: &str = "󰄱";
 
 pub fn draw(f: &mut Frame, app: &App) {
+    draw_writing(f, app, None);
+}
+
+/// The frame, with the editor's terminal in the right pane while writing (X6).
+pub fn draw_writing(f: &mut Frame, app: &App, editor: Option<&crate::pane::Pane>) {
     let area = f.area();
     if area.height < 4 {
         return;
@@ -36,9 +41,12 @@ pub fn draw(f: &mut Frame, app: &App) {
     } else if matches!(app.mode, Mode::RunDetail { .. }) {
         crate::ui_runs::detail(f, app, main);
     } else {
-        mail(f, app, main);
+        mail(f, app, main, editor);
     }
     footer(f, app, foot);
+    if let Some(p) = app.writing.as_ref().and_then(|w| w.picker.as_ref()) {
+        crate::ui_send::picker(f, area, p);
+    }
     match &app.mode {
         Mode::Help => help(f, area),
         Mode::GoTo => goto(f, app, area),
@@ -84,9 +92,55 @@ fn header(app: &App) -> Line<'static> {
 }
 
 /// The list and the reading pane in one frame.
-fn mail(f: &mut Frame, app: &App, area: Rect) {
+/// Where the list, its rule and the right-hand pane go inside the frame's border.
+struct Panes {
+    list: Option<Rect>,
+    right: Rect,
+}
+
+fn panes(app: &App, inner: Rect) -> Panes {
+    let reading = matches!(app.mode, Mode::Thread | Mode::Attachments) || app.writing.is_some();
+    if app.list_hidden || (!app.split() && reading) {
+        return Panes {
+            list: None,
+            right: inner,
+        };
+    }
+    if !app.split() {
+        return Panes {
+            list: Some(inner),
+            right: Rect::new(inner.x + inner.width, inner.y, 0, inner.height),
+        };
+    }
+    let lw = (inner.width / 3).clamp(30, 46);
+    Panes {
+        list: Some(Rect::new(inner.x, inner.y, lw, inner.height)),
+        right: Rect::new(inner.x + lw + 1, inner.y, inner.width - lw - 1, inner.height),
+    }
+}
+
+/// Where the editor's terminal goes in a frame of `size` (the run loop sizes the pty to it).
+pub fn writing_rect(app: &App, size: Rect) -> Rect {
+    let main = Rect::new(size.x, size.y, size.width, size.height.saturating_sub(1));
+    let inner = Rect::new(
+        main.x + 1,
+        main.y + 1,
+        main.width.saturating_sub(2),
+        main.height.saturating_sub(2),
+    );
+    let r = panes(app, inner).right;
+    Rect::new(r.x + 1, r.y, r.width.saturating_sub(1), r.height)
+}
+
+fn mail(f: &mut Frame, app: &App, area: Rect, editor: Option<&crate::pane::Pane>) {
     let new = app.new_count();
-    let right = (new > 0).then(|| Line::from(Span::styled(format!(" {new} new "), locus_theme::st("peach"))));
+    let right = match &app.writing {
+        Some(w) => Some(Line::from(Span::styled(
+            format!(" {} ", w.purpose.label()),
+            locus_theme::st("peach"),
+        ))),
+        None => (new > 0).then(|| Line::from(Span::styled(format!(" {new} new "), locus_theme::st("peach")))),
+    };
     let block = locus_theme::screen(header(app), right);
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -99,23 +153,40 @@ fn mail(f: &mut Frame, app: &App, area: Rect) {
     } else {
         app.preview.as_ref()
     };
-    if app.list_hidden || (!app.split() && reading) {
-        thread(f, app, inner, open);
+    let p = panes(app, inner);
+    if let Some(l) = p.list {
+        list(f, app, l);
+        if p.right.width > 0 {
+            for y in p.right.y..p.right.y + p.right.height {
+                f.buffer_mut()
+                    .set_string(p.right.x - 1, y, "│", locus_theme::st("surface1"));
+            }
+        }
+    }
+    if p.right.width == 0 {
         return;
     }
-    if !app.split() {
-        list(f, app, inner);
+    if app.writing.is_some() {
+        let r = Rect::new(
+            p.right.x + 1,
+            p.right.y,
+            p.right.width.saturating_sub(1),
+            p.right.height,
+        );
+        if let Some(pane) = editor {
+            pane.with_screen(|screen| {
+                let term = tui_term::widget::PseudoTerminal::new(screen)
+                    .cursor(tui_term::widget::Cursor::default().visibility(false));
+                f.render_widget(term, r);
+                if !screen.hide_cursor() && app.writing.as_ref().is_some_and(|w| w.picker.is_none()) {
+                    let (y, x) = screen.cursor_position();
+                    f.set_cursor_position((r.x + x, r.y + y));
+                }
+            });
+        }
         return;
     }
-    let lw = (inner.width / 3).clamp(30, 46);
-    let left = Rect::new(inner.x, inner.y, lw, inner.height);
-    let rule = Rect::new(inner.x + lw, inner.y, 1, inner.height);
-    let right = Rect::new(inner.x + lw + 1, inner.y, inner.width - lw - 1, inner.height);
-    list(f, app, left);
-    for y in rule.y..rule.y + rule.height {
-        f.buffer_mut().set_string(rule.x, y, "│", locus_theme::st("surface1"));
-    }
-    thread(f, app, right, open);
+    thread(f, app, p.right, open);
 }
 
 /// A day as a list heading: `today`, `yesterday`, `friday`, `12 oct`.
@@ -653,6 +724,17 @@ fn thread(f: &mut Frame, app: &App, area: Rect, open: Option<&Open>) {
 /// hold, what waits in Approve, a stale sync.
 fn footer(f: &mut Frame, app: &App, area: Rect) {
     let pairs: Vec<(&str, &str)> = match &app.mode {
+        _ if app.writing.as_ref().is_some_and(|w| w.picker.is_some()) => {
+            vec![("⏎", "attach"), ("↑ ↓", "move"), ("esc", "back")]
+        }
+        _ if app.writing.is_some() => {
+            vec![
+                (":w", "send"),
+                (":q", "keep as a draft"),
+                (":cq", "throw away"),
+                ("^a", "attach"),
+            ]
+        }
         Mode::Search(_) => vec![("⏎", "keep"), ("esc", "clear"), ("↑ ↓", "move")],
         Mode::Thread
             if app

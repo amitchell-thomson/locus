@@ -165,13 +165,13 @@ impl App {
         match keryx_core::reply::reply(&self.cfg, &msgs, false) {
             Ok(d) => {
                 let sig = self.cfg.account(&d.account).and_then(|x| x.signature.clone());
-                self.editor_request = Some(crate::send::EditorRequest {
-                    text: keryx_core::compose::file_with_body(&d.to, &d.cc, &d.subject, text, sig.as_deref(), &d.quote),
-                    purpose: crate::send::Purpose::Reply {
+                self.write(
+                    keryx_core::compose::file_with_body(&d.to, &d.cc, &d.subject, text, sig.as_deref(), &d.quote),
+                    crate::send::Purpose::Reply {
                         r#ref: r.to_string(),
                         account: d.account,
                     },
-                });
+                );
             }
             Err(e) => self.message = Some((e.to_string(), true)),
         }

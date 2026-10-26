@@ -132,6 +132,10 @@ pub struct App {
     pub pending_sends: usize,
     /// The run loop opens `$EDITOR` for this, then calls `editor_done`.
     pub editor_request: Option<crate::send::EditorRequest>,
+    /// Writing a mail in the right pane (the run loop owns the editor itself).
+    pub writing: Option<crate::send::Writing>,
+    /// Where `:q` keeps a changed mail (set by the running TUI; `None` in tests unless set).
+    pub drafts_dir: Option<PathBuf>,
     /// A send in its hold: (changeset id, sends at).
     pub hold: Option<(String, i64)>,
     /// `b`: the list hidden, the message taking the width.
@@ -179,6 +183,8 @@ impl App {
             open_proposals: 0,
             pending_sends: 0,
             editor_request: None,
+            writing: None,
+            drafts_dir: None,
             hold: None,
             task_status: std::collections::HashMap::new(),
             list_hidden: false,

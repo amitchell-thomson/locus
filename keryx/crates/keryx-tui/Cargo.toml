@@ -19,10 +19,13 @@ crossterm.workspace = true
 ratatui.workspace = true
 unicode-width.workspace = true
 serde_json.workspace = true
+tui-term = "0.3.4"
+portable-pty = "0.9"
 
 [dev-dependencies]
 insta.workspace = true
 keryx-store = { workspace = true, features = ["testkit"] }
+tempfile.workspace = true
 
 [lints]
 workspace = true

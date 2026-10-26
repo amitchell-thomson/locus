@@ -1,46 +1,28 @@
-# Address completion in Neovim
+# Writing mail in Neovim
 
-keryx opens replies and new mail as `keryx-*.eml` files. This snippet completes addresses on `To:`, `Cc:` and `Bcc:` lines from `keryx addresses` (people you write to most come first). Add it to your Neovim config (chezmoi); keryx never edits your dotfiles.
+keryx writes in your own Neovim, run inside the right-hand pane of the Mail view with the list
+still beside it (keryx-joins-locus X6). Your config, motions and colours all apply; keryx adds a
+small Lua file for that one buffer (`keryx/crates/keryx-tui/nvim/keryx.lua`, loaded with `-c`)
+and never edits your dotfiles.
 
-```lua
--- keryx: mail filetype + address completion (<C-x><C-u>) in keryx-*.eml
-vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, {
-  pattern = "keryx-*.eml",
-  callback = function(ev)
-    vim.bo[ev.buf].filetype = "mail"
-    vim.bo[ev.buf].completefunc = "v:lua.KeryxComplete"
-  end,
-})
+| You type | What happens |
+|---|---|
+| `:w` (or `:wq`, `:x`, `ZZ`) | send: keryx shows who it goes to and from which account, `y` sends after the 10 s hold (`u` cancels) |
+| `:q` | close; a changed mail is kept as a draft, and `r` on the thread (or `+` for a new mail) opens it again |
+| `:cq` | close and throw the draft away |
+| `^a` | keryx's picker over Downloads, Desktop and Documents, newest first; `⏎` adds an `Attach:` line |
 
-function _G.KeryxComplete(findstart, base)
-  local line = vim.api.nvim_get_current_line()
-  if findstart == 1 then
-    if not (line:match("^To:") or line:match("^Cc:") or line:match("^Bcc:")) then
-      return -3 -- not an address line: cancel quietly
-    end
-    local col = vim.api.nvim_win_get_cursor(0)[2]
-    local start = col
-    while start > 0 and not line:sub(start, start):match("[,:]") do
-      start = start - 1
-    end
-    while line:sub(start + 1, start + 1) == " " do
-      start = start + 1
-    end
-    return start
-  end
-  local out = vim.fn.system({ "keryx", "addresses", base, "--json", "--limit", "20" })
-  local ok, data = pcall(vim.json.decode, out)
-  if not ok or not data.contacts then
-    return {}
-  end
-  local items = {}
-  for _, c in ipairs(data.contacts) do
-    table.insert(items, { word = c.display, menu = (c.sent > 0) and ("you wrote " .. c.sent) or "" })
-  end
-  return items
-end
-```
+The file: headers (`From:` the account it goes from, `To:`, `Cc:`, `Bcc:`, `Subject:`, any
+number of `Attach: ~/path`), a blank line, your message and signature, then the marker line (drawn
+as "the quote below is kept"); the quote below it is kept. Change the account on `From:` for a new
+mail or a forward; a reply goes from the account it came to. Each `Attach:` line shows the file's
+size, or "not found".
 
-Type part of a name or address after `To: ` and press `<C-x><C-u>`. With blink.cmp or nvim-cmp you can wrap the same `keryx addresses <prefix> --json` call as a source.
+**Address completion** on `To:`, `Cc:` and `Bcc:` comes from `keryx addresses` (the people you
+write to most first): as you type when your config has blink.cmp (a source keryx registers for
+this buffer only), and on `<C-x><C-u>` otherwise. `Attach:` paths complete with blink's own path
+source.
 
-The file layout: headers (`To:`, `Cc:`, `Bcc:`, `Subject:`, any number of `Attach: ~/path`), a blank line, your message and signature, then the marker line — the quote below it is kept. Save and quit to get the confirm screen; save an empty message to send nothing.
+keryx embeds the editor when `$VISUAL` (else `$EDITOR`) is `nvim`, or when neither is set and
+`nvim` is on the PATH. Any other editor runs full screen as before, without these keys: save and
+quit to get the confirm screen.

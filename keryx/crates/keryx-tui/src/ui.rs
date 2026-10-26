@@ -975,11 +975,18 @@ fn help(f: &mut Frame, area: Rect) {
 fn goto(f: &mut Frame, app: &App, area: Rect) {
     let key = |k: &str| Span::styled(format!(" {k}  "), locus_theme::bold(locus_theme::st("blue")));
     let head = |t: &str| Line::from(Span::styled(format!(" {t}"), locus_theme::dim()));
+    // The two columns' titles, bold, so they stand apart from Personal's subheading.
+    let title = |t: &str| {
+        Line::from(Span::styled(
+            format!(" {t}"),
+            locus_theme::bold(locus_theme::st("text")),
+        ))
+    };
     let entry = |k: &str, name: &str, col: ratatui::style::Color| {
         Line::from(vec![key(k), Span::styled(name.to_string(), Style::default().fg(col))])
     };
     let text = c("text");
-    let mut left = vec![head("mail")];
+    let mut left = vec![title("mail")];
     for group in [
         &[("i", "Inbox"), ("r", "Needs reply"), ("d", "Drafts")][..],
         &[("s", "Sent"), ("v", "Archive"), ("a", "All mail")][..],
@@ -1009,7 +1016,10 @@ fn goto(f: &mut Frame, app: &App, area: Rect) {
             .find(|a| a.filter_by_stream)
             .map(|a| a.id.to_lowercase())
     });
-    let mut right = vec![head(if app.shared.is_some() { "areas" } else { "keys" }), Line::raw("")];
+    let mut right = vec![
+        title(if app.shared.is_some() { "areas" } else { "keys" }),
+        Line::raw(""),
+    ];
     let mut in_streams = false;
     for (i, (name, col)) in folders.iter().enumerate() {
         if streams.contains(name) && !in_streams {

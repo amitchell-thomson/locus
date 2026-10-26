@@ -122,6 +122,20 @@ pub enum ApproveKind {
     /// A change to your calendar waiting for you (a kairos changeset from Claude or a script):
     /// one approve place, here, not a second list in kairos (round 7c).
     Calendar,
+    /// A mail Claude drafted, waiting for your yes to send (keryx; X2: one approve place).
+    MailSend,
+    /// Where Claude would file or archive a thread (a keryx cleanup proposal).
+    MailFiling,
+}
+
+/// What deciding a mail item acts on in keryx.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MailDecision {
+    /// A pending send (a keryx changeset id): yes sends it, after the hold.
+    Send(String),
+    /// A cleanup proposal id: yes applies it.
+    Proposal(String),
 }
 
 /// A date from mail, and what accepting it does: a new event, or moving the one already there.
@@ -167,6 +181,9 @@ pub struct ApproveItem {
     /// For a calendar change: the kairos changeset id to approve or refuse.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub changeset: Option<String>,
+    /// For a mail item: what yes or no acts on in keryx.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mail: Option<MailDecision>,
 }
 
 impl Approve {

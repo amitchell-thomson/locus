@@ -37,6 +37,8 @@ fn group_name(k: ApproveKind) -> &'static str {
         ApproveKind::StopAsking => "stop asking?",
         ApproveKind::Date => "dates from mail",
         ApproveKind::Calendar => "calendar changes",
+        ApproveKind::MailSend => "mail to send",
+        ApproveKind::MailFiling => "mail to file",
     }
 }
 
@@ -302,6 +304,36 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 }
                 return true;
             }
+            // Mail from keryx (keryx-joins-locus X2): a draft to send, or a thread to file.
+            let mail = key
+                .strip_prefix("approve:")
+                .and_then(|r| r.split_once(':'))
+                .and_then(|(g, i)| {
+                    let g: usize = g.parse().ok()?;
+                    let i: usize = i.parse().ok()?;
+                    app.fixtures
+                        .approve
+                        .groups
+                        .get(g)?
+                        .items
+                        .get(i)?
+                        .mail
+                        .clone()
+                        .map(|m| (g, i, m))
+                });
+            if let (Some((g, i, m)), KeyCode::Char(c @ ('y' | 'n'))) = (mail, k.code)
+                && let Some(live) = app.mail.clone()
+            {
+                match live.decide(&m, c == 'y') {
+                    Ok(msg) => {
+                        app.fixtures.approve.groups[g].items.remove(i);
+                        app.fixtures.approve.groups.retain(|x| !x.items.is_empty());
+                        app.note = Some(msg);
+                    }
+                    Err(e) => app.note = Some(format!("keryx said no: {e}")),
+                }
+                return true;
+            }
             // A calendar change from kairos (round 7c): approved or refused here, the one place.
             let changeset = key
                 .strip_prefix("approve:")
@@ -359,6 +391,17 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 KeyCode::Char(c @ ('y' | 'n')) => approve_one(app, key, &text, to.as_deref(), c == 'y'),
                 KeyCode::Char('Y') => {
                     let group = key.split(':').nth(1).unwrap_or_default().to_string();
+                    // A mail group (X2) is decided in keryx, every item in it.
+                    if let (Some(live), Some(g)) = (app.mail.clone(), group.parse::<usize>().ok())
+                        && let Some(grp) = app.fixtures.approve.groups.get(g)
+                        && grp.items.iter().any(|i| i.mail.is_some())
+                    {
+                        let all: Vec<_> = grp.items.iter().filter_map(|i| i.mail.clone()).collect();
+                        let ok = all.iter().filter(|m| live.decide(m, true).is_ok()).count();
+                        app.fixtures.approve.groups.remove(g);
+                        app.note = Some(format!("approved the group: {ok} of {}", all.len()));
+                        return true;
+                    }
                     let mut n = 0;
                     for (k2, t2, to2, _) in rows.iter().filter(|r| r.0.split(':').nth(1) == Some(group.as_str())) {
                         approve_one(app, k2.clone(), t2, to2.as_deref(), true);

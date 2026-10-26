@@ -2143,6 +2143,8 @@ dependencies = [
  "insta",
  "kairos-core",
  "kairos-store",
+ "keryx-core",
+ "keryx-store",
  "locus-contract",
  "locus-theme",
  "ratatui",

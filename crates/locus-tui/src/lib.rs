@@ -7,6 +7,7 @@ pub mod calendar;
 pub mod dump;
 pub mod fixtures;
 pub mod follow;
+pub mod mail;
 pub mod maildates;
 pub mod screen;
 pub mod ui;

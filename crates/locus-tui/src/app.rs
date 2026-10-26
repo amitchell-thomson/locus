@@ -96,6 +96,8 @@ pub struct App {
     /// kairosd, when the window runs live (spec K8): what locus puts on the calendar goes
     /// through it. `None` in tests and dumps.
     pub calendar: Option<std::sync::Arc<crate::calendar::Live>>,
+    /// keryxd, when the window runs live (keryx-joins-locus X2): mail to decide in Approve.
+    pub mail: Option<std::sync::Arc<crate::mail::Live>>,
     /// The project Home asked the Project window to show, until Esc.
     pub peek: Option<String>,
     /// For a section that draws only some of its items, the ones drawn, in order: the arrows
@@ -141,6 +143,7 @@ impl App {
             in_session: false,
             armed: None,
             calendar: None,
+            mail: None,
             peek: None,
             shown: RefCell::new(HashMap::new()),
             lane_open: false,

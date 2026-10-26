@@ -288,6 +288,7 @@ pub fn apply_dates(fx: &mut Fixtures, bookings: &[crate::maildates::Booking], ca
                 choices: b.choices.clone(),
             }),
             changeset: None,
+            mail: None,
         });
     }
     fx.approve
@@ -320,6 +321,7 @@ pub fn apply_pending(fx: &mut Fixtures, pending: &[kairos_core::changeset::Chang
             opens: None,
             date: None,
             changeset: Some(c.id.clone()),
+            mail: None,
         })
         .collect();
     if !items.is_empty() {

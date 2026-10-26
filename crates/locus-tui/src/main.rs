@@ -96,6 +96,9 @@ fn main() -> Result<()> {
         let bookings = locus_tui::maildates::scan(&fx.registry, chrono::Utc::now(), 45, false);
         locus_tui::calendar::apply_dates(&mut fx, &bookings, &cal, &locus_tui::maildates::dismissed());
         locus_tui::calendar::apply_pending(&mut fx, &live.pending());
+        if let Some(m) = locus_tui::mail::Live::connect() {
+            locus_tui::mail::apply(&mut fx, &m.drafts(), &m.proposals());
+        }
     }
     if let Some(name) = cli.dump {
         let Some(screen) = ScreenId::from_name(&name) else {
@@ -294,6 +297,19 @@ fn run(mut app: App) -> Result<()> {
             }
         });
     }
+    // Mail to decide (keryx-joins-locus X2): keryxd's drafts and cleanup proposals, every minute.
+    let (mail_tx, mail_rx) = std::sync::mpsc::channel();
+    if let Some(m) = locus_tui::mail::Live::connect().map(std::sync::Arc::new) {
+        app.mail = Some(m.clone());
+        std::thread::spawn(move || {
+            loop {
+                if mail_tx.send((m.drafts(), m.proposals())).is_err() {
+                    return;
+                }
+                std::thread::sleep(Duration::from_secs(60));
+            }
+        });
+    }
     // Items kairos asks to open (spec K8). Only Home's window answers: an application opens on
     // its own page there, a repo in the Project window.
     let mut inbox = locus_contract::link::OpenFile::locus();
@@ -310,6 +326,9 @@ fn run(mut app: App) -> Result<()> {
                 locus_tui::calendar::apply(&mut app.fixtures, &cal, |k| live.area_of(k), chrono::Utc::now());
                 locus_tui::calendar::apply_chores(&mut app.fixtures, &chores);
                 locus_tui::calendar::apply_tasks(&mut app.fixtures, &tasks);
+            }
+            if let Ok((drafts, proposals)) = mail_rx.try_recv() {
+                locus_tui::mail::apply(&mut app.fixtures, &drafts, &proposals);
             }
             if app.stack.first() == Some(&ScreenId::Home)
                 && let Some(req) = inbox.poll()

@@ -3,32 +3,32 @@ source: keryx/crates/keryx-tui/tests/snapshots.rs
 expression: "render_to_string(&mut app(), 120, 30)"
 ---
 ╭ keryx ───────────────────────────── all · personal · oxford · oqts · oqts shared ────────────────────────────────────╮
-│ today ─────────────────────────────── │ Your e-ticket: Oxford to London, Fri 23 Oct  oxford                          │
-│ ▎ Trains                        08:30 │                                                                              │
-│ ▎  Your e-ticket: Oxford to L… oxford │ ▎ Trains <no-reply@trains.example.co.uk> · wed 14 oct 2026, 08:30            │
-│ ▎ Trains                        08:30 │ ▎                                                                            │
-│ ▎  Your e-ticket: Oxford to… personal │ ▎ (Mail hasn't downloaded this message yet, or it has no text)               │
-│                                       │                                                                              │
-│ yesterday ─────────────────────────── │                                                                              │
-│   Lecturer                      󰁦 tue │                                                                              │
-│    Society minutes             oxford │                                                                              │
-│   Lecturer                      󰁦 tue │                                                                              │
-│    Broken file                 oxford │                                                                              │
-│ ▎ Lecturer                      󰁦 tue │                                                                              │
-│ ▎  B4 problem sheet 3          oxford │                                                                              │
-│ ▎ Jane Doe                        tue │                                                                              │
-│ ▎  Lab partner for Thursday?   oxford │                                                                              │
-│ ▎ Prof Smith (2)                  tue │                                                                              │
-│ ▎  Cancelled: Project meeting  oxford │                                                                              │
-│                                       │                                                                              │
-│ monday ────────────────────────────── │                                                                              │
-│   Jane Doe (2)                    mon │                                                                              │
-│    Re: Group project plan      oxford │                                                                              │
-│   Department Office               mon │                                                                              │
-│    Coursework submission port… oxford │                                                                              │
-│                                       │                                                                              │
-│ sunday ────────────────────────────── │                                                                              │
-│   Stranger                        sun │                                                                              │
-│    Urgent request              oxford │                                                                              │
+│ today ──────────────────────────────────── │ Your e-ticket: Oxford to London, Fri 23 Oct  oxford                     │
+│ ▎ Trains                             08:30 │                                                                         │
+│ ▎  Your e-ticket: Oxford to London… oxford │ ▎ Trains <no-reply@trains.example.co.uk> · wed 14 oct 2026, 08:30       │
+│ ▎ Trains                             08:30 │ ▎                                                                       │
+│ ▎  Your e-ticket: Oxford to Lond… personal │ ▎ (Mail hasn't downloaded this message yet, or it has no text)          │
+│                                            │                                                                         │
+│ yesterday ──────────────────────────────── │                                                                         │
+│   Lecturer                           󰁦 tue │                                                                         │
+│    Society minutes                  oxford │                                                                         │
+│   Lecturer                           󰁦 tue │                                                                         │
+│    Broken file                      oxford │                                                                         │
+│ ▎ Lecturer                           󰁦 tue │                                                                         │
+│ ▎  B4 problem sheet 3               oxford │                                                                         │
+│ ▎ Jane Doe                             tue │                                                                         │
+│ ▎  Lab partner for Thursday?        oxford │                                                                         │
+│ ▎ Prof Smith (2)                       tue │                                                                         │
+│ ▎  Cancelled: Project meeting       oxford │                                                                         │
+│                                            │                                                                         │
+│ monday ─────────────────────────────────── │                                                                         │
+│   Jane Doe (2)                       󰑚 mon │                                                                         │
+│    Re: Group project plan           oxford │                                                                         │
+│   Department Office                    mon │                                                                         │
+│    Coursework submission portal     oxford │                                                                         │
+│                                            │                                                                         │
+│ sunday ─────────────────────────────────── │                                                                         │
+│   Stranger                             sun │                                                                         │
+│    Urgent request                   oxford │                                                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- ⏎ open · r reply · d done · e archive · m for · f needs reply · ? keys
+ ⏎ open · r reply · d done · a archive · m for · f needs reply · ? keys

@@ -21,4 +21,4 @@ expression: "render_to_string(&mut a, 80, 20)"
 │                                                                              │
 │                                                                              │
 ╰───────────────────────────── y send (10 s to cancel) · e edit · n don't send ╯
- ⏎ open · r reply · d done · e archive · m for · f needs reply · ? keys
+ ⏎ open · r reply · d done · a archive · m for · f needs reply · ? keys

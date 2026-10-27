@@ -153,6 +153,8 @@ pub struct App {
     pub background: Option<std::sync::mpsc::Sender<crate::write::Job>>,
     /// Threads a change in the worker takes out of the list: gone at once, until it answers.
     pub hidden: BTreeSet<String>,
+    /// The last move, for an instant `u`: (threads, whether it took them out of the list).
+    pub last_move: Option<(Vec<String>, bool, Option<String>)>,
     /// Threads a change in the worker puts back in the inbox: there at once, until it answers.
     pub shown: BTreeSet<String>,
     /// A send in its hold: (changeset id, the draft kept until it has gone).
@@ -220,6 +222,7 @@ impl App {
             background: None,
             hidden: BTreeSet::new(),
             shown: BTreeSet::new(),
+            last_move: None,
             read_here: BTreeSet::new(),
             marks: std::collections::HashMap::new(),
             shared: None,
@@ -255,6 +258,16 @@ impl App {
 
     /// The worker finished a change: the threads it hid come back if it failed (reload shows
     /// them where they really are), and it says how it went.
+    /// The worker's answer for a move: the change it applied, so `u` undoes exactly that one.
+    pub fn move_applied(&mut self, touched: &[String], cs: Option<String>) {
+        if let Some((refs, _, slot)) = &mut self.last_move
+            && refs.as_slice() == touched
+            && cs.is_some()
+        {
+            *slot = cs;
+        }
+    }
+
     pub fn background_done(&mut self, hid: Vec<String>, res: Result<Option<String>, String>) {
         for r in &hid {
             self.hidden.remove(r);

@@ -57,6 +57,8 @@ pub struct ThreadRow {
     pub unread: bool,
     pub flagged: bool,
     pub has_attachment: bool,
+    /// You wrote last, in a thread someone else is in.
+    pub replied: bool,
     pub in_inbox: bool,
     /// Key names the thread is filed under.
     pub keys: Vec<String>,
@@ -451,6 +453,10 @@ fn rows_for(
                 }
             }
         }
+        let replied = latest.from.as_ref().is_some_and(|f| own.contains(&f.key()))
+            && msgs
+                .iter()
+                .any(|m| m.from.as_ref().is_some_and(|f| !own.contains(&f.key())));
         out.push(ThreadRow {
             r#ref: keryx_core::model::thread_ref(&account, &thread_id),
             subject: if latest.subject.is_empty() {
@@ -465,6 +471,7 @@ fn rows_for(
             unread,
             flagged,
             has_attachment,
+            replied,
             in_inbox,
             keys,
             latest: latest.source_id.clone(),

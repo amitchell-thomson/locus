@@ -359,11 +359,11 @@ fn done_files_for_what_it_is_for_with_the_guess_chosen() {
         )]
     );
 
-    // e archives straight away, no question; Esc leaves the picker without a change.
+    // a archives straight away, no question; Esc leaves the picker without a change.
     select(&mut a, "Lab partner for Thursday?");
     keys(&mut a, &[Key::Char('m'), Key::Esc]);
     assert!(f.take().is_empty() && a.mode == Mode::List);
-    keys(&mut a, &[Key::Char('e')]);
+    keys(&mut a, &[Key::Char('a')]);
     assert_eq!(f.take(), vec![format!(r#"triage {{"action":"archive"}} ["{lab}"]"#)]);
     // d's picker no longer offers "for nothing": that was ambiguous beside e.
     keys(&mut a, &[Key::Char('d')]);
@@ -1247,4 +1247,41 @@ fn back_to_the_inbox_shows_in_the_inbox_at_once() {
     // Mail refused: it goes again.
     a.background_done([job.hides(), job.shows()].concat(), Err("not done".into()));
     assert!(!a.rows.iter().any(|r| r.r#ref == row.r#ref));
+}
+
+#[test]
+fn u_brings_an_archived_thread_back_at_once_and_undoes_that_exact_change() {
+    let (mut a, _f) = app();
+    let (tx, rx) = std::sync::mpsc::channel();
+    a.background = Some(tx);
+    let lab = select(&mut a, "Lab partner for Thursday?");
+    keys(&mut a, &[Key::Char('a')]);
+    a.run_deferred();
+    let archive = rx.try_recv().unwrap();
+    assert!(!a.rows.iter().any(|r| r.r#ref == lab), "gone");
+    // keryxd answers with the change it applied.
+    a.move_applied(&archive.hides(), Some("cs-archive".into()));
+    a.background_done(archive.hides(), Ok(None));
+    keys(&mut a, &[Key::Char('u')]);
+    a.run_deferred();
+    assert!(a.rows.iter().any(|r| r.r#ref == lab), "back at once");
+    match rx.try_recv().unwrap() {
+        keryx_tui::write::Job::UndoMove { cs, refs, back_in } => {
+            assert_eq!((cs.as_deref(), refs, back_in), (Some("cs-archive"), vec![lab], true));
+        }
+        j => panic!("{j:?}"),
+    }
+}
+
+#[test]
+fn a_thread_you_answered_last_is_marked_replied() {
+    let (a, _f) = app();
+    let row = a.rows.iter().find(|r| r.subject == "Re: Group project plan").unwrap();
+    assert!(row.replied);
+    let lab = a
+        .rows
+        .iter()
+        .find(|r| r.subject == "Lab partner for Thursday?")
+        .unwrap();
+    assert!(!lab.replied);
 }

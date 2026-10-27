@@ -21,6 +21,7 @@ pub const ICON_ATTACH: &str = "󰁦";
 pub const ICON_INVITE: &str = "󰃭";
 pub const ICON_SNOOZE: &str = "󰒲";
 pub const ICON_TASK: &str = "󰄱";
+pub const ICON_REPLIED: &str = "\u{f045a}";
 
 pub fn draw(f: &mut Frame, app: &App) {
     draw_writing(f, app, None);
@@ -123,7 +124,8 @@ fn panes(app: &App, inner: Rect) -> Panes {
             right: Rect::new(inner.x + inner.width, inner.y, 0, inner.height),
         };
     }
-    let lw = (inner.width / 3).clamp(30, 46);
+    // A little over a third (round 11: "slightly wider"; b hides it).
+    let lw = (inner.width * 3 / 8).clamp(32, 52);
     Panes {
         list: Some(Rect::new(inner.x, inner.y, lw, inner.height)),
         right: Rect::new(inner.x + lw + 1, inner.y, inner.width - lw - 1, inner.height),
@@ -376,6 +378,10 @@ fn row_who(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
         right.push(Span::styled(format!("{ICON_TASK}? "), Style::default().fg(c("mauve"))));
     } else if r.linked {
         right.push(Span::styled(format!("{ICON_TASK} "), Style::default().fg(c("green"))));
+    }
+    // You wrote last in a thread someone else is in: replied (round 11).
+    if r.replied {
+        right.push(Span::styled(format!("{ICON_REPLIED} "), Style::default().fg(c("blue"))));
     }
     if r.has_attachment {
         right.push(Span::styled(
@@ -855,7 +861,7 @@ fn footer(f: &mut Frame, app: &App, area: Rect) {
         Mode::Drafts { .. } => vec![("↑ ↓", "move"), ("⏎", "open"), ("esc", "back")],
         _ if !app.marked.is_empty() => vec![
             ("d", "done"),
-            ("e", "archive"),
+            ("a", "archive"),
             ("m", "for"),
             ("f", "needs reply"),
             ("esc", "unmark"),
@@ -864,7 +870,7 @@ fn footer(f: &mut Frame, app: &App, area: Rect) {
             ("⏎", "open"),
             ("r", "reply"),
             ("d", "done"),
-            ("e", "archive"),
+            ("a", "archive"),
             ("m", "for"),
             ("f", "needs reply"),
             ("?", "keys"),
@@ -949,7 +955,7 @@ fn help(f: &mut Frame, area: Rect) {
         ),
         ("r R F +", "reply · reply all · forward · write a new mail"),
         ("d", "done: filed for its mark, else for what you choose"),
-        ("e", "archive straight away"),
+        ("a u", "archive straight away · undo (at once)"),
         ("m", "mark what it is for; it stays in your inbox"),
         ("f U L", "needs reply on or off · unread · unsubscribe"),
         ("I", "back to the inbox (from the archive or a folder)"),

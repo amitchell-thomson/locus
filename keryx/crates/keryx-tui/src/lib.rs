@@ -126,14 +126,15 @@ pub fn run_at(cfg: Config, thread: Option<(String, String)>) -> Result<(), Strin
     // Changes to mail run on a worker with its own connection to keryxd, in order, so the
     // screen shows them done at once and hears back only how they went (round 8).
     let (job_tx, job_rx) = std::sync::mpsc::channel::<write::Job>();
-    let (done_tx, done_rx) = std::sync::mpsc::channel::<(Vec<String>, Result<Option<String>, String>)>();
+    let (done_tx, done_rx) =
+        std::sync::mpsc::channel::<(Vec<String>, Result<Option<String>, String>, Option<String>)>();
     if let Ok(client) = keryx_store::client::Client::from_config(&cfg) {
         let client = client.interactive(true);
         std::thread::spawn(move || {
             while let Ok(job) = job_rx.recv() {
-                let res = write::run_background(&client, &job);
+                let (res, cs) = write::run_job(&client, &job);
                 let touched = [job.hides(), job.shows()].concat();
-                if done_tx.send((touched, res)).is_err() {
+                if done_tx.send((touched, res, cs)).is_err() {
                     return;
                 }
             }
@@ -217,7 +218,8 @@ pub fn run_at(cfg: Config, thread: Option<(String, String)>) -> Result<(), Strin
                 app.writing_finished(how);
                 continue;
             }
-            while let Ok((hid, res)) = done_rx.try_recv() {
+            while let Ok((hid, res, cs)) = done_rx.try_recv() {
+                app.move_applied(&hid, cs);
                 app.background_done(hid, res);
             }
             // keryxd writes the mirror; pick changes up within ~2 s.

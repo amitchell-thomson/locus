@@ -285,7 +285,7 @@ the needs-reply reason, suggestions and linked tasks sit above the messages.
 | `⇥` `⇧⇥` · `⌥⇥` | the next or previous inbox · add the next inbox to the ones shown (personal and oxford together; `⇥` goes back to one) |
 | `b` | hide or show the list |
 | `d` | done: filed for what it is for (X7): its mark when it has one, with no question; else a picker over the registry items, Personal's streams and the plain areas, keryx's guess first with its reason. Never deletes |
-| `e` | archive straight away, no question (round 10); a mark stays |
+| `a` · `u` | archive straight away, no question (rounds 10, 11); a mark stays · undo: the move is put back on screen at once |
 | `m` | mark what it is for, and it stays in the inbox (round 4): a tag on the row, and on its item's page at once. keryx's own record; the mail does not move |
 | `v` | select for a batch (`d` `m` `f` then act on every selected thread) |
 | `f` `U` `L` | needs reply on or off (the one attention marker: a peach bar, first in its day; keryx no longer flags) · unread · unsubscribe |

@@ -15,6 +15,14 @@ pub enum Job {
         quiet: bool,
     },
     UndoLast,
+    /// `u` right after a move: undo it, showing the threads back where they were at once.
+    UndoMove {
+        refs: Vec<String>,
+        /// The move took them out of the list (file, archive): undoing brings them back.
+        back_in: bool,
+        /// The move's change, once keryxd has answered: undone exactly, not just "the last".
+        cs: Option<String>,
+    },
     /// `m`: what the threads are for, kept in keryx; nothing moves.
     MarkFor(Vec<String>, Option<String>),
     Decide {
@@ -57,7 +65,13 @@ impl Job {
     pub fn is_background(&self) -> bool {
         matches!(
             self,
-            Job::Triage { .. } | Job::MarkFor(..) | Job::Tag(_) | Job::Untag(_) | Job::UndoLast | Job::Undo(_)
+            Job::Triage { .. }
+                | Job::MarkFor(..)
+                | Job::Tag(_)
+                | Job::Untag(_)
+                | Job::UndoLast
+                | Job::UndoMove { .. }
+                | Job::Undo(_)
         )
     }
 
@@ -65,6 +79,9 @@ impl Job {
     pub fn shows(&self) -> Vec<String> {
         match self {
             Job::Triage { req, .. } if req.intent == Intent::Unarchive => req.refs.clone(),
+            Job::UndoMove {
+                refs, back_in: true, ..
+            } => refs.clone(),
             _ => vec![],
         }
     }
@@ -73,6 +90,9 @@ impl Job {
     pub fn hides(&self) -> Vec<String> {
         match self {
             Job::Triage { req, .. } if req.intent.leaves_inbox() => req.refs.clone(),
+            Job::UndoMove {
+                refs, back_in: false, ..
+            } => refs.clone(),
             _ => vec![],
         }
     }
@@ -81,29 +101,58 @@ impl Job {
 /// Run one background job: its message, or why it failed. A change keryxd recorded as failed
 /// (Mail refused it) is a failure here too, with Mail's reason.
 pub fn run_background(d: &dyn keryx_store::client::Daemon, job: &Job) -> Result<Option<String>, String> {
-    match job {
-        Job::Triage { req, quiet } => {
-            let o = d.triage(req).map_err(|e| e.to_string())?;
-            match &o.applied {
-                Some(cs) if cs.status == keryx_core::changeset::Status::Failed => Err(format!(
-                    "{}: not done · {}",
-                    req.intent.verb(),
-                    cs.error.clone().unwrap_or_default()
-                )),
-                // Nothing done: say why, not just "1 skipped" (round 9).
-                None if !o.skipped.is_empty() => {
-                    let (_, why) = &o.skipped[0];
-                    let more = if o.skipped.len() > 1 {
-                        format!(" (and {} more)", o.skipped.len() - 1)
-                    } else {
-                        String::new()
-                    };
-                    Ok(Some(format!("{}: {why}{more}", req.intent.verb())))
-                }
-                _ => Ok((!quiet).then_some(o.summary)),
+    run_job(d, job).0
+}
+
+/// As [`run_background`], with the id of the change it applied (for an exact undo).
+pub fn run_job(d: &dyn keryx_store::client::Daemon, job: &Job) -> (Result<Option<String>, String>, Option<String>) {
+    if let Job::Triage { req, .. } = job {
+        return match d.triage(req) {
+            Ok(o) => {
+                let id = o.applied.as_ref().map(|c| c.id.clone());
+                (triage_message(req, job, o), id)
             }
+            Err(e) => (Err(e.to_string()), None),
+        };
+    }
+    (run_one(d, job), None)
+}
+
+fn triage_message(req: &TriageReq, job: &Job, o: keryx_store::api::TriageOutcome) -> Result<Option<String>, String> {
+    let quiet = matches!(job, Job::Triage { quiet: true, .. });
+    match &o.applied {
+        Some(cs) if cs.status == keryx_core::changeset::Status::Failed => Err(format!(
+            "{}: not done · {}",
+            req.intent.verb(),
+            cs.error.clone().unwrap_or_default()
+        )),
+        None if !o.skipped.is_empty() => {
+            let (_, why) = &o.skipped[0];
+            let more = if o.skipped.len() > 1 {
+                format!(" (and {} more)", o.skipped.len() - 1)
+            } else {
+                String::new()
+            };
+            Ok(Some(format!("{}: {why}{more}", req.intent.verb())))
         }
-        Job::UndoLast => d.undo_last().map(|c| Some(c.summary)).map_err(|e| e.to_string()),
+        _ => Ok((!quiet).then_some(o.summary)),
+    }
+}
+
+fn run_one(d: &dyn keryx_store::client::Daemon, job: &Job) -> Result<Option<String>, String> {
+    match job {
+        Job::Triage { req, .. } => {
+            let o = d.triage(req).map_err(|e| e.to_string())?;
+            triage_message(req, job, o)
+        }
+        Job::UndoMove { cs: Some(id), .. } => d
+            .undo(id)
+            .map(|c| Some(format!("undone: {}", c.summary)))
+            .map_err(|e| e.to_string()),
+        Job::UndoLast | Job::UndoMove { cs: None, .. } => d
+            .undo_last()
+            .map(|c| Some(format!("undone: {}", c.summary)))
+            .map_err(|e| e.to_string()),
         Job::MarkFor(refs, id) => refs
             .iter()
             .try_for_each(|r| d.mark_for(r, id.as_deref()))
@@ -206,6 +255,12 @@ impl App {
         }
         let n = refs.len();
         let leaves = matches!(intent, Intent::Archive | Intent::File { .. } | Intent::Snooze { .. });
+        // What u undoes at once: the threads this moved, and which way.
+        self.last_move = match intent {
+            Intent::Archive | Intent::File { .. } => Some((refs.clone(), true, None)),
+            Intent::Unarchive => Some((refs.clone(), false, None)),
+            _ => None,
+        };
         self.deferred.push(Job::Triage {
             req: TriageReq {
                 intent,
@@ -238,8 +293,8 @@ impl App {
             }
             // Done: filed for what it is for: the mark when there is one, else the picker (X7).
             Key::Char('d') => self.done(),
-            // Archive straight away, no question (round 10; e as in Gmail). Any mark stays.
-            Key::Char('e') => self.triage(Intent::Archive, "archiving"),
+            // Archive straight away, no question (rounds 10, 11: a). Any mark stays.
+            Key::Char('a') => self.triage(Intent::Archive, "archiving"),
             // What it is for, staying in the inbox (round 4).
             Key::Char('m') => self.open_for_picker(true),
             Key::Char('s') if self.cfg.snooze.enabled => self.mode = Mode::Snooze(None),
@@ -253,6 +308,17 @@ impl App {
             Key::Char('U') => self.triage(Intent::Read { on: false }, "marking unread"),
             // Back to the inbox, from the archive, a folder or anywhere (round 8: nothing could).
             Key::Char('I') => self.triage(Intent::Unarchive, "moving back to the inbox"),
+            // Undo: a move you just made is put back on screen at once (round 11).
+            Key::Char('u') if self.last_move.is_some() => {
+                if let Some((refs, left, cs)) = self.last_move.take() {
+                    self.deferred.push(Job::UndoMove {
+                        refs,
+                        back_in: left,
+                        cs,
+                    });
+                    self.message = Some(("undoing…".into(), false));
+                }
+            }
             Key::Char('u') => {
                 self.deferred.push(Job::UndoLast);
                 self.message = Some(("undoing…".into(), false));
@@ -331,14 +397,23 @@ impl App {
         }
         // Changes to mail go to the worker and the screen moves on (round 8: filing one mail
         // took ten seconds and more, Mail's own pace). The list already shows them done.
+        // Any other change ends what u can put back at once: u then means "undo the last change".
+        if jobs.iter().any(|j| {
+            matches!(j, Job::MarkFor(..) | Job::Tag(_) | Job::Untag(_))
+                || matches!(j, Job::Triage { req, quiet: false } if !matches!(req.intent, Intent::Archive | Intent::File { .. } | Intent::Unarchive))
+        }) {
+            self.last_move = None;
+        }
         if let Some(tx) = self.background.clone() {
             let (bg, rest): (Vec<Job>, Vec<Job>) = jobs.into_iter().partition(Job::is_background);
             let mut gone = false;
             for j in bg {
                 for r in j.hides() {
+                    self.shown.remove(&r);
                     gone |= self.hidden.insert(r);
                 }
                 for r in j.shows() {
+                    self.hidden.remove(&r);
                     gone |= self.shown.insert(r);
                 }
                 let _ = tx.send(j);
@@ -369,6 +444,7 @@ impl App {
             let res: Result<Option<String>, String> = match &job {
                 j @ (Job::Triage { .. }
                 | Job::UndoLast
+                | Job::UndoMove { .. }
                 | Job::MarkFor(..)
                 | Job::Tag(_)
                 | Job::Untag(_)

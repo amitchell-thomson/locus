@@ -309,8 +309,29 @@ fn rows_for(db: &Db, cfg: &Config, threads_sql: &str, args: Vec<Value>, limit: u
             .find(|a| !own.contains(&a.key()))
             .map(|a| a.short().to_string())
             .or_else(|| {
-                // Only Alec in the thread: show who he wrote to.
-                latest.to.first().map(|a| format!("to {}", a.short()))
+                // Only Alec in the thread: who he wrote to, his own addresses by their account
+                // ("to Oxford, OQTS", not "to Alec Mitchell-Thomson").
+                let names: Vec<String> = latest
+                    .to
+                    .iter()
+                    .chain(&latest.cc)
+                    .map(|a| {
+                        cfg.accounts
+                            .iter()
+                            .find(|acc| acc.addresses().any(|x| x == a.key()))
+                            .map_or_else(|| a.short().to_string(), |acc| acc.name.clone())
+                    })
+                    .fold(Vec::new(), |mut v, n| {
+                        if !v.contains(&n) {
+                            v.push(n);
+                        }
+                        v
+                    });
+                match names.len() {
+                    0 => None,
+                    1 | 2 => Some(format!("to {}", names.join(", "))),
+                    n => Some(format!("to {}, {} +{}", names[0], names[1], n - 2)),
+                }
             })
             .unwrap_or_else(|| "me".into());
         let mut keys: Vec<String> = Vec::new();

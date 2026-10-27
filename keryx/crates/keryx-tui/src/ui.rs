@@ -29,6 +29,28 @@ pub fn draw(f: &mut Frame, app: &App) {
 
 /// The frame, with the editor's terminal in the right pane while writing (X6).
 pub fn draw_writing(f: &mut Frame, app: &App, editor: Option<&crate::pane::Pane>) {
+    draw_screen(f, app, editor);
+    one_width(f.buffer_mut());
+}
+
+/// Drop variation selectors from every cell. `✔️` is `✔` + U+FE0F: ratatui counts it one cell
+/// wide and tmux two, so the rest of its line landed a column to the right and a cell ratatui
+/// believed unchanged was never repainted (round 11: a stray "l" by the thread's right border,
+/// left from an earlier mail). Without the selector each one is a single cell to both.
+fn one_width(buf: &mut ratatui::buffer::Buffer) {
+    for cell in &mut buf.content {
+        if cell.symbol().contains(['\u{FE0E}', '\u{FE0F}']) {
+            let plain: String = cell
+                .symbol()
+                .chars()
+                .filter(|c| !matches!(c, '\u{FE0E}' | '\u{FE0F}'))
+                .collect();
+            cell.set_symbol(if plain.is_empty() { " " } else { &plain });
+        }
+    }
+}
+
+fn draw_screen(f: &mut Frame, app: &App, editor: Option<&crate::pane::Pane>) {
     let area = f.area();
     if area.height < 4 {
         return;
@@ -817,6 +839,7 @@ fn thread(f: &mut Frame, app: &App, area: Rect, open: Option<&Open>) {
     let w = inner.width as usize;
     let lines = thread_lines(app, open, w);
     let max_scroll = (lines.len() as u16).saturating_sub(inner.height);
+    open.max_scroll.set(max_scroll);
     f.render_widget(Paragraph::new(lines).scroll((open.scroll.min(max_scroll), 0)), inner);
 }
 
@@ -881,7 +904,7 @@ fn footer(f: &mut Frame, app: &App, area: Rect) {
         Mode::ConfirmUnsubscribe { .. } => vec![("y", "unsubscribe"), ("esc", "no")],
         Mode::File(_) => vec![("⏎", "file"), ("↑ ↓", "move"), ("esc", "back")],
         Mode::Attachments => vec![("↑ ↓", "move"), ("⏎", "open"), ("esc", "back")],
-        Mode::Drafts { .. } => vec![("↑ ↓", "move"), ("⏎", "open"), ("esc", "back")],
+        Mode::Drafts { .. } => vec![("↑ ↓", "move"), ("⏎", "open"), ("x", "throw away"), ("esc", "back")],
         _ if !app.marked.is_empty() => vec![
             ("d", "done"),
             ("a", "archive"),
@@ -969,6 +992,7 @@ fn footer(f: &mut Frame, app: &App, area: Rect) {
 fn help(f: &mut Frame, area: Rect) {
     let screen: &[(&str, &str)] = &[
         ("↑ ↓  ⏎ esc", "move · read a thread · back"),
+        ("⇧↑ ⇧↓", "the top or bottom of the list, or of the thread"),
         ("J K", "the next or previous thread, while reading"),
         ("⇥ ⇧⇥", "the next or previous inbox (all, then each account)"),
         ("⌥⇥", "add the next inbox to the ones shown (⇥ goes back to one)"),
@@ -1164,6 +1188,16 @@ mod tests {
         // Outlook: everything from the rule down is the quote.
         let o = fold_quotes("Approved.\n________________________________\nFrom: A\nSent: B\n\nold text");
         assert_eq!(o, vec![Ok("Approved.".into()), Err(5)]);
+    }
+
+    #[test]
+    fn emoji_variation_selectors_are_dropped_so_every_cell_is_one_width() {
+        let mut buf = ratatui::buffer::Buffer::empty(Rect::new(0, 0, 12, 1));
+        buf.set_string(0, 0, "ok \u{2714}\u{FE0F} done", ratatui::style::Style::default());
+        one_width(&mut buf);
+        let text: String = buf.content.iter().map(|c| c.symbol()).collect();
+        assert!(!text.contains('\u{FE0F}'), "{text:?}");
+        assert!(text.starts_with("ok \u{2714}"), "{text:?}");
     }
 
     #[test]

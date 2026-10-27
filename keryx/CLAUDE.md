@@ -90,6 +90,8 @@ Copied from kairos so far:
 - `pgrep -x Mail` tells whether Mail is running; keryxd will `open -gja Mail` before acting (Phase 4). Envelope Index tables used: `messages`, `mailboxes`, `subjects`, `addresses`, `recipients`, `message_global_data`, `conversations`.
 - keryxd has its own FDA + Automation grants (2026-10-20); both survived a `cargo install` rebuild, so no signing script is needed. An unrelated crates.io crate is also called `keryx`: `cargo install keryx` installs the wrong thing (install-daemon.sh now checks).
 - The claude.ai Gmail connector in Claude Code can send directly, bypassing keryx: Alec is turning it off (2026-10-14).
+- **Personal Gmail through Mail does not keep archives** (27 Oct, measured): `move` INBOX → `[Gmail]/All Mail` is answered "ok", the label is gone in Mail's index within ~100 ms, and within 10 s the message is back as a NEW row with a new All Mail UID, Inbox label on. 5 of 7 archives that evening came back; the same script sticks on OQTS. Not yet explained (Gmail's IMAP settings on that account are the first suspect). The TUI says "Mail put … back in the inbox" rather than letting the row reappear silently.
+- **Mail joins conversations after the fact**: your first mail to someone sits in its own conversation until the reply arrives, then Mail moves it. The mirror now follows `conversation_id` changes, and a thread emptied that way hands its tags and marks to the one it joined.
 
 ## Decisions log
 

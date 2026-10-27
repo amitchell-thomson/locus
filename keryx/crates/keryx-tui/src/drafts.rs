@@ -1,5 +1,5 @@
 //! `g` then `d`: the drafts you kept (`:q` on a changed mail, X6), newest first. `⏎` opens one
-//! in Neovim where you left it; `:cq` there throws it away. Claude's drafts are not here: they
+//! in Neovim where you left it; `:cq` there, or `x` twice here, throws it away. Claude's drafts are not here: they
 //! wait in locus's Approve (`A`).
 //!
 //! A kept draft is a file in locus's state directory named for what it is (`reply-<thread>`,
@@ -83,13 +83,39 @@ impl App {
 
     pub fn drafts_key(&mut self, k: Key, sel: usize) {
         let list = self.kept_drafts();
+        let asked = self.drop_draft.take();
+        let last = list.len().saturating_sub(1);
         self.mode = match k {
             Key::Char('j') | Key::Down => Mode::Drafts {
-                sel: (sel + 1).min(list.len().saturating_sub(1)),
+                sel: (sel + 1).min(last),
             },
             Key::Char('k') | Key::Up => Mode::Drafts {
                 sel: sel.saturating_sub(1),
             },
+            Key::Top => Mode::Drafts { sel: 0 },
+            Key::Bottom => Mode::Drafts { sel: last },
+            // x asks, x again throws it away: your own text, gone for good (locus's drop).
+            Key::Char('x') => {
+                if let Some(d) = list.get(sel) {
+                    let what = if d.subject.is_empty() {
+                        "this draft"
+                    } else {
+                        d.subject.as_str()
+                    };
+                    if asked.as_ref() == Some(&d.path) {
+                        self.message = Some(match std::fs::remove_file(&d.path) {
+                            Ok(()) => (format!("threw away “{what}”"), false),
+                            Err(e) => (format!("couldn't throw it away: {e}"), true),
+                        });
+                    } else {
+                        self.message = Some((format!("throw away “{what}”? x again throws it away"), false));
+                        self.drop_draft = Some(d.path.clone());
+                    }
+                }
+                Mode::Drafts {
+                    sel: sel.min(self.kept_drafts().len().saturating_sub(1)),
+                }
+            }
             Key::Enter => match list
                 .get(sel)
                 .and_then(|d| Some((std::fs::read_to_string(&d.path).ok()?, d)))

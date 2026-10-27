@@ -1285,3 +1285,91 @@ fn a_thread_you_answered_last_is_marked_replied() {
         .unwrap();
     assert!(!lab.replied);
 }
+
+#[test]
+fn archiving_leaves_the_cursor_where_it_was_not_at_the_top() {
+    let (mut a, _f) = app();
+    let (tx, _rx) = std::sync::mpsc::channel();
+    a.background = Some(tx);
+    assert!(a.rows.len() > 3);
+    a.sel = 2;
+    let below = a.rows[3].r#ref.clone();
+    keys(&mut a, &[Key::Char('a')]);
+    assert_eq!(a.sel, 2, "the cursor stays put");
+    assert_eq!(a.rows[a.sel].r#ref, below, "on the thread that moved up into its place");
+    // The last row: the cursor stays at the end, on the one above.
+    a.sel = a.rows.len() - 1;
+    keys(&mut a, &[Key::Char('a')]);
+    assert_eq!(a.sel, a.rows.len() - 1);
+}
+
+#[test]
+fn shift_up_and_down_go_to_the_top_and_the_bottom() {
+    let (mut a, _f) = app();
+    keys(&mut a, &[Key::Bottom]);
+    assert_eq!(a.sel, a.rows.len() - 1);
+    keys(&mut a, &[Key::Top]);
+    assert_eq!(a.sel, 0);
+    // In a thread: to its end, and no further, so ↑ moves at once.
+    keys(&mut a, &[Key::Enter]);
+    let _ = render_to_string(&mut a, 40, 6);
+    let open = a.open.as_ref().unwrap();
+    let end = open.max_scroll.get();
+    assert!(end > 0, "a thread longer than the screen");
+    keys(&mut a, &[Key::Bottom]);
+    assert_eq!(a.open.as_ref().unwrap().scroll, end);
+    keys(&mut a, &[Key::Down, Key::Down]);
+    let _ = render_to_string(&mut a, 40, 6);
+    assert_eq!(a.open.as_ref().unwrap().scroll, end);
+    keys(&mut a, &[Key::Up]);
+    assert_eq!(a.open.as_ref().unwrap().scroll, end - 1);
+    keys(&mut a, &[Key::Top]);
+    assert_eq!(a.open.as_ref().unwrap().scroll, 0);
+}
+
+#[test]
+fn x_twice_throws_a_kept_draft_away() {
+    let (mut a, _f) = app();
+    let dir = tempfile::tempdir().unwrap();
+    a.drafts_dir = Some(dir.path().to_path_buf());
+    let kept = dir.path().join("new-oxford.eml");
+    std::fs::write(&kept, "To: someone@example.com\nSubject: Half a thought\n\nbody\n").unwrap();
+    keys(&mut a, &[Key::Char('g'), Key::Char('d'), Key::Char('x')]);
+    assert!(kept.exists(), "the first x only asks");
+    assert!(a.message.as_ref().unwrap().0.contains("x again"));
+    // Anything else in between, and x asks again.
+    keys(&mut a, &[Key::Down, Key::Char('x')]);
+    assert!(kept.exists());
+    keys(&mut a, &[Key::Char('x')]);
+    assert!(!kept.exists());
+    assert!(a.message.as_ref().unwrap().0.contains("threw away"));
+    assert!(render_to_string(&mut a, 90, 6).contains("no drafts"));
+}
+
+#[test]
+fn a_thread_mail_puts_back_in_the_inbox_is_said_not_silent() {
+    let (mut a, _f) = app();
+    let (tx, rx) = std::sync::mpsc::channel();
+    a.background = Some(tx);
+    let lab = select(&mut a, "Lab partner for Thursday?");
+    keys(&mut a, &[Key::Char('a')]);
+    let job = rx.try_recv().unwrap();
+    assert!(!a.rows.iter().any(|r| r.r#ref == lab));
+    // keryxd said done, and the fake mirror still has it in the inbox: Mail put it back.
+    a.background_done(job.hides(), Ok(None));
+    assert!(a.rows.iter().any(|r| r.r#ref == lab));
+    let (said, err) = a.message.clone().unwrap();
+    assert!(
+        err && said.contains("back in the inbox") && said.contains("Lab partner"),
+        "{said}"
+    );
+    // Said once.
+    a.message = None;
+    a.reload();
+    assert!(a.message.is_none());
+    // Back because something newer came is not Mail's doing.
+    let row_date = a.rows.iter().find(|r| r.r#ref == lab).unwrap().date;
+    a.gone.insert(lab, row_date - 1);
+    a.reload();
+    assert!(a.message.is_none());
+}

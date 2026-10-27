@@ -87,7 +87,11 @@ pub fn mailapp_account(
         seen.insert(sid.clone());
         match current.get(&sid) {
             Some(fp) if same_message(fp, &row.message_id) => {
-                if fp.location != location || fp.read != row.read || fp.flagged != row.flagged {
+                if fp.location != location
+                    || fp.read != row.read
+                    || fp.flagged != row.flagged
+                    || fp.thread_id != mail_thread(&row)
+                {
                     work.push(Work::State(row, location));
                 }
             }
@@ -108,6 +112,11 @@ pub fn mailapp_account(
                 match w {
                     Work::State(row, location) => {
                         let in_inbox = location.contains(&inbox);
+                        // Mail joins conversations after the fact: your first mail to someone
+                        // sat in a thread of its own until their reply came, and the mirror kept
+                        // it there, so the thread showed the reply without what it answered
+                        // (round 11).
+                        db.set_thread(&account.id, &row.rowid.to_string(), &mail_thread(row))?;
                         db.update_state(
                             &account.id,
                             &row.rowid.to_string(),
@@ -151,11 +160,7 @@ pub fn mailapp_account(
                         if let Some(path) = path {
                             disk_sizes(path, row.rowid, &mut p.attachments);
                         }
-                        let thread_id = if row.conversation_id != 0 {
-                            row.conversation_id.to_string()
-                        } else {
-                            format!("m{sid}")
-                        };
+                        let thread_id = mail_thread(row);
                         let was = current.contains_key(&sid);
                         let m = build::message(
                             &p,
@@ -205,6 +210,15 @@ pub fn mailapp_account(
         })?;
     }
     Ok(report)
+}
+
+/// The thread a Mail row belongs to: Mail's conversation, else the message alone.
+fn mail_thread(row: &MailRow) -> String {
+    if row.conversation_id != 0 {
+        row.conversation_id.to_string()
+    } else {
+        format!("m{}", row.rowid)
+    }
 }
 
 /// A partial `.emlx`'s attachments live on disk beside it: their sizes come from there.
@@ -450,6 +464,41 @@ mod tests {
         let m2 = db.message("oxford", "2").unwrap().unwrap();
         assert!(m2.flagged && m2.read);
         assert!(db.message("oxford", "3").unwrap().is_none());
+    }
+
+    #[test]
+    fn a_message_mail_joins_to_another_conversation_moves_thread() {
+        let cfg = cfg();
+        let (_dir, root) = copy_store();
+        let acc = cfg.account("oxford").unwrap();
+        let mut db = Db::open_in_memory().unwrap();
+        mailapp_account(&mut db, &MailStore::open(&root).unwrap(), acc, None).unwrap();
+        let other = db.message("oxford", "1").unwrap().unwrap().thread_id;
+        let alone = db.message("oxford", "2").unwrap().unwrap().thread_id;
+        assert_ne!(alone, other);
+        let tag = crate::state::Tag {
+            account: "oxford".into(),
+            thread_id: alone.clone(),
+            kind: "needs_reply".into(),
+            reason: String::new(),
+            author: "alec".into(),
+            created_at: 0,
+        };
+        db.set_tag(&tag).unwrap();
+        {
+            let c = rusqlite::Connection::open(root.join("MailData/Envelope Index")).unwrap();
+            let conv: i64 = c
+                .query_row("SELECT conversation_id FROM messages WHERE ROWID = 1", [], |r| r.get(0))
+                .unwrap();
+            c.execute("UPDATE messages SET conversation_id = ?1 WHERE ROWID = 2", [conv])
+                .unwrap();
+        }
+        let r = mailapp_account(&mut db, &MailStore::open(&root).unwrap(), acc, None).unwrap();
+        assert_eq!((r.added, r.updated), (0, 1), "{r:?}");
+        assert_eq!(db.message("oxford", "2").unwrap().unwrap().thread_id, other);
+        // Its old thread is empty now: the needs-reply mark went with it.
+        assert!(db.tag("oxford", &alone, "needs_reply").unwrap().is_none());
+        assert!(db.tag("oxford", &other, "needs_reply").unwrap().is_some());
     }
 
     #[test]

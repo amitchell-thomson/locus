@@ -410,9 +410,11 @@ impl App {
             for j in bg {
                 for r in j.hides() {
                     self.shown.remove(&r);
+                    self.gone.insert(r.clone(), self.now.timestamp());
                     gone |= self.hidden.insert(r);
                 }
                 for r in j.shows() {
+                    self.gone.remove(&r);
                     self.hidden.remove(&r);
                     gone |= self.shown.insert(r);
                 }

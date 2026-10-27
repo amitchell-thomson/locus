@@ -13,7 +13,7 @@ use keryx_store::client::Daemon;
 use keryx_store::db::Db;
 use keryx_store::mailapp;
 use keryx_store::view::{self, Filter, ThreadRow, View};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,6 +33,10 @@ pub enum Key {
     Right,
     PageUp,
     PageDown,
+    /// ⇧↑ (or Home): the top of the list or thread.
+    Top,
+    /// ⇧↓ (or End): the bottom.
+    Bottom,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -89,6 +93,8 @@ pub struct Open {
     pub show_quotes: bool,
     pub expand_all: bool,
     pub scroll: u16,
+    /// How far the thread can scroll, as last drawn: `⇧↓` goes there, and `j` stops there.
+    pub max_scroll: std::cell::Cell<u16>,
 }
 
 impl Open {
@@ -169,6 +175,11 @@ pub struct App {
     pub marks: keryx_store::state::Marks,
     /// Where `:q` keeps a changed mail (set by the running TUI; `None` in tests unless set).
     pub drafts_dir: Option<PathBuf>,
+    /// `x` on a kept draft: the one the next `x` throws away.
+    pub drop_draft: Option<PathBuf>,
+    /// Threads taken out of the inbox here, and when: one that comes back with nothing newer
+    /// in it was put back by Mail, and the list says so (round 11).
+    pub gone: BTreeMap<String, i64>,
     /// A send in its hold: (changeset id, sends at).
     pub hold: Option<(String, i64)>,
     /// `b`: the list hidden, the message taking the width.
@@ -218,6 +229,8 @@ impl App {
             editor_request: None,
             writing: None,
             drafts_dir: None,
+            drop_draft: None,
+            gone: BTreeMap::new(),
             att_sel: 0,
             help_back: None,
             also: BTreeSet::new(),
@@ -275,6 +288,10 @@ impl App {
         for r in &hid {
             self.hidden.remove(r);
             self.shown.remove(r);
+            if res.is_err() {
+                // Said already, as an error: nothing to notice later.
+                self.gone.remove(r);
+            }
         }
         match res {
             Ok(Some(m)) => self.message = Some((m, false)),
@@ -455,9 +472,12 @@ impl App {
                 self.search_error = Some(e);
             }
         }
+        // A thread that left the list (archived, filed) leaves the cursor where it was, on the
+        // one that moved up into its place: back at the top, you lost your place (round 11).
+        self.note_put_back();
         self.sel = keep
             .and_then(|r| self.rows.iter().position(|x| x.r#ref == r))
-            .unwrap_or(0)
+            .unwrap_or(self.sel)
             .min(self.rows.len().saturating_sub(1));
         self.stale = self.stale_accounts();
         self.open_proposals = keryx_store::state::open_proposals(&self.db).unwrap_or(0);
@@ -467,6 +487,43 @@ impl App {
         self.marked.retain(|r| refs.contains(r));
         self.marks = self.db.fors().unwrap_or_default();
         self.preview = None;
+    }
+
+    /// A thread archived here that is back in the inbox with nothing newer in it: Mail accepted
+    /// the change and then took the server's word over it. On Personal (Gmail through Mail) the
+    /// Inbox label came back on most archives of 27 Oct, under a new copy of the message, while
+    /// keryx had said "done" (round 11). A thread that is back because a reply came is not this.
+    fn note_put_back(&mut self) {
+        let now = self.now.timestamp();
+        self.gone.retain(|_, t| now - *t < 600);
+        if self.view != View::Inbox || self.search.is_some() {
+            return;
+        }
+        let back: Vec<(String, String, String)> = self
+            .rows
+            .iter()
+            // A filed thread that needs a reply stays listed by design (round 10).
+            .filter(|r| r.needs_reply.is_none() && self.gone.get(&r.r#ref).is_some_and(|t| r.date <= *t))
+            .map(|r| (r.r#ref.clone(), r.subject.clone(), r.account.clone()))
+            .collect();
+        let Some((_, subject, account)) = back.first() else {
+            return;
+        };
+        let name = self.cfg.account(account).map_or(account.as_str(), |a| a.name.as_str());
+        let more = match back.len() {
+            1 => String::new(),
+            n => format!(" and {} more", n - 1),
+        };
+        self.message = Some((
+            format!(
+                "Mail put “{}”{more} back in the inbox: {name}'s server kept it there. a tries again",
+                locus_theme::fit(subject, 40)
+            ),
+            true,
+        ));
+        for (r, _, _) in back {
+            self.gone.remove(&r);
+        }
     }
 
     fn stale_accounts(&self) -> Vec<(String, i64)> {
@@ -499,6 +556,7 @@ impl App {
             show_quotes: false,
             expand_all: false,
             scroll: 0,
+            max_scroll: std::cell::Cell::new(u16::MAX),
         })
     }
 
@@ -584,7 +642,8 @@ impl App {
             Key::Char('k') | Key::Up => self.move_sel(-1),
             Key::PageDown | Key::Ctrl('d') => self.move_sel(10),
             Key::PageUp | Key::Ctrl('u') => self.move_sel(-10),
-            Key::Char('G') => self.move_sel(isize::MAX / 2),
+            Key::Char('G') | Key::Bottom => self.move_sel(isize::MAX / 2),
+            Key::Top => self.move_sel(isize::MIN / 2),
             Key::Enter => self.open_selected(),
             Key::Tab => self.cycle_account(1),
             Key::AltTab => self.extend_account(),
@@ -692,11 +751,14 @@ impl App {
                 self.open = None;
                 self.mode = self.back.take().unwrap_or(Mode::List);
             }
-            Key::Char('j') | Key::Down => open.scroll = open.scroll.saturating_add(1),
+            Key::Char('j') | Key::Down => open.scroll = open.scroll.saturating_add(1).min(open.max_scroll.get()),
             Key::Char('k') | Key::Up => open.scroll = open.scroll.saturating_sub(1),
-            Key::PageDown | Key::Char(' ') | Key::Ctrl('d') => open.scroll = open.scroll.saturating_add(15),
+            Key::PageDown | Key::Char(' ') | Key::Ctrl('d') => {
+                open.scroll = open.scroll.saturating_add(15).min(open.max_scroll.get())
+            }
             Key::PageUp | Key::Ctrl('u') => open.scroll = open.scroll.saturating_sub(15),
-            Key::Char('g') => open.scroll = 0,
+            Key::Char('g') | Key::Top => open.scroll = 0,
+            Key::Bottom => open.scroll = open.max_scroll.get(),
             Key::Char('b') => self.toggle_list(),
             Key::Char('z') => {
                 open.show_quotes = !open.show_quotes;

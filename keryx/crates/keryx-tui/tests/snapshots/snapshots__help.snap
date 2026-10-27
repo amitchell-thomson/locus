@@ -5,6 +5,7 @@ expression: "render_to_string(&mut a, 80, 20)"
 ╭──────────────────────────────────── keys ────────────────────────────────────╮
 │ this screen                                                                  │
 │  ↑ ↓  ⏎ esc  move · read a thread · back                                     │
+│  ⇧↑ ⇧↓       the top or bottom of the list, or of the thread                 │
 │  J K         the next or previous thread, while reading                      │
 │  ⇥ ⇧⇥        the next or previous inbox (all, then each account)             │
 │  ⌥⇥          add the next inbox to the ones shown (⇥ goes back to one)       │
@@ -20,5 +21,4 @@ expression: "render_to_string(&mut a, 80, 20)"
 │  v           select several for one change                                   │
 │  z o 1…9     the whole conversation · an attachment · open link n            │
 │  A ^R        approve, in locus · sync now                                    │
-│                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯

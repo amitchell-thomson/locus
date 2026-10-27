@@ -90,6 +90,7 @@ pub enum Raw<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Fingerprint {
     pub message_id: String,
+    pub thread_id: String,
     pub location: Location,
     pub read: bool,
     pub flagged: bool,
@@ -287,6 +288,46 @@ impl Db {
         Ok(n > 0)
     }
 
+    /// Move a message into another thread (Mail joined two conversations). When that empties
+    /// its old thread, what was said about the old thread goes with it: a needs-reply tag left
+    /// on a thread with no messages never clears, and your reply was in the other one (round 11).
+    pub fn set_thread(&self, account: &str, source_id: &str, thread_id: &str) -> Result<bool> {
+        let old: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT thread_id FROM messages WHERE account = ?1 AND source_id = ?2",
+                params![account, source_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let Some(old) = old.filter(|o| o != thread_id) else {
+            return Ok(false);
+        };
+        self.conn.execute(
+            "UPDATE messages SET thread_id = ?3 WHERE account = ?1 AND source_id = ?2",
+            params![account, source_id, thread_id],
+        )?;
+        let left: i64 = self.conn.query_row(
+            "SELECT count(*) FROM messages WHERE account = ?1 AND thread_id = ?2",
+            params![account, old],
+            |r| r.get(0),
+        )?;
+        if left == 0 {
+            for table in ["tags", "links", "snoozes", "suggestions"] {
+                // OR IGNORE: the thread it joined may say the same already; the rest is dropped.
+                self.conn.execute(
+                    &format!("UPDATE OR IGNORE {table} SET thread_id = ?3 WHERE account = ?1 AND thread_id = ?2"),
+                    params![account, old, thread_id],
+                )?;
+                self.conn.execute(
+                    &format!("DELETE FROM {table} WHERE account = ?1 AND thread_id = ?2"),
+                    params![account, old],
+                )?;
+            }
+        }
+        Ok(true)
+    }
+
     pub fn delete(&self, account: &str, source_id: &str) -> Result<bool> {
         let id: Option<i64> = self
             .conn
@@ -305,7 +346,7 @@ impl Db {
     /// source_id → fingerprint, for diffing an account against its source.
     pub fn fingerprints(&self, account: &str) -> Result<HashMap<String, Fingerprint>> {
         let mut st = self.conn.prepare(
-            "SELECT source_id, message_id, location_json, read, flagged, text_version
+            "SELECT source_id, message_id, location_json, read, flagged, text_version, thread_id
              FROM messages WHERE account = ?1",
         )?;
         let rows = st.query_map([account], |r| {
@@ -316,15 +357,17 @@ impl Db {
                 r.get::<_, bool>(3)?,
                 r.get::<_, bool>(4)?,
                 r.get::<_, u32>(5)?,
+                r.get::<_, String>(6)?,
             ))
         })?;
         let mut out = HashMap::new();
         for row in rows {
-            let (sid, message_id, loc, read, flagged, text_version) = row?;
+            let (sid, message_id, loc, read, flagged, text_version, thread_id) = row?;
             out.insert(
                 sid,
                 Fingerprint {
                     message_id,
+                    thread_id,
                     location: serde_json::from_str(&loc)?,
                     read,
                     flagged,

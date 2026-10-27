@@ -20,6 +20,8 @@ are unit-testable without a live process.
 
 from __future__ import annotations
 
+import json
+import sqlite3
 import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -200,6 +202,26 @@ def collect_status(
             f"{len(parked)} margin question(s) parked after repeated ungrounded attempts "
             f"(e.g. \"{parked[0][1][:60]}\") — `locus review --retry-parked` after new ingests"
         )
+    # A tablet folder the registry does not know still captures under its area, but nothing
+    # links it to a course, repo or application. Named here, from the last capture run, so a typo
+    # or an unregistered course is fixed rather than filed under nothing (Slice 0.12).
+    try:
+        last_capture = conn.execute(
+            "SELECT stats FROM agent_runs WHERE kind='capture' AND stats IS NOT NULL "
+            "ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    except sqlite3.OperationalError:          # a database without the agent tables
+        last_capture = None
+    if last_capture:
+        try:
+            unmatched = json.loads(last_capture[0] or "{}").get("unmatched_folders") or []
+        except ValueError:
+            unmatched = []
+        if unmatched:
+            warnings.append(
+                f"tablet folder(s) not in taxonomy/registry.toml: {', '.join(unmatched)} — "
+                "add them or rename the folder"
+            )
     if last_backup is None:
         warnings.append("no backup snapshot found — run `locus backup`")
     elif last_backup_age_days is not None and last_backup_age_days > 7:

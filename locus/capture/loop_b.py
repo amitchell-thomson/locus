@@ -9,9 +9,8 @@ command for had 105 marks of stored geometry and not one written word — questi
 could not see, on a surface whose whole promise is that it sees them. A path that looks wired
 and isn't (CLAUDE.md §3).
 
-WHAT RUNS. `annotate_sync` rides the same half-hourly capture timer as Loop A, consuming the
-same staging dir. Loop A takes the Notes folders; this takes the READING folders Loop A
-excludes. Per changed document: fetch the cloud `.rmdoc`, extract mark geometry (free, local),
+WHAT RUNS. `annotate_sync` rides the same half-hourly capture timer as Loop A, over the same
+placed tablet. Loop A takes the notebooks; this takes the PDFs. Per changed document: fetch the cloud `.rmdoc`, extract mark geometry (free, local),
 store marks, transcribe NEW ink (bounded, billed vision — the same metered SDK path as Loop A's
 transcription), and let the nightly intent/answer passes do the rest on their own timers.
 
@@ -24,9 +23,22 @@ join is computed, not remembered: hash match → that document's source_uri; no 
 ingested) → the device path, which `annotate --ingest`'s rekey step upgrades later. Verified
 live before building: the parent-orders bundle's hash equals the ingested row's content_hash.
 
-CHANGE DETECTION reuses Loop A's staged-render manifest with an `annotate:` key prefix — the
-device only pushes documents whose content changed, and an unchanged staged render means no new
-ink, so a no-op run costs zero rmapi downloads and zero model calls.
+CHANGE DETECTION is the document's ink key from the cloud tree (capture/device.py), stored in
+Loop A's manifest under `annotate:<uuid>`. Until Slice 0.12 it was the hash of a render the
+tablet agent pushed, and when that agent stopped on or about 1 Aug this loop saw nothing for
+twelve weeks without a word. A no-op run still costs zero downloads and zero model calls.
+
+THREE KINDS OF PDF since Slice 0.12, decided by where it sits and whether Locus sent it:
+  - in `Reading/`: everything above, unchanged.
+  - a PDF Locus SENT, wherever he filed it: Claude's document. Never ingested; its marks keep
+    the device path as their key, and his notes are promoted WITH the passage each was written
+    against, because "notes on their own are often meaningless" (Alec, 23 Oct).
+  - any other PDF in an area folder: a SOURCE. Copied into the drop folder under its area
+    (`incoming/studies/...`), where `locus-watch` ingests it like anything he drops there; its
+    marks wait until the library has it, then key on its `source_uri` and are promoted the same
+    way. A copy that was quarantined is never re-queued, so a bad PDF cannot loop.
+Marks follow a document by its uuid: when he moves one, its earlier marks are re-keyed onto the
+current key rather than left under the old path.
 
 RELATIONSHIP TO `reading/sweep.py` (which predates this and coined "Loop B"): sweep is the
 hourly CLOUD-PULL pass over `reading_targets` — geometry only, papers the system delivered —
@@ -41,7 +53,6 @@ from __future__ import annotations
 import hashlib
 import logging
 import sqlite3
-import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -65,7 +76,9 @@ _CHOSEN_SUBFOLDERS: tuple[str, ...] = ("In-Progress", "Finished")
 class AnnotateOutcome:
     uuid: str
     name: str
-    status: str                   # 'annotated' | 'unchanged' | 'failed'
+    # 'annotated' | 'unchanged' | 'deferred' | 'failed', and for a source not yet in the
+    # library 'queued' | 'waiting' | 'quarantined' (see `_queue_source`)
+    status: str
     source_uri: str = ""
     hash_mapped: bool = False     # True when content-hash resolved a corpus document
     ingested: bool = False        # True when this run ingested the document itself
@@ -73,6 +86,7 @@ class AnnotateOutcome:
     transcribed: int = 0
     promoted: str = ""            # promote_reading_notes status ('' = no notes to promote)
     error: str | None = None
+    role: str = ""                # the placement it was read under ('reading' | 'sent' | 'source')
 
 
 @dataclass
@@ -164,37 +178,63 @@ def _ingest_from_bundle(conn: sqlite3.Connection, doc, name: str) -> str | None:
     return row["source_uri"] if row else None
 
 
+def _queue_source(doc, where, pdf_bytes: bytes, *, incoming: Path) -> str:
+    """Put a source PDF in the drop folder under its area for `locus-watch`. Returns a status.
+
+    'queued' when written now, 'waiting' when an earlier copy has not been ingested yet, and
+    'quarantined' when an earlier copy failed: re-queuing that one would quarantine it again
+    every half hour, for ever.
+    """
+    name = doc.name.replace("/", "-")
+    if not name.lower().endswith(".pdf"):
+        name += ".pdf"
+    area_dir = incoming / (where.area or "").lower()
+    for set_aside in (".quarantine", ".unsupported"):
+        held = incoming / set_aside
+        if held.exists() and any(held.rglob(name)):
+            return "quarantined"
+    dest = area_dir / name
+    if dest.exists():
+        return "waiting"
+    area_dir.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_suffix(".part")
+    tmp.write_bytes(pdf_bytes)
+    tmp.replace(dest)
+    return "queued"
+
+
 def annotate_sync(
     conn: sqlite3.Connection,
     *,
-    staging_dir: str | Path | None = None,
+    placed=None,
     manifest: dict | None = None,
-    index_fn=None,
     fetch_fn=None,
     read_fn=None,
     marks_fn=None,
     transcribe_fn=None,
     ingest_fn=None,
     promote_fn=None,
+    queue_fn=None,
     transcribe_limit: int | None = None,
+    max_fetch: int | None = None,
 ) -> AnnotateSyncResult:
-    """Capture + transcribe reading annotations for every staged, changed reading document.
+    """Capture + transcribe the ink on every changed PDF in `placed` (see the module docstring).
 
-    `manifest` maps staged-render identity to what was last processed; None loads and persists
-    Loop A's manifest file, under `annotate:<uuid>` keys so the two loops share one file without
-    colliding. All externals are injectable for model-free tests. Failure on one document never
-    aborts the batch (ingest §7).
+    `placed` is `[(DeviceDoc, Placement)]` from capture/device.py (None reads the tablet).
+    `manifest` maps `annotate:<uuid>` to the ink key last processed; None loads and persists
+    Loop A's manifest file. All externals are injectable for model-free tests. Failure on one
+    document never aborts the batch (ingest §7).
     """
     from locus.agent import journal
-    from locus.capture.annotate import store_marks
-    from locus.capture.loop_a import MANIFEST_NAME, _load_manifest, _save_manifest
+    from locus.capture.annotate import rekey_marks_by_uuid, store_marks
+    from locus.capture.loop_a import (
+        MANIFEST_NAME, _load_manifest, _save_manifest, default_fetch, placed_documents,
+    )
     from locus.capture.mark_text import transcribe_marks
-    from locus.capture.remarkable import _subprocess_runner
-    from locus.capture.rmdoc import fetch_rmdoc, read_rmdoc
+    from locus.capture.rmdoc import read_rmdoc
     from locus.config import load
 
     cfg = load()
-    staging = Path(staging_dir) if staging_dir is not None else cfg.capture.staging_dir
     mpath = None
     if manifest is None:
         mpath = cfg.paths.raw_store / MANIFEST_NAME
@@ -204,12 +244,8 @@ def annotate_sync(
         if transcribe_limit is not None
         else cfg.capture.annotate_max_transcribe
     )
-    index_fn = index_fn or (
-        lambda: reading_index(_subprocess_runner(cfg.capture.rmapi_binary))
-    )
-    fetch_fn = fetch_fn or (
-        lambda path, dest: fetch_rmdoc(path, dest, rmapi_binary=cfg.capture.rmapi_binary)
-    )
+    fetch_cap = cfg.capture.annotate_max_fetch if max_fetch is None else max_fetch
+    fetch_fn = fetch_fn or default_fetch(cfg)
     read_fn = read_fn or read_rmdoc
     if marks_fn is None:
         from locus.capture.annotate import marks_for_document
@@ -227,86 +263,104 @@ def annotate_sync(
         from locus.agent.promote import promote_reading_notes
 
         promote_fn = promote_reading_notes
+    queue_fn = queue_fn or (
+        lambda doc, where, pdf_bytes: _queue_source(
+            doc, where, pdf_bytes, incoming=Path(cfg.paths.incoming)
+        )
+    )
+    if placed is None:
+        placed = placed_documents(conn, cfg)
 
     result = AnnotateSyncResult()
-    staged = sorted(staging.glob("*.pdf")) if staging.exists() else []
-    if not staged:
-        return result
-    try:
-        index = index_fn()
-    except Exception as exc:  # cloud unreachable: capture again next tick, nothing lost
-        log.warning("annotate-sync: reading index failed: %s", exc)
-        return result
-
     budget = max(0, int(limit))
+    fetched = 0
     with journal.run(conn, "annotate") as run:
-        for pdf in staged:
-            uuid = pdf.stem
-            if uuid not in index:
+        for doc, where in placed:
+            if where.role not in ("reading", "sent", "source"):
                 continue
-            device_path, name = index[uuid]
+            uuid, name, device_path = doc.uuid, doc.name, doc.path
             key = f"annotate:{uuid}"
-            h = hashlib.sha256(pdf.read_bytes()).hexdigest()
-            if manifest.get(key) == h:
+            if manifest.get(key) == doc.ink_key:
                 result.outcomes.append(AnnotateOutcome(uuid, name, "unchanged"))
                 continue
-            try:
-                from locus.capture.annotate import rekey_marks
 
-                with tempfile.TemporaryDirectory(prefix="locus-loopb-") as tmp:
-                    doc = read_fn(fetch_fn(device_path, tmp))
-                    marks = marks_fn(doc)
-                    uri = _corpus_uri_for(conn, doc.pdf_bytes)
+            # A source's identity is its bytes, and the tree already has their hash: whether the
+            # library holds it is known before anything is downloaded.
+            library_uri = None
+            if where.role == "source" and doc.pdf_hash:
+                row = conn.execute(
+                    "SELECT source_uri FROM documents WHERE content_hash=?", (doc.pdf_hash,)
+                ).fetchone()
+                library_uri = row["source_uri"] if row else None
+            if where.role != "reading" and doc.ink_pages == 0 and (
+                where.role == "sent" or library_uri is not None
+            ):
+                manifest[key] = doc.ink_key      # nothing written on it: nothing to read
+                result.outcomes.append(AnnotateOutcome(uuid, name, "unchanged"))
+                continue
+            if fetched >= fetch_cap:
+                result.outcomes.append(AnnotateOutcome(uuid, name, "deferred"))
+                continue
+            fetched += 1
+            try:
+                doc_read = read_fn(fetch_fn(doc))
+                if where.role == "source" and library_uri is None:
+                    # Not in the library yet: hand it to the drop folder, and come back to its
+                    # ink once `locus-watch` has ingested it. The key is NOT recorded, so the
+                    # next tick looks again.
+                    status = queue_fn(doc, where, doc_read.pdf_bytes)
+                    result.outcomes.append(AnnotateOutcome(uuid, name, status))
+                    continue
+
+                marks = marks_fn(doc_read)
+                hash_mapped = ingested = False
+                if where.role == "reading":
+                    uri = _corpus_uri_for(conn, doc_read.pdf_bytes)
                     hash_mapped = uri is not None
-                    ingested = False
-                    if uri is None and _chosen(device_path) and doc.pdf_bytes:
+                    if uri is None and _chosen(device_path) and doc_read.pdf_bytes:
                         # A document he CHOSE (moved to In-Progress/Finished) that no ingest
-                        # path ever covered — a hand-added book. Ingest it now so its marks join
-                        # the corpus; earlier ticks' device-path marks are re-keyed with it.
-                        # Never a native notebook: it has no PDF, and ingesting its empty bytes
-                        # would file a zero-byte `.pdf` in the incoming folder.
-                        uri = ingest_fn(conn, doc, name)
-                        if uri is not None:
-                            ingested = True
-                            moved = rekey_marks(conn, old_uri=device_path, new_uri=uri)
-                            if moved:
-                                log.info(
-                                    "annotate-sync: re-keyed %d earlier mark(s) onto %s",
-                                    moved, uri,
-                                )
+                        # path ever covered: a hand-added book. Never a native notebook: it has
+                        # no PDF, and ingesting its empty bytes would file a zero-byte `.pdf`.
+                        uri = ingest_fn(conn, doc_read, name)
+                        ingested = uri is not None
                     uri = uri or device_path
-                    stored = store_marks(
-                        conn, marks, source_uri=uri, doc_uuid=doc.doc_uuid,
-                        source_run=run.id,
-                    )
-                    transcribed = 0
-                    if budget > 0 and cfg.capture.annotate_transcribe:
-                        transcribed = transcribe_fn(
-                            conn, marks, source_uri=uri, limit=budget
-                        )
-                        budget -= transcribed
-                    promoted = ""
-                    if uri != device_path:
-                        # HIS margin notes become a reading-notes document automatically —
-                        # idempotent (stable path, content-compare), and `notes_sync` on the
-                        # next capture tick ingests the file, so his marginalia reaches
-                        # retrieval with no command typed. None = he wrote no notes.
-                        p = promote_fn(conn, uri)
-                        promoted = p.status if p else ""
-                manifest[key] = h
+                elif where.role == "source":
+                    uri, hash_mapped = library_uri, True
+                else:                                # sent: Claude's document, keyed on the device
+                    uri = device_path
+
+                moved = rekey_marks_by_uuid(conn, doc_uuid=doc_read.doc_uuid, new_uri=uri)
+                if moved:
+                    log.info("annotate-sync: re-keyed %d earlier mark(s) onto %s", moved, uri)
+                stored = store_marks(
+                    conn, marks, source_uri=uri, doc_uuid=doc_read.doc_uuid, source_run=run.id,
+                )
+                transcribed = 0
+                if budget > 0 and cfg.capture.annotate_transcribe:
+                    transcribed = transcribe_fn(conn, marks, source_uri=uri, limit=budget)
+                    budget -= transcribed
+                promoted = ""
+                if uri != device_path or where.role == "sent":
+                    # HIS margin notes become a notes document automatically, each with the
+                    # passage it was written against: idempotent (stable path, content-compare),
+                    # and `notes_sync` on the next capture tick ingests the file. For Claude's
+                    # document the title is its device name, since the library has no row for it.
+                    p = promote_fn(conn, uri, title=name) if where.role == "sent" else promote_fn(conn, uri)
+                    promoted = p.status if p else ""
+                manifest[key] = doc.ink_key
                 result.outcomes.append(
                     AnnotateOutcome(
                         uuid, name, "annotated", source_uri=uri, hash_mapped=hash_mapped,
                         ingested=ingested, marks=stored, transcribed=transcribed,
-                        promoted=promoted,
+                        promoted=promoted, role=where.role,
                     )
                 )
-                if uri == device_path:
+                if where.role == "reading" and uri == device_path:
                     # Loud, not fatal: a still-Proposed document he has marked up. Its marks
                     # join the corpus the moment he moves it out of Proposed (the ingest above
-                    # + rekey), so nothing is lost — but until then no downstream pass sees it.
+                    # + rekey), so nothing is lost; until then no downstream pass sees it.
                     log.warning(
-                        "annotate-sync: %s not in the corpus (still in Proposed?) — "
+                        "annotate-sync: %s not in the corpus (still in Proposed?): "
                         "marks keyed by device path %r until he chooses it", name, device_path,
                     )
             except Exception as exc:  # one doc's failure never aborts the batch
@@ -315,15 +369,21 @@ def annotate_sync(
         run.stats = {
             "annotated": result.annotated,
             "unchanged": sum(o.status == "unchanged" for o in result.outcomes),
+            "queued": sum(o.status in ("queued", "waiting") for o in result.outcomes),
+            "quarantined": sum(o.status == "quarantined" for o in result.outcomes),
+            "deferred": sum(o.status == "deferred" for o in result.outcomes),
             "failed": sum(o.status == "failed" for o in result.outcomes),
+            "downloads": fetched,
             "marks": sum(o.marks for o in result.outcomes),
             "transcribed": sum(o.transcribed for o in result.outcomes),
             "ingested": sum(o.ingested for o in result.outcomes),
             "promoted": sum(bool(o.promoted and o.promoted != "unchanged")
                             for o in result.outcomes),
+            # Reading documents only: a document Locus sent is keyed on the device by design.
             "unmapped_to_corpus": sum(
                 1 for o in result.outcomes
-                if o.status == "annotated" and not o.hash_mapped and not o.ingested
+                if o.status == "annotated" and o.role == "reading"
+                and not o.hash_mapped and not o.ingested
             ),
         }
     if mpath is not None:

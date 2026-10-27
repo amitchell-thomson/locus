@@ -209,6 +209,8 @@ def deliver_pdf(
     replace: bool = False,
     runner: RmapiRunner | None = None,
     inspect: RemoteInspector | None = None,
+    authored: bool = True,
+    record: "Callable[[Path, str], None] | None" = None,
 ) -> DeliveryResult:
     """Upload `pdf_path` to `remote_folder` on the reMarkable, creating the folder if needed.
 
@@ -244,10 +246,25 @@ def deliver_pdf(
 
     `inspect` is the injectable that answers "what is on the device"; it defaults to fetching the
     bundle with `rmapi get`, which is one download and only on the replace path.
+
+    **`authored`: did Locus write this?** (Slice 0.12.) Capture reads a PDF on the tablet as
+    Claude's document when its hash is recorded here and as a SOURCE otherwise, so every
+    authored push is recorded (`capture/sent.py`) before the upload. It defaults to True because
+    the two mistakes are not equal: an unrecorded Claude document would be ingested into the
+    library as a source (invariant 5), while a recorded paper is merely not ingested twice.
+    `reading/deliver.py`, which pushes third-party papers, passes False. `record` follows the
+    inspector's rule: defaulted to the live database only when the transport is not injected.
     """
     pdf_path = Path(pdf_path)
     if not pdf_path.is_file():
         raise FileNotFoundError(pdf_path)
+    if authored:
+        if record is None and runner is None:
+            from locus.capture.sent import default_recorder
+
+            record = default_recorder()
+        if record is not None:
+            record(pdf_path, remote_folder)
 
     # The inspector is a SECOND transport (it shells out to `rmapi get`, which writes to cwd and
     # so cannot go through `runner`'s argv-only interface). A caller that injected a runner

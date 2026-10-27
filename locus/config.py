@@ -693,15 +693,28 @@ class IngestConfig(BaseModel):
 
 
 class CaptureConfig(BaseModel):
-    """Loop A — reMarkable handwriting capture (agent-layer plan §8.1, Phase 1 ④).
+    """Capture from the reMarkable cloud (Slice 0.12; capture/device.py).
 
-    The device pushes each changed notebook to `staging_dir` as `<uuid>.pdf`; capture identifies,
-    transcribes, enriches, and files it as a `rough` note. Folder→category maps a reMarkable top
-    folder to a Locus category (empty dict = the built-in map in capture/remarkable.py)."""
+    What is read, and how, follows the folders and the kind of document (a notebook is his
+    writing, a PDF Locus sent is Claude's, any other PDF in an area folder is a source), so there
+    is no folder map or exclusion list to configure: an unknown folder is not read at all. The
+    old `folder_category`, `excluded_folders`, `default_category` and `notes_root` settings were
+    retired with the tablet agent; pydantic ignores unknown keys, so a config that still sets
+    them would LOOK live, which is why they were also removed from the server's config.toml."""
 
     staging_dir: Path = Field(
         Path("/home/alec/remarkable-import"),
-        description="Where the device-push receiver lands <uuid>.pdf renders (absolute).",
+        description="Where notebook renders are written as <uuid>.pdf for transcription.",
+    )
+    rmapi_tree_cache: Path = Field(
+        Path("~/.cache/rmapi/tree.cache"),
+        description="rmapi's own tree cache, read after one `rmapi ls /` (capture/device.py).",
+    )
+    max_notebooks_per_run: int = Field(
+        4, description="Notebooks rendered and transcribed per capture run (billed vision)."
+    )
+    annotate_max_fetch: int = Field(
+        15, description="PDF bundles fetched per capture run; the rest wait a tick (cloud 429s)."
     )
     rmapi_binary: str = Field("rmapi", description="rmapi binary (PATH name or absolute path).")
     # Transcription is a VISION call — an Anthropic SDK request with the page image, NOT `claude -p`
@@ -715,23 +728,6 @@ class CaptureConfig(BaseModel):
         "claude-sonnet-5", description="Anthropic vision model id for transcription (seeds the corpus)."
     )
     transcribe_dpi: int = Field(150, description="Render DPI for handwriting pages (legible, not huge).")
-    folder_category: dict[str, str] = Field(
-        default_factory=dict, description="reMarkable folder -> Locus category (empty = built-in)."
-    )
-    excluded_folders: list[str] = Field(
-        default_factory=lambda: [
-            "trash", "Daily", "Reading", "Admin",
-            "Locus", "admin", "reading_list",   # pre-2026-08 names, kept so an unmigrated
-        ],                                      # device keeps behaving correctly
-        description="reMarkable folders whose docs are not Loop-A capture.",
-    )
-    default_category: str = Field("note", description="Category for folders not in the map.")
-    # His own writing lives at `Notes/<topic>/...` after the 2026-08 reorganisation, so category
-    # is keyed on the folder BENEATH this root. Anything not under it keeps the old top-level
-    # keying, which is what lets an unmigrated device carry on unchanged.
-    notes_root: str = Field(
-        "Notes", description="Device folder holding his topic folders; category keys below it."
-    )
     # Loop B on the capture timer (capture/loop_b.py): reading annotations captured and their
     # handwriting transcribed automatically. Transcription was the ONE manual link in the
     # ink→answer chain — 105 marks sat wordless on a paper because `locus annotate --transcribe`

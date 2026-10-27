@@ -9,7 +9,7 @@ locus-capture.timer
 locus-discover-pull.timer
 locus-maintain.timer
 locus-watch.timer
-# Long-running: restarted on every deploy that moves the code.
-locus-remarkable-receiver.service
+# Off since Slice 0.12: locus-remarkable-receiver.service, which received renders pushed by an
+# agent on the tablet. That agent stopped about 1 Aug; capture now reads the cloud.
 # The calendar daemon (kairos, ADR-008): restarted only when its build ran, not on every deploy.
 locus-kairosd.service

@@ -16,10 +16,10 @@ handwriting on it, then archives to `/Daily/YYYY-MM`; dropping unrelated reading
 that signal) and NOT `Reading/In-Progress` or `Reading/Finished`, because `capture/loop_b` treats
 a document he MOVED into either of those with no corpus match as one he chose to read, and
 ingests it from the bundle's own bytes. A doc that arrived there because a tool put it there was
-never chosen, so it would auto-ingest a rendering of text usually already in the corpus. And
-emphatically NOT `[capture].notes_root` (`/Notes` on the live device, which looked like the
-obvious home for it): Loop A pulls that tree and ingests what it finds as the owner's OWN
-handwriting, so agent prose filed there breaks invariant 5 by filing rather than by code.
+never chosen, so it would auto-ingest a rendering of text usually already in the corpus.
+(Until Slice 0.12 his notes tree was ruled out too, because Loop A read everything in it as his
+handwriting. Capture now knows a document Locus sent by the hash `deliver_pdf` records before
+every push, so once he has read one he files it into its area folder himself.)
 
 The default (`[reading].send_folder`) is therefore its own top-level folder that no loop watches,
 from which moving a document into `Reading/In-Progress` stays a deliberate act meaning exactly
@@ -70,6 +70,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from locus.capture.sent import default_recorder
 from locus.config import load
 from locus.reading.deliver import safe_filename
 from locus.reading.deliver_remarkable import (
@@ -181,6 +182,8 @@ def send_markdown(
     # An injected runner means the caller supplied the transport, so the remote inspector must
     # not go behind it to the network (see `deliver_pdf`). Built here, passed down explicitly.
     inspector = None if runner is not None else _rmapi_inspector(cfg.reading.rmapi_binary)
+    # Same rule for the record of what Locus sent (capture/sent.py, Slice 0.12).
+    recorder = None if runner is not None else default_recorder()
     runner = runner or _subprocess_runner(cfg.reading.rmapi_binary)
     filename = safe_filename(title)
 
@@ -191,7 +194,7 @@ def send_markdown(
         pages = _page_count(pdf)
         _ensure_folder_path(runner, folder)
         deliver_pdf(pdf, remote_folder=folder, replace=True, runner=runner,
-                    inspect=inspector)
+                    inspect=inspector, record=recorder)
 
     return SentDoc(filename=filename, remote_folder=folder, pages=pages)
 
@@ -232,6 +235,8 @@ def send_latex(
     # An injected runner means the caller supplied the transport, so the remote inspector must
     # not go behind it to the network (see `deliver_pdf`). Built here, passed down explicitly.
     inspector = None if runner is not None else _rmapi_inspector(cfg.reading.rmapi_binary)
+    # Same rule for the record of what Locus sent (capture/sent.py, Slice 0.12).
+    recorder = None if runner is not None else default_recorder()
     runner = runner or _subprocess_runner(cfg.reading.rmapi_binary)
     filename = safe_filename(title)
 
@@ -266,7 +271,7 @@ def send_latex(
         pages = _page_count(pdf)
         _ensure_folder_path(runner, folder)
         deliver_pdf(pdf, remote_folder=folder, replace=True, runner=runner,
-                    inspect=inspector)
+                    inspect=inspector, record=recorder)
 
     return SentDoc(filename=filename, remote_folder=folder, pages=pages)
 
@@ -375,6 +380,8 @@ def send_pdf(
     # An injected runner means the caller supplied the transport, so the remote inspector must
     # not go behind it to the network (see `deliver_pdf`). Built here, passed down explicitly.
     inspector = None if runner is not None else _rmapi_inspector(cfg.reading.rmapi_binary)
+    # Same rule for the record of what Locus sent (capture/sent.py, Slice 0.12).
+    recorder = None if runner is not None else default_recorder()
     runner = runner or _subprocess_runner(cfg.reading.rmapi_binary)
     filename = safe_filename(title or src.stem)
     pages = _page_count(src)
@@ -384,6 +391,6 @@ def send_pdf(
         staged.write_bytes(src.read_bytes())
         _ensure_folder_path(runner, folder)
         deliver_pdf(staged, remote_folder=folder, replace=True, runner=runner,
-                    inspect=inspector)
+                    inspect=inspector, record=recorder)
 
     return SentDoc(filename=filename, remote_folder=folder, pages=pages)

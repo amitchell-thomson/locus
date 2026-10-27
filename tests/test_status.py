@@ -85,3 +85,20 @@ def test_stale_backup_warns(conn_and_paths, tmp_path):
     r = _collect(conn_and_paths, now=old + timedelta(days=30))
     assert r.last_backup_age_days == pytest.approx(30, abs=0.1)
     assert any("days old" in w for w in r.warnings)
+
+
+def test_names_tablet_folders_the_registry_does_not_know(conn_and_paths):
+    """Slice 0.12: an unregistered course folder still captures under its area, but nothing
+    links it to the course, so it is named until it is fixed."""
+    import json
+
+    conn = get_connection(conn_and_paths["db"])
+    with conn:
+        conn.execute(
+            "INSERT INTO agent_runs (kind, started_at, finished_at, status, stats) "
+            "VALUES ('capture', 't', 't', 'ok', ?)",
+            (json.dumps({"unmatched_folders": ["Studies/B99 Typo"]}),),
+        )
+    conn.close()
+    joined = " ".join(_collect(conn_and_paths).warnings)
+    assert "Studies/B99 Typo" in joined and "registry" in joined

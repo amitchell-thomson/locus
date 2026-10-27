@@ -315,6 +315,24 @@ def rekey_marks(conn, *, old_uri: str, new_uri: str) -> int:
     return cur.rowcount
 
 
+def rekey_marks_by_uuid(conn, *, doc_uuid: str, new_uri: str) -> int:
+    """Move every mark of one device document onto `new_uri`. Returns the number moved.
+
+    A document's marks are keyed by its device path until the library has it, and the path
+    changes whenever he files the document somewhere else, which he did to almost everything on
+    the tablet on 23 Oct 2026. The uuid does not change, so it is what finds the old rows.
+    """
+    if not doc_uuid:
+        return 0
+    old = [
+        r[0] for r in conn.execute(
+            "SELECT DISTINCT source_uri FROM pdf_annotations WHERE doc_uuid=? AND source_uri!=?",
+            (doc_uuid, new_uri),
+        )
+    ]
+    return sum(rekey_marks(conn, old_uri=o, new_uri=new_uri) for o in old)
+
+
 def store_marks(conn, marks, *, source_uri: str, doc_uuid: str = "", source_run=None) -> int:
     """Upsert marks for one document. Returns the number of rows written.
 

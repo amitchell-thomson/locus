@@ -136,7 +136,7 @@ def deliver_proposal(
 
     ensure_reading_folders(runner, root=root)
     target = f"{root}/{P.FOLDER_PROPOSED}"
-    deliver_pdf(staged, remote_folder=target, runner=runner)
+    deliver_pdf(staged, remote_folder=target, runner=runner, authored=False)
 
     uuid = _device_uuid(runner, f"/{target}/{Path(filename).stem}")
     P.mark_proposed(

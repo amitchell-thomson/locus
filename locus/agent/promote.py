@@ -300,7 +300,7 @@ def promote_reading_notes(
     passage is quoted as evidence under his note, not presented as his writing.
     """
     rows = conn.execute(
-        "SELECT pdf_page, kind, note, covered_text FROM pdf_annotations "
+        "SELECT pdf_page, kind, note, covered_text, line_text FROM pdf_annotations "
         "WHERE source_uri=? AND TRIM(COALESCE(note,''))!='' ORDER BY pdf_page, id",
         (source_uri,),
     ).fetchall()
@@ -331,7 +331,10 @@ def promote_reading_notes(
     ]
     for row in rows:
         note = " ".join((row["note"] or "").split())
-        passage = " ".join((row["covered_text"] or "").split())
+        # What the note was about: the words the ink covered, or, for a note written in the
+        # margin, which covers none, the line beside it. A margin note is deictic ("why here?"),
+        # and without its line it reads as nothing at all (Slice 0.12).
+        passage = " ".join((row["covered_text"] or row["line_text"] or "").split())
         lines += [f"## p.{row['pdf_page'] + 1}", "", note, ""]
         if passage:
             lines += [f"> {passage}", ""]

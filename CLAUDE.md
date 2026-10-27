@@ -155,7 +155,7 @@ VRAM change.**
 
 ## 5. Data model
 
-Source of truth: Alembic migrations in `locus/db/migrations/versions/` (currently **0037**).
+Source of truth: Alembic migrations in `locus/db/migrations/versions/` (currently **0038**).
 `locus/db/schema.sql` is a human-readable summary. Never `ALTER` a live DB ad hoc; never force a
 re-ingest for a schema change — migrate forward.
 
@@ -300,13 +300,29 @@ the per-doc cap.
 
 Turns the engine into a learning and project-development tool. State lives in its own tables.
 
-**Capture.** `capture/rmdoc.py` reads stroke geometry from the device's cloud copy. Shape decides
+**Capture reads the cloud, and what a document is decides how** (Slice 0.12, 2026-10-27).
+`capture/device.py` refreshes rmapi's own tree cache with ONE `rmapi ls /` per tick and reads
+every document's folder, kind and per-file sha256 from it; the old index (`find` + one `stat`
+per document, ~80 calls per half hour) fitted the 429s. Until then capture waited for an agent
+ON THE TABLET to push renders to `locus-remarkable-receiver`; it stopped about 1 Aug and every
+run said "0 captured" for twelve weeks while exiting 0. Now: a **notebook** is his writing (Loop
+A renders it from its bundle and transcribes it, keyed on its ink so a move costs nothing); a
+**PDF Locus sent** is Claude's document, never ingested, his notes on it promoted with the
+passage each was about (`deliver_pdf` records the sha256 of every authored push BEFORE the
+upload, `device_sent`, migration 0038; `authored=False` for third-party papers); **any other
+PDF** in `Studies/ Projects/ Careers/` is a source, queued into `incoming/<area>/` for
+locus-watch, its marks waiting until the library has it. Only those folders, `Inbox`, `Reading`
+and root notebooks (Jot) are read: no folder map or exclusion list exists to keep current. Level
+2 of an area folder matches `taxonomy/registry.toml` (Careers by an application's `company`);
+an unmatched one is named by `locus status`. Marks follow a moved document by its uuid.
+
+`capture/rmdoc.py` reads stroke geometry from the device's cloud copy. Shape decides
 the gesture; position only sets `in_margin`. Hand underlines sit *below* their glyphs, so the
 underline band searches *above* the stroke; highlights sit *on* their glyphs and are clustered
 one-per-line (`_split_highlights`). `capture/annotate.py` stores both `covered_text` (what the ink
 covered) and `line_text` (the full line) — **marginalia is deictic**, and for a note like "what
 does this mean here?" the line *is* the content of the question. `capture/loop_b.py` runs the
-whole chain on the half-hourly capture timer for the Reading folders Loop A excludes: changed
+whole chain on the half-hourly capture timer for every PDF on the tablet it reads: changed
 document → marks stored → new handwriting transcribed (bounded per run). Marks map to corpus
 documents **by content hash of the bundle's PDF bytes** — computed, never remembered; an
 unmatched (un-ingested) document keys by device path with a loud log and an
@@ -546,7 +562,7 @@ locus/
 ├── locus/
 │   ├── cli.py              # the product surface (all commands)
 │   ├── config.py           # typed config; API key via env/.env only
-│   ├── db/                 # connection, migrate, migrations/ (0001–0037)
+│   ├── db/                 # connection, migrate, migrations/ (0001–0038)
 │   ├── extract/            # pdf · mathocr · figures_detect · docx · pptx · textdoc · code
 │   ├── ingest/             # llm · summarize · propositions · entities · concepts · synthesis
 │   │                       #   gaps · chunk · embed · figures · llamacpp
@@ -557,7 +573,8 @@ locus/
 │   ├── agent/              # claude (the one `claude -p` runner) · journal · budget · state
 │   │                       #   layout (fits each section by rendering it)
 │   │                       #   compose_daily · pull_daily · promote
-│   ├── capture/            # remarkable · rmdoc · annotate · mark_text · intent · transcribe
+│   ├── capture/            # device (the tablet from the cloud tree) · sent (what Locus pushed)
+│   │                       #   remarkable · rmdoc · annotate · mark_text · intent · transcribe
 │   │                       #   review (read the marks back, with the inked pages)
 │   │                       #   loop_a (notes) · loop_b (reading) · fillin · conversations
 │   │                       #   device_migrate

@@ -1,6 +1,8 @@
-"""Loop A orchestrator (agent-layer §8.1, Phase 1 ④). Every model call is injected, so this runs
-offline on a real migrated DB: it asserts the note is filed with the right frontmatter, the run is
-journaled, idempotency skips an unchanged raster, and per-doc failures don't abort the batch."""
+"""Loop A orchestrator (agent-layer §8.1; capture from the cloud since Slice 0.12). Every model
+call and the cloud fetch are injected, so this runs offline on a real migrated DB: it asserts the
+note is filed with the right frontmatter, the run is journaled, idempotency keys on the INK (not
+on a render, and not on where the notebook sits), the backlog is bounded per run, and per-doc
+failures don't abort the batch."""
 
 from __future__ import annotations
 
@@ -8,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
+from locus.capture.device import DeviceDoc, Placement
 from locus.capture.fillin import FillResult
 from locus.capture.loop_a import capture_sync
-from locus.capture.remarkable import CaptureItem
 from locus.capture.transcribe import PageTranscript, Transcript
 from locus.db.connection import get_connection
 from locus.db.migrate import migrate
@@ -26,10 +28,10 @@ def conn(tmp_path: Path):
     c.close()
 
 
-def _item(staging: Path, uuid: str, name: str, folder: str, category: str) -> CaptureItem:
-    pdf = staging / f"{uuid}.pdf"
-    pdf.write_bytes(b"%PDF-1.7\n" + uuid.encode())  # distinct content per uuid
-    return CaptureItem(uuid=uuid, pdf_path=pdf, name=name, folder=folder, category=category)
+def _notebook(uuid: str, name: str, folders: tuple[str, ...], *, ink: str = "ink-1",
+              pages: int = 2, modified: str | None = None) -> DeviceDoc:
+    return DeviceDoc(uuid=uuid, name=name, folders=folders, is_notebook=True, pdf_hash=None,
+                     ink_key=ink, ink_pages=pages, modified=modified)
 
 
 def _transcript(text: str) -> Transcript:
@@ -39,120 +41,180 @@ def _transcript(text: str) -> Transcript:
     return t
 
 
-def _fakes(staging, items, enrich_calls):
-    def identify(_s):
-        return items, ["excluded-uuid"]
+class _Fakes:
+    """The cloud fetch, the render and the three model passes, all counting their calls."""
 
-    def transcribe(pdf_path):
+    def __init__(self, fail: set[str] = frozenset()):
+        self.fetched: list[str] = []
+        self.transcribed: list[str] = []
+        self.enriched: list[str] = []
+        self.fail = fail
+
+    def fetch(self, doc):
+        self.fetched.append(doc.uuid)
+        return Path(f"/nowhere/{doc.uuid}.rmdoc")
+
+    def render(self, bundle, out):
+        out = Path(out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"%PDF-1.7\n" + Path(bundle).stem.encode())
+        return out
+
+    def transcribe(self, pdf_path):
+        if Path(pdf_path).stem in self.fail:
+            raise RuntimeError("vision API 500")
+        self.transcribed.append(Path(pdf_path).stem)
         return _transcript("# Notes\n\nSwap [illegible] resets on SOFR[?].")
 
-    def fillin(md):
+    def fillin(self, md):
         return FillResult(markdown=md.replace("[illegible]", "⟦leg⟧"), filled=1, total_gaps=2)
 
-    def enrich(note_path, note_text, *, conn, run_id):
-        enrich_calls.append((str(note_path), run_id))
+    def enrich(self, note_path, note_text, *, conn, run_id):
+        self.enriched.append(str(note_path))
         return EnrichResult(related=2, wrote_block=True)
 
-    return identify, transcribe, fillin, enrich
+
+def _run(conn, tmp_path, placed, fakes, **kw):
+    kw.setdefault("max_notebooks", 10)
+    return capture_sync(
+        conn, placed=placed, staging_dir=tmp_path / "stage", notes_dir=tmp_path / "notes",
+        manifest_path=tmp_path / "m.json", ingest=False, fetch_fn=fakes.fetch,
+        render_fn=fakes.render, transcribe_fn=fakes.transcribe, fillin_fn=fakes.fillin,
+        enrich_fn=fakes.enrich, now="2026-10-27T00:00:00+00:00", **kw,
+    )
 
 
 def test_capture_files_note_with_provenance_and_journals(tmp_path, conn):
-    staging, notes = tmp_path / "stage", tmp_path / "notes"
-    staging.mkdir(); notes.mkdir()
-    items = [_item(staging, "81ae50ba-x", "Jargon Sheet", "brevan_howard", "note")]
-    enrich_calls: list = []
-    identify, transcribe, fillin, enrich = _fakes(staging, items, enrich_calls)
+    doc = _notebook("81ae50ba-x", "Jargon Sheet", ("Careers", "Brevan Howard"))
+    where = Placement("notebook", area="Careers", thing="brevan-howard-2026",
+                      thing_folder="Brevan Howard")
+    fakes = _Fakes()
+    r = _run(conn, tmp_path, [(doc, where)], fakes)
 
-    r = capture_sync(conn, staging_dir=staging, notes_dir=notes, manifest_path=tmp_path / "m.json",
-                     ingest=False, identify_fn=identify, transcribe_fn=transcribe,
-                     fillin_fn=fillin, enrich_fn=enrich, now="2026-07-28T00:00:00+00:00")
-
-    assert r.captured == 1 and r.unmapped == ["excluded-uuid"]
-    note = notes / "jargon-sheet-81ae50ba.md"
-    assert note.exists()
+    assert r.captured == 1
+    note = tmp_path / "notes" / "jargon-sheet-81ae50ba.md"
     text = note.read_text()
-    # frontmatter provenance: category (note), rough, folder kept, uuid, source raster
-    assert "category: note" in text and "maturity: rough" in text
-    assert "remarkable_folder: brevan_howard" in text
+    # the area decides the category; the path and the registry thing are kept as provenance
+    assert "category: career" in text and "maturity: rough" in text
+    assert "remarkable_folder: /Careers/Brevan Howard" in text
     assert "remarkable_uuid: 81ae50ba-x" in text
-    assert "⟦leg⟧" in text  # filled body written
-    assert enrich_calls and enrich_calls[0][0] == str(note)  # enrich ran on the note
-    # run journaled with stats
+    assert "area: Careers" in text and "thing: brevan-howard-2026" in text
+    assert "⟦leg⟧" in text
+    assert fakes.enriched == [str(note)]
     row = conn.execute("SELECT kind, status, stats FROM agent_runs").fetchone()
     assert row["kind"] == "capture" and row["status"] == "ok"
     assert '"captured": 1' in row["stats"] and '"cost_usd"' in row["stats"]
 
 
-def test_unchanged_raster_is_skipped_no_retranscribe(tmp_path, conn):
-    staging, notes = tmp_path / "stage", tmp_path / "notes"
-    staging.mkdir(); notes.mkdir()
-    items = [_item(staging, "u1", "Doc", "rough_notes", "note")]
-    calls = {"transcribe": 0}
-    identify, _t, fillin, enrich = _fakes(staging, items, [])
+def test_jot_at_the_root_is_a_note_with_no_area(tmp_path, conn):
+    fakes = _Fakes()
+    _run(conn, tmp_path, [(_notebook("jot-1", "Jot", ()), Placement("notebook"))], fakes)
+    text = next((tmp_path / "notes").glob("*.md")).read_text()
+    assert "category: note" in text
+    assert "area:" not in text and "thing:" not in text   # empty fields are not written
 
-    def counting_transcribe(pdf):
-        calls["transcribe"] += 1
-        return _transcript("body")
 
-    kw = dict(staging_dir=staging, notes_dir=notes, manifest_path=tmp_path / "m.json", ingest=False,
-              identify_fn=identify, transcribe_fn=counting_transcribe, fillin_fn=fillin, enrich_fn=enrich)
-    capture_sync(conn, **kw)
-    r2 = capture_sync(conn, **kw)  # nothing changed on disk
-    assert calls["transcribe"] == 1  # NOT re-transcribed (manifest gate)
-    assert r2.outcomes[0].status == "unchanged"
+def test_unchanged_ink_costs_nothing_even_after_a_move(tmp_path, conn):
+    """Keyed on the ink, so filing a notebook into a new folder does not re-bill a transcription
+    (moving one changes its metadata, and so its document hash, but not a stroke)."""
+    fakes = _Fakes()
+    before = _notebook("u1", "Doc", ("Projects", "quast"))
+    _run(conn, tmp_path, [(before, Placement("notebook", area="Projects"))], fakes)
+    moved = _notebook("u1", "Doc", ("Studies", "B15 Control Systems"))
+    r2 = _run(conn, tmp_path, [(moved, Placement("notebook", area="Studies"))], fakes)
+    assert fakes.fetched == ["u1"] and fakes.transcribed == ["u1"]
+    assert [o.status for o in r2.outcomes] == ["unchanged"]
+
+
+def test_new_ink_is_captured_again(tmp_path, conn):
+    fakes = _Fakes()
+    _run(conn, tmp_path, [(_notebook("u1", "Doc", ("Projects",), ink="a"), Placement("notebook"))],
+         fakes)
+    _run(conn, tmp_path, [(_notebook("u1", "Doc", ("Projects",), ink="b"), Placement("notebook"))],
+         fakes)
+    assert fakes.transcribed == ["u1", "u1"]
+
+
+def test_only_notebooks_are_loop_a(tmp_path, conn):
+    """A PDF is never transcribed as his writing, whoever made it (invariant 5)."""
+    fakes = _Fakes()
+    pdf = DeviceDoc("p1", "Lecture 4", ("Studies", "B14 Information Engineering Systems"),
+                    is_notebook=False, pdf_hash="h", ink_key="k", ink_pages=3, modified=None)
+    r = _run(conn, tmp_path, [(pdf, Placement("source", area="Studies")),
+                              (pdf, Placement("sent", area="Studies"))], fakes)
+    assert r.outcomes == [] and fakes.fetched == []
+
+
+def test_an_empty_notebook_is_recorded_without_a_fetch(tmp_path, conn):
+    fakes = _Fakes()
+    r = _run(conn, tmp_path, [(_notebook("e1", "New", (), pages=0), Placement("notebook"))], fakes)
+    assert fakes.fetched == [] and [o.status for o in r.outcomes] == ["unchanged"]
+
+
+def test_a_notebook_the_tablet_agent_captured_is_seeded_not_rebilled(tmp_path, conn):
+    """Transcribed from the agent's render before it stopped: recorded as current on first sight
+    rather than re-transcribed to find out whether anything moved."""
+    import json
+
+    (tmp_path / "stage").mkdir()
+    (tmp_path / "stage" / "old-1.pdf").write_bytes(b"%PDF device render")
+    (tmp_path / "m.json").write_text(json.dumps({"captures": {"old-1": "rasterhash"}}))
+    fakes = _Fakes()
+    doc = (_notebook("old-1", "Swaps", ("Careers", "Brevan Howard")), Placement("notebook"))
+    r = _run(conn, tmp_path, [doc], fakes)
+    assert [o.status for o in r.outcomes] == ["seeded"] and fakes.fetched == []
+    r2 = _run(conn, tmp_path, [doc], fakes)
+    assert [o.status for o in r2.outcomes] == ["unchanged"]
+
+
+def test_recapture_overrides_the_seed(tmp_path, conn):
+    import json
+
+    (tmp_path / "stage").mkdir()
+    (tmp_path / "stage" / "old-1.pdf").write_bytes(b"%PDF device render")
+    (tmp_path / "m.json").write_text(json.dumps({"captures": {"old-1": "rasterhash"}}))
+    fakes = _Fakes()
+    _run(conn, tmp_path, [(_notebook("old-1", "Swaps", ()), Placement("notebook"))], fakes,
+         recapture=True)
+    assert fakes.transcribed == ["old-1"]
+
+
+def test_the_backlog_is_bounded_per_run_and_resumes(tmp_path, conn):
+    """Twelve weeks of notebooks arrive at once after the fix; transcription is billed, so a run
+    takes `max_notebooks` and the rest wait for the next tick rather than being dropped."""
+    fakes = _Fakes()
+    placed = [(_notebook(f"n{i}", f"Notebook {i}", ()), Placement("notebook")) for i in range(3)]
+    r1 = _run(conn, tmp_path, placed, fakes, max_notebooks=2)
+    assert [o.status for o in r1.outcomes] == ["captured", "captured", "deferred"]
+    r2 = _run(conn, tmp_path, placed, fakes, max_notebooks=2)
+    assert [o.status for o in r2.outcomes] == ["unchanged", "unchanged", "captured"]
+    stats = conn.execute("SELECT stats FROM agent_runs ORDER BY id LIMIT 1").fetchone()["stats"]
+    assert '"deferred": 1' in stats
 
 
 def test_one_doc_failure_does_not_abort_batch(tmp_path, conn):
-    staging, notes = tmp_path / "stage", tmp_path / "notes"
-    staging.mkdir(); notes.mkdir()
-    items = [_item(staging, "good", "Good", "rough_notes", "note"),
-             _item(staging, "bad", "Bad", "rough_notes", "note")]
-    identify, transcribe, fillin, enrich = _fakes(staging, items, [])
-
-    def flaky_transcribe(pdf):
-        if pdf.stem == "bad":
-            raise RuntimeError("vision API 500")
-        return _transcript("ok")
-
-    r = capture_sync(conn, staging_dir=staging, notes_dir=notes, manifest_path=tmp_path / "m.json",
-                     ingest=False, identify_fn=identify, transcribe_fn=flaky_transcribe,
-                     fillin_fn=fillin, enrich_fn=enrich)
+    fakes = _Fakes(fail={"bad"})
+    placed = [(_notebook("good", "Good", ()), Placement("notebook")),
+              (_notebook("bad", "Bad", ()), Placement("notebook"))]
+    r = _run(conn, tmp_path, placed, fakes)
     by = {o.name: o for o in r.outcomes}
     assert by["Good"].status == "captured"
     assert by["Bad"].status == "failed" and "500" in by["Bad"].error
     assert conn.execute("SELECT status FROM agent_runs").fetchone()["status"] == "ok"
+    # a failed notebook is tried again next run: its ink key was not recorded
+    fakes.fail = set()
+    r2 = _run(conn, tmp_path, placed, fakes)
+    assert {o.name: o.status for o in r2.outcomes} == {"Good": "unchanged", "Bad": "captured"}
 
 
-def test_capture_config_reaches_identify_staged(conn, tmp_path, monkeypatch):
-    """[capture] identification settings must actually be passed through.
-
-    `identify_staged` defaults every one of them, so an omitted argument does not fail — it
-    silently ignores config. `excluded_folders` was dead exactly this way: adding `reading_list`
-    to config.toml (to keep a 211-page book out of handwriting transcription) changed nothing.
-    """
-    from locus.capture import loop_a as mod
-
-    seen = {}
-
-    def fake_identify(staging_dir, **kwargs):
-        seen.update(kwargs)
-        return [], []
-
-    monkeypatch.setattr("locus.capture.remarkable.identify_staged", fake_identify)
-
-    from locus.config import load
-
-    cfg = load()
-    monkeypatch.setattr(cfg.capture, "excluded_folders", ["trash", "reading_list"], raising=False)
-    monkeypatch.setattr(cfg.capture, "default_category", "note", raising=False)
-    monkeypatch.setattr(cfg.capture, "folder_category", {"projects": "project"}, raising=False)
-
-    mod.capture_sync(conn, staging_dir=tmp_path / "staging", notes_dir=tmp_path / "notes",
-                     manifest_path=tmp_path / "m.json", ingest=False)
-
-    assert seen["excluded_folders"] == ("trash", "reading_list")
-    assert seen["default_category"] == "note"
-    assert seen["folder_category"] == {"projects": "project"}
+def test_unmatched_registry_folders_are_journaled(tmp_path, conn):
+    """`locus status` names them from here (see test_status)."""
+    fakes = _Fakes()
+    placed = [(_notebook("u", "x", ("Studies", "B99 Typo")),
+               Placement("notebook", area="Studies", thing=None, thing_folder="B99 Typo"))]
+    r = _run(conn, tmp_path, placed, fakes)
+    assert r.unmatched_folders == ["Studies/B99 Typo"]
+    assert "B99 Typo" in conn.execute("SELECT stats FROM agent_runs").fetchone()["stats"]
 
 
 def test_note_is_dated_by_the_device_not_by_capture_time(tmp_path, conn):
@@ -162,43 +224,15 @@ def test_note_is_dated_by_the_device_not_by_capture_time(tmp_path, conn):
     belief_positions.dated_at. The first live 12-document capture dated every note "today",
     collapsing the understanding-evolution trajectory to a single point.
     """
-    from locus.capture import loop_a as mod
-
-    staging, notes = tmp_path / "stage", tmp_path / "notes"
-    staging.mkdir()
-    notes.mkdir()
-    item = _item(staging, "u-dated", "Rates Foundations", "brevan_howard", "note")
-    item = CaptureItem(uuid=item.uuid, pdf_path=item.pdf_path, name=item.name,
-                       folder=item.folder, category=item.category,
-                       modified="2026-07-10T13:13:56Z")
-
-    mod.capture_sync(
-        conn, staging_dir=staging, notes_dir=notes, manifest_path=tmp_path / "m.json",
-        ingest=False, identify_fn=lambda s: ([item], []),
-        transcribe_fn=lambda p: _transcript("swaps are discount factors"),
-        fillin_fn=lambda md: FillResult(markdown=md, filled=0, total_gaps=0),
-        enrich_fn=lambda *a, **k: EnrichResult(related=0, wrote_block=False),
-        now="2026-07-29T09:00:00+00:00",
-    )
-    text = next(notes.glob("*.md")).read_text()
-    assert "date: 2026-07-10" in text          # the device's ModifiedClient
-    assert "date: 2026-07-29" not in text      # not the capture date
+    doc = _notebook("u-dated", "Rates Foundations", (), modified="2026-07-10T13:13:56+00:00")
+    _run(conn, tmp_path, [(doc, Placement("notebook"))], _Fakes())
+    text = next((tmp_path / "notes").glob("*.md")).read_text()
+    assert "date: 2026-07-10" in text
+    assert "date: 2026-10-27" not in text
 
 
 def test_note_without_a_device_date_falls_back_to_capture_time(tmp_path, conn):
     """No invented dates: a document the device reports no timestamp for uses capture time."""
-    from locus.capture import loop_a as mod
-
-    staging, notes = tmp_path / "stage", tmp_path / "notes"
-    staging.mkdir()
-    notes.mkdir()
-    item = _item(staging, "u-undated", "Scribble", "rough_notes", "note")
-    mod.capture_sync(
-        conn, staging_dir=staging, notes_dir=notes, manifest_path=tmp_path / "m.json",
-        ingest=False, identify_fn=lambda s: ([item], []),
-        transcribe_fn=lambda p: _transcript("x"),
-        fillin_fn=lambda md: FillResult(markdown=md, filled=0, total_gaps=0),
-        enrich_fn=lambda *a, **k: EnrichResult(related=0, wrote_block=False),
-        now="2026-07-29T09:00:00+00:00",
-    )
-    assert "date: 2026-07-29" in next(notes.glob("*.md")).read_text()
+    _run(conn, tmp_path, [(_notebook("u-undated", "Scribble", ()), Placement("notebook"))],
+         _Fakes())
+    assert "date: 2026-10-27" in next((tmp_path / "notes").glob("*.md")).read_text()

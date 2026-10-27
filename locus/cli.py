@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -1553,22 +1554,25 @@ def cmd_annotate(args) -> None:
 
 
 def cmd_capture_sync(args) -> None:
-    """Loop A: transcribe + fill-in + enrich + ingest staged reMarkable handwriting renders.
+    """Capture from the reMarkable cloud: notebooks (Loop A) and ink on PDFs (Loop B).
 
-    Each changed <uuid>.pdf in the staging dir becomes a `rough` note (Sonnet vision transcription,
-    Haiku fill-in, grounded Related block), then note-sync ingests it. Idempotent — an unchanged
-    render is skipped. Billed (metered vision + subscription text); the run is journaled.
+    One cloud call lists the tablet (capture/device.py). A changed notebook is rendered from its
+    bundle, transcribed (Sonnet vision), filled in, enriched and filed as a `rough` note; a changed
+    PDF has its marks stored and transcribed, and is either a source (ingested through the drop
+    folder) or a document Locus sent (never ingested; his notes promoted with their passages).
+    Idempotent on the ink. Billed (metered vision + subscription text); both loops are journaled.
     """
-    from locus.capture.loop_a import capture_sync
+    from locus.capture.loop_a import capture_sync, placed_documents
     from locus.capture.loop_b import annotate_sync
 
     conn = _open()
     try:
-        r = capture_sync(conn, staging_dir=args.staging, ingest=not args.no_ingest)
-        # Loop B rides the same timer and the same staging dir: the folders Loop A excludes
-        # (Reading) are exactly the ones whose ink is margin annotation, and the one manual
-        # step in the ink→answer chain was transcribing it (capture/loop_b.py).
-        b = annotate_sync(conn, staging_dir=args.staging)
+        placed = placed_documents(conn)
+        r = capture_sync(
+            conn, placed=placed, staging_dir=args.staging, ingest=not args.no_ingest,
+            recapture=args.recapture,
+        )
+        b = annotate_sync(conn, placed=placed)
     finally:
         conn.close()
     for o in r.outcomes:
@@ -1577,28 +1581,84 @@ def cmd_capture_sync(args) -> None:
                   f"{o.filled} filled · {o.related} related)  -> {o.note_path}")
         elif o.status == "failed":
             print(f"  FAILED    {o.name}: {o.error}")
-    n_unchanged = sum(o.status == "unchanged" for o in r.outcomes)
-    n_failed = sum(o.status == "failed" for o in r.outcomes)
-    print(f"\ncapture: {r.captured} captured, {n_unchanged} unchanged, {n_failed} failed, "
-          f"{len(r.unmapped)} unmapped   est cost ${r.cost_usd:.4f}")
+    print(f"\ncapture: {len(placed)} documents placed · {r.captured} notebook(s) captured, "
+          f"{r.count('unchanged')} unchanged, {r.count('seeded')} seeded, "
+          f"{r.count('deferred')} deferred to the next run, {r.count('failed')} failed   "
+          f"est cost ${r.cost_usd:.4f}")
+    if r.unmatched_folders:
+        print(f"  not in the registry: {', '.join(r.unmatched_folders)}")
     for o in b.outcomes:
         if o.status == "annotated":
-            if o.hash_mapped:
-                key = "corpus"
+            if o.role == "sent":
+                key = "device (a document Locus sent)"
+            elif o.hash_mapped:
+                key = "library"
             elif o.ingested:
-                key = "corpus (ingested this run)"
+                key = "library (ingested this run)"
             else:
                 key = "DEVICE PATH (awaiting his move out of Proposed)"
             extra = f" · notes {o.promoted}" if o.promoted and o.promoted != "unchanged" else ""
             print(f"  annotated {o.name}  ({o.marks} marks · {o.transcribed} transcribed · "
                   f"keyed to {key}{extra})")
+        elif o.status in ("queued", "quarantined"):
+            print(f"  source {o.status}: {o.name}")
         elif o.status == "failed":
             print(f"  ANNOTATE FAILED {o.name}: {o.error}")
-    if b.outcomes:
-        print(f"annotate: {b.annotated} document(s) with new ink")
+    deferred = sum(o.status == "deferred" for o in b.outcomes)
+    print(f"annotate: {b.annotated} PDF(s) with new ink"
+          + (f", {deferred} deferred to the next run" if deferred else ""))
+    print(f"cloud: 1 listing + {r.count('captured') + r.count('failed')} notebook and "
+          f"{sum(o.status not in ('unchanged', 'deferred') for o in b.outcomes)} PDF download(s)")
     if r.ingest:
         print(f"ingest: {r.ingest.ingested} ingested, {r.ingest.skipped} unchanged, "
               f"{r.ingest.deleted} deleted, {r.ingest.failed} failed")
+
+
+# A document Locus sent before migration 0038 recorded sends (Slice 0.12, one-off): every push
+# names its file with a leading date ("2026-10-19 Locus plan v3"), the daily pages are
+# `daily-<date>`, and a dossier carries its date at the end. Third-party PDFs on the tablet
+# (lecture slides, papers, his own exports) carry none of these.
+_SENT_NAME = re.compile(r"^\d{4}-\d{2}-\d{2} |\d{4}-\d{2}-\d{2}$|^daily-\d{4}-\d{2}-\d{2}")
+
+
+def cmd_device_sent(args) -> None:
+    """Record the PDFs Locus sent before sends were recorded (one-off backfill, Slice 0.12).
+
+    Lists the PDFs on the tablet that the naming rule says Locus sent, plus any named with
+    --add, and records them with --apply. Uses the content hashes in rmapi's tree cache, so
+    nothing is downloaded. Without --apply it only prints, so the list can be checked first.
+    """
+    from locus.capture.device import READING, read_device
+    from locus.capture.remarkable import _subprocess_runner
+    from locus.capture.sent import record_sent, sent_hashes
+
+    cfg = load()
+    docs = read_device(
+        _subprocess_runner(cfg.capture.rmapi_binary), tree_cache=cfg.capture.rmapi_tree_cache
+    )
+    extra = {p.rstrip("/") for p in (args.add or [])}
+    picked = [
+        d for d in docs
+        if not d.is_notebook and d.top not in (READING, "Admin")
+        and (_SENT_NAME.search(d.name) or d.path in extra)
+    ]
+    missing = extra - {d.path for d in docs}
+    conn = _open()
+    try:
+        known = sent_hashes(conn)
+        new = [d for d in picked if d.pdf_hash not in known]
+        for d in sorted(picked, key=lambda d: d.path):
+            print(f"  {'recorded' if d.pdf_hash in known else 'NEW     '}  {d.path}")
+        if args.apply:
+            for d in new:
+                record_sent(conn, Path(d.name), "/".join(d.folders), origin="backfill",
+                            content_hash=d.pdf_hash)
+    finally:
+        conn.close()
+    for m in sorted(missing):
+        print(f"  not on the tablet: {m}")
+    verb = "recorded" if args.apply else "would record (re-run with --apply)"
+    print(f"{len(picked)} PDF(s) Locus sent; {len(new)} {verb}")
 
 
 def cmd_device_migrate(args) -> None:
@@ -2467,11 +2527,22 @@ def main(argv=None) -> None:
 
     pcs = sub.add_parser(
         "capture-sync",
-        help="Loop A: transcribe + enrich + ingest staged reMarkable handwriting renders (billed)",
+        help="capture from the reMarkable cloud: notebooks transcribed, ink on PDFs read (billed)",
     )
     pcs.add_argument("--staging", default=None, help="staging dir (default: [capture].staging_dir)")
     pcs.add_argument("--no-ingest", action="store_true", help="render notes only; skip the notes-sync ingest")
+    pcs.add_argument("--recapture", action="store_true",
+                     help="transcribe notebooks the old tablet agent already captured, instead of seeding them")
     pcs.set_defaults(func=cmd_capture_sync)
+
+    pds = sub.add_parser(
+        "device-sent",
+        help="one-off: record the PDFs Locus sent before sends were recorded (prints; --apply records)",
+    )
+    pds.add_argument("--apply", action="store_true", help="record them (default: print only)")
+    pds.add_argument("--add", nargs="*", metavar="DEVICE_PATH",
+                     help="also record these device paths (e.g. '/Projects/locus/How_a_deploy_reaches_the_server')")
+    pds.set_defaults(func=cmd_device_sent)
 
     pdm = sub.add_parser(
         "device-migrate",

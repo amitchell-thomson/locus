@@ -3,7 +3,7 @@
 
 use crate::app::{App, Open};
 use crate::form::{FieldKind, Form, minutes_label};
-use crate::theme::{c, centred, fit, popup_block, rgb, wrap};
+use crate::theme::{c, centred, fit, popup_block, wrap};
 use crate::ui::ICON_TASK;
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -45,13 +45,10 @@ pub fn form(f: &mut Frame, app: &App, area: Rect, form: &Form) {
                 let arrow = Style::default().fg(if focus { c("mauve") } else { c("surface2") });
                 spans.push(Span::styled("◀ ", arrow));
                 if fld.label == "Calendar" {
-                    // kairos's own colours aren't known here: the key colour if one matches.
-                    let col = app
-                        .cfg
-                        .keys
-                        .iter()
-                        .find(|k| k.kairos_key.as_deref() == Some(fld.value.as_str()))
-                        .map_or(c("text"), |k| rgb(k.colour));
+                    // The calendar's colour, as kairos and locus draw it: the taxonomy's.
+                    let col = keryx_store::view::shared()
+                        .and_then(|s| s.taxonomy.colour_of(&fld.value))
+                        .map_or(c("text"), c);
                     spans.push(Span::styled("● ", Style::default().fg(col)));
                 }
                 spans.push(Span::styled(

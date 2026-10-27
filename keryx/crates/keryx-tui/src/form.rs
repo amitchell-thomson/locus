@@ -89,20 +89,29 @@ pub enum Built {
 
 pub const WHEN_HINT: &str = "fri 17:00 · 23 oct · tomorrow 9 · 2026-10-23T17:00";
 
-/// kairos calendars: the keys' `kairos_key`s plus kairos's defaults.
-pub fn calendars(cfg: &Config) -> Vec<String> {
-    let mut v: Vec<String> = ["Personal", "Engineering", "Careers", "Projects", "Sport", "Social"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-    for k in &cfg.keys {
-        if let Some(c) = &k.kairos_key
-            && !v.contains(c)
-        {
-            v.push(c.clone());
-        }
+/// kairos calendars: locus's areas and Personal's streams, as kairos has them (Family is the
+/// shared calendar and takes no new items). Without the taxonomy, kairos's older names.
+pub fn calendars(_cfg: &Config) -> Vec<String> {
+    match keryx_store::view::shared() {
+        Some(s) => locus_contract::fors::folders(&s.taxonomy)
+            .into_iter()
+            .filter(|f| f != "Family")
+            .collect(),
+        None => ["Personal", "Engineering", "Careers", "Projects", "Sport", "Social"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
     }
-    v
+}
+
+/// An older calendar name as kairos now calls it (Engineering is Studies; Personal and Inbox
+/// are Errands), so a default from before the taxonomy still lands on a real choice.
+pub fn current_calendar(name: &str) -> String {
+    match name.to_lowercase().as_str() {
+        "engineering" => "Studies".into(),
+        "personal" | "inbox" => "Errands".into(),
+        _ => name.to_string(),
+    }
 }
 
 /// "2 h 30 min" for a preview.
@@ -137,6 +146,8 @@ pub fn window(choice: &str, now: DateTime<Tz>) -> (String, String) {
 impl Form {
     pub fn task(cfg: &Config, r#ref: &str, title: &str, calendar: &str, suggestion: Option<(String, String)>) -> Form {
         let cals = calendars(cfg);
+        let calendar = current_calendar(calendar);
+        let calendar = calendar.as_str();
         let (sid, reason) = suggestion.map(|(a, b)| (Some(a), Some(b))).unwrap_or((None, None));
         Form {
             purpose: Purpose::Task {
@@ -149,6 +160,8 @@ impl Form {
                     "Calendar",
                     if cals.iter().any(|c| c == calendar) {
                         calendar
+                    } else if cals.iter().any(|c| c == "Errands") {
+                        "Errands"
                     } else {
                         "Personal"
                     },
@@ -186,6 +199,8 @@ impl Form {
         suggestion: Option<(String, String)>,
     ) -> Form {
         let cals = calendars(cfg);
+        let calendar = current_calendar(calendar);
+        let calendar = calendar.as_str();
         let (sid, reason) = suggestion.map(|(a, b)| (Some(a), Some(b))).unwrap_or((None, None));
         Form {
             purpose: Purpose::Event {
@@ -198,6 +213,8 @@ impl Form {
                     "Calendar",
                     if cals.iter().any(|c| c == calendar) {
                         calendar
+                    } else if cals.iter().any(|c| c == "Errands") {
+                        "Errands"
                     } else {
                         "Personal"
                     },
@@ -526,10 +543,13 @@ mod tests {
     fn calendar_picker_jumps_by_letter() {
         let c = cfg();
         let mut f = Form::task(&c, "oxford:9", "x", "Nope", None);
-        assert_eq!(f.fields[1].value, "Personal", "unknown calendar → Personal");
+        assert_eq!(
+            f.fields[1].value, "Errands",
+            "unknown calendar → Errands, kairos's inbox"
+        );
         f.focus = 1;
-        f.key(Key::Char('e'), now());
-        assert_eq!(f.fields[1].value, "Engineering");
+        f.key(Key::Char('s'), now());
+        assert_eq!(f.fields[1].value, "Studies");
     }
 
     #[test]
@@ -546,7 +566,10 @@ mod tests {
             None,
         );
         let (b, p) = f.build(&c, now()).unwrap();
-        assert_eq!(p, "Design review · Personal · Tue 20 Oct 14:00–15:30 · LR6");
+        assert_eq!(
+            p, "Design review · Errands · Tue 20 Oct 14:00–15:30 · LR6",
+            "Personal is Errands now"
+        );
         let Built::Event(e) = b else { panic!() };
         assert_eq!(e.start, "2026-10-20T14:00");
         let mut f2 = f.clone();

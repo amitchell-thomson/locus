@@ -13,13 +13,13 @@ expression: s
 │ ╭────────────────────────────── kairos task ───────────────────────────────╮ │
 │ │                                                                          │ │
 │ │    Title  Lab partner for Thursday?                                      │ │
-│ │ Calendar  ◀ ● Personal ▶                                                 │ │
+│ │ Calendar  ◀ ● Errands ▶                                                  │ │
 │ │     Type  ◀ admin ▶                                                      │ │
 │ │ Estimate  45m                                                            │ │
 │ │      Due  fri 17:00█                                                     │ │
 │ │           fri 17:00 · 23 oct · tomorrow 9 · 2026-10-23T17:00             │ │
 │ │                                                                          │ │
-│ │  → Lab partner for Thursday? · Personal · admin · 45 min · due Fri 16    │ │
+│ │  → Lab partner for Thursday? · Errands · admin · 45 min · due Fri 16     │ │
 │ │    Oct 17:00                                                             │ │
 │ │                                                                          │ │
 │ │  Tab next · ⇧Tab back · Enter save · Esc cancel                          │ │

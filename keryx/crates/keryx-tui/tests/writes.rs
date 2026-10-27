@@ -625,7 +625,7 @@ fn t_makes_a_kairos_task_through_a_form() {
     type_str(&mut a, "fri 17:00");
     let s = render_to_string(&mut a, 80, 30);
     assert!(
-        s.contains("→ Lab partner for Thursday? · Personal · admin · 45 min · due Fri 16") && s.contains("Oct 17:00"),
+        s.contains("→ Lab partner for Thursday? · Errands · admin · 45 min · due Fri 16") && s.contains("Oct 17:00"),
         "{s}"
     );
     insta::assert_snapshot!("kairos_task_form", s);
@@ -637,7 +637,7 @@ fn t_makes_a_kairos_task_through_a_form() {
     assert_eq!(body["due"], "2026-10-16T17:00");
     assert_eq!(body["kind"], "admin");
     assert_eq!(body["estimate_min"], 45);
-    assert_eq!(body["key"], "Personal");
+    assert_eq!(body["key"], "Errands");
     assert_eq!(a.mode, Mode::List);
     assert_eq!(a.message.as_ref().unwrap().0, "kairos task: Lab partner for Thursday?");
     // Esc leaves without asking kairos anything.
@@ -685,7 +685,7 @@ fn suggestions_y_opens_the_prefilled_form_n_dismisses() {
     let s = render_to_string(&mut a, 80, 30);
     assert!(s.contains("Claude  Jane needs to know before Thursday"), "{s}");
     assert!(
-        s.contains("→ Reply to Jane · Personal · admin · 15 min · due Thu 15 Oct 09:00"),
+        s.contains("→ Reply to Jane · Errands · admin · 15 min · due Thu 15 Oct 09:00"),
         "{s}"
     );
     keys(&mut a, &[Key::Esc]);
@@ -715,7 +715,7 @@ fn i_turns_an_invite_into_an_event() {
     keys(&mut a, &[Key::Char('i')]);
     let s = render_to_string(&mut a, 80, 30);
     assert!(
-        s.contains("→ Project meeting · Personal · Thu 22 Oct 14:00–15:00 · Thom Building,") && s.contains("Room 2"),
+        s.contains("→ Project meeting · Errands · Thu 22 Oct 14:00–15:00 · Thom Building,") && s.contains("Room 2"),
         "{s}"
     );
     keys(&mut a, &[Key::Enter]);

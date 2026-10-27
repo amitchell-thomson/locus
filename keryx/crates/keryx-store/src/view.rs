@@ -199,10 +199,30 @@ fn view_threads(cfg: &Config, view: &View, f: &Filter, args: &mut Vec<Value>) ->
                     "?".to_string()
                 })
                 .collect();
+            // What each account's own Sent folder holds (Sent Items, [Gmail]/Sent Mail, SENT):
+            // mail you wrote that reached another of your inboxes is received there, not sent,
+            // so one send is one row (round 8: a test to all three accounts showed three).
+            let mut sent: Vec<String> = Vec::new();
+            for a in &cfg.accounts {
+                let folder = match a.backend {
+                    keryx_core::config::Backend::Gmail => "SENT".to_string(),
+                    keryx_core::config::Backend::Mailapp => a.sent_mailbox.clone().unwrap_or_else(|| "Sent".into()),
+                };
+                args.push(Value::Text(a.id.clone()));
+                args.push(Value::Text(folder.clone()));
+                args.push(Value::Text(folder));
+                sent.push(
+                    "(account = ? AND (json_extract(location_json, '$.physical') = ?
+                      OR EXISTS (SELECT 1 FROM json_each(location_json, '$.labels') WHERE value = ?)))"
+                        .to_string(),
+                );
+            }
             format!(
                 "SELECT account, thread_id FROM messages WHERE {acc}
-                 AND lower(json_extract(from_json, '$.email')) IN ({})",
-                if marks.is_empty() { "''".into() } else { marks.join(",") }
+                 AND lower(json_extract(from_json, '$.email')) IN ({})
+                 AND ({})",
+                if marks.is_empty() { "''".into() } else { marks.join(",") },
+                if sent.is_empty() { "0".into() } else { sent.join(" OR ") }
             )
         }
         View::Key(k) => {

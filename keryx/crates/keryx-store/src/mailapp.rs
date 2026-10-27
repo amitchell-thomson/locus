@@ -28,7 +28,7 @@ pub enum MailError {
 pub type Result<T> = std::result::Result<T, MailError>;
 
 /// One message as Mail knows it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct MailRow {
     pub rowid: i64,
     /// Physical mailbox, as a path below the account (`Inbox`, `[Gmail]/All Mail`).

@@ -142,6 +142,36 @@ on run argv
 end run
 "#;
 
+/// Whether Mail's row shows what the change was about, and only that: the mailbox it went into,
+/// labels added and taken away, read and flag when they changed. Comparing the whole location
+/// never matched on Gmail, which adds and drops labels of its own ("Important"), so every
+/// filing waited 30 s, failed, and was undone although Mail had done it (27 Oct).
+pub fn shows_change(r: &keryx_store::mailapp::MailRow, before: &MsgState, after: &MsgState) -> bool {
+    if before.read != after.read && r.read != after.read {
+        return false;
+    }
+    if before.flagged != after.flagged && r.flagged != after.flagged {
+        return false;
+    }
+    match (&before.location, &after.location) {
+        (
+            Location::Mailboxes {
+                physical: bp,
+                labels: bl,
+            },
+            Location::Mailboxes {
+                physical: ap,
+                labels: al,
+            },
+        ) => {
+            (bp == ap || r.physical == *ap)
+                && al.iter().filter(|l| !bl.contains(l)).all(|l| r.labels.contains(l))
+                && bl.iter().filter(|l| !al.contains(l)).all(|l| !r.labels.contains(l))
+        }
+        _ => true,
+    }
+}
+
 /// The argv for one step (the box is where the message is now).
 pub fn step_args(acc: &Account, mid: &str, current: &str, step: &MailStep) -> Vec<String> {
     let (box_name, action, arg) = match step {
@@ -394,7 +424,7 @@ impl Real {
                 current = to.clone();
             }
         }
-        self.await_envelope(acc, msg, after)?;
+        self.await_envelope(acc, msg, before, after)?;
         Ok(None)
     }
 
@@ -468,22 +498,24 @@ impl Real {
     }
 
     /// Wait (≤ 30 s) until Mail's Envelope Index shows the new state.
-    fn await_envelope(&self, acc: &Account, msg: &MsgRef, after: &MsgState) -> Result<(), String> {
+    fn await_envelope(&self, acc: &Account, msg: &MsgRef, before: &MsgState, after: &MsgState) -> Result<(), String> {
         let uuid = acc.mailapp_account_id.as_deref().unwrap_or_default();
         let t = Instant::now();
         while t.elapsed() < Duration::from_secs(30) {
             if let Ok(store) = MailStore::open(&self.cfg.paths.mail_dir)
                 && let Ok(rows) = store.scan(uuid)
-                && rows.iter().any(|r| {
-                    r.message_id == msg.message_id
-                        && r.read == after.read
-                        && r.flagged == after.flagged
-                        && ingest::mailapp_location(r).as_ref() == Some(&after.location)
-                })
+                && rows
+                    .iter()
+                    .any(|r| r.message_id == msg.message_id && shows_change(r, before, after))
             {
+                tracing::info!(
+                    account = acc.id,
+                    ms = t.elapsed().as_millis() as u64,
+                    "mail change seen"
+                );
                 return Ok(());
             }
-            std::thread::sleep(Duration::from_millis(500));
+            std::thread::sleep(Duration::from_millis(300));
         }
         Err("Mail accepted the change but it didn't show up within 30 s".into())
     }
@@ -561,6 +593,56 @@ impl Actuator for Real {
 
 #[cfg(test)]
 mod tests {
+
+    fn row(physical: &str, labels: &[&str], read: bool) -> keryx_store::mailapp::MailRow {
+        keryx_store::mailapp::MailRow {
+            rowid: 1,
+            physical: physical.into(),
+            labels: labels.iter().map(|l| l.to_string()).collect(),
+            read,
+            flagged: false,
+            conversation_id: 0,
+            message_id: "m".into(),
+            date_received: 0,
+            size: 0,
+            ..Default::default()
+        }
+    }
+
+    fn state_at(physical: &str, labels: &[&str], read: bool) -> MsgState {
+        MsgState {
+            location: Location::Mailboxes {
+                physical: physical.into(),
+                labels: labels.iter().map(|l| l.to_string()).collect(),
+            },
+            read,
+            flagged: false,
+        }
+    }
+
+    #[test]
+    fn a_change_is_seen_by_what_it_was_about_not_the_whole_location() {
+        // Gmail archive: the inbox label off; Gmail's own Important label does not matter.
+        let before = state_at("[Gmail]/All Mail", &["INBOX"], true);
+        let after = state_at("[Gmail]/All Mail", &[], true);
+        assert!(shows_change(
+            &row("[Gmail]/All Mail", &["[Gmail]/Important"], true),
+            &before,
+            &after
+        ));
+        assert!(!shows_change(
+            &row("[Gmail]/All Mail", &["INBOX"], true),
+            &before,
+            &after
+        ));
+        // Read state the move did not touch is not waited on.
+        assert!(shows_change(&row("[Gmail]/All Mail", &[], false), &before, &after));
+        // Exchange: in the new mailbox, or not yet.
+        let before = state_at("Inbox", &[], true);
+        let after = state_at("Archive", &[], true);
+        assert!(shows_change(&row("Archive", &[], true), &before, &after));
+        assert!(!shows_change(&row("Inbox", &[], true), &before, &after));
+    }
 
     /// Every Mail script compiles, and none names a variable after an AppleScript class
     /// (`files` is "every file": the first live attachment failed on it, 26 Oct). macOS only.

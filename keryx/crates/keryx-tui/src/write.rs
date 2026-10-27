@@ -82,6 +82,16 @@ pub fn run_background(d: &dyn keryx_store::client::Daemon, job: &Job) -> Result<
                     req.intent.verb(),
                     cs.error.clone().unwrap_or_default()
                 )),
+                // Nothing done: say why, not just "1 skipped" (round 9).
+                None if !o.skipped.is_empty() => {
+                    let (_, why) = &o.skipped[0];
+                    let more = if o.skipped.len() > 1 {
+                        format!(" (and {} more)", o.skipped.len() - 1)
+                    } else {
+                        String::new()
+                    };
+                    Ok(Some(format!("{}: {why}{more}", req.intent.verb())))
+                }
                 _ => Ok((!quiet).then_some(o.summary)),
             }
         }

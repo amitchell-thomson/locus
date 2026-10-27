@@ -457,8 +457,12 @@ impl Engine {
                     self.mark_filed(a, t, key, item.as_deref())?;
                     continue;
                 }
-                out.skipped
-                    .push((r.clone(), format!("nothing to {}", req.intent.verb())));
+                let why = match req.intent {
+                    Intent::Unarchive => "already in the inbox".to_string(),
+                    Intent::Archive | Intent::File { .. } => "already out of the inbox".to_string(),
+                    _ => format!("nothing to {}", req.intent.verb()),
+                };
+                out.skipped.push((r.clone(), why));
                 continue;
             }
             let tf = self.facts_for(&account, &msgs, &ops, &sent_to);

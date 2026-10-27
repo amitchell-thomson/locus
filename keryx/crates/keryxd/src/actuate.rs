@@ -243,6 +243,10 @@ on run argv
     repeat with fr in fileRefs
       tell content of msg to make new attachment with properties {file name:(contents of fr)} at after last paragraph
     end repeat
+    -- Adding an attachment can bring the message's window up; it stays hidden, as it was made.
+    try
+      set visible of msg to false
+    end try
     delay 1
     send msg
     return "ok"

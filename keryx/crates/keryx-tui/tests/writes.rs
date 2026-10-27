@@ -1201,3 +1201,11 @@ fn after_the_hold_the_line_says_sent_or_why_not_and_the_draft_follows() {
         assert!(a.sending.is_none());
     }
 }
+
+#[test]
+fn capital_i_puts_a_thread_back_in_the_inbox() {
+    let (mut a, f) = app();
+    let r = select(&mut a, "Lab partner for Thursday?");
+    keys(&mut a, &[Key::Char('I')]);
+    assert_eq!(f.take(), vec![format!(r#"triage {{"action":"unarchive"}} ["{r}"]"#)]);
+}

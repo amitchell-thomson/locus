@@ -179,6 +179,8 @@ impl App {
                 }
             }
             Key::Char('U') => self.triage(Intent::Read { on: false }, "marking unread"),
+            // Back to the inbox, from the archive, a folder or anywhere (round 8: nothing could).
+            Key::Char('I') => self.triage(Intent::Unarchive, "moving back to the inbox"),
             Key::Char('u') => {
                 self.deferred.push(Job::UndoLast);
                 self.message = Some(("undoing…".into(), false));

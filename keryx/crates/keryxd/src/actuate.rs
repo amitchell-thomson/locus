@@ -372,10 +372,79 @@ impl Real {
     ) -> Result<Option<MsgState>, String> {
         Self::ensure_mail_running()?;
         let mut current = current_box(acc, &before.location);
-        for step in mail_steps(acc, before, after) {
+        let steps = mail_steps(acc, before, after);
+        // Gmail-style accounts file by adding a label, then taking the Inbox one away. The second
+        // step waits until Mail shows the first on the message: a copy into a folder made a moment
+        // before did nothing, the Inbox label still went, and the mail was left in All Mail alone
+        // (round 8, 27 Oct). If the label never shows, nothing is taken away.
+        let added: Vec<String> = steps
+            .iter()
+            .filter_map(|s| match s {
+                MailStep::Copy { to, .. } => Some(to.clone()),
+                _ => None,
+            })
+            .collect();
+        let copies: Vec<MailStep> = steps
+            .iter()
+            .filter(|s| matches!(s, MailStep::Copy { .. }))
+            .cloned()
+            .collect();
+        let rest: Vec<MailStep> = steps
+            .iter()
+            .filter(|s| !matches!(s, MailStep::Copy { .. }))
+            .cloned()
+            .collect();
+        if !copies.is_empty() {
+            for step in &copies {
+                self.mail_step(acc, msg, &current, step)?;
+            }
+            if !self.await_labels(acc, msg, &added, Duration::from_secs(10)) {
+                // Once more, for a folder Mail had not finished making.
+                for step in &copies {
+                    self.mail_step(acc, msg, &current, step)?;
+                }
+                if !self.await_labels(acc, msg, &added, Duration::from_secs(20)) {
+                    return Err(format!(
+                        "Mail didn't put it in {} (nothing was taken out of the inbox)",
+                        added.join(", ")
+                    ));
+                }
+            }
+        }
+        for step in rest {
+            self.mail_step(acc, msg, &current, &step)?;
+            if let MailStep::Move { to, .. } = &step {
+                current = to.clone();
+            }
+        }
+        self.await_envelope(acc, msg, after)?;
+        Ok(None)
+    }
+
+    /// Whether the message shows every label in `wanted` within `wait`.
+    fn await_labels(&self, acc: &Account, msg: &MsgRef, wanted: &[String], wait: Duration) -> bool {
+        let uuid = acc.mailapp_account_id.as_deref().unwrap_or_default();
+        let t = Instant::now();
+        while t.elapsed() < wait {
+            if let Ok(store) = MailStore::open(&self.cfg.paths.mail_dir)
+                && let Ok(rows) = store.scan(uuid)
+                && rows
+                    .iter()
+                    .any(|r| r.message_id == msg.message_id && wanted.iter().all(|w| r.labels.contains(w)))
+            {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        }
+        false
+    }
+
+    /// One AppleScript step on the message, which is in `current`.
+    fn mail_step(&self, acc: &Account, msg: &MsgRef, current: &str, step: &MailStep) -> Result<(), String> {
+        {
             let out = Command::new("osascript")
                 .arg("-")
-                .args(step_args(acc, &msg.message_id, &current, &step))
+                .args(step_args(acc, &msg.message_id, current, step))
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
@@ -400,12 +469,8 @@ impl Real {
                     _ => format!("Mail: {said} {err}"),
                 });
             }
-            if let MailStep::Move { to, .. } = &step {
-                current = to.clone();
-            }
         }
-        self.await_envelope(acc, msg, after)?;
-        Ok(None)
+        Ok(())
     }
 
     /// Wait (≤ 30 s) until Mail's Envelope Index shows the new state.
@@ -445,9 +510,25 @@ impl Actuator for Real {
                     account.address.clone(),
                     name.to_string(),
                 ];
-                osascript_answers(MKBOX_SCRIPT, &args, &["made", "exists"])
+                let made = osascript_answers(MKBOX_SCRIPT, &args, &["made", "exists"])
                     .map(|said| said == "made")
-                    .map_err(|e| format!("making the folder {name:?} on {}: {e}", account.name))
+                    .map_err(|e| format!("making the folder {name:?} on {}: {e}", account.name))?;
+                // A new folder is Mail's to make on the server: wait until Mail lists it.
+                if made {
+                    let uuid = account.mailapp_account_id.as_deref().unwrap_or_default();
+                    let t = Instant::now();
+                    while t.elapsed() < Duration::from_secs(20) {
+                        if MailStore::open(&self.cfg.paths.mail_dir)
+                            .and_then(|s| s.mailbox_totals(uuid))
+                            .is_ok_and(|m| m.contains_key(name))
+                        {
+                            break;
+                        }
+                        std::thread::sleep(Duration::from_millis(500));
+                    }
+                    std::thread::sleep(Duration::from_secs(2));
+                }
+                Ok(made)
             }
         }
     }

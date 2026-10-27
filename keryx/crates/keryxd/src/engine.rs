@@ -725,6 +725,11 @@ impl Engine {
             match self.apply_op(&op, &mut resync) {
                 Ok(()) => done.push(op),
                 Err(e) => {
+                    // A step can have half happened at the source: re-read that account, so
+                    // the list shows where the mail really is.
+                    if let Op::State { msg, .. } = &op {
+                        resync.insert(msg.account.clone(), ());
+                    }
                     failure = Some(e);
                     break;
                 }
@@ -743,7 +748,7 @@ impl Engine {
             }
             cs.status = Status::Failed;
             cs.error = Some(if stuck == 0 {
-                format!("{e} (nothing was changed)")
+                format!("{e} (keryx undid what it had done; the account is re-read from Mail)")
             } else {
                 format!("{e}; {stuck} change(s) already made couldn't be reverted — check the thread")
             });

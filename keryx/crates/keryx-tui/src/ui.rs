@@ -944,6 +944,7 @@ fn help(f: &mut Frame, area: Rect) {
         ("d", "done: filed for its mark, else for what you choose"),
         ("m", "mark what it is for; it stays in your inbox"),
         ("f U L", "needs reply on or off · unread · unsubscribe"),
+        ("I", "back to the inbox (from the archive or a folder)"),
         ("t i w", "a task · an invite to the calendar · reply with free times"),
         ("v u", "mark for a batch · undo the last change"),
         ("z o", "the whole conversation · open an attachment"),

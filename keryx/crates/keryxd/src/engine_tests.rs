@@ -1345,3 +1345,23 @@ fn marking_what_a_thread_is_for_moves_nothing() {
     e.mark_for(&lab, None).unwrap();
     assert!(e.db.fors().unwrap().is_empty());
 }
+
+#[test]
+fn a_mail_you_sent_yourself_comes_back_to_the_inbox() {
+    let (mut e, _fake) = engine();
+    let lab = r(&e, "Lab partner for Thursday?");
+    let (a, t) = parse_thread_ref(&lab).unwrap();
+    // As if you had written it to yourself: from your own address, received in the inbox.
+    e.db.conn()
+        .execute(
+            "UPDATE messages SET from_json = '{\"name\":null,\"email\":\"newc7370@ox.ac.uk\"}'
+             WHERE account = ?1 AND thread_id = ?2",
+            rusqlite::params![a, t],
+        )
+        .unwrap();
+    e.triage(req(Intent::Archive, vec![lab.clone()]), Who::ALEC).unwrap();
+    assert!(!in_inbox(&e, &lab));
+    let out = e.triage(req(Intent::Unarchive, vec![lab.clone()]), Who::ALEC).unwrap();
+    assert!(out.skipped.is_empty(), "{:?}", out.skipped);
+    assert!(in_inbox(&e, &lab), "back in the inbox");
+}

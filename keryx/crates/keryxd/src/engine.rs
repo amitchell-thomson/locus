@@ -267,7 +267,9 @@ impl Engine {
                 }
             }
             Intent::Unarchive => {
-                for m in msgs.iter().filter(|m| !self.is_own(m)) {
+                // Not your sent copies; but a mail you sent yourself and received is inbox mail
+                // like any other (round 8: "1 skipped" on exactly that).
+                for m in msgs.iter().filter(|m| !location::in_sent(account, &m.location)) {
                     state(
                         m,
                         MsgState {

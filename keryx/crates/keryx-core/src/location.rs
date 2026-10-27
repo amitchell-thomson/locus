@@ -66,6 +66,18 @@ pub fn archived(a: &Account, loc: &Location) -> Location {
 }
 
 /// Back in the inbox.
+/// Whether a message is the account's own sent copy (Sent Items, `[Gmail]/Sent Mail`, SENT).
+pub fn in_sent(a: &Account, loc: &Location) -> bool {
+    let sent = match a.backend {
+        Backend::Gmail => "SENT",
+        Backend::Mailapp => a.sent_mailbox.as_deref().unwrap_or("Sent"),
+    };
+    match loc {
+        Location::Labels { labels } => labels.iter().any(|l| l == sent),
+        Location::Mailboxes { physical, labels } => physical == sent || labels.iter().any(|l| l == sent),
+    }
+}
+
 pub fn inboxed(a: &Account, loc: &Location) -> Location {
     let inbox = inbox_name(a);
     match loc {

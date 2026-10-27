@@ -17,6 +17,8 @@ use keryx_store::view;
 use std::collections::BTreeMap;
 
 const MARK: &str = "autofile.since";
+/// Whether keryx was live when the mark was set ("1" / "0").
+const LIVE_MARK: &str = "autofile.live";
 
 impl Engine {
     /// File what arrived since the last tick. Returns how many threads were filed.
@@ -28,13 +30,21 @@ impl Engine {
             return Ok(0);
         };
         let now = self.now();
+        // Going live starts the count again: what arrived while keryx could touch only test
+        // mail is not filed in one batch the minute it can touch everything (round 10).
+        let live = if self.cfg.live { "1" } else { "0" };
+        let was_live = self.db.meta(LIVE_MARK)?;
         let since = match self.db.meta(MARK)?.and_then(|v| v.parse::<i64>().ok()) {
-            Some(t) => t,
-            None => {
+            Some(t) if was_live.as_deref() == Some(live) || !self.cfg.live => t,
+            _ => {
                 self.db.set_meta(MARK, &now.to_string())?;
+                self.db.set_meta(LIVE_MARK, live)?;
                 return Ok(0);
             }
         };
+        if was_live.as_deref() != Some(live) {
+            self.db.set_meta(LIVE_MARK, live)?;
+        }
         let rows = view::list(&self.db, &self.cfg, &view::View::Inbox, &view::Filter::default())?;
         let sent_to = view::sent_to(&self.db, &self.cfg)?;
         let own = self.cfg.own_addresses();

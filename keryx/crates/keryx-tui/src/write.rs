@@ -238,6 +238,8 @@ impl App {
             }
             // Done: filed for what it is for: the mark when there is one, else the picker (X7).
             Key::Char('d') => self.done(),
+            // Archive straight away, no question (round 10; e as in Gmail). Any mark stays.
+            Key::Char('e') => self.triage(Intent::Archive, "archiving"),
             // What it is for, staying in the inbox (round 4).
             Key::Char('m') => self.open_for_picker(true),
             Key::Char('s') if self.cfg.snooze.enabled => self.mode = Mode::Snooze(None),

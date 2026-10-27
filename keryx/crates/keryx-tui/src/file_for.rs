@@ -35,7 +35,7 @@ impl Choice {
     pub fn label(&self) -> String {
         match self {
             Choice::For(f) => f.label.clone(),
-            Choice::Nothing => "for nothing".into(),
+            Choice::Nothing => "for nothing: clear the mark".into(),
         }
     }
 }
@@ -145,7 +145,10 @@ impl App {
                     .cloned()
                     .map(Choice::For),
             );
-            v.push(Choice::Nothing);
+            // Only m can say "for nothing" (clear the mark): d files, and e archives outright.
+            if p.mark {
+                v.push(Choice::Nothing);
+            }
         } else {
             v.extend(
                 matching(&all, &p.query, |o| (o.id.as_str(), o.label.as_str()))
@@ -154,7 +157,7 @@ impl App {
                     .map(Choice::For),
             );
             let q = p.query.trim().to_lowercase();
-            if "nothing".starts_with(&q) || "archive".starts_with(&q) {
+            if p.mark && ("nothing".starts_with(&q) || "clear".starts_with(&q)) {
                 v.push(Choice::Nothing);
             }
         }

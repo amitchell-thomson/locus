@@ -359,16 +359,19 @@ fn done_files_for_what_it_is_for_with_the_guess_chosen() {
         )]
     );
 
-    // For nothing: archive only. Esc leaves without a change.
+    // e archives straight away, no question; Esc leaves the picker without a change.
     select(&mut a, "Lab partner for Thursday?");
     keys(&mut a, &[Key::Char('m'), Key::Esc]);
     assert!(f.take().is_empty() && a.mode == Mode::List);
+    keys(&mut a, &[Key::Char('e')]);
+    assert_eq!(f.take(), vec![format!(r#"triage {{"action":"archive"}} ["{lab}"]"#)]);
+    // d's picker no longer offers "for nothing": that was ambiguous beside e.
     keys(&mut a, &[Key::Char('d')]);
     for c in "nothing".chars() {
         a.key(Key::Char(c));
     }
     keys(&mut a, &[Key::Enter]);
-    assert_eq!(f.take(), vec![format!(r#"triage {{"action":"archive"}} ["{lab}"]"#)]);
+    assert!(f.take().is_empty(), "nothing to choose");
 }
 
 #[test]

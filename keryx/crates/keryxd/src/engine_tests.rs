@@ -1336,3 +1336,24 @@ fn a_mail_you_sent_yourself_comes_back_to_the_inbox() {
     assert!(out.skipped.is_empty(), "{:?}", out.skipped);
     assert!(in_inbox(&e, &lab), "back in the inbox");
 }
+
+#[test]
+fn going_live_starts_filing_on_arrival_afresh() {
+    let (mut e, fake) = engine();
+    with_taxonomy(&mut e);
+    e.cfg.live = false;
+    assert_eq!(e.file_arrivals().unwrap(), 0, "the mark is set");
+    e.db.set_meta("autofile.since", &(NOW - 7 * 86_400).to_string())
+        .unwrap();
+    e.cfg.live = true;
+    assert_eq!(
+        e.file_arrivals().unwrap(),
+        0,
+        "live: the mark starts again, nothing filed in a batch"
+    );
+    assert!(fake.calls.lock().unwrap().is_empty());
+    assert_eq!(
+        e.db.meta("autofile.since").unwrap().as_deref(),
+        Some(NOW.to_string().as_str())
+    );
+}

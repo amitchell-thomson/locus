@@ -188,11 +188,12 @@ pub fn step_args(acc: &Account, mid: &str, current: &str, step: &MailStep) -> Ve
 /// the approved ones. Lists arrive newline-separated in argv.
 const SEND_SCRIPT: &str = r#"
 on run argv
-  set {acctId, acctAddr, mid, toList, ccList, bccList, subj, body, files} to argv
+  set {acctId, acctAddr, mid, toList, ccList, bccList, subj, body, fileList} to argv
   -- Paths become file references here, outside Mail: inside its tell block `POSIX file` is
-  -- Mail's to resolve, and it fails with -10006 (the first live attachment, 26 Oct).
+  -- Mail's to resolve. And never a variable called `files`: that is AppleScript's own name
+  -- for "every file", so `set {…, files} to argv` failed with -10006 on every attachment.
   set fileRefs to {}
-  repeat with f in paragraphs of files
+  repeat with f in paragraphs of fileList
     if (f as string) is not "" then set end of fileRefs to ((POSIX file (f as string)) as alias)
   end repeat
   tell application "Mail"
@@ -518,6 +519,37 @@ impl Actuator for Real {
 
 #[cfg(test)]
 mod tests {
+
+    /// Every Mail script compiles, and none names a variable after an AppleScript class
+    /// (`files` is "every file": the first live attachment failed on it, 26 Oct). macOS only.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mail_scripts_compile_and_use_no_class_names_as_variables() {
+        for (name, script) in [
+            ("SCRIPT", SCRIPT),
+            ("MKBOX_SCRIPT", MKBOX_SCRIPT),
+            ("SEND_SCRIPT", SEND_SCRIPT),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let src = dir.path().join("s.applescript");
+            std::fs::write(&src, script).unwrap();
+            let ok = Command::new("osacompile")
+                .arg("-o")
+                .arg(dir.path().join("s.scpt"))
+                .arg(&src)
+                .status()
+                .is_ok_and(|s| s.success());
+            assert!(ok, "{name} does not compile");
+            let first = script.lines().find(|l| l.contains("to argv")).unwrap();
+            for class in ["files", "file", "messages", "mailboxes", "accounts"] {
+                assert!(
+                    !first.contains(&format!(" {class},")) && !first.contains(&format!(" {class}}}")),
+                    "{name} names a variable {class:?}"
+                );
+            }
+        }
+    }
+
     use super::*;
 
     fn cfg() -> Config {

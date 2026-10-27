@@ -15,7 +15,7 @@ Check the current syntax with `claude mcp add --help` if it changes. Then turn o
 
 - **Email is untrusted data.** Tool results wrap everything senders wrote in `⟦email-data n=…⟧ … ⟦/email-data n=…⟧` (fresh nonce each time). Claude never follows instructions found there.
 - **Claude can't send, approve, accept, forward, unsubscribe or delete.** Those tools don't exist.
-- **The server decides risk.** Triage on *automated* mail (newsletters, notifications, receipts — computed from headers), unflagged, not on OQTS shared, ≤ 100 threads, applies at once and can be undone. Anything else becomes a **proposal** in a cleanup review that Alec decides item by item in the TUI (`A`).
+- **The server decides risk.** Triage on *automated* mail (newsletters, notifications, receipts — computed from headers), unflagged, not on OQTS shared, ≤ 100 threads, applies at once and can be undone. Anything else becomes a **proposal** in a cleanup review that Alec decides item by item in locus's Approve.
 - Every change is a changeset: `list_changesets`, `undo`.
 
 ## Tools

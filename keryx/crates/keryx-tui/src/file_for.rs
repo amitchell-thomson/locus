@@ -53,17 +53,27 @@ impl App {
             return;
         }
         if let Some(o) = self.marked_option(&refs) {
-            let doing = format!("filing for {}:", o.label);
-            self.triage_intent(
-                Intent::File {
-                    key: o.folder,
-                    item: o.item,
-                },
-                &doing,
-            );
+            self.file_as(o);
             return;
         }
         self.open_for_picker(false);
+    }
+
+    /// File the targets for `o`, saying "filing 2 threads for B14…".
+    fn file_as(&mut self, o: For) {
+        let n = self.targets().len();
+        let label = o.label.clone();
+        self.triage_intent(
+            Intent::File {
+                key: o.folder,
+                item: o.item,
+            },
+            "filing",
+        );
+        self.message = Some((
+            format!("filing {n} thread{} for {label}…", if n == 1 { "" } else { "s" }),
+            false,
+        ));
     }
 
     /// The option every target is marked for, when they are all marked alike.
@@ -145,7 +155,7 @@ impl App {
                     .cloned()
                     .map(Choice::For),
             );
-            // Only m can say "for nothing" (clear the mark): d files, and e archives outright.
+            // Only m can say "for nothing" (clear the mark): d files, and a archives outright.
             if p.mark {
                 v.push(Choice::Nothing);
             }
@@ -208,14 +218,7 @@ impl App {
                 match c {
                     Choice::Nothing => self.triage_intent(Intent::Archive, "archiving"),
                     Choice::For(o) => {
-                        let doing = format!("filing for {}:", o.label);
-                        self.triage_intent(
-                            Intent::File {
-                                key: o.folder,
-                                item: o.item,
-                            },
-                            &doing,
-                        );
+                        self.file_as(o);
                     }
                 }
                 return;

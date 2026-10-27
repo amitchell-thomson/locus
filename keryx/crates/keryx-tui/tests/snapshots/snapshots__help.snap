@@ -5,20 +5,20 @@ expression: "render_to_string(&mut a, 80, 20)"
 ╭──────────────────────────────────── keys ────────────────────────────────────╮
 │ this screen                                                                  │
 │  ↑ ↓  ⏎ esc  move · read a thread · back                                     │
+│  J K         the next or previous thread, while reading                      │
 │  ⇥ ⇧⇥        the next or previous inbox (all, then each account)             │
 │  ⌥⇥          add the next inbox to the ones shown (⇥ goes back to one)       │
 │  b           hide or show the list                                           │
 │  g           go to: inbox, needs reply, sent, archive, drafts, filed by itsel│
 │  r R F +     reply · reply all · forward · write a new mail                  │
 │  d           done: filed for its mark, else for what you choose              │
-│  a u         archive straight away · undo (at once)                          │
+│  a I         archive straight away · back to the inbox                       │
+│  u           undo (a move comes back at once)                                │
 │  m           mark what it is for; it stays in your inbox                     │
 │  f U L       needs reply on or off · unread · unsubscribe                    │
-│  I           back to the inbox (from the archive or a folder)                │
 │  t i w       a task · an invite to the calendar · reply with free times      │
-│  v u         mark for a batch · undo the last change                         │
-│  z o         the whole conversation · open an attachment                     │
+│  v           select several for one change                                   │
+│  z o 1…9     the whole conversation · an attachment · open link n            │
 │  A ^R        approve, in locus · sync now                                    │
 │                                                                              │
-│ everywhere                                                                   │
 ╰──────────────────────────────────────────────────────────────────────────────╯

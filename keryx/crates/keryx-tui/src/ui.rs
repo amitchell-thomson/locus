@@ -694,7 +694,15 @@ fn message_lines(app: &App, open: &Open, i: usize, m: &Message, w: usize, full: 
     {
         out.push(Line::from(vec![
             bar(),
-            Span::styled(format!("needs reply: {why}"), Style::default().fg(c("mauve"))),
+            Span::styled(
+                // Your own mark carries no reason (round 11: it read "tagged by Alec").
+                if why.trim().is_empty() || why == "tagged by Alec" {
+                    "needs reply".to_string()
+                } else {
+                    format!("needs reply: {why}")
+                },
+                Style::default().fg(c("mauve")),
+            ),
         ]));
     }
     if m.hidden_text_removed {
@@ -847,15 +855,30 @@ fn footer(f: &mut Frame, app: &App, area: Rect) {
                 ("esc", "back"),
             ]
         }
-        Mode::Thread => vec![
-            ("r", "reply"),
-            ("R", "all"),
-            ("F", "forward"),
-            ("d", "done"),
-            ("z", "everything"),
-            ("o", "attachment"),
-            ("esc", "back"),
-        ],
+        // A thread opened from a run's detail: only back works (round 11 audit).
+        Mode::Thread if app.back.is_some() => vec![("z", "everything"), ("esc", "back")],
+        Mode::Thread => {
+            let mut v = vec![
+                ("r", "reply"),
+                ("d", "done"),
+                ("a", "archive"),
+                ("m", "for"),
+                ("z", "everything"),
+            ];
+            if app.open.as_ref().is_some_and(|o| !o.attachments().is_empty()) {
+                v.push(("o", "attachment"));
+            }
+            v.push(("esc", "back"));
+            v
+        }
+        Mode::Help | Mode::GoTo => vec![("esc", "close")],
+        Mode::Filed { .. } => vec![("↑ ↓", "move"), ("u", "put back in the inbox"), ("esc", "back")],
+        Mode::Runs { .. } => vec![("↑ ↓", "move"), ("⏎", "details"), ("esc", "back")],
+        Mode::RunDetail { .. } => vec![("↑ ↓", "move"), ("⏎", "open"), ("u", "undo"), ("esc", "back")],
+        Mode::Snooze(_) => vec![("1…4", "choose"), ("esc", "cancel")],
+        Mode::KairosForm(_) => vec![("⇥", "next"), ("⏎", "save"), ("esc", "cancel")],
+        Mode::ConfirmSend(_) => vec![("y", "send"), ("e", "edit"), ("n", "not now")],
+        Mode::ConfirmUnsubscribe { .. } => vec![("y", "unsubscribe"), ("esc", "no")],
         Mode::File(_) => vec![("⏎", "file"), ("↑ ↓", "move"), ("esc", "back")],
         Mode::Attachments => vec![("↑ ↓", "move"), ("⏎", "open"), ("esc", "back")],
         Mode::Drafts { .. } => vec![("↑ ↓", "move"), ("⏎", "open"), ("esc", "back")],
@@ -946,28 +969,29 @@ fn footer(f: &mut Frame, app: &App, area: Rect) {
 fn help(f: &mut Frame, area: Rect) {
     let screen: &[(&str, &str)] = &[
         ("↑ ↓  ⏎ esc", "move · read a thread · back"),
+        ("J K", "the next or previous thread, while reading"),
         ("⇥ ⇧⇥", "the next or previous inbox (all, then each account)"),
         ("⌥⇥", "add the next inbox to the ones shown (⇥ goes back to one)"),
         ("b", "hide or show the list"),
         (
             "g",
-            "go to: inbox, needs reply, sent, archive, drafts, filed by itself, folders",
+            "go to: inbox, needs reply, sent, archive, drafts, filed by itself, an area",
         ),
         ("r R F +", "reply · reply all · forward · write a new mail"),
         ("d", "done: filed for its mark, else for what you choose"),
-        ("a u", "archive straight away · undo (at once)"),
+        ("a I", "archive straight away · back to the inbox"),
+        ("u", "undo (a move comes back at once)"),
         ("m", "mark what it is for; it stays in your inbox"),
         ("f U L", "needs reply on or off · unread · unsubscribe"),
-        ("I", "back to the inbox (from the archive or a folder)"),
         ("t i w", "a task · an invite to the calendar · reply with free times"),
-        ("v u", "mark for a batch · undo the last change"),
-        ("z o", "the whole conversation · open an attachment"),
+        ("v", "select several for one change"),
+        ("z o 1…9", "the whole conversation · an attachment · open link n"),
         ("A ^R", "approve, in locus · sync now"),
     ];
     let everywhere: &[(&str, &str)] = &[
         ("/", "search"),
         ("?", "keys"),
-        ("q", "quit"),
+        ("q ^C", "quit"),
         ("alt-1…4", "home · project · calendar · mail"),
     ];
     let mut lines = vec![Line::from(Span::styled(" this screen", locus_theme::dim()))];
@@ -1012,7 +1036,8 @@ fn goto(f: &mut Frame, app: &App, area: Rect) {
     for group in [
         &[("i", "Inbox"), ("r", "Needs reply"), ("d", "Drafts")][..],
         &[("s", "Sent"), ("v", "Archive"), ("a", "All mail")][..],
-        &[("l", "Filed by itself"), ("c", "Claude runs")][..],
+        // Claude runs (g c) stays reachable but unlisted until the locus job replaces it (X8).
+        &[("l", "Filed by itself")][..],
     ] {
         left.push(Line::raw(""));
         left.extend(group.iter().map(|(k, n)| entry(k, n, text)));

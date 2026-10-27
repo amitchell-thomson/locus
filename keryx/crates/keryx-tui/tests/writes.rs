@@ -433,7 +433,7 @@ fn without_keryxd_changes_are_explained() {
     a.daemon = None;
     select(&mut a, "Lab partner for Thursday?");
     keys(&mut a, &[Key::Char('d')]);
-    assert!(a.message.as_ref().unwrap().0.contains("keryxd isn't running"));
+    assert!(a.message.as_ref().unwrap().0.contains("mail service isn't running"));
 }
 
 // ---------------- Phase 6: compose and send (approving drafts is locus's Approve) ----------------
@@ -500,7 +500,7 @@ fn empty_and_bad_input() {
     a.key(Key::Char('r'));
     let (text, purpose) = editor(&mut a);
     a.editor_done(purpose.clone(), Ok(text.clone()));
-    assert_eq!(a.message.as_ref().unwrap().0, "Nothing sent");
+    assert_eq!(a.message.as_ref().unwrap().0, "nothing sent: the message is empty");
     assert_eq!(a.mode, Mode::List);
     let bad = type_body(&text, "hi").replacen("To: Jane Doe <jane.doe@example.com>", "To: jane at example", 1);
     a.editor_done(purpose, Ok(bad));
@@ -833,7 +833,7 @@ fn runs_view_lists_runs_and_what_they_made() {
     a.db.finish_run("run-1", "done", "Jane asked about the lab; tagged.", None, start + 120)
         .unwrap();
     keys(&mut a, &[Key::Char('g')]);
-    assert!(render_to_string(&mut a, 80, 24).contains("c  Claude runs"));
+    // Unlisted in go-to until the locus job replaces it (X8), still reachable with g c.
     keys(&mut a, &[Key::Char('c')]);
     let s = render_to_string(&mut a, 90, 8);
     assert!(

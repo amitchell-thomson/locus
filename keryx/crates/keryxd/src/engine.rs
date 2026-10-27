@@ -552,7 +552,7 @@ impl Engine {
                 // proposals: they're refused with the reason.
                 None => out
                     .skipped
-                    .extend(high.into_iter().map(|(r, why)| (r, format!("needs Alec: {why}")))),
+                    .extend(high.into_iter().map(|(r, why)| (r, format!("left for you: {why}")))),
             }
         }
         out.summary = self.summarise(&out, &summary_base);
@@ -573,7 +573,7 @@ impl Engine {
         }
         if out.proposed > 0 {
             parts.push(format!(
-                "{} thread{} proposed for Alec's review ({}): approve in keryx with A",
+                "{} thread{} left for you ({}): they wait in locus's Approve",
                 out.proposed,
                 if out.proposed == 1 { "" } else { "s" },
                 out.review_id.clone().unwrap_or_default()

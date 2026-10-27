@@ -55,18 +55,10 @@ kairos's token is already in the Keychain as `kairos-api-token`, and keryx reuse
 
 `docs/nvim.md` will have a small snippet for your config (chezmoi). keryx never edits your dotfiles.
 
-## 8. Phone (Phase 8)
+## 8. Phone
 
-1. Make a private topic and store it (keryxd reads it at start):
-   ```sh
-   security add-generic-password -U -s keryx-ntfy-topic -a "$USER" -w "keryx-$(openssl rand -hex 12)"
-   security find-generic-password -s keryx-ntfy-topic -w   # the name to subscribe to
-   ```
-2. ntfy app on the iPhone → subscribe to that topic on `https://ntfy.sh` (separate from kairos's topic, so they group apart).
-3. In `config.toml`, `[server] bind` must be the Mac's Tailscale IP (`tailscale ip -4`), so the phone can reach the approval pages. Links are signed with a key derived from `keryx-api-token`; rotating the token invalidates old links.
-4. Restart keryxd (`deploy/keryx/install-daemon.sh`). `keryx doctor` should say "ntfy topic set".
-
-Approval pushes are **off** (`[notify] approvals = false`, Alec 2026-10-20): drafts are approved in keryx (`A`), the phone only gets the one push per run and per finished cleanup, and the pages show drafts without buttons. With `approvals = true`, each Claude draft pushes with buttons that open a confirmation page; nothing is approved until you press its button (link previews can't approve). If the Mac is asleep the page won't load and the draft stays pending.
+Removed on 26 Oct 2026 (keryx-joins-locus X2, plan B.4): no ntfy pushes and no approval pages.
+Drafts and proposals are approved in locus's Approve; the phone shows your mail through Mail.
 
 ## 9. Scheduled runs (Phase 9)
 

@@ -153,7 +153,7 @@ fn draft_json(cs: &keryx_core::changeset::Changeset) -> Value {
         "changeset_id": cs.id,
         "status": cs.status,
         "warnings": cs.warnings,
-        "next": "Waiting for Alec's approval (A in keryx, `keryx approve`, or his phone). You can't send it.",
+        "next": "Waiting for Alec's approval in locus's Approve. You can't send it.",
         "email_data": {
             "to": o.map(|o| addrs(&o.to)),
             "cc": o.map(|o| addrs(&o.cc)),
@@ -914,7 +914,7 @@ impl KeryxMcp {
     }
 
     #[tool(
-        description = "Draft a reply in a thread. It is NEVER sent by you: it waits for Alec's approval (TUI A, CLI, or his phone), which shows the recipients first. Recipients are computed from the thread. Write in Alec's voice (style_samples)."
+        description = "Draft a reply in a thread. It is NEVER sent by you: it waits for Alec's approval in locus's Approve, which shows the recipients first. Recipients are computed from the thread. Write in Alec's voice (style_samples)."
     )]
     async fn draft_reply(&self, Parameters(a): Parameters<DraftReplyArgs>) -> Result<CallToolResult, ErrorData> {
         self.run(move |e| {

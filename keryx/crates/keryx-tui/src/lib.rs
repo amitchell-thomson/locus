@@ -64,7 +64,7 @@ fn map_key(k: event::KeyEvent) -> Option<Key> {
     if k.modifiers.contains(KeyModifiers::CONTROL)
         && let KeyCode::Char(c) = k.code
     {
-        return Some(if c == 'c' { Key::Char('q') } else { Key::Ctrl(c) });
+        return Some(Key::Ctrl(c));
     }
     Some(match k.code {
         KeyCode::Char(c) => Key::Char(c),

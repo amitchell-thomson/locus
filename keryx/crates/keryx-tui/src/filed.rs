@@ -75,14 +75,16 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, sel: usize) {
         let note = if app.cfg.automated.file_on_arrival {
             " nothing yet: automated mail you can be told the purpose of is filed here as it arrives"
         } else {
-            " off: [automated] file_on_arrival = false"
+            " filing on arrival is off ([automated] file_on_arrival in your keryx config)"
         };
         f.render_widget(Paragraph::new(Span::styled(note, locus_theme::dim())), inner);
         return;
     }
     let w = usize::from(inner.width);
     let mut lines = Vec::new();
-    for (i, cs) in list.iter().enumerate().take(usize::from(inner.height)) {
+    let rows = usize::from(inner.height);
+    let first = sel.saturating_sub(rows.saturating_sub(1));
+    for (i, cs) in list.iter().enumerate().skip(first).take(rows) {
         let when = keryx_core::display::date_label(cs.created_at, app.now);
         // "filed as it arrived, for Errands (2 threads)" → "Errands".
         let what = cs
@@ -99,7 +101,12 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, sel: usize) {
         } else {
             String::new()
         };
-        let status = format!("{:?}", cs.status).to_lowercase();
+        let status: String = match cs.status {
+            keryx_core::changeset::Status::Applied => "filed".to_string(),
+            keryx_core::changeset::Status::Undone => "put back".to_string(),
+            keryx_core::changeset::Status::Failed => "not done".to_string(),
+            s => s.as_str().to_string(),
+        };
         let head = format!(" {when:>9}  {:<12} ", locus_theme::fit(&what, 12));
         let room = w.saturating_sub(head.chars().count() + status.len() + 2);
         let body = locus_theme::fit(&format!("{first}{more}"), room);
@@ -115,7 +122,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, sel: usize) {
             Span::raw(" ".repeat(gap + 1)),
             Span::styled(
                 status.clone(),
-                if status == "applied" {
+                if status == "filed" {
                     locus_theme::st("green")
                 } else {
                     locus_theme::dim()

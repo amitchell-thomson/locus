@@ -132,11 +132,14 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect, sel: usize) {
     let w = usize::from(inner.width);
     let now = SystemTime::now();
     let mut lines = Vec::new();
-    for (i, d) in list.iter().enumerate().take(usize::from(inner.height)) {
+    let rows = usize::from(inner.height);
+    let first = sel.saturating_sub(rows.saturating_sub(1));
+    let name = |id: &str| app.cfg.account(id).map_or_else(|| id.to_string(), |a| a.name.clone());
+    for (i, d) in list.iter().enumerate().skip(first).take(rows) {
         let kind = match &d.purpose {
-            Purpose::Reply { .. } => "reply".to_string(),
-            Purpose::Forward { account } => format!("forward · {account}"),
-            Purpose::Compose { account } => format!("new · {account}"),
+            Purpose::Reply { account, .. } => format!("reply · {}", name(account)),
+            Purpose::Forward { account } => format!("forward · {}", name(account)),
+            Purpose::Compose { account } => format!("new · {}", name(account)),
             Purpose::EditDraft { .. } => "draft".to_string(),
         };
         let age = now

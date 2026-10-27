@@ -130,7 +130,7 @@ pub struct App {
     pub dry_open: bool,
     /// keryxd, for changes (None: read-only, e.g. keryxd not running).
     pub daemon: Option<Box<dyn Daemon>>,
-    /// Threads marked with `x` for a batch.
+    /// Threads marked with `v` for a batch.
     pub marked: BTreeSet<String>,
     /// Changes queued for keryxd (run after the frame is drawn).
     pub deferred: Vec<Job>,
@@ -146,6 +146,8 @@ pub struct App {
     pub writing: Option<crate::send::Writing>,
     /// locus's taxonomy and registry: what mail can be filed for (X7). `None`: `d` archives.
     pub shared: Option<locus_contract::taxonomy::Shared>,
+    /// Where `?` came from: help closes back to it (a thread stays open).
+    pub help_back: Option<Mode>,
     /// The highlighted row of the attachment list (`o`).
     pub att_sel: usize,
     /// The worker that takes changes to mail off the screen's hands (the real TUI); `None`
@@ -217,6 +219,7 @@ impl App {
             writing: None,
             drafts_dir: None,
             att_sel: 0,
+            help_back: None,
             also: BTreeSet::new(),
             sending: None,
             background: None,
@@ -279,6 +282,38 @@ impl App {
             Err(e) => self.message = Some((e, true)),
         }
         self.reload();
+    }
+
+    fn open_help(&mut self) {
+        self.help_back = Some(self.mode.clone());
+        self.mode = Mode::Help;
+    }
+
+    /// `b`: hide or show the list; there is a list to hide only beside a thread (wide window).
+    fn toggle_list(&mut self) {
+        if self.split() {
+            self.list_hidden = !self.list_hidden;
+        } else {
+            self.message = Some(("the list hides beside a thread: widen the window".into(), false));
+        }
+    }
+
+    /// Digit `n` in a thread: open link n of the message shown in full (its latest).
+    pub fn open_link(&mut self, n: usize) {
+        let Some(m) = self.open.as_ref().and_then(|o| o.msgs.last()) else {
+            return;
+        };
+        let r = keryx_core::text::readable(&m.body_text, false);
+        match r.links.iter().find(|(k, _, _)| *k == n) {
+            Some((_, url, site)) => {
+                if !self.dry_open {
+                    let _ = std::process::Command::new("open").arg(url).spawn();
+                }
+                self.message = Some((format!("opened {site}"), false));
+                self.opened.push(PathBuf::from(url));
+            }
+            None => self.message = Some((format!("no link {n} here"), false)),
+        }
     }
 
     /// Whether a row reads as unread: unread in the mirror and not opened here since.
@@ -512,11 +547,16 @@ impl App {
 
     pub fn key(&mut self, k: Key) {
         self.note_key();
+        // ^C quits from anywhere (it used to type a "q" into searches and forms).
+        if k == Key::Ctrl('c') {
+            self.quit = true;
+            return;
+        }
         if self.message.is_some() && !matches!(self.mode, Mode::Search(_)) {
             self.message = None;
         }
         match self.mode.clone() {
-            Mode::Help => self.mode = Mode::List,
+            Mode::Help => self.mode = self.help_back.take().unwrap_or(Mode::List),
             Mode::GoTo => self.goto_key(k),
             Mode::Search(q) => self.search_key(k, q),
             Mode::Attachments => self.attachment_key(k),
@@ -551,11 +591,17 @@ impl App {
             Key::BackTab => self.cycle_account(-1),
             Key::Char('g') => self.mode = Mode::GoTo,
             Key::Char('/') => self.mode = Mode::Search(self.search.clone().unwrap_or_default()),
-            Key::Char('?') => self.mode = Mode::Help,
-            Key::Char('b') => self.list_hidden = !self.list_hidden,
+            Key::Char('?') => self.open_help(),
+            Key::Char('b') => self.toggle_list(),
             Key::Esc if !self.marked.is_empty() => self.marked.clear(),
             Key::Esc if self.search.is_some() => {
                 self.search = None;
+                self.reload();
+            }
+            // From another list (sent, the archive, an area), esc is the inbox (round 11 audit).
+            Key::Esc if self.view != View::Inbox => {
+                self.view = View::Inbox;
+                self.sel = 0;
                 self.reload();
             }
             _ => {}
@@ -651,7 +697,7 @@ impl App {
             Key::PageDown | Key::Char(' ') | Key::Ctrl('d') => open.scroll = open.scroll.saturating_add(15),
             Key::PageUp | Key::Ctrl('u') => open.scroll = open.scroll.saturating_sub(15),
             Key::Char('g') => open.scroll = 0,
-            Key::Char('b') => self.list_hidden = !self.list_hidden,
+            Key::Char('b') => self.toggle_list(),
             Key::Char('z') => {
                 open.show_quotes = !open.show_quotes;
                 open.expand_all = open.show_quotes;
@@ -673,7 +719,8 @@ impl App {
                 self.move_sel(-1);
                 self.open_selected();
             }
-            Key::Char('?') => self.mode = Mode::Help,
+            Key::Char(c) if c.is_ascii_digit() && c != '0' => self.open_link(c as usize - '0' as usize),
+            Key::Char('?') => self.open_help(),
             _ => {}
         }
     }
@@ -841,38 +888,5 @@ impl App {
             Err(e) => self.search_error = Some(e.to_string()),
         }
         self.mode = Mode::Search(q);
-    }
-
-    /// Hints for the bottom-right edge.
-    pub fn key_hints(&self) -> String {
-        match &self.mode {
-            Mode::Thread if self.back.is_some() => "z quotes · Esc back to the review".into(),
-            Mode::Thread => {
-                let mut h = vec![];
-                if self
-                    .open
-                    .as_ref()
-                    .is_some_and(|o| self.suggestion_for(&o.account, &o.thread_id).is_some())
-                {
-                    h.extend(["y create", "n dismiss"]);
-                }
-                h.extend(["r reply", "d archive", "t task", "z quotes"]);
-                if self.open.as_ref().is_some_and(|o| !o.attachments().is_empty()) {
-                    h.push("o attachment");
-                }
-                h.extend(["Esc back", "? help"]);
-                h.join(" · ")
-            }
-            Mode::List if self.rows.is_empty() => "g go to · / search · ? help".into(),
-            Mode::List if !self.marked.is_empty() => {
-                format!(
-                    "{} marked · d archive · m file · f flag · Esc unmark",
-                    self.marked.len()
-                )
-            }
-            Mode::List => "d archive · m file · r reply · t task · x mark · ? help".into(),
-            Mode::Search(_) => "Enter keep · Esc clear · ↑↓ move".into(),
-            _ => String::new(),
-        }
     }
 }

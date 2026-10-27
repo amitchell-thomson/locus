@@ -178,7 +178,7 @@ fn claude_mixed_batch_splits_into_applied_and_proposals() {
     assert_eq!(review.items.len(), 2);
     assert!(review.items.iter().all(|i| i.proposal.reason.contains("from people")));
     assert!(
-        out.summary.contains("10 threads") && out.summary.contains("2 threads proposed"),
+        out.summary.contains("10 threads") && out.summary.contains("2 threads left for you"),
         "{}",
         out.summary
     );
@@ -224,7 +224,7 @@ fn flag_and_read_changes_that_need_alec_are_refused_not_proposed() {
     let t = r(&e, "Lab partner for Thursday?");
     let out = e.triage(req(Intent::Flag { on: true }, vec![t]), Who::CLAUDE).unwrap();
     assert!(out.applied.is_none() && out.review_id.is_none());
-    assert!(out.skipped[0].1.contains("needs Alec"), "{:?}", out.skipped);
+    assert!(out.skipped[0].1.contains("left for you"), "{:?}", out.skipped);
 }
 
 #[test]

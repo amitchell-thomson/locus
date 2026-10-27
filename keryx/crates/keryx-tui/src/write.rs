@@ -160,12 +160,12 @@ fn run_one(d: &dyn keryx_store::client::Daemon, job: &Job) -> Result<Option<Stri
             .map_err(|e| e.to_string()),
         Job::Undo(id) => d.undo(id).map(|c| Some(c.summary)).map_err(|e| e.to_string()),
         Job::Tag(r) => d
-            .tag(r, "tagged by Alec")
-            .map(|_| Some("needs reply".into()))
+            .tag(r, "")
+            .map(|_| Some("needs reply on".into()))
             .map_err(|e| e.to_string()),
         Job::Untag(r) => d
             .untag(r)
-            .map(|_| Some("needs-reply tag cleared".into()))
+            .map(|_| Some("needs reply off".into()))
             .map_err(|e| e.to_string()),
         _ => Ok(None),
     }
@@ -431,7 +431,10 @@ impl App {
                 .iter()
                 .any(|j| !matches!(j, Job::Triage { quiet: true, .. } | Job::TaskStatus(_)))
             {
-                self.message = Some(("can't change mail: keryxd isn't running (keryx doctor)".into(), true));
+                self.message = Some((
+                    "changes are off: keryx's mail service isn't running (keryx doctor says why)".into(),
+                    true,
+                ));
             }
             return;
         };

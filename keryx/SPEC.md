@@ -265,11 +265,14 @@ work here on the left; on the right only what needs you (a send in its hold, wha
 Approve, a stale sync). When space is short the hints give way to the note, never the
 reverse.
 
-**The list:** two quiet lines a thread, the sender then the subject; unread is a dot. Days
-are headings with white space between them. A peach rule marks **new since you last looked**:
-the last key before a break of half an hour, kept across restarts. A flag, an attachment, a
-linked kairos task (󰄱) or a waiting suggestion (󰄱?) show as one icon beside the date; the
-account tag shows only in *all*.
+**The list:** two quiet lines a thread, the sender then the subject. Unread is a thin blue bar
+down the row, gone once you open it; what needs your reply has a peach bar beside it and is
+listed first, in its own "needs reply" section at the top of the inbox, wherever it is filed.
+Days are headings with a rule, white space between them. A peach rule marks **new since you
+last looked**: the last key before a break of half an hour, kept across restarts. Beside the
+date: your reply mark (you wrote last), an attachment, a linked kairos task (󰄱) or a waiting
+suggestion (󰄱?). A thread's mark (`b14`, `errands`) sits on its subject line in its area's
+colour; the account tag shows whenever more than one inbox is shown.
 
 **The reading pane** is the conversation in the order it was written, top to bottom. Each
 writer has their own colour bar (you in blue) and a `who · date` line; earlier messages are
@@ -288,12 +291,12 @@ the needs-reply reason, suggestions and linked tasks sit above the messages.
 | `a` · `u` | archive straight away, no question (rounds 10, 11); a mark stays · undo: the move is put back on screen at once |
 | `m` | mark what it is for, and it stays in the inbox (round 4): a tag on the row, and on its item's page at once. keryx's own record; the mail does not move |
 | `v` | select for a batch (`d` `m` `f` then act on every selected thread) |
-| `f` `U` `L` | needs reply on or off (the one attention marker: a peach bar, first in its day; keryx no longer flags) · unread · unsubscribe |
+| `f` `U` `L` | needs reply on or off (the one attention marker: a peach bar, the inbox's first section; keryx no longer flags) · unread · unsubscribe |
 | `r` `R` `F` `+` | reply · reply all · forward · write a new mail, in your Neovim (below) |
 | `t` `i` `w` · `y` `n` | a kairos task · an invite to the calendar · reply with free times · on a suggestion: create · dismiss |
 | `u` | undo the last change; during a send's hold, cancel it |
 | `A` | locus's Approve (drafts and cleanup proposals wait there; keryx has no approve screen) |
-| `g` | go to, in two columns: `i` inbox · `r` needs reply · `d` drafts · `s` sent · `v` archive · `a` all · `l` filed by itself · `c` Claude runs; and `1…7` the areas and Personal's streams |
+| `g` | go to, in two columns: `i` inbox · `r` needs reply · `d` drafts · `s` sent · `v` archive · `a` all · `l` filed by itself; and `1…7` the areas and Personal's streams (`c`, Claude runs, unlisted until X8) |
 | `/` · `^R` · `?` · `q` | search (§7) · sync now · keys · quit |
 
 **Writing** (X6) is your Neovim, run on a terminal inside the right pane with the list beside

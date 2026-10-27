@@ -354,7 +354,7 @@ impl App {
         let sig = self.signature(&account);
         match compose::parse(&text, sig.as_deref(), self.cfg.send.max_attachments_mb) {
             Err(ComposeError::Empty) => {
-                self.message = Some(("Nothing sent".into(), false));
+                self.message = Some(("nothing sent: the message is empty".into(), false));
             }
             Err(e) => {
                 // Back to the editor with the problem at the top.
@@ -427,7 +427,7 @@ impl App {
         if !self.cfg.live {
             for r in o.recipients().iter().filter(|r| !own.contains(*r)) {
                 w.push(format!(
-                    "live = false: {r} isn't one of your addresses, so keryxd will not send this"
+                    "test mode: {r} isn't one of your addresses, so this will not be sent"
                 ));
             }
         }
@@ -453,8 +453,18 @@ impl App {
                 self.mode = Mode::List;
             }
             Key::Char('n') | Key::Esc => {
-                self.mode = Mode::List;
-                self.message = Some(("Nothing sent".into(), false));
+                // Back where you were writing from; the text waits in drafts (round 11 audit).
+                self.mode = if self.open.is_some() { Mode::Thread } else { Mode::List };
+                let kept = self.draft_path(&d.purpose).is_some_and(|p| p.exists());
+                self.message = Some((
+                    if kept {
+                        "not sent · kept in drafts (g d)"
+                    } else {
+                        "not sent"
+                    }
+                    .into(),
+                    false,
+                ));
             }
             _ => self.mode = Mode::ConfirmSend(Box::new(d)),
         }

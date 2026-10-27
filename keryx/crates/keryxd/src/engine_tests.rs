@@ -445,14 +445,17 @@ fn snooze_in_the_past_is_refused_and_undo_restores() {
 }
 
 #[test]
-fn needs_reply_tags_clear_on_archive_and_on_reply() {
+fn needs_reply_survives_filing_and_clears_on_reply() {
     let (mut e, _) = engine();
     let t = r(&e, "Lab partner for Thursday?");
     e.tag(&t, "asks about Thursday", Who::CLAUDE).unwrap();
     let (a, tid) = parse_thread_ref(&t).unwrap();
     assert!(e.db.tag(a, tid, NEEDS_REPLY).unwrap().is_some());
+    // Round 9: filed or archived, a thread you owe a reply stays marked, and in the inbox list.
     e.triage(req(Intent::Archive, vec![t.clone()]), Who::ALEC).unwrap();
-    assert!(e.db.tag(a, tid, NEEDS_REPLY).unwrap().is_none());
+    assert!(e.db.tag(a, tid, NEEDS_REPLY).unwrap().is_some());
+    let inbox = view::list(&e.db, &e.cfg, &view::View::Inbox, &view::Filter::default()).unwrap();
+    assert!(inbox.iter().any(|r| r.r#ref == t), "still listed in the inbox");
 
     let t2 = r(&e, "Coursework submission portal");
     e.tag(&t2, "submit by Friday", Who::CLAUDE).unwrap();

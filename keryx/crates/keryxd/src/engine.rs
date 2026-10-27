@@ -506,11 +506,12 @@ impl Engine {
             self.apply(&mut cs)?;
             if cs.status == Status::Applied && req.intent.leaves_inbox() {
                 for (r, _, _) in &low {
-                    if let Some((a, t)) = parse_thread_ref(r) {
-                        self.db.clear_tag(a, t, NEEDS_REPLY)?;
-                        if let Intent::File { key, item } = &req.intent {
-                            self.mark_filed(a, t, key, item.as_deref())?;
-                        }
+                    // Needs reply stays: filed or archived, a thread you still owe an answer is
+                    // listed in the inbox until you reply or clear it (round 9).
+                    if let Some((a, t)) = parse_thread_ref(r)
+                        && let Intent::File { key, item } = &req.intent
+                    {
+                        self.mark_filed(a, t, key, item.as_deref())?;
                     }
                 }
             }

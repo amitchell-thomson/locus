@@ -248,7 +248,14 @@ fn account_clause(f: &Filter, args: &mut Vec<Value>) -> String {
 fn view_threads(cfg: &Config, view: &View, f: &Filter, args: &mut Vec<Value>) -> String {
     let acc = account_clause(f, args);
     match view {
-        View::Inbox => format!("SELECT account, thread_id FROM messages WHERE {acc} AND in_inbox = 1"),
+        // The inbox, and every thread you owe a reply wherever it is filed (round 9).
+        View::Inbox => {
+            let acc2 = account_clause(f, args);
+            format!(
+                "SELECT account, thread_id FROM messages WHERE {acc} AND in_inbox = 1
+                 UNION SELECT account, thread_id FROM tags WHERE kind = 'needs_reply' AND {acc2}"
+            )
+        }
         View::Flagged => format!("SELECT account, thread_id FROM messages WHERE {acc} AND flagged = 1"),
         View::All => format!("SELECT account, thread_id FROM messages WHERE {acc}"),
         View::Archive => format!(

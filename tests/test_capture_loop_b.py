@@ -164,6 +164,7 @@ def test_a_chosen_hand_added_book_is_ingested_and_earlier_marks_rekeyed(tmp_path
 
 def test_unchanged_ink_costs_nothing(tmp_path):
     conn = _conn(tmp_path)
+    _library_row(conn)                  # handled: in the library, so nothing is left to retry
     manifest: dict = {}
     fetches: list = []
 

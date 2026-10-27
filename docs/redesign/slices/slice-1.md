@@ -877,6 +877,11 @@ review swallowed, so `?` never opened the keys there); `d` stays the decisions l
 Project view while nothing there can be done. The shared-key test now covers every screen. The
 course page goes on the list of pages to refine, after keryx.
 
+**Round 7g, 27 Oct (kairos).** With Family hidden, the Family events you are attending (`B`, or
+your own event shared to Family) still show, in Family's colour. **To monitor:** the show/hide
+toggles are used for nothing but Family ("I do not really use for anything except family");
+watch them in use and decide whether to keep them or to replace them with just this rule.
+
 ## Report
 
 *(written when the slice closes: done, evidence per check, deviations, decisions taken)*

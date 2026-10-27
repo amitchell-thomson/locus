@@ -62,6 +62,11 @@ impl Filter {
     }
 
     pub fn allows(&self, i: &Instance) -> bool {
+        // Family hidden still shows what you are attending there (`B`, or your own event shared
+        // to Family), drawn in Family's colour (your call of 27 Oct): it is your time too.
+        if i.overlay == Overlay::Family && !self.family && (i.meta.blocking || i.meta.origin_key.is_some()) {
+            return true;
+        }
         if !self.overlay_on(i.overlay) {
             return false;
         }
@@ -178,4 +183,47 @@ pub fn view_with(
 ) -> Vec<Cluster> {
     let visible: Vec<Instance> = all.into_iter().filter(|i| filter.allows(i)).collect();
     cluster(visible, tz, |i| rank_for(i, kind_of(&i.source)))
+}
+
+#[cfg(test)]
+mod family_tests {
+    use super::*;
+    use crate::model::{Meta, Span};
+
+    fn family(blocking: bool) -> Instance {
+        Instance {
+            uid: "f".into(),
+            recurrence_id: None,
+            source: "family".into(),
+            overlay: Overlay::Family,
+            key: None,
+            title: "Dinner".into(),
+            location: None,
+            description: None,
+            span: Span::Timed {
+                start: chrono::Utc::now(),
+                end: chrono::Utc::now(),
+            },
+            recurring: false,
+            transparent: false,
+            tentative: false,
+            meta: Meta {
+                blocking,
+                ..Meta::default()
+            },
+            href: None,
+            alarms: vec![],
+        }
+    }
+
+    #[test]
+    fn hiding_family_keeps_what_you_are_attending() {
+        let f = Filter {
+            family: false,
+            ..Filter::default()
+        };
+        assert!(f.allows(&family(true)), "attending (B): still shown");
+        assert!(!f.allows(&family(false)), "the rest of Family hides");
+        assert!(Filter::default().allows(&family(false)));
+    }
 }

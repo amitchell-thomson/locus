@@ -87,8 +87,6 @@ pub trait Actuator: Send {
     fn send(&mut self, account: &Account, o: &keryx_core::changeset::Outgoing) -> std::result::Result<(), String>;
     /// RFC 8058 one-click unsubscribe (POST `List-Unsubscribe=One-Click`).
     fn unsubscribe(&mut self, url: &str) -> std::result::Result<(), String>;
-    /// Make the folder `name` on `account` unless it exists. `Ok(true)`: it was made.
-    fn ensure_folder(&mut self, account: &Account, name: &str) -> std::result::Result<bool, String>;
 }
 
 pub struct Engine {
@@ -103,8 +101,6 @@ pub struct Engine {
     pub current_run: Option<keryx_store::runs::Run>,
     /// locus's taxonomy and registry: where filed mail goes and what it can be for (X7).
     pub shared: Option<locus_contract::taxonomy::Shared>,
-    /// Folders known to exist, per account, so each is made at most once per run.
-    ensured: HashSet<(String, String)>,
 }
 
 fn new_id(prefix: &str) -> String {
@@ -146,7 +142,6 @@ impl Engine {
             kairos_note: "no kairos client".into(),
             current_run: None,
             shared: None,
-            ensured: HashSet::new(),
         })
     }
 
@@ -205,39 +200,10 @@ impl Engine {
         if let Some(f) = def.and_then(|d| d.folders.get(&account.id)) {
             return Ok(f.clone());
         }
-        if let Some(t) = self.taxonomy_folder(key) {
-            return Ok(t);
-        }
         Err(EngineError::BadRequest(match def {
             Some(d) => format!("key {} isn't available on {} (no folder mapped)", d.name, account.name),
             None => format!("no key {key:?}"),
         }))
-    }
-
-    /// Before a message moves into a taxonomy folder, make sure the folder exists on its
-    /// account. Only taxonomy folders are ever made (keryx's SPEC §6 lifted for them alone).
-    fn ensure_folders(
-        &mut self,
-        account: &Account,
-        before: &MsgState,
-        after: &MsgState,
-    ) -> std::result::Result<(), String> {
-        for name in location::entered(&before.location, &after.location) {
-            if self.taxonomy_folder(&name).as_deref() != Some(name.as_str()) {
-                continue;
-            }
-            let k = (account.id.clone(), name.clone());
-            if self.ensured.contains(&k) {
-                continue;
-            }
-            if self.act.ensure_folder(account, &name)? {
-                tracing::info!(account = account.id, folder = name, "made a folder for filed mail");
-                self.note_run("folder", &format!("{}:{name}", account.id), Some(&account.id), None)
-                    .map_err(|e| e.to_string())?;
-            }
-            self.ensured.insert(k);
-        }
-        Ok(())
     }
 
     /// The ops an intent means for one thread.
@@ -296,6 +262,21 @@ impl Engine {
                     );
                 }
             }
+            // Filing for what it is for (round 8, your call of 27 Oct: option C): keryx records
+            // the item or area; on the server the mail is only archived. No folders are made or
+            // moved into, so nothing on the server depends on Mail's slow, fragile label moves.
+            Intent::File { key, .. } if self.taxonomy_folder(key).is_some() => {
+                for m in msgs.iter().filter(|m| location::in_inbox(account, &m.location)) {
+                    state(
+                        m,
+                        MsgState {
+                            location: location::archived(account, &m.location),
+                            ..state_of(m)
+                        },
+                    );
+                }
+            }
+            // Your older config keys (Admin, Travel) still move into the folders they have.
             Intent::File { key, .. } => {
                 let folder_name = self.folder_name(key, account)?;
                 let folder = self.label_id(account, &folder_name).ok_or_else(|| {
@@ -468,6 +449,14 @@ impl Engine {
                 }
             };
             if ops.is_empty() {
+                // Already out of the inbox: filing it is only the mark (round 8, option C).
+                if let Intent::File { key, item } = &req.intent
+                    && self.taxonomy_folder(key).is_some()
+                    && let Some((a, t)) = parse_thread_ref(r)
+                {
+                    self.mark_filed(a, t, key, item.as_deref())?;
+                    continue;
+                }
                 out.skipped
                     .push((r.clone(), format!("nothing to {}", req.intent.verb())));
                 continue;
@@ -515,8 +504,8 @@ impl Engine {
                 for (r, _, _) in &low {
                     if let Some((a, t)) = parse_thread_ref(r) {
                         self.db.clear_tag(a, t, NEEDS_REPLY)?;
-                        if let Intent::File { item, .. } = &req.intent {
-                            self.link_item(a, t, item.as_deref())?;
+                        if let Intent::File { key, item } = &req.intent {
+                            self.mark_filed(a, t, key, item.as_deref())?;
                         }
                     }
                 }
@@ -631,6 +620,25 @@ impl Engine {
             Some(id) => self.db.message(&m.account, &id)?,
             None => None,
         })
+    }
+
+    /// Record what a filed thread is for: its item, else the area or stream it was filed under
+    /// (a config key such as Admin is a server folder, not a mark).
+    pub(crate) fn mark_filed(&mut self, account: &str, thread_id: &str, key: &str, item: Option<&str>) -> Result<()> {
+        match (item, self.taxonomy_folder(key)) {
+            (Some(_), _) => self.link_item(account, thread_id, item),
+            (None, Some(folder)) => {
+                let now = self.now();
+                self.db.set_for(
+                    account,
+                    thread_id,
+                    Some(("folder", folder.as_str(), folder.as_str())),
+                    now,
+                )?;
+                Ok(())
+            }
+            (None, None) => Ok(()),
+        }
     }
 
     /// Record what a filed thread is for (`None`: a stream, no item). An id the registry does
@@ -791,7 +799,6 @@ impl Engine {
                     Some(m) => msg_ref(m),
                     None => msg.clone(),
                 };
-                self.ensure_folders(&account, before, after)?;
                 match self.act.apply(&account, &msg, before, after)? {
                     Some(confirmed) => {
                         let in_inbox = location::in_inbox(&account, &confirmed.location);

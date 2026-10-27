@@ -142,29 +142,6 @@ on run argv
 end run
 "#;
 
-/// Make a top-level mailbox unless it exists. On an Exchange account that is a folder; on a
-/// Gmail account read through Mail it is a label. Values only via argv.
-const MKBOX_SCRIPT: &str = r#"
-on run argv
-  set {acctId, acctAddr, boxName} to argv
-  tell application "Mail"
-    set acc to missing value
-    try
-      set acc to first account whose id is acctId
-    end try
-    if acc is missing value then
-      try
-        set acc to first account whose email addresses contains acctAddr
-      end try
-    end if
-    if acc is missing value then return "noaccount"
-    if exists mailbox boxName of acc then return "exists"
-    make new mailbox with properties {name:boxName} at acc
-    return "made"
-  end tell
-end run
-"#;
-
 /// The argv for one step (the box is where the message is now).
 pub fn step_args(acc: &Account, mid: &str, current: &str, step: &MailStep) -> Vec<String> {
     let (box_name, action, arg) = match step {
@@ -513,43 +490,6 @@ impl Real {
 }
 
 impl Actuator for Real {
-    fn ensure_folder(&mut self, account: &Account, name: &str) -> Result<bool, String> {
-        match account.backend {
-            // Every account reads through Mail since 2026-10-20; the API path has no label maker.
-            Backend::Gmail => Err(format!(
-                "{}: making the Gmail label {name:?} is not built for the Gmail API backend; make it in Gmail once",
-                account.name
-            )),
-            Backend::Mailapp => {
-                Self::ensure_mail_running()?;
-                let args = vec![
-                    account.mailapp_account_id.clone().unwrap_or_default(),
-                    account.address.clone(),
-                    name.to_string(),
-                ];
-                let made = osascript_answers(MKBOX_SCRIPT, &args, &["made", "exists"])
-                    .map(|said| said == "made")
-                    .map_err(|e| format!("making the folder {name:?} on {}: {e}", account.name))?;
-                // A new folder is Mail's to make on the server: wait until Mail lists it.
-                if made {
-                    let uuid = account.mailapp_account_id.as_deref().unwrap_or_default();
-                    let t = Instant::now();
-                    while t.elapsed() < Duration::from_secs(20) {
-                        if MailStore::open(&self.cfg.paths.mail_dir)
-                            .and_then(|s| s.mailbox_totals(uuid))
-                            .is_ok_and(|m| m.contains_key(name))
-                        {
-                            break;
-                        }
-                        std::thread::sleep(Duration::from_millis(500));
-                    }
-                    std::thread::sleep(Duration::from_secs(2));
-                }
-                Ok(made)
-            }
-        }
-    }
-
     fn apply(
         &mut self,
         account: &Account,
@@ -627,11 +567,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn mail_scripts_compile_and_use_no_class_names_as_variables() {
-        for (name, script) in [
-            ("SCRIPT", SCRIPT),
-            ("MKBOX_SCRIPT", MKBOX_SCRIPT),
-            ("SEND_SCRIPT", SEND_SCRIPT),
-        ] {
+        for (name, script) in [("SCRIPT", SCRIPT), ("SEND_SCRIPT", SEND_SCRIPT)] {
             let dir = tempfile::tempdir().unwrap();
             let src = dir.path().join("s.applescript");
             std::fs::write(&src, script).unwrap();

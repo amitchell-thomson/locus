@@ -97,33 +97,6 @@ pub fn inboxed(a: &Account, loc: &Location) -> Location {
 
 /// Filed under a key and out of the inbox. `folder` is the key's mailbox
 /// (Mail.app) or label **id** (Gmail).
-/// The folders a message goes into on the way from `before` to `after`: a new physical mailbox,
-/// or labels it gains. keryxd makes a taxonomy folder that does not exist yet before the move.
-pub fn entered(before: &Location, after: &Location) -> Vec<String> {
-    match (before, after) {
-        (Location::Labels { labels: b }, Location::Labels { labels: a }) => {
-            a.iter().filter(|l| !b.contains(l)).cloned().collect()
-        }
-        (
-            Location::Mailboxes {
-                physical: bp,
-                labels: bl,
-            },
-            Location::Mailboxes {
-                physical: ap,
-                labels: al,
-            },
-        ) => {
-            let mut v: Vec<String> = al.iter().filter(|l| !bl.contains(l)).cloned().collect();
-            if ap != bp {
-                v.insert(0, ap.clone());
-            }
-            v
-        }
-        _ => vec![],
-    }
-}
-
 pub fn filed(a: &Account, loc: &Location, folder: &str) -> Location {
     let inbox = inbox_name(a);
     match loc {

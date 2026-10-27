@@ -23,9 +23,6 @@ impl Actuator for Ok_ {
     fn unsubscribe(&mut self, _: &str) -> Result<(), String> {
         Ok(())
     }
-    fn ensure_folder(&mut self, _: &Account, _: &str) -> Result<bool, String> {
-        Ok(false)
-    }
 }
 
 const TOKEN: &str = "test-token";

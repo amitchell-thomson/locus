@@ -53,7 +53,7 @@ impl App {
             return;
         }
         if let Some(o) = self.marked_option(&refs) {
-            let doing = format!("filing for {} into {}:", o.label, o.folder);
+            let doing = format!("filing for {}:", o.label);
             self.triage_intent(
                 Intent::File {
                     key: o.folder,
@@ -205,7 +205,7 @@ impl App {
                 match c {
                     Choice::Nothing => self.triage_intent(Intent::Archive, "archiving"),
                     Choice::For(o) => {
-                        let doing = format!("filing for {} into {}:", o.label, o.folder);
+                        let doing = format!("filing for {}:", o.label);
                         self.triage_intent(
                             Intent::File {
                                 key: o.folder,

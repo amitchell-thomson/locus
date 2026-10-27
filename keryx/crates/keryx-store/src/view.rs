@@ -141,10 +141,32 @@ pub fn kairos_key(db: &Db, cfg: &Config, account: &str, msgs: &[Message]) -> Str
 pub fn taxonomy_folders() -> &'static [String] {
     static F: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
     F.get_or_init(|| {
-        locus_contract::taxonomy::load(&locus_contract::taxonomy::root())
+        shared()
             .map(|s| locus_contract::fors::folders(&s.taxonomy))
             .unwrap_or_default()
     })
+}
+
+/// locus's taxonomy and registry, read once.
+pub fn shared() -> Option<&'static locus_contract::taxonomy::Shared> {
+    static S: std::sync::OnceLock<Option<locus_contract::taxonomy::Shared>> = std::sync::OnceLock::new();
+    S.get_or_init(|| locus_contract::taxonomy::load(&locus_contract::taxonomy::root()).ok())
+        .as_ref()
+}
+
+/// The area or stream a thread's mark files it under: an item's area (or stream), else the
+/// folder it was marked for. Option C (27 Oct): filed mail lives in keryx's marks, not in
+/// folders on the server.
+fn marked_folder(mark: &(String, String)) -> Option<String> {
+    match mark.0.as_str() {
+        "item" => {
+            let s = shared()?;
+            s.registry
+                .get(&mark.1)
+                .map(|p| locus_contract::fors::folder_of(&s.taxonomy, p))
+        }
+        _ => Some(mark.1.clone()),
+    }
 }
 
 /// Names of the keys a location is filed under: your config's keys, and the taxonomy folders
@@ -310,6 +332,7 @@ fn rows_for(
     limit: u32,
     sent: bool,
 ) -> Result<Vec<ThreadRow>, DbError> {
+    let marks = db.fors().unwrap_or_default();
     let own = cfg.own_addresses();
     let labels = label_names(db, cfg);
     let snoozes: HashMap<(String, String), i64> = db
@@ -394,6 +417,9 @@ fn rows_for(
                 .unwrap_or_else(|| "me".into()),
         };
         let mut keys: Vec<String> = Vec::new();
+        if let Some(f) = marks.get(&(account.clone(), thread_id.clone())).and_then(marked_folder) {
+            keys.push(f);
+        }
         for m in &msgs {
             for k in keys_of(cfg, &account, &m.location, labels.get(&account)) {
                 if !keys.contains(&k) {

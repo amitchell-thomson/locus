@@ -244,6 +244,13 @@ rounds. X8 and the clear-out wait for Slice 0's budget logging if that is not in
   or asks. **Needs reply is the one attention marker** (`f`, a peach bar, first in its day);
   keryx no longer flags. Go-to lost Flagged. An item's page lists its inbox threads first.
 
+- **Round 9 (27 Oct, during X4):** filing into folders on the servers proved fragile through
+  Mail (label steps accepted and not kept; a mail left in All Mail alone). Your call: **option
+  C**, which replaces X-b. keryx records what a thread is for (its item, area or stream) and the
+  server only archives it; no folders are made. **Later: backfill**, migrating every existing
+  folder (Admin, Careers, Travel, OQTS, JCR Treasurer and the rest on each account) into the new
+  scheme, so past mail is marked for what it is for too.
+
 ## Report
 *(when the steps are done)*
 

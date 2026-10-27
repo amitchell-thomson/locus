@@ -132,7 +132,8 @@ pub fn run_at(cfg: Config, thread: Option<(String, String)>) -> Result<(), Strin
         std::thread::spawn(move || {
             while let Ok(job) = job_rx.recv() {
                 let res = write::run_background(&client, &job);
-                if done_tx.send((job.hides(), res)).is_err() {
+                let touched = [job.hides(), job.shows()].concat();
+                if done_tx.send((touched, res)).is_err() {
                     return;
                 }
             }

@@ -61,6 +61,14 @@ impl Job {
         )
     }
 
+    /// The threads a change puts back in the inbox, shown there until keryxd answers.
+    pub fn shows(&self) -> Vec<String> {
+        match self {
+            Job::Triage { req, .. } if req.intent == Intent::Unarchive => req.refs.clone(),
+            _ => vec![],
+        }
+    }
+
     /// The threads a change takes out of the list, shown gone until keryxd answers.
     pub fn hides(&self) -> Vec<String> {
         match self {
@@ -327,6 +335,9 @@ impl App {
             for j in bg {
                 for r in j.hides() {
                     gone |= self.hidden.insert(r);
+                }
+                for r in j.shows() {
+                    gone |= self.shown.insert(r);
                 }
                 let _ = tx.send(j);
             }

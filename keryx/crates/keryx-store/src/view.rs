@@ -299,6 +299,23 @@ fn view_threads(cfg: &Config, view: &View, f: &Filter, args: &mut Vec<Value>) ->
     }
 }
 
+/// One thread's row, wherever it is (the TUI shows a thread it is putting back in the inbox
+/// before Mail has done it).
+pub fn thread_row(db: &Db, cfg: &Config, account: &str, thread_id: &str) -> Option<ThreadRow> {
+    let args = vec![Value::Text(account.to_string()), Value::Text(thread_id.to_string())];
+    rows_for(
+        db,
+        cfg,
+        "SELECT account, thread_id FROM messages WHERE account = ? AND thread_id = ?",
+        args,
+        1,
+        false,
+    )
+    .ok()?
+    .into_iter()
+    .next()
+}
+
 /// Rows for a view, newest first.
 pub fn list(db: &Db, cfg: &Config, view: &View, f: &Filter) -> Result<Vec<ThreadRow>, DbError> {
     let mut args = Vec::new();

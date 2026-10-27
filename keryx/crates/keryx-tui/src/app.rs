@@ -153,6 +153,8 @@ pub struct App {
     pub background: Option<std::sync::mpsc::Sender<crate::write::Job>>,
     /// Threads a change in the worker takes out of the list: gone at once, until it answers.
     pub hidden: BTreeSet<String>,
+    /// Threads a change in the worker puts back in the inbox: there at once, until it answers.
+    pub shown: BTreeSet<String>,
     /// A send in its hold: (changeset id, the draft kept until it has gone).
     pub sending: Option<(String, Option<PathBuf>)>,
     /// Inboxes added to the highlighted one with ⌥⇥.
@@ -217,6 +219,7 @@ impl App {
             sending: None,
             background: None,
             hidden: BTreeSet::new(),
+            shown: BTreeSet::new(),
             read_here: BTreeSet::new(),
             marks: std::collections::HashMap::new(),
             shared: None,
@@ -255,6 +258,7 @@ impl App {
     pub fn background_done(&mut self, hid: Vec<String>, res: Result<Option<String>, String>) {
         for r in &hid {
             self.hidden.remove(r);
+            self.shown.remove(r);
         }
         match res {
             Ok(Some(m)) => self.message = Some((m, false)),
@@ -370,6 +374,21 @@ impl App {
         match res {
             Ok(mut rows) => {
                 rows.retain(|r| !self.hidden.contains(&r.r#ref));
+                // Put back in the inbox: listed at once (round 9), however long Mail takes.
+                if self.view == View::Inbox && self.search.is_none() {
+                    for r in &self.shown {
+                        if rows.iter().any(|x| &x.r#ref == r) {
+                            continue;
+                        }
+                        if let Some((a, t)) = keryx_core::model::parse_thread_ref(r)
+                            && let Some(mut row) = view::thread_row(&self.db, &self.cfg, a, t)
+                        {
+                            row.in_inbox = true;
+                            rows.push(row);
+                        }
+                    }
+                    rows.sort_by(|a, b| b.date.cmp(&a.date));
+                }
                 // The inbox opens on what needs a reply, as a section of its own, then the days
                 // (round 4 and 5): it is what you act on. Other lists are by date alone.
                 if self.reply_first() {

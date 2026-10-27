@@ -1228,3 +1228,20 @@ fn filing_is_gone_from_the_list_at_once_and_comes_back_if_it_fails() {
     assert!(a.rows.iter().any(|r| r.r#ref == lab), "failed: it is back");
     assert!(a.message.as_ref().unwrap().0.contains("Mail refused"));
 }
+
+#[test]
+fn back_to_the_inbox_shows_in_the_inbox_at_once() {
+    let (mut a, _f) = app();
+    let (tx, rx) = std::sync::mpsc::channel();
+    a.background = Some(tx);
+    keys(&mut a, &[Key::Char('g'), Key::Char('v')]); // the archive
+    let row = a.rows.first().expect("an archived thread").clone();
+    keys(&mut a, &[Key::Char('I')]);
+    a.run_deferred();
+    let job = rx.try_recv().expect("handed to the worker");
+    keys(&mut a, &[Key::Char('g'), Key::Char('i')]);
+    assert!(a.rows.iter().any(|r| r.r#ref == row.r#ref), "in the inbox at once");
+    // Mail refused: it goes again.
+    a.background_done([job.hides(), job.shows()].concat(), Err("not done".into()));
+    assert!(!a.rows.iter().any(|r| r.r#ref == row.r#ref));
+}

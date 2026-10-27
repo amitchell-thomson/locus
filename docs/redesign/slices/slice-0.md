@@ -180,6 +180,25 @@ non-excluded document on each run (about 80 cloud calls every 30 minutes), which
   printed by `locus list` as a source; one capture run's journal printed showing its cloud call
   count; a day of `locus-capture` logs with no 429.
 
+### 0.13 Off the metered API (added 27 Oct, approved)
+Found during 0.12: the API credit ran out mid-run on 27 Oct, and with it handwriting
+transcription and every library ingest (`[ingest].pass_routing` sends each pass to Haiku through
+the metered key). Alec, 27 Oct: change over rather than top up. The reasons the API was used no
+longer hold: transcription left `claude -p` because Phase 0 measured an 8-turn tool loop at
+$0.23 a page, and an image passed inline in the message (`--input-format stream-json`) is read in
+one turn, on the subscription, in under 3 s (tested 27 Oct).
+- `agent/claude.py` gains one call that takes text and images and a system prompt; every model
+  call in the codebase goes through it: page and margin transcription, the ingest passes,
+  `locus query`, retitle, and the evals. No `anthropic.Anthropic` client remains.
+- Every headless call runs lean: no tools and no MCP servers (`--tools ''
+  --strict-mcp-config`). Measured: a call otherwise carries about 23,500 tokens of tool and
+  server definitions it never uses; lean, about 750.
+- Usage is subscription quota, not money; the envelope's notional cost still goes to the budget
+  ledger so 0.7 can count it.
+- **Check:** a test page transcribed by `claude -p` printed; one document ingested and one
+  notebook captured on the server with `ANTHROPIC_API_KEY` removed from the environment; `grep`
+  printed showing no `anthropic.Anthropic(` left under `locus/`; capture resumed on its timer.
+
 ### 0.5b Tablet tidy (added 23 Oct; done by Alec by hand, 23 Oct)
 **Done:** the root is `Admin Archive Careers Inbox Jot Projects Reading Studies trash`, listed
 twice. Level-2 folders not yet in the registry: `Careers/Brevan Howard`, `Careers/Jane Street`,

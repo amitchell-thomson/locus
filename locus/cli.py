@@ -401,14 +401,8 @@ def cmd_watch_repo(args) -> None:
 
 
 def cmd_query(args) -> None:
-    from locus.config import Config
     from locus.query import QUERY_MODES, answer
 
-    try:
-        Config.anthropic_api_key()  # fail early with a clear message if the key is missing
-    except RuntimeError as exc:
-        print(exc)
-        sys.exit(1)
     if args.mode not in QUERY_MODES:
         print(f"unknown mode {args.mode!r}; choose from {sorted(QUERY_MODES)}")
         sys.exit(1)
@@ -2162,15 +2156,8 @@ def cmd_audit(args) -> None:
 
 
 def cmd_eval(args) -> None:
-    from locus.config import Config
-
+    # The judged suites run on the subscription since Slice 0.13; no API key is needed.
     suites = ["judge", "math", "retrieval"] if args.suite == "full" else [args.suite]
-    if suites != ["retrieval"]:  # retrieval is local-only; the judged suites need the API
-        try:
-            Config.anthropic_api_key()  # fail early with a clear message if the key is missing
-        except RuntimeError as exc:
-            print(exc)
-            sys.exit(1)
 
     conn = _open()
     try:

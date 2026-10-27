@@ -68,43 +68,40 @@ def test_claude_path_raises_after_exhausting_retries(monkeypatch):
 # ---------- the routed SDK client: one per process, and it must fail fast ----------
 
 
-def test_the_sdk_client_is_built_once_not_per_call(monkeypatch):
+def test_the_routed_client_is_built_once_not_per_call(monkeypatch):
     """Live failure 2026-07-31: a client per call leaked 324 fds (218 API sockets) climbing
-    ~15/min on a 1024 limit, and the 211-page book ingest wedged."""
+    ~15/min on a 1024 limit, and the 211-page book ingest wedged. On the subscription since
+    Slice 0.13; still built once."""
     from locus.ingest import llm
 
     monkeypatch.setattr(llm, "_SDK_CLIENT", None)
     built = []
-
-    class _Fake:
-        def __init__(self, **kw):
-            built.append(kw)
-
-    monkeypatch.setattr("anthropic.Anthropic", _Fake)
-    monkeypatch.setattr("locus.config.Config.anthropic_api_key", staticmethod(lambda: "k"))
-
+    monkeypatch.setattr("locus.agent.claude.subscription_client",
+                        lambda **kw: built.append(kw) or object())
     a, b = llm._sdk_client(), llm._sdk_client()
     assert a is b, "the client must be reused across passes"
     assert len(built) == 1
 
 
-def test_the_client_fails_fast_rather_than_blocking_for_ten_minutes(monkeypatch):
-    """The SDK default is 600s x 2 retries = up to 30 min of silent blocking on one hung call."""
+def test_a_routed_pass_fails_fast_rather_than_blocking_for_ten_minutes(monkeypatch):
+    """The metered SDK's default was 600s x 2 retries: up to 30 min of silent blocking on one
+    hung call. The subscription runner's own ceiling is sized for a long query answer, so the
+    ingest client must carry a short one, and it must reach the subprocess."""
+    import subprocess
+
     from locus.ingest import llm
 
     monkeypatch.setattr(llm, "_SDK_CLIENT", None)
-    built = {}
+    seen = {}
 
-    class _Fake:
-        def __init__(self, **kw):
-            built.update(kw)
+    def fake_run(cmd, **kw):
+        seen["timeout"] = kw["timeout"]
+        raise subprocess.TimeoutExpired(cmd, kw["timeout"])
 
-    monkeypatch.setattr("anthropic.Anthropic", _Fake)
-    monkeypatch.setattr("locus.config.Config.anthropic_api_key", staticmethod(lambda: "k"))
-
-    llm._sdk_client()
-    assert built["timeout"] <= 120, "an ingest pass returns <=4096 tokens; minutes is too long"
-    assert built["max_retries"] >= 1
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    with pytest.raises(Exception):
+        llm._sdk_client().messages.create(model="m", messages=[{"role": "user", "content": "x"}])
+    assert seen["timeout"] <= 120, "an ingest pass returns <=4096 tokens; minutes is too long"
 
 
 # ---------- the local (Ollama) client must also be bounded ----------

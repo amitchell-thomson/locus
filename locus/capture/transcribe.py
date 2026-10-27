@@ -1,14 +1,14 @@
 """Transcribe a device-rendered handwriting PDF to Markdown via a Claude VISION call.
 
-A staged reMarkable render is a faithful *raster* of the owner's handwriting — no text layer — so
-transcription is a vision task: each page is rasterised (pymupdf) and sent as a base64 image to an
-Anthropic SDK request, reusing the multimodal pattern `query.py` already uses for figures.
+A notebook render is a faithful *raster* of the owner's handwriting (no text layer), so
+transcription is a vision task: each page is rasterised (pymupdf) and sent as an image.
 
-This is DELIBERATELY a different channel from `agent/claude.py` (§10). Phase 0 measured that routing
-transcription through `claude -p` spun an 8-turn agentic loop at **$0.23/page**; one SDK vision call
-is **~$0.01/page** on Haiku. So Loop A uses the metered SDK for vision and subscription `claude -p`
-for the text passes (fill-in, enrich). The SDK gives exact token usage but not a cost figure, so cost
-here is an ESTIMATE from the model's per-token price (Phase-0 confirmed Haiku 4.5 = $1/$5 per M).
+It goes through the subscription (`agent/claude.SubscriptionClient`, Slice 0.13, 2026-10-27).
+It used to be the one deliberate exception, on the metered SDK, because Phase 0 measured
+`claude -p` at **$0.23/page**: the page was handed over as a FILE and the model spent eight tool
+turns opening it. The image now travels INSIDE the message and is read in one turn; the metered
+route ended when its credit ran out mid-capture. `cost_usd` is the call envelope's notional cost,
+which the budget ledger counts against the subscription share, not money spent.
 
 Fidelity is the whole point (failure mode #3): the prompt transcribes EXACTLY, never invents, and
 marks genuinely-unreadable regions `[illegible]` for the later grounded fill-in pass to resolve. The
@@ -22,10 +22,10 @@ import base64
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from locus.config import Config, load
+from locus.config import load
 
-# Haiku 4.5 pricing (USD per million tokens), Phase-0 confirmed. Cost is an estimate — the SDK
-# returns exact token usage, not a price; update alongside `[capture].transcribe_model`.
+# Fallback price (USD per million tokens) for a client that reports tokens but no cost (the
+# tests' fakes); the subscription client reports the envelope's own figure.
 _INPUT_USD_PER_MTOK = 1.0
 _OUTPUT_USD_PER_MTOK = 5.0
 
@@ -68,6 +68,7 @@ class Transcript:
     pages: list[PageTranscript] = field(default_factory=list)
     input_tokens: int = 0
     output_tokens: int = 0
+    reported_cost_usd: float | None = None    # the call envelopes' own figure, when given
 
     @property
     def markdown(self) -> str:
@@ -84,6 +85,8 @@ class Transcript:
 
     @property
     def cost_usd(self) -> float:
+        if self.reported_cost_usd is not None:
+            return self.reported_cost_usd
         return (
             self.input_tokens / 1_000_000 * _INPUT_USD_PER_MTOK
             + self.output_tokens / 1_000_000 * _OUTPUT_USD_PER_MTOK
@@ -101,7 +104,7 @@ def render_pdf_pages(pdf_path: str | Path, *, dpi: int = 150) -> list[bytes]:
         doc.close()
 
 
-def _transcribe_page(client, model: str, png: bytes, *, max_tokens: int) -> tuple[str, int, int]:
+def _transcribe_page(client, model: str, png: bytes, *, max_tokens: int) -> tuple[str, int, int, float | None]:
     resp = client.messages.create(
         model=model,
         max_tokens=max_tokens,
@@ -116,7 +119,10 @@ def _transcribe_page(client, model: str, png: bytes, *, max_tokens: int) -> tupl
     )
     text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
     usage = getattr(resp, "usage", None)
-    return text.strip(), int(getattr(usage, "input_tokens", 0) or 0), int(getattr(usage, "output_tokens", 0) or 0)
+    return (
+        text.strip(), int(getattr(usage, "input_tokens", 0) or 0),
+        int(getattr(usage, "output_tokens", 0) or 0), getattr(resp, "cost_usd", None),
+    )
 
 
 def transcribe_pdf(
@@ -129,19 +135,21 @@ def transcribe_pdf(
 ) -> Transcript:
     """Transcribe every page of a handwriting PDF to Markdown. One vision call per page.
 
-    `client` is injectable (tests pass a fake); the default builds an Anthropic client from
-    ANTHROPIC_API_KEY. Model/DPI default to `[capture]`."""
+    `client` is injectable (tests pass a fake); the default is the subscription client.
+    Model/DPI default to `[capture]`."""
     cfg = load().capture
     model = model or cfg.transcribe_model
     dpi = dpi if dpi is not None else cfg.transcribe_dpi
     if client is None:
-        import anthropic
+        from locus.agent.claude import subscription_client
 
-        client = anthropic.Anthropic(api_key=Config.anthropic_api_key())
+        client = subscription_client()
 
     transcript = Transcript()
     for i, png in enumerate(render_pdf_pages(pdf_path, dpi=dpi), start=1):
-        md, in_tok, out_tok = _transcribe_page(client, model, png, max_tokens=max_tokens)
+        md, in_tok, out_tok, cost = _transcribe_page(client, model, png, max_tokens=max_tokens)
+        if cost is not None:
+            transcript.reported_cost_usd = (transcript.reported_cost_usd or 0.0) + cost
         transcript.pages.append(PageTranscript(
             page=i, markdown=md, illegible=md.count("[illegible]"), uncertain=md.count("[?]"),
         ))

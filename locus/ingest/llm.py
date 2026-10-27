@@ -298,26 +298,22 @@ def _extract_json(text: str) -> str:
     return text[start : end + 1]
 
 
-# ONE client for the process, not one per call. The first cut constructed
-# `anthropic.Anthropic(...)` inside the per-call function, so every pass on every section built a
-# fresh client with its own connection pool and nothing ever closed them. Measured live on the
-# 211-page book ingest (2026-07-31): 324 open file descriptors and climbing ~15/min, 218 of them
-# sockets to the API — on a default 1024-fd limit that is a guaranteed death about 45 minutes in.
-# The SDK client is thread-safe and designed to be reused; reusing it also keeps HTTP connections
-# alive instead of paying a TLS handshake per pass.
+# ONE client for the process, not one per call. The first cut built a metered SDK client per
+# pass and never closed them: 324 open file descriptors on the 211-page book ingest (2026-07-31).
+# Since Slice 0.13 (2026-10-27) the routed passes run on the SUBSCRIPTION through headless Claude
+# Code (`agent/claude.SubscriptionClient`, one lean `claude -p` per pass), because the metered
+# credit ran out mid-ingest and Alec chose to move rather than top it up. Each pass is a short
+# subprocess, so there is no pool to leak; the client is still built once.
 _SDK_CLIENT = None
 
-# The SDK's defaults are 600s per request with 2 retries — up to THIRTY MINUTES of silent blocking
-# on one hung call, which is what wedged that ingest: zero CPU, no log output, connections piling
-# up, for fifteen minutes before it was killed. An ingest pass returns at most 4096 tokens, so a
-# minute is already generous; failing fast lets the pipeline's own retry/quarantine logic run
-# instead of the process appearing to hang.
-_SDK_TIMEOUT_S = 90.0
-_SDK_MAX_RETRIES = 3
+# A pass returns at most 4096 tokens, so two minutes is already generous. The metered SDK's
+# default of 600s x 2 retries once blocked an ingest silently for thirty minutes on one hung call;
+# the runner's own ceiling is sized for a long `locus query` answer, so ingest sets its own.
+_SDK_TIMEOUT_S = 120.0
 
 
 def _sdk_client():
-    """The shared Anthropic client, built once per process.
+    """The shared routed-pass client, built once per process.
 
     NOT named `_client`: that name is already the module's OLLAMA client (line ~74), and the
     first cut of this shadowed it — the later definition wins, so every local-generation call
@@ -325,23 +321,17 @@ def _sdk_client():
     """
     global _SDK_CLIENT
     if _SDK_CLIENT is None:
-        import anthropic
+        from locus.agent.claude import subscription_client
 
-        from locus.config import Config
-
-        _SDK_CLIENT = anthropic.Anthropic(
-            api_key=Config.anthropic_api_key(),
-            timeout=_SDK_TIMEOUT_S,
-            max_retries=_SDK_MAX_RETRIES,
-        )
+        _SDK_CLIENT = subscription_client(timeout=_SDK_TIMEOUT_S)
     return _SDK_CLIENT
 
 
 def _generate_structured_claude(
     schema: type[T], system: str, user: str, *, model: str, retries: int, sdk_client=None
 ) -> T:
-    """The routed path: one metered Anthropic SDK call per pass, same prompt/schema as local (zero
-    drift, Phase-0). The schema is appended to the prompt (the SDK has no grammar constraint); a
+    """The routed path: one subscription `claude -p` call per pass (Slice 0.13), same
+    prompt/schema as local (zero drift, Phase-0). The schema is appended to the prompt (the SDK has no grammar constraint); a
     validation failure retries with the error. Raises IngestExtractionError to quarantine, like the
     local path."""
     import json

@@ -55,7 +55,7 @@ from pydantic import BaseModel, Field
 
 from locus.agent import compose_daily as cd
 from locus.agent import state
-from locus.config import Config, load
+from locus.config import load
 from locus.learn import review as learn_review
 from locus.link.projects import projects_for
 
@@ -144,9 +144,9 @@ def extract_regions(
     model = model or cfg.transcribe_model
     dpi = dpi if dpi is not None else cfg.transcribe_dpi
     if client is None:
-        import anthropic
+        from locus.agent.claude import subscription_client
 
-        client = anthropic.Anthropic(api_key=Config.anthropic_api_key())
+        client = subscription_client()
 
     schema = json.dumps(_Regions.model_json_schema())
     out: dict[str, ExtractedRegion] = {}

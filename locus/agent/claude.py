@@ -22,12 +22,22 @@ the envelope's cost/usage so the budget ledger (`budget.py`) can meter spend fro
 Grounding is NOT done here: the orchestrator retrieves candidates in-process and passes them in
 the prompt. This module only turns a (prompt, model) into validated output.
 
-Bulk work (a full re-ingest) belongs on the API Batch endpoint, not this per-call CLI path — that
-runner is added with the hybrid-routing swap (plan §7), which the Phase-1 loops do not need.
+**Every model call in the codebase comes through here** (Slice 0.13, 2026-10-27). Transcription,
+the ingest passes, `locus query`, retitle and the evals used the metered SDK until the API credit
+ran out mid-capture on 27 Oct; Alec chose to move them rather than top it up. The reason they had
+left was measured and is gone: Phase 0 sent a page to `claude -p` as a FILE, and the model spent
+eight tool turns opening it ($0.23 a page). `ask` sends the image INSIDE the message
+(`--input-format stream-json`), and it is read in one turn, on the subscription, in under 3 s.
+
+**Every call runs lean**: `--tools '' --strict-mcp-config --max-turns 1`. A headless call
+otherwise loads every tool and every user MCP server it can find and sends their definitions
+with the prompt: measured 27 Oct, 23,581 tokens of definitions on a call that needed none,
+against 741 lean. That was being paid on every fill-in, structure and adjudication call.
 """
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import subprocess
@@ -42,7 +52,7 @@ from pydantic import BaseModel, ValidationError
 from locus.config import load
 
 # A wedged `claude -p` should never take this long; bounds a stuck subprocess.
-_CLI_TIMEOUT_S = 180
+_CLI_TIMEOUT_S = 600
 # Env vars that reroute `claude -p` off the subscription onto metered billing — scrubbed (req 1).
 _METERED_KEYS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
 
@@ -77,8 +87,13 @@ class ClaudeResult:
 
 # (prompt, model) -> ClaudeResult. The default spawns `claude -p`; tests inject a fake.
 CliRunner = Callable[[str, "str | None"], ClaudeResult]
+# (content blocks, model, system) -> ClaudeResult: the general form, which carries images.
+ContentRunner = Callable[[list, "str | None", "str | None"], ClaudeResult]
 # Optional per-result sink (the budget ledger records cost; the caller may log). Never raises.
 ResultSink = Callable[[ClaudeResult], None]
+
+# No tools, no MCP servers, one turn: see the module docstring for what this saves.
+_LEAN = ("--max-turns", "1", "--strict-mcp-config", "--tools", "")
 
 
 def _scrubbed_env() -> dict[str, str]:
@@ -93,42 +108,117 @@ def scrub_prompt(prompt: str) -> str:
     return (prompt or "").translate(_CONTROL_CHARS)
 
 
-def cli_runner(prompt: str, model: str | None) -> ClaudeResult:
-    """Run one headless `claude -p` with a scrubbed env and return the parsed envelope.
+def image_block(data: bytes, media_type: str = "image/png") -> dict:
+    """An image as a message content block, for `ask(images=...)` or a hand-built content list."""
+    return {
+        "type": "image",
+        "source": {"type": "base64", "media_type": media_type,
+                   "data": base64.standard_b64encode(data).decode("ascii")},
+    }
 
-    `--output-format json` wraps the reply in a stable envelope; a neutral cwd keeps the call
-    from picking up this repo's CLAUDE.md / project MCP servers. Raises `ClaudeError` on any
-    failure (missing CLI, timeout, nonzero exit, non-JSON output, model-reported error).
 
-    The prompt is stripped of control characters first (`_CONTROL_CHARS`): they carry no meaning
-    to the model, and a NUL cannot go in argv at all — it raises a `ValueError` that is not a
-    `ClaudeError` and so degrades nothing gracefully."""
-    cmd = ["claude", "-p", scrub_prompt(prompt), "--output-format", "json"]
+def _scrub_blocks(content: list) -> list:
+    out = []
+    for block in content:
+        if isinstance(block, dict) and block.get("type") == "text":
+            block = {**block, "text": scrub_prompt(block.get("text", ""))}
+            block.pop("cache_control", None)
+        elif isinstance(block, dict):
+            block = {k: v for k, v in block.items() if k != "cache_control"}
+        out.append(block)
+    return out
+
+
+def content_runner(
+    content: list, model: str | None, system: str | None, *, timeout: float = _CLI_TIMEOUT_S,
+) -> ClaudeResult:
+    """Run one headless `claude -p` over message content blocks (text and images).
+
+    The message goes in on stdin as one stream-json user turn, so an image travels inside it and
+    nothing has to be opened with a tool, and the prompt is no longer an argv element (a NUL
+    could not go there at all; control characters are still scrubbed, they carry no meaning).
+    The env is scrubbed of the metered key, the cwd is neutral, and the call is lean. Raises
+    `ClaudeError` on any failure, including a reply the model marked as an error.
+    """
+    cmd = ["claude", "-p", "--input-format", "stream-json", "--output-format", "stream-json",
+           "--verbose", *_LEAN]
     if model:
         cmd += ["--model", model]
+    if system:
+        cmd += ["--system-prompt", scrub_prompt(system)]
+    message = {"type": "user",
+               "message": {"role": "user", "content": _scrub_blocks(content)}}
     try:
         proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=_CLI_TIMEOUT_S,
-            cwd=tempfile.gettempdir(), env=_scrubbed_env(),
+            cmd, input=json.dumps(message) + "\n", capture_output=True, text=True,
+            timeout=timeout, cwd=tempfile.gettempdir(), env=_scrubbed_env(),
         )
     except FileNotFoundError as e:
         raise ClaudeError("`claude` CLI not found on PATH — the agent layer uses headless Claude Code") from e
     except subprocess.TimeoutExpired as e:
-        raise ClaudeError(f"`claude -p` timed out after {_CLI_TIMEOUT_S}s") from e
-    if proc.returncode != 0:
-        raise ClaudeError(f"`claude -p` failed (exit {proc.returncode}): {proc.stderr[:500]}")
-    try:
-        envelope = json.loads(proc.stdout)
-    except json.JSONDecodeError as e:
-        raise ClaudeError(f"`claude -p` did not return JSON: {proc.stdout[:300]!r}") from e
-    if envelope.get("is_error"):
+        raise ClaudeError(f"`claude -p` timed out after {timeout}s") from e
+    envelope = None
+    for line in proc.stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict) and event.get("type") == "result":
+            envelope = event
+    if envelope is None:
+        detail = (proc.stderr or proc.stdout)[:500]
+        raise ClaudeError(f"`claude -p` returned no result (exit {proc.returncode}): {detail}")
+    if envelope.get("is_error") or proc.returncode != 0:
         raise ClaudeError(f"`claude -p` reported an error: {envelope.get('result')!r}")
     return ClaudeResult(
-        text=envelope.get("result", ""),
+        text=envelope.get("result", "") or "",
         cost_usd=float(envelope.get("total_cost_usd") or 0.0),
         usage=envelope.get("usage") or {},
         service_tier=envelope.get("service_tier"),
     )
+
+
+def cli_runner(prompt: str, model: str | None) -> ClaudeResult:
+    """Run one headless `claude -p` over a text prompt (the original runner's interface)."""
+    return content_runner([{"type": "text", "text": prompt}], model, None)
+
+
+def ask(
+    content: "str | list",
+    *,
+    system: str | None = None,
+    images: "list[bytes] | tuple[bytes, ...]" = (),
+    model: str | None = None,
+    runner: ContentRunner | None = None,
+    retries: int = 2,
+    backoff_s: float = 0.5,
+    on_result: ResultSink | None = None,
+) -> ClaudeResult:
+    """One call with a system prompt, text and images, with bounded retry-then-raise.
+
+    `content` is a prompt string or ready-made content blocks (`locus query` builds its own, with
+    figures). `images` are PNG bytes placed before the text, which is where a vision model reads
+    them best. The model defaults to `[agent].model`.
+    """
+    runner = runner or content_runner
+    model = model or load().agent.model
+    blocks = (
+        [image_block(i) for i in images] + [{"type": "text", "text": content}]
+        if isinstance(content, str) else list(content)
+    )
+    last: ClaudeError | None = None
+    for attempt in range(retries + 1):
+        try:
+            result = runner(blocks, model, system)
+        except ClaudeError as e:
+            last = e
+            if attempt < retries and backoff_s:
+                time.sleep(backoff_s * (attempt + 1))
+            continue
+        if on_result is not None:
+            on_result(result)
+        return result
+    raise last or ClaudeError("`claude -p` call failed with no captured error")
 
 
 def call(
@@ -214,3 +304,105 @@ def run_structured(
             on_result(result)
         return validated
     raise last or ClaudeError("`claude -p` structured call failed with no captured error")
+
+
+# --- the Messages-API shape, served by the subscription -------------------------------------------
+
+@dataclass
+class _Block:
+    type: str
+    text: str = ""
+    input: dict | None = None
+    name: str = ""
+
+
+@dataclass
+class _Usage:
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+
+@dataclass
+class _Response:
+    content: list
+    usage: _Usage
+    cost_usd: float = 0.0
+
+
+def _system_text(system) -> str | None:
+    if system is None:
+        return None
+    if isinstance(system, str):
+        return system
+    return "\n\n".join(b.get("text", "") for b in system if isinstance(b, dict))
+
+
+def _as_blocks(content) -> list:
+    return [{"type": "text", "text": content}] if isinstance(content, str) else list(content)
+
+
+def _fold_turns(messages: list) -> list:
+    """A conversation as ONE user turn, since a headless call is one turn.
+
+    The callers that send more than one message are repair loops ("your reply was invalid, try
+    again"): the first user turn carries the images and the task, the rest is the exchange. They
+    are kept in order and labelled, so the model sees what it said and what was wrong with it.
+    """
+    if len(messages) == 1:
+        return _as_blocks(messages[0]["content"])
+    blocks = _as_blocks(messages[0]["content"])
+    for m in messages[1:]:
+        label = "Your earlier reply" if m.get("role") == "assistant" else "Follow-up"
+        text = " ".join(
+            b.get("text", "") for b in _as_blocks(m["content"]) if b.get("type") == "text"
+        )
+        blocks.append({"type": "text", "text": f"[{label}]\n{text}"})
+    return blocks
+
+
+class SubscriptionClient:
+    """`client.messages.create(...)` served by headless Claude Code on the subscription.
+
+    For the call sites written against the Anthropic SDK (transcription, ingest passes, query,
+    retitle, evals), so moving them off the metered key (Slice 0.13) changed one constructor each
+    and none of their tests, which inject SDK-shaped fakes. Supports what those sites use: a
+    system prompt, text and image blocks, a repair conversation (folded, see `_fold_turns`), and
+    FORCED tool use, which is asked for as JSON against the tool's schema and returned as a
+    `tool_use` block. Anything else they pass (`max_tokens`, `thinking`, `cache_control`) is the
+    CLI's to decide and is ignored. Never reaches the metered key: `content_runner` scrubs it.
+    """
+
+    def __init__(self, runner: ContentRunner | None = None, *, timeout: float | None = None):
+        if runner is None and timeout is not None:
+            def runner(content, model, system):
+                return content_runner(content, model, system, timeout=timeout)
+        self._runner = runner
+        self.messages = self
+
+    def create(self, *, model=None, messages, system=None, tools=None, tool_choice=None, **_):
+        blocks = _fold_turns(messages)
+        forced = None
+        if tool_choice and tool_choice.get("type") == "tool" and tools:
+            forced = next((t for t in tools if t.get("name") == tool_choice.get("name")), None)
+        if forced is not None:
+            blocks.append({"type": "text", "text": (
+                "Respond with ONLY a JSON object conforming to this JSON Schema "
+                f"(no prose, no code fences):\n{json.dumps(forced.get('input_schema', {}))}"
+            )})
+        result = ask(blocks, system=_system_text(system), model=model, runner=self._runner)
+        usage = result.usage or {}
+        tokens_in = sum(int(usage.get(k) or 0) for k in (
+            "input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
+        out_usage = _Usage(input_tokens=tokens_in, output_tokens=int(usage.get("output_tokens") or 0))
+        if forced is not None:
+            try:
+                obj = json.loads(_extract_json(result.text))
+                return _Response([_Block("tool_use", input=obj, name=forced["name"])], out_usage,
+                                 result.cost_usd)
+            except (ClaudeError, json.JSONDecodeError):
+                pass                    # the caller's "no tool_use block" path reports it
+        return _Response([_Block("text", text=result.text)], out_usage, result.cost_usd)
+
+
+def subscription_client(*, timeout: float | None = None) -> SubscriptionClient:
+    return SubscriptionClient(timeout=timeout)

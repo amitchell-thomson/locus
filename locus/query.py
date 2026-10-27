@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from locus.config import Config, load
+from locus.config import load
 from locus.retrieve import Facets, retrieve
 
 DEFAULT_MODE = "standard"
@@ -155,9 +155,9 @@ def answer(
     retrieved = retrieve(question, conn=conn, facets=facets)
     model = model or load().generation.model
     if client is None:
-        import anthropic
+        from locus.agent.claude import subscription_client
 
-        client = anthropic.Anthropic(api_key=Config.anthropic_api_key())
+        client = subscription_client()
 
     content, figures_attached = _user_content(retrieved, question)
     resp = client.messages.create(

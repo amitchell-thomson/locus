@@ -316,9 +316,9 @@ daily_cost_cap_usd = 5.0       # soft daily claude -p spend cap (USD); omit/None
 
 [ingest]
 # Per-pass ingest LLM routing (agent-layer §7). 'local' = local qwen (Ollama, default); a Claude
-# alias ('haiku'/'sonnet') or model id routes that pass to the METERED Anthropic SDK (cheap Haiku;
-# the right channel for high-volume small passes). Embeddings + math-OCR are ALWAYS local. Empty =
-# every pass local. Uncomment to move the durable passes to Haiku (metered; needs ANTHROPIC_API_KEY):
+# alias ('haiku'/'sonnet') or model id runs that pass on the SUBSCRIPTION through a lean headless
+# `claude -p` (Slice 0.13; no API key). Embeddings + math-OCR are ALWAYS local. Empty = every pass
+# local. Uncomment to move the durable passes to Haiku:
 # pass_routing = { summarize = "haiku", propositions = "haiku", entities = "haiku", synthesis = "haiku", gaps = "haiku", concepts = "haiku" }
 
 [capture]
@@ -335,7 +335,7 @@ rmapi_binary     = "rmapi"                          # PATH name or absolute path
 rmapi_tree_cache = "~/.cache/rmapi/tree.cache"      # rmapi's tree cache, read after the one listing call
 max_notebooks_per_run = 4                           # notebooks rendered + transcribed per run (billed vision)
 annotate_max_fetch = 15                             # PDF bundles downloaded per run; the rest wait (cloud 429s)
-transcribe_model = "claude-sonnet-5"                # VISION model (metered SDK). Sonnet default: A/B on
+transcribe_model = "claude-sonnet-5"                # VISION model (subscription, image inline). Sonnet: A/B on
                                                     # real dense handwriting beat Haiku decisively; seeds corpus
 transcribe_dpi   = 150                              # page render DPI for transcription
 # Loop B on the same timer: the ink on PDFs captured and its handwriting transcribed

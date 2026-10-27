@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from locus.config import Config, load
+from locus.config import load
 
 
 class SectionScores(BaseModel):
@@ -57,9 +57,10 @@ def _build_user(source: str, summary: str, propositions: list[str], entities: li
 
 
 def _anthropic_client():
-    import anthropic
+    """The Messages-API shape on the subscription (Slice 0.13; agent/claude.SubscriptionClient)."""
+    from locus.agent.claude import subscription_client
 
-    return anthropic.Anthropic(api_key=Config.anthropic_api_key())
+    return subscription_client()
 
 
 def judge_section(

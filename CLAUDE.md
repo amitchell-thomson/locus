@@ -650,11 +650,17 @@ locus/
 - No secrets in code or committed config. `ANTHROPIC_API_KEY` via env/.env.
 - All tunables in `config.toml`; optional sections default cleanly. `config.toml` is gitignored —
   document new settings in `config.example.toml`.
-- **`agent/claude.py` is the one `claude -p` runner** and is env-scrubbed so it uses subscription
-  OAuth rather than the metered key. This has been mis-wired twice. It also **scrubs control
-  characters from every prompt**: the prompt is an argv element, so a NUL raises `ValueError`
-  before the process spawns — not a `ClaudeError`, so no `except ClaudeError` degrade path catches
-  it. Maths PDFs extract symbol-font glyphs as control codes, and three calculus documents failed
+- **`agent/claude.py` is the one model runner, and every model call goes through it** (Slice
+  0.13, 2026-10-27): transcription, ingest passes, `locus query`, retitle and the evals included.
+  No metered client exists (`anthropic.Anthropic(` is asserted absent); the metered credit ran out
+  mid-capture and he chose to move rather than top it up. `ask()` sends text and IMAGES inside one
+  stream-json message; the SDK-shaped call sites use `SubscriptionClient`, which serves
+  `messages.create` (forced tool use as JSON, repair turns folded). Every call is **lean**
+  (`--tools '' --strict-mcp-config --max-turns 1`): otherwise each carries ~23,500 tokens of tool
+  and MCP definitions it never uses (measured; ~750 lean). It is env-scrubbed so it uses
+  subscription OAuth rather than the metered key (mis-wired twice before), and it **scrubs control
+  characters from every prompt**: maths PDFs extract symbol-font glyphs as control codes, a NUL in
+  argv raised `ValueError` past every `except ClaudeError`, and three calculus documents failed
   the structure pass on *every* run because of it.
 - **Tests must not read the live `config.toml`.** It is gitignored, so a test that inherits it
   passes or fails per machine: two connection tests asserting paper-vs-coursework ranking broke

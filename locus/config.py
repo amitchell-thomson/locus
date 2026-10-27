@@ -679,8 +679,9 @@ class StructureConfig(BaseModel):
 class IngestConfig(BaseModel):
     """Per-pass ingest LLM routing (agent-layer plan §7). Maps a durable text pass to an engine:
     `local` = the local qwen model (Ollama, the default) · any other value = a Claude model
-    alias/id run via the METERED Anthropic SDK (cheap Haiku — the right channel for high-volume
-    small passes, not `claude -p` whose per-call harness prompt dominates small-task cost, Phase-0).
+    alias/id run on the SUBSCRIPTION through a lean headless `claude -p` (Slice 0.13). Phase 0
+    sent these to the metered SDK because a `claude -p` call carried its harness's tool and server
+    definitions, which dominated a small pass; the lean flags remove them (~23,500 -> ~750 tokens).
 
     Embeddings and math-OCR are ALWAYS local (no Claude equivalent / safe-degrade) and are not
     routed here. Absent/empty `pass_routing` => every pass runs local (current behaviour, no
@@ -717,12 +718,12 @@ class CaptureConfig(BaseModel):
         15, description="PDF bundles fetched per capture run; the rest wait a tick (cloud 429s)."
     )
     rmapi_binary: str = Field("rmapi", description="rmapi binary (PATH name or absolute path).")
-    # Transcription is a VISION call — an Anthropic SDK request with the page image, NOT `claude -p`
-    # (Phase-0: claude -p spun an 8-turn loop at $0.23/page; the SDK image call is cents/page). It is
-    # METERED (needs ANTHROPIC_API_KEY). Default SONNET, not Haiku: a 2026-07-28 A/B on a real dense
+    # Transcription is a VISION call, made on the subscription with the page image inside the message
+    # (Slice 0.13; Phase 0's $0.23/page came from handing `claude -p` a FILE to open over eight tool
+    # turns, which the inline image avoids). Default SONNET, not Haiku: a 2026-07-28 A/B on a real dense
     # notebook (Jargon Sheet) showed Haiku produced confident NONSENSE on hard quant-jargon pages
     # while Sonnet transcribed coherently and flagged uncertainty — and transcription seeds the
-    # corpus (errors propagate, failure mode #3). ~$0.015/page; the text passes (fill-in/enrich) stay
+    # corpus (errors propagate, failure mode #3). Subscription quota, not money; the text passes stay
     # on cheap Haiku (agent.model). This is the plan's "escalate to Sonnet on eval evidence".
     transcribe_model: str = Field(
         "claude-sonnet-5", description="Anthropic vision model id for transcription (seeds the corpus)."

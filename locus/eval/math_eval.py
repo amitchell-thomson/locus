@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pymupdf
 
-from locus.config import Config, load
+from locus.config import load
 from locus.eval.math_fidelity import PageJudgement, judge_transcription
 from locus.extract.pdf import _page_flags
 
@@ -71,9 +71,9 @@ def evaluate_math_fidelity(
     conn, *, sample: int = 10, seed: int = 0, judge_model: str | None = None
 ) -> tuple[list[PageFidelity], dict[str, float]]:
     """Judge a deterministic sample of flagged pages across the corpus."""
-    import anthropic
+    from locus.agent.claude import subscription_client
 
-    client = anthropic.Anthropic(api_key=Config.anthropic_api_key())
+    client = subscription_client()
     model = judge_model or load().generation.model
 
     # PDFs only: the math-OCR pass exists for the PDF path, and non-PDF raw entries

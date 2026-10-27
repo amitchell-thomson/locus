@@ -35,7 +35,7 @@ import sqlite3
 
 from pydantic import BaseModel, Field
 
-from locus.config import Config, load
+from locus.config import load
 
 log = logging.getLogger(__name__)
 
@@ -119,9 +119,9 @@ def transcribe_ink(png: bytes, *, client=None, model: str | None = None) -> str:
     cfg = load().capture
     model = model or cfg.transcribe_model
     if client is None:
-        import anthropic
+        from locus.agent.claude import subscription_client
 
-        client = anthropic.Anthropic(api_key=Config.anthropic_api_key())
+        client = subscription_client()
 
     schema = json.dumps(_Transcription.model_json_schema())
     resp = client.messages.create(

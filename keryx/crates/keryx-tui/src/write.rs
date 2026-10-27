@@ -52,6 +52,58 @@ fn kairos_message(o: &keryx_store::api::KairosOutcome) -> String {
         .join(" · ")
 }
 
+impl Job {
+    /// Changes to mail that need no answer before the screen moves on.
+    pub fn is_background(&self) -> bool {
+        matches!(
+            self,
+            Job::Triage { .. } | Job::MarkFor(..) | Job::Tag(_) | Job::Untag(_) | Job::UndoLast | Job::Undo(_)
+        )
+    }
+
+    /// The threads a change takes out of the list, shown gone until keryxd answers.
+    pub fn hides(&self) -> Vec<String> {
+        match self {
+            Job::Triage { req, .. } if req.intent.leaves_inbox() => req.refs.clone(),
+            _ => vec![],
+        }
+    }
+}
+
+/// Run one background job: its message, or why it failed. A change keryxd recorded as failed
+/// (Mail refused it) is a failure here too, with Mail's reason.
+pub fn run_background(d: &dyn keryx_store::client::Daemon, job: &Job) -> Result<Option<String>, String> {
+    match job {
+        Job::Triage { req, quiet } => {
+            let o = d.triage(req).map_err(|e| e.to_string())?;
+            match &o.applied {
+                Some(cs) if cs.status == keryx_core::changeset::Status::Failed => Err(format!(
+                    "{}: not done · {}",
+                    req.intent.verb(),
+                    cs.error.clone().unwrap_or_default()
+                )),
+                _ => Ok((!quiet).then_some(o.summary)),
+            }
+        }
+        Job::UndoLast => d.undo_last().map(|c| Some(c.summary)).map_err(|e| e.to_string()),
+        Job::MarkFor(refs, id) => refs
+            .iter()
+            .try_for_each(|r| d.mark_for(r, id.as_deref()))
+            .map(|_| None)
+            .map_err(|e| e.to_string()),
+        Job::Undo(id) => d.undo(id).map(|c| Some(c.summary)).map_err(|e| e.to_string()),
+        Job::Tag(r) => d
+            .tag(r, "tagged by Alec")
+            .map(|_| Some("needs reply".into()))
+            .map_err(|e| e.to_string()),
+        Job::Untag(r) => d
+            .untag(r)
+            .map(|_| Some("needs-reply tag cleared".into()))
+            .map_err(|e| e.to_string()),
+        _ => Ok(None),
+    }
+}
+
 fn sent_message(c: &keryx_core::changeset::Changeset) -> String {
     match c.status {
         keryx_core::changeset::Status::Holding => "sending… (u cancels during the hold)".into(),
@@ -253,9 +305,28 @@ impl App {
     }
 
     pub fn run_deferred(&mut self) {
-        let jobs = std::mem::take(&mut self.deferred);
+        let mut jobs = std::mem::take(&mut self.deferred);
         if jobs.is_empty() {
             return;
+        }
+        // Changes to mail go to the worker and the screen moves on (round 8: filing one mail
+        // took ten seconds and more, Mail's own pace). The list already shows them done.
+        if let Some(tx) = self.background.clone() {
+            let (bg, rest): (Vec<Job>, Vec<Job>) = jobs.into_iter().partition(Job::is_background);
+            let mut gone = false;
+            for j in bg {
+                for r in j.hides() {
+                    gone |= self.hidden.insert(r);
+                }
+                let _ = tx.send(j);
+            }
+            if gone {
+                self.reload();
+            }
+            jobs = rest;
+            if jobs.is_empty() {
+                return;
+            }
         }
         let Some(d) = self.daemon.as_ref() else {
             if jobs
@@ -273,16 +344,12 @@ impl App {
         let mut sending: Option<(String, Option<std::path::PathBuf>)> = None;
         for job in jobs {
             let res: Result<Option<String>, String> = match &job {
-                Job::Triage { req, quiet } => d
-                    .triage(req)
-                    .map(|o| (!quiet).then_some(o.summary))
-                    .map_err(|e| e.to_string()),
-                Job::UndoLast => d.undo_last().map(|c| Some(c.summary)).map_err(|e| e.to_string()),
-                Job::MarkFor(refs, id) => refs
-                    .iter()
-                    .try_for_each(|r| d.mark_for(r, id.as_deref()))
-                    .map(|_| None)
-                    .map_err(|e| e.to_string()),
+                j @ (Job::Triage { .. }
+                | Job::UndoLast
+                | Job::MarkFor(..)
+                | Job::Tag(_)
+                | Job::Untag(_)
+                | Job::Undo(_)) => run_background(d.as_ref(), j),
                 Job::Decide { proposal, decision } => {
                     d.decide(proposal, decision).map(|_| None).map_err(|e| e.to_string())
                 }
@@ -303,14 +370,6 @@ impl App {
                 Job::UndoReview(r) => d
                     .undo_review(r)
                     .map(|u| Some(format!("undid {} change(s)", u.undone)))
-                    .map_err(|e| e.to_string()),
-                Job::Tag(r) => d
-                    .tag(r, "tagged by Alec")
-                    .map(|_| Some("needs reply".into()))
-                    .map_err(|e| e.to_string()),
-                Job::Untag(r) => d
-                    .untag(r)
-                    .map(|_| Some("needs-reply tag cleared".into()))
                     .map_err(|e| e.to_string()),
                 Job::Sync => d.sync().map(|_| Some("syncing".into())).map_err(|e| e.to_string()),
                 // The draft goes only once keryxd has the send; refused, your text stays (round 8:
@@ -378,7 +437,6 @@ impl App {
                     }
                     Err(e) => Err(e.to_string()),
                 },
-                Job::Undo(id) => d.undo(id).map(|c| Some(c.summary)).map_err(|e| e.to_string()),
                 Job::Dismiss(id) => d.dismiss_suggestion(id).map(|_| None).map_err(|e| e.to_string()),
                 Job::TaskStatus(ids) => {
                     for id in ids {

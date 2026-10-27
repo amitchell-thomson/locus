@@ -441,6 +441,23 @@ impl Real {
 
     /// One AppleScript step on the message, which is in `current`.
     fn mail_step(&self, acc: &Account, msg: &MsgRef, current: &str, step: &MailStep) -> Result<(), String> {
+        let started = Instant::now();
+        let res = self.mail_step_inner(acc, msg, current, step);
+        // Every step, what Mail said and how long it took: the trail when Mail does less than
+        // it answers (round 8: a label came off nowhere, and nothing recorded why).
+        tracing::info!(
+            account = acc.id,
+            step = ?step,
+            from = current,
+            ms = started.elapsed().as_millis() as u64,
+            ok = res.is_ok(),
+            error = res.as_ref().err().map(String::as_str).unwrap_or(""),
+            "mail step"
+        );
+        res
+    }
+
+    fn mail_step_inner(&self, acc: &Account, msg: &MsgRef, current: &str, step: &MailStep) -> Result<(), String> {
         {
             let out = Command::new("osascript")
                 .arg("-")

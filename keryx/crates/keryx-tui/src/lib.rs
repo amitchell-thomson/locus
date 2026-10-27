@@ -123,6 +123,22 @@ pub fn run_at(cfg: Config, thread: Option<(String, String)>) -> Result<(), Strin
     app.drafts_dir = locus_contract::link::state_dir().map(|d| d.join("keryx-drafts"));
     // What mail is filed for (X7): `d` archives plainly when the taxonomy cannot be read.
     app.shared = locus_contract::taxonomy::load(&locus_contract::taxonomy::root()).ok();
+    // Changes to mail run on a worker with its own connection to keryxd, in order, so the
+    // screen shows them done at once and hears back only how they went (round 8).
+    let (job_tx, job_rx) = std::sync::mpsc::channel::<write::Job>();
+    let (done_tx, done_rx) = std::sync::mpsc::channel::<(Vec<String>, Result<Option<String>, String>)>();
+    if let Ok(client) = keryx_store::client::Client::from_config(&cfg) {
+        let client = client.interactive(true);
+        std::thread::spawn(move || {
+            while let Ok(job) = job_rx.recv() {
+                let res = write::run_background(&client, &job);
+                if done_tx.send((job.hides(), res)).is_err() {
+                    return;
+                }
+            }
+        });
+        app.background = Some(job_tx);
+    }
     let editor = writing::embeddable_editor();
     let mut session: Option<writing::Session> = None;
     let mut cursor_shape: u16 = 0;
@@ -199,6 +215,9 @@ pub fn run_at(cfg: Config, thread: Option<(String, String)>) -> Result<(), Strin
                 session = None;
                 app.writing_finished(how);
                 continue;
+            }
+            while let Ok((hid, res)) = done_rx.try_recv() {
+                app.background_done(hid, res);
             }
             // keryxd writes the mirror; pick changes up within ~2 s.
             if last_check.elapsed() > Duration::from_secs(2) {

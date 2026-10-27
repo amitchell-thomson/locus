@@ -148,6 +148,11 @@ pub struct App {
     pub shared: Option<locus_contract::taxonomy::Shared>,
     /// The highlighted row of the attachment list (`o`).
     pub att_sel: usize,
+    /// The worker that takes changes to mail off the screen's hands (the real TUI); `None`
+    /// runs them in place (tests).
+    pub background: Option<std::sync::mpsc::Sender<crate::write::Job>>,
+    /// Threads a change in the worker takes out of the list: gone at once, until it answers.
+    pub hidden: BTreeSet<String>,
     /// A send in its hold: (changeset id, the draft kept until it has gone).
     pub sending: Option<(String, Option<PathBuf>)>,
     /// Inboxes added to the highlighted one with ⌥⇥.
@@ -210,6 +215,8 @@ impl App {
             att_sel: 0,
             also: BTreeSet::new(),
             sending: None,
+            background: None,
+            hidden: BTreeSet::new(),
             read_here: BTreeSet::new(),
             marks: std::collections::HashMap::new(),
             shared: None,
@@ -241,6 +248,20 @@ impl App {
                 || email.to_string(),
                 |a| a.shown_address.clone().unwrap_or_else(|| a.address.clone()),
             )
+    }
+
+    /// The worker finished a change: the threads it hid come back if it failed (reload shows
+    /// them where they really are), and it says how it went.
+    pub fn background_done(&mut self, hid: Vec<String>, res: Result<Option<String>, String>) {
+        for r in &hid {
+            self.hidden.remove(r);
+        }
+        match res {
+            Ok(Some(m)) => self.message = Some((m, false)),
+            Ok(None) => {}
+            Err(e) => self.message = Some((e, true)),
+        }
+        self.reload();
     }
 
     /// Whether a row reads as unread: unread in the mirror and not opened here since.
@@ -348,6 +369,7 @@ impl App {
         };
         match res {
             Ok(mut rows) => {
+                rows.retain(|r| !self.hidden.contains(&r.r#ref));
                 // The inbox opens on what needs a reply, as a section of its own, then the days
                 // (round 4 and 5): it is what you act on. Other lists are by date alone.
                 if self.reply_first() {

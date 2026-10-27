@@ -1209,3 +1209,22 @@ fn capital_i_puts_a_thread_back_in_the_inbox() {
     keys(&mut a, &[Key::Char('I')]);
     assert_eq!(f.take(), vec![format!(r#"triage {{"action":"unarchive"}} ["{r}"]"#)]);
 }
+
+#[test]
+fn filing_is_gone_from_the_list_at_once_and_comes_back_if_it_fails() {
+    let (mut a, _f) = app();
+    let (tx, rx) = std::sync::mpsc::channel();
+    a.background = Some(tx);
+    let lab = select(&mut a, "Lab partner for Thursday?");
+    keys(&mut a, &[Key::Char('d')]); // no taxonomy here: d archives
+    a.run_deferred();
+    assert!(!a.rows.iter().any(|r| r.r#ref == lab), "gone at once");
+    let job = rx.try_recv().expect("handed to the worker");
+    assert_eq!(job.hides(), vec![lab.clone()]);
+    // Another reload while the worker is busy does not bring it back.
+    a.reload();
+    assert!(!a.rows.iter().any(|r| r.r#ref == lab));
+    a.background_done(job.hides(), Err("archive: not done · Mail refused".into()));
+    assert!(a.rows.iter().any(|r| r.r#ref == lab), "failed: it is back");
+    assert!(a.message.as_ref().unwrap().0.contains("Mail refused"));
+}

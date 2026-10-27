@@ -299,3 +299,20 @@ def test_fetches_are_bounded_per_run(tmp_path):
     assert [o.status for o in r1.outcomes] == ["annotated", "annotated", "deferred"]
     r2 = _run(conn, placed, manifest=manifest, max_fetch=2, limit=0)
     assert [o.status for o in r2.outcomes] == ["unchanged", "unchanged", "annotated"]
+
+
+def test_a_chosen_book_whose_ingest_failed_is_tried_again(tmp_path):
+    """27 Oct: the API credit ran out mid-run and a book in In-Progress failed to ingest. Recorded
+    as handled, it would never have been tried again until he next wrote on it."""
+    conn = _conn(tmp_path)
+    manifest: dict = {}
+    attempts: list = []
+
+    def ingest(conn, doc, name):
+        attempts.append(name)
+        return None
+
+    _run(conn, [_reading("/Reading/In-Progress/A Paper")], manifest=manifest, ingest_fn=ingest)
+    _run(conn, [_reading("/Reading/In-Progress/A Paper")], manifest=manifest, ingest_fn=ingest)
+    assert attempts == ["A Paper", "A Paper"]
+    assert "annotate:uuid-1" not in manifest

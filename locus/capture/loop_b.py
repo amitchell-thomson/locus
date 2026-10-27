@@ -347,7 +347,15 @@ def annotate_sync(
                     # document the title is its device name, since the library has no row for it.
                     p = promote_fn(conn, uri, title=name) if where.role == "sent" else promote_fn(conn, uri)
                     promoted = p.status if p else ""
-                manifest[key] = doc.ink_key
+                chosen_but_missing = (
+                    where.role == "reading" and uri == device_path and _chosen(device_path)
+                    and bool(doc_read.pdf_bytes)
+                )
+                if not chosen_but_missing:
+                    # A book he chose whose ingest did not land (the lock was held, or the ingest
+                    # passes failed: the API credit ran out on 27 Oct) is NOT recorded as done,
+                    # or it would never be tried again until he wrote on it.
+                    manifest[key] = doc.ink_key
                 result.outcomes.append(
                     AnnotateOutcome(
                         uuid, name, "annotated", source_uri=uri, hash_mapped=hash_mapped,
@@ -355,12 +363,17 @@ def annotate_sync(
                         promoted=promoted, role=where.role,
                     )
                 )
-                if where.role == "reading" and uri == device_path:
+                if chosen_but_missing:
+                    log.warning(
+                        "annotate-sync: %s is chosen but its ingest did not land: marks keyed by "
+                        "device path %r, tried again next run", name, device_path,
+                    )
+                elif where.role == "reading" and uri == device_path:
                     # Loud, not fatal: a still-Proposed document he has marked up. Its marks
                     # join the corpus the moment he moves it out of Proposed (the ingest above
                     # + rekey), so nothing is lost; until then no downstream pass sees it.
                     log.warning(
-                        "annotate-sync: %s not in the corpus (still in Proposed?): "
+                        "annotate-sync: %s not in the corpus (still in Proposed): "
                         "marks keyed by device path %r until he chooses it", name, device_path,
                     )
             except Exception as exc:  # one doc's failure never aborts the batch

@@ -251,6 +251,10 @@ rounds. X8 and the clear-out wait for Slice 0's budget logging if that is not in
   folder (Admin, Careers, Travel, OQTS, JCR Treasurer and the rest on each account) into the new
   scheme, so past mail is marked for what it is for too.
 
+- **Round 10 (27 Oct): live.** `e` archives straight away (d files, m marks; "for nothing"
+  only clears a mark). X4 passed on Personal, Oxford and OQTS and keryx went live; OQTS shared
+  stays read-only, untested by your choice. Filing on arrival started afresh at going live.
+
 ## Report
 *(when the steps are done)*
 

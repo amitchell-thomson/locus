@@ -646,7 +646,9 @@ fn message_lines(app: &App, open: &Open, i: usize, m: &Message, w: usize, full: 
     let body_w = w.saturating_sub(2);
     let who = match &m.from {
         // You, and which of your addresses (your round of 26 Oct: not just the alias).
-        Some(a) if is_me(app, a) => format!("you <{}>", a.email),
+        // One address for you per account (round 8: your SSO beside your college address read
+        // as two people): the one your From: line shows.
+        Some(a) if is_me(app, a) => format!("you <{}>", app.my_address(&a.email)),
         Some(a) => a.display(),
         None => "(no sender)".into(),
     };

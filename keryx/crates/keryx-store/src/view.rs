@@ -72,6 +72,27 @@ pub struct ThreadRow {
     pub suggested: bool,
 }
 
+/// A thread's messages as you read it: copies of one mail (your sent copy and the one you
+/// received when you wrote to yourself, both on an Exchange account) shown once, the received
+/// copy kept. The mirror keeps both; filing and archiving act on every copy.
+pub fn distinct(msgs: Vec<Message>) -> Vec<Message> {
+    let mut out: Vec<Message> = Vec::new();
+    for m in msgs {
+        match out
+            .iter_mut()
+            .find(|x| !m.message_id.is_empty() && x.message_id == m.message_id)
+        {
+            Some(x) => {
+                if m.in_inbox && !x.in_inbox {
+                    *x = m;
+                }
+            }
+            None => out.push(m),
+        }
+    }
+    out
+}
+
 /// Gmail label id → name per account, from sync state.
 pub fn label_names(db: &Db, cfg: &Config) -> HashMap<String, BTreeMap<String, String>> {
     let mut out = HashMap::new();
@@ -283,7 +304,7 @@ fn rows_for(db: &Db, cfg: &Config, threads_sql: &str, args: Vec<Value>, limit: u
     let sql = format!(
         "WITH t AS (SELECT DISTINCT account, thread_id FROM ({threads_sql})),
          agg AS (
-           SELECT m.account, m.thread_id, max(m.date) AS last, count(*) AS n,
+           SELECT m.account, m.thread_id, max(m.date) AS last, count(DISTINCT CASE WHEN m.message_id != '' THEN m.message_id ELSE m.id END) AS n,
                   max(m.read = 0) AS unread, max(m.flagged) AS flagged, max(m.in_inbox) AS inbox,
                   max(m.attachments_json != '[]') AS att
            FROM messages m JOIN t ON t.account = m.account AND t.thread_id = m.thread_id
@@ -750,5 +771,30 @@ mod tests {
         );
         assert_eq!(addresses(&db, &cfg, "SAM", 10).unwrap()[0].email, "sam@example.com");
         assert_eq!(sent_to(&db, &cfg).unwrap().len(), 3);
+    }
+
+    #[test]
+    fn a_mail_you_sent_yourself_reads_once() {
+        let (_cfg, db) = crate::testkit::fixture_db();
+        let mut msgs = db
+            .thread(
+                "oxford",
+                &db.conn()
+                    .query_row(
+                        "SELECT thread_id FROM messages WHERE account = 'oxford' LIMIT 1",
+                        [],
+                        |r| r.get::<_, String>(0),
+                    )
+                    .unwrap(),
+            )
+            .unwrap();
+        msgs.truncate(1);
+        let mut sent = msgs[0].clone();
+        sent.in_inbox = false;
+        sent.source_id = "sent-copy".into();
+        let both = vec![sent, msgs[0].clone()];
+        let one = distinct(both);
+        assert_eq!(one.len(), 1);
+        assert!(one[0].source_id != "sent-copy", "the received copy is kept");
     }
 }

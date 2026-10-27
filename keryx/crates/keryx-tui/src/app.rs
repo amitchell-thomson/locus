@@ -229,6 +229,20 @@ impl App {
         self.view == View::Inbox && self.search.is_none()
     }
 
+    /// How one of your addresses is shown: its account's shown address (Oxford: your college
+    /// address, never the SSO Mail sends with), else the address itself.
+    pub fn my_address(&self, email: &str) -> String {
+        let key = email.to_lowercase();
+        self.cfg
+            .accounts
+            .iter()
+            .find(|a| a.addresses().any(|x| x == key))
+            .map_or_else(
+                || email.to_string(),
+                |a| a.shown_address.clone().unwrap_or_else(|| a.address.clone()),
+            )
+    }
+
     /// Whether a row reads as unread: unread in the mirror and not opened here since.
     pub fn is_unread(&self, r: &ThreadRow) -> bool {
         r.unread && !self.read_here.contains(&r.r#ref)
@@ -383,7 +397,7 @@ impl App {
     }
 
     pub fn load_thread(&self, account: &str, thread_id: &str) -> Option<Open> {
-        let msgs = self.db.thread(account, thread_id).ok()?;
+        let msgs = view::distinct(self.db.thread(account, thread_id).ok()?);
         if msgs.is_empty() {
             return None;
         }

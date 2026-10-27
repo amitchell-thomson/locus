@@ -38,7 +38,9 @@ FOLDER LEVELS. Level 1 is the area, matched case-insensitively. Level 2 is the c
 application, matched to `taxonomy/registry.toml` by name (in Careers, by the application's
 `company`, since a firm's folder spans its applications). Anything deeper is his own
 organisation and decides nothing. A level-2 folder the registry does not know keeps its area and
-is reported, so a typo or an unregistered course is named rather than filed under nothing.
+is reported, so a typo or an unregistered course is named rather than filed under nothing. A firm
+with several applications matches all of them, and then no single one is recorded: the folder
+says which firm, not which application.
 """
 
 from __future__ import annotations
@@ -91,6 +93,7 @@ class Placement:
     area: str | None = None       # 'Studies' | 'Projects' | 'Careers' | None
     thing: str | None = None      # registry id of the course, repo or application
     thing_folder: str | None = None  # the level-2 folder name, matched or not
+    matched: bool = False         # the registry knows the folder (it may name several things)
 
     @property
     def category(self) -> str:
@@ -205,13 +208,13 @@ def read_device(runner, *, tree_cache: Path | str = DEFAULT_TREE_CACHE) -> list[
 
 @dataclass(frozen=True)
 class Registry:
-    # (area, casefolded folder name) -> registry id
-    by_name: dict[tuple[str, str], str]
+    # (area, casefolded folder name) -> the registry ids it names, in registry order
+    by_name: dict[tuple[str, str], tuple[str, ...]]
 
-    def match(self, area: str, folder: str | None) -> str | None:
+    def match(self, area: str, folder: str | None) -> tuple[str, ...]:
         if not folder:
-            return None
-        return self.by_name.get((area, folder.casefold()))
+            return ()
+        return self.by_name.get((area, folder.casefold()), ())
 
 
 def load_registry(path: Path | str = REGISTRY_PATH) -> Registry:
@@ -225,16 +228,19 @@ def load_registry(path: Path | str = REGISTRY_PATH) -> Registry:
     except (OSError, tomllib.TOMLDecodeError) as exc:
         log.warning("registry unreadable (%s): level-2 folders will all report unmatched", exc)
         return Registry({})
-    by_name: dict[tuple[str, str], str] = {}
+    by_name: dict[tuple[str, str], tuple[str, ...]] = {}
     for entry in data.get("projects", []):
         area, ident = entry.get("area"), entry.get("id")
         if not area or not ident:
             continue
-        # Company first, so `Careers/Brevan Howard` names the firm and not one of its two
-        # internship applications; the first application registered for a firm is its id.
-        for key in (entry.get("company"), entry.get("name")):
-            if key:
-                by_name.setdefault((area, key.casefold()), ident)
+        # An application is matched by its company: `Careers/Brevan Howard` is the firm's folder
+        # and names BOTH of its internship applications. Which one a note belongs to is not in
+        # the folder, so `place` records no single thing for it rather than the first one
+        # registered (which filed 2026 internship notes under the 2027 application, 27 Oct).
+        for key in {k.casefold() for k in (entry.get("company"), entry.get("name")) if k}:
+            ids = by_name.get((area, key), ())
+            if ident not in ids:
+                by_name[(area, key)] = (*ids, ident)
     return Registry(by_name)
 
 
@@ -256,14 +262,15 @@ def place(doc: DeviceDoc, *, sent_hashes: set[str], registry: Registry) -> Place
     if area is None:
         return None
     thing_folder = doc.folders[1] if len(doc.folders) > 1 else None
-    thing = registry.match(area, thing_folder)
+    ids = registry.match(area, thing_folder)
+    thing = ids[0] if len(ids) == 1 else None
     if doc.is_notebook:
         role = "notebook"
     elif doc.pdf_hash in sent_hashes:
         role = "sent"
     else:
         role = "source"
-    return Placement(role, area=area, thing=thing, thing_folder=thing_folder)
+    return Placement(role, area=area, thing=thing, thing_folder=thing_folder, matched=bool(ids))
 
 
 def unmatched_folders(placed: list[tuple[DeviceDoc, Placement]]) -> list[str]:
@@ -271,5 +278,5 @@ def unmatched_folders(placed: list[tuple[DeviceDoc, Placement]]) -> list[str]:
     return sorted({
         f"{p.area}/{p.thing_folder}"
         for _, p in placed
-        if p.area and p.thing_folder and p.thing is None
+        if p.area and p.thing_folder and not p.matched
     })

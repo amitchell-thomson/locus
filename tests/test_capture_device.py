@@ -115,8 +115,8 @@ def test_read_device_makes_one_cloud_call(tmp_path):
 
 
 REG = Registry({
-    ("Studies", "b14 information engineering systems"): "b14",
-    ("Careers", "brevan howard"): "brevan-howard-2026",
+    ("Studies", "b14 information engineering systems"): ("b14",),
+    ("Careers", "brevan howard"): ("bh-2026", "bh-2027"),
 })
 
 
@@ -129,7 +129,7 @@ def test_what_a_document_is_decides_how_it_is_read():
     assert p["Jot"] == Placement("notebook")
     assert p["B14 Image Processing"] == Placement(
         "notebook", area="Studies", thing="b14",
-        thing_folder="B14 Information Engineering Systems")
+        thing_folder="B14 Information Engineering Systems", matched=True)
     assert p["B14_IP_MT26_L2.pdf"].role == "source"
     assert p["Swaps"].category == "career"
     assert p["B14 Image Processing"].category == "coursework"
@@ -178,7 +178,7 @@ def test_the_real_registry_matches_the_tablet_folders():
 
 
 def test_a_missing_registry_is_empty_not_an_error(tmp_path):
-    assert load_registry(tmp_path / "nope.toml").match("Studies", "B1") is None
+    assert load_registry(tmp_path / "nope.toml").match("Studies", "B1") == ()
 
 
 def test_root_pdf_has_no_home():
@@ -195,3 +195,13 @@ def test_tree_paths_are_built_from_the_cache_not_assumed():
     docs = _by_name(parse_tree(tree))
     assert docs["B14 Image Processing"].path == "/Studies/B14 IES/B14 Image Processing"
     assert Path(docs["B14 Image Processing"].path).parent.name == "B14 IES"
+
+
+def test_a_firm_with_two_applications_names_neither():
+    """His 2026 internship notes sat under `Careers/Brevan Howard`, which names both the 2026 and
+    the 2027 application. The folder says which firm; guessing the application filed them under
+    2027. Recorded as matched, with no single thing, and not reported as unmatched."""
+    where = _placements()["Swaps"]
+    assert where.matched and where.thing is None and where.area == "Careers"
+    assert unmatched_folders([(None, where)]) == []
+    assert set(load_registry().match("Careers", "Brevan Howard")) >= {"bh-2026", "bh-2027"}

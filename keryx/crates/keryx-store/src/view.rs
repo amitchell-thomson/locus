@@ -72,6 +72,27 @@ pub struct ThreadRow {
     pub suggested: bool,
 }
 
+/// "to Jane, Sam, Oxford +2": a message's recipients (To and Cc), your own addresses by their
+/// account, at most `max` named.
+pub fn recipients_label(cfg: &Config, m: &Message, max: usize) -> Option<String> {
+    let mut names: Vec<String> = Vec::new();
+    for a in m.to.iter().chain(&m.cc) {
+        let n = cfg
+            .accounts
+            .iter()
+            .find(|acc| acc.addresses().any(|x| x == a.key()))
+            .map_or_else(|| a.short().to_string(), |acc| acc.name.clone());
+        if !names.contains(&n) {
+            names.push(n);
+        }
+    }
+    match names.len() {
+        0 => None,
+        n if n <= max => Some(format!("to {}", names.join(", "))),
+        n => Some(format!("to {} +{}", names[..max].join(", "), n - max)),
+    }
+}
+
 /// A thread's messages as you read it: copies of one mail (your sent copy and the one you
 /// received when you wrote to yourself, both on an Exchange account) shown once, the received
 /// copy kept. The mirror keeps both; filing and archiving act on every copy.
@@ -266,6 +287,7 @@ pub fn list(db: &Db, cfg: &Config, view: &View, f: &Filter) -> Result<Vec<Thread
         &threads,
         args,
         if matches!(view, View::Key(_)) { 0 } else { f.limit },
+        matches!(view, View::Sent),
     )?;
     Ok(match view {
         View::Key(k) => {
@@ -280,7 +302,14 @@ pub fn list(db: &Db, cfg: &Config, view: &View, f: &Filter) -> Result<Vec<Thread
 }
 
 /// Aggregate the threads selected by `threads_sql` into rows.
-fn rows_for(db: &Db, cfg: &Config, threads_sql: &str, args: Vec<Value>, limit: u32) -> Result<Vec<ThreadRow>, DbError> {
+fn rows_for(
+    db: &Db,
+    cfg: &Config,
+    threads_sql: &str,
+    args: Vec<Value>,
+    limit: u32,
+    sent: bool,
+) -> Result<Vec<ThreadRow>, DbError> {
     let own = cfg.own_addresses();
     let labels = label_names(db, cfg);
     let snoozes: HashMap<(String, String), i64> = db
@@ -344,37 +373,26 @@ fn rows_for(db: &Db, cfg: &Config, threads_sql: &str, args: Vec<Value>, limit: u
             msgs.push(row_to_message(r)?);
         }
         let Some(latest) = msgs.first() else { continue };
-        let who = msgs
+        // Sent says who you sent to: every recipient of your latest message (round 8).
+        let mine = msgs
             .iter()
-            .filter_map(|m| m.from.as_ref())
-            .find(|a| !own.contains(&a.key()))
-            .map(|a| a.short().to_string())
-            .or_else(|| {
-                // Only Alec in the thread: who he wrote to, his own addresses by their account
-                // ("to Oxford, OQTS", not "to Alec Mitchell-Thomson").
-                let names: Vec<String> = latest
-                    .to
-                    .iter()
-                    .chain(&latest.cc)
-                    .map(|a| {
-                        cfg.accounts
-                            .iter()
-                            .find(|acc| acc.addresses().any(|x| x == a.key()))
-                            .map_or_else(|| a.short().to_string(), |acc| acc.name.clone())
-                    })
-                    .fold(Vec::new(), |mut v, n| {
-                        if !v.contains(&n) {
-                            v.push(n);
-                        }
-                        v
-                    });
-                match names.len() {
-                    0 => None,
-                    1 | 2 => Some(format!("to {}", names.join(", "))),
-                    n => Some(format!("to {}, {} +{}", names[0], names[1], n - 2)),
-                }
-            })
-            .unwrap_or_else(|| "me".into());
+            .find(|m| m.from.as_ref().is_some_and(|f| own.contains(&f.key())));
+        let sent_to = if sent {
+            mine.and_then(|m| recipients_label(cfg, m, 3))
+        } else {
+            None
+        };
+        let who = match sent_to {
+            Some(w) => w,
+            None => msgs
+                .iter()
+                .filter_map(|m| m.from.as_ref())
+                .find(|a| !own.contains(&a.key()))
+                .map(|a| a.short().to_string())
+                // Only Alec in the thread: who he wrote to, his own addresses by account.
+                .or_else(|| recipients_label(cfg, latest, 2))
+                .unwrap_or_else(|| "me".into()),
+        };
         let mut keys: Vec<String> = Vec::new();
         for m in &msgs {
             for k in keys_of(cfg, &account, &m.location, labels.get(&account)) {
@@ -500,7 +518,14 @@ pub fn search(db: &Db, cfg: &Config, q: &Query, f: &Filter) -> Result<Vec<Thread
         );
     }
     let threads = format!("SELECT account, thread_id FROM messages WHERE {}", wh.join(" AND "));
-    let rows = rows_for(db, cfg, &threads, args, if q.key.is_empty() { f.limit } else { 0 })?;
+    let rows = rows_for(
+        db,
+        cfg,
+        &threads,
+        args,
+        if q.key.is_empty() { f.limit } else { 0 },
+        false,
+    )?;
     if q.key.is_empty() {
         return Ok(rows);
     }

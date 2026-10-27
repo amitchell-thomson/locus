@@ -566,12 +566,10 @@ fn invite_lines(app: &App, inv: &Invite, w: usize) -> Vec<Line<'static>> {
 }
 
 /// Is this address yours (any account's address or alias)?
+/// One of your addresses: an account's, its aliases or the one its From: line shows (your
+/// college address was missing, so your own mail read as from someone else).
 fn is_me(app: &App, a: &Address) -> bool {
-    let e = a.email.to_lowercase();
-    app.cfg
-        .accounts
-        .iter()
-        .any(|x| x.address.eq_ignore_ascii_case(&e) || x.aliases.iter().any(|y| y.eq_ignore_ascii_case(&e)))
+    app.cfg.own_addresses().contains(&a.key())
 }
 
 /// Each person in a conversation keeps one colour; you are blue.

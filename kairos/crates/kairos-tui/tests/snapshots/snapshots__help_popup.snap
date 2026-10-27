@@ -5,30 +5,30 @@ expression: "render_to_string(&a, 100, 30)"
 ╭ kairos ─╭──────────────────────────────────── keys ────────────────────────────────────╮─────────╮
 │       mo│ this screen                                                                  │25       │
 │         │  ← → [ ]   day · week back, forward                                          │         │
-│         │  ⇧↑↓ ⇧←→   nudge the selected item 30 min · a day                            │         │
-│─────────│  ↑ ↓       select; past the first or last, scroll the hours                  │─────────│
-│11:00▲┊  │  ⇥ ⇧⇥      week → day → month → agenda                                       │         │
-│      ┊  │  t w       today · week Mon–Sun or Mon–Fri                                   │         │
-│      ┄┄┄│  +         add an event or a task (it asks what it is for)                   │┄┄┄┄┄┄┄┄┄│
-│12:00 ┊  │  e m L     edit · move · say what it is for                                  │         │
-│      ┊  │  d x       done (a task) · remove (asks first)                               │         │
-│13:00 ┊  │  y c l     a past block: done · partly · took longer                         │         │
-│      ┊  │  n W S     start a task now · log work · run the scheduler                   │         │
-│14:00 ┊  │  s B       share to Family · going or not                                    │         │
-│      ┊  │  C u r     check in · undo · sync                                            │         │
-│15:00 ┊  │  T P A     tasks · projects · approve, in locus                              │         │
-│      ┊  │  1–8 p f   3 careers  4 personal  5 family  8 errands                        │         │
-│16:00 ┊  │            show or hide each; p all yours, f Family                          │         │
-│      ┊  │                                                                              │         │
-│17:00 ┊  │ everywhere                                                                   │         │
-│      ┊  │  ⏎         open in locus, else the details                                   │         │
-│      ┄┄┄│  esc       back                                                              │┄┄┄┄┄┄┄┄┄│
-│18:00 ┊  │  /         search                                                            │         │
-│      ┊  │  ?         keys                                                              │         │
-│19:00 ┊▌S│  alt-1…4   home · project · calendar · mail                                  │day      │
-│      ┊▌ │                                                                              │ash      │
-│20:00 ┊  │ symbols                                                                      │         │
-│      ┊  │  󰄱 󰡖 󰄵     a work block: to do · over, not checked in · done                 │         │
-│21:00 ┊  │  ┆ ╏ ▌     kairos may move it · you placed it · an event                     │         │
+│         │  ⇧↑↓ ⇧←→   move the selected item 30 min · a day                             │         │
+│─────────│  ⌥↑↓       shorter · longer by 15 min (a block: its task's time)             │─────────│
+│11:00▲┊  │  ↑ ↓       select; past the first or last, scroll the hours                  │         │
+│      ┊  │  ⇥ ⇧⇥      week → day → month → agenda                                       │         │
+│      ┄┄┄│  t w       today · week Mon–Sun or Mon–Fri                                   │┄┄┄┄┄┄┄┄┄│
+│12:00 ┊  │  +         add an event or a task (it asks what it is for)                   │         │
+│      ┊  │  e m L     edit · move · say what it is for                                  │         │
+│13:00 ┊  │  d x       done (a task) · remove (asks first)                               │         │
+│      ┊  │  y x d     a past block (✓ too): done · didn't happen · task done            │         │
+│14:00 ┊  │  n W S     start a task now · log work · run the scheduler                   │         │
+│      ┊  │  s B       share to Family · going or not                                    │         │
+│15:00 ┊  │  C u r     check in · undo · sync                                            │         │
+│      ┊  │  T P A     tasks · projects · approve, in locus                              │         │
+│16:00 ┊  │  1–8 p f   3 careers  4 personal  5 family  8 errands                        │         │
+│      ┊  │            show or hide each; p all yours, f Family                          │         │
+│17:00 ┊  │                                                                              │         │
+│      ┊  │ everywhere                                                                   │         │
+│      ┄┄┄│  ⏎         open in locus, else the details                                   │┄┄┄┄┄┄┄┄┄│
+│18:00 ┊  │  esc       back                                                              │         │
+│      ┊  │  /         search                                                            │         │
+│19:00 ┊▌S│  ?         keys                                                              │day      │
+│      ┊▌ │  alt-1…4   home · project · calendar · mail                                  │ash      │
+│20:00 ┊  │                                                                              │         │
+│      ┊  │ symbols                                                                      │         │
+│21:00 ┊  │  󰄱 󰡖 󰄵     a work block: to do · over, not checked in · done                 │         │
 ╰ ● 19:00–╰──────────────────────────────────────────────────────────────────────────────╯x delete ╯
  ⏎ open · ⇥ view · [ ] week · ? keys

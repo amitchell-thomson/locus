@@ -24,3 +24,4 @@ format every repository will share, checked so an edit can never break it, is ch
 | [ADR-007](ADR-007-two-windows-build-and-question.md) | The project window builds; the locus window questions and learns, and follow-ups stay there | accepted |
 | [ADR-008](ADR-008-kairos-joins-locus.md) | kairos moves into this repository as a sub-app, speaks locus's taxonomy, reads its registry, and links both ways | accepted |
 | [ADR-009](ADR-009-for-not-type.md) | Adding anything asks what it is for (a registry item or a Personal stream, by type-ahead); how a task is planned follows from its estimate, not a chosen type | accepted |
+| [ADR-010](ADR-010-start-and-length.md) | Every calendar item has a start and a length: ⇧ moves it, ⌥ changes its length (a block's length is its task's time); no two work blocks overlap; a check-in is one undoable changeset | accepted |

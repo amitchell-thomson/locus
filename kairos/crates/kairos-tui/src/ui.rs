@@ -1593,14 +1593,15 @@ fn help(f: &mut Frame, app: &App, area: Rect) {
     let mut lines = vec![Line::from(TSpan::styled(" this screen", dim))];
     for (k, what) in [
         ("← → [ ]", "day · week back, forward"),
-        ("⇧↑↓ ⇧←→", "nudge the selected item 30 min · a day"),
+        ("⇧↑↓ ⇧←→", "move the selected item 30 min · a day"),
+        ("⌥↑↓", "shorter · longer by 15 min (a block: its task's time)"),
         ("↑ ↓", "select; past the first or last, scroll the hours"),
         ("⇥ ⇧⇥", "week → day → month → agenda"),
         ("t w", "today · week Mon–Sun or Mon–Fri"),
         ("+", "add an event or a task (it asks what it is for)"),
         ("e m L", "edit · move · say what it is for"),
         ("d x", "done (a task) · remove (asks first)"),
-        ("y c l", "a past block: done · partly · took longer"),
+        ("y x d", "a past block (✓ too): done · didn't happen · task done"),
         ("n W S", "start a task now · log work · run the scheduler"),
         ("s B", "share to Family · going or not"),
         ("C u r", "check in · undo · sync"),
@@ -1693,10 +1694,9 @@ fn checkin(f: &mut Frame, app: &App, area: Rect, i: usize) {
     lines.push(Line::raw(""));
     lines.push(locus_theme::hints(&[
         ("y", "done"),
-        ("c", "partly"),
-        ("l", "took longer"),
         ("x", "missed"),
         ("d", "task done"),
+        ("⏎", "fix its time"),
         ("↓", "next"),
         ("esc", "later"),
     ]));

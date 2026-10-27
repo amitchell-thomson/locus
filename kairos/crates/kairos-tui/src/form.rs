@@ -17,10 +17,6 @@ pub enum FormKind {
     EditTask {
         id: String,
     },
-    /// Check-in: the block took longer than planned.
-    TookLonger {
-        t: crate::app::CheckinTarget,
-    },
     /// Link an event or task to a locus item afterwards (`L`).
     Link {
         source: String,
@@ -322,38 +318,7 @@ impl Form {
             FormKind::EditEvent { .. } => "edit event",
             FormKind::AddTask => "new task",
             FormKind::EditTask { .. } => "edit task",
-            FormKind::TookLonger { .. } => "took longer",
         }
-    }
-
-    /// "Took longer": time spent, how much more, plan it from when.
-    pub fn took_longer(t: crate::app::CheckinTarget) -> Form {
-        let spent = fmt_minutes(i64::from(t.planned_min + 60));
-        let more = fmt_minutes(i64::from(t.remaining_min.saturating_sub(t.planned_min).max(60)));
-        Form::new(
-            FormKind::TookLonger { t },
-            vec![
-                field(
-                    "Spent",
-                    spent,
-                    FieldKind::Duration,
-                    "time actually spent on it: 3h · 2h30",
-                ),
-                field(
-                    "Needs",
-                    more,
-                    FieldKind::Duration,
-                    "how much more you think it needs (0 = finished)",
-                ),
-                field(
-                    "From",
-                    "",
-                    FieldKind::OptWhen,
-                    "plan it no earlier than: sat · 20 oct · empty = as soon as there's time",
-                ),
-            ],
-            Vec::new(),
-        )
     }
 
     pub fn get(&self, label: &str) -> &str {

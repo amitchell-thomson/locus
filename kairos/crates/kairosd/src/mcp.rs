@@ -823,7 +823,7 @@ impl KairosMcp {
             remaining_min: a.remaining_min,
             not_before: a.not_before,
         };
-        self.run(move |e| e.checkin(&req)).await
+        self.run(move |e| e.checkin(Author::Claude, &req)).await
     }
 
     #[tool(

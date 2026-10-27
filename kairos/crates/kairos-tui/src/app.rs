@@ -40,10 +40,6 @@ impl View {
 pub enum PromptKind {
     Move,
     Search,
-    /// Check-in: how long did you work on it (partly done)?
-    Partial {
-        t: CheckinTarget,
-    },
     /// Check-in (coursework, or a block that uses up the task): how much of
     /// the task is left?
     Remaining {
@@ -67,7 +63,6 @@ impl PromptKind {
         match self {
             PromptKind::Move => "move to (when)",
             PromptKind::Search => "/",
-            PromptKind::Partial { .. } => "partly done — how long did you work? (e.g. 45m)",
             PromptKind::Remaining { .. } => "how much is left? (e.g. 3h, 0 = finished)",
             PromptKind::LogWork { .. } => "log work — how long, ending now? (e.g. 40m)",
             PromptKind::MoveDeadline { .. } => "due (when, e.g. fri 17:00)",
@@ -478,8 +473,35 @@ impl App {
             || self.going_overrides.iter().any(|o| o.2 < requested)
     }
 
-    /// Replace the index (after a reload) and re-apply recent local patches.
+    /// Replace the index (after a reload) and re-apply recent local patches. The selection
+    /// stays on the item it was on, not on its place in the list (2026-10-27: a reload that
+    /// reordered the day moved it onto the next event, and the next ⇧↓ nudged that one).
     pub fn set_index(&mut self, idx: Index) {
+        let held = self.selected().map(|c| c.primary.uid);
+        self.set_index_keep(idx);
+        if let Some(uid) = held {
+            self.reselect(&uid);
+        }
+    }
+
+    /// Select the item `uid` again where it now is, if it is still in view.
+    fn reselect(&mut self, uid: &str) {
+        let at = match self.view {
+            View::Agenda => self
+                .agenda_rows()
+                .iter()
+                .position(|(_, c)| c.all().any(|i| i.uid == uid)),
+            View::Week | View::Day | View::Month => self
+                .day_clusters(self.cursor)
+                .iter()
+                .position(|c| c.all().any(|i| i.uid == uid)),
+        };
+        if let Some(k) = at {
+            self.sel = k;
+        }
+    }
+
+    fn set_index_keep(&mut self, idx: Index) {
         self.index = idx;
         let now = Utc::now();
         self.blocking_overrides.retain(|o| o.3 > now);
@@ -703,6 +725,9 @@ impl App {
             Key::ShiftDown => self.nudge(30),
             Key::ShiftLeft => self.nudge(-24 * 60),
             Key::ShiftRight => self.nudge(24 * 60),
+            // Its length (2026-10-27): ⌥↑ shorter, ⌥↓ longer, 15 min at a time.
+            Key::AltUp => self.stretch(-15),
+            Key::AltDown => self.stretch(15),
             Key::Char('t') => {
                 self.cursor = self.today();
                 self.sel = 0;
@@ -856,19 +881,14 @@ impl App {
                     );
                     return;
                 }
-                // A work block that has started and isn't checked in: check it in right here
-                // (y done · c partly · l took longer · x missed · d the task is done; L4: d is
-                // done and x removes, as everywhere in locus).
-                if self.awaits_checkin(&i) && matches!(k, Key::Char('y' | 'c' | 'x' | 'd' | 'l')) {
+                // A work block that has started, checked in or not: y it happened as drawn (fix
+                // its start and length first with ⇧ and ⌥) · x it didn't · d it did and the
+                // task is finished (L4: d is done and x removes, as everywhere in locus).
+                // Answering a ✓ block again corrects it; u takes any answer back.
+                if self.checkable(&i) && matches!(k, Key::Char('y' | 'x' | 'd')) {
                     let t = self.checkin_target(&i);
-                    if k == Key::Char('l') {
-                        self.message = None;
-                        self.mode = Mode::Form(Form::took_longer(t));
-                        return;
-                    }
                     let outcome = match k {
                         Key::Char('y') => "done",
-                        Key::Char('c') => "partial",
                         Key::Char('d') => "finished",
                         _ => "missed",
                     };
@@ -1215,14 +1235,6 @@ impl App {
             };
             return self.send_checkin(&t.clone(), &outcome.clone(), *actual, left);
         }
-        if let PromptKind::Partial { t } = &kind {
-            let Ok(actual) = dates::parse_minutes(&buf) else {
-                self.set_message("how long: e.g. 45m, 1h30", true);
-                self.mode = Mode::Prompt(kind.clone(), buf);
-                return;
-            };
-            return self.check_in_after(t.clone(), "partial", Some(actual));
-        }
         if let PromptKind::LogWork { task_id, title } = &kind {
             let Ok(m) = dates::parse_minutes(&buf) else {
                 self.set_message("how long: e.g. 40m, 1h", true);
@@ -1265,10 +1277,7 @@ impl App {
             return;
         }
         match kind {
-            PromptKind::Remaining { .. }
-            | PromptKind::Partial { .. }
-            | PromptKind::LogWork { .. }
-            | PromptKind::MoveDeadline { .. } => {}
+            PromptKind::Remaining { .. } | PromptKind::LogWork { .. } | PromptKind::MoveDeadline { .. } => {}
             PromptKind::Search => {
                 self.search = if buf.is_empty() { None } else { Some(buf) };
             }
@@ -1364,6 +1373,58 @@ impl App {
         }));
     }
 
+    /// Make the selected item `minutes` longer (or shorter): its end moves, its start stays.
+    /// Together with the nudge that is every start and end (started later and kept going: ⇧↓
+    /// then ⌥↓). On a work block it means one thing everywhere (kairosd, 2026-10-27): ahead,
+    /// the task gets that much more (or less) time; checked in, it is what you did.
+    pub fn stretch(&mut self, minutes: i64) {
+        if !matches!(self.view, View::Week | View::Day) {
+            return;
+        }
+        let Some(i) = self.selected().map(|c| c.primary) else {
+            return;
+        };
+        if matches!(i.meta.kind, EventKind::Worked | EventKind::Deadline) {
+            return;
+        }
+        if i.span.is_all_day() {
+            return self.set_message("an all-day item has no length to change: e to edit its days", false);
+        }
+        if self.daemon.is_none() {
+            return self.set_message("kairosd not configured — writes unavailable", true);
+        }
+        let (s, e) = i.span.bounds(self.tz);
+        let end = e + Duration::minutes(minutes);
+        if end - s < Duration::minutes(15) {
+            let what = if i.meta.kind == EventKind::TaskBlock {
+                "x removes it"
+            } else {
+                "x deletes it"
+            };
+            return self.set_message(format!("15 min is as short as it goes: {what}"), false);
+        }
+        let len = (end - s).num_minutes().max(0) as u32;
+        let start = s.to_rfc3339();
+        let tz = self.tz;
+        self.patch_local(&i.uid, |x| {
+            retime(x, &start, Some(len), tz);
+            true
+        });
+        let day = s.with_timezone(&tz).date_naive();
+        self.follow(day, &i.uid);
+        let req = api::UpdateEventReq {
+            end: Some(end.to_rfc3339()),
+            ..Default::default()
+        };
+        self.deferred.push(Box::new(move |app: &mut App| {
+            if let Some(r) = app.with_daemon(|d| d.update_event(&i.source, &i.uid, &req).map(|r| r.map(to_write)))
+                && !app.write_applied(r)
+            {
+                app.unpatch(Some(i.clone()), &i.uid);
+            }
+        }));
+    }
+
     /// Where a nudge would put the selected item: (it, its new start, its new day). `Ok(None)`
     /// when nothing nudgeable is selected; `Err` says why not.
     pub fn nudge_target(&self, minutes: i64) -> Result<Option<(Instance, DateTime<Utc>, NaiveDate)>, String> {
@@ -1447,32 +1508,6 @@ impl App {
                 )),
                 None => Err("For: type what it belongs to".into()),
             },
-            FormKind::TookLonger { .. } => {
-                let spent = dates::parse_minutes(f.get("Spent")).map_err(|_| "Spent: e.g. 3h or 2h30".to_string())?;
-                if !f.fields.iter().any(|x| x.label == "Needs") {
-                    return Ok(format!("{} spent", crate::form::fmt_minutes(i64::from(spent))));
-                }
-                let needs =
-                    dates::parse_minutes(f.get("Needs")).map_err(|_| "Needs: e.g. 1h, or 0 if finished".to_string())?;
-                if needs == 0 {
-                    return Ok(format!(
-                        "{} spent · finished",
-                        crate::form::fmt_minutes(i64::from(spent))
-                    ));
-                }
-                let from = match f.get("From") {
-                    "" => "as soon as there's time".to_string(),
-                    d => match dates::parse_when(d, self.today()).map_err(|e| e.to_string())? {
-                        When::Date(d) => format!("from {}", d.format("%a %-d %b")),
-                        When::DateTime(n) => format!("from {}", n.format("%a %-d %b %H:%M")),
-                    },
-                };
-                Ok(format!(
-                    "{} spent · {} more, planned {from}",
-                    crate::form::fmt_minutes(i64::from(spent)),
-                    crate::form::fmt_minutes(i64::from(needs))
-                ))
-            }
             FormKind::EditTask { .. } => {
                 let left = dates::parse_minutes(f.get("Left")).map_err(|_| "Left: e.g. 3h or 90m".to_string())?;
                 let due = match f.get("Due") {
@@ -1551,24 +1586,6 @@ impl App {
     }
 
     fn submit_form(&mut self, f: Form) {
-        if let FormKind::TookLonger { t } = &f.kind {
-            if let Err(e) = self.form_preview(&f) {
-                self.set_message(e, true);
-                self.mode = Mode::Form(f);
-                return;
-            }
-            let spent = dates::parse_minutes(f.get("Spent")).ok();
-            let needs = dates::parse_minutes(f.get("Needs")).ok();
-            let from = match f.get("From") {
-                "" => None,
-                w => match self.when_str(w) {
-                    Ok(s) => Some(s),
-                    Err(e) => return self.set_message(e, true),
-                },
-            };
-            let outcome = if needs == Some(0) { "finished" } else { "longer" };
-            return self.send_checkin_full(&t.clone(), outcome, spent, needs, from);
-        }
         // The link form (L) has no title: only what it is for. Checking one here made Enter on it
         // answer "Title is empty" and do nothing (25 Oct, a B14 lecture).
         if !matches!(f.kind, FormKind::Link { .. }) && f.get("Title").is_empty() {
@@ -1741,7 +1758,6 @@ impl App {
                     }
                 }
             }
-            FormKind::TookLonger { .. } => {}
             FormKind::Link { source, uid, task } => {
                 let Some(o) = f.chosen_for().cloned() else {
                     return self.set_message("For: type what it belongs to", true);
@@ -1830,10 +1846,14 @@ impl App {
             // Same keys as on a block in the calendar (p is the Private toggle there).
             // The same keys as on a past block in the calendar (L4).
             Key::Char('y') => self.check_in(t, "done"),
-            Key::Char('c') => self.check_in(t, "partial"),
             Key::Char('x') => self.check_in(t, "missed"),
             Key::Char('d') => self.check_in(t, "finished"),
-            Key::Char('l') => self.mode = Mode::Form(Form::took_longer(t)),
+            // Not as planned: show the block on its day, to fix with ⇧ and ⌥, then y.
+            Key::Enter => {
+                self.mode = Mode::Normal;
+                let day = item.start.with_timezone(&self.tz).date_naive();
+                self.open_day(day, Some(&item.block_uid));
+            }
             Key::Char('s') | Key::Down => {
                 self.mode = Mode::Checkin((i + 1).min(open.len().saturating_sub(1)));
             }
@@ -1862,17 +1882,13 @@ impl App {
                 ("n", "start"),
                 ("x", "drop"),
             ],
-            (EventKind::TaskBlock, _) if kairos_core::build::is_checked_in(&i.title) => &[("W", "log more work")],
-            _ if self.awaits_checkin(&i) => &[
-                ("y", "done"),
-                ("c", "partly"),
-                ("l", "longer"),
-                ("x", "missed"),
-                ("d", "task done"),
-            ],
+            (EventKind::TaskBlock, _) if kairos_core::build::is_checked_in(&i.title) => {
+                &[("⌥↑↓", "length"), ("x", "didn't happen"), ("W", "log more work")]
+            }
+            _ if self.awaits_checkin(&i) => &[("y", "done"), ("⌥↑↓", "length"), ("x", "missed"), ("d", "task done")],
             (EventKind::TaskBlock, _) => &[
                 ("n", "start"),
-                ("m", "move"),
+                ("⌥↑↓", "length"),
                 ("e", "edit"),
                 ("d", "done"),
                 ("x", "skip"),
@@ -2150,6 +2166,11 @@ impl App {
 
     /// What a check-in needs about a block (from the C list's data if it's
     /// there, else from the block and its task).
+    /// A work block that has started, checked in or not: y x d answer it (again).
+    pub fn checkable(&self, i: &Instance) -> bool {
+        i.meta.kind == EventKind::TaskBlock && i.start(self.tz) <= self.now
+    }
+
     /// A work block that has started and isn't checked in yet.
     pub fn awaits_checkin(&self, i: &Instance) -> bool {
         if kairos_core::build::is_checked_in(&i.title) || i.start(self.tz) > self.now {
@@ -2184,16 +2205,9 @@ impl App {
         self.checkins.iter().filter(|c| c.outcome.is_none()).count()
     }
 
-    /// Check a block in: done / partial (asks how long) / missed / finished
-    /// (done, and the task is finished). Coursework, and a block that uses up
-    /// the task, also ask how much is left.
+    /// Check a block in: done (as drawn) / missed / finished (done, and the task is
+    /// finished). Coursework, and a block that uses up the task, also ask how much is left.
     pub fn check_in(&mut self, t: CheckinTarget, outcome: &str) {
-        if outcome == "partial" {
-            self.message = None;
-            let guess = crate::form::fmt_minutes(i64::from(t.planned_min / 2));
-            self.mode = Mode::Prompt(PromptKind::Partial { t }, guess);
-            return;
-        }
         self.check_in_after(t, outcome, None);
     }
 
@@ -2329,6 +2343,8 @@ pub enum Key {
     ShiftRight,
     ShiftUp,
     ShiftDown,
+    AltUp,
+    AltDown,
 }
 
 /// Status-bar legend: (toggle key, name, shown?, colour, group).

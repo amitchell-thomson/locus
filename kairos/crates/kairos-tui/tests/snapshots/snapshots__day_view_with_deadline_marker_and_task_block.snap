@@ -30,5 +30,5 @@ expression: "render_to_string(&a, 100, 30)"
 │18:00 ┊                                                                                           │
 │      ┊                                                                                           │
 │     ▼┊▌Squash                                                                                    │
-╰ ┆ 09:00–10:30 · 󰄱 B4 sheet · Errands · in 1h ─────── n start · m move · e edit · d done · x skip ╯
+╰ ┆ 09:00–10:30 · 󰄱 B4 sheet · Errands · in 1h ─── n start · ⌥↑↓ length · e edit · d done · x skip ╯
  ⏎ open · ⇥ view · [ ] week · ? keys

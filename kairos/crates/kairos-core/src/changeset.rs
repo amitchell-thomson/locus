@@ -3,7 +3,7 @@
 
 use crate::model::Author;
 use crate::task::Task;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -54,6 +54,45 @@ impl Status {
     }
 }
 
+/// Outcome of a planned block, from the check-in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Outcome {
+    Done,
+    Partial,
+    Missed,
+}
+
+impl Outcome {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Outcome::Done => "done",
+            Outcome::Partial => "partial",
+            Outcome::Missed => "missed",
+        }
+    }
+    pub fn parse(s: &str) -> Option<Outcome> {
+        match s {
+            "done" => Some(Outcome::Done),
+            "partial" => Some(Outcome::Partial),
+            "missed" => Some(Outcome::Missed),
+            _ => None,
+        }
+    }
+}
+
+/// A work block's check-in record (kairos-store's `checkins` row).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Checkin {
+    pub block_uid: String,
+    pub task_id: String,
+    pub day: NaiveDate,
+    pub planned_min: u32,
+    pub outcome: Option<Outcome>,
+    pub actual_min: Option<u32>,
+    pub answered_at: Option<DateTime<Utc>>,
+}
+
 /// One file in a vdir collection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Item {
@@ -99,6 +138,13 @@ pub enum Op {
         before: Box<Task>,
         after: Box<Task>,
     },
+    /// A work block's check-in record (`None` = no row). Part of the changeset that answers
+    /// it, so `u` takes back an accidental "done" whole: the ✓, the task's time, the record.
+    Checkin {
+        block_uid: String,
+        before: Option<Box<Checkin>>,
+        after: Option<Box<Checkin>>,
+    },
 }
 
 impl Op {
@@ -121,6 +167,10 @@ impl Op {
             }
             Op::CreateTask { after } => format!("create task {:?}", after.title),
             Op::UpdateTask { after, .. } => format!("update task {:?}", after.title),
+            Op::Checkin { after, .. } => match after.as_ref().and_then(|c| c.outcome) {
+                Some(o) => format!("check in ({})", o.as_str()),
+                None => "clear a check-in".into(),
+            },
         }
     }
 

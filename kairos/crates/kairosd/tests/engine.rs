@@ -775,13 +775,16 @@ fn checkin_missed_returns_time_and_done_consumes_it() {
     assert_eq!(items.len(), 1);
     let uid = items[0].block_uid.clone();
     let p = e
-        .checkin(&CheckinReq {
-            block_uid: uid,
-            outcome: "missed".into(),
-            actual_min: None,
-            remaining_min: None,
-            not_before: None,
-        })
+        .checkin(
+            Author::Alec,
+            &CheckinReq {
+                block_uid: uid,
+                outcome: "missed".into(),
+                actual_min: None,
+                remaining_min: None,
+                not_before: None,
+            },
+        )
         .unwrap();
     let t = e.db.task_get(&r.task.id).unwrap().unwrap();
     assert_eq!(t.remaining_min, 180, "missed time returns to remaining");
@@ -802,13 +805,16 @@ fn checkin_missed_returns_time_and_done_consumes_it() {
         .unwrap()
         .clone();
     *env.now.lock().unwrap() = next.end(chrono_tz::Europe::London) + Duration::minutes(1);
-    e.checkin(&CheckinReq {
-        block_uid: next.uid.clone(),
-        outcome: "done".into(),
-        actual_min: None,
-        remaining_min: None,
-        not_before: None,
-    })
+    e.checkin(
+        Author::Alec,
+        &CheckinReq {
+            block_uid: next.uid.clone(),
+            outcome: "done".into(),
+            actual_min: None,
+            remaining_min: None,
+            not_before: None,
+        },
+    )
     .unwrap();
     let t = e.db.task_get(&r.task.id).unwrap().unwrap();
     let mins = (next.end(chrono_tz::Europe::London) - next.start(chrono_tz::Europe::London)).num_minutes() as u32;
@@ -1130,13 +1136,16 @@ fn coursework_checkin_asks_and_takes_what_is_left() {
     let items = e.checkin_items().unwrap();
     assert!(items[0].ask_remaining);
     // Done, and it turns out 8 h are left (it grew).
-    e.checkin(&CheckinReq {
-        block_uid: items[0].block_uid.clone(),
-        outcome: "done".into(),
-        actual_min: None,
-        remaining_min: Some(480),
-        not_before: None,
-    })
+    e.checkin(
+        Author::Alec,
+        &CheckinReq {
+            block_uid: items[0].block_uid.clone(),
+            outcome: "done".into(),
+            actual_min: None,
+            remaining_min: Some(480),
+            not_before: None,
+        },
+    )
     .unwrap();
     let t = e.db.task_get(&r.task.id).unwrap().unwrap();
     assert_eq!(t.remaining_min, 480);
@@ -1410,13 +1419,16 @@ fn last_block_checkin_asks_finished_and_learned_time_isnt_dropped() {
     let it = items.iter().find(|i| i.title == "B4 sheet").unwrap();
     assert!(it.ask_remaining);
     // "Done, and that's it": finished, and learned from.
-    e.checkin(&CheckinReq {
-        block_uid: it.block_uid.clone(),
-        outcome: "done".into(),
-        actual_min: None,
-        remaining_min: Some(0),
-        not_before: None,
-    })
+    e.checkin(
+        Author::Alec,
+        &CheckinReq {
+            block_uid: it.block_uid.clone(),
+            outcome: "done".into(),
+            actual_min: None,
+            remaining_min: Some(0),
+            not_before: None,
+        },
+    )
     .unwrap();
     let t = e.db.task_get(&r.task.id).unwrap().unwrap();
     assert_eq!(t.status, TaskStatus::Done);
@@ -1459,13 +1471,16 @@ fn done_blocks_use_up_the_estimate_at_the_learned_rate() {
     let len = (first.end - first.start).num_minutes();
     *env.now.lock().unwrap() = first.end + Duration::minutes(1);
     let uid = e.checkin_items().unwrap()[0].block_uid.clone();
-    e.checkin(&CheckinReq {
-        block_uid: uid,
-        outcome: "done".into(),
-        actual_min: None,
-        remaining_min: None,
-        not_before: None,
-    })
+    e.checkin(
+        Author::Alec,
+        &CheckinReq {
+            block_uid: uid,
+            outcome: "done".into(),
+            actual_min: None,
+            remaining_min: None,
+            not_before: None,
+        },
+    )
     .unwrap();
     let t = e.db.task_get(&r.task.id).unwrap().unwrap();
     assert_eq!(i64::from(t.remaining_min), 240 - (len as f64 / 1.5).round() as i64);
@@ -1605,13 +1620,16 @@ fn finishing_a_task_clears_its_deadline_even_from_the_phone() {
     *env.now.lock().unwrap() = first.end + Duration::minutes(5);
     let uid = e.checkin_items().unwrap()[0].block_uid.clone();
     // Not direct (a phone link): "0 left" finishes it, ⚑ and all, no approval.
-    e.checkin(&CheckinReq {
-        block_uid: uid,
-        outcome: "done".into(),
-        actual_min: None,
-        remaining_min: Some(0),
-        not_before: None,
-    })
+    e.checkin(
+        Author::Alec,
+        &CheckinReq {
+            block_uid: uid,
+            outcome: "done".into(),
+            actual_min: None,
+            remaining_min: Some(0),
+            not_before: None,
+        },
+    )
     .unwrap();
     let t = e.db.task_get(&r.task.id).unwrap().unwrap();
     assert_eq!(t.status, TaskStatus::Done);
@@ -1673,13 +1691,16 @@ fn partly_done_block_gets_the_rest_planned_again() {
     *env.now.lock().unwrap() = created[0].end + Duration::minutes(5);
     let uid = e.checkin_items().unwrap()[0].block_uid.clone();
     let p = e
-        .checkin(&CheckinReq {
-            block_uid: uid,
-            outcome: "partial".into(),
-            actual_min: Some(20),
-            remaining_min: None,
-            not_before: None,
-        })
+        .checkin(
+            Author::Alec,
+            &CheckinReq {
+                block_uid: uid,
+                outcome: "partial".into(),
+                actual_min: Some(20),
+                remaining_min: None,
+                not_before: None,
+            },
+        )
         .unwrap();
     let again: i64 = p.created.iter().map(|b| (b.end - b.start).num_minutes()).sum();
     assert_eq!(again, 40, "{p:?}");
@@ -1699,13 +1720,16 @@ fn took_longer_records_the_time_spent_and_plans_what_alec_says_is_left() {
     *env.now.lock().unwrap() = b.end + Duration::hours(2);
     let uid = e.checkin_items().unwrap()[0].block_uid.clone();
     let p = e
-        .checkin(&CheckinReq {
-            block_uid: uid.clone(),
-            outcome: "longer".into(),
-            actual_min: Some(180),
-            remaining_min: Some(90),
-            not_before: Some("2026-10-15".into()),
-        })
+        .checkin(
+            Author::Alec,
+            &CheckinReq {
+                block_uid: uid.clone(),
+                outcome: "longer".into(),
+                actual_min: Some(180),
+                remaining_min: Some(90),
+                not_before: Some("2026-10-15".into()),
+            },
+        )
         .unwrap();
     // The ✓ block shows the 3 h spent.
     let world = e.world(14).unwrap();
@@ -1774,13 +1798,16 @@ fn checking_in_a_block_moved_back_over_a_lecture_needs_no_approval() {
         .unwrap();
     e.direct = false;
     assert_eq!(mv.status, Status::Applied);
-    e.checkin(&CheckinReq {
-        block_uid: uid.clone(),
-        outcome: "done".into(),
-        actual_min: None,
-        remaining_min: None,
-        not_before: None,
-    })
+    e.checkin(
+        Author::Alec,
+        &CheckinReq {
+            block_uid: uid.clone(),
+            outcome: "done".into(),
+            actual_min: None,
+            remaining_min: None,
+            not_before: None,
+        },
+    )
     .unwrap();
     assert!(
         e.db.cs_list(Some(Status::Pending), 10).unwrap().is_empty(),
@@ -1834,13 +1861,16 @@ fn checked_in_blocks_show_what_happened_on_the_calendar() {
     // Block 1: partly done (30 min) — trimmed to the 30 min and ticked.
     *env.now.lock().unwrap() = b1.end + Duration::minutes(5);
     let uid1 = e.checkin_items().unwrap()[0].block_uid.clone();
-    e.checkin(&CheckinReq {
-        block_uid: uid1.clone(),
-        outcome: "partial".into(),
-        actual_min: Some(30),
-        remaining_min: None,
-        not_before: None,
-    })
+    e.checkin(
+        Author::Alec,
+        &CheckinReq {
+            block_uid: uid1.clone(),
+            outcome: "partial".into(),
+            actual_min: Some(30),
+            remaining_min: None,
+            not_before: None,
+        },
+    )
     .unwrap();
     let world = e.world(14).unwrap();
     let i1 = world.instances.iter().find(|i| i.uid == uid1).unwrap();
@@ -1849,19 +1879,22 @@ fn checked_in_blocks_show_what_happened_on_the_calendar() {
         (i1.end(chrono_tz::Europe::London) - i1.start(chrono_tz::Europe::London)).num_minutes(),
         30
     );
-    // It can't be moved any more.
-    assert!(matches!(
-        e.update_event(
-            Author::Alec,
-            Some(&i1.source),
-            &uid1,
-            &UpdateEventReq {
-                start: Some(at("2026-10-15 20:00").to_rfc3339()),
-                ..Default::default()
-            }
-        ),
-        Err(EngineError::BadRequest(m)) if m.contains("check in")
-    ));
+    // It still moves (2026-10-27: it says when you did the work), and the record keeps its
+    // 30 min.
+    e.direct = true;
+    e.update_event(
+        Author::Alec,
+        Some(&i1.source),
+        &uid1,
+        &UpdateEventReq {
+            start: Some((b1.start - Duration::minutes(60)).to_rfc3339()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    e.direct = false;
+    let rec = e.db.checkin_get(&uid1).unwrap().unwrap();
+    assert_eq!(rec.actual_min, Some(30));
     // Block 2: missed — removed (its time is planned again).
     *env.now.lock().unwrap() = b2.end + Duration::minutes(5);
     let uid2 = e
@@ -1875,13 +1908,16 @@ fn checked_in_blocks_show_what_happened_on_the_calendar() {
             String::new()
         });
     if !uid2.is_empty() {
-        e.checkin(&CheckinReq {
-            block_uid: uid2.clone(),
-            outcome: "missed".into(),
-            actual_min: None,
-            remaining_min: None,
-            not_before: None,
-        })
+        e.checkin(
+            Author::Alec,
+            &CheckinReq {
+                block_uid: uid2.clone(),
+                outcome: "missed".into(),
+                actual_min: None,
+                remaining_min: None,
+                not_before: None,
+            },
+        )
         .unwrap();
         let world = e.world(14).unwrap();
         assert!(world.instances.iter().all(|i| i.uid != uid2), "missed block removed");
@@ -1933,13 +1969,16 @@ fn finished_at_checkin_completes_the_task_and_earlier_blocks_wait_to_be_checked_
         .find(|i| i.outcome.is_none())
         .expect("yesterday's block is still listed");
     // "Finished" = done, and the whole task is.
-    e.checkin(&CheckinReq {
-        block_uid: it.block_uid.clone(),
-        outcome: "finished".into(),
-        actual_min: None,
-        remaining_min: None,
-        not_before: None,
-    })
+    e.checkin(
+        Author::Alec,
+        &CheckinReq {
+            block_uid: it.block_uid.clone(),
+            outcome: "finished".into(),
+            actual_min: None,
+            remaining_min: None,
+            not_before: None,
+        },
+    )
     .unwrap();
     assert_eq!(e.db.task_get(&r.task.id).unwrap().unwrap().status, TaskStatus::Done);
 }
@@ -1992,13 +2031,16 @@ fn project_time_is_measured_and_checked_in_and_an_hour_counts_once() {
         .find(|c| c.task_id == r.task.id)
         .unwrap()
         .block_uid;
-    e.checkin(&CheckinReq {
-        block_uid: uid,
-        outcome: "done".into(),
-        actual_min: None,
-        remaining_min: None,
-        not_before: None,
-    })
+    e.checkin(
+        Author::Alec,
+        &CheckinReq {
+            block_uid: uid,
+            outcome: "done".into(),
+            actual_min: None,
+            remaining_min: None,
+            not_before: None,
+        },
+    )
     .unwrap();
     // Claude was open from half an hour before the block to an hour into it.
     e.set_worked(&kairos_core::api::WorkedReq {
@@ -2532,4 +2574,324 @@ fn lectures_link_to_their_course_by_its_code() {
     assert_eq!(src(&e, "l4").meta.locus, None);
     assert_eq!(src(&e, "l5").meta.locus, None, "only Studies events");
     assert_eq!(e.link_courses().unwrap(), 0, "nothing more to do");
+}
+
+// ---------------------------------------------------------------- start and length (2026-10-27)
+
+/// A task's work blocks, earliest first.
+fn work_blocks(e: &kairosd::engine::Engine, task_id: &str) -> Vec<kairos_core::model::Instance> {
+    let mut v: Vec<_> = e
+        .world(14)
+        .unwrap()
+        .instances
+        .into_iter()
+        .filter(|i| i.meta.kind == EventKind::TaskBlock && i.meta.task_id.as_deref() == Some(task_id))
+        .collect();
+    v.sort_by_key(|i| i.start(chrono_tz::Europe::London));
+    v
+}
+
+fn span_of(i: &kairos_core::model::Instance) -> (chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>) {
+    let tz = chrono_tz::Europe::London;
+    (i.start(tz), i.end(tz))
+}
+
+/// Alec's own edit from the TUI (direct, as `x-kairos-interactive` makes it).
+fn retime(
+    e: &mut kairosd::engine::Engine,
+    i: &kairos_core::model::Instance,
+    start: Option<chrono::DateTime<chrono::Utc>>,
+    end: Option<chrono::DateTime<chrono::Utc>>,
+) -> Result<Option<kairos_core::changeset::Changeset>, EngineError> {
+    e.direct = true;
+    let r = e.update_event(
+        Author::Alec,
+        Some(&i.source),
+        &i.uid,
+        &UpdateEventReq {
+            start: start.map(|s| s.to_rfc3339()),
+            end: end.map(|s| s.to_rfc3339()),
+            ..Default::default()
+        },
+    );
+    e.direct = false;
+    r
+}
+
+fn last_checkin(e: &kairosd::engine::Engine) -> kairos_core::changeset::Changeset {
+    e.db.cs_list(Some(Status::Applied), 50)
+        .unwrap()
+        .into_iter()
+        .find(|c| c.summary.starts_with("Check-in"))
+        .unwrap()
+}
+
+#[test]
+fn a_block_cannot_be_piled_onto_a_checked_in_one() {
+    // 2026-10-27: a pinned block nudged back a day landed on a morning block already ticked,
+    // and the time counted twice (and the view hid it). Now the edit is refused, naming it.
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e.create_task(Author::Alec, &b4(240, "fri 17:00")).unwrap();
+    let bs = work_blocks(&e, &r.task.id);
+    assert!(bs.len() >= 2);
+    let (s0, e0) = span_of(&bs[0]);
+    *env.now.lock().unwrap() = e0 + Duration::minutes(5);
+    e.checkin(
+        Author::Alec,
+        &CheckinReq {
+            block_uid: bs[0].uid.clone(),
+            outcome: "done".into(),
+            actual_min: None,
+            remaining_min: None,
+            not_before: None,
+        },
+    )
+    .unwrap();
+    let later = work_blocks(&e, &r.task.id)
+        .into_iter()
+        .find(|i| span_of(i).0 > e0)
+        .unwrap();
+    let err = retime(&mut e, &later, Some(s0 + Duration::minutes(10)), None).unwrap_err();
+    assert!(
+        matches!(&err, EngineError::BadRequest(m) if m.contains("overlap") && m.contains("B4")),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn a_flexible_block_in_the_way_moves_out_of_it() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let a = e.create_task(Author::Alec, &b4(120, "fri 17:00")).unwrap();
+    let mut other = b4(120, "fri 17:00");
+    other.title = "B5 sheet".into();
+    let b = e.create_task(Author::Alec, &other).unwrap();
+    let ba = work_blocks(&e, &a.task.id)[0].clone();
+    let bb = work_blocks(&e, &b.task.id)[0].clone();
+    retime(&mut e, &ba, Some(span_of(&bb).0), None).unwrap();
+    e.replan_if_needed().unwrap();
+    let (sa, ea) = span_of(&work_blocks(&e, &a.task.id)[0]);
+    for i in work_blocks(&e, &b.task.id) {
+        let (s, en) = span_of(&i);
+        assert!(en <= sa || s >= ea, "B5 moved out of the way");
+    }
+}
+
+#[test]
+fn lengthening_a_block_ahead_gives_the_task_that_time_and_leaves_the_rest() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e.create_task(Author::Alec, &b4(240, "fri 17:00")).unwrap();
+    let before = work_blocks(&e, &r.task.id);
+    let (s, en) = span_of(&before[0]);
+    let cs = retime(&mut e, &before[0], None, Some(en + Duration::minutes(30)))
+        .unwrap()
+        .unwrap();
+    assert!(cs.summary.contains("+30 m for the task"), "{}", cs.summary);
+    assert_eq!(e.db.task_get(&r.task.id).unwrap().unwrap().remaining_min, 270);
+    e.replan_if_needed().unwrap();
+    let after = work_blocks(&e, &r.task.id);
+    assert_eq!(span_of(&after[0]), (s, en + Duration::minutes(30)));
+    assert_eq!(
+        after[1..].iter().map(span_of).collect::<Vec<_>>(),
+        before[1..].iter().map(span_of).collect::<Vec<_>>(),
+        "the other blocks stay"
+    );
+    // Shorter gives it back.
+    retime(&mut e, &after[0], None, Some(en - Duration::minutes(30))).unwrap();
+    assert_eq!(e.db.task_get(&r.task.id).unwrap().unwrap().remaining_min, 210);
+}
+
+#[test]
+fn halfway_through_a_block_start_later_and_keep_going() {
+    // 14:00–16:00, started at 14:30 and working on to 17:00: ⇧↓ then ⌥↓↓.
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e.create_task(Author::Alec, &b4(240, "fri 17:00")).unwrap();
+    let b = work_blocks(&e, &r.task.id)[0].clone();
+    let (s, en) = span_of(&b);
+    *env.now.lock().unwrap() = s + Duration::minutes(45);
+    retime(&mut e, &b, Some(s + Duration::minutes(30)), None).unwrap();
+    let b = work_blocks(&e, &r.task.id)[0].clone();
+    retime(&mut e, &b, None, Some(en + Duration::minutes(60))).unwrap();
+    let b = work_blocks(&e, &r.task.id)[0].clone();
+    assert_eq!(span_of(&b), (s + Duration::minutes(30), en + Duration::minutes(60)));
+    assert_eq!(e.db.task_get(&r.task.id).unwrap().unwrap().remaining_min, 270);
+}
+
+#[test]
+fn fixing_a_past_block_then_checking_in_records_what_happened() {
+    // Planned 2 h, actually 1 h 30: shorten it, then y.
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e.create_task(Author::Alec, &b4(240, "fri 17:00")).unwrap();
+    let b = work_blocks(&e, &r.task.id)[0].clone();
+    let (s, en) = span_of(&b);
+    *env.now.lock().unwrap() = en + Duration::minutes(10);
+    let planned = (en - s).num_minutes() as u32;
+    retime(&mut e, &b, None, Some(en - Duration::minutes(30))).unwrap();
+    e.checkin(
+        Author::Alec,
+        &CheckinReq {
+            block_uid: b.uid.clone(),
+            outcome: "done".into(),
+            actual_min: None,
+            remaining_min: None,
+            not_before: None,
+        },
+    )
+    .unwrap();
+    let rec = e.db.checkin_get(&b.uid).unwrap().unwrap();
+    assert_eq!(rec.actual_min, Some(planned - 30));
+    // 240 − 30 (given back) − (planned − 30) done.
+    assert_eq!(e.db.task_get(&r.task.id).unwrap().unwrap().remaining_min, 240 - planned);
+}
+
+#[test]
+fn a_checked_in_block_stays_editable() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e.create_task(Author::Alec, &b4(240, "fri 17:00")).unwrap();
+    let b = work_blocks(&e, &r.task.id)[0].clone();
+    let (s, en) = span_of(&b);
+    let planned = (en - s).num_minutes() as u32;
+    *env.now.lock().unwrap() = en + Duration::hours(3);
+    e.checkin(
+        Author::Alec,
+        &CheckinReq {
+            block_uid: b.uid.clone(),
+            outcome: "done".into(),
+            actual_min: None,
+            remaining_min: None,
+            not_before: None,
+        },
+    )
+    .unwrap();
+    let left = e.db.task_get(&r.task.id).unwrap().unwrap().remaining_min;
+    // Worked 30 min longer than recorded: the record grows; what's left doesn't change.
+    let b = work_blocks(&e, &r.task.id)[0].clone();
+    retime(&mut e, &b, None, Some(en + Duration::minutes(30))).unwrap();
+    assert_eq!(
+        e.db.checkin_get(&b.uid).unwrap().unwrap().actual_min,
+        Some(planned + 30)
+    );
+    assert_eq!(e.db.task_get(&r.task.id).unwrap().unwrap().remaining_min, left);
+    // It didn't happen after all: x answers it again — gone, and the time back to the task.
+    e.checkin(
+        Author::Alec,
+        &CheckinReq {
+            block_uid: b.uid.clone(),
+            outcome: "missed".into(),
+            actual_min: None,
+            remaining_min: None,
+            not_before: None,
+        },
+    )
+    .unwrap();
+    assert!(work_blocks(&e, &r.task.id).iter().all(|i| i.uid != b.uid));
+    assert_eq!(
+        e.db.task_get(&r.task.id).unwrap().unwrap().remaining_min,
+        left + planned + 30
+    );
+}
+
+#[test]
+fn undo_takes_back_an_accidental_check_in_whole() {
+    // 2026-10-27: "done" pressed by accident, and u went past it (it was the scheduler's).
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e.create_task(Author::Alec, &b4(240, "fri 17:00")).unwrap();
+    let b = work_blocks(&e, &r.task.id)[0].clone();
+    *env.now.lock().unwrap() = span_of(&b).1 + Duration::minutes(5);
+    let task_before = e.db.task_get(&r.task.id).unwrap().unwrap();
+    // Even "finished".
+    e.checkin(
+        Author::Alec,
+        &CheckinReq {
+            block_uid: b.uid.clone(),
+            outcome: "finished".into(),
+            actual_min: None,
+            remaining_min: None,
+            not_before: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(e.db.task_get(&r.task.id).unwrap().unwrap().status, TaskStatus::Done);
+    let cs = last_checkin(&e);
+    assert_eq!(cs.author, Author::Alec, "u finds it");
+    e.undo_with_replans(&cs.id).unwrap();
+    let t = e.db.task_get(&r.task.id).unwrap().unwrap();
+    assert_eq!(
+        (t.status, t.remaining_min),
+        (TaskStatus::Open, task_before.remaining_min)
+    );
+    assert!(e.db.checkin_get(&b.uid).unwrap().is_none_or(|c| c.outcome.is_none()));
+    let again = work_blocks(&e, &r.task.id);
+    let i = again.iter().find(|i| i.uid == b.uid).unwrap();
+    assert!(i.title.starts_with('☐'), "{}", i.title);
+    assert!(again.len() >= 2, "its blocks ahead are back");
+    assert!(
+        e.checkin_items()
+            .unwrap()
+            .iter()
+            .any(|c| c.block_uid == b.uid && c.outcome.is_none())
+    );
+}
+
+#[test]
+fn a_check_in_claude_records_for_alec_applies_at_once() {
+    // "Only managed 20 min" said to Claude: still no approval needed, as when the scheduler
+    // authored the ✓ (before 2026-10-27).
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e.create_task(Author::Alec, &b4(240, "fri 17:00")).unwrap();
+    let b = work_blocks(&e, &r.task.id)[0].clone();
+    *env.now.lock().unwrap() = span_of(&b).1 + Duration::minutes(5);
+    e.checkin(
+        Author::Claude,
+        &CheckinReq {
+            block_uid: b.uid.clone(),
+            outcome: "partial".into(),
+            actual_min: Some(20),
+            remaining_min: None,
+            not_before: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        last_checkin(&e).status,
+        Status::Applied,
+        "{:?}",
+        last_checkin(&e).reasons
+    );
+    // And a pinned (hand-moved) one.
+    let b2 = work_blocks(&e, &r.task.id)
+        .into_iter()
+        .find(|i| i.uid != b.uid)
+        .unwrap();
+    let (s2, _) = span_of(&b2);
+    retime(&mut e, &b2, Some(s2 + Duration::minutes(30)), None).unwrap();
+    let b2 = work_blocks(&e, &r.task.id)
+        .into_iter()
+        .find(|i| i.uid == b2.uid)
+        .unwrap();
+    *env.now.lock().unwrap() = span_of(&b2).1 + Duration::minutes(5);
+    e.checkin(
+        Author::Claude,
+        &CheckinReq {
+            block_uid: b2.uid.clone(),
+            outcome: "done".into(),
+            actual_min: None,
+            remaining_min: None,
+            not_before: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        last_checkin(&e).status,
+        Status::Applied,
+        "{:?}",
+        last_checkin(&e).reasons
+    );
 }

@@ -586,8 +586,9 @@ async fn checkin_items(State(st): State<AppState>) -> HResult<Vec<api::CheckinIt
     Ok(Json(with_engine(&st, move |e| e.checkin_items()).await?))
 }
 
-async fn checkin(State(st): State<AppState>, Json(req): Json<api::CheckinReq>) -> HResult<api::PlanResp> {
-    Ok(Json(with_engine(&st, move |e| e.checkin(&req)).await?))
+async fn checkin(State(st): State<AppState>, h: HeaderMap, Json(req): Json<api::CheckinReq>) -> HResult<api::PlanResp> {
+    let a = author(&h);
+    Ok(Json(with_engine_as(&st, &h, move |e| e.checkin(a, &req)).await?))
 }
 
 /// Every task for locus's Tasks page (spec E7).

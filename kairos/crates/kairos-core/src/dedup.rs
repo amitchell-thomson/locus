@@ -7,8 +7,12 @@
 //!    starts are within ±15 min, on the same local date, both timed or both
 //!    all-day — and, unless titles are identical, their locations don't
 //!    contradict each other.
+//!
+//! Two different work blocks are never duplicates (2026-10-27): kairos wrote both, so they
+//! are two claims on your time, not two copies of one event. Folding them hid two B14 blocks
+//! under a third and their time was counted without being seen.
 
-use crate::model::Instance;
+use crate::model::{EventKind, Instance};
 use chrono::Duration;
 use chrono_tz::Tz;
 use serde::Serialize;
@@ -64,6 +68,9 @@ fn locations_conflict(a: &Instance, b: &Instance) -> bool {
 pub fn is_duplicate(a: &Instance, b: &Instance, tz: Tz) -> bool {
     if a.uid == b.uid && a.recurrence_id == b.recurrence_id {
         return true;
+    }
+    if a.meta.kind == EventKind::TaskBlock || b.meta.kind == EventKind::TaskBlock {
+        return false;
     }
     if a.span.is_all_day() != b.span.is_all_day() {
         return false;
@@ -173,6 +180,50 @@ mod tests {
         assert_eq!(normalise_title("⚑  B4 Sheet!!"), "b4 sheet");
         assert_eq!(normalise_title("OQTS committee meeting! 🎉"), "oqts committee meeting");
         assert_eq!(normalise_title("Café — Talk"), "café talk");
+    }
+
+    fn block(uid: &str, start: &str, end: &str) -> Instance {
+        let t = |s: &str| {
+            chrono::DateTime::parse_from_rfc3339(s)
+                .map(|d| d.with_timezone(&chrono::Utc))
+                .unwrap_or_default()
+        };
+        Instance {
+            uid: uid.into(),
+            recurrence_id: None,
+            source: "engineering".into(),
+            overlay: crate::config::Overlay::Personal,
+            key: Some("Studies".into()),
+            title: "☐ B14 Image Processing".into(),
+            location: None,
+            description: None,
+            span: crate::model::Span::Timed {
+                start: t(start),
+                end: t(end),
+            },
+            recurring: false,
+            transparent: false,
+            tentative: false,
+            meta: crate::model::Meta {
+                kind: EventKind::TaskBlock,
+                task_id: Some("t-1".into()),
+                ..Default::default()
+            },
+            href: None,
+            alarms: vec![],
+        }
+    }
+
+    #[test]
+    fn two_work_blocks_are_never_one_event() {
+        // 2026-10-27: 11:00–13:00 and two blocks at 11:10 of the same task drew as one.
+        let tz = chrono_tz::Europe::London;
+        let a = block("a", "2026-10-27T11:00:00Z", "2026-10-27T13:00:00Z");
+        let b = block("b", "2026-10-27T11:10:00Z", "2026-10-27T12:00:00Z");
+        assert!(!is_duplicate(&a, &b, tz));
+        assert_eq!(cluster(vec![a.clone(), b], tz, |_| 0).len(), 2);
+        // The same block twice (one uid) is still one.
+        assert_eq!(cluster(vec![a.clone(), a], tz, |_| 0).len(), 1);
     }
 
     #[test]

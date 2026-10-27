@@ -581,6 +581,15 @@ impl Engine {
                 overlaps_fixed: false,
                 finished_task_deadline: false,
             },
+            Op::Checkin { .. } => OpFacts {
+                action: Action::TaskUpdate,
+                target: None,
+                origin: None,
+                before: None,
+                after: None,
+                overlaps_fixed: false,
+                finished_task_deadline: false,
+            },
             Op::UpdateTask { before, after } => OpFacts {
                 action: match (before.status, after.status) {
                     (TaskStatus::Open, TaskStatus::Dropped) => Action::TaskDrop,
@@ -730,6 +739,10 @@ impl Engine {
                 }
                 Op::CreateTask { after } => self.db.task_put(after)?,
                 Op::UpdateTask { after, .. } => self.db.task_put(after)?,
+                Op::Checkin { block_uid, after, .. } => match after {
+                    Some(c) => self.db.checkin_put(c)?,
+                    None => self.db.checkin_delete(block_uid)?,
+                },
             }
             for it in op.items() {
                 touched.push(it.source.clone());
@@ -913,7 +926,17 @@ impl Engine {
                     t.notes = format!("{} [undone {}]", t.notes, cs.id).trim().to_string();
                     self.db.task_put(&t)?;
                 }
-                Op::UpdateTask { before, .. } => self.db.task_put(before)?,
+                Op::UpdateTask { before, after } => {
+                    self.db.task_put(before)?;
+                    // Reopened: its estimate-log row (from finishing it) goes too.
+                    if before.status == TaskStatus::Open && after.status == TaskStatus::Done {
+                        self.db.estimate_unlog(&before.id)?;
+                    }
+                }
+                Op::Checkin { block_uid, before, .. } => match before {
+                    Some(c) => self.db.checkin_put(c)?,
+                    None => self.db.checkin_delete(block_uid)?,
+                },
             }
             // Moves: delete from `to` first, then recreate in `from`.
             let items = op.items();
@@ -1054,7 +1077,11 @@ impl Engine {
                         "that's in the past: pick a time from now on".into(),
                     ));
                 }
-                NewTime::Timed { .. } => {}
+                NewTime::Timed { start, end } => {
+                    if let Some(why) = self.block_in_the_way(&world, None, start, end)? {
+                        return Err(EngineError::BadRequest(why));
+                    }
+                }
             }
         }
         let mut meta = self.author_meta(author);
@@ -1227,10 +1254,12 @@ impl Engine {
         req: &api::UpdateEventReq,
     ) -> Result<Option<Changeset>> {
         let world = self.world(60)?;
-        let Some((op, summary)) = self.update_op(&world, source, uid, req)? else {
+        let mut tasks = TaskEdits::new();
+        let Some((mut ops, summary)) = self.update_op(&world, source, uid, req, &mut tasks)? else {
             return Ok(None);
         };
-        self.propose(&world, author, vec![op], summary).map(Some)
+        ops.extend(task_ops(tasks));
+        self.propose(&world, author, ops, summary).map(Some)
     }
 
     /// Several edits as one changeset: one approval, one undo. `label` is a
@@ -1245,15 +1274,19 @@ impl Engine {
         let world = self.world(60)?;
         let mut ops = Vec::new();
         let mut first = String::new();
+        let mut tasks = TaskEdits::new();
+        let mut n = 0;
         for u in updates {
-            if let Some((op, s)) = self.update_op(&world, u.source.as_deref(), &u.uid, &u.change)? {
+            if let Some((o, s)) = self.update_op(&world, u.source.as_deref(), &u.uid, &u.change, &mut tasks)? {
                 if first.is_empty() {
                     first = s;
                 }
-                ops.push(op);
+                n += 1;
+                ops.extend(o);
             }
         }
-        let summary = match (ops.len(), label) {
+        ops.extend(task_ops(tasks));
+        let summary = match (n, label) {
             (0, _) => return Err(EngineError::BadRequest("nothing to change".into())),
             (1, None) => first,
             (n, Some(l)) => format!("{l} ({n} events)"),
@@ -1262,14 +1295,17 @@ impl Engine {
         self.propose(&world, author, ops, summary)
     }
 
-    /// The op for one edit (`None` if it only touched the sidecar `blocking` flag).
+    /// The ops for one edit (`None` if it only touched the sidecar `blocking` flag). A work
+    /// block's change of length also changes its task, collected in `tasks` so a batch writes
+    /// each task once.
     fn update_op(
         &mut self,
         world: &World,
         source: Option<&str>,
         uid: &str,
         req: &api::UpdateEventReq,
-    ) -> Result<Option<(Op, String)>> {
+        tasks: &mut TaskEdits,
+    ) -> Result<Option<(Vec<Op>, String)>> {
         let loc = self.locate(world, source, uid)?;
         if req.blocking.is_some() || req.not_going.is_some() || req.locus.is_some() {
             // Sidecar-only flags (no iCloud write): a Family event opting in to block the
@@ -1350,19 +1386,58 @@ impl Engine {
             }
             t => t,
         };
-        if block && time.is_some() {
-            // A block that has started is history once you have checked in on it; before
-            // that it can still be moved (one placed in the past by mistake, or moved back to
-            // when you really did the work before checking in).
-            let answered = self
-                .db
-                .checkins(false)?
-                .iter()
-                .any(|c| c.block_uid == uid && c.outcome.is_some());
-            if master.start.instant(tz) <= self.now() && (answered || build::is_checked_in(&master.summary)) {
-                return Err(EngineError::BadRequest(
-                    "you've checked in on that block, so it is history: check in again (C) to change it".into(),
-                ));
+        // A work block has a start and a length (Alec, 2026-10-27), and they mean one thing
+        // whatever the block is. Moving it never changes how much time its task gets (moved
+        // into the past, it says when you did the work). Changing its length changes the
+        // task's time by exactly the difference, so the rest of the plan stays where it is:
+        // ahead (or under way) the task gets more or less time; checked in, it is what you
+        // did (the record changes; what's left doesn't). No two work blocks overlap: a
+        // flexible one in the way is moved by the replan; a pinned, started or checked-in
+        // one stops the edit — piling blocks on one another is how time got counted twice
+        // (today, three B14 blocks on one morning, two of them hidden).
+        let mut extra = Vec::new();
+        let mut note = String::new();
+        if block && let Some(NewTime::Timed { start: s1, end: e1 }) = time {
+            if let Some(why) = self.block_in_the_way(world, Some(uid), s1, e1)? {
+                return Err(EngineError::BadRequest(why));
+            }
+            let (s0, e0) = (master.start.instant(tz), master.end.instant(tz));
+            let d = (e1 - s1).num_minutes() - (e0 - s0).num_minutes();
+            let answered = self.db.checkin_get(uid)?.filter(|c| c.outcome.is_some());
+            if let Some(c) = answered {
+                let day = s1.with_timezone(&tz).date_naive();
+                let was = c.actual_min.unwrap_or(c.planned_min);
+                let actual = (i64::from(was) + d).max(0) as u32;
+                if actual != was || day != c.day {
+                    let mut after = c.clone();
+                    after.actual_min = Some(actual);
+                    after.day = day;
+                    extra.push(Op::Checkin {
+                        block_uid: uid.into(),
+                        before: Some(Box::new(c)),
+                        after: Some(Box::new(after)),
+                    });
+                }
+                if d != 0 {
+                    note = format!(" ({} done)", fmt_min(actual));
+                }
+            } else if d != 0
+                && let Some(tid) = master.meta.task_id.as_deref()
+                && let Some((_, after)) = self.task_edit(tasks, tid)?
+            {
+                let ratio = self.ratio_for(after)?;
+                let units = (d.unsigned_abs() as f32 / ratio).round() as u32;
+                after.remaining_min = if d > 0 {
+                    after.remaining_min + units
+                } else {
+                    after.remaining_min.saturating_sub(units)
+                };
+                after.updated_at = self.now();
+                note = format!(
+                    " ({}{} for the task)",
+                    if d > 0 { "+" } else { "−" },
+                    fmt_min(d.unsigned_abs() as u32)
+                );
             }
         }
         // Moving a work block by hand pins it: the scheduler won't move it back.
@@ -1385,7 +1460,7 @@ impl Engine {
         let after = build::edit_file(&loc.text, uid, &edit, tz, self.now())
             .map_err(|e| EngineError::BadRequest(e.to_string()))?;
         let summary = format!(
-            "Update {:?}{}",
+            "Update {:?}{}{note}",
             master.summary,
             time.map(|t| format!(" → {}", describe_time(t, tz))).unwrap_or_default()
         );
@@ -1398,7 +1473,68 @@ impl Engine {
             before: loc.text,
             after,
         };
-        Ok(Some((op, summary)))
+        let mut ops = vec![op];
+        ops.extend(extra);
+        Ok(Some((ops, summary)))
+    }
+
+    /// The task `id` as this edit leaves it so far: `(before, after)`, loaded once. `None` for a
+    /// task that is not open (a finished task's block still moves; its time is history) or a
+    /// project.
+    fn task_edit<'a>(&self, tasks: &'a mut TaskEdits, id: &str) -> Result<Option<&'a mut (Task, Task)>> {
+        if !tasks.contains_key(id) {
+            match self.db.task_get(id)? {
+                Some(t) if t.status == TaskStatus::Open && !t.is_project() => {
+                    tasks.insert(id.to_string(), (t.clone(), t));
+                }
+                _ => return Ok(None),
+            }
+        }
+        Ok(tasks.get_mut(id))
+    }
+
+    /// Why a work block can't go in `[start, end)`: another work block there that is pinned,
+    /// has started, or is checked in (a flexible one is the scheduler's to move). `None` if
+    /// nothing is in the way.
+    fn block_in_the_way(
+        &self,
+        world: &World,
+        uid: Option<&str>,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> Result<Option<String>> {
+        let now = self.now();
+        let answered: std::collections::HashSet<String> = self
+            .db
+            .checkins(false)?
+            .into_iter()
+            .filter(|c| c.outcome.is_some())
+            .map(|c| c.block_uid)
+            .collect();
+        let tz = self.tz();
+        Ok(self
+            .blocks(world)
+            .into_iter()
+            .filter(|(b, _)| b.uid.as_deref() != uid && b.start < end && start < b.end)
+            .find(|(b, i)| {
+                b.pinned
+                    || b.start <= now
+                    || b.uid.as_ref().is_some_and(|u| answered.contains(u))
+                    || build::is_checked_in(&i.title)
+            })
+            .map(|(b, i)| {
+                format!(
+                    "that would overlap {:?} {}: move or shorten it first",
+                    i.title,
+                    describe_time(
+                        NewTime::Timed {
+                            start: b.start,
+                            end: b.end
+                        },
+                        tz
+                    )
+                )
+            }))
     }
 
     pub fn delete_event(&mut self, author: Author, source: Option<&str>, uid: &str) -> Result<Changeset> {
@@ -2966,27 +3102,23 @@ impl Engine {
             start.with_timezone(&tz).format("%H:%M"),
             end.with_timezone(&tz).format("%H:%M")
         );
-        let cs = self.propose(
-            &world,
-            author,
-            vec![Op::CreateEvent {
-                item,
-                uid: uid.clone(),
-                after,
-            }],
-            summary,
-        )?;
-        if cs.status == Status::Applied {
-            let b = Block {
-                uid: Some(uid.clone()),
-                task_id: t.id.clone(),
-                start,
-                end,
-                pinned: true,
-                why: None,
-            };
-            self.answer_checkin(&uid, &b, true, Outcome::Done, Some(minutes))?;
-        }
+        // The block and its check-in in one changeset (already ✓, so nothing to record).
+        let b = Block {
+            uid: Some(uid.clone()),
+            task_id: t.id.clone(),
+            start,
+            end,
+            pinned: true,
+            why: None,
+        };
+        let (checkin, _) = self.checkin_ops(&world, &uid, &b, false, Outcome::Done, Some(minutes), None)?;
+        let mut ops = vec![Op::CreateEvent {
+            item,
+            uid: uid.clone(),
+            after,
+        }];
+        ops.extend(checkin);
+        let cs = self.propose(&world, author, ops, summary)?;
         let plan = if cs.status == Status::Applied {
             self.replan_soon = false;
             Some(self.plan(false, Author::Scheduler)?)
@@ -3347,67 +3479,147 @@ impl Engine {
             if b.end > boundary || answered.contains(&uid) || build::is_checked_in(&inst.title) {
                 continue;
             }
-            self.answer_checkin(&uid, &b, recordable(&inst), Outcome::Done, None)?;
+            self.answer_checkin(Author::Scheduler, &uid, &b, recordable(&inst), Outcome::Done, None)?;
             n += 1;
         }
         Ok(n)
     }
 
-    /// Record a check-in on a work block: the time counts (for the task's remaining, and its
-    /// project's time spent) and the calendar shows it, except on repeating events, which aren't
-    /// touched.
+    /// Record a check-in on a work block as ONE changeset (see [`Engine::checkin_ops`]), so `u`
+    /// takes it back whole.
     fn answer_checkin(
         &mut self,
+        author: Author,
         uid: &str,
         b: &Block,
         record: bool,
         outcome: Outcome,
         actual: Option<u32>,
-    ) -> Result<()> {
+    ) -> Result<Changeset> {
+        let world = self.world(2)?;
+        let (ops, summary) = self.checkin_ops(&world, uid, b, record, outcome, actual, None)?;
+        self.propose(&world, author, ops, summary)
+    }
+
+    /// The ops that answer a check-in on a work block, or answer it again (an accidental
+    /// "done" corrected; a ✓ block that didn't happen after all): the record, the task's
+    /// remaining, and the calendar — `✓` (trimmed or grown to the time done) or gone if missed,
+    /// except on repeating events, which aren't touched (`record` false).
+    ///
+    /// Remaining is in estimate units: with a learned ratio (sheets take ×1.5), 90 min of work
+    /// uses up 60 min of the estimate. Answering again first gives back what the earlier
+    /// answer used. A task never finishes by itself when it reaches 0, only when Alec says so
+    /// (`remaining` = Some(0): finished, its blocks still ahead and its ⚑ go in the same
+    /// changeset, as `complete_task` does).
+    #[allow(clippy::too_many_arguments)]
+    fn checkin_ops(
+        &self,
+        world: &World,
+        uid: &str,
+        b: &Block,
+        record: bool,
+        outcome: Outcome,
+        actual: Option<u32>,
+        remaining: Option<u32>,
+    ) -> Result<(Vec<Op>, String)> {
         let tz = self.tz();
+        let now = self.now();
+        let prev = self.db.checkin_get(uid)?;
+        let prev_actual = prev.as_ref().filter(|c| c.outcome.is_some()).and_then(|c| c.actual_min);
         let planned = b.minutes().max(0) as u32;
-        self.db.checkin_upsert_planned(&Checkin {
-            block_uid: uid.into(),
-            task_id: b.task_id.clone(),
-            day: b.start.with_timezone(&tz).date_naive(),
-            planned_min: planned,
-            outcome: None,
-            actual_min: None,
-            answered_at: None,
-        })?;
         let actual = match outcome {
             Outcome::Done => actual.unwrap_or(planned),
             Outcome::Partial => actual.unwrap_or(planned / 2).min(planned),
             Outcome::Missed => 0,
         };
-        self.db.checkin_answer(uid, outcome, actual, self.now())?;
-        if let Some(mut t) = self.db.task_get(&b.task_id)?
-            && t.status == TaskStatus::Open
-            && !t.is_project()
+        let mut ops = vec![Op::Checkin {
+            block_uid: uid.into(),
+            before: prev.clone().map(Box::new),
+            after: Some(Box::new(Checkin {
+                block_uid: uid.into(),
+                task_id: b.task_id.clone(),
+                day: b.start.with_timezone(&tz).date_naive(),
+                planned_min: prev
+                    .as_ref()
+                    .filter(|c| c.outcome.is_some())
+                    .map_or(planned, |c| c.planned_min),
+                outcome: Some(outcome),
+                actual_min: Some(actual),
+                answered_at: Some(now),
+            })),
+        }];
+        let mut finished = false;
+        if let Some(before) = self.db.task_get(&b.task_id)?
+            && before.status == TaskStatus::Open
+            && !before.is_project()
         {
-            // Remaining is in estimate units: with a learned ratio (sheets take
-            // ×1.5), 90 min of work uses up 60 min of the estimate. A task
-            // never finishes by itself when it reaches 0 — only when Alec says
-            // so (it then asks "finished, or how much more?").
-            let ratio = self.ratio_for(&t)?;
-            let used = (actual as f32 / ratio).round() as u32;
-            t.remaining_min = t.remaining_min.saturating_sub(used);
-            t.updated_at = self.now();
-            self.db.task_put(&t)?;
+            let ratio = self.ratio_for(&before)?;
+            let units = |m: u32| (m as f32 / ratio).round() as u32;
+            let mut t = before.clone();
+            t.remaining_min = (t.remaining_min + prev_actual.map_or(0, units)).saturating_sub(units(actual));
+            match remaining {
+                Some(0) => {
+                    finished = true;
+                    t.status = TaskStatus::Done;
+                    t.remaining_min = 0;
+                }
+                Some(r) => t.remaining_min = r,
+                None => {}
+            }
+            if t != before {
+                t.updated_at = now;
+                ops.push(Op::UpdateTask {
+                    before: Box::new(before),
+                    after: Box::new(t.clone()),
+                });
+            }
+            if finished {
+                ops.extend(self.block_deletes(world, &t.id, |x| x.start >= now && x.uid.as_deref() != Some(uid))?);
+                ops.extend(self.deadline_delete(world, &t, true));
+            }
         }
-        if record {
-            self.record_checkin(uid, b, outcome, actual)?;
-        }
-        Ok(())
+        let title = match record {
+            true => self.record_op(world, uid, b, outcome, actual)?.map(|(op, title)| {
+                ops.push(op);
+                title
+            }),
+            false => None,
+        };
+        let title = title.unwrap_or_else(|| self.task_title(&b.task_id));
+        let what = match (outcome, finished) {
+            (_, true) => "done, task finished",
+            (Outcome::Done, _) => "done",
+            (Outcome::Partial, _) => "partly done",
+            (Outcome::Missed, _) => "missed",
+        };
+        let again = if prev_actual.is_some() { " (answered again)" } else { "" };
+        Ok((
+            ops,
+            format!("Check-in: {:?} {what}{again}", build::bare_block_title(&title)),
+        ))
     }
 
-    /// Make the calendar show what happened to a checked-in block: `✓` in
-    /// its title (trimmed to the time actually done), or gone if missed (that
-    /// time is planned again elsewhere).
-    fn record_checkin(&mut self, uid: &str, b: &Block, outcome: Outcome, actual: u32) -> Result<()> {
-        let world = self.world(2)?;
-        let Ok(loc) = self.locate(&world, None, uid) else {
-            return Ok(());
+    fn task_title(&self, id: &str) -> String {
+        self.db
+            .task_get(id)
+            .ok()
+            .flatten()
+            .map_or_else(|| id.to_string(), |t| t.title)
+    }
+
+    /// The calendar side of a check-in: `✓` in the block's title (trimmed to the time actually
+    /// done, or grown to it), or the block gone if missed (that time is planned again
+    /// elsewhere). `None` if nothing changes. Returns the op and the block's title.
+    fn record_op(
+        &self,
+        world: &World,
+        uid: &str,
+        b: &Block,
+        outcome: Outcome,
+        actual: u32,
+    ) -> Result<Option<(Op, String)>> {
+        let Ok(loc) = self.locate(world, None, uid) else {
+            return Ok(None);
         };
         let title = loc
             .series
@@ -3419,15 +3631,12 @@ impl Engine {
             source: loc.source.id.clone(),
             href: loc.href.clone(),
         };
-        let (op, what) = match outcome {
-            Outcome::Missed => (
-                Op::DeleteEvent {
-                    item,
-                    uid: uid.into(),
-                    before: loc.text,
-                },
-                "missed",
-            ),
+        let op = match outcome {
+            Outcome::Missed => Op::DeleteEvent {
+                item,
+                uid: uid.into(),
+                before: loc.text,
+            },
             Outcome::Done | Outcome::Partial => {
                 let planned = b.minutes().max(0);
                 // Took longer: the block grows to the time spent, as far as
@@ -3460,28 +3669,19 @@ impl Engine {
                     ..Default::default()
                 };
                 if edit.title.is_none() && edit.time.is_none() {
-                    return Ok(());
+                    return Ok(None);
                 }
                 let after = build::edit_file(&loc.text, uid, &edit, self.tz(), self.now())
                     .map_err(|e| EngineError::BadRequest(e.to_string()))?;
-                (
-                    Op::UpdateEvent {
-                        item,
-                        uid: uid.into(),
-                        before: loc.text,
-                        after,
-                    },
-                    if outcome == Outcome::Done {
-                        "done"
-                    } else {
-                        "partly done"
-                    },
-                )
+                Op::UpdateEvent {
+                    item,
+                    uid: uid.into(),
+                    before: loc.text,
+                    after,
+                }
             }
         };
-        let summary = format!("Check-in: {:?} {what}", build::bare_block_title(&title));
-        self.propose(&world, Author::Scheduler, vec![op], summary)?;
-        Ok(())
+        Ok(Some((op, title)))
     }
 
     /// Today's blocks for the check-in.
@@ -3532,7 +3732,7 @@ impl Engine {
         Ok(out)
     }
 
-    pub fn checkin(&mut self, req: &api::CheckinReq) -> Result<api::PlanResp> {
+    pub fn checkin(&mut self, author: Author, req: &api::CheckinReq) -> Result<api::PlanResp> {
         // "finished" = done, and the whole task is finished.
         let finished = req.outcome == "finished";
         let mut req = req.clone();
@@ -3552,40 +3752,75 @@ impl Engine {
                 req.outcome
             ))
         })?;
-        let world = self.world(1)?;
+        let world = self.world(i64::from(self.constraints.horizon_days) + 60)?;
         let (b, inst) = self
             .blocks(&world)
             .into_iter()
             .find(|(b, _)| b.uid.as_deref() == Some(req.block_uid.as_str()))
             .ok_or_else(|| EngineError::NotFound(format!("block {}", req.block_uid)))?;
-        self.answer_checkin(&req.block_uid, &b, recordable(&inst), outcome, req.actual_min)?;
-        // "How much is left?": the new remaining estimate (coursework).
-        if let Some(r) = req.remaining_min
-            && let Some(mut t) = self.db.task_get(&b.task_id)?
-            && t.status == TaskStatus::Open
-        {
-            if r == 0 {
-                // "0 left" = finished: the same as completing it.
-                return Ok(self.complete_task(Author::Alec, &t.id, None)?.plan.unwrap_or_default());
-            }
-            t.remaining_min = r;
-            t.updated_at = self.now();
-            self.db.task_put(&t)?;
-        }
+        // One changeset: the record, the task's time ("how much is left?"; 0 = finished) and
+        // the ✓, so `u` takes back an accidental answer whole.
+        let (mut ops, summary) = self.checkin_ops(
+            &world,
+            &req.block_uid,
+            &b,
+            recordable(&inst),
+            outcome,
+            req.actual_min,
+            req.remaining_min,
+        )?;
         // "Took longer — plan the rest from <date>".
         if let Some(nb) = req.not_before.as_deref().filter(|s| !s.trim().is_empty())
-            && let Some(mut t) = self.db.task_get(&b.task_id)?
+            && let Some(t) = self.db.task_get(&b.task_id)?
             && t.status == TaskStatus::Open
         {
             let tz = self.tz();
-            t.earliest_start = Some(match api::parse_time(nb, tz, self.now())? {
+            let at = match api::parse_time(nb, tz, self.now())? {
                 TimeIn::At(x) => x,
                 TimeIn::Date(d) => kairos_core::time::resolve_local(d.and_time(NaiveTime::MIN), tz),
-            });
-            t.updated_at = self.now();
-            self.db.task_put(&t)?;
+            };
+            match ops.iter_mut().find_map(|o| match o {
+                Op::UpdateTask { after, .. } => Some(after),
+                _ => None,
+            }) {
+                Some(after) => after.earliest_start = Some(at),
+                None => {
+                    let mut after = t.clone();
+                    after.earliest_start = Some(at);
+                    after.updated_at = self.now();
+                    ops.push(Op::UpdateTask {
+                        before: Box::new(t),
+                        after: Box::new(after),
+                    });
+                }
+            }
         }
+        let cs = self.propose(&world, author, ops, summary)?;
+        self.log_finished(&cs)?;
         self.plan(false, Author::Scheduler)
+    }
+
+    /// A changeset that finished a task feeds the estimate log, as `complete_task` does.
+    fn log_finished(&self, cs: &Changeset) -> Result<()> {
+        if cs.status != Status::Applied {
+            return Ok(());
+        }
+        for op in &cs.ops {
+            if let Op::UpdateTask { before, after } = op
+                && before.status == TaskStatus::Open
+                && after.status == TaskStatus::Done
+            {
+                let actual = self.actual_minutes(&after.id).unwrap_or(after.estimate_min);
+                self.db.estimate_log(&EstimateRow {
+                    task_id: after.id.clone(),
+                    title: after.title.clone(),
+                    estimate_min: after.estimate_min,
+                    actual_min: actual,
+                    completed_at: self.now(),
+                })?;
+            }
+        }
+        Ok(())
     }
 
     /// Run the scheduler; unless `dry_run`, propose the resulting changeset.
@@ -3991,4 +4226,19 @@ fn fmt_min(m: u32) -> String {
         (h, 0) => format!("{h} h"),
         (h, m) => format!("{h} h {m:02} m"),
     }
+}
+
+/// Tasks a write changes, by id: `(before, after)`.
+type TaskEdits = std::collections::BTreeMap<String, (Task, Task)>;
+
+/// One `UpdateTask` per task that actually changed.
+fn task_ops(tasks: TaskEdits) -> Vec<Op> {
+    tasks
+        .into_values()
+        .filter(|(b, a)| b != a)
+        .map(|(b, a)| Op::UpdateTask {
+            before: Box::new(b),
+            after: Box::new(a),
+        })
+        .collect()
 }

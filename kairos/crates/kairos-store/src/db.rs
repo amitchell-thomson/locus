@@ -4,7 +4,7 @@
 
 use crate::Result;
 use crate::load::Sidecar;
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Utc};
 use kairos_core::changeset::{Changeset, Status};
 use kairos_core::model::Meta;
 use kairos_core::project::ProjectStatus;
@@ -72,43 +72,7 @@ pub type SkipRow = (String, DateTime<Utc>, DateTime<Utc>);
 /// An event linked to a project as one of its sessions: `(source, uid, project id)`.
 pub type SessionLink = (String, String, String);
 
-/// Outcome of a planned block, from the evening check-in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Outcome {
-    Done,
-    Partial,
-    Missed,
-}
-
-impl Outcome {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Outcome::Done => "done",
-            Outcome::Partial => "partial",
-            Outcome::Missed => "missed",
-        }
-    }
-    pub fn parse(s: &str) -> Option<Outcome> {
-        match s {
-            "done" => Some(Outcome::Done),
-            "partial" => Some(Outcome::Partial),
-            "missed" => Some(Outcome::Missed),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Checkin {
-    pub block_uid: String,
-    pub task_id: String,
-    pub day: NaiveDate,
-    pub planned_min: u32,
-    pub outcome: Option<Outcome>,
-    pub actual_min: Option<u32>,
-    pub answered_at: Option<DateTime<Utc>>,
-}
+pub use kairos_core::changeset::{Checkin, Outcome};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EstimateRow {
@@ -350,6 +314,37 @@ impl Db {
             params![block_uid, outcome.as_str(), actual_min, at.to_rfc3339()],
         )?;
         Ok(n > 0)
+    }
+
+    /// Put a check-in record back exactly as it was (a changeset's image).
+    pub fn checkin_put(&self, c: &Checkin) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO checkins(block_uid, task_id, day, planned_min, outcome, actual_min, answered_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(block_uid) DO UPDATE SET task_id = excluded.task_id, day = excluded.day,
+               planned_min = excluded.planned_min, outcome = excluded.outcome,
+               actual_min = excluded.actual_min, answered_at = excluded.answered_at",
+            params![
+                c.block_uid,
+                c.task_id,
+                c.day.to_string(),
+                c.planned_min,
+                c.outcome.map(|o| o.as_str()),
+                c.actual_min,
+                c.answered_at.map(|t| t.to_rfc3339())
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn checkin_delete(&self, block_uid: &str) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM checkins WHERE block_uid = ?1", params![block_uid])?;
+        Ok(())
+    }
+
+    pub fn checkin_get(&self, block_uid: &str) -> Result<Option<Checkin>> {
+        Ok(self.checkins(false)?.into_iter().find(|c| c.block_uid == block_uid))
     }
 
     pub fn checkins(&self, unanswered_only: bool) -> Result<Vec<Checkin>> {

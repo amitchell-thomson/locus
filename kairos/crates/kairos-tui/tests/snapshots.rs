@@ -565,7 +565,7 @@ fn keys_do_what_the_hints_say_for_each_kind_of_item() {
     };
     // Work block (Wed 21): hints, and x = skip (L4: x removes, d is done).
     pick(&mut a, &|i| i.meta.kind == kairos_core::model::EventKind::TaskBlock);
-    assert_eq!(a.key_hints(), "n start · m move · e edit · d done · x skip");
+    assert_eq!(a.key_hints(), "n start · ⌥↑↓ length · e edit · d done · x skip");
     a.key(Key::Char('x'));
     assert!(matches!(a.mode, Mode::Confirm(Confirm::Skip)));
     a.key(Key::Char('n')); // cancel
@@ -726,30 +726,11 @@ fn past_blocks_wait_for_a_check_in_right_on_the_calendar() {
         s.contains(&format!("▌{} B4 sheet", kairos_core::build::WAITING_ICON)),
         "{s}"
     );
-    assert_eq!(a.key_hints(), "y done · c partly · l longer · x missed · d task done");
-    // c asks how long (prefilled with half the block).
+    assert_eq!(a.key_hints(), "y done · ⌥↑↓ length · x missed · d task done");
+    // No more c (partly) or l (took longer): ⌥↑↓ makes the block what happened, then y.
     a.key(Key::Char('c'));
-    assert!(matches!(&a.mode, Mode::Prompt(PromptKind::Partial { t }, b) if t.title == "B4 sheet" && b == "45m"));
-    a.key(Key::Esc);
-    // l took longer: a form for time spent, what it still needs, and from when.
     a.key(Key::Char('l'));
-    let Mode::Form(f) = &a.mode else { panic!("no form") };
-    assert_eq!(f.title(), "took longer");
-    assert_eq!(f.get("Spent"), "2h30");
-    assert_eq!(
-        a.form_preview(f).unwrap(),
-        format!("2h30 spent · {} more, planned as soon as there's time", f.get("Needs"))
-    );
-    let mut f = f.clone();
-    f.fields[2].value = "sat".into();
-    assert!(
-        a.form_preview(&f).unwrap().ends_with("planned from Sat 24 Oct"),
-        "{}",
-        a.form_preview(&f).unwrap()
-    );
-    f.fields[1].value = "0".into();
-    assert_eq!(a.form_preview(&f).unwrap(), "2h30 spent · finished");
-    a.key(Key::Esc);
+    assert!(matches!(a.mode, Mode::Normal));
     // W logs work on its task.
     a.key(Key::Char('W'));
     assert!(matches!(&a.mode, Mode::Prompt(PromptKind::LogWork { task_id, .. }, _) if task_id == "task-b4"));
@@ -1091,4 +1072,51 @@ fn shared_keys_keep_their_meaning_on_every_kind_of_item() {
         }
         a.key(Key::Right);
     }
+}
+
+#[test]
+fn overlapping_work_blocks_are_all_drawn_and_the_selection_stays_put() {
+    // 2026-10-27: two B14 blocks at 11:10 hid under the 11:00 one (same title, starts 10 min
+    // apart: "duplicates"), and a reload moved the selection onto the next event.
+    let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
+    a.key(Key::Tab); // day view
+    let b4 = a
+        .index
+        .instances
+        .iter()
+        .find(|i| i.meta.task_id.as_deref() == Some("task-b4"))
+        .unwrap()
+        .clone();
+    let mut twin = b4.clone();
+    twin.uid = "twin@kairos".into();
+    if let kairos_core::model::Span::Timed { start, .. } = &mut twin.span {
+        *start += chrono::Duration::minutes(10);
+    }
+    let mut idx = a.index.clone();
+    idx.instances.push(twin);
+    a.set_index(idx);
+    let clusters = a.day_clusters(a.cursor);
+    let blocks: Vec<_> = clusters
+        .iter()
+        .filter(|c| c.primary.meta.task_id.as_deref() == Some("task-b4"))
+        .collect();
+    assert_eq!(blocks.len(), 2, "both drawn");
+    assert!(blocks.iter().all(|c| !c.is_merged()));
+    // Select the twin; a reload with an earlier item added keeps it selected.
+    a.sel = clusters.iter().position(|c| c.primary.uid == "twin@kairos").unwrap();
+    let mut idx = a.index.clone();
+    let mut early = b4.clone();
+    early.uid = "early".into();
+    early.title = "Breakfast".into();
+    early.meta = Default::default();
+    early.span = kairos_core::model::Span::Timed {
+        start: now("2026-10-21T06:00:00Z"),
+        end: now("2026-10-21T06:30:00Z"),
+    };
+    idx.instances.insert(0, early);
+    a.set_index(idx);
+    assert_eq!(a.selected().unwrap().primary.uid, "twin@kairos");
+    // ⌥↓ asks kairosd (none here: it says so).
+    a.key(Key::AltDown);
+    assert!(a.message.as_ref().is_some_and(|m| m.0.contains("kairosd")));
 }

@@ -139,7 +139,7 @@ def _scrub_blocks(content: list) -> list:
     return out
 
 
-def content_runner(
+def _content_runner(
     content: list, model: str | None, system: str | None, *, timeout: float = _CLI_TIMEOUT_S,
     thinking: bool = False,
 ) -> ClaudeResult:
@@ -187,6 +187,31 @@ def content_runner(
         usage=envelope.get("usage") or {},
         service_tier=envelope.get("service_tier"),
     )
+
+
+def content_runner(
+    content: list, model: str | None, system: str | None, *, timeout: float = _CLI_TIMEOUT_S,
+    thinking: bool = False,
+) -> ClaudeResult:
+    """`_content_runner`, counted: every call, success or failure, is one `model_calls` row
+    (agent/usage.py, Slice 0.7), so the subscription share is measured rather than guessed."""
+    from locus.agent import usage
+
+    images = sum(1 for b in content if isinstance(b, dict) and b.get("type") == "image")
+    started = time.monotonic()
+    try:
+        result = _content_runner(content, model, system, timeout=timeout, thinking=thinking)
+    except ClaudeError as exc:
+        usage.record(usage.record_from_usage(
+            model=model, ok=False, duration_ms=int((time.monotonic() - started) * 1000),
+            usage=None, images=images, error=str(exc),
+        ))
+        raise
+    usage.record(usage.record_from_usage(
+        model=model, ok=True, duration_ms=int((time.monotonic() - started) * 1000),
+        usage=result.usage, images=images, cost_usd=result.cost_usd,
+    ))
+    return result
 
 
 def cli_runner(prompt: str, model: str | None) -> ClaudeResult:

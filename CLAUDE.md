@@ -155,7 +155,7 @@ VRAM change.**
 
 ## 5. Data model
 
-Source of truth: Alembic migrations in `locus/db/migrations/versions/` (currently **0038**).
+Source of truth: Alembic migrations in `locus/db/migrations/versions/` (currently **0039**).
 `locus/db/schema.sql` is a human-readable summary. Never `ALTER` a live DB ad hoc; never force a
 re-ingest for a schema change — migrate forward.
 
@@ -562,7 +562,7 @@ locus/
 ├── locus/
 │   ├── cli.py              # the product surface (all commands)
 │   ├── config.py           # typed config; API key via env/.env only
-│   ├── db/                 # connection, migrate, migrations/ (0001–0038)
+│   ├── db/                 # connection, migrate, migrations/ (0001–0039)
 │   ├── extract/            # pdf · mathocr · figures_detect · docx · pptx · textdoc · code
 │   ├── ingest/             # llm · summarize · propositions · entities · concepts · synthesis
 │   │                       #   gaps · chunk · embed · figures · llamacpp
@@ -570,7 +570,8 @@ locus/
 │   ├── retrieve/           # search · rerank · expand · assemble · pipeline · multiquery
 │   │                       #   threads · figure_images
 │   ├── link/               # aliases · adjudicate · related · threads · projects · connect
-│   ├── agent/              # claude (the one `claude -p` runner) · journal · budget · state
+│   ├── agent/              # claude (the one model runner) · usage (every call counted, `locus budget`)
+│   │                       #   journal · budget · state
 │   │                       #   layout (fits each section by rendering it)
 │   │                       #   compose_daily · pull_daily · promote
 │   ├── capture/            # device (the tablet from the cloud tree) · sent (what Locus pushed)
@@ -661,7 +662,11 @@ locus/
   subscription OAuth rather than the metered key (mis-wired twice before), and it **scrubs control
   characters from every prompt**: maths PDFs extract symbol-font glyphs as control codes, a NUL in
   argv raised `ValueError` past every `except ClaudeError`, and three calculus documents failed
-  the structure pass on *every* run because of it.
+  the structure pass on *every* run because of it. **Every call is counted** (Slice 0.7,
+  `agent/usage.py`, migration 0039): the runner writes one `model_calls` row per call, failures
+  included, with tokens (cache and thinking separately), time, images and the notional cost; the
+  job is the journaled run's kind or else the CLI subcommand. `locus budget` sums it by job for
+  today and the last seven days. Tests replace the sink (`tests/conftest.py`).
 - **Tests must not read the live `config.toml`.** It is gitignored, so a test that inherits it
   passes or fails per machine: two connection tests asserting paper-vs-coursework ranking broke
   the day `[agent].connect_idea_projects` gained entries, and nowhere else. Pin what you depend on

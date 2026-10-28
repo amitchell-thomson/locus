@@ -1615,6 +1615,25 @@ def cmd_capture_sync(args) -> None:
 _SENT_NAME = re.compile(r"^\d{4}-\d{2}-\d{2} |\d{4}-\d{2}-\d{2}$|^daily-\d{4}-\d{2}-\d{2}")
 
 
+def cmd_budget(args) -> None:
+    """What the subscription was spent on: model calls by job, today and the last seven days.
+
+    Every headless Claude call is one `model_calls` row (agent/usage.py). Tokens are the real
+    measure; minutes say how long jobs held the queue; the notional $ is the envelope's
+    API-equivalent figure, useful for weighing models, not money spent.
+    """
+    from locus.agent import usage
+
+    today, week = usage.windows()
+    conn = _open()
+    try:
+        print(usage.format_totals(f"today (since {today[:16]} UTC)", usage.totals(conn, since=today)))
+        print()
+        print(usage.format_totals("last 7 days", usage.totals(conn, since=week)))
+    finally:
+        conn.close()
+
+
 def cmd_device_sent(args) -> None:
     """Record the PDFs Locus sent before sends were recorded (one-off backfill, Slice 0.12).
 
@@ -2522,6 +2541,11 @@ def main(argv=None) -> None:
                      help="transcribe notebooks the old tablet agent already captured, instead of seeding them")
     pcs.set_defaults(func=cmd_capture_sync)
 
+    pbu = sub.add_parser(
+        "budget", help="model calls on the subscription by job: today and the last 7 days",
+    )
+    pbu.set_defaults(func=cmd_budget)
+
     pds = sub.add_parser(
         "device-sent",
         help="one-off: record the PDFs Locus sent before sends were recorded (prints; --apply records)",
@@ -2713,6 +2737,9 @@ def main(argv=None) -> None:
     pe.set_defaults(func=cmd_eval)
 
     args = parser.parse_args(argv)
+    from locus.agent import usage
+
+    usage.set_default_job(args.cmd if getattr(args, "cmd", None) else "cli")
     kind = _journal_kind(args)
     if kind is None:
         args.func(args)

@@ -60,3 +60,14 @@ def _mcp_log_to_tmp(tmp_path, monkeypatch):
     """
     monkeypatch.setattr(mcp_log, "_resolved", tmp_path / "mcp.jsonl")
     yield
+
+
+@pytest.fixture(autouse=True)
+def _model_calls_not_recorded_live(monkeypatch):
+    """Every model call is counted into the live database's `model_calls` (Slice 0.7). Tests
+    that drive the runner with a faked subprocess would otherwise add fake calls to the budget
+    the owner reads. A test that wants the records replaces the sink with its own list."""
+    from locus.agent import usage
+
+    monkeypatch.setattr(usage, "SINK", lambda rec: None)
+    yield

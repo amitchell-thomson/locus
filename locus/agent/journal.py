@@ -63,9 +63,12 @@ def run(conn, kind: str, *, now: Callable[[], str] = _utcnow) -> Iterator[RunHan
 
     A raised exception is recorded as `error` (with its message under stats['error']) and
     re-raised — journaling never swallows the failure, it just records it."""
+    from locus.agent import usage
+
     handle = RunHandle(id=start_run(conn, kind, now=now), kind=kind)
     try:
-        yield handle
+        with usage.job(kind):            # every model call in the run is counted against it
+            yield handle
     except Exception as exc:
         finish_run(conn, handle.id, "error", stats={**handle.stats, "error": str(exc)}, now=now)
         raise

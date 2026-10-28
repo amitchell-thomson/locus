@@ -477,6 +477,11 @@ impl Engine {
                     continue;
                 }
                 let why = match req.intent {
+                    // A thread of only your sent copies has nothing to put back (28 Oct: it said
+                    // "already in the inbox" of a mail that was not).
+                    Intent::Unarchive if msgs.iter().all(|m| location::in_sent(&account, &m.location)) => {
+                        "only your sent copies: they don't go in the inbox".to_string()
+                    }
                     Intent::Unarchive => "already in the inbox".to_string(),
                     Intent::Archive | Intent::File { .. } => "already out of the inbox".to_string(),
                     _ => format!("nothing to {}", req.intent.verb()),

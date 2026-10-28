@@ -1,6 +1,6 @@
 # keryx archives Gmail mail itself: labels over IMAP, not moves through Mail
 
-**State:** approved 2026-10-28 ("do it in full"), in progress · **Written:** 2026-10-28 · **Part of:** [keryx-joins-locus.md](keryx-joins-locus.md) (round 11)
+**State:** done 2026-10-28 · **Written:** 2026-10-28 · **Part of:** [keryx-joins-locus.md](keryx-joins-locus.md) (round 11)
 **From:** your words, 28 Oct: "lets do that" (stop archiving on Personal now, and a spec for the
 direct route), after "try connection doctor before setting up anything new".
 
@@ -85,5 +85,20 @@ pages. `keryx doctor` checks it logs in and finds `[Gmail]/All Mail`.
   `keryx doctor` signs in and names All Mail. Checked against the real Gmail with a wrong
   password: TLS, greeting and LOGIN work, and the refusal reads "sign-in refused … check the app
   password".
-- **I4 waits for you:** the two app passwords (docs/setup.md §2).
+- **I4 done, 28 Oct.** App passwords for Personal and OQTS (OQTS needed 2-Step Verification
+  allowed in its Admin console first). `keryx doctor` signs in on both. Round trips through
+  keryxd: a Personal `[keryx-test]` mail archived in 1.6 s and shown by Mail 8 s later on the same
+  UID (no copy); Gmail's own report, in Mail's log, lists it without `\Inbox`, and it stayed out.
+  On OQTS, a fresh message archived and came back into the inbox within 3 s of each change.
+  Mail's log shows no `APPEND` or `EXPUNGE` from keryx's changes. `archives = false` is off both.
+- **Mail only re-reads what changed since its last checkpoint** (`UID FETCH … CHANGEDSINCE`).
+  The OQTS test mail whose archive Mail recorded on 27 Oct and never sent kept showing as
+  archived in Mail while Gmail had it in the inbox: nothing about it had changed at Gmail since
+  Mail's checkpoint, so Mail never asked, and a later `+X-GM-LABELS (\Inbox)` that Mail did hear
+  about did not change what it showed. It was cured by making Gmail match (one label change).
+  Any other mail archived through Mail on OQTS before 28 Oct may be in the same state: archived in
+  Mail and keryx, still in the inbox at Gmail (the phone and the web show it there).
+- **It is slow per thread** (~1.5 s at Gmail, then up to ~15 s while keryx waits for Mail to
+  show it). The TUI doesn't wait (the background worker), but a 13-thread `keryx archive` outlived
+  the CLI's patience while keryxd carried on and finished it.
 

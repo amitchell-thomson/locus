@@ -1396,3 +1396,27 @@ fn an_account_keryx_may_not_archive_on_keeps_its_mail_and_still_records_what_it_
         "nothing moved"
     );
 }
+
+#[test]
+fn back_to_the_inbox_on_a_thread_of_only_your_sent_mail_says_so() {
+    let (mut e, _) = engine();
+    let t = r(&e, "Lab partner for Thursday?");
+    let mut mine = thread(&e, &t)[0].clone();
+    mine.thread_id = "sentonly".into();
+    mine.source_id = "sent1".into();
+    mine.message_id = "sent1@x".into();
+    mine.from = Some(Address::new(None, "newc7370@ox.ac.uk"));
+    mine.location = Location::Mailboxes {
+        physical: "Sent Items".into(),
+        labels: vec![],
+    };
+    mine.in_inbox = false;
+    e.db.upsert(&mine, Raw::None, keryx_core::text::TEXT_VERSION).unwrap();
+    let out = e
+        .triage(
+            req(Intent::Unarchive, vec![format!("{}:sentonly", mine.account)]),
+            Who::ALEC,
+        )
+        .unwrap();
+    assert!(out.skipped[0].1.contains("only your sent copies"), "{out:?}");
+}

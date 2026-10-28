@@ -95,6 +95,7 @@ Copied from kairos so far:
 
 ## Decisions log
 
+- 2026-10-28 (Alec): **Gmail's Inbox label over IMAP** for Personal and OQTS (`gmail_imap = true`, app passwords `keryx-imap-<id>`; spec `docs/redesign/slices/keryx-gmail-imap.md`), after Mail's log showed its archive was an upload plus a delete on Personal and never sent on OQTS. `archives = false` stays as the switch for an account keryx must not archive on.
 - 2026-10-27 (Alec): **live** (`live = true`), after X4's round trips on `[keryx-test]` mail: sends with attachments from Personal and Oxford, receiving and opening attachments on every account, filing (option C), archive and back. **OQTS shared is read-only** in keryx (`writable = false`): he chose not to test it, since another person sees it. Bugs X4 found and fixed: the send script's `files` variable (every attachment failed), Gmail label moves done in the wrong order, a check that waited for the whole location (Gmail's own labels never matched), back-to-inbox skipping your own mail, a refused send deleting your text.
 
 - 2026-10-14 (Alec): name **keryx**; Gmail via the **Gmail API** (OAuth, `gmail.modify`, consent screen in production); all four accounts in v1; daemon **on the Mac only**; kairos-style keys (`d` archive, `s` snooze, `f` flag, `m` file, `x` batch, `t` task, `r`/`R` reply, `w` free times, `c` compose, `A` approvals, `Tab` accounts); own sends = confirm screen + 10 s undo window; Claude = **MCP only** for now (TUI popup later, consistent across kairos and keryx); filing by **shared keys** across accounts.

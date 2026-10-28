@@ -2895,3 +2895,35 @@ fn a_check_in_claude_records_for_alec_applies_at_once() {
         last_checkin(&e).reasons
     );
 }
+
+#[test]
+fn the_replan_waits_while_alec_moves_things_by_hand() {
+    // 27 Oct: each of five quick nudges set off a replan that resized another task's block.
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e.create_task(Author::Alec, &b4(240, "fri 17:00")).unwrap();
+    let b = work_blocks(&e, &r.task.id)[0].clone();
+    let (s, _) = span_of(&b);
+    retime(&mut e, &b, Some(s + Duration::minutes(30)), None).unwrap();
+    assert!(e.replan_soon);
+    assert!(e.replan_wait().is_some_and(|w| w > std::time::Duration::from_secs(3)));
+    assert!(e.replan_due().unwrap().is_none(), "held while nudging");
+    assert!(e.replan_soon, "still owed");
+    // Once he has paused it runs (the hold elapsed).
+    e.replan_hold = Some(std::time::Instant::now());
+    assert!(e.replan_due().unwrap().is_some());
+    assert!(!e.replan_soon && e.replan_hold.is_none());
+    // A change that isn't his at a keyboard (Claude, a sync) is not held.
+    let b = work_blocks(&e, &r.task.id).into_iter().last().unwrap();
+    e.update_event(
+        Author::Claude,
+        Some(&b.source),
+        &b.uid,
+        &UpdateEventReq {
+            title: Some("☐ B4 problem sheet (Q3)".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert!(e.replan_wait().is_none());
+}

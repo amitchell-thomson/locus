@@ -72,14 +72,23 @@ pub async fn with_engine<T: Send + 'static>(
             .map_err(|_| EngineError::BadRequest("engine lock poisoned; restart kairosd".into()))?;
         let r = f(&mut g);
         if g.replan_soon {
-            // An event changed: move work out of its way right after answering.
+            // An event changed: move work out of its way right after answering, or, while
+            // Alec is moving things by hand, once he has paused (a later edit pushes the pause
+            // back, and this replan then finds nothing due yet).
             let eng = eng.clone();
-            tokio::task::spawn_blocking(move || {
-                if let Ok(mut e) = eng.lock()
-                    && let Err(err) = e.replan_if_needed()
-                {
-                    tracing::warn!("replan after write: {err}");
+            let wait = g.replan_wait();
+            tokio::runtime::Handle::current().spawn(async move {
+                if let Some(w) = wait {
+                    tokio::time::sleep(w + std::time::Duration::from_millis(50)).await;
                 }
+                let _ = tokio::task::spawn_blocking(move || {
+                    if let Ok(mut e) = eng.lock()
+                        && let Err(err) = e.replan_due()
+                    {
+                        tracing::warn!("replan after write: {err}");
+                    }
+                })
+                .await;
             });
         }
         r

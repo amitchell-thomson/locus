@@ -1120,3 +1120,81 @@ fn overlapping_work_blocks_are_all_drawn_and_the_selection_stays_put() {
     a.key(Key::AltDown);
     assert!(a.message.as_ref().is_some_and(|m| m.0.contains("kairosd")));
 }
+
+#[test]
+fn moving_between_days_keeps_the_time_of_day() {
+    // 2026-10-27: ←/→ selected the new day's first item (an all-day one) and the day jumped
+    // to the top. Now it stays at the time: the item running then, or the nearest.
+    let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
+    a.key(Key::Tab); // day view
+    let proto = a.index.instances[0].clone();
+    let ev = |uid: &str, s: &str, e: &str| {
+        let mut i = proto.clone();
+        i.uid = uid.into();
+        i.title = uid.into();
+        i.recurring = false;
+        i.recurrence_id = None;
+        i.meta = Default::default();
+        i.span = kairos_core::model::Span::Timed {
+            start: now(s),
+            end: now(e),
+        };
+        i
+    };
+    let term = |d: &str| {
+        let mut i = proto.clone();
+        i.uid = format!("term-{d}");
+        i.title = "Term".into();
+        i.recurring = false;
+        i.recurrence_id = None;
+        i.meta = Default::default();
+        let d: chrono::NaiveDate = d.parse().unwrap();
+        i.span = kairos_core::model::Span::AllDay {
+            start: d,
+            end: d.succ_opt().unwrap(),
+        };
+        i
+    };
+    let mut idx = a.index.clone();
+    idx.instances = vec![
+        term("2026-12-07"),
+        ev("mon-09", "2026-12-07T09:00:00Z", "2026-12-07T10:00:00Z"),
+        ev("mon-14", "2026-12-07T14:00:00Z", "2026-12-07T15:00:00Z"),
+        term("2026-12-08"),
+        ev("tue-08", "2026-12-08T08:00:00Z", "2026-12-08T09:00:00Z"),
+        ev("tue-1330", "2026-12-08T13:30:00Z", "2026-12-08T14:30:00Z"),
+        ev("tue-18", "2026-12-08T18:00:00Z", "2026-12-08T19:00:00Z"),
+        term("2026-12-09"),
+        ev("thu-15", "2026-12-10T15:00:00Z", "2026-12-10T16:00:00Z"),
+    ];
+    a.set_index(idx);
+    a.tasks.clear();
+    a.cursor = "2026-12-07".parse().unwrap();
+    let pick = |a: &mut App, uid: &str| {
+        a.sel = a
+            .day_clusters(a.cursor)
+            .iter()
+            .position(|c| c.primary.uid == uid)
+            .unwrap();
+    };
+    let on = |a: &App| a.selected().map(|c| c.primary.uid).unwrap_or_default();
+    pick(&mut a, "mon-14");
+    a.key(Key::Right);
+    assert_eq!(on(&a), "tue-1330", "running at 14:00");
+    a.key(Key::Right);
+    assert_eq!(on(&a), "term-2026-12-09", "nothing timed: the day's first");
+    a.key(Key::Right);
+    assert_eq!(on(&a), "thu-15", "14:00 remembered across the empty day");
+    a.key(Key::Left);
+    a.key(Key::Left);
+    assert_eq!(on(&a), "tue-1330", "15:00: 13:30–14:30 is nearer than 18:00");
+    // An all-day item selected: the next day's top.
+    pick(&mut a, "term-2026-12-08");
+    a.key(Key::Left);
+    assert_eq!(on(&a), "term-2026-12-07");
+    // ] keeps it too.
+    pick(&mut a, "mon-14");
+    a.key(Key::Char(']'));
+    a.key(Key::Char('['));
+    assert_eq!(on(&a), "mon-14");
+}

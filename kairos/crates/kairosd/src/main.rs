@@ -120,6 +120,7 @@ async fn main() -> Result<()> {
         clock: Arc::new(chrono::Utc::now),
         direct: false,
         replan_soon: true,
+        replan_hold: None,
         // The locus registry (spec K7): kairos's projects are its repos.
         registry: kairos_store::taxonomy::local().ok().map(|s| s.registry),
     };

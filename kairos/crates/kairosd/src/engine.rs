@@ -136,6 +136,9 @@ pub struct Engine {
     /// An event changed under the plan: replan as soon as the current
     /// request is done (see [`Engine::replan_if_needed`]).
     pub replan_soon: bool,
+    /// Alec is moving things by hand: the replan that follows waits until he has paused
+    /// ([`REPLAN_QUIET`]) instead of running after every nudge (see [`Engine::replan_due`]).
+    pub replan_hold: Option<std::time::Instant>,
     /// The locus registry (spec K7), read from `taxonomy/registry.toml`: kairos's projects are
     /// its repos. `None` (tests, or the file unreadable) leaves projects as kairos keeps them.
     pub registry: Option<locus_contract::Registry>,
@@ -762,8 +765,30 @@ impl Engine {
             })
         {
             self.replan_soon = true;
+            if self.direct {
+                self.replan_hold = Some(std::time::Instant::now() + REPLAN_QUIET);
+            }
         }
         Ok(())
+    }
+
+    /// The automatic replan (after a write, on the jobs tick): [`Engine::replan_if_needed`],
+    /// unless Alec is in the middle of moving things by hand. 27 Oct: five nudges of one B14
+    /// block in three seconds each set off a replan, and each resized and recreated the
+    /// "Draft questions" block around that moment's position; the scheduler looked as if it
+    /// were fighting him. Now it plans once, when he has stopped.
+    pub fn replan_due(&mut self) -> Result<Option<api::PlanResp>> {
+        if self.replan_hold.is_some_and(|h| std::time::Instant::now() < h) {
+            return Ok(None);
+        }
+        self.replan_hold = None;
+        self.replan_if_needed()
+    }
+
+    /// How long until a held replan is due (`None`: not held).
+    pub fn replan_wait(&self) -> Option<std::time::Duration> {
+        self.replan_hold
+            .map(|h| h.saturating_duration_since(std::time::Instant::now()))
     }
 
     /// Replan if an event changed since the last plan (after a write, after
@@ -4196,6 +4221,11 @@ type Stretch = (DateTime<Utc>, DateTime<Utc>);
 
 /// The busy spans the last plan saw (to notice freed time).
 const BUSY_KEY: &str = "plan.busy_spans";
+
+/// How long after Alec's last hand edit the replan waits: long enough to cover a run of
+/// nudges (presses well under a second apart, pauses of a second or two to look), short
+/// enough that the plan has settled by the time he looks for it.
+pub const REPLAN_QUIET: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Busy time from `from` on, merged into disjoint `(start, end)` unix spans.
 fn merged_spans(busy: &[Busy], from: DateTime<Utc>) -> Vec<(i64, i64)> {

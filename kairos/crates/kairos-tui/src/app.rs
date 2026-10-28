@@ -160,6 +160,12 @@ pub struct App {
     pub cursor: NaiveDate,
     /// Selected item within the cursor day (week/day) or list (agenda/tasks/approvals).
     pub sel: usize,
+    /// The time of day ←/→ keep while moving between days (`None`: the top, an all-day item).
+    /// Remembered across a day with nothing on it, so passing through one keeps the time.
+    pub nav_time: Option<NaiveTime>,
+    /// The selection is where ←/→ fell back to (a day with nothing timed), not a choice: an
+    /// all-day item selected that way keeps `nav_time`.
+    nav_fallback: bool,
     pub expanded: bool,
     pub mode: Mode,
     pub search: Option<String>,
@@ -247,6 +253,8 @@ impl App {
             index,
             view: View::Week,
             sel: 0,
+            nav_time: None,
+            nav_fallback: false,
             expanded: false,
             mode: Mode::Normal,
             search: None,
@@ -1095,10 +1103,48 @@ impl App {
         }
     }
 
+    /// Move the cursor by `days` (←/→, `[` `]`), staying at the same time of day: the item
+    /// on the new day under (or nearest) the time of the one selected, not the day's first,
+    /// which put the selection on an all-day item and scrolled the grid to the top
+    /// (2026-10-27).
     fn shift(&mut self, days: i64) {
+        if matches!(self.view, View::Week | View::Day | View::Month)
+            && let Some(c) = self.selected()
+            && !(c.primary.span.is_all_day() && self.nav_fallback)
+        {
+            self.nav_time =
+                (!c.primary.span.is_all_day()).then(|| c.primary.start(self.tz).with_timezone(&self.tz).time());
+        }
         self.cursor += Duration::days(days);
-        self.sel = 0;
         self.expanded = false;
+        let (sel, fallback) = match (self.view, self.nav_time) {
+            (View::Week | View::Day | View::Month, Some(t)) => self.nearest_at(t),
+            _ => (0, false),
+        };
+        self.sel = sel;
+        self.nav_fallback = fallback;
+    }
+
+    /// The item on the cursor's day at time of day `t`: one running then, else the one starting
+    /// nearest to it (the earlier on a tie); the first item if the day has only all-day ones
+    /// (and `true`: a fallback).
+    fn nearest_at(&self, t: NaiveTime) -> (usize, bool) {
+        let day = self.cursor;
+        let at = resolve_local(day.and_time(t), self.tz);
+        self.day_clusters(day)
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| !c.primary.span.is_all_day())
+            .min_by_key(|(_, c)| {
+                let (s, e) = c.primary.span.bounds(self.tz);
+                let off = if s <= at && at < e {
+                    0
+                } else {
+                    (s - at).num_minutes().abs()
+                };
+                (off, s)
+            })
+            .map_or((0, true), |(k, _)| (k, false))
     }
 
     fn confirmed(&mut self, c: Confirm) {

@@ -154,6 +154,7 @@ overlay = "imported"
             syncer: Box::new(self.rec.clone()),
             direct: false,
             replan_soon: false,
+            replan_hold: None,
             registry: None,
         }
     }

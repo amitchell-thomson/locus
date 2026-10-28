@@ -98,7 +98,7 @@ impl Jobs {
                 if do_sync {
                     tick_sync(&mut e)?;
                 }
-                match e.replan_if_needed() {
+                match e.replan_due() {
                     Ok(Some(p)) if p.changeset.is_some() => tracing::info!("replanned: {}", p.summary),
                     Ok(_) => {}
                     Err(err) => tracing::warn!("replan: {err}"),

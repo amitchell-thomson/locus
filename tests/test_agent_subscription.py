@@ -146,3 +146,20 @@ def test_no_metered_client_is_left_in_the_codebase():
         if "anthropic.Anthropic(" in p.read_text(encoding="utf-8")
     ]
     assert offenders == []
+
+
+def test_thinking_is_off_unless_asked_for(spawned):
+    """Default headless thinking tripled an ingest pass's time and output quota (55 s vs 19.5 s)."""
+    claude.content_runner([{"type": "text", "text": "x"}], None, None)
+    assert spawned[-1][1]["env"]["MAX_THINKING_TOKENS"] == "0"
+    claude.content_runner([{"type": "text", "text": "x"}], None, None, thinking=True)
+    assert "MAX_THINKING_TOKENS" not in spawned[-1][1]["env"]
+
+
+def test_query_keeps_its_thinking_and_extraction_does_not(spawned):
+    client = claude.SubscriptionClient()
+    client.messages.create(model="m", messages=[{"role": "user", "content": "q"}],
+                           thinking={"type": "adaptive"})
+    assert "MAX_THINKING_TOKENS" not in spawned[-1][1]["env"]
+    client.messages.create(model="m", messages=[{"role": "user", "content": "extract"}])
+    assert spawned[-1][1]["env"]["MAX_THINKING_TOKENS"] == "0"

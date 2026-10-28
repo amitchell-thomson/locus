@@ -33,6 +33,12 @@ eight tool turns opening it ($0.23 a page). `ask` sends the image INSIDE the mes
 otherwise loads every tool and every user MCP server it can find and sends their definitions
 with the prompt: measured 27 Oct, 23,581 tokens of definitions on a call that needed none,
 against 741 lean. That was being paid on every fill-in, structure and adjudication call.
+
+**Thinking is OFF unless a call asks for it.** Headless Claude Code thinks by default. Measured
+27 Oct on an ingest pass (propositions from 9,000 characters of his notes, Haiku): 54.9 s and
+4,834 thinking tokens by default, 19.5 s and none with `MAX_THINKING_TOKENS=0`, the same task, a
+third of the output quota. Extraction and transcription gain nothing from it; `locus query`,
+which asked the SDK for adaptive thinking, keeps it.
 """
 
 from __future__ import annotations
@@ -96,10 +102,14 @@ ResultSink = Callable[[ClaudeResult], None]
 _LEAN = ("--max-turns", "1", "--strict-mcp-config", "--tools", "")
 
 
-def _scrubbed_env() -> dict[str, str]:
+def _scrubbed_env(*, thinking: bool = False) -> dict[str, str]:
     env = dict(os.environ)
     for key in _METERED_KEYS:
         env.pop(key, None)
+    if not thinking:
+        env["MAX_THINKING_TOKENS"] = "0"     # see the module docstring
+    else:
+        env.pop("MAX_THINKING_TOKENS", None)
     return env
 
 
@@ -131,6 +141,7 @@ def _scrub_blocks(content: list) -> list:
 
 def content_runner(
     content: list, model: str | None, system: str | None, *, timeout: float = _CLI_TIMEOUT_S,
+    thinking: bool = False,
 ) -> ClaudeResult:
     """Run one headless `claude -p` over message content blocks (text and images).
 
@@ -151,7 +162,7 @@ def content_runner(
     try:
         proc = subprocess.run(
             cmd, input=json.dumps(message) + "\n", capture_output=True, text=True,
-            timeout=timeout, cwd=tempfile.gettempdir(), env=_scrubbed_env(),
+            timeout=timeout, cwd=tempfile.gettempdir(), env=_scrubbed_env(thinking=thinking),
         )
     except FileNotFoundError as e:
         raise ClaudeError("`claude` CLI not found on PATH — the agent layer uses headless Claude Code") from e
@@ -193,6 +204,7 @@ def ask(
     retries: int = 2,
     backoff_s: float = 0.5,
     on_result: ResultSink | None = None,
+    thinking: bool = False,
 ) -> ClaudeResult:
     """One call with a system prompt, text and images, with bounded retry-then-raise.
 
@@ -200,7 +212,9 @@ def ask(
     figures). `images` are PNG bytes placed before the text, which is where a vision model reads
     them best. The model defaults to `[agent].model`.
     """
-    runner = runner or content_runner
+    if runner is None:
+        def runner(content, model, system):
+            return content_runner(content, model, system, thinking=thinking)
     model = model or load().agent.model
     blocks = (
         [image_block(i) for i in images] + [{"type": "text", "text": content}]
@@ -368,18 +382,17 @@ class SubscriptionClient:
     and none of their tests, which inject SDK-shaped fakes. Supports what those sites use: a
     system prompt, text and image blocks, a repair conversation (folded, see `_fold_turns`), and
     FORCED tool use, which is asked for as JSON against the tool's schema and returned as a
-    `tool_use` block. Anything else they pass (`max_tokens`, `thinking`, `cache_control`) is the
-    CLI's to decide and is ignored. Never reaches the metered key: `content_runner` scrubs it.
+    `tool_use` block, and `thinking`, which turns it on for that call. Anything else they pass
+    (`max_tokens`, `cache_control`) is the CLI's to decide and is ignored. Never reaches the metered key: `content_runner` scrubs it.
     """
 
     def __init__(self, runner: ContentRunner | None = None, *, timeout: float | None = None):
-        if runner is None and timeout is not None:
-            def runner(content, model, system):
-                return content_runner(content, model, system, timeout=timeout)
         self._runner = runner
+        self._timeout = timeout
         self.messages = self
 
-    def create(self, *, model=None, messages, system=None, tools=None, tool_choice=None, **_):
+    def create(self, *, model=None, messages, system=None, tools=None, tool_choice=None,
+               thinking=None, **_):
         blocks = _fold_turns(messages)
         forced = None
         if tool_choice and tool_choice.get("type") == "tool" and tools:
@@ -389,7 +402,15 @@ class SubscriptionClient:
                 "Respond with ONLY a JSON object conforming to this JSON Schema "
                 f"(no prose, no code fences):\n{json.dumps(forced.get('input_schema', {}))}"
             )})
-        result = ask(blocks, system=_system_text(system), model=model, runner=self._runner)
+        # A call that asked the SDK for thinking (`locus query`) keeps it; the rest run without.
+        think = bool(thinking) and (thinking or {}).get("type") != "disabled"
+        runner = self._runner
+        if runner is None:
+            timeout = self._timeout or _CLI_TIMEOUT_S
+
+            def runner(content, model, system):
+                return content_runner(content, model, system, timeout=timeout, thinking=think)
+        result = ask(blocks, system=_system_text(system), model=model, runner=runner)
         usage = result.usage or {}
         tokens_in = sum(int(usage.get(k) or 0) for k in (
             "input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))

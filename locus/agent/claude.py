@@ -100,6 +100,13 @@ ResultSink = Callable[[ClaudeResult], None]
 
 # No tools, no MCP servers, one turn: see the module docstring for what this saves.
 _LEAN = ("--max-turns", "1", "--strict-mcp-config", "--tools", "")
+# Used when a caller gives no system prompt. Without one a call inherits Claude Code's own, which
+# is written for an interactive coding agent and weighs ~3,500 tokens: a one-word probe measured
+# 4,279 input tokens on 28 Oct. Every fill-in, structure and adjudication call was paying it.
+_PLAIN_SYSTEM = (
+    "You complete one task from the user's message and reply with only what it asks for. "
+    "Follow its instructions and output format exactly."
+)
 
 
 def _scrubbed_env(*, thinking: bool = False) -> dict[str, str]:
@@ -155,8 +162,7 @@ def _content_runner(
            "--verbose", *_LEAN]
     if model:
         cmd += ["--model", model]
-    if system:
-        cmd += ["--system-prompt", scrub_prompt(system)]
+    cmd += ["--system-prompt", scrub_prompt(system or _PLAIN_SYSTEM)]
     message = {"type": "user",
                "message": {"role": "user", "content": _scrub_blocks(content)}}
     try:

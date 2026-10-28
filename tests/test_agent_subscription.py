@@ -163,3 +163,10 @@ def test_query_keeps_its_thinking_and_extraction_does_not(spawned):
     assert "MAX_THINKING_TOKENS" not in spawned[-1][1]["env"]
     client.messages.create(model="m", messages=[{"role": "user", "content": "extract"}])
     assert spawned[-1][1]["env"]["MAX_THINKING_TOKENS"] == "0"
+
+
+def test_a_call_without_a_system_prompt_does_not_inherit_claude_codes(spawned):
+    """Claude Code's own system prompt is ~3,500 tokens, written for an interactive agent."""
+    claude.cli_runner("x", None)
+    cmd = spawned[-1][0]
+    assert cmd[cmd.index("--system-prompt") + 1] == claude._PLAIN_SYSTEM

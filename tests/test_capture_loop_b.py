@@ -68,7 +68,7 @@ def _no_queue(doc, where, pdf_bytes):
 
 
 def _run(conn, placed, *, manifest=None, transcribe_fn=None, limit=8, fetch_fn=None,
-         ingest_fn=None, promote_fn=None, queue_fn=None, max_fetch=20):
+         ingest_fn=None, promote_fn=None, queue_fn=None, held_fn=None, max_fetch=20):
     # Every injectable that would otherwise resolve the LIVE config is passed: the real ingest
     # once wrote these fake bytes into the server's data/incoming/paper/ (found 2026-10-19), and
     # the real promote and queue write into data/notes/ and data/incoming/.
@@ -83,6 +83,7 @@ def _run(conn, placed, *, manifest=None, transcribe_fn=None, limit=8, fetch_fn=N
         ingest_fn=ingest_fn or (lambda conn, doc, name: None),
         promote_fn=promote_fn or (lambda conn, uri, **kw: None),
         queue_fn=queue_fn or _no_queue,
+        held_fn=held_fn or (lambda doc: False),
         transcribe_limit=limit,
         max_fetch=max_fetch,
     )
@@ -317,3 +318,15 @@ def test_a_chosen_book_whose_ingest_failed_is_tried_again(tmp_path):
     _run(conn, [_reading("/Reading/In-Progress/A Paper")], manifest=manifest, ingest_fn=ingest)
     assert attempts == ["A Paper", "A Paper"]
     assert "annotate:uuid-1" not in manifest
+
+
+def test_a_quarantined_source_is_not_downloaded_every_run(tmp_path):
+    """28 Oct: four lecture PDFs quarantined by locus-watch were fetched every half hour only to
+    learn they were held back. The file name answers that without a download."""
+    conn = _conn(tmp_path)
+    fetches: list = []
+    src = (_pdf("/Studies/B14 Information Engineering Systems/B14_IP_MT26_L1.pdf"),
+           Placement("source", area="Studies"))
+    r = _run(conn, [src], fetch_fn=lambda d: fetches.append(d) or Path("/x"),
+             held_fn=lambda doc: True)
+    assert fetches == [] and [o.status for o in r.outcomes] == ["quarantined"]

@@ -156,7 +156,7 @@ def capture_sync(
     if placed is None:
         placed = placed_documents(conn, cfg)
     fetch_fn = fetch_fn or default_fetch(cfg)
-    render_fn = render_fn or (lambda bundle, out: composite_pdf(read_rmdoc(bundle), out))
+    render_fn = render_fn or (lambda bundle, out: _render_notebook(bundle, out, composite_pdf, read_rmdoc))
     transcribe_fn = transcribe_fn or transcribe_pdf
     fillin_fn = fillin_fn or fill_gaps
     enrich_fn = enrich_fn or enrich_note
@@ -197,6 +197,13 @@ def capture_sync(
             try:
                 bundle = fetch_fn(doc)
                 pdf_path = render_fn(bundle, staging / f"{doc.uuid}.pdf")
+                if pdf_path is None:
+                    # Stroke layers with no strokes in them (a page drawn on and erased): there
+                    # is nothing to read, and composing it failed every run ("cannot save with
+                    # zero pages", G-Research, 28 Oct). Recorded, so it is not fetched again.
+                    manifest[key] = doc.ink_key
+                    result.outcomes.append(CaptureOutcome(doc.uuid, doc.name, "unchanged"))
+                    continue
                 item = CaptureItem(
                     uuid=doc.uuid, pdf_path=Path(pdf_path), name=doc.name,
                     folder="/" + "/".join(doc.folders), category=where.category,
@@ -244,6 +251,14 @@ def capture_sync(
     if ingest:
         result.ingest = sync_notes(conn, ndir)
     return result
+
+
+def _render_notebook(bundle, out, composite, read):
+    """Draw a notebook's ink onto pages; None when no page carries a stroke."""
+    rmdoc = read(bundle)
+    if not rmdoc.pages:
+        return None
+    return composite(rmdoc, out)
 
 
 def placed_documents(conn, cfg=None):

@@ -236,3 +236,28 @@ def test_note_without_a_device_date_falls_back_to_capture_time(tmp_path, conn):
     _run(conn, tmp_path, [(_notebook("u-undated", "Scribble", ()), Placement("notebook"))],
          _Fakes())
     assert "date: 2026-10-27" in next((tmp_path / "notes").glob("*.md")).read_text()
+
+
+def test_a_notebook_whose_ink_was_erased_is_recorded_not_failed_every_run(tmp_path, conn):
+    """G-Research, 28 Oct: a stroke layer with no strokes; composing it raised "cannot save with
+    zero pages" on every run. Nothing to read is recorded as read, and not fetched again."""
+    fakes = _Fakes()
+    doc = (_notebook("g1", "G-Research", ("Careers", "G-Research")), Placement("notebook"))
+    r = capture_sync(
+        conn, placed=[doc], staging_dir=tmp_path / "stage", notes_dir=tmp_path / "notes",
+        manifest_path=tmp_path / "m.json", ingest=False, fetch_fn=fakes.fetch,
+        render_fn=lambda bundle, out: None, transcribe_fn=fakes.transcribe,
+        fillin_fn=fakes.fillin, enrich_fn=fakes.enrich, max_notebooks=4,
+    )
+    assert [o.status for o in r.outcomes] == ["unchanged"] and fakes.transcribed == []
+    r2 = _run(conn, tmp_path, [doc], fakes)
+    assert [o.status for o in r2.outcomes] == ["unchanged"] and fakes.fetched == ["g1"]
+
+
+def test_render_notebook_returns_none_when_no_page_has_ink():
+    from locus.capture.loop_a import _render_notebook
+
+    class _Doc:
+        pages: list = []
+
+    assert _render_notebook("b", "out", lambda d, o: "drawn", lambda b: _Doc()) is None

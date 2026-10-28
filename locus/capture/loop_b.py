@@ -178,6 +178,25 @@ def _ingest_from_bundle(conn: sqlite3.Connection, doc, name: str) -> str | None:
     return row["source_uri"] if row else None
 
 
+def _queued_name(doc) -> str:
+    name = doc.name.replace("/", "-")
+    return name if name.lower().endswith(".pdf") else name + ".pdf"
+
+
+def _held_back(doc, *, incoming: Path) -> bool:
+    """Was an earlier copy of this source set aside by locus-watch (quarantine or unsupported)?
+
+    Asked BEFORE the download: the answer is in the file name, and finding it out after fetching
+    the bundle cost four downloads every half hour for documents nothing would happen to.
+    """
+    name = _queued_name(doc)
+    for set_aside in (".quarantine", ".unsupported"):
+        held = incoming / set_aside
+        if held.exists() and any(held.rglob(name)):
+            return True
+    return False
+
+
 def _queue_source(doc, where, pdf_bytes: bytes, *, incoming: Path) -> str:
     """Put a source PDF in the drop folder under its area for `locus-watch`. Returns a status.
 
@@ -185,14 +204,10 @@ def _queue_source(doc, where, pdf_bytes: bytes, *, incoming: Path) -> str:
     'quarantined' when an earlier copy failed: re-queuing that one would quarantine it again
     every half hour, for ever.
     """
-    name = doc.name.replace("/", "-")
-    if not name.lower().endswith(".pdf"):
-        name += ".pdf"
+    name = _queued_name(doc)
     area_dir = incoming / (where.area or "").lower()
-    for set_aside in (".quarantine", ".unsupported"):
-        held = incoming / set_aside
-        if held.exists() and any(held.rglob(name)):
-            return "quarantined"
+    if _held_back(doc, incoming=incoming):
+        return "quarantined"
     dest = area_dir / name
     if dest.exists():
         return "waiting"
@@ -215,6 +230,7 @@ def annotate_sync(
     ingest_fn=None,
     promote_fn=None,
     queue_fn=None,
+    held_fn=None,
     transcribe_limit: int | None = None,
     max_fetch: int | None = None,
 ) -> AnnotateSyncResult:
@@ -268,6 +284,7 @@ def annotate_sync(
             doc, where, pdf_bytes, incoming=Path(cfg.paths.incoming)
         )
     )
+    held_fn = held_fn or (lambda doc: _held_back(doc, incoming=Path(cfg.paths.incoming)))
     if placed is None:
         placed = placed_documents(conn, cfg)
 
@@ -297,6 +314,9 @@ def annotate_sync(
             ):
                 manifest[key] = doc.ink_key      # nothing written on it: nothing to read
                 result.outcomes.append(AnnotateOutcome(uuid, name, "unchanged"))
+                continue
+            if where.role == "source" and library_uri is None and held_fn(doc):
+                result.outcomes.append(AnnotateOutcome(uuid, name, "quarantined"))
                 continue
             if fetched >= fetch_cap:
                 result.outcomes.append(AnnotateOutcome(uuid, name, "deferred"))

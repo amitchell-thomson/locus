@@ -11,9 +11,24 @@ keryx doctor            # names every problem in the config
 ```
 The example already has your four accounts and the Mail.app account ids found on 2026-10-14. Leave `live = false` until the Phase 4 checks pass.
 
-## 2. Gmail (nothing to do)
+## 2. Gmail (one app password per account, for archiving)
 
 Personal Gmail goes through Mac Mail, like the OQTS accounts (Alec, 2026-10-20): no Google Cloud project or OAuth. The Gmail API backend still exists (`backend = "gmail"` + `keryx auth gmail`) if it's ever wanted; it needs a published OAuth app with public home and privacy pages.
+
+**Archiving needs IMAP** (spec `docs/redesign/slices/keryx-gmail-imap.md`, 28 Oct). Mail cannot archive these accounts for keryx: on Personal it uploaded a copy and deleted the original, on OQTS it never told Gmail. So keryxd changes Gmail's Inbox label itself, and nothing else. For each Gmail account (Personal, OQTS):
+
+1. At <https://myaccount.google.com/apppasswords> (signed in as that account; it needs 2-Step Verification on), make an app password named `keryx`. Google shows 16 letters in four groups.
+2. In a terminal, store it; `security` asks for it, so it never appears in your shell history:
+   ```sh
+   security add-generic-password -s keryx-imap-personal -a alec.mitchellthomson@gmail.com -w
+   security add-generic-password -s keryx-imap-oqts -a alec@oqts.org -w
+   ```
+   (The spaces Google shows can be typed or left out.)
+3. In `~/.config/keryx/config.toml`, on that account: add `gmail_imap = true`.
+4. `keryx doctor` must say `Gmail IMAP signs in as … (All Mail is "[Gmail]/All Mail")`.
+5. Restart keryxd (`deploy/keryx/install-daemon.sh`), check a round trip on a `[keryx-test]` mail, then delete the account's `archives = false` line.
+
+To stop using it, take `gmail_imap = true` out (and put `archives = false` back), and revoke the app password on the same Google page.
 
 ## 3. Mail.app permissions for keryxd (Phase 1)
 

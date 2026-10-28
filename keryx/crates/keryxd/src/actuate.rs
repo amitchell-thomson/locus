@@ -142,6 +142,44 @@ on run argv
 end run
 "#;
 
+/// Whether the change puts the message in the inbox (`Some(true)`), takes it out (`Some(false)`),
+/// or leaves the Inbox label alone.
+pub fn inbox_change(acc: &Account, before: &MsgState, after: &MsgState) -> Option<bool> {
+    let inbox = acc.inbox_mailbox.as_deref().unwrap_or("INBOX");
+    match (&before.location, &after.location) {
+        (Location::Mailboxes { labels: b, .. }, Location::Mailboxes { labels: a, .. }) => {
+            let (was, is) = (b.iter().any(|l| l == inbox), a.iter().any(|l| l == inbox));
+            (was != is).then_some(is)
+        }
+        _ => None,
+    }
+}
+
+/// A Mail step that adds or takes away the Inbox label.
+fn touches_inbox(acc: &Account, step: &MailStep) -> bool {
+    let inbox = acc.inbox_mailbox.as_deref().unwrap_or("INBOX");
+    matches!(step, MailStep::Move { from, .. } if from == inbox)
+        || matches!(step, MailStep::Copy { to, .. } if to == inbox)
+}
+
+/// Ask Mail to sync an account now (it picks up a change made at the server).
+fn sync_mail_account(acc: &Account) {
+    let Some(id) = acc.mailapp_account_id.as_deref() else {
+        return;
+    };
+    let _ = Command::new("osascript")
+        .args([
+            "-e",
+            "on run argv",
+            "-e",
+            "tell application \"Mail\" to synchronize with (first account whose id is (item 1 of argv))",
+            "-e",
+            "end run",
+            id,
+        ])
+        .output();
+}
+
 /// Whether Mail's row shows what the change was about, and only that: the mailbox it went into,
 /// labels added and taken away, read and flag when they changed. Comparing the whole location
 /// never matched on Gmail, which adds and drops labels of its own ("Important"), so every
@@ -379,7 +417,16 @@ impl Real {
     ) -> Result<Option<MsgState>, String> {
         Self::ensure_mail_running()?;
         let mut current = current_box(acc, &before.location);
-        let steps = mail_steps(acc, before, after);
+        let mut steps = mail_steps(acc, before, after);
+        // The Inbox label goes over IMAP on accounts that say so; Mail does the rest.
+        let inbox = if acc.gmail_imap {
+            inbox_change(acc, before, after)
+        } else {
+            None
+        };
+        if inbox.is_some() {
+            steps.retain(|s| !touches_inbox(acc, s));
+        }
         // Gmail-style accounts file by adding a label, then taking the Inbox one away. The second
         // step waits until Mail shows the first on the message: a copy into a folder made a moment
         // before did nothing, the Inbox label still went, and the mail was left in All Mail alone
@@ -424,7 +471,49 @@ impl Real {
                 current = to.clone();
             }
         }
+        if let Some(on) = inbox {
+            return self.imap_inbox(acc, msg, before, after, on);
+        }
         self.await_envelope(acc, msg, before, after)?;
+        Ok(None)
+    }
+
+    /// The Inbox label changed at Gmail itself, then Mail asked to catch up. Gmail's answer is
+    /// the confirmation; Mail only has to show it, and is nudged once if it is slow.
+    fn imap_inbox(
+        &self,
+        acc: &Account,
+        msg: &MsgRef,
+        before: &MsgState,
+        after: &MsgState,
+        on: bool,
+    ) -> Result<Option<MsgState>, String> {
+        let started = Instant::now();
+        let imap =
+            keryx_store::gmail_imap::GmailImap::from_keychain(&acc.id, &acc.address).map_err(|e| e.to_string())?;
+        let res = imap.set_inbox(&msg.message_id, on);
+        tracing::info!(
+            account = acc.id,
+            inbox = on,
+            ms = started.elapsed().as_millis() as u64,
+            copies = res.as_ref().map(Vec::len).unwrap_or(0),
+            error = res.as_ref().err().map(ToString::to_string).unwrap_or_default(),
+            "gmail inbox label"
+        );
+        res.map_err(|e| e.to_string())?;
+        if self
+            .await_envelope_for(acc, msg, before, after, Duration::from_secs(5))
+            .is_err()
+        {
+            sync_mail_account(acc);
+            if self
+                .await_envelope_for(acc, msg, before, after, Duration::from_secs(30))
+                .is_err()
+            {
+                // Done at Gmail: what Mail shows follows on its next sync, and the mirror with it.
+                tracing::warn!(account = acc.id, "gmail inbox label changed; Mail hasn't shown it yet");
+            }
+        }
         Ok(None)
     }
 
@@ -499,9 +588,20 @@ impl Real {
 
     /// Wait (≤ 30 s) until Mail's Envelope Index shows the new state.
     fn await_envelope(&self, acc: &Account, msg: &MsgRef, before: &MsgState, after: &MsgState) -> Result<(), String> {
+        self.await_envelope_for(acc, msg, before, after, Duration::from_secs(30))
+    }
+
+    fn await_envelope_for(
+        &self,
+        acc: &Account,
+        msg: &MsgRef,
+        before: &MsgState,
+        after: &MsgState,
+        wait: Duration,
+    ) -> Result<(), String> {
         let uuid = acc.mailapp_account_id.as_deref().unwrap_or_default();
         let t = Instant::now();
-        while t.elapsed() < Duration::from_secs(30) {
+        while t.elapsed() < wait {
             if let Ok(store) = MailStore::open(&self.cfg.paths.mail_dir)
                 && let Ok(rows) = store.scan(uuid)
                 && rows
@@ -829,6 +929,36 @@ mod tests {
         assert_eq!(
             (args[2].as_str(), args[4].as_str(), args[5].as_str()),
             ("Inbox", "move", "Archive")
+        );
+    }
+
+    #[test]
+    fn the_inbox_label_is_told_apart_from_everything_else_a_change_does() {
+        let c = cfg();
+        let a = c.account("oqts").unwrap();
+        let all = "[Gmail]/All Mail";
+        let inbox = st(mb(all, &["INBOX"]), false, false);
+        let out = st(mb(all, &[]), false, false);
+        assert_eq!(inbox_change(a, &inbox, &out), Some(false), "archive");
+        assert_eq!(inbox_change(a, &out, &inbox), Some(true), "back to the inbox");
+        assert_eq!(
+            inbox_change(a, &inbox, &st(mb(all, &["INBOX"]), true, true)),
+            None,
+            "read, flag"
+        );
+        // Filing under an old config key: the label copy stays with Mail, the Inbox goes over IMAP.
+        let filed = st(mb(all, &["Admin"]), false, false);
+        assert_eq!(inbox_change(a, &inbox, &filed), Some(false));
+        let rest: Vec<MailStep> = mail_steps(a, &inbox, &filed)
+            .into_iter()
+            .filter(|s| !touches_inbox(a, s))
+            .collect();
+        assert_eq!(
+            rest,
+            vec![MailStep::Copy {
+                from: all.into(),
+                to: "Admin".into()
+            }]
         );
     }
 }

@@ -56,6 +56,12 @@ pub struct Account {
     /// Marks and needs-reply still work; the thread stays in the inbox.
     #[serde(default = "yes")]
     pub archives: bool,
+    /// Gmail accounts read through Mail: take mail out of the inbox and put it back by changing
+    /// Gmail's Inbox label over IMAP (app password in the Keychain, `keryx-imap-<id>`), not by
+    /// asking Mail, which uploaded a copy on one account and never sent it on the other
+    /// (spec `keryx-gmail-imap.md`). Flags, read state and sending still go through Mail.
+    #[serde(default)]
+    pub gmail_imap: bool,
     /// Used by other people too: every Claude write needs Alec (SPEC §6.2).
     #[serde(default)]
     pub shared: bool,

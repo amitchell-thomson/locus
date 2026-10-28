@@ -465,6 +465,30 @@ fn doctor(path: &std::path::Path) -> anyhow::Result<()> {
         ),
     }
 
+    // Gmail's Inbox label over IMAP (spec keryx-gmail-imap.md): sign in and find All Mail.
+    for acc in cfg.accounts.iter().filter(|a| a.gmail_imap) {
+        let service = keryx_store::gmail_imap::keychain_service(&acc.id);
+        match keryx_store::gmail_imap::GmailImap::from_keychain(&acc.id, &acc.address).and_then(|g| g.check()) {
+            Ok(all) => {
+                r.ok(format!("{}: Gmail IMAP signs in as {} (All Mail is {all:?})", acc.name, acc.address));
+                if !acc.archives {
+                    r.note(format!(
+                        "{}: archives = false still: delete that line to let keryx archive here",
+                        acc.name
+                    ));
+                }
+            }
+            Err(keryx_store::gmail_imap::ImapError::Login(e)) if e.contains("no Keychain item") => r.bad(
+                format!("{}: no app password for Gmail IMAP", acc.name),
+                format!(
+                    "make one at myaccount.google.com/apppasswords, then: security add-generic-password -s {service} -a {} -w   (docs/setup.md)",
+                    acc.address
+                ),
+            ),
+            Err(e) => r.bad(format!("{}: {e}", acc.name), "docs/setup.md: Gmail IMAP"),
+        }
+    }
+
     // keryxd itself, and its permission to control Mail.
     match keryx_store::client::Client::from_config(&cfg) {
         Err(e) => r.bad(e.to_string(), "make the token: docs/setup.md §3"),

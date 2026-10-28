@@ -5,6 +5,7 @@ pub mod api;
 pub mod client;
 pub mod db;
 pub mod gmail;
+pub mod gmail_imap;
 pub mod ingest;
 pub mod item;
 pub mod kairos;

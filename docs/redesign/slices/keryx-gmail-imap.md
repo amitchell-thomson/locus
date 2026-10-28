@@ -1,6 +1,6 @@
 # keryx archives Gmail mail itself: labels over IMAP, not moves through Mail
 
-**State:** draft for approval · **Written:** 2026-10-28 · **Part of:** [keryx-joins-locus.md](keryx-joins-locus.md) (round 11)
+**State:** approved 2026-10-28 ("do it in full"), in progress · **Written:** 2026-10-28 · **Part of:** [keryx-joins-locus.md](keryx-joins-locus.md) (round 11)
 **From:** your words, 28 Oct: "lets do that" (stop archiving on Personal now, and a spec for the
 direct route), after "try connection doctor before setting up anything new".
 
@@ -71,3 +71,19 @@ pages. `keryx doctor` checks it logs in and finds `[Gmail]/All Mail`.
 - **OQTS shared** is read-only in keryx and stays out of this. OQTS needs its own app password.
 - **Undoing the earlier archives.** Five Personal threads came back on 27–28 Oct (Barchart,
   Netflix, LinkedIn, a GitHub run, Bloomberg). After I4 you can archive them again with `a`.
+
+## Progress
+
+- **I1–I3 done, 28 Oct.** No IMAP crate: `keryx-store/src/gmail_imap.rs` is a hand-written client
+  over rustls (already in the workspace through reqwest) with the Mac's certificate store, so its
+  six commands are all it can send (LOGIN, LIST, SELECT, UID SEARCH X-GM-RAW, UID STORE
+  ±X-GM-LABELS (\Inbox), LOGOUT). Tests against a fake Gmail: every copy of a Message-ID
+  changes, other labels stay, All Mail is found by `\All` under another name, a wrong password /
+  a missing message / a label Gmail keeps are errors, and no other command is possible.
+  `actuate` sends only the Inbox label over IMAP and leaves flags, read state and other labels to
+  Mail; after the change it waits for Mail to show it and nudges Mail to sync once if it is slow.
+  `keryx doctor` signs in and names All Mail. Checked against the real Gmail with a wrong
+  password: TLS, greeting and LOGIN work, and the refusal reads "sign-in refused … check the app
+  password".
+- **I4 waits for you:** the two app passwords (docs/setup.md §2).
+

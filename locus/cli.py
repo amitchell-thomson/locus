@@ -1571,7 +1571,7 @@ def cmd_capture_sync(args) -> None:
         conn.close()
     for o in r.outcomes:
         if o.status == "captured":
-            print(f"  captured  {o.name}  ({o.pages}pp · {o.illegible} illegible · {o.uncertain} [?] · "
+            print(f"  captured  {o.name}  ({o.pages}pp, {o.pages_read} read now · {o.illegible} illegible · {o.uncertain} [?] · "
                   f"{o.filled} filled · {o.related} related)  -> {o.note_path}")
         elif o.status == "failed":
             print(f"  FAILED    {o.name}: {o.error}")

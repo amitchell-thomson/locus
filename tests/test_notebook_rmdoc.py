@@ -132,3 +132,20 @@ def test_markups_reads_a_notebook_end_to_end(conn, tmp_path, monkeypatch):
     text = m.marks.render(notebook=m.notebook)
     assert "NOTEBOOK" in text
     assert "were ADDED on the tablet" not in text, "a notebook is not additions to a PDF"
+
+
+def test_a_pen_colour_rmscene_does_not_know_is_kept_not_dropped():
+    """The tablet writes colour 14; rmscene 0.8.0 knows 0-13 and dropped the whole stroke block.
+    Measured 28 Oct: 6 of 133,155 strokes lost across the cache, all recovered."""
+    import logging
+
+    from rmscene import scene_items as si
+
+    from locus.capture.rmdoc import _tolerate_new_pen_colours
+
+    _tolerate_new_pen_colours()
+    assert int(si.PenColor(14)) == 14
+    assert si.PenColor(0) is si.PenColor.BLACK
+    # the trailing-bytes warning is quiet; a block that cannot be read still reports
+    assert logging.getLogger("rmscene.tagged_block_reader").level == logging.ERROR
+    assert logging.getLogger("rmscene.scene_stream").getEffectiveLevel() <= logging.WARNING

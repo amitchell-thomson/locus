@@ -209,6 +209,46 @@ def _page_order(content: dict) -> list[tuple[str, int | None]]:
     return out
 
 
+_COLOURS_PATCHED = False
+
+
+def _tolerate_new_pen_colours() -> None:
+    """Let a pen colour rmscene does not know through, instead of losing the stroke.
+
+    rmscene 0.8.0 (the newest release) knows colours 0-13. The tablet now writes 14 as well, and
+    rmscene's reader then fails the WHOLE line block ("14 is not a valid PenColor") and drops the
+    stroke. Measured 28 Oct over the 75 bundles in the cache: 133,155 strokes parsed, 6 dropped
+    this way, all 6 recovered with this in place. The colour itself is irrelevant to capture
+    (shape and position are what is read), so the unknown value becomes a pseudo-member named
+    UNKNOWN_<n> rather than an error.
+
+    Also quietened: rmscene's "Some data has not been read" WARNING, about trailing bytes newer
+    firmware writes after a block it otherwise parses fully. Measured the same day: 414 of them
+    across the cache with no stroke lost, and they buried the capture log. Only that reader's
+    logger is raised: rmscene reports a block it could NOT read ("Error reading block", "Unknown
+    block type") at WARNING from `scene_stream`, and that must stay visible, since it is how the
+    colour-14 loss above was found.
+    """
+    global _COLOURS_PATCHED
+    if _COLOURS_PATCHED:
+        return
+    import logging
+
+    from rmscene import scene_items as si
+
+    def _missing_(cls, value):
+        if not isinstance(value, int):
+            return None
+        obj = int.__new__(cls, value)
+        obj._name_ = f"UNKNOWN_{value}"
+        obj._value_ = value
+        return obj
+
+    si.PenColor._missing_ = classmethod(_missing_)
+    logging.getLogger("rmscene.tagged_block_reader").setLevel(logging.ERROR)
+    _COLOURS_PATCHED = True
+
+
 def _parse_rm(data: bytes) -> list[tuple[list[tuple[float, float]], int | None, int | None]]:
     """Raw strokes from one `.rm` file, still in reMarkable screen coordinates.
 
@@ -218,6 +258,7 @@ def _parse_rm(data: bytes) -> list[tuple[list[tuple[float, float]], int | None, 
     """
     from rmscene import read_blocks
 
+    _tolerate_new_pen_colours()
     out = []
     for block in read_blocks(io.BytesIO(data)):
         if type(block).__name__ != "SceneLineItemBlock":

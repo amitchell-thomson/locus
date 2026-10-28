@@ -44,27 +44,31 @@ def _transcript(text: str) -> Transcript:
 class _Fakes:
     """The cloud fetch, the render and the three model passes, all counting their calls."""
 
-    def __init__(self, fail: set[str] = frozenset()):
+    def __init__(self, fail: set[str] = frozenset(), empty: set[str] = frozenset()):
         self.fetched: list[str] = []
         self.transcribed: list[str] = []
         self.enriched: list[str] = []
         self.fail = fail
+        self.empty = empty
+        self.staging = Path("/tmp")
 
     def fetch(self, doc):
         self.fetched.append(doc.uuid)
         return Path(f"/nowhere/{doc.uuid}.rmdoc")
 
-    def render(self, bundle, out):
-        out = Path(out)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_bytes(b"%PDF-1.7\n" + Path(bundle).stem.encode())
-        return out
-
-    def transcribe(self, pdf_path):
-        if Path(pdf_path).stem in self.fail:
+    def notebook(self, doc, bundle):
+        """Stands in for render + per-page transcription; the real one is tested in
+        test_capture_notebook.py."""
+        if doc.uuid in self.fail:
             raise RuntimeError("vision API 500")
-        self.transcribed.append(Path(pdf_path).stem)
-        return _transcript("# Notes\n\nSwap [illegible] resets on SOFR[?].")
+        if doc.uuid in self.empty:
+            return None
+        self.transcribed.append(doc.uuid)
+        out = self.staging / f"{doc.uuid}.pdf"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"%PDF-1.7\n" + doc.uuid.encode())
+        t = _transcript("# Notes\n\nSwap [illegible] resets on SOFR[?].")
+        return t, out, len(t.pages)
 
     def fillin(self, md):
         return FillResult(markdown=md.replace("[illegible]", "⟦leg⟧"), filled=1, total_gaps=2)
@@ -76,10 +80,11 @@ class _Fakes:
 
 def _run(conn, tmp_path, placed, fakes, **kw):
     kw.setdefault("max_notebooks", 10)
+    fakes.staging = tmp_path / "stage"
     return capture_sync(
         conn, placed=placed, staging_dir=tmp_path / "stage", notes_dir=tmp_path / "notes",
         manifest_path=tmp_path / "m.json", ingest=False, fetch_fn=fakes.fetch,
-        render_fn=fakes.render, transcribe_fn=fakes.transcribe, fillin_fn=fakes.fillin,
+        notebook_fn=fakes.notebook, fillin_fn=fakes.fillin,
         enrich_fn=fakes.enrich, now="2026-10-27T00:00:00+00:00", **kw,
     )
 
@@ -241,23 +246,9 @@ def test_note_without_a_device_date_falls_back_to_capture_time(tmp_path, conn):
 def test_a_notebook_whose_ink_was_erased_is_recorded_not_failed_every_run(tmp_path, conn):
     """G-Research, 28 Oct: a stroke layer with no strokes; composing it raised "cannot save with
     zero pages" on every run. Nothing to read is recorded as read, and not fetched again."""
-    fakes = _Fakes()
+    fakes = _Fakes(empty={"g1"})
     doc = (_notebook("g1", "G-Research", ("Careers", "G-Research")), Placement("notebook"))
-    r = capture_sync(
-        conn, placed=[doc], staging_dir=tmp_path / "stage", notes_dir=tmp_path / "notes",
-        manifest_path=tmp_path / "m.json", ingest=False, fetch_fn=fakes.fetch,
-        render_fn=lambda bundle, out: None, transcribe_fn=fakes.transcribe,
-        fillin_fn=fakes.fillin, enrich_fn=fakes.enrich, max_notebooks=4,
-    )
+    r = _run(conn, tmp_path, [doc], fakes)
     assert [o.status for o in r.outcomes] == ["unchanged"] and fakes.transcribed == []
     r2 = _run(conn, tmp_path, [doc], fakes)
     assert [o.status for o in r2.outcomes] == ["unchanged"] and fakes.fetched == ["g1"]
-
-
-def test_render_notebook_returns_none_when_no_page_has_ink():
-    from locus.capture.loop_a import _render_notebook
-
-    class _Doc:
-        pages: list = []
-
-    assert _render_notebook("b", "out", lambda d, o: "drawn", lambda b: _Doc()) is None

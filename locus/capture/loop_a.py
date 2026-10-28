@@ -17,7 +17,9 @@ changed notebook and pushed it here; it stopped, and for twelve weeks every run 
 "0 captured" and exited 0. The render is now made on the server from the cloud bundle
 (`rmdoc.composite_pdf`, blank canvas for a notebook), so nothing on the device has to work.
 
-Idempotent on the INK, not on the render: `cloud:<uuid>` in the manifest holds the notebook's ink
+Per PAGE, not per notebook: only the pages whose ink changed are transcribed, and the note is
+rebuilt from every page's kept transcription (capture/notebook.py), so a growing Jot costs the new
+page, not the whole book. Idempotent on the INK, not on the render: `cloud:<uuid>` in the manifest holds the notebook's ink
 key from the cloud tree, which changes when a stroke layer does and not when he moves or opens
 the notebook. A render is not byte-reproducible (pymupdf stamps each save), so keying on it would
 re-pay a billed transcription for nothing. The per-uuid render hash is still written, and a
@@ -59,6 +61,7 @@ class CaptureOutcome:
     status: str
     note_path: str | None = None
     pages: int = 0
+    pages_read: int = 0      # pages actually transcribed this run (the rest were unchanged)
     illegible: int = 0
     uncertain: int = 0
     filled: int = 0
@@ -132,7 +135,7 @@ def capture_sync(
     manifest_path=None,
     ingest: bool = True,
     fetch_fn=None,
-    render_fn=None,
+    notebook_fn=None,
     transcribe_fn=None,
     fillin_fn=None,
     enrich_fn=None,
@@ -146,6 +149,7 @@ def capture_sync(
     from locus.capture.device import unmatched_folders
     from locus.capture.fillin import fill_gaps
     from locus.capture.remarkable import CaptureItem
+    from locus.capture.notebook import transcribe_notebook
     from locus.capture.rmdoc import composite_pdf, read_rmdoc
     from locus.capture.transcribe import transcribe_pdf
     from locus.enrich.related import enrich_note
@@ -156,8 +160,18 @@ def capture_sync(
     if placed is None:
         placed = placed_documents(conn, cfg)
     fetch_fn = fetch_fn or default_fetch(cfg)
-    render_fn = render_fn or (lambda bundle, out: _render_notebook(bundle, out, composite_pdf, read_rmdoc))
     transcribe_fn = transcribe_fn or transcribe_pdf
+    page_cache = Path(cfg.paths.db).parent / "cache" / "transcripts"
+    if notebook_fn is None:
+
+        def notebook_fn(doc, bundle):
+            # Only the pages whose ink changed are transcribed (capture/notebook.py).
+            out_pdf = staging / f"{doc.uuid}.pdf"
+            transcript, n = transcribe_notebook(
+                read_rmdoc(bundle), out_pdf=out_pdf, cache_file=page_cache / f"{doc.uuid}.json",
+                transcribe_pdf=transcribe_fn, composite=composite_pdf,
+            )
+            return None if transcript is None else (transcript, out_pdf, n)
     fillin_fn = fillin_fn or fill_gaps
     enrich_fn = enrich_fn or enrich_note
     cap = cfg.capture.max_notebooks_per_run if max_notebooks is None else max_notebooks
@@ -196,20 +210,21 @@ def capture_sync(
             rendered += 1
             try:
                 bundle = fetch_fn(doc)
-                pdf_path = render_fn(bundle, staging / f"{doc.uuid}.pdf")
-                if pdf_path is None:
+                staging.mkdir(parents=True, exist_ok=True)
+                read = notebook_fn(doc, bundle)
+                if read is None:
                     # Stroke layers with no strokes in them (a page drawn on and erased): there
                     # is nothing to read, and composing it failed every run ("cannot save with
                     # zero pages", G-Research, 28 Oct). Recorded, so it is not fetched again.
                     manifest[key] = doc.ink_key
                     result.outcomes.append(CaptureOutcome(doc.uuid, doc.name, "unchanged"))
                     continue
+                transcript, pdf_path, pages_read = read
                 item = CaptureItem(
                     uuid=doc.uuid, pdf_path=Path(pdf_path), name=doc.name,
                     folder="/" + "/".join(doc.folders), category=where.category,
                     modified=doc.modified, area=where.area, thing=where.thing,
                 )
-                transcript = transcribe_fn(item.pdf_path)
                 ledger.record(ClaudeResult(
                     text="", cost_usd=transcript.cost_usd,
                     usage={"input_tokens": transcript.input_tokens,
@@ -225,7 +240,8 @@ def capture_sync(
                 manifest[key] = doc.ink_key
                 result.outcomes.append(CaptureOutcome(
                     item.uuid, item.name, "captured", note_path=str(note_path),
-                    pages=len(transcript.pages), illegible=transcript.illegible_total,
+                    pages=len(transcript.pages), pages_read=pages_read,
+                    illegible=transcript.illegible_total,
                     uncertain=transcript.uncertain_total, filled=filled.filled,
                     related=enriched.related, cost_usd=transcript.cost_usd,
                 ))
@@ -251,14 +267,6 @@ def capture_sync(
     if ingest:
         result.ingest = sync_notes(conn, ndir)
     return result
-
-
-def _render_notebook(bundle, out, composite, read):
-    """Draw a notebook's ink onto pages; None when no page carries a stroke."""
-    rmdoc = read(bundle)
-    if not rmdoc.pages:
-        return None
-    return composite(rmdoc, out)
 
 
 def placed_documents(conn, cfg=None):

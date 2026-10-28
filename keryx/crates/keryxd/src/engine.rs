@@ -127,7 +127,7 @@ fn msg_ref(m: &Message) -> MsgRef {
 /// Why a thread on an account with `archives = false` stays in the inbox.
 pub fn archives_off(account: &Account) -> String {
     format!(
-        "{}: archive it in Mail for now (keryx's archive there makes Mail upload a copy that keeps the Inbox label)",
+        "{}: archive it in Mail for now (an archive keryx asks Mail for doesn't reach Gmail)",
         account.name
     )
 }

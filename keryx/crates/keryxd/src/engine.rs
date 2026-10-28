@@ -124,6 +124,14 @@ fn msg_ref(m: &Message) -> MsgRef {
     }
 }
 
+/// Why a thread on an account with `archives = false` stays in the inbox.
+pub fn archives_off(account: &Account) -> String {
+    format!(
+        "{}: archive it in Mail for now (keryx's archive there makes Mail upload a copy that keeps the Inbox label)",
+        account.name
+    )
+}
+
 /// Short human description of a state change, for conflicts and summaries.
 fn describe(m: &Message) -> String {
     let who = m.from.as_ref().map(|a| a.short().to_string()).unwrap_or_default();
@@ -441,6 +449,17 @@ impl Engine {
                 }
             };
             let account = self.account(&account_id)?.clone();
+            if !account.archives && matches!(req.intent, Intent::Archive | Intent::File { .. }) {
+                // What it is for is still recorded; only the move out of the inbox waits.
+                if let Intent::File { key, item } = &req.intent
+                    && self.taxonomy_folder(key).is_some()
+                    && let Some((a, t)) = parse_thread_ref(r)
+                {
+                    self.mark_filed(a, t, key, item.as_deref())?;
+                }
+                out.skipped.push((r.clone(), archives_off(&account)));
+                continue;
+            }
             let ops = match self.plan(&req.intent, &account, &msgs) {
                 Ok(o) => o,
                 Err(e) => {
@@ -798,6 +817,13 @@ impl Engine {
         match op {
             Op::State { msg, before, after } => {
                 let account = self.account(&msg.account).map_err(|e| e.to_string())?.clone();
+                // Checked here too: an accepted cleanup reaches apply without triage.
+                if !account.archives
+                    && location::in_inbox(&account, &before.location)
+                    && !location::in_inbox(&account, &after.location)
+                {
+                    return Err(archives_off(&account));
+                }
                 // A Mail move may have renumbered the message: act on what's there now.
                 let current = self.locate(msg).map_err(|e| e.to_string())?;
                 let msg = match &current {

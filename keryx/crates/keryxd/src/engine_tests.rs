@@ -1357,3 +1357,42 @@ fn going_live_starts_filing_on_arrival_afresh() {
         Some(NOW.to_string().as_str())
     );
 }
+
+#[test]
+fn an_account_keryx_may_not_archive_on_keeps_its_mail_and_still_records_what_it_is_for() {
+    let (mut e, fake) = engine();
+    with_taxonomy(&mut e);
+    let lab = r(&e, "Lab partner for Thursday?");
+    let (a, t) = parse_thread_ref(&lab).unwrap();
+    let (a, t) = (a.to_string(), t.to_string());
+    for acc in &mut e.cfg.accounts {
+        if acc.id == a {
+            acc.archives = false;
+        }
+    }
+    let out = e.triage(req(Intent::Archive, vec![lab.clone()]), Who::ALEC).unwrap();
+    assert!(out.applied.is_none(), "{out:?}");
+    assert!(out.skipped[0].1.contains("archive it in Mail for now"), "{out:?}");
+    let out = e
+        .triage(
+            req(
+                Intent::File {
+                    key: "Studies".into(),
+                    item: Some("b14".into()),
+                },
+                vec![lab.clone()],
+            ),
+            Who::ALEC,
+        )
+        .unwrap();
+    assert!(out.applied.is_none() && out.skipped.len() == 1, "{out:?}");
+    assert_eq!(
+        e.db.item_of(&a, &t).unwrap().as_deref(),
+        Some("b14"),
+        "the mark is kept"
+    );
+    assert!(
+        in_inbox(&e, &lab) && fake.calls.lock().unwrap().is_empty(),
+        "nothing moved"
+    );
+}

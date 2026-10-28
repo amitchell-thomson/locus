@@ -15,6 +15,9 @@ mailapp_account_id = "1FD73A3D-D50A-49FE-B98E-E87E389ED2E0"
 inbox_mailbox = "INBOX"
 archive_mailbox = "[Gmail]/All Mail"
 sent_mailbox = "[Gmail]/Sent Mail"
+# Mail can't archive on this account: it uploads a copy that keeps the Inbox label (28 Oct).
+# Off, keryx leaves its mail in the inbox; marks and needs-reply still work.
+archives = false
 colour = "lavender"
 
 [[accounts]]
@@ -42,6 +45,7 @@ mailapp_account_id = "09F30390-18E1-4550-AF71-D9A1004D8C0F"
 inbox_mailbox = "INBOX"
 archive_mailbox = "[Gmail]/All Mail"
 sent_mailbox = "[Gmail]/Sent Mail"
+archives = false            # as Personal: Mail marks it archived and never tells Gmail (28 Oct)
 colour = "mauve"
 
 [[accounts]]

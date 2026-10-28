@@ -244,6 +244,20 @@ impl App {
         self.selected().map(|r| vec![r.r#ref.clone()]).unwrap_or_default()
     }
 
+    /// The account's name when every thread in `refs` is on an account keryx may not archive on.
+    pub(crate) fn archives_off(&self, refs: &[String]) -> Option<String> {
+        let mut name = None;
+        for r in refs {
+            let (a, _) = keryx_core::model::parse_thread_ref(r)?;
+            let acc = self.cfg.account(a)?;
+            if acc.archives {
+                return None;
+            }
+            name = Some(acc.name.clone());
+        }
+        name
+    }
+
     pub(crate) fn triage_intent(&mut self, intent: Intent, doing: &str) {
         self.triage(intent, doing);
     }
@@ -251,6 +265,14 @@ impl App {
     fn triage(&mut self, intent: Intent, doing: &str) {
         let refs = self.targets();
         if refs.is_empty() {
+            return;
+        }
+        // An account keryx may not archive on (round 11: Personal): a says so at once; d still
+        // goes, so keryxd records what it is for, and the thread stays where it is.
+        if matches!(intent, Intent::Archive)
+            && let Some(acc) = self.archives_off(&refs)
+        {
+            self.message = Some((format!("{}: archive it in Mail for now", acc), true));
             return;
         }
         let n = refs.len();
@@ -409,6 +431,9 @@ impl App {
             let mut gone = false;
             for j in bg {
                 for r in j.hides() {
+                    if self.archives_off(std::slice::from_ref(&r)).is_some() {
+                        continue;
+                    }
                     self.shown.remove(&r);
                     self.gone.insert(r.clone(), self.now.timestamp());
                     gone |= self.hidden.insert(r);

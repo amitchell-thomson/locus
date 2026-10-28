@@ -1373,3 +1373,20 @@ fn a_thread_mail_puts_back_in_the_inbox_is_said_not_silent() {
     a.reload();
     assert!(a.message.is_none());
 }
+
+#[test]
+fn a_on_an_account_keryx_may_not_archive_on_says_so_and_sends_nothing() {
+    let (mut a, f) = app();
+    let lab = select(&mut a, "Lab partner for Thursday?");
+    let acc = lab.split(':').next().unwrap().to_string();
+    for x in &mut a.cfg.accounts {
+        if x.id == acc {
+            x.archives = false;
+        }
+    }
+    keys(&mut a, &[Key::Char('a')]);
+    assert!(f.take().is_empty(), "nothing sent");
+    let (said, err) = a.message.clone().unwrap();
+    assert!(err && said.contains("archive it in Mail for now"), "{said}");
+    assert!(a.rows.iter().any(|r| r.r#ref == lab), "still listed");
+}

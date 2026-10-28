@@ -50,6 +50,12 @@ pub struct Account {
     pub sent_mailbox: Option<String>,
     #[serde(default = "yes")]
     pub writable: bool,
+    /// Whether keryx may take mail out of this account's inbox (archive, file). Off for Personal
+    /// (round 11, 28 Oct): asked to move a message out of INBOX, Mail uploads a fresh copy to
+    /// All Mail and deletes the original there, and Gmail keeps the Inbox label on the copy.
+    /// Marks and needs-reply still work; the thread stays in the inbox.
+    #[serde(default = "yes")]
+    pub archives: bool,
     /// Used by other people too: every Claude write needs Alec (SPEC §6.2).
     #[serde(default)]
     pub shared: bool,

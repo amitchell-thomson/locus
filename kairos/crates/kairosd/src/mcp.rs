@@ -24,7 +24,9 @@ removing due dates, dropping tasks, or more than 8 operations at once (the sched
 to read-only imports (Google feeds, holidays) are refused. You cannot approve changes: tell Alec what is pending and \
 let him approve it in locus's Approve. Every write returns {changeset_id, risk, status, summary}.\n\
 SCHEDULING: don't hand-place work blocks. Create/update tasks saying what each is for (locus: a registry id \
-such as b15, millennium or quast; or the key Errands, Sport, Social for personal things), an estimate (how long in \
+such as b15, millennium or quast; the key Studies, Projects or Careers with no locus for something general \
+in that area: general prep for the application process, a project too new for the registry, study for no one course; \
+or the key Errands, Sport, Social for personal things), an estimate (how long in \
 total) and a due date (the task's own attribute: no calendar event is made); how it is planned follows from the \
 estimate (an hour or less in one go, a short Errands task as a chore in a gap, longer in 2–3 h blocks, a course's \
 sheet 5 h by default), so leave kind unset unless Alec says otherwise. Then call plan; the deterministic scheduler spreads work over the days before the due date, moves it \

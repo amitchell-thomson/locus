@@ -197,9 +197,12 @@ pub struct App {
     pub grid: std::cell::Cell<(i64, i64, i64, i64)>,
 }
 
-/// What things can be for (ADR-009): every registry item, in its area's calendar, then
-/// Personal's streams that have a calendar (Family is the shared calendar: `s` shares to it).
-/// Active items first; inactive ones (a finished project) last.
+/// What things can be for (ADR-009): every registry item, in its area's calendar, then each
+/// area on its own for what is general within it (your call 30 Oct: "planning general prep for
+/// the process, or projects that do not have a thread yet ... studies not related to a specific
+/// course"), then Personal's streams that have a calendar (Family is the shared calendar: `s`
+/// shares to it). Active items first; inactive ones (a finished project) last. An area or a
+/// stream links to no item: the calendar is the whole answer.
 pub fn build_fors(cfg: &Config, shared: Option<&locus_contract::taxonomy::Shared>) -> Vec<ForOption> {
     let fallback = cfg.default_key().map(|k| k.name.clone()).unwrap_or_default();
     let mut v: Vec<(bool, ForOption)> = Vec::new();
@@ -220,13 +223,16 @@ pub fn build_fors(cfg: &Config, shared: Option<&locus_contract::taxonomy::Shared
         }
     }
     let mut keys = cfg.keys.clone();
-    keys.sort_by_key(|k| k.index);
-    for k in keys.iter().filter(|k| k.area.is_some()) {
+    keys.sort_by_key(|k| (k.area.is_some(), k.index));
+    for k in &keys {
         v.push((
             true,
             ForOption {
                 id: k.name.to_lowercase(),
-                label: k.name.clone(),
+                label: match k.area {
+                    Some(_) => k.name.clone(),
+                    None => format!("{} (general)", k.name),
+                },
                 key: k.name.clone(),
                 locus: None,
                 course: false,

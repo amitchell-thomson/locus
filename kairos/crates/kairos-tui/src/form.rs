@@ -45,17 +45,18 @@ pub enum FieldKind {
     For,
 }
 
-/// One answer to "what is it for" (ADR-009): a registry item (a course, an application, a repo)
-/// or one of Personal's streams. Its calendar follows from it.
+/// One answer to "what is it for" (ADR-009): a registry item (a course, an application, a repo),
+/// an area on its own (`Careers (general)`) or one of Personal's streams. Its calendar follows
+/// from it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ForOption {
-    /// The registry id, or the stream's name.
+    /// The registry id, or the area's or stream's name in lower case.
     pub id: String,
     /// What is shown and typed against: `B15 Control Systems`, `Millennium QD Internship 2027`.
     pub label: String,
     /// The calendar (key) it goes in.
     pub key: String,
-    /// The registry id to link to (none for a stream).
+    /// The registry id to link to (none for an area or a stream).
     pub locus: Option<String>,
     /// A course (its sheets get the five-hour default).
     pub course: bool,

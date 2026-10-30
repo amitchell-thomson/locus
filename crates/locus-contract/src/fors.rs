@@ -56,8 +56,9 @@ pub fn fors(shared: &Shared) -> Vec<For> {
 }
 
 /// The areas not filtered by stream (Studies, Projects, Careers) as answers of their own, for
-/// what belongs to an area and to no item (a department newsletter). keryx offers them after
-/// [`fors`]; kairos does not, since an event always has a calendar more specific than that.
+/// what belongs to an area and to no item (a department newsletter; general career prep, a
+/// project with no registry entry yet). keryx offers them after [`fors`]; kairos offers them as
+/// `Careers (general)`, the area's calendar with no link.
 pub fn area_fors(shared: &Shared) -> Vec<For> {
     shared
         .taxonomy

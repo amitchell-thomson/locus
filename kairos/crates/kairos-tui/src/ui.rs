@@ -1499,6 +1499,13 @@ fn details(f: &mut Frame, app: &App, area: Rect, cl: &Cluster) {
         }
         None => match link {
             Some(l) => vec![text(l)],
+            // No item: its calendar is the answer, an area (general within it) or a stream.
+            None if matches!(i.overlay, Overlay::Personal) && !app.for_label(None, key).is_empty() => vec![
+                text(app.for_label(None, key)),
+                dimmed("  ".into()),
+                TSpan::styled("L", locus_theme::keyst()),
+                dimmed(" links it to something specific".into()),
+            ],
             None => vec![
                 dimmed("not linked to anything yet  ".into()),
                 TSpan::styled("L", locus_theme::keyst()),

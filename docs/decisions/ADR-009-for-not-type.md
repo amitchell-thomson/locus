@@ -42,3 +42,16 @@ not its areas or kinds.
 ## What would make this wrong
 - If the derived shape plans badly often enough that you keep overriding it, the shape belongs
   back in the form, as a choice of planning shape ("in one go" or "spread"), not of category.
+
+## Amendment, 30 Oct 2026: an area on its own is an answer
+**Your words:** "can we add a generic career/ projects/ studies labels in the for field for things
+that are general within that like planning general prep for the process, or projects that do not
+have a thread yet and are in their infancy, and studies not related to a specific course that are
+instead just general" (30 Oct 2026)
+
+For also offers each area that has a calendar as `Studies (general)`, `Projects (general)`,
+`Careers (general)`: the area's calendar and no registry item, the way a stream is. An item with
+no link in an area calendar reads as that area's general one, with `L` to link it to something
+specific. A project that grows a registry entry is linked with `L` then. The earlier reason for
+not offering areas ("an event always has a calendar more specific than that") was wrong for work
+that belongs to an area and to nothing in it yet.

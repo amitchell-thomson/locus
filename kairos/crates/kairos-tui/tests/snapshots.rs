@@ -1046,13 +1046,44 @@ fn an_items_detail_lays_out_its_area_what_it_is_for_its_task_and_who_made_it() {
     let s = render_to_string(&a, 120, 34);
     for want in [
         "area     ●",
-        "for      not linked to anything yet",
+        "for      Errands  L links it to something specific",
         "task     B4 sheet",
         "made by  the scheduler (kairos)",
     ] {
         assert!(s.contains(want), "{want:?} missing:\n{s}");
     }
     assert!(!s.contains("no duplicates") && !s.contains("copies"), "{s}");
+}
+
+#[test]
+fn an_area_on_its_own_is_an_answer_for_what_is_general_within_it() {
+    // Your call 30 Oct: general prep for the application process, a project with no thread yet,
+    // study for no one course. For offers each area that has a calendar (this config: Careers)
+    // as itself: that calendar, and no item.
+    let (a, _t) = app("2026-10-21T08:00:00+01:00");
+    let areas: Vec<String> = a
+        .cfg
+        .keys
+        .iter()
+        .filter(|k| k.area.is_none())
+        .map(|k| k.name.clone())
+        .collect();
+    assert!(areas.contains(&"Careers".to_string()), "{areas:?}");
+    for area in &areas {
+        let o = a
+            .fors
+            .iter()
+            .find(|o| o.label == format!("{area} (general)"))
+            .unwrap_or_else(|| panic!("{area} (general) offered: {:?}", a.fors));
+        assert_eq!((o.key.as_str(), o.locus.as_deref()), (area.as_str(), None));
+    }
+    let mut f = kairos_tui::form::Form::add_task(a.key_names()).with_fors(a.fors.clone());
+    f.focus_on("For");
+    for c in "careers".chars() {
+        f.key(Key::Char(c));
+    }
+    assert_eq!(f.chosen_for().map(|o| o.label.as_str()), Some("Careers (general)"));
+    assert_eq!(a.for_label(None, Some("Careers")), "Careers (general)");
 }
 
 /// L4: a shared key means here what it means in locus (d done, x remove, + add).

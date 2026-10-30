@@ -244,7 +244,8 @@ enum TaskCmd {
     /// how it is planned follows from --est)
     Add {
         title: String,
-        /// What it is for: a registry item (b15, millennium, quast) or a stream (errands, sport,
+        /// What it is for: a registry item (b15, millennium, quast), an area (careers: general
+        /// within it) or a stream (errands, sport,
         /// social). Its calendar follows from it.
         #[arg(long = "for")]
         for_: Option<String>,
@@ -1458,7 +1459,8 @@ fn sync(ctx: &Ctx, p: &Paint, local: bool) -> Result<()> {
     Ok(())
 }
 
-/// `--for` (ADR-009): a registry item or a Personal stream → (calendar, link). Without it, the
+/// `--for` (ADR-009): a registry item, an area (general within it) or a Personal stream →
+/// (calendar, link). Without it, the
 /// calendar given, else the inbox.
 fn resolve_for(
     cfg: &kairos_core::config::Config,
@@ -1469,7 +1471,7 @@ fn resolve_for(
     let Some(f) = for_.map(str::trim).filter(|f| !f.is_empty()) else {
         return Ok((key.unwrap_or_else(inbox), None));
     };
-    if let Some(k) = cfg.key(f).filter(|k| k.area.is_some()) {
+    if let Some(k) = cfg.key(f) {
         return Ok((k.name.clone(), None));
     }
     let shared = kairos_store::taxonomy::get(cfg).map(|(s, _)| s);
@@ -1482,7 +1484,7 @@ fn resolve_for(
     match hit {
         Some(o) => Ok((key.unwrap_or_else(|| o.key.clone()), o.locus.clone())),
         None => Err(anyhow!(
-            "--for {f:?}: not a registry item or a stream (errands, sport, social)"
+            "--for {f:?}: not a registry item, an area (studies, projects, careers) or a stream (errands, sport, social)"
         )),
     }
 }

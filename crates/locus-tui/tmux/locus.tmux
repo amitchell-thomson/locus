@@ -1,8 +1,8 @@
 # The locus window (locus plan B.4; Slice 1 step 1.2). Sourced from ~/.config/tmux/tmux.conf:
 #   source-file ~/local-projects/locus/crates/locus-tui/tmux/locus.tmux
 #
-# Session `locus` has one window per view: home, project, calendar (kairos), mail (keryx).
-# Alt-1..4 switch them, and only while this client is ON the locus session; anywhere else the
+# Session `locus` has one window per view: home, project, calendar (kairos), mail (keryx), and
+# fix, a Claude chat for quick fixes to the other four (fix-chat.md). Alt-1..5 switch them, and only while this client is ON the locus session; anywhere else the
 # key goes through to the program, so a project session loses nothing. Bare digits stay
 # kairos's filters.
 #
@@ -20,6 +20,7 @@ bind -n M-1 if -F "#{==:#{session_name},locus}" "run-shell -b '#{@locus-tmux-dir
 bind -n M-2 if -F "#{==:#{session_name},locus}" "run-shell -b '#{@locus-tmux-dir}/locus-session.sh select project'" "send-keys M-2"
 bind -n M-3 if -F "#{==:#{session_name},locus}" "run-shell -b '#{@locus-tmux-dir}/locus-session.sh select calendar'" "send-keys M-3"
 bind -n M-4 if -F "#{==:#{session_name},locus}" "run-shell -b '#{@locus-tmux-dir}/locus-session.sh select mail'" "send-keys M-4"
+bind -n M-5 if -F "#{==:#{session_name},locus}" "run-shell -b '#{@locus-tmux-dir}/locus-session.sh select fix'" "send-keys M-5"
 
 # The Project view follows the project window: whenever a client lands on a session, record
 # it. Slot 42 so this never replaces another hook on the same event.

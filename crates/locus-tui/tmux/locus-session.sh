@@ -1,7 +1,7 @@
 #!/bin/sh
 # The locus tmux session: one window per view, created when missing (locus.tmux).
 #   locus-session.sh ensure          create the session and any missing window
-#   locus-session.sh select <view>   ensure, then show that view (home|project|calendar|mail)
+#   locus-session.sh select <view>   ensure, then show that view (home|project|calendar|mail|fix)
 # Quitting a view closes its window; its Alt key brings it back.
 set -e
 here=$(cd "$(dirname "$0")" && pwd)
@@ -29,7 +29,9 @@ command_for() {
         project) echo "LOCUS_IN_SESSION=1 LOCUS_STATE_DIR='$state' '$bin' project" ;;
         calendar) echo "$kairos" ;;
         mail) echo "$keryx" ;;
-        *) echo "locus-session.sh: no view '$1' (home|project|calendar|mail)" >&2; exit 2 ;;
+        # A Claude chat for quick fixes to the four views; its brief is fix-chat.md (2 Nov).
+        fix) echo "cd '$repo' && claude --name locus-fix --append-system-prompt \"\$(cat '$here/fix-chat.md')\"" ;;
+        *) echo "locus-session.sh: no view '$1' (home|project|calendar|mail|fix)" >&2; exit 2 ;;
     esac
 }
 
@@ -56,7 +58,7 @@ ensure() {
     tmux set -t locus: 'status-format[1]' ''
     base=$(tmux show -gv base-index)
     i=0
-    for view in home project calendar mail; do
+    for view in home project calendar mail fix; do
         mark=$(tmux list-windows -t =locus -F '#{window_name} #{@locus-view}' | awk -v v="$view" '$1==v{print $2; exit}')
         if ! tmux list-windows -t =locus -F '#{window_name}' | grep -qx "$view"; then
             tmux new-window -d -t "=locus:$((base + i))" -n "$view" "$(window_for "$view")" 2>/dev/null \
@@ -71,7 +73,7 @@ ensure() {
     # Put the views back in order: with renumber-windows on, closing one shifts the rest down,
     # so the recreated one lands at the end (21 Oct: home came back after project).
     i=0
-    for view in home project calendar mail; do
+    for view in home project calendar mail fix; do
         at=$(tmux list-windows -t =locus -F '#{window_index} #{window_name}' | awk -v v="$view" '$2==v{print $1; exit}')
         want=$((base + i))
         if [ -n "$at" ] && [ "$at" != "$want" ]; then
@@ -98,5 +100,5 @@ case ${1:-ensure} in
     # From the attach hooks (locus.tmux): a client landing on locus revives what a restart left.
     landed) [ "${2:-}" = locus ] && locked_ensure; true ;;
     select) command_for "${2:-}" >/dev/null; locked_ensure; tmux select-window -t "=locus:=$2" ;;
-    *) echo "usage: locus-session.sh ensure | select <home|project|calendar|mail>" >&2; exit 2 ;;
+    *) echo "usage: locus-session.sh ensure | select <home|project|calendar|mail|fix>" >&2; exit 2 ;;
 esac

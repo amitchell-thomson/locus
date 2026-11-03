@@ -1229,3 +1229,34 @@ fn moving_between_days_keeps_the_time_of_day() {
     a.key(Key::Char('['));
     assert_eq!(on(&a), "mon-14");
 }
+
+#[test]
+fn a_run_of_nudges_is_one_write_sent_when_the_keys_stop() {
+    // 2026-11-03: one blocking write per key repeat queued behind the keyboard, so a held ⇧↓
+    // lagged, then raced many places and froze. The run shows at once and is written once.
+    let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
+    a.daemon = Some(kairos_store::client::Daemon::new("http://127.0.0.1:9", "t").unwrap());
+    a.key(Key::Tab);
+    let block = a
+        .day_clusters(a.cursor)
+        .iter()
+        .position(|c| c.primary.meta.task_id.as_deref() == Some("task-b4"))
+        .expect("B4 block on Wed");
+    a.sel = block;
+    let (s0, e0) = a.selected().unwrap().primary.span.bounds(a.tz);
+    for _ in 0..3 {
+        a.key(Key::ShiftDown);
+    }
+    a.key(Key::AltDown);
+    assert!(a.deferred.is_empty(), "nothing sent while the keys run");
+    let (s1, e1) = a.selected().unwrap().primary.span.bounds(a.tz);
+    assert_eq!(s1 - s0, chrono::Duration::minutes(90), "shown at once");
+    assert_eq!(e1 - e0, chrono::Duration::minutes(105));
+    let h = a.held.as_ref().unwrap();
+    assert_eq!(h.start.as_deref(), Some(s1.to_rfc3339().as_str()));
+    assert_eq!(h.end, Some(e1));
+    assert_eq!(h.orig.span.bounds(a.tz), (s0, e0), "the original kept for a refusal");
+    a.key(Key::Down);
+    assert!(a.held.is_none());
+    assert_eq!(a.deferred.len(), 1, "one write for the run");
+}

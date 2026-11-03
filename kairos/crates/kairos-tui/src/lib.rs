@@ -214,22 +214,37 @@ pub fn run(cfg: Config, path: PathBuf) -> Result<(), String> {
                     last_reload = Instant::now();
                 }
             }
-            if event::poll(Duration::from_millis(250)).map_err(|e| e.to_string())?
-                && let Event::Key(k) = event::read().map_err(|e| e.to_string())?
-                && let Some(key) = map_key(k)
-            {
-                if app.message.is_some() && matches!(app.mode, Mode::Normal) {
-                    app.message = None;
+            // A held move is written once the arrows rest (HOLD_QUIET), so wake up for it.
+            let wait = if app.held.is_some() { 50 } else { 250 };
+            if event::poll(Duration::from_millis(wait)).map_err(|e| e.to_string())? {
+                // Take every key already waiting before drawing again: a held arrow's
+                // repeats are handled as they arrive instead of queueing behind frames.
+                loop {
+                    if let Event::Key(k) = event::read().map_err(|e| e.to_string())?
+                        && let Some(key) = map_key(k)
+                    {
+                        if app.message.is_some() && matches!(app.mode, Mode::Normal) {
+                            app.message = None;
+                        }
+                        app.key(key);
+                        if app.quit {
+                            app.release_held();
+                            app.run_deferred();
+                            return Ok(());
+                        }
+                    }
+                    if !event::poll(Duration::ZERO).map_err(|e| e.to_string())? {
+                        break;
+                    }
                 }
-                app.key(key);
-                if app.quit {
-                    return Ok(());
-                }
-                if !app.deferred.is_empty() {
-                    // Draw the optimistic change first, then do the round trip.
-                    terminal.draw(|f| ui::draw(f, &app)).map_err(|e| e.to_string())?;
-                    app.run_deferred();
-                }
+            }
+            if app.held_due() {
+                app.release_held();
+            }
+            if !app.deferred.is_empty() {
+                // Draw the optimistic change first, then do the round trip.
+                terminal.draw(|f| ui::draw(f, &app)).map_err(|e| e.to_string())?;
+                app.run_deferred();
             }
         }
     })();

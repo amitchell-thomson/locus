@@ -2627,9 +2627,10 @@ fn last_checkin(e: &kairosd::engine::Engine) -> kairos_core::changeset::Changese
 }
 
 #[test]
-fn a_block_cannot_be_piled_onto_a_checked_in_one() {
+fn only_alec_by_hand_can_pile_a_block_onto_a_checked_in_one() {
     // 2026-10-27: a pinned block nudged back a day landed on a morning block already ticked,
-    // and the time counted twice (and the view hid it). Now the edit is refused, naming it.
+    // and the time counted twice (and the view hid it), so the edit was refused, naming it.
+    // 2026-11-03: his own moves by hand are never blocked; anyone else's still are.
     let env = Env::new(true);
     let mut e = env.engine();
     let r = e.create_task(Author::Alec, &b4(240, "fri 17:00")).unwrap();
@@ -2652,11 +2653,22 @@ fn a_block_cannot_be_piled_onto_a_checked_in_one() {
         .into_iter()
         .find(|i| span_of(i).0 > e0)
         .unwrap();
-    let err = retime(&mut e, &later, Some(s0 + Duration::minutes(10)), None).unwrap_err();
+    let err = e
+        .update_event(
+            Author::Alec,
+            Some(&later.source),
+            &later.uid,
+            &UpdateEventReq {
+                start: Some((s0 + Duration::minutes(10)).to_rfc3339()),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
     assert!(
         matches!(&err, EngineError::BadRequest(m) if m.contains("overlap") && m.contains("B4")),
         "{err:?}"
     );
+    retime(&mut e, &later, Some(s0 + Duration::minutes(10)), None).unwrap();
 }
 
 #[test]

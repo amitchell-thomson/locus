@@ -144,6 +144,22 @@ pub struct LocalPatch {
 /// the screen shows the change before the network answers.
 pub type Deferred = Box<dyn FnOnce(&mut App)>;
 
+/// A run of ⇧/⌥ arrows on one item, shown at once and written ONCE when the keys stop
+/// (2026-11-03: one blocking write per key repeat queued up behind the keyboard, so a held
+/// ⇧↓ did nothing for a while, then raced many places and froze until it caught up).
+pub struct HeldTime {
+    /// The item as it was before the first key, put back if kairosd refuses the write.
+    pub orig: Instance,
+    /// The new start (RFC 3339, or a date for an all-day event), if it moved.
+    pub start: Option<String>,
+    /// The new end, if its length changed.
+    pub end: Option<DateTime<Utc>>,
+    pub last: std::time::Instant,
+}
+
+/// How long the arrows must rest before a held move is written.
+pub const HOLD_QUIET: std::time::Duration = std::time::Duration::from_millis(400);
+
 pub struct App {
     pub cfg: Config,
     pub patches: Vec<LocalPatch>,
@@ -152,6 +168,8 @@ pub struct App {
     /// (uid, not going, made, until): "not going" set from the TUI on your own events.
     pub going_overrides: Vec<(String, bool, DateTime<Utc>, DateTime<Utc>)>,
     pub deferred: Vec<Deferred>,
+    /// A move or resize not yet sent (see [`HeldTime`]).
+    pub held: Option<HeldTime>,
     pub tz: Tz,
     pub now: DateTime<Utc>,
     pub index: Index,
@@ -284,6 +302,7 @@ impl App {
             blocking_overrides: Vec::new(),
             going_overrides: Vec::new(),
             deferred: Vec::new(),
+            held: None,
             cfg,
         }
     }
@@ -668,6 +687,12 @@ impl App {
     // ------------------------------------------------------------ keys
 
     pub fn key(&mut self, k: Key) {
+        if !matches!(
+            k,
+            Key::ShiftUp | Key::ShiftDown | Key::ShiftLeft | Key::ShiftRight | Key::AltUp | Key::AltDown
+        ) {
+            self.release_held();
+        }
         let name = match k {
             Key::Char(c) => c.to_string(),
             other => format!("{other:?}").to_lowercase(),
@@ -1365,8 +1390,8 @@ impl App {
     }
 
     /// Move the selected item by `minutes` (spec E3): an event or block to a new start, a task's
-    /// ⚑ to a new due time; all-day ones by whole days. One changeset each, with an undo; a block
-    /// you nudge stays where you put it. The selection follows it, onto the next day if need be.
+    /// ⚑ to a new due time; all-day ones by whole days. A run of keys is one changeset, with an undo,
+    /// written when they stop ([`HeldTime`]); a block you nudge stays where you put it. The selection follows it, onto the next day if need be.
     pub fn nudge(&mut self, minutes: i64) {
         let (i, new_start, day) = match self.nudge_target(minutes) {
             Ok(Some(t)) => t,
@@ -1407,15 +1432,48 @@ impl App {
         } else {
             new_start.to_rfc3339()
         };
-        let req = api::UpdateEventReq {
-            start: Some(start.clone()),
-            ..Default::default()
-        };
         self.patch_local(&i.uid, |x| {
             retime(x, &start, None, tz);
             true
         });
         self.follow(day, &i.uid);
+        let shift = Duration::minutes(minutes);
+        let h = self.hold(i);
+        h.start = Some(start);
+        h.end = h.end.map(|e| e + shift);
+    }
+
+    /// The held move for `i`, started now if there is none (another item's is sent first).
+    fn hold(&mut self, i: Instance) -> &mut HeldTime {
+        if self.held.as_ref().is_some_and(|h| h.orig.uid != i.uid) {
+            self.release_held();
+        }
+        let h = self.held.get_or_insert_with(|| HeldTime {
+            orig: i,
+            start: None,
+            end: None,
+            last: std::time::Instant::now(),
+        });
+        h.last = std::time::Instant::now();
+        h
+    }
+
+    /// Whether a held move has rested long enough to be written.
+    pub fn held_due(&self) -> bool {
+        self.held.as_ref().is_some_and(|h| h.last.elapsed() >= HOLD_QUIET)
+    }
+
+    /// Queue the held move's one write (run by [`App::run_deferred`]).
+    pub fn release_held(&mut self) {
+        let Some(h) = self.held.take() else {
+            return;
+        };
+        let req = api::UpdateEventReq {
+            start: h.start,
+            end: h.end.map(|e| e.to_rfc3339()),
+            ..Default::default()
+        };
+        let i = h.orig;
         self.deferred.push(Box::new(move |app: &mut App| {
             if let Some(r) = app.with_daemon(|d| d.update_event(&i.source, &i.uid, &req).map(|r| r.map(to_write)))
                 && !app.write_applied(r)
@@ -1464,17 +1522,7 @@ impl App {
         });
         let day = s.with_timezone(&tz).date_naive();
         self.follow(day, &i.uid);
-        let req = api::UpdateEventReq {
-            end: Some(end.to_rfc3339()),
-            ..Default::default()
-        };
-        self.deferred.push(Box::new(move |app: &mut App| {
-            if let Some(r) = app.with_daemon(|d| d.update_event(&i.source, &i.uid, &req).map(|r| r.map(to_write)))
-                && !app.write_applied(r)
-            {
-                app.unpatch(Some(i.clone()), &i.uid);
-            }
-        }));
+        self.hold(i).end = Some(end);
     }
 
     /// Where a nudge would put the selected item: (it, its new start, its new day). `Ok(None)`

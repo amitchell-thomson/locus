@@ -1416,14 +1416,17 @@ impl Engine {
         // into the past, it says when you did the work). Changing its length changes the
         // task's time by exactly the difference, so the rest of the plan stays where it is:
         // ahead (or under way) the task gets more or less time; checked in, it is what you
-        // did (the record changes; what's left doesn't). No two work blocks overlap: a
-        // flexible one in the way is moved by the replan; a pinned, started or checked-in
-        // one stops the edit — piling blocks on one another is how time got counted twice
-        // (today, three B14 blocks on one morning, two of them hidden).
+        // did (the record changes; what's left doesn't). A flexible block in the way is
+        // moved by the replan. A pinned, started or checked-in one stops the edit, except
+        // when it is Alec moving his own blocks by hand (2026-11-03: "I should be able to
+        // move my own work blocks to wherever without them colliding"); piling blocks on
+        // one another by anyone else is how time got counted twice (2026-10-27).
         let mut extra = Vec::new();
         let mut note = String::new();
         if block && let Some(NewTime::Timed { start: s1, end: e1 }) = time {
-            if let Some(why) = self.block_in_the_way(world, Some(uid), s1, e1)? {
+            if !self.direct
+                && let Some(why) = self.block_in_the_way(world, Some(uid), s1, e1)?
+            {
                 return Err(EngineError::BadRequest(why));
             }
             let (s0, e0) = (master.start.instant(tz), master.end.instant(tz));

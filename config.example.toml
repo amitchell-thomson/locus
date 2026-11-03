@@ -302,10 +302,15 @@ judge_enabled      = true
 judge_drop_at_or_below = 1
 
 [agent]
-# Agent-layer orchestration (agent-layer plan §10, Phase 1). Capture/enrichment loops run
-# language tasks through headless `claude -p` (subscription), metered by a cost ledger over the
-# claude -p envelope's total_cost_usd. Bulk work uses API Batch instead (added with hybrid routing).
-model              = "haiku"   # claude -p model for durable agent passes (Phase-0 routing choice)
+# Where model calls run (agent/claude.py): the Max API credit first, the subscription when it
+# refuses. Every call is counted (`locus budget`).
+model              = "haiku"   # model for durable agent passes (Phase-0 routing choice)
+backend            = "api"     # model calls on the Max API credit first; the subscription (headless
+                               # claude -p) only when the credit refuses. "subscription" = API off.
+api_retry_hours    = 24        # after a refusal, hours on the subscription before trying the API again
+credit_cycle_day   = 1         # day of the month the Max API credit renews (for `locus budget`)
+# api_models = { haiku = "claude-haiku-4-5-20251001", sonnet = "claude-sonnet-5", opus = "claude-opus-5-5" }
+# api_prices = { "claude-haiku-4-5-20251001" = [1.0, 5.0] }   # USD/Mtok in,out: ESTIMATES for locus budget
 connect_model      = "sonnet"  # connection prose runs on Sonnet: on junk pairs Haiku bluffed a
                                # connection where Sonnet answered NO_CONNECTION (measured 2026-08-06)
 # Projects whose repos take NEW paper/note ideas on the daily page (titles of implements-linked

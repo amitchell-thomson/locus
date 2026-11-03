@@ -155,7 +155,7 @@ VRAM change.**
 
 ## 5. Data model
 
-Source of truth: Alembic migrations in `locus/db/migrations/versions/` (currently **0039**).
+Source of truth: Alembic migrations in `locus/db/migrations/versions/` (currently **0040**).
 `locus/db/schema.sql` is a human-readable summary. Never `ALTER` a live DB ad hoc; never force a
 re-ingest for a schema change — migrate forward.
 
@@ -562,7 +562,7 @@ locus/
 ├── locus/
 │   ├── cli.py              # the product surface (all commands)
 │   ├── config.py           # typed config; API key via env/.env only
-│   ├── db/                 # connection, migrate, migrations/ (0001–0039)
+│   ├── db/                 # connection, migrate, migrations/ (0001–0040)
 │   ├── extract/            # pdf · mathocr · figures_detect · docx · pptx · textdoc · code
 │   ├── ingest/             # llm · summarize · propositions · entities · concepts · synthesis
 │   │                       #   gaps · chunk · embed · figures · llamacpp
@@ -653,8 +653,12 @@ locus/
   document new settings in `config.example.toml`.
 - **`agent/claude.py` is the one model runner, and every model call goes through it** (Slice
   0.13, 2026-10-27): transcription, ingest passes, `locus query`, retitle and the evals included.
-  No metered client exists (`anthropic.Anthropic(` is asserted absent); the metered credit ran out
-  mid-capture and he chose to move rather than top it up. `ask()` sends text and IMAGES inside one
+  **Two routes** (3 Nov, his call: "on the $100 credit for now, with the ability to switch if that
+  credit goes"): the API on the Max credit first; on a refusal for credit or a dead key the call
+  runs on the subscription instead, the refusal is written to `data/state/api-credit.json`, and
+  the API is retried after `[agent].api_retry_hours`. Any other API error is an error, not a
+  fallback. `[agent].backend = "subscription"` turns the API off. Only this module may build an
+  API client (asserted). Tests run on the headless route (`tests/conftest.py`). `ask()` sends text and IMAGES inside one
   stream-json message; the SDK-shaped call sites use `SubscriptionClient`, which serves
   `messages.create` (forced tool use as JSON, repair turns folded). Every call is **lean**
   (`--tools '' --strict-mcp-config --max-turns 1`): otherwise each carries ~23,500 tokens of tool
@@ -664,9 +668,10 @@ locus/
   argv raised `ValueError` past every `except ClaudeError`, and three calculus documents failed
   the structure pass on *every* run because of it. **Every call is counted** (Slice 0.7,
   `agent/usage.py`, migration 0039): the runner writes one `model_calls` row per call, failures
-  included, with tokens (cache and thinking separately), time, images and the notional cost; the
-  job is the journaled run's kind or else the CLI subcommand. `locus budget` sums it by job for
-  today and the last seven days. Tests replace the sink (`tests/conftest.py`).
+  included, with tokens (cache and thinking separately), time, images, the cost and the ROUTE
+  (`backend`, migration 0040); the job is the journaled run's kind or else the CLI subcommand.
+  `locus budget` sums it by job and route for today and the last seven days and estimates the
+  credit used this cycle from `[agent].api_prices` (the console is exact). Tests replace the sink.
 - **Tests must not read the live `config.toml`.** It is gitignored, so a test that inherits it
   passes or fails per machine: two connection tests asserting paper-vs-coursework ranking broke
   the day `[agent].connect_idea_projects` gained entries, and nowhere else. Pin what you depend on

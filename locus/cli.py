@@ -1622,16 +1622,24 @@ def cmd_budget(args) -> None:
     measure; minutes say how long jobs held the queue; the notional $ is the envelope's
     API-equivalent figure, useful for weighing models, not money spent.
     """
-    from locus.agent import usage
+    from locus.agent import claude, usage
 
+    cfg = load().agent
     today, week = usage.windows()
+    cycle = usage.cycle_start(cfg.credit_cycle_day)
     conn = _open()
     try:
         print(usage.format_totals(f"today (since {today[:16]} UTC)", usage.totals(conn, since=today)))
         print()
         print(usage.format_totals("last 7 days", usage.totals(conn, since=week)))
+        used = usage.credit_used(conn, since=cycle.isoformat())
     finally:
         conn.close()
+    route = "API credit first, subscription if it refuses" if cfg.backend == "api" else "subscription only"
+    print(f"\nroute: {route}" + ("" if claude._api_open() or cfg.backend != "api"
+                                  else " (credit refused recently: on the subscription for now)"))
+    print(f"API credit this cycle (since {cycle:%d %b}): about ${used:.2f} of $100, estimated "
+          "from [agent].api_prices; the Anthropic console is the exact figure")
 
 
 def cmd_device_sent(args) -> None:

@@ -34,6 +34,14 @@ otherwise loads every tool and every user MCP server it can find and sends their
 with the prompt: measured 27 Oct, 23,581 tokens of definitions on a call that needed none,
 against 741 lean. That was being paid on every fill-in, structure and adjudication call.
 
+**Two routes, one function** (3 Nov). Every call goes first to the API on the credit that comes
+with Max ($100 a month, Messages and Batch API; his call: "it should be on the $100 credit for
+now, with the ability to switch if that credit goes"). When the API refuses for want of credit,
+or the key is gone, the call is made on the subscription instead and the refusal is written to
+`data/state/api-credit.json`; the API is tried again after `[agent].api_retry_hours`. Nothing is
+charged by an empty credit: it only refuses. `[agent].backend = "subscription"` turns the API off.
+The headless route below keeps every lesson Slice 0.13 measured.
+
 **Thinking is OFF unless a call asks for it.** Headless Claude Code thinks by default. Measured
 27 Oct on an ingest pass (propositions from 9,000 characters of his notes, Haiku): 54.9 s and
 4,834 thinking tokens by default, 19.5 s and none with `MAX_THINKING_TOKENS=0`, the same task, a
@@ -51,6 +59,7 @@ import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from typing import TypeVar
 
 from pydantic import BaseModel, ValidationError
@@ -79,6 +88,10 @@ T = TypeVar("T", bound=BaseModel)
 
 class ClaudeError(RuntimeError):
     """A `claude -p` call failed after exhausting retries. Callers catch this to degrade."""
+
+
+class CreditRefused(ClaudeError):
+    """The API refused for want of credit, or there is no usable key: use the subscription."""
 
 
 @dataclass(frozen=True)
@@ -195,29 +208,152 @@ def _content_runner(
     )
 
 
+# --- the API route ---------------------------------------------------------------------------------
+
+_API_CLIENT = None
+
+
+def _api_client():
+    global _API_CLIENT
+    if _API_CLIENT is None:
+        import anthropic
+
+        from locus.config import Config
+
+        try:
+            key = Config.anthropic_api_key()
+        except RuntimeError as exc:
+            raise CreditRefused(f"no API key: {exc}") from exc
+        _API_CLIENT = anthropic.Anthropic(api_key=key, max_retries=2)
+    return _API_CLIENT
+
+
+def _state_file():
+    from pathlib import Path
+
+    return Path(load().paths.db).parent / "state" / "api-credit.json"
+
+
+def _api_open() -> bool:
+    """Is the API route on, and not inside the pause after a refusal?"""
+    cfg = load().agent
+    if cfg.backend != "api":
+        return False
+    try:
+        state = json.loads(_state_file().read_text())
+        refused = datetime.fromisoformat(state["refused_at"])
+    except (OSError, ValueError, KeyError):
+        return True
+    return datetime.now(timezone.utc) - refused >= timedelta(hours=cfg.api_retry_hours)
+
+
+def _mark_refused(reason: str) -> None:
+    path = _state_file()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"refused_at": datetime.now(timezone.utc).isoformat(),
+                                    "reason": reason[:300]}))
+    except OSError:
+        pass        # the next call is refused again and tries to write again; nothing is lost
+
+
+def api_price(model_id: str, usage: dict) -> float:
+    """An ESTIMATE of what a call took from the credit ([agent].api_prices); the console is truth."""
+    rate_in, rate_out = load().agent.api_prices.get(model_id, [0.0, 0.0])
+    fresh = int(usage.get("input_tokens") or 0)
+    written = int(usage.get("cache_creation_input_tokens") or 0)
+    read = int(usage.get("cache_read_input_tokens") or 0)
+    out = int(usage.get("output_tokens") or 0)
+    return (fresh * rate_in + written * rate_in * 1.25 + read * rate_in * 0.1
+            + out * rate_out) / 1_000_000
+
+
+def _api_runner(content: list, model: str | None, system: str | None, *, timeout: float,
+                thinking: bool, max_tokens: int | None) -> ClaudeResult:
+    import anthropic
+
+    cfg = load().agent
+    model_id = cfg.api_models.get(model or cfg.model, model or cfg.model)
+    blocks = [
+        {**b, "text": scrub_prompt(b.get("text", ""))} if isinstance(b, dict) and b.get("type") == "text"
+        else b
+        for b in content
+    ]
+    kwargs: dict = {
+        "model": model_id,
+        "max_tokens": max_tokens or (16000 if thinking else 8192),
+        "messages": [{"role": "user", "content": blocks}],
+        "timeout": timeout,
+    }
+    if system:
+        kwargs["system"] = scrub_prompt(system)
+    if thinking:
+        kwargs["thinking"] = {"type": "adaptive"}
+    client = _api_client()
+    try:
+        resp = client.messages.create(**kwargs)
+    except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as exc:
+        raise CreditRefused(f"API key refused: {exc}") from exc
+    except anthropic.BadRequestError as exc:
+        if "credit balance" in str(exc).lower():
+            raise CreditRefused(f"API credit spent: {exc}") from exc
+        raise ClaudeError(f"API call rejected ({model_id}): {exc}") from exc
+    except anthropic.APIError as exc:
+        raise ClaudeError(f"API call failed ({model_id}): {exc}") from exc
+    text = "".join(getattr(b, "text", "") for b in resp.content if getattr(b, "type", "") == "text")
+    u = getattr(resp, "usage", None)
+    usage = {
+        "input_tokens": int(getattr(u, "input_tokens", 0) or 0),
+        "cache_creation_input_tokens": int(getattr(u, "cache_creation_input_tokens", 0) or 0),
+        "cache_read_input_tokens": int(getattr(u, "cache_read_input_tokens", 0) or 0),
+        "output_tokens": int(getattr(u, "output_tokens", 0) or 0),
+    }
+    return ClaudeResult(text=text, cost_usd=api_price(model_id, usage), usage=usage)
+
+
 def content_runner(
     content: list, model: str | None, system: str | None, *, timeout: float = _CLI_TIMEOUT_S,
-    thinking: bool = False,
+    thinking: bool = False, max_tokens: int | None = None,
 ) -> ClaudeResult:
-    """`_content_runner`, counted: every call, success or failure, is one `model_calls` row
-    (agent/usage.py, Slice 0.7), so the subscription share is measured rather than guessed."""
+    """One model call: the API credit first, the subscription when it refuses (module docstring).
+
+    Counted either way: every attempt is one `model_calls` row (agent/usage.py), with the route
+    it took, so a refusal and the fallback that followed are both visible in `locus budget`.
+    """
     from locus.agent import usage
 
     images = sum(1 for b in content if isinstance(b, dict) and b.get("type") == "image")
-    started = time.monotonic()
-    try:
-        result = _content_runner(content, model, system, timeout=timeout, thinking=thinking)
-    except ClaudeError as exc:
+
+    def counted(route: str, run):
+        started = time.monotonic()
+        try:
+            result = run()
+        except ClaudeError as exc:
+            usage.record(usage.record_from_usage(
+                model=model, ok=False, duration_ms=int((time.monotonic() - started) * 1000),
+                usage=None, images=images, error=str(exc), backend=route,
+            ))
+            raise
         usage.record(usage.record_from_usage(
-            model=model, ok=False, duration_ms=int((time.monotonic() - started) * 1000),
-            usage=None, images=images, error=str(exc),
+            model=model, ok=True, duration_ms=int((time.monotonic() - started) * 1000),
+            usage=result.usage, images=images, cost_usd=result.cost_usd, backend=route,
         ))
-        raise
-    usage.record(usage.record_from_usage(
-        model=model, ok=True, duration_ms=int((time.monotonic() - started) * 1000),
-        usage=result.usage, images=images, cost_usd=result.cost_usd,
-    ))
-    return result
+        return result
+
+    if _api_open():
+        try:
+            return counted("api", lambda: _api_runner(
+                content, model, system, timeout=timeout, thinking=thinking, max_tokens=max_tokens))
+        except CreditRefused as exc:
+            _mark_refused(str(exc))
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "API credit refused (%s): using the subscription for %.0f h", exc,
+                load().agent.api_retry_hours,
+            )
+    return counted("subscription", lambda: _content_runner(
+        content, model, system, timeout=timeout, thinking=thinking))
 
 
 def cli_runner(prompt: str, model: str | None) -> ClaudeResult:
@@ -423,7 +559,7 @@ class SubscriptionClient:
         self.messages = self
 
     def create(self, *, model=None, messages, system=None, tools=None, tool_choice=None,
-               thinking=None, **_):
+               thinking=None, max_tokens=None, **_):
         blocks = _fold_turns(messages)
         forced = None
         if tool_choice and tool_choice.get("type") == "tool" and tools:
@@ -440,7 +576,8 @@ class SubscriptionClient:
             timeout = self._timeout or _CLI_TIMEOUT_S
 
             def runner(content, model, system):
-                return content_runner(content, model, system, timeout=timeout, thinking=think)
+                return content_runner(content, model, system, timeout=timeout, thinking=think,
+                                      max_tokens=max_tokens)
         result = ask(blocks, system=_system_text(system), model=model, runner=runner)
         usage = result.usage or {}
         tokens_in = sum(int(usage.get(k) or 0) for k in (

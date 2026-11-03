@@ -579,9 +579,43 @@ class DiscoveryConfig(BaseModel):
 
 
 class AgentConfig(BaseModel):
-    """Agent-layer orchestration (agent-layer plan §10, Phase 1). The capture/enrichment loops
-    run language tasks through headless `claude -p` (the owner's subscription), metered by a
-    cost ledger (agent/budget.py). Bulk work uses API Batch instead (added with hybrid routing)."""
+    """Agent-layer orchestration. WHERE MODEL CALLS RUN (agent/claude.py, 3 Nov): on the API
+    credit that comes with Max ($100 a month, Messages and Batch API, expires each cycle), and
+    on the subscription through headless `claude -p` only when that credit refuses a call. His
+    call, 3 Nov: "it should be on the $100 credit for now, with the ability to switch if that
+    credit goes". Every call is counted (agent/usage.py, `locus budget`)."""
+
+    backend: str = Field(
+        "api", description="'api' (the Max API credit, falling back to the subscription when it "
+        "refuses) or 'subscription' (headless claude -p only).",
+    )
+    # A model named by alias here and in the passes ("haiku") is pinned to an id for the API,
+    # which has no aliases. These are the ids the code already used on the API before Slice 0.13.
+    api_models: dict[str, str] = Field(
+        default_factory=lambda: {
+            "haiku": "claude-haiku-4-5-20251001",
+            "sonnet": "claude-sonnet-5",
+            "opus": "claude-opus-5-5",
+        },
+        description="model alias -> API model id",
+    )
+    # USD per million tokens [input, output], used only to ESTIMATE the month's credit use for
+    # `locus budget`; the console is the truth. Haiku 4.5 was confirmed in Phase 0; the others are
+    # estimates to be replaced by the first month's measurement.
+    api_prices: dict[str, list[float]] = Field(
+        default_factory=lambda: {
+            "claude-haiku-4-5-20251001": [1.0, 5.0],
+            "claude-sonnet-5": [3.0, 15.0],
+            "claude-opus-5-5": [5.0, 25.0],
+        },
+        description="API model id -> [input, output] USD per million tokens (estimates)",
+    )
+    api_retry_hours: float = Field(
+        24.0, description="After the credit refuses, hours on the subscription before trying it again."
+    )
+    credit_cycle_day: int = Field(
+        1, description="Day of the month the Max API credit renews (for `locus budget`)."
+    )
 
     # `claude -p --model` for durable agent passes. Haiku is the Phase-0 routing choice (it beat
     # local AND Sonnet on the durable passes at 3x less cost); a CLI alias so it tracks the

@@ -42,6 +42,7 @@ class CallRecord:
     images: int = 0
     cost_usd: float = 0.0
     error: str | None = None
+    backend: str = "subscription"     # 'api' (the Max credit) or 'subscription' (claude -p)
 
 
 def current_job() -> str:
@@ -64,7 +65,7 @@ def job(name: str) -> Iterator[None]:
 
 def record_from_usage(
     *, model: str | None, ok: bool, duration_ms: int, usage: dict | None, images: int,
-    cost_usd: float = 0.0, error: str | None = None,
+    cost_usd: float = 0.0, error: str | None = None, backend: str = "subscription",
 ) -> CallRecord:
     u = usage or {}
     details = u.get("output_tokens_details") or {}
@@ -75,7 +76,7 @@ def record_from_usage(
         cache_read_tokens=int(u.get("cache_read_input_tokens") or 0),
         output_tokens=int(u.get("output_tokens") or 0),
         thinking_tokens=int(details.get("thinking_tokens") or 0),
-        images=images, cost_usd=cost_usd, error=error,
+        images=images, cost_usd=cost_usd, error=error, backend=backend,
     )
 
 
@@ -84,11 +85,11 @@ def write(conn: sqlite3.Connection, rec: CallRecord, *, at: str | None = None) -
         conn.execute(
             "INSERT INTO model_calls (at, job, model, ok, duration_ms, input_tokens, "
             "cache_creation_tokens, cache_read_tokens, output_tokens, thinking_tokens, images, "
-            "cost_usd, error) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "cost_usd, error, backend) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (at or datetime.now(timezone.utc).isoformat(), rec.job, rec.model, int(rec.ok),
              rec.duration_ms, rec.input_tokens, rec.cache_creation_tokens, rec.cache_read_tokens,
              rec.output_tokens, rec.thinking_tokens, rec.images, rec.cost_usd,
-             (rec.error or None) and rec.error[:500]),
+             (rec.error or None) and rec.error[:500], rec.backend),
         )
 
 
@@ -119,6 +120,7 @@ def record(rec: CallRecord) -> None:
 @dataclass(frozen=True)
 class JobTotals:
     job: str
+    backend: str
     calls: int
     failed: int
     input_tokens: int          # fresh input + cache written + cache read
@@ -130,17 +132,35 @@ class JobTotals:
 
 def totals(conn: sqlite3.Connection, *, since: str) -> list[JobTotals]:
     rows = conn.execute(
-        "SELECT job, COUNT(*) calls, SUM(1-ok) failed, "
+        "SELECT job, backend, COUNT(*) calls, SUM(1-ok) failed, "
         "SUM(input_tokens+cache_creation_tokens+cache_read_tokens) tin, SUM(output_tokens) tout, "
         "SUM(thinking_tokens) think, SUM(duration_ms) ms, SUM(cost_usd) cost "
-        "FROM model_calls WHERE at >= ? GROUP BY job ORDER BY tout DESC, calls DESC",
+        "FROM model_calls WHERE at >= ? GROUP BY job, backend ORDER BY tout DESC, calls DESC",
         (since,),
     ).fetchall()
     return [
-        JobTotals(r[0], r[1], r[2] or 0, r[3] or 0, r[4] or 0, r[5] or 0, (r[6] or 0) / 60000,
-                  r[7] or 0.0)
+        JobTotals(r[0], r[1], r[2], r[3] or 0, r[4] or 0, r[5] or 0, r[6] or 0, (r[7] or 0) / 60000,
+                  r[8] or 0.0)
         for r in rows
     ]
+
+
+def cycle_start(day: int, now: datetime | None = None) -> datetime:
+    """Start of the current Max credit cycle, renewing on `day` of each month (UTC)."""
+    now = now or datetime.now(timezone.utc)
+    day = max(1, min(day, 28))
+    start = now.replace(day=day, hour=0, minute=0, second=0, microsecond=0)
+    if start > now:
+        start = (start.replace(day=1) - timedelta(days=1)).replace(day=day)
+    return start
+
+
+def credit_used(conn: sqlite3.Connection, *, since: str) -> float:
+    """ESTIMATED credit taken by API calls since `since` (agent/claude.api_price)."""
+    row = conn.execute(
+        "SELECT SUM(cost_usd) FROM model_calls WHERE backend='api' AND at >= ?", (since,)
+    ).fetchone()
+    return float(row[0] or 0.0)
 
 
 def windows(now: datetime | None = None) -> tuple[str, str]:
@@ -153,19 +173,19 @@ def windows(now: datetime | None = None) -> tuple[str, str]:
 def format_totals(title: str, rows: list[JobTotals]) -> str:
     if not rows:
         return f"{title}: no model calls recorded"
-    head = f"{'job':<22}{'calls':>7}{'failed':>8}{'in tok':>11}{'out tok':>10}{'thinking':>10}{'min':>7}{'notional $':>12}"
+    head = f"{'job':<22}{'via':<6}{'calls':>7}{'failed':>8}{'in tok':>11}{'out tok':>10}{'thinking':>10}{'min':>7}{'notional $':>12}"
     lines = [title, head]
     for r in rows:
         lines.append(
-            f"{r.job[:22]:<22}{r.calls:>7}{r.failed:>8}{r.input_tokens:>11,}{r.output_tokens:>10,}"
+            f"{r.job[:22]:<22}{r.backend[:5]:<6}{r.calls:>7}{r.failed:>8}{r.input_tokens:>11,}{r.output_tokens:>10,}"
             f"{r.thinking_tokens:>10,}{r.minutes:>7.1f}{r.cost_usd:>12.2f}"
         )
-    t = JobTotals("total", sum(r.calls for r in rows), sum(r.failed for r in rows),
+    t = JobTotals("total", "", sum(r.calls for r in rows), sum(r.failed for r in rows),
                   sum(r.input_tokens for r in rows), sum(r.output_tokens for r in rows),
                   sum(r.thinking_tokens for r in rows), sum(r.minutes for r in rows),
                   sum(r.cost_usd for r in rows))
     lines.append(
-        f"{'total':<22}{t.calls:>7}{t.failed:>8}{t.input_tokens:>11,}{t.output_tokens:>10,}"
+        f"{'total':<22}{'':<6}{t.calls:>7}{t.failed:>8}{t.input_tokens:>11,}{t.output_tokens:>10,}"
         f"{t.thinking_tokens:>10,}{t.minutes:>7.1f}{t.cost_usd:>12.2f}"
     )
     return "\n".join(lines)

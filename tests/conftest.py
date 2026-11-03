@@ -71,3 +71,13 @@ def _model_calls_not_recorded_live(monkeypatch):
 
     monkeypatch.setattr(usage, "SINK", lambda rec: None)
     yield
+
+
+@pytest.fixture(autouse=True)
+def _model_calls_on_the_headless_route(monkeypatch):
+    """Model calls go to the API credit first (3 Nov). No test may reach the real API: the suite
+    runs on the headless route, which every runner test fakes at `subprocess.run`. A test of the
+    API route sets `backend` itself and injects a fake client."""
+    cfg = config.load()
+    monkeypatch.setattr(cfg.agent, "backend", "subscription", raising=False)
+    yield

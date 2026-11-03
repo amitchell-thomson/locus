@@ -136,8 +136,10 @@ def test_a_repair_conversation_is_folded_into_one_turn():
     assert blocks[-1]["text"].startswith("[Follow-up]")
 
 
-def test_no_metered_client_is_left_in_the_codebase():
-    """The point of 0.13: nothing constructs a metered client any more."""
+def test_only_the_runner_builds_an_api_client():
+    """0.13 removed every metered client; on 3 Nov the API came back as the runner's FIRST
+    route (the Max credit). It must stay one place, so the fallback and the counting apply to
+    every call: no other module may build its own client."""
     from pathlib import Path
 
     root = Path(claude.__file__).resolve().parents[1]
@@ -145,7 +147,7 @@ def test_no_metered_client_is_left_in_the_codebase():
         str(p.relative_to(root)) for p in root.rglob("*.py")
         if "anthropic.Anthropic(" in p.read_text(encoding="utf-8")
     ]
-    assert offenders == []
+    assert offenders == ["agent/claude.py"]
 
 
 def test_thinking_is_off_unless_asked_for(spawned):

@@ -748,6 +748,7 @@ impl App {
     }
 
     fn normal(&mut self, k: Key) {
+        let k = vim_arrow(k);
         let n = self.list_len();
         match k {
             Key::Char('q') | Key::Esc if self.expanded => self.expanded = false,
@@ -1942,7 +1943,7 @@ impl App {
         let open: Vec<api::CheckinItem> = self.checkins.iter().filter(|c| c.outcome.is_none()).cloned().collect();
         let Some(item) = open.get(i) else { return };
         let t = CheckinTarget::of(item, true);
-        match k {
+        match vim_arrow(k) {
             // Same keys as on a block in the calendar (p is the Private toggle there).
             // The same keys as on a past block in the calendar (L4).
             Key::Char('y') => self.check_in(t, "done"),
@@ -2531,6 +2532,18 @@ fn plan_warning(p: &api::PlanResp) -> Option<String> {
 
 pub fn is_deadline(i: &Instance) -> bool {
     i.meta.kind == EventKind::Deadline
+}
+
+/// h j k l as ← ↓ ↑ →, wherever the arrows navigate (not in forms or prompts,
+/// where they are letters). Shift-H/J/K/L are not the nudges: K and L are taken.
+fn vim_arrow(k: Key) -> Key {
+    match k {
+        Key::Char('h') => Key::Left,
+        Key::Char('j') => Key::Down,
+        Key::Char('k') => Key::Up,
+        Key::Char('l') => Key::Right,
+        other => other,
+    }
 }
 
 #[cfg(test)]

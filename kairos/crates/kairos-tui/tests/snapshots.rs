@@ -123,6 +123,24 @@ fn day_view_with_deadline_marker_and_task_block() {
 }
 
 #[test]
+fn hjkl_move_like_the_arrows() {
+    let (mut arrows, _t) = app("2026-10-21T08:00:00+01:00");
+    let (mut vim, _u) = app("2026-10-21T08:00:00+01:00");
+    for (a, v) in [
+        (Key::Right, 'l'),
+        (Key::Right, 'l'),
+        (Key::Down, 'j'),
+        (Key::Up, 'k'),
+        (Key::Left, 'h'),
+        (Key::Down, 'j'),
+    ] {
+        arrows.key(a);
+        vim.key(Key::Char(v));
+    }
+    assert_eq!(render_to_string(&arrows, 100, 30), render_to_string(&vim, 100, 30));
+}
+
+#[test]
 fn agenda_view() {
     let (mut a, _t) = app("2026-10-15T08:00:00+01:00");
     a.key(Key::Char('g'));
@@ -727,9 +745,8 @@ fn past_blocks_wait_for_a_check_in_right_on_the_calendar() {
         "{s}"
     );
     assert_eq!(a.key_hints(), "y done · ⌥↑↓ length · x missed · d task done");
-    // No more c (partly) or l (took longer): ⌥↑↓ makes the block what happened, then y.
+    // No more c (partly) or l (took longer; l is → now): ⌥↑↓ makes the block what happened, then y.
     a.key(Key::Char('c'));
-    a.key(Key::Char('l'));
     assert!(matches!(a.mode, Mode::Normal));
     // W logs work on its task.
     a.key(Key::Char('W'));

@@ -625,20 +625,14 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
         }
     }
     bars.sort_by_key(|b| (b.k0, std::cmp::Reverse(b.k1 - b.k0)));
-    let cap = if single { 4 } else { 2 };
+    // Every all-day bar is shown, never folded into "+N more" (Alec, 2026-11-04):
+    // the strip takes the rows it needs and the hour grid gives them up.
     let mut occupied: Vec<Vec<bool>> = Vec::new();
     let mut placed: Vec<(usize, &Bar)> = Vec::new();
-    let mut hidden = vec![0usize; ndays];
     for b in &bars {
         let row = (0..)
             .find(|&r| occupied.get(r).is_none_or(|o: &Vec<bool>| (b.k0..=b.k1).all(|k| !o[k])))
             .unwrap_or(0);
-        if row >= cap {
-            for h in &mut hidden[b.k0..=b.k1] {
-                *h += 1;
-            }
-            continue;
-        }
         if occupied.len() <= row {
             occupied.resize(row + 1, vec![false; ndays]);
         }
@@ -647,9 +641,7 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
         }
         placed.push((row, b));
     }
-    let strip_rows = occupied.len().min(cap);
-    // Days with hidden bars give up their last row to "+N more".
-    let more_row = strip_rows.saturating_sub(1);
+    let strip_rows = occupied.len();
     for (row, b) in &placed {
         let i = &b.cl.primary;
         let x0 = col_x(b.k0);
@@ -682,22 +674,6 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
         let pad = (width as usize).saturating_sub(s.width());
         s.push_str(&" ".repeat(pad));
         put(buf, x0, y + 1 + *row as u16, width, &s, style);
-    }
-    for (k, n) in hidden.iter().enumerate() {
-        if *n > 0 && strip_rows > 0 {
-            let x = col_x(k);
-            let w = col_w_of(k).saturating_sub(1);
-            let blank = " ".repeat(w as usize);
-            put(buf, x, y + 1 + more_row as u16, w, &blank, Style::default());
-            put(
-                buf,
-                x,
-                y + 1 + more_row as u16,
-                w,
-                &format!("▎+{} more", n + usize::from(occupied[more_row][k])),
-                Style::default().fg(c("overlay1")),
-            );
-        }
     }
     let sep_y = y + 1 + strip_rows as u16;
     for xx in inner.x..inner.x + inner.width {
@@ -1599,10 +1575,10 @@ fn help(f: &mut Frame, app: &App, area: Rect) {
     };
     let mut lines = vec![Line::from(TSpan::styled(" this screen", dim))];
     for (k, what) in [
-        ("← → [ ]", "day · week back, forward"),
+        ("←→ hl [ ]", "day · week back, forward"),
         ("⇧↑↓ ⇧←→", "move the selected item 30 min · a day"),
         ("⌥↑↓", "shorter · longer by 15 min (a block: its task's time)"),
-        ("↑ ↓", "select; past the first or last, scroll the hours"),
+        ("↑↓ jk", "select; past the first or last, scroll the hours"),
         ("⇥ ⇧⇥", "week → day → month → agenda"),
         ("t w", "today · week Mon–Sun or Mon–Fri"),
         ("+", "add an event or a task (it asks what it is for)"),

@@ -4,6 +4,7 @@
 
 pub mod app;
 pub mod calendar;
+pub mod chat;
 pub mod dump;
 pub mod fixtures;
 pub mod follow;

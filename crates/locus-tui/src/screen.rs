@@ -26,6 +26,8 @@ pub enum ScreenId {
     Learning,
     Review,
     Tasks,
+    /// The Home chat's conversations (files-and-chat M2), on `i` from anywhere.
+    Chat,
 }
 
 /// A part of a screen that a letter focuses; Enter on it opens `detail`, if it has one.
@@ -41,7 +43,7 @@ const fn s(letter: char, title: &'static str, detail: Option<ScreenId>) -> Secti
 }
 
 impl ScreenId {
-    pub const ALL: [ScreenId; 18] = [
+    pub const ALL: [ScreenId; 19] = [
         ScreenId::Home,
         ScreenId::Project,
         ScreenId::Application,
@@ -60,6 +62,7 @@ impl ScreenId {
         ScreenId::Learning,
         ScreenId::Review,
         ScreenId::Tasks,
+        ScreenId::Chat,
     ];
 
     /// The name used on the command line and in the use log.
@@ -83,6 +86,7 @@ impl ScreenId {
             ScreenId::Learning => "learning",
             ScreenId::Review => "review",
             ScreenId::Tasks => "tasks",
+            ScreenId::Chat => "chat",
         }
     }
 
@@ -111,6 +115,7 @@ impl ScreenId {
             ScreenId::Learning => "learning",
             ScreenId::Review => "weekly review",
             ScreenId::Tasks => "tasks",
+            ScreenId::Chat => "chat",
         }
     }
 

@@ -275,6 +275,8 @@ fn run(mut app: App) -> Result<()> {
     let mut asked = false;
     app.in_session = std::env::var_os("LOCUS_IN_SESSION").is_some();
     app.peek_file = Some(follow::PeekFile::new(follow::state_dir()));
+    // The chat runs only in the real window, never in dumps or tests.
+    app.chat = locus_tui::chat::Chat::new(follow::state_dir());
     let mut peek = follow::PeekFile::new(follow::state_dir());
     let mut focus = FocusFile::new(follow::state_dir());
     app.tick(focus.poll(), Instant::now());
@@ -327,6 +329,7 @@ fn run(mut app: App) -> Result<()> {
     let result = (|| -> Result<()> {
         while !app.quit {
             app.tick(focus.poll(), Instant::now());
+            app.chat.pump();
             if let Ok((cal, chores, tasks, bookings, pending)) = cal_rx.try_recv()
                 && let Some(live) = app.calendar.clone()
             {
@@ -386,7 +389,9 @@ fn run(mut app: App) -> Result<()> {
             terminal.draw(|f| ui::draw(f, &app))?;
             slowest = slowest.max(t.elapsed());
             first_frame.get_or_insert_with(|| started.elapsed());
-            if event::poll(Duration::from_millis(250))?
+            // Faster while the chat streams, so its words arrive as they are written.
+            let wait = if app.chat.busy.is_some() { 40 } else { 250 };
+            if event::poll(Duration::from_millis(wait))?
                 && let Event::Key(k) = event::read()?
                 && k.kind == KeyEventKind::Press
             {

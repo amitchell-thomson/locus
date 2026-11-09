@@ -1,6 +1,6 @@
 # Files and the Home chat
 
-**State:** spec written 9 Nov 2026, awaiting approval · **Written:** 2026-11-09 · **Runs in:** `claude` (locus-dev window 4)
+**State:** approved 9 Nov 2026; M1 and M2 done 9 Nov (report below) · **Written:** 2026-11-09 · **Runs in:** `claude` (locus-dev window 4)
 
 **From:** the 9 Nov review of where locus stands. You agreed to:
 - Cut to what you will use now. Everything else is kept, not deleted, and comes back only when
@@ -151,4 +151,57 @@ All of these come after this spec, in the order you settle once you have read `h
 
 ## Report
 
-*(written when it closes)*
+**M1 Files: done 9 Nov.**
+- **1. Folder names in the registry.**
+  - Every entry has a `folder`.
+  - `the_registry_is_clean` passes, and
+    `folder_names_have_no_spaces_and_one_name_is_one_thing` fails on a duplicate or a space.
+- **2. Capture.**
+  - Capture matches on `folder`, and on the old names during the rename. Deployed.
+  - `locus status` names only `Projects/gr-ai-ml` as unmatched: a real question, not a defect.
+- **3. Tablet renames.**
+  - All 14 level-2 folders were renamed with `locus files tablet-rename --apply`.
+  - Then 9 folders inside them that had spaces were renamed with `--deep` (Technology Strategy,
+    Image Processing, Daily Sheets, ...).
+  - Departure: the spec named only level 2. You allowed renaming tablet folders, and a deeper
+    folder with spaces could never be mirrored.
+- **4. `~/files`.**
+  - The tree was made from the registry.
+  - `b1-practical` moved to `Studies/b1-engineering-computation/`, and `b2-tech-strategy` to
+    `Studies/b2-engineering-in-society/technology-strategy/`.
+  - Their Claude histories moved with them, and both b1 sessions resumed in place.
+  - Their Python environments had the old path written into their scripts. It was rewritten,
+    and pip and uv run there.
+- **5. `locus files sync`.**
+  - The first real run made 7 folders on the laptop and 6 on the tablet; a second run made
+    nothing.
+  - Installed as `com.locus.files` (every 30 min); its log is `~/Library/Logs/locus-files.log`.
+  - Found while running it, and now covered by tests:
+    - one folder under its old name on one side and its new name on the other is a rename, not
+      two folders;
+    - `general` mirrors in every area;
+    - a missing area folder (`Personal` on the tablet) is made.
+
+**M2 The Home chat: done 9 Nov.**
+- **Where it is.** The bar sits at the foot of Home, and the view opens on `i` from any screen.
+- **Tested end to end** in a scratch tmux session against a real turn:
+  - a question answered from git histories;
+  - kairos tasks and keryx mail read;
+  - a folder made in `~/files` and listed as a change;
+  - `n` started a new conversation, and `r` renamed one.
+- **Found by that test and fixed:**
+  - **A refused change was drawn as done** (`✎ ran mkdir`). The change list now reads each
+    call's result.
+  - **Path rules in the `:*` form never matched a path below `~/files`.** They are now globs.
+- **Not tested:** `o`. It opens a window in your live `locus` session, which this test could
+  not use without changing that session.
+
+**Deviation.** The chat calls `claude` directly rather than through `agent/claude.py`. It is an
+interactive session on your subscription, like any Claude Code window, not a background job.
+
+**Left over.**
+- **keryxd on the laptop runs a build from 31 Oct.** If it restarts before it is rebuilt, it
+  cannot read the registry (strict parsing meets the new `folder` field). Filing by area then
+  switches off, with only a warning in its log.
+  - It was not rebuilt now because `keryx/` holds another session's uncommitted changes.
+  - Rebuild it with `deploy/keryx/install-daemon.sh` once those are committed.

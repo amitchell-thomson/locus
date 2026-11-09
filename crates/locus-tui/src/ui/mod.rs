@@ -5,6 +5,7 @@
 pub mod application;
 pub mod approve;
 pub mod changes;
+pub mod chat;
 pub mod decisions;
 pub mod explore;
 pub mod home;
@@ -50,6 +51,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         ScreenId::Learning => learning::draw(f, body, app),
         ScreenId::Review => review::draw(f, body, app),
         ScreenId::Tasks => tasks::draw(f, body, app),
+        ScreenId::Chat => chat::draw(f, body, app),
     }
     draw_footer(f, footer, app);
     if app.keys_open {
@@ -77,6 +79,7 @@ pub fn screen_key(app: &mut App, k: KeyEvent) -> bool {
         ScreenId::Prep | ScreenId::Learning => learning::key(app, k),
         ScreenId::Application => application::key(app, k),
         ScreenId::Tasks => tasks::key(app, k),
+        ScreenId::Chat => chat::key(app, k),
     }
 }
 
@@ -151,6 +154,7 @@ pub fn screen_keys(s: ScreenId) -> &'static [(&'static str, &'static str)] {
         ScreenId::Learning => learning::KEYS,
         ScreenId::Review => review::KEYS,
         ScreenId::Tasks => tasks::KEYS,
+        ScreenId::Chat => chat::KEYS,
     }
 }
 
@@ -274,6 +278,8 @@ fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
     let left = match &app.mode {
         Mode::Ask(_) => hints(&[("⏎", "answer here"), ("⇥", "send to tablet"), ("esc", "cancel")]),
         Mode::Strike(_) => hints(&[("i", "irrelevant"), ("k", "knew it"), ("l", "level"), ("t", "too long")]),
+        Mode::Chat(_) => hints(&[("⏎", "send"), ("⇧⏎", "new line"), ("esc", "keep it for later")]),
+        Mode::ChatName(_) => hints(&[("⏎", "rename"), ("esc", "cancel")]),
         // Enter's hint says what it does for the focused section, where a screen knows.
         Mode::Normal => {
             let enter = match app.screen() {
@@ -286,6 +292,7 @@ fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
                 ("⇥", "sections"),
                 ("l", "log"),
                 ("/", "search"),
+                ("i", "chat"),
                 ("?", "keys"),
             ])
         }

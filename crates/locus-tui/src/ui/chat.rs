@@ -1,0 +1,378 @@
+//! The chat (files-and-chat M2): its bar at the foot of Home and its own view on `i`.
+//!
+//! The bar is a rule and one line: what you are typing, what the running turn is doing, or the
+//! last thing it said. The view lists your conversations on the left, newest first, and shows
+//! the selected one on the right, every change it made marked (C2). Tab keeps its meaning
+//! everywhere (9 Nov: Tab behaving differently here would be wrong), so the view has its own
+//! key, `i`, which nothing else used.
+
+use crate::app::{App, Mode};
+use crate::chat::Entry;
+use crate::screen::ScreenId;
+use crate::ui::widgets::*;
+use crate::ui::{ask_rule, esc_back, frame, title};
+use ratatui::Frame;
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::Paragraph;
+use unicode_width::UnicodeWidthStr;
+
+pub const KEYS: &[(&str, &str)] = &[
+    ("↑ ↓", "choose a conversation"),
+    ("␣ ⏎", "type into it"),
+    ("n", "a new conversation"),
+    ("o", "open it in full Claude Code, for anything it may not do here"),
+    ("r", "rename it"),
+    ("PgUp PgDn", "scroll it"),
+];
+
+/// The conversation the view shows: the selected row; a new one when there are none or you
+/// pressed `n`.
+pub fn viewed(app: &App) -> Option<String> {
+    if app.chat_new {
+        return None;
+    }
+    app.chat.list().get(app.sel(' ')).map(|c| c.id.clone())
+}
+
+/// Send what was typed, in the conversation it was typed into.
+pub fn send(app: &mut App, text: String, into: Option<String>) {
+    app.chat.select(into);
+    app.chat_new = false;
+    match app.chat.send(&text) {
+        Ok(()) => {
+            // The conversation it went to heads the list now: keep it selected.
+            app.sel.insert((ScreenId::Chat, ' '), 0);
+        }
+        Err(e) => {
+            app.chat_draft = text;
+            app.note = Some(format!("not sent: {e} · ␣ brings it back"));
+        }
+    }
+}
+
+pub fn key(app: &mut App, k: KeyEvent) -> bool {
+    let n = app.chat.list().len();
+    let page = 10;
+    match k.code {
+        KeyCode::Up | KeyCode::Char('k') if !k.modifiers.contains(KeyModifiers::SHIFT) => {
+            if app.chat_new {
+                app.chat_new = false;
+            } else {
+                app.move_sel(' ', n, -1);
+            }
+            app.chat.scroll = 0;
+        }
+        KeyCode::Down | KeyCode::Char('j') if !k.modifiers.contains(KeyModifiers::SHIFT) => {
+            app.chat_new = false;
+            app.move_sel(' ', n, 1);
+            app.chat.scroll = 0;
+        }
+        KeyCode::PageUp | KeyCode::Char('K') => app.chat.scroll += page,
+        KeyCode::Up => app.chat.scroll += 1,
+        KeyCode::PageDown | KeyCode::Char('J') => app.chat.scroll = app.chat.scroll.saturating_sub(page),
+        KeyCode::Down => app.chat.scroll = app.chat.scroll.saturating_sub(1),
+        KeyCode::Char(' ') | KeyCode::Enter => {
+            let into = viewed(app);
+            app.chat.select(into);
+            app.mode = Mode::Chat(std::mem::take(&mut app.chat_draft));
+        }
+        KeyCode::Char('n') => {
+            app.chat_new = true;
+            app.chat.select(None);
+            app.mode = Mode::Chat(String::new());
+        }
+        KeyCode::Char('o') => match viewed(app) {
+            Some(id) => {
+                app.note = Some(match crate::chat::open_in_claude(&id) {
+                    Ok(()) => "opened in full Claude Code: a `chat` window in the locus session".into(),
+                    Err(e) => format!("could not open it: {e}"),
+                })
+            }
+            None => app.note = Some("nothing to open yet: say something first".into()),
+        },
+        KeyCode::Char('r') => match viewed(app).and_then(|id| app.chat.get(&id).map(|c| c.name.clone())) {
+            Some(name) => app.mode = Mode::ChatName(name),
+            None => app.note = Some("nothing to rename yet".into()),
+        },
+        _ => return false,
+    }
+    true
+}
+
+/// The bar at the foot of Home: a rule, then one line.
+pub fn draw_bar(f: &mut Frame, area: Rect, app: &App) {
+    let typing = matches!(app.mode, Mode::Chat(_));
+    let name = app.chat.current().map(|c| c.name.clone()).unwrap_or_else(|| "new conversation".into());
+    let long = app.chat.index.current.as_deref().is_some_and(|id| app.chat.is_long(id));
+    let tail = if long { format!("· {name} · long, n in i for a fresh one") } else { format!("· {name}") };
+    let rule = ask_rule("chat", typing, &[("␣", "ask"), ("i", "conversations")], &tail, area.width);
+    let w = usize::from(area.width).saturating_sub(5);
+    let body = if let Mode::Chat(q) = &app.mode {
+        let shown = tail_cut(q, w.saturating_sub(1));
+        vec![
+            Span::styled("   › ", st("mauve")),
+            Span::styled(shown, text()),
+            Span::styled("▏", st("mauve")),
+        ]
+    } else if app.chat.busy.is_some() {
+        let said = app.chat.live.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("");
+        let what = if said.is_empty() { app.chat.status.clone() } else { said.to_string() };
+        vec![
+            Span::styled(format!("   {} ", spin(app.frame)), st("mauve")),
+            Span::styled(cut(&what, w.saturating_sub(2)), text()),
+        ]
+    } else if let Some(e) = &app.chat.error {
+        vec![Span::styled("   ! ", st("red")), Span::styled(cut(e, w), text())]
+    } else if let Some(r) = app.chat.index.current.as_deref().and_then(|id| app.chat.last_reply(id)) {
+        let first = r.lines().find(|l| !l.trim().is_empty()).unwrap_or("").to_string();
+        vec![Span::styled("   ", dim()), Span::styled(cut(&first, w), dim())]
+    } else {
+        vec![
+            Span::styled("   ␣", keyst()),
+            Span::styled(" to ask anything that needs your whole life as context · ", dim()),
+            Span::styled("i", keyst()),
+            Span::styled(" for your conversations", dim()),
+        ]
+    };
+    f.render_widget(Paragraph::new(vec![rule, Line::from(body)]), area);
+}
+
+pub fn draw(f: &mut Frame, area: Rect, app: &App) {
+    let inner = frame(f, area, title("chat", "your whole life as context"), Some(esc_back()));
+    let [list_r, _, conv_r] =
+        Layout::horizontal([Constraint::Length(34), Constraint::Length(1), Constraint::Min(20)]).areas(inner);
+    draw_list(f, list_r, app);
+    let [talk_r, bar_r] = Layout::vertical([Constraint::Min(1), Constraint::Length(2)]).areas(conv_r);
+    draw_conversation(f, talk_r, app);
+    draw_input(f, bar_r, app);
+}
+
+fn draw_list(f: &mut Frame, area: Rect, app: &App) {
+    let mut lines = vec![rule("conversations", "", None, false, area.width)];
+    let sel = (!app.chat_new).then(|| app.sel(' '));
+    if app.chat_new || app.chat.list().is_empty() {
+        lines.push(row(
+            vec![pointer(0, Some(0)), Span::styled("new conversation", st("mauve"))],
+            vec![],
+            area.width,
+        ));
+    }
+    let now = chrono::Local::now();
+    for (i, c) in app.chat.list().into_iter().enumerate() {
+        let when = chrono::DateTime::from_timestamp(c.updated, 0)
+            .map(|t| t.with_timezone(&chrono::Local))
+            .map(|t| {
+                if t.date_naive() == now.date_naive() {
+                    t.format("%H:%M").to_string()
+                } else if (now - t).num_days() < 6 {
+                    t.format("%a").to_string()
+                } else {
+                    t.format("%-d %b").to_string()
+                }
+            })
+            .unwrap_or_default();
+        let running = app.chat.busy.as_deref() == Some(c.id.as_str());
+        let mut left = vec![pointer(i, sel)];
+        if running {
+            left.push(Span::styled(format!("{} ", spin(app.frame)), st("mauve")));
+        }
+        left.push(Span::styled(c.name.clone(), text()));
+        lines.push(row(left, vec![Span::styled(when, dim())], area.width));
+    }
+    f.render_widget(Paragraph::new(lines), area);
+}
+
+fn draw_conversation(f: &mut Frame, area: Rect, app: &App) {
+    let w = usize::from(area.width).saturating_sub(4).max(10);
+    let id = viewed(app);
+    let mut out: Vec<Line<'static>> = Vec::new();
+    let entries = id.as_deref().map(|i| app.chat.entries(i)).unwrap_or_default();
+    if entries.is_empty() && app.chat.busy.is_none() {
+        let hint = "A new conversation. Ask anything: where a project stands, what you decided in a \
+                    chat, what is due; or ask it to add a task, draft a reply, file notes, or \
+                    register a project.";
+        for l in paragraph_lines(hint, w) {
+            out.push(Line::from(Span::styled(format!("  {l}"), dim())));
+        }
+    }
+    let mut looked: Vec<String> = Vec::new();
+    let flush = |looked: &mut Vec<String>, out: &mut Vec<Line<'static>>| {
+        if looked.is_empty() {
+            return;
+        }
+        let more = looked.len().saturating_sub(2);
+        let mut s = looked.iter().take(2).cloned().collect::<Vec<_>>().join(" · ");
+        if more > 0 {
+            s.push_str(&format!(" · {more} more"));
+        }
+        out.push(Line::from(Span::styled(format!("  · {}", cut(&s, w)), dim())));
+        looked.clear();
+    };
+    for e in entries {
+        match e {
+            Entry::Looked(s) => looked.push(s),
+            Entry::You(t) => {
+                flush(&mut looked, &mut out);
+                out.push(Line::default());
+                out.push(Line::from(Span::styled("  you", bold(st("mauve")))));
+                for l in paragraph_lines(&t, w) {
+                    out.push(Line::from(Span::styled(format!("  {l}"), text())));
+                }
+            }
+            Entry::Claude(t) => {
+                flush(&mut looked, &mut out);
+                out.push(Line::default());
+                for l in paragraph_lines(&t, w) {
+                    out.push(Line::from(Span::styled(format!("  {l}"), text())));
+                }
+            }
+            Entry::Did(s) => {
+                flush(&mut looked, &mut out);
+                out.push(Line::from(vec![
+                    Span::styled("  ✎ ", st("peach")),
+                    Span::styled(cut(&s, w.saturating_sub(2)), st("peach")),
+                ]));
+            }
+        }
+    }
+    flush(&mut looked, &mut out);
+    if app.chat.busy.is_some() && app.chat.busy == id.or_else(|| app.chat.index.current.clone()) {
+        out.push(Line::default());
+        for l in paragraph_lines(&app.chat.live, w) {
+            out.push(Line::from(Span::styled(format!("  {l}"), text())));
+        }
+        out.push(Line::from(vec![
+            Span::styled(format!("  {} ", spin(app.frame)), st("mauve")),
+            Span::styled(app.chat.status.clone(), dim()),
+        ]));
+    }
+    if let Some(e) = &app.chat.error {
+        out.push(Line::from(vec![Span::styled("  ! ", st("red")), Span::styled(e.clone(), text())]));
+    }
+    // Pinned to the bottom; PgUp scrolls back.
+    let h = usize::from(area.height);
+    let max_scroll = out.len().saturating_sub(h);
+    let scroll = app.chat.scroll.min(max_scroll);
+    let start = out.len().saturating_sub(h + scroll);
+    let shown: Vec<Line<'static>> = out.into_iter().skip(start).take(h).collect();
+    f.render_widget(Paragraph::new(shown), area);
+}
+
+fn draw_input(f: &mut Frame, area: Rect, app: &App) {
+    let w = usize::from(area.width).saturating_sub(6);
+    let (lit, body) = match &app.mode {
+        Mode::Chat(q) => (
+            true,
+            vec![
+                Span::styled("   › ", st("mauve")),
+                Span::styled(tail_cut(q, w), text()),
+                Span::styled("▏", st("mauve")),
+            ],
+        ),
+        Mode::ChatName(n) => (
+            true,
+            vec![
+                Span::styled("   name › ", st("mauve")),
+                Span::styled(tail_cut(n, w.saturating_sub(5)), text()),
+                Span::styled("▏", st("mauve")),
+            ],
+        ),
+        _ => (
+            false,
+            vec![
+                Span::styled("   ␣", keyst()),
+                Span::styled(" to type · ", dim()),
+                Span::styled("o", keyst()),
+                Span::styled(" when it needs to do more than it may here", dim()),
+            ],
+        ),
+    };
+    let rule = ask_rule(
+        "ask",
+        lit,
+        &[("n", "new"), ("o", "Claude Code"), ("r", "rename")],
+        "",
+        area.width,
+    );
+    f.render_widget(Paragraph::new(vec![rule, Line::from(body)]), area);
+}
+
+/// Text as lines of at most `w` columns, keeping its own line breaks and blank lines.
+fn paragraph_lines(s: &str, w: usize) -> Vec<String> {
+    let mut out = Vec::new();
+    for raw in s.trim_end().lines() {
+        if raw.trim().is_empty() {
+            if out.last().is_some_and(|l: &String| !l.is_empty()) {
+                out.push(String::new());
+            }
+            continue;
+        }
+        let raw = plain(raw);
+        let indent: String = raw.chars().take_while(|c| *c == ' ').collect();
+        let body = raw.trim_start();
+        // A list item's wrapped lines hang under its text; anything else wraps flush.
+        let hang = if body.starts_with("- ") || body.starts_with("* ") {
+            "  ".to_string()
+        } else if let Some(n) = body.find(". ").filter(|&n| n <= 3 && body[..n].chars().all(|c| c.is_ascii_digit())) {
+            " ".repeat(n + 2)
+        } else {
+            String::new()
+        };
+        for (i, l) in wrap(body, w.saturating_sub(indent.width() + hang.len()).max(8)).into_iter().enumerate() {
+            out.push(if i == 0 { format!("{indent}{l}") } else { format!("{indent}{hang}{l}") });
+        }
+    }
+    out
+}
+
+fn cut(s: &str, w: usize) -> String {
+    crate::ui::truncate(plain(s).trim(), w)
+}
+
+/// Markdown's marks dropped (`**bold**`, `` `code` ``): the terminal shows them as clutter, and
+/// the words read the same without them.
+fn plain(s: &str) -> String {
+    s.replace("**", "").replace('`', "")
+}
+
+/// The END of what you are typing, so the cursor stays in view on a long message.
+fn tail_cut(s: &str, w: usize) -> String {
+    if s.width() <= w {
+        return s.to_string();
+    }
+    let mut out: Vec<char> = Vec::new();
+    let mut used = 0;
+    for ch in s.chars().rev() {
+        let cw = UnicodeWidthStr::width(ch.to_string().as_str());
+        if used + cw + 1 > w {
+            break;
+        }
+        used += cw;
+        out.push(ch);
+    }
+    out.reverse();
+    format!("…{}", out.into_iter().collect::<String>())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn long_text_keeps_its_breaks_and_wraps() {
+        let l = paragraph_lines("first line\n\n- a point that is long enough to wrap around", 20);
+        assert_eq!(l[0], "first line");
+        assert_eq!(l[1], "");
+        assert!(l.len() > 3 && l.iter().all(|x| x.width() <= 22));
+        assert!(l[3].starts_with("  "), "a list item's second line hangs: {l:?}");
+        let p = paragraph_lines("Only **locus** had commits in the last few days, on `files`", 24);
+        assert!(!p[1].starts_with(' ') && !p.concat().contains('*'), "{p:?}");
+    }
+
+    #[test]
+    fn typing_shows_the_end() {
+        assert!(tail_cut("abcdefghijklmnopqrstuvwxyz", 10).ends_with("xyz"));
+    }
+}

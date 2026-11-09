@@ -22,6 +22,8 @@ use unicode_width::UnicodeWidthStr;
 
 pub const KEYS: &[(&str, &str)] = &[
     ("⇥ ↑ ↓", "move between sections and through them"),
+    ("␣", "ask the chat: anything that needs your whole life as context"),
+    ("i", "the chat's conversations, from any screen"),
     ("⏎", "go there: the project, the approve list, the find"),
     ("W", "the weekly review, when it is ready"),
     ("L", "learning"),
@@ -188,8 +190,12 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         Constraint::Length((3 + inner.height.saturating_sub(35)).min(6)),
         gap,
         Constraint::Length(3),
+        gap,
+        // The chat bar (files-and-chat M2), pinned to the foot as the Project view's ask line was.
+        Constraint::Length(2),
     ])
     .split(inner);
+    crate::ui::chat::draw_bar(f, rects[12], app);
     let (work_r, proj_r, side_r, exp_r, pair_r, sys_r) = (rects[0], rects[2], rects[4], rects[6], rects[8], rects[10]);
     let [wait_r, pair_bar, task_r] = Layout::horizontal([
         Constraint::Percentage(50),
@@ -1018,6 +1024,11 @@ fn draw_system(f: &mut Frame, area: Rect, app: &App) {
 
 pub fn key(app: &mut App, k: KeyEvent) -> bool {
     match (app.focus, k.code) {
+        // Space types into the chat bar from anywhere on Home, with any draft you left.
+        (_, KeyCode::Char(' ')) => {
+            app.mode = crate::app::Mode::Chat(std::mem::take(&mut app.chat_draft));
+            true
+        }
         // Careers and learning sit side by side: ← and → cross between them (round 1c).
         (Some('c'), KeyCode::Right) => {
             app.focus = Some('s');

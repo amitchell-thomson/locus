@@ -42,6 +42,10 @@ pub enum Mode {
     Ask(String),
     /// A find was struck; the next key is the reason (C.7).
     Strike(String),
+    /// Typing to the chat (files-and-chat M2), from Home's bar or the chat view.
+    Chat(String),
+    /// Renaming the chat view's selected conversation.
+    ChatName(String),
 }
 
 pub struct App {
@@ -109,6 +113,12 @@ pub struct App {
     pub lane_open: bool,
     pub records_at: usize,
     pub peek_file: Option<crate::follow::PeekFile>,
+    /// The Home chat (files-and-chat M2). Runs nothing until it is given a state dir.
+    pub chat: crate::chat::Chat,
+    /// A chat message you were typing when you pressed Esc: Space brings it back.
+    pub chat_draft: String,
+    /// The chat view shows a new, empty conversation (`n`) rather than the selected one.
+    pub chat_new: bool,
 }
 
 impl App {
@@ -149,6 +159,9 @@ impl App {
             lane_open: false,
             records_at: 0,
             peek_file: None,
+            chat: crate::chat::Chat::new(None),
+            chat_draft: String::new(),
+            chat_new: false,
         };
         app.uselog.record(root.name(), "open");
         app
@@ -295,6 +308,18 @@ impl App {
                 }
             }
             KeyCode::Char('l') if self.screen() != ScreenId::AutoLog => self.open(ScreenId::AutoLog),
+            // The chat's conversations, from anywhere (files-and-chat M2: its own key, never Tab).
+            KeyCode::Char('i') if self.screen() != ScreenId::Chat => {
+                self.chat_new = false;
+                let at = self
+                    .chat
+                    .index
+                    .current
+                    .as_deref()
+                    .and_then(|id| self.chat.list().iter().position(|c| c.id == id));
+                self.open(ScreenId::Chat);
+                self.sel.insert((ScreenId::Chat, ' '), at.unwrap_or(0));
+            }
             KeyCode::Char('q') if self.screen().is_root() => self.quit = true,
             KeyCode::Char('R') => self.reset(),
             KeyCode::Char(ch) if self.screen().sections().iter().any(|s| s.letter == ch) => self.focus = Some(ch),
@@ -387,6 +412,44 @@ impl App {
                 self.mode = Mode::Normal;
             }
             (Mode::Strike(_), KeyCode::Esc) => self.mode = Mode::Normal,
+            // Esc keeps a half-typed message; Space brings it back.
+            (Mode::Chat(q), KeyCode::Esc) => {
+                if !q.trim().is_empty() {
+                    self.chat_draft = std::mem::take(q);
+                    self.note = Some("draft kept · ␣ brings it back".into());
+                }
+                self.mode = Mode::Normal;
+            }
+            // A line break inside a message.
+            (Mode::Chat(q), KeyCode::Enter)
+                if key.modifiers.intersects(KeyModifiers::SHIFT | KeyModifiers::ALT) =>
+            {
+                q.push('\n')
+            }
+            (Mode::Chat(q), KeyCode::Enter) => {
+                let text = std::mem::take(q).trim().to_string();
+                self.mode = Mode::Normal;
+                if !text.is_empty() {
+                    let into = if self.screen() == ScreenId::Chat {
+                        crate::ui::chat::viewed(self)
+                    } else {
+                        self.chat.index.current.clone()
+                    };
+                    crate::ui::chat::send(self, text, into);
+                }
+            }
+            (Mode::Chat(q) | Mode::ChatName(q), KeyCode::Backspace) => {
+                q.pop();
+            }
+            (Mode::Chat(q) | Mode::ChatName(q), KeyCode::Char(ch)) => q.push(ch),
+            (Mode::ChatName(_), KeyCode::Esc) => self.mode = Mode::Normal,
+            (Mode::ChatName(n), KeyCode::Enter) => {
+                let name = std::mem::take(n);
+                self.mode = Mode::Normal;
+                if let Some(id) = crate::ui::chat::viewed(self).filter(|_| !name.trim().is_empty()) {
+                    self.chat.rename(&id, &name);
+                }
+            }
             (Mode::Ask(q), KeyCode::Enter) => {
                 let q = q.trim().to_string();
                 self.mode = Mode::Normal;
@@ -436,7 +499,8 @@ impl App {
     /// The project window moved to `session` (from the focus file), or time passed: switch the
     /// Project view if nothing holds it back.
     pub fn tick(&mut self, session: Option<String>, now: Instant) {
-        let busy = follow::busy(self.last_key, now, self.stack.len() > 1) || matches!(self.mode, Mode::Ask(_));
+        let busy = follow::busy(self.last_key, now, self.stack.len() > 1)
+            || matches!(self.mode, Mode::Ask(_) | Mode::Chat(_) | Mode::ChatName(_));
         if let Some(s) = session {
             self.follow.offer(&s, busy);
         }

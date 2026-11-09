@@ -35,10 +35,16 @@ decisions and runs by itself through mechanical steps.
 
 ## Status
 
+**9 Nov: cut to what is used.** The order below is paused, not deleted: a part comes back only when
+you want an improvement to something you already use. The Project view (3) is set aside. First:
+[`files-and-chat`](slices/files-and-chat.md), then heuris (ADR-011, awaiting your reading of
+`heuris.tex`).
+
 | Slice | What | State |
 |---|---|---|
-| 0 | Plumbing | approved 19 Oct, ready to start |
-| 1 | Every screen on fixtures (ratatui prototype) | approved 19 Oct, in progress beside 0 |
+| files-and-chat | `~/files` mirrored with the tablet; the Home chat | done 9 Nov |
+| 0 | Plumbing | 0.1–0.5, 0.7, 0.12, 0.13 done; 0.6, 0.9–0.11 open |
+| 1 | Every screen on fixtures (ratatui prototype) | design rounds done; Home, calendar and mail in use; report not written |
 | 2 | Dossier loop | — |
 | 3 | Project view live | — |
 | 4 | Home live | — |

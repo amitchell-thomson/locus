@@ -39,4 +39,4 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │─ follow up ───────────────────────────────────────────────────── c build in project window ─│
 │   follow up › ␣ continue this thread                                                        │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯
- ⏎ open · ⇥ sections · l log · / search · ? keys
+ ⏎ open · ⇥ sections · l log · / search · i chat · ? keys

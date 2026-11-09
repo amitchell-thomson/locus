@@ -233,7 +233,7 @@ pub fn step_args(acc: &Account, mid: &str, current: &str, step: &MailStep) -> Ve
 /// the approved ones. Lists arrive newline-separated in argv.
 const SEND_SCRIPT: &str = r#"
 on run argv
-  set {acctId, acctAddr, mid, toList, ccList, bccList, subj, body, fileList} to argv
+  set {acctId, acctAddr, mid, toList, ccList, bccList, subj, body, fileList, boxList} to argv
   -- Paths become file references here, outside Mail: inside its tell block `POSIX file` is
   -- Mail's to resolve. And never a variable called `files`: that is AppleScript's own name
   -- for "every file", so `set {…, files} to argv` failed with -10006 on every attachment.
@@ -255,8 +255,19 @@ on run argv
     if mid is "" then
       set msg to make new outgoing message with properties {subject:subj, content:body, visible:false}
     else
+      -- Only in the mailboxes Mail's index has it in: a search of every mailbox holds Mail's
+      -- main thread for minutes on a large account. Every mailbox only when the index has none.
       set found to missing value
-      repeat with mb in (every mailbox of acc)
+      set boxes to {}
+      repeat with bn in paragraphs of boxList
+        if (bn as string) is not "" then
+          try
+            set end of boxes to mailbox (bn as string) of acc
+          end try
+        end if
+      end repeat
+      if boxes is {} then set boxes to every mailbox of acc
+      repeat with mb in boxes
         try
           set ms to (messages of mb whose message id is mid)
           if (count of ms) > 0 then
@@ -299,8 +310,8 @@ on run argv
 end run
 "#;
 
-/// argv for SEND_SCRIPT.
-pub fn send_args(acc: &Account, o: &keryx_core::changeset::Outgoing) -> Vec<String> {
+/// argv for SEND_SCRIPT. `boxes`: the mailboxes the message it replies to is in (Mail's index).
+pub fn send_args(acc: &Account, o: &keryx_core::changeset::Outgoing, boxes: &[String]) -> Vec<String> {
     let lines = |v: &[keryx_core::model::Address]| v.iter().map(|a| a.email.clone()).collect::<Vec<_>>().join("\n");
     vec![
         acc.mailapp_account_id.clone().unwrap_or_default(),
@@ -316,30 +327,33 @@ pub fn send_args(acc: &Account, o: &keryx_core::changeset::Outgoing) -> Vec<Stri
             .map(|f| f.path.clone())
             .collect::<Vec<_>>()
             .join("\n"),
+        boxes.join("\n"),
     ]
 }
 
-fn osascript(script: &str, args: &[String]) -> Result<String, String> {
-    osascript_answers(script, args, &["ok"])
+/// How long a Mail step may take. keryxd waited on osascript with no limit, so a Mail that never
+/// answered (busy, showing a dialog, force-quit mid-script) stopped every later action (31 Oct).
+pub const STEP_LIMIT: Duration = Duration::from_secs(60);
+/// How long a send may take: making the reply, attaching, handing it to the Outbox.
+pub const SEND_LIMIT: Duration = Duration::from_secs(120);
+
+/// Why a script that ran out of time failed. A send may still have gone (the limit can fall just
+/// after `send`), so it says to look before sending again.
+pub fn timed_out(limit: Duration, send: bool) -> String {
+    let s = limit.as_secs();
+    if send {
+        format!("Mail didn't answer within {s} s; it may still have sent it: look in Sent before sending again")
+    } else {
+        format!("Mail didn't answer within {s} s (busy, or showing a dialog)")
+    }
 }
 
-/// Run `script`; any of `oks` is a success and is returned.
-fn osascript_answers(script: &str, args: &[String], oks: &[&str]) -> Result<String, String> {
-    let out = Command::new("osascript")
-        .arg("-")
-        .args(args)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .and_then(|mut child| {
-            use std::io::Write;
-            if let Some(stdin) = child.stdin.as_mut() {
-                stdin.write_all(script.as_bytes())?;
-            }
-            child.wait_with_output()
-        })
-        .map_err(|e| format!("osascript: {e}"))?;
+/// Run `script`; any of `oks` is a success and is returned. Past `limit` osascript is killed and
+/// the answer is an error.
+fn osascript_answers(script: &str, args: &[String], oks: &[&str], limit: Duration) -> Result<String, String> {
+    let out = run_within(Command::new("osascript").arg("-").args(args), script.as_bytes(), limit)
+        .map_err(|e| format!("osascript: {e}"))?
+        .ok_or_else(|| timed_out(limit, script == SEND_SCRIPT))?;
     let said = String::from_utf8_lossy(&out.stdout).trim().to_string();
     if oks.contains(&said.as_str()) {
         return Ok(said);
@@ -353,6 +367,30 @@ fn osascript_answers(script: &str, args: &[String], oks: &[&str]) -> Result<Stri
         }
         _ => format!("Mail: {said} {err}"),
     })
+}
+
+/// Run `cmd` with `input` on stdin; `None` when it was still running after `limit` (it is
+/// killed). Its output is small, so it is read after it exits.
+pub fn run_within(cmd: &mut Command, input: &[u8], limit: Duration) -> std::io::Result<Option<std::process::Output>> {
+    use std::io::Write;
+    let mut child = cmd
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(input)?;
+    }
+    let t = Instant::now();
+    while child.try_wait()?.is_none() {
+        if t.elapsed() >= limit {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Ok(None);
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    child.wait_with_output().map(Some)
 }
 
 pub struct Real {
@@ -501,18 +539,16 @@ impl Real {
             "gmail inbox label"
         );
         res.map_err(|e| e.to_string())?;
+        // Mail is asked to sync at once. It used to get 5 s to notice by itself first, and it
+        // never did (every archive of 30-31 Oct): 5 s more under the engine's lock, which every
+        // other request to keryxd waits on, the screen's included (31 Oct).
+        sync_mail_account(acc);
         if self
-            .await_envelope_for(acc, msg, before, after, Duration::from_secs(5))
+            .await_envelope_for(acc, msg, before, after, Duration::from_secs(30))
             .is_err()
         {
-            sync_mail_account(acc);
-            if self
-                .await_envelope_for(acc, msg, before, after, Duration::from_secs(30))
-                .is_err()
-            {
-                // Done at Gmail: what Mail shows follows on its next sync, and the mirror with it.
-                tracing::warn!(account = acc.id, "gmail inbox label changed; Mail hasn't shown it yet");
-            }
+            // Done at Gmail: what Mail shows follows on its next sync, and the mirror with it.
+            tracing::warn!(account = acc.id, "gmail inbox label changed; Mail hasn't shown it yet");
         }
         Ok(None)
     }
@@ -555,21 +591,15 @@ impl Real {
 
     fn mail_step_inner(&self, acc: &Account, msg: &MsgRef, current: &str, step: &MailStep) -> Result<(), String> {
         {
-            let out = Command::new("osascript")
-                .arg("-")
-                .args(step_args(acc, &msg.message_id, current, step))
-                .stdin(std::process::Stdio::piped())
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
-                .spawn()
-                .and_then(|mut child| {
-                    use std::io::Write;
-                    if let Some(stdin) = child.stdin.as_mut() {
-                        stdin.write_all(SCRIPT.as_bytes())?;
-                    }
-                    child.wait_with_output()
-                })
-                .map_err(|e| format!("osascript: {e}"))?;
+            let out = run_within(
+                Command::new("osascript")
+                    .arg("-")
+                    .args(step_args(acc, &msg.message_id, current, step)),
+                SCRIPT.as_bytes(),
+                STEP_LIMIT,
+            )
+            .map_err(|e| format!("osascript: {e}"))?
+            .ok_or_else(|| timed_out(STEP_LIMIT, false))?;
             let said = String::from_utf8_lossy(&out.stdout).trim().to_string();
             if said != "ok" {
                 let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
@@ -661,7 +691,15 @@ impl Actuator for Real {
             }
             Backend::Mailapp => {
                 Self::ensure_mail_running()?;
-                osascript(SEND_SCRIPT, &send_args(account, o)).map(|_| ())
+                // Where the message it replies to is, from Mail's index (none: Mail looks
+                // everywhere, as before).
+                let boxes = match (&o.in_reply_to, account.mailapp_account_id.as_deref()) {
+                    (Some(mid), Some(uuid)) => MailStore::open(&self.cfg.paths.mail_dir)
+                        .and_then(|st| st.mailboxes_of(uuid, mid))
+                        .unwrap_or_default(),
+                    _ => Vec::new(),
+                };
+                osascript_answers(SEND_SCRIPT, &send_args(account, o, &boxes), &["ok"], SEND_LIMIT).map(|_| ())
             }
         }
     }
@@ -901,12 +939,39 @@ mod tests {
             message_id: "m@ox.ac.uk".into(),
             attachments: vec![],
         };
-        let args = send_args(a, &o);
-        assert_eq!(args.len(), 9);
+        let args = send_args(a, &o, &["Inbox".into()]);
+        assert_eq!(args.len(), 10);
+        assert_eq!(args[9], "Inbox", "where the message it replies to is");
         assert_eq!(args[2], "thread-a@example.com");
         assert_eq!(args[3], "jane@example.com\nsam@example.com");
         assert_eq!(args[7], "hi \" & quit", "body is data");
         assert!(!SEND_SCRIPT.contains("quit"));
+    }
+
+    #[test]
+    fn a_script_that_never_answers_is_stopped_at_its_limit() {
+        // 31 Oct: Mail was force-quit mid-send and keryxd waited for osascript forever.
+        let t = Instant::now();
+        let out = run_within(
+            Command::new("sh").args(["-c", "sleep 30"]),
+            b"",
+            Duration::from_millis(300),
+        )
+        .unwrap();
+        assert!(out.is_none(), "stopped");
+        assert!(t.elapsed() < Duration::from_secs(5));
+        let out = run_within(&mut Command::new("cat"), b"ok", Duration::from_secs(5)).unwrap();
+        assert_eq!(out.map(|o| o.stdout), Some(b"ok".to_vec()), "a quick one answers");
+        assert!(
+            timed_out(SEND_LIMIT, true).contains("look in Sent"),
+            "a send may have gone"
+        );
+    }
+
+    #[test]
+    fn the_reply_is_looked_for_only_where_mail_has_it() {
+        assert!(SEND_SCRIPT.contains("paragraphs of boxList"));
+        assert!(SEND_SCRIPT.contains("if boxes is {} then set boxes to every mailbox of acc"));
     }
 
     #[test]

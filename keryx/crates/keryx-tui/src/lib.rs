@@ -145,6 +145,26 @@ pub fn run_at(cfg: Config, thread: Option<(String, String)>) -> Result<(), Strin
         });
         app.background = Some(job_tx);
     }
+    // Tasks' live state on a worker of its own: asked when a thread opens, shown when it comes.
+    let (status_tx, status_rx) = std::sync::mpsc::channel::<Vec<String>>();
+    let (status_done_tx, status_done_rx) = std::sync::mpsc::channel::<keryx_store::api::TaskStatus>();
+    if let Ok(client) = keryx_store::client::Client::from_config(&cfg) {
+        let client = client.interactive(true);
+        std::thread::spawn(move || {
+            use keryx_store::client::Daemon;
+            while let Ok(ids) = status_rx.recv() {
+                for id in ids {
+                    // kairos down: the line just shows without live state.
+                    if let Ok(Some(s)) = client.task_status(&id)
+                        && status_done_tx.send(s).is_err()
+                    {
+                        return;
+                    }
+                }
+            }
+        });
+        app.status_worker = Some(status_tx);
+    }
     let editor = writing::embeddable_editor();
     let mut session: Option<writing::Session> = None;
     let mut cursor_shape: u16 = 0;
@@ -221,6 +241,9 @@ pub fn run_at(cfg: Config, thread: Option<(String, String)>) -> Result<(), Strin
                 session = None;
                 app.writing_finished(how);
                 continue;
+            }
+            while let Ok(s) = status_done_rx.try_recv() {
+                app.task_status.insert(s.id.clone(), s);
             }
             while let Ok((hid, res, cs)) = done_rx.try_recv() {
                 app.move_applied(&hid, cs);

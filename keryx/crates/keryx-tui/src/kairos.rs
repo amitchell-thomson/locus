@@ -185,11 +185,20 @@ impl App {
             .links(&o.account, &o.thread_id)
             .unwrap_or_default()
             .into_iter()
-            .filter(|l| l.kind != "event" && !self.task_status.contains_key(&l.target))
+            .filter(|l| {
+                l.kind != "event" && !self.task_status.contains_key(&l.target) && !self.status_asked.contains(&l.target)
+            })
             .map(|l| l.target)
             .collect();
-        if !ids.is_empty() {
-            self.deferred.push(Job::TaskStatus(ids));
+        if ids.is_empty() {
+            return;
+        }
+        match &self.status_worker {
+            Some(tx) => {
+                self.status_asked.extend(ids.iter().cloned());
+                let _ = tx.send(ids);
+            }
+            None => self.deferred.push(Job::TaskStatus(ids)),
         }
     }
 }

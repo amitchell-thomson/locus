@@ -194,6 +194,12 @@ pub struct App {
     pub seen_file: Option<PathBuf>,
     /// Live kairos task states, by task id (fetched when a thread opens).
     pub task_status: std::collections::HashMap<String, keryx_store::api::TaskStatus>,
+    /// The worker that asks keryxd for tasks' live state (the real TUI); `None` asks in place
+    /// (tests). Opening a thread asked on the screen's own time, and keryxd answers one request
+    /// at a time: behind an archive (10 s of Mail) the screen froze (31 Oct).
+    pub status_worker: Option<std::sync::mpsc::Sender<Vec<String>>>,
+    /// Tasks already asked about, so reopening a thread does not ask again while it waits.
+    pub status_asked: BTreeSet<String>,
 }
 
 pub const LIST_LIMIT: u32 = 500;
@@ -244,6 +250,8 @@ impl App {
             shared: None,
             hold: None,
             task_status: std::collections::HashMap::new(),
+            status_worker: None,
+            status_asked: BTreeSet::new(),
             list_hidden: false,
             seen_since: None,
             last_key: 0,

@@ -216,6 +216,39 @@ impl MailStore {
         Ok(out)
     }
 
+    /// The mailboxes a message is in on one account, by its Message-ID (with or without `<>`):
+    /// its labels (Gmail's Inbox) first, then the mailbox that holds it. The send script looks
+    /// for the message it replies to here and nowhere else: searching every mailbox of Oxford
+    /// (20, ~3,100 messages) for a Message-ID held Mail's main thread for minutes, and Mail
+    /// stopped answering until it was force-quit (31 Oct).
+    pub fn mailboxes_of(&self, account_uuid: &str, message_id: &str) -> Result<Vec<String>> {
+        let prefix_like = format!("%://{account_uuid}/%");
+        let id = bare_id(message_id);
+        let mut st = self.conn.prepare(
+            "SELECT mb.url, 0 FROM messages m
+               JOIN message_global_data g ON g.ROWID = m.global_message_id
+               JOIN labels l ON l.message_id = m.ROWID
+               JOIN mailboxes mb ON mb.ROWID = l.mailbox_id
+              WHERE g.message_id_header IN (?2, '<' || ?2 || '>') AND mb.url LIKE ?1 AND m.deleted = 0
+             UNION ALL
+             SELECT mb.url, 1 FROM messages m
+               JOIN message_global_data g ON g.ROWID = m.global_message_id
+               JOIN mailboxes mb ON mb.ROWID = m.mailbox
+              WHERE g.message_id_header IN (?2, '<' || ?2 || '>') AND mb.url LIKE ?1 AND m.deleted = 0
+             ORDER BY 2",
+        )?;
+        let urls = st.query_map([&prefix_like, &id], |r| r.get::<_, String>(0))?;
+        let mut out: Vec<String> = Vec::new();
+        for url in urls {
+            if let Some((_, path)) = parse_mailbox_url(&url?)
+                && !out.contains(&path)
+            {
+                out.push(path);
+            }
+        }
+        Ok(out)
+    }
+
     /// Mail's own total per mailbox (path → total_count) for an account.
     pub fn mailbox_totals(&self, account_uuid: &str) -> Result<HashMap<String, u64>> {
         let mut st = self
@@ -407,6 +440,34 @@ mod tests {
         assert_eq!(rows[0].physical, "[Gmail]/All Mail");
         assert_eq!(rows[0].labels, vec!["INBOX".to_string()]);
         assert!(!rows[0].read);
+    }
+
+    #[test]
+    fn where_a_message_is_comes_from_the_index() {
+        let s = fixture();
+        let oqts = s.scan(OQTS).unwrap();
+        let mid = &oqts[0].message_id;
+        assert_eq!(
+            s.mailboxes_of(OQTS, mid).unwrap(),
+            vec!["INBOX".to_string(), "[Gmail]/All Mail".to_string()],
+            "its labels first, then where it is held"
+        );
+        assert_eq!(
+            s.mailboxes_of(OQTS, &format!("<{mid}>")).unwrap().len(),
+            2,
+            "with brackets too"
+        );
+        let ox = s.scan(OXFORD).unwrap();
+        let b = ox.iter().find(|r| r.rowid == 11).unwrap();
+        assert_eq!(
+            s.mailboxes_of(OXFORD, &b.message_id).unwrap(),
+            vec!["Sent Items".to_string()]
+        );
+        assert!(s.mailboxes_of(OXFORD, "nobody@nowhere").unwrap().is_empty());
+        assert!(
+            s.mailboxes_of(OQTS, &b.message_id).unwrap().is_empty(),
+            "only that account's"
+        );
     }
 
     #[test]

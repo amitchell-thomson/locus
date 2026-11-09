@@ -792,6 +792,42 @@ fn linked_task_line_and_row_icon() {
     assert_eq!(a.rows.len(), 1);
 }
 
+#[test]
+fn opening_a_thread_asks_for_its_task_off_the_screen() {
+    // 31 Oct: asking keryxd on the screen's time froze it behind an archive (keryxd answers one
+    // request at a time). With the worker, opening hands the ids over and waits for nothing.
+    let (mut a, _) = app();
+    let r = select(&mut a, "Lab partner for Thursday?");
+    let (acc, t) = keryx_core::model::parse_thread_ref(&r).unwrap();
+    a.db.add_link(&keryx_store::state::Link {
+        account: acc.into(),
+        thread_id: t.into(),
+        app: "kairos".into(),
+        kind: "deadline".into(),
+        target: "t-9".into(),
+        title: "Find a lab partner".into(),
+        created_at: 0,
+    })
+    .unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    a.status_worker = Some(tx);
+    keys(&mut a, &[Key::Enter]);
+    assert_eq!(
+        rx.try_recv().ok(),
+        Some(vec!["t-9".to_string()]),
+        "handed to the worker"
+    );
+    assert!(
+        !a.deferred
+            .iter()
+            .any(|j| matches!(j, keryx_tui::write::Job::TaskStatus(_))),
+        "nothing left for the screen to ask"
+    );
+    // Back out and in again: asked once.
+    keys(&mut a, &[Key::Esc, Key::Enter]);
+    assert!(rx.try_recv().is_err(), "not asked twice while it waits");
+}
+
 // ---- Phase 9: the Claude runs view ----
 
 #[test]

@@ -110,7 +110,9 @@ pub fn with_error(text: &str, err: &ComposeError) -> String {
 }
 
 /// Split "Jane Doe <jane@x.com>, bob@y.org" into addresses (commas inside
-/// quotes are kept).
+/// quotes are kept). A piece with no `@` is part of the next one's name, so an
+/// unquoted `Cunningham, Kate <kate@x.com>` (as Outlook senders come back in a
+/// reply) is one address, not a bad "Cunningham" that sends you back to the editor.
 pub fn parse_addresses(s: &str) -> Result<Vec<Address>, ComposeError> {
     let mut out = Vec::new();
     let mut cur = String::new();
@@ -127,11 +129,20 @@ pub fn parse_addresses(s: &str) -> Result<Vec<Address>, ComposeError> {
         }
     }
     parts.push(cur);
+    let mut name_part = String::new();
     for p in parts {
         let p = p.trim();
         if p.is_empty() {
             continue;
         }
+        if !p.contains('@') {
+            name_part.push_str(p);
+            name_part.push_str(", ");
+            continue;
+        }
+        let joined = format!("{name_part}{p}");
+        name_part.clear();
+        let p = joined.as_str();
         let (name, email) = match (p.rfind('<'), p.rfind('>')) {
             (Some(a), Some(b)) if a < b => (Some(p[..a].trim().trim_matches('"').trim()), p[a + 1..b].trim()),
             _ => (None, p),
@@ -140,6 +151,11 @@ pub fn parse_addresses(s: &str) -> Result<Vec<Address>, ComposeError> {
             return Err(ComposeError::BadAddress(p.to_string()));
         }
         out.push(Address::new(name.filter(|n| !n.is_empty()), email));
+    }
+    if !name_part.is_empty() {
+        return Err(ComposeError::BadAddress(
+            name_part.trim_end_matches([',', ' ']).to_string(),
+        ));
     }
     Ok(out)
 }
@@ -285,6 +301,14 @@ mod tests {
 
     #[test]
     fn addresses() {
+        let v = parse_addresses("Cunningham, Kate <kate@example.com>, bob@example.org").unwrap();
+        assert_eq!(v.len(), 2);
+        assert_eq!(v[0].name.as_deref(), Some("Cunningham, Kate"));
+        assert_eq!(v[0].email, "kate@example.com");
+        assert!(matches!(
+            parse_addresses("Cunningham, Kate"),
+            Err(ComposeError::BadAddress(_))
+        ));
         let v = parse_addresses(r#""Doe, Jane" <jane@example.com>; bob@example.org,"#).unwrap();
         assert_eq!(v.len(), 2);
         assert_eq!(v[0].name.as_deref(), Some("Doe, Jane"));

@@ -2276,7 +2276,8 @@ def cmd_files(args) -> None:
             _time.sleep(args.pace)
     elif args.files_cmd == "tablet-rename":
         run, cache = runner()
-        renames = fs.rename_plan(fs.tablet_now(run, tree_cache=cache))
+        tablet = fs.tablet_now(run, tree_cache=cache)
+        renames = fs.deep_rename_plan(tablet) if args.deep else fs.rename_plan(tablet)
         for old, new in renames:
             if args.apply:
                 code, out, err = run(["mv", "/" + old, "/" + new])
@@ -2287,7 +2288,8 @@ def cmd_files(args) -> None:
             else:
                 print(f"would rename /{old} -> /{new}")
         if not renames:
-            print("every registered tablet folder already has its folder name")
+            print("every tablet folder already has a folder name" if args.deep
+                  else "every registered tablet folder already has its folder name")
 
 
 def main(argv=None) -> None:
@@ -2415,6 +2417,8 @@ def main(argv=None) -> None:
     fsm.add_argument("--pace", type=float, default=1.0, help="seconds between cloud calls (429s)")
     fsr = fsub.add_parser("tablet-rename", help="server: rename level-2 tablet folders to the registry's folder")
     fsr.add_argument("--apply", action="store_true", help="rename; without it, print the plan")
+    fsr.add_argument("--deep", action="store_true",
+                     help="rename the folders INSIDE a thing's folder to the same rule (spaces, capitals)")
     fsr.add_argument("--pace", type=float, default=2.0, help="seconds between cloud calls (429s)")
     pfs.set_defaults(func=cmd_files)
 

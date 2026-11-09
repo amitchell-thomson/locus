@@ -100,3 +100,27 @@ def test_an_unreadable_tablet_is_an_error_not_an_empty_tablet():
 def test_suggested_names_follow_the_registry_rule():
     assert fs.suggest("B1 Engineering Computation") == "b1-engineering-computation"
     assert fs.is_folder_name(fs.suggest("Citadel FI&M Trading!"))
+
+
+def test_a_folder_under_its_old_name_is_one_folder_not_two():
+    """The tablet's `Technology Strategy` and the laptop's `technology-strategy` (9 Nov)."""
+    laptop = BOTH | {"Studies/b1-engineering-computation/technology-strategy"}
+    tablet = BOTH | {"Studies/b1-engineering-computation/Technology Strategy"}
+    p = fs.plan(laptop, tablet, REG)
+    assert p.to_tablet == [] and p.to_laptop == []
+    assert [q["why"] for q in p.questions] == ["name"]
+
+
+def test_general_mirrors_in_every_area_and_missing_areas_are_made():
+    p = fs.plan(BOTH, (BOTH - {"Personal"}) | {"Careers/general", "Careers/general/cover-letters"}, REG)
+    assert p.to_laptop == ["Careers/general", "Careers/general/cover-letters"]
+    assert p.to_tablet == ["Personal"] and p.questions == []
+
+
+def test_deep_renames_go_deepest_first_and_never_merge():
+    tablet = {"Studies", "Studies/b14-x", "Studies/b14-x/Image Processing",
+              "Studies/b14-x/Image Processing/Week One", "Studies/b14-x/Signal", "Studies/b14-x/signal"}
+    assert fs.deep_rename_plan(tablet) == [
+        ("Studies/b14-x/Image Processing/Week One", "Studies/b14-x/Image Processing/week-one"),
+        ("Studies/b14-x/Image Processing", "Studies/b14-x/image-processing"),
+    ]

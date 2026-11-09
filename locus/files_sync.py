@@ -10,7 +10,8 @@ are perfectly linked... We also need a way to handle new folders on both"):
   the authority on what exists.
 * A level-2 folder the registry does NOT name is a question for him, never mirrored: register it
   as a course, project or company, or remove it. Personal has no registry entries, so every level
-  below it mirrors freely.
+  below it mirrors freely, and so does `general` in every area: the area's own things, the folder
+  kairos calls "Careers (general)".
 * A name with a space or a capital is a question too, with the name it would take. Nothing is
   made under a name the other side could not use, since a mirrored copy would carry the bad name
   across and the two trees would then disagree about what the folder is called.
@@ -45,6 +46,7 @@ _NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 # Never looked inside on the laptop: their contents are code and tooling, not things you file.
 _OPAQUE_MARKERS = (".git", "pyvenv.cfg")
 _SKIP = {"__pycache__", "node_modules", ".venv", "venv", "target", "build", "dist"}
+GENERAL = "general"   # in every area: the area's own things, mirrored without a registry entry
 
 
 def is_folder_name(name: str) -> bool:
@@ -159,7 +161,23 @@ def plan(laptop: set[str], tablet: set[str], registry: dict[str, set[str]],
         """A folder under a questioned one waits for the answer."""
         return any(path.startswith(a + "/") for a in asked)
 
-    # the registry's own folders exist on both sides
+    # The same folder under its old name on one side and its new one on the other (the tablet's
+    # `Technology Strategy`, the laptop's `technology-strategy`) is ONE folder waiting for a
+    # rename, never a reason to make a second one.
+    def renamed_twin(p: str, other: set[str]) -> str | None:
+        head, _, name = p.rpartition("/")
+        twin = f"{head}/{suggest(name)}" if head else suggest(name)
+        return twin if twin != p and twin in other else None
+
+    twins = {renamed_twin(p, laptop) for p in tablet - laptop} | {renamed_twin(p, tablet) for p in laptop - tablet}
+    twins.discard(None)
+
+    # the four areas, and the registry's own folders, exist on both sides
+    for area in registry:
+        if area not in laptop:
+            out.to_laptop.append(area)
+        if area not in tablet:
+            out.to_tablet.append(area)
     for area, names in registry.items():
         for f in sorted(names):
             p = f"{area}/{f}"
@@ -172,12 +190,13 @@ def plan(laptop: set[str], tablet: set[str], registry: dict[str, set[str]],
                                     (tablet, laptop, "tablet", out.to_laptop)):
         for p in sorted(here - there, key=lambda s: (s.count("/"), s)):
             parts = p.split("/")
-            if len(parts) == 1 or blocked(p) or p in pending_new:
+            if len(parts) == 1 or blocked(p) or p in pending_new or p in twins:
                 continue
             if not is_folder_name(parts[-1]):
                 ask(p, side, "name")
                 continue
-            if len(parts) == 2 and parts[0] != "Personal" and parts[1] not in registry.get(parts[0], set()):
+            if (len(parts) == 2 and parts[0] != "Personal" and parts[1] != GENERAL
+                    and parts[1] not in registry.get(parts[0], set())):
                 ask(p, side, "unregistered")
                 continue
             if p not in dest:
@@ -199,7 +218,10 @@ def plan(laptop: set[str], tablet: set[str], registry: dict[str, set[str]],
 def server_command(args: list[str]) -> list[str]:
     host = os.environ.get("LOCUS_HOST", "compute-node")
     d = os.environ.get("LOCUS_DIR", "/home/alec/server-projects/locus")
-    remote = f"cd {shlex.quote(d)} && uv run --quiet locus files " + " ".join(shlex.quote(a) for a in args)
+    # uv by its full path: a non-interactive ssh shell does not read the profile that puts
+    # ~/.local/bin on PATH ("zsh: command not found: uv", 9 Nov).
+    uv = os.environ.get("LOCUS_SERVER_UV", "~/.local/bin/uv")
+    remote = f"cd {shlex.quote(d)} && {uv} run --quiet locus files " + " ".join(shlex.quote(a) for a in args)
     return ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", host, remote]
 
 
@@ -265,6 +287,22 @@ def tablet_now(runner, *, tree_cache: Path | str = Path("~/.cache/rmapi/tree.cac
     if code != 0:
         raise RuntimeError(f"rmapi ls / failed: {(err or out).strip()[:300]}")
     return tablet_folders(json.loads(Path(tree_cache).expanduser().read_text()))
+
+
+def deep_rename_plan(tablet: set[str]) -> list[tuple[str, str]]:
+    """Every tablet folder below a thing's folder whose name breaks F1, as (old, new) with the
+    suggested name, DEEPEST FIRST: rmapi renames by path, so a child is renamed while its parent
+    still has the name the listing gave. A target that already exists is left alone (it would be
+    a merge, not a rename) and so is anything under a folder sync is asking about."""
+    out: list[tuple[str, str]] = []
+    for p in sorted(tablet, key=lambda s: (-s.count("/"), s)):
+        parts = p.split("/")
+        if len(parts) < 3 or is_folder_name(parts[-1]):
+            continue
+        new = "/".join(parts[:-1] + [suggest(parts[-1])])
+        if new not in tablet:
+            out.append((p, new))
+    return out
 
 
 def rename_plan(tablet: set[str], registry_path: Path | str = REGISTRY_PATH) -> list[tuple[str, str]]:

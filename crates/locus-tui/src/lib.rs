@@ -10,6 +10,7 @@ pub mod fixtures;
 pub mod follow;
 pub mod mail;
 pub mod maildates;
+pub mod markdown;
 pub mod screen;
 pub mod ui;
 pub mod uselog;

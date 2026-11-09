@@ -77,6 +77,8 @@ pub struct Chat {
     pub error: Option<String>,
     /// Lines scrolled up from the bottom of the chat view's transcript.
     pub scroll: usize,
+    /// How far it can scroll, as the last draw measured it: the keys stop there.
+    pub max_scroll: std::cell::Cell<usize>,
     cache: RefCell<HashMap<String, (SystemTime, Vec<Entry>)>>,
 }
 
@@ -130,6 +132,7 @@ impl Chat {
             status: String::new(),
             error: None,
             scroll: 0,
+            max_scroll: std::cell::Cell::new(0),
             cache: RefCell::new(HashMap::new()),
         }
     }
@@ -517,6 +520,8 @@ pub fn parse_transcript(s: &str) -> Vec<Entry> {
                                 out.push(Entry::Claude(t.to_string()));
                             }
                         }
+                        // Claude Code finding its own tools is not a step you took part in.
+                        Some("tool_use") if b["name"] == "ToolSearch" => {}
                         Some("tool_use") => {
                             let (d, changed) = describe_tool(b["name"].as_str().unwrap_or(""), &b["input"]);
                             let refused = failed.contains(b["id"].as_str().unwrap_or("-"));

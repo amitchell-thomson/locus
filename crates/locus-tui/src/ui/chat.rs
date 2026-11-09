@@ -19,13 +19,20 @@ use ratatui::widgets::Paragraph;
 use unicode_width::UnicodeWidthStr;
 
 pub const KEYS: &[(&str, &str)] = &[
-    ("↑ ↓", "choose a conversation"),
+    ("↑ ↓ j k", "scroll the conversation (the mouse wheel too)"),
+    ("← →", "to your conversations and back: there ↑ ↓ choose one"),
+    ("⇟ ⇞ ^d ^u", "a page down or up; g G the top or the end"),
     ("␣ ⏎", "type into it"),
     ("n", "a new conversation"),
     ("o", "open it in full Claude Code, for anything it may not do here"),
     ("r", "rename it"),
-    ("PgUp PgDn", "scroll it"),
 ];
+
+/// Scroll the open conversation by `d` lines (up is positive), kept inside what there is.
+pub fn scroll(app: &mut App, d: isize) {
+    let max = app.chat.max_scroll.get();
+    app.chat.scroll = (app.chat.scroll as isize + d).clamp(0, max as isize) as usize;
+}
 
 /// The conversation the view shows: the selected row; a new one when there are none or you
 /// pressed `n`.
@@ -52,11 +59,18 @@ pub fn send(app: &mut App, text: String, into: Option<String>) {
     }
 }
 
+/// The chat view's keys. The arrows scroll the open conversation, as reading it is what the
+/// view is for (9 Nov: "in the chat there is no way to scroll": they used to choose a
+/// conversation, with scrolling on PgUp, which a Mac keyboard does not have, and on Shift-↑);
+/// ← moves them to the list of conversations, → back.
 pub fn key(app: &mut App, k: KeyEvent) -> bool {
     let n = app.chat.list().len();
-    let page = 10;
+    let page = 12;
+    let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
     match k.code {
-        KeyCode::Up | KeyCode::Char('k') if !k.modifiers.contains(KeyModifiers::SHIFT) => {
+        KeyCode::Left => app.chat_list = true,
+        KeyCode::Right => app.chat_list = false,
+        KeyCode::Up | KeyCode::Char('k') if app.chat_list => {
             if app.chat_new {
                 app.chat_new = false;
             } else {
@@ -64,15 +78,17 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
             }
             app.chat.scroll = 0;
         }
-        KeyCode::Down | KeyCode::Char('j') if !k.modifiers.contains(KeyModifiers::SHIFT) => {
+        KeyCode::Down | KeyCode::Char('j') if app.chat_list => {
             app.chat_new = false;
             app.move_sel(' ', n, 1);
             app.chat.scroll = 0;
         }
-        KeyCode::PageUp | KeyCode::Char('K') => app.chat.scroll += page,
-        KeyCode::Up => app.chat.scroll += 1,
-        KeyCode::PageDown | KeyCode::Char('J') => app.chat.scroll = app.chat.scroll.saturating_sub(page),
-        KeyCode::Down => app.chat.scroll = app.chat.scroll.saturating_sub(1),
+        KeyCode::Up | KeyCode::Char('k') => scroll(app, 2),
+        KeyCode::Down | KeyCode::Char('j') => scroll(app, -2),
+        KeyCode::PageUp | KeyCode::Char('u') if k.code == KeyCode::PageUp || ctrl => scroll(app, page),
+        KeyCode::PageDown | KeyCode::Char('d') if k.code == KeyCode::PageDown || ctrl => scroll(app, -page),
+        KeyCode::Char('g') | KeyCode::Home => scroll(app, isize::MAX / 4),
+        KeyCode::Char('G') | KeyCode::End => app.chat.scroll = 0,
         KeyCode::Char(' ') | KeyCode::Enter => {
             let into = viewed(app);
             app.chat.select(into);
@@ -126,8 +142,14 @@ pub fn draw_bar(f: &mut Frame, area: Rect, app: &App) {
     } else if let Some(e) = &app.chat.error {
         vec![Span::styled("   ! ", st("red")), Span::styled(cut(e, w), text())]
     } else if let Some(r) = app.chat.index.current.as_deref().and_then(|id| app.chat.last_reply(id)) {
-        let first = r.lines().find(|l| !l.trim().is_empty()).unwrap_or("").to_string();
-        vec![Span::styled("   ", dim()), Span::styled(cut(&first, w), dim())]
+        // Its first line, rendered as the view renders it, then dimmed.
+        let first = crate::markdown::render(&r, 400).into_iter().find(|l| l.width() > 0).unwrap_or_default();
+        let mut v = vec![Span::styled("   ", dim())];
+        v.extend(first.spans.into_iter().map(|s| Span::styled(s.content, s.style.patch(dim()))));
+        return f.render_widget(
+            Paragraph::new(vec![rule, row(v, vec![], area.width.saturating_sub(1))]),
+            area,
+        );
     } else {
         vec![
             Span::styled("   ␣", keyst()),
@@ -157,7 +179,8 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn draw_list(f: &mut Frame, area: Rect, app: &App) {
-    let mut lines = vec![rule("conversations", "", None, false, area.width)];
+    // Lit while the arrows move through it (←).
+    let mut lines = vec![rule("conversations", "", None, app.chat_list, area.width)];
     let sel = (!app.chat_new).then(|| app.sel(' '));
     if app.chat_new || app.chat.list().is_empty() {
         lines.push(row(
@@ -220,20 +243,20 @@ fn draw_conversation(f: &mut Frame, area: Rect, app: &App) {
     for e in entries {
         match e {
             Entry::Looked(s) => looked.push(s),
+            // As Claude Code draws a conversation: your message behind `❯`, its replies behind
+            // `⏺` with their markdown rendered.
             Entry::You(t) => {
                 flush(&mut looked, &mut out);
                 out.push(Line::default());
-                out.push(Line::from(Span::styled("  you", bold(st("mauve")))));
-                for l in paragraph_lines(&t, w) {
-                    out.push(Line::from(Span::styled(format!("  {l}"), text())));
+                for (i, l) in paragraph_lines(&t, w.saturating_sub(2)).into_iter().enumerate() {
+                    let lead = if i == 0 { Span::styled("❯ ", st("mauve")) } else { Span::raw("  ") };
+                    out.push(Line::from(vec![lead, Span::styled(l, st("subtext0"))]));
                 }
             }
             Entry::Claude(t) => {
                 flush(&mut looked, &mut out);
                 out.push(Line::default());
-                for l in paragraph_lines(&t, w) {
-                    out.push(Line::from(Span::styled(format!("  {l}"), text())));
-                }
+                out.extend(reply_lines(&t, w));
             }
             Entry::Did(s) => {
                 flush(&mut looked, &mut out);
@@ -247,9 +270,7 @@ fn draw_conversation(f: &mut Frame, area: Rect, app: &App) {
     flush(&mut looked, &mut out);
     if app.chat.busy.is_some() && app.chat.busy == id.or_else(|| app.chat.index.current.clone()) {
         out.push(Line::default());
-        for l in paragraph_lines(&app.chat.live, w) {
-            out.push(Line::from(Span::styled(format!("  {l}"), text())));
-        }
+        out.extend(reply_lines(&app.chat.live, w));
         out.push(Line::from(vec![
             Span::styled(format!("  {} ", spin(app.frame)), st("mauve")),
             Span::styled(app.chat.status.clone(), dim()),
@@ -258,10 +279,21 @@ fn draw_conversation(f: &mut Frame, area: Rect, app: &App) {
     if let Some(e) = &app.chat.error {
         out.push(Line::from(vec![Span::styled("  ! ", st("red")), Span::styled(e.clone(), text())]));
     }
-    // Pinned to the bottom; PgUp scrolls back.
+    // Pinned to the bottom; ↑ scrolls back. The draw records how far back there is, so the keys
+    // stop at the top instead of piling up scroll nobody can see.
     let h = usize::from(area.height);
     let max_scroll = out.len().saturating_sub(h);
+    app.chat.max_scroll.set(max_scroll);
     let scroll = app.chat.scroll.min(max_scroll);
+    if scroll > 0 && h > 1 {
+        // Say there is more below, on the last row.
+        let below = Line::from(Span::styled(format!("  ↓ {scroll} more lines · G the end"), dim()));
+        let start = out.len().saturating_sub(h + scroll);
+        let mut shown: Vec<Line<'static>> = out.into_iter().skip(start).take(h - 1).collect();
+        shown.push(below);
+        f.render_widget(Paragraph::new(shown), area);
+        return;
+    }
     let start = out.len().saturating_sub(h + scroll);
     let shown: Vec<Line<'static>> = out.into_iter().skip(start).take(h).collect();
     f.render_widget(Paragraph::new(shown), area);
@@ -304,6 +336,19 @@ fn draw_input(f: &mut Frame, area: Rect, app: &App) {
         area.width,
     );
     f.render_widget(Paragraph::new(vec![rule, Line::from(body)]), area);
+}
+
+/// A reply as the view draws it: `⏺` before its first line, its markdown rendered, every line
+/// indented under the mark.
+fn reply_lines(md: &str, w: usize) -> Vec<Line<'static>> {
+    let mut out = Vec::new();
+    for (i, l) in crate::markdown::render(md, w.saturating_sub(2)).into_iter().enumerate() {
+        let lead = if i == 0 { Span::styled("⏺ ", st("text")) } else { Span::raw("  ") };
+        let mut spans = vec![lead];
+        spans.extend(l.spans);
+        out.push(Line::from(spans));
+    }
+    out
 }
 
 /// Text as lines of at most `w` columns, keeping its own line breaks and blank lines.

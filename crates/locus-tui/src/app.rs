@@ -119,6 +119,9 @@ pub struct App {
     pub chat_draft: String,
     /// The chat view shows a new, empty conversation (`n`) rather than the selected one.
     pub chat_new: bool,
+    /// The chat view's arrows move through the conversations list (←) rather than scrolling the
+    /// open conversation (→, the default).
+    pub chat_list: bool,
 }
 
 impl App {
@@ -162,6 +165,7 @@ impl App {
             chat: crate::chat::Chat::new(None),
             chat_draft: String::new(),
             chat_new: false,
+            chat_list: false,
         };
         app.uselog.record(root.name(), "open");
         app

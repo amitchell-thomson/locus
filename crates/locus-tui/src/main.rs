@@ -326,6 +326,7 @@ fn run(mut app: App) -> Result<()> {
     // its own page there, a repo in the Project window.
     let mut inbox = locus_contract::link::OpenFile::locus();
     let mut terminal = ratatui::try_init()?;
+    let mut mouse = false;
     let result = (|| -> Result<()> {
         while !app.quit {
             app.tick(focus.poll(), Instant::now());
@@ -391,15 +392,35 @@ fn run(mut app: App) -> Result<()> {
             first_frame.get_or_insert_with(|| started.elapsed());
             // Faster while the chat streams, so its words arrive as they are written.
             let wait = if app.chat.busy.is_some() { 40 } else { 250 };
-            if event::poll(Duration::from_millis(wait))?
-                && let Event::Key(k) = event::read()?
-                && k.kind == KeyEventKind::Press
-            {
-                app.on_key(k);
+            // The mouse wheel scrolls the chat (9 Nov). It is taken only while the chat is open:
+            // everywhere else the mouse stays tmux's and the terminal's, so selecting text works
+            // as it always did.
+            let want = app.screen() == ScreenId::Chat;
+            if want != mouse {
+                mouse = want;
+                if want {
+                    ratatui::crossterm::execute!(std::io::stdout(), event::EnableMouseCapture)?;
+                } else {
+                    ratatui::crossterm::execute!(std::io::stdout(), event::DisableMouseCapture)?;
+                }
+            }
+            if event::poll(Duration::from_millis(wait))? {
+                match event::read()? {
+                    Event::Key(k) if k.kind == KeyEventKind::Press => app.on_key(k),
+                    Event::Mouse(m) if app.screen() == ScreenId::Chat => match m.kind {
+                        event::MouseEventKind::ScrollUp => ui::chat::scroll(&mut app, 3),
+                        event::MouseEventKind::ScrollDown => ui::chat::scroll(&mut app, -3),
+                        _ => {}
+                    },
+                    _ => {}
+                }
             }
         }
         Ok(())
     })();
+    if mouse {
+        let _ = ratatui::crossterm::execute!(std::io::stdout(), event::DisableMouseCapture);
+    }
     ratatui::restore();
     if let Some(ff) = first_frame {
         eprintln!(

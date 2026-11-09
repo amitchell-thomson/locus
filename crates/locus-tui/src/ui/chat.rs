@@ -14,6 +14,8 @@ use crate::ui::{ask_rule, esc_back, frame, title};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::{Constraint, Layout, Rect};
+use locus_theme::c;
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use unicode_width::UnicodeWidthStr;
@@ -128,15 +130,15 @@ pub fn draw_bar(f: &mut Frame, area: Rect, app: &App) {
     let body = if let Mode::Chat(q) = &app.mode {
         let shown = tail_cut(q, w.saturating_sub(1));
         vec![
-            Span::styled("   › ", st("mauve")),
+            Span::styled("   ❯ ", st("blue")),
             Span::styled(shown, text()),
-            Span::styled("▏", st("mauve")),
+            Span::styled("▏", st("blue")),
         ]
     } else if app.chat.busy.is_some() {
         let said = app.chat.live.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("");
         let what = if said.is_empty() { app.chat.status.clone() } else { said.to_string() };
         vec![
-            Span::styled(format!("   {} ", spin(app.frame)), st("mauve")),
+            Span::styled(format!("   {} ", spin(app.frame)), st("blue")),
             Span::styled(cut(&what, w.saturating_sub(2)), text()),
         ]
     } else if let Some(e) = &app.chat.error {
@@ -184,7 +186,7 @@ fn draw_list(f: &mut Frame, area: Rect, app: &App) {
     let sel = (!app.chat_new).then(|| app.sel(' '));
     if app.chat_new || app.chat.list().is_empty() {
         lines.push(row(
-            vec![pointer(0, Some(0)), Span::styled("new conversation", st("mauve"))],
+            vec![pointer(0, Some(0)), Span::styled("new conversation", st("blue"))],
             vec![],
             area.width,
         ));
@@ -206,7 +208,7 @@ fn draw_list(f: &mut Frame, area: Rect, app: &App) {
         let running = app.chat.busy.as_deref() == Some(c.id.as_str());
         let mut left = vec![pointer(i, sel)];
         if running {
-            left.push(Span::styled(format!("{} ", spin(app.frame)), st("mauve")));
+            left.push(Span::styled(format!("{} ", spin(app.frame)), st("blue")));
         }
         left.push(Span::styled(c.name.clone(), text()));
         lines.push(row(left, vec![Span::styled(when, dim())], area.width));
@@ -237,7 +239,12 @@ fn draw_conversation(f: &mut Frame, area: Rect, app: &App) {
         if more > 0 {
             s.push_str(&format!(" · {more} more"));
         }
-        out.push(Line::from(Span::styled(format!("  · {}", cut(&s, w)), dim())));
+        // Lookups as Claude Code shows a tool's result: a faint `⎿` under the reply.
+        let refused = s.starts_with("refused");
+        out.push(Line::from(vec![
+            Span::styled("  ⎿  ", dim()),
+            Span::styled(cut(&s, w.saturating_sub(5)), if refused { st("red") } else { dim() }),
+        ]));
         looked.clear();
     };
     for e in entries {
@@ -245,12 +252,21 @@ fn draw_conversation(f: &mut Frame, area: Rect, app: &App) {
             Entry::Looked(s) => looked.push(s),
             // As Claude Code draws a conversation: your message behind `❯`, its replies behind
             // `⏺` with their markdown rendered.
+            // Your message on Claude Code's own band (the theme's userMessageBackground, #313244)
+            // across the full width, behind `>`.
             Entry::You(t) => {
                 flush(&mut looked, &mut out);
                 out.push(Line::default());
-                for (i, l) in paragraph_lines(&t, w.saturating_sub(2)).into_iter().enumerate() {
-                    let lead = if i == 0 { Span::styled("❯ ", st("mauve")) } else { Span::raw("  ") };
-                    out.push(Line::from(vec![lead, Span::styled(l, st("subtext0"))]));
+                let full = usize::from(area.width);
+                for (i, l) in paragraph_lines(&t, full.saturating_sub(3)).into_iter().enumerate() {
+                    let lead = if i == 0 { "> " } else { "  " };
+                    let pad = full.saturating_sub(2 + l.width());
+                    let band = Style::default().bg(c("surface0"));
+                    out.push(Line::from(vec![
+                        Span::styled(lead, st("overlay2").patch(band)),
+                        Span::styled(l, text().patch(band)),
+                        Span::styled(" ".repeat(pad), band),
+                    ]));
                 }
             }
             Entry::Claude(t) => {
@@ -260,9 +276,11 @@ fn draw_conversation(f: &mut Frame, area: Rect, app: &App) {
             }
             Entry::Did(s) => {
                 flush(&mut looked, &mut out);
+                // A change as Claude Code shows a tool call that ran: a green ⏺ (the theme's
+                // success colour).
                 out.push(Line::from(vec![
-                    Span::styled("  ✎ ", st("peach")),
-                    Span::styled(cut(&s, w.saturating_sub(2)), st("peach")),
+                    Span::styled("⏺ ", st("green")),
+                    Span::styled(cut(&s, w.saturating_sub(2)), text()),
                 ]));
             }
         }
@@ -272,7 +290,7 @@ fn draw_conversation(f: &mut Frame, area: Rect, app: &App) {
         out.push(Line::default());
         out.extend(reply_lines(&app.chat.live, w));
         out.push(Line::from(vec![
-            Span::styled(format!("  {} ", spin(app.frame)), st("mauve")),
+            Span::styled(format!("{} ", spin(app.frame)), st("blue")),
             Span::styled(app.chat.status.clone(), dim()),
         ]));
     }
@@ -305,17 +323,17 @@ fn draw_input(f: &mut Frame, area: Rect, app: &App) {
         Mode::Chat(q) => (
             true,
             vec![
-                Span::styled("   › ", st("mauve")),
+                Span::styled("   ❯ ", st("blue")),
                 Span::styled(tail_cut(q, w), text()),
-                Span::styled("▏", st("mauve")),
+                Span::styled("▏", st("blue")),
             ],
         ),
         Mode::ChatName(n) => (
             true,
             vec![
-                Span::styled("   name › ", st("mauve")),
+                Span::styled("   name ❯ ", st("blue")),
                 Span::styled(tail_cut(n, w.saturating_sub(5)), text()),
-                Span::styled("▏", st("mauve")),
+                Span::styled("▏", st("blue")),
             ],
         ),
         _ => (

@@ -2225,6 +2225,71 @@ def cmd_eval(args) -> None:
         conn.close()
 
 
+def cmd_files(args) -> None:
+    """`~/files` and the tablet keep one folder tree (files-and-chat M1; see locus/files_sync.py).
+    `sync` and `questions` run on the laptop; `tablet`, `tablet-mkdir` and `tablet-rename` run on
+    the server, which holds the rmapi login, and are what `sync` calls over ssh."""
+    import json as _json
+    import time as _time
+
+    from locus import files_sync as fs
+
+    def runner():
+        from locus.capture.remarkable import _subprocess_runner
+        from locus.config import load
+
+        cfg = load()
+        return _subprocess_runner(cfg.capture.rmapi_binary), cfg.capture.rmapi_tree_cache
+
+    if args.files_cmd == "sync":
+        p = fs.sync(dry_run=args.dry_run)
+        verb = "would make" if args.dry_run else "made"
+        for rel in p.to_laptop:
+            print(f"{verb} on the laptop  {rel}")
+        for rel in p.to_tablet:
+            print(f"{verb} on the tablet  {rel}")
+        for old, new in p.renames:
+            print(f"rename pending     {old} -> {new}  (locus files tablet-rename --apply, on the server)")
+        for q in p.questions:
+            if q["path"] not in {o for o, _ in p.renames}:
+                print(f"question           {fs.describe(q)}")
+        if not (p.to_laptop or p.to_tablet or p.questions or p.renames):
+            print("in step: the laptop and the tablet have the same folders")
+    elif args.files_cmd == "questions":
+        qs = fs.questions()
+        for q in qs:
+            print(fs.describe(q))
+        if not qs:
+            print("no folder questions")
+    elif args.files_cmd == "tablet":
+        run, cache = runner()
+        print(_json.dumps(sorted(fs.tablet_now(run, tree_cache=cache))))
+    elif args.files_cmd == "tablet-mkdir":
+        from locus.reading.deliver_remarkable import _ensure_folder
+
+        run, _ = runner()
+        for rel in sorted(args.paths, key=lambda s: (s.count("/"), s)):
+            if not rel.split("/", 1)[0] in fs.AREAS or ".." in rel.split("/"):
+                raise SystemExit(f"refusing {rel!r}: tablet folders are made under the areas only")
+            _ensure_folder(run, "/" + rel)
+            print(f"made /{rel}")
+            _time.sleep(args.pace)
+    elif args.files_cmd == "tablet-rename":
+        run, cache = runner()
+        renames = fs.rename_plan(fs.tablet_now(run, tree_cache=cache))
+        for old, new in renames:
+            if args.apply:
+                code, out, err = run(["mv", "/" + old, "/" + new])
+                if code != 0:
+                    raise SystemExit(f"rmapi mv /{old} failed: {(err or out).strip()[:300]}")
+                print(f"renamed /{old} -> /{new}")
+                _time.sleep(args.pace)
+            else:
+                print(f"would rename /{old} -> /{new}")
+        if not renames:
+            print("every registered tablet folder already has its folder name")
+
+
 def main(argv=None) -> None:
     parser = argparse.ArgumentParser(prog="locus", description="Locus — query-driven personal library")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -2338,6 +2403,20 @@ def main(argv=None) -> None:
         help="restore titles from the most recent pre-run snapshot",
     )
     pr.set_defaults(func=cmd_retitle)
+
+    pfs = sub.add_parser("files", help="keep ~/files and the tablet one folder tree")
+    fsub = pfs.add_subparsers(dest="files_cmd", required=True)
+    fss = fsub.add_parser("sync", help="laptop: compare both trees, make what is missing, list questions")
+    fss.add_argument("--dry-run", action="store_true", help="make nothing; print what would be made")
+    fsub.add_parser("questions", help="laptop: the folder questions from the last sync")
+    fsub.add_parser("tablet", help="server: the tablet's folders as JSON (one rmapi call)")
+    fsm = fsub.add_parser("tablet-mkdir", help="server: make tablet folders (Area/... paths)")
+    fsm.add_argument("paths", nargs="+")
+    fsm.add_argument("--pace", type=float, default=1.0, help="seconds between cloud calls (429s)")
+    fsr = fsub.add_parser("tablet-rename", help="server: rename level-2 tablet folders to the registry's folder")
+    fsr.add_argument("--apply", action="store_true", help="rename; without it, print the plan")
+    fsr.add_argument("--pace", type=float, default=2.0, help="seconds between cloud calls (429s)")
+    pfs.set_defaults(func=cmd_files)
 
     pst = sub.add_parser("status", help="one-screen operational health summary (no API)")
     pst.set_defaults(func=cmd_status)

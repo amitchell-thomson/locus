@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  `locus files sync` every 30 minutes and at login (files-and-chat M1): ~/files and the tablet keep
+  one folder tree. Installed by deploy/files/install.sh, which fills in __HOME__, __REPO__, __UV__.
+  The tablet is reached through the server (ssh), so a sync while it is unreachable fails, is
+  logged, and changes nothing.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.locus.files</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>cd __REPO__ &amp;&amp; date &amp;&amp; __UV__ run --quiet locus files sync</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>1800</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>StandardOutPath</key>
+    <string>__HOME__/Library/Logs/locus-files.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Library/Logs/locus-files.log</string>
+</dict>
+</plist>

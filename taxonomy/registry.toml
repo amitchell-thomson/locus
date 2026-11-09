@@ -2,9 +2,11 @@
 # (the fixtures and, later, the HTTP service) and by kairos (kairosd serves it at /api/taxonomy;
 # the Mac keeps a cached copy for offline). Areas and streams must be the ones in areas.toml.
 #
-# Names are stable: Slice 0's tablet capture matches folder names to `name` (courses) and to
-# `company` (applications), so a rename is a decision, not a tidy-up. `active = false` is
-# registered but not shown on Home.
+# `folder` is the thing's folder, the same name on the laptop (~/files/<area>/<folder>) and on the
+# tablet (/<area>/<folder>): lowercase words joined by hyphens, no spaces (files-and-chat F1).
+# Capture matches tablet folders on it, so a rename is a decision, not a tidy-up. A company's
+# applications share its folder; so do a repo and the course it does the work of (3YP and B3).
+# `active = false` is registered but not shown on Home.
 
 # ── repo ────────────────────────────────────────────────────────────────────────────────────────
 # Repositories you work in: the Project window shows and follows these.
@@ -12,6 +14,7 @@
 [[projects]]
 id = "quast"
 name = "quast"
+folder = "quast"
 area = "Projects"
 kind = "repo"
 active = true
@@ -21,6 +24,7 @@ sessions = ["quast"]
 [[projects]]
 id = "nabla"
 name = "nabla"
+folder = "nabla"
 area = "Projects"
 kind = "repo"
 active = true
@@ -30,6 +34,7 @@ sessions = ["nabla"]
 [[projects]]
 id = "locus"
 name = "locus"
+folder = "locus"
 area = "Projects"
 kind = "repo"
 active = true
@@ -40,6 +45,7 @@ components = [{ name = "locus", repo = "locus" }, { name = "kairos (calendar)", 
 [[projects]]
 id = "oqts"
 name = "OQTS"
+folder = "oqts"
 area = "Projects"
 kind = "repo"
 active = true
@@ -50,6 +56,7 @@ components = [{ name = "oxdaq", repo = "oqts/oxdaq-core" }, { name = "platform",
 [[projects]]
 id = "cv"
 name = "CV"
+folder = "cv"
 area = "Careers"
 kind = "repo"
 active = true
@@ -58,6 +65,7 @@ sessions = ["cv"]
 [[projects]]
 id = "3yp"
 name = "3YP"
+folder = "b3-group-design-project"
 area = "Studies"
 kind = "repo"
 course = "b3"
@@ -67,6 +75,7 @@ sessions = ["B3-Project"]
 [[projects]]
 id = "tanker-flow"
 name = "Tanker-flow"
+folder = "tanker-flow"
 area = "Projects"
 kind = "repo"
 active = false
@@ -77,6 +86,7 @@ active = false
 [[projects]]
 id = "b1"
 name = "B1 Engineering Computation"
+folder = "b1-engineering-computation"
 area = "Studies"
 kind = "course"
 active = true
@@ -84,6 +94,7 @@ active = true
 [[projects]]
 id = "b2"
 name = "B2 Engineering in Society"
+folder = "b2-engineering-in-society"
 area = "Studies"
 kind = "course"
 active = true
@@ -91,6 +102,7 @@ active = true
 [[projects]]
 id = "b3"
 name = "B3 Group Design Project"
+folder = "b3-group-design-project"
 area = "Studies"
 kind = "course"
 active = true
@@ -98,6 +110,7 @@ active = true
 [[projects]]
 id = "b14"
 name = "B14 Information Engineering Systems"
+folder = "b14-information-engineering-systems"
 area = "Studies"
 kind = "course"
 active = true
@@ -105,6 +118,7 @@ active = true
 [[projects]]
 id = "b15"
 name = "B15 Control Systems"
+folder = "b15-control-systems"
 area = "Studies"
 kind = "course"
 active = true
@@ -112,6 +126,7 @@ active = true
 [[projects]]
 id = "b16"
 name = "B16 Software Engineering Systems"
+folder = "b16-software-engineering-systems"
 area = "Studies"
 kind = "course"
 active = true
@@ -119,6 +134,7 @@ active = true
 [[projects]]
 id = "b18"
 name = "B18 Biomedical Modelling and Monitoring"
+folder = "b18-biomedical-modelling-and-monitoring"
 area = "Studies"
 kind = "course"
 active = true
@@ -126,6 +142,7 @@ active = true
 [[projects]]
 id = "b20"
 name = "B20 Machine Learning"
+folder = "b20-machine-learning"
 area = "Studies"
 kind = "course"
 active = true
@@ -136,6 +153,7 @@ active = true
 [[projects]]
 id = "millennium"
 name = "Millennium QD Internship 2027"
+folder = "millennium"
 area = "Careers"
 kind = "application"
 company = "Millennium"
@@ -144,6 +162,7 @@ active = true
 [[projects]]
 id = "gresearch"
 name = "G-Research Spring 2027"
+folder = "g-research"
 area = "Careers"
 kind = "application"
 company = "G-Research"
@@ -152,6 +171,7 @@ active = true
 [[projects]]
 id = "gresearch-ml"
 name = "G-Research AI/ML Challenges"
+folder = "g-research"
 area = "Careers"
 kind = "application"
 company = "G-Research"
@@ -160,6 +180,7 @@ active = true
 [[projects]]
 id = "bh-2027"
 name = "Brevan Howard Internship 2027"
+folder = "brevan-howard"
 area = "Careers"
 kind = "application"
 company = "Brevan Howard"
@@ -168,6 +189,7 @@ active = true
 [[projects]]
 id = "jump"
 name = "Jump Trading Internship 2027"
+folder = "jump-trading"
 area = "Careers"
 kind = "application"
 company = "Jump Trading"
@@ -176,6 +198,7 @@ active = true
 [[projects]]
 id = "citadel"
 name = "Citadel FI&M Trading 2027"
+folder = "citadel"
 area = "Careers"
 kind = "application"
 company = "Citadel"
@@ -184,6 +207,7 @@ active = true
 [[projects]]
 id = "citadel-cbc"
 name = "Citadel FI&M Central Bank Challenge 2026"
+folder = "citadel"
 area = "Careers"
 kind = "application"
 company = "Citadel"
@@ -192,6 +216,7 @@ active = true
 [[projects]]
 id = "bh-2026"
 name = "Brevan Howard Internship 2026"
+folder = "brevan-howard"
 area = "Careers"
 kind = "application"
 company = "Brevan Howard"
@@ -200,6 +225,7 @@ active = true
 [[projects]]
 id = "meet-millennium"
 name = "Meet Millennium 2026"
+folder = "millennium"
 area = "Careers"
 kind = "application"
 company = "Millennium"
@@ -208,6 +234,7 @@ active = true
 [[projects]]
 id = "jane-street"
 name = "Jane Street"
+folder = "jane-street"
 area = "Careers"
 kind = "application"
 company = "Jane Street"

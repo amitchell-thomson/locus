@@ -108,6 +108,23 @@ pub struct Project {
     /// matches a folder to this (Slice 0, 0.12).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub company: Option<String>,
+    /// Its folder, the same name on the laptop (`~/files/<area>/<folder>`) and on the tablet
+    /// (`/<area>/<folder>`): lowercase words joined by hyphens, no spaces (files-and-chat F1, his
+    /// words 9 Nov: "I do not wanted spaces in names anywhere on my laptop"). The one link
+    /// between the two trees, so a rename is a decision, not a tidy-up. Several entries share a
+    /// folder only when the folder is one thing on paper: a company's applications (Brevan
+    /// Howard 2026 and 2027), or a repo and the course it does the work of (3YP and B3).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder: Option<String>,
+}
+
+/// A folder name as F1 allows it: lowercase letters and digits, words joined by single hyphens.
+pub fn is_folder_name(s: &str) -> bool {
+    !s.is_empty()
+        && !s.starts_with('-')
+        && !s.ends_with('-')
+        && !s.contains("--")
+        && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
 /// What a registry entry is (ADR-006). The kind decides which view shows it and whether

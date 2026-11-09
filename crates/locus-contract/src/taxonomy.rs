@@ -74,6 +74,47 @@ impl Shared {
             if p.kind == crate::ProjectKind::Application && p.company.is_none() {
                 bad.push(format!("application `{}` has no company", p.id));
             }
+            match &p.folder {
+                None => bad.push(format!("`{}` has no folder", p.id)),
+                Some(f) if !crate::common::is_folder_name(f) => bad.push(format!(
+                    "`{}` has folder `{f}`: lowercase words joined by hyphens, no spaces",
+                    p.id
+                )),
+                Some(_) => {}
+            }
+        }
+        bad.extend(self.shared_folders());
+        bad
+    }
+
+    /// Two entries in one area with one folder, unless the folder is one thing (see
+    /// `Project::folder`): applications to the same company, or a repo and its course.
+    fn shared_folders(&self) -> Vec<String> {
+        let ps = &self.registry.projects;
+        let mut bad = Vec::new();
+        for (i, a) in ps.iter().enumerate() {
+            for b in &ps[i + 1..] {
+                if a.area != b.area || a.folder.is_none() || a.folder != b.folder {
+                    continue;
+                }
+                let same_company = a.kind == crate::ProjectKind::Application
+                    && b.kind == crate::ProjectKind::Application
+                    && a.company.is_some()
+                    && a.company == b.company;
+                let repo_and_course = |r: &crate::Project, c: &crate::Project| {
+                    r.kind == crate::ProjectKind::Repo
+                        && c.kind == crate::ProjectKind::Course
+                        && r.course.as_deref() == Some(c.id.as_str())
+                };
+                if !(same_company || repo_and_course(a, b) || repo_and_course(b, a)) {
+                    bad.push(format!(
+                        "`{}` and `{}` share folder `{}`",
+                        a.id,
+                        b.id,
+                        a.folder.as_deref().unwrap_or_default()
+                    ));
+                }
+            }
         }
         bad
     }
@@ -95,6 +136,27 @@ mod tests {
         let types: Vec<_> = s.taxonomy.task_types.iter().map(|t| t.id.as_str()).collect();
         assert_eq!(types, ["sheet", "coursework", "admin", "chore"]);
         assert!(s.registry.get("tanker-flow").is_some() && s.registry.get("jane-street").is_some());
+    }
+
+    #[test]
+    fn the_registry_is_clean() {
+        let s = load(&root()).expect("taxonomy/ loads");
+        assert_eq!(s.problems(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn folder_names_have_no_spaces_and_one_name_is_one_thing() {
+        assert!(crate::common::is_folder_name("b1-engineering-computation"));
+        for bad in ["B1 Engineering", "b1_x", "-a", "a-", "a--b", ""] {
+            assert!(!crate::common::is_folder_name(bad), "{bad:?}");
+        }
+        let mut s = load(&root()).expect("taxonomy/ loads");
+        let quast = s.registry.projects.iter().position(|p| p.id == "quast").unwrap();
+        let nabla = s.registry.projects.iter().position(|p| p.id == "nabla").unwrap();
+        s.registry.projects[nabla].folder = s.registry.projects[quast].folder.clone();
+        assert!(s.problems().iter().any(|b| b.contains("share folder")));
+        s.registry.projects[nabla].folder = Some("Nabla Repo".into());
+        assert!(s.problems().iter().any(|b| b.contains("no spaces")));
     }
 
     #[test]

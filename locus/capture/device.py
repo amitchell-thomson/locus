@@ -218,7 +218,14 @@ class Registry:
 
 
 def load_registry(path: Path | str = REGISTRY_PATH) -> Registry:
-    """Read `taxonomy/registry.toml`. An application matches on its `company` first, then name.
+    """Read `taxonomy/registry.toml`. A folder matches an entry on its `folder` (files-and-chat
+    F1: one lowercase hyphenated name on the laptop and the tablet).
+
+    The older names, an application's `company` and any entry's `name`, still match, so a tablet
+    folder not yet renamed to its `folder` keeps its thing through the rename instead of turning
+    up unmatched for a tick. A repo that does a course's work (3YP for B3) shares the course's
+    folder and does not claim it: material there is the course's, so the folder names the course
+    alone rather than two things and so nothing.
 
     Missing or unreadable, the registry is EMPTY rather than an error: every document still gets
     its area, and every level-2 folder is reported as unmatched, which is loud enough.
@@ -237,7 +244,10 @@ def load_registry(path: Path | str = REGISTRY_PATH) -> Registry:
         # and names BOTH of its internship applications. Which one a note belongs to is not in
         # the folder, so `place` records no single thing for it rather than the first one
         # registered (which filed 2026 internship notes under the 2027 application, 27 Oct).
-        for key in {k.casefold() for k in (entry.get("company"), entry.get("name")) if k}:
+        names = [entry.get("company"), entry.get("name")]
+        if not (entry.get("kind") == "repo" and entry.get("course")):
+            names.append(entry.get("folder"))
+        for key in {k.casefold() for k in names if k}:
             ids = by_name.get((area, key), ())
             if ident not in ids:
                 by_name[(area, key)] = (*ids, ident)

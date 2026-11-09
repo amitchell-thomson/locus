@@ -177,6 +177,20 @@ def test_the_real_registry_matches_the_tablet_folders():
         assert reg.match(area, folder), f"{area}/{folder} is not in taxonomy/registry.toml"
 
 
+def test_the_tablet_folders_match_after_the_rename_too():
+    """files-and-chat F1: tablet folders are renamed to the registry's `folder`. Both the old and
+    the new name match through the rename, and a course's folder names the course alone even
+    though its repo (3YP) shares it."""
+    reg = load_registry()
+    for area, folder in [
+        ("Studies", "b14-information-engineering-systems"), ("Projects", "tanker-flow"),
+        ("Careers", "brevan-howard"), ("Careers", "jump-trading"), ("Careers", "g-research"),
+    ]:
+        assert reg.match(area, folder), f"{area}/{folder} is not in taxonomy/registry.toml"
+    assert reg.match("Studies", "b3-group-design-project") == ("b3",)
+    assert reg.match("Studies", "B3 Group Design Project") == ("b3",)
+
+
 def test_a_missing_registry_is_empty_not_an_error(tmp_path):
     assert load_registry(tmp_path / "nope.toml").match("Studies", "B1") == ()
 

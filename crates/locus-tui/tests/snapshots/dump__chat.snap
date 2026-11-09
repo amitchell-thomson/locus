@@ -3,40 +3,40 @@ source: crates/locus-tui/tests/dump.rs
 expression: "dump::render(&a, 95, 38).unwrap()"
 ---
 ╭ chat · your whole life as context ──────────────────────────────────────────────── esc back ╮
-│─ conversations ──────────────────   A new conversation. Ask anything: where a project       │
-│▌ new conversation                   stands, what you decided in a chat, what is due; or     │
-│                                     ask it to add a task, draft a reply, file notes, or     │
-│                                     register a project.                                     │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                                                                             │
-│                                   ─ ask ───────────────── n new · o Claude Code · r rename ─│
-│                                      ␣ to type · o when it needs to do more than it may here│
+│─ conversations ───────────────────┐   A new conversation. Ask anything: where a project     │
+│▌ new conversation                 │   stands, what you decided in a chat, what is due; or   │
+│                                   │   ask it to add a task, draft a reply, file notes, or   │
+│                                   │   register a project.                                   │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   │                                                         │
+│                                   ├── ask ─────────────── n new · o Claude Code · r rename ─│
+│                                   │    ␣ to type · o when it needs to do more than it may he│
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯
  ⏎ open · ⇥ sections · l log · / search · i chat · ? keys

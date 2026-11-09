@@ -141,9 +141,16 @@ pub fn draw_bar(f: &mut Frame, area: Rect, app: &App) {
 
 pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     let inner = frame(f, area, title("chat", "your whole life as context"), Some(esc_back()));
-    let [list_r, _, conv_r] =
-        Layout::horizontal([Constraint::Length(34), Constraint::Length(1), Constraint::Min(20)]).areas(inner);
+    let [list_r, bar_x, conv_r] =
+        Layout::horizontal([Constraint::Length(34), Constraint::Length(3), Constraint::Min(20)]).areas(inner);
     draw_list(f, list_r, app);
+    // The divider between your conversations and the open one (9 Nov), joined to the rules on
+    // either side as Home's careers | studies divider is.
+    let mut div = vec![Line::from(Span::styled("─┐ ", st("surface2")))];
+    div.extend((1..bar_x.height.saturating_sub(2)).map(|_| Line::from(Span::styled(" │ ", st("surface2")))));
+    div.push(Line::from(Span::styled(" ├─", st("surface2"))));
+    div.push(Line::from(Span::styled(" │ ", st("surface2"))));
+    f.render_widget(Paragraph::new(div), bar_x);
     let [talk_r, bar_r] = Layout::vertical([Constraint::Min(1), Constraint::Length(2)]).areas(conv_r);
     draw_conversation(f, talk_r, app);
     draw_input(f, bar_r, app);

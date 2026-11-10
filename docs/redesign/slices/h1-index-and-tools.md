@@ -1,6 +1,6 @@
 # H1: the index and the tools
 
-**State:** written, waiting for your approval · **Written:** 2026-11-10 · **Runs in:** `claude` (locus-dev)
+**State:** approved 10 Nov 2026, all eight decisions as recommended ("go with recommendations") · **Written:** 2026-11-10 · **Runs in:** `claude` (locus-dev)
 **From:** heuris v2 (accepted 10 Nov), section I, row H1; sections C and D; ADR-011.
 **Builds on:** Slice 0.6 (the one HTTP service), 0.9 (the scrubber), 0.10 (laptop chats on the server).
 
@@ -163,11 +163,42 @@ throwaway Funnel endpoint and see what claude.ai asks for.
   minutes.
 - **Check:** a written finding, and claude.ai lists the test server's one tool.
 
+**Finding (10 Nov), from Anthropic's connector docs** (claude.com/docs/connectors/custom/add-unlisted,
+claude.com/docs/connectors/building/authentication, support article 11175166):
+- A fixed header token (`static_headers`) is "Beta, for a limited set of organizations", so it
+  cannot be relied on. OAuth is supported by default: Dynamic Client Registration (RFC 7591) or
+  Claude's published Client ID Metadata Document. **So D4 takes the OAuth branch**: the service
+  runs the single-user OAuth flow with a passphrase page.
+- Claude's redirect is `https://claude.ai/api/mcp/auth_callback`; Claude Code uses a loopback
+  redirect on any port.
+- Claude connects from Anthropic's cloud, from `160.79.104.0/21`, so the server must be public:
+  Tailscale Funnel. Funnel is enabled on compute-node; port 443 already serves something else on
+  the tailnet, so locus takes Funnel port **8443**.
+- The docs do not say outright that a connector added on the web appears in the phone app; the
+  real connector in H1.10 checks it.
+- The throwaway test connector is skipped: the docs settle the login, and the real connector in
+  H1.10 is the live check.
+
 ### H1.2 Looking at real data (D3)
 No code that stays. I sample your real mail through the starting rule, and show you items of
 each kind with their proposed fields.
 - **Your step:** mark the wrong ones; about 5 minutes.
 - **Check:** your answers recorded in this spec, and the rule written as tests from them.
+
+**Your answers (10 Nov).** The starting rule over keryx's mirror, OQTS-shared excluded, kept 3,440
+of 6,630 messages: sent 1,177 · threads you replied to 969 · people you have written to 822 ·
+other people 230 · firms and recruiting systems 198 · Oxford offices 30 · flagged 14. Left out:
+list or automated headers 2,069 · automated senders 532 · companies with no person 459 · bulk
+domains 130. On the samples:
+- **Oxford mailing lists: keep all of them** (you chose this over admin only), societies included.
+- **Receipts: travel only.** Flights, trains and bookings kept; shop orders and promotions not.
+- **Societies outside Oxford's lists: the quant and careers ones** (Oxford Alpha Fund and the
+  like); sport and social clubs not.
+- Fixed without asking: Microsoft Family Safety reports were kept as "a person"; the careers
+  service's daily alerts were kept because you once wrote to that address; Oxford Alpha Fund was
+  kept once and left out once.
+- Quoted text and signatures: shown to you on five real threads when the mail indexer exists
+  (H1.4), since the cleaner is what is being judged.
 
 ### H1.3 heuris.db and the indexer
 - The `items` table, its vectors (nomic, 768) and full-text index.

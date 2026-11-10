@@ -12,7 +12,7 @@ use keryx_store::api::*;
 use keryx_store::db::{Db, DbError};
 use keryx_store::state::{self, Action, Proposal, ProposalStatus, Review, Snooze, Tag};
 use keryx_store::view;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 pub const NEEDS_REPLY: &str = "needs_reply";
 pub const SNOOZE_OFF: &str = "snoozing is off ([snooze] enabled = false): keep, file or archive instead";
@@ -1099,13 +1099,14 @@ impl Engine {
                     )?;
                     let pid = new_id("p");
                     let keep = matches!(item.action, Action::Keep { .. });
+                    let action = self.with_item(item.action.clone(), &msgs);
                     self.db.add_proposal(&Proposal {
                         id: pid.clone(),
                         review_id: review_id.clone(),
                         position: base + i as i64,
                         account,
                         thread_id,
-                        action: item.action,
+                        action,
                         reason: keryx_core::text::sanitize(&item.reason).chars().take(200).collect(),
                         fingerprint: state::fingerprint(&msgs),
                         status: ProposalStatus::Open,
@@ -1304,6 +1305,87 @@ impl Engine {
         self.db
             .decide_proposal(&p.id, ProposalStatus::Accepted, None, None, self.now())?;
         self.maybe_done(&p.review_id)
+    }
+
+    /// A filing with no item gets the one keryx's guesser names (`item::guess`, deterministic,
+    /// the same one that files automated mail), when that item files into the same folder:
+    /// "File → Careers" for a Millennium scheduling mail becomes "File → Careers (millennium)",
+    /// so the thread lands on Millennium's page (10 Nov: "should we not be inferring the specific
+    /// area that a certain email is for, not just Careers"). A guess for another folder, a tie
+    /// or no guess leaves the proposal as Claude made it.
+    fn with_item(&self, action: Action, msgs: &[Message]) -> Action {
+        let Action::File { key, item: None } = &action else {
+            return action;
+        };
+        let Some(shared) = &self.shared else { return action };
+        let own = self.cfg.own_addresses();
+        let Some(g) = keryx_store::item::guess_within(&self.db, shared, msgs, &own, key) else {
+            return action;
+        };
+        match keryx_store::item::options(shared).into_iter().find(|o| o.id == g.id) {
+            Some(o) if o.item.is_some() && o.folder.eq_ignore_ascii_case(key) => Action::File {
+                key: key.clone(),
+                item: o.item,
+            },
+            _ => action,
+        }
+    }
+
+    /// Open filings proposed before items were filled in (the 10 Nov cleanup): given theirs
+    /// now. Returns how many gained one.
+    pub fn fill_open_items(&mut self) -> Result<usize> {
+        let own = self.cfg.own_addresses();
+        let sender_of = |msgs: &[Message]| -> Option<String> {
+            msgs.iter()
+                .rev()
+                .find_map(|m| m.from.as_ref().filter(|f| !own.contains(&f.key())).map(|f| f.key()))
+        };
+        let mut n = 0;
+        // (proposal, folder, sender) still without an item after the guesser.
+        let mut left: Vec<(Proposal, String, Option<String>)> = Vec::new();
+        // sender → the items their filings in a folder are for.
+        let mut by_sender: HashMap<(String, String), HashSet<String>> = HashMap::new();
+        for r in self.db.reviews(Some("open"))? {
+            for p in self.db.proposals(&r.id)? {
+                let Action::File { key, item } = &p.action else {
+                    continue;
+                };
+                if p.status != ProposalStatus::Open {
+                    continue;
+                }
+                let msgs = self.db.thread(&p.account, &p.thread_id)?;
+                let sender = sender_of(&msgs);
+                let a = match item {
+                    Some(_) => p.action.clone(),
+                    None => self.with_item(p.action.clone(), &msgs),
+                };
+                if a != p.action {
+                    self.db.set_proposal_action(&p.id, &a)?;
+                    n += 1;
+                }
+                match (&a, sender) {
+                    (Action::File { item: Some(i), .. }, Some(s)) => {
+                        by_sender.entry((s, key.to_lowercase())).or_default().insert(i.clone());
+                    }
+                    (Action::File { item: None, .. }, s) => left.push((p.clone(), key.clone(), s)),
+                    _ => {}
+                }
+            }
+        }
+        // A thread the guesser could not settle takes the one item its sender's other threads in
+        // the same folder are for: Ayshe's "let's schedule a time" mails name no company, her
+        // other 25 name Millennium (10 Nov).
+        for (p, key, sender) in left {
+            let Some(s) = sender else { continue };
+            if let Some(items) = by_sender.get(&(s, key.to_lowercase()))
+                && items.len() == 1
+            {
+                let item = items.iter().next().cloned();
+                self.db.set_proposal_action(&p.id, &Action::File { key, item })?;
+                n += 1;
+            }
+        }
+        Ok(n)
     }
 
     /// Keeps proposed before they were settled on the spot (the 10 Nov cleanup's 42): settled at

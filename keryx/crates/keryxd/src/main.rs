@@ -96,6 +96,11 @@ fn main() -> anyhow::Result<()> {
         Ok(s) => engine.shared = Some(s),
         Err(e) => tracing::warn!(error = %e, "no locus taxonomy: filing by area is off"),
     }
+    match engine.fill_open_items() {
+        Ok(0) => {}
+        Ok(n) => tracing::info!(n, "open filings given the item they are for"),
+        Err(e) => tracing::warn!(error = %e, "could not fill in filing items"),
+    }
     match keryx_store::kairos::Http::new(&cfg.kairos.url, &cfg.kairos.token_service) {
         Ok(k) => engine.kairos = Some(Box::new(k)),
         Err(e) => {

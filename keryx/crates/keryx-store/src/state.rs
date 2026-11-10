@@ -665,6 +665,15 @@ impl Db {
         Ok(())
     }
 
+    /// Change what an open proposal would do (keryxd filling in the item it is for).
+    pub fn set_proposal_action(&self, id: &str, action: &Action) -> Result<(), DbError> {
+        self.conn().execute(
+            "UPDATE proposals SET action = ?2 WHERE id = ?1 AND status = 'open'",
+            params![id, serde_json::to_string(action)?],
+        )?;
+        Ok(())
+    }
+
     /// Re-open a decided proposal (its decision was undone).
     pub fn reopen_proposal(&self, id: &str) -> Result<(), DbError> {
         self.conn().execute(

@@ -105,13 +105,23 @@ fn score(p: &Project, subject: &str, sender: &str, body: &str) -> (f32, &'static
     if best.0 > 0.0 && p.kind == ProjectKind::Application {
         // Between applications of one company: the rest of the name, then being active.
         let company = p.company.clone().unwrap_or_default().to_lowercase();
-        let extra = p
+        // A year counts only in the subject: mail bodies are full of dates, and "2026" in a
+        // footer tied Millennium 2027 with Meet Millennium 2026 on every scheduling mail (10 Nov).
+        let words: Vec<&str> = p
             .name
             .split_whitespace()
-            .filter(|w| !company.contains(&w.to_lowercase()) && (w.len() >= 4 || w.chars().all(|c| c.is_ascii_digit())))
-            .filter(|w| has_word(subject, w) || has_word(body, w))
+            .filter(|w| !company.contains(&w.to_lowercase()))
+            .collect();
+        let year = |w: &str| w.chars().all(|c| c.is_ascii_digit());
+        let in_subject = words
+            .iter()
+            .filter(|w| (w.len() >= 4 || year(w)) && has_word(subject, w))
             .count();
-        best.0 += extra as f32 * 0.5 + if p.active { 0.25 } else { 0.0 };
+        let in_body = words
+            .iter()
+            .filter(|w| w.len() >= 4 && !year(w) && !has_word(subject, w) && has_word(body, w))
+            .count();
+        best.0 += in_subject as f32 * 0.5 + in_body as f32 * 0.25 + if p.active { 0.25 } else { 0.0 };
     }
     best
 }
@@ -185,6 +195,56 @@ pub fn guess(db: &Db, shared: &Shared, msgs: &[Message], own: &HashSet<String>, 
     None
 }
 
+/// The item a thread is for, among the items filed into `folder` only: used when the folder is
+/// already chosen (a cleanup proposing "File → Careers"). With the field that narrow, the company
+/// named once in the text is enough (a DocuSign envelope for Brevan Howard says so only in its
+/// body), but only when one item clearly leads; a tie still gives none.
+pub fn guess_within(db: &Db, shared: &Shared, msgs: &[Message], own: &HashSet<String>, folder: &str) -> Option<Guess> {
+    let first = msgs.first()?;
+    if let Ok(Some(id)) = db.item_of(&first.account, &first.thread_id) {
+        return Some(Guess {
+            id,
+            why: "filed for it before".into(),
+        });
+    }
+    let other = msgs
+        .iter()
+        .rev()
+        .find(|m| m.from.as_ref().is_some_and(|f| !own.contains(&f.key())))
+        .or(msgs.last())?;
+    let sender = other
+        .from
+        .as_ref()
+        .map(|f| format!("{} {}", f.name.clone().unwrap_or_default(), f.email))
+        .unwrap_or_default();
+    let body: String = msgs
+        .iter()
+        .map(|m| m.body_text.chars().take(3000).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut scored: Vec<(f32, &Project, &'static str)> = shared
+        .registry
+        .projects
+        .iter()
+        .filter(|p| p.area.eq_ignore_ascii_case(folder))
+        .map(|p| {
+            let (s, w) = score(p, &first.subject, &sender, &body);
+            (s, p, w)
+        })
+        .filter(|(s, _, _)| *s >= 1.0)
+        .collect();
+    scored.sort_by(|a, b| b.0.total_cmp(&a.0));
+    let (top, p, w) = scored.first()?;
+    if scored.get(1).is_some_and(|(s, _, _)| (s - top).abs() < f32::EPSILON) {
+        return None;
+    }
+    let named = names(p).into_iter().next().unwrap_or_else(|| p.id.clone());
+    Some(Guess {
+        id: p.id.clone(),
+        why: format!("{named} {w}"),
+    })
+}
+
 /// The item you filed this sender's threads for, when one answer is most of them.
 fn sender_history(db: &Db, email: &str) -> Option<(String, usize)> {
     let mut counts: HashMap<String, usize> = HashMap::new();
@@ -251,6 +311,19 @@ mod tests {
         let subject = "Meet Millennium 2026: your place is confirmed";
         let a = score(p("meet-millennium"), subject, "", "").0;
         let b = score(p("millennium"), subject, "", "").0;
+        assert!(a > b, "{a} vs {b}");
+    }
+
+    /// Millennium's scheduling mail: "2026" in the body's dates no longer ties it with Meet
+    /// Millennium 2026 (10 Nov, every one of Ayshe's threads gave no item).
+    #[test]
+    fn a_year_in_the_body_does_not_settle_between_applications() {
+        let s = shared();
+        let p = |id: &str| s.registry.get(id).unwrap();
+        let subject = "Scheduled: Alec <> Millennium 2027 Quantitative Developer Intern, London";
+        let body = "Your interview is on Thursday 15 October 2026. Please meet the team online.";
+        let a = score(p("millennium"), subject, "", body).0;
+        let b = score(p("meet-millennium"), subject, "", body).0;
         assert!(a > b, "{a} vs {b}");
     }
 }

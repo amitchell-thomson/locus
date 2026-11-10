@@ -81,20 +81,6 @@ def _text(call_result) -> str:
     return blocks[0].text
 
 
-def test_query_tool_is_opt_in():
-    """The cost guard: `query` is the ONLY billable tool and is absent unless opted into.
-
-    Asserted as an invariant (the delta between the two tool sets), not as an exact tool list —
-    the exact-set version went stale the moment Loop C added `capture`, which is the wrong
-    failure: a new FREE tool must not break the cost-guard test."""
-    default_tools = {t.name for t in mcp_server._build()._tool_manager.list_tools()}
-    enabled_tools = {t.name for t in mcp_server._build(enable_query=True)._tool_manager.list_tools()}
-    assert "query" not in default_tools
-    assert enabled_tools - default_tools == {"query"}  # opting in adds exactly `query`
-    assert {"retrieve", "list_documents", "inspect_document"} <= default_tools
-    # The two write-side tools the desktop app / laptop reach the server FOR: both free.
-    assert {"capture", "to_remarkable"} <= default_tools
-
 
 def test_facets_validation_and_active():
     assert mcp_server._facets(None, None, None) is None  # nothing set -> unrestricted
@@ -104,85 +90,10 @@ def test_facets_validation_and_active():
         mcp_server._facets("not-a-date", None, None)
 
 
-def test_list_documents_renders_and_filters(seeded_db):
-    m = mcp_server._build()
-    out = _text(asyncio.run(m.call_tool("list_documents", {})))
-    assert "Control Notes" in out and "category paper" in out
-    # A non-matching category yields the explicit no-match message.
-    out2 = _text(asyncio.run(m.call_tool("list_documents", {"category": "project"})))
-    assert "No documents match" in out2
 
 
-def test_inspect_document_shows_synthesis_and_sections(seeded_db):
-    m = mcp_server._build()
-    out = _text(asyncio.run(m.call_tool("inspect_document", {"doc": "Control"})))
-    assert "THESIS" in out
-    assert "Stability is determined by the poles." in out
-    assert "Nyquist criterion (theorem)" in out
-    assert "missing proof" in out  # gap flag
-    # Alias substrate not built in this fixture -> graceful hint, not an error (step 12).
-    assert "RELATED DOCUMENTS" in out and "locus link" in out
 
 
-def test_inspect_document_unknown_is_reported(seeded_db):
-    m = mcp_server._build()
-    out = _text(asyncio.run(m.call_tool("inspect_document", {"doc": "no-such-doc"})))
-    assert "No unique document matches" in out
-
-
-def _stub_result(band: str | None = None):
-    from locus.retrieve.assemble import Citation
-
-    cite = '"Control Notes", §Stability, pp 5–7'
-    return types.SimpleNamespace(
-        context="CTX",
-        citations=[cite],
-        citation_details=[Citation(text=cite, doc_id=1, rerank_score=4.21)],
-        survivors=[],
-        low_confidence=band is not None,
-        confidence_band=band,
-    )
-
-
-def test_retrieve_tool_annotates_category_and_score(seeded_db, monkeypatch):
-    monkeypatch.setattr(
-        mcp_server, "run_retrieval", lambda q, facets=None, **kw: _stub_result(band=None)
-    )
-    out = _text(asyncio.run(mcp_server._build().call_tool("retrieve", {"query": "q"})))
-    assert "rerank +4.21" in out
-    assert "[paper," in out  # doc 1's category, looked up from the seeded DB
-    assert "LOW CONFIDENCE" not in out
-
-
-def test_retrieve_tool_passes_include_excluded(seeded_db, monkeypatch):
-    """The MCP tool exposes include_excluded (default False) so Locus's own source — excluded
-    from retrieval by config — can be queried on request, matching the CLI flag."""
-    seen = {}
-    monkeypatch.setattr(
-        mcp_server, "run_retrieval",
-        lambda q, facets=None, **kw: seen.update(kw) or _stub_result(band=None),
-    )
-    asyncio.run(mcp_server._build().call_tool("retrieve", {"query": "q"}))
-    assert seen.get("include_excluded") is False  # default: excluded docs stay out
-    asyncio.run(mcp_server._build().call_tool("retrieve", {"query": "q", "include_excluded": True}))
-    assert seen.get("include_excluded") is True  # opt-in reaches the pipeline
-
-
-def test_retrieve_tool_flags_low_confidence_by_band(seeded_db, monkeypatch):
-    # 'absent': strong wording. 'ambiguous': must NOT claim the corpus lacks the topic
-    # (the cross-domain mislabel from the 2026-06-05 second evaluation).
-    monkeypatch.setattr(
-        mcp_server, "run_retrieval", lambda q, facets=None, **kw: _stub_result(band="absent")
-    )
-    out = _text(asyncio.run(mcp_server._build().call_tool("retrieve", {"query": "q"})))
-    assert out.startswith("LOW CONFIDENCE") and "very likely does not cover" in out
-
-    monkeypatch.setattr(
-        mcp_server, "run_retrieval", lambda q, facets=None, **kw: _stub_result(band="ambiguous")
-    )
-    out = _text(asyncio.run(mcp_server._build().call_tool("retrieve", {"query": "q"})))
-    assert out.startswith("LOW CONFIDENCE") and "covers the parts separately" in out
-    assert "does not cover" not in out
 
 
 def test_sources_fall_back_to_plain_citations():
@@ -190,43 +101,6 @@ def test_sources_fall_back_to_plain_citations():
     result = types.SimpleNamespace(citations=["plain cite"], citation_details=[])
     assert mcp_server._sources(result) == "- plain cite"
 
-
-def test_retrieve_tool_attaches_figure_images(seeded_db, monkeypatch, tmp_path):
-    """A figure survivor rides along as an ImageContent block (step 11 tier 3 over MCP)."""
-    import pymupdf
-
-    from locus.retrieve.pipeline import RetrievedFigure
-
-    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 120, 80))
-    pix.clear_with(100)
-    (tmp_path / "h_fig0.png").write_bytes(pix.tobytes("png"))
-
-    cfg = types.SimpleNamespace(
-        paths=types.SimpleNamespace(db=seeded_db, raw_store=tmp_path),
-        mcp=types.SimpleNamespace(include_figure_images=True),
-    )
-    monkeypatch.setattr(mcp_server, "load", lambda *a, **k: cfg)
-    # figure_images.load_figure_png uses its own config import
-    import locus.retrieve.figure_images as fi
-
-    monkeypatch.setattr(fi, "load", lambda *a, **k: cfg)
-
-    result = _stub_result()
-    result.figures = [
-        RetrievedFigure(raw_path="h_fig0.png", page=5, kind="vector",
-                        caption="Figure 1", doc_title="Control Notes", rerank_score=4.0),
-    ]
-    monkeypatch.setattr(mcp_server, "run_retrieval", lambda q, facets=None, **kw: result)
-    blocks = asyncio.run(mcp_server._build().call_tool("retrieve", {"query": "q"}))
-    kinds = [b.type for b in blocks]
-    assert kinds == ["text", "text", "image"]
-    assert 'figure on p.5 of "Control Notes"' in blocks[1].text
-    assert blocks[2].mimeType == "image/png"
-
-    # gate off => text only
-    cfg.mcp.include_figure_images = False
-    blocks = asyncio.run(mcp_server._build().call_tool("retrieve", {"query": "q"}))
-    assert [b.type for b in blocks] == ["text"]
 
 
 def test_build_stamp_is_nonempty_and_never_raises():
@@ -625,3 +499,12 @@ def test_markups_distinguishes_the_three_empty_answers(seeded_db, monkeypatch):
     monkeypatch.setattr(review, "markups", lambda *a, **k: result(looked=True, inked_pages=[]))
     assert "carries no ink" in _text(asyncio.run(
         mcp_server._build().call_tool("markups", {"document": "D"})))
+
+
+def test_the_h1_tool_set_is_advertised_and_the_retired_tools_are_gone():
+    names = {t.name for t in mcp_server._build()._tool_manager.list_tools()}
+    assert {"context", "search", "open", "timeline", "capture", "to_remarkable", "markups"} <= names
+    retired = {"retrieve", "query", "list_documents", "inspect_document", "critique", "synthesise",
+               "objects", "evolution"}
+    assert not names & retired
+    assert not {t.name for t in mcp_server._build(enable_query=True)._tool_manager.list_tools()} & retired

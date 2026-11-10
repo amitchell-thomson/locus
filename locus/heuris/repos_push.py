@@ -157,6 +157,11 @@ def build(stage: Path | None = None) -> Report:
     for f in stage.glob("*.json"):
         if f not in wanted:
             f.unlink()
+    # The applications file lives in ~/files on the laptop only; `context` on the server reads
+    # this copy (it is his own record, not a secret, and small).
+    apps = Path("~/files/Careers/applications.toml").expanduser()
+    if apps.exists():
+        (stage / "_applications.toml").write_text(apps.read_text())
     return r
 
 

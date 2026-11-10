@@ -232,12 +232,4 @@ def test_synthesis_degrades_on_model_failure(conn):
 # --- MCP wiring -----------------------------------------------------------------------------------
 
 
-def test_new_tools_are_advertised_and_none_of_them_bills_the_api_key():
-    from locus import mcp_server
-
-    default_tools = {t.name for t in mcp_server._build()._tool_manager.list_tools()}
-    for expected in ("critique", "synthesise", "objects", "evolution"):
-        assert expected in default_tools
-    # The cost guard is unchanged: `query` (metered) is still the only opt-in tool.
-    enabled = {t.name for t in mcp_server._build(enable_query=True)._tool_manager.list_tools()}
-    assert enabled - default_tools == {"query"}
+# The critique/synthesise TOOLS were retired in H1 (D6); test_mcp_server asserts the new set.

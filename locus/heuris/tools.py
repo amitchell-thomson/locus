@@ -642,3 +642,65 @@ def context(conn: sqlite3.Connection, about: str | None = None, *, today: date |
                       "ORDER BY at_ts DESC LIMIT 15").fetchall()
     out.append("\nMail tagged needs-reply: " + ("; ".join(env.wrap(t) + f" [{p}]" for p, t in nr) if nr else "none tagged"))
     return env.preamble() + "\n".join(out)
+
+
+# ---------------------------------------------------------------------------------------------
+# waiting (H1 fix 5)
+
+# A message that asks or proposes something: a question, or the words people use to.
+_ASKS = re.compile(r"\?|\b(?:let me know|could you|would you|can you|can we|shall we|perhaps we|"
+                   r"are you free|please (?:confirm|send|let|reply)|let'?s|do you want|would it be possible)\b", re.I)
+# Senders that are not people, by their address.
+_NOT_A_PERSON = re.compile(r"^(?:no-?reply|do-?not-?reply|notifications?|alerts?|news(?:letter)?|info|"
+                           r"support|mailer|bounce|updates?|team|hello|careers)\b", re.I)
+
+
+def _ask_line(text: str) -> str:
+    for sent in re.split(r"(?<=[.?!])\s+|\n+", text or ""):
+        if _ASKS.search(sent) and len(sent.strip()) > 8:
+            return sent.strip()[:220]
+    return ""
+
+
+def waiting(conn: sqlite3.Connection, on: str = "me", days: int = 28, now: datetime | None = None) -> str:
+    """Threads where someone is waiting on him (`on="me"`: a person wrote last and asked or
+    proposed something, and he has not replied since), or he on them (`on="them"`: he wrote
+    last and asked). Read over ALL indexed mail of the last `days`, inbox or archived.
+
+    Why (H1 fix 5, 10 Nov): "what emails need a reply" missed Milly at Tower. Her thread was in
+    an inbox of ~400 and every listing the chat made was cut off before it; needs-reply tags
+    exist only where a run has set them. Who wrote last is a fact, not a judgement.
+    """
+    now = now or datetime.now(timezone.utc)
+    t0 = int(now.timestamp()) - days * 86400
+    rows = conn.execute("SELECT parent, ref, at, at_ts, title, text, meta FROM items WHERE kind='mail' AND parent IN "
+                        "(SELECT DISTINCT parent FROM items WHERE kind='mail' AND at_ts >= ?) ORDER BY at_ts",
+                        (t0,)).fetchall()
+    last: dict[str, tuple] = {}
+    for r in rows:
+        last[r[0]] = r
+    env = Envelope()
+    out = []
+    for parent, ref, at, ts, title, text, meta in sorted(last.values(), key=lambda r: r[3], reverse=True):
+        m = json.loads(meta or "{}")
+        mine = m.get("why") == "you sent it"
+        ask = _ask_line(text)
+        if not ask:
+            continue
+        if on == "me":
+            local = (m.get("from") or "").split("@")[0]
+            if mine or _NOT_A_PERSON.match(local):
+                continue
+            who = f"{m.get('from_name') or ''} <{m.get('from')}>"
+        else:
+            if not mine:
+                continue
+            who = "you"
+        age = max(0, int((now.timestamp() - ts) // 86400))
+        out.append(f"- {at[:10]} ({age} d ago) · {who} · {title}\n  {env.wrap(ask)}\n  open {parent}")
+    if not out:
+        return ("No one is waiting on a reply from you" if on == "me" else "No unanswered question of yours") + \
+            f" in the last {days} days of indexed mail."
+    head = (f"Waiting on you: {len(out)} threads where a person wrote last and asked or proposed something "
+            if on == "me" else f"Waiting on them: {len(out)} threads where you wrote last and asked ")
+    return env.preamble() + head + f"(last {days} days, all mail, newest first):\n" + "\n".join(out)

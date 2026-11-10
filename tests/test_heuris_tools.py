@@ -162,3 +162,23 @@ def test_a_mail_pointer_still_opens_after_its_thread_moves(conn):
           embed=fake_embed)
     out = ht.open_ref(conn, "mail:oxford/5/71")
     assert "moved to mail:oxford/7" in out and "16:00 in the Lab." in out
+
+
+def test_waiting_finds_who_wrote_last_across_all_mail(conn):
+    # H1 fix 5: Milly's reply was archived-or-buried and never tagged; who wrote last is a fact.
+    def m(ref, d, name, email, subj, text, mine=False):
+        it = mail(ref, d, name, email, subj, text)
+        it.meta["why"] = "you sent it" if mine else "someone you have written to"
+        return it
+    index(conn, "mail", [
+        m("mail:personal/40/401", 1, "Alec", "alec@x.com", "Tower", "Two quick questions: graduate or intern?", mine=True),
+        m("mail:personal/40/402", 2, "Milly Parrott", "parrott@tower-research.com", "Re: Tower",
+          "Perhaps we can schedule a time to connect in early January?"),
+        m("mail:personal/41/411", 3, "Alec", "alec@x.com", "Sim repo", "Could you send the access link?", mine=True),
+        m("mail:personal/42/421", 3, "noreply", "noreply@shop.com", "Your order", "Can we help with anything?"),
+    ], embed=fake_embed)
+    now = datetime(2026, 11, 10, tzinfo=timezone.utc)
+    me = ht.waiting(conn, on="me", now=now)
+    assert "Milly Parrott" in me and "early January" in me and "noreply" not in me
+    them = ht.waiting(conn, on="them", now=now)
+    assert "Sim repo" in them and "Milly" not in them

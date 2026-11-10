@@ -154,6 +154,7 @@ def test_a_library_document_names_its_project():
     assert ht.doc_thing("Advanced Portfolio Management", "incoming/paper/apm.pdf") is None
     assert ht.doc_thing("quast and locus", "") is None, "two named: none"
     assert ht.doc_thing("Update your CV", "") is None, "short ids never fire on prose"
+    assert ht.doc_thing("B14 Image Processing", "data/notes/b14-image-processing-1a2b3c4d.md") == "b14", "a course code"
 
 
 def test_a_mail_pointer_still_opens_after_its_thread_moves(conn):

@@ -235,7 +235,8 @@ def doc_thing(title: str, uri: str) -> str | None:
         names = {pid, e.get("name", ""), e.get("folder", "")} | set(e.get("sessions", []))
         for n in names:
             n = (n or "").lower()
-            if len(n) >= 4 and re.search(rf"(?<![a-z0-9]){re.escape(n)}(?![a-z0-9])", hay):
+            # Four letters at least, except a course code (b14, b3): short, but never prose.
+            if (len(n) >= 4 or re.fullmatch(r"[a-z]\d{1,2}", n)) and re.search(rf"(?<![a-z0-9]){re.escape(n)}(?![a-z0-9])", hay):
                 hits.add(pid)
                 break
     return hits.pop() if len(hits) == 1 else None

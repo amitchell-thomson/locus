@@ -128,7 +128,7 @@ How does this fit into ideas/ suggestions/ corrections that I make in margins as
 **22 · H1 (laptop) ·** What emails need a reply? Draft replies for them all.
 > The threads needing a reply, with a draft for each made through keryx (`draft_reply`), never sent.
 > Must include Milly Parrott (Tower Research, personal account, "Tower QT/QR advice for timing and options"): her 2 Nov reply answers both my questions and proposes connecting in early January to plan a Tower x OQTS event. I have not replied. The 10 Nov run missed it. The thread was never archived: it sits 248th in an inbox of about 400 threads, because keryx's morning and evening runs (which clear automated mail and tag needs-reply) were never installed. Each listing the chat made stopped short of it (150 rows over two weeks, 40 of 84 for the personal account). Needing a reply is judged on all my mail over the last few weeks, read to the end, not the first page of the inbox: a person's last message asks or proposes something, and I have not answered.
-> Drafts wait in keryx's Approve (`keryx changes --status pending`, or A in the keryx window); they are not Gmail drafts, so they do not show in Gmail.
+> Drafts wait in keryx's Drafts (`g d`; 10 Nov they moved there from Approve); they are not Gmail drafts, so they do not show in Gmail.
 
 **23 · H1 ·** Schedule the meeting the 3YP group proposed in their last email.
 > The 3YP group's last proposal, found by search, scheduled through kairos (pending your approval).

@@ -894,7 +894,9 @@ def markups(
     # with its pointer: Q21 (H1, 10 Nov) was told the B14 notebook was "readable only once it has
     # been transcribed" while its transcription sat indexed as src:664, and answered from that.
     uuid = target.doc_uuid or (doc.doc_uuid if doc is not None else None)
-    if notebook and uuid:
+    # Also when the tablet could not be read at all (HTTP 429 in the H1 re-run): a transcription
+    # in the library is then the only way in, and the answer said none existed.
+    if uuid and (notebook or doc is None):
         row = conn.execute(
             "SELECT id FROM documents WHERE source_uri LIKE ? ORDER BY id DESC LIMIT 1", (f"%-{uuid[:8]}.md",)
         ).fetchone()

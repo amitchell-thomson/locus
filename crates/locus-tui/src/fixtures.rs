@@ -79,7 +79,15 @@ impl Fixtures {
             projects.insert(
                 p.id.clone(),
                 ProjectFixture {
-                    view: read(dir, &format!("{base}/view.json"))?,
+                    // A registry entry with no view yet gets an empty one: registering
+                    // something (JCR Treasurer, 10 Nov) must never stop the window starting.
+                    view: match read_opt(dir, &format!("{base}/view.json"))? {
+                        Some(v) => v,
+                        None => serde_json::from_value(serde_json::json!({
+                            "project": p.id, "new": [], "sessions": []
+                        }))
+                        .map_err(|e| anyhow::anyhow!("an empty view for {}: {e}", p.id))?,
+                    },
                     decisions: read_opt(dir, &format!("{base}/decisions.json"))?,
                     answered: read_opt(dir, &format!("{base}/answered.json"))?,
                     changes: read_opt(dir, &format!("{base}/changes.json"))?,

@@ -151,7 +151,7 @@ def session_items(path: Path, machine: str) -> list[Item]:
 # Held out of the index while the H1 test set is scored (H1.11): this session wrote the answer key
 # and read the answers out of his files (the questionnaire's ticks among them), so a scoring chat
 # that found it would be marking its own homework. Removed from the index too (`purge_held_out`).
-HELD_OUT_SESSIONS = {"81c0a62a-3b15-4f89-ae5c-80227ae38eab"}
+HELD_OUT_SESSIONS = {"81c0a62a-3b15-4f89-ae5c-80227ae38eab", "e42b4acc-43ff-433a-a9d9-db66a6ba6722"}  # this build session, both its ids
 
 
 def purge_held_out(conn: sqlite3.Connection) -> int:

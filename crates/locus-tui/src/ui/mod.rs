@@ -13,6 +13,7 @@ mod keys;
 pub mod learning;
 pub mod project;
 pub mod projectdetail;
+pub mod projects;
 pub mod review;
 pub mod system;
 pub mod tasks;
@@ -51,6 +52,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         ScreenId::Learning => learning::draw(f, body, app),
         ScreenId::Review => review::draw(f, body, app),
         ScreenId::Tasks => tasks::draw(f, body, app),
+        ScreenId::Projects => projects::draw(f, body, app),
         ScreenId::Chat => chat::draw(f, body, app),
     }
     draw_footer(f, footer, app);
@@ -79,6 +81,7 @@ pub fn screen_key(app: &mut App, k: KeyEvent) -> bool {
         ScreenId::Prep | ScreenId::Learning => learning::key(app, k),
         ScreenId::Application => application::key(app, k),
         ScreenId::Tasks => tasks::key(app, k),
+        ScreenId::Projects => projects::key(app, k),
         ScreenId::Chat => chat::key(app, k),
     }
 }
@@ -154,6 +157,7 @@ pub fn screen_keys(s: ScreenId) -> &'static [(&'static str, &'static str)] {
         ScreenId::Learning => learning::KEYS,
         ScreenId::Review => review::KEYS,
         ScreenId::Tasks => tasks::KEYS,
+        ScreenId::Projects => projects::KEYS,
         ScreenId::Chat => chat::KEYS,
     }
 }

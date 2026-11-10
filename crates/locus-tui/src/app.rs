@@ -135,6 +135,8 @@ pub struct App {
     /// Home is reading live data: rows the fixtures held are gone, and sections not yet live
     /// say so. False in dumps of the fixtures and in tests.
     pub home_live: bool,
+    /// Repositories in `~/local-projects` the registry does not name, for the projects view.
+    pub other_repos: Vec<(String, Option<(locus_contract::Time, String)>)>,
 }
 
 impl App {
@@ -184,6 +186,7 @@ impl App {
             careers_error: None,
             system_live: None,
             home_live: false,
+            other_repos: Vec::new(),
         };
         app.uselog.record(root.name(), "open");
         app

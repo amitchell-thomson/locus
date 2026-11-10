@@ -24,6 +24,7 @@ pub const KEYS: &[(&str, &str)] = &[
     ("⇥ ↑ ↓", "move between sections and through them"),
     ("␣", "ask the chat: anything that needs your whole life as context"),
     ("i", "the chat's conversations, from any screen"),
+    ("p", "every project: live, parked, done, and what is not registered"),
     ("⏎", "go there: the project, the approve list, the find"),
     ("W", "the weekly review, when it is ready"),
     ("L", "learning"),
@@ -33,7 +34,9 @@ pub const KEYS: &[(&str, &str)] = &[
 /// project, then the rest as registered. Home's sections go by area, not kind (ADR-006): this
 /// one holds everything outside Careers.
 pub fn project_rows(app: &App) -> Vec<String> {
-    let mut rows = rows_of(app, |p| p.area == "Projects");
+    // The live projects you build, in any area (3YP is Studies' and live): parked and done ones
+    // are in the projects view on `p` (10 Nov).
+    let mut rows = rows_of(app, |p| p.state == Some(locus_contract::ProjectState::Live));
     // Live Claude sessions the registry does not know (home-live H2), as `tmux:<session>`: one
     // that needs you goes to the top with the others that do, the rest after the registered.
     for (name, sessions) in &app.unregistered {
@@ -65,7 +68,31 @@ fn window_note(len: usize, w: &std::ops::Range<usize>) -> String {
     if len <= w.len() {
         String::new()
     } else {
-        format!("{}–{} of {len} · ↑↓", w.start + 1, w.end)
+        format!("{}–{} of {len}", w.start + 1, w.end)
+    }
+}
+
+/// A small ▲ on a capped section's first row when rows are hidden above, and ▼ on its last
+/// shown row when more are below (10 Nov: "some sort of small indicator to show that there
+/// are more rows"), in the section's right-hand column.
+fn scroll_marks(f: &mut Frame, area: Rect, len: usize, w: &std::ops::Range<usize>) {
+    if w.is_empty() || area.width == 0 {
+        return;
+    }
+    let x = area.x + area.width - 1;
+    let buf = f.buffer_mut();
+    let mut mark = |y: u16, g: &str| {
+        if y < area.y + area.height
+            && let Some(cell) = buf.cell_mut((x, y))
+        {
+            cell.set_symbol(g).set_style(st("overlay1"));
+        }
+    };
+    if w.start > 0 {
+        mark(area.y + 1, "▲");
+    }
+    if w.end < len {
+        mark(area.y + w.len() as u16, "▼");
     }
 }
 
@@ -845,6 +872,7 @@ fn draw_careers(f: &mut Frame, area: Rect, app: &App) -> u16 {
     }
     let used = out.len() as u16;
     lines(f, area, out);
+    scroll_marks(f, area, n_apps, &w);
     used
 }
 
@@ -982,7 +1010,8 @@ fn draw_studies(f: &mut Frame, area: Rect, app: &App) {
         out.push(row(left, counts(0), area.width));
     }
     if !learning_row {
-        return lines(f, area, out);
+        lines(f, area, out);
+        return scroll_marks(f, area, ids.len(), &w);
     }
     // A thin line between the courses and learning, as the work panel sets its total apart
     // from the projects (round 2f).
@@ -1011,6 +1040,7 @@ fn draw_studies(f: &mut Frame, area: Rect, app: &App) {
         area.width,
     ));
     lines(f, area, out);
+    scroll_marks(f, area, ids.len(), &w);
 }
 
 /// Explore's finds by kind, titles only, with room between groups so they do not run into a
@@ -1280,6 +1310,11 @@ fn draw_system(f: &mut Frame, area: Rect, app: &App) {
 
 pub fn key(app: &mut App, k: KeyEvent) -> bool {
     match (app.focus, k.code) {
+        // p opens every project by where it stands (10 Nov); Tab still reaches the section.
+        (_, KeyCode::Char('p')) => {
+            app.open(ScreenId::Projects);
+            true
+        }
         // Space types into the chat bar from anywhere on Home, with any draft you left.
         (_, KeyCode::Char(' ')) => {
             app.mode = crate::app::Mode::Chat(std::mem::take(&mut app.chat_draft));

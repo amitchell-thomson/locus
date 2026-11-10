@@ -137,6 +137,8 @@ fn main() -> Result<()> {
             app.home_live = true;
             apply_live(&mut app, Live::Projects(sessions, Some(commits), Some(careers)));
             apply_live(&mut app, Live::System(locus_tui::live::fetch_system()));
+            let others = locus_tui::live::scan_unregistered_repos(&app.fixtures.registry);
+            apply_live(&mut app, Live::Others(others));
         }
         if let Some(id) = cli.project {
             if app.fixtures.registry.get(&id).is_none() {
@@ -286,12 +288,22 @@ enum Live {
         Option<Result<std::collections::BTreeMap<String, locus_contract::Status>, String>>,
     ),
     System(Result<locus_tui::live::SystemLive, String>),
+    Others(Vec<(String, Option<(locus_contract::Time, String)>)>),
 }
 
 fn apply_live(app: &mut App, msg: Live) {
     // Live, the screen's clock is the real one: the fixtures' fixed moment made every session
     // "now" and every due date relative to 24 October.
     app.fixtures.manifest.now = chrono::Local::now().fixed_offset();
+    // Approve kinds nothing live writes yet (jot filing, mail counts, deadlines, ink, stop
+    // asking) are the fixtures' and go: live, Approve holds only what kairos and keryx sent.
+    {
+        use locus_contract::ApproveKind as K;
+        app.fixtures
+            .approve
+            .groups
+            .retain(|g| matches!(g.kind, K::Calendar | K::Date | K::MailSend | K::MailFiling));
+    }
     match msg {
         Live::Projects(sessions, commits, careers) => {
             app.unregistered = locus_tui::live::apply_sessions(&mut app.fixtures, &sessions);
@@ -308,6 +320,7 @@ fn apply_live(app: &mut App, msg: Live) {
             }
         }
         Live::System(s) => app.system_live = Some(s),
+        Live::Others(o) => app.other_repos = o,
     }
 }
 
@@ -381,6 +394,10 @@ fn run(mut app: App) -> Result<()> {
                 let commits = slow.then(|| locus_tui::live::scan_commits(&registry, &sessions));
                 let careers = slow.then(|| locus_tui::live::read_careers(&locus_tui::live::careers_file()));
                 if tx.send(Live::Projects(sessions, commits, careers)).is_err() {
+                    return;
+                }
+                // Every ten minutes: a git call per folder, for the projects view's last section.
+                if tick % 120 == 0 && tx.send(Live::Others(locus_tui::live::scan_unregistered_repos(&registry))).is_err() {
                     return;
                 }
                 std::thread::sleep(Duration::from_secs(5));

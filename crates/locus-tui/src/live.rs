@@ -355,9 +355,39 @@ pub fn scan_commits(reg: &Registry, live: &[Live]) -> BTreeMap<String, (DateTime
     let home = home();
     reg.projects
         .iter()
-        .filter(|p| p.active && p.kind == ProjectKind::Repo)
+        .filter(|p| p.kind == ProjectKind::Repo && (p.active || p.state.is_some()))
         .filter_map(|p| Some((p.id.clone(), last_commit(&repo_dirs(p, live, &home))?)))
         .collect()
+}
+
+/// Git repositories in `~/local-projects` that no registry entry names (the projects view's
+/// last section): each with its newest commit, newest first.
+/// A folder's name and its newest commit, if it has one.
+pub type Repo = (String, Option<(DateTime<FixedOffset>, String)>);
+
+pub fn scan_unregistered_repos(reg: &Registry) -> Vec<Repo> {
+    let lp = home().join("local-projects");
+    let Ok(dir) = std::fs::read_dir(&lp) else { return Vec::new() };
+    let known = |name: &str| {
+        reg.projects.iter().any(|p| {
+            p.id == name
+                || p.folder.as_deref() == Some(name)
+                || p.sessions.iter().any(|s| s == name)
+                || p.components.iter().any(|c| c.repo.split('/').next() == Some(name))
+        })
+    };
+    let mut out: Vec<_> = dir
+        .flatten()
+        .filter(|e| e.path().join(".git").exists())
+        .filter_map(|e| e.file_name().to_str().map(str::to_string))
+        .filter(|n| !known(n))
+        .map(|n| {
+            let last = last_commit(&[lp.join(&n)]);
+            (n, last)
+        })
+        .collect();
+    out.sort_by(|a, b| b.1.as_ref().map(|x| x.0).cmp(&a.1.as_ref().map(|x| x.0)));
+    out
 }
 
 // --- careers ----------------------------------------------------------------------------------

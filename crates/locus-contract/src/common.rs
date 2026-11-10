@@ -109,6 +109,10 @@ pub struct Project {
     /// linked and this should be known").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub application: Option<String>,
+    /// Where a project you build stands (10 Nov): live ones are on Home; parked and done ones
+    /// only in the projects view (`p`). None for what is not built (courses, applications).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<ProjectState>,
     /// The firm an application is with: one company can have several applications (Brevan
     /// Howard 2026 and 2027), and the tablet's Careers folders are per company, so capture
     /// matches a folder to this (Slice 0, 0.12).
@@ -131,6 +135,19 @@ pub fn is_folder_name(s: &str) -> bool {
         && !s.ends_with('-')
         && !s.contains("--")
         && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// Where a project you build stands (10 Nov: "only show the projects that are only live and
+/// being worked on, and not show the projects that are done or parked").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectState {
+    /// Being worked on: on Home.
+    Live,
+    /// Stopped for now, may come back.
+    Parked,
+    /// Finished.
+    Done,
 }
 
 /// What a registry entry is (ADR-006). The kind decides which view shows it and whether

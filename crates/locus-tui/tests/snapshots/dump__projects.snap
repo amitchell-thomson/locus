@@ -1,0 +1,42 @@
+---
+source: crates/locus-tui/tests/dump.rs
+expression: "dump::render(&a, 95, 38).unwrap()"
+---
+╭ projects · 5 live ──────────────────────────────────────────────────────────────────────────╮
+│─ live · 5 ──────────────────────────────────────────────────────────────────────────────────│
+│▌  󱓟 quast                     󰹇 needs you 35m  wants to run the full battery on… 2 sessions │
+│   󱓟 locus                     󰹇 needs you 20m  wants to restart the locus HTTP … 3 sessions │
+│   󱓟 OQTS                      󰤄 no sessions                                                 │
+│   󱓟 3YP                       󰤄 no sessions                                                 │
+│   󱓟 GR AI/ML                  󰤄 no sessions                                                 │
+│                                                                                             │
+│─ parked · 2 ────────────────────────────────────────────────────────────────────────────────│
+│   󱓟 nabla                     󰹇 needs you 42m  SYNA's vote is close: close the … 8 sessions │
+│   󱓟 Tanker-flow               󰤄 no sessions                                                 │
+│                                                                                             │
+│─ done · none ───────────────────────────────────────────────────────────────────────────────│
+│                                                                                             │
+│─ running, not registered · none ────────────────────────────────────────────────────────────│
+│                                                                                             │
+│─ in ~/local-projects, not registered · none ────────────────────────────────────────────────│
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+╰─────────────────────────────────────────────────────────────────────────────────────────────╯
+ ⏎ open · ⇥ sections · l log · / search · i chat · ? keys

@@ -26,6 +26,8 @@ pub enum ScreenId {
     Learning,
     Review,
     Tasks,
+    /// Every project you build, by where it stands (`p` on Home, 10 Nov).
+    Projects,
     /// The Home chat's conversations (files-and-chat M2), on `i` from anywhere.
     Chat,
 }
@@ -43,7 +45,7 @@ const fn s(letter: char, title: &'static str, detail: Option<ScreenId>) -> Secti
 }
 
 impl ScreenId {
-    pub const ALL: [ScreenId; 19] = [
+    pub const ALL: [ScreenId; 20] = [
         ScreenId::Home,
         ScreenId::Project,
         ScreenId::Application,
@@ -62,6 +64,7 @@ impl ScreenId {
         ScreenId::Learning,
         ScreenId::Review,
         ScreenId::Tasks,
+        ScreenId::Projects,
         ScreenId::Chat,
     ];
 
@@ -86,6 +89,7 @@ impl ScreenId {
             ScreenId::Learning => "learning",
             ScreenId::Review => "review",
             ScreenId::Tasks => "tasks",
+            ScreenId::Projects => "projects",
             ScreenId::Chat => "chat",
         }
     }
@@ -115,6 +119,7 @@ impl ScreenId {
             ScreenId::Learning => "learning",
             ScreenId::Review => "weekly review",
             ScreenId::Tasks => "tasks",
+            ScreenId::Projects => "projects",
             ScreenId::Chat => "chat",
         }
     }

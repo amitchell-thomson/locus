@@ -334,14 +334,14 @@ fn with_taxonomy(a: &mut App) {
 fn done_files_for_what_it_is_for_with_the_guess_chosen() {
     let (mut a, f) = app();
     with_taxonomy(&mut a);
-    // A receipt: guessed Errands, Enter takes it.
+    // A booking: guessed Travel (your folder, 10 Nov; it was Errands), Enter takes it.
     let ticket = select(&mut a, "Your e-ticket: Oxford to London, Fri 23 Oct");
     keys(&mut a, &[Key::Char('d')]);
     insta::assert_snapshot!("file_picker", render_to_string(&mut a, 80, 16));
     keys(&mut a, &[Key::Enter]);
     assert_eq!(
         f.take(),
-        vec![format!(r#"triage {{"action":"file","key":"Errands"}} ["{ticket}"]"#)]
+        vec![format!(r#"triage {{"action":"file","key":"Travel"}} ["{ticket}"]"#)]
     );
 
     // No guess: Enter chooses nothing until you type.

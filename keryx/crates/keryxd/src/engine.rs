@@ -1330,7 +1330,7 @@ impl Engine {
             };
             return match keryx_store::item::mail_item(shared, &g.id) {
                 Some(p) if p.kind != locus_contract::ProjectKind::Application => Action::File {
-                    key: key.clone(),
+                    key: self.key_for(p, key),
                     item: Some(p.id.clone()),
                 },
                 _ => action,
@@ -1360,6 +1360,24 @@ impl Engine {
             }
             _ => action,
         }
+    }
+
+    /// The key a filing for `p` goes under, given the key it was proposed with. A course (or a
+    /// repo doing a course's work) keeps your department key (Engineering). A project you build
+    /// goes to its own area, or to a key named after it (OQTS), never to a department folder:
+    /// "quast is a big project, it just happens to be associated with part of the engineering
+    /// department" (10 Nov).
+    fn key_for(&self, p: &locus_contract::Project, key: &str) -> String {
+        if p.kind == locus_contract::ProjectKind::Course || p.course.is_some() {
+            return key.to_string();
+        }
+        if let Some(k) = self.cfg.key(&p.name).or_else(|| self.cfg.key(&p.id)) {
+            return k.name.clone();
+        }
+        if self.taxonomy_folder(&p.area).is_some() {
+            return p.area.clone();
+        }
+        key.to_string()
     }
 
     /// Open filings proposed before items were filled in (the 10 Nov cleanup): given theirs
@@ -1400,6 +1418,21 @@ impl Engine {
                         _ => p.action.clone(),
                     },
                     None => self.with_item(p.action.clone(), &msgs),
+                };
+                // A project filed under a department key goes to its own place (quast → Projects).
+                let a = match &a {
+                    Action::File { key: k, item: Some(i) } => {
+                        match self.shared.as_ref().and_then(|s| s.registry.get(i)).cloned() {
+                            Some(r) if r.kind == locus_contract::ProjectKind::Repo && r.course.is_none() => {
+                                Action::File {
+                                    key: self.key_for(&r, k),
+                                    item: Some(r.id.clone()),
+                                }
+                            }
+                            _ => a.clone(),
+                        }
+                    }
+                    _ => a.clone(),
                 };
                 if a != p.action {
                     self.db.set_proposal_action(&p.id, &a)?;

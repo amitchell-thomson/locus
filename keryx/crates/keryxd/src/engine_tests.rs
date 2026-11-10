@@ -1268,19 +1268,20 @@ fn automated_mail_is_filed_as_it_arrives_and_people_mail_never() {
         .unwrap();
     let ticket = r(&e, "Your e-ticket: Oxford to London, Fri 23 Oct");
     let lab = r(&e, "Lab partner for Thursday?");
-    let n = e.file_arrivals().unwrap();
-    assert!(n >= 1, "{n}");
-    assert!(!in_inbox(&e, &ticket), "a receipt went to Errands");
+    e.file_arrivals().unwrap();
+    // Since 10 Nov a booking goes to your Travel folder and a receipt to Admin, never Errands
+    // (Personal's stream for chores). This e-ticket is on Oxford, where Travel has no folder,
+    // so it stays in the inbox for the morning run or a cleanup, rather than going anywhere wrong.
+    assert!(in_inbox(&e, &ticket), "no Travel folder on Oxford: left where it is");
     assert!(in_inbox(&e, &lab), "a person's mail is never moved");
     let (ta, tt) = parse_thread_ref(&ticket).unwrap();
-    assert_eq!(
+    assert_ne!(
         e.db.fors().unwrap().get(&(ta.to_string(), tt.to_string())),
         Some(&("folder".to_string(), "Errands".to_string())),
-        "marked for Errands"
+        "never Errands"
     );
     let cs = e.db.changesets(None, 10).unwrap();
-    assert!(cs.iter().any(|c| c.author == keryx_core::changeset::Author::System
-        && c.summary.starts_with("filed as it arrived, for Errands")));
+    assert!(!cs.iter().any(|c| c.summary.contains("for Errands")));
     assert_eq!(e.file_arrivals().unwrap(), 0, "nothing new since");
 
     e.cfg.automated.file_on_arrival = false;

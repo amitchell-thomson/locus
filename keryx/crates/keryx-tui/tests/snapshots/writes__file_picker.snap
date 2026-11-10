@@ -3,18 +3,18 @@ source: keryx/crates/keryx-tui/tests/writes.rs
 expression: "render_to_string(&mut a, 80, 16)"
 ---
 ╭ keryx ───────── all · personal · oxford · oqts · oqts shared ────────────────╮
-│ today ────────────────────────────────────────────────────────────────────── │
-│ ▎ Trai╭──────────────────── done: what is it for ────────────────────╮ 08:30 │
-│ ▎  You│ ⏎ takes the guess · type to choose another                   │oxford │
-│ ▎ Trai│                                                              │ 08:30 │
-│ ▎  You│ ▸ Errands  a receipt or a booking                    Errands │rsonal │
-│       │   quast                                             Projects │       │
-│ yester│   nabla                                             Projects │────── │
-│   Lect│   locus                                             Projects │ 󰁦 tue │
-│    Soc│   OQTS                                              Projects │oxford │
-│   Lect│   CV                                                 Careers │ 󰁦 tue │
-│    Bro│   3YP                                                Studies │oxford │
-│ ▎ Lect│   B1 Engineering Computation                         Studies │ 󰁦 tue │
-│ ▎  B4 ╰──────────────────────────────────────────────────────────────╯oxford │
+│ today ───────────────────────────────────────────────────────────────────── ┃│
+│ ▎ Trai╭──────────────────── done: what is it for ────────────────────╮08:30 ┃│
+│ ▎  You│ ⏎ takes the guess · type to choose another                   │xford ││
+│ ▎ Trai│                                                              │08:30 ││
+│ ▎  You│ ▸ Travel  a booking or a ticket                       Travel │sonal ││
+│       │   quast                                             Projects │      ││
+│ yester│   nabla                                             Projects │───── ││
+│   Lect│   locus                                             Projects │󰁦 tue ││
+│    Soc│   OQTS                                              Projects │xford ││
+│   Lect│   CV                                                 Careers │󰁦 tue ││
+│    Bro│   3YP                                                Studies │xford ││
+│ ▎ Lect│   GR AI/ML                                          Projects │󰁦 tue ││
+│ ▎  B4 ╰──────────────────────────────────────────────────────────────╯xford ││
 ╰──────────────────────────────────────────────────────────────────────────────╯
  ⏎ file · ↑ ↓ move · esc back

@@ -141,7 +141,21 @@ impl App {
     /// The picker's rows for what is typed: the guess first, then the rest; "for nothing" last.
     pub fn for_choices(&self, p: &ForPicker) -> Vec<Choice> {
         let Some(shared) = &self.shared else { return vec![] };
-        let all = item::options(shared);
+        let mut all = item::options(shared);
+        // Your own folders too (Admin, Travel, …), which receipts and bookings are guessed into
+        // since 10 Nov: without them the guess was not in the list and ⏎ took the first item.
+        for k in &self.cfg.keys {
+            if !all.iter().any(|o| o.folder.eq_ignore_ascii_case(&k.name)) {
+                all.push(locus_contract::fors::For {
+                    id: k.name.clone(),
+                    label: k.name.clone(),
+                    item: None,
+                    kind: None,
+                    folder: k.name.clone(),
+                    active: true,
+                });
+            }
+        }
         let mut v: Vec<Choice> = Vec::new();
         if p.query.trim().is_empty() {
             if let Some(g) = &p.guess

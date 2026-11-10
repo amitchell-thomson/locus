@@ -3,24 +3,24 @@ source: keryx/crates/keryx-tui/tests/writes.rs
 expression: "render_to_string(&mut a, 80, 22)"
 ---
 ╭ keryx ───────── all · personal · oxford · oqts · oqts shared ────────────────╮
-│ today ────────────────────────────────────────────────────────────────────── │
-│ ▎ Trains                                                               08:30 │
-│ ▎  Your e-ticket: Oxford to London, Fri 23 Oct                        oxford │
-│ ▎ Trains     ╭──────────────────── go to ────────────────────╮         08:30 │
-│ ▎  Your e-tic│                                               │      personal │
-│              │ mail                   │  areas               │               │
-│ yesterday ───│                        │                      │────────────── │
-│   Lecturer   │ i  Inbox               │  1  Studies          │         󰁦 tue │
-│    Society mi│ r  Needs reply         │  2  Projects         │        oxford │
-│   Lecturer   │ d  Drafts              │  3  Careers          │         󰁦 tue │
-│    Broken fil│                        │                      │        oxford │
-│ ▎ Lecturer   │ s  Sent                │  personal            │         󰁦 tue │
-│ ▎  B4 problem│ v  Archive             │  4  Family           │        oxford │
-│ ▎ Jane Doe   │ a  All mail            │  5  Sport            │           tue │
-│ ▎  Lab partne│                        │  6  Social           │        oxford │
-│ ▎ Prof Smith │ l  Filed by itself     │  7  Errands          │           tue │
-│ ▎  Cancelled:╰───────────────────────────────────────────────╯        oxford │
-│                                                                              │
-│ monday ───────────────────────────────────────────────────────────────────── │
+│ today ───────────────────────────────────────────────────────────────────── ┃│
+│ ▎ Trains                                                              08:30 ┃│
+│ ▎  Your e-ticket: Oxford to London, Fri 23 Oct                       oxford ┃│
+│ ▎ Trains     ╭──────────────────── go to ────────────────────╮        08:30 ┃│
+│ ▎  Your e-tic│                                               │     personal ┃│
+│              │ mail                   │  areas               │              ││
+│ yesterday ───│                        │                      │───────────── ││
+│   Lecturer   │ i  Inbox               │  1  Studies          │        󰁦 tue ││
+│    Society mi│ r  Needs reply         │  2  Projects         │       oxford ││
+│   Lecturer   │ d  Drafts              │  3  Careers          │        󰁦 tue ││
+│    Broken fil│                        │                      │       oxford ││
+│ ▎ Lecturer   │ s  Sent                │  personal            │        󰁦 tue ││
+│ ▎  B4 problem│ v  Archive             │  4  Family           │       oxford ││
+│ ▎ Jane Doe   │ a  All mail            │  5  Sport            │          tue ││
+│ ▎  Lab partne│                        │  6  Social           │       oxford ││
+│ ▎ Prof Smith │ l  Filed by itself     │  7  Errands          │          tue ││
+│ ▎  Cancelled:╰───────────────────────────────────────────────╯       oxford ││
+│                                                                             ││
+│ monday ──────────────────────────────────────────────────────────────────── ││
 ╰──────────────────────────────────────────────────────────────────────────────╯
  esc close

@@ -274,7 +274,12 @@ fn the_inbox_opens_on_what_needs_a_reply_then_a_gap_then_the_days() {
     assert!(lines[1].contains("needs reply"), "{s}");
     assert!(lines[3].contains("Lab partner for Thursday?"), "{s}");
     assert!(lines[2].contains('▌'), "the peach bar: {s}");
-    assert_eq!(lines[4].trim_matches(|c| c == '│' || c == ' '), "", "a gap: {s}");
+    // The scrollbar (┃ │) runs down the right edge: a gap is a line with nothing else.
+    assert_eq!(
+        lines[4].trim_matches(|c| c == '│' || c == '┃' || c == ' '),
+        "",
+        "a gap: {s}"
+    );
     assert!(lines[5].contains("today"), "{s}");
     assert!(s.contains('▎'), "unread is a blue bar: {s}");
 }

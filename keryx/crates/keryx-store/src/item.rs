@@ -35,20 +35,34 @@ pub fn options(shared: &Shared) -> Vec<For> {
     v
 }
 
-/// Words that mark mail as a receipt, a booking or an order: Errands.
-const ERRANDS: &[&str] = &[
+/// Words that mark mail as a booking or a ticket: your Travel folder.
+const TRAVEL: &[&str] = &[
+    "booking",
+    "reservation",
+    "e-ticket",
+    "your ticket",
+    "boarding pass",
+    "check in",
+    "check-in",
+    "itinerary",
+    "your flight",
+    "your trip",
+];
+
+/// Words that mark mail as a receipt, an order or a payment: your Admin folder.
+///
+/// Both were Errands until 10 Nov ("admin and travel for those, errands are more like present
+/// shopping, laundry, garbage etc..., rare and more for tasks"): Errands is Personal's stream
+/// for chores, and keryx no longer files anything into it by itself.
+const ADMIN: &[&str] = &[
     "receipt",
     "invoice",
     "your order",
     "order confirmation",
-    "booking",
-    "reservation",
     "payment",
     "delivery",
     "dispatched",
     "refund",
-    "e-ticket",
-    "your ticket",
 ];
 
 /// Whether `needle` occurs in `hay` as a whole word (case ignored).
@@ -186,10 +200,17 @@ pub fn guess(db: &Db, shared: &Shared, msgs: &[Message], own: &HashSet<String>, 
     let bounce = ["delivery status notification", "undeliverable", "mail delivery"]
         .iter()
         .any(|w| low.contains(w));
-    if automated && !bounce && ERRANDS.iter().any(|w| low.contains(w)) {
+    // A key of your own config (Admin, Travel), by name: the caller files under it with no item.
+    if automated && !bounce && TRAVEL.iter().any(|w| low.contains(w)) {
         return Some(Guess {
-            id: "errands".into(),
-            why: "a receipt or a booking".into(),
+            id: "Travel".into(),
+            why: "a booking or a ticket".into(),
+        });
+    }
+    if automated && !bounce && ADMIN.iter().any(|w| low.contains(w)) {
+        return Some(Guess {
+            id: "Admin".into(),
+            why: "a receipt or an order".into(),
         });
     }
     None
@@ -286,7 +307,12 @@ mod tests {
         m[0].subject = "Your parcel is out for delivery".into();
         assert_eq!(
             guess(&db, &s, &m, &cfg.own_addresses(), true).map(|g| g.id),
-            Some("errands".into())
+            Some("Admin".into())
+        );
+        m[0].subject = "Your booking confirmation XP8BKP".into();
+        assert_eq!(
+            guess(&db, &s, &m, &cfg.own_addresses(), true).map(|g| g.id),
+            Some("Travel".into())
         );
     }
 

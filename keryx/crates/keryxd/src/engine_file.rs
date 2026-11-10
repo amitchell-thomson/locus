@@ -67,13 +67,15 @@ impl Engine {
             let Some(g) = item::guess(&self.db, &shared, &msgs, &own, true) else {
                 continue;
             };
-            let Some(o) = options.iter().find(|o| o.id == g.id) else {
-                continue;
+            // An item or stream; else one of your own keys by name (Admin, Travel).
+            let dest = match options.iter().find(|o| o.id == g.id) {
+                Some(o) => (o.folder.clone(), o.item.clone()),
+                None => match self.cfg.key(&g.id) {
+                    Some(k) => (k.name.clone(), None),
+                    None => continue,
+                },
             };
-            groups
-                .entry((o.folder.clone(), o.item.clone()))
-                .or_default()
-                .push(r.r#ref.clone());
+            groups.entry(dest).or_default().push(r.r#ref.clone());
         }
         let mut filed = 0;
         for ((folder, item), refs) in groups {

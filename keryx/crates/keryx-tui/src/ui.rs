@@ -330,6 +330,24 @@ fn list(f: &mut Frame, app: &App, area: Rect) {
         .unwrap_or(0);
     // The selected thread kept near the middle, clamped at both ends.
     let first = at.saturating_sub(h / 2).min(rows.len().saturating_sub(h));
+    // How far through (10 Nov: "a similar scrollbar for my inbox", as locus's Approve has): a
+    // mauve thumb on the right edge, its size what fits on screen, when the list is longer.
+    let area = if rows.len() > h && h > 0 && area.width > 8 {
+        let size = (h * h / rows.len()).max(1);
+        let top = (first * h / rows.len()).min(h - size);
+        let x = area.x + area.width - 1;
+        for y in 0..h {
+            let (ch, st) = if (top..top + size).contains(&y) {
+                ("┃", Style::default().fg(c("mauve")))
+            } else {
+                ("│", Style::default().fg(c("surface1")))
+            };
+            f.buffer_mut().set_string(x, area.y + y as u16, ch, st);
+        }
+        Rect::new(area.x, area.y, area.width - 1, area.height)
+    } else {
+        area
+    };
     let w = area.width as usize;
     let focus = !matches!(app.mode, Mode::Thread | Mode::Attachments);
     for (k, row) in rows.iter().enumerate().skip(first).take(h) {

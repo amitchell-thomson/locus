@@ -3,32 +3,32 @@ source: keryx/crates/keryx-tui/tests/writes.rs
 expression: s
 ---
 ╭ keryx ───────── all · personal · oxford · oqts · oqts shared ────────────────╮
-│ today ────────────────────────────────────────────────────────────────────── │
-│ ▎ Trains                                                               08:30 │
-│ ▎  Your e-ticket: Oxford to London, Fri 23 Oct                        oxford │
-│ ▎ Trains                                                               08:30 │
-│ ▎  Your e-ticket: Oxford to London, Fri 23 Oct                      personal │
-│                                                                              │
-│ yesterday ────────────────────────────────────────────────────────────────── │
-│ ╭────────────────────────────── kairos task ───────────────────────────────╮ │
-│ │                                                                          │ │
-│ │    Title  Lab partner for Thursday?                                      │ │
-│ │ Calendar  ◀ ● Errands ▶                                                  │ │
-│ │     Type  ◀ admin ▶                                                      │ │
-│ │ Estimate  45m                                                            │ │
-│ │      Due  fri 17:00█                                                     │ │
-│ │           fri 17:00 · 23 oct · tomorrow 9 · 2026-10-23T17:00             │ │
-│ │                                                                          │ │
-│ │  → Lab partner for Thursday? · Errands · admin · 45 min · due Fri 16     │ │
-│ │    Oct 17:00                                                             │ │
-│ │                                                                          │ │
-│ │  Tab next · ⇧Tab back · Enter save · Esc cancel                          │ │
-│ ╰──────────────────────────────────────────────────────────────────────────╯ │
-│   Department Office                                                      mon │
-│    Coursework submission portal                                       oxford │
-│                                                                              │
-│ sunday ───────────────────────────────────────────────────────────────────── │
-│   Stranger                                                               sun │
-│    Urgent request                                                     oxford │
+│ today ───────────────────────────────────────────────────────────────────── ┃│
+│ ▎ Trains                                                              08:30 ┃│
+│ ▎  Your e-ticket: Oxford to London, Fri 23 Oct                       oxford ┃│
+│ ▎ Trains                                                              08:30 ┃│
+│ ▎  Your e-ticket: Oxford to London, Fri 23 Oct                     personal ┃│
+│                                                                             ┃│
+│ yesterday ───────────────────────────────────────────────────────────────── ┃│
+│ ╭────────────────────────────── kairos task ───────────────────────────────╮┃│
+│ │                                                                          │┃│
+│ │    Title  Lab partner for Thursday?                                      │┃│
+│ │ Calendar  ◀ ● Errands ▶                                                  │┃│
+│ │     Type  ◀ admin ▶                                                      │││
+│ │ Estimate  45m                                                            │││
+│ │      Due  fri 17:00█                                                     │││
+│ │           fri 17:00 · 23 oct · tomorrow 9 · 2026-10-23T17:00             │││
+│ │                                                                          │││
+│ │  → Lab partner for Thursday? · Errands · admin · 45 min · due Fri 16     │││
+│ │    Oct 17:00                                                             │││
+│ │                                                                          │││
+│ │  Tab next · ⇧Tab back · Enter save · Esc cancel                          │││
+│ ╰──────────────────────────────────────────────────────────────────────────╯││
+│   Department Office                                                     mon ││
+│    Coursework submission portal                                      oxford ││
+│                                                                             ││
+│ sunday ──────────────────────────────────────────────────────────────────── ││
+│   Stranger                                                              sun ││
+│    Urgent request                                                    oxford ││
 ╰──────────────────────────────────────────────────────────────────────────────╯
  ⇥ next · ⏎ save · esc cancel

@@ -1328,7 +1328,7 @@ impl Engine {
             let Some(g) = keryx_store::item::guess(&self.db, shared, msgs, &own, false) else {
                 return action;
             };
-            return match shared.registry.get(&g.id) {
+            return match keryx_store::item::mail_item(shared, &g.id) {
                 Some(p) if p.kind != locus_contract::ProjectKind::Application => Action::File {
                     key: key.clone(),
                     item: Some(p.id.clone()),
@@ -1340,10 +1340,24 @@ impl Engine {
             return action;
         };
         match keryx_store::item::options(shared).into_iter().find(|o| o.id == g.id) {
-            Some(o) if o.item.is_some() && o.folder.eq_ignore_ascii_case(key) => Action::File {
-                key: key.clone(),
-                item: o.item,
-            },
+            Some(o) if o.item.is_some() && o.folder.eq_ignore_ascii_case(key) => {
+                // A course or application with a repo doing its work is filed as the repo, in
+                // the repo's area: G-Research AI/ML mail goes to Projects, for gr-ai-ml.
+                match keryx_store::item::mail_item(shared, &g.id) {
+                    Some(p) if p.id != g.id => Action::File {
+                        key: if self.taxonomy_folder(&p.area).is_some() {
+                            p.area.clone()
+                        } else {
+                            key.clone()
+                        },
+                        item: Some(p.id.clone()),
+                    },
+                    _ => Action::File {
+                        key: key.clone(),
+                        item: o.item,
+                    },
+                }
+            }
             _ => action,
         }
     }
@@ -1373,7 +1387,18 @@ impl Engine {
                 let msgs = self.db.thread(&p.account, &p.thread_id)?;
                 let sender = sender_of(&msgs);
                 let a = match item {
-                    Some(_) => p.action.clone(),
+                    // Filed as a course or application a repo does the work of: as the repo.
+                    Some(i) => match self.shared.as_ref().and_then(|s| keryx_store::item::mail_item(s, i)) {
+                        Some(r) if &r.id != i => Action::File {
+                            key: if self.taxonomy_folder(key).is_some() && self.taxonomy_folder(&r.area).is_some() {
+                                r.area.clone()
+                            } else {
+                                key.clone()
+                            },
+                            item: Some(r.id.clone()),
+                        },
+                        _ => p.action.clone(),
+                    },
                     None => self.with_item(p.action.clone(), &msgs),
                 };
                 if a != p.action {

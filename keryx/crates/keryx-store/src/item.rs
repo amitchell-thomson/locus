@@ -245,6 +245,17 @@ pub fn guess_within(db: &Db, shared: &Shared, msgs: &[Message], own: &HashSet<St
     })
 }
 
+/// The registry entry mail about `id` is filed for: a course or an application whose work a
+/// repo does (B3 and 3YP, the G-Research AI/ML challenges and gr-ai-ml) is one place for mail,
+/// the repo (10 Nov: "the same thing in two different places"). Anything else is itself.
+pub fn mail_item<'a>(shared: &'a Shared, id: &str) -> Option<&'a Project> {
+    let reg = &shared.registry;
+    reg.projects
+        .iter()
+        .find(|p| p.course.as_deref() == Some(id) || p.application.as_deref() == Some(id))
+        .or_else(|| reg.get(id))
+}
+
 /// The item you filed this sender's threads for, when one answer is most of them.
 fn sender_history(db: &Db, email: &str) -> Option<(String, usize)> {
     let mut counts: HashMap<String, usize> = HashMap::new();

@@ -3,20 +3,20 @@ source: crates/locus-tui/tests/dump.rs
 expression: "dump::render(&a, 95, 38).unwrap()"
 ---
 ╭ approve · 6 ────────────────────────────────────────────────────────────────────── esc back ╮
-│─ filing · 2 · Y all ────────────────────────────────────────────────────────────────────────│
+│─ filing · 2 · Y all ─────────────────────────────────────────────────────────────────────── │
 │▌ FILE     jot p3 "G-Research sponsor talk"                                                  │
 │  FILE     jot p3 "Kalman filters for…"                                                      │
 │                                                                                             │
-│─ mail · 1 · Y all ──────────────────────────────────────────────────────────────────────────│
+│─ mail · 1 · Y all ───────────────────────────────────────────────────────────────────────── │
 │  MAIL     14 mails                                                                          │
 │                                                                                             │
-│─ deadlines · 1 · Y all ─────────────────────────────────────────────────────────────────────│
+│─ deadlines · 1 · Y all ──────────────────────────────────────────────────────────────────── │
 │  DEADLINE  G-Research applications close 31 Oct                                             │
 │                                                                                             │
-│─ ink · 1 · Y all ───────────────────────────────────────────────────────────────────────────│
+│─ ink · 1 · Y all ────────────────────────────────────────────────────────────────────────── │
 │  INK      QUAST dossier 15 Oct · 3 marks I am unsure where they point                       │
 │                                                                                             │
-│─ stop asking? · 1 · Y all ──────────────────────────────────────────────────────────────────│
+│─ stop asking? · 1 · Y all ───────────────────────────────────────────────────────────────── │
 │  STOP ASKING?  spam archives: you approved 23 of 23. Do them automatically?                 │
 │                                                                                             │
 │                                                                                             │
@@ -37,6 +37,6 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │                                                                                             │
 │                                                                                             │
 │                                                                                             │
-│                                   1/6  y n one · Y the group · c change · a archive · ⏎ open│
+│                             1/6 · 16%  y n one · Y the group · c change · a archive · ⏎ open│
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯
  ⏎ open · ⇥ sections · l log · / search · i chat · ? keys

@@ -208,7 +208,11 @@ pub struct Dest {
 /// filings carry now): B15 is filed under Engineering, so B15 goes there; a course with none
 /// yet goes where most courses go; an application under its area (Careers); else its area.
 /// Picking B15 from an Admin filing must not file it under Admin (10 Nov).
-pub fn destinations(reg: &locus_contract::Registry, keys: &[String], pairs: &HashMap<String, String>) -> Vec<Dest> {
+pub fn destinations(
+    reg: &locus_contract::Registry,
+    keys: &[(String, String)],
+    pairs: &HashMap<String, String>,
+) -> Vec<Dest> {
     let by_kind = |k: locus_contract::ProjectKind| -> Option<String> {
         let mut n: HashMap<&str, usize> = HashMap::new();
         for (item, key) in pairs {
@@ -223,19 +227,54 @@ pub fn destinations(reg: &locus_contract::Registry, keys: &[String], pairs: &Has
         hint: "out of the inbox, nowhere in particular".into(),
         action: Action::Archive,
     }];
-    let mut items: Vec<&locus_contract::Project> = reg.projects.iter().collect();
+    // Personal's streams first (Family, Sport, Social, Errands): mail that is no project's.
+    for (name, hint) in keys.iter().filter(|(_, h)| h == "Personal") {
+        v.push(Dest {
+            label: name.clone(),
+            hint: hint.clone(),
+            action: Action::File {
+                key: name.clone(),
+                item: None,
+            },
+        });
+    }
+    // A course or application a repo does the work of is one place with the repo, listed once
+    // as the repo under both names (10 Nov: "the same thing in two different places").
+    let parent = |p: &locus_contract::Project| -> Option<&locus_contract::Project> {
+        p.course
+            .as_deref()
+            .or(p.application.as_deref())
+            .and_then(|id| reg.get(id))
+    };
+    let absorbed: std::collections::HashSet<String> = reg
+        .projects
+        .iter()
+        .filter_map(|p| parent(p).map(|q| q.id.clone()))
+        .collect();
+    let mut items: Vec<&locus_contract::Project> = reg.projects.iter().filter(|p| !absorbed.contains(&p.id)).collect();
     items.sort_by_key(|p| (!p.active, p.area.clone(), p.name.clone()));
     for p in items {
-        let key = match p.kind {
-            locus_contract::ProjectKind::Application => p.area.clone(),
-            k => pairs
+        // Where it is filed already, else: a course (or a repo doing a course's work) where
+        // courses go (Engineering); an application under Careers; anything else in its own area.
+        // A repo of Projects goes to Projects, never to Engineering by likeness (gr-ai-ml, 10 Nov).
+        let course_like = p.kind == locus_contract::ProjectKind::Course || p.course.is_some();
+        let key = if p.kind == locus_contract::ProjectKind::Application {
+            p.area.clone()
+        } else if course_like {
+            pairs
                 .get(&p.id)
                 .cloned()
-                .or_else(|| by_kind(k))
-                .unwrap_or_else(|| p.area.clone()),
+                .or_else(|| by_kind(locus_contract::ProjectKind::Course))
+                .unwrap_or_else(|| p.area.clone())
+        } else {
+            pairs.get(&p.id).cloned().unwrap_or_else(|| p.area.clone())
+        };
+        let label = match parent(p) {
+            Some(q) => format!("{} ({})", q.name, p.name),
+            None => p.name.clone(),
         };
         v.push(Dest {
-            label: p.name.clone(),
+            label,
             hint: format!("{key} · {}", p.id),
             action: Action::File {
                 key,
@@ -243,12 +282,24 @@ pub fn destinations(reg: &locus_contract::Registry, keys: &[String], pairs: &Has
             },
         });
     }
-    for k in keys {
+    // A folder that is one item's own (the OQTS folder is where the OQTS project's mail goes)
+    // is listed once, as the item: filing there and linking it to the project are one act.
+    let own: Vec<String> = v
+        .iter()
+        .filter_map(|d| match &d.action {
+            Action::File { key, item: Some(_) } if d.label.eq_ignore_ascii_case(key) => Some(key.to_lowercase()),
+            _ => None,
+        })
+        .collect();
+    for (name, hint) in keys
+        .iter()
+        .filter(|(n, h)| h != "Personal" && !own.contains(&n.to_lowercase()))
+    {
         v.push(Dest {
-            label: k.clone(),
-            hint: "a folder".into(),
+            label: name.clone(),
+            hint: hint.clone(),
             action: Action::File {
-                key: k.clone(),
+                key: name.clone(),
                 item: None,
             },
         });
@@ -274,11 +325,30 @@ pub fn pairs(fx: &Fixtures) -> HashMap<String, String> {
     out
 }
 
-/// Your keryx keys by name (Admin, Engineering, …), from keryx's config.
-pub fn key_names() -> Vec<String> {
-    Config::load(&Config::default_path())
-        .map(|c| c.keys.iter().map(|k| k.name.clone()).collect())
-        .unwrap_or_default()
+/// Every folder a filing can name, with what it is: Personal's streams (Family, Sport, Social,
+/// Errands: "is there no personal/family category", 10 Nov), the areas with no stream (Studies,
+/// Projects, Careers), then your own keryx keys (Admin, Engineering, …) not already listed.
+pub fn key_names() -> Vec<(String, String)> {
+    let mut v: Vec<(String, String)> = Vec::new();
+    if let Ok(shared) = locus_contract::taxonomy::load(&locus_contract::taxonomy::root()) {
+        for f in locus_contract::fors::fors(&shared)
+            .into_iter()
+            .filter(|f| f.item.is_none())
+        {
+            v.push((f.label, "Personal".into()));
+        }
+        for f in locus_contract::fors::area_fors(&shared) {
+            v.push((f.label, "an area".into()));
+        }
+    }
+    if let Ok(c) = Config::load(&Config::default_path()) {
+        for k in c.keys {
+            if !v.iter().any(|(n, _)| n.eq_ignore_ascii_case(&k.name)) {
+                v.push((k.name, "a folder".into()));
+            }
+        }
+    }
+    v
 }
 
 /// The `c` picker over the approve list.
@@ -758,7 +828,14 @@ mod tests {
             .find(|p| p.kind == locus_contract::ProjectKind::Application)
             .unwrap();
         let pairs: HashMap<String, String> = [(course.id.clone(), "Engineering".to_string())].into();
-        let d = destinations(reg, &["Admin".into(), "Engineering".into()], &pairs);
+        let d = destinations(
+            reg,
+            &[
+                ("Admin".into(), "a folder".into()),
+                ("Engineering".into(), "a folder".into()),
+            ],
+            &pairs,
+        );
         let to = |id: &str| {
             d.iter()
                 .find(|x| matches!(&x.action, Action::File { item: Some(i), .. } if i == id))

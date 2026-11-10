@@ -138,14 +138,39 @@ fn wrap_keep(s: &str, width: usize) -> Vec<String> {
 
 /// The selected item: (group, item).
 fn selected(app: &App, sel: usize) -> Option<(usize, usize)> {
-    let mut n = 0;
-    for (g, group) in app.fixtures.approve.groups.iter().enumerate() {
-        if sel < n + group.items.len() {
-            return Some((g, sel - n));
-        }
-        n += group.items.len();
+    visible(app).get(sel).copied()
+}
+
+/// Whether an item has every word of the filter in what it shows: who, what, the action,
+/// its group.
+fn item_matches(group: &ApproveGroup, it: &ApproveItem, filter: &str) -> bool {
+    if filter.trim().is_empty() {
+        return true;
     }
-    None
+    let mut hay = format!(
+        "{} {} {}",
+        it.text,
+        it.to.clone().unwrap_or_default(),
+        group_label(group)
+    );
+    if let Some(d) = &it.detail {
+        hay.push_str(&format!(" {} {} {} {}", d.action, d.who, d.subject, d.meta));
+    }
+    let hay = hay.to_lowercase();
+    filter.split_whitespace().all(|w| hay.contains(&w.to_lowercase()))
+}
+
+/// The lines the list shows, in order, as (group, item): every one, or those the filter keeps.
+fn visible(app: &App) -> Vec<(usize, usize)> {
+    let mut v = Vec::new();
+    for (g, group) in app.fixtures.approve.groups.iter().enumerate() {
+        for (i, it) in group.items.iter().enumerate() {
+            if item_matches(group, it, &app.approve_filter) {
+                v.push((g, i));
+            }
+        }
+    }
+    v
 }
 
 /// The approve list (10 Nov redesign): the action first as a coloured badge, then who and what,
@@ -154,8 +179,9 @@ fn selected(app: &App, sel: usize) -> Option<(usize, usize)> {
 /// wide enough, the selected item whole.
 pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     let ap = &app.fixtures.approve;
-    let total = ap.len();
-    let inner = frame(f, area, title("approve", &total.to_string()), Some(esc_back()));
+    let shown_items = visible(app);
+    let total = shown_items.len();
+    let inner = frame(f, area, title("approve", &ap.len().to_string()), Some(esc_back()));
     let [body, foot] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(inner);
     let split = body.width >= 100 && total > 0;
     let (list_r, detail_r) = if split {
@@ -166,6 +192,33 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     };
     let sel = app.sel(' ').min(total.saturating_sub(1));
     let visual = app.approve_visual.map(|v| (v.min(sel), v.max(sel)));
+    // The filter line, while typing or while a filter holds.
+    let filtering = app.approve_filtering || !app.approve_filter.is_empty();
+    let list_r = if filtering {
+        let [fl, rest] = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(list_r);
+        let mut spans = vec![
+            Span::styled(" / ", keyst()),
+            Span::styled(app.approve_filter.clone(), bold(text())),
+        ];
+        if app.approve_filtering {
+            spans.push(Span::styled("▏", keyst()));
+        }
+        spans.push(Span::styled(format!("   {total} of {}", ap.len()), dim()));
+        lines(f, fl, vec![Line::from(spans)]);
+        rest
+    } else {
+        list_r
+    };
+    // One column for the scrollbar.
+    let bar_r = Rect {
+        x: list_r.x + list_r.width.saturating_sub(1),
+        width: 1,
+        ..list_r
+    };
+    let list_r = Rect {
+        width: list_r.width.saturating_sub(1),
+        ..list_r
+    };
     let w = usize::from(list_r.width);
 
     let who_w = (w / 5).clamp(10, 22);
@@ -173,7 +226,13 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     let mut at_sel = 0;
     let mut n = 0;
     for (g, group) in ap.groups.iter().enumerate() {
-        if g > 0 {
+        let here: Vec<usize> = (0..group.items.len())
+            .filter(|i| shown_items.contains(&(g, *i)))
+            .collect();
+        if here.is_empty() {
+            continue;
+        }
+        if !out.is_empty() {
             out.push(Line::from(""));
         }
         let decided_here = group
@@ -183,7 +242,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
             .filter(|(i, _)| app.marked(&format!("approve:{g}:{i}")).is_some())
             .count();
         // A ruled heading per group (10 Nov: "better separated with horizontal rules").
-        let left = group.items.len() - decided_here;
+        let left = here.len().saturating_sub(decided_here);
         out.push(rule(
             &group_label(group),
             &format!("{left} · Y all"),
@@ -201,6 +260,9 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
             .unwrap_or(8)
             .clamp(8, 30);
         for (i, it) in group.items.iter().enumerate() {
+            if !here.contains(&i) {
+                continue;
+            }
             let k = format!("approve:{g}:{i}");
             let mark = app.marked(&k);
             let is_sel = n == sel;
@@ -244,6 +306,11 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     }
     if ap.is_empty() {
         out.push(Line::from(Span::styled("  nothing to approve", dim())));
+    } else if total == 0 {
+        out.push(Line::from(Span::styled(
+            "  nothing matches · esc clears the filter",
+            dim(),
+        )));
     }
     // Follow the cursor: keep it a few rows from either edge (and show its group's heading
     // when it is the first item).
@@ -258,6 +325,23 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     }
     top = top.min(out.len().saturating_sub(h));
     app.approve_scroll.set(top);
+    // How far through the list (10 Nov: "an indication of how far through the list I am"): a
+    // thumb on the right edge, its size what fits on screen.
+    let len = out.len();
+    if len > h && h > 0 {
+        let size = (h * h / len).max(1);
+        let at = (top * h / len).min(h - size);
+        let bar: Vec<Line<'static>> = (0..h)
+            .map(|y| {
+                if (at..at + size).contains(&y) {
+                    Line::from(Span::styled("┃", st("mauve")))
+                } else {
+                    Line::from(Span::styled("│", st("surface1")))
+                }
+            })
+            .collect();
+        lines(f, bar_r, bar);
+    }
     let shown: Vec<Line<'static>> = out.into_iter().skip(top).take(h).collect();
     lines(f, list_r, shown);
     if let Some(r) = detail_r {
@@ -268,7 +352,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     }
     let pos = match visual {
         Some((lo, hi)) => format!("VISUAL · {} selected  ", hi - lo + 1),
-        None if total > 0 => format!("{}/{total}  ", sel + 1),
+        None if total > 0 => format!("{}/{total} · {}%  ", sel + 1, (sel + 1) * 100 / total),
         None => String::new(),
     };
     let mut foot_line = hints(&[
@@ -719,7 +803,63 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 picker_key(app, k);
                 return true;
             }
-            let rows = approve_rows(app);
+            // `/`: filter this list (not the window's search). Typing narrows; Enter keeps the
+            // filter and goes back to the list; Esc clears it.
+            if app.approve_filtering {
+                match k.code {
+                    KeyCode::Enter => app.approve_filtering = false,
+                    KeyCode::Esc => {
+                        app.approve_filtering = false;
+                        app.approve_filter.clear();
+                    }
+                    KeyCode::Backspace => {
+                        app.approve_filter.pop();
+                    }
+                    KeyCode::Char(c) => app.approve_filter.push(c),
+                    _ => return true,
+                }
+                app.sel.insert((ScreenId::Approve, ' '), 0);
+                app.approve_visual = None;
+                return true;
+            }
+            if k.code == KeyCode::Char('/') {
+                app.approve_filtering = true;
+                app.approve_visual = None;
+                return true;
+            }
+            if k.code == KeyCode::Esc && app.approve_visual.is_none() && !app.approve_filter.is_empty() {
+                app.approve_filter.clear();
+                app.sel.insert((ScreenId::Approve, ' '), 0);
+                return true;
+            }
+            // With a filter, Y approves every line it shows (a group can be half shown).
+            if k.code == KeyCode::Char('Y') && app.approve_visual.is_none() && !app.approve_filter.is_empty() {
+                let n = visible(app).len();
+                for idx in (0..n).rev() {
+                    app.sel.insert((ScreenId::Approve, ' '), idx);
+                    key(app, KeyEvent::new(KeyCode::Char('y'), k.modifiers));
+                }
+                app.sel.insert((ScreenId::Approve, ' '), 0);
+                app.note = Some(format!("approved all {n} shown: on their way to keryx"));
+                return true;
+            }
+            // The lines as shown, so a selection (filtered or not) names the right item.
+            let all = approve_rows(app);
+            let offsets: Vec<usize> = app
+                .fixtures
+                .approve
+                .groups
+                .iter()
+                .scan(0, |n, g| {
+                    let at = *n;
+                    *n += g.items.len();
+                    Some(at)
+                })
+                .collect();
+            let rows: Vec<_> = visible(app)
+                .into_iter()
+                .filter_map(|(g, i)| all.get(offsets[g] + i).cloned())
+                .collect();
             // Visual mode (10 Nov: "press v to do visual mode to select multiple lines and do
             // that action over those lines"): v marks where it starts, moving extends it, and
             // y n a c act on every line in it.

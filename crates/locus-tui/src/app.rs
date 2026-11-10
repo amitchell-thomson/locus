@@ -111,6 +111,11 @@ pub struct App {
     pub approve_pick: Option<crate::mail::Picker>,
     /// `v` on Approve: where the visual selection started (it runs to the cursor).
     pub approve_visual: Option<usize>,
+    /// `/` on Approve: the list narrowed to lines with every word typed (10 Nov: "search
+    /// should search and filter among approved, not be the general search").
+    pub approve_filter: String,
+    /// Typing the filter now (Enter keeps it, Esc clears it).
+    pub approve_filtering: bool,
     /// The project Home asked the Project window to show, until Esc.
     pub peek: Option<String>,
     /// For a section that draws only some of its items, the ones drawn, in order: the arrows
@@ -185,6 +190,8 @@ impl App {
             mail_queue: None,
             approve_pick: None,
             approve_visual: None,
+            approve_filter: String::new(),
+            approve_filtering: false,
             peek: None,
             shown: RefCell::new(HashMap::new()),
             lane_open: false,
@@ -647,7 +654,7 @@ mod tests {
             .collect();
         assert_eq!(approved.len(), 3, "{approved:?}");
         assert!(
-            a.marks.get("approve:0:0").is_none(),
+            !a.marks.contains_key("approve:0:0"),
             "the line before the selection is untouched"
         );
         // Esc leaves visual mode without leaving the screen.

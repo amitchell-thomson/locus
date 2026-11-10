@@ -214,3 +214,11 @@ def test_latest_activity_is_what_happened_not_a_dropped_task(conn, monkeypatch):
     out = ht.context(conn)
     line = next(l for l in out.splitlines() if l.strip().startswith("GR AI/ML"))
     assert "weekend work" in line and "settle team" not in line
+
+
+def test_a_notebook_note_carries_its_header_project(tmp_path):
+    # H1 re-run: "Feedback" under /Careers/Jump Trading said nothing about Jump in its title or text.
+    note = tmp_path / "feedback-d885f3a1.md"
+    note.write_text("---\ntitle: Feedback\nremarkable_folder: /Careers/Jump Trading\narea: Careers\nthing: jump\n---\n\nGreenhouse work - do more\n")
+    assert ht.note_header(str(note))["remarkable_folder"] == "/Careers/Jump Trading"
+    assert ht.doc_thing("Feedback", str(note)) == "jump"

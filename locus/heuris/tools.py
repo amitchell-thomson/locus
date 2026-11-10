@@ -24,6 +24,7 @@ import sqlite3
 import struct
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 from locus.heuris import registry
 from locus.heuris.index import QUERY_PREFIX
@@ -221,6 +222,29 @@ def heuris_candidates(conn, query: str, qvec: list[float], *, kind=None, area=No
                 score=-chunk_ids[r[0]]) for r in rows]
 
 
+def note_header(uri: str) -> dict[str, str]:
+    """The header Loop A writes on a transcribed notebook (`thing`, `remarkable_folder`, `area`),
+    read from the note itself: the library keeps only its title, so "Feedback" under
+    /Careers/Jump Trading carried no trace of Jump (Y9 and Q10 in the H1 re-run, 10 Nov)."""
+    if not uri or not uri.endswith(".md"):
+        return {}
+    p = Path(uri)
+    try:
+        head = p.read_text(errors="replace")[:2000] if p.is_file() else ""
+    except OSError:
+        return {}
+    if not head.startswith("---"):
+        return {}
+    out = {}
+    for line in head.split("\n")[1:40]:
+        if line.strip() == "---":
+            break
+        k, _, v = line.partition(":")
+        if k.strip() in ("thing", "remarkable_folder", "area"):
+            out[k.strip()] = v.strip()
+    return out
+
+
 def doc_thing(title: str, uri: str) -> str | None:
     """The registry item a library document is about, when its title or path NAMES one (its id,
     name or folder, as a whole word; four letters at least, so `cv` never fires on prose). The
@@ -229,7 +253,10 @@ def doc_thing(title: str, uri: str) -> str | None:
 
     H1 fix 3, 10 Nov: the library carried no item at all, so `thing=quast` dropped every paper
     and note, and regime-ml (src:175) read as having no repository."""
-    hay = f"{title or ''} {uri or ''}".lower().replace("_", "-")
+    header = note_header(uri)
+    if header.get("thing") in registry.entries():
+        return header["thing"]
+    hay = f"{title or ''} {uri or ''} {header.get('remarkable_folder', '')}".lower().replace("_", "-")
     hits = set()
     for pid, e in registry.entries().items():
         names = {pid, e.get("name", ""), e.get("folder", "")} | set(e.get("sessions", []))
@@ -240,6 +267,33 @@ def doc_thing(title: str, uri: str) -> str | None:
                 hits.add(pid)
                 break
     return hits.pop() if len(hits) == 1 else None
+
+
+def notes_for_thing(thing: str, limit: int = 8) -> list[Hit]:
+    """His transcribed notebook notes whose header says they are for `thing`."""
+    from locus.config import load
+    from locus.db.connection import get_connection
+
+    conn = get_connection(load().paths.db)
+    try:
+        rows = conn.execute("SELECT id, title, source_uri, source_date FROM documents WHERE source_uri LIKE '%.md' "
+                            "AND source_uri LIKE '%/notes/%' ORDER BY id DESC").fetchall()
+        out = []
+        for r in rows:
+            h = note_header(r["source_uri"])
+            if h.get("thing") != thing:
+                continue
+            first = conn.execute("SELECT raw_text FROM chunks WHERE doc_id=? ORDER BY id LIMIT 1", (r["id"],)).fetchone()
+            folder = h.get("remarkable_folder", "").strip("/")
+            out.append(Hit(ref=f"src:{r['id']}", kind="note", at=r["source_date"] or "",
+                           title=f"{r['title']} (tablet: {folder})" if folder else r["title"],
+                           text=(first[0] if first else "")[:800], thing=thing,
+                           meta={"category": "note", "unit": "notebook"}))
+            if len(out) >= limit:
+                break
+        return out
+    finally:
+        conn.close()
 
 
 def library_candidates(query: str, *, kind=None, area=None, since=None, until=None, thing=None) -> list[Hit]:
@@ -278,10 +332,12 @@ def library_candidates(query: str, *, kind=None, area=None, since=None, until=No
         about = doc_thing(d["title"] or "", d["source_uri"] or "")
         if thing and about != thing:
             continue
+        folder = note_header(d["source_uri"] or "").get("remarkable_folder")
         pos = secs.get(c.section_id)
         ref = f"src:{c.doc_id}" + (f"#s{pos}" if pos is not None else "")
         out.append(Hit(ref=ref, kind=k, at=d["source_date"] or (d["ingested_at"] or "")[:10],
-                       title=d["title"] or f"document {c.doc_id}", text=c.text, thing=about,
+                       title=(d["title"] or f"document {c.doc_id}") + (f" (tablet: {folder.strip('/')})" if folder else ""),
+                       text=c.text, thing=about,
                        meta={"category": d["category"], "unit": c.kind}))
     return out
 
@@ -348,6 +404,12 @@ def search(conn: sqlite3.Connection, query: str, *, kind: str | None = None, are
     if library and (kind is None or kind in LIBRARY_KINDS) and lib_ok:
         try:
             hits += library_candidates(query, kind=kind, area=area, since=since, until=until, thing=thing)
+            # A query that names an item ("Jump feedback notes") also offers that item's own
+            # notebook notes, whose text may never say the name (H1 re-run: Y9 reached the
+            # "Feedback" notebook only at call 10).
+            named = thing or doc_thing(query, "")
+            if named and kind in (None, "note"):
+                hits += notes_for_thing(named)
         except Exception as exc:  # the library being down must not take mail search with it
             hits.append(Hit(ref="", kind="error", at="", title="library unavailable", text=str(exc)))
     if not hits:

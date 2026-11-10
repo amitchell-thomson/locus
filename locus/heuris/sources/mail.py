@@ -62,7 +62,10 @@ def clean(body: str, *, keep_forward: bool = True) -> str:
             forwarded = re.sub(r"^ ?> ?", "", text[cut:cut + 8000], flags=re.M)
         text = own if own.strip() or forwarded else body[:1000]
     unquoted = "\n".join(line for line in text.split("\n") if not line.lstrip().startswith(">"))
-    if not unquoted.strip() and text.strip():
+    # "Nothing left" means no words: an image placeholder (U+FFFC) and keryx's "Links:" footer
+    # are all that remained of his 5 Nov reply, so it counted as text and the fallback never ran.
+    words = re.sub(r"\n\s*Links:\s*\n(?:\s*\[\d+\][^\n]*\n?)*", "", unquoted).replace("\ufffc", "")
+    if not re.search(r"[A-Za-z]{3}", words) and text.strip():
         # Everything quoted: some clients send a reply with the writer's own text prefixed "> "
         # (Alec's 5 Nov reply to Millennium, with the passport line, was indexed EMPTY; H1 fix
         # 4). The message's own text is then its first quoted block, up to the quoted "On …

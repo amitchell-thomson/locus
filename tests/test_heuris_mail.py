@@ -139,3 +139,6 @@ def test_a_reply_sent_all_quoted_keeps_its_own_text():
     out = clean(body)
     assert "passport renewed next month" in out and "confirm your right to work" not in out
     assert clean("Thanks!\n\nOn Thu, Kate wrote:\n> old text") == "Thanks!"
+    # As it really arrived: an image placeholder and a Links footer above the quoted reply.
+    real = "\ufffc\n\nLinks:\n[1] https://www.mlp.com/home/\n" + body
+    assert "passport renewed next month" in clean(real)

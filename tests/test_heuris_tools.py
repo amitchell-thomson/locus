@@ -182,3 +182,19 @@ def test_waiting_finds_who_wrote_last_across_all_mail(conn):
     assert "Milly Parrott" in me and "early January" in me and "noreply" not in me
     them = ht.waiting(conn, on="them", now=now)
     assert "Sim repo" in them and "Milly" not in them
+
+
+def test_waiting_leaves_out_lists_and_bulk_mail(conn):
+    def m(ref, d, email, subj, text):
+        it = mail(ref, d, "Sender", email, subj, text)
+        it.meta["why"] = "an Oxford list or office"
+        return it
+    index(conn, "mail", [
+        m("mail:oxford/50/501", 1, "jcr@new.ox.ac.uk", "Agenda", "Please let me know if your motion is missing."),
+        m("mail:oxford/51/511", 2, "jcr@new.ox.ac.uk", "Voting", "Any questions please let me know."),
+        m("mail:oxford/52/521", 3, "jcr@new.ox.ac.uk", "Minutes", "Questions? Let me know."),
+        m("mail:oxford/53/531", 3, "club@ox.ac.uk", "Training", "Can you drive? To unsubscribe email us."),
+        m("mail:oxford/54/541", 4, "connor@lmh.ox.ac.uk", "B15 tutorial 1", "Could you do Wednesday at 4pm?"),
+    ], embed=fake_embed)
+    out = ht.waiting(conn, on="me", now=datetime(2026, 11, 10, tzinfo=timezone.utc))
+    assert "B15 tutorial 1" in out and "Agenda" not in out and "Training" not in out

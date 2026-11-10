@@ -25,28 +25,50 @@ def _thing(path: str) -> str | None:
     return hits[0] if len(hits) == 1 else None
 
 
-def _thing_by_text(text: str) -> str | None:
-    """The application a file is about, from what it says, for a file whose folder names no firm
-    (H1 fix 2, 10 Nov: the Millennium offer letter sits in ~/Downloads and was linked to nothing,
-    so `timeline millennium` and four answers never saw it).
+def _stages() -> dict[str, str]:
+    """Each application's stage from his applications file (pushed beside the repos)."""
+    import tomllib
 
-    The firm must be named in the text, and only one firm; between that firm's applications
-    the rest of each application's name decides (the letter says "2027" and "Internship", the
-    2026 event's name says "Meet"). A tie gives none: an unlinked file is findable by search,
-    a wrongly linked one misleads."""
+    from locus.heuris.run import inbox
+
+    try:
+        data = tomllib.loads((inbox() / "repos" / "_applications.toml").read_text())
+    except (OSError, ValueError):
+        return {}
+    return {k: str(v.get("stage", "")) for k, v in data.items() if isinstance(v, dict)}
+
+
+def _thing_by_text(text: str, stages: dict[str, str] | None = None) -> str | None:
+    """The application a file is about, from what it says, for a file whose folder names no firm
+    (H1 fix 2, 10 Nov: the Millennium offer letter sits in ~/Downloads and was linked to nothing).
+
+    The firm must be named in the text, and only one firm. Between that firm's applications:
+    a document about an OFFER goes to the one whose stage is an offer or a contract (the first
+    version of this read "meet" and the letter's 2026 date and linked the offer letter, pack and
+    handbook to Meet Millennium 2026: worse than no link); then the rest of each application's
+    name, matched as written (capitalised), so ordinary words like "meet" do not count. A tie
+    gives none: an unlinked file is findable by search, a wrongly linked one misleads.
+    """
+    stages = _stages() if stages is None else stages
     low = text.lower()
     named = lambda w: re.search(rf"(?<![a-z0-9]){re.escape(w.lower())}(?![a-z0-9])", low) is not None
+    exact = lambda w: re.search(rf"(?<![A-Za-z0-9]){re.escape(w)}(?![A-Za-z0-9])", text) is not None
     apps = [(pid, e) for pid, e in registry.entries().items() if e.get("kind") == "application" and e.get("company")]
     firms = {e["company"] for _, e in apps if named(e["company"])}
     if len(firms) != 1:
         return None
     firm = firms.pop()
+    about_offer = named("offer") or named("contract") or named("employment")
     scored = []
     for pid, e in apps:
         if e["company"] != firm:
             continue
+        score = 0.0
+        if about_offer and re.search(r"offer|contract|signed", stages.get(pid, ""), re.I):
+            score += 2
         rest = [w for w in e.get("name", "").split() if w.lower() not in firm.lower() and len(w) >= 2]
-        scored.append((sum(1 for w in rest if named(w)), pid))
+        score += sum(1 for w in rest if not w.isdigit() and exact(w))
+        scored.append((score, pid))
     scored.sort(reverse=True)
     if not scored or (len(scored) > 1 and scored[0][0] == scored[1][0]):
         return None

@@ -145,12 +145,14 @@ def test_a_cross_drawn_over_a_checkbox_is_read_as_the_chosen_option():  # Y2
 
 
 def test_a_downloads_file_is_linked_to_its_application_by_its_text():
-    # H1 fix 2: the Millennium offer letter in ~/Downloads was linked to nothing.
+    # H1 fix 2: the Millennium offer letter in ~/Downloads was linked to nothing, then (first
+    # try) to Meet Millennium 2026 because it says "meet" and is dated 2026.
     from locus.heuris.sources.files import _thing_by_text
 
-    letter = ("Millennium Management. We are pleased to offer you the 2027 Quantitative Developer "
-              "Internship, from 21 June to 27 August 2027, in London.")
-    assert _thing_by_text(letter) == "millennium"
-    assert _thing_by_text("Meet Millennium 2026: your place is confirmed") == "meet-millennium"
-    assert _thing_by_text("A letter from Brevan Howard and Millennium") is None, "two firms: none"
-    assert _thing_by_text("A recipe for soup") is None
+    stages = {"millennium": "offer accepted", "meet-millennium": "attended"}
+    letter = ("28 October 2026. Dear Alec, We are pleased to offer you a fixed term position with "
+              "Millennium Capital Management as an Intern. We look forward to meet you in 2027.")
+    assert _thing_by_text(letter, stages) == "millennium"
+    assert _thing_by_text("Meet Millennium 2026: your place is confirmed", stages) == "meet-millennium"
+    assert _thing_by_text("Millennium news for everyone", stages) is None, "nothing settles it: none"
+    assert _thing_by_text("A letter from Brevan Howard and Millennium", stages) is None, "two firms: none"

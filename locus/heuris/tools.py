@@ -655,10 +655,19 @@ _NOT_A_PERSON = re.compile(r"^(?:no-?reply|do-?not-?reply|notifications?|alerts?
                            r"support|mailer|bounce|updates?|team|hello|careers)\b", re.I)
 
 
+# Bulk mail: what a person writing to him does not put in a message.
+_BULK = re.compile(r"unsubscribe|mailing list|view (?:it )?in (?:your )?browser|displaying incorrectly|"
+                   r"manage (?:your )?preferences|you are receiving this", re.I)
+
+
 def _ask_line(text: str) -> str:
     for sent in re.split(r"(?<=[.?!])\s+|\n+", text or ""):
-        if _ASKS.search(sent) and len(sent.strip()) > 8:
-            return sent.strip()[:220]
+        sent = sent.strip()
+        # A link, a footnote or markup is not an ask.
+        if not sent or sent.startswith("[") or re.search(r"https?://|mailto:|@media|\{", sent):
+            continue
+        if _ASKS.search(sent) and len(sent) > 8:
+            return sent[:220]
     return ""
 
 
@@ -679,6 +688,15 @@ def waiting(conn: sqlite3.Connection, on: str = "me", days: int = 28, now: datet
     last: dict[str, tuple] = {}
     for r in rows:
         last[r[0]] = r
+    # A sender of three or more threads he never answered is a list, not a person waiting
+    # (the first cut returned 74 threads, mostly college lists whose footer says "let me know").
+    answered, threads_of = set(), {}
+    for parent, ref, at, ts, title, text, meta in rows:
+        m = json.loads(meta or "{}")
+        if m.get("why") == "you sent it":
+            answered.add(parent)
+        threads_of.setdefault((m.get("from") or "").lower(), set()).add(parent)
+    listy = {a for a, ps in threads_of.items() if len(ps) >= 3 and not (ps & answered)}
     env = Envelope()
     out = []
     for parent, ref, at, ts, title, text, meta in sorted(last.values(), key=lambda r: r[3], reverse=True):
@@ -688,8 +706,8 @@ def waiting(conn: sqlite3.Connection, on: str = "me", days: int = 28, now: datet
         if not ask:
             continue
         if on == "me":
-            local = (m.get("from") or "").split("@")[0]
-            if mine or _NOT_A_PERSON.match(local):
+            sender = (m.get("from") or "").lower()
+            if mine or _NOT_A_PERSON.match(sender.split("@")[0]) or sender in listy or _BULK.search(text or ""):
                 continue
             who = f"{m.get('from_name') or ''} <{m.get('from')}>"
         else:

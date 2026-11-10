@@ -619,7 +619,12 @@ def context(conn: sqlite3.Connection, about: str | None = None, *, today: date |
     for pid, e in registry.entries().items():
         if e.get("state") != "live":
             continue
-        last = conn.execute("SELECT at, kind, title FROM items WHERE thing=? ORDER BY at_ts DESC LIMIT 1", (pid,)).fetchone()
+        # What has HAPPENED: nothing dated after now, and no task that is not open. A dropped
+        # task due on Friday was shown as GR AI/ML's latest activity, and two answers took it as
+        # live (H1 re-run, 10 Nov).
+        last = conn.execute("SELECT at, kind, title FROM items WHERE thing=? AND at_ts <= ? AND NOT "
+                            "(kind='task' AND COALESCE(json_extract(meta,'$.status'),'open') != 'open') "
+                            "ORDER BY at_ts DESC LIMIT 1", (pid, int(datetime.now(timezone.utc).timestamp()))).fetchone()
         out.append(f"  {e.get('name', pid)}: " + (f"{last[0][:10]} {last[1]}: {_short(last[2], 90)}" if last else "nothing indexed"))
     try:
         import tomllib

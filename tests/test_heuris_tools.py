@@ -198,3 +198,18 @@ def test_waiting_leaves_out_lists_and_bulk_mail(conn):
     ], embed=fake_embed)
     out = ht.waiting(conn, on="me", now=datetime(2026, 11, 10, tzinfo=timezone.utc))
     assert "B15 tutorial 1" in out and "Agenda" not in out and "Training" not in out
+
+
+def test_latest_activity_is_what_happened_not_a_dropped_task(conn, monkeypatch):
+    # H1 re-run: a dropped task due on Friday showed as GR AI/ML's latest activity.
+    monkeypatch.setattr(ht.registry, "entries", lambda: {"gr-ai-ml": {"name": "GR AI/ML", "state": "live", "area": "Projects"}})
+    now = datetime.now(timezone.utc)
+    index(conn, "calendar", [
+        Item(ref="task:t-x", kind="task", at=now.replace(year=now.year + 1), title="settle team", text="",
+             thing="gr-ai-ml", meta={"status": "dropped"}),
+        Item(ref="chat:laptop/s#1", kind="chat", at=now.replace(year=now.year - 1), title="weekend work",
+             text="", thing="gr-ai-ml"),
+    ], embed=fake_embed)
+    out = ht.context(conn)
+    line = next(l for l in out.splitlines() if l.strip().startswith("GR AI/ML"))
+    assert "weekend work" in line and "settle team" not in line

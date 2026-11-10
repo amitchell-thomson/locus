@@ -2198,7 +2198,9 @@ fn projects_are_the_registry_repos() {
         kairos_core::project::ProjectStatus::Paused,
         "inactive in the registry"
     );
-    assert_eq!(e.unregistered().unwrap(), ["aulos"]);
+    // aulos joined the registry (as done), so kairos's own "aulos" is linked, not left over.
+    assert!(e.unregistered().unwrap().is_empty());
+    by_reg("aulos");
     // New projects come from the registry.
     let err = e
         .create_project(

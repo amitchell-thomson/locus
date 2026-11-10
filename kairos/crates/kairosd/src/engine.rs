@@ -2345,9 +2345,23 @@ impl Engine {
         if !made.is_empty() {
             parts.push(format!("added {}", made.join(", ")));
         }
-        let world = self.world(1)?;
         let summary = format!("Projects from the locus registry: {}", parts.join("; "));
-        self.propose(&world, Author::Claude, ops, summary).map(Some)
+        // In batches of at most eight: one project per registry repo is the same low-risk change
+        // many times over, and the registry outgrew the eight-change limit (10 Nov), so a fresh
+        // sync sat waiting for approval as one high-risk changeset. Each batch is its own undo.
+        let n = ops.len().div_ceil(risk::MAX_LOW_RISK_OPS);
+        let mut first = None;
+        for (i, chunk) in ops.chunks(risk::MAX_LOW_RISK_OPS).enumerate() {
+            let world = self.world(1)?;
+            let s = if n > 1 {
+                format!("{summary} (part {} of {n})", i + 1)
+            } else {
+                summary.clone()
+            };
+            let cs = self.propose(&world, Author::Claude, chunk.to_vec(), s)?;
+            first.get_or_insert(cs);
+        }
+        Ok(first)
     }
 
     /// When an event starts, if it is on the calendar in the next four months.

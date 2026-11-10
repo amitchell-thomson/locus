@@ -416,3 +416,34 @@ everyone; with four chats at once, 4 of 48 could not connect. Tools now run in w
 **Spot-check (yours):** Y2, Y3, Y7, 1, 10, 18, 24, 34, 46, 48: five passes and five failures
 across every group. Each is `data/evals/h1-2026-11-10/answers/<id>.md` with its grade in
 `grades/<id>.json`.
+
+
+### Re-run (10 Nov, 20:45): the 10 fails, 8 partials the fixes touch, and the new Q49
+
+Same method: each question in a fresh `claude -p` with only locus, keryx and kairos; four graders verifying against live data with read-only tools. New this time: effort per question, and the call at which the right source first appeared. This build session was held out of the index (its second id too) before the run.
+
+| Q | round 1 | re-run | calls | first useful call | seconds | cause |
+|---|---|---|---|---|---|---|
+| Y1 | partial | **partial** | 18 | 2 | 93 | model-reasoning |
+| Y3 | fail | **partial** | 38 | 2 | 164 | model-reasoning |
+| Y5 | partial | **partial** | 14 | 3 | 137 | model-reasoning |
+| Y7 | fail | **pass** | 16 | 1 | 92 | ok |
+| Y9 | partial | **pass** | 20 | 10 | 173 | ok |
+| 1 | partial | **partial** | 17 | 1 | 34 | index-gap |
+| 10 | fail | **partial** | 22 | 14 | 49 | model-reasoning |
+| 12 | partial | **pass** | 21 | 2 | 63 | ok |
+| 21 | fail | **fail** | 8 | None | 136 | tool-bug |
+| 22 | fail | **pass** | 23 | 1 | 67 | ok |
+| 24 | fail | **pass** | 4 | 2 | 21 | ok |
+| 34 | fail | **fail** | 5 | 2 | 27 | model-reasoning |
+| 35 | fail | **partial** | 11 | 2 | 38 | tool-bug |
+| P1 | fail | **pass** | 11 | 1 | 42 | ok |
+| P2 | fail | **fail** | 15 | 1 | 67 | model-reasoning |
+| 36 | partial | **partial** | 6 | 2 | 38 | tool-bug |
+| 38 | partial | **partial** | 7 | 2 | 35 | model-reasoning |
+| 39 | partial | **partial** | 13 | 2 | 56 | model-reasoning |
+| 49 | new | **pass** | 13 | 3 | 41 | ok |
+
+**H1 now, over 49 questions: 33 pass, 13 partial, 3 fail** (was 26 / 12 / 10 over 48). Effort fell where the fixes landed: Q24 17 calls / 52 s to 4 / 21 s; Q7 194 s to 92 s; Q9 267 s to 173 s; Q10 107 s to 49 s.
+
+Found by the re-run and fixed the same evening: `context` showed a dropped future task as a project's latest activity (Q35, P1); course codes (b14) did not name library documents, and `markups` did not point at a transcription when the tablet refused (HTTP 429) (Q21). Still open: Q34 (CV figures restated unchecked), P2 (asked before writing, though writes apply by his choice), a tool for worked time over a chosen range (Q36), the applications file's notes not reachable (Brian's advice; Y1, Y7), a tablet notebook's folder not reaching its library copy (Y9: "Feedback" under jump-trading).

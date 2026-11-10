@@ -912,6 +912,38 @@ def run(enable_query: bool = False) -> None:
     _build(enable_query=enable_query).run()
 
 
+class _Arrivals:
+    """ASGI wrapper for the public listener: one `public_request` line per request with its
+    method, path, status, Host and user agent (never a header value that could be a secret).
+
+    "Couldn't reach locus" from claude.ai (10 Nov) left nothing on the server to say whether its
+    request arrived at all, the same blind spot `mcp-log` closed for tool calls (CLAUDE.md §3).
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        h = dict(scope.get("headers") or [])
+        status = {"code": None}
+
+        async def send_(msg):
+            if msg["type"] == "http.response.start":
+                status["code"] = msg["status"]
+            await send(msg)
+
+        try:
+            await self.app(scope, receive, send_)
+        finally:
+            mcp_log.record("public_request", method=scope.get("method"), path=scope.get("path"),
+                           status=status["code"], host=h.get(b"host", b"").decode(errors="replace"),
+                           ua=h.get(b"user-agent", b"").decode(errors="replace")[:120],
+                           origin=h.get(b"origin", b"").decode(errors="replace"),
+                           fwd=h.get(b"x-forwarded-for", b"").decode(errors="replace"))
+
+
 class _Bearer:
     """ASGI wrapper: every HTTP request must carry `Authorization: Bearer <token>` (Slice 0.6).
 
@@ -973,7 +1005,7 @@ def serve_public(port: int, passphrase: str, base_url: str, db_path) -> None:
     _SERVER_PID = os.getpid()
     provider = Provider(Store(db_path), passphrase, base_url)
     mcp_log.record("server_start", build=_SERVER_BUILD, public=base_url, http=f"127.0.0.1:{port}")
-    app = _build(host="127.0.0.1", public=(provider, base_url)).streamable_http_app()
+    app = _Arrivals(_build(host="127.0.0.1", public=(provider, base_url)).streamable_http_app())
     # Funnel terminates TLS and forwards; trust its X-Forwarded-* so the issuer URLs are https.
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning", proxy_headers=True,
                 forwarded_allow_ips="127.0.0.1")

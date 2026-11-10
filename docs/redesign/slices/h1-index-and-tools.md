@@ -344,4 +344,58 @@ H1.8, then H1.9, H1.10, H1.12 and H1.11.
   a decision for you; keryx is unchanged.
 
 ## Report
-*(written when H1 closes)*
+
+### H1.11 scored (10 Nov)
+48 H1 questions, each in a fresh `claude -p` on the laptop: locus, keryx and kairos tools only,
+no built-in tools, no repo, run from a temp folder so the runs are never indexed. Four graders
+marked each answer against your line, opened every cited pointer and searched for what an answer
+missed. Answers, tool calls and grades: `data/evals/h1-2026-11-10/` (laptop, not committed: it
+holds your mail).
+
+**26 pass · 12 partial · 10 fail.** Q40 (phone) is yours to run.
+
+| | Passed |
+| --- | --- |
+| All three marks | Y2 Y4 Y6 · 2 3 5 6 8 9 11 · 13 15 16 17 18 19 20 25 26 · 33 37 41 44 46 47 48 |
+
+| # | State | Sources | Nothing invented | Overall | Cause and fix |
+| --- | --- | --- | --- | --- | --- |
+| Y1 | partial | partial | pass | partial | Read the Millennium letter, still gave the dates from the handwritten offer-call note; did not use your stated goal (QD/QR beside a systematic pod, 30 Oct mail). |
+| Y3 | partial | partial | **fail** | fail | "Millennium accepted today": it was 2 Nov. Cited notes by section, not page; missed the BH "EM ideas" note. |
+| Y5 | pass | partial | pass | partial | regime-ml is not in the registry, so it said it had no repo; the library holds it (`src:175`). |
+| Y7 | partial | partial | **fail** | fail | "BH fills places from its reserve list" stated as fact, unlabelled; said the Millennium letter is not in mail (it is a file). |
+| Y9 | partial | pass | pass | partial | 2 Jun start from the handwritten note; the letter says 21 Jun. |
+| 1 | partial | partial | partial | partial | Missed the passport renewal: your 5 Nov reply is indexed with no body (rich reply). Took the family calendar's Düsseldorf flight as yours. |
+| 4 | pass | partial | pass | partial | Named no commits, though four from 10 Nov are indexed. |
+| 7 | pass | partial | pass | partial | Lectures right; only one has a library pointer, none an event pointer. |
+| 10 | **fail** | partial | pass | fail | "No margin notes for locus or GR AI/ML": the reading notes on the locus plan, screens and heuris v1, and on the Transformer primer, exist; `thing=` filters miss them. |
+| 12 | pass | partial | pass | partial | BH quotes verbatim; repo docs named but not opened or cited. |
+| 14 | pass | pass | partial | partial | Two bullets overstate the source (which bug rejected UK orders; "matching all 5,177 deals"). |
+| 21 | partial | fail | **fail** | fail | Said the B14 notebook is untranscribed; it is indexed (`src:664`). The right answer: no 2D Fourier page exists. |
+| 22 | partial | pass | **fail** | fail | Proposed 8pm Wed/Thu to Kristof: Wed clashes with MAO Drinks, Thu is a flight. Drafts made, none sent; the OQTS-shared ones were refused (read-only). |
+| 23 | partial | pass | pass | partial | No 3YP email proposes a meeting (likely WhatsApp); it said so and scheduled nothing. |
+| 24 | **fail** | partial | pass | fail | Found the offer letter but `open` returned all 55 KB and the client spilled it to a file it could not read. Missed 21 Jun–27 Aug, pay and stipend. |
+| 34 | pass | partial | **fail** | fail | "OQTS, which Tower has sponsored from the start": no source. Repeated the CV's "3.4 s" tune-up; quast's results say 3.4 *minutes*. **Your CV line may be wrong.** |
+| 35 | partial | pass | **fail** | fail | Treated family-calendar events as yours (Callum's personal training, the Düsseldorf flight). |
+| P1 | partial | partial | **fail** | fail | Copied the stale mixer time (17:00) from the Home chat; the 10 Nov mail moved it to 16:00. The pointer it held had changed (thread ids move when a reply arrives). |
+| P2 | **fail** | pass | pass | fail | Good plan, but kairos APPLIED its writes (an event, a task, a block) rather than leaving them pending: low-risk writes from MCP apply at once. |
+| 36 | partial | pass | pass | partial | kairos reports only the last 30 days, so "last month" became 11 Oct–10 Nov (said so). |
+| 38 | partial | partial | pass | partial | Missed September's careers activity (Jump onsite, Millennium rounds); called September vacation (Quantum Device Lab internship). |
+| 39 | partial | partial | partial | partial | Called regime-ml an unbuilt idea; it was built (`src:175`). |
+
+**What the failures have in common, and the fix for each** (H1 fixes unless marked):
+1. **Family calendar shown as yours** (1, 35, P1). Tool output should mark family-overlay events as such, with their guests.
+2. **Offer terms not where answers look** (Y1, Y7, Y9, 24). The career files have no `thing` (a Downloads letter names no firm folder), and `open` does not page a long file. Fixes: file a file under a firm by its text; `open` pages long text.
+3. **Library projects and notes not tied to projects** (Y5, 10, 39). regime-ml is a library project with no registry id, and reading notes carry no `thing`. Fix: register regime-ml; map each "Reading notes" note to its document's project.
+4. **Index gaps**: a rich-text reply indexed with no body (1); `markups` does not point at a notebook's indexed transcription (21); mail thread ids change when a reply arrives, so older pointers stop opening (P1).
+5. **Unlabelled claims and stale facts** (Y3, Y7, 22, 34, P1): the model's own inferences stated as fact, and an older chat trusted over newer mail. Partly H2 (facts with dates, newer replaces older), partly the CLAUDE.md line on labelling.
+6. **kairos** (P2, 36): low-risk writes from MCP apply without approval, and project time covers only 30 days. Both are kairos decisions; raised with you, not changed.
+7. **OQTS-shared reaches the index indirectly** (47's grader): the 10 Nov Home chat quoted Kristof's OQTS-shared mail and is indexed. Fine for now, as you said; noted.
+
+**Found and fixed during the run:** tools ran on the server's event loop, so one search stalled
+everyone; with four chats at once, 4 of 48 could not connect. Tools now run in worker threads
+(tested, deployed; the four re-ran under the same load and connected).
+
+**Spot-check (yours):** Y2, Y3, Y7, 1, 10, 18, 24, 34, 46, 48: five passes and five failures
+across every group. Each is `data/evals/h1-2026-11-10/answers/<id>.md` with its grade in
+`grades/<id>.json`.

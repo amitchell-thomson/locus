@@ -167,6 +167,30 @@ def _instrument(fn):
 _call_seq = 0
 
 
+def _off_loop(fn):
+    """Run a synchronous tool in a worker thread, so one slow call cannot stall the server.
+
+    FastMCP calls a plain `def` tool directly on the event loop. One `search` (an embedding,
+    then the cross-encoder on the CPU) held the loop for seconds, and with four chats at once
+    (the H1 test-set run, 10 Nov) a NEW chat's `initialize` waited past the client's 30s limit:
+    4 of 48 sessions started with "locus failed to connect" while the service was up and busy.
+    The same would happen to the phone or the Home chat whenever another chat was searching.
+
+    The async wrapper keeps the signature (`functools.wraps` sets `__wrapped__`), so the schema
+    FastMCP advertises is unchanged. Each tool opens its own SQLite connection per call, which is
+    what makes running them in threads safe.
+    """
+    import functools
+
+    import anyio
+
+    @functools.wraps(fn)
+    async def runner(*args, **kwargs):
+        return await anyio.to_thread.run_sync(functools.partial(fn, *args, **kwargs))
+
+    return runner
+
+
 def _build(enable_query: bool = False, host: str = "127.0.0.1", public=None) -> "FastMCP":  # noqa: F821
     """Construct the FastMCP server with its tools registered.
 
@@ -227,7 +251,7 @@ def _build(enable_query: bool = False, host: str = "127.0.0.1", public=None) -> 
         """
 
         def deco(fn):
-            return mcp.tool()(_instrument(fn))
+            return mcp.tool()(_off_loop(_instrument(fn)))
 
         return deco
 

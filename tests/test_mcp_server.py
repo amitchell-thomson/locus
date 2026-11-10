@@ -508,3 +508,40 @@ def test_the_h1_tool_set_is_advertised_and_the_retired_tools_are_gone():
                "objects", "evolution"}
     assert not names & retired
     assert not {t.name for t in mcp_server._build(enable_query=True)._tool_manager.list_tools()} & retired
+
+
+def test_a_slow_tool_does_not_hold_the_event_loop():
+    """Sync tools run in worker threads (H1.11: a busy search stalled new chats' handshakes)."""
+    import asyncio
+    import inspect
+    import threading
+    import time
+
+    from locus.mcp_server import _off_loop
+
+    loop_thread = []
+
+    def slow(x: int) -> int:
+        """doc"""
+        time.sleep(0.3)
+        return threading.get_ident()
+
+    wrapped = _off_loop(slow)
+    assert inspect.iscoroutinefunction(wrapped) and list(inspect.signature(wrapped).parameters) == ["x"]
+
+    async def main():
+        loop_thread.append(threading.get_ident())
+        t0 = time.monotonic()
+        ticks = 0
+
+        async def ticker():
+            nonlocal ticks
+            while time.monotonic() - t0 < 0.25:
+                ticks += 1
+                await asyncio.sleep(0.01)
+
+        tid, _ = await asyncio.gather(wrapped(x=1), ticker())
+        return tid, ticks
+
+    tid, ticks = asyncio.run(main())
+    assert tid != loop_thread[0] and ticks > 10

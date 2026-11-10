@@ -46,8 +46,8 @@ you want an improvement to something you already use. The Project view (3) is se
 | 0 | Plumbing | 0.1–0.5, 0.7, 0.12, 0.13 done; 0.6, 0.9–0.11 open |
 | 1 | Every screen on fixtures (ratatui prototype) | design rounds done; Home, calendar and mail in use; report not written |
 | 2 | Dossier loop | — |
-| 3 | Project view live | — |
-| 4 | Home live | — |
+| 3 | Project view live | set aside 9 Nov |
+| 4 | Home live | done 10 Nov (`slices/home-live.md`); first in heuris v2's order |
 | 5 | Linking job, Explore and the scout | — |
 | 6 | Learning system | — |
 | 7 | Canvas, search, charts, budget view | — |

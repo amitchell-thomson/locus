@@ -62,10 +62,17 @@ def _walk(root: Path):
             yield Path(dirpath) / f
 
 
+# The H1 answer key and the spec whose progress notes quote found answers stay out of the index
+# while the test set is scored (H1.11): a scoring chat that found them would read the answers.
+HELD_OUT = {"docs/redesign/slices/h1-test-set.md", "docs/redesign/slices/h1-index-and-tools.md"}
+
+
 def docs(root: Path) -> list[Path]:
     out = []
     for p in _walk(root):
         rel = p.relative_to(root)
+        if str(rel) in HELD_OUT:
+            continue
         ext = p.suffix.lower()
         top_or_docs = len(rel.parts) == 1 or "docs" in rel.parts
         if ext == ".md" or (ext in (".tex", ".txt") and top_or_docs):

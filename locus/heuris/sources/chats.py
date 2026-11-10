@@ -148,6 +148,23 @@ def session_items(path: Path, machine: str) -> list[Item]:
     return out
 
 
+# Held out of the index while the H1 test set is scored (H1.11): this session wrote the answer key
+# and read the answers out of his files (the questionnaire's ticks among them), so a scoring chat
+# that found it would be marking its own homework. Removed from the index too (`purge_held_out`).
+HELD_OUT_SESSIONS = {"81c0a62a-3b15-4f89-ae5c-80227ae38eab"}
+
+
+def purge_held_out(conn: sqlite3.Connection) -> int:
+    from locus.heuris.index import _delete_item
+
+    ids = [r[0] for sid in HELD_OUT_SESSIONS for r in conn.execute(
+        "SELECT id FROM items WHERE source=? AND parent LIKE ?", (SOURCE, f"chat:%/{sid}")).fetchall()]
+    with conn:
+        for i in ids:
+            _delete_item(conn, i)
+    return len(ids)
+
+
 def changed_files(conn: sqlite3.Connection, locus_dir: Path) -> list[tuple[str, Path, int, float]]:
     seen = {(p): (s, m) for p, s, m in conn.execute("SELECT path, size, mtime FROM file_state WHERE source=?", (SOURCE,))}
     out = []
@@ -158,6 +175,8 @@ def changed_files(conn: sqlite3.Connection, locus_dir: Path) -> list[tuple[str, 
             if not proj.is_dir() or proj.name.endswith("-tmp") or "-tmp-" in proj.name:
                 continue
             for f in sorted(proj.glob("*.jsonl")):
+                if f.stem in HELD_OUT_SESSIONS:
+                    continue
                 st = f.stat()
                 if seen.get(str(f)) != (st.st_size, st.st_mtime):
                     out.append((machine, f, st.st_size, st.st_mtime))

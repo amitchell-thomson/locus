@@ -125,3 +125,20 @@ def test_a_partial_read_sends_nothing(tmp_path, monkeypatch):
 def test_cv_books_and_mandates_are_not_read():
     assert documents.denied("oqts-cvs-drinks-dinner-jump-trading-2026-10-23.pdf")
     assert documents.denied("New College JCR Mandate form Signed Alec and Max.pdf")
+
+
+def test_a_cross_drawn_over_a_checkbox_is_read_as_the_chosen_option():  # Y2
+    import pymupdf
+
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((40, 60), "Question 1")
+    page.insert_text((60, 100), "A. Building fast systems")
+    page.insert_text((300, 100), "B. Finding patterns in data")
+    for x in (240, 500):
+        page.draw_rect(pymupdf.Rect(x, 88, x + 18, 106), color=None, fill=(0.9, 0.9, 0.9))
+    page.draw_line((502, 90), (516, 104))   # the cross, over B's box only
+    page.draw_line((516, 90), (502, 104))
+    text = documents.extract("form.pdf", doc.tobytes())
+    marked = text[text.index("Marked by hand"):]
+    assert "B. Finding patterns in data" in marked and "A. Building" not in marked

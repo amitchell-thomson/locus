@@ -39,6 +39,8 @@ from locus.scrub import scrub
 
 MAX_BYTES = 25 * 1024 * 1024
 MAX_CHARS = 150_000
+# Part of the cache key: bump it when extraction changes, or cached text outlives the reader.
+EXTRACT_VERSION = 2  # 2: hand-marked checkboxes (10 Nov)
 READABLE = (".pdf", ".docx", ".txt", ".md")
 
 DENY = re.compile(
@@ -113,6 +115,50 @@ def scrub_identifiers(text: str) -> tuple[str, dict[str, int]]:
 
 # -- extraction -------------------------------------------------------------------------------
 
+def _marked_boxes(page) -> str:
+    """The options he ticked on a form, which are drawings, not text.
+
+    The Millennium questionnaire (Y2) was answered with crosses drawn over its checkboxes and
+    flattened into the PDF: `get_text` returns every question and option and none of the answers.
+    A checkbox is a small filled square; a mark is a stroke whose box covers at least half of it
+    with its centre inside (the form's own 9pt glyph inside each box covers a quarter, and is not
+    a mark). Each marked box is reported with the option text beside it and the question above.
+    Pages with thousands of drawings (plots) are skipped: no form looks like that.
+    """
+    try:
+        drawings = page.get_drawings()
+    except Exception:
+        return ""
+    if not drawings or len(drawings) > 1500:
+        return ""
+    boxes = [d["rect"] for d in drawings if d.get("fill") is not None and d["type"] == "f"
+             and 10 <= d["rect"].width <= 30 and abs(d["rect"].width - d["rect"].height) < 2]
+    strokes = [d["rect"] for d in drawings if d["type"] == "s"]
+    if not boxes or not strokes:
+        return ""
+    blocks = [(b[0], b[1], b[2], b[3], " ".join(b[4].split())) for b in page.get_text("blocks")]
+    words = page.get_text("words")
+    out = []
+    for box in boxes:
+        area = box.width * box.height
+        hit = any(r.width * r.height >= 0.5 * area and box.contains((r.tl + r.br) / 2) and r != box
+                  for r in strokes)
+        if not hit:
+            continue
+        mid = (box.y0 + box.y1) / 2
+        # Words, not blocks: a block can span both columns of options (Question 4, 10 Nov).
+        left = max([bx.x1 for bx in boxes if bx.x1 < box.x0 and abs(bx.y0 - box.y0) < 40], default=0)
+        beside = [w for w in words if left <= w[0] and w[2] <= box.x0 + 2 and abs((w[1] + w[3]) / 2 - mid) <= 14]
+        option = " ".join(w[4] for w in sorted(beside, key=lambda w: (round(w[1]), w[0]))) or "(no text beside it)"
+        above = [b for b in blocks if b[3] <= box.y0 and b[4].lower().startswith("question")]
+        question = max(above, key=lambda b: b[3])[4] if above else ""
+        out.append((box.y0, box.x0, f"- {question}: {option}" if question else f"- {option}"))
+    if not out:
+        return ""
+    return "\n\nMarked by hand on this page (crosses or ticks drawn over the boxes):\n" + \
+        "\n".join(t for _, _, t in sorted(out))
+
+
 def extract(name: str, data: bytes) -> str:
     """Plain text of a PDF, Word or text file; empty when it has none (a scan) or cannot be read."""
     low = name.lower()
@@ -121,7 +167,7 @@ def extract(name: str, data: bytes) -> str:
             import pymupdf
 
             with pymupdf.open(stream=data, filetype="pdf") as doc:
-                text = "\n\n".join(page.get_text() for page in doc)
+                text = "\n\n".join(page.get_text() + _marked_boxes(page) for page in doc)
         elif low.endswith(".docx"):
             import docx
 
@@ -164,14 +210,15 @@ class Cache:
 
     def text(self, name: str, data: bytes, known: list[str], redacted: dict[str, int]) -> tuple[str, str]:
         sha = hashlib.sha256(data).hexdigest()
-        self.used.add(sha)
-        if sha not in self.data:
+        key = f"{EXTRACT_VERSION}:{sha}"
+        self.used.add(key)
+        if key not in self.data:
             raw = extract(name, data)
             text, counts = clean(raw, known) if raw else ("", {})
             for k, v in counts.items():
                 redacted[k] = redacted.get(k, 0) + v
-            self.data[sha] = text
-        return sha, self.data[sha]
+            self.data[key] = text
+        return sha, self.data[key]
 
     def save(self) -> None:
         keep = {k: v for k, v in self.data.items() if k in self.used}

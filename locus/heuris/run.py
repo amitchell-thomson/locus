@@ -86,6 +86,7 @@ def run_source(conn: sqlite3.Connection, name: str, *, embed=None) -> Outcome:
         elif name == "chats":
             from locus.heuris.sources import chats
 
+            chats.purge_held_out(conn)
             files = chats.changed_files(conn, locus_dir())
             st = index(conn, name, chats.items(files), embed=embed)
             chats.mark_read(conn, files)

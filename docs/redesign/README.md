@@ -43,7 +43,7 @@ you want an improvement to something you already use. The Project view (3) is se
 | Slice | What | State |
 |---|---|---|
 | files-and-chat | `~/files` mirrored with the tablet; the Home chat | done 9 Nov |
-| 0 | Plumbing | 0.1–0.5, 0.7, 0.12, 0.13 done; 0.6, 0.9–0.11 open |
+| 0 | Plumbing | done 10 Nov (0.11 dropped) |
 | 1 | Every screen on fixtures (ratatui prototype) | design rounds done; Home, calendar and mail in use; report not written |
 | 2 | Dossier loop | — |
 | 3 | Project view live | set aside 9 Nov |

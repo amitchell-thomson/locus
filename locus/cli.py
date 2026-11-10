@@ -477,6 +477,16 @@ def cmd_serve(args) -> None:
           enable_query=args.enable_query or cfg.mcp.enable_query)
 
 
+def cmd_transcripts_push(args) -> None:
+    """Laptop transcripts, scrubbed, to the server (Slice 0.10). Run by launchd every 30 min."""
+    from locus.transcripts_push import describe, push
+
+    r = push(dry_run=args.dry_run)
+    print(describe(r) if not args.dry_run else f"{r.scrubbed} would be scrubbed and sent, {r.unchanged} unchanged")
+    if r.error:
+        sys.exit(1)
+
+
 def cmd_mcp_log(args) -> None:
     """What the MCP server was actually asked to do — the answer to a bare "Tool execution failed".
 
@@ -2454,6 +2464,10 @@ def main(argv=None) -> None:
     psv.add_argument("--port", type=int, default=7422)
     psv.add_argument("--enable-query", action="store_true", help="also expose the billable query tool")
     psv.set_defaults(func=cmd_serve)
+
+    ptp = sub.add_parser("transcripts-push", help="laptop Claude transcripts, scrubbed, to the server (Slice 0.10)")
+    ptp.add_argument("--dry-run", action="store_true", help="say how many would go; scrub and send nothing")
+    ptp.set_defaults(func=cmd_transcripts_push)
 
     phs = sub.add_parser("home-system", help="Home's system section as JSON (read by the window)")
     phs.set_defaults(func=cmd_home_system)

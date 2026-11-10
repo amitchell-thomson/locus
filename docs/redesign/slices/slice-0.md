@@ -1,6 +1,6 @@
 # Slice 0 — Plumbing
 
-**State:** approved 2026-10-19, ready to start · **Written:** 2026-10-19
+**State:** done 10 Nov 2026 (0.11 dropped by D6) · **Written:** 2026-10-19
 **Plan:** F, row 0; B.6; C.2; C.3; C.5; E.
 
 **Done when (from the plan):** tablet pushes and readback work with no hand steps, the library takes
@@ -276,4 +276,48 @@ at the same time.
 
 ## Report
 
-*(written when the slice closes: done, evidence per check, deviations, decisions taken)*
+Closed 10 Nov 2026. Steps 0.1–0.5, 0.7, 0.8, 0.12 and 0.13 were reported in their own commits;
+0.11 was dropped (D6). This covers the last three.
+
+**0.6 One HTTP service.**
+- `locus serve` runs MCP over HTTP at `http://compute-node:7422/mcp`: unit `locus-http.service`,
+  bound to the Tailscale address only, as kairosd is.
+- A bearer token gates it: `LOCUS_HTTP_TOKEN` in `~/.config/locus/http.env` (0600) on the server,
+  Keychain `locus-http-token` on the laptop. A request without it gets 401, and the refusal is
+  logged.
+- Every call is logged on arrival and completion, as before.
+- Check:
+  - a fresh laptop `claude -p` called `retrieve` and got a cited result;
+  - `locus mcp-log` showed `-> retrieve(...)` then `ok retrieve 6264ms`, both from the service's
+    pid;
+  - the server runs one service: uv and the Python it starts.
+- **Departure:** the registration is at user level on both machines (`claude mcp add -s user`,
+  as kairos is), not the repo's `.mcp.json`. That file is deleted. heuris v2 asks for user level
+  so every repository has the tools, and it keeps the token in a file that is not committed.
+
+**0.9 Secrets scrubber** (`locus/scrub.py`).
+- **Patterns:** provider keys (Anthropic, OpenAI, GitHub, AWS, Slack, Google), bearer tokens,
+  PEM private keys, and values after password/token/api_key-like words.
+- **Known secrets:** exact strings in `~/.config/locus/known-secrets` (0600): the kairos, keryx
+  and locus tokens, which are bare hex.
+- **Kept on purpose:** long hex in general. Commit ids and content hashes are hex too.
+- **Check:**
+  - `tests/test_scrub.py` plants each kind and prints before and after; none survive.
+  - Ordinary text is unchanged, including commit ids, hashes and `${VAR}` references.
+  - A scrubbed transcript line is still valid JSON.
+- **Found by that JSON test:** a key at the start of a pasted line follows a JSON `\n` escape,
+  whose `n` defeated `\b`. Every pattern now also starts after an escape.
+
+**0.10 Laptop transcripts reach the server** (`locus transcripts-push`, launchd
+`com.locus.transcripts` every 30 minutes).
+- Each changed transcript is scrubbed into `~/.local/state/locus/transcripts/`, then rsynced to
+  `data/transcripts/laptop/` on the server.
+- **First run:** 358 transcripts, 1.1 GB, 10.5 minutes, mostly the send. 762 redactions in all.
+- **Normal run:** 5 seconds.
+- **Audit of the scrubbed tree:**
+  - the kairos token, present in 2 original transcripts, appears in none;
+  - no Anthropic or GitHub keys are left;
+  - the one remaining "PRIVATE KEY" is prose about keys.
+- **Check:** this session reached the server within the run, as
+  `data/transcripts/laptop/-Users-alecmitchell-thomson-local-projects-locus/81c0a62a-….jsonl`
+  (0600). The kairos token printed in it reads `Bearer [redacted:known]` there.

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  `locus transcripts-push` every 30 minutes and at login (Slice 0.10): the laptop's Claude
+  transcripts, scrubbed of secrets (locus/scrub.py), rsynced to data/transcripts/laptop/ on the
+  server. Installed by deploy/transcripts/install.sh, which fills in __HOME__, __REPO__, __UV__.
+  Only the scrubbed copy leaves the laptop.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.locus.transcripts</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>cd __REPO__ &amp;&amp; date &amp;&amp; __UV__ run --quiet locus transcripts-push</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>1800</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>StandardOutPath</key>
+    <string>__HOME__/Library/Logs/locus-transcripts.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Library/Logs/locus-transcripts.log</string>
+</dict>
+</plist>

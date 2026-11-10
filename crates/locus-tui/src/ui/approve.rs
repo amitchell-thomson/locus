@@ -96,6 +96,17 @@ fn badge(text: &str, width: usize) -> Span<'static> {
     )
 }
 
+/// The action in the list: coloured text, not a block. Solid badges stacked row on row made
+/// one large block of colour (10 Nov: "forms one big blue block and looks odd").
+fn tag(text: &str, width: usize) -> Span<'static> {
+    let t = crate::ui::truncate(text, width.saturating_sub(1));
+    let pad = width.saturating_sub(t.width());
+    Span::styled(
+        format!("{t}{}", " ".repeat(pad)),
+        Style::default().fg(c(badge_colour(text))).add_modifier(Modifier::BOLD),
+    )
+}
+
 fn group_label(g: &ApproveGroup) -> String {
     g.label.clone().unwrap_or_else(|| group_name(g.kind).to_string())
 }
@@ -145,13 +156,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     };
     let sel = app.sel(' ').min(total.saturating_sub(1));
     let w = usize::from(list_r.width);
-    let bw = ap
-        .groups
-        .iter()
-        .flat_map(|g| g.items.iter().map(move |it| badge_text(g.kind, it).width() + 2))
-        .max()
-        .unwrap_or(8)
-        .clamp(8, 18);
+
     let who_w = (w / 5).clamp(10, 22);
     let mut out: Vec<Line<'static>> = Vec::new();
     let mut at_sel = 0;
@@ -166,19 +171,24 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
             .enumerate()
             .filter(|(i, _)| app.marked(&format!("approve:{g}:{i}")).is_some())
             .count();
-        let mut head = vec![Span::styled(
-            format!(" {} {}", glyph::APPROVE, group_label(group)),
-            bold(st("subtext1")),
-        )];
-        head.push(Span::styled(
-            format!("{SEP}{}", group.items.len() - decided_here),
-            dim(),
-        ));
-        out.push(row(
-            head,
-            vec![Span::styled("Y ", keyst()), Span::styled("all ", dim())],
+        // A ruled heading per group (10 Nov: "better separated with horizontal rules").
+        let left = group.items.len() - decided_here;
+        out.push(rule(
+            &group_label(group),
+            &format!("{left} · Y all"),
+            None,
+            false,
             list_r.width,
         ));
+        // The action column fits this group's own badges: one long name elsewhere does not
+        // push every row's text right.
+        let bw = group
+            .items
+            .iter()
+            .map(|it| badge_text(group.kind, it).width() + 1)
+            .max()
+            .unwrap_or(8)
+            .clamp(8, 30);
         for (i, it) in group.items.iter().enumerate() {
             let k = format!("approve:{g}:{i}");
             let mark = app.marked(&k);
@@ -197,7 +207,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
             };
             let mut left = vec![
                 pointer(n, Some(sel)),
-                badge(&badge_text(group.kind, it), bw),
+                tag(&badge_text(group.kind, it), bw),
                 Span::raw(" "),
             ];
             if !who.is_empty() {
@@ -645,6 +655,23 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                         .clone()
                         .map(|m| (g, i, m))
                 });
+            if let (Some((g, i, m)), KeyCode::Char(c @ ('y' | 'n'))) = (mail.clone(), k.code)
+                && let Some(q) = &app.mail_queue
+            {
+                // Off the key's path: the item goes now, keryxd catches up behind.
+                let what = text.clone();
+                let action = to.clone().unwrap_or_default();
+                q.push(m, c == 'y', what);
+                let waiting = q.waiting();
+                app.fixtures.approve.groups[g].items.remove(i);
+                app.fixtures.approve.groups.retain(|x| !x.items.is_empty());
+                app.note = Some(if c == 'y' {
+                    format!("{action}: on its way ({waiting} with keryx)")
+                } else {
+                    format!("left as it is ({waiting} with keryx)")
+                });
+                return true;
+            }
             if let (Some((g, i, m)), KeyCode::Char(c @ ('y' | 'n'))) = (mail, k.code)
                 && let Some(live) = app.mail.clone()
             {
@@ -720,6 +747,22 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 KeyCode::Char('Y') => {
                     let group = key.split(':').nth(1).unwrap_or_default().to_string();
                     // A mail group (X2) is decided in keryx, every item in it.
+                    if let (Some(q), Some(g)) = (&app.mail_queue, group.parse::<usize>().ok())
+                        && let Some(grp) = app.fixtures.approve.groups.get(g)
+                        && grp.items.iter().any(|i| i.mail.is_some())
+                    {
+                        let all: Vec<_> = grp
+                            .items
+                            .iter()
+                            .filter_map(|i| Some((i.mail.clone()?, i.text.clone())))
+                            .collect();
+                        for (m, what) in &all {
+                            q.push(m.clone(), true, what.clone());
+                        }
+                        app.fixtures.approve.groups.remove(g);
+                        app.note = Some(format!("approved the group: {} on their way to keryx", all.len()));
+                        return true;
+                    }
                     if let (Some(live), Some(g)) = (app.mail.clone(), group.parse::<usize>().ok())
                         && let Some(grp) = app.fixtures.approve.groups.get(g)
                         && grp.items.iter().any(|i| i.mail.is_some())

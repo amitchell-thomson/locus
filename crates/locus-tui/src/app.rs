@@ -105,6 +105,8 @@ pub struct App {
     pub calendar: Option<std::sync::Arc<crate::calendar::Live>>,
     /// keryxd, when the window runs live (keryx-joins-locus X2): mail to decide in Approve.
     pub mail: Option<std::sync::Arc<crate::mail::Live>>,
+    /// Mail decisions on their way to keryxd (the window; `--dump` decides in place).
+    pub mail_queue: Option<crate::mail::Queue>,
     /// The project Home asked the Project window to show, until Esc.
     pub peek: Option<String>,
     /// For a section that draws only some of its items, the ones drawn, in order: the arrows
@@ -176,6 +178,7 @@ impl App {
             armed: None,
             calendar: None,
             mail: None,
+            mail_queue: None,
             peek: None,
             shown: RefCell::new(HashMap::new()),
             lane_open: false,

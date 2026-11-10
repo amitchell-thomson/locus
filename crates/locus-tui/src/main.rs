@@ -372,6 +372,7 @@ fn run(mut app: App) -> Result<()> {
     let (mail_tx, mail_rx) = std::sync::mpsc::channel();
     if let Some(m) = locus_tui::mail::Live::connect().map(std::sync::Arc::new) {
         app.mail = Some(m.clone());
+        app.mail_queue = Some(locus_tui::mail::Queue::start(m.clone()));
         let ids: Vec<String> = app.fixtures.registry.projects.iter().map(|p| p.id.clone()).collect();
         std::thread::spawn(move || {
             loop {
@@ -445,10 +446,17 @@ fn run(mut app: App) -> Result<()> {
                 locus_tui::calendar::apply_chores(&mut app.fixtures, &chores);
                 locus_tui::calendar::apply_tasks(&mut app.fixtures, &tasks);
             }
+            if let Some(n) = app.mail_queue.as_ref().and_then(|q| q.take_note()) {
+                app.note = Some(n);
+            }
             while let Ok(msg) = live_rx.try_recv() {
                 apply_live(&mut app, msg);
             }
-            if let Ok((proposals, previews, need, filed)) = mail_rx.try_recv() {
+            if let Ok((mut proposals, previews, need, filed)) = mail_rx.try_recv() {
+                // Decided here but not yet reached by keryxd: not shown again.
+                if let Some(q) = &app.mail_queue {
+                    proposals.retain(|p| !q.was_sent(&p.proposal.id));
+                }
                 locus_tui::mail::apply(&mut app.fixtures, &proposals, &previews);
                 locus_tui::mail::apply_counts(&mut app.fixtures, need);
                 locus_tui::mail::apply_filed(&mut app.fixtures, &filed);

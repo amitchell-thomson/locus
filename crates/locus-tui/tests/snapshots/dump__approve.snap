@@ -3,21 +3,21 @@ source: crates/locus-tui/tests/dump.rs
 expression: "dump::render(&a, 95, 38).unwrap()"
 ---
 ╭ approve · 6 ────────────────────────────────────────────────────────────────────── esc back ╮
-│ 󰴹 filing · 2                                                                          Y all │
-│▌  FILE          jot p3 "G-Research sponsor talk"                                            │
-│   FILE          jot p3 "Kalman filters for…"                                                │
+│─ filing · 2 · Y all ────────────────────────────────────────────────────────────────────────│
+│▌ FILE     jot p3 "G-Research sponsor talk"                                                  │
+│  FILE     jot p3 "Kalman filters for…"                                                      │
 │                                                                                             │
-│ 󰴹 mail · 1                                                                            Y all │
-│   MAIL          14 mails                                                                    │
+│─ mail · 1 · Y all ──────────────────────────────────────────────────────────────────────────│
+│  MAIL     14 mails                                                                          │
 │                                                                                             │
-│ 󰴹 deadlines · 1                                                                       Y all │
-│   DEADLINE      G-Research applications close 31 Oct                                        │
+│─ deadlines · 1 · Y all ─────────────────────────────────────────────────────────────────────│
+│  DEADLINE  G-Research applications close 31 Oct                                             │
 │                                                                                             │
-│ 󰴹 ink · 1                                                                             Y all │
-│   INK           QUAST dossier 15 Oct · 3 marks I am unsure where they point                 │
+│─ ink · 1 · Y all ───────────────────────────────────────────────────────────────────────────│
+│  INK      QUAST dossier 15 Oct · 3 marks I am unsure where they point                       │
 │                                                                                             │
-│ 󰴹 stop asking? · 1                                                                    Y all │
-│   STOP ASKING?  spam archives: you approved 23 of 23. Do them automatically?                │
+│─ stop asking? · 1 · Y all ──────────────────────────────────────────────────────────────────│
+│  STOP ASKING?  spam archives: you approved 23 of 23. Do them automatically?                 │
 │                                                                                             │
 │                                                                                             │
 │                                                                                             │

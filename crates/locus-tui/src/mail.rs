@@ -76,6 +76,93 @@ impl Live {
     }
 }
 
+/// Decisions sent to keryxd one after another on a thread of their own, so `y` returns at once
+/// (10 Nov: "very large delay between pressing y and it happening"). keryxd carries an archive
+/// out through Mail, which takes a second or more; the item leaves the list when you press, and
+/// a refusal comes back as a note. What was sent is remembered for the session, so the minute's
+/// refresh cannot bring back an item keryxd has not reached yet.
+pub struct Queue {
+    tx: std::sync::mpsc::Sender<(MailDecision, bool, String)>,
+    sent: std::sync::Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
+    state: std::sync::Arc<std::sync::Mutex<QueueState>>,
+}
+
+#[derive(Default)]
+struct QueueState {
+    waiting: usize,
+    done: usize,
+    failed: Vec<String>,
+    changed: bool,
+}
+
+fn decision_id(d: &MailDecision) -> &str {
+    match d {
+        MailDecision::Send(id) | MailDecision::Proposal(id) => id,
+    }
+}
+
+impl Queue {
+    pub fn start(live: std::sync::Arc<Live>) -> Queue {
+        let (tx, rx) = std::sync::mpsc::channel::<(MailDecision, bool, String)>();
+        let state = std::sync::Arc::new(std::sync::Mutex::new(QueueState::default()));
+        let st = state.clone();
+        std::thread::spawn(move || {
+            for (d, yes, what) in rx {
+                let r = live.decide(&d, yes);
+                let Ok(mut s) = st.lock() else { return };
+                s.waiting = s.waiting.saturating_sub(1);
+                match r {
+                    Ok(_) => s.done += 1,
+                    Err(e) => s.failed.push(format!("keryx said no to “{what}”: {e}")),
+                }
+                s.changed = true;
+            }
+        });
+        Queue {
+            tx,
+            sent: Default::default(),
+            state,
+        }
+    }
+
+    /// Send a decision; false when the worker is gone (then decide it in place).
+    pub fn push(&self, d: MailDecision, yes: bool, what: String) -> bool {
+        if let Ok(mut s) = self.sent.lock() {
+            s.insert(decision_id(&d).to_string());
+        }
+        if let Ok(mut s) = self.state.lock() {
+            s.waiting += 1;
+        }
+        self.tx.send((d, yes, what)).is_ok()
+    }
+
+    /// Whether this proposal or draft was already decided here.
+    pub fn was_sent(&self, id: &str) -> bool {
+        self.sent.lock().is_ok_and(|s| s.contains(id))
+    }
+
+    pub fn waiting(&self) -> usize {
+        self.state.lock().map_or(0, |s| s.waiting)
+    }
+
+    /// A note when something finished since the last call: a refusal first, else progress.
+    pub fn take_note(&self) -> Option<String> {
+        let mut s = self.state.lock().ok()?;
+        if !s.changed {
+            return None;
+        }
+        s.changed = false;
+        if let Some(e) = s.failed.pop() {
+            return Some(e);
+        }
+        Some(if s.waiting == 0 {
+            format!("keryx has done all {}", s.done)
+        } else {
+            format!("keryx has done {} · {} to go", s.done, s.waiting)
+        })
+    }
+}
+
 /// keryx's mirror of your mail, opened read-only through its library (keryx-joins-locus X2: one
 /// workspace, so no `keryx` command run as a process). Only keryxd ever writes it.
 pub struct Mirror {
@@ -151,21 +238,49 @@ impl Mirror {
     }
 }
 
-/// What a proposal would do, in a few words.
-fn action_text(a: &Action) -> String {
+/// What a proposal would do, in a few words; an item by its registry name
+/// ("file → Careers / Millennium QD Internship 2027").
+fn action_text(a: &Action, reg: &locus_contract::Registry) -> String {
     match a {
         Action::Archive => "archive".into(),
-        Action::File { key, item: Some(i) } => format!("file → {key} ({i})"),
+        Action::File { key, item: Some(i) } => {
+            format!("file → {key} / {}", reg.get(i).map_or(i.clone(), |p| p.name.clone()))
+        }
         Action::File { key, .. } => format!("file → {key}"),
         Action::Snooze { .. } => "snooze".into(),
         Action::Keep { .. } => "keep".into(),
     }
 }
 
-/// The action as a badge: the verb in capitals, a key as it is named (`FILE → Careers`).
-fn badge_of(a: &Action) -> String {
+/// The action as a badge: the verb in capitals, then where, as short as says it: an
+/// application by its company (`FILE → Millennium`), another item by its id (`FILE → b15`), else
+/// the key (`FILE → Admin`).
+fn badge_of(a: &Action, reg: &locus_contract::Registry) -> String {
     match a {
         Action::Archive => "ARCHIVE".into(),
+        Action::File { item: Some(i), .. } => {
+            let p = reg.get(i);
+            // A company with two applications (Millennium, Brevan Howard) is named by the
+            // application, or the badge would not say which.
+            let shared = |c: &str| reg.projects.iter().filter(|q| q.company.as_deref() == Some(c)).count() > 1;
+            let short = match p {
+                Some(p) => match &p.company {
+                    Some(c) if !shared(c) => c.clone(),
+                    // "Millennium 2027", "Brevan Howard 2026": the heading has the full name.
+                    Some(c) => match p
+                        .name
+                        .split_whitespace()
+                        .find(|w| w.len() == 4 && w.chars().all(|d| d.is_ascii_digit()))
+                    {
+                        Some(y) => format!("{c} {y}"),
+                        None => p.name.clone(),
+                    },
+                    None => p.name.clone(),
+                },
+                None => i.to_uppercase(),
+            };
+            format!("FILE → {short}")
+        }
         Action::File { key, .. } => format!("FILE → {key}"),
         Action::Snooze { .. } => "SNOOZE".into(),
         Action::Keep { .. } => "KEEP".into(),
@@ -318,7 +433,7 @@ pub fn apply(fx: &mut Fixtures, proposals: &[ReviewItem], previews: &HashMap<Str
         if matches!(i.proposal.action, Action::Keep { .. }) {
             continue;
         }
-        let action = action_text(&i.proposal.action);
+        let action = action_text(&i.proposal.action, &fx.registry);
         let pv = previews.get(&i.r#ref).cloned().unwrap_or_default();
         let item = ApproveItem {
             text: format!("{}: {}", i.who, i.subject),
@@ -330,7 +445,7 @@ pub fn apply(fx: &mut Fixtures, proposals: &[ReviewItem], previews: &HashMap<Str
             changeset: None,
             mail: Some(MailDecision::Proposal(i.proposal.id.clone())),
             detail: Some(ApproveDetail {
-                action: badge_of(&i.proposal.action),
+                action: badge_of(&i.proposal.action, &fx.registry),
                 who: i.who.clone(),
                 subject: i.subject.clone(),
                 meta: if i.stale {

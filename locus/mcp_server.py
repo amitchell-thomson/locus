@@ -518,8 +518,17 @@ def _build(enable_query: bool = False, host: str = "127.0.0.1", public=None) -> 
         try:
             candidates = review.resolve_target(conn, document, rmapi_binary=cfg.capture.rmapi_binary)
             if not candidates:
-                return (f"Nothing on the device or in the library matches {document!r}. "
-                        "Try a shorter fragment, or the exact device path.")
+                # The nearest names on the tablet, so the next call can be exact (10 Nov: a chat
+                # spent eleven calls guessing at a notebook named B15_sheet1).
+                try:
+                    near = review.nearest_names(review.device_file_paths(
+                        review._subprocess_runner(cfg.capture.rmapi_binary)), document)
+                except Exception:
+                    near = []
+                hint = ("\nNearest names on the tablet (pass one exactly, or its path):\n"
+                        + "\n".join(f"  {p}" for p in near)) if near else \
+                    "\nTry a shorter fragment, or the exact device path."
+                return f"Nothing on the device or in the library matches {document!r}.{hint}"
             if len(candidates) > 1:
                 listing = "\n".join(f"  {c.title}  [{c.device_path}]" for c in candidates)
                 return f"{document!r} matches several documents — say which:\n{listing}"

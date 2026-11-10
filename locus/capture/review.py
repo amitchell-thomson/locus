@@ -262,6 +262,27 @@ def _readable_title(uri: str, title: str) -> str:
     return Path(uri).name or uri
 
 
+def name_key(s: str) -> str:
+    """A name as compared: lower case, letters and digits only. "B15 Sheet 1", "B15_sheet1" and
+    "b15-sheet-1" are one name (10 Nov: a chat asked for "B15 Sheet 1" eleven ways and never
+    reached the notebook, which the tablet calls `B15_sheet1`)."""
+    return "".join(ch for ch in s.casefold() if ch.isalnum())
+
+
+def nearest_names(paths: list[str], query: str, n: int = 6) -> list[str]:
+    """Device paths whose name shares the most of the query's words: what to offer when nothing
+    matches, so the next call can name the document exactly."""
+    words = [name_key(w) for w in __import__("re").split(r"[\s_/\-]+", query) if name_key(w)]
+    scored = []
+    for p in paths:
+        k = name_key(Path(p).name) + " " + name_key(str(Path(p).parent))
+        score = sum(1 for w in words if w in k)
+        if score:
+            scored.append((score, p))
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    return [p for _, p in scored[:n]]
+
+
 def resolve(conn: sqlite3.Connection, query: str) -> list[tuple[str, str, int]]:
     """Candidate documents for a human string. Exact `source_uri` wins outright.
 
@@ -275,7 +296,8 @@ def resolve(conn: sqlite3.Connection, query: str) -> list[tuple[str, str, int]]:
     exact = [k for k in known if k[0].casefold() == q]
     if exact:
         return exact
-    return [k for k in known if q in k[1].casefold() or q in k[0].casefold()]
+    qk = name_key(q)
+    return [k for k in known if qk and (qk in name_key(k[1]) or qk in name_key(k[0]))]
 
 
 def load(
@@ -516,8 +538,9 @@ def find_on_device(runner, query: str) -> list[str]:
     q = query.strip().casefold()
     if not q:
         return []
-    hits = [p for p in device_file_paths(runner) if q in Path(p).name.casefold()]
-    exact = [p for p in hits if Path(p).name.casefold() == q]
+    qk = name_key(q)
+    hits = [p for p in device_file_paths(runner) if qk and qk in name_key(Path(p).name)]
+    exact = [p for p in hits if name_key(Path(p).name) == qk]
     return exact or hits
 
 
@@ -596,6 +619,11 @@ def resolve_target(
     runner = runner or _subprocess_runner(rmapi_binary)
 
     # (2) a uuid, or a reading_target we know by name but have never swept.
+    # The first eight characters of a uuid, as notes and file names show it (7d2a2d23).
+    if __import__("re").fullmatch(r"[0-9a-f]{8}", q.casefold()):
+        hits = [(u, v) for u, v in device_index(runner).items() if u.startswith(q.casefold())]
+        return [Target(device_path=v[0], title=v[1], doc_uuid=u,
+                       source_uri=_marks_source_uri_for_uuid(conn, u)) for u, v in hits]
     if _UUID_RE.match(q.casefold()):
         hit = device_index(runner).get(q.casefold())
         if hit:

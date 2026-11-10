@@ -22,3 +22,22 @@ def test_nothing_matching_offers_the_nearest_names():
     paths = ["/Studies/b15/B15_sheet1", "/Studies/b15/B15_lecture_notes", "/Personal/recipes"]
     near = review.nearest_names(paths, "B15 problem sheet 1 question 5")
     assert near[0] == "/Studies/b15/B15_sheet1" and "/Personal/recipes" not in near
+
+
+def test_the_device_listing_is_kept_for_a_few_minutes(monkeypatch):
+    # H1 re-run: several markups calls in a row each listed the device and the cloud said 429.
+    from locus.capture import remarkable
+
+    calls = []
+    def run(args):
+        calls.append(args)
+        return 0, "[f] /Studies/b15/B15_sheet1\n", ""
+    run.binary = "rmapi"
+    review._LISTING.update(at=0.0, paths=None, key=None)
+    review.device_file_paths(run)
+    review.device_file_paths(run)
+    assert len(calls) == 1, "the second call is served from the kept listing"
+    fake = lambda args: (calls.append(args) or (0, "", ""))
+    review.device_file_paths(fake)
+    review.device_file_paths(fake)
+    assert len(calls) == 3, "a test runner is never cached"

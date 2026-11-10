@@ -46,6 +46,7 @@ def _subprocess_runner(binary: str) -> RmapiRunner:
         proc = subprocess.run([binary, *args], capture_output=True, text=True, timeout=120)
         return proc.returncode, proc.stdout, proc.stderr
 
+    run.binary = binary  # the real device: its listing may be cached (review.device_file_paths)
     return run
 
 

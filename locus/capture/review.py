@@ -521,11 +521,28 @@ class Target:
     source_uri: str | None = None
 
 
+# The device listing, kept for a few minutes per server process: a chat looking for a document
+# makes several markups calls in a row, each listed the whole device through the cloud, and the
+# cloud began answering HTTP 429 (H1 re-run, 10 Nov). Five minutes is short enough that a
+# document he has just made shows up on the next ask with refresh.
+_LISTING: dict = {"at": 0.0, "paths": None}
+LISTING_TTL_S = 300
+
+
 def device_file_paths(runner) -> list[str]:
     """Every document path on the device. ONE `rmapi find /` — 0.37s over 79 files, measured."""
+    import time
+
     from locus.capture.remarkable import _find_file_paths
 
-    return _find_file_paths(runner)
+    key = getattr(runner, "binary", None)  # only the real device is cached; test runners never
+    now = time.monotonic()
+    if key and _LISTING["paths"] is not None and _LISTING.get("key") == key and now - _LISTING["at"] < LISTING_TTL_S:
+        return _LISTING["paths"]
+    paths = _find_file_paths(runner)
+    if key:
+        _LISTING.update(at=now, paths=paths, key=key)
+    return paths
 
 
 def find_on_device(runner, query: str) -> list[str]:
@@ -675,7 +692,14 @@ def load_rmdoc(target: Target, *, cfg, refresh: bool = False, fetch=None, read=N
         )
     )
     with tempfile.TemporaryDirectory() as tmp:
-        got = Path(fetch(target.device_path, tmp))
+        try:
+            got = Path(fetch(target.device_path, tmp))
+        except Exception:
+            # The cloud refused (HTTP 429 in the H1 re-run, 10 Nov) on a refresh: the cached
+            # copy is a few minutes old at worst, and far better than nothing.
+            if cached is not None and cached.exists():
+                return read(cached), False
+            raise
         doc = read(got)
         if target.doc_uuid or doc.doc_uuid:
             cached = _cache_dir(cfg) / f"{target.doc_uuid or doc.doc_uuid}.rmdoc"

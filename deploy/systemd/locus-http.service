@@ -1,0 +1,26 @@
+# The one HTTP service (Slice 0.6): MCP at http://<tailscale ip>:7422/mcp behind a bearer token.
+# Replaces a `locus mcp` per chat over SSH. Bound to the Tailscale address only, as kairosd is;
+# the token is LOCUS_HTTP_TOKEN in ~/.config/locus/http.env (mode 0600, never committed).
+# Restarted by deploy/server-sync.sh whenever the code moves, since it runs the code it started
+# with.
+[Unit]
+Description=locus HTTP service (MCP over HTTP, bearer token, Tailscale only)
+Documentation=file:///home/alec/server-projects/locus/docs/redesign/slices/slice-0.md
+After=network-online.target tailscaled.service
+Wants=network-online.target
+StartLimitIntervalSec=0
+OnFailure=locus-failure@%n.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/alec/server-projects/locus
+Environment=PATH=/home/alec/.local/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=%h/.config/locus/http.env
+ExecStart=/bin/sh -c 'exec /home/alec/.local/bin/uv run --quiet locus serve --host "$(tailscale ip -4)" --port 7422'
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+UMask=0077
+
+[Install]
+WantedBy=default.target

@@ -462,6 +462,21 @@ def cmd_mcp(args) -> None:
     run(enable_query=args.enable_query or cfg.mcp.enable_query)
 
 
+def cmd_serve(args) -> None:
+    """The HTTP service (Slice 0.6): one process on the server, MCP at /mcp, bearer token from
+    LOCUS_HTTP_TOKEN (an env file the unit reads, never committed)."""
+    import os
+
+    from locus.db.migrate import migrate
+
+    cfg = load()
+    migrate(cfg.paths.db)
+    from locus.mcp_server import serve
+
+    serve(args.host, args.port, os.environ.get("LOCUS_HTTP_TOKEN", ""),
+          enable_query=args.enable_query or cfg.mcp.enable_query)
+
+
 def cmd_mcp_log(args) -> None:
     """What the MCP server was actually asked to do — the answer to a bare "Tool execution failed".
 
@@ -2433,6 +2448,12 @@ def main(argv=None) -> None:
 
     pst = sub.add_parser("status", help="one-screen operational health summary (no API)")
     pst.set_defaults(func=cmd_status)
+
+    psv = sub.add_parser("serve", help="the HTTP service: MCP at /mcp behind a bearer token (Slice 0.6)")
+    psv.add_argument("--host", default="127.0.0.1", help="address to bind (the unit passes the Tailscale one)")
+    psv.add_argument("--port", type=int, default=7422)
+    psv.add_argument("--enable-query", action="store_true", help="also expose the billable query tool")
+    psv.set_defaults(func=cmd_serve)
 
     phs = sub.add_parser("home-system", help="Home's system section as JSON (read by the window)")
     phs.set_defaults(func=cmd_home_system)

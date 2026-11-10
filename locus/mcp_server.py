@@ -190,7 +190,7 @@ def _instrument(fn):
 _call_seq = 0
 
 
-def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp imported lazily
+def _build(enable_query: bool = False, host: str = "127.0.0.1") -> "FastMCP":  # noqa: F821
     """Construct the FastMCP server with its tools registered.
 
     `enable_query` registers the billable, server-generating `query` tool. It defaults to False
@@ -204,6 +204,10 @@ def _build(enable_query: bool = False) -> "FastMCP":  # noqa: F821 - quoted: mcp
 
     mcp = FastMCP(
         "locus",
+        # The HTTP service (Slice 0.6) binds the Tailscale address; FastMCP's DNS-rebinding guard
+        # is keyed to its host and would refuse every request naming the server otherwise. The
+        # bearer token is the gate there, on a network only his devices are on.
+        host=host,
         instructions=(
             "Locus is the owner's personal library (papers, code, notes, projects, "
             "achievements). Use `retrieve` to pull grounded context + citations into your own "
@@ -1078,3 +1082,50 @@ def run(enable_query: bool = False) -> None:
     # `live_servers` decides liveness by signalling the pid instead, which needs no cooperation
     # from a process that has already died.
     _build(enable_query=enable_query).run()
+
+
+class _Bearer:
+    """ASGI wrapper: every HTTP request must carry `Authorization: Bearer <token>` (Slice 0.6).
+
+    Pure ASGI, not Starlette's BaseHTTPMiddleware, which buffers responses and so breaks the
+    streamed replies MCP over HTTP sends. Lifespan events pass straight through: FastMCP's
+    session manager starts there.
+    """
+
+    def __init__(self, app, token: str):
+        self.app = app
+        self.expected = f"Bearer {token}".encode()
+
+    async def __call__(self, scope, receive, send):
+        import hmac
+
+        if scope["type"] == "http":
+            got = dict(scope.get("headers") or []).get(b"authorization", b"")
+            if not hmac.compare_digest(got, self.expected):
+                mcp_log.record("refused", path=scope.get("path"), reason="no or wrong bearer token")
+                await send({"type": "http.response.start", "status": 401,
+                            "headers": [(b"content-type", b"text/plain")]})
+                await send({"type": "http.response.body", "body": b"unauthorized\n"})
+                return
+        await self.app(scope, receive, send)
+
+
+def serve(host: str, port: int, token: str, enable_query: bool = False) -> None:
+    """The one long-running HTTP service (Slice 0.6): MCP at `/mcp`, behind a bearer token.
+
+    Replaces a `locus mcp` per chat over SSH (2,325 processes for 75 calls, measured 19 Oct): one
+    process, so the embedder and reranker load once and every client shares them. Calls are
+    logged on arrival and completion by `_instrument`, as on stdio.
+    """
+    import os
+
+    import uvicorn
+
+    if not token or len(token) < 32:
+        raise SystemExit("LOCUS_HTTP_TOKEN is missing or shorter than 32 characters")
+    global _SERVER_BUILD, _SERVER_PID
+    _SERVER_BUILD = _build_stamp()
+    _SERVER_PID = os.getpid()
+    mcp_log.record("server_start", build=_SERVER_BUILD, query_enabled=enable_query, http=f"{host}:{port}")
+    app = _Bearer(_build(enable_query=enable_query, host=host).streamable_http_app(), token)
+    uvicorn.run(app, host=host, port=port, log_level="warning")

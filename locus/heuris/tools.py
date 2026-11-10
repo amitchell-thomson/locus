@@ -221,7 +221,27 @@ def heuris_candidates(conn, query: str, qvec: list[float], *, kind=None, area=No
                 score=-chunk_ids[r[0]]) for r in rows]
 
 
-def library_candidates(query: str, *, kind=None, area=None, since=None, until=None) -> list[Hit]:
+def doc_thing(title: str, uri: str) -> str | None:
+    """The registry item a library document is about, when its title or path NAMES one (its id,
+    name or folder, as a whole word; four letters at least, so `cv` never fires on prose). The
+    old linker's rule (link/projects.py, tier 1): a fact checkable by reading beats a guess, and
+    a confidently wrong link is worse than none. Several named, or none: no item.
+
+    H1 fix 3, 10 Nov: the library carried no item at all, so `thing=quast` dropped every paper
+    and note, and regime-ml (src:175) read as having no repository."""
+    hay = f"{title or ''} {uri or ''}".lower().replace("_", "-")
+    hits = set()
+    for pid, e in registry.entries().items():
+        names = {pid, e.get("name", ""), e.get("folder", "")} | set(e.get("sessions", []))
+        for n in names:
+            n = (n or "").lower()
+            if len(n) >= 4 and re.search(rf"(?<![a-z0-9]){re.escape(n)}(?![a-z0-9])", hay):
+                hits.add(pid)
+                break
+    return hits.pop() if len(hits) == 1 else None
+
+
+def library_candidates(query: str, *, kind=None, area=None, since=None, until=None, thing=None) -> list[Hit]:
     """Sources and his notes from the library (locus.db), as hits with `src:` pointers."""
     from locus.agent.state import owner_authored_sql
     from locus.config import load
@@ -239,7 +259,7 @@ def library_candidates(query: str, *, kind=None, area=None, since=None, until=No
         clause, params = owner_authored_sql("d")
         doc_ids = sorted({c.doc_id for c in cands})
         docs = {r["id"]: r for r in conn.execute(
-            f"SELECT d.id, d.title, d.source_date, d.category, d.ingested_at, ({clause}) AS his FROM documents d "
+            f"SELECT d.id, d.title, d.source_uri, d.source_date, d.category, d.ingested_at, ({clause}) AS his FROM documents d "
             f"WHERE d.id IN ({','.join('?' * len(doc_ids))})", [*params, *doc_ids])}
         sec_ids = sorted({c.section_id for c in cands if c.section_id})
         secs = {r["id"]: r["position"] for r in conn.execute(
@@ -254,10 +274,13 @@ def library_candidates(query: str, *, kind=None, area=None, since=None, until=No
         k = "note" if d["his"] else "source"
         if kind and kind != k:
             continue
+        about = doc_thing(d["title"] or "", d["source_uri"] or "")
+        if thing and about != thing:
+            continue
         pos = secs.get(c.section_id)
         ref = f"src:{c.doc_id}" + (f"#s{pos}" if pos is not None else "")
         out.append(Hit(ref=ref, kind=k, at=d["source_date"] or (d["ingested_at"] or "")[:10],
-                       title=d["title"] or f"document {c.doc_id}", text=c.text,
+                       title=d["title"] or f"document {c.doc_id}", text=c.text, thing=about,
                        meta={"category": d["category"], "unit": c.kind}))
     return out
 
@@ -319,10 +342,11 @@ def search(conn: sqlite3.Connection, query: str, *, kind: str | None = None, are
                                   until=until, people_ids=people_ids)
     # The library has no thing, person or most areas: a filter it cannot apply excludes it, rather
     # than letting unfiltered papers into a filtered answer (area=Family returned papers, 10 Nov).
-    lib_ok = not thing and not person and (area is None or area in AREA_CATEGORY)
+    # A thing filter keeps the library documents that name that item (H1 fix 3).
+    lib_ok = not person and (area is None or area in AREA_CATEGORY)
     if library and (kind is None or kind in LIBRARY_KINDS) and lib_ok:
         try:
-            hits += library_candidates(query, kind=kind, area=area, since=since, until=until)
+            hits += library_candidates(query, kind=kind, area=area, since=since, until=until, thing=thing)
         except Exception as exc:  # the library being down must not take mail search with it
             hits.append(Hit(ref="", kind="error", at="", title="library unavailable", text=str(exc)))
     if not hits:

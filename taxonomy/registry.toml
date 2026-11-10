@@ -96,6 +96,17 @@ application = "gresearch-ml"
 active = true
 sessions = ["gr-ai-ml"]
 
+# regime-ml: built Feb–Mar 2026 (last commit 16 Mar), in the library as src:175; unregistered
+# until 10 Nov, so answers said it had no repo or was an unbuilt idea (H1 fix 3, Y5 and 39).
+[[projects]]
+id = "regime-ml"
+name = "Regime-conditioned equity ML"
+folder = "regime-conditioned-equity-ml"
+area = "Projects"
+kind = "repo"
+state = "parked"
+active = false
+
 [[projects]]
 id = "tanker-flow"
 name = "Tanker-flow"

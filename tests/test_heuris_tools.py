@@ -113,10 +113,12 @@ def test_a_filter_the_library_cannot_apply_keeps_the_library_out(conn, monkeypat
     called = []
     monkeypatch.setattr(ht, "library_candidates", lambda *a, **k: called.append(k) or [])
     ht.search(conn, "christmas", area="Family", embed=fake_embed)
-    ht.search(conn, "christmas", thing="quast", embed=fake_embed)
     assert called == []
+    # A thing filter the library CAN apply since H1 fix 3: it keeps documents naming the item.
+    ht.search(conn, "barrier", thing="quast", embed=fake_embed)
+    assert called and called[-1]["thing"] == "quast"
     ht.search(conn, "lecture", area="Studies", embed=fake_embed)
-    assert called and called[0]["area"] == "Studies"
+    assert called[-1]["area"] == "Studies"
 
 
 def test_a_firm_is_its_applications_and_its_mail_not_a_person(conn):
@@ -143,3 +145,12 @@ def test_open_pages_a_long_file_and_a_long_thread(conn):
     page = ht.open_ref(conn, "mail:personal/9/0")
     opened = page.count("<email_data nonce") - 1  # the preamble names the marker once
     assert "page=2" in page and opened >= 1 and opened == page.count("</email_data nonce")
+
+
+def test_a_library_document_names_its_project():
+    # H1 fix 3: the library carried no item, so regime-ml read as unbuilt and thing= dropped papers.
+    assert ht.doc_thing("Regime-Conditioned ML: notes", "incoming/project/regime-conditioned-equity-ml/README.md") == "regime-ml"
+    assert ht.doc_thing("Reading notes: quast barrier law", "data/notes/reading/quast.md") == "quast"
+    assert ht.doc_thing("Advanced Portfolio Management", "incoming/paper/apm.pdf") is None
+    assert ht.doc_thing("quast and locus", "") is None, "two named: none"
+    assert ht.doc_thing("Update your CV", "") is None, "short ids never fire on prose"

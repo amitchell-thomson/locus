@@ -68,7 +68,7 @@ impl Purpose {
     }
 
     /// The name a kept draft goes under: one per thread for a reply, one per account for a new
-    /// mail or a forward. A draft of Claude's is not kept here (it waits in Approve).
+    /// mail or a forward. A draft of Claude's is not a file: it is a pending send, listed in g d beside these.
     pub fn draft_name(&self) -> Option<String> {
         let safe = |s: &str| -> String {
             s.chars()

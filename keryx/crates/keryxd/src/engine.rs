@@ -1097,8 +1097,10 @@ impl Engine {
                         Some(&account),
                         Some(&thread_id),
                     )?;
+                    let pid = new_id("p");
+                    let keep = matches!(item.action, Action::Keep { .. });
                     self.db.add_proposal(&Proposal {
-                        id: new_id("p"),
+                        id: pid.clone(),
                         review_id: review_id.clone(),
                         position: base + i as i64,
                         account,
@@ -1110,6 +1112,9 @@ impl Engine {
                         decided_at: None,
                         changeset_id: None,
                     })?;
+                    if keep {
+                        self.settle_keep(&pid, who)?;
+                    }
                     // A thread proposed again replaces its open proposal.
                     if new {
                         out.added += 1;
@@ -1280,6 +1285,40 @@ impl Engine {
         }
         self.maybe_done(review_id)?;
         Ok(out)
+    }
+
+    /// A keep is settled as it is made, never asked about (10 Nov: "keep is the default so
+    /// should not request my approval, it does nothing"). Keeping changes no mailbox; its one
+    /// effect, a needs-reply tag, is something Claude may set anyway (`tag_needs_reply`).
+    fn settle_keep(&mut self, proposal_id: &str, who: Who) -> Result<()> {
+        let Some(p) = self.db.proposal(proposal_id)? else {
+            return Ok(());
+        };
+        if p.status != ProposalStatus::Open {
+            return Ok(());
+        }
+        if let Action::Keep { needs_reply: true, .. } = p.action {
+            let r = keryx_core::model::thread_ref(&p.account, &p.thread_id);
+            self.tag(&r, "kept for a reply (cleanup)", who)?;
+        }
+        self.db
+            .decide_proposal(&p.id, ProposalStatus::Accepted, None, None, self.now())?;
+        self.maybe_done(&p.review_id)
+    }
+
+    /// Keeps proposed before they were settled on the spot (the 10 Nov cleanup's 42): settled at
+    /// start, so none sits in Approve. Returns how many.
+    pub fn settle_open_keeps(&mut self) -> Result<usize> {
+        let mut n = 0;
+        for r in self.db.reviews(Some("open"))? {
+            for p in self.db.proposals(&r.id)? {
+                if p.status == ProposalStatus::Open && matches!(p.action, Action::Keep { .. }) {
+                    self.settle_keep(&p.id, Who::claude())?;
+                    n += 1;
+                }
+            }
+        }
+        Ok(n)
     }
 
     fn maybe_done(&mut self, review_id: &str) -> Result<()> {

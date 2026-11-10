@@ -949,9 +949,11 @@ fn footer(f: &mut Frame, app: &App, area: Rect) {
         }
     }
     if app.message.is_none() {
-        let waiting = app.pending_sends + app.open_proposals;
-        if waiting > 0 {
-            notes.push(format!("{waiting} to approve · A"));
+        if app.pending_sends > 0 {
+            notes.push(format!("{} of Claude's drafts · g d", app.pending_sends));
+        }
+        if app.open_proposals > 0 {
+            notes.push(format!("{} to approve · A", app.open_proposals));
         }
         for (name, mins) in &app.stale {
             let ago = if *mins < 120 {

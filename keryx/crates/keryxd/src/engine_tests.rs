@@ -559,7 +559,13 @@ fn cleanup_review_decisions() {
     let ci = rv.items.iter().find(|i| i.r#ref == c).unwrap();
     assert_eq!(ci.proposal.status, ProposalStatus::Changed);
     assert_eq!(ci.proposal.action, Action::Archive);
-    e.decide(&p(&e, &d), Decision::Accept, Who::ALEC).unwrap();
+    // A keep is settled as it is proposed: nothing to decide, but the needs-reply tag is set.
+    let di = rv.items.iter().find(|i| i.r#ref == d).unwrap();
+    assert_eq!(di.proposal.status, ProposalStatus::Accepted, "keep needs no decision");
+    assert!(
+        e.decide(&p(&e, &d), Decision::Accept, Who::ALEC).is_err(),
+        "already settled"
+    );
     let (da, dt) = parse_thread_ref(&d).unwrap();
     assert!(
         e.db.tag(da, dt, NEEDS_REPLY).unwrap().is_some(),
@@ -1419,4 +1425,31 @@ fn back_to_the_inbox_on_a_thread_of_only_your_sent_mail_says_so() {
         )
         .unwrap();
     assert!(out.skipped[0].1.contains("only your sent copies"), "{out:?}");
+}
+
+#[test]
+fn keeps_left_open_are_settled_at_start() {
+    let (mut e, _) = engine();
+    let a = r(&e, "Lab partner for Thursday?");
+    let rid = propose(
+        &mut e,
+        vec![(
+            a.clone(),
+            Action::Keep {
+                why: keryx_store::state::Keep::New,
+                needs_reply: false,
+            },
+        )],
+    );
+    // As the 10 Nov cleanup left them: open, waiting to be "approved".
+    let pid = e.review(&rid).unwrap().items[0].proposal.id.clone();
+    e.db.reopen_proposal(&pid).unwrap();
+    e.db.set_review_status(&rid, "open").unwrap();
+    assert_eq!(e.settle_open_keeps().unwrap(), 1);
+    assert_eq!(
+        e.review(&rid).unwrap().items[0].proposal.status,
+        ProposalStatus::Accepted
+    );
+    assert_eq!(e.db.review(&rid).unwrap().unwrap().status, "done");
+    assert!(in_inbox(&e, &a), "keeping moves nothing");
 }

@@ -176,7 +176,8 @@ pub struct App {
     /// Where `:q` keeps a changed mail (set by the running TUI; `None` in tests unless set).
     pub drafts_dir: Option<PathBuf>,
     /// `x` on a kept draft: the one the next `x` throws away.
-    pub drop_draft: Option<PathBuf>,
+    /// The draft `x` asked about: `file:<path>` (yours) or `claude:<changeset>`.
+    pub drop_draft: Option<String>,
     /// Threads taken out of the inbox here, and when: one that comes back with nothing newer
     /// in it was put back by Mail, and the list says so (round 11).
     pub gone: BTreeMap<String, i64>,

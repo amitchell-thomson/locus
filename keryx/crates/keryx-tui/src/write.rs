@@ -354,7 +354,7 @@ impl App {
                     self.move_sel_by(1);
                 }
             }
-            // One approve place (keryx-joins-locus X2): drafts and cleanups wait in locus's Approve.
+            // Cleanups wait in locus's Approve (keryx-joins-locus X2); Claude's drafts in g d (10 Nov).
             Key::Char('A') => self.open_locus_approve(),
             Key::Ctrl('r') => {
                 self.deferred.push(Job::Sync);
@@ -406,7 +406,7 @@ impl App {
             ("opened approve in locus".into(), false)
         } else {
             (
-                "drafts and cleanups wait in locus's Approve (Alt-1, then a)".into(),
+                "cleanups wait in locus's Approve (Alt-1, then a) · Claude's drafts are in g d".into(),
                 false,
             )
         });

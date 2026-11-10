@@ -86,6 +86,11 @@ fn main() -> anyhow::Result<()> {
     let token = keryx_store::keychain::get("keryx-api-token")
         .context("no API token in the Keychain (docs/setup.md §5: keryx-api-token)")?;
     let mut engine = engine::Engine::new(cfg.clone(), db, Box::new(actuate::Real::new(cfg.clone())))?;
+    match engine.settle_open_keeps() {
+        Ok(0) => {}
+        Ok(n) => tracing::info!(n, "settled keep proposals: keeping needs no decision"),
+        Err(e) => tracing::warn!(error = %e, "could not settle keep proposals"),
+    }
     // Where filed mail goes and what it is for (keryx-joins-locus X7), as kairosd reads it.
     match locus_contract::taxonomy::load(&locus_contract::taxonomy::root()) {
         Ok(s) => engine.shared = Some(s),

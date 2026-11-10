@@ -1426,3 +1426,67 @@ fn a_on_an_account_keryx_may_not_archive_on_says_so_and_sends_nothing() {
     assert!(err && said.contains("archive it in Mail for now"), "{said}");
     assert!(a.rows.iter().any(|r| r.r#ref == lab), "still listed");
 }
+
+/// Claude's drafts are in g d, not in Approve (10 Nov): Enter opens the text to edit, and what
+/// you send replaces Claude's; x twice rejects it, nothing sent.
+#[test]
+fn claudes_drafts_are_in_g_d_and_sending_your_edit_replaces_it() {
+    let (mut a, f) = app();
+    let lab = select(&mut a, "Lab partner for Thursday?");
+    let (acct, thread) = keryx_core::model::parse_thread_ref(&lab).unwrap();
+    let addr = |e: &str| keryx_core::model::Address {
+        name: Some("Jane".into()),
+        email: e.into(),
+    };
+    let mut c = cs(Status::Pending);
+    c.id = "cs-claude".into();
+    c.author = Author::Claude;
+    c.interactive = false;
+    c.created_at = a.now.timestamp() - 600;
+    c.ops = vec![keryx_core::changeset::Op::Send(keryx_core::changeset::Outgoing {
+        account: acct.into(),
+        thread_id: Some(thread.into()),
+        from: addr("me@example.org"),
+        to: vec![addr("jane@example.org")],
+        cc: vec![],
+        bcc: vec![],
+        subject: "Re: Lab partner for Thursday?".into(),
+        body: "Thursday works for me.".into(),
+        in_reply_to: None,
+        references: vec![],
+        message_id: "<c@example.org>".into(),
+        attachments: vec![],
+    })];
+    a.db.save_changeset(&c).unwrap();
+
+    keys(&mut a, &[Key::Char('g'), Key::Char('d')]);
+    let s = render_to_string(&mut a, 110, 6);
+    assert!(
+        s.contains("Claude") && s.contains("Re: Lab partner") && s.contains("jane@"),
+        "{s}"
+    );
+
+    keys(&mut a, &[Key::Enter]);
+    let (text, purpose) = editor(&mut a);
+    assert!(
+        text.contains("To: Jane <jane@example.org>") && text.contains("Thursday works for me."),
+        "{text}"
+    );
+    assert!(matches!(&purpose, Purpose::EditDraft { id, .. } if id == "cs-claude"));
+    a.editor_done(
+        purpose,
+        Ok(text.replace("Thursday works for me.", "Thursday at 2 works.")),
+    );
+    keys(&mut a, &[Key::Char('y')]);
+    let log = f.take();
+    assert!(
+        log.len() == 1 && log[0].starts_with("replace cs-claude") && log[0].contains("Thursday at 2 works."),
+        "{log:?}"
+    );
+
+    // x asks, x again rejects: nothing is sent.
+    keys(&mut a, &[Key::Char('g'), Key::Char('d'), Key::Char('x')]);
+    assert!(f.take().is_empty(), "the first x only asks");
+    keys(&mut a, &[Key::Char('x')]);
+    assert_eq!(f.take(), vec!["reject cs-claude"]);
+}

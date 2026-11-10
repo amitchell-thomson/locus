@@ -176,7 +176,8 @@ impl App {
                 }
             }
             Key::Enter => match lines.get(sel) {
-                Some(l) if l.kind == "review" || l.kind == "draft" => self.open_locus_approve(),
+                Some(l) if l.kind == "draft" => self.mode = Mode::Drafts { sel: 0 },
+                Some(l) if l.kind == "review" => self.open_locus_approve(),
                 Some(ItemLine {
                     thread: Some((a, t)), ..
                 }) => {

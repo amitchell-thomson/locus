@@ -277,7 +277,26 @@ fn launch(cfg: &Config, p: &Plan, run_id: &str, timeout: Duration) -> anyhow::Re
                 }
             })
             .collect();
+        // 10 Nov, 18:00: the run's Claude found no keryx tools and finished without record_run.
+        // keryxd was busy carrying out an approval run one decision at a time, and Claude Code
+        // gives an MCP server only a short while to answer at start. The same run through
+        // launchd two hours later, keryxd idle, worked. So the run waits for keryxd to answer
+        // (up to two minutes) and gives the connection a minute rather than the default.
+        let health = format!("{}/healthz", cfg.server_url());
+        for _ in 0..24 {
+            let ok = std::process::Command::new("curl")
+                .args(["-s", "-o", "/dev/null", "-m", "5", "-w", "%{http_code}", &health])
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout) == "200")
+                .unwrap_or(false);
+            if ok {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_secs(5));
+        }
         let mut child = std::process::Command::new(&cfg.runs.claude_bin)
+            .env("MCP_TIMEOUT", "60000")
+            .env("MCP_TOOL_TIMEOUT", "300000")
             .args(&args)
             .stdin(std::process::Stdio::null())
             .stdout(log.try_clone()?)

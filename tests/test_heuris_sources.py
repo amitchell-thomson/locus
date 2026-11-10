@@ -76,6 +76,8 @@ def test_family_events_get_the_family_area_and_tasks_their_thing():
     t = calendar.task_item({"id": "t-1", "title": "plan", "status": "open", "locus": "quast",
                             "created_at": "2026-11-09T14:29:20.632843778Z"})
     assert t.thing == "quast" and t.area == "Projects"
+    d = calendar.task_item({"id": "t-2", "title": "settle team", "status": "dropped", "created_at": "2026-11-09T14:29:20Z"})
+    assert d.title == "[dropped] settle team"
 
 
 def test_a_full_scan_that_reads_nothing_prunes_nothing(tmp_path, monkeypatch):

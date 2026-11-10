@@ -107,11 +107,15 @@ def task_item(t: dict) -> Item:
         parts.append(f"Due: {due.get('value')}")
     if t.get("notes"):
         parts.append(t["notes"])
+    # A task that is not open says so in its title, where every hit shows it: a dropped task read
+    # as "due Friday" in two re-run answers (H1, 10 Nov) because the status sat in the body.
+    status = t.get("status")
+    title = t.get("title", "") if status in (None, "open") else f"[{status}] {t.get('title', '')}"
     return Item(
         ref=f"task:{t['id']}",
         kind="task",
         at=at,
-        title=t.get("title", ""),
+        title=title,
         text="\n".join(parts),
         area=registry.area_of(thing) or t.get("key"),
         thing=thing,

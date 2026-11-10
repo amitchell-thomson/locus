@@ -7,7 +7,7 @@
 use crate::fixtures::Fixtures;
 use keryx_core::changeset::Changeset;
 use keryx_core::config::Config;
-use keryx_store::api::{Decision, ReviewItem};
+use keryx_store::api::{DecideOne, Decision, ReviewItem};
 use keryx_store::client::{Client, Daemon};
 use keryx_store::state::{Action, ProposalStatus};
 use locus_contract::{
@@ -83,18 +83,6 @@ impl Live {
         }
     }
 
-    /// The changeset a decided proposal made, if it made one (a refusal makes none).
-    fn changeset_of(&self, d: &MailDecision, yes: bool) -> Result<Option<String>, String> {
-        match d {
-            MailDecision::Send(_) => self.decide(d, yes).map(|_| None),
-            MailDecision::Proposal(id) => self
-                .client
-                .decide(id, if yes { &Decision::Accept } else { &Decision::Decline })
-                .map(|c| c.map(|c| c.id))
-                .map_err(|e| e.to_string()),
-        }
-    }
-
     /// Undo a changeset: the mail goes back where it was, and keryxd reopens the proposal.
     pub fn undo(&self, changeset: &str) -> Result<String, String> {
         self.client
@@ -104,11 +92,22 @@ impl Live {
     }
 }
 
-/// Decisions sent to keryxd one after another on a thread of their own, so `y` returns at once
-/// (10 Nov: "very large delay between pressing y and it happening"). keryxd carries an archive
-/// out through Mail, which takes a second or more; the item leaves the list when you press, and
-/// a refusal comes back as a note. What was sent is remembered for the session, so the minute's
-/// refresh cannot bring back an item keryxd has not reached yet.
+/// Decisions on their way to keryxd, off the key's path (10 Nov: "very large delay between
+/// pressing y and it happening"): the item leaves the list when you press, and a thread of its
+/// own sends what you decided.
+///
+/// **In batches** (10 Nov, after a 500-item approval run took most of an hour one request at a
+/// time): the worker takes everything waiting, and whatever else arrives within a third of a
+/// second, and sends it as `decide-many` calls of up to 100, so keryxd carries out each group of
+/// like actions as one changeset. What was sent is remembered for the session, so the minute's
+/// refresh cannot bring back an item keryxd has not reached yet; a decision keryx refuses is
+/// forgotten again, so its item comes back to be tried again, and the note says how many.
+pub struct Queue {
+    tx: std::sync::mpsc::Sender<(Job, String)>,
+    sent: std::sync::Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
+    state: std::sync::Arc<std::sync::Mutex<QueueState>>,
+}
+
 /// One decision on its way to keryxd.
 enum Job {
     Decide(MailDecision, bool),
@@ -118,20 +117,16 @@ enum Job {
     Undo(String),
 }
 
-pub struct Queue {
-    tx: std::sync::mpsc::Sender<(Job, String)>,
-    sent: std::sync::Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
-    state: std::sync::Arc<std::sync::Mutex<QueueState>>,
-}
-
 #[derive(Default)]
 struct QueueState {
     waiting: usize,
     done: usize,
-    failed: Vec<String>,
+    /// Refusals since the last note: (what, why).
+    failed: Vec<(String, String)>,
+    failed_total: usize,
     changed: bool,
-    /// What `u` can put back, newest last: (what, proposal, changeset).
-    undoable: Vec<(String, String, String)>,
+    /// What `u` can put back, newest last: (what, the proposals, the changeset).
+    undoable: Vec<(String, Vec<String>, String)>,
     /// A note from the worker itself (an undo done).
     said: Option<String>,
 }
@@ -142,49 +137,126 @@ fn decision_id(d: &MailDecision) -> &str {
     }
 }
 
+const BATCH: usize = 100;
+
 impl Queue {
     pub fn start(live: std::sync::Arc<Live>) -> Queue {
         let (tx, rx) = std::sync::mpsc::channel::<(Job, String)>();
         let state = std::sync::Arc::new(std::sync::Mutex::new(QueueState::default()));
-        let st = state.clone();
+        let sent: std::sync::Arc<std::sync::Mutex<std::collections::HashSet<String>>> = Default::default();
+        let (st, sent2) = (state.clone(), sent.clone());
         std::thread::spawn(move || {
-            for (job, what) in rx {
-                // (proposal, the changeset it made) for `u`.
-                let r: Result<Option<(String, String)>, String> = match &job {
-                    Job::Decide(d, yes) => live
-                        .changeset_of(d, *yes)
-                        .map(|c| c.map(|c| (decision_id(d).to_string(), c))),
-                    Job::Change(id, a) => live
-                        .client
-                        .decide(id, &Decision::Change(a.clone()))
-                        .map(|c| c.map(|c| (id.clone(), c.id)))
-                        .map_err(|e| e.to_string()),
-                    Job::Undo(cs) => live.undo(cs).map(|_| None),
-                };
-                let Ok(mut s) = st.lock() else { return };
-                s.waiting = s.waiting.saturating_sub(1);
-                match (r, &job) {
-                    (Ok(_), Job::Undo(_)) => {
-                        s.said = Some(format!(
-                            "put back: “{what}” is in your inbox and back here within a minute"
-                        ))
+            while let Ok(first) = rx.recv() {
+                let mut jobs = vec![first];
+                // A burst of keys (y y y, or Y on a group) goes as one batch.
+                std::thread::sleep(std::time::Duration::from_millis(350));
+                while let Ok(j) = rx.try_recv() {
+                    jobs.push(j);
+                }
+                let mut batch: Vec<(DecideOne, String)> = Vec::new();
+                let mut others: Vec<(Job, String)> = Vec::new();
+                for (job, what) in jobs {
+                    match job {
+                        Job::Decide(MailDecision::Proposal(id), yes) => batch.push((
+                            DecideOne {
+                                proposal: id,
+                                decision: if yes { Decision::Accept } else { Decision::Decline },
+                            },
+                            what,
+                        )),
+                        Job::Change(id, a) => batch.push((
+                            DecideOne {
+                                proposal: id,
+                                decision: Decision::Change(a),
+                            },
+                            what,
+                        )),
+                        other => others.push((other, what)),
                     }
-                    (Ok(c), _) => {
-                        s.done += 1;
-                        if let Some((p, cs)) = c {
-                            s.undoable.push((what.clone(), p, cs));
+                }
+                for chunk in batch.chunks(BATCH) {
+                    let items: Vec<DecideOne> = chunk.iter().map(|x| x.0.clone()).collect();
+                    let what_of = |id: &str| {
+                        chunk
+                            .iter()
+                            .find(|x| x.0.proposal == id)
+                            .map(|x| x.1.clone())
+                            .unwrap_or_default()
+                    };
+                    let r = live.client.decide_many(&items);
+                    let Ok(mut s) = st.lock() else { return };
+                    s.waiting = s.waiting.saturating_sub(chunk.len());
+                    let mut back: Vec<String> = Vec::new();
+                    match r {
+                        Ok(out) => {
+                            let mut by_cs: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+                            for d in out.done {
+                                match (d.error, d.changeset) {
+                                    (Some(e), _) if e.starts_with("already") => s.done += 1,
+                                    (Some(e), _) => {
+                                        s.failed.push((what_of(&d.proposal), e));
+                                        s.failed_total += 1;
+                                        back.push(d.proposal);
+                                    }
+                                    (None, cs) => {
+                                        s.done += 1;
+                                        if let Some(cs) = cs {
+                                            let w = what_of(&d.proposal);
+                                            by_cs.entry(cs).or_default().push((w, d.proposal));
+                                        }
+                                    }
+                                }
+                            }
+                            for (cs, list) in by_cs {
+                                let what = match list.as_slice() {
+                                    [(w, _)] => w.clone(),
+                                    many => format!("{} at once", many.len()),
+                                };
+                                s.undoable.push((what, list.into_iter().map(|(_, p)| p).collect(), cs));
+                            }
+                        }
+                        Err(e) => {
+                            for (d, w) in chunk {
+                                s.failed.push((w.clone(), e.to_string()));
+                                s.failed_total += 1;
+                                back.push(d.proposal.clone());
+                            }
                         }
                     }
-                    (Err(e), _) => s.failed.push(format!("keryx said no to “{what}”: {e}")),
+                    s.changed = true;
+                    drop(s);
+                    // Refused: forgotten here, so the item comes back to Approve to try again.
+                    if let Ok(mut sent) = sent2.lock() {
+                        for p in back {
+                            sent.remove(&p);
+                        }
+                    }
                 }
-                s.changed = true;
+                for (job, what) in others {
+                    let r = match &job {
+                        Job::Decide(d, yes) => live.decide(d, *yes).map(|_| ()),
+                        Job::Undo(cs) => live.undo(cs).map(|_| ()),
+                        Job::Change(..) => Ok(()),
+                    };
+                    let Ok(mut s) = st.lock() else { return };
+                    s.waiting = s.waiting.saturating_sub(1);
+                    match (r, &job) {
+                        (Ok(()), Job::Undo(_)) => {
+                            s.said = Some(format!(
+                                "put back: “{what}” is in your inbox and back here within a minute"
+                            ))
+                        }
+                        (Ok(()), _) => s.done += 1,
+                        (Err(e), _) => {
+                            s.failed.push((what, e));
+                            s.failed_total += 1;
+                        }
+                    }
+                    s.changed = true;
+                }
             }
         });
-        Queue {
-            tx,
-            sent: Default::default(),
-            state,
-        }
+        Queue { tx, sent, state }
     }
 
     /// Send a decision; false when the worker is gone (then decide it in place).
@@ -209,20 +281,22 @@ impl Queue {
         self.tx.send((Job::Change(proposal, action), what)).is_ok()
     }
 
-    /// `u`: put back the newest decision keryx has carried out. Its proposal may show again
-    /// (keryxd reopens it). Err says why not: nothing done yet, or still working.
+    /// `u`: put back the newest decision keryx has carried out (a batch is put back whole).
+    /// Its proposals show again (keryxd reopens them). Err says why not.
     pub fn undo_last(&self) -> Result<String, String> {
         let mut s = self.state.lock().map_err(|_| "the queue is gone".to_string())?;
         if s.waiting > 0 {
             return Err(format!("keryx is still doing {}: u undoes once it has", s.waiting));
         }
-        let Some((what, proposal, cs)) = s.undoable.pop() else {
+        let Some((what, proposals, cs)) = s.undoable.pop() else {
             return Err("nothing to undo here yet (a refusal changes nothing, so it has no undo)".into());
         };
         s.waiting += 1;
         drop(s);
         if let Ok(mut sent) = self.sent.lock() {
-            sent.remove(&proposal);
+            for p in &proposals {
+                sent.remove(p);
+            }
         }
         self.tx
             .send((Job::Undo(cs), what.clone()))
@@ -239,15 +313,29 @@ impl Queue {
         self.state.lock().map_or(0, |s| s.waiting)
     }
 
-    /// A note when something finished since the last call: a refusal first, else progress.
+    /// Decisions keryx refused this session (their items came back to the list).
+    pub fn failed_total(&self) -> usize {
+        self.state.lock().map_or(0, |s| s.failed_total)
+    }
+
+    /// A note when something finished since the last call: refusals first (all of them, as a
+    /// count), else progress.
     pub fn take_note(&self) -> Option<String> {
         let mut s = self.state.lock().ok()?;
         if !s.changed {
             return None;
         }
         s.changed = false;
-        if let Some(e) = s.failed.pop() {
-            return Some(e);
+        if !s.failed.is_empty() {
+            let failed = std::mem::take(&mut s.failed);
+            return Some(match failed.as_slice() {
+                [(what, why)] => format!("keryx said no to “{what}”: {why} · it is back in Approve to try again"),
+                [(_, why), ..] => format!(
+                    "{} failed ({why}) · they are back in Approve to try again",
+                    failed.len()
+                ),
+                [] => String::new(),
+            });
         }
         if let Some(n) = s.said.take() {
             return Some(n);

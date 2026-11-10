@@ -355,6 +355,15 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
             draw_detail(f, r, group, it, 0, true);
         }
     }
+    let failed = app.mail_queue.as_ref().map_or(0, |q| q.failed_total());
+    let waiting = app.mail_queue.as_ref().map_or(0, |q| q.waiting());
+    // What keryx still has to do, and what it refused (those came back to the list).
+    let status = match (waiting, failed) {
+        (0, 0) => String::new(),
+        (w, 0) => format!("{w} with keryx · "),
+        (0, f) => format!("{f} failed, back in the list · "),
+        (w, f) => format!("{w} with keryx · {f} failed · "),
+    };
     let pos = match visual {
         Some((lo, hi)) => format!("VISUAL · {} selected  ", hi - lo + 1),
         None if total > 0 => format!("{}/{total} · {}%  ", sel + 1, (sel + 1) * 100 / total),
@@ -368,6 +377,12 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         ("⏎", "open"),
     ]);
     foot_line.spans.insert(0, Span::styled(pos, dim()));
+    if !status.is_empty() {
+        foot_line.spans.insert(
+            0,
+            Span::styled(status, st(if failed > 0 { "peach" } else { "overlay1" })),
+        );
+    }
     lines(f, foot, vec![foot_line.right_aligned()]);
     if let Some(p) = &app.approve_pick {
         draw_picker(f, body, p);

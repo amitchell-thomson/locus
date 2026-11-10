@@ -122,6 +122,19 @@ pub struct App {
     /// The chat view's arrows move through the conversations list (←) rather than scrolling the
     /// open conversation (→, the default).
     pub chat_list: bool,
+    /// Home live (home-live.md): Claude sessions in tmux the registry does not know, by tmux
+    /// session (H2).
+    pub unregistered: Vec<(String, Vec<locus_contract::Session>)>,
+    /// The newest commit of each active repo (H3).
+    pub last_commit: std::collections::BTreeMap<String, (locus_contract::Time, String)>,
+    /// Why `~/files/Careers/applications.toml` could not be read, shown on careers (H5).
+    pub careers_error: Option<String>,
+    /// The server's system section (H7): none until the first answer, an error when the server
+    /// could not be asked.
+    pub system_live: Option<Result<crate::live::SystemLive, String>>,
+    /// Home is reading live data: rows the fixtures held are gone, and sections not yet live
+    /// say so. False in dumps of the fixtures and in tests.
+    pub home_live: bool,
 }
 
 impl App {
@@ -166,6 +179,11 @@ impl App {
             chat_draft: String::new(),
             chat_new: false,
             chat_list: false,
+            unregistered: Vec::new(),
+            last_commit: Default::default(),
+            careers_error: None,
+            system_live: None,
+            home_live: false,
         };
         app.uselog.record(root.name(), "open");
         app

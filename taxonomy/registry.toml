@@ -70,7 +70,7 @@ area = "Studies"
 kind = "repo"
 course = "b3"
 active = true
-sessions = ["B3-Project"]
+sessions = ["med-ml-3yp"]
 
 [[projects]]
 id = "tanker-flow"

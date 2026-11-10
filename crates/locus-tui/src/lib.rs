@@ -8,6 +8,7 @@ pub mod chat;
 pub mod dump;
 pub mod fixtures;
 pub mod follow;
+pub mod live;
 pub mod mail;
 pub mod maildates;
 pub mod markdown;

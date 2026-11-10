@@ -773,6 +773,20 @@ def cmd_status(args) -> None:
     print(format_status(report))
 
 
+def cmd_home_system(args) -> None:
+    """Home's system section as one JSON object (home-live H7): read over ssh by the window."""
+    import json
+
+    from locus.home_system import collect
+
+    cfg = load().agent
+    conn = _open()
+    try:
+        print(json.dumps(collect(conn, cycle_day=cfg.credit_cycle_day, backend=cfg.backend)))
+    finally:
+        conn.close()
+
+
 def cmd_export_obsidian(args) -> None:
     """Render the corpus to a read-only Obsidian vault (§13; joins-only, no API).
 
@@ -2419,6 +2433,9 @@ def main(argv=None) -> None:
 
     pst = sub.add_parser("status", help="one-screen operational health summary (no API)")
     pst.set_defaults(func=cmd_status)
+
+    phs = sub.add_parser("home-system", help="Home's system section as JSON (read by the window)")
+    phs.set_defaults(func=cmd_home_system)
 
     prw = sub.add_parser(
         "reading-why",

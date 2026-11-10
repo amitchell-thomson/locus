@@ -24,6 +24,7 @@ ratatui-image.workspace = true
 image.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+toml.workspace = true
 unicode-width.workspace = true
 uuid.workspace = true
 

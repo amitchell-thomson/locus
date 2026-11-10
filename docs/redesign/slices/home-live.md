@@ -1,6 +1,6 @@
 # Home live
 
-**State:** proposed 10 Nov 2026 · **Written:** 2026-11-10 · **Runs in:** `claude` (locus-dev)
+**State:** approved 10 Nov 2026, with changes ("go with recommendations") · **Written:** 2026-11-10 · **Runs in:** `claude` (locus-dev)
 
 **From:** your 9 Nov priorities ("wished home page project view was live"), first in the build
 order of heuris v2 (accepted 10 Nov). It needs nothing from heuris.
@@ -54,8 +54,14 @@ session `B3-Project` no longer exists.
   - I seed it from the fixture and you correct it once.
   - Heuris H2 later writes the same file from mail, so Home does not change again.
   - The alternative is to wait for H2, leaving careers fake until then.
-- **H6, Explore leaves Home; the learning row waits for L** `[proposal]`. Both were fixture-only
-  and are set aside. Their space goes to projects and careers.
+- **H6, Explore and the learning row stay, marked not live** (you, 10 Nov: "keep them in just
+  mark as not live"). Each says so in its heading until its slice makes it live.
+- **H8, every open project always visible** (you, 10 Nov: "I always want all open projects to be
+  visible, as those are important to me to see at once all the time"). Careers and studies show
+  at most 5 rows at this size and scroll within their section when focused; projects never
+  scroll.
+- **H9, kairos's glyphs** (you, 10 Nov): tasks use the same boxes as kairos (an open box, a green
+  tick when done), and careers uses the same family for its stages.
 - **H7, the system section goes live from the server** `[proposal]`. It shows:
   - jobs running now (`systemctl --user` on the server);
   - done and failed today (the run journal `locus status` reads);
@@ -74,8 +80,9 @@ session `B3-Project` no longer exists.
 - **S3, careers file** (H5): the contract, the seeded file, the chat brief told about it.
 - **S4, system** (H7): one `locus status --json` on the server, with budget included (a flag
   added to the existing command). Home reads it over ssh.
-- **S5, Home trimmed** (H4, H6): the count column removed, Explore and the goals row taken out;
-  the fixture files for them stay on disk (set aside, not deleted).
+- **S5, Home's shape** (H4, H6, H8, H9): the count column removed; Explore and the goals row
+  marked not live; careers and studies capped at 5 rows and scrolling; kairos's glyphs on tasks
+  and careers.
 - **S6, check against real output:** Home dumped with `--live` next to `tmux ls`, `git log` and
   the server's `locus status`, each row compared by hand; then a day of your use.
 

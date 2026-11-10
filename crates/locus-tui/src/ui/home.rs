@@ -33,7 +33,40 @@ pub const KEYS: &[(&str, &str)] = &[
 /// project, then the rest as registered. Home's sections go by area, not kind (ADR-006): this
 /// one holds everything outside Careers.
 pub fn project_rows(app: &App) -> Vec<String> {
-    rows_of(app, |p| p.area == "Projects")
+    let mut rows = rows_of(app, |p| p.area == "Projects");
+    // Live Claude sessions the registry does not know (home-live H2), as `tmux:<session>`: one
+    // that needs you goes to the top with the others that do, the rest after the registered.
+    for (name, sessions) in &app.unregistered {
+        let id = format!("tmux:{name}");
+        if sessions.iter().any(|s| s.state == SessionState::NeedsYou) {
+            rows.insert(0, id);
+        } else {
+            rows.push(id);
+        }
+    }
+    rows
+}
+
+/// Careers and studies show this many rows and scroll through the rest when focused (home-live
+/// H8: projects never scroll, "I always want all open projects to be visible").
+pub const SIDE_ROWS: usize = 5;
+
+/// The rows of a capped section to draw: a window of `cap` that keeps the selection in view.
+pub fn window(len: usize, sel: Option<usize>, cap: usize) -> std::ops::Range<usize> {
+    if len <= cap {
+        return 0..len;
+    }
+    let start = sel.filter(|&s| s < len).map_or(0, |s| (s + 1).saturating_sub(cap));
+    start..start + cap
+}
+
+/// "6–10 of 12", for a capped section's heading; nothing when it all fits.
+fn window_note(len: usize, w: &std::ops::Range<usize>) -> String {
+    if len <= w.len() {
+        String::new()
+    } else {
+        format!("{}–{} of {len} · ↑↓", w.start + 1, w.end)
+    }
 }
 
 /// The Studies area: courses, and coursework run as a repo (3YP) (round 2d: "I can see on
@@ -169,10 +202,20 @@ pub fn section_len(app: &App, sec: char) -> usize {
 pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     let inner = draw_border(f, area, app);
     let n_proj = project_rows(app).len().max(1) as u16;
-    let n_side = career_rows(app).len().max(study_rows(app).len() + 2).max(1) as u16;
+    let n_side = career_rows(app)
+        .len()
+        .min(SIDE_ROWS)
+        .max(study_rows(app).len().min(SIDE_ROWS) + 2)
+        .max(1) as u16;
     // A blank line between sections (round 1b), paid for by moving next and mail into the
     // border.
     let gap = Constraint::Length(1);
+    let pair_h = (3 + inner.height.saturating_sub(35)).min(6);
+    // Projects are never squeezed (home-live H8: "I always want all open projects to be
+    // visible"): careers and studies take what is left after everything else, down to a row
+    // each, and scroll through the rest.
+    let fixed = 9 + 6 + (n_proj + 1) + pair_h + 3 + 2 + 2;
+    let side_h = inner.height.saturating_sub(fixed).clamp(2, n_side + 1);
     // Work heads the page; the approve line sits with the system at the foot (round 1d: he
     // checks approvals as a sign the system is working, so it belongs beside the system).
     let rects = Layout::vertical([
@@ -180,14 +223,14 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         gap,
         Constraint::Length(n_proj + 1),
         gap,
-        Constraint::Length(n_side + 1),
+        Constraint::Length(side_h),
         gap,
         // Explore takes what is left: at the smallest window one find, never a project's row.
         Constraint::Min(2),
         gap,
         // Approve and tasks side by side (round 7a), as careers and studies are: a title and
         // two rows at the smallest window, a row more for each row of height, up to five.
-        Constraint::Length((3 + inner.height.saturating_sub(35)).min(6)),
+        Constraint::Length(pair_h),
         gap,
         Constraint::Length(3),
         gap,
@@ -228,7 +271,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     draw_careers(f, c_r, app);
     draw_studies(f, g_r, app);
     // Rows careers had no use for hold its summary (round 2g).
-    let used = 1 + career_rows(app).len().max(1) as u16;
+    let used = 1 + career_rows(app).len().clamp(1, SIDE_ROWS) as u16;
     crate::ui::summary_box(
         f,
         Rect {
@@ -404,7 +447,7 @@ fn draw_tasks(f: &mut Frame, area: Rect, app: &App) {
     let mut out = vec![rule("tasks", "+ adds one", Some('t'), focus, area.width)];
     let room = usize::from(area.height.saturating_sub(1));
     if rows.is_empty() {
-        out.push(Line::from(Span::styled("   ☐ nothing to do", dim())));
+        out.push(Line::from(Span::styled(format!("   {} nothing to do", glyph::TODO_BOX), dim())));
         return lines(f, area, out);
     }
     let shown = if rows.len() > room {
@@ -435,10 +478,17 @@ fn draw_tasks(f: &mut Frame, area: Rect, app: &App) {
                 if days <= 2 { st("peach") } else { dim() },
             ));
         }
+        // kairos's boxes (home-live H9): open to do, the waiting box once it is overdue.
+        let overdue = due.is_some_and(|d| d.date_naive() < now.date_naive());
+        let (bx, bc) = if overdue {
+            (glyph::WAITING_BOX, "peach")
+        } else {
+            (glyph::TODO_BOX, "subtext0")
+        };
         out.push(row(
             vec![
                 pointer(i, sel),
-                Span::styled(" ☐ ", dim()),
+                Span::styled(format!(" {bx} "), st(bc)),
                 Span::styled(title.clone(), text()),
             ],
             right,
@@ -537,6 +587,10 @@ fn draw_projects(f: &mut Frame, area: Rect, app: &App) {
     let mut out = vec![rule("personal projects", "", Some('p'), focus, area.width)];
     let sel = focus.then(|| app.sel('p'));
     for (i, id) in ids.iter().enumerate() {
+        if let Some(name) = id.strip_prefix("tmux:") {
+            out.push(unregistered_row(app, i, sel, name, area.width));
+            continue;
+        }
         let Some(p) = fx.registry.get(id) else { continue };
         let pf = fx.projects.get(id);
         let attended = fx.home.attended.as_deref() == Some(id.as_str());
@@ -556,35 +610,29 @@ fn draw_projects(f: &mut Frame, area: Rect, app: &App) {
         let mut sessions: Vec<_> = pf.map(|pf| pf.view.sessions.iter().collect()).unwrap_or_default();
         sessions.sort_by_key(|s| s.state);
         match sessions.first() {
-            Some(s) => {
-                let (sg, sc, word) = session_glyph(s.state);
-                let sg = if s.state == SessionState::Working {
-                    spin(app.frame)
-                } else {
-                    sg
-                };
-                left.push(Span::styled(format!("{sg} "), st(sc)));
-                left.push(Span::styled(format!("{word:<9}"), st(sc)));
-                left.push(Span::styled(format!("{:>4}  ", ago(now, s.since)), dim()));
-                let what = s.summary.clone().or_else(|| s.doing.clone()).unwrap_or_default();
-                left.push(Span::styled(what, text()));
-            }
+            Some(s) => left.extend(session_spans(app, s, now)),
             None => {
                 left.push(Span::styled(format!("{} ", glyph::IDLE), dim()));
                 left.push(Span::styled(format!("{:<15}", "no sessions"), dim()));
-                // What it last did, so a stalled project shows where it stopped (round 1d).
-                let last = pf.and_then(|pf| {
-                    let mut items: Vec<_> = pf.view.new.iter().collect();
-                    if let Some(c) = &pf.changes {
-                        items.extend(c.entries.iter());
-                    }
-                    items.into_iter().max_by_key(|i| i.at).cloned()
-                });
+                // What it last did, so a stalled project shows where it stopped (round 1d):
+                // live, its newest commit (home-live H3); on fixtures, the newest item.
+                let last: Option<(chrono::NaiveDate, String)> = if app.home_live {
+                    app.last_commit.get(id).map(|(t, s)| (t.date_naive(), s.clone()))
+                } else {
+                    pf.and_then(|pf| {
+                        let mut items: Vec<_> = pf.view.new.iter().collect();
+                        if let Some(c) = &pf.changes {
+                            items.extend(c.entries.iter());
+                        }
+                        items.into_iter().max_by_key(|i| i.at).map(|i| (i.at.date_naive(), i.text.clone()))
+                    })
+                };
                 match last {
-                    Some(it) => {
-                        left.push(Span::styled(format!("last {}  ", date(it.at.date_naive())), dim()));
-                        left.push(Span::styled(it.text, st("subtext0")));
+                    Some((d, what)) => {
+                        left.push(Span::styled(format!("last {}  ", date(d)), dim()));
+                        left.push(Span::styled(what, st("subtext0")));
                     }
+                    None if app.home_live => left.push(Span::styled("nothing yet", dim())),
                     None => left.push(Span::styled(
                         pf.and_then(|pf| pf.view.stage.clone())
                             .unwrap_or_else(|| "nothing yet".into()),
@@ -593,7 +641,7 @@ fn draw_projects(f: &mut Frame, area: Rect, app: &App) {
                 }
             }
         }
-        out.push(row(left, counts(pf.map(|p| &p.view), sessions.len()), area.width));
+        out.push(row(left, counts(sessions.len()), area.width));
     }
     if ids.is_empty() {
         out.push(Line::from(Span::styled("  no active projects", dim())));
@@ -601,37 +649,95 @@ fn draw_projects(f: &mut Frame, area: Rect, app: &App) {
     lines(f, area, out);
 }
 
-/// The two counts on a row, each saying what it counts (round 1: "+1/+7 and the
-/// notifications are confusing").
-fn counts(view: Option<&locus_contract::ProjectView>, sessions: usize) -> Vec<Span<'static>> {
+/// A session's state, how long, and what it is about, as one row draws it.
+fn session_spans(app: &App, s: &locus_contract::Session, now: locus_contract::Time) -> Vec<Span<'static>> {
+    let (sg, sc, word) = session_glyph(s.state);
+    let sg = if s.state == SessionState::Working {
+        spin(app.frame)
+    } else {
+        sg
+    };
+    // Waiting, what it waits for comes first: that is what you go there to answer.
+    let what = if s.state == SessionState::NeedsYou {
+        s.doing.clone().or_else(|| s.summary.clone())
+    } else {
+        s.summary.clone().or_else(|| s.doing.clone())
+    };
+    vec![
+        Span::styled(format!("{sg} "), st(sc)),
+        Span::styled(format!("{word:<9}"), st(sc)),
+        Span::styled(format!("{:>4}  ", ago(now, s.since)), dim()),
+        Span::styled(what.unwrap_or_default(), text()),
+    ]
+}
+
+/// A live session the registry does not know (home-live H2): named by its tmux session, and
+/// Enter asks the chat to register it.
+fn unregistered_row(app: &App, i: usize, sel: Option<usize>, name: &str, width: u16) -> Line<'static> {
+    let now = app.fixtures.now();
+    let sessions = app.unregistered.iter().find(|(n, _)| n == name).map(|(_, s)| s.as_slice()).unwrap_or(&[]);
+    let mut left = vec![
+        pointer(i, sel),
+        Span::styled(format!(" {} ", glyph::UNATTENDED), st("overlay1")),
+        Span::styled(format!("{:<9}", crate::ui::truncate(name, 9)), st("overlay2")),
+    ];
+    if let Some(s) = sessions.first() {
+        left.extend(session_spans(app, s, now));
+    }
+    let mut right = counts(sessions.len());
+    right.insert(0, Span::styled("not registered ", st("overlay1")));
+    row(left, right, width)
+}
+
+/// The count on a row, saying what it counts (round 1: "+1/+7 and the notifications are
+/// confusing"). The "new" count went with home-live H4: it needed change records, and a count
+/// that is always zero teaches you to ignore it.
+fn counts(sessions: usize) -> Vec<Span<'static>> {
     let mut right = Vec::new();
     if sessions > 1 {
         right.push(Span::styled(format!("{sessions} sessions"), dim()));
     }
-    let unread = view.map(|v| v.unread()).unwrap_or(0);
-    if unread > 0 {
-        if !right.is_empty() {
-            right.push(Span::styled("  ", dim()));
-        }
-        right.push(Span::styled(format!("{} {unread} new", glyph::UNREAD), st("peach")));
-    }
     right.push(Span::raw(" "));
     right
+}
+
+/// An application's glyph in kairos's family (home-live H9): a green tick when it ended well,
+/// red when it did not, an open box when it is your move, the waiting box when it is theirs.
+fn career_glyph(p: &locus_contract::Project, status: Option<&locus_contract::Status>, closed: bool) -> (&'static str, &'static str) {
+    if p.kind == ProjectKind::Repo {
+        return (glyph::DOSSIER, "peach");
+    }
+    let stage = status.map_or(String::new(), |s| s.stage.to_lowercase());
+    if stage.contains("not offered") || stage.contains("reject") || stage.contains("withdrawn") {
+        return (glyph::FAILED, "red");
+    }
+    match status.and_then(|s| s.turn) {
+        Some(locus_contract::Turn::You) => (glyph::TODO_BOX, "peach"),
+        Some(locus_contract::Turn::Them) => (glyph::WAITING_BOX, "yellow"),
+        None if closed
+            || ["accepted", "complete", "signed", "competed"].iter().any(|w| stage.contains(w)) =>
+        {
+            (glyph::DONE, "green")
+        }
+        None => (glyph::TODO_BOX, "overlay2"),
+    }
 }
 
 fn draw_careers(f: &mut Frame, area: Rect, app: &App) {
     let fx = &app.fixtures;
     let focus = app.focus == Some('c');
     let ids = career_rows(app);
-    let mut out = vec![rule(
-        "careers",
-        "applications and your CV",
-        Some('c'),
-        focus,
-        area.width,
-    )];
     let sel = focus.then(|| app.sel('c'));
-    for (i, id) in ids.iter().enumerate() {
+    let w = window(ids.len(), sel, SIDE_ROWS.min(usize::from(area.height.saturating_sub(1))).max(1));
+    let extra = match &app.careers_error {
+        Some(e) => format!("not read: {e}"),
+        None => match window_note(ids.len(), &w) {
+            n if n.is_empty() => "applications and your CV".to_string(),
+            n => n,
+        },
+    };
+    let mut out = vec![rule("careers", &extra, Some('c'), focus, area.width)];
+    for (i, id) in ids.iter().enumerate().skip(w.start).take(w.len()) {
         let Some(p) = fx.registry.get(id) else { continue };
         let pf = fx.projects.get(id);
         let today = fx.now().date_naive();
@@ -668,11 +774,7 @@ fn draw_careers(f: &mut Frame, area: Rect, app: &App) {
                     )
                 })
             });
-        let (g, gc) = if p.kind == ProjectKind::Repo {
-            (glyph::DOSSIER, "peach")
-        } else {
-            crate::ui::application::stage_glyph(status.map_or("", |s| s.stage.as_str()))
-        };
+        let (g, gc) = career_glyph(p, status, closed);
         let nw = ids
             .iter()
             .filter_map(|id| fx.registry.get(id).map(|p| p.name.width()))
@@ -690,7 +792,7 @@ fn draw_careers(f: &mut Frame, area: Rect, app: &App) {
         ];
         let mut left = left;
         left.extend(stage);
-        out.push(row(left, counts(pf.map(|p| &p.view), 0), area.width));
+        out.push(row(left, counts(0), area.width));
     }
     if ids.is_empty() {
         out.push(Line::from(Span::styled("  no applications open", dim())));
@@ -764,9 +866,16 @@ fn draw_studies(f: &mut Frame, area: Rect, app: &App) {
     let today = fx.now().date_naive();
     let focus = app.focus == Some('s');
     let ids = study_rows(app);
-    let mut out = vec![rule("studies", "courses and coursework", Some('s'), focus, area.width)];
     let sel = focus.then(|| app.sel('s'));
-    for (i, id) in ids.iter().enumerate() {
+    // The learning row below the courses is always drawn; only the courses scroll.
+    let cap = SIDE_ROWS.min(usize::from(area.height.saturating_sub(3))).max(1);
+    let w = window(ids.len(), sel.filter(|&s| s < ids.len()), cap);
+    let extra = match window_note(ids.len(), &w) {
+        n if n.is_empty() => "courses and coursework".to_string(),
+        n => n,
+    };
+    let mut out = vec![rule("studies", &extra, Some('s'), focus, area.width)];
+    for (i, id) in ids.iter().enumerate().skip(w.start).take(w.len()) {
         let Some(p) = fx.registry.get(id) else { continue };
         let pf = fx.projects.get(id);
         let g = if p.kind == ProjectKind::Repo {
@@ -813,7 +922,7 @@ fn draw_studies(f: &mut Frame, area: Rect, app: &App) {
                 dim(),
             )),
         }
-        out.push(row(left, counts(pf.map(|p| &p.view), 0), area.width));
+        out.push(row(left, counts(0), area.width));
     }
     // A thin line between the courses and learning, as the work panel sets its total apart
     // from the projects (round 2f).
@@ -827,12 +936,16 @@ fn draw_studies(f: &mut Frame, area: Rect, app: &App) {
     if to_agree > 0 {
         state.push_str(&format!(", {to_agree} syllabus to agree"));
     }
+    // Learning is not live until its slice (home-live H6): kept, and saying so.
+    if app.home_live {
+        state = "not live yet".into();
+    }
     out.push(row(
         vec![
             pointer(ids.len(), sel),
             Span::styled(format!(" {} ", glyph::IDEA), st("yellow")),
             Span::styled(format!("{:<35}", "learning"), bold(st("yellow"))),
-            Span::styled(state, if to_agree > 0 { st("peach") } else { dim() }),
+            Span::styled(state, if to_agree > 0 && !app.home_live { st("peach") } else { dim() }),
         ],
         vec![Span::styled("L ", bold(keyst()))],
         area.width,
@@ -850,7 +963,12 @@ fn draw_explore(f: &mut Frame, area: Rect, app: &App) {
     } else {
         ""
     };
-    let extra = format!("{} finds{full}", ex.queue.len());
+    let extra = if app.home_live {
+        // Explore is set aside (9 Nov): kept on Home, saying it is not live (home-live H6).
+        "not live · sample finds".to_string()
+    } else {
+        format!("{} finds{full}", ex.queue.len())
+    };
     let mut out = vec![rule("explore", &extra, Some('e'), focus, area.width)];
     let sel = focus.then(|| app.sel('e'));
     let room = usize::from(area.height.saturating_sub(1));
@@ -973,7 +1091,85 @@ pub(crate) fn area_colour(app: &App, area: &str) -> &'static str {
 
 /// Two lines: what is running now (pulsing), and the budget with both limits named in words
 /// (round 1: "window 34% · 4%" was "too obscure").
+/// The system section from the server (home-live H7): what runs now, today's done and failed
+/// with the newest failure's cause, and the credit. Unreachable says so; old numbers are
+/// never shown as current.
+fn draw_system_live(f: &mut Frame, area: Rect, app: &App) {
+    let focus = app.focus == Some('y');
+    let mut out = vec![rule("system", "the server", Some('y'), focus, area.width)];
+    match &app.system_live {
+        None => out.push(Line::from(Span::styled("   asking the server…", dim()))),
+        Some(Err(e)) => {
+            out.push(Line::from(vec![
+                Span::styled(format!("   {} ", glyph::FAILED), st("red")),
+                Span::styled("server not reached: ", st("red")),
+                Span::styled(e.clone(), dim()),
+            ]));
+        }
+        Some(Ok(sys)) => {
+            let mut jobs: Vec<Span> = vec![Span::styled("   running  ", dim())];
+            for (i, j) in sys.running.iter().enumerate() {
+                if i > 0 {
+                    jobs.push(Span::styled("   │   ", st("surface2")));
+                }
+                jobs.push(Span::styled(format!("{} ", spin(app.frame + i as u64)), st("blue")));
+                jobs.push(Span::styled(j.kind.clone(), text()));
+            }
+            if sys.running.is_empty() {
+                jobs.push(Span::styled("nothing", dim()));
+            }
+            let failed = sys.failed_today;
+            let counts = vec![
+                Span::styled(format!("{} {} done today", glyph::DONE, sys.done_today), st("green")),
+                Span::styled("   ", dim()),
+                Span::styled(
+                    format!("{} {failed} failed ", glyph::FAILED),
+                    if failed > 0 { st("red") } else { dim() },
+                ),
+            ];
+            out.push(row(jobs, counts, area.width));
+            // The newest failure's cause, when the newest run of its kind failed: a failure
+            // carries its cause (CLAUDE.md §3).
+            let newest_failure = sys
+                .recent
+                .iter()
+                .find(|r| !r.ok)
+                .filter(|r| sys.recent.iter().find(|x| x.kind == r.kind).is_some_and(|x| !x.ok));
+            let mut b = vec![Span::styled("   credit   ", dim())];
+            match newest_failure {
+                Some(r) => {
+                    b.push(Span::styled(format!("{} {} failed: ", glyph::FAILED, r.kind), st("red")));
+                    b.push(Span::styled(
+                        if r.cause.is_empty() { "no cause recorded".to_string() } else { r.cause.clone() },
+                        dim(),
+                    ));
+                    b[0] = Span::styled("   last     ", dim());
+                    out.push(Line::from(b));
+                }
+                None => {
+                    b.push(Span::styled(
+                        format!("${:.2} of $100 since {}", sys.credit_used, sys.credit_since),
+                        text(),
+                    ));
+                    out.push(row(
+                        b,
+                        vec![Span::styled(
+                            format!("{} model calls today{SEP}{} ", sys.calls_today, sys.backend),
+                            dim(),
+                        )],
+                        area.width,
+                    ));
+                }
+            }
+        }
+    }
+    lines(f, area, out);
+}
+
 fn draw_system(f: &mut Frame, area: Rect, app: &App) {
+    if app.home_live {
+        return draw_system_live(f, area, app);
+    }
     let fx = &app.fixtures;
     let focus = app.focus == Some('y');
     let mut out = vec![rule("system", "", Some('y'), focus, area.width)];
@@ -1064,8 +1260,16 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
             true
         }
         (Some('p'), KeyCode::Enter) => {
-            if let Some(id) = project_rows(app).get(app.sel('p')).cloned() {
-                app.open_project(id);
+            match project_rows(app).get(app.sel('p')).cloned() {
+                // Not registered (home-live H2): the chat registers it, with you.
+                Some(id) if id.starts_with("tmux:") => {
+                    let name = id.trim_start_matches("tmux:");
+                    app.mode = crate::app::Mode::Chat(format!(
+                        "The tmux session `{name}` is not in the registry. Look at what it works on and help me register it: "
+                    ));
+                }
+                Some(id) => app.open_project(id),
+                None => {}
             }
             true
         }

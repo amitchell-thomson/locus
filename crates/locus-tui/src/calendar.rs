@@ -659,7 +659,8 @@ mod task_tests {
         let home = crate::dump::render(&app, 120, 40).unwrap();
         // Home lists them beside approve, soonest due first.
         assert!(
-            home.contains("☐ Millennium prep") && home.contains("☐ B15 sheet 4"),
+            home.contains(&format!("{} Millennium prep", locus_theme::glyph::TODO_BOX))
+                && home.contains(&format!("{} B15 sheet 4", locus_theme::glyph::TODO_BOX)),
             "{home}"
         );
         // t focuses tasks; Enter opens the page on the selected one.

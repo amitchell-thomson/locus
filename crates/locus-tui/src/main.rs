@@ -128,6 +128,16 @@ fn main() -> Result<()> {
             ScreenId::Home
         };
         let mut app = App::new(fx, root, UseLog::off());
+        if cli.live {
+            // Home live, read once, as the window reads it on its threads.
+            let mut prompts = locus_tui::live::Prompts::default();
+            let sessions = locus_tui::live::scan_sessions(&app.fixtures.registry, &mut prompts);
+            let commits = locus_tui::live::scan_commits(&app.fixtures.registry, &sessions);
+            let careers = locus_tui::live::read_careers(&locus_tui::live::careers_file());
+            app.home_live = true;
+            apply_live(&mut app, Live::Projects(sessions, Some(commits), Some(careers)));
+            apply_live(&mut app, Live::System(locus_tui::live::fetch_system()));
+        }
         if let Some(id) = cli.project {
             if app.fixtures.registry.get(&id).is_none() {
                 bail!("no project {id:?} in the registry");
@@ -268,6 +278,36 @@ fn timing(set: &str, size: &str) -> Result<()> {
     Ok(())
 }
 
+/// What the Home-live threads send.
+enum Live {
+    Projects(
+        Vec<locus_tui::live::Live>,
+        Option<std::collections::BTreeMap<String, (locus_contract::Time, String)>>,
+        Option<Result<std::collections::BTreeMap<String, locus_contract::Status>, String>>,
+    ),
+    System(Result<locus_tui::live::SystemLive, String>),
+}
+
+fn apply_live(app: &mut App, msg: Live) {
+    match msg {
+        Live::Projects(sessions, commits, careers) => {
+            app.unregistered = locus_tui::live::apply_sessions(&mut app.fixtures, &sessions);
+            if let Some(c) = commits {
+                app.last_commit = c;
+            }
+            match careers {
+                Some(Ok(c)) => {
+                    locus_tui::live::apply_careers(&mut app.fixtures, &c);
+                    app.careers_error = None;
+                }
+                Some(Err(e)) => app.careers_error = Some(e),
+                None => {}
+            }
+        }
+        Live::System(s) => app.system_live = Some(s),
+    }
+}
+
 fn run(mut app: App) -> Result<()> {
     let started = Instant::now();
     let mut first_frame = None;
@@ -322,6 +362,36 @@ fn run(mut app: App) -> Result<()> {
             }
         });
     }
+    // Home live (home-live.md): sessions every 5 s, commits and the careers file every minute,
+    // on a thread of their own; the server's system section every 5 minutes on another, since
+    // ssh can take seconds.
+    app.home_live = true;
+    let (live_tx, live_rx) = std::sync::mpsc::channel::<Live>();
+    {
+        let registry = app.fixtures.registry.clone();
+        let tx = live_tx.clone();
+        std::thread::spawn(move || {
+            let mut prompts = locus_tui::live::Prompts::default();
+            for tick in 0u64.. {
+                let sessions = locus_tui::live::scan_sessions(&registry, &mut prompts);
+                let slow = tick % 12 == 0;
+                let commits = slow.then(|| locus_tui::live::scan_commits(&registry, &sessions));
+                let careers = slow.then(|| locus_tui::live::read_careers(&locus_tui::live::careers_file()));
+                if tx.send(Live::Projects(sessions, commits, careers)).is_err() {
+                    return;
+                }
+                std::thread::sleep(Duration::from_secs(5));
+            }
+        });
+        std::thread::spawn(move || {
+            loop {
+                if live_tx.send(Live::System(locus_tui::live::fetch_system())).is_err() {
+                    return;
+                }
+                std::thread::sleep(Duration::from_secs(300));
+            }
+        });
+    }
     // Items kairos asks to open (spec K8). Only Home's window answers: an application opens on
     // its own page there, a repo in the Project window.
     let mut inbox = locus_contract::link::OpenFile::locus();
@@ -340,6 +410,9 @@ fn run(mut app: App) -> Result<()> {
                 locus_tui::calendar::apply(&mut app.fixtures, &cal, |k| live.area_of(k), chrono::Utc::now());
                 locus_tui::calendar::apply_chores(&mut app.fixtures, &chores);
                 locus_tui::calendar::apply_tasks(&mut app.fixtures, &tasks);
+            }
+            while let Ok(msg) = live_rx.try_recv() {
+                apply_live(&mut app, msg);
             }
             if let Ok((drafts, proposals, need, filed)) = mail_rx.try_recv() {
                 locus_tui::mail::apply(&mut app.fixtures, &drafts, &proposals);

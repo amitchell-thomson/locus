@@ -153,18 +153,33 @@ pub fn transcript_dir(cwd: &Path, home: &Path) -> PathBuf {
     home.join(".claude/projects").join(mangled)
 }
 
-/// The last thing you asked in a transcript, one line. Read from the file's tail only: a long
-/// transcript is megabytes, and Home reads every session every few seconds.
+/// The last thing you asked in a transcript, one line. Read backwards in chunks: a long
+/// transcript is megabytes, and your last prompt can sit behind a megabyte of tool output
+/// (measured 10 Nov: a fixed 512 KB tail found nothing in a working session). Stops after 16 MB.
 pub fn last_prompt(path: &Path) -> Option<String> {
     use std::io::{Read, Seek, SeekFrom};
+    const CHUNK: u64 = 1024 * 1024;
     let mut f = std::fs::File::open(path).ok()?;
     let len = f.metadata().ok()?.len();
-    let take = len.min(512 * 1024);
-    f.seek(SeekFrom::Start(len - take)).ok()?;
-    let mut buf = Vec::new();
-    f.read_to_end(&mut buf).ok()?;
-    let text = String::from_utf8_lossy(&buf);
-    text.lines().rev().find_map(prompt_of)
+    let mut end = len;
+    // Bytes of a line cut at the chunk's start, joined to the chunk before.
+    let mut carry: Vec<u8> = Vec::new();
+    while end > 0 && len - end < 16 * CHUNK {
+        let start = end.saturating_sub(CHUNK);
+        f.seek(SeekFrom::Start(start)).ok()?;
+        let mut buf = vec![0u8; usize::try_from(end - start).ok()?];
+        f.read_exact(&mut buf).ok()?;
+        buf.extend_from_slice(&carry);
+        // The first line may be cut, unless this chunk starts the file.
+        let cut = if start == 0 { 0 } else { buf.iter().position(|&b| b == b'\n').map_or(buf.len(), |i| i + 1) };
+        let text = String::from_utf8_lossy(&buf[cut..]);
+        if let Some(p) = text.lines().rev().find_map(prompt_of) {
+            return Some(p);
+        }
+        carry = buf[..cut].to_vec();
+        end = start;
+    }
+    None
 }
 
 /// Your words in one transcript line, if it is a prompt you typed (not a tool result, a
@@ -211,14 +226,35 @@ impl Prompts {
     }
 }
 
+/// The newest `.jsonl` in a folder that no session has claimed.
+fn newest_unclaimed(dir: &Path, claimed: &std::collections::HashSet<PathBuf>) -> Option<PathBuf> {
+    std::fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("jsonl") && !claimed.contains(p))
+        .filter_map(|p| Some((std::fs::metadata(&p).and_then(|m| m.modified()).ok()?, p)))
+        .max_by_key(|(t, _)| *t)
+        .map(|(_, p)| p)
+}
+
 /// Every Claude session running in tmux now.
 pub fn scan_sessions(reg: &Registry, prompts: &mut Prompts) -> Vec<Live> {
     let home = home();
     let panes = claude_panes();
     let Ok(dir) = std::fs::read_dir(home.join(".claude/sessions")) else { return Vec::new() };
     let mut out = Vec::new();
-    for e in dir.flatten() {
-        let path = e.path();
+    // Sessions whose own transcript exists claim it first, so a stand-in never takes one.
+    let mut entries: Vec<_> = dir.flatten().map(|e| e.path()).collect();
+    entries.sort();
+    let mut claimed: std::collections::HashSet<PathBuf> = entries
+        .iter()
+        .filter_map(|p| std::fs::read_to_string(p).ok())
+        .filter_map(|s| serde_json::from_str::<ProcFile>(&s).ok())
+        .map(|f| transcript_dir(Path::new(&f.cwd), &home).join(format!("{}.jsonl", f.session_id)))
+        .filter(|t| t.exists())
+        .collect();
+    for path in entries {
         if path.extension().and_then(|x| x.to_str()) != Some("json") {
             continue;
         }
@@ -232,7 +268,17 @@ pub fn scan_sessions(reg: &Registry, prompts: &mut Prompts) -> Vec<Live> {
         }
         let cwd = PathBuf::from(&f.cwd);
         let id = match_entry(reg, tmux, &cwd, &home).map(|p| p.id.clone());
-        let transcript = transcript_dir(&cwd, &home).join(format!("{}.jsonl", f.session_id));
+        let tdir = transcript_dir(&cwd, &home);
+        let mut transcript = tdir.join(format!("{}.jsonl", f.session_id));
+        // Older Claude Code names the id it started with; a resumed session writes elsewhere.
+        // Then the newest transcript in its folder that no other session names stands in.
+        if !transcript.exists() {
+            match newest_unclaimed(&tdir, &claimed) {
+                Some(t) => transcript = t,
+                None => transcript = PathBuf::new(),
+            }
+        }
+        claimed.insert(transcript.clone());
         let state = state_of(&f);
         let since = f.status_updated_at.or(f.updated_at).or(f.started_at).map(at_ms).unwrap_or_else(|| Utc::now().fixed_offset());
         out.push(Live {

@@ -289,6 +289,9 @@ enum Live {
 }
 
 fn apply_live(app: &mut App, msg: Live) {
+    // Live, the screen's clock is the real one: the fixtures' fixed moment made every session
+    // "now" and every due date relative to 24 October.
+    app.fixtures.manifest.now = chrono::Local::now().fixed_offset();
     match msg {
         Live::Projects(sessions, commits, careers) => {
             app.unregistered = locus_tui::live::apply_sessions(&mut app.fixtures, &sessions);

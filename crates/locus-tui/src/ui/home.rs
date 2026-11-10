@@ -210,12 +210,15 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     // A blank line between sections (round 1b), paid for by moving next and mail into the
     // border.
     let gap = Constraint::Length(1);
-    let pair_h = (3 + inner.height.saturating_sub(35)).min(6);
-    // Projects are never squeezed (home-live H8: "I always want all open projects to be
-    // visible"): careers and studies take what is left after everything else, down to a row
-    // each, and scroll through the rest.
-    let fixed = 9 + 6 + (n_proj + 1) + pair_h + 3 + 2 + 2;
-    let side_h = inner.height.saturating_sub(fixed).clamp(2, n_side + 1);
+    // Height in priority order (home-live H8: "I always want all open projects to be
+    // visible"): projects whole; careers and studies up to their 5 rows; approve and tasks up
+    // to 6; then studies' learning row; Explore takes the rest, down to its heading.
+    let fixed = 9 + 6 + (n_proj + 1) + 3 + 2 + 1;
+    let avail = inner.height.saturating_sub(fixed);
+    let core = (career_rows(app).len().min(SIDE_ROWS).max(study_rows(app).len().min(SIDE_ROWS)).max(1) + 1) as u16;
+    let side_core = core.min(avail.saturating_sub(3)).max(2);
+    let pair_h = avail.saturating_sub(side_core).clamp(3, 6);
+    let side_h = (side_core + avail.saturating_sub(side_core + pair_h)).min(n_side + 1);
     // Work heads the page; the approve line sits with the system at the foot (round 1d: he
     // checks approvals as a sign the system is working, so it belongs beside the system).
     let rects = Layout::vertical([
@@ -225,8 +228,8 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         gap,
         Constraint::Length(side_h),
         gap,
-        // Explore takes what is left: at the smallest window one find, never a project's row.
-        Constraint::Min(2),
+        // Explore takes what is left: at the smallest window its heading, never a project's row.
+        Constraint::Min(1),
         gap,
         // Approve and tasks side by side (round 7a), as careers and studies are: a title and
         // two rows at the smallest window, a row more for each row of height, up to five.
@@ -659,7 +662,10 @@ fn session_spans(app: &App, s: &locus_contract::Session, now: locus_contract::Ti
     };
     // Waiting, what it waits for comes first: that is what you go there to answer.
     let what = if s.state == SessionState::NeedsYou {
-        s.doing.clone().or_else(|| s.summary.clone())
+        match (&s.doing, &s.summary) {
+            (Some(d), Some(p)) => Some(format!("{d}{SEP}{p}")),
+            (d, p) => d.clone().or_else(|| p.clone()),
+        }
     } else {
         s.summary.clone().or_else(|| s.doing.clone())
     };
@@ -868,12 +874,19 @@ fn draw_studies(f: &mut Frame, area: Rect, app: &App) {
     let ids = study_rows(app);
     let sel = focus.then(|| app.sel('s'));
     // The learning row below the courses is always drawn; only the courses scroll.
-    let cap = SIDE_ROWS.min(usize::from(area.height.saturating_sub(3))).max(1);
+    let room = usize::from(area.height.saturating_sub(1));
+    let cap = SIDE_ROWS.min(room).max(1);
     let w = window(ids.len(), sel.filter(|&s| s < ids.len()), cap);
-    let extra = match window_note(ids.len(), &w) {
+    // The learning row and its line need two rows beyond the courses; without them, learning
+    // is named in the heading (L still opens it) so the courses keep their five.
+    let learning_row = room >= w.len() + 2;
+    let mut extra = match window_note(ids.len(), &w) {
         n if n.is_empty() => "courses and coursework".to_string(),
         n => n,
     };
+    if !learning_row {
+        extra.push_str(if app.home_live { " · L learning, not live" } else { " · L learning" });
+    }
     let mut out = vec![rule("studies", &extra, Some('s'), focus, area.width)];
     for (i, id) in ids.iter().enumerate().skip(w.start).take(w.len()) {
         let Some(p) = fx.registry.get(id) else { continue };
@@ -916,6 +929,8 @@ fn draw_studies(f: &mut Frame, area: Rect, app: &App) {
                     if days <= 2 { st("peach") } else { dim() },
                 ));
             }
+            // Live, a stage would be the fixture's: nothing due is what is known.
+            None if app.home_live => left.push(Span::styled("nothing due", dim())),
             None => left.push(Span::styled(
                 pf.and_then(|pf| pf.view.stage.clone())
                     .unwrap_or_else(|| "nothing due".into()),
@@ -923,6 +938,9 @@ fn draw_studies(f: &mut Frame, area: Rect, app: &App) {
             )),
         }
         out.push(row(left, counts(0), area.width));
+    }
+    if !learning_row {
+        return lines(f, area, out);
     }
     // A thin line between the courses and learning, as the work panel sets its total apart
     // from the projects (round 2f).
@@ -1337,5 +1355,21 @@ pub fn approve_one(app: &mut App, key: String, text: &str, to: Option<&str>, yes
         app.mark(key, crate::app::Mark::Approved, format!("approved: would do {what}"));
     } else {
         app.mark(key, crate::app::Mark::Rejected, format!("refused: {what}"));
+    }
+}
+
+#[cfg(test)]
+mod window_tests {
+    use super::window;
+
+    #[test]
+    fn a_capped_section_keeps_the_selection_in_view() {
+        assert_eq!(window(3, Some(2), 5), 0..3);
+        assert_eq!(window(10, None, 5), 0..5);
+        assert_eq!(window(10, Some(4), 5), 0..5);
+        assert_eq!(window(10, Some(5), 5), 1..6);
+        assert_eq!(window(10, Some(9), 5), 5..10);
+        // The learning row sits past the courses: the courses stay where they were.
+        assert_eq!(window(8, Some(8), 5), 0..5);
     }
 }

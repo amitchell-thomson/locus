@@ -27,6 +27,11 @@ pub const KEYS: &[(&str, &str)] = &[
         "v",
         "visual: select lines by moving, then y n a c act on all of them (esc ends it)",
     ),
+    ("u", "undo the last decision: the mail goes back, the item comes back"),
+    (
+        "/",
+        "search this list only: type words to narrow it, ⏎ keeps it, esc clears it; Y approves all shown",
+    ),
     ("⏎", "the item whole (an ink item: where does it point?)"),
     ("PgUp PgDn", "a page at a time; Home End the ends"),
     (
@@ -820,6 +825,14 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 }
                 app.sel.insert((ScreenId::Approve, ' '), 0);
                 app.approve_visual = None;
+                return true;
+            }
+            // u: put back the last decision (10 Nov: "add undo").
+            if k.code == KeyCode::Char('u') {
+                app.note = Some(match &app.mail_queue {
+                    Some(q) => q.undo_last().unwrap_or_else(|e| e),
+                    None => "undo works on decisions sent to keryx from this window".into(),
+                });
                 return true;
             }
             if k.code == KeyCode::Char('/') {

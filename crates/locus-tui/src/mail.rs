@@ -17,7 +17,7 @@ use std::collections::{BTreeMap, HashMap};
 
 /// A connection to keryxd, from keryx's own config, as you (your keypresses in Approve).
 pub struct Live {
-    client: Client,
+    pub(crate) client: Client,
 }
 
 impl Live {
@@ -82,6 +82,26 @@ impl Live {
                 .map_err(|e| e.to_string()),
         }
     }
+
+    /// The changeset a decided proposal made, if it made one (a refusal makes none).
+    fn changeset_of(&self, d: &MailDecision, yes: bool) -> Result<Option<String>, String> {
+        match d {
+            MailDecision::Send(_) => self.decide(d, yes).map(|_| None),
+            MailDecision::Proposal(id) => self
+                .client
+                .decide(id, if yes { &Decision::Accept } else { &Decision::Decline })
+                .map(|c| c.map(|c| c.id))
+                .map_err(|e| e.to_string()),
+        }
+    }
+
+    /// Undo a changeset: the mail goes back where it was, and keryxd reopens the proposal.
+    pub fn undo(&self, changeset: &str) -> Result<String, String> {
+        self.client
+            .undo(changeset)
+            .map(|c| c.summary)
+            .map_err(|e| e.to_string())
+    }
 }
 
 /// Decisions sent to keryxd one after another on a thread of their own, so `y` returns at once
@@ -94,6 +114,8 @@ enum Job {
     Decide(MailDecision, bool),
     /// A proposal approved as you changed it.
     Change(String, Action),
+    /// Put back what a decision did.
+    Undo(String),
 }
 
 pub struct Queue {
@@ -108,6 +130,10 @@ struct QueueState {
     done: usize,
     failed: Vec<String>,
     changed: bool,
+    /// What `u` can put back, newest last: (what, proposal, changeset).
+    undoable: Vec<(String, String, String)>,
+    /// A note from the worker itself (an undo done).
+    said: Option<String>,
 }
 
 fn decision_id(d: &MailDecision) -> &str {
@@ -123,15 +149,33 @@ impl Queue {
         let st = state.clone();
         std::thread::spawn(move || {
             for (job, what) in rx {
-                let r = match &job {
-                    Job::Decide(d, yes) => live.decide(d, *yes),
-                    Job::Change(id, a) => live.change(id, a),
+                // (proposal, the changeset it made) for `u`.
+                let r: Result<Option<(String, String)>, String> = match &job {
+                    Job::Decide(d, yes) => live
+                        .changeset_of(d, *yes)
+                        .map(|c| c.map(|c| (decision_id(d).to_string(), c))),
+                    Job::Change(id, a) => live
+                        .client
+                        .decide(id, &Decision::Change(a.clone()))
+                        .map(|c| c.map(|c| (id.clone(), c.id)))
+                        .map_err(|e| e.to_string()),
+                    Job::Undo(cs) => live.undo(cs).map(|_| None),
                 };
                 let Ok(mut s) = st.lock() else { return };
                 s.waiting = s.waiting.saturating_sub(1);
-                match r {
-                    Ok(_) => s.done += 1,
-                    Err(e) => s.failed.push(format!("keryx said no to “{what}”: {e}")),
+                match (r, &job) {
+                    (Ok(_), Job::Undo(_)) => {
+                        s.said = Some(format!(
+                            "put back: “{what}” is in your inbox and back here within a minute"
+                        ))
+                    }
+                    (Ok(c), _) => {
+                        s.done += 1;
+                        if let Some((p, cs)) = c {
+                            s.undoable.push((what.clone(), p, cs));
+                        }
+                    }
+                    (Err(e), _) => s.failed.push(format!("keryx said no to “{what}”: {e}")),
                 }
                 s.changed = true;
             }
@@ -165,6 +209,27 @@ impl Queue {
         self.tx.send((Job::Change(proposal, action), what)).is_ok()
     }
 
+    /// `u`: put back the newest decision keryx has carried out. Its proposal may show again
+    /// (keryxd reopens it). Err says why not: nothing done yet, or still working.
+    pub fn undo_last(&self) -> Result<String, String> {
+        let mut s = self.state.lock().map_err(|_| "the queue is gone".to_string())?;
+        if s.waiting > 0 {
+            return Err(format!("keryx is still doing {}: u undoes once it has", s.waiting));
+        }
+        let Some((what, proposal, cs)) = s.undoable.pop() else {
+            return Err("nothing to undo here yet (a refusal changes nothing, so it has no undo)".into());
+        };
+        s.waiting += 1;
+        drop(s);
+        if let Ok(mut sent) = self.sent.lock() {
+            sent.remove(&proposal);
+        }
+        self.tx
+            .send((Job::Undo(cs), what.clone()))
+            .map_err(|_| "the queue is gone".to_string())?;
+        Ok(format!("undoing “{what}”"))
+    }
+
     /// Whether this proposal or draft was already decided here.
     pub fn was_sent(&self, id: &str) -> bool {
         self.sent.lock().is_ok_and(|s| s.contains(id))
@@ -183,6 +248,9 @@ impl Queue {
         s.changed = false;
         if let Some(e) = s.failed.pop() {
             return Some(e);
+        }
+        if let Some(n) = s.said.take() {
+            return Some(n);
         }
         Some(if s.waiting == 0 {
             format!("keryx has done all {}", s.done)
@@ -481,7 +549,13 @@ fn action_text(a: &Action, reg: &locus_contract::Registry) -> String {
     match a {
         Action::Archive => "archive".into(),
         Action::File { key, item: Some(i) } => {
-            format!("file → {key} / {}", reg.get(i).map_or(i.clone(), |p| p.name.clone()))
+            let name = reg.get(i).map_or(i.clone(), |p| p.name.clone());
+            // "file → OQTS", not "file → OQTS / OQTS": the folder is the project's own.
+            if name.eq_ignore_ascii_case(key) {
+                format!("file → {key}")
+            } else {
+                format!("file → {key} / {name}")
+            }
         }
         Action::File { key, .. } => format!("file → {key}"),
         Action::Snooze { .. } => "snooze".into(),

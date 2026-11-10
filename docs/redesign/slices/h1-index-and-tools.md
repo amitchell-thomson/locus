@@ -392,6 +392,23 @@ holds your mail).
 6. **kairos** (P2, 36): low-risk writes from MCP apply without approval, and project time covers only 30 days. **Your call, 10 Nov: keep it** ("if I ask for something it should just happen, small scheduling is fine and can always be changed back"), so P2's applied writes were right, not a fault. The 30 days stays a limit of the worked-time measure (and Home's 8-week chart is still sample data: H1 fix 6 below).
 7. **OQTS-shared reaches the index indirectly** (47's grader): the 10 Nov Home chat quoted Kristof's OQTS-shared mail and is indexed. Fine for now, as you said; noted.
 
+### Fixes made (10 Nov, evening), before the re-run
+
+Each checked on live data through the locus tools after deploying, not only by tests.
+
+| # | Fix | Live check |
+|---|---|---|
+| 1 | Family events say whose they are: `[family]` in the title, a first line saying so, and `context` lists them as "FAMILY calendar: not necessarily his". | `context`: the Düsseldorf flights and Callum's training are labelled. |
+| 2 | `open` pages long things (a file by paragraphs, a thread by whole messages, never cutting an envelope). A career file whose folder names no firm is linked by its opening text, an offer document to the application at the offer stage. | `timeline millennium`: the offer letter and offer pack. The first try linked them to Meet Millennium 2026, and a book to Millennium; both fixed. |
+| 3 | regime-ml registered (parked). A library document carries the project its title or path names; a project filter keeps those instead of dropping the library. | Tests; the library's own paths decide. |
+| 4 | A reply sent all-quoted (or only an image placeholder and links above the quote) keeps its own text. `markups` points at a notebook's transcription. A mail pointer follows its message when the thread's id moves. | Search "passport renewed next month": the 5 Nov reply first. |
+| 5 | `waiting`: who wrote last and asked, over all mail, lists and bulk mail left out. | `waiting on me`: 15 threads with Milly, Connor (B15), Isobel (B18), Kate; first cut gave 74. |
+| 6 | The 8-week work chart is measured (it was sample data); kairos keeps 56 days. The laptop's worked-time scan had stopped silently on 9 Nov (a stale binary could not read the registry); fixed, and the sync now says when it cannot measure. | The chart shows quast 49 h, locus 47 h, nabla 19 h over eight weeks. |
+| 7 | One line in the global CLAUDE.md and the same in the locus server's instructions: label guesses, newer sources win, family events are not his. | In the server's instructions. |
+
+Also: one filing model (keryx's old folders retire into the taxonomy; Admin and Travel are Personal streams; JCR Treasurer is a registry role), and keryx's scheduled runs wait for keryxd (the 18:00 run had found no tools).
+
+
 **Found and fixed during the run:** tools ran on the server's event loop, so one search stalled
 everyone; with four chats at once, 4 of 48 could not connect. Tools now run in worker threads
 (tested, deployed; the four re-ran under the same load and connected).

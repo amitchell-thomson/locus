@@ -17,6 +17,8 @@ pub enum ScreenId {
     Approve,
     AutoLog,
     InkConfirm,
+    /// One approve item, whole: `⏎` on Approve (10 Nov).
+    ApproveItem,
     Decisions,
     Answered,
     Changes,
@@ -45,7 +47,7 @@ const fn s(letter: char, title: &'static str, detail: Option<ScreenId>) -> Secti
 }
 
 impl ScreenId {
-    pub const ALL: [ScreenId; 20] = [
+    pub const ALL: [ScreenId; 21] = [
         ScreenId::Home,
         ScreenId::Project,
         ScreenId::Application,
@@ -55,6 +57,7 @@ impl ScreenId {
         ScreenId::Approve,
         ScreenId::AutoLog,
         ScreenId::InkConfirm,
+        ScreenId::ApproveItem,
         ScreenId::Decisions,
         ScreenId::Answered,
         ScreenId::Changes,
@@ -79,6 +82,7 @@ impl ScreenId {
             ScreenId::Approve => "approve",
             ScreenId::AutoLog => "autolog",
             ScreenId::InkConfirm => "ink",
+            ScreenId::ApproveItem => "approve-item",
             ScreenId::Decisions => "decisions",
             ScreenId::Answered => "answered",
             ScreenId::Changes => "changes",
@@ -109,6 +113,7 @@ impl ScreenId {
             ScreenId::Approve => "approve",
             ScreenId::AutoLog => "automatic actions",
             ScreenId::InkConfirm => "where does this mark point?",
+            ScreenId::ApproveItem => "approve",
             ScreenId::Decisions => "decisions",
             ScreenId::Answered => "answered",
             ScreenId::Changes => "changes",

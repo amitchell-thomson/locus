@@ -97,7 +97,11 @@ fn main() -> Result<()> {
         locus_tui::calendar::apply_dates(&mut fx, &bookings, &cal, &locus_tui::maildates::dismissed());
         locus_tui::calendar::apply_pending(&mut fx, &live.pending());
         if let Some(m) = locus_tui::mail::Live::connect() {
-            locus_tui::mail::apply(&mut fx, &m.drafts(), &m.proposals());
+            let proposals = m.proposals();
+            let previews = locus_tui::mail::Mirror::open()
+                .map(|x| x.previews(&proposals))
+                .unwrap_or_default();
+            locus_tui::mail::apply(&mut fx, &proposals, &previews);
         }
         if let Some(m) = locus_tui::mail::Mirror::open() {
             locus_tui::mail::apply_counts(&mut fx, m.need_reply());
@@ -162,6 +166,10 @@ fn main() -> Result<()> {
                 "enter" => KeyCode::Enter,
                 "esc" => KeyCode::Esc,
                 "tab" => KeyCode::Tab,
+                "pgdn" => KeyCode::PageDown,
+                "pgup" => KeyCode::PageUp,
+                "home" => KeyCode::Home,
+                "end" => KeyCode::End,
                 "up" => KeyCode::Up,
                 "down" => KeyCode::Down,
                 "left" => KeyCode::Left,
@@ -371,7 +379,9 @@ fn run(mut app: App) -> Result<()> {
                 let need = mirror.as_ref().map_or(0, |x| x.need_reply());
                 // What was filed for each item, for its page (keryx-joins-locus X7).
                 let filed = mirror.as_ref().map(|x| x.filed(&ids, 20)).unwrap_or_default();
-                if mail_tx.send((m.drafts(), m.proposals(), need, filed)).is_err() {
+                let proposals = m.proposals();
+                let previews = mirror.as_ref().map(|x| x.previews(&proposals)).unwrap_or_default();
+                if mail_tx.send((proposals, previews, need, filed)).is_err() {
                     return;
                 }
                 std::thread::sleep(Duration::from_secs(60));
@@ -397,7 +407,11 @@ fn run(mut app: App) -> Result<()> {
                     return;
                 }
                 // Every ten minutes: a git call per folder, for the projects view's last section.
-                if tick % 120 == 0 && tx.send(Live::Others(locus_tui::live::scan_unregistered_repos(&registry))).is_err() {
+                if tick % 120 == 0
+                    && tx
+                        .send(Live::Others(locus_tui::live::scan_unregistered_repos(&registry)))
+                        .is_err()
+                {
                     return;
                 }
                 std::thread::sleep(Duration::from_secs(5));
@@ -434,8 +448,8 @@ fn run(mut app: App) -> Result<()> {
             while let Ok(msg) = live_rx.try_recv() {
                 apply_live(&mut app, msg);
             }
-            if let Ok((drafts, proposals, need, filed)) = mail_rx.try_recv() {
-                locus_tui::mail::apply(&mut app.fixtures, &drafts, &proposals);
+            if let Ok((proposals, previews, need, filed)) = mail_rx.try_recv() {
+                locus_tui::mail::apply(&mut app.fixtures, &proposals, &previews);
                 locus_tui::mail::apply_counts(&mut app.fixtures, need);
                 locus_tui::mail::apply_filed(&mut app.fixtures, &filed);
             }

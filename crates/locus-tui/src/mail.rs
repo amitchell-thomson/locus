@@ -1,6 +1,6 @@
 //! Mail, live (keryx-joins-locus X2): what keryx needs you to decide comes to locus's Approve,
-//! the one approve place, as kairos's calendar changes do. Drafts Claude wrote wait for your yes
-//! to send; cleanup proposals wait for your yes to file or archive. Everything goes through
+//! as kairos's calendar changes do: cleanup proposals wait for your yes to file or archive.
+//! Claude's drafts do not (10 Nov): they are in keryx's Drafts, where you read, edit and send. Everything goes through
 //! keryxd's API, keryxd being the only writer to your mail; nothing here sends or files by
 //! itself.
 
@@ -10,8 +10,10 @@ use keryx_core::config::Config;
 use keryx_store::api::{Decision, ReviewItem};
 use keryx_store::client::{Client, Daemon};
 use keryx_store::state::{Action, ProposalStatus};
-use locus_contract::{AppEvent, AppEventKind, ApproveGroup, ApproveItem, ApproveKind, Item, ItemKind, MailDecision};
-use std::collections::BTreeMap;
+use locus_contract::{
+    AppEvent, AppEventKind, ApproveDetail, ApproveGroup, ApproveItem, ApproveKind, Item, ItemKind, MailDecision,
+};
+use std::collections::{BTreeMap, HashMap};
 
 /// A connection to keryxd, from keryx's own config, as you (your keypresses in Approve).
 pub struct Live {
@@ -160,6 +162,16 @@ fn action_text(a: &Action) -> String {
     }
 }
 
+/// The action as a badge: the verb in capitals, a key as it is named (`FILE → Careers`).
+fn badge_of(a: &Action) -> String {
+    match a {
+        Action::Archive => "ARCHIVE".into(),
+        Action::File { key, .. } => format!("FILE → {key}"),
+        Action::Snooze { .. } => "SNOOZE".into(),
+        Action::Keep { .. } => "KEEP".into(),
+    }
+}
+
 /// Home's mail line: how many threads wait on your reply.
 pub fn apply_counts(fx: &mut Fixtures, need_reply: u32) {
     fx.home.mail.need_reply = need_reply;
@@ -235,55 +247,115 @@ pub fn apply_filed(fx: &mut Fixtures, filed: &BTreeMap<String, Vec<Filed>>) {
 }
 
 /// keryx's drafts and proposals onto Approve, replacing what an earlier pass put there.
-pub fn apply(fx: &mut Fixtures, drafts: &[Changeset], proposals: &[ReviewItem]) {
+/// What the detail pane shows for a proposal's thread: account and date, and the start of the
+/// newest message from someone else (read from keryx's mirror, off the UI thread).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Preview {
+    pub meta: String,
+    pub body: String,
+}
+
+const PREVIEW_CHARS: usize = 1500;
+
+impl Mirror {
+    /// A preview for each proposal's thread, by its ref.
+    pub fn previews(&self, items: &[ReviewItem]) -> HashMap<String, Preview> {
+        let own = self.cfg.own_addresses();
+        let mut out = HashMap::new();
+        for it in items {
+            let Some((a, t)) = keryx_core::model::parse_thread_ref(&it.r#ref) else {
+                continue;
+            };
+            let Ok(msgs) = self.db.thread(a, t) else { continue };
+            let Some(m) = msgs
+                .iter()
+                .rev()
+                .find(|m| m.from.as_ref().is_some_and(|f| !own.contains(&f.key())))
+                .or(msgs.last())
+            else {
+                continue;
+            };
+            let account = self.cfg.account(a).map_or(a.to_string(), |x| x.name.clone());
+            let when = chrono::DateTime::from_timestamp(m.date, 0)
+                .map(|d| d.with_timezone(&self.cfg.tz()).format("%a %-d %b %H:%M").to_string())
+                .unwrap_or_default();
+            let n = msgs.len();
+            let meta = format!(
+                "{account} · {when}{}",
+                if n > 1 {
+                    format!(" · {n} messages")
+                } else {
+                    String::new()
+                }
+            );
+            let text = if m.body_text.trim().is_empty() {
+                &m.snippet
+            } else {
+                &m.body_text
+            };
+            let mut body: String = text.chars().take(PREVIEW_CHARS).collect();
+            if text.chars().count() > PREVIEW_CHARS {
+                body.push_str(" …");
+            }
+            out.insert(it.r#ref.clone(), Preview { meta, body });
+        }
+        out
+    }
+}
+
+/// keryx's cleanup proposals onto Approve, one group per action ("archive", "file → Admin"), so
+/// `Y` approves one kind at a time.
+///
+/// Two things are NOT here (10 Nov): Claude's drafts, which wait in keryx's Drafts (`g d`) where
+/// they are read, edited and sent; and keeps, which change nothing and so ask nothing (keryxd
+/// settles them as they are proposed; any left open are skipped here as well).
+pub fn apply(fx: &mut Fixtures, proposals: &[ReviewItem], previews: &HashMap<String, Preview>) {
     fx.approve
         .groups
         .retain(|g| !matches!(g.kind, ApproveKind::MailSend | ApproveKind::MailFiling));
-    let sends: Vec<ApproveItem> = drafts
-        .iter()
-        .filter_map(|c| {
-            let o = c.outgoing()?;
-            let to = o.to.first().map(|a| a.display()).unwrap_or_default();
-            Some(ApproveItem {
-                text: format!("to {to}: {}", o.subject),
-                to: None,
-                from: format!("keryx · {}", c.author.as_str()),
-                new: true,
-                opens: None,
-                date: None,
-                changeset: None,
-                mail: Some(MailDecision::Send(c.id.clone())),
-            })
-        })
-        .collect();
-    let filing: Vec<ApproveItem> = proposals
-        .iter()
-        .map(|i| ApproveItem {
+    let mut groups: Vec<(String, Vec<ApproveItem>)> = Vec::new();
+    for i in proposals {
+        if matches!(i.proposal.action, Action::Keep { .. }) {
+            continue;
+        }
+        let action = action_text(&i.proposal.action);
+        let pv = previews.get(&i.r#ref).cloned().unwrap_or_default();
+        let item = ApproveItem {
             text: format!("{}: {}", i.who, i.subject),
-            to: Some(action_text(&i.proposal.action)),
+            to: Some(action.clone()),
             from: "keryx · claude".into(),
             new: true,
             opens: None,
             date: None,
             changeset: None,
             mail: Some(MailDecision::Proposal(i.proposal.id.clone())),
-        })
-        .collect();
-    if !filing.is_empty() {
+            detail: Some(ApproveDetail {
+                action: badge_of(&i.proposal.action),
+                who: i.who.clone(),
+                subject: i.subject.clone(),
+                meta: if i.stale {
+                    format!("{} · a new message came after this was proposed", pv.meta)
+                } else {
+                    pv.meta
+                },
+                reason: i.proposal.reason.clone(),
+                body: pv.body,
+            }),
+        };
+        match groups.iter_mut().find(|(a, _)| *a == action) {
+            Some((_, v)) => v.push(item),
+            None => groups.push((action, vec![item])),
+        }
+    }
+    // Filing first (each a deliberate place), the archive pile last.
+    groups.sort_by_key(|(a, v)| (a == "archive", std::cmp::Reverse(v.len())));
+    for (label, items) in groups.into_iter().rev() {
         fx.approve.groups.insert(
             0,
             ApproveGroup {
                 kind: ApproveKind::MailFiling,
-                items: filing,
-            },
-        );
-    }
-    if !sends.is_empty() {
-        fx.approve.groups.insert(
-            0,
-            ApproveGroup {
-                kind: ApproveKind::MailSend,
-                items: sends,
+                label: Some(label),
+                items,
             },
         );
     }
@@ -293,45 +365,7 @@ pub fn apply(fx: &mut Fixtures, drafts: &[Changeset], proposals: &[ReviewItem]) 
 mod tests {
     use super::*;
     use crate::fixtures::resolve;
-    use keryx_core::changeset::{Author, Op, Outgoing, Risk, Status};
-    use keryx_core::model::Address;
     use keryx_store::state::Proposal;
-
-    fn draft() -> Changeset {
-        let a = |e: &str| Address {
-            name: None,
-            email: e.into(),
-        };
-        Changeset {
-            id: "cs-1".into(),
-            author: Author::Claude,
-            interactive: false,
-            created_at: 0,
-            ops: vec![Op::Send(Outgoing {
-                account: "personal".into(),
-                thread_id: None,
-                from: a("me@example.org"),
-                to: vec![a("someone@example.org")],
-                cc: vec![],
-                bcc: vec![],
-                subject: "Re: Thursday".into(),
-                body: "Thursday works.".into(),
-                in_reply_to: None,
-                references: vec![],
-                message_id: "<x@example.org>".into(),
-                attachments: vec![],
-            })],
-            risk: Risk::High,
-            reasons: vec![],
-            status: Status::Pending,
-            summary: "Reply".into(),
-            review_id: None,
-            undoes: None,
-            error: None,
-            hold_until: None,
-            warnings: vec![],
-        }
-    }
 
     fn proposal() -> ReviewItem {
         ReviewItem {
@@ -357,29 +391,67 @@ mod tests {
         }
     }
 
+    fn with(action: Action, id: &str) -> ReviewItem {
+        let mut p = proposal();
+        p.proposal.action = action;
+        p.proposal.id = id.into();
+        p.r#ref = format!("personal:{id}");
+        p
+    }
+
     #[test]
-    fn drafts_and_proposals_wait_in_approve_and_a_second_pass_replaces_them() {
+    fn proposals_wait_in_approve_by_action_and_a_second_pass_replaces_them() {
         let mut fx = Fixtures::load(&resolve("default")).unwrap();
-        apply(&mut fx, &[draft()], &[proposal()]);
-        apply(&mut fx, &[draft()], &[proposal()]);
-        let kinds: Vec<ApproveKind> = fx.approve.groups.iter().map(|g| g.kind).collect();
-        assert_eq!(&kinds[..2], &[ApproveKind::MailSend, ApproveKind::MailFiling]);
-        assert_eq!(kinds.iter().filter(|k| **k == ApproveKind::MailSend).count(), 1);
-        let send = &fx.approve.groups[0].items[0];
-        assert_eq!(send.text, "to someone@example.org: Re: Thursday");
-        assert_eq!(send.mail, Some(MailDecision::Send("cs-1".into())));
-        let file = &fx.approve.groups[1].items[0];
-        assert_eq!(
-            (file.to.as_deref(), file.mail.clone()),
-            (Some("archive"), Some(MailDecision::Proposal("p-1".into())))
-        );
-        apply(&mut fx, &[], &[]);
+        let items = [
+            proposal(),
+            with(
+                Action::File {
+                    key: "Admin".into(),
+                    item: None,
+                },
+                "p-2",
+            ),
+            with(
+                Action::Keep {
+                    why: keryx_store::state::Keep::New,
+                    needs_reply: false,
+                },
+                "p-3",
+            ),
+        ];
+        let previews: HashMap<String, Preview> = [(
+            "personal:t-1".to_string(),
+            Preview {
+                meta: "Personal · Sun 8 Nov".into(),
+                body: "Hello".into(),
+            },
+        )]
+        .into();
+        apply(&mut fx, &items, &previews);
+        apply(&mut fx, &items, &previews);
+        let mail: Vec<&ApproveGroup> = fx
+            .approve
+            .groups
+            .iter()
+            .filter(|g| g.kind == ApproveKind::MailFiling)
+            .collect();
+        // One group per action, filing before the archive pile; a keep asks nothing (10 Nov).
+        let labels: Vec<_> = mail.iter().map(|g| g.label.clone().unwrap()).collect();
+        assert_eq!(labels, vec!["file → Admin", "archive"]);
         assert!(
-            fx.approve
-                .groups
-                .iter()
-                .all(|g| !matches!(g.kind, ApproveKind::MailSend | ApproveKind::MailFiling))
+            fx.approve.groups.iter().all(|g| g.kind != ApproveKind::MailSend),
+            "drafts are in keryx's Drafts"
         );
+        let a = &mail[1].items[0];
+        assert_eq!(a.mail, Some(MailDecision::Proposal("p-1".into())));
+        let d = a.detail.as_ref().unwrap();
+        assert_eq!(
+            (d.action.as_str(), d.reason.as_str(), d.body.as_str()),
+            ("ARCHIVE", "a newsletter", "Hello")
+        );
+        assert_eq!(mail[0].items[0].detail.as_ref().unwrap().action, "FILE → Admin");
+        apply(&mut fx, &[], &HashMap::new());
+        assert!(fx.approve.groups.iter().all(|g| g.kind != ApproveKind::MailFiling));
     }
 
     #[test]

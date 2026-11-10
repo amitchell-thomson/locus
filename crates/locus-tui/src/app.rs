@@ -89,6 +89,9 @@ pub struct App {
     /// The terminal's image protocol, found at startup; none means half blocks (and `--dump`).
     pub picker: Option<Picker>,
     pub image: RefCell<Option<(String, StatefulProtocol)>>,
+    /// The approve list's first shown line, kept between frames so it scrolls only when the
+    /// cursor nears an edge.
+    pub approve_scroll: std::cell::Cell<usize>,
     /// Draw count, for the pulse on things running right now.
     pub frame: u64,
     /// Running as a window of the locus session (set by locus-session.sh), so Home can hand a
@@ -167,6 +170,7 @@ impl App {
             split: false,
             picker: None,
             image: RefCell::new(None),
+            approve_scroll: std::cell::Cell::new(0),
             frame: 0,
             in_session: false,
             armed: None,
@@ -238,6 +242,14 @@ impl App {
         self.uselog.record(screen.name(), "open");
     }
 
+    /// Leave the screen on top without the rest of Esc's rules (an approve item, decided).
+    pub fn close_top(&mut self) {
+        if self.stack.len() > 1 {
+            self.stack.pop();
+            self.focus = self.focus_below.pop().flatten();
+        }
+    }
+
     fn back(&mut self) {
         if self.stack.len() == 1 && self.peek.is_some() && self.focus.is_none() {
             // A project Home handed over: give the window back to following, and go home.
@@ -271,6 +283,16 @@ impl App {
     /// The selected row of a list (`' '` when the screen has one list and no sections).
     pub fn sel(&self, sec: char) -> usize {
         self.sel.get(&(self.screen(), sec)).copied().unwrap_or(0)
+    }
+
+    /// A page of the approve list: what the last frame showed, roughly.
+    pub fn approve_page(&self) -> usize {
+        15
+    }
+
+    /// The approve list's selection, from any screen (the item screen shows it).
+    pub fn approve_sel(&self) -> usize {
+        self.sel.get(&(ScreenId::Approve, ' ')).copied().unwrap_or(0)
     }
 
     /// Move a list's selection by `d`, kept inside `len`.
@@ -446,9 +468,7 @@ impl App {
                 self.mode = Mode::Normal;
             }
             // A line break inside a message.
-            (Mode::Chat(q), KeyCode::Enter)
-                if key.modifiers.intersects(KeyModifiers::SHIFT | KeyModifiers::ALT) =>
-            {
+            (Mode::Chat(q), KeyCode::Enter) if key.modifiers.intersects(KeyModifiers::SHIFT | KeyModifiers::ALT) => {
                 q.push('\n')
             }
             (Mode::Chat(q), KeyCode::Enter) => {

@@ -101,6 +101,10 @@ pub struct Approve {
 #[serde(deny_unknown_fields)]
 pub struct ApproveGroup {
     pub kind: ApproveKind,
+    /// The heading when the kind alone is too coarse: mail filing is split by what it would do
+    /// ("archive", "file → Admin"), so `Y` approves one kind of action at a time (10 Nov).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
     #[serde(default)]
     pub items: Vec<ApproveItem>,
 }
@@ -184,6 +188,32 @@ pub struct ApproveItem {
     /// For a mail item: what yes or no acts on in keryx.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mail: Option<MailDecision>,
+    /// What the detail pane shows for it (10 Nov: "easier to review the individual actions").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<ApproveDetail>,
+}
+
+/// One approve item, laid out for reviewing: the action first, then whom and what it is about,
+/// why it was proposed, and the thing itself (the start of the mail, the calendar change).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ApproveDetail {
+    /// The action in a word or two, shown as a badge: `ARCHIVE`, `FILE → Admin`, `CALENDAR`.
+    pub action: String,
+    /// The sender, or who it is with.
+    #[serde(default)]
+    pub who: String,
+    #[serde(default)]
+    pub subject: String,
+    /// Account and date, or where it comes from.
+    #[serde(default)]
+    pub meta: String,
+    /// Why it was proposed, as its proposer wrote it.
+    #[serde(default)]
+    pub reason: String,
+    /// The thing itself, as plain text.
+    #[serde(default)]
+    pub body: String,
 }
 
 impl Approve {

@@ -280,12 +280,20 @@ pub fn apply_dates(fx: &mut Fixtures, bookings: &[crate::maildates::Booking], ca
             opens: None,
             date: Some(locus_contract::MailDate {
                 for_id: b.for_id.clone(),
-                title,
+                title: title.clone(),
                 at: b.at,
                 minutes: b.minutes,
                 thread: b.thread.clone(),
                 moves: linked.map(|e| (e.source.clone(), e.uid.clone())),
                 choices: b.choices.clone(),
+            }),
+            detail: Some(locus_contract::ApproveDetail {
+                action: if linked.is_some() { "MOVE EVENT" } else { "ADD EVENT" }.into(),
+                who: name.clone(),
+                subject: title.clone(),
+                meta: when.clone(),
+                reason: format!("a date in the mail of {}", b.sent.format("%-d %b")),
+                body: format!("“{}”", b.subject),
             }),
             changeset: None,
             mail: None,
@@ -298,6 +306,7 @@ pub fn apply_dates(fx: &mut Fixtures, bookings: &[crate::maildates::Booking], ca
         fx.approve.groups.insert(
             0,
             locus_contract::ApproveGroup {
+                label: None,
                 kind: locus_contract::ApproveKind::Date,
                 items,
             },
@@ -322,12 +331,25 @@ pub fn apply_pending(fx: &mut Fixtures, pending: &[kairos_core::changeset::Chang
             date: None,
             changeset: Some(c.id.clone()),
             mail: None,
+            detail: Some(locus_contract::ApproveDetail {
+                action: "CALENDAR".into(),
+                who: format!("kairos · {}", c.author.as_str()),
+                subject: c.summary.lines().next().unwrap_or("").to_string(),
+                meta: c
+                    .created_at
+                    .with_timezone(&chrono_tz::Europe::London)
+                    .format("%a %-d %b %H:%M")
+                    .to_string(),
+                reason: c.reasons.join("; "),
+                body: c.summary.clone(),
+            }),
         })
         .collect();
     if !items.is_empty() {
         fx.approve.groups.insert(
             0,
             locus_contract::ApproveGroup {
+                label: None,
                 kind: locus_contract::ApproveKind::Calendar,
                 items,
             },

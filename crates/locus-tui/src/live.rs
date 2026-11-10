@@ -24,7 +24,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn home() -> PathBuf {
-    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"))
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/"))
 }
 
 fn at_ms(ms: i64) -> DateTime<FixedOffset> {
@@ -64,10 +66,16 @@ pub struct ProcFile {
 
 impl ProcFile {
     fn tmux_session(&self) -> Option<&str> {
-        self.tmux.as_deref().and_then(|t| t.split(':').next()).filter(|s| !s.is_empty())
+        self.tmux
+            .as_deref()
+            .and_then(|t| t.split(':').next())
+            .filter(|s| !s.is_empty())
     }
     fn pane(&self) -> Option<&str> {
-        self.tmux.as_deref().and_then(|t| t.rsplit('.').next()).filter(|p| p.starts_with('%'))
+        self.tmux
+            .as_deref()
+            .and_then(|t| t.rsplit('.').next())
+            .filter(|p| p.starts_with('%'))
     }
 }
 
@@ -109,7 +117,9 @@ fn claude_panes() -> HashMap<String, String> {
 /// Claude Code shows in tmux as its version (`2.1.317`), or as `claude`/`node`.
 pub fn is_claude_command(cmd: &str) -> bool {
     let cmd = cmd.trim();
-    cmd == "claude" || cmd == "node" || (cmd.split('.').count() == 3 && cmd.split('.').all(|p| p.parse::<u32>().is_ok()))
+    cmd == "claude"
+        || cmd == "node"
+        || (cmd.split('.').count() == 3 && cmd.split('.').all(|p| p.parse::<u32>().is_ok()))
 }
 
 /// Which registry entry a session works on: its tmux session named in `sessions`, else the
@@ -137,7 +147,11 @@ pub fn match_entry<'a>(reg: &'a Registry, tmux: &str, cwd: &Path, home: &Path) -
             .collect();
         // A folder shared by a course and its repo (B3 and 3YP) goes to the repo: that is the
         // thing sessions work in.
-        return hits.iter().find(|p| p.kind == ProjectKind::Repo).or(hits.first()).copied();
+        return hits
+            .iter()
+            .find(|p| p.kind == ProjectKind::Repo)
+            .or(hits.first())
+            .copied();
     }
     None
 }
@@ -171,7 +185,11 @@ pub fn last_prompt(path: &Path) -> Option<String> {
         f.read_exact(&mut buf).ok()?;
         buf.extend_from_slice(&carry);
         // The first line may be cut, unless this chunk starts the file.
-        let cut = if start == 0 { 0 } else { buf.iter().position(|&b| b == b'\n').map_or(buf.len(), |i| i + 1) };
+        let cut = if start == 0 {
+            0
+        } else {
+            buf.iter().position(|&b| b == b'\n').map_or(buf.len(), |i| i + 1)
+        };
         let text = String::from_utf8_lossy(&buf[cut..]);
         if let Some(p) = text.lines().rev().find_map(prompt_of) {
             return Some(p);
@@ -242,7 +260,9 @@ fn newest_unclaimed(dir: &Path, claimed: &std::collections::HashSet<PathBuf>) ->
 pub fn scan_sessions(reg: &Registry, prompts: &mut Prompts) -> Vec<Live> {
     let home = home();
     let panes = claude_panes();
-    let Ok(dir) = std::fs::read_dir(home.join(".claude/sessions")) else { return Vec::new() };
+    let Ok(dir) = std::fs::read_dir(home.join(".claude/sessions")) else {
+        return Vec::new();
+    };
     let mut out = Vec::new();
     // Sessions whose own transcript exists claim it first, so a stand-in never takes one.
     let mut entries: Vec<_> = dir.flatten().map(|e| e.path()).collect();
@@ -258,11 +278,15 @@ pub fn scan_sessions(reg: &Registry, prompts: &mut Prompts) -> Vec<Live> {
         if path.extension().and_then(|x| x.to_str()) != Some("json") {
             continue;
         }
-        let Some(f) = std::fs::read_to_string(&path).ok().and_then(|s| serde_json::from_str::<ProcFile>(&s).ok())
+        let Some(f) = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|s| serde_json::from_str::<ProcFile>(&s).ok())
         else {
             continue;
         };
-        let (Some(tmux), Some(pane)) = (f.tmux_session(), f.pane()) else { continue };
+        let (Some(tmux), Some(pane)) = (f.tmux_session(), f.pane()) else {
+            continue;
+        };
         if !panes.contains_key(pane) {
             continue;
         }
@@ -280,7 +304,12 @@ pub fn scan_sessions(reg: &Registry, prompts: &mut Prompts) -> Vec<Live> {
         }
         claimed.insert(transcript.clone());
         let state = state_of(&f);
-        let since = f.status_updated_at.or(f.updated_at).or(f.started_at).map(at_ms).unwrap_or_else(|| Utc::now().fixed_offset());
+        let since = f
+            .status_updated_at
+            .or(f.updated_at)
+            .or(f.started_at)
+            .map(at_ms)
+            .unwrap_or_else(|| Utc::now().fixed_offset());
         out.push(Live {
             id,
             tmux: tmux.to_string(),
@@ -289,13 +318,17 @@ pub fn scan_sessions(reg: &Registry, prompts: &mut Prompts) -> Vec<Live> {
                 name: tmux.to_string(),
                 state,
                 since,
-                doing: (state == SessionState::NeedsYou).then(|| f.waiting_for.clone().unwrap_or_else(|| "waiting for you".into())),
+                doing: (state == SessionState::NeedsYou)
+                    .then(|| f.waiting_for.clone().unwrap_or_else(|| "waiting for you".into())),
                 summary: prompts.get(&transcript),
                 background: f.kind.as_deref().is_some_and(|k| k != "interactive"),
             },
         });
     }
-    out.sort_by(|a, b| (a.session.state, std::cmp::Reverse(a.session.since)).cmp(&(b.session.state, std::cmp::Reverse(b.session.since))));
+    out.sort_by(|a, b| {
+        (a.session.state, std::cmp::Reverse(a.session.since))
+            .cmp(&(b.session.state, std::cmp::Reverse(b.session.since)))
+    });
     out
 }
 
@@ -327,7 +360,11 @@ pub fn repo_dirs(p: &Project, live: &[Live], home: &Path) -> Vec<PathBuf> {
         dirs.push(lp.join(f));
     }
     dirs.extend(p.components.iter().map(|c| lp.join(&c.repo)));
-    dirs.extend(live.iter().filter(|l| l.id.as_deref() == Some(p.id.as_str())).map(|l| l.cwd.clone()));
+    dirs.extend(
+        live.iter()
+            .filter(|l| l.id.as_deref() == Some(p.id.as_str()))
+            .map(|l| l.cwd.clone()),
+    );
     dirs.sort();
     dirs.dedup();
     dirs.into_iter().filter(|d| d.join(".git").exists()).collect()
@@ -345,7 +382,10 @@ pub fn last_commit(dirs: &[PathBuf]) -> Option<(DateTime<FixedOffset>, String)> 
                 .ok()?;
             let s = String::from_utf8_lossy(&out.stdout);
             let (t, subject) = s.trim().split_once('\t')?;
-            Some((Utc.timestamp_opt(t.parse().ok()?, 0).single()?.fixed_offset(), subject.to_string()))
+            Some((
+                Utc.timestamp_opt(t.parse().ok()?, 0).single()?.fixed_offset(),
+                subject.to_string(),
+            ))
         })
         .max_by_key(|(t, _)| *t)
 }
@@ -367,7 +407,9 @@ pub type Repo = (String, Option<(DateTime<FixedOffset>, String)>);
 
 pub fn scan_unregistered_repos(reg: &Registry) -> Vec<Repo> {
     let lp = home().join("local-projects");
-    let Ok(dir) = std::fs::read_dir(&lp) else { return Vec::new() };
+    let Ok(dir) = std::fs::read_dir(&lp) else {
+        return Vec::new();
+    };
     let known = |name: &str| {
         reg.projects.iter().any(|p| {
             p.id == name
@@ -405,6 +447,10 @@ struct CareerEntry {
     since: toml::Value,
     #[serde(default)]
     turn: Option<String>,
+    /// His own note on it (advice, plans; 10 Nov). Read by `context`; Home does not show it.
+    #[serde(default)]
+    #[allow(dead_code)]
+    note: Option<String>,
 }
 
 fn date_of(v: &toml::Value) -> Option<NaiveDate> {
@@ -431,14 +477,27 @@ pub fn read_careers(path: &Path) -> Result<BTreeMap<String, Status>, String> {
                 t => return Err(format!("{id}: turn is `you`, `them` or nothing, not `{t}`")),
             };
             let since = date_of(&e.since).ok_or_else(|| format!("{id}: since is a date, 2026-10-22"))?;
-            Ok((id, Status { stage: e.stage, since, turn }))
+            Ok((
+                id,
+                Status {
+                    stage: e.stage,
+                    since,
+                    turn,
+                },
+            ))
         })
         .collect()
 }
 
 /// Careers' stages onto their entries; every Careers entry loses its fixture stage first.
 pub fn apply_careers(fx: &mut Fixtures, careers: &BTreeMap<String, Status>) {
-    let ids: Vec<String> = fx.registry.projects.iter().filter(|p| p.area == "Careers").map(|p| p.id.clone()).collect();
+    let ids: Vec<String> = fx
+        .registry
+        .projects
+        .iter()
+        .filter(|p| p.area == "Careers")
+        .map(|p| p.id.clone())
+        .collect();
     for id in ids {
         if let Some(pf) = fx.projects.get_mut(&id) {
             pf.view.status = careers.get(&id).cloned();
@@ -494,7 +553,12 @@ pub fn fetch_system() -> Result<SystemLive, String> {
         .map_err(|e| format!("ssh: {e}"))?;
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
-        return Err(err.lines().last().unwrap_or("the server did not answer").trim().to_string());
+        return Err(err
+            .lines()
+            .last()
+            .unwrap_or("the server did not answer")
+            .trim()
+            .to_string());
     }
     serde_json::from_slice(&out.stdout).map_err(|e| format!("unreadable answer: {e}"))
 }
@@ -504,7 +568,9 @@ mod tests {
     use super::*;
 
     fn reg() -> Registry {
-        locus_contract::taxonomy::load(&locus_contract::taxonomy::root()).expect("registry").registry
+        locus_contract::taxonomy::load(&locus_contract::taxonomy::root())
+            .expect("registry")
+            .registry
     }
 
     #[test]
@@ -540,8 +606,14 @@ mod tests {
         let id = |t: &str, c: &str| match_entry(&r, t, Path::new(c), h).map(|p| p.id.clone());
         assert_eq!(id("locus-dev", "/elsewhere").as_deref(), Some("locus"));
         assert_eq!(id("x", "/Users/a/local-projects/quast/src").as_deref(), Some("quast"));
-        assert_eq!(id("x", "/Users/a/local-projects/oqts/oxdaq-core").as_deref(), Some("oqts"));
-        assert_eq!(id("x", "/Users/a/files/Studies/b1-engineering-computation/algos").as_deref(), Some("b1"));
+        assert_eq!(
+            id("x", "/Users/a/local-projects/oqts/oxdaq-core").as_deref(),
+            Some("oqts")
+        );
+        assert_eq!(
+            id("x", "/Users/a/files/Studies/b1-engineering-computation/algos").as_deref(),
+            Some("b1")
+        );
         assert_eq!(id("peek", "/Users/a/local-projects/peek"), None); // aulos was registered 10 Nov
     }
 
@@ -562,9 +634,18 @@ mod tests {
             p(r#"{"type":"user","message":{"content":[{"type":"text","text":"go on"}]}}"#).as_deref(),
             Some("go on")
         );
-        assert_eq!(p(r#"{"type":"user","message":{"content":[{"type":"tool_result","content":"ok"}]}}"#), None);
-        assert_eq!(p(r#"{"type":"user","message":{"content":"<command-name>/clear</command-name>"}}"#), None);
-        assert_eq!(p(r#"{"type":"user","isMeta":true,"message":{"content":"hidden"}}"#), None);
+        assert_eq!(
+            p(r#"{"type":"user","message":{"content":[{"type":"tool_result","content":"ok"}]}}"#),
+            None
+        );
+        assert_eq!(
+            p(r#"{"type":"user","message":{"content":"<command-name>/clear</command-name>"}}"#),
+            None
+        );
+        assert_eq!(
+            p(r#"{"type":"user","isMeta":true,"message":{"content":"hidden"}}"#),
+            None
+        );
         assert_eq!(p(r#"{"type":"assistant","message":{"content":"hi"}}"#), None);
     }
 

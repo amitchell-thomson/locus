@@ -642,6 +642,10 @@ def context(conn: sqlite3.Connection, about: str | None = None, *, today: date |
             if isinstance(v, dict):
                 turn = f", {v['turn']} to move" if v.get("turn") else ""
                 out.append(f"  {k}: {v.get('stage')} since {v.get('since')}{turn}")
+                # His own notes on it (advice, plans): a comment was invisible here, and two
+                # answers searched 4-6 calls for Brian's advice (H1 re-run, 10 Nov).
+                if v.get("note"):
+                    out.append(f"      his note: {v['note']}")
     except (OSError, ValueError):
         pass
     nr = conn.execute("SELECT DISTINCT parent, title FROM items WHERE kind='mail' AND json_extract(meta,'$.needs_reply')=1 "

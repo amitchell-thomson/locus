@@ -103,6 +103,12 @@ pub struct Project {
     /// to be two kinds is two linked things (ADR-006).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub course: Option<String>,
+    /// The application a repo does the work of (gr-ai-ml for the G-Research AI/ML challenges),
+    /// as `course` is for a course: the repo is a project you build, the application is where
+    /// it stands with the firm, and each knows the other (10 Nov: "they should have been
+    /// linked and this should be known").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub application: Option<String>,
     /// The firm an application is with: one company can have several applications (Brevan
     /// Howard 2026 and 2027), and the tablet's Careers folders are per company, so capture
     /// matches a folder to this (Slice 0, 0.12).

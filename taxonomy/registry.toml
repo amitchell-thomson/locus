@@ -73,6 +73,16 @@ active = true
 sessions = ["med-ml-3yp"]
 
 [[projects]]
+id = "gr-ai-ml"
+name = "GR AI/ML"
+folder = "gr-ai-ml"
+area = "Projects"
+kind = "repo"
+application = "gresearch-ml"
+active = true
+sessions = ["gr-ai-ml"]
+
+[[projects]]
 id = "tanker-flow"
 name = "Tanker-flow"
 folder = "tanker-flow"

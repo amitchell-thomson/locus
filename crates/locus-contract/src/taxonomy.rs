@@ -71,6 +71,15 @@ impl Shared {
                     }
                 }
             }
+            if let Some(a) = &p.application
+                && !self
+                    .registry
+                    .projects
+                    .iter()
+                    .any(|q| &q.id == a && q.kind == crate::ProjectKind::Application)
+            {
+                bad.push(format!("`{}` names application `{a}`, which is not a registered application", p.id));
+            }
             if p.kind == crate::ProjectKind::Application && p.company.is_none() {
                 bad.push(format!("application `{}` has no company", p.id));
             }

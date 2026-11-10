@@ -87,7 +87,20 @@ fn repo_for<'a>(app: &'a App, course: &str) -> Option<&'a locus_contract::Projec
 
 /// The Careers area: applications, and the CV (a project that lives there).
 pub fn career_rows(app: &App) -> Vec<String> {
-    rows_of(app, |p| p.area == "Careers")
+    // Applications first, the CV (a repo living in Careers) last: it sits in its own row below
+    // them, as learning sits below the courses (10 Nov).
+    let mut rows = rows_of(app, |p| p.area == "Careers");
+    rows.sort_by_key(|id| is_repo(app, id));
+    rows
+}
+
+fn is_repo(app: &App, id: &str) -> bool {
+    app.fixtures.registry.get(id).is_some_and(|p| p.kind == ProjectKind::Repo)
+}
+
+/// How many of careers' rows are applications (the rest, the CV, come after them).
+fn application_count(app: &App) -> usize {
+    career_rows(app).iter().filter(|id| !is_repo(app, id)).count()
 }
 
 fn rows_of(app: &App, keep: impl Fn(&locus_contract::Project) -> bool) -> Vec<String> {
@@ -202,9 +215,7 @@ pub fn section_len(app: &App, sec: char) -> usize {
 pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     let inner = draw_border(f, area, app);
     let n_proj = project_rows(app).len().max(1) as u16;
-    let n_side = career_rows(app)
-        .len()
-        .min(SIDE_ROWS)
+    let n_side = (application_count(app).min(SIDE_ROWS) + 2)
         .max(study_rows(app).len().min(SIDE_ROWS) + 2)
         .max(1) as u16;
     // A blank line between sections (round 1b), paid for by moving next and mail into the
@@ -215,7 +226,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     // to 6; then studies' learning row; Explore takes the rest, down to its heading.
     let fixed = 9 + 6 + (n_proj + 1) + 3 + 2 + 1;
     let avail = inner.height.saturating_sub(fixed);
-    let core = (career_rows(app).len().min(SIDE_ROWS).max(study_rows(app).len().min(SIDE_ROWS)).max(1) + 1) as u16;
+    let core = (application_count(app).min(SIDE_ROWS).max(study_rows(app).len().min(SIDE_ROWS)).max(1) + 1) as u16;
     let side_core = core.min(avail.saturating_sub(3)).max(2);
     let pair_h = avail.saturating_sub(side_core).clamp(3, 6);
     let side_h = (side_core + avail.saturating_sub(side_core + pair_h)).min(n_side + 1);
@@ -271,10 +282,9 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         Constraint::Percentage(50),
     ])
     .areas(side_r);
-    draw_careers(f, c_r, app);
+    let used = draw_careers(f, c_r, app);
     draw_studies(f, g_r, app);
     // Rows careers had no use for hold its summary (round 2g).
-    let used = 1 + career_rows(app).len().clamp(1, SIDE_ROWS) as u16;
     crate::ui::summary_box(
         f,
         Rect {
@@ -729,21 +739,47 @@ fn career_glyph(p: &locus_contract::Project, status: Option<&locus_contract::Sta
     }
 }
 
-fn draw_careers(f: &mut Frame, area: Rect, app: &App) {
+/// Careers: the applications, scrolling past five, then the CV in its own row below a line (10
+/// Nov: "CV should be in its own section below, like learning is for studies"). Returns the
+/// rows it used.
+fn draw_careers(f: &mut Frame, area: Rect, app: &App) -> u16 {
     let fx = &app.fixtures;
     let focus = app.focus == Some('c');
     let ids = career_rows(app);
+    let n_apps = application_count(app);
     let sel = focus.then(|| app.sel('c'));
-    let w = window(ids.len(), sel, SIDE_ROWS.min(usize::from(area.height.saturating_sub(1))).max(1));
-    let extra = match &app.careers_error {
+    let room = usize::from(area.height.saturating_sub(1));
+    let w = window(n_apps, sel.filter(|&s| s < n_apps), SIDE_ROWS.min(room).max(1));
+    // The CV's line and row need two rows beyond the applications; without them the CV is
+    // named in the heading and stays reachable with the arrows.
+    let cv_rows = room >= w.len() + 1 + (ids.len() - n_apps);
+    let mut extra = match &app.careers_error {
         Some(e) => format!("not read: {e}"),
-        None => match window_note(ids.len(), &w) {
-            n if n.is_empty() => "applications and your CV".to_string(),
+        None => match window_note(n_apps, &w) {
+            n if n.is_empty() => "applications".to_string(),
             n => n,
         },
     };
+    if !cv_rows && ids.len() > n_apps && app.careers_error.is_none() {
+        extra.push_str(" · CV below");
+    }
     let mut out = vec![rule("careers", &extra, Some('c'), focus, area.width)];
-    for (i, id) in ids.iter().enumerate().skip(w.start).take(w.len()) {
+    let mut shown: Vec<usize> = w.clone().collect();
+    if cv_rows {
+        shown.extend(n_apps..ids.len());
+    } else if let Some(s) = sel.filter(|&s| s >= n_apps) {
+        // Selected but folded away: shown in place of the last application, so you see it.
+        shown.pop();
+        shown.push(s);
+    }
+    for i in shown {
+        let id = &ids[i];
+        if i == n_apps && cv_rows {
+            out.push(Line::from(Span::styled(
+                format!("   {}", "─".repeat(usize::from(area.width).saturating_sub(5))),
+                st("surface1"),
+            )));
+        }
         let Some(p) = fx.registry.get(id) else { continue };
         let pf = fx.projects.get(id);
         let today = fx.now().date_naive();
@@ -797,13 +833,19 @@ fn draw_careers(f: &mut Frame, area: Rect, app: &App) {
             ),
         ];
         let mut left = left;
+        // The project doing this application's work, named as studies names 3YP on B3.
+        if let Some(r) = fx.registry.projects.iter().find(|r| r.application.as_deref() == Some(id.as_str())) {
+            left.push(Span::styled(format!("{} {}  ", glyph::PROJECT, r.name), bold(st("blue"))));
+        }
         left.extend(stage);
         out.push(row(left, counts(0), area.width));
     }
     if ids.is_empty() {
         out.push(Line::from(Span::styled("  no applications open", dim())));
     }
+    let used = out.len() as u16;
     lines(f, area, out);
+    used
 }
 
 /// Careers in two lines: where the applications stand, and the CV's last release.

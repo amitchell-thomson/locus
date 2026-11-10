@@ -18,13 +18,13 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │   󰆣 nabla    󰹇 needs you 42m  SYNA: close the shadow position or hold to the vo… 8 sessions │
 │   󰆣 locus    󰹇 needs you 20m  allow: ssh compute-node 'systemctl --user restart… 3 sessions │
 │   󰆣 OQTS     󰤄 no sessions    last 28 Aug  agent guidance in all three repositories         │
+│   󰆣 GR AI/ML 󰤄 no sessions    nothing yet                                                   │
 │                                                                                             │
-│─ careers · 1–5 of 10 · ↑↓ ─────────── [c] ──┬── studies · 1–5 of 8 · ↑↓ · L learning ─ [s] ─│
-│   󰈙 CV                     released the …   │    󱀄 B1   Engineering Computation       not…  │
-│   󰡖 Millennium QD Interns… final round d…   │    󱀄 B2   Engineering in Society        not…  │
-│   󰡖 G-Research Spring 2027 applied · wai…   │    󱀄 B3   Group Design Project          󱓟 3…  │
-│   󰡖 G-Research AI/ML Chal… applied · wai…   │    󱀄 B14  Information Engineering Syst… not…  │
-│   󰄵 Brevan Howard Interns… contract sign…   │    󱀄 B15  Control Systems               not…  │
+│─ careers · 1–4 of 9 · ↑↓ · CV below ─ [c] ──┬── studies · 1–4 of 8 · ↑↓ · L learning ─ [s] ─│
+│   󰡖 Millennium QD Interns… final round d…   │    󱀄 B1   Engineering Computation       not…  │
+│   󰡖 G-Research Spring 2027 applied · wai…   │    󱀄 B2   Engineering in Society        not…  │
+│   󰡖 G-Research AI/ML Chal… 󱓟 GR AI/ML  a…   │    󱀄 B3   Group Design Project          󱓟 3…  │
+│   󰄵 Brevan Howard Interns… contract sign…   │    󱀄 B14  Information Engineering Syst… not…  │
 │                                                                                             │
 │─ explore · 7 finds · full, so the scout is waiting for you ─────────────────────────── [e] ─│
 │                                                                                             │

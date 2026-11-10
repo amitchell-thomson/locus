@@ -154,3 +154,11 @@ def test_a_library_document_names_its_project():
     assert ht.doc_thing("Advanced Portfolio Management", "incoming/paper/apm.pdf") is None
     assert ht.doc_thing("quast and locus", "") is None, "two named: none"
     assert ht.doc_thing("Update your CV", "") is None, "short ids never fire on prose"
+
+
+def test_a_mail_pointer_still_opens_after_its_thread_moves(conn):
+    # H1 fix 4: a reply arriving gives the thread a new id; the message keeps its own.
+    index(conn, "mail", [mail("mail:oxford/7/71", 2, "GR", "edge@gresearch.com", "Mixer", "16:00 in the Lab.")],
+          embed=fake_embed)
+    out = ht.open_ref(conn, "mail:oxford/5/71")
+    assert "moved to mail:oxford/7" in out and "16:00 in the Lab." in out

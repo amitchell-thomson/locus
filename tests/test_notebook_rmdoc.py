@@ -149,3 +149,22 @@ def test_a_pen_colour_rmscene_does_not_know_is_kept_not_dropped():
     # the trailing-bytes warning is quiet; a block that cannot be read still reports
     assert logging.getLogger("rmscene.tagged_block_reader").level == logging.ERROR
     assert logging.getLogger("rmscene.scene_stream").getEffectiveLevel() <= logging.WARNING
+
+
+def test_markups_points_at_a_notebooks_transcription(conn, tmp_path, monkeypatch):
+    """H1 fix 4: Q21 was told the B14 notebook was untranscribed while src:664 held its text."""
+    path = _notebook(tmp_path, monkeypatch)
+    cfg = types.SimpleNamespace(
+        paths=types.SimpleNamespace(db=tmp_path / "nb.db"),
+        capture=types.SimpleNamespace(rmapi_binary="rmapi"),
+    )
+    monkeypatch.setattr(review, "locate", lambda c, t, **k: t)
+    conn.execute(
+        "INSERT INTO documents (content_hash, source_type, source_uri, raw_path, title, ingested_at, ingest_model) "
+        "VALUES (?,?,?,?,?,?,?)",
+        ("h-transcript", "markdown", f"data/notes/jump-call-{UUID[:8]}.md", "raw/x.md", "Jump call", "t", "m"),
+    )
+    doc_id = conn.execute("SELECT id FROM documents WHERE content_hash='h-transcript'").fetchone()[0]
+    target = review.Target(device_path="/Rough notes/Jump call", title="Jump call", doc_uuid=UUID)
+    m = review.markups(conn, target, cfg=cfg, fetch=lambda p, dest: path, read=rmdoc.read_rmdoc)
+    assert f"open src:{doc_id}" in m.fit_note

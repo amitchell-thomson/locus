@@ -409,6 +409,15 @@ def open_ref(conn: sqlite3.Connection, ref: str, *, around: int = 3, page: int =
         parent = f"mail:{parts[0]}/{parts[1]}" if len(parts) >= 2 else ref
         rows = conn.execute("SELECT ref, at, title, text, meta FROM items WHERE parent=? AND kind='mail' "
                             "ORDER BY at_ts", (parent,)).fetchall()
+        if not rows and len(parts) >= 3:
+            # The thread's id moves when a reply arrives (oxford/12797 became 12894; H1 fix 4,
+            # P1 held a pointer that no longer opened). The message's own id does not: find the
+            # message, and open the thread it is in now.
+            moved = conn.execute("SELECT ref, parent FROM items WHERE kind='mail' AND ref LIKE ? LIMIT 1",
+                                 (f"mail:{parts[0]}/%/{parts[2]}",)).fetchone()
+            if moved and moved[1] != parent:
+                out = open_ref(conn, moved[0], around=around, page=page)
+                return f"(The thread moved to {moved[1]} when a reply arrived; this is it now.)\n" + out
         if not rows:
             return f"No mail thread {parent}."
         readable = {}

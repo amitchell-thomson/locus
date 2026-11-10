@@ -61,7 +61,16 @@ def clean(body: str, *, keep_forward: bool = True) -> str:
         if keep_forward and len(own.strip()) < 300 and re.search(r"forward", text[cut:cut + 80], re.I):
             forwarded = re.sub(r"^ ?> ?", "", text[cut:cut + 8000], flags=re.M)
         text = own if own.strip() or forwarded else body[:1000]
-    text = "\n".join(line for line in text.split("\n") if not line.lstrip().startswith(">"))
+    unquoted = "\n".join(line for line in text.split("\n") if not line.lstrip().startswith(">"))
+    if not unquoted.strip() and text.strip():
+        # Everything quoted: some clients send a reply with the writer's own text prefixed "> "
+        # (Alec's 5 Nov reply to Millennium, with the passport line, was indexed EMPTY; H1 fix
+        # 4). The message's own text is then its first quoted block, up to the quoted "On …
+        # wrote:" that starts the thread below it.
+        first = re.sub(r"^ ?> ?", "", text, flags=re.M)
+        stop = min((m.start() for q in _QUOTE_STARTS if (m := q.search(first))), default=len(first))
+        unquoted = "\n".join(line for line in first[:stop].split("\n") if not line.lstrip().startswith(">"))
+    text = unquoted
     sig = min((m.start() for p in _SIGNATURE_STARTS if (m := p.search(text))), default=None)
     if sig is not None and sig > 0:
         text = text[:sig]

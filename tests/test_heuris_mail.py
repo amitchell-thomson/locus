@@ -127,3 +127,15 @@ def test_a_forward_under_a_short_note_keeps_the_forwarded_mail_unquoted():
 def test_a_body_that_is_all_quote_is_not_emptied():
     body = "On Mon, Sam wrote:\n> only quoted text here"
     assert clean(body)
+
+
+def test_a_reply_sent_all_quoted_keeps_its_own_text():
+    # H1 fix 4: Alec's 5 Nov reply to Millennium arrived with every line "> "-prefixed and was
+    # indexed with no body, so the passport renewal could not be found.
+    from locus.heuris.sources.mail import clean
+
+    body = ("> Hi Kate,\n>\n> I plan to get my passport renewed next month.\n>\n> Best Wishes,\n> Alec\n>\n"
+            "> On Thu 5 Nov 2026 at 15:22, Cunningham, Kate wrote:\n> > Please confirm your right to work.")
+    out = clean(body)
+    assert "passport renewed next month" in out and "confirm your right to work" not in out
+    assert clean("Thanks!\n\nOn Thu, Kate wrote:\n> old text") == "Thanks!"

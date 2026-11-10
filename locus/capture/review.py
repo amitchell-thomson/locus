@@ -861,11 +861,25 @@ def markups(
             doc, wanted, dpi=dpi, margins=margins, max_bytes=max_bytes
         )
 
+    notebook = bool(doc is not None and doc.is_notebook)
+    # A notebook Loop A has transcribed is in the library as notes/<name>-<uuid8>.md. Say so,
+    # with its pointer: Q21 (H1, 10 Nov) was told the B14 notebook was "readable only once it has
+    # been transcribed" while its transcription sat indexed as src:664, and answered from that.
+    uuid = target.doc_uuid or (doc.doc_uuid if doc is not None else None)
+    if notebook and uuid:
+        row = conn.execute(
+            "SELECT id FROM documents WHERE source_uri LIKE ? ORDER BY id DESC LIMIT 1", (f"%-{uuid[:8]}.md",)
+        ).fetchone()
+        if row:
+            fit_note = (fit_note + " " if fit_note else "") + (
+                f"Its transcription is in the library: open src:{row[0]} for the text (searchable; "
+                "the page images are the ink itself)."
+            )
     return Markups(
         target=target, marks=marks, pages=rendered,
         inked_pages=inked, added_pages=added, swept=swept, fetched=fetched,
         looked=doc is not None, filtered=bool(pages or intent), fit_note=fit_note,
-        notebook=bool(doc is not None and doc.is_notebook),
+        notebook=notebook,
     )
 
 

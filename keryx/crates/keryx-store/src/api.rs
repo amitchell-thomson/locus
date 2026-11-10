@@ -121,6 +121,28 @@ pub enum Decision {
     Change(Action),
 }
 
+/// One proposal and what you decided (`decide-many`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DecideOne {
+    pub proposal: String,
+    pub decision: Decision,
+}
+
+/// What `decide-many` did with each proposal: the changeset it went into, or why not.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DecideMany {
+    pub done: Vec<DecidedOne>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DecidedOne {
+    pub proposal: String,
+    #[serde(default)]
+    pub changeset: Option<String>,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AcceptGroup {
     pub accepted: usize,

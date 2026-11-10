@@ -1454,3 +1454,58 @@ fn keeps_left_open_are_settled_at_start() {
     assert_eq!(e.db.review(&rid).unwrap().unwrap().status, "done");
     assert!(in_inbox(&e, &a), "keeping moves nothing");
 }
+
+/// decide-many: accepts that agree on an action are one changeset; a refusal changes nothing
+/// and is recorded; a proposal already decided is said to be, not done twice (10 Nov).
+#[test]
+fn many_decisions_are_carried_out_as_one_batch() {
+    let (mut e, _) = engine();
+    let a = r(&e, "Lab partner for Thursday?");
+    let b = r(&e, "Coursework submission portal");
+    let c = r(&e, "Your account needs attention");
+    let rid = propose(
+        &mut e,
+        vec![
+            (a.clone(), Action::Archive),
+            (b.clone(), Action::Archive),
+            (c.clone(), Action::Archive),
+        ],
+    );
+    let id = |e: &Engine, rf: &str| {
+        e.review(&rid)
+            .unwrap()
+            .items
+            .into_iter()
+            .find(|i| i.r#ref == rf)
+            .unwrap()
+            .proposal
+            .id
+    };
+    let (pa, pb, pc) = (id(&e, &a), id(&e, &b), id(&e, &c));
+    let one = |p: &str, d: Decision| DecideOne {
+        proposal: p.into(),
+        decision: d,
+    };
+    assert!(matches!(
+        e.decide_many(vec![one(&pa, Decision::Accept)], Who::CLAUDE),
+        Err(EngineError::Forbidden(_))
+    ));
+    let out = e
+        .decide_many(
+            vec![
+                one(&pa, Decision::Accept),
+                one(&pb, Decision::Accept),
+                one(&pc, Decision::Decline),
+            ],
+            Who::ALEC,
+        )
+        .unwrap();
+    assert!(out.done.iter().all(|d| d.error.is_none()), "{:?}", out.done);
+    let cs: HashSet<_> = out.done.iter().filter_map(|d| d.changeset.clone()).collect();
+    assert_eq!(cs.len(), 1, "both archives in one changeset");
+    assert!(!in_inbox(&e, &a) && !in_inbox(&e, &b));
+    assert!(in_inbox(&e, &c), "refused: untouched");
+    let again = e.decide_many(vec![one(&pa, Decision::Accept)], Who::ALEC).unwrap();
+    assert!(again.done[0].error.as_deref().is_some_and(|x| x.starts_with("already")));
+    assert_eq!(e.db.review(&rid).unwrap().unwrap().status, "done");
+}

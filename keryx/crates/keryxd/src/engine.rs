@@ -35,6 +35,9 @@ pub enum EngineError {
 
 pub type Result<T> = std::result::Result<T, EngineError>;
 
+/// A proposal in a `decide_many` batch: it, its thread, and what it becomes.
+type Batched = (Proposal, String, ProposalStatus);
+
 /// Who is asking (from the HTTP headers; MCP is always Claude).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Who {
@@ -1210,6 +1213,97 @@ impl Engine {
         )?;
         self.maybe_done(&p.review_id)?;
         Ok(cs)
+    }
+
+    /// Many decisions at once (10 Nov: approving 500 lines one request at a time took the better
+    /// part of an hour, each archive its own round trip to Gmail and its own wait for Mail).
+    /// Accepts and changes that agree on review and action are carried out as ONE changeset,
+    /// as `Y` on a group is; refusals are recorded directly. A batch that fails leaves all its
+    /// proposals open and says why for each, so nothing is half done.
+    pub fn decide_many(&mut self, items: Vec<DecideOne>, who: Who) -> Result<DecideMany> {
+        if !who.direct() {
+            return Err(EngineError::Forbidden("only Alec decides proposals, in the TUI".into()));
+        }
+        let mut out = DecideMany::default();
+        let mut batches: BTreeMap<(String, String), (Action, Vec<Batched>)> = BTreeMap::new();
+        let mut touched: HashSet<String> = HashSet::new();
+        for it in items {
+            let p = match self.db.proposal(&it.proposal)? {
+                Some(p) if p.status == ProposalStatus::Open => p,
+                Some(p) => {
+                    out.done.push(DecidedOne {
+                        proposal: it.proposal,
+                        changeset: None,
+                        error: Some(format!("already {}", p.status.as_str())),
+                    });
+                    continue;
+                }
+                None => {
+                    out.done.push(DecidedOne {
+                        proposal: it.proposal,
+                        changeset: None,
+                        error: Some("no such proposal".into()),
+                    });
+                    continue;
+                }
+            };
+            touched.insert(p.review_id.clone());
+            let (status, action) = match it.decision {
+                Decision::Decline => {
+                    self.db
+                        .decide_proposal(&p.id, ProposalStatus::Declined, None, None, self.now())?;
+                    out.done.push(DecidedOne {
+                        proposal: p.id,
+                        changeset: None,
+                        error: None,
+                    });
+                    continue;
+                }
+                Decision::Accept => (ProposalStatus::Accepted, p.action.clone()),
+                Decision::Change(a) => (ProposalStatus::Changed, a),
+            };
+            let r = keryx_core::model::thread_ref(&p.account, &p.thread_id);
+            let k = (p.review_id.clone(), serde_json::to_string(&action).unwrap_or_default());
+            batches
+                .entry(k)
+                .or_insert_with(|| (action.clone(), Vec::new()))
+                .1
+                .push((p, r, status));
+        }
+        for ((rid, _), (action, ps)) in batches {
+            let refs: Vec<String> = ps.iter().map(|x| x.1.clone()).collect();
+            match self.carry_out(&refs, &action, &rid, who) {
+                Ok(cs) => {
+                    for (p, _, status) in &ps {
+                        self.db.decide_proposal(
+                            &p.id,
+                            *status,
+                            (*status == ProposalStatus::Changed).then_some(&action),
+                            cs.as_ref().map(|c| c.id.as_str()),
+                            self.now(),
+                        )?;
+                        out.done.push(DecidedOne {
+                            proposal: p.id.clone(),
+                            changeset: cs.as_ref().map(|c| c.id.clone()),
+                            error: None,
+                        });
+                    }
+                }
+                Err(e) => {
+                    for (p, _, _) in &ps {
+                        out.done.push(DecidedOne {
+                            proposal: p.id.clone(),
+                            changeset: None,
+                            error: Some(e.to_string()),
+                        });
+                    }
+                }
+            }
+        }
+        for rid in touched {
+            self.maybe_done(&rid)?;
+        }
+        Ok(out)
     }
 
     /// Apply an accepted action as Alec. `Keep` changes nothing but may tag.

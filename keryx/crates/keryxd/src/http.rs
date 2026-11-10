@@ -124,6 +124,7 @@ pub fn router(st: AppState, mcp: Option<Router<AppState>>) -> Router {
         .route("/api/reviews/{id}", get(review))
         .route("/api/reviews/{id}/accept-group", post(accept_group))
         .route("/api/reviews/{id}/undo", post(undo_review))
+        .route("/api/proposals/decide-many", post(decide_many))
         .route("/api/proposals/{id}/decide", post(decide))
         .route("/api/tags", post(tag))
         .route("/api/for", post(mark_for))
@@ -284,6 +285,15 @@ async fn accept_group(
 ) -> HResult<AcceptGroup> {
     let w = who(&h);
     Ok(Json(with_engine(&st, move |e| e.accept_group(&id, &g.group, w)).await?))
+}
+
+async fn decide_many(
+    State(st): State<AppState>,
+    h: HeaderMap,
+    Json(items): Json<Vec<DecideOne>>,
+) -> HResult<DecideMany> {
+    let w = who(&h);
+    Ok(Json(with_engine(&st, move |e| e.decide_many(items, w)).await?))
 }
 
 async fn undo_review(State(st): State<AppState>, h: HeaderMap, Path(id): Path<String>) -> HResult<UndoReview> {

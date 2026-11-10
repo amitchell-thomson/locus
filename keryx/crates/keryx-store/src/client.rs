@@ -30,6 +30,10 @@ pub trait Daemon: Send {
     fn review(&self, id: &str) -> Result<ReviewView>;
     fn decide(&self, proposal: &str, d: &Decision) -> Result<Option<Changeset>>;
     fn accept_group(&self, review: &str, group: &str) -> Result<AcceptGroup>;
+    /// Many decisions in one call: what agrees on an action is carried out as one batch.
+    fn decide_many(&self, _items: &[DecideOne]) -> Result<DecideMany> {
+        Err(ClientError::Shape("decide-many is not supported here".into()))
+    }
     fn undo_review(&self, review: &str) -> Result<UndoReview>;
     fn tag(&self, r: &str, reason: &str) -> Result<()>;
     fn untag(&self, r: &str) -> Result<()>;
@@ -176,6 +180,10 @@ impl Daemon for Client {
         serde_json::from_value(v.get("changeset").cloned().unwrap_or(Value::Null))
             .map_err(|e| ClientError::Shape(e.to_string()))
     }
+    fn decide_many(&self, items: &[DecideOne]) -> Result<DecideMany> {
+        self.post("/api/proposals/decide-many", &items)
+    }
+
     fn accept_group(&self, review: &str, group: &str) -> Result<AcceptGroup> {
         self.post(
             &format!("/api/reviews/{review}/accept-group"),

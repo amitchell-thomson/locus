@@ -24,7 +24,7 @@ You spot-check ten.
 
 **Y2 · H1 ·** What did I write on the Millennium role preference form they sent after the spring week? From that, why do you think they put me on the quant dev track rather than QR?
 > The role preference form as you filled it in, quoted from mail or your notes. If it is not found, the answer says so and does not reconstruct it. The QD-versus-QR reasoning grounded in that form and the spring-week mail. The form was a pdf sent in mail, that I marked up with my preferences and returned to them.
-> *Found:* "Meet Millennium Questionnaire", `Millennium Questionnaire.pdf`, sent 23 Jun, returned by you 28 Jun. **H1 gap:** the index keeps attachment names but not their contents, so today a good answer finds the mail and says it cannot read the form.
+> *Found:* "Meet Millennium Questionnaire", `Millennium Questionnaire.pdf`, sent 23 Jun, returned by you 28 Jun. Closed by H1.12: attachments are read, and the crosses you drew are read as the options chosen, so a good answer quotes your four choices.
 
 **Y3 · H1 ·** Look through the Brevan Howard notes I made over the internship and draw on other projects and notes to theorise about how to improve nabla.
 > Your BH internship notes (tablet notebooks, in the library) cited by page. Ideas tied to nabla's real design from its repo docs, plus other projects only where a real link exists.
@@ -133,7 +133,7 @@ How does this fit into ideas/ suggestions/ corrections that I make in margins as
 
 **24 · H1 ·** What are the start date and terms in my Millennium offer?
 > Start date and terms quoted from the Millennium offer mail. The offer chain is fully in mail, but the contract itself is in my downloads folder.
-> **H1 gap:** `~/Downloads` is not indexed, so terms that are only in the contract are not found; the answer must say so.
+> Closed by H1.12: the offer letter, offer pack and handbook in `~/Downloads` are indexed as files.
 
 **25 · H1 ·** Who has not answered an email of mine that needed an answer?
 > Threads where your message was last, asked a question and has had no answer for over a week.

@@ -275,6 +275,17 @@ held attachment names, not contents, and no files outside repos.
   terms (24); what was skipped by name is counted in the push report; a test asserts each
   identifier kind is redacted.
 
+- **Done 10 Nov:** 211 attachments and 48 files indexed. Skipped by name: 59 attachments and
+  9 files (identity, tax and bank papers, mandates), 3 CVs that are not yours. 347 attachments
+  Mail never downloaded are counted, not fetched. Crosses drawn over a form's checkboxes are read
+  as the options chosen (the questionnaire: B, B, B, C, matching the page). Two things found on
+  the way:
+  - The push job (launchd) cannot read iCloud or Downloads (macOS privacy). A partial read now
+    sends nothing, so the server keeps its last copy; the files refresh only when the push runs
+    from a terminal until the job is given access.
+  - The answer key leaked: this file, `h1-test-set.md` and the chat that wrote them were indexed.
+    All three are held out while H1 is scored.
+
 **Order:** H1.1 and H1.2 first, because they need you and they shape the rest. Then H1.3 to
 H1.8, then H1.9, H1.10, H1.12 and H1.11.
 

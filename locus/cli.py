@@ -525,11 +525,12 @@ def cmd_heuris(args) -> None:
 
 
 def cmd_heuris_push(args) -> None:
-    """Laptop: mail (kept by the H1.2 rule, scrubbed) and project docs and commits, to the server."""
-    from locus.heuris import mail_push, repos_push
+    """Laptop: mail (kept by the H1.2 rule, scrubbed) with its attachments, project docs and
+    commits, and career files (H1.12), to the server."""
+    from locus.heuris import files_push, mail_push, repos_push
 
     failed = False
-    for name, mod in (("mail", mail_push), ("repos", repos_push)):
+    for name, mod in (("mail", mail_push), ("repos", repos_push), ("files", files_push)):
         try:
             r = mod.push(send=not args.dry_run)
             print(f"{name}: {mod.describe(r)}")

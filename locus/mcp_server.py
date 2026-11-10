@@ -601,7 +601,8 @@ def _register_heuris(tool) -> None:
     def search(query: str, kind: str | None = None, area: str | None = None, thing: str | None = None,
                person: str | None = None, since: str | None = None, until: str | None = None,
                limit: int = 12) -> str:
-        """Search everything he has: mail, calendar events, tasks, Claude chats (his prompts and
+        """Search everything he has: mail and the text of its attachments, career files (offers,
+        contracts, CVs, forms), calendar events, tasks, Claude chats (his prompts and
         Claude's answers), repository docs and commits, and the library (papers, lecture notes,
         his own handwritten notes and margin notes). Words and meaning together, reranked as one
         list. Each hit is dated and ends with a pointer for `open`. Filters apply before ranking.
@@ -609,7 +610,7 @@ def _register_heuris(tool) -> None:
 
         Args:
             query: What to look for, in plain words.
-            kind: mail, event, task, chat, commit, doc (repository doc), source (library), note (his own writing in the library).
+            kind: mail, attachment (a mail attachment's text), file (a career file), event, task, chat, commit, doc (repository doc), source (library), note (his own writing in the library).
             area: Studies, Careers, Projects, Personal, Family, Errands, Sport, Social.
             thing: a registry id (quast, locus, oqts, millennium, b15, ...); see `context`.
             person: a name or an email address.
@@ -624,8 +625,8 @@ def _register_heuris(tool) -> None:
     @tool()
     def open(ref: str) -> str:  # noqa: A001 - the tool's name is the verb the plan uses
         """The whole thing behind a pointer from `search`, `timeline` or `context`: a mail thread
-        in order (quoted text removed), the chat turns around a turn, a commit with its files, an
-        event or task, a repository doc, or a section of a library source (`src:<doc>` alone
+        in order (quoted text removed), an attachment's or career file's text, the chat turns
+        around a turn, a commit with its files, an event or task, a repository doc, or a section of a library source (`src:<doc>` alone
         lists its sections).
 
         Args:

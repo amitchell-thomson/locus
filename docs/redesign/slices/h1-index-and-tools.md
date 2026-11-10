@@ -253,8 +253,30 @@ domains 130. On the samples:
 - **Check:** the scored table is in the report. Every question in the "answerable in H1" group
   passes, or its failure is named with its cause and the slice that fixes it.
 
+### H1.12 Attachments and career files (added 10 Nov, your call: "add it to H1 first")
+Found while you corrected the test set: the role preference form (Y2) is a PDF attachment you
+marked up and returned, and the Millennium contract (24) is a file in `~/Downloads`. The index
+held attachment names, not contents, and no files outside repos.
+- **Attachments:** each PDF, Word or text attachment on mail the rule already keeps has its text
+  read on the laptop (from Mail's own store; never fetched), and becomes an item of kind
+  `attachment`, pointing at its message, with the message's people, thing and area.
+- **Files:** kind `file`, read on the laptop from two places only:
+  - iCloud `Career/` (applications, contracts, cover letters, your CVs, course material);
+  - `~/Downloads`, only names that look like an offer, contract, offer pack or handbook.
+- **Never read, by name:** passports, driving licences, P46 and tax forms, information and data
+  collection forms, bank and account statements, payslips, visa and right-to-work papers. A CV
+  that does not name you (someone else's) is skipped. Scanned pages with no text layer give no
+  text and are skipped.
+- **In whatever is read:** the secret scrubber, plus national insurance numbers, passport
+  machine-readable lines, IBANs, sort codes with account numbers, and card numbers are redacted
+  before anything leaves the laptop.
+- Both are wrapped as untrusted data in the tools, like mail.
+- **Check:** `search` finds the Millennium questionnaire's contents (Y2) and the contract's
+  terms (24); what was skipped by name is counted in the push report; a test asserts each
+  identifier kind is redacted.
+
 **Order:** H1.1 and H1.2 first, because they need you and they shape the rest. Then H1.3 to
-H1.8, then H1.9, H1.10 and H1.11.
+H1.8, then H1.9, H1.10, H1.12 and H1.11.
 
 ---
 

@@ -1,6 +1,6 @@
 """Index every source into heuris.db, and say how fresh each is (H1.3).
 
-`locus heuris index [mail calendar chats repos]` runs on the server every 15 minutes
+`locus heuris index [mail calendar chats repos files]` runs on the server every 15 minutes
 (`locus-heuris.timer`). Each source is independent: one failing records its error and the rest
 still run. `locus heuris status` prints every source with its count, its last good run and how
 stale it is; Home's system section reads the same rows.
@@ -26,10 +26,10 @@ from pathlib import Path
 from locus.heuris import db as hdb
 from locus.heuris.index import Stats, index, record_run
 
-SOURCES = ("mail", "calendar", "chats", "repos")
+SOURCES = ("mail", "calendar", "chats", "repos", "files")
 # How old a source's last good run may be before status calls it stale.
 STALE = {"mail": timedelta(hours=1), "calendar": timedelta(hours=1), "chats": timedelta(hours=2),
-         "repos": timedelta(hours=2)}
+         "repos": timedelta(hours=2), "files": timedelta(hours=2)}
 
 
 def locus_dir() -> Path:
@@ -75,6 +75,10 @@ def run_source(conn: sqlite3.Connection, name: str, *, embed=None) -> Outcome:
             from locus.heuris.sources import repos
 
             st = _full_scan(conn, name, repos.items(inbox() / "repos"), embed)
+        elif name == "files":
+            from locus.heuris.sources import files
+
+            st = _full_scan(conn, name, files.items(inbox() / "files"), embed)
         elif name == "calendar":
             from locus.heuris.sources import calendar
 

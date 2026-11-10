@@ -113,6 +113,22 @@ def items(root: Path) -> Iterator[Item]:
                       "flagged": m.get("flagged"), "needs_reply": needs_reply,
                       "attachments": m.get("attachments") or [], "in_inbox": m.get("in_inbox")},
             )
+            # Attachments read on the laptop (H1.12): one item each, beside their message, with
+            # its people, thing and area so every filter that finds the message finds them.
+            for i, d in enumerate(m.get("docs") or []):
+                yield Item(
+                    ref=f"attachment:{acct}/{thread}/{m['id']}/{i}",
+                    kind="attachment",
+                    at=_when(m["date"]),
+                    title=f"{d['name']} (attached to \"{(m.get('subject') or '').strip()}\")",
+                    text=d["text"],
+                    area=area,
+                    thing=thing,
+                    parent=f"mail:{acct}/{thread}",
+                    people=[p for p in people if p[0]],
+                    meta={"account": acct, "from": email, "from_name": name, "name": d["name"],
+                          "sha": d.get("sha"), "message": f"mail:{acct}/{thread}/{m['id']}"},
+                )
 
 
 def record_rule(root: Path) -> None:

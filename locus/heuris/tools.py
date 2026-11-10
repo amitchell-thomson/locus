@@ -28,7 +28,9 @@ from datetime import date, datetime, timedelta, timezone
 from locus.heuris import registry
 from locus.heuris.index import QUERY_PREFIX
 
-KINDS = ("mail", "event", "task", "chat", "commit", "doc", "source", "note")
+KINDS = ("mail", "attachment", "file", "event", "task", "chat", "commit", "doc", "source", "note")
+# Text written by someone else, which arrives inside the untrusted-data envelope.
+UNTRUSTED = ("mail", "attachment", "file")
 LIBRARY_KINDS = ("source", "note")
 # The library's categories by area, so `area=` narrows the library too.
 AREA_CATEGORY = {"Studies": "coursework", "Careers": "career", "Projects": "project"}
@@ -284,9 +286,11 @@ def _describe(h: Hit, env: Envelope, i: int) -> str:
             head += f" \"{m['session_title']}\""
     if h.thing:
         head += f" · {h.thing}"
-    title = env.wrap(h.title) if h.kind == "mail" else h.title
+    elif h.kind == "attachment":
+        head += f" · attached by {m.get('from_name') or m.get('from') or ''}"
+    title = env.wrap(h.title) if h.kind in UNTRUSTED else h.title
     snip = _short(h.text)
-    body = env.wrap(snip) if h.kind == "mail" else snip
+    body = env.wrap(snip) if h.kind in UNTRUSTED else snip
     return f"{head}\n    {title}\n    {body}\n    open: {h.ref}"
 
 
@@ -349,14 +353,20 @@ def open_ref(conn: sqlite3.Connection, ref: str, *, around: int = 3) -> str:
     if ref.startswith("mail:"):
         parts = ref[5:].split("/")
         parent = f"mail:{parts[0]}/{parts[1]}" if len(parts) >= 2 else ref
-        rows = conn.execute("SELECT ref, at, title, text, meta FROM items WHERE parent=? ORDER BY at_ts", (parent,)).fetchall()
+        rows = conn.execute("SELECT ref, at, title, text, meta FROM items WHERE parent=? AND kind='mail' "
+                            "ORDER BY at_ts", (parent,)).fetchall()
         if not rows:
             return f"No mail thread {parent}."
+        readable = {}
+        for aref, ameta in conn.execute("SELECT ref, meta FROM items WHERE parent=? AND kind='attachment'", (parent,)):
+            readable.setdefault(json.loads(ameta).get("message"), []).append(aref)
         out = [f"Mail thread {parent}, {len(rows)} messages kept, oldest first (quoted text and signatures removed):"]
         for r in rows:
             m = json.loads(r[4])
             att = f" · attachments: {', '.join(a for a in m.get('attachments') or [] if a)}" if m.get("attachments") else ""
             mark = "  ← the one you opened" if r[0] == ref else ""
+            if readable.get(r[0]):
+                att += f" (read them: open {', '.join(readable[r[0]])})"
             out.append(f"\n--- {r[1][:16]} · {m.get('from_name') or ''} <{m.get('from')}>{att}{mark}\n"
                        + env.wrap(f"Subject: {r[2]}\n\n{r[3]}"))
         return env.preamble() + "\n".join(out)
@@ -383,6 +393,9 @@ def open_ref(conn: sqlite3.Connection, ref: str, *, around: int = 3) -> str:
     head = f"{kind} · {at[:16]} · {title}" + (f" · {thing}" if thing else "")
     if kind == "commit":
         return f"{head}\n\n{text}\n\nrepo folder: {m.get('repo') or '(top level)'} · sha {m.get('sha')}"
+    if kind in UNTRUSTED:
+        where = f"\n(attached to {m.get('message')}; open that for the thread)" if kind == "attachment" else ""
+        return env.preamble() + env.wrap(f"{head}\n\n{text}") + where
     return f"{head}\n\n{text}"
 
 
@@ -476,8 +489,9 @@ def timeline(conn: sqlite3.Connection, about: str, *, since: str | None = None, 
     for ref, k, at, title, meta in rows:
         m = json.loads(meta or "{}")
         extra = ""
-        if k == "mail":
-            extra = f" ({m.get('from_name') or m.get('from')})"
+        if k in UNTRUSTED:
+            if k == "mail":
+                extra = f" ({m.get('from_name') or m.get('from')})"
             title = env.wrap(title)
         elif k == "chat":
             extra = " (you)" if m.get("role") == "you" else " (Claude)"

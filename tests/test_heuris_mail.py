@@ -69,25 +69,26 @@ def test_lists_and_brands_are_left_out_and_people_are_kept():
     assert kept(m("callum.mitchellthomson@gmail.com", "Callum Mitchell-Thomson"))
 
 
-def test_build_never_writes_oqts_shared_and_records_what_it_left_out(tmp_path):
+def test_build_never_writes_oqts_shared_and_records_what_it_left_out(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOCUS_STATE_DIR", str(tmp_path / "state"))
     db = tmp_path / "keryx.db"
     c = sqlite3.connect(db)
     c.executescript("""
       CREATE TABLE messages (id INTEGER, account TEXT, thread_id TEXT, message_id TEXT, from_json TEXT,
         to_json TEXT, cc_json TEXT, subject TEXT, date INTEGER, in_inbox INTEGER, read INTEGER,
-        flagged INTEGER, list_headers_json TEXT, body_text TEXT, attachments_json TEXT);
+        flagged INTEGER, list_headers_json TEXT, body_text TEXT, attachments_json TEXT, raw_ref TEXT);
       CREATE TABLE tags (account TEXT, thread_id TEXT, kind TEXT, reason TEXT);
       CREATE TABLE links (account TEXT, thread_id TEXT, app TEXT, kind TEXT, target TEXT, title TEXT);
     """)
     rows = [
         (1, "personal", "t1", "<a>", '{"email":"edward.weeden@gym.co.uk","name":"Edward Weeden"}', "[]", "[]",
-         "Gym", 1700000000, 1, 1, 0, "[]", "password: hunter22secret", "[]"),
+         "Gym", 1700000000, 1, 1, 0, "[]", "password: hunter22secret", "[]", None),
         (2, "oqts-shared", "t2", "<b>", '{"email":"x@gmail.com","name":"A Person"}', "[]", "[]",
-         "secret", 1700000000, 1, 1, 0, "[]", "never", "[]"),
+         "secret", 1700000000, 1, 1, 0, "[]", "never", "[]", None),
         (3, "personal", "t3", "<c>", '{"email":"no-reply@spotify.com","name":"Spotify"}', "[]", "[]",
-         "Promo", 1700000000, 1, 1, 0, "[]", "buy", "[]"),
+         "Promo", 1700000000, 1, 1, 0, "[]", "buy", "[]", None),
     ]
-    c.executemany("INSERT INTO messages VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+    c.executemany("INSERT INTO messages VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
     c.execute("INSERT INTO links VALUES ('personal','t1','locus','item','millennium','Millennium')")
     c.commit()
     c.close()

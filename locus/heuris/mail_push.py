@@ -20,6 +20,10 @@ What the rule left out is written to `_rule.json` with samples, and the server r
 `locus gates` (gate `heuris.mail_rule`), so a rule that drops something it should not shows up
 in words rather than as a missing answer (CLAUDE.md §3; test question 44).
 
+**Attachments** (H1.12): each PDF, Word or text attachment on a kept message is read from Mail's
+own store and redacted (locus/heuris/documents.py has what is never read and why), and travels
+with its message as `docs`. One Mail has not downloaded is counted, not fetched.
+
 A thread whose kept set is empty has no file; `rsync --delete` then removes it on the server and
 the indexer's full scan prunes it, so tightening the rule takes mail out of the index too.
 """
@@ -36,6 +40,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from locus.heuris import documents
 from locus.scrub import load_known, scrub
 from locus.transcripts_push import state_dir
 
@@ -164,6 +169,9 @@ class Report:
     threads_removed: int = 0
     reasons: Counter = field(default_factory=Counter)
     redacted: dict[str, int] = field(default_factory=dict)
+    attachments_read: int = 0
+    attachments_empty: int = 0
+    attachments_skipped: Counter = field(default_factory=Counter)
     sent: bool = False
     error: str = ""
 
@@ -173,7 +181,7 @@ def _thread_file(stage: Path, account: str, thread: str) -> Path:
 
 
 _COLS = ("id", "account", "thread_id", "message_id", "from_json", "to_json", "cc_json", "subject", "date",
-         "in_inbox", "read", "flagged", "list_headers_json", "body_text", "attachments_json")
+         "in_inbox", "read", "flagged", "list_headers_json", "body_text", "attachments_json", "raw_ref")
 
 
 def build(db: Path = KERYX_DB, stage: Path | None = None) -> Report:
@@ -184,6 +192,7 @@ def build(db: Path = KERYX_DB, stage: Path | None = None) -> Report:
     try:
         ctx = context(conn)
         known = load_known()
+        cache = documents.Cache(state_dir() / "documents-cache.json")
         threads: dict[tuple[str, str], list[dict]] = defaultdict(list)
         left_samples: dict[str, list[str]] = defaultdict(list)
         for row in conn.execute(f"SELECT {', '.join(_COLS)} FROM messages ORDER BY date"):
@@ -205,13 +214,31 @@ def build(db: Path = KERYX_DB, stage: Path | None = None) -> Report:
             for c in (counts, c2):
                 for kk, v in c.items():
                     r.redacted[kk] = r.redacted.get(kk, 0) + v
+            atts = [a for a in (json.loads(m["attachments_json"] or "[]") or []) if isinstance(a, dict)]
+            docs = []
+            for a in atts:
+                aname = a.get("name") or a.get("filename") or ""
+                if not aname.lower().endswith(documents.READABLE):
+                    continue  # images and the rest: named on the message, not read
+                if why_not := documents.denied(aname):
+                    r.attachments_skipped[why_not] += 1
+                    continue
+                data = documents.attachment_bytes(m["raw_ref"], a.get("id"), aname)
+                if data is None:
+                    r.attachments_skipped["not in Mail's store"] += 1
+                    continue
+                sha, text = cache.text(aname, data, known, r.redacted)
+                if not text:
+                    r.attachments_empty += 1
+                    continue
+                r.attachments_read += 1
+                docs.append({"name": aname, "sha": sha, "text": text})
             threads[(m["account"], m["thread_id"])].append({
                 "id": m["id"], "message_id": m["message_id"], "from": json.loads(m["from_json"] or "{}"),
                 "to": json.loads(m["to_json"] or "[]"), "cc": json.loads(m["cc_json"] or "[]"),
                 "subject": subj, "date": m["date"], "in_inbox": bool(m["in_inbox"]),
                 "read": bool(m["read"]), "flagged": bool(m["flagged"]), "why": why, "body": body,
-                "attachments": [a.get("name") or a.get("filename") for a in
-                                (json.loads(m["attachments_json"] or "[]") or []) if isinstance(a, dict)],
+                "attachments": [a.get("name") or a.get("filename") for a in atts], "docs": docs,
             })
         tags = defaultdict(list)
         for acct, thread, kind, reason in conn.execute("SELECT account, thread_id, kind, reason FROM tags"):
@@ -220,6 +247,7 @@ def build(db: Path = KERYX_DB, stage: Path | None = None) -> Report:
         for acct, thread, kind, target, title in conn.execute(
                 "SELECT account, thread_id, kind, target, title FROM links WHERE app='locus'"):
             links[(acct, thread)].append({"kind": kind, "target": target, "title": title})
+        cache.save()
     finally:
         conn.close()
 
@@ -276,5 +304,7 @@ def push(db: Path = KERYX_DB, send: bool = True) -> Report:
 def describe(r: Report) -> str:
     red = ", ".join(f"{k} {v}" for k, v in sorted(r.redacted.items())) or "nothing"
     sent = "sent to the server" if r.sent else (f"NOT sent: {r.error}" if r.error else "not sent")
+    skipped = ", ".join(f"{why} {n}" for why, n in r.attachments_skipped.most_common()) or "none"
     return (f"{r.kept} kept, {r.left_out} left out, {r.excluded} never leave the laptop; "
+            f"attachments: {r.attachments_read} read, {r.attachments_empty} without text, skipped {skipped}; "
             f"{r.threads_written} threads written, {r.threads_removed} removed; redacted: {red}; {sent}")

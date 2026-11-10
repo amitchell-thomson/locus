@@ -1,6 +1,6 @@
 # H1: the index and the tools
 
-**State:** approved 10 Nov 2026, all eight decisions as recommended ("go with recommendations") · **Written:** 2026-11-10 · **Runs in:** `claude` (locus-dev)
+**State:** **done 10 Nov 2026** (49 questions: 36 pass, 13 partial, 0 fail; your call: "rerun and close H1") · approved 10 Nov 2026, all eight decisions as recommended ("go with recommendations") · **Written:** 2026-11-10 · **Runs in:** `claude` (locus-dev)
 **From:** heuris v2 (accepted 10 Nov), section I, row H1; sections C and D; ADR-011.
 **Builds on:** Slice 0.6 (the one HTTP service), 0.9 (the scrubber), 0.10 (laptop chats on the server).
 
@@ -447,3 +447,26 @@ Same method: each question in a fresh `claude -p` with only locus, keryx and kai
 **H1 now, over 49 questions: 33 pass, 13 partial, 3 fail** (was 26 / 12 / 10 over 48). Effort fell where the fixes landed: Q24 17 calls / 52 s to 4 / 21 s; Q7 194 s to 92 s; Q9 267 s to 173 s; Q10 107 s to 49 s.
 
 Found by the re-run and fixed the same evening: `context` showed a dropped future task as a project's latest activity (Q35, P1); course codes (b14) did not name library documents, and `markups` did not point at a transcription when the tablet refused (HTTP 429) (Q21). Still open: Q34 (CV figures restated unchecked), P2 (asked before writing, though writes apply by his choice), a tool for worked time over a chosen range (Q36), the applications file's notes not reachable (Brian's advice; Y1, Y7), a tablet notebook's folder not reaching its library copy (Y9: "Feedback" under jump-trading).
+
+### Re-run 2 (10 Nov, 21:40) and close
+
+Six more fixes before it: figures from a CV checked against the project's results (server instructions); kairos told to make the writes he asks for, adding nothing else; an application's `note` shown by `context` (Brian's advice); a transcribed notebook's tablet folder and project read from its own header; kairos `worked`, hours per project over any range; the tablet listing kept five minutes, the cached bundle used when the cloud refuses. Also: kairos syncs the registry in batches of eight (its four failing tests passed); a task that is not open says so in its title; evaluation sessions are never indexed.
+
+| Q | re-run 1 | re-run 2 | calls | first useful call | seconds |
+|---|---|---|---|---|---|
+| Y1 | partial | **partial** | 12 | 1 | 53 |
+| Y3 | partial | **partial** | 37 | 2 | 158 |
+| Y5 | partial | **partial** | 11 | 3 | 89 |
+| 1 | partial | **pass** | 14 | 1 | 38 |
+| 10 | partial | **partial** | 21 | 8 | 47 |
+| 21 | fail | **pass** | 9 | 1 | 90 |
+| 34 | fail | **partial** | 9 | 2 | 53 |
+| 35 | partial | **partial** | 11 | 2 | 46 |
+| P2 | fail | **partial** | 17 | 1 | 62 |
+| 36 | partial | **pass** | 4 | 1 | 25 |
+| 38 | partial | **partial** | 7 | 2 | 27 |
+| 39 | partial | **partial** | 12 | 2 | 45 |
+
+**H1 closed: 49 questions, 36 pass, 13 partial, 0 fail** (first scoring 26 / 12 / 10 over 48). The partials are answers that are right but thin: a source left uncited (10, Y3 by section not page), a stated goal not used (Y1), one more figure misread (34), a reason given from reasoning rather than a recorded decision (Y5). What they need is mostly H2: facts with dates and his stated preferences, `remember`.
+
+Carried into H2 and after: Q38's September answer skipped mail; P2's GR task still says "settle team" beside the pitch; the evening run's needs-reply tags and suggestions are not yet on Home.

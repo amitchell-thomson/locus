@@ -256,10 +256,11 @@ pub fn destinations(reg: &locus_contract::Registry, keys: &[String], pairs: &Has
     v
 }
 
-/// Item → key, from the approve list's filing groups ("file → Engineering / B15 Control
-/// Systems"): where each item's mail is being filed now.
+/// Item → key: from the approve list's filing groups ("file → Engineering / B15 Control
+/// Systems"), then from where keryx has filed each item's threads already. The list alone was
+/// not enough: once the B15 group was approved, nothing in it said where courses go (10 Nov).
 pub fn pairs(fx: &Fixtures) -> HashMap<String, String> {
-    let mut out = HashMap::new();
+    let mut out = Mirror::open().map(|m| m.item_keys()).unwrap_or_default();
     for g in &fx.approve.groups {
         let Some(l) = g.label.as_deref().and_then(|l| l.strip_prefix("file → ")) else {
             continue;
@@ -283,8 +284,8 @@ pub fn key_names() -> Vec<String> {
 /// The `c` picker over the approve list.
 #[derive(Debug, Clone)]
 pub struct Picker {
-    /// The approve item it changes: (group, item).
-    pub at: (usize, usize),
+    /// The approve items it changes: (group, item), one or a visual selection.
+    pub at: Vec<(usize, usize)>,
     pub query: String,
     pub sel: usize,
     pub dests: Vec<Dest>,
@@ -365,6 +366,31 @@ impl Mirror {
             }
         }
         out
+    }
+
+    /// Item → the key its threads are filed under in your mailboxes now (the most common), from
+    /// what keryx linked and where those threads sit: B15's mail is in Engineering.
+    pub fn item_keys(&self) -> HashMap<String, String> {
+        let mut n: HashMap<(String, String), usize> = HashMap::new();
+        for (a, t, item) in self.db.items().unwrap_or_default() {
+            let Ok(msgs) = self.db.thread(&a, &t) else { continue };
+            for k in &self.cfg.keys {
+                let Some(folder) = k.folders.get(&a) else { continue };
+                if msgs
+                    .iter()
+                    .any(|m| m.location.all().iter().any(|l| l.eq_ignore_ascii_case(folder)))
+                {
+                    *n.entry((item.clone(), k.name.clone())).or_default() += 1;
+                }
+            }
+        }
+        let mut best: HashMap<String, (String, usize)> = HashMap::new();
+        for ((item, key), c) in n {
+            if best.get(&item).is_none_or(|(_, b)| c > *b) {
+                best.insert(item, (key, c));
+            }
+        }
+        best.into_iter().map(|(i, (k, _))| (i, k)).collect()
     }
 
     pub fn search(&self, q: &str) -> Vec<keryx_store::view::ThreadRow> {
@@ -763,14 +789,14 @@ mod tests {
         );
         assert_eq!(d[0].action, Action::Archive);
         let p = Picker {
-            at: (0, 0),
+            at: vec![],
             query: course.id.clone(),
             sel: 0,
             dests: d.clone(),
         };
         assert!(p.matches().iter().any(|x| x.label == course.name));
         let p = Picker {
-            at: (0, 0),
+            at: vec![],
             query: "nothing like this".into(),
             sel: 0,
             dests: d,

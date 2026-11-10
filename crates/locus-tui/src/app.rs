@@ -109,6 +109,8 @@ pub struct App {
     pub mail_queue: Option<crate::mail::Queue>,
     /// `c` on Approve: where else the selected filing could go.
     pub approve_pick: Option<crate::mail::Picker>,
+    /// `v` on Approve: where the visual selection started (it runs to the cursor).
+    pub approve_visual: Option<usize>,
     /// The project Home asked the Project window to show, until Esc.
     pub peek: Option<String>,
     /// For a section that draws only some of its items, the ones drawn, in order: the arrows
@@ -182,6 +184,7 @@ impl App {
             mail: None,
             mail_queue: None,
             approve_pick: None,
+            approve_visual: None,
             peek: None,
             shown: RefCell::new(HashMap::new()),
             lane_open: false,
@@ -621,6 +624,36 @@ mod tests {
 
     fn press(app: &mut App, code: KeyCode) {
         app.on_key(KeyEvent::new(code, KeyModifiers::NONE));
+    }
+
+    /// v on Approve, then moving, marks a run of lines; y acts on every one of them, and the
+    /// selection ends (10 Nov).
+    #[test]
+    fn visual_mode_on_approve_acts_on_every_selected_line() {
+        let mut a = app();
+        a.open(ScreenId::Approve);
+        press(&mut a, KeyCode::Char('j'));
+        press(&mut a, KeyCode::Char('v'));
+        press(&mut a, KeyCode::Char('j'));
+        press(&mut a, KeyCode::Char('j'));
+        assert_eq!(a.approve_visual, Some(1));
+        press(&mut a, KeyCode::Char('y'));
+        assert_eq!(a.approve_visual, None);
+        let approved: Vec<&String> = a
+            .marks
+            .iter()
+            .filter(|(_, m)| **m == Mark::Approved)
+            .map(|(k, _)| k)
+            .collect();
+        assert_eq!(approved.len(), 3, "{approved:?}");
+        assert!(
+            a.marks.get("approve:0:0").is_none(),
+            "the line before the selection is untouched"
+        );
+        // Esc leaves visual mode without leaving the screen.
+        press(&mut a, KeyCode::Char('v'));
+        press(&mut a, KeyCode::Esc);
+        assert_eq!((a.approve_visual, a.screen()), (None, ScreenId::Approve));
     }
 
     #[test]

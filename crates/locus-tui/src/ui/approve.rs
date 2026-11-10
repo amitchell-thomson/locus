@@ -23,6 +23,10 @@ pub const KEYS: &[(&str, &str)] = &[
     ("Y", "approve the whole group"),
     ("c", "a filing: put it somewhere else (type to find the place)"),
     ("a", "a filing: archive it instead"),
+    (
+        "v",
+        "visual: select lines by moving, then y n a c act on all of them (esc ends it)",
+    ),
     ("⏎", "the item whole (an ink item: where does it point?)"),
     ("PgUp PgDn", "a page at a time; Home End the ends"),
     (
@@ -161,6 +165,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         (body, None)
     };
     let sel = app.sel(' ').min(total.saturating_sub(1));
+    let visual = app.approve_visual.map(|v| (v.min(sel), v.max(sel)));
     let w = usize::from(list_r.width);
 
     let who_w = (w / 5).clamp(10, 22);
@@ -227,7 +232,13 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
                 Some(Mark::Rejected) => vec![Span::styled("refused ", st("red"))],
                 _ => vec![],
             };
-            out.push(row(left, right, list_r.width));
+            let line = row(left, right, list_r.width);
+            out.push(if visual.is_some_and(|(lo, hi)| (lo..=hi).contains(&n)) {
+                // The theme's purple, faded (10 Nov: "and in the themes purple").
+                line.patch_style(Style::default().bg(locus_theme::fade(c("mauve"), 0.6)))
+            } else {
+                line
+            });
             n += 1;
         }
     }
@@ -255,10 +266,10 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
             draw_detail(f, r, group, it, 0, true);
         }
     }
-    let pos = if total > 0 {
-        format!("{}/{total}  ", sel + 1)
-    } else {
-        String::new()
+    let pos = match visual {
+        Some((lo, hi)) => format!("VISUAL · {} selected  ", hi - lo + 1),
+        None if total > 0 => format!("{}/{total}  ", sel + 1),
+        None => String::new(),
     };
     let mut foot_line = hints(&[
         ("y n", "one"),
@@ -371,10 +382,18 @@ fn picker_key(app: &mut App, k: KeyEvent) {
         }
         KeyCode::Enter => {
             let chosen = p.matches().get(p.sel).map(|d| (d.action.clone(), d.label.clone()));
-            let at = p.at;
+            let mut at = p.at.clone();
             app.approve_pick = None;
             if let Some((action, label)) = chosen {
-                change_item(app, at, action, &label);
+                // Last first, so removing one leaves the others' places as they were.
+                at.sort_unstable_by(|a, b| b.cmp(a));
+                let n = at.len();
+                for t in at {
+                    change_item(app, t, action.clone(), &label);
+                }
+                if n > 1 {
+                    app.note = Some(format!("→ {label}: {n} on their way to keryx"));
+                }
             }
         }
         _ => {}
@@ -701,6 +720,70 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 return true;
             }
             let rows = approve_rows(app);
+            // Visual mode (10 Nov: "press v to do visual mode to select multiple lines and do
+            // that action over those lines"): v marks where it starts, moving extends it, and
+            // y n a c act on every line in it.
+            match (k.code, app.approve_visual) {
+                (KeyCode::Char('v'), v) => {
+                    app.approve_visual = if v.is_some() { None } else { Some(app.sel(' ')) };
+                    return true;
+                }
+                (KeyCode::Esc, Some(_)) => {
+                    app.approve_visual = None;
+                    return true;
+                }
+                (KeyCode::Char(c @ ('y' | 'n' | 'a')), Some(start)) => {
+                    let (lo, hi) = (start.min(app.sel(' ')), start.max(app.sel(' ')));
+                    app.approve_visual = None;
+                    for idx in (lo..=hi.min(rows.len().saturating_sub(1))).rev() {
+                        app.sel.insert((ScreenId::Approve, ' '), idx);
+                        key(app, k);
+                    }
+                    let n = hi - lo + 1;
+                    let left = app.fixtures.approve.len();
+                    app.sel.insert((ScreenId::Approve, ' '), lo.min(left.saturating_sub(1)));
+                    app.note = Some(match c {
+                        'y' => format!("approved {n}: on their way to keryx"),
+                        'n' => format!("refused {n}: left as they are"),
+                        _ => format!("archiving {n} instead: on their way to keryx"),
+                    });
+                    return true;
+                }
+                (KeyCode::Char('c'), Some(start)) => {
+                    let (lo, hi) = (start.min(app.sel(' ')), start.max(app.sel(' ')));
+                    let at: Vec<(usize, usize)> = (lo..=hi)
+                        .filter_map(|i| selected(app, i))
+                        .filter(|&(g, i)| {
+                            matches!(
+                                app.fixtures.approve.groups[g].items[i].mail,
+                                Some(locus_contract::MailDecision::Proposal(_))
+                            )
+                        })
+                        .collect();
+                    app.approve_visual = None;
+                    if at.is_empty() {
+                        app.note = Some("none of those is a mail filing".into());
+                        return true;
+                    }
+                    let dests = crate::mail::destinations(
+                        &app.fixtures.registry,
+                        &crate::mail::key_names(),
+                        &crate::mail::pairs(&app.fixtures),
+                    );
+                    app.approve_pick = Some(crate::mail::Picker {
+                        at,
+                        query: String::new(),
+                        sel: 0,
+                        dests,
+                    });
+                    return true;
+                }
+                (KeyCode::Char('Y'), Some(_)) => {
+                    app.note = Some("in visual mode y approves the selection; esc leaves it".into());
+                    return true;
+                }
+                _ => {}
+            }
             if let Some(d) = nav(&k) {
                 app.move_sel(' ', rows.len(), d);
                 return true;
@@ -723,7 +806,7 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                         &crate::mail::pairs(&app.fixtures),
                     );
                     app.approve_pick = Some(crate::mail::Picker {
-                        at,
+                        at: vec![at],
                         query: String::new(),
                         sel: 0,
                         dests,

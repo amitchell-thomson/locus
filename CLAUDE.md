@@ -42,7 +42,7 @@ rest is being removed or restructured:
 | §2.6–§2.9, §10 the daily page | **Removed in Slice 0** (daily page, its readback and nightly steps). |
 | §8 link layer | Nightly word-matching links **retired**; replaced by the linking job (ideas, decisions, concepts), Slice 5. |
 | §9 agent layer | Ink capture and readback **kept**. Recall, the contradiction tracker, `critique`/`synthesise` **removed**; discovery becomes the scout; margin answers become Answered. |
-| The MCP server (one process per chat over SSH; see §12, §13) | Replaced by **one HTTP service** on the server, Slice 0. The repo's `.mcp.json` points at a server-only path, which is why locus tools fail on the laptop. |
+| The MCP server (one process per chat over SSH; see §12, §13) | Replaced by **one HTTP service** on the server (Slice 0.6, 10 Nov): `locus serve`, unit `locus-http.service`, `http://compute-node:7422/mcp` behind a bearer token (`~/.config/locus/http.env` on the server, Keychain `locus-http-token` on the laptop), registered at user level on both machines. The repo's stdio `.mcp.json` is gone. |
 
 Where a section below conflicts with the plan, the plan wins; say so when you notice it.
 

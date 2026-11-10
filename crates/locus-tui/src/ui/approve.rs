@@ -21,6 +21,8 @@ use unicode_width::UnicodeWidthStr;
 pub const KEYS: &[(&str, &str)] = &[
     ("y n", "approve or refuse; the next one comes up"),
     ("Y", "approve the whole group"),
+    ("c", "a filing: put it somewhere else (type to find the place)"),
+    ("a", "a filing: archive it instead"),
     ("⏎", "the item whole (an ink item: where does it point?)"),
     ("PgUp PgDn", "a page at a time; Home End the ends"),
     (
@@ -28,7 +30,11 @@ pub const KEYS: &[(&str, &str)] = &[
         "a date from mail: which application it is for, when the mail did not say",
     ),
 ];
-pub const ITEM_KEYS: &[(&str, &str)] = &[("y n", "approve or refuse, then the next"), ("↑ ↓", "scroll")];
+pub const ITEM_KEYS: &[(&str, &str)] = &[
+    ("y n", "approve or refuse, then the next"),
+    ("c a", "somewhere else, or archive instead"),
+    ("↑ ↓", "scroll"),
+];
 pub const LOG_KEYS: &[(&str, &str)] = &[("u", "undo")];
 pub const INK_KEYS: &[(&str, &str)] = &[("1 2 3", "it points here"), ("0", "a general note: none of these")];
 
@@ -254,9 +260,125 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     } else {
         String::new()
     };
-    let mut foot_line = hints(&[("y n", "one"), ("Y", "the group"), ("⏎", "open"), ("l", "log")]);
+    let mut foot_line = hints(&[
+        ("y n", "one"),
+        ("Y", "the group"),
+        ("c", "change"),
+        ("a", "archive"),
+        ("⏎", "open"),
+    ]);
     foot_line.spans.insert(0, Span::styled(pos, dim()));
     lines(f, foot, vec![foot_line.right_aligned()]);
+    if let Some(p) = &app.approve_pick {
+        draw_picker(f, body, p);
+    }
+}
+
+/// `c`: where the filing goes instead. Type to narrow (every word must appear), ↑ ↓ to choose,
+/// ⏎ to approve it there.
+fn draw_picker(f: &mut Frame, over: Rect, p: &crate::mail::Picker) {
+    let w = over.width.saturating_sub(8).min(84);
+    let h = over.height.saturating_sub(4).min(22);
+    let area = Rect {
+        x: over.x + (over.width - w) / 2,
+        y: over.y + (over.height - h) / 2,
+        width: w,
+        height: h,
+    };
+    f.render_widget(ratatui::widgets::Clear, area);
+    let inner = frame(f, area, title("file it where?", "type to find"), None);
+    let iw = usize::from(inner.width);
+    let mut out = vec![
+        Line::from(vec![
+            Span::styled(" › ", keyst()),
+            Span::styled(p.query.clone(), bold(text())),
+            Span::styled("▏", keyst()),
+        ]),
+        Line::from(Span::styled("─".repeat(iw), st("surface1"))),
+    ];
+    let m = p.matches();
+    let room = usize::from(inner.height).saturating_sub(out.len() + 1);
+    let first = p.sel.saturating_sub(room.saturating_sub(1));
+    for (i, d) in m.iter().enumerate().skip(first).take(room) {
+        let label_w = iw.saturating_sub(4).min(44);
+        let l = crate::ui::truncate(&d.label, label_w);
+        let pad = label_w.saturating_sub(l.width());
+        let left = vec![
+            pointer(i, Some(p.sel)),
+            Span::styled(format!("{l}{} ", " ".repeat(pad)), text()),
+            Span::styled(d.hint.clone(), dim()),
+        ];
+        out.push(row(left, vec![], inner.width));
+    }
+    if m.is_empty() {
+        out.push(Line::from(Span::styled("  nothing matches", dim())));
+    }
+    let foot = Rect {
+        y: inner.y + inner.height.saturating_sub(1),
+        height: 1,
+        ..inner
+    };
+    lines(f, inner, out);
+    lines(
+        f,
+        foot,
+        vec![hints(&[("⏎", "file it there"), ("↑ ↓", "choose"), ("esc", "never mind")]).right_aligned()],
+    );
+}
+
+/// Approve the item at `at` as changed to `action` (`c` and `a`): queued like `y`.
+fn change_item(app: &mut App, at: (usize, usize), action: keryx_store::state::Action, label: &str) {
+    let (g, i) = at;
+    let Some(it) = app.fixtures.approve.groups.get(g).and_then(|x| x.items.get(i)).cloned() else {
+        return;
+    };
+    let Some(locus_contract::MailDecision::Proposal(id)) = it.mail.clone() else {
+        app.note = Some("only a mail filing can be put somewhere else here".into());
+        return;
+    };
+    let sent = match (&app.mail_queue, app.mail.clone()) {
+        (Some(q), _) => {
+            q.push_change(id, action, it.text.clone());
+            Ok(format!("→ {label}: on its way ({} with keryx)", q.waiting()))
+        }
+        (None, Some(live)) => live.change(&id, &action).map(|_| format!("→ {label}: done")),
+        (None, None) => Ok(format!("would file it: {label}")),
+    };
+    match sent {
+        Ok(msg) => {
+            app.fixtures.approve.groups[g].items.remove(i);
+            app.fixtures.approve.groups.retain(|x| !x.items.is_empty());
+            app.note = Some(msg);
+        }
+        Err(e) => app.note = Some(format!("keryx said no: {e}")),
+    }
+}
+
+/// The picker's keys, while it is open: everything goes to it.
+fn picker_key(app: &mut App, k: KeyEvent) {
+    let Some(p) = app.approve_pick.as_mut() else { return };
+    match k.code {
+        KeyCode::Esc => app.approve_pick = None,
+        KeyCode::Up => p.sel = p.sel.saturating_sub(1),
+        KeyCode::Down => p.sel = (p.sel + 1).min(p.matches().len().saturating_sub(1)),
+        KeyCode::Backspace => {
+            p.query.pop();
+            p.sel = 0;
+        }
+        KeyCode::Char(c) => {
+            p.query.push(c);
+            p.sel = 0;
+        }
+        KeyCode::Enter => {
+            let chosen = p.matches().get(p.sel).map(|d| (d.action.clone(), d.label.clone()));
+            let at = p.at;
+            app.approve_pick = None;
+            if let Some((action, label)) = chosen {
+                change_item(app, at, action, &label);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// One item laid out for reviewing: the action, whom and what, when and where, why, then the
@@ -373,6 +495,8 @@ pub fn draw_item(f: &mut Frame, area: Rect, app: &App) {
             hints(&[
                 ("y", "approve"),
                 ("n", "refuse"),
+                ("c", "change"),
+                ("a", "archive"),
                 ("↑ ↓", "scroll"),
                 ("esc", "the list"),
             ])
@@ -553,8 +677,13 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
             match k.code {
                 KeyCode::PageDown => app.move_sel(' ', 10_000, 15),
                 KeyCode::PageUp => app.move_sel(' ', 10_000, -15),
+                // Somewhere else: the picker opens over the list.
+                KeyCode::Char('c') => {
+                    app.close_top();
+                    key(app, k);
+                }
                 // Decide it as the list would, then show the next one.
-                KeyCode::Char('y' | 'n' | 'Y') => {
+                KeyCode::Char('y' | 'n' | 'Y' | 'a') => {
                     app.close_top();
                     key(app, k);
                     if !app.fixtures.approve.is_empty() {
@@ -567,12 +696,41 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
             true
         }
         ScreenId::Approve => {
+            if app.approve_pick.is_some() {
+                picker_key(app, k);
+                return true;
+            }
             let rows = approve_rows(app);
             if let Some(d) = nav(&k) {
                 app.move_sel(' ', rows.len(), d);
                 return true;
             }
             let page = isize::try_from(app.approve_page()).unwrap_or(10);
+            if let KeyCode::Char(c @ ('c' | 'a')) = k.code
+                && let Some(at) = selected(app, app.sel(' '))
+            {
+                let it = app.fixtures.approve.groups[at.0].items[at.1].clone();
+                if !matches!(it.mail, Some(locus_contract::MailDecision::Proposal(_))) {
+                    app.note = Some("only a mail filing can be put somewhere else here".into());
+                    return true;
+                }
+                if c == 'a' {
+                    change_item(app, at, keryx_store::state::Action::Archive, "archive");
+                } else {
+                    let dests = crate::mail::destinations(
+                        &app.fixtures.registry,
+                        &crate::mail::key_names(),
+                        &crate::mail::pairs(&app.fixtures),
+                    );
+                    app.approve_pick = Some(crate::mail::Picker {
+                        at,
+                        query: String::new(),
+                        sel: 0,
+                        dests,
+                    });
+                }
+                return true;
+            }
             match k.code {
                 KeyCode::PageDown => {
                     app.move_sel(' ', rows.len(), page);

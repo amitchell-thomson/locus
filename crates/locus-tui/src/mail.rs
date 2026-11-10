@@ -48,6 +48,14 @@ impl Live {
             .collect()
     }
 
+    /// Approve a proposal as you changed it: somewhere else, or archived instead.
+    pub fn change(&self, proposal: &str, action: &Action) -> Result<String, String> {
+        self.client
+            .decide(proposal, &Decision::Change(action.clone()))
+            .map(|_| "done".to_string())
+            .map_err(|e| e.to_string())
+    }
+
     /// Yes or no on a mail item.
     pub fn decide(&self, d: &MailDecision, yes: bool) -> Result<String, String> {
         match d {
@@ -81,8 +89,15 @@ impl Live {
 /// out through Mail, which takes a second or more; the item leaves the list when you press, and
 /// a refusal comes back as a note. What was sent is remembered for the session, so the minute's
 /// refresh cannot bring back an item keryxd has not reached yet.
+/// One decision on its way to keryxd.
+enum Job {
+    Decide(MailDecision, bool),
+    /// A proposal approved as you changed it.
+    Change(String, Action),
+}
+
 pub struct Queue {
-    tx: std::sync::mpsc::Sender<(MailDecision, bool, String)>,
+    tx: std::sync::mpsc::Sender<(Job, String)>,
     sent: std::sync::Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
     state: std::sync::Arc<std::sync::Mutex<QueueState>>,
 }
@@ -103,12 +118,15 @@ fn decision_id(d: &MailDecision) -> &str {
 
 impl Queue {
     pub fn start(live: std::sync::Arc<Live>) -> Queue {
-        let (tx, rx) = std::sync::mpsc::channel::<(MailDecision, bool, String)>();
+        let (tx, rx) = std::sync::mpsc::channel::<(Job, String)>();
         let state = std::sync::Arc::new(std::sync::Mutex::new(QueueState::default()));
         let st = state.clone();
         std::thread::spawn(move || {
-            for (d, yes, what) in rx {
-                let r = live.decide(&d, yes);
+            for (job, what) in rx {
+                let r = match &job {
+                    Job::Decide(d, yes) => live.decide(d, *yes),
+                    Job::Change(id, a) => live.change(id, a),
+                };
                 let Ok(mut s) = st.lock() else { return };
                 s.waiting = s.waiting.saturating_sub(1);
                 match r {
@@ -133,7 +151,18 @@ impl Queue {
         if let Ok(mut s) = self.state.lock() {
             s.waiting += 1;
         }
-        self.tx.send((d, yes, what)).is_ok()
+        self.tx.send((Job::Decide(d, yes), what)).is_ok()
+    }
+
+    /// Send a proposal approved as you changed it.
+    pub fn push_change(&self, proposal: String, action: Action, what: String) -> bool {
+        if let Ok(mut s) = self.sent.lock() {
+            s.insert(proposal.clone());
+        }
+        if let Ok(mut s) = self.state.lock() {
+            s.waiting += 1;
+        }
+        self.tx.send((Job::Change(proposal, action), what)).is_ok()
     }
 
     /// Whether this proposal or draft was already decided here.
@@ -160,6 +189,118 @@ impl Queue {
         } else {
             format!("keryx has done {} · {} to go", s.done, s.waiting)
         })
+    }
+}
+
+/// Somewhere a proposal can go instead (`c` on Approve).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Dest {
+    /// What is shown and typed against: `B15 Control Systems`, `Admin`, `archive`.
+    pub label: String,
+    /// Beside it, quieter: the folder it lands in.
+    pub hint: String,
+    pub action: Action,
+}
+
+/// Every place a filing can go: archive, each registry item, then your keys.
+///
+/// Which folder an item lands in is learnt from the list itself (`pairs`: item → the key its
+/// filings carry now): B15 is filed under Engineering, so B15 goes there; a course with none
+/// yet goes where most courses go; an application under its area (Careers); else its area.
+/// Picking B15 from an Admin filing must not file it under Admin (10 Nov).
+pub fn destinations(reg: &locus_contract::Registry, keys: &[String], pairs: &HashMap<String, String>) -> Vec<Dest> {
+    let by_kind = |k: locus_contract::ProjectKind| -> Option<String> {
+        let mut n: HashMap<&str, usize> = HashMap::new();
+        for (item, key) in pairs {
+            if reg.get(item).is_some_and(|p| p.kind == k) {
+                *n.entry(key.as_str()).or_default() += 1;
+            }
+        }
+        n.into_iter().max_by_key(|(_, c)| *c).map(|(k, _)| k.to_string())
+    };
+    let mut v = vec![Dest {
+        label: "archive".into(),
+        hint: "out of the inbox, nowhere in particular".into(),
+        action: Action::Archive,
+    }];
+    let mut items: Vec<&locus_contract::Project> = reg.projects.iter().collect();
+    items.sort_by_key(|p| (!p.active, p.area.clone(), p.name.clone()));
+    for p in items {
+        let key = match p.kind {
+            locus_contract::ProjectKind::Application => p.area.clone(),
+            k => pairs
+                .get(&p.id)
+                .cloned()
+                .or_else(|| by_kind(k))
+                .unwrap_or_else(|| p.area.clone()),
+        };
+        v.push(Dest {
+            label: p.name.clone(),
+            hint: format!("{key} · {}", p.id),
+            action: Action::File {
+                key,
+                item: Some(p.id.clone()),
+            },
+        });
+    }
+    for k in keys {
+        v.push(Dest {
+            label: k.clone(),
+            hint: "a folder".into(),
+            action: Action::File {
+                key: k.clone(),
+                item: None,
+            },
+        });
+    }
+    v
+}
+
+/// Item → key, from the approve list's filing groups ("file → Engineering / B15 Control
+/// Systems"): where each item's mail is being filed now.
+pub fn pairs(fx: &Fixtures) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    for g in &fx.approve.groups {
+        let Some(l) = g.label.as_deref().and_then(|l| l.strip_prefix("file → ")) else {
+            continue;
+        };
+        if let Some((key, name)) = l.split_once(" / ")
+            && let Some(p) = fx.registry.projects.iter().find(|p| p.name == name)
+        {
+            out.insert(p.id.clone(), key.to_string());
+        }
+    }
+    out
+}
+
+/// Your keryx keys by name (Admin, Engineering, …), from keryx's config.
+pub fn key_names() -> Vec<String> {
+    Config::load(&Config::default_path())
+        .map(|c| c.keys.iter().map(|k| k.name.clone()).collect())
+        .unwrap_or_default()
+}
+
+/// The `c` picker over the approve list.
+#[derive(Debug, Clone)]
+pub struct Picker {
+    /// The approve item it changes: (group, item).
+    pub at: (usize, usize),
+    pub query: String,
+    pub sel: usize,
+    pub dests: Vec<Dest>,
+}
+
+impl Picker {
+    /// The destinations matching what is typed: every word somewhere in the label or the hint.
+    pub fn matches(&self) -> Vec<&Dest> {
+        let words: Vec<String> = self.query.split_whitespace().map(|w| w.to_lowercase()).collect();
+        self.dests
+            .iter()
+            .filter(|d| {
+                let hay = format!("{} {}", d.label, d.hint).to_lowercase();
+                words.iter().all(|w| hay.contains(w))
+            })
+            .collect()
     }
 }
 
@@ -567,6 +708,74 @@ mod tests {
         assert_eq!(mail[0].items[0].detail.as_ref().unwrap().action, "FILE → Admin");
         apply(&mut fx, &[], &HashMap::new());
         assert!(fx.approve.groups.iter().all(|g| g.kind != ApproveKind::MailFiling));
+    }
+
+    /// `c`: a course goes where courses are being filed (Engineering), not under the key the
+    /// proposal happened to have; an application under Careers; typing narrows by every word.
+    #[test]
+    fn the_picker_files_an_item_where_its_kind_goes() {
+        let fx = Fixtures::load(&resolve("default")).unwrap();
+        let reg = &fx.registry;
+        let course = reg
+            .projects
+            .iter()
+            .find(|p| p.kind == locus_contract::ProjectKind::Course)
+            .unwrap();
+        let other = reg
+            .projects
+            .iter()
+            .find(|p| p.kind == locus_contract::ProjectKind::Course && p.id != course.id)
+            .unwrap();
+        let app = reg
+            .projects
+            .iter()
+            .find(|p| p.kind == locus_contract::ProjectKind::Application)
+            .unwrap();
+        let pairs: HashMap<String, String> = [(course.id.clone(), "Engineering".to_string())].into();
+        let d = destinations(reg, &["Admin".into(), "Engineering".into()], &pairs);
+        let to = |id: &str| {
+            d.iter()
+                .find(|x| matches!(&x.action, Action::File { item: Some(i), .. } if i == id))
+                .map(|x| x.action.clone())
+                .unwrap()
+        };
+        assert_eq!(
+            to(&course.id),
+            Action::File {
+                key: "Engineering".into(),
+                item: Some(course.id.clone())
+            }
+        );
+        assert_eq!(
+            to(&other.id),
+            Action::File {
+                key: "Engineering".into(),
+                item: Some(other.id.clone())
+            },
+            "by kind"
+        );
+        assert_eq!(
+            to(&app.id),
+            Action::File {
+                key: app.area.clone(),
+                item: Some(app.id.clone())
+            }
+        );
+        assert_eq!(d[0].action, Action::Archive);
+        let p = Picker {
+            at: (0, 0),
+            query: course.id.clone(),
+            sel: 0,
+            dests: d.clone(),
+        };
+        assert!(p.matches().iter().any(|x| x.label == course.name));
+        let p = Picker {
+            at: (0, 0),
+            query: "nothing like this".into(),
+            sel: 0,
+            dests: d,
+        };
+        assert!(p.matches().is_empty());
     }
 
     #[test]

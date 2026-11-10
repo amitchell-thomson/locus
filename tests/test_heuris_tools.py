@@ -107,3 +107,13 @@ def test_context_lists_the_week_and_what_needs_a_reply(conn):
     assert "B15 lecture" in out and "quast paper plan" in out and "Squash" in out
     focused = ht.context(conn, "quast", today=date(2026, 11, 10))
     assert "barrier sweep" in focused and "Coming up" in focused
+
+
+def test_a_filter_the_library_cannot_apply_keeps_the_library_out(conn, monkeypatch):
+    called = []
+    monkeypatch.setattr(ht, "library_candidates", lambda *a, **k: called.append(k) or [])
+    ht.search(conn, "christmas", area="Family", embed=fake_embed)
+    ht.search(conn, "christmas", thing="quast", embed=fake_embed)
+    assert called == []
+    ht.search(conn, "lecture", area="Studies", embed=fake_embed)
+    assert called and called[0]["area"] == "Studies"

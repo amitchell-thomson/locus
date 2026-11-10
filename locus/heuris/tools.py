@@ -311,7 +311,10 @@ def search(conn: sqlite3.Connection, query: str, *, kind: str | None = None, are
     if kind not in LIBRARY_KINDS:
         hits += heuris_candidates(conn, query, qvec, kind=kind, area=area, thing=thing, since=since,
                                   until=until, people_ids=people_ids)
-    if library and (kind is None or kind in LIBRARY_KINDS) and not thing and not person:
+    # The library has no thing, person or most areas: a filter it cannot apply excludes it, rather
+    # than letting unfiltered papers into a filtered answer (area=Family returned papers, 10 Nov).
+    lib_ok = not thing and not person and (area is None or area in AREA_CATEGORY)
+    if library and (kind is None or kind in LIBRARY_KINDS) and lib_ok:
         try:
             hits += library_candidates(query, kind=kind, area=area, since=since, until=until)
         except Exception as exc:  # the library being down must not take mail search with it

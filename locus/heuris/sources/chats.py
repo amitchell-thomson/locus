@@ -154,11 +154,19 @@ def session_items(path: Path, machine: str) -> list[Item]:
 HELD_OUT_SESSIONS = {"81c0a62a-3b15-4f89-ae5c-80227ae38eab", "e42b4acc-43ff-433a-a9d9-db66a6ba6722"}  # this build session, both its ids
 
 
+# Evaluation runs are Claude sessions too (`claude -p` from data/evals/<run>/work): indexed, a
+# later run read an earlier run's answers as if they were his chats (H1 re-run 2, 10 Nov). Never
+# indexed, by their working directory.
+EVAL_DIR_MARK = "-data-evals-"
+
+
 def purge_held_out(conn: sqlite3.Connection) -> int:
     from locus.heuris.index import _delete_item
 
     ids = [r[0] for sid in HELD_OUT_SESSIONS for r in conn.execute(
         "SELECT id FROM items WHERE source=? AND parent LIKE ?", (SOURCE, f"chat:%/{sid}")).fetchall()]
+    ids += [r[0] for r in conn.execute(
+        "SELECT id FROM items WHERE source=? AND json_extract(meta,'$.cwd') LIKE '%/data/evals/%'", (SOURCE,)).fetchall()]
     with conn:
         for i in ids:
             _delete_item(conn, i)
@@ -172,7 +180,7 @@ def changed_files(conn: sqlite3.Connection, locus_dir: Path) -> list[tuple[str, 
         if not root.exists():
             continue
         for proj in sorted(root.iterdir()):
-            if not proj.is_dir() or proj.name.endswith("-tmp") or "-tmp-" in proj.name:
+            if not proj.is_dir() or proj.name.endswith("-tmp") or "-tmp-" in proj.name or EVAL_DIR_MARK in proj.name:
                 continue
             for f in sorted(proj.glob("*.jsonl")):
                 if f.stem in HELD_OUT_SESSIONS:

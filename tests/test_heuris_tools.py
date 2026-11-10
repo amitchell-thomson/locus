@@ -117,3 +117,10 @@ def test_a_filter_the_library_cannot_apply_keeps_the_library_out(conn, monkeypat
     assert called == []
     ht.search(conn, "lecture", area="Studies", embed=fake_embed)
     assert called and called[0]["area"] == "Studies"
+
+
+def test_a_firm_is_its_applications_and_its_mail_not_a_person(conn):
+    index(conn, "mail", [mail("mail:personal/9/91", 2, "Scadding, Sarah", "sarah.scadding@brevanhoward.com",
+                              "Confidential - BH Summer 2027", "Here is the offer email.")], embed=fake_embed)
+    out = ht.timeline(conn, "Brevan Howard")
+    assert "Confidential - BH Summer 2027" in out and "applications bh-2027" in out

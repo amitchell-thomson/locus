@@ -302,6 +302,8 @@ def search(conn: sqlite3.Connection, query: str, *, kind: str | None = None, are
         people_ids, ask = resolve_person(conn, person)
         if ask:
             return ask
+        if not people_ids and (firm := company(conn, person)):
+            people_ids = firm[1]
         if not people_ids:
             return f"No one called {person!r} appears in mail or the calendar."
     if embed is None:
@@ -417,13 +419,45 @@ def _open_source(ref: str) -> str:
 # timeline
 
 
+# A firm's mail domain where it is not its name squashed (Millennium writes from mlp.com).
+FIRM_DOMAINS = {"millennium": ["mlp.com"], "jump trading": ["jumptrading"], "g-research": ["gresearch"],
+                "brevan howard": ["brevanhoward"], "jane street": ["janestreet"], "citadel": ["citadel"]}
+
+
+def company(conn: sqlite3.Connection, about: str) -> tuple[list[str], list[str]] | None:
+    """A firm named in the registry: (its application ids, the addresses mail came from there).
+
+    "When did I last hear from Brevan Howard" is about a firm, not a person called that; read as
+    a name it found two HackerRank emails (10 Nov, the first fresh-chat check).
+    """
+    a = about.strip().lower()
+    apps = [i for i, e in registry.entries().items() if (e.get("company") or "").lower() == a]
+    if not apps:
+        return None
+    frags = FIRM_DOMAINS.get(a, [re.sub(r"[^a-z0-9]", "", a)])
+    addrs = [r[0] for r in conn.execute(
+        "SELECT DISTINCT person FROM item_people WHERE role IN ('from','to','cc') AND ("
+        + " OR ".join("person LIKE ?" for _ in frags) + ")", [f"%@%{f}%" for f in frags])]
+    return apps, addrs
+
+
 def timeline(conn: sqlite3.Connection, about: str, *, since: str | None = None, until: str | None = None,
              kind: str | None = None, limit: int = 80) -> str:
-    """Everything about a registry thing or a person, oldest first, one line each."""
+    """Everything about a registry thing, a firm, or a person, oldest first, one line each."""
     env = Envelope()
+    firm = company(conn, about) if about not in registry.entries() else None
     if about in registry.entries():
         where, params = _filters(kind, None, about, since, until, None)
         label = registry.entries()[about].get("name", about)
+    elif firm:
+        apps, addrs = firm
+        base, params = _filters(kind, None, None, since, until, None)
+        alt = [f"i.thing IN ({','.join('?' * len(apps))})"]
+        if addrs:
+            alt.append(f"i.id IN (SELECT item_id FROM item_people WHERE person IN ({','.join('?' * len(addrs))}))")
+        where = f"{base} AND ({' OR '.join(alt)})"
+        params = [*params, *apps, *addrs]
+        label = f"{about} (applications {', '.join(apps)}; mail from {len(addrs)} addresses)"
     else:
         ids, ask = resolve_person(conn, about)
         if ask:

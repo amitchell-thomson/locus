@@ -345,11 +345,41 @@ def _item_row(conn, ref: str):
     return conn.execute("SELECT ref, kind, at, title, text, thing, parent, meta FROM items WHERE ref=?", (ref,)).fetchone()
 
 
-def open_ref(conn: sqlite3.Connection, ref: str, *, around: int = 3) -> str:
+# A page of `open` (H1 fix 2, 10 Nov): the Millennium offer letter came back whole, 55 KB, the
+# client spilled it to a file it could not read, and four answers fell back on a handwritten
+# note with the wrong dates. Long things come back in pages, each saying how to get the next.
+PAGE_CHARS = 24_000
+
+
+def _pages(text: str) -> list[str]:
+    """`text` cut into pages of at most PAGE_CHARS, on a paragraph break where there is one."""
+    out = []
+    while len(text) > PAGE_CHARS:
+        cut = text.rfind("\n\n", PAGE_CHARS // 2, PAGE_CHARS)
+        if cut < 0:
+            cut = text.rfind("\n", PAGE_CHARS // 2, PAGE_CHARS)
+        if cut < 0:
+            cut = PAGE_CHARS
+        out.append(text[:cut])
+        text = text[cut:].lstrip("\n")
+    out.append(text)
+    return out
+
+
+def _more(ref: str, page: int, n: int) -> str:
+    if n <= 1:
+        return ""
+    if page < n:
+        return f"\n\n[page {page} of {n}: open(\"{ref}\", page={page + 1}) for the rest]"
+    return f"\n\n[page {page} of {n}, the last]"
+
+
+def open_ref(conn: sqlite3.Connection, ref: str, *, around: int = 3, page: int = 1) -> str:
     env = Envelope()
     ref = ref.strip()
+    page = max(1, page)
     if ref.startswith("src:"):
-        return _open_source(ref)
+        return _open_source(ref, page)
     if ref.startswith("mail:"):
         parts = ref[5:].split("/")
         parent = f"mail:{parts[0]}/{parts[1]}" if len(parts) >= 2 else ref
@@ -360,8 +390,19 @@ def open_ref(conn: sqlite3.Connection, ref: str, *, around: int = 3) -> str:
         readable = {}
         for aref, ameta in conn.execute("SELECT ref, meta FROM items WHERE parent=? AND kind='attachment'", (parent,)):
             readable.setdefault(json.loads(ameta).get("message"), []).append(aref)
-        out = [f"Mail thread {parent}, {len(rows)} messages kept, oldest first (quoted text and signatures removed):"]
+        # Paged by whole messages, so no page cuts an envelope in two.
+        groups: list[list] = [[]]
+        size = 0
         for r in rows:
+            n = len(r[3] or "") + 200
+            if groups[-1] and size + n > PAGE_CHARS:
+                groups.append([])
+                size = 0
+            groups[-1].append(r)
+            size += n
+        p = min(page, len(groups))
+        out = [f"Mail thread {parent}, {len(rows)} messages kept, oldest first (quoted text and signatures removed):"]
+        for r in groups[p - 1]:
             m = json.loads(r[4])
             att = f" · attachments: {', '.join(a for a in m.get('attachments') or [] if a)}" if m.get("attachments") else ""
             mark = "  ← the one you opened" if r[0] == ref else ""
@@ -369,7 +410,7 @@ def open_ref(conn: sqlite3.Connection, ref: str, *, around: int = 3) -> str:
                 att += f" (read them: open {', '.join(readable[r[0]])})"
             out.append(f"\n--- {r[1][:16]} · {m.get('from_name') or ''} <{m.get('from')}>{att}{mark}\n"
                        + env.wrap(f"Subject: {r[2]}\n\n{r[3]}"))
-        return env.preamble() + "\n".join(out)
+        return env.preamble() + "\n".join(out) + _more(ref, p, len(groups))
     if ref.startswith("chat:"):
         row = _item_row(conn, ref)
         parent = row[6] if row else ref.split("#")[0]
@@ -391,15 +432,18 @@ def open_ref(conn: sqlite3.Connection, ref: str, *, around: int = 3) -> str:
     _, kind, at, title, text, thing, parent, meta = row
     m = json.loads(meta or "{}")
     head = f"{kind} · {at[:16]} · {title}" + (f" · {thing}" if thing else "")
+    pages = _pages(text or "")
+    p = min(page, len(pages))
+    text, more = pages[p - 1], _more(ref, p, len(pages))
     if kind == "commit":
         return f"{head}\n\n{text}\n\nrepo folder: {m.get('repo') or '(top level)'} · sha {m.get('sha')}"
     if kind in UNTRUSTED:
         where = f"\n(attached to {m.get('message')}; open that for the thread)" if kind == "attachment" else ""
-        return env.preamble() + env.wrap(f"{head}\n\n{text}") + where
-    return f"{head}\n\n{text}"
+        return env.preamble() + env.wrap(f"{head}\n\n{text}") + where + more
+    return f"{head}\n\n{text}{more}"
 
 
-def _open_source(ref: str) -> str:
+def _open_source(ref: str, page: int = 1) -> str:
     from locus.config import load
     from locus.db.connection import get_connection
 
@@ -422,7 +466,9 @@ def _open_source(ref: str) -> str:
             return f"{head}\n\nNo section {pos}; it has {len(secs)}."
         text = "\n".join(r[0] for r in conn.execute(
             "SELECT raw_text FROM chunks WHERE section_id=? ORDER BY position", (sec["id"],)))
-        return (f"{head}\n\nSection {pos}: {sec['title'] or ''}\n\n{text[:20000]}\n\n"
+        pages = _pages(text)
+        p = min(page, len(pages))
+        return (f"{head}\n\nSection {pos}: {sec['title'] or ''}\n\n{pages[p - 1]}{_more(ref, p, len(pages))}\n\n"
                 f"(For the page itself as an image, with his ink, call markups on this document.)")
     finally:
         conn.close()

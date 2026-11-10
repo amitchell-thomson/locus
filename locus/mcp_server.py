@@ -651,7 +651,7 @@ def _register_heuris(tool) -> None:
                              until=until, limit=max(1, min(limit, 40)))
 
     @tool()
-    def open(ref: str) -> str:  # noqa: A001 - the tool's name is the verb the plan uses
+    def open(ref: str, page: int = 1) -> str:  # noqa: A001 - the tool's name is the verb the plan uses
         """The whole thing behind a pointer from `search`, `timeline` or `context`: a mail thread
         in order (quoted text removed), an attachment's or career file's text, the chat turns
         around a turn, a commit with its files, an event or task, a repository doc, or a section of a library source (`src:<doc>` alone
@@ -659,9 +659,12 @@ def _register_heuris(tool) -> None:
 
         Args:
             ref: the pointer, e.g. mail:oxford/10617/1234, chat:laptop/<session>#<uuid>, commit:quast@<sha>, src:12#s3.
+            page: for something long (an offer pack, a long thread): which page, from 1. A long
+                result ends with "[page 1 of 3: open(..., page=2) for the rest]"; read on when the
+                answer may be further in.
         """
         with _conn() as c:
-            return ht.open_ref(c, ref)
+            return ht.open_ref(c, ref, page=page)
 
     @tool()
     def timeline(about: str, since: str | None = None, until: str | None = None, kind: str | None = None) -> str:

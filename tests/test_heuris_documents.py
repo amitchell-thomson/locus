@@ -142,3 +142,15 @@ def test_a_cross_drawn_over_a_checkbox_is_read_as_the_chosen_option():  # Y2
     text = documents.extract("form.pdf", doc.tobytes())
     marked = text[text.index("Marked by hand"):]
     assert "B. Finding patterns in data" in marked and "A. Building" not in marked
+
+
+def test_a_downloads_file_is_linked_to_its_application_by_its_text():
+    # H1 fix 2: the Millennium offer letter in ~/Downloads was linked to nothing.
+    from locus.heuris.sources.files import _thing_by_text
+
+    letter = ("Millennium Management. We are pleased to offer you the 2027 Quantitative Developer "
+              "Internship, from 21 June to 27 August 2027, in London.")
+    assert _thing_by_text(letter) == "millennium"
+    assert _thing_by_text("Meet Millennium 2026: your place is confirmed") == "meet-millennium"
+    assert _thing_by_text("A letter from Brevan Howard and Millennium") is None, "two firms: none"
+    assert _thing_by_text("A recipe for soup") is None

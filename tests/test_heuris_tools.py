@@ -124,3 +124,22 @@ def test_a_firm_is_its_applications_and_its_mail_not_a_person(conn):
                               "Confidential - BH Summer 2027", "Here is the offer email.")], embed=fake_embed)
     out = ht.timeline(conn, "Brevan Howard")
     assert "Confidential - BH Summer 2027" in out and "applications bh-2027" in out
+
+
+def test_open_pages_a_long_file_and_a_long_thread(conn):
+    # H1 fix 2: a 55 KB offer pack came back whole and could not be read.
+    para = "Start date 21 June 2027. " * 40
+    long = "\n\n".join(f"Section {i}. {para}" for i in range(80))
+    index(conn, "files", [Item(ref="file:Downloads/offer.pdf", kind="file", at=at(7), title="offer.pdf",
+                               text=long, area="Careers")], embed=fake_embed)
+    one = ht.open_ref(conn, "file:Downloads/offer.pdf")
+    assert len(one) < ht.PAGE_CHARS + 2_000 and 'open("file:Downloads/offer.pdf", page=2)' in one
+    n = int(one.split(" of ")[1].split(":")[0])
+    last = ht.open_ref(conn, "file:Downloads/offer.pdf", page=n)
+    assert "Section 79." in last and "the last" in last
+    # A thread pages by whole messages: every envelope it opens, it closes.
+    index(conn, "mail", [mail(f"mail:personal/9/{i}", 1 + i % 5, "HR", "hr@mlp.com", "Offer",
+                              ("Term %d. " % i) * 1500) for i in range(12)], embed=fake_embed)
+    page = ht.open_ref(conn, "mail:personal/9/0")
+    opened = page.count("<email_data nonce") - 1  # the preamble names the marker once
+    assert "page=2" in page and opened >= 1 and opened == page.count("</email_data nonce")

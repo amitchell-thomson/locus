@@ -1319,6 +1319,23 @@ impl Engine {
         };
         let Some(shared) = &self.shared else { return action };
         let own = self.cfg.own_addresses();
+        // A key of your own (Engineering, OQTS, Admin) is not an area: the course or project
+        // the mail clearly names goes with it, so "File → Engineering" becomes "File →
+        // Engineering (b15)" and the thread reaches B15's page (10 Nov: "what about individual
+        // engineering tasks"). The bar is the guesser's full one (subject or sender), and
+        // applications stay with Careers.
+        if self.taxonomy_folder(key).is_none() {
+            let Some(g) = keryx_store::item::guess(&self.db, shared, msgs, &own, false) else {
+                return action;
+            };
+            return match shared.registry.get(&g.id) {
+                Some(p) if p.kind != locus_contract::ProjectKind::Application => Action::File {
+                    key: key.clone(),
+                    item: Some(p.id.clone()),
+                },
+                _ => action,
+            };
+        }
         let Some(g) = keryx_store::item::guess_within(&self.db, shared, msgs, &own, key) else {
             return action;
         };

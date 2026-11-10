@@ -127,6 +127,8 @@ How does this fit into ideas/ suggestions/ corrections that I make in margins as
 
 **22 · H1 (laptop) ·** What emails need a reply? Draft replies for them all.
 > The threads needing a reply, with a draft for each made through keryx (`draft_reply`), never sent.
+> Must include Milly Parrott (Tower Research, personal account, "Tower QT/QR advice for timing and options"): her 2 Nov reply answers both my questions and proposes connecting in early January to plan a Tower x OQTS event. I have not replied. The thread is archived, so a search of the inbox alone misses it (10 Nov run: it did). Needing a reply is judged on the whole of my mail over the last few weeks, not the inbox: a person's last message asks or proposes something, and I have not answered.
+> Drafts wait in keryx's Approve (`keryx changes --status pending`, or A in the keryx window); they are not Gmail drafts, so they do not show in Gmail.
 
 **23 · H1 ·** Schedule the meeting the 3YP group proposed in their last email.
 > The 3YP group's last proposal, found by search, scheduled through kairos (pending your approval).
@@ -134,6 +136,9 @@ How does this fit into ideas/ suggestions/ corrections that I make in margins as
 **24 · H1 ·** What are the start date and terms in my Millennium offer?
 > Start date and terms quoted from the Millennium offer mail. The offer chain is fully in mail, but the contract itself is in my downloads folder.
 > Closed by H1.12: the offer letter, offer pack and handbook in `~/Downloads` are indexed as files.
+
+**49 · H1 ·** What tutorial sheets do I have due? Add them as tasks linked to their module.
+> Each sheet with its due date (or the tutorial it is due before), from the tutors' mail, the course pages and the calendar's tutorial times, cited. Each added through kairos as a task for its module (`--for b15` and so on, the registry ids), with an estimate, pending approval. A sheet with no date found is listed with that said, not given a guessed one.
 
 **25 · H1 ·** Who has not answered an email of mine that needed an answer?
 > Threads where your message was last, asked a question and has had no answer for over a week.
@@ -162,6 +167,7 @@ How does this fit into ideas/ suggestions/ corrections that I make in margins as
 
 **34 · H1 ·** Write a cover-letter paragraph for [firm] using my real projects and experience.
 > A paragraph using real project facts from the repos, cited, for the named firm, and contacts/ experience from email chains/ facts/ CV
+> Every number taken from the CV is checked against the project's own results, and any that disagree or are out of date are named. 10 Nov run: the CV's "a full tune-up in 3.4 s" for quast is true only for detuning-only control on ARC's L40S (quast §8bi); v2 with barrier control takes 3.4 minutes with the law learned, 0.8 told (§8ci).
 
 **35 · H1 + H2 ·** I've been accepted to the G-Research x Oxford Edge AI/ML Quant Challenges. Which projects should I aim for, given that I want to work close to systematic at Millennium this summer (alt data or rates), then stay on or go to a graduate trading/research role at a systematic or HFT firm (Tower, Jump, G-Research, HRT, QRT)?
 > The acceptance mail and its challenges list, your projects, and the Millennium offer. Your stated preferences need `remember` (H2): until then it uses your chats about them, cited.
@@ -173,6 +179,7 @@ How does this fit into ideas/ suggestions/ corrections that I make in margins as
 
 **P2 · H1 ·** Plan this week around my lectures, the projects that are live and what is due.
 > A week plan around lectures, live projects and due work, scheduled through kairos (pending).
+> No task for something that a scheduled session itself does: the 10 Nov run added "settle team + project on Edge Slack" before the G-Research mixer, whose purpose is forming the teams. Removed 10 Nov.
 
 **P3 · L ·** Build me a learning track for C++ aimed at oxdaq and quant developer work, and say how it shares ground with Millennium preparation.
 

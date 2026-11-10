@@ -372,13 +372,13 @@ holds your mail).
 | 12 | pass | partial | pass | partial | BH quotes verbatim; repo docs named but not opened or cited. |
 | 14 | pass | pass | partial | partial | Two bullets overstate the source (which bug rejected UK orders; "matching all 5,177 deals"). |
 | 21 | partial | fail | **fail** | fail | Said the B14 notebook is untranscribed; it is indexed (`src:664`). The right answer: no 2D Fourier page exists. |
-| 22 | partial | pass | **fail** | fail | Proposed 8pm Wed/Thu to Kristof: Wed clashes with MAO Drinks, Thu is a flight. Drafts made, none sent; the OQTS-shared ones were refused (read-only). |
+| 22 | partial | pass | **fail** | fail | Proposed 8pm Wed/Thu to Kristof: Wed clashes with MAO Drinks, Thu is a flight. Drafts made, none sent; the OQTS-shared ones were refused (read-only). **Missed Milly Parrott's 2 Nov Tower reply** (yours to answer): it read only the inbox, and that thread is archived (your correction, 10 Nov). |
 | 23 | partial | pass | pass | partial | No 3YP email proposes a meeting (likely WhatsApp); it said so and scheduled nothing. |
 | 24 | **fail** | partial | pass | fail | Found the offer letter but `open` returned all 55 KB and the client spilled it to a file it could not read. Missed 21 Jun–27 Aug, pay and stipend. |
-| 34 | pass | partial | **fail** | fail | "OQTS, which Tower has sponsored from the start": no source. Repeated the CV's "3.4 s" tune-up; quast's results say 3.4 *minutes*. **Your CV line may be wrong.** |
+| 34 | pass | partial | **fail** | fail | "OQTS, which Tower has sponsored from the start": no source. Repeated the CV's "3.4 s" tune-up; quast's results say 3.4 *minutes*. Checked 10 Nov: both are real. 3.4 s is detuning-only control on the L40S (§8bi); v2 with barrier control is 3.4 min learned, 0.8 told (§8ci). The CV line describes the older mode. |
 | 35 | partial | pass | **fail** | fail | Treated family-calendar events as yours (Callum's personal training, the Düsseldorf flight). |
 | P1 | partial | partial | **fail** | fail | Copied the stale mixer time (17:00) from the Home chat; the 10 Nov mail moved it to 16:00. The pointer it held had changed (thread ids move when a reply arrives). |
-| P2 | **fail** | pass | pass | fail | Good plan, but kairos APPLIED its writes (an event, a task, a block) rather than leaving them pending: low-risk writes from MCP apply at once. |
+| P2 | **fail** | pass | pass | fail | Good plan, but kairos APPLIED its writes (an event, a task, a block) rather than leaving them pending: low-risk writes from MCP apply at once. The task (and its block) was also wrong in itself: the mixer is where teams are settled. Undone 10 Nov at your request; the mixer event stays. |
 | 36 | partial | pass | pass | partial | kairos reports only the last 30 days, so "last month" became 11 Oct–10 Nov (said so). |
 | 38 | partial | partial | pass | partial | Missed September's careers activity (Jump onsite, Millennium rounds); called September vacation (Quantum Device Lab internship). |
 | 39 | partial | partial | partial | partial | Called regime-ml an unbuilt idea; it was built (`src:175`). |

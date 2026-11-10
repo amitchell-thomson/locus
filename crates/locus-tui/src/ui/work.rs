@@ -205,7 +205,7 @@ pub fn draw_chart(f: &mut Frame, area: Rect, app: &App) {
         out.push(Line::from(""));
         out.push(Line::from(Span::styled(
             format!(
-                " from commits, half an hour each{SEP}transcripts replace this in Slice 4{SEP}{per} day{} a column",
+                " measured from your Claude sessions (kairos){SEP}{per} day{} a column",
                 if per == 1 { "" } else { "s" }
             ),
             Style::default().fg(c("overlay0")),

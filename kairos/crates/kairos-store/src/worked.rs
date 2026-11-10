@@ -24,8 +24,9 @@ pub const MIN_SPAN_MIN: i64 = 5;
 /// The scan's state in the cache directory (v2: spans carry their activity; v3: each file keeps
 /// its working directory, so a session from before its project was registered is read again).
 pub const STATE_FILE: &str = "worked-scan-v3.json";
-/// Spans older than this are forgotten.
-pub const KEEP_DAYS: i64 = 30;
+/// Spans older than this are forgotten. 56 (eight weeks, H1 fix 6, 10 Nov): Home's area chart
+/// covers eight weeks and had nothing past thirty days to draw; it was sample data until then.
+pub const KEEP_DAYS: i64 = 56;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct FileState {

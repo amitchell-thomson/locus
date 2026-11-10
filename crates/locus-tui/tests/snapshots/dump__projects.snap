@@ -1,6 +1,5 @@
 ---
 source: crates/locus-tui/tests/dump.rs
-assertion_line: 159
 expression: "dump::render(&a, 95, 38).unwrap()"
 ---
 ╭ projects · 5 live ──────────────────────────────────────────────────────────────────────────╮
@@ -11,8 +10,9 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │   󱓟 3YP                       󰤄 no sessions                                                 │
 │   󱓟 GR AI/ML                  󰤄 no sessions                                                 │
 │                                                                                             │
-│─ parked · 1 ────────────────────────────────────────────────────────────────────────────────│
+│─ parked · 2 ────────────────────────────────────────────────────────────────────────────────│
 │   󱓟 nabla                     󰹇 needs you 42m  SYNA's vote is close: close the … 8 sessions │
+│   󱓟 Regime-conditioned equit… 󰤄 no sessions                                                 │
 │                                                                                             │
 │─ done · 2 ──────────────────────────────────────────────────────────────────────────────────│
 │   󱓟 Tanker-flow               󰤄 no sessions                                                 │
@@ -21,7 +21,6 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │─ running, not registered · none ────────────────────────────────────────────────────────────│
 │                                                                                             │
 │─ in ~/local-projects, not registered · none ────────────────────────────────────────────────│
-│                                                                                             │
 │                                                                                             │
 │                                                                                             │
 │                                                                                             │

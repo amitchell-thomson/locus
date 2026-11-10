@@ -465,6 +465,38 @@ pub fn apply(fx: &mut Fixtures, cal: &[Instance], area_of: impl Fn(&str) -> Opti
             })
             .collect();
     }
+    // The eight-week area chart (H1 fix 6, 10 Nov: "the work tracking chart is not updating"; it
+    // was the sample set's, never live): hours per project per day from the same measured spans.
+    if !worked.is_empty() {
+        let from = today - Duration::days(55);
+        let mut series: std::collections::BTreeMap<String, Vec<f32>> = std::collections::BTreeMap::new();
+        for i in &worked {
+            let Span::Timed { start, end } = i.span else { continue };
+            let project = fx
+                .registry
+                .projects
+                .iter()
+                .find(|p| p.name == i.title)
+                .map_or_else(|| i.title.clone(), |p| p.id.clone());
+            let d = at(start).date_naive();
+            if d < from || d > today {
+                continue;
+            }
+            let hours = (end - start).num_minutes().max(0) as f32 / 60.0;
+            let row = series.entry(project).or_insert_with(|| vec![0.0; 56]);
+            if let Ok(k) = usize::try_from((d - from).num_days())
+                && let Some(h) = row.get_mut(k)
+            {
+                *h += hours;
+            }
+        }
+        let mut series: Vec<locus_contract::WorkSeries> = series
+            .into_iter()
+            .map(|(project, hours)| locus_contract::WorkSeries { project, hours })
+            .collect();
+        series.sort_by(|a, b| b.hours.iter().sum::<f32>().total_cmp(&a.hours.iter().sum::<f32>()));
+        fx.work.chart = locus_contract::WorkChart { from, series };
+    }
     // Each application's events: the calendar's, replacing what an earlier pass added.
     let apps: Vec<String> = fx
         .registry
@@ -550,6 +582,10 @@ mod tests {
         assert!(today.spans.iter().all(|s| s.project == "locus"));
         let shades: Vec<u8> = today.spans.iter().map(|s| s.intensity).collect();
         assert_eq!(shades, [1, 4, 2], "half hours shaded by how busy they were");
+        // The eight-week chart is live too (H1 fix 6): today's measured hours under locus.
+        let locus = fx.work.chart.series.iter().find(|s| s.project == "locus").unwrap();
+        assert_eq!(locus.hours.len(), 56);
+        assert!(*locus.hours.last().unwrap() > 0.0, "today, the last day of the chart");
         let events = &fx.projects["millennium"].view.application.as_ref().unwrap().events;
         let e = events.iter().find(|e| e.calendar.as_deref() == Some("intv")).unwrap();
         assert_eq!(e.kind, AppEventKind::Interview);

@@ -1433,8 +1433,13 @@ fn sync(ctx: &Ctx, p: &Paint, local: bool) -> Result<()> {
             println!("{ok} open tasks from kairosd (due dates)");
         }
         // This machine's Claude sessions as project time (spec K6); the server measures its own.
-        if let Some(n) = kairos_store::worked::push(&ctx.cfg, "mac", ctx.now) {
-            println!("{ok} worked time: {n} span(s) from your Claude sessions");
+        // Said when it fails: it failed in silence from 9 to 10 Nov (no taxonomy, so no scan),
+        // and the work chart simply stopped.
+        match kairos_store::worked::push(&ctx.cfg, "mac", ctx.now) {
+            Some(n) => println!("{ok} worked time: {n} span(s) from your Claude sessions"),
+            None => {
+                println!("{warn} worked time NOT measured: no taxonomy (run `kairos doctor`) or kairosd refused it")
+            }
         }
     }
     let (from, to) = cache::default_window(&ctx.cfg, ctx.now);

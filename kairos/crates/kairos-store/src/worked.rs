@@ -21,8 +21,9 @@ use std::path::{Path, PathBuf};
 pub const GAP_MIN: i64 = 10;
 /// A span is at least this long (one prompt and a quick answer is still a sitting).
 pub const MIN_SPAN_MIN: i64 = 5;
-/// The scan's state in the cache directory (v2: spans carry their activity).
-pub const STATE_FILE: &str = "worked-scan-v2.json";
+/// The scan's state in the cache directory (v2: spans carry their activity; v3: each file keeps
+/// its working directory, so a session from before its project was registered is read again).
+pub const STATE_FILE: &str = "worked-scan-v3.json";
 /// Spans older than this are forgotten.
 pub const KEEP_DAYS: i64 = 30;
 
@@ -30,6 +31,9 @@ pub const KEEP_DAYS: i64 = 30;
 struct FileState {
     offset: u64,
     project: Option<String>,
+    /// The session's working directory, as soon as a line names it.
+    #[serde(default)]
+    cwd: Option<String>,
     open: Option<(DateTime<Utc>, DateTime<Utc>)>,
     /// Lines per ten minutes of the open span.
     #[serde(default)]
@@ -38,13 +42,15 @@ struct FileState {
 }
 
 /// The registry repo a working directory belongs to: the deepest path segment that names one
-/// (its id, its name, one of its tmux sessions, or one of its components' repositories).
+/// (its id, its name, its folder, one of its tmux sessions, or one of its components'
+/// repositories).
 pub fn project_for_cwd(cwd: &str, reg: &Registry) -> Option<String> {
     for seg in cwd.rsplit('/').filter(|s| !s.is_empty()) {
         let seg = seg.to_lowercase();
         let hit = reg.projects.iter().filter(|p| p.kind == ProjectKind::Repo).find(|p| {
             p.id.to_lowercase() == seg
                 || p.name.to_lowercase() == seg
+                || p.folder.as_deref().is_some_and(|f| f.to_lowercase() == seg)
                 || p.sessions.iter().any(|s| s.to_lowercase() == seg)
                 || p.components
                     .iter()
@@ -108,6 +114,7 @@ fn read_file(path: &Path, st: &mut FileState, reg: &Registry) -> std::io::Result
         if st.project.is_none()
             && let Some(cwd) = v["cwd"].as_str()
         {
+            st.cwd = Some(cwd.to_string());
             st.project = project_for_cwd(cwd, reg);
         }
         let kind = v["type"].as_str().unwrap_or("");
@@ -168,6 +175,12 @@ pub fn scan(root: &Path, state_path: &Path, reg: &Registry, now: DateTime<Utc>) 
     let mut all = Vec::new();
     for f in &files {
         let st = state.entry(f.to_string_lossy().into_owned()).or_default();
+        // A session whose folder named no project when it was read, and names one now (the
+        // project was registered since): read again from the start, or its time is lost. The
+        // weekend's gr-ai-ml sessions were read before gr-ai-ml was registered (10 Nov).
+        if st.project.is_none() && st.cwd.as_deref().is_some_and(|c| project_for_cwd(c, reg).is_some()) {
+            *st = FileState::default();
+        }
         let _ = read_file(f, st, reg);
         // A span quiet for longer than the gap is over.
         if st.open.is_some_and(|(_, e)| now - e > Duration::minutes(GAP_MIN)) {
@@ -267,7 +280,11 @@ mod tests {
             Some("locus")
         );
         assert_eq!(p("/home/alec/server-projects/nabla").as_deref(), Some("nabla"));
-        assert_eq!(p("/Users/a/local-projects/B3-Project").as_deref(), Some("3yp"));
+        assert_eq!(p("/Users/a/local-projects/med-ml-3yp").as_deref(), Some("3yp"));
+        assert_eq!(
+            p("/Users/a/files/Studies/b3-group-design-project").as_deref(),
+            Some("3yp")
+        );
         assert_eq!(p("/home/alec/server-projects/oqts/oxdaq-core").as_deref(), Some("oqts"));
         assert_eq!(p("/tmp"), None);
     }

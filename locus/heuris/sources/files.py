@@ -50,6 +50,10 @@ def _thing_by_text(text: str, stages: dict[str, str] | None = None) -> str | Non
     gives none: an unlinked file is findable by search, a wrongly linked one misleads.
     """
     stages = _stages() if stages is None else stages
+    # The opening only: a letter or a form says whom it is from at the top, and a book that
+    # mentions Millennium on page 200 is not about the internship (Advanced Portfolio Management
+    # was linked to it, 10 Nov).
+    text = text[:3000]
     low = text.lower()
     named = lambda w: re.search(rf"(?<![a-z0-9]){re.escape(w.lower())}(?![a-z0-9])", low) is not None
     exact = lambda w: re.search(rf"(?<![A-Za-z0-9]){re.escape(w)}(?![A-Za-z0-9])", text) is not None

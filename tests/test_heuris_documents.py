@@ -156,3 +156,5 @@ def test_a_downloads_file_is_linked_to_its_application_by_its_text():
     assert _thing_by_text("Meet Millennium 2026: your place is confirmed", stages) == "meet-millennium"
     assert _thing_by_text("Millennium news for everyone", stages) is None, "nothing settles it: none"
     assert _thing_by_text("A letter from Brevan Howard and Millennium", stages) is None, "two firms: none"
+    book = "Advanced Portfolio Management. " + "Factor models and risk. " * 400 + "Millennium made an offer."
+    assert _thing_by_text(book, stages) is None, "named deep in a book: not about the firm"

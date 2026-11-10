@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  `locus heuris-push` every 15 minutes and at login (H1.4, H1.7): mail kept by the H1.2 rule and
+  each registry project's docs and commits, scrubbed (locus/scrub.py), rsynced to
+  data/heuris-in/ on the server. OQTS-shared never leaves the laptop. Installed by
+  deploy/heuris/install.sh, which fills in __HOME__, __REPO__, __UV__.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.locus.heuris-push</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>cd __REPO__ &amp;&amp; date &amp;&amp; __UV__ run --quiet locus heuris-push</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>900</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>StandardOutPath</key>
+    <string>__HOME__/Library/Logs/locus-heuris-push.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Library/Logs/locus-heuris-push.log</string>
+</dict>
+</plist>

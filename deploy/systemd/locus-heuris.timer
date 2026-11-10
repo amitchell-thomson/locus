@@ -1,0 +1,11 @@
+[Unit]
+Description=Index heuris every 15 minutes (the laptop pushes mail and repos on the same beat)
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+RandomizedDelaySec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

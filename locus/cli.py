@@ -487,6 +487,45 @@ def cmd_transcripts_push(args) -> None:
         sys.exit(1)
 
 
+def cmd_heuris(args) -> None:
+    """heuris (H1): index the sources into heuris.db, or say how fresh each is."""
+    from locus.heuris import db as hdb
+    from locus.heuris import run as hrun
+
+    conn = hdb.connect()
+    try:
+        if args.action == "index":
+            names = [n for n in args.sources if n != "all"] or None
+            for o in hrun.run(names, conn=conn):
+                st = o.stats
+                did = f"+{st.added} added, {st.unchanged} unchanged, -{st.removed} removed, {st.chunks} chunks" if st else ""
+                print(f"{o.source:9} {'ERROR ' + o.error if o.error else did}  ({o.seconds:.1f}s)")
+            print()
+        rows = hrun.status(conn)
+        print(hrun.status_json(conn) if args.json else hrun.render(rows))
+        if args.action == "index" and any(r["state"] == "error" for r in rows):
+            sys.exit(1)
+    finally:
+        conn.close()
+
+
+def cmd_heuris_push(args) -> None:
+    """Laptop: mail (kept by the H1.2 rule, scrubbed) and project docs and commits, to the server."""
+    from locus.heuris import mail_push, repos_push
+
+    failed = False
+    for name, mod in (("mail", mail_push), ("repos", repos_push)):
+        try:
+            r = mod.push(send=not args.dry_run)
+            print(f"{name}: {mod.describe(r)}")
+            failed |= bool(r.error)
+        except Exception as exc:
+            print(f"{name}: FAILED {type(exc).__name__}: {exc}")
+            failed = True
+    if failed:
+        sys.exit(1)
+
+
 def cmd_mcp_log(args) -> None:
     """What the MCP server was actually asked to do — the answer to a bare "Tool execution failed".
 
@@ -2303,7 +2342,7 @@ def cmd_files(args) -> None:
 
         run, _ = runner()
         for rel in sorted(args.paths, key=lambda s: (s.count("/"), s)):
-            if not rel.split("/", 1)[0] in fs.AREAS or ".." in rel.split("/"):
+            if rel.split("/", 1)[0] not in fs.AREAS or ".." in rel.split("/"):
                 raise SystemExit(f"refusing {rel!r}: tablet folders are made under the areas only")
             _ensure_folder(run, "/" + rel)
             print(f"made /{rel}")
@@ -2468,6 +2507,16 @@ def main(argv=None) -> None:
     ptp = sub.add_parser("transcripts-push", help="laptop Claude transcripts, scrubbed, to the server (Slice 0.10)")
     ptp.add_argument("--dry-run", action="store_true", help="say how many would go; scrub and send nothing")
     ptp.set_defaults(func=cmd_transcripts_push)
+
+    phe = sub.add_parser("heuris", help="heuris (H1): index mail, calendar, chats and repos; or their freshness")
+    phe.add_argument("action", choices=["index", "status"])
+    phe.add_argument("sources", nargs="*", default=[], help="mail calendar chats repos (default: all)")
+    phe.add_argument("--json", action="store_true", help="status as JSON")
+    phe.set_defaults(func=cmd_heuris)
+
+    php = sub.add_parser("heuris-push", help="laptop: kept mail and project docs/commits, scrubbed, to the server")
+    php.add_argument("--dry-run", action="store_true", help="build the staging tree; send nothing")
+    php.set_defaults(func=cmd_heuris_push)
 
     phs = sub.add_parser("home-system", help="Home's system section as JSON (read by the window)")
     phs.set_defaults(func=cmd_home_system)

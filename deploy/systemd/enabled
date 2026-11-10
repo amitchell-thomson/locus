@@ -15,3 +15,5 @@ locus-watch.timer
 locus-kairosd.service
 # The HTTP service (Slice 0.6): MCP for every Claude, one process.
 locus-http.service
+# heuris (H1): mail, calendar, chats and repos indexed into heuris.db every 15 minutes.
+locus-heuris.timer

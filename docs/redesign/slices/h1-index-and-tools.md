@@ -297,7 +297,7 @@ H1.8, then H1.9, H1.10 and H1.11.
   - the Home chat has the tools, and answered Q1 from them;
   - keryx is registered at user level on the laptop;
   - the CLAUDE.md line is on both machines;
-  - the public listener runs behind Funnel at `https://compute-node.tailb449e5.ts.net:8443/mcp`,
+  - the public listener runs behind Funnel at `https://compute-node.tailb449e5.ts.net/mcp` (moved from :8443, which claude.ai never reached; the nabla dashboard moved to tailnet-only :8444),
     with OAuth and a passphrase (Keychain `locus-public-passphrase`).
 
   **Waiting on you:**

@@ -94,4 +94,27 @@ session `B3-Project` no longer exists.
 
 ## Report
 
-(written when the steps are done)
+Done 10 Nov 2026 (commits 5b00f24, 594cb81; the server deployed with `locus home-system`).
+
+- **Sessions:** read from Claude Code's per-process status files
+  (`~/.claude/sessions/<pid>.json`), not the pane screens. Each file names its tmux pane and its
+  transcript, with a status of `busy`, `waiting` or `idle`. Screens were measured to differ in
+  every state.
+  - Older Claude Code names a transcript that no longer exists after a resume. Those sessions
+    take the newest unclaimed transcript in their folder.
+  - The last prompt is searched backwards in 1 MB chunks: in a working session it sat more than
+    512 KB behind tool output.
+- **Clock:** the window had never replaced the fixtures' clock, so live Home read "saturday 24
+  october". It now uses the real time while live.
+- **Height:** shared in priority order: projects whole; careers and studies up to 5 rows; approve
+  and tasks up to 6; then the learning row (folded into the studies heading when there is no
+  room); Explore takes the rest.
+- **Registry:** 3YP's session became `med-ml-3yp`. `aulos` and `gr-ai-ml` show as not
+  registered.
+- **Checked against the sources:**
+  - sessions against `~/.claude/sessions` and tmux;
+  - OQTS's "last 28 Aug" against its three repos' `git log`;
+  - the system section against `locus home-system` on the server;
+  - careers against the seeded file.
+- **Still yours to do:** correct `~/files/Careers/applications.toml` (the two entries marked
+  CHECK), and decide whether `aulos` and `gr-ai-ml` are registered.

@@ -17,3 +17,5 @@ locus-kairosd.service
 locus-http.service
 # heuris (H1): mail, calendar, chats and repos indexed into heuris.db every 15 minutes.
 locus-heuris.timer
+# The public listener (H1.10): claude.ai and the phone, OAuth with a passphrase, via Funnel.
+locus-public.service

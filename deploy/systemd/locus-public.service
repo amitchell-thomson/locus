@@ -1,0 +1,27 @@
+# The public listener for claude.ai and the phone (H1.10): the same tools as locus-http, behind
+# a single-user OAuth login (locus/public_auth.py), on 127.0.0.1:7423. Tailscale Funnel publishes
+# it at https://compute-node.tailb449e5.ts.net:8443 (ExecStartPre sets that up; tailscaled keeps
+# it). The passphrase and URL are in ~/.config/locus/public.env (mode 0600, never committed); the
+# passphrase is also in the laptop's Keychain as `locus-public-passphrase`.
+[Unit]
+Description=locus public MCP for claude.ai (OAuth, behind Tailscale Funnel)
+Documentation=file:///home/alec/server-projects/locus/docs/redesign/slices/h1-index-and-tools.md
+After=network-online.target tailscaled.service
+Wants=network-online.target
+StartLimitIntervalSec=0
+OnFailure=locus-failure@%n.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/alec/server-projects/locus
+Environment=PATH=/home/alec/.local/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=%h/.config/locus/public.env
+ExecStartPre=/usr/bin/tailscale funnel --bg --https=8443 http://127.0.0.1:7423
+ExecStart=/home/alec/.local/bin/uv run --quiet locus serve-public --port 7423
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+UMask=0077
+
+[Install]
+WantedBy=default.target

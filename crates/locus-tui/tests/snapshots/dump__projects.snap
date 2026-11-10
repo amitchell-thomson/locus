@@ -1,5 +1,6 @@
 ---
 source: crates/locus-tui/tests/dump.rs
+assertion_line: 159
 expression: "dump::render(&a, 95, 38).unwrap()"
 ---
 ╭ projects · 5 live ──────────────────────────────────────────────────────────────────────────╮
@@ -10,16 +11,16 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │   󱓟 3YP                       󰤄 no sessions                                                 │
 │   󱓟 GR AI/ML                  󰤄 no sessions                                                 │
 │                                                                                             │
-│─ parked · 2 ────────────────────────────────────────────────────────────────────────────────│
+│─ parked · 1 ────────────────────────────────────────────────────────────────────────────────│
 │   󱓟 nabla                     󰹇 needs you 42m  SYNA's vote is close: close the … 8 sessions │
-│   󱓟 Tanker-flow               󰤄 no sessions                                                 │
 │                                                                                             │
-│─ done · none ───────────────────────────────────────────────────────────────────────────────│
+│─ done · 2 ──────────────────────────────────────────────────────────────────────────────────│
+│   󱓟 Tanker-flow               󰤄 no sessions                                                 │
+│   󱓟 aulos                     󰤄 no sessions                                                 │
 │                                                                                             │
 │─ running, not registered · none ────────────────────────────────────────────────────────────│
 │                                                                                             │
 │─ in ~/local-projects, not registered · none ────────────────────────────────────────────────│
-│                                                                                             │
 │                                                                                             │
 │                                                                                             │
 │                                                                                             │

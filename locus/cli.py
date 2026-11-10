@@ -477,6 +477,21 @@ def cmd_serve(args) -> None:
           enable_query=args.enable_query or cfg.mcp.enable_query)
 
 
+def cmd_serve_public(args) -> None:
+    """The public listener for claude.ai and the phone (H1.10): OAuth with a passphrase, behind
+    Tailscale Funnel. LOCUS_PUBLIC_PASSPHRASE and LOCUS_PUBLIC_URL come from the unit's env file."""
+    import os
+
+    from locus.mcp_server import serve_public
+
+    cfg = load()
+    phrase = os.environ.get("LOCUS_PUBLIC_PASSPHRASE", "")
+    url = os.environ.get("LOCUS_PUBLIC_URL", "")
+    if len(phrase) < 12 or not url.startswith("https://"):
+        raise SystemExit("LOCUS_PUBLIC_PASSPHRASE (12+ characters) and LOCUS_PUBLIC_URL (https) are required")
+    serve_public(args.port, phrase, url, cfg.paths.db.parent / "public-auth.db")
+
+
 def cmd_transcripts_push(args) -> None:
     """Laptop transcripts, scrubbed, to the server (Slice 0.10). Run by launchd every 30 min."""
     from locus.transcripts_push import describe, push
@@ -2503,6 +2518,10 @@ def main(argv=None) -> None:
     psv.add_argument("--port", type=int, default=7422)
     psv.add_argument("--enable-query", action="store_true", help="also expose the billable query tool")
     psv.set_defaults(func=cmd_serve)
+
+    psp = sub.add_parser("serve-public", help="the public listener for claude.ai and the phone: OAuth, behind Funnel (H1.10)")
+    psp.add_argument("--port", type=int, default=7423)
+    psp.set_defaults(func=cmd_serve_public)
 
     ptp = sub.add_parser("transcripts-push", help="laptop Claude transcripts, scrubbed, to the server (Slice 0.10)")
     ptp.add_argument("--dry-run", action="store_true", help="say how many would go; scrub and send nothing")

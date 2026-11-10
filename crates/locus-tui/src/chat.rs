@@ -468,6 +468,11 @@ pub fn describe_tool(name: &str, input: &serde_json::Value) -> (String, bool) {
                 (format!("keryx {}", tool.replace('_', " ")), false)
             }
         }
+        _ if name.starts_with("mcp__locus__") => {
+            let tool = &name["mcp__locus__".len()..];
+            let what = ["query", "about", "ref"].iter().map(|k| s(k)).find(|v| !v.is_empty());
+            (format!("locus {tool}{}", what.map(|w| format!(": {w}")).unwrap_or_default()), false)
+        }
         _ => (format!("used {name}"), false),
     }
 }

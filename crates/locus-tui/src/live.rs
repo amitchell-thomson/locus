@@ -542,7 +542,7 @@ mod tests {
         assert_eq!(id("x", "/Users/a/local-projects/quast/src").as_deref(), Some("quast"));
         assert_eq!(id("x", "/Users/a/local-projects/oqts/oxdaq-core").as_deref(), Some("oqts"));
         assert_eq!(id("x", "/Users/a/files/Studies/b1-engineering-computation/algos").as_deref(), Some("b1"));
-        assert_eq!(id("aulos", "/Users/a/local-projects/aulos"), None);
+        assert_eq!(id("peek", "/Users/a/local-projects/peek"), None); // aulos was registered 10 Nov
     }
 
     #[test]

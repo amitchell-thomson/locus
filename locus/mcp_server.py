@@ -167,7 +167,7 @@ def _instrument(fn):
 _call_seq = 0
 
 
-def _build(enable_query: bool = False, host: str = "127.0.0.1") -> "FastMCP":  # noqa: F821
+def _build(enable_query: bool = False, host: str = "127.0.0.1", public=None) -> "FastMCP":  # noqa: F821
     """Construct the FastMCP server with its tools registered.
 
     `enable_query` is accepted and ignored: the billable `query` tool was retired in H1 (D6).
@@ -177,12 +177,30 @@ def _build(enable_query: bool = False, host: str = "127.0.0.1") -> "FastMCP":  #
     """
     from mcp.server.fastmcp import FastMCP
 
+    extra: dict = {}
+    if public is not None:
+        # The public listener (H1.10): OAuth for one person in front of the same tools.
+        from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
+        from mcp.server.transport_security import TransportSecuritySettings
+
+        provider, base = public
+        netloc = base.split("://", 1)[1].rstrip("/")
+        extra = dict(
+            auth_server_provider=provider,
+            auth=AuthSettings(issuer_url=base, resource_server_url=f"{base}/mcp",
+                              client_registration_options=ClientRegistrationOptions(enabled=True),
+                              revocation_options=RevocationOptions(enabled=True)),
+            transport_security=TransportSecuritySettings(
+                enable_dns_rebinding_protection=True, allowed_hosts=[netloc, netloc.split(":")[0]],
+                allowed_origins=[base, "https://claude.ai"]),
+        )
     mcp = FastMCP(
         "locus",
         # The HTTP service (Slice 0.6) binds the Tailscale address; FastMCP's DNS-rebinding guard
         # is keyed to its host and would refuse every request naming the server otherwise. The
         # bearer token is the gate there, on a network only his devices are on.
         host=host,
+        **extra,
         instructions=(
             "Locus holds the owner's life: his mail, calendar and tasks, every Claude chat on his "
             "laptop and server, his project repositories, and his library of papers, lecture notes "
@@ -218,6 +236,8 @@ def _build(enable_query: bool = False, host: str = "127.0.0.1") -> "FastMCP":  #
     # The code behind them stays until the drop list is decided; only the tools went, so every
     # chat sees one way to find things.
     _register_heuris(tool)
+    if public is not None:
+        _login_routes(mcp, public[0])
 
     @tool()
     def capture(content: str, title: str, project: str | None = None) -> str:
@@ -630,6 +650,28 @@ def _register_heuris(tool) -> None:
             return ht.timeline(c, about, since=since, until=until, kind=kind)
 
 
+def _login_routes(mcp, provider) -> None:
+    """The passphrase page the OAuth flow sends his browser to (locus/public_auth.py)."""
+    from starlette.requests import Request
+    from starlette.responses import HTMLResponse, RedirectResponse
+
+    from locus.public_auth import login_page
+
+    @mcp.custom_route("/login", methods=["GET"])
+    async def login_get(request: Request):
+        return HTMLResponse(login_page(request.query_params.get("req", "")))
+
+    @mcp.custom_route("/login", methods=["POST"])
+    async def login_post(request: Request):
+        form = await request.form()
+        rid = str(form.get("req", ""))
+        url, msg = provider.approve(rid, str(form.get("passphrase", "")))
+        mcp_log.record("public_login", ok=url is not None, reason=None if url else msg)
+        if url is None:
+            return HTMLResponse(login_page(rid, msg), status_code=401)
+        return RedirectResponse(url, status_code=302)
+
+
 # --- shared helpers ----------------------------------------------------------------------
 
 
@@ -915,3 +957,23 @@ def serve(host: str, port: int, token: str, enable_query: bool = False) -> None:
     mcp_log.record("server_start", build=_SERVER_BUILD, query_enabled=enable_query, http=f"{host}:{port}")
     app = _Bearer(_build(enable_query=enable_query, host=host).streamable_http_app(), token)
     uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
+def serve_public(port: int, passphrase: str, base_url: str, db_path) -> None:
+    """The public listener for claude.ai and the phone (H1.10): OAuth for one person, on
+    127.0.0.1 behind Tailscale Funnel. Accepts only tokens its own login issued."""
+    import os
+
+    import uvicorn
+
+    from locus.public_auth import Provider, Store
+
+    global _SERVER_BUILD, _SERVER_PID
+    _SERVER_BUILD = _build_stamp()
+    _SERVER_PID = os.getpid()
+    provider = Provider(Store(db_path), passphrase, base_url)
+    mcp_log.record("server_start", build=_SERVER_BUILD, public=base_url, http=f"127.0.0.1:{port}")
+    app = _build(host="127.0.0.1", public=(provider, base_url)).streamable_http_app()
+    # Funnel terminates TLS and forwards; trust its X-Forwarded-* so the issuer URLs are https.
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning", proxy_headers=True,
+                forwarded_allow_ips="127.0.0.1")

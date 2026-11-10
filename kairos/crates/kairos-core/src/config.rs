@@ -70,7 +70,8 @@ pub struct KeyDef {
     /// An area of the locus taxonomy (Studies, Projects, Careers) or a stream of one (Sport,
     /// Errands under Personal): kairos's calendars are the areas (ADR-008).
     pub name: String,
-    /// 1–9: the TUI toggle key. `tui.personal_index` and `tui.family_index` are taken.
+    /// 1–9: the TUI toggle key. `tui.personal_index` and `tui.family_index` are taken. 0: none
+    /// of its own (Personal's digit covers a stream).
     pub index: u8,
     /// Its colour. Taken from `taxonomy/areas.toml` (L3, `Config::apply_taxonomy`), so a config
     /// need not set it; one set here that disagrees is named by `kairos doctor`.
@@ -478,8 +479,9 @@ impl Config {
             if !key_names.insert(k.name.to_lowercase()) {
                 errs.push(ConfigError::DuplicateKey(k.name.clone()));
             }
-            if !(1..=9).contains(&k.index)
-                || !key_idx.insert(k.index)
+            // 0: no toggle digit of its own (the digits ran out when Admin and Travel joined
+            // Personal, 10 Nov); Personal's own digit still shows and hides it.
+            if k.index != 0 && (!(1..=9).contains(&k.index) || !key_idx.insert(k.index))
                 || k.index == self.tui.personal_index
                 || k.index == self.tui.family_index
             {
@@ -721,7 +723,10 @@ mod tests {
         let c = example();
         assert_eq!(c.key("Engineering").map(|k| k.name.as_str()), Some("Studies"));
         assert_eq!(c.key("personal").map(|k| k.name.as_str()), Some("Errands"));
-        assert_eq!(c.keys_named(&["Personal".into()]), ["errands", "social", "sport"]);
+        assert_eq!(
+            c.keys_named(&["Personal".into()]),
+            ["admin", "errands", "social", "sport", "travel"]
+        );
         assert_eq!(
             c.keys_named(&["Engineering".into(), "Careers".into()]),
             ["careers", "studies"]
@@ -797,7 +802,11 @@ mod tests {
         assert_eq!(c.validate(), vec![]);
         assert!(!c.live, "example must not be live");
         assert_eq!(c.test_calendar, "ZZ-kairos-test");
-        assert_eq!(c.keys.len(), 6);
+        assert_eq!(
+            c.keys.len(),
+            8,
+            "the areas, and Personal's streams with Admin and Travel (10 Nov)"
+        );
         assert_eq!(c.tz(), chrono_tz::Europe::London);
         assert_eq!(c.source_for_key("sport").unwrap().id, "sport");
         assert_eq!(c.family_source().unwrap().id, "family");

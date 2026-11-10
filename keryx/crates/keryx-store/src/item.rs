@@ -94,6 +94,8 @@ fn names(p: &Project) -> Vec<String> {
     match p.kind {
         ProjectKind::Course => vec![p.id.clone()],
         ProjectKind::Application => p.company.clone().into_iter().collect(),
+        // "JCR Treasurer": the whole name, or "treasurer" alone is too common a word.
+        ProjectKind::Role => vec![p.name.clone()],
         // Short repo ids (`cv`) are ordinary words in mail; a repo counts only by a real name.
         ProjectKind::Repo => [p.id.clone(), p.name.clone()]
             .into_iter()
@@ -200,16 +202,16 @@ pub fn guess(db: &Db, shared: &Shared, msgs: &[Message], own: &HashSet<String>, 
     let bounce = ["delivery status notification", "undeliverable", "mail delivery"]
         .iter()
         .any(|w| low.contains(w));
-    // A key of your own config (Admin, Travel), by name: the caller files under it with no item.
+    // Personal's Admin and Travel streams (ids as `fors` gives them).
     if automated && !bounce && TRAVEL.iter().any(|w| low.contains(w)) {
         return Some(Guess {
-            id: "Travel".into(),
+            id: "travel".into(),
             why: "a booking or a ticket".into(),
         });
     }
     if automated && !bounce && ADMIN.iter().any(|w| low.contains(w)) {
         return Some(Guess {
-            id: "Admin".into(),
+            id: "admin".into(),
             why: "a receipt or an order".into(),
         });
     }
@@ -307,12 +309,12 @@ mod tests {
         m[0].subject = "Your parcel is out for delivery".into();
         assert_eq!(
             guess(&db, &s, &m, &cfg.own_addresses(), true).map(|g| g.id),
-            Some("Admin".into())
+            Some("admin".into())
         );
         m[0].subject = "Your booking confirmation XP8BKP".into();
         assert_eq!(
             guess(&db, &s, &m, &cfg.own_addresses(), true).map(|g| g.id),
-            Some("Travel".into())
+            Some("travel".into())
         );
     }
 

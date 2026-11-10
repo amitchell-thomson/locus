@@ -416,7 +416,50 @@ impl Engine {
 
     /// Archive, file, flag, read, snooze… on threads. Low-risk threads are
     /// applied as one changeset; the rest become proposals for Alec.
+    /// A filing under a retired key, as what it files as: "Engineering" → Studies, "OQTS" →
+    /// Projects for oqts, "Admin" → the Admin stream. Anything else is unchanged.
+    pub fn as_taxonomy(&self, key: &str, item: Option<String>) -> (String, Option<String>) {
+        match self.cfg.key(key) {
+            Some(k) if k.files_as.is_some() => {
+                (k.files_as.clone().unwrap_or_default(), item.or_else(|| k.item.clone()))
+            }
+            _ => (key.to_string(), item),
+        }
+    }
+
+    /// Mail already sitting in a retired key's folder, recorded once for what the key files as,
+    /// so it shows under that place in keryx, locus and kairos. Nothing moves. Returns how many.
+    pub fn record_retired_folders(&mut self) -> Result<usize> {
+        let fors = self.db.fors()?;
+        let mut n = 0;
+        for k in self.cfg.keys.clone() {
+            let Some(area) = k.files_as.clone() else { continue };
+            let f = view::Filter {
+                accounts: vec![],
+                limit: 20_000,
+            };
+            for r in view::list(&self.db, &self.cfg, &view::View::Key(k.name.clone()), &f)? {
+                if fors.contains_key(&(r.account.clone(), r.thread_id.clone())) {
+                    continue;
+                }
+                if self.db.item_of(&r.account, &r.thread_id)?.is_some() {
+                    continue;
+                }
+                self.mark_filed(&r.account, &r.thread_id, &area, k.item.as_deref())?;
+                n += 1;
+            }
+        }
+        Ok(n)
+    }
+
     pub fn triage(&mut self, req: TriageReq, who: Who) -> Result<TriageOutcome> {
+        // A retired key files as its place in the taxonomy (10 Nov).
+        let mut req = req;
+        if let Intent::File { key, item } = &req.intent {
+            let (key, item) = self.as_taxonomy(key, item.clone());
+            req.intent = Intent::File { key, item };
+        }
+        let req = req;
         if req.refs.is_empty() {
             return Err(EngineError::BadRequest("no threads given".into()));
         }
@@ -1489,13 +1532,23 @@ impl Engine {
         // sender → the items their filings in a folder are for.
         let mut by_sender: HashMap<(String, String), HashSet<String>> = HashMap::new();
         for r in self.db.reviews(Some("open"))? {
-            for p in self.db.proposals(&r.id)? {
-                let Action::File { key, item } = &p.action else {
-                    continue;
-                };
+            for mut p in self.db.proposals(&r.id)? {
                 if p.status != ProposalStatus::Open {
                     continue;
                 }
+                // A proposal under a retired key, as its place in the taxonomy first.
+                if let Action::File { key, item } = &p.action {
+                    let (k2, i2) = self.as_taxonomy(key, item.clone());
+                    if (&k2, &i2) != (key, item) {
+                        let a = Action::File { key: k2, item: i2 };
+                        self.db.set_proposal_action(&p.id, &a)?;
+                        p.action = a;
+                        n += 1;
+                    }
+                }
+                let Action::File { key, item } = &p.action else {
+                    continue;
+                };
                 let msgs = self.db.thread(&p.account, &p.thread_id)?;
                 let sender = sender_of(&msgs);
                 let a = match item {

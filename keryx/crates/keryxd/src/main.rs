@@ -96,6 +96,11 @@ fn main() -> anyhow::Result<()> {
         Ok(s) => engine.shared = Some(s),
         Err(e) => tracing::warn!(error = %e, "no locus taxonomy: filing by area is off"),
     }
+    match engine.record_retired_folders() {
+        Ok(0) => {}
+        Ok(n) => tracing::info!(n, "mail in retired folders recorded for its place in the taxonomy"),
+        Err(e) => tracing::warn!(error = %e, "could not record retired folders"),
+    }
     match engine.fill_open_items() {
         Ok(0) => {}
         Ok(n) => tracing::info!(n, "open filings given the item they are for"),

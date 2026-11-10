@@ -1509,3 +1509,41 @@ fn many_decisions_are_carried_out_as_one_batch() {
     assert!(again.done[0].error.as_deref().is_some_and(|x| x.starts_with("already")));
     assert_eq!(e.db.review(&rid).unwrap().unwrap().status, "done");
 }
+
+/// One way to file (10 Nov): a retired key files as its place in the taxonomy. "Engineering"
+/// is Studies, "OQTS" is Projects for the oqts project; the mail is archived and recorded, never
+/// moved into the old folder.
+#[test]
+fn a_retired_key_files_as_its_place_in_the_taxonomy() {
+    let (mut e, _) = engine();
+    with_taxonomy(&mut e);
+    assert_eq!(e.as_taxonomy("Engineering", None), ("Studies".to_string(), None));
+    assert_eq!(
+        e.as_taxonomy("OQTS", None),
+        ("Projects".to_string(), Some("oqts".to_string()))
+    );
+    assert_eq!(
+        e.as_taxonomy("Studies", Some("b15".into())),
+        ("Studies".to_string(), Some("b15".to_string()))
+    );
+    let lab = r(&e, "Lab partner for Thursday?");
+    e.triage(
+        TriageReq {
+            intent: Intent::File {
+                key: "Engineering".into(),
+                item: None,
+            },
+            refs: vec![lab.clone()],
+            summary: None,
+            review_id: None,
+        },
+        Who::ALEC,
+    )
+    .unwrap();
+    let (a, t) = parse_thread_ref(&lab).unwrap();
+    assert_eq!(
+        e.db.fors().unwrap().get(&(a.to_string(), t.to_string())),
+        Some(&("folder".to_string(), "Studies".to_string()))
+    );
+    assert!(!in_inbox(&e, &lab));
+}

@@ -144,7 +144,7 @@ impl App {
         let mut all = item::options(shared);
         // Your own folders too (Admin, Travel, …), which receipts and bookings are guessed into
         // since 10 Nov: without them the guess was not in the list and ⏎ took the first item.
-        for k in &self.cfg.keys {
+        for k in self.cfg.keys.iter().filter(|k| k.files_as.is_none()) {
             if !all.iter().any(|o| o.folder.eq_ignore_ascii_case(&k.name)) {
                 all.push(locus_contract::fors::For {
                     id: k.name.clone(),

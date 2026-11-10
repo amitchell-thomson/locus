@@ -677,7 +677,22 @@ impl KeryxMcp {
     #[tool(description = "Keys (shared filing folders) and which accounts each works on.")]
     async fn list_keys(&self) -> Result<CallToolResult, ErrorData> {
         self.run(|e| {
-            Ok(json!({"keys": e.cfg.keys.iter().map(|k| json!({"name": k.name, "accounts": k.folders.keys().collect::<Vec<_>>()})).collect::<Vec<_>>()}))
+            // The places to file: the locus taxonomy's areas and Personal's streams, and the
+            // registry items (filed as {"key": area, "item": id}). Retired mail folders are not
+            // offered (10 Nov: one way to file everywhere).
+            let mut keys: Vec<serde_json::Value> = Vec::new();
+            if let Some(s) = &e.shared {
+                for o in keryx_store::item::options(s) {
+                    keys.push(match &o.item {
+                        Some(i) => json!({"name": o.folder, "item": i, "label": o.label}),
+                        None => json!({"name": o.folder, "label": o.label}),
+                    });
+                }
+            }
+            for k in e.cfg.keys.iter().filter(|k| k.files_as.is_none()) {
+                keys.push(json!({"name": k.name, "accounts": k.folders.keys().collect::<Vec<_>>()}));
+            }
+            Ok(json!({"keys": keys}))
         })
         .await
     }

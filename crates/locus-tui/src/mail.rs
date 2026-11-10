@@ -503,7 +503,8 @@ pub fn key_names() -> Vec<(String, String)> {
         }
     }
     if let Ok(c) = Config::load(&Config::default_path()) {
-        for k in c.keys {
+        // A retired key (files_as set, 10 Nov) is not a place of its own any more.
+        for k in c.keys.into_iter().filter(|k| k.files_as.is_none()) {
             if !v.iter().any(|(n, _)| n.eq_ignore_ascii_case(&k.name)) {
                 v.push((k.name, "a folder".into()));
             }

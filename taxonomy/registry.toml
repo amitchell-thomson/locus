@@ -58,6 +58,14 @@ sessions = ["oqts"]
 components = [{ name = "oxdaq", repo = "oqts/oxdaq-core" }, { name = "platform", repo = "oqts/oqts-platform" }, { name = "website", repo = "oqts/oqts-site" }]
 
 [[projects]]
+id = "jcr-treasurer"
+name = "JCR Treasurer"
+folder = "jcr-treasurer"
+area = "Projects"
+kind = "role"
+active = true
+
+[[projects]]
 id = "cv"
 name = "CV"
 folder = "cv"

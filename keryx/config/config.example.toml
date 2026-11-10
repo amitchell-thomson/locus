@@ -65,36 +65,44 @@ colour = "pink"
 # folders maps account id → Gmail label or Mail mailbox. Numbered 1… in the TUI.
 [[keys]]
 name = "Admin"
+files_as = "Admin"   # retired 10 Nov: files as this place in the taxonomy
 colour = "lavender"
 kairos_key = "Personal"
 folders = { personal = "Admin & Receipts", oxford = "Admin" }
 
 [[keys]]
 name = "Engineering"
+files_as = "Studies"   # retired 10 Nov: files as this place in the taxonomy
 colour = "blue"
 kairos_key = "Engineering"
 folders = { oxford = "Engineering" }
 
 [[keys]]
 name = "Careers"
+files_as = "Careers"   # retired 10 Nov: files as this place in the taxonomy
 colour = "peach"
 kairos_key = "Careers"
 folders = { personal = "Careers", oxford = "Careers" }
 
 [[keys]]
 name = "Travel"
+files_as = "Travel"   # retired 10 Nov: files as this place in the taxonomy
 colour = "sapphire"
 kairos_key = "Personal"
 folders = { personal = "Travel" }
 
 [[keys]]
 name = "OQTS"
+files_as = "Projects"   # retired 10 Nov: files as this place in the taxonomy
+item = "oqts"
 colour = "mauve"
 kairos_key = "Careers"
 folders = { oxford = "oqts" }
 
 [[keys]]
 name = "JCR Treasurer"
+files_as = "Projects"   # retired 10 Nov: files as this place in the taxonomy
+item = "jcr-treasurer"
 colour = "yellow"
 kairos_key = "Personal"
 folders = { oxford = "JCR Treasurer" }

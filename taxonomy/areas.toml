@@ -21,9 +21,12 @@ colour = "peach"
 [[areas]]
 id = "Personal"
 colour = "lavender"
-streams = ["Family", "Sport", "Social", "Errands"]
+# Admin and Travel joined on 10 Nov: receipts, orders and bookings, which keryx used to file
+# into mail folders of the same names outside the taxonomy ("admin and travel for those, errands
+# are more like present shopping, laundry, garbage etc."). Errands is for chores.
+streams = ["Family", "Sport", "Social", "Errands", "Admin", "Travel"]
 filter_by_stream = true
-stream_colours = { Family = "yellow", Sport = "green", Social = "pink", Errands = "lavender" }
+stream_colours = { Family = "yellow", Sport = "green", Social = "pink", Errands = "lavender", Admin = "rosewater", Travel = "sapphire" }
 
 # Kinds of registry entry (registry.toml). Everything else has a kind too (task, event, mail
 # thread, source, ...; ADR-006), but only these three are registered.
@@ -34,6 +37,10 @@ about = "a repository you work in: sessions, chats, change records, a decision l
 [[kinds]]
 id = "course"
 about = "a course you take: notes, lectures, deadlines, sheets, topic tracks"
+
+[[kinds]]
+id = "role"
+about = "a role you hold (JCR Treasurer): mail, deadlines and a page of its own; no repository"
 
 [[kinds]]
 id = "application"

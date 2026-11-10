@@ -132,6 +132,16 @@ pub struct KeyDef {
     pub kairos_key: Option<String>,
     /// Account id → label (Gmail) or mailbox (Mail.app).
     pub folders: BTreeMap<String, String>,
+    /// What filing here means in the locus taxonomy: an area or a Personal stream ("Studies",
+    /// "Admin"). Set, the key is retired as a destination of its own: filing under it files
+    /// under this instead (archived, recorded for it, as every taxonomy filing is), and mail
+    /// already in its folder is recorded for it once. One way to file everywhere (10 Nov:
+    /// "it still feels unclean and inconsistent with the rest of the system").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub files_as: Option<String>,
+    /// With `files_as`: the registry item its mail is for (OQTS → the oqts project).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -865,6 +875,8 @@ mod tests {
         let e = errs_after(|c| {
             let k = c.keys[0].clone();
             c.keys.push(KeyDef {
+                files_as: None,
+                item: None,
                 name: k.name.to_uppercase(),
                 ..k
             });
@@ -883,6 +895,8 @@ mod tests {
             let k = c.keys[0].clone();
             for i in 0..MAX_KEYS {
                 c.keys.push(KeyDef {
+                    files_as: None,
+                    item: None,
                     name: format!("k{i}"),
                     ..k.clone()
                 });

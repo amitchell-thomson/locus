@@ -91,6 +91,20 @@ calendar = "personal"
 area = "Personal"
 aliases = ["Personal", "Inbox"]
 
+# Admin (receipts, orders) and Travel (bookings, trips): Personal streams since 10 Nov. They
+# share the personal calendar until they have calendars of their own; Travel has no digit (0).
+[[keys]]
+name = "Admin"
+index = 9
+calendar = "personal"
+area = "Personal"
+
+[[keys]]
+name = "Travel"
+index = 0
+calendar = "personal"
+area = "Personal"
+
 [[sources]]
 id = "personal"
 kind = "icloud"

@@ -134,7 +134,8 @@ pub fn is_folder_name(s: &str) -> bool {
         && !s.starts_with('-')
         && !s.ends_with('-')
         && !s.contains("--")
-        && s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        && s.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
 /// Where a project you build stands (10 Nov: "only show the projects that are only live and
@@ -164,6 +165,9 @@ pub enum ProjectKind {
     /// A pursuit with stages owned by a company: an internship or job application. No
     /// repository or sessions; it has a stage and whose move it is, dates, mail, a prep plan.
     Application,
+    /// A role you hold: JCR Treasurer (10 Nov, your call: "a registry item", so its mail, dates
+    /// and invoices have one place and a page, as OQTS has). No repository, no sessions, no stages.
+    Role,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

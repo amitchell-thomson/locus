@@ -78,7 +78,7 @@ def reingest_repo_incremental(repo_path, conn, *, force: bool = False) -> Ingest
             return IngestResult(str(repo), "skipped", doc_id=existing["id"])
         old_blobs = _load_manifest_blobs(existing["content_hash"])
         if old_blobs is None or force:
-            # No diff base (pre-manifest doc / LocusDrop tarball) or a forced full re-run.
+            # No diff base (pre-manifest doc / snapshot tarball) or a forced full re-run.
             return ingest_repo(repo, conn, force=force)
 
         doc_id = existing["id"]

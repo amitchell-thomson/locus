@@ -25,7 +25,7 @@ repo-relative path, text = full verbatim source, §15.0), with:
     never fails the repo.
 
 Two repo channels share this extractor (build step 10): tracked server repos (git,
-commit-sha content hash) and LocusDrop snapshot drops (possibly no .git — eligible files
+commit-sha content hash) and snapshot drops (data/incoming/projects) (possibly no .git — eligible files
 fall back to a filesystem walk and the content hash to a manifest hash).
 """
 
@@ -79,7 +79,7 @@ def repo_head(repo: Path) -> str | None:
     """The repo's HEAD commit sha, or None if `repo` is not itself a git work-tree root.
 
     `git rev-parse` walks UP the directory tree, so a plain folder nested inside some
-    other repo (e.g. a LocusDrop tree under data/incoming/, which lives inside the locus
+    other repo (e.g. a snapshot tree under data/incoming/, which lives inside the locus
     repo) would silently resolve to the ENCLOSING repo's HEAD — and `git ls-files` would
     then list nothing for the gitignored drop. Requiring toplevel == repo rejects that.
     """
@@ -110,7 +110,7 @@ def _git_files(repo: Path) -> list[str] | None:
 
 
 def _walk_files(repo: Path) -> list[str]:
-    """Filesystem fallback for non-git trees (LocusDrop snapshot drops)."""
+    """Filesystem fallback for non-git trees (snapshot drops (data/incoming/projects))."""
     out: list[str] = []
     for p in sorted(repo.rglob("*")):
         if not p.is_file():

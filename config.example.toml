@@ -112,7 +112,7 @@ annotation_image_cap = 4
 # Tracked code repositories (step 10). `locus watch` checks each repo's git HEAD every
 # check_interval seconds and re-ingests only when new commits landed (the check is ~free);
 # `locus sync [--force]` runs the same pass manually. Smaller/ad-hoc repos can instead be
-# dropped as a folder into LocusDrop/projects/<name>/ — ingested once as a snapshot.
+# dropped as a folder into data/incoming/projects/<name>/ — ingested once as a snapshot.
 paths = [
   "/home/alec/server-projects/digest",
   "/home/alec/server-projects/locus",

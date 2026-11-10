@@ -982,7 +982,7 @@ def _write_repo_manifest(snap: code_extract.RepoSnapshot, repo: Path) -> str:
     Deliberate exception to §6's copy-the-raw-file rule: a git repo IS its own durable raw
     store (every commit recoverable by sha), so Locus stores a pointer — repo path, HEAD,
     and the eligible-file blob list (which doubles as the pass-cache key material).
-    LocusDrop snapshot drops, whose source tree is deleted after ingest, get a real
+    snapshot drops (data/incoming/projects), whose source tree is deleted after ingest, get a real
     tarball instead (see watcher.py).
     """
     raw_store = load().paths.raw_store
@@ -1010,7 +1010,7 @@ def ingest_repo(
     commits) — same content and not `force` is a skip; otherwise the old document is
     replaced atomically (prepare-first, delete+write in one transaction).
 
-    `source_uri` defaults to the resolved repo path; LocusDrop snapshot drops pass a
+    `source_uri` defaults to the resolved repo path; snapshot drops (data/incoming/projects) pass a
     stable `locusdrop:<name>` key (their incoming path is transient) plus a tarball
     `raw_name` (their source tree is deleted after ingest).
     """

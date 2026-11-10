@@ -806,11 +806,6 @@ def cmd_export_obsidian(args) -> None:
     )
     for w in report.warnings:
         print(f"  ! {w}")
-    print(
-        "\nView from the Mac (plan §10):\n"
-        "  rsync -az --delete --exclude '.obsidian/' "
-        f"<host>:{report.out_dir}/ ~/LocusVault/"
-    )
 
 
 def cmd_warm_latex(args) -> None:

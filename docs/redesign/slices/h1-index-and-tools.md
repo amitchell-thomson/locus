@@ -266,5 +266,49 @@ H1.8, then H1.9, H1.10 and H1.11.
 - Moving the library into `heuris.db`, and the propositions measurement: after H1.
 - Drafting mail from the phone: later, because keryxd runs only on the Mac.
 
+## Progress (10 Nov, end of the first day)
+
+- **H1.1–H1.2:** done (above).
+- **H1.3–H1.7:** the first full index was built on the server in under 4 minutes on the GPU:
+  - mail 3,958 items (OQTS-shared: 0);
+  - calendar and tasks 921;
+  - chats 6,904 (both machines);
+  - repos 2,328 (9 projects, 189 docs, 2,140 commits);
+  - 32,715 chunks in all.
+
+  The server re-indexes every 15 minutes (`locus-heuris.timer`); the laptop pushes on the same
+  beat (`com.locus.heuris-push`).
+- **Mail cleaner:** quoted text and signatures cut kept-reply text from 7.3M to 0.5M characters.
+  A forward under a short note keeps the forwarded mail, unquoted.
+- **H1.8–H1.9:** `context`, `search`, `open`, `timeline` are on the service, and the old tools
+  are retired. Checks against the real index:
+  - the BH offer email is found (Q44);
+  - interviews are found among events;
+  - Family events are present;
+  - this week's locus commits are in order.
+
+  A fresh laptop `claude -p` answered "when did I last hear from Brevan Howard" correctly from
+  mail with pointers, in 29 s.
+- **Fixed from the checks:**
+  - `area=Family` let library papers through;
+  - a firm ("Brevan Howard") was read as a person's name; it now resolves to its applications
+    plus mail from its domain.
+- **H1.10:**
+  - the Home chat has the tools, and answered Q1 from them;
+  - keryx is registered at user level on the laptop;
+  - the CLAUDE.md line is on both machines;
+  - the public listener runs behind Funnel at `https://compute-node.tailb449e5.ts.net:8443/mcp`,
+    with OAuth and a passphrase (Keychain `locus-public-passphrase`).
+
+  **Waiting on you:**
+  - add the connector on claude.ai;
+  - sign Claude Code in again on the server (its login had expired, so the server check could
+    not run).
+- **H1.11:** answer lines drafted in [h1-test-set.md](h1-test-set.md), waiting for your
+  corrections before scoring.
+- **Found:** keryx's own tools return OQTS-shared mail to any chat that has them (the Home chat
+  read one thread), which goes against integrity question 47. The index never holds it. This is
+  a decision for you; keryx is unchanged.
+
 ## Report
 *(written when H1 closes)*

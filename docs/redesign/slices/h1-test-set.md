@@ -1,6 +1,6 @@
 # H1 test set: what a good answer contains (draft for your corrections)
 
-**State:** drafted 10 Nov 2026 by Claude, waiting for your corrections (H1 D8) · **Questions:** heuris.tex J, copied in below
+**State:** drafted 10 Nov 2026 by Claude, corrected by you 10 Nov (H1 D8) · **Questions:** heuris.tex J, copied in below
 
 Each question is sorted into one of three groups:
 - **H1:** the index and tools can answer it now;
@@ -23,7 +23,8 @@ You spot-check ten.
 > Both offers from mail: BH's 20 Aug offer for 21 Jun–27 Aug 2027 (pay, allowance, bonus) and Millennium QD (offer accepted, right to work confirmed 5 Nov). Your own reasoning from past chats about each, and the case for each in terms of your stated goals (systematic, then a graduate role). It notes that BH's contract is signed (applications file, 26 Aug), so choosing Millennium means reneging.
 
 **Y2 · H1 ·** What did I write on the Millennium role preference form they sent after the spring week? From that, why do you think they put me on the quant dev track rather than QR?
-> The role preference form as you filled it in, quoted from mail or your notes. If it is not found, the answer says so and does not reconstruct it. The QD-versus-QR reasoning grounded in that form and the spring-week mail. `?` Where did the form go: mail, or a form site?
+> The role preference form as you filled it in, quoted from mail or your notes. If it is not found, the answer says so and does not reconstruct it. The QD-versus-QR reasoning grounded in that form and the spring-week mail. The form was a pdf sent in mail, that I marked up with my preferences and returned to them.
+> *Found:* "Meet Millennium Questionnaire", `Millennium Questionnaire.pdf`, sent 23 Jun, returned by you 28 Jun. **H1 gap:** the index keeps attachment names but not their contents, so today a good answer finds the mail and says it cannot read the form.
 
 **Y3 · H1 ·** Look through the Brevan Howard notes I made over the internship and draw on other projects and notes to theorise about how to improve nabla.
 > Your BH internship notes (tablet notebooks, in the library) cited by page. Ideas tied to nabla's real design from its repo docs, plus other projects only where a real link exists.
@@ -51,7 +52,7 @@ You spot-check ten.
 **1 · H1 ·** What deadlines or interviews do I have coming up in careers, and what do I still owe anyone?
 > Careers events and tasks ahead from kairos, and dated asks in recent careers mail. On 10 Nov: the GR team mixer 11 Nov 17:00 (not in the calendar, and it clashes with training), team formation by 13 Nov, the passport renewal you told Millennium about.
 
-**2 · H1 ·** When did I last hear from [BH recruiter], and what did I last tell them?
+**2 · H1 ·** When did I last hear from Sarah Scadding, and what did I last tell them?
 > Sarah Scadding, 5 Oct, "No problem at all…", in reply to your 3 Oct email with the documents.
 
 **3 · H1 ·** Did I agree to anything in an email that is not in my calendar yet?
@@ -64,7 +65,8 @@ You spot-check ten.
 > nabla's docs or commits or chats that record the decision, quoted with its date. If none record a reason, the answer says so.
 
 **6 · H1 ·** Which version of my CV went to G-Research?
-> The CV attachment on the G-Research application mail (the file name and date), matched to the cv repo's history if possible. `?` Did it go by mail or through a portal?
+> The CV attachment on the G-Research application mail (the file name and date), matched to the cv repo's history if possible. Went through an application portal, so there will be no email to find with it as the attachment.
+> So a good answer dates the application (applications file, portal confirmation mail) and names the cv repo commit current at that date, saying it is inferred; or says it cannot know.
 
 ## Linking
 
@@ -88,6 +90,10 @@ You spot-check ten.
 
 **13 · H1 ·** Which papers I have read, and my notes on them, hold ideas I could use in my projects, or for a new one?
 > Papers you read and noted, each tied to a project or a new idea, cited.
+
+
+How does this fit into ideas/ suggestions/ corrections that I make in margins as I go - do I need to ask for them explicitly or how do they get recorded?
+> *Answer (Claude, 10 Nov):* nothing to ask for. Capture reads the tablet every half hour, stores each mark with the passage it covers, transcribes the handwriting and adds it to the library, where `search` finds it (H1.8). What does not happen yet is anything acting on them: a correction does not become a fact until H2, and an idea is not followed up unless a chat searches for it.
 
 ## Describing my own work
 
@@ -126,7 +132,8 @@ You spot-check ten.
 > The 3YP group's last proposal, found by search, scheduled through kairos (pending your approval).
 
 **24 · H1 ·** What are the start date and terms in my Millennium offer?
-> Start date and terms quoted from the Millennium offer mail. `?` Is the offer in mail, or only in a portal?
+> Start date and terms quoted from the Millennium offer mail. The offer chain is fully in mail, but the contract itself is in my downloads folder.
+> **H1 gap:** `~/Downloads` is not indexed, so terms that are only in the contract are not found; the answer must say so.
 
 **25 · H1 ·** Who has not answered an email of mine that needed an answer?
 > Threads where your message was last, asked a question and has had no answer for over a week.
@@ -153,10 +160,10 @@ You spot-check ten.
 **33 · H1 ·** Across all my interviews, which question types keep coming up?
 > Question types drawn from your interview notes and prep chats, counted, each cited.
 
-**34 · H1 ·** Write a cover-letter paragraph for [firm] using my real projects.
-> A paragraph using real project facts from the repos, cited, for the named firm.
+**34 · H1 ·** Write a cover-letter paragraph for [firm] using my real projects and experience.
+> A paragraph using real project facts from the repos, cited, for the named firm, and contacts/ experience from email chains/ facts/ CV
 
-**35 · H1 + H2 ·** I've been accepted to the G-Research x Oxford Edge AI/ML Quant Challenges. Which projects should I aim for, given that I want to work close to systematic at Millennium this summer (alt data or rates), then stay on or go to a graduate role at a systematic or HFT firm (Tower, Jump, G-Research, HRT, QRT)?
+**35 · H1 + H2 ·** I've been accepted to the G-Research x Oxford Edge AI/ML Quant Challenges. Which projects should I aim for, given that I want to work close to systematic at Millennium this summer (alt data or rates), then stay on or go to a graduate trading/research role at a systematic or HFT firm (Tower, Jump, G-Research, HRT, QRT)?
 > The acceptance mail and its challenges list, your projects, and the Millennium offer. Your stated preferences need `remember` (H2): until then it uses your chats about them, cited.
 
 ## Planning and advice
@@ -187,7 +194,7 @@ You spot-check ten.
 **39 · H1 ·** What project ideas have I had over the past year?
 > Project ideas from chats and notes over the year, each dated and cited.
 
-**40 · H1.10 (phone) ·** On the phone, in claude.ai: what is on tomorrow, and is there anything I need to prepare?
+**40 · H1.10 (phone) ·** On the phone, in claude.ai: what is on tomorrow, and is there anything I need to prepare (eg. explain to me how this specific part of quast works)?
 > Tomorrow's calendar and anything to prepare, from claude.ai on the phone.
 
 ## Personal
@@ -211,7 +218,7 @@ You spot-check ten.
 > It names both Sams, or asks which (the test passes on fixtures; checked on real data at scoring).
 
 **47 · H1 ·** Anything from the OQTS-shared mailbox. It must never appear.
-> Nothing from OQTS-shared. **Open:** the index never holds it, but keryx's own tools do return it (the Home chat read an OQTS-shared thread on 10 Nov).
+> Nothing from OQTS-shared. **Open:** the index never holds it, but keryx's own tools do return it (the Home chat read an OQTS-shared thread on 10 Nov). -That is fine for now.
 
 **48 · H1 ·** Explain how quast's barrier tuning works. Every claim must match the repository.
 > Every claim matches quast's repo docs.

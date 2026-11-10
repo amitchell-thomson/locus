@@ -124,3 +124,14 @@ def test_deep_renames_go_deepest_first_and_never_merge():
         ("Studies/b14-x/Image Processing/Week One", "Studies/b14-x/Image Processing/week-one"),
         ("Studies/b14-x/Image Processing", "Studies/b14-x/image-processing"),
     ]
+
+
+def test_a_finished_project_gets_no_new_folders():
+    from locus.files_sync import plan
+    reg = {"Projects": {"aulos", "quast"}, "Studies": set(), "Careers": set(), "Personal": set()}
+    areas = {"Projects", "Studies", "Careers", "Personal"}
+    p = plan(areas | {"Projects/quast"}, areas | {"Projects/quast"}, reg, done={"Projects/aulos"})
+    assert "Projects/aulos" not in p.to_laptop and "Projects/aulos" not in p.to_tablet
+    # One that exists on one side is still mirrored: its notes are kept.
+    p = plan(areas | {"Projects/quast", "Projects/aulos"}, areas | {"Projects/quast"}, reg, done={"Projects/aulos"})
+    assert "Projects/aulos" in p.to_tablet

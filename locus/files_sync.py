@@ -70,6 +70,15 @@ def registry_folders(path: Path | str = REGISTRY_PATH) -> dict[str, set[str]]:
     return out
 
 
+def done_folders(path: Path | str = REGISTRY_PATH) -> set[str]:
+    """`Area/folder` of every finished project (registry `state = "done"`, 10 Nov). Its folder is
+    known, so never a question, but it is not made where it does not exist: a finished project
+    with no notes would only leave two empty folders behind."""
+    data = tomllib.loads(Path(path).read_text())
+    return {f"{e['area']}/{e['folder']}" for e in data.get("projects", [])
+            if e.get("state") == "done" and e.get("area") and e.get("folder")}
+
+
 # --- the two trees, as sets of "Area/a/b" paths ---------------------------------------------------
 
 def laptop_folders(root: Path | str = FILES_ROOT) -> set[str]:
@@ -138,7 +147,7 @@ class Plan:
 
 
 def plan(laptop: set[str], tablet: set[str], registry: dict[str, set[str]],
-         renames: list[tuple[str, str]] = ()) -> Plan:
+         renames: list[tuple[str, str]] = (), done: set[str] = frozenset()) -> Plan:
     """What to make where, and what to ask. `renames` are the tablet's level-2 folders still
     under their old names (`rename_plan`): until `locus files tablet-rename` has run, the new
     name is NOT made beside the old one, which would leave two folders for one thing, and the
@@ -181,6 +190,8 @@ def plan(laptop: set[str], tablet: set[str], registry: dict[str, set[str]],
     for area, names in registry.items():
         for f in sorted(names):
             p = f"{area}/{f}"
+            if p in done and p not in laptop and p not in tablet:
+                continue
             if p not in laptop:
                 out.to_laptop.append(p)
             if p not in tablet and p not in pending_new:
@@ -250,7 +261,7 @@ def sync(*, dry_run: bool = False, root: Path | str = FILES_ROOT) -> Plan:
     are true either way; a failure to reach the tablet raises and writes nothing."""
     root = Path(root).expanduser()
     tablet = fetch_tablet()
-    p = plan(laptop_folders(root), tablet, registry_folders(), rename_plan(tablet))
+    p = plan(laptop_folders(root), tablet, registry_folders(), rename_plan(tablet), done=done_folders())
     if not dry_run:
         for rel in p.to_laptop:
             (root / rel).mkdir(parents=True, exist_ok=True)

@@ -94,11 +94,21 @@ name = "Tanker-flow"
 folder = "tanker-flow"
 area = "Projects"
 kind = "repo"
-state = "parked"
+state = "done"
 active = false
 
 # ── course ──────────────────────────────────────────────────────────────────────────────────────
 # Courses. Names exactly as on Canvas: the tablet capture matches its folders on them.
+
+[[projects]]
+id = "aulos"
+name = "aulos"
+folder = "aulos"
+area = "Projects"
+kind = "repo"
+state = "done"
+active = false
+sessions = ["aulos"]
 
 [[projects]]
 id = "b1"

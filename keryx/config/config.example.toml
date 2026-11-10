@@ -58,6 +58,7 @@ inbox_mailbox = "INBOX"
 archive_mailbox = "[Gmail]/All Mail"
 sent_mailbox = "[Gmail]/Sent Mail"
 shared = true              # used with one other person: every Claude write needs you
+hidden = true              # not in the All view; Shift-Tab reaches it, All's title names it
 colour = "pink"
 
 # Keys: shared filing destinations ("Admin is Admin on any account").

@@ -65,10 +65,50 @@ pub struct Account {
     /// Used by other people too: every Claude write needs Alec (SPEC §6.2).
     #[serde(default)]
     pub shared: bool,
+    /// Left out of the All view: the TUI's first `Tab` position and `keryx inbox` with no
+    /// account. Still one `Tab` / `Shift-Tab` away, named in the All view's title, and seen by
+    /// Claude's tools. For OQTS shared, the society's inbox, not his (10 Nov: "still visible,
+    /// just not initially shown in 'all'").
+    #[serde(default)]
+    pub hidden: bool,
     pub colour: Rgb,
     /// Plain text added to replies and drafts from this account.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<String>,
+}
+
+impl Config {
+    /// The accounts the All view shows: empty (= every account) when none is hidden.
+    pub fn default_accounts(&self) -> Vec<String> {
+        if self.accounts.iter().any(|a| a.hidden) {
+            self.accounts
+                .iter()
+                .filter(|a| !a.hidden)
+                .map(|a| a.id.clone())
+                .collect()
+        } else {
+            vec![]
+        }
+    }
+
+    /// The All view's name. With an account hidden it still NAMES it and the key that reaches
+    /// it, so the account is out of the list but never out of sight: "All accounts · OQTS
+    /// shared on ⇧Tab" (⇧Tab when it is the last account: one press back from All).
+    pub fn default_label(&self) -> String {
+        let n = self.accounts.len();
+        let hidden: Vec<String> = self
+            .accounts
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| a.hidden)
+            .map(|(i, a)| format!("{} on {}", a.name, if i + 1 == n { "⇧Tab" } else { "Tab" }))
+            .collect();
+        if hidden.is_empty() {
+            "All accounts".into()
+        } else {
+            format!("All accounts · {}", hidden.join(", "))
+        }
+    }
 }
 
 impl Account {
@@ -692,6 +732,16 @@ mod tests {
         let mut c = example();
         edit(&mut c);
         c.validate()
+    }
+
+    #[test]
+    fn hidden_accounts_leave_the_all_view() {
+        let mut c = example();
+        assert_eq!(c.default_accounts(), Vec::<String>::new(), "none hidden: every account");
+        assert_eq!(c.default_label(), "All accounts");
+        c.accounts.iter_mut().find(|a| a.id == "oqts-shared").unwrap().hidden = true;
+        assert_eq!(c.default_accounts(), vec!["personal", "oxford", "oqts"]);
+        assert_eq!(c.default_label(), "All accounts · OQTS shared on ⇧Tab");
     }
 
     #[test]

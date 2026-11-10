@@ -406,18 +406,21 @@ impl App {
 
     pub fn filter(&self) -> Filter {
         Filter {
-            accounts: self
-                .shown_accounts()
-                .into_iter()
-                .filter_map(|i| self.cfg.accounts.get(i - 1).map(|a| a.id.clone()))
-                .collect(),
+            accounts: if self.account == 0 {
+                self.cfg.default_accounts()
+            } else {
+                self.shown_accounts()
+                    .into_iter()
+                    .filter_map(|i| self.cfg.accounts.get(i - 1).map(|a| a.id.clone()))
+                    .collect()
+            },
             limit: LIST_LIMIT,
         }
     }
 
     pub fn account_label(&self) -> String {
         match self.account {
-            0 => "All accounts".into(),
+            0 => self.cfg.default_label(),
             _ => self
                 .shown_accounts()
                 .into_iter()

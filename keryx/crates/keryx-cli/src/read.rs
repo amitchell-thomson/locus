@@ -127,7 +127,7 @@ pub fn inbox(cfg: &Config, account: Option<&str>, limit: u32, json: bool) -> any
     let db = open_db(cfg)?;
     let accounts = match account {
         Some(a) => vec![account_id(cfg, a)?],
-        None => vec![],
+        None => cfg.default_accounts(),
     };
     let rows = view::list(&db, cfg, &View::Inbox, &Filter { accounts, limit })?;
     print_rows(cfg, &rows, json, "inbox", keryx_tui::now(cfg));

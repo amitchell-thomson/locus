@@ -68,6 +68,11 @@ def test_family_events_get_the_family_area_and_tasks_their_thing():
     e = calendar.event_item({"uid": "U", "source": "family", "title": "Christmas", "recurring": False,
                              "span": {"type": "all_day", "start": "2026-12-25", "end": "2026-12-26"}})
     assert e.area == "Family" and e.kind == "event"
+    # Whose it is, in the item itself (H1 fix 1): Q1, 35 and P1 read family events as his.
+    assert e.title.startswith("[family]") and "not necessarily Alec's" in e.text and e.meta["family"]
+    own = calendar.event_item({"uid": "V", "source": "studies", "key": "Studies", "title": "B15 lecture",
+                               "recurring": False, "span": {"type": "all_day", "start": "2026-11-12"}})
+    assert own.title == "B15 lecture" and "FAMILY" not in own.text
     t = calendar.task_item({"id": "t-1", "title": "plan", "status": "open", "locus": "quast",
                             "created_at": "2026-11-09T14:29:20.632843778Z"})
     assert t.thing == "quast" and t.area == "Projects"

@@ -58,10 +58,21 @@ def _when(span: dict) -> str:
     return f"{s} to {e}" if e else str(s)
 
 
+# What a Family-calendar event says about itself, in its title and first line (H1 fix 1, 10 Nov):
+# Q1, 35 and P1 described Callum's personal training and a family flight as Alec's own plans,
+# because nothing in the item said whose it was beyond an area label the answer never read.
+FAMILY_NOTE = "On the FAMILY calendar (shared with his family): someone in the family's, not necessarily Alec's."
+
+
 def event_item(e: dict) -> Item:
     rid = e.get("recurrence_id") or e["span"].get("start")
-    area = "Family" if e.get("source") == "family" else e.get("key")
-    parts = [e.get("title", ""), f"When: {_when(e['span'])}"]
+    family = e.get("source") == "family"
+    area = "Family" if family else e.get("key")
+    title = e.get("title", "")
+    parts = [title, f"When: {_when(e['span'])}"]
+    if family:
+        title = f"[family] {title}"
+        parts.insert(0, FAMILY_NOTE)
     if e.get("location"):
         parts.append(f"Where: {e['location']}")
     if e.get("description"):
@@ -70,11 +81,11 @@ def event_item(e: dict) -> Item:
         ref=f"event:{e['source']}/{e['uid']}#{rid}",
         kind="event",
         at=_start(e["span"]),
-        title=e.get("title", ""),
+        title=title,
         text="\n".join(parts),
         area=area,
         parent=f"event:{e['source']}/{e['uid']}",
-        meta={"source": e.get("source"), "key": e.get("key"), "location": e.get("location"),
+        meta={"source": e.get("source"), "key": e.get("key"), "location": e.get("location"), "family": family,
               "span": e["span"], "recurring": e.get("recurring"), "tentative": e.get("tentative")},
     )
 

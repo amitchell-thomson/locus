@@ -528,7 +528,9 @@ def context(conn: sqlite3.Connection, about: str | None = None, *, today: date |
         m = json.loads(meta or "{}")
         if k == "task" and m.get("status") not in ("open", None):
             continue
-        out.append(f"  {at[:16].replace('T', ' ')}  {'due ' if k == 'task' else ''}{title}" + (f"  ({area})" if area else ""))
+        # Family events are the family's (H1 fix 1): said in words, not left to the area label.
+        whose = "  (FAMILY calendar: not necessarily his)" if area == "Family" else (f"  ({area})" if area else "")
+        out.append(f"  {at[:16].replace('T', ' ')}  {'due ' if k == 'task' else ''}{title}{whose}")
     overdue = conn.execute("SELECT at, title FROM items WHERE kind='task' AND at_ts < ? AND "
                            "json_extract(meta,'$.status')='open' AND json_extract(meta,'$.due') IS NOT NULL",
                            (t0,)).fetchall()

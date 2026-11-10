@@ -363,7 +363,7 @@ holds your mail).
 | Y1 | partial | partial | pass | partial | Read the Millennium letter, still gave the dates from the handwritten offer-call note; did not use your stated goal (QD/QR beside a systematic pod, 30 Oct mail). |
 | Y3 | partial | partial | **fail** | fail | "Millennium accepted today": it was 2 Nov. Cited notes by section, not page; missed the BH "EM ideas" note. |
 | Y5 | pass | partial | pass | partial | regime-ml is not in the registry, so it said it had no repo; the library holds it (`src:175`). |
-| Y7 | partial | partial | **fail** | fail | "BH fills places from its reserve list" stated as fact, unlabelled; said the Millennium letter is not in mail (it is a file). |
+| Y7 (BH contract: **signed**, your answer 10 Nov; a renege email to Sarah planned) | partial | partial | **fail** | fail | "BH fills places from its reserve list" stated as fact, unlabelled; said the Millennium letter is not in mail (it is a file). |
 | Y9 | partial | pass | pass | partial | 2 Jun start from the handwritten note; the letter says 21 Jun. |
 | 1 | partial | partial | partial | partial | Missed the passport renewal: your 5 Nov reply is indexed with no body (rich reply). Took the family calendar's Düsseldorf flight as yours. |
 | 4 | pass | partial | pass | partial | Named no commits, though four from 10 Nov are indexed. |
@@ -389,7 +389,7 @@ holds your mail).
 3. **Library projects and notes not tied to projects** (Y5, 10, 39). regime-ml is a library project with no registry id, and reading notes carry no `thing`. Fix: register regime-ml; map each "Reading notes" note to its document's project.
 4. **Index gaps**: a rich-text reply indexed with no body (1); `markups` does not point at a notebook's indexed transcription (21); mail thread ids change when a reply arrives, so older pointers stop opening (P1).
 5. **Unlabelled claims and stale facts** (Y3, Y7, 22, 34, P1): the model's own inferences stated as fact, and an older chat trusted over newer mail. Partly H2 (facts with dates, newer replaces older), partly the CLAUDE.md line on labelling.
-6. **kairos** (P2, 36): low-risk writes from MCP apply without approval, and project time covers only 30 days. Both are kairos decisions; raised with you, not changed.
+6. **kairos** (P2, 36): low-risk writes from MCP apply without approval, and project time covers only 30 days. **Your call, 10 Nov: keep it** ("if I ask for something it should just happen, small scheduling is fine and can always be changed back"), so P2's applied writes were right, not a fault. The 30 days stays a limit of the worked-time measure (and Home's 8-week chart is still sample data: H1 fix 6 below).
 7. **OQTS-shared reaches the index indirectly** (47's grader): the 10 Nov Home chat quoted Kristof's OQTS-shared mail and is indexed. Fine for now, as you said; noted.
 
 **Found and fixed during the run:** tools ran on the server's event loop, so one search stalled

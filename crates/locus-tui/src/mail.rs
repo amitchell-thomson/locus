@@ -335,7 +335,12 @@ pub fn destinations(
                 .or_else(|| by_kind(locus_contract::ProjectKind::Course))
                 .unwrap_or_else(|| p.area.clone())
         } else {
-            pairs.get(&p.id).cloned().unwrap_or_else(|| p.area.clone())
+            // A project you build goes to a folder named after it (OQTS), else its own area:
+            // never a department folder ("quast is a big project", 10 Nov).
+            keys.iter()
+                .find(|(n, h)| h == "a folder" && (n.eq_ignore_ascii_case(&p.name) || n.eq_ignore_ascii_case(&p.id)))
+                .map(|(n, _)| n.clone())
+                .unwrap_or_else(|| p.area.clone())
         };
         let label = match parent(p) {
             Some(q) => format!("{} ({})", q.name, p.name),

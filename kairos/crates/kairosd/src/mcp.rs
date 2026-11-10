@@ -167,6 +167,14 @@ pub struct ListEventsArgs {
     pub keys: Option<Vec<String>>,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema, Default)]
+pub struct WorkedArgs {
+    /// Range start, e.g. '2026-10-01' (default 28 days ago).
+    pub from: Option<String>,
+    /// Range end, exclusive, e.g. '2026-11-01' (default now).
+    pub to: Option<String>,
+}
+
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct FindFreeArgs {
     pub from: Option<String>,
@@ -851,6 +859,46 @@ impl KairosMcp {
     )]
     async fn list_projects(&self) -> Result<CallToolResult, ErrorData> {
         self.run(|e| e.projects()).await
+    }
+
+    #[tool(
+        description = "Time Alec worked on each project over ANY range (\"last month\", \"October\", \"since the 1st\"): hours per project in total and by week, measured from his Claude sessions in each project's repository (no check-in needed; overlaps counted once). Kept for eight weeks: an earlier range says what is not measured. Read-only. For planned time, list_events/list_tasks."
+    )]
+    async fn worked(&self, Parameters(a): Parameters<WorkedArgs>) -> Result<CallToolResult, ErrorData> {
+        self.run(move |e| {
+            let now = e.now();
+            let from_s = a.from.clone().unwrap_or_else(|| (now - Duration::days(28)).format("%Y-%m-%d").to_string());
+            let (from, to) = window(e, Some(&from_s), a.to.as_deref(), 28)?;
+            let to = if a.to.is_none() { now } else { to.min(now) };
+            let spans = e.worked(from, to)?;
+            let mut total: std::collections::BTreeMap<String, f64> = Default::default();
+            let mut weekly: std::collections::BTreeMap<String, std::collections::BTreeMap<String, f64>> = Default::default();
+            for s in &spans {
+                let (a0, b0) = (s.start.max(from), s.end.min(to));
+                if b0 <= a0 {
+                    continue;
+                }
+                let h = (b0 - a0).num_minutes() as f64 / 60.0;
+                *total.entry(s.project.clone()).or_default() += h;
+                let d = a0.with_timezone(&e.tz()).date_naive();
+                let monday = d - Duration::days(i64::from(chrono::Datelike::weekday(&d).num_days_from_monday()));
+                *weekly.entry(monday.to_string()).or_default().entry(s.project.clone()).or_default() += h;
+            }
+            let round = |h: f64| (h * 10.0).round() / 10.0;
+            let kept_from = now - Duration::days(kairos_store::worked::KEEP_DAYS);
+            Ok(serde_json::json!({
+                "from": from.to_rfc3339(),
+                "to": to.to_rfc3339(),
+                "hours_by_project": total.iter().map(|(k, v)| (k.clone(), round(*v))).collect::<std::collections::BTreeMap<_, _>>(),
+                "hours_by_week": weekly.iter().map(|(w, m)| (w.clone(), m.iter().map(|(k, v)| (k.clone(), round(*v))).collect::<std::collections::BTreeMap<_, _>>())).collect::<std::collections::BTreeMap<_, _>>(),
+                "note": if from < kept_from {
+                    format!("Worked time is kept for {} days: before {} nothing is measured, so that part of the range is not zero, it is unknown.", kairos_store::worked::KEEP_DAYS, kept_from.format("%Y-%m-%d"))
+                } else {
+                    "Measured from Claude sessions; checked-in task blocks are in list_projects.".to_string()
+                },
+            }))
+        })
+        .await
     }
 
     #[tool(description = "Add a project to Alec's list (only when he asks).")]

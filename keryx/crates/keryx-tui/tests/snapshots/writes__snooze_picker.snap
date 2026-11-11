@@ -3,15 +3,15 @@ source: keryx/crates/keryx-tui/tests/writes.rs
 expression: "render_to_string(&mut a, 80, 14)"
 ---
 ╭ keryx ───────── all · personal · oxford · oqts · oqts shared ────────────────╮
-│     Society minutes                                                         ││
-│   ● Lecturer                                                       󰁦    tue ┃│
-│     Broken file                                                             ││
-│ ▎ ● Lecturer ╭──────────── snooze 1 thread until ─────────────╮    󰁦    tue ││
-│ ▎   B4 proble│ 1  Later today           Wed 14 Oct, 18:00     │             ││
-│ ▎ ● Jane Doe │ 2  Tomorrow morning      Thu 15 Oct, 08:00     │         tue ││
-│ ▎   Lab partn│ 3  Monday morning        Mon 19 Oct, 08:00     │             ││
-│ ▎ ● Prof Smit│ 4  Pick…                                       │         tue ││
-│ ▎   Cancelled╰────────────────────────────────────────────────╯             ││
+│   Society minutes                                                         󰁦 ││
+│   Lecturer                                                    ox        tue ┃│
+│   Broken file                                                             󰁦 ││
+│ ▎ Lecturer   ╭──────────── snooze 1 thread until ─────────────╮x        tue ││
+│ ▎ B4 problem │ 1  Later today           Wed 14 Oct, 18:00     │           󰁦 ││
+│ ▎ Jane Doe   │ 2  Tomorrow morning      Thu 15 Oct, 08:00     │x        tue ││
+│ ▎ Lab partner│ 3  Monday morning        Mon 19 Oct, 08:00     │             ││
+│ ▎ Prof Smith │ 4  Pick…                                       │x        tue ││
+│ ▎ Cancelled: ╰────────────────────────────────────────────────╯             ││
 │                                                                             ││
 │ monday ──────────────────────────────────────────────────────────────────── ││
 ╰──────────────────────────────────────────────────────────────────────────────╯

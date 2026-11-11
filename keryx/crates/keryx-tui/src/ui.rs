@@ -418,26 +418,20 @@ fn list(f: &mut Frame, app: &App, area: Rect) {
 /// colour at the start, not a word competing with the subject; the thread count is a quiet
 /// `· 11`; the label it is filed for sits on this line, short, before the icons; the subject
 /// line below has the whole width to itself.
+/// Line 1 of a thread: who and how many, then three fixed columns on the right: the AREA it is
+/// filed in (blank when it has none, so filed and unfiled read down the list at a glance), the
+/// account as a short coloured word, and the date. Nothing goes between the account and the
+/// date (11 Nov: "never any icons between the two"); the icons live at the end of line 2.
 fn row_who(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
     let date = date_label(r.date, app.now).to_lowercase();
     let mut right: Vec<Span<'static>> = Vec::new();
-    if let Some(t) = mark_tag(app, r) {
-        right.push(t);
-    }
-    if r.suggested {
-        right.push(Span::styled(format!("{ICON_TASK}? "), Style::default().fg(c("mauve"))));
-    } else if r.linked {
-        right.push(Span::styled(format!("{ICON_TASK} "), Style::default().fg(c("green"))));
-    }
-    // You wrote last in a thread someone else is in: replied (round 11).
-    if r.replied {
-        right.push(Span::styled(format!("{ICON_REPLIED} "), Style::default().fg(c("blue"))));
-    }
-    if r.has_attachment {
-        right.push(Span::styled(
-            format!("{ICON_ATTACH} "),
-            Style::default().fg(c("overlay1")),
-        ));
+    let area = mark_tag(app, r).unwrap_or_else(|| Span::raw(""));
+    let aw = area.content.width();
+    right.push(area);
+    right.push(Span::raw(" ".repeat(AREA_COL.saturating_sub(aw))));
+    if show_accounts(app) {
+        let (word, col) = account_word(app, &r.account);
+        right.push(Span::styled(format!("{word:<ACCOUNT_COL$} "), Style::default().fg(col)));
     }
     right.push(Span::styled(format!("{date:>6} "), locus_theme::dim()));
     let rw: usize = right.iter().map(|s| s.content.width()).sum();
@@ -449,21 +443,12 @@ fn row_who(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
     } else {
         Span::raw(" ")
     };
-    // The account, as a dot in its colour, in the all view (and when several are shown).
-    let dot = if (app.account == 0 || !app.also.is_empty())
-        && let Some(a) = app.cfg.account(&r.account)
-    {
-        Span::styled("● ", Style::default().fg(fade(rgb(a.colour), 0.15)))
-    } else {
-        Span::raw("")
-    };
-    let dw = dot.content.width();
     let count = if r.count > 1 {
         format!(" · {}", r.count)
     } else {
         String::new()
     };
-    let room = width.saturating_sub(3 + dw + rw + 1);
+    let room = width.saturating_sub(3 + rw + 1);
     let who = fit(&r.who, room.saturating_sub(count.width()));
     let gap = room.saturating_sub(who.width() + count.width());
     let who_style = if app.is_unread(r) {
@@ -475,7 +460,6 @@ fn row_who(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
         reply_bar(r),
         mark,
         Span::raw(" "),
-        dot,
         Span::styled(who, who_style),
         Span::styled(count, locus_theme::dim()),
         Span::raw(" ".repeat(gap + 1)),
@@ -484,27 +468,61 @@ fn row_who(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
     Line::from(spans)
 }
 
-/// A thread's second line: the subject, quieter, and its account in the all view.
-/// Unread (rounds 5, 6): a blue bar down both of the row's lines, beside needs reply's peach
-/// one when both; gone once you open the thread.
-fn unread_bar(app: &App, r: &ThreadRow) -> Span<'static> {
-    if app.is_unread(r) {
-        Span::styled("▎", locus_theme::st("blue"))
-    } else {
-        Span::raw(" ")
-    }
+/// Width of the area column: `mark_tag` fits a name to 12 and adds a space.
+const AREA_COL: usize = 14;
+/// Width of the account word.
+const ACCOUNT_COL: usize = 6;
+
+/// Accounts are named on the row only when more than one is in view.
+fn show_accounts(app: &App) -> bool {
+    app.account == 0 || !app.also.is_empty()
 }
 
-/// Needs reply (round 4: the one attention marker): a peach bar down the row's left edge.
-fn reply_bar(r: &ThreadRow) -> Span<'static> {
-    if r.needs_reply.is_some() {
-        Span::styled("▌", locus_theme::st("peach"))
-    } else {
-        Span::raw(" ")
-    }
+/// The account as a short word in its colour: "pers", "ox", "oqts", "shared".
+fn account_word(app: &App, id: &str) -> (String, ratatui::style::Color) {
+    let word = match id {
+        "personal" => "pers".to_string(),
+        "oxford" => "ox".to_string(),
+        "oqts-shared" => "shared".to_string(),
+        _ => {
+            let n = app.cfg.account(id).map_or(id, |a| a.name.as_str()).to_lowercase();
+            n.split_whitespace().last().unwrap_or(&n).chars().take(ACCOUNT_COL).collect()
+        }
+    };
+    let col = app.cfg.account(id).map_or(c("overlay1"), |a| rgb(a.colour));
+    (word, col)
 }
 
-/// What a thread is marked for (`m`), short, in its area's colour: `b14`, `errands`.
+/// Line 2: the subject, and the icons at its end (a suggested task, replied, attachment). The
+/// icons win the room: a long subject is cut, never an icon.
+fn row_subject(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
+    let mut icons: Vec<Span<'static>> = Vec::new();
+    if r.suggested {
+        icons.push(Span::styled(format!("{ICON_TASK}? "), Style::default().fg(c("mauve"))));
+    }
+    // You wrote last in a thread someone else is in: replied (round 11).
+    if r.replied {
+        icons.push(Span::styled(format!("{ICON_REPLIED} "), Style::default().fg(c("blue"))));
+    }
+    if r.has_attachment {
+        icons.push(Span::styled(format!("{ICON_ATTACH} "), Style::default().fg(c("overlay1"))));
+    }
+    let iw: usize = icons.iter().map(|s| s.content.width()).sum();
+    let indent = 3;
+    let room = width.saturating_sub(indent + 1 + iw);
+    let subject = fit(&r.subject, room);
+    let gap = room.saturating_sub(subject.width());
+    let mut spans = vec![
+        reply_bar(r),
+        unread_bar(app, r),
+        Span::raw(" ".repeat(indent - 2)),
+        Span::styled(subject, locus_theme::st("overlay1")),
+        Span::raw(" ".repeat(gap + 1)),
+    ];
+    spans.extend(icons);
+    Line::from(spans)
+}
+
 fn mark_tag(app: &App, r: &ThreadRow) -> Option<Span<'static>> {
     let (kind, target) = app.marks.get(&(r.account.clone(), r.thread_id.clone()))?;
     let shared = app.shared.as_ref();
@@ -523,19 +541,20 @@ fn mark_tag(app: &App, r: &ThreadRow) -> Option<Span<'static>> {
     ))
 }
 
-fn row_subject(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
-    // The subject alone, with the whole line: labels and the account moved to the first line.
-    let indent = if app.account == 0 || !app.also.is_empty() { 5 } else { 3 };
-    let room = width.saturating_sub(indent + 1);
-    let subject = fit(&r.subject, room);
-    let gap = room.saturating_sub(subject.width());
-    Line::from(vec![
-        reply_bar(r),
-        unread_bar(app, r),
-        Span::raw(" ".repeat(indent - 2)),
-        Span::styled(subject, locus_theme::st("overlay1")),
-        Span::raw(" ".repeat(gap + 1)),
-    ])
+fn unread_bar(app: &App, r: &ThreadRow) -> Span<'static> {
+    if app.is_unread(r) {
+        Span::styled("▎", locus_theme::st("blue"))
+    } else {
+        Span::raw(" ")
+    }
+}
+
+fn reply_bar(r: &ThreadRow) -> Span<'static> {
+    if r.needs_reply.is_some() {
+        Span::styled("▌", locus_theme::st("peach"))
+    } else {
+        Span::raw(" ")
+    }
 }
 
 /// Kept for tests and the runs view: one thread as a single line.

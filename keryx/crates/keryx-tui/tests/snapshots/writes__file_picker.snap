@@ -4,17 +4,17 @@ expression: "render_to_string(&mut a, 80, 16)"
 ---
 ╭ keryx ───────── all · personal · oxford · oqts · oqts shared ────────────────╮
 │ today ───────────────────────────────────────────────────────────────────── ┃│
-│ ▎ ● Tr╭──────────────────── done: what is it for ────────────────────╮08:30 ┃│
-│ ▎   Yo│ ⏎ takes the guess · type to choose another                   │      ││
-│ ▎ ● Tr│                                                              │08:30 ││
-│ ▎   Yo│ ▸ Travel  a booking or a ticket                       Travel │      ││
+│ ▎ Trai╭──────────────────── done: what is it for ────────────────────╮08:30 ┃│
+│ ▎ Your│ ⏎ takes the guess · type to choose another                   │      ││
+│ ▎ Trai│                                                              │08:30 ││
+│ ▎ Your│ ▸ Travel  a booking or a ticket                       Travel │      ││
 │       │   quast                                             Projects │      ││
 │ yester│   nabla                                             Projects │───── ││
-│   ● Le│   locus                                             Projects │  tue ││
-│     So│   OQTS                                              Projects │      ││
-│   ● Le│   JCR Treasurer                                     Projects │  tue ││
-│     Br│   CV                                                 Careers │      ││
-│ ▎ ● Le│   3YP                                                Studies │  tue ││
-│ ▎   B4╰──────────────────────────────────────────────────────────────╯      ││
+│   Lect│   locus                                             Projects │  tue ││
+│   Soci│   OQTS                                              Projects │    󰁦 ││
+│   Lect│   JCR Treasurer                                     Projects │  tue ││
+│   Brok│   CV                                                 Careers │    󰁦 ││
+│ ▎ Lect│   3YP                                                Studies │  tue ││
+│ ▎ B4 p╰──────────────────────────────────────────────────────────────╯    󰁦 ││
 ╰──────────────────────────────────────────────────────────────────────────────╯
  ⏎ file · ↑ ↓ move · esc back

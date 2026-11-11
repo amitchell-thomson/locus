@@ -9,8 +9,10 @@ expression: "render_to_string(&mut a, 80, 24)"
 │ waiting on them · you wrote last, 2 days ago                                 │
 │                                                                              │
 │ ── 12 oct ─────────────────────────────────────────────────────────────────  │
-│        you               to Jane Doe, Sam, Team                              │
-│        11:00             I'll take part two.                                 │
+│ ▌      ▎ you                                             mon 12 oct · 11:00  │
+│ ▌      ▎ to Jane Doe, Sam · cc Team, you                                     │
+│ ▌      ▎                                                                     │
+│ ▌      ▎ I'll take part two.                                                 │
 │                                                                              │
 │  Jane Doe          Let's split the report into three parts.                  │
 │  09:00                                                                       │
@@ -22,7 +24,5 @@ expression: "render_to_string(&mut a, 80, 24)"
 │                                                                              │
 │                                                                              │
 │                                                                              │
-│                                                                              │
-│                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- r reply · d done · a archive · m for · ⏎ all whole · z as received · esc back
+ r reply · d done · a archive · m for · ↑↓ email · ⏎ open · z as received

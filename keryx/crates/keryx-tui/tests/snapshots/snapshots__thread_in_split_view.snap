@@ -10,11 +10,11 @@ expression: "render_to_string(&mut a, 140, 26)"
 │ ▎ Your e-ticket: Oxfor…                          ┃│ ── new to you ─────────────────────────────────────────────────────────────────────  │
 │                                                  ┃│                                                                                      │
 │ yesterday ────────────────────────────────────── ┃│ ── 13 oct ─────────────────────────────────────────────────────────────────────────  │
-│   Lecturer                  not assigned     tue ┃│  Lecturer          Please see the attached file.                                     │
-│   Society minutes                              󰁦 ││  12:00 new         󰁦 sheet3.pdf · 625 B                                              │
-│   Lecturer                  not assigned     tue ││                                                                                      │
-│   Broken file                                  󰁦 ││                                                                                      │
-│   Lecturer                  not assigned     tue ││                                                                                      │
+│   Lecturer                  not assigned     tue ┃│ ▌▎ Lecturer <lecturer@eng.example.ac.uk>                     tue 13 oct · 12:00 new  │
+│   Society minutes                              󰁦 ││ ▌▎ to you                                                                            │
+│   Lecturer                  not assigned     tue ││ ▌▎                                                                                   │
+│   Broken file                                  󰁦 ││ ▌▎ Please see the attached file.                                                     │
+│   Lecturer                  not assigned     tue ││ ▌▎ 󰁦 sheet3.pdf · 625 B                                                              │
 │   B4 problem sheet 3                           󰁦 ││                                                                                      │
 │ ▎ Jane Doe                  not assigned     tue ││                                                                                      │
 │ ▎ Lab partner for Thur…                          ││                                                                                      │
@@ -27,4 +27,4 @@ expression: "render_to_string(&mut a, 140, 26)"
 │   Department Office         not assigned     mon ││                                                                                      │
 │   Coursework submissio…                          ││                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- r reply · d done · a archive · m for · ⏎ all whole · z as received · o attachment · esc back
+ r reply · d done · a archive · m for · ↑↓ email · ⏎ open · z as received · o attachment · esc back

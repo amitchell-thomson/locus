@@ -77,6 +77,24 @@ fn thread_with_folded_quotes() {
 }
 
 #[test]
+fn arrows_select_an_email_and_enter_opens_only_that_one() {
+    let mut a = app();
+    select(&mut a, "Re: Group project plan");
+    keys(&mut a, &[Key::Enter]);
+    // The newest (your reply) is open; Jane's, below it, is folded to its first lines.
+    let s = render_to_string(&mut a, 80, 24);
+    assert!(!s.contains("to you"), "Jane's is folded: {s}");
+    keys(&mut a, &[Key::Down, Key::Enter]);
+    let s = render_to_string(&mut a, 80, 24);
+    assert!(s.contains("▌▎ Jane Doe"), "Jane's is selected and open: {s}");
+    assert!(s.contains("to you"), "its header names who it went to: {s}");
+    // ⏎ again folds it; the newest stayed as it was.
+    keys(&mut a, &[Key::Enter]);
+    let s = render_to_string(&mut a, 80, 24);
+    assert!(!s.contains("▌▎ Jane Doe"), "{s}");
+}
+
+#[test]
 fn thread_in_split_view() {
     let mut a = app();
     select(&mut a, "B4 problem sheet 3");

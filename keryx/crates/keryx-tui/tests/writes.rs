@@ -1346,21 +1346,28 @@ fn shift_up_and_down_go_to_the_top_and_the_bottom() {
     assert_eq!(a.sel, a.rows.len() - 1);
     keys(&mut a, &[Key::Top]);
     assert_eq!(a.sel, 0);
-    // In a thread: to its end, and no further, so ↑ moves at once.
+    // In a thread: ⇧↓ to its end and its oldest email, and no further; ↓↑ move between
+    // emails (11 Nov), ⇧↑ back to the top and the newest.
     keys(&mut a, &[Key::Enter]);
     let _ = render_to_string(&mut a, 40, 6);
     let open = a.open.as_ref().unwrap();
     let end = open.max_scroll.get();
+    let last = open.msgs.len() - 1;
     assert!(end > 0, "a thread longer than the screen");
     keys(&mut a, &[Key::Bottom]);
     assert_eq!(a.open.as_ref().unwrap().scroll, end);
+    assert_eq!(a.open.as_ref().unwrap().sel, last);
     keys(&mut a, &[Key::Down, Key::Down]);
     let _ = render_to_string(&mut a, 40, 6);
     assert_eq!(a.open.as_ref().unwrap().scroll, end);
-    keys(&mut a, &[Key::Up]);
-    assert_eq!(a.open.as_ref().unwrap().scroll, end - 1);
+    assert_eq!(a.open.as_ref().unwrap().sel, last, "no further than the oldest");
+    if last > 0 {
+        keys(&mut a, &[Key::Up]);
+        assert_eq!(a.open.as_ref().unwrap().sel, last - 1);
+    }
     keys(&mut a, &[Key::Top]);
     assert_eq!(a.open.as_ref().unwrap().scroll, 0);
+    assert_eq!(a.open.as_ref().unwrap().sel, 0);
 }
 
 #[test]

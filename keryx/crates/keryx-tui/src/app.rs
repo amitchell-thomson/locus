@@ -90,8 +90,17 @@ pub struct Open {
     pub msgs: Vec<Message>,
     /// Parsed invites, per message (same order as `msgs`).
     pub invites: Vec<Option<Invite>>,
-    pub show_quotes: bool,
-    pub expand_all: bool,
+    /// The selected message, as a position newest first (0 = the newest): ↑↓ move it.
+    pub sel: usize,
+    /// Messages (indices into `msgs`) whose fold ⏎ flipped: the newest and the new ones start
+    /// open, the rest folded.
+    pub toggled: std::collections::HashSet<usize>,
+    /// Messages shown exactly as received (`z`), quoted history and all.
+    pub raw: std::collections::HashSet<usize>,
+    /// The line each message's block starts on, newest first, and the pane's height, as last
+    /// drawn: moving the selection scrolls to it.
+    pub starts: std::cell::RefCell<Vec<usize>>,
+    pub height: std::cell::Cell<u16>,
     /// When you last opened this thread here, before this time (spec keryx-thread-view T3).
     pub last_read: Option<i64>,
     pub scroll: u16,
@@ -100,6 +109,30 @@ pub struct Open {
 }
 
 impl Open {
+    /// The selected message's index into `msgs`.
+    pub fn selected(&self) -> Option<usize> {
+        let mut v: Vec<usize> = (0..self.msgs.len()).collect();
+        v.sort_by_key(|&i| std::cmp::Reverse(self.msgs[i].date));
+        v.get(self.sel).copied()
+    }
+
+    /// Scroll the selected message's start to the top of the pane.
+    pub fn to_top(&mut self) {
+        if let Some(&s) = self.starts.borrow().get(self.sel) {
+            self.scroll = s.saturating_sub(1) as u16;
+        }
+    }
+
+    /// Scroll so the selected message is in view, its start near the top, when it is not.
+    pub fn follow(&mut self) {
+        let Some(&s) = self.starts.borrow().get(self.sel) else { return };
+        let h = usize::from(self.height.get()).max(6);
+        let top = usize::from(self.scroll);
+        if s < top || s + 5 > top + h {
+            self.scroll = (s.saturating_sub(1) as u16).min(self.max_scroll.get());
+        }
+    }
+
     /// Every attachment in the thread: (message index, attachment index).
     pub fn attachments(&self) -> Vec<(usize, usize)> {
         self.msgs
@@ -588,8 +621,11 @@ impl App {
             thread_id: thread_id.to_string(),
             msgs,
             invites,
-            show_quotes: false,
-            expand_all: false,
+            sel: 0,
+            toggled: Default::default(),
+            raw: Default::default(),
+            starts: Default::default(),
+            height: std::cell::Cell::new(0),
             last_read: None,
             scroll: 0,
             max_scroll: std::cell::Cell::new(u16::MAX),
@@ -791,21 +827,55 @@ impl App {
                 self.open = None;
                 self.mode = self.back.take().unwrap_or(Mode::List);
             }
-            Key::Char('j') | Key::Down => open.scroll = open.scroll.saturating_add(1).min(open.max_scroll.get()),
-            Key::Char('k') | Key::Up => open.scroll = open.scroll.saturating_sub(1),
+            // ↑↓ move between the emails, the view following (11 Nov); space and ^d still page
+            // through a long one.
+            Key::Char('j') | Key::Down => {
+                let to = (open.sel + 1).min(open.msgs.len().saturating_sub(1));
+                if to != open.sel {
+                    open.sel = to;
+                    open.follow();
+                }
+            }
+            Key::Char('k') | Key::Up => {
+                if open.sel > 0 {
+                    open.sel -= 1;
+                    open.follow();
+                }
+            }
             Key::PageDown | Key::Char(' ') | Key::Ctrl('d') => {
                 open.scroll = open.scroll.saturating_add(15).min(open.max_scroll.get())
             }
             Key::PageUp | Key::Ctrl('u') => open.scroll = open.scroll.saturating_sub(15),
-            Key::Char('g') | Key::Top => open.scroll = 0,
-            Key::Bottom => open.scroll = open.max_scroll.get(),
-            Key::Char('b') => self.toggle_list(),
-            Key::Char('z') => {
-                open.show_quotes = !open.show_quotes;
-                open.expand_all = open.show_quotes;
+            Key::Char('g') | Key::Top => {
+                open.sel = 0;
+                open.scroll = 0;
             }
-            // Every message whole (the newest is always whole); again folds them back.
-            Key::Enter => open.expand_all = !open.expand_all,
+            Key::Bottom => {
+                open.sel = open.msgs.len().saturating_sub(1);
+                open.scroll = open.max_scroll.get();
+            }
+            Key::Char('b') => self.toggle_list(),
+            // The selected email open or folded.
+            Key::Enter => {
+                if let Some(i) = open.selected() {
+                    if !open.toggled.remove(&i) {
+                        open.toggled.insert(i);
+                    }
+                    open.raw.remove(&i);
+                }
+                // Its start to the top, so what it says is what you see.
+                open.to_top();
+            }
+            // The selected email exactly as received (11 Nov: z on the whole thread was
+            // unreadable); again goes back to its own words.
+            Key::Char('z') => {
+                if let Some(i) = open.selected()
+                    && !open.raw.remove(&i)
+                {
+                    open.raw.insert(i);
+                }
+                open.follow();
+            }
             Key::Char('o') => match open.attachments().len() {
                 0 => self.message = Some(("no attachments in this thread".into(), false)),
                 1 => self.open_attachment(0),

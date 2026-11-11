@@ -725,9 +725,11 @@ pub fn thread_lines(app: &App, open: &Open, w: usize) -> Vec<Line<'static>> {
     };
     let newest = order.first().copied();
     let mut last_day: Option<chrono::NaiveDate> = None;
+    let mut starts: Vec<usize> = Vec::with_capacity(order.len());
     for (k, &i) in order.iter().enumerate() {
         let m = &open.msgs[i];
         let d = local(app, m.date).date_naive();
+        let block_start = out.len() + 1;
         if last_day != Some(d) {
             // The silence before this day: back to the next older message.
             let older = order.get(k..).and_then(|rest| {
@@ -748,8 +750,142 @@ pub fn thread_lines(app: &App, open: &Open, w: usize) -> Vec<Line<'static>> {
         } else {
             out.push(Line::raw(""));
         }
-        let full = Some(i) == newest || open.expand_all || (new(i) && !mine(app, m));
-        out.extend(message_block(app, open, i, m, w, full, new(i), first_of[i], &adds[i]));
+        let open_by_default = Some(i) == newest || (new(i) && !mine(app, m));
+        let full = open_by_default != open.toggled.contains(&i) || open.raw.contains(&i);
+        let selected = k == open.sel.min(order.len().saturating_sub(1));
+        starts.push(block_start);
+        let notes = Notes { new: new(i), joins: first_of[i], adds: &adds[i], selected };
+        if full {
+            out.extend(open_block(app, open, i, m, w, &notes));
+        } else {
+            out.extend(message_block(app, open, i, m, w, &notes));
+        }
+    }
+    *open.starts.borrow_mut() = starts;
+    out
+}
+
+/// What the name column (folded) or the header (open) says about a message beyond who and when.
+struct Notes<'a> {
+    new: bool,
+    joins: bool,
+    adds: &'a [String],
+    selected: bool,
+}
+
+/// The selection mark at the left edge: a mauve bar on the selected message's lines.
+fn sel_mark(selected: bool) -> Span<'static> {
+    if selected {
+        Span::styled("▌", Style::default().fg(c("mauve")))
+    } else {
+        Span::raw(" ")
+    }
+}
+
+/// An open message, at the pane's width: a header (who, then when on the right; who it went to
+/// and who it brought in), a blank line, then its own words in paragraphs, list items hanging,
+/// behind a bar in the sender's colour. Yours step in like their folded rows.
+fn open_block(app: &App, open: &Open, i: usize, m: &Message, w: usize, n: &Notes) -> Vec<Line<'static>> {
+    let me = mine(app, m);
+    let indent = if me { MINE } else { 0 };
+    let col = voice(app, m.from.as_ref());
+    let text_w = w.saturating_sub(indent + 4).clamp(10, TEXT_MAX + META);
+    let pre = |out: &mut Vec<Span<'static>>| {
+        out.push(sel_mark(n.selected));
+        out.push(Span::raw(" ".repeat(indent)));
+        out.push(Span::styled("▎ ", Style::default().fg(col)));
+    };
+    let mut out = Vec::new();
+    // Who, and when on the right.
+    let who = match &m.from {
+        Some(a) if is_me(app, a) => "you".to_string(),
+        Some(a) => a.display(),
+        None => "(no sender)".into(),
+    };
+    let when = local(app, m.date).format("%a %-d %b · %H:%M").to_string().to_lowercase();
+    let tag = if n.new { " new" } else { "" };
+    let who = fit(&who, text_w.saturating_sub(when.width() + tag.width() + 2));
+    let gap = text_w.saturating_sub(who.width() + when.width() + tag.width());
+    let mut l = Vec::new();
+    pre(&mut l);
+    l.push(Span::styled(who, Style::default().fg(col).add_modifier(Modifier::BOLD)));
+    l.push(Span::raw(" ".repeat(gap)));
+    l.push(Span::styled(when, locus_theme::dim()));
+    l.push(Span::styled(tag, Style::default().fg(c("mauve"))));
+    out.push(Line::from(l));
+    // Who it went to, and who joined or was brought in.
+    let names = |v: &[Address]| {
+        v.iter()
+            .map(|a| if is_me(app, a) { "you".to_string() } else { a.short().to_string() })
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let mut to = String::new();
+    if !m.to.is_empty() {
+        to.push_str(&format!("to {}", names(&m.to)));
+    }
+    if !m.cc.is_empty() {
+        to.push_str(&format!(" · cc {}", names(&m.cc)));
+    }
+    let mut l = Vec::new();
+    pre(&mut l);
+    l.push(Span::styled(fit(to.trim_start_matches(" · "), text_w), locus_theme::dim()));
+    if n.joins {
+        l.push(Span::styled(" · joins", Style::default().fg(c("teal"))));
+    }
+    for a in n.adds {
+        l.push(Span::styled(format!(" · adds {a}"), Style::default().fg(c("teal"))));
+    }
+    out.push(Line::from(l));
+    let mut l = Vec::new();
+    pre(&mut l);
+    out.push(Line::from(l));
+    for body in message_text(app, open, i, m, text_w, true) {
+        let mut l = Vec::new();
+        pre(&mut l);
+        l.extend(body.spans);
+        out.push(Line::from(l));
+    }
+    out
+}
+
+/// Wrap paragraph by paragraph, a list item's later lines hanging under its text ("1. It's
+/// completely up to you, …" / "   an intern if you prefer"), blank runs kept to one.
+fn wrap_hanging(text: &str, w: usize) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for para in text.split('\n') {
+        if para.trim().is_empty() {
+            if out.last().is_some_and(|l| !l.trim().is_empty()) {
+                out.push(String::new());
+            }
+            continue;
+        }
+        let lead = para.len() - para.trim_start().len();
+        let t = para.trim_start();
+        let marker = t
+            .split_once(' ')
+            .map(|(m, _)| m)
+            .filter(|m| {
+                matches!(*m, "-" | "*" | "•")
+                    || (m.len() <= 3
+                        && m.ends_with(['.', ')'])
+                        && m[..m.len() - 1].chars().all(|c| c.is_ascii_digit())
+                        && m.len() > 1)
+            });
+        let hang = lead + marker.map_or(0, |m| m.chars().count() + 1);
+        let first = wrap(para, w);
+        let mut lines = first.into_iter();
+        if let Some(l) = lines.next() {
+            out.push(l);
+        }
+        let rest: Vec<String> = lines.collect();
+        if !rest.is_empty() {
+            let again = wrap(&rest.join(" "), w.saturating_sub(hang).max(10));
+            out.extend(again.into_iter().map(|l| format!("{}{l}", " ".repeat(hang))));
+        }
+    }
+    while out.last().is_some_and(|l| l.trim().is_empty()) {
+        out.pop();
     }
     out
 }
@@ -1079,7 +1215,7 @@ fn draft_lines(app: &App, open: &Open, w: usize) -> Vec<Line<'static>> {
             .take(2)
             .map(|l| Line::from(Span::styled(l, locus_theme::st("subtext0"))))
             .collect();
-        out.extend(lane(vec![Span::styled("you", Style::default().fg(c("blue")))], vec![], lines, MINE));
+        out.extend(lane(vec![Span::styled("you", Style::default().fg(c("blue")))], vec![], lines, MINE, false));
     }
     out
 }
@@ -1092,14 +1228,20 @@ const TEXT_MAX: usize = 96;
 
 /// Lay a message out in its lane: the name column (name, then time, then notes, one per line)
 /// beside the text.
-fn lane(name: Vec<Span<'static>>, notes: Vec<Vec<Span<'static>>>, text: Vec<Line<'static>>, indent: usize) -> Vec<Line<'static>> {
+fn lane(
+    name: Vec<Span<'static>>,
+    notes: Vec<Vec<Span<'static>>>,
+    text: Vec<Line<'static>>,
+    indent: usize,
+    selected: bool,
+) -> Vec<Line<'static>> {
     let mut meta: Vec<Vec<Span<'static>>> = vec![name];
     meta.extend(notes);
     let rows = meta.len().max(text.len());
     let mut out = Vec::new();
     let mut text = text.into_iter();
     for r in 0..rows {
-        let mut spans = vec![Span::raw(" ".repeat(indent + 1))];
+        let mut spans = vec![sel_mark(selected), Span::raw(" ".repeat(indent))];
         let m = meta.get(r).cloned().unwrap_or_default();
         let mw: usize = m.iter().map(|s| s.content.width()).sum();
         spans.extend(m);
@@ -1112,18 +1254,8 @@ fn lane(name: Vec<Span<'static>>, notes: Vec<Vec<Span<'static>>>, text: Vec<Line
     out
 }
 
-#[allow(clippy::too_many_arguments)]
-fn message_block(
-    app: &App,
-    open: &Open,
-    i: usize,
-    m: &Message,
-    w: usize,
-    full: bool,
-    new: bool,
-    joins: bool,
-    adds: &[String],
-) -> Vec<Line<'static>> {
+/// A folded message in its lane: the name column (name, time, notes) beside its first lines.
+fn message_block(app: &App, open: &Open, i: usize, m: &Message, w: usize, n: &Notes) -> Vec<Line<'static>> {
     let me = mine(app, m);
     let indent = if me { MINE } else { 0 };
     let col = voice(app, m.from.as_ref());
@@ -1134,19 +1266,19 @@ fn message_block(
     );
     let mut notes: Vec<Vec<Span<'static>>> = Vec::new();
     let mut when = vec![Span::styled(local(app, m.date).format("%H:%M").to_string(), locus_theme::dim())];
-    if new {
+    if n.new {
         when.push(Span::styled(" new", Style::default().fg(c("mauve"))));
     }
     notes.push(when);
-    if joins {
-        notes.push(vec![Span::styled("joins", locus_theme::dim())]);
+    if n.joins {
+        notes.push(vec![Span::styled("joins", Style::default().fg(c("teal")))]);
     }
-    for a in adds {
+    for a in n.adds {
         let first = a.split_whitespace().next().unwrap_or(a);
         notes.push(vec![Span::styled(fit(&format!("adds {first}"), META - 2), Style::default().fg(c("teal")))]);
     }
-    let text = message_text(app, open, i, m, text_w, full);
-    lane(vec![name], notes, text, indent)
+    let text = message_text(app, open, i, m, text_w, false);
+    lane(vec![name], notes, text, indent, n.selected)
 }
 
 /// A message's text in its lane: the whole of it (without quoted history) when `full`, else its
@@ -1155,12 +1287,6 @@ fn message_text(app: &App, open: &Open, i: usize, m: &Message, w: usize, full: b
     let mut out: Vec<Line<'static>> = Vec::new();
     let body = Style::default().fg(c("text"));
     let note = Style::default().fg(c("overlay0")).add_modifier(Modifier::ITALIC);
-    // Who it went to, when that is not just you.
-    let others: Vec<&Address> = m.to.iter().chain(&m.cc).filter(|a| !is_me(app, a)).collect();
-    if full && (!others.is_empty() && mine(app, m) || others.len() > 1) {
-        let to = others.iter().map(|a| a.short().to_string()).collect::<Vec<_>>().join(", ");
-        out.push(Line::from(Span::styled(fit(&format!("to {to}"), w), locus_theme::dim())));
-    }
     // An invite is its own summary line, folded or not.
     if let Some(Some(inv)) = open.invites.get(i) {
         out.extend(invite_lines(app, inv, w));
@@ -1182,25 +1308,28 @@ fn message_text(app: &App, open: &Open, i: usize, m: &Message, w: usize, full: b
             out.push(Line::from(Span::styled(l, Style::default().fg(c("subtext1")))));
         }
         if more > 0 {
-            out.push(Line::from(Span::styled(format!("… {more} more · ⏎ shows all"), note)));
+            out.push(Line::from(Span::styled(format!("… {more} more · ⏎ opens"), note)));
         }
     } else {
         let automated = !m.list_headers.is_empty();
         let r = keryx_core::text::readable(&m.body_text, automated);
         let mut lines = r.lines.clone();
         // Its own words: the history it quoted is the messages below (z shows it as received).
-        if !open.show_quotes {
+        if !open.raw.contains(&i) {
             if let Some(h) = history_start(&lines) {
                 lines.truncate(h);
             }
             lines.retain(|l| !l.trim_start().starts_with('>'));
         }
         let mut shown: Vec<Line<'static>> = Vec::new();
+        // Mail's placeholder for an inline attachment (U+FFFC) says nothing: the attachment is
+        // listed below.
+        let lines: Vec<String> = lines.iter().map(|l| l.replace('\u{fffc}', "")).collect();
         let text = reflow(&lines);
         if text.trim().is_empty() {
             shown.push(Line::from(Span::styled("(nothing of its own: only what it quoted · z shows it)", note)));
         }
-        for l in wrap(text.trim_end(), w) {
+        for l in wrap_hanging(text.trim_end(), w) {
             let st = if l.trim_start().starts_with('>') { locus_theme::dim() } else { body };
             shown.push(Line::from(Span::styled(l, st)));
         }
@@ -1215,6 +1344,7 @@ fn message_text(app: &App, open: &Open, i: usize, m: &Message, w: usize, full: b
             )));
         }
         if !r.links.is_empty() {
+            out.push(Line::raw(""));
             let items: Vec<String> = r.links.iter().map(|(n, _, s)| format!("[{n}] {s}")).collect();
             for l in wrap(&items.join("  "), w) {
                 out.push(Line::from(Span::styled(l, locus_theme::dim())));
@@ -1255,6 +1385,7 @@ fn thread(f: &mut Frame, app: &App, area: Rect, open: Option<&Open>) {
     let inner = Rect::new(area.x + 1, area.y, area.width.saturating_sub(2), area.height);
     let w = inner.width as usize;
     let lines = thread_lines(app, open, w);
+    open.height.set(inner.height);
     let max_scroll = (lines.len() as u16).saturating_sub(inner.height);
     open.max_scroll.set(max_scroll);
     f.render_widget(Paragraph::new(lines).scroll((open.scroll.min(max_scroll), 0)), inner);
@@ -1296,14 +1427,15 @@ fn footer(f: &mut Frame, app: &App, area: Rect) {
             ]
         }
         // A thread opened from a run's detail: only back works (round 11 audit).
-        Mode::Thread if app.back.is_some() => vec![("⏎", "all whole"), ("z", "as received"), ("esc", "back")],
+        Mode::Thread if app.back.is_some() => vec![("↑↓", "email"), ("⏎", "open"), ("z", "as received"), ("esc", "back")],
         Mode::Thread => {
             let mut v = vec![
                 ("r", "reply"),
                 ("d", "done"),
                 ("a", "archive"),
                 ("m", "for"),
-                ("⏎", "all whole"),
+                ("↑↓", "email"),
+                ("⏎", "open"),
                 ("z", "as received"),
             ];
             if app.open.as_ref().is_some_and(|o| !o.attachments().is_empty()) {

@@ -189,17 +189,25 @@ pub fn quote(cfg: &Config, m: &Message) -> String {
         .as_ref()
         .map(|a| a.short().to_string())
         .unwrap_or_else(|| "someone".into());
+    // Only what they wrote this time, one level deep (11 Nov: replies arrived with ">>>>>"
+    // stacked five deep, "odd for people I am replying to to see"). Their message's own quoted
+    // history and signature are left out, as `compact` does for summaries; the thread below is
+    // still in every mail client's view of the conversation. A message that is ALL quote (some
+    // phones send a reply that way) is quoted whole rather than as nothing.
+    let own = crate::text::compact(&m.body_text);
+    let own = own.strip_suffix("…[truncated]").unwrap_or(&own);
+    let body = if own.trim().is_empty() {
+        m.body_text.as_str()
+    } else {
+        own
+    };
     let mut q = format!("On {when}, {who} wrote:\n");
-    for line in m.body_text.lines() {
-        if line.is_empty() {
+    for line in body.lines() {
+        if line.trim().is_empty() {
             q.push_str(">\n");
-        } else if line.starts_with('>') {
-            q.push('>');
-            q.push_str(line);
-            q.push('\n');
         } else {
             q.push_str("> ");
-            q.push_str(line);
+            q.push_str(line.trim_start_matches('>').trim_start());
             q.push('\n');
         }
     }
@@ -352,8 +360,20 @@ mod tests {
         let m = msg("oxford", "Jane Doe <jane.doe@example.com>", &["newc7370@ox.ac.uk"], &[]);
         assert_eq!(
             quote(&cfg(), &m),
-            "On Mon 12 Oct 2026 at 09:00, Jane Doe wrote:\n> Let's split it.\n>\n>> earlier\n> Thanks\n"
+            "On Mon 12 Oct 2026 at 09:00, Jane Doe wrote:\n> Let's split it.\n>\n> Thanks\n",
+            "one level only: her own quoted history is left out (11 Nov)"
         );
+        // A long thread: her reply quotes his, which quotes hers. Only her new text is quoted.
+        let mut deep = m.clone();
+        deep.body_text =
+            "Tuesday works.\n\nOn Mon, Alec wrote:\n> Could we meet?\n>> On Sun, Jane wrote:\n>>> hi".into();
+        let q = quote(&cfg(), &deep);
+        assert_eq!(q.matches('>').count(), 1, "{q}");
+        assert!(q.contains("> Tuesday works.") && !q.contains("Could we meet"));
+        // All quote (a phone reply): quoted whole, one level, not as nothing.
+        let mut all = m.clone();
+        all.body_text = "> I plan to renew my passport\n> next month".into();
+        assert!(quote(&cfg(), &all).contains("> I plan to renew my passport"));
     }
 
     #[test]

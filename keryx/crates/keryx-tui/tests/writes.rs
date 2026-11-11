@@ -487,7 +487,7 @@ fn reply_all_when_alec_wrote_last() {
     let (text, _) = editor(&mut a);
     assert!(
         text.starts_with(
-            "From: Oxford <newc7370@ox.ac.uk>\nTo: Jane Doe <jane.doe@example.com>, Sam <sam@example.com>\nCc: Team <team@example.com>\n"
+            "From: Oxford <newc7370@ox.ac.uk>\nTo: Jane Doe <jane.doe@example.com>,\n    Sam <sam@example.com>\nCc: Team <team@example.com>\n"
         ),
         "{text}"
     );

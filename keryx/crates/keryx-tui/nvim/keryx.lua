@@ -68,12 +68,13 @@ _G.KeryxKeyAt = key_at
 -- an unindented second half is no header at all). Lines wrap on screen instead.
 vim.bo[buf].textwidth = 0
 vim.bo[buf].formatoptions = vim.bo[buf].formatoptions:gsub("[tc]", "")
--- Long headers wrap under themselves instead of running off the pane.
+-- Lines wrap on screen at word breaks, with nothing drawn at the break: the message reads as
+-- it will arrive. (A "↳" showbreak, there for long To: lines, marked every wrapped line of the
+-- message too; recipients now go one to a line instead, 11 Nov.)
 vim.wo.wrap = true
 vim.wo.linebreak = true
-vim.wo.breakindent = true
-vim.wo.breakindentopt = "shift:4,sbr"
-vim.wo.showbreak = "↳ "
+vim.wo.breakindent = false
+vim.wo.showbreak = ""
 
 -- keryx's colours, from your colourscheme's own groups.
 vim.api.nvim_set_hl(0, "KeryxHeader", { link = "Statement", default = true })

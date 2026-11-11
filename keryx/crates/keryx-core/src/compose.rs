@@ -58,8 +58,11 @@ pub enum ComposeError {
     ReplyFromOther(String),
 }
 
-fn list(v: &[Address]) -> String {
-    v.iter().map(Address::display).collect::<Vec<_>>().join(", ")
+/// Recipients for the editor: one address to a line, the later ones indented as a folded header
+/// (the parser joins them back). Long recipient lists used to wrap on screen with a "↳" marker,
+/// which, being a window option, marked every wrapped line of the message too (11 Nov).
+fn folded(v: &[Address]) -> String {
+    v.iter().map(Address::display).collect::<Vec<_>>().join(",\n    ")
 }
 
 /// The file to open in the editor.
@@ -78,8 +81,8 @@ pub fn file_with_body(
 ) -> String {
     let mut s = format!(
         "To: {}\nCc: {}\nBcc: \nSubject: {subject}\n\n{body}\n",
-        list(to),
-        list(cc)
+        folded(to),
+        folded(cc)
     );
     if let Some(sig) = signature.filter(|s| !s.trim().is_empty()) {
         s.push_str(&format!("\n{}\n", sig.trim_end()));

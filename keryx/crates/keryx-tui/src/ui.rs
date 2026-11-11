@@ -411,9 +411,19 @@ fn list(f: &mut Frame, app: &App, area: Rect) {
 }
 
 /// A thread's first line: unread dot, who (and how many), what it carries, when.
+/// A thread's first line: who, how many messages, what it is for, what it carries, when.
+///
+/// Laid out so each thing has one place (11 Nov: the list "reads messy and hard to figure out
+/// what corresponds to what… long labels cut each other off"): the account is a dot in its
+/// colour at the start, not a word competing with the subject; the thread count is a quiet
+/// `· 11`; the label it is filed for sits on this line, short, before the icons; the subject
+/// line below has the whole width to itself.
 fn row_who(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
     let date = date_label(r.date, app.now).to_lowercase();
     let mut right: Vec<Span<'static>> = Vec::new();
+    if let Some(t) = mark_tag(app, r) {
+        right.push(t);
+    }
     if r.suggested {
         right.push(Span::styled(format!("{ICON_TASK}? "), Style::default().fg(c("mauve"))));
     } else if r.linked {
@@ -429,7 +439,7 @@ fn row_who(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
             Style::default().fg(c("overlay1")),
         ));
     }
-    right.push(Span::styled(format!("{date} "), locus_theme::dim()));
+    right.push(Span::styled(format!("{date:>6} "), locus_theme::dim()));
     let rw: usize = right.iter().map(|s| s.content.width()).sum();
     let marked = app.marked.contains(&r.r#ref);
     let mark = if marked {
@@ -439,15 +449,23 @@ fn row_who(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
     } else {
         Span::raw(" ")
     };
-    let lead = mark;
-    let who = if r.count > 1 {
-        format!("{} ({})", r.who, r.count)
+    // The account, as a dot in its colour, in the all view (and when several are shown).
+    let dot = if (app.account == 0 || !app.also.is_empty())
+        && let Some(a) = app.cfg.account(&r.account)
+    {
+        Span::styled("● ", Style::default().fg(fade(rgb(a.colour), 0.15)))
     } else {
-        r.who.clone()
+        Span::raw("")
     };
-    let room = width.saturating_sub(3 + rw);
-    let who = fit(&who, room);
-    let gap = room.saturating_sub(who.width());
+    let dw = dot.content.width();
+    let count = if r.count > 1 {
+        format!(" · {}", r.count)
+    } else {
+        String::new()
+    };
+    let room = width.saturating_sub(3 + dw + rw + 1);
+    let who = fit(&r.who, room.saturating_sub(count.width()));
+    let gap = room.saturating_sub(who.width() + count.width());
     let who_style = if app.is_unread(r) {
         Style::default().fg(c("text"))
     } else {
@@ -455,10 +473,12 @@ fn row_who(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
     };
     let mut spans = vec![
         reply_bar(r),
-        lead,
+        mark,
         Span::raw(" "),
+        dot,
         Span::styled(who, who_style),
-        Span::raw(" ".repeat(gap)),
+        Span::styled(count, locus_theme::dim()),
+        Span::raw(" ".repeat(gap + 1)),
     ];
     spans.extend(right);
     Line::from(spans)
@@ -496,38 +516,26 @@ fn mark_tag(app: &App, r: &ThreadRow) -> Option<Span<'static>> {
         _ => shared.and_then(|s| s.taxonomy.colour_of(target)),
     };
     let col = colour_name.map_or(c("text"), c);
+    // Short, so a long item name never pushes the date and icons off (11 Nov).
     Some(Span::styled(
-        format!("{} ", target.to_lowercase()),
+        format!("{} ", fit(&target.to_lowercase(), 12)),
         Style::default().fg(col),
     ))
 }
 
 fn row_subject(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
-    let mut right: Vec<Span<'static>> = Vec::new();
-    if let Some(t) = mark_tag(app, r) {
-        right.push(t);
-    }
-    if (app.account == 0 || !app.also.is_empty())
-        && let Some(a) = app.cfg.account(&r.account)
-    {
-        right.push(Span::styled(
-            format!("{} ", a.name.to_lowercase()),
-            Style::default().fg(fade(rgb(a.colour), 0.35)),
-        ));
-    }
-    let rw: usize = right.iter().map(|s| s.content.width()).sum();
-    let room = width.saturating_sub(5 + rw);
+    // The subject alone, with the whole line: labels and the account moved to the first line.
+    let indent = if app.account == 0 || !app.also.is_empty() { 5 } else { 3 };
+    let room = width.saturating_sub(indent + 1);
     let subject = fit(&r.subject, room);
     let gap = room.saturating_sub(subject.width());
-    let mut spans = vec![
+    Line::from(vec![
         reply_bar(r),
         unread_bar(app, r),
-        Span::raw("  "),
+        Span::raw(" ".repeat(indent - 2)),
         Span::styled(subject, locus_theme::st("overlay1")),
         Span::raw(" ".repeat(gap + 1)),
-    ];
-    spans.extend(right);
-    Line::from(spans)
+    ])
 }
 
 /// Kept for tests and the runs view: one thread as a single line.

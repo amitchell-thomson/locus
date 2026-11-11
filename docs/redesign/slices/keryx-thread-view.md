@@ -1,6 +1,6 @@
 # keryx: a thread you can read at a glance, and replies that look normal
 
-**State:** approved 2026-11-11, building · **Written:** 2026-11-11 · **Part of:**
+**State:** built 2026-11-11 (T1–T4 c203953, R1 460ecfb); §6 not built · **Written:** 2026-11-11 · **Part of:**
 [keryx-joins-locus.md](keryx-joins-locus.md)
 **From:** your words, 11 Nov: "I currently find reading threads in both apple mail and our system
 tricky to figure out what is new, what is old, what was said when, what the back and forth has
@@ -151,3 +151,22 @@ when you press `s`. Left out of the steps below unless you want it.
    sent and checked by you before it is the default.
 
 Each step is installed and shown to you with a `dump` of a real thread before the next starts.
+
+## As built (11 Nov)
+
+- **T1–T4** as above, with these differences: `⏎` shows every message whole (and folds them back),
+  not one at a time, since the thread scrolls rather than selecting a message; "joins" is someone
+  whose first message comes from outside every earlier From/To/Cc, and the message that brought
+  someone in says "adds Elspeth"; lines a client wrapped at a fixed width are rejoined before the
+  pane wraps them; a folded message's preview leaves its greeting off.
+- **Last read** is a small file, `keryx-thread-read` in locus's state directory, not a table: the
+  TUI opens the mirror read-only.
+- **R1**: the engine builds the HTML at send time from the original in the mirror (its HTML part,
+  else its text) and Mail sets it with `html content`. A plain `> ` quote at the end of the body
+  (keryx's own, and the one Claude's waiting drafts carry) is cut off before sending. The editor
+  still shows that quote under the marker as reference; it is not sent. Forwards and new messages
+  go as before. The test reply of 11 Nov read as a normal Mail reply in Gmail and Outlook (yours).
+- Checks: keryx-core, keryx-store and keryx-tui green; keryxd 72 of 74, the two failures
+  (`automated_mail_is_filed_as_it_arrives_and_people_mail_never`,
+  `restart_mid_session_needs_no_new_handshake`) fail identically at the commit before this work.
+

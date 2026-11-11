@@ -11,10 +11,10 @@ use crate::chat::Entry;
 use crate::screen::ScreenId;
 use crate::ui::widgets::*;
 use crate::ui::{ask_rule, esc_back, frame, title};
+use locus_theme::c;
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::layout::{Constraint, Layout, Rect};
-use locus_theme::c;
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
@@ -28,7 +28,40 @@ pub const KEYS: &[(&str, &str)] = &[
     ("n", "a new conversation"),
     ("o", "open it in full Claude Code, for anything it may not do here"),
     ("r", "rename it"),
+    ("y n", "when it offers to remember a fact: record it, or drop it"),
 ];
+
+/// The fact waiting for your y/n in a conversation, if any (H2.3).
+pub fn pending(app: &App, id: Option<&str>) -> Option<crate::chat::Remember> {
+    id.and_then(|i| app.chat.pending(i))
+}
+
+/// `y` or `n` on a waiting fact: true when the key was the answer.
+pub fn answer_key(app: &mut App, id: Option<&str>, k: KeyEvent) -> bool {
+    let yes = match k.code {
+        KeyCode::Char('y') => true,
+        KeyCode::Char('n') => false,
+        _ => return false,
+    };
+    let Some(r) = pending(app, id) else { return false };
+    app.chat.answer(&r, yes);
+    if !yes {
+        app.note = Some(format!("dropped: {}", r.line()));
+    }
+    true
+}
+
+/// The question, as a line: `remember: "jump · outcome = no offer"? y/n`.
+fn ask_line(r: &crate::chat::Remember, w: usize) -> Line<'static> {
+    Line::from(vec![
+        Span::styled("   remember: ", st("yellow")),
+        Span::styled(cut(&format!("\"{}\"", r.line()), w.saturating_sub(22)), text()),
+        Span::styled("? ", st("yellow")),
+        Span::styled("y", keyst()),
+        Span::styled("/", dim()),
+        Span::styled("n", keyst()),
+    ])
+}
 
 /// Scroll the open conversation by `d` lines (up is positive), kept inside what there is.
 pub fn scroll(app: &mut App, d: isize) {
@@ -66,6 +99,11 @@ pub fn send(app: &mut App, text: String, into: Option<String>) {
 /// conversation, with scrolling on PgUp, which a Mac keyboard does not have, and on Shift-↑);
 /// ← moves them to the list of conversations, → back.
 pub fn key(app: &mut App, k: KeyEvent) -> bool {
+    // A fact waiting for an answer takes y and n first (n is otherwise a new conversation).
+    let open = viewed(app);
+    if answer_key(app, open.as_deref(), k) {
+        return true;
+    }
     let n = app.chat.list().len();
     let page = 12;
     let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
@@ -122,10 +160,24 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
 /// The bar at the foot of Home: a rule, then one line.
 pub fn draw_bar(f: &mut Frame, area: Rect, app: &App) {
     let typing = matches!(app.mode, Mode::Chat(_));
-    let name = app.chat.current().map(|c| c.name.clone()).unwrap_or_else(|| "new conversation".into());
+    let name = app
+        .chat
+        .current()
+        .map(|c| c.name.clone())
+        .unwrap_or_else(|| "new conversation".into());
     let long = app.chat.index.current.as_deref().is_some_and(|id| app.chat.is_long(id));
-    let tail = if long { format!("· {name} · long, n in i for a fresh one") } else { format!("· {name}") };
-    let rule = ask_rule("chat", typing, &[("␣", "ask"), ("i", "conversations")], &tail, area.width);
+    let tail = if long {
+        format!("· {name} · long, n in i for a fresh one")
+    } else {
+        format!("· {name}")
+    };
+    let rule = ask_rule(
+        "chat",
+        typing,
+        &[("␣", "ask"), ("i", "conversations")],
+        &tail,
+        area.width,
+    );
     let w = usize::from(area.width).saturating_sub(5);
     let body = if let Mode::Chat(q) = &app.mode {
         let shown = tail_cut(q, w.saturating_sub(1));
@@ -136,18 +188,32 @@ pub fn draw_bar(f: &mut Frame, area: Rect, app: &App) {
         ]
     } else if app.chat.busy.is_some() {
         let said = app.chat.live.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("");
-        let what = if said.is_empty() { app.chat.status.clone() } else { said.to_string() };
+        let what = if said.is_empty() {
+            app.chat.status.clone()
+        } else {
+            said.to_string()
+        };
         vec![
             Span::styled(format!("   {} ", spin(app.frame)), st("blue")),
             Span::styled(cut(&what, w.saturating_sub(2)), text()),
         ]
     } else if let Some(e) = &app.chat.error {
         vec![Span::styled("   ! ", st("red")), Span::styled(cut(e, w), text())]
+    } else if let Some(r) = pending(app, app.chat.index.current.as_deref()) {
+        return f.render_widget(Paragraph::new(vec![rule, ask_line(&r, w)]), area);
     } else if let Some(r) = app.chat.index.current.as_deref().and_then(|id| app.chat.last_reply(id)) {
         // Its first line, rendered as the view renders it, then dimmed.
-        let first = crate::markdown::render(&r, 400).into_iter().find(|l| l.width() > 0).unwrap_or_default();
+        let first = crate::markdown::render(&r, 400)
+            .into_iter()
+            .find(|l| l.width() > 0)
+            .unwrap_or_default();
         let mut v = vec![Span::styled("   ", dim())];
-        v.extend(first.spans.into_iter().map(|s| Span::styled(s.content, s.style.patch(dim()))));
+        v.extend(
+            first
+                .spans
+                .into_iter()
+                .map(|s| Span::styled(s.content, s.style.patch(dim()))),
+        );
         return f.render_widget(
             Paragraph::new(vec![rule, row(v, vec![], area.width.saturating_sub(1))]),
             area,
@@ -274,6 +340,25 @@ fn draw_conversation(f: &mut Frame, area: Rect, app: &App) {
                 out.push(Line::default());
                 out.extend(reply_lines(&t, w));
             }
+            Entry::Remember(r) => {
+                flush(&mut looked, &mut out);
+                match app.chat.index.answered.get(&r.key) {
+                    None => out.push(ask_line(&r, w)),
+                    Some(yes) => out.push(Line::from(vec![
+                        Span::styled(
+                            if *yes { "⏺ " } else { "  ⎿  " },
+                            if *yes { st("green") } else { dim() },
+                        ),
+                        Span::styled(
+                            cut(
+                                &format!("{} {}", if *yes { "remembered" } else { "not remembered:" }, r.line()),
+                                w.saturating_sub(5),
+                            ),
+                            if *yes { text() } else { dim() },
+                        ),
+                    ])),
+                }
+            }
             Entry::Did(s) => {
                 flush(&mut looked, &mut out);
                 // A change as Claude Code shows a tool call that ran: a green ⏺ (the theme's
@@ -295,7 +380,10 @@ fn draw_conversation(f: &mut Frame, area: Rect, app: &App) {
         ]));
     }
     if let Some(e) = &app.chat.error {
-        out.push(Line::from(vec![Span::styled("  ! ", st("red")), Span::styled(e.clone(), text())]));
+        out.push(Line::from(vec![
+            Span::styled("  ! ", st("red")),
+            Span::styled(e.clone(), text()),
+        ]));
     }
     // Pinned to the bottom; ↑ scrolls back. The draw records how far back there is, so the keys
     // stop at the top instead of piling up scroll nobody can see.
@@ -361,7 +449,11 @@ fn draw_input(f: &mut Frame, area: Rect, app: &App) {
 fn reply_lines(md: &str, w: usize) -> Vec<Line<'static>> {
     let mut out = Vec::new();
     for (i, l) in crate::markdown::render(md, w.saturating_sub(2)).into_iter().enumerate() {
-        let lead = if i == 0 { Span::styled("⏺ ", st("text")) } else { Span::raw("  ") };
+        let lead = if i == 0 {
+            Span::styled("⏺ ", st("text"))
+        } else {
+            Span::raw("  ")
+        };
         let mut spans = vec![lead];
         spans.extend(l.spans);
         out.push(Line::from(spans));
@@ -385,13 +477,23 @@ fn paragraph_lines(s: &str, w: usize) -> Vec<String> {
         // A list item's wrapped lines hang under its text; anything else wraps flush.
         let hang = if body.starts_with("- ") || body.starts_with("* ") {
             "  ".to_string()
-        } else if let Some(n) = body.find(". ").filter(|&n| n <= 3 && body[..n].chars().all(|c| c.is_ascii_digit())) {
+        } else if let Some(n) = body
+            .find(". ")
+            .filter(|&n| n <= 3 && body[..n].chars().all(|c| c.is_ascii_digit()))
+        {
             " ".repeat(n + 2)
         } else {
             String::new()
         };
-        for (i, l) in wrap(body, w.saturating_sub(indent.width() + hang.len()).max(8)).into_iter().enumerate() {
-            out.push(if i == 0 { format!("{indent}{l}") } else { format!("{indent}{hang}{l}") });
+        for (i, l) in wrap(body, w.saturating_sub(indent.width() + hang.len()).max(8))
+            .into_iter()
+            .enumerate()
+        {
+            out.push(if i == 0 {
+                format!("{indent}{l}")
+            } else {
+                format!("{indent}{hang}{l}")
+            });
         }
     }
     out

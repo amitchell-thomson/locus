@@ -436,6 +436,9 @@ fn run(mut app: App) -> Result<()> {
         while !app.quit {
             app.tick(focus.poll(), Instant::now());
             app.chat.pump();
+            if let Some(n) = app.chat.fact_note.take() {
+                app.note = Some(n);
+            }
             if let Ok((cal, chores, tasks, bookings, pending)) = cal_rx.try_recv()
                 && let Some(live) = app.calendar.clone()
             {

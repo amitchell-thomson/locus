@@ -541,6 +541,37 @@ pub struct RunDone {
     pub cause: String,
 }
 
+/// One argument quoted for the server's shell.
+fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// Run `locus <args>` on the server and return what it printed (H2.3: the Home chat's `y`
+/// records a fact there, where the ledger lives). The error is the last line it printed.
+pub fn server_locus(args: &[String]) -> Result<String, String> {
+    let host = std::env::var("LOCUS_HOST").unwrap_or_else(|_| "compute-node".into());
+    let dir = std::env::var("LOCUS_DIR").unwrap_or_else(|_| "/home/alec/server-projects/locus".into());
+    let uv = std::env::var("LOCUS_SERVER_UV").unwrap_or_else(|_| "~/.local/bin/uv".into());
+    let quoted: Vec<String> = args.iter().map(|a| shell_quote(a)).collect();
+    let out = Command::new("ssh")
+        .args(["-o", "ConnectTimeout=8", "-o", "BatchMode=yes", &host])
+        .arg(format!("cd {dir} && {uv} run --quiet locus {}", quoted.join(" ")))
+        .output()
+        .map_err(|e| format!("ssh: {e}"))?;
+    let said = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if out.status.success() {
+        Ok(said)
+    } else {
+        let err = String::from_utf8_lossy(&out.stderr);
+        Err(err
+            .lines()
+            .last()
+            .unwrap_or("the server did not answer")
+            .trim()
+            .to_string())
+    }
+}
+
 /// Ask the server, as `locus files` does (files_sync.server_command).
 pub fn fetch_system() -> Result<SystemLive, String> {
     let host = std::env::var("LOCUS_HOST").unwrap_or_else(|_| "compute-node".into());
@@ -591,6 +622,12 @@ mod tests {
         assert_eq!(state_of(&f("idle")), SessionState::Idle);
         assert_eq!(f("idle").tmux_session(), Some("quast"));
         assert_eq!(f("idle").pane(), Some("%42"));
+    }
+
+    #[test]
+    fn quoting_survives_the_server_shell() {
+        assert_eq!(shell_quote("no offer; reapply"), "'no offer; reapply'");
+        assert_eq!(shell_quote("Brian's advice"), "'Brian'\\''s advice'");
     }
 
     #[test]

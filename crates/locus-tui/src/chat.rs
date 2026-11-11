@@ -42,6 +42,30 @@ pub struct Index {
     /// None: the next message starts a new one.
     pub current: Option<String>,
     pub conversations: Vec<Conversation>,
+    /// The `remember`s you answered (H2.3), by the refused call's id: true recorded, false
+    /// dropped. Kept so a fact is asked about once, however often the view is redrawn.
+    #[serde(default)]
+    pub answered: HashMap<String, bool>,
+}
+
+/// A fact the chat offered to remember (H2.3). `remember` is off the chat's allow list, so the
+/// call is refused under `dontAsk` (nobody is there to ask) and comes back carrying the exact
+/// fact; the window asks instead, with one key (heuris B).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Remember {
+    /// The refused tool call's id: what an answer is kept against.
+    pub key: String,
+    pub subject: String,
+    pub slot: String,
+    pub value: String,
+    pub as_of: Option<String>,
+}
+
+impl Remember {
+    /// As the question shows it: `millennium · stage = offer accepted`.
+    pub fn line(&self) -> String {
+        format!("{} · {} = {}", self.subject, self.slot, self.value)
+    }
 }
 
 /// One line of a conversation as the chat view shows it.
@@ -53,6 +77,8 @@ pub enum Entry {
     Did(String),
     /// A lookup on the way (read a file, searched mail): shown faintly, never as a change.
     Looked(String),
+    /// A fact it offered to remember, which waits for your y/n (H2.3).
+    Remember(Remember),
 }
 
 /// What the running turn sends back.
@@ -80,6 +106,12 @@ pub struct Chat {
     /// How far it can scroll, as the last draw measured it: the keys stop there.
     pub max_scroll: std::cell::Cell<usize>,
     cache: RefCell<HashMap<String, (SystemTime, Vec<Entry>)>>,
+    /// A `y` being recorded on the server: what it says when it is done.
+    fact_rx: Option<Receiver<Result<String, String>>>,
+    /// Which question that `y` answered: asked again if the server did not record it.
+    fact_key: Option<String>,
+    /// What the last `y` came to ("Remembered: ..." or why not), for the window's note.
+    pub fact_note: Option<String>,
 }
 
 /// Where the chat runs: your projects folder, so every repository is a relative path.
@@ -90,7 +122,9 @@ pub fn workdir() -> PathBuf {
 }
 
 fn home() -> PathBuf {
-    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"))
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/"))
 }
 
 /// `chat/` beside this crate: the brief and the permission rules, read at every turn so an edit
@@ -134,6 +168,9 @@ impl Chat {
             scroll: 0,
             max_scroll: std::cell::Cell::new(0),
             cache: RefCell::new(HashMap::new()),
+            fact_rx: None,
+            fact_key: None,
+            fact_note: None,
         }
     }
 
@@ -218,6 +255,33 @@ impl Chat {
 
     /// Take what the running turn has sent. True when anything changed (worth a redraw).
     pub fn pump(&mut self) -> bool {
+        if let Some(r) = self.fact_rx.as_ref().and_then(|rx| rx.try_recv().ok()) {
+            self.fact_rx = None;
+            let key = self.fact_key.take();
+            // "Not recorded" from the server (a slot it refused) is a failure too.
+            let r = r.and_then(|said| {
+                if said.starts_with("Remembered")
+                    || said.starts_with("Already true")
+                    || said.starts_with("Kept as history")
+                {
+                    Ok(said)
+                } else {
+                    Err(said)
+                }
+            });
+            self.fact_note = Some(match r {
+                Ok(said) => said.lines().last().unwrap_or("remembered").to_string(),
+                Err(e) => {
+                    // Not recorded: the question comes back, so the view never claims it was.
+                    if let Some(k) = key {
+                        self.index.answered.remove(&k);
+                        self.save();
+                    }
+                    format!("not remembered: {e}")
+                }
+            });
+            return true;
+        }
         let Some(rx) = &self.rx else { return false };
         let mut changed = false;
         while let Ok(ev) = rx.try_recv() {
@@ -257,7 +321,9 @@ impl Chat {
         {
             return e.clone();
         }
-        let e = std::fs::read_to_string(&path).map(|s| parse_transcript(&s)).unwrap_or_default();
+        let e = std::fs::read_to_string(&path)
+            .map(|s| parse_transcript(&s))
+            .unwrap_or_default();
         self.cache.borrow_mut().insert(id.to_string(), (modified, e.clone()));
         e
     }
@@ -267,6 +333,48 @@ impl Chat {
         let path = transcript_dir(&workdir()).join(format!("{id}.jsonl"));
         std::fs::metadata(path).is_ok_and(|m| m.len() > 1_500_000)
             || self.entries(id).iter().filter(|e| matches!(e, Entry::You(_))).count() > 40
+    }
+
+    /// The first fact in a conversation still waiting for your y/n.
+    pub fn pending(&self, id: &str) -> Option<Remember> {
+        self.entries(id).into_iter().find_map(|e| match e {
+            Entry::Remember(r) if !self.index.answered.contains_key(&r.key) => Some(r),
+            _ => None,
+        })
+    }
+
+    /// `y` records it on the server (in the background: ssh takes a second or two); `n` drops
+    /// it. Either way it is never asked again.
+    pub fn answer(&mut self, r: &Remember, yes: bool) {
+        self.index.answered.insert(r.key.clone(), yes);
+        self.save();
+        if !yes || self.dir.is_none() {
+            return;
+        }
+        let name = self.current().map(|c| c.name.clone()).unwrap_or_default();
+        let today = chrono::Local::now().format("%Y-%m-%d");
+        let mut args: Vec<String> = vec![
+            "facts".into(),
+            "remember".into(),
+            r.subject.clone(),
+            r.slot.clone(),
+            r.value.clone(),
+            "--route".into(),
+            "home".into(),
+            "--source".into(),
+            format!("you said so in the Home chat (\"{name}\"), {today}"),
+        ];
+        if let Some(d) = &r.as_of {
+            args.push("--as-of".into());
+            args.push(d.clone());
+        }
+        let (tx, rx) = channel();
+        self.fact_rx = Some(rx);
+        self.fact_key = Some(r.key.clone());
+        self.fact_note = Some(format!("remembering {}…", r.line()));
+        std::thread::spawn(move || {
+            let _ = tx.send(crate::live::server_locus(&args));
+        });
     }
 
     /// The last thing it said, for the bar.
@@ -280,7 +388,11 @@ impl Chat {
 
 /// A conversation's name from its first message: its first line, cut at a word.
 pub fn name_from(text: &str) -> String {
-    let line = text.lines().find(|l| !l.trim().is_empty()).unwrap_or("conversation").trim();
+    let line = text
+        .lines()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("conversation")
+        .trim();
     if line.chars().count() <= 48 {
         return line.to_string();
     }
@@ -376,7 +488,9 @@ fn run_turn(args: Vec<String>, tx: Sender<Event>) {
     let mut failed: Option<String> = None;
     if let Some(out) = child.stdout.take() {
         for line in BufReader::new(out).lines().map_while(Result::ok) {
-            let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
+                continue;
+            };
             match v["type"].as_str() {
                 Some("stream_event") => {
                     let ev = &v["event"];
@@ -446,9 +560,18 @@ pub fn describe_tool(name: &str, input: &serde_json::Value) -> (String, bool) {
         }
         _ if name.starts_with("mcp__kairos__") => {
             let tool = &name["mcp__kairos__".len()..];
-            let looks = ["list_", "search_", "find_", "get_"].iter().any(|p| tool.starts_with(p));
-            let what = ["title", "summary", "name", "query"].iter().map(|k| s(k)).find(|v| !v.is_empty());
-            let label = format!("kairos {}{}", tool.replace('_', " "), what.map(|w| format!(": {w}")).unwrap_or_default());
+            let looks = ["list_", "search_", "find_", "get_"]
+                .iter()
+                .any(|p| tool.starts_with(p));
+            let what = ["title", "summary", "name", "query"]
+                .iter()
+                .map(|k| s(k))
+                .find(|v| !v.is_empty());
+            let label = format!(
+                "kairos {}{}",
+                tool.replace('_', " "),
+                what.map(|w| format!(": {w}")).unwrap_or_default()
+            );
             if looks {
                 (label, false)
             } else {
@@ -460,18 +583,29 @@ pub fn describe_tool(name: &str, input: &serde_json::Value) -> (String, bool) {
             if tool.starts_with("draft") {
                 let what = s("subject");
                 (
-                    format!("keryx {}{} · waits in Approve; never sent by itself", tool.replace('_', " "),
-                        if what.is_empty() { String::new() } else { format!(": {what}") }),
+                    format!(
+                        "keryx {}{} · waits in Approve; never sent by itself",
+                        tool.replace('_', " "),
+                        if what.is_empty() {
+                            String::new()
+                        } else {
+                            format!(": {what}")
+                        }
+                    ),
                     true,
                 )
             } else {
                 (format!("keryx {}", tool.replace('_', " ")), false)
             }
         }
+        "mcp__locus__forget" => (format!("locus forget {}", s("fact")), true),
         _ if name.starts_with("mcp__locus__") => {
             let tool = &name["mcp__locus__".len()..];
             let what = ["query", "about", "ref"].iter().map(|k| s(k)).find(|v| !v.is_empty());
-            (format!("locus {tool}{}", what.map(|w| format!(": {w}")).unwrap_or_default()), false)
+            (
+                format!("locus {tool}{}", what.map(|w| format!(": {w}")).unwrap_or_default()),
+                false,
+            )
         }
         _ => (format!("used {name}"), false),
     }
@@ -485,7 +619,9 @@ pub fn parse_transcript(s: &str) -> Vec<Entry> {
     // rules, and the view still drew "✎ ran mkdir": a change claimed and not made.
     let mut failed: std::collections::HashSet<String> = std::collections::HashSet::new();
     for line in s.lines() {
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else { continue };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
         for b in v["message"]["content"].as_array().into_iter().flatten() {
             if b["type"] == "tool_result" && b["is_error"] == true {
                 failed.insert(b["tool_use_id"].as_str().unwrap_or("").to_string());
@@ -494,7 +630,9 @@ pub fn parse_transcript(s: &str) -> Vec<Entry> {
     }
     let mut out = Vec::new();
     for line in s.lines() {
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else { continue };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
         if v["isMeta"] == true || v["isSidechain"] == true {
             continue;
         }
@@ -527,12 +665,30 @@ pub fn parse_transcript(s: &str) -> Vec<Entry> {
                         }
                         // Claude Code finding its own tools is not a step you took part in.
                         Some("tool_use") if b["name"] == "ToolSearch" => {}
+                        // Refused, as it always is here: the fact waits for your y/n (H2.3).
+                        Some("tool_use")
+                            if b["name"] == "mcp__locus__remember"
+                                && failed.contains(b["id"].as_str().unwrap_or("-")) =>
+                        {
+                            let s = |k: &str| b["input"][k].as_str().unwrap_or("").trim().to_string();
+                            if !s("subject").is_empty() && !s("slot").is_empty() && !s("value").is_empty() {
+                                out.push(Entry::Remember(Remember {
+                                    key: b["id"].as_str().unwrap_or("").to_string(),
+                                    subject: s("subject"),
+                                    slot: s("slot"),
+                                    value: s("value"),
+                                    as_of: Some(s("as_of")).filter(|d| !d.is_empty()),
+                                }));
+                            }
+                        }
                         Some("tool_use") => {
                             let (d, changed) = describe_tool(b["name"].as_str().unwrap_or(""), &b["input"]);
                             let refused = failed.contains(b["id"].as_str().unwrap_or("-"));
                             out.push(match (changed, refused) {
                                 (true, false) => Entry::Did(d),
-                                (true, true) => Entry::Looked(format!("refused: {}", d.split(" · ").next().unwrap_or(&d))),
+                                (true, true) => {
+                                    Entry::Looked(format!("refused: {}", d.split(" · ").next().unwrap_or(&d)))
+                                }
                                 _ => Entry::Looked(d),
                             });
                         }
@@ -551,7 +707,11 @@ pub fn parse_transcript(s: &str) -> Vec<Entry> {
 pub fn open_in_claude(id: &str) -> Result<(), String> {
     let dir = workdir();
     let cmd = format!("claude --resume {id}");
-    let target = if Command::new("tmux").args(["has-session", "-t", "locus"]).status().is_ok_and(|s| s.success()) {
+    let target = if Command::new("tmux")
+        .args(["has-session", "-t", "locus"])
+        .status()
+        .is_ok_and(|s| s.success())
+    {
         "locus:"
     } else {
         ""
@@ -599,7 +759,36 @@ mod tests {
             r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","is_error":true,"content":"Permission to use Bash has been denied"}]}}"#,
         ]
         .join("\n");
-        assert_eq!(parse_transcript(&t), vec![Entry::Looked("refused: ran mkdir ~/files/Personal/x".into())]);
+        assert_eq!(
+            parse_transcript(&t),
+            vec![Entry::Looked("refused: ran mkdir ~/files/Personal/x".into())]
+        );
+    }
+
+    #[test]
+    fn a_refused_remember_waits_for_your_answer() {
+        let t = [
+            r#"{"type":"user","message":{"content":"Jump said no offer, reapply next year"}}"#,
+            r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"r1","name":"mcp__locus__remember","input":{"subject":"jump","slot":"outcome","value":"no offer; reapply next year"}}]}}"#,
+            r#"{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"r1","is_error":true,"content":"Permission to use mcp__locus__remember has been denied"}]}}"#,
+            r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Noted. y to keep it."}]}}"#,
+        ]
+        .join("\n");
+        let e = parse_transcript(&t);
+        let r = e.iter().find_map(|e| match e {
+            Entry::Remember(r) => Some(r.clone()),
+            _ => None,
+        });
+        let r = r.expect("a remember entry");
+        assert_eq!(
+            (r.key.as_str(), r.line().as_str()),
+            ("r1", "jump · outcome = no offer; reapply next year")
+        );
+        // Not also listed as a refused change.
+        assert!(
+            !e.iter()
+                .any(|e| matches!(e, Entry::Looked(s) if s.contains("remember")))
+        );
     }
 
     #[test]

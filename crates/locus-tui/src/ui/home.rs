@@ -1310,6 +1310,11 @@ fn draw_system(f: &mut Frame, area: Rect, app: &App) {
 }
 
 pub fn key(app: &mut App, k: KeyEvent) -> bool {
+    // The chat bar's fact waiting for y/n (H2.3): Home uses neither key otherwise.
+    let current = app.chat.index.current.clone();
+    if crate::ui::chat::answer_key(app, current.as_deref(), k) {
+        return true;
+    }
     match (app.focus, k.code) {
         // p opens every project by where it stands (10 Nov); Tab still reaches the section.
         (_, KeyCode::Char('p')) => {

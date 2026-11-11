@@ -611,10 +611,27 @@ impl App {
     }
 
     pub fn load_thread(&self, account: &str, thread_id: &str) -> Option<Open> {
-        let msgs = view::distinct(self.db.thread(account, thread_id).ok()?);
-        if msgs.is_empty() {
+        let own = self.db.thread(account, thread_id).ok()?;
+        if own.is_empty() {
             return None;
         }
+        // The same conversation in his other accounts (11 Nov: the OxFORD enquiry opened from
+        // Oxford showed only the copy he was cc'd on; its history was in OQTS shared). One round
+        // out from this thread's ids, each copy once.
+        let ids: Vec<String> = own
+            .iter()
+            .flat_map(|m| std::iter::once(m.message_id.clone()).chain(m.in_reply_to.clone()).chain(m.references.clone()))
+            .collect();
+        let mut all = own.clone();
+        for (a, t) in self.db.threads_with_ids(&ids).unwrap_or_default() {
+            if a == account && t == thread_id {
+                continue;
+            }
+            all.extend(self.db.thread(&a, &t).unwrap_or_default());
+        }
+        // A copy in the thread's own account wins, so read state and refs are this thread's.
+        all.sort_by_key(|m| (m.date, m.account != account));
+        let msgs = view::distinct(all);
         let invites = msgs.iter().map(|m| self.invite_of(m)).collect();
         Some(Open {
             account: account.to_string(),

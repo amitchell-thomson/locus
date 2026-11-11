@@ -194,11 +194,19 @@ fn mail(f: &mut Frame, app: &App, area: Rect, editor: Option<&crate::pane::Pane>
     };
     let p = panes(app, inner);
     if let Some(l) = p.list {
-        list(f, app, l);
+        // With a pane beside it, the list's scrollbar IS the dividing rule (11 Nov: "too many
+        // vertical lines"): its thumb drawn thick on the rule.
+        let thumb = list(f, app, l, p.right.width > 0);
         if p.right.width > 0 {
+            let rule = if reading { "mauve" } else { "surface1" };
             for y in p.right.y..p.right.y + p.right.height {
-                let rule = if reading { "mauve" } else { "surface1" };
-                f.buffer_mut().set_string(p.right.x - 1, y, "│", locus_theme::st(rule));
+                let on = thumb.is_some_and(|(top, size)| (top..top + size).contains(&(y - p.right.y)));
+                let (ch, st) = if on {
+                    ("┃", Style::default().fg(c(if reading { "mauve" } else { "overlay1" })))
+                } else {
+                    ("│", locus_theme::st(rule))
+                };
+                f.buffer_mut().set_string(p.right.x - 1, y, ch, st);
             }
         }
     }
@@ -305,7 +313,9 @@ fn list_rows(app: &App) -> Vec<Row> {
     out
 }
 
-fn list(f: &mut Frame, app: &App, area: Rect) {
+/// The list. Returns the scrollbar's thumb (top, size) when the list is longer than the screen
+/// and `on_rule` (a pane beside it draws it on the dividing rule); else draws its own on the edge.
+fn list(f: &mut Frame, app: &App, area: Rect, on_rule: bool) -> Option<(u16, u16)> {
     if app.rows.is_empty() {
         let msg = match (&app.search_error, &app.search) {
             (Some(e), _) => e.clone(),
@@ -320,7 +330,7 @@ fn list(f: &mut Frame, app: &App, area: Rect) {
             area.width.saturating_sub(2) as usize,
             locus_theme::dim(),
         );
-        return;
+        return None;
     }
     let rows = list_rows(app);
     let h = area.height as usize;
@@ -332,7 +342,13 @@ fn list(f: &mut Frame, app: &App, area: Rect) {
     let first = at.saturating_sub(h / 2).min(rows.len().saturating_sub(h));
     // How far through (10 Nov: "a similar scrollbar for my inbox", as locus's Approve has): a
     // mauve thumb on the right edge, its size what fits on screen, when the list is longer.
-    let area = if rows.len() > h && h > 0 && area.width > 8 {
+    let mut thumb = None;
+    let area = if rows.len() > h && h > 0 && on_rule {
+        let size = (h * h / rows.len()).max(1);
+        let top = (first * h / rows.len()).min(h - size);
+        thumb = Some((top as u16, size as u16));
+        area
+    } else if rows.len() > h && h > 0 && area.width > 8 {
         let size = (h * h / rows.len()).max(1);
         let top = (first * h / rows.len()).min(h - size);
         let x = area.x + area.width - 1;
@@ -408,6 +424,7 @@ fn list(f: &mut Frame, app: &App, area: Rect) {
         };
         f.buffer_mut().set_line(area.x, y, &line, area.width);
     }
+    thumb
 }
 
 /// A thread's first line: unread dot, who (and how many), what it carries, when.
@@ -641,7 +658,7 @@ fn invite_lines(app: &App, inv: &Invite, w: usize) -> Vec<Line<'static>> {
 /// One of your addresses: an account's, its aliases or the one its From: line shows (your
 /// college address was missing, so your own mail read as from someone else).
 fn is_me(app: &App, a: &Address) -> bool {
-    app.cfg.own_addresses().contains(&a.key())
+    app.cfg.personal_addresses().contains(&a.key())
 }
 
 /// Each person in a conversation keeps one colour; you are blue.
@@ -670,6 +687,15 @@ fn voice(app: &App, a: Option<&Address>) -> ratatui::style::Color {
 /// top"), each only in its own words, theirs at the left and yours indented, under day bands that
 /// say how long the silence before them was.
 pub fn thread_lines(app: &App, open: &Open, w: usize) -> Vec<Line<'static>> {
+    let (mut head, body) = thread_parts(app, open, w);
+    head.extend(body);
+    head
+}
+
+/// The thread's header (subject, people, timeline, whose turn, questions), which stays put, and
+/// its body (drafts and the emails), which scrolls under it (11 Nov: scrolled down, the timeline
+/// was gone until the thread was opened again).
+pub fn thread_parts(app: &App, open: &Open, w: usize) -> (Vec<Line<'static>>, Vec<Line<'static>>) {
     let mut out: Vec<Line<'static>> = Vec::new();
     let subject = open.msgs.last().map(|m| m.subject.clone()).unwrap_or_default();
     let (acc, col) = account_tag(app, &open.account);
@@ -690,6 +716,7 @@ pub fn thread_lines(app: &App, open: &Open, w: usize) -> Vec<Line<'static>> {
     let new = |i: usize| is_new(app, open, i);
     out.extend(header_lines(app, open, w, &new));
     out.extend(crate::ui_kairos::thread_lines(app, open, w));
+    let head = std::mem::take(&mut out);
     out.extend(draft_lines(app, open, w));
     let any_new = (0..open.msgs.len()).any(&new);
     if any_new {
@@ -754,15 +781,22 @@ pub fn thread_lines(app: &App, open: &Open, w: usize) -> Vec<Line<'static>> {
         let full = open_by_default != open.toggled.contains(&i) || open.raw.contains(&i);
         let selected = k == open.sel.min(order.len().saturating_sub(1));
         starts.push(block_start);
+        let selected = selected && matches!(app.mode, Mode::Thread);
         let notes = Notes { new: new(i), joins: first_of[i], adds: &adds[i], selected };
-        if full {
-            out.extend(open_block(app, open, i, m, w, &notes));
+        let mut block = if full {
+            open_block(app, open, i, m, w, &notes)
         } else {
-            out.extend(message_block(app, open, i, m, w, &notes));
+            message_block(app, open, i, m, w, &notes)
+        };
+        // The selected email: its first line on a soft band (11 Nov: a second bar beside the
+        // sender's was busy).
+        if selected && let Some(first) = block.first_mut() {
+            *first = tint(std::mem::take(first), w);
         }
+        out.extend(block);
     }
     *open.starts.borrow_mut() = starts;
-    out
+    (head, out)
 }
 
 /// What the name column (folded) or the header (open) says about a message beyond who and when.
@@ -773,13 +807,13 @@ struct Notes<'a> {
     selected: bool,
 }
 
-/// The selection mark at the left edge: a mauve bar on the selected message's lines.
-fn sel_mark(selected: bool) -> Span<'static> {
-    if selected {
-        Span::styled("▌", Style::default().fg(c("mauve")))
-    } else {
-        Span::raw(" ")
-    }
+/// A line on the selection band, filled to the pane's width.
+fn tint(line: Line<'static>, w: usize) -> Line<'static> {
+    let bg = c("surface0");
+    let used = line.width();
+    let mut spans: Vec<Span<'static>> = line.spans.into_iter().map(|s| { let st = s.style.bg(bg); Span::styled(s.content, st) }).collect();
+    spans.push(Span::styled(" ".repeat(w.saturating_sub(used)), Style::default().bg(bg)));
+    Line::from(spans)
 }
 
 /// An open message, at the pane's width: a header (who, then when on the right; who it went to
@@ -791,8 +825,7 @@ fn open_block(app: &App, open: &Open, i: usize, m: &Message, w: usize, n: &Notes
     let col = voice(app, m.from.as_ref());
     let text_w = w.saturating_sub(indent + 4).clamp(10, TEXT_MAX + META);
     let pre = |out: &mut Vec<Span<'static>>| {
-        out.push(sel_mark(n.selected));
-        out.push(Span::raw(" ".repeat(indent)));
+        out.push(Span::raw(" ".repeat(indent + 1)));
         out.push(Span::styled("▎ ", Style::default().fg(col)));
     };
     let mut out = Vec::new();
@@ -836,7 +869,9 @@ fn open_block(app: &App, open: &Open, i: usize, m: &Message, w: usize, n: &Notes
     for a in n.adds {
         l.push(Span::styled(format!(" · adds {a}"), Style::default().fg(c("teal"))));
     }
-    out.push(Line::from(l));
+    if !to.is_empty() || n.joins || !n.adds.is_empty() {
+        out.push(Line::from(l));
+    }
     let mut l = Vec::new();
     pre(&mut l);
     out.push(Line::from(l));
@@ -1128,11 +1163,40 @@ pub fn questions(text: &str) -> Vec<String> {
     out
 }
 
+/// A message whose every line is quoted, one level off. Mail sent keryx's replies inside a
+/// borderless quote block (and still wraps a scripted one in it), so their plain text marks
+/// the sender's own words with `>`: Alec's reply to Milly of 11 Nov read as nothing of its own.
+fn unwrap_quote(body: &str) -> std::borrow::Cow<'_, str> {
+    // The mirror's own "Links:" list (from the HTML part) follows the text unquoted.
+    let quoted = body
+        .lines()
+        .take_while(|l| l.trim() != "Links:")
+        .filter(|l| !l.trim().is_empty())
+        .all(|l| l.trim_start().starts_with('>'));
+    if !quoted || body.trim().is_empty() {
+        return std::borrow::Cow::Borrowed(body);
+    }
+    std::borrow::Cow::Owned(
+        body.lines()
+            .map(|l| {
+                let t = l.trim_start();
+                if !t.starts_with('>') {
+                    return l.to_string();
+                }
+                let t = t.strip_prefix('>').unwrap_or(t);
+                t.strip_prefix(' ').unwrap_or(t).to_string()
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
+}
+
 /// What the message itself says: its text without the history it quoted or its signature.
 fn own_text(m: &Message) -> String {
-    let own = keryx_core::text::compact(&m.body_text);
+    let body = unwrap_quote(&m.body_text);
+    let own = keryx_core::text::compact(&body);
     let own = own.strip_suffix("…[truncated]").unwrap_or(&own).trim().to_string();
-    if own.is_empty() { m.body_text.trim().to_string() } else { own }
+    if own.is_empty() { body.trim().to_string() } else { own }
 }
 
 /// Rejoin lines a mail client wrapped at a fixed width (Gmail's plain text breaks at ~76), so the
@@ -1241,7 +1305,8 @@ fn lane(
     let mut out = Vec::new();
     let mut text = text.into_iter();
     for r in 0..rows {
-        let mut spans = vec![sel_mark(selected), Span::raw(" ".repeat(indent))];
+        let _ = selected;
+        let mut spans = vec![Span::raw(" ".repeat(indent + 1))];
         let m = meta.get(r).cloned().unwrap_or_default();
         let mw: usize = m.iter().map(|s| s.content.width()).sum();
         spans.extend(m);
@@ -1312,7 +1377,7 @@ fn message_text(app: &App, open: &Open, i: usize, m: &Message, w: usize, full: b
         }
     } else {
         let automated = !m.list_headers.is_empty();
-        let r = keryx_core::text::readable(&m.body_text, automated);
+        let r = keryx_core::text::readable(&unwrap_quote(&m.body_text), automated);
         let mut lines = r.lines.clone();
         // Its own words: the history it quoted is the messages below (z shows it as received).
         if !open.raw.contains(&i) {
@@ -1384,11 +1449,15 @@ fn thread(f: &mut Frame, app: &App, area: Rect, open: Option<&Open>) {
     };
     let inner = Rect::new(area.x + 1, area.y, area.width.saturating_sub(2), area.height);
     let w = inner.width as usize;
-    let lines = thread_lines(app, open, w);
-    open.height.set(inner.height);
-    let max_scroll = (lines.len() as u16).saturating_sub(inner.height);
+    let (head, lines) = thread_parts(app, open, w);
+    // The header stays; at most two thirds of the pane, so a short pane still shows emails.
+    let hh = (head.len() as u16).min(inner.height * 2 / 3).max(1.min(inner.height));
+    f.render_widget(Paragraph::new(head), Rect::new(inner.x, inner.y, inner.width, hh));
+    let body = Rect::new(inner.x, inner.y + hh, inner.width, inner.height - hh);
+    open.height.set(body.height);
+    let max_scroll = (lines.len() as u16).saturating_sub(body.height);
     open.max_scroll.set(max_scroll);
-    f.render_widget(Paragraph::new(lines).scroll((open.scroll.min(max_scroll), 0)), inner);
+    f.render_widget(Paragraph::new(lines).scroll((open.scroll.min(max_scroll), 0)), body);
 }
 
 /// locus's footer: the keys that work here on the left; on the right the note, a send in its

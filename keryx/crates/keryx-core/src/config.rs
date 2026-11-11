@@ -711,6 +711,13 @@ impl Config {
     }
 
     /// Every address of Alec's, across all accounts, lowercased.
+    /// His own addresses, without a shared account's (the society's inbox is not him: 11 Nov,
+    /// "it should be treated as a different email that is not mine that I just have access to").
+    /// For who said what. Safety checks (where keryx may send) keep `own_addresses`.
+    pub fn personal_addresses(&self) -> HashSet<String> {
+        self.accounts.iter().filter(|a| !a.shared).flat_map(|a| a.addresses()).collect()
+    }
+
     pub fn own_addresses(&self) -> HashSet<String> {
         self.accounts.iter().flat_map(|a| a.addresses()).collect()
     }
@@ -980,6 +987,20 @@ mod tests {
         }
         .to_string();
         assert!(msg.contains("Admin") && msg.contains("nowhere"), "{msg}");
+    }
+}
+
+#[cfg(test)]
+mod personal_tests {
+    #[test]
+    fn a_shared_inbox_is_not_him_but_keryx_may_still_send_from_it() {
+        let p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../config/config.test.toml");
+        let c = super::Config::load(&p).unwrap();
+        let shared = c.accounts.iter().find(|a| a.shared).expect("the test config has a shared account");
+        assert!(c.own_addresses().contains(&shared.address.to_lowercase()));
+        assert!(!c.personal_addresses().contains(&shared.address.to_lowercase()));
+        let mine = c.accounts.iter().find(|a| !a.shared).unwrap();
+        assert!(c.personal_addresses().contains(&mine.address.to_lowercase()));
     }
 }
 

@@ -3,28 +3,28 @@ source: keryx/crates/keryx-tui/tests/snapshots.rs
 expression: "render_to_string(&mut a, 140, 26)"
 ---
 ╭ keryx ─────────────────────────────────────── all · personal · oxford · oqts · oqts shared ───────────────────────────────────── reading ╮
-│ today ────────────────────────────────────────── ┃│ B4 problem sheet 3  oxford                                                           │
-│ ▎ Trains                    not assigned   08:30 ┃│ Lecturer · 1 message · 13 oct                                                        │
-│ ▎ Your e-ticket: Oxfor…                          ┃│ your turn · Lecturer wrote last, yesterday                                           │
-│ ▎ Trains                    not assigned   08:30 ┃│                                                                                      │
-│ ▎ Your e-ticket: Oxfor…                          ┃│ ── new to you ─────────────────────────────────────────────────────────────────────  │
-│                                                  ┃│                                                                                      │
-│ yesterday ────────────────────────────────────── ┃│ ── 13 oct ─────────────────────────────────────────────────────────────────────────  │
-│   Lecturer                  not assigned     tue ┃│ ▌▎ Lecturer <lecturer@eng.example.ac.uk>                     tue 13 oct · 12:00 new  │
-│   Society minutes                              󰁦 ││ ▌▎ to you                                                                            │
-│   Lecturer                  not assigned     tue ││ ▌▎                                                                                   │
-│   Broken file                                  󰁦 ││ ▌▎ Please see the attached file.                                                     │
-│   Lecturer                  not assigned     tue ││ ▌▎ 󰁦 sheet3.pdf · 625 B                                                              │
-│   B4 problem sheet 3                           󰁦 ││                                                                                      │
-│ ▎ Jane Doe                  not assigned     tue ││                                                                                      │
-│ ▎ Lab partner for Thur…                          ││                                                                                      │
-│ ▎ Prof Smith · 2            not assigned     tue ││                                                                                      │
-│ ▎ Cancelled: Project m…                          ││                                                                                      │
-│                                                  ││                                                                                      │
-│ monday ───────────────────────────────────────── ││                                                                                      │
-│   Jane Doe · 2              not assigned     mon ││                                                                                      │
-│   Re: Group project pl…                        󰑚 ││                                                                                      │
-│   Department Office         not assigned     mon ││                                                                                      │
-│   Coursework submissio…                          ││                                                                                      │
+│ today ─────────────────────────────────────────── ┃ B4 problem sheet 3  oxford                                                           │
+│ ▎ Trains                     not assigned   08:30 ┃ Lecturer · 1 message · 13 oct                                                        │
+│ ▎ Your e-ticket: Oxford…                          ┃ your turn · Lecturer wrote last, yesterday                                           │
+│ ▎ Trains                     not assigned   08:30 ┃                                                                                      │
+│ ▎ Your e-ticket: Oxford…                          ┃ ── new to you ─────────────────────────────────────────────────────────────────────  │
+│                                                   ┃                                                                                      │
+│ yesterday ─────────────────────────────────────── ┃ ── 13 oct ─────────────────────────────────────────────────────────────────────────  │
+│   Lecturer                   not assigned     tue ┃  ▎ Lecturer <lecturer@eng.example.ac.uk>                     tue 13 oct · 12:00 new  │
+│   Society minutes                               󰁦 │  ▎ to you                                                                            │
+│   Lecturer                   not assigned     tue │  ▎                                                                                   │
+│   Broken file                                   󰁦 │  ▎ Please see the attached file.                                                     │
+│   Lecturer                   not assigned     tue │  ▎ 󰁦 sheet3.pdf · 625 B                                                              │
+│   B4 problem sheet 3                            󰁦 │                                                                                      │
+│ ▎ Jane Doe                   not assigned     tue │                                                                                      │
+│ ▎ Lab partner for Thurs…                          │                                                                                      │
+│ ▎ Prof Smith · 2             not assigned     tue │                                                                                      │
+│ ▎ Cancelled: Project me…                          │                                                                                      │
+│                                                   │                                                                                      │
+│ monday ────────────────────────────────────────── │                                                                                      │
+│   Jane Doe · 2               not assigned     mon │                                                                                      │
+│   Re: Group project plan                        󰑚 │                                                                                      │
+│   Department Office          not assigned     mon │                                                                                      │
+│   Coursework submission…                          │                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
  r reply · d done · a archive · m for · ↑↓ email · ⏎ open · z as received · o attachment · esc back

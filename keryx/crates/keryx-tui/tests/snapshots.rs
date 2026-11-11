@@ -86,12 +86,12 @@ fn arrows_select_an_email_and_enter_opens_only_that_one() {
     assert!(!s.contains("to you"), "Jane's is folded: {s}");
     keys(&mut a, &[Key::Down, Key::Enter]);
     let s = render_to_string(&mut a, 80, 24);
-    assert!(s.contains("▌▎ Jane Doe"), "Jane's is selected and open: {s}");
+    assert!(s.contains("▎ Jane Doe"), "Jane's is open: {s}");
     assert!(s.contains("to you"), "its header names who it went to: {s}");
     // ⏎ again folds it; the newest stayed as it was.
     keys(&mut a, &[Key::Enter]);
     let s = render_to_string(&mut a, 80, 24);
-    assert!(!s.contains("▌▎ Jane Doe"), "{s}");
+    assert!(!s.contains("▎ Jane Doe"), "{s}");
 }
 
 #[test]

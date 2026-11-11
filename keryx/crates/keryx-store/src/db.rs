@@ -402,6 +402,37 @@ impl Db {
         Ok(out)
     }
 
+    /// The threads, in any account, that hold one of these Message-IDs or answer one of them
+    /// (`In-Reply-To` / `References`): one conversation seen from several accounts. The same
+    /// conversation is often in two of his (the society's shared inbox, and his Oxford copy
+    /// when cc'd), and opening it from one showed only that one copy (11 Nov).
+    pub fn threads_with_ids(&self, ids: &[String]) -> Result<Vec<(String, String)>> {
+        let mut out: Vec<(String, String)> = Vec::new();
+        let mut by_id = self
+            .conn
+            .prepare("SELECT DISTINCT account, thread_id FROM messages WHERE message_id = ?1")?;
+        let mut answers = self.conn.prepare(
+            "SELECT DISTINCT account, thread_id FROM messages \
+             WHERE in_reply_to_json LIKE ?1 OR references_json LIKE ?1 LIMIT 50",
+        )?;
+        for id in ids.iter().filter(|i| !i.trim().is_empty()).take(60) {
+            let id = id.trim().trim_matches(|c| c == '<' || c == '>');
+            let mut rows = by_id.query(params![id])?;
+            while let Some(r) = rows.next()? {
+                out.push((r.get(0)?, r.get(1)?));
+            }
+            // A JSON string array: the id appears quoted. `%` and `_` in an id only widen the
+            // match, and a widened match is checked again by Message-ID when merged.
+            let mut rows = answers.query(params![format!("%{id}%")])?;
+            while let Some(r) = rows.next()? {
+                out.push((r.get(0)?, r.get(1)?));
+            }
+        }
+        out.sort();
+        out.dedup();
+        Ok(out)
+    }
+
     /// Stored raw bytes (Gmail), or the `.emlx` path (Mail.app).
     pub fn raw(&self, account: &str, source_id: &str) -> Result<(Option<Vec<u8>>, Option<String>)> {
         Ok(self
@@ -551,6 +582,33 @@ mod tests {
             references: vec![],
             list_headers: vec![],
         }
+    }
+
+    #[test]
+    fn one_conversation_is_found_in_every_account_that_holds_it() {
+        let db = Db::open_in_memory().unwrap();
+        // The society's inbox has the first two; his Oxford copy (cc'd) answers the second.
+        let a = msg("oqts-shared", "s1", "Enquiry");
+        let mut b = msg("oqts-shared", "s2", "Re: Enquiry");
+        b.thread_id = "s1".into();
+        b.in_reply_to = vec!["s1@x".into()];
+        let mut c = msg("oxford", "o1", "Re: Enquiry");
+        c.in_reply_to = vec!["s2@x".into()];
+        c.references = vec!["s1@x".into(), "s2@x".into()];
+        let other = msg("oxford", "o2", "Unrelated");
+        for m in [&a, &b, &c, &other] {
+            db.upsert(m, Raw::None, 1).unwrap();
+        }
+        // From the Oxford copy: its references find the shared thread.
+        let ids: Vec<String> = c.references.clone();
+        assert_eq!(
+            db.threads_with_ids(&ids).unwrap(),
+            vec![("oqts-shared".to_string(), "s1".to_string()), ("oxford".to_string(), "o1".to_string())]
+        );
+        // From the shared thread: the Oxford copy answers it.
+        let found = db.threads_with_ids(&["s2@x".to_string()]).unwrap();
+        assert!(found.contains(&("oxford".to_string(), "o1".to_string())), "{found:?}");
+        assert!(!found.iter().any(|(_, t)| t == "o2"));
     }
 
     #[test]

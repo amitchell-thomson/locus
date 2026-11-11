@@ -154,8 +154,10 @@ Each step is installed and shown to you with a `dump` of a real thread before th
 
 ## As built (11 Nov)
 
-- **T1–T4** as above, with these differences: `⏎` shows every message whole (and folds them back),
-  not one at a time, since the thread scrolls rather than selecting a message; "joins" is someone
+- **T1–T4** as above, with these differences: `↑↓` select an email and `⏎` opens or folds that
+  one; `z` shows that one as received (11 Nov, yours: `z` over the whole thread was unreadable).
+  An open email is drawn at full width under a header (who, when, to and cc, who it adds) with
+  paragraphs kept and list items hanging; folded ones keep the two-lane rows. "joins" is someone
   whose first message comes from outside every earlier From/To/Cc, and the message that brought
   someone in says "adds Elspeth"; lines a client wrapped at a fixed width are rejoined before the
   pane wraps them; a folded message's preview leaves its greeting off.

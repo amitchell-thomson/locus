@@ -231,9 +231,17 @@ pub fn step_args(acc: &Account, mid: &str, current: &str, step: &MailStep) -> Ve
 /// Sending through Mail.app. A reply is made with Mail's `reply` (so Mail
 /// keeps its threading headers); its recipients are then replaced by exactly
 /// the approved ones. Lists arrive newline-separated in argv.
+///
+/// A reply's body is set as HTML (`html content`, from the file named last in argv) in Mail's own
+/// reply format. Setting `content` instead loses Mail's quote of the original: Mail adds it only
+/// when the message is saved, so a script sees an empty body, and what it writes is flattened.
+/// Measured 11 Nov on four drafts (spec keryx-thread-view); `html content` alone kept the quote,
+/// and a test reply read as an ordinary Mail reply in Gmail and Outlook.
 const SEND_SCRIPT: &str = r#"
 on run argv
-  set {acctId, acctAddr, mid, toList, ccList, bccList, subj, body, fileList, boxList} to argv
+  set {acctId, acctAddr, mid, toList, ccList, bccList, subj, body, fileList, boxList, htmlPath} to argv
+  set htmlBody to ""
+  if htmlPath is not "" then set htmlBody to read (POSIX file htmlPath) as «class utf8»
   -- Paths become file references here, outside Mail: inside its tell block `POSIX file` is
   -- Mail's to resolve. And never a variable called `files`: that is AppleScript's own name
   -- for "every file", so `set {…, files} to argv` failed with -10006 on every attachment.
@@ -279,7 +287,11 @@ on run argv
       if found is missing value then return "notfound"
       set msg to reply found opening window false
       set subject of msg to subj
-      set content of msg to body
+      if htmlBody is "" then
+        set content of msg to body
+      else
+        set html content of msg to htmlBody
+      end if
     end if
     tell msg
       set sender to acctAddr
@@ -665,7 +677,7 @@ impl Actuator for Real {
         }
     }
 
-    fn send(&mut self, account: &Account, o: &keryx_core::changeset::Outgoing) -> Result<(), String> {
+    fn send(&mut self, account: &Account, o: &keryx_core::changeset::Outgoing, html: Option<&str>) -> Result<(), String> {
         match account.backend {
             Backend::Gmail => {
                 let mut files = Vec::new();
@@ -699,7 +711,23 @@ impl Actuator for Real {
                         .unwrap_or_default(),
                     _ => Vec::new(),
                 };
-                osascript_answers(SEND_SCRIPT, &send_args(account, o, &boxes), &["ok"], SEND_LIMIT).map(|_| ())
+                // The reply's HTML goes by file: argv would carry it, but a file keeps it out of
+                // `ps` and has no length limit. Removed whatever the outcome.
+                let file = match html {
+                    Some(h) => {
+                        let p = std::env::temp_dir().join(format!("keryx-reply-{}.html", o.message_id.replace(['<', '>', '@', '/'], "_")));
+                        std::fs::write(&p, h).map_err(|e| format!("reply html: {e}"))?;
+                        Some(p)
+                    }
+                    None => None,
+                };
+                let mut args = send_args(account, o, &boxes);
+                args.push(file.as_ref().map(|p| p.display().to_string()).unwrap_or_default());
+                let r = osascript_answers(SEND_SCRIPT, &args, &["ok"], SEND_LIMIT).map(|_| ());
+                if let Some(p) = file {
+                    let _ = std::fs::remove_file(p);
+                }
+                r
             }
         }
     }

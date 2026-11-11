@@ -214,6 +214,100 @@ pub fn quote(cfg: &Config, m: &Message) -> String {
     q
 }
 
+/// The text you wrote, without a plain `> ` quote keryx used to append (11 Nov: that quote reached
+/// people as literal `>` lines). Cut at the LAST "On … wrote:" line that only quoted lines follow,
+/// so your own words, even a line starting "On", are never cut.
+pub fn without_plain_quote(body: &str) -> &str {
+    let lines: Vec<&str> = body.lines().collect();
+    let mut cut = None;
+    for (i, l) in lines.iter().enumerate() {
+        let t = l.trim();
+        if t.starts_with("On ")
+            && t.ends_with("wrote:")
+            && lines[i + 1..].iter().all(|n| n.trim().is_empty() || n.trim_start().starts_with('>'))
+        {
+            cut = Some(i);
+            break;
+        }
+    }
+    match cut {
+        Some(i) => {
+            let at: usize = lines[..i].iter().map(|l| l.len() + 1).sum();
+            body[..at.min(body.len())].trim_end()
+        }
+        None => body.trim_end(),
+    }
+}
+
+fn escape(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+}
+
+/// Plain text as Mail writes it in HTML: a `<div>` a line, `<div><br></div>` for a blank one.
+fn text_html(text: &str) -> String {
+    text.lines()
+        .map(|l| {
+            if l.trim().is_empty() {
+                "<div><br></div>".to_string()
+            } else {
+                format!("<div>{}</div>", escape(l))
+            }
+        })
+        .collect()
+}
+
+/// What is inside a document's `<body>`, or the whole of it when it has none.
+fn body_of(html: &str) -> &str {
+    let lower = html.to_ascii_lowercase();
+    let start = lower
+        .find("<body")
+        .and_then(|b| lower[b..].find('>').map(|e| b + e + 1));
+    let end = lower.rfind("</body>");
+    match (start, end) {
+        (Some(s), Some(e)) if s <= e => &html[s..e],
+        (Some(s), None) => &html[s..],
+        _ => html,
+    }
+}
+
+/// A reply in Mail's own format (spec keryx-thread-view R1; Mail's untouched reply, test A, 11 Nov):
+/// your text, then "On 8 Nov 2026, at 22:30, Matilda Borthwick <…> wrote:" and their message, as
+/// they sent it, in `<blockquote type="cite">`. Their history is inside their message, so it nests
+/// the way every client folds it. `original_html` is their HTML part; without one their text.
+pub fn reply_html(
+    cfg: &Config,
+    own: &str,
+    to: &Message,
+    original_html: Option<&str>,
+) -> String {
+    let when = cfg
+        .tz()
+        .timestamp_opt(to.date, 0)
+        .single()
+        .map(|d| d.format("On %-d %b %Y, at %H:%M").to_string())
+        .unwrap_or_else(|| "On an unknown date".into());
+    let who = match &to.from {
+        Some(a) if a.name.as_deref().is_some_and(|n| !n.trim().is_empty()) => format!(
+            "{} &lt;{}&gt;",
+            escape(a.name.as_deref().unwrap_or_default().trim()),
+            escape(&a.email)
+        ),
+        Some(a) => format!("&lt;{}&gt;", escape(&a.email)),
+        None => "someone".into(),
+    };
+    let theirs = match original_html {
+        Some(h) if !h.trim().is_empty() => body_of(h).to_string(),
+        _ => text_html(&to.body_text),
+    };
+    format!(
+        "<html><head><meta http-equiv=\"content-type\" content=\"text/html; charset=utf-8\"></head>\
+<body style=\"overflow-wrap: break-word; -webkit-nbsp-mode: space; line-break: after-white-space;\">\
+{mine}<div><br><blockquote type=\"cite\"><div>{when}, {who} wrote:</div><br class=\"Apple-interchange-newline\">\
+<div>{theirs}</div></blockquote></div><br></body></html>",
+        mine = text_html(without_plain_quote(own)),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -353,6 +447,30 @@ mod tests {
             (r.account.as_str(), r.from.email.as_str()),
             ("oqts-shared", "oqts@oqts.org")
         );
+    }
+
+    #[test]
+    fn a_plain_quote_keryx_appended_comes_off_and_your_words_stay() {
+        let body = "Thanks, see you then.\n\nOn a related note, I wrote:\nnothing\n\nAlec\n\nOn Mon 12 Oct 2026 at 09:00, Jane Doe wrote:\n> Let's split it.\n>\n> Thanks\n";
+        assert_eq!(
+            without_plain_quote(body),
+            "Thanks, see you then.\n\nOn a related note, I wrote:\nnothing\n\nAlec"
+        );
+        assert_eq!(without_plain_quote("Just this.\n"), "Just this.");
+    }
+
+    #[test]
+    fn a_reply_is_written_in_mails_own_format() {
+        let mut m = msg("oxford", "Jane Doe <jane.doe@example.com>", &["newc7370@ox.ac.uk"], &[]);
+        m.body_text = "Plain & simple".into();
+        let h = reply_html(&cfg(), "Yes, part two.\n\nAlec\n\nOn Mon 12 Oct 2026 at 09:00, Jane Doe wrote:\n> old\n", &m, Some("<html><head><style>x</style></head><body class=\"b\"><p>Her <b>HTML</b></p></body></html>"));
+        assert!(h.contains("<div>Yes, part two.</div><div><br></div><div>Alec</div><div><br><blockquote type=\"cite\">"), "{h}");
+        assert!(h.contains("<div>On 12 Oct 2026, at 09:00, Jane Doe &lt;jane.doe@example.com&gt; wrote:</div>"), "{h}");
+        assert!(h.contains("<div><p>Her <b>HTML</b></p></div></blockquote>"), "{h}");
+        assert!(!h.contains("&gt; old") && !h.contains("<style>"), "{h}");
+        // No HTML part: her text, escaped, a div a line.
+        let h = reply_html(&cfg(), "Ok", &m, None);
+        assert!(h.contains("<div><div>Plain &amp; simple</div></div></blockquote>"), "{h}");
     }
 
     #[test]

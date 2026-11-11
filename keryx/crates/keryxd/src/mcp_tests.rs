@@ -16,7 +16,7 @@ impl Actuator for Ok_ {
     fn resync(&mut self, _: &mut Db, _: &Account) -> Result<(), String> {
         Ok(())
     }
-    fn send(&mut self, _: &Account, _: &keryx_core::changeset::Outgoing) -> Result<(), String> {
+    fn send(&mut self, _: &Account, _: &keryx_core::changeset::Outgoing, _: Option<&str>) -> Result<(), String> {
         Ok(())
     }
     fn unsubscribe(&mut self, _: &str) -> Result<(), String> {

@@ -86,8 +86,15 @@ pub trait Actuator: Send {
     ) -> std::result::Result<Option<MsgState>, String>;
     /// Re-read an account into the mirror after `apply` returned `None`.
     fn resync(&mut self, db: &mut Db, account: &Account) -> std::result::Result<(), String>;
-    /// Send a message (after its hold). An error means nothing was sent.
-    fn send(&mut self, account: &Account, o: &keryx_core::changeset::Outgoing) -> std::result::Result<(), String>;
+    /// Send a message (after its hold). An error means nothing was sent. `html`, for a reply whose
+    /// original is in the mirror, is the whole message in Mail's own reply format (spec
+    /// keryx-thread-view R1); without it the body goes as plain text.
+    fn send(
+        &mut self,
+        account: &Account,
+        o: &keryx_core::changeset::Outgoing,
+        html: Option<&str>,
+    ) -> std::result::Result<(), String>;
     /// RFC 8058 one-click unsubscribe (POST `List-Unsubscribe=One-Click`).
     fn unsubscribe(&mut self, url: &str) -> std::result::Result<(), String>;
 }

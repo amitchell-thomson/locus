@@ -13,6 +13,7 @@ struct Fake {
     calls: Arc<Mutex<Vec<(String, MsgState)>>>,
     fail_on: Arc<Mutex<Option<usize>>>,
     sent: Arc<Mutex<Vec<keryx_core::changeset::Outgoing>>>,
+    sent_html: Arc<Mutex<Vec<Option<String>>>>,
     unsubscribed: Arc<Mutex<Vec<String>>>,
 }
 
@@ -36,8 +37,14 @@ impl Actuator for Fake {
     fn resync(&mut self, _db: &mut Db, _a: &Account) -> std::result::Result<(), String> {
         Ok(())
     }
-    fn send(&mut self, _a: &Account, o: &keryx_core::changeset::Outgoing) -> std::result::Result<(), String> {
+    fn send(
+        &mut self,
+        _a: &Account,
+        o: &keryx_core::changeset::Outgoing,
+        html: Option<&str>,
+    ) -> std::result::Result<(), String> {
         self.sent.lock().unwrap().push(o.clone());
+        self.sent_html.lock().unwrap().push(html.map(str::to_string));
         Ok(())
     }
     fn unsubscribe(&mut self, url: &str) -> std::result::Result<(), String> {
@@ -675,6 +682,30 @@ fn send_req(to: &str) -> SendReq {
         body: "hi".into(),
         attachments: vec![],
     }
+}
+
+#[test]
+fn a_reply_goes_in_mails_own_format_and_a_new_message_as_text() {
+    let (mut e, fake) = engine();
+    let t = r(&e, "Lab partner for Thursday?");
+    let theirs = thread(&e, &t).last().cloned().unwrap();
+    let mut req = send_req("jane.doe@example.com");
+    req.thread = Some(t.clone());
+    req.body = "Yes, Thursday works.\n\nOn Mon 12 Oct 2026 at 09:00, Jane wrote:\n> old\n".into();
+    e.send(&req, Who::ALEC).unwrap();
+    e.send(&send_req("jane.doe@example.com"), Who::ALEC).unwrap();
+    set_clock(&mut e, NOW + 10);
+    assert_eq!(e.process_holds().unwrap(), 2);
+    let html = fake.sent_html.lock().unwrap().clone();
+    let sent = fake.sent.lock().unwrap().clone();
+    let reply = sent.iter().position(|o| o.thread_id.is_some()).unwrap();
+    let h = html[reply].as_deref().expect("a reply carries its HTML");
+    assert!(h.contains("<div>Yes, Thursday works.</div>"), "{h}");
+    assert!(h.contains("<blockquote type=\"cite\">") && h.contains("wrote:</div>"), "{h}");
+    assert!(!h.contains("&gt; old"), "keryx's plain quote is not sent: {h}");
+    let first_words: String = theirs.body_text.split_whitespace().take(2).collect::<Vec<_>>().join(" ");
+    assert!(h.contains(&first_words) || theirs.body_text.trim().is_empty(), "their message is quoted: {h}");
+    assert_eq!(html[1 - reply], None, "a new message goes as text");
 }
 
 #[test]

@@ -341,6 +341,25 @@ impl Engine {
         Ok(new)
     }
 
+    /// A reply in Mail's own format, when the message it answers is in the mirror (spec
+    /// keryx-thread-view R1). Their HTML from the raw message when it can be read, else their
+    /// text. None for a new message or a forward, which go as before.
+    fn reply_html(&self, o: &keryx_core::changeset::Outgoing) -> Option<String> {
+        let mid = o.in_reply_to.as_deref()?.trim_matches(|c| c == '<' || c == '>');
+        let thread = o.thread_id.as_deref()?;
+        let msgs = self.db.thread(&o.account, thread).ok()?;
+        let to = msgs
+            .iter()
+            .find(|m| m.message_id.trim_matches(|c| c == '<' || c == '>') == mid)?;
+        let raw = match self.db.raw(&to.account, &to.source_id).ok() {
+            Some((Some(b), _)) => Some(b),
+            Some((None, Some(p))) if !p.is_empty() => keryx_store::mailapp::read_emlx(std::path::Path::new(&p)).ok(),
+            _ => None,
+        };
+        let html = raw.and_then(|r| keryx_core::mime::parse(&r).ok()).and_then(|p| p.text_html);
+        Some(keryx_core::reply::reply_html(&self.cfg, &o.body, to, html.as_deref()))
+    }
+
     /// Send everything whose hold is over. Preconditions are checked again.
     pub fn process_holds(&mut self) -> Result<usize> {
         let now = (self.clock)();
@@ -369,7 +388,8 @@ impl Engine {
             })();
             let result = check.and_then(|_| {
                 let acc = self.cfg.account(&o.account).cloned().ok_or("account removed")?;
-                self.act.send(&acc, &o)
+                let html = self.reply_html(&o);
+                self.act.send(&acc, &o, html.as_deref())
             });
             match result {
                 Ok(()) => {

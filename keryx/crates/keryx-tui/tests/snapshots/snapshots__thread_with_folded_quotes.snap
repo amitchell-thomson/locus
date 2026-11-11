@@ -4,19 +4,19 @@ expression: "render_to_string(&mut a, 80, 24)"
 ---
 ╭ keryx ───────── all · personal · oxford · oqts · oqts shared ─────── reading ╮
 │ Re: Group project plan  oxford                                               │
-│ 2 messages · Jane Doe, you                                                   │
+│ Jane Doe, you · 2 messages · 12 oct                                          │
+│ 12 oct ●───────────────────────────────────────────────────────────● 12 oct  │
+│ waiting on them · you wrote last, 2 days ago                                 │
 │                                                                              │
-│ ▎ Jane Doe <jane.doe@example.com> · mon 12 oct 2026, 09:00                   │
-│ ▎ to Sam, Team                                                               │
-│ ▎                                                                            │
-│ ▎ Let's split the report into three parts.                                   │
+│ ── 12 oct ─────────────────────────────────────────────────────────────────  │
+│        you               to Jane Doe, Sam, Team                              │
+│        11:00             I'll take part two.                                 │
 │                                                                              │
-│ ▎ you <newc7370@ox.ac.uk> · mon 12 oct 2026, 11:00                           │
-│ ▎ to Jane Doe, Sam, Team                                                     │
-│ ▎                                                                            │
-│ ▎ I'll take part two.                                                        │
-│ ▎                                                                            │
-│ ▎ … what it quoted (2 lines) · z shows                                       │
+│  Jane Doe          Let's split the report into three parts.                  │
+│  09:00                                                                       │
+│                                                                              │
+│                                                                              │
+│                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │
@@ -25,4 +25,4 @@ expression: "render_to_string(&mut a, 80, 24)"
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- r reply · d done · a archive · m for · z everything · esc back
+ r reply · d done · a archive · m for · ⏎ all whole · z as received · esc back

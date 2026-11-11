@@ -4,11 +4,11 @@ expression: "render_to_string(&mut a, 80, 12)"
 ---
 ╭ keryx · search: all · personal · oxford · oqts · oqts shared ────────────────╮
 │ yesterday ───────────────────────────────────────────────────────────────── ┃│
-│ ▎ Jane Doe                                                              tue ┃│
+│ ▎ Jane Doe                                             not assigned     tue ┃│
 │ ▎ Lab partner for Thursday?                                                 ┃│
 │                                                                             ┃│
 │ monday ──────────────────────────────────────────────────────────────────── ┃│
-│   Jane Doe · 2                                                          mon ┃│
+│   Jane Doe · 2                                         not assigned     mon ┃│
 │   Re: Group project plan                                                  󰑚 ┃│
 │                                                                             ││
 │ 6 oct ───────────────────────────────────────────────────────────────────── ││

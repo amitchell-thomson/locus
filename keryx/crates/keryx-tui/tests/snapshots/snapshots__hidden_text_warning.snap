@@ -4,12 +4,12 @@ expression: s
 ---
 ╭ keryx ───────── all · personal · oxford · oqts · oqts shared ─────── reading ╮
 │ Your account needs attention  personal                                       │
+│ Deals · 1 message · 11 oct                                                   │
+│ your turn · Deals wrote last, 3 days ago                                     │
 │                                                                              │
-│ ▎ Deals <deals@promo.example.com> · sun 11 oct 2026, 07:00                   │
-│ ▎ ⚠ hidden text was removed                                                  │
-│ ▎                                                                            │
-│ ▎ Visible text: please review your settings.                                 │
-│                                                                              │
+│ ── 11 oct ─────────────────────────────────────────────────────────────────  │
+│  Deals             ⚠ hidden text was removed                                 │
+│  07:00             Visible text: please review your settings.                │
 │                                                                              │
 │                                                                              │
 │                                                                              │
@@ -17,4 +17,4 @@ expression: s
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- r reply · d done · a archive · m for · z everything · esc back
+ r reply · d done · a archive · m for · ⏎ all whole · z as received · esc back

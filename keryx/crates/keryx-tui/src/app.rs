@@ -92,6 +92,8 @@ pub struct Open {
     pub invites: Vec<Option<Invite>>,
     pub show_quotes: bool,
     pub expand_all: bool,
+    /// When you last opened this thread here, before this time (spec keryx-thread-view T3).
+    pub last_read: Option<i64>,
     pub scroll: u16,
     /// How far the thread can scroll, as last drawn: `⇧↓` goes there, and `j` stops there.
     pub max_scroll: std::cell::Cell<u16>,
@@ -175,6 +177,8 @@ pub struct App {
     pub marks: keryx_store::state::Marks,
     /// Where `:q` keeps a changed mail (set by the running TUI; `None` in tests unless set).
     pub drafts_dir: Option<PathBuf>,
+    /// When each thread was last opened here (`thread_read`); None in tests.
+    pub thread_read_file: Option<PathBuf>,
     /// `x` on a kept draft: the one the next `x` throws away.
     /// The draft `x` asked about: `file:<path>` (yours) or `claude:<changeset>`.
     pub drop_draft: Option<String>,
@@ -236,6 +240,7 @@ impl App {
             editor_request: None,
             writing: None,
             drafts_dir: None,
+            thread_read_file: None,
             drop_draft: None,
             gone: BTreeMap::new(),
             att_sel: 0,
@@ -353,6 +358,24 @@ impl App {
             Some(s) => self.rows.iter().filter(|r| r.date > s).count(),
             None => 0,
         }
+    }
+
+    /// When you last opened a thread here, and record that you opened it now. Kept as one small
+    /// file in locus's state directory (`keryx-thread-read`, "<ref> <unix time>" a line): local,
+    /// and losing it only loses the "new since" band until you next open each thread.
+    fn thread_read(&mut self, r#ref: &str) -> Option<i64> {
+        let path = self.thread_read_file.clone()?;
+        let text = std::fs::read_to_string(&path).unwrap_or_default();
+        let mut map: std::collections::BTreeMap<String, i64> = text
+            .lines()
+            .filter_map(|l| l.rsplit_once(' '))
+            .filter_map(|(k, v)| Some((k.to_string(), v.trim().parse().ok()?)))
+            .collect();
+        let before = map.get(r#ref).copied();
+        map.insert(r#ref.to_string(), self.now.timestamp());
+        let body: String = map.iter().map(|(k, v)| format!("{k} {v}\n")).collect();
+        let _ = std::fs::write(&path, body);
+        before
     }
 
     /// Where the time you last looked is kept (locus's state directory).
@@ -567,6 +590,7 @@ impl App {
             invites,
             show_quotes: false,
             expand_all: false,
+            last_read: None,
             scroll: 0,
             max_scroll: std::cell::Cell::new(u16::MAX),
         })
@@ -700,6 +724,10 @@ impl App {
         let Some(r) = self.selected().cloned() else { return };
         self.open = self.load_thread(&r.account, &r.thread_id);
         if self.open.is_some() {
+            let last = self.thread_read(&r.r#ref);
+            if let Some(o) = self.open.as_mut() {
+                o.last_read = last;
+            }
             self.mode = Mode::Thread;
             self.queue_task_status();
             // Opening a thread marks it read (Alec, 2026-10-14). The row stops showing unread at
@@ -776,6 +804,8 @@ impl App {
                 open.show_quotes = !open.show_quotes;
                 open.expand_all = open.show_quotes;
             }
+            // Every message whole (the newest is always whole); again folds them back.
+            Key::Enter => open.expand_all = !open.expand_all,
             Key::Char('o') => match open.attachments().len() {
                 0 => self.message = Some(("no attachments in this thread".into(), false)),
                 1 => self.open_attachment(0),

@@ -5,7 +5,7 @@
 
 use crate::app::{App, Mode, Open};
 use crate::theme::{c, centred, fade, fit, popup_block, rgb, wrap};
-use keryx_core::display::{date_full, date_label};
+use keryx_core::display::date_label;
 use keryx_core::invite::{Invite, When};
 use keryx_core::model::{Address, Message};
 use keryx_store::view::ThreadRow;
@@ -449,9 +449,11 @@ fn two_blocks(
 fn row_who(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
     let date = date_label(r.date, app.now).to_lowercase();
     let mut details: Vec<Span<'static>> = Vec::new();
-    if let Some(t) = mark_tag(app, r) {
-        details.push(t);
-    }
+    // Unfiled says so (11 Nov: a blank there was too much empty space), dim beside a filed
+    // thread's coloured area, so the two still read apart down the column.
+    details.push(
+        mark_tag(app, r).unwrap_or_else(|| Span::styled("not assigned  ", Style::default().fg(c("surface2")))),
+    );
     details.push(Span::styled(format!("{date:>6} "), locus_theme::dim()));
     let marked = app.marked.contains(&r.r#ref);
     let mark = if marked {
@@ -662,6 +664,11 @@ fn voice(app: &App, a: Option<&Address>) -> ratatui::style::Color {
 /// The lines of a thread at width `w`: the conversation oldest first, each message under a
 /// coloured bar in its writer's colour (you in blue), what it quoted folded away since it is
 /// just above, earlier messages kept to their first lines until `z`.
+/// The thread, read for coming back to it (spec keryx-thread-view, 11 Nov): a header that holds
+/// the whole thread in a few lines (who, how long, a timeline, whose turn, what they asked that
+/// you have not answered), then the messages NEWEST FIRST ("most recent should always be at the
+/// top"), each only in its own words, theirs at the left and yours indented, under day bands that
+/// say how long the silence before them was.
 pub fn thread_lines(app: &App, open: &Open, w: usize) -> Vec<Line<'static>> {
     let mut out: Vec<Line<'static>> = Vec::new();
     let subject = open.msgs.last().map(|m| m.subject.clone()).unwrap_or_default();
@@ -679,188 +686,556 @@ pub fn thread_lines(app: &App, open: &Open, w: usize) -> Vec<Line<'static>> {
         Span::raw("  "),
         Span::styled(acc, Style::default().fg(fade(col, 0.2))),
     ]));
-    if open.msgs.len() > 1 {
-        let mut people: Vec<String> = Vec::new();
-        for m in &open.msgs {
-            if let Some(a) = &m.from {
-                let n = if is_me(app, a) {
-                    "you".to_string()
-                } else {
-                    a.short().to_string()
-                };
-                if !people.contains(&n) {
-                    people.push(n);
+    let order = newest_first(open);
+    let new = |i: usize| is_new(app, open, i);
+    out.extend(header_lines(app, open, w, &new));
+    out.extend(crate::ui_kairos::thread_lines(app, open, w));
+    out.extend(draft_lines(app, open, w));
+    let any_new = (0..open.msgs.len()).any(&new);
+    if any_new {
+        let since = open.last_read.map_or("new to you".to_string(), |t| {
+            format!("new since you last read · {}", day_of(app, t))
+        });
+        out.push(Line::raw(""));
+        out.push(band(&since, w, Style::default().fg(c("mauve"))));
+    }
+    let mut seen_people: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // Who each message brought in: an address on its To or Cc that no earlier message had.
+    let mut adds: Vec<Vec<String>> = vec![Vec::new(); open.msgs.len()];
+    let first_of: Vec<bool> = {
+        let mut v = vec![false; open.msgs.len()];
+        let mut by_date: Vec<usize> = (0..open.msgs.len()).collect();
+        by_date.sort_by_key(|&i| open.msgs[i].date);
+        // Someone joins when their first message comes from outside every earlier message's
+        // From, To and Cc: Milly, written to in the first mail, does not "join" by answering it.
+        for &i in &by_date {
+            let m = &open.msgs[i];
+            let who = m.from.as_ref().map(Address::key).unwrap_or_default();
+            v[i] = !seen_people.is_empty() && !seen_people.contains(&who);
+            if !seen_people.is_empty() {
+                for a in m.to.iter().chain(&m.cc) {
+                    if !seen_people.contains(&a.key()) && !is_me(app, a) && !adds[i].contains(&a.short().to_string()) {
+                        adds[i].push(a.short().to_string());
+                    }
                 }
             }
+            seen_people.extend(m.from.iter().chain(&m.to).chain(&m.cc).map(Address::key));
         }
-        out.push(Line::from(Span::styled(
-            format!("{} messages · {}", open.msgs.len(), people.join(", ")),
-            locus_theme::dim(),
-        )));
-    }
-    out.extend(crate::ui_kairos::thread_lines(app, open, w));
-    let last = open.msgs.len().saturating_sub(1);
-    for (i, m) in open.msgs.iter().enumerate() {
-        out.push(Line::raw(""));
-        message_lines(app, open, i, m, w, i == last || open.expand_all || !m.read, &mut out);
+        v
+    };
+    let newest = order.first().copied();
+    let mut last_day: Option<chrono::NaiveDate> = None;
+    for (k, &i) in order.iter().enumerate() {
+        let m = &open.msgs[i];
+        let d = local(app, m.date).date_naive();
+        if last_day != Some(d) {
+            // The silence before this day: back to the next older message.
+            let older = order.get(k..).and_then(|rest| {
+                rest.iter().map(|&j| &open.msgs[j]).find(|o| local(app, o.date).date_naive() != d)
+            });
+            let gap = older.map(|o| (d - local(app, o.date).date_naive()).num_days()).unwrap_or(0);
+            let mut label = day_of(app, m.date);
+            let mut style = locus_theme::dim();
+            if gap >= 2 {
+                label.push_str(&format!(" · {} later", span_words(gap)));
+                if gap >= 7 {
+                    style = Style::default().fg(c("peach"));
+                }
+            }
+            out.push(Line::raw(""));
+            out.push(band(&label, w, style));
+            last_day = Some(d);
+        } else {
+            out.push(Line::raw(""));
+        }
+        let full = Some(i) == newest || open.expand_all || (new(i) && !mine(app, m));
+        out.extend(message_block(app, open, i, m, w, full, new(i), first_of[i], &adds[i]));
     }
     out
 }
 
-fn message_lines(app: &App, open: &Open, i: usize, m: &Message, w: usize, full: bool, out: &mut Vec<Line<'static>>) {
-    let tz = app.cfg.tz();
-    let col = voice(app, m.from.as_ref());
-    let bar = || Span::styled("▎ ", Style::default().fg(col));
-    let body_w = w.saturating_sub(2);
-    let who = match &m.from {
-        // You, and which of your addresses (your round of 26 Oct: not just the alias).
-        // One address for you per account (round 8: your SSO beside your college address read
-        // as two people): the one your From: line shows.
-        Some(a) if is_me(app, a) => format!("you <{}>", app.my_address(&a.email)),
-        Some(a) => a.display(),
-        None => "(no sender)".into(),
-    };
-    let date = date_full(m.date, tz).to_lowercase();
-    out.push(Line::from(vec![
-        bar(),
-        Span::styled(
-            fit(&who, body_w.saturating_sub(date.width() + 3)),
-            Style::default().fg(col).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(format!(" · {date}"), locus_theme::dim()),
-    ]));
-    // Who it went to, when that is not just you.
-    let others: Vec<&Address> = m.to.iter().chain(&m.cc).filter(|a| !is_me(app, a)).collect();
-    if !others.is_empty() && m.from.as_ref().is_some_and(|a| is_me(app, a)) || others.len() > 1 {
-        let to = others
-            .iter()
-            .map(|a| a.short().to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        out.push(Line::from(vec![
-            bar(),
-            Span::styled(fit(&format!("to {to}"), body_w), locus_theme::dim()),
-        ]));
+/// Message indices, newest first.
+fn newest_first(open: &Open) -> Vec<usize> {
+    let mut v: Vec<usize> = (0..open.msgs.len()).collect();
+    v.sort_by_key(|&i| std::cmp::Reverse(open.msgs[i].date));
+    v
+}
+
+fn mine(app: &App, m: &Message) -> bool {
+    m.from.as_ref().is_some_and(|a| is_me(app, a))
+}
+
+/// New to you: theirs, and after the last time you opened this thread here; with no record of
+/// that yet, unread in the mirror when the thread was opened.
+fn is_new(app: &App, open: &Open, i: usize) -> bool {
+    let m = &open.msgs[i];
+    !mine(app, m)
+        && match open.last_read {
+            Some(t) => m.date > t,
+            None => !m.read,
+        }
+}
+
+fn local(app: &App, t: i64) -> chrono::DateTime<chrono_tz::Tz> {
+    use chrono::TimeZone;
+    app.cfg.tz().timestamp_opt(t, 0).single().unwrap_or(app.now)
+}
+
+/// "2 nov", with the year when it is not this year's.
+fn day_of(app: &App, t: i64) -> String {
+    use chrono::Datelike;
+    let d = local(app, t);
+    if d.year() == app.now.year() {
+        d.format("%-d %b").to_string().to_lowercase()
+    } else {
+        d.format("%-d %b %Y").to_string().to_lowercase()
     }
-    if let Some(Some(inv)) = open.invites.get(i) {
-        for l in invite_lines(app, inv, body_w) {
-            let mut spans = vec![bar()];
-            spans.extend(l.spans);
-            out.push(Line::from(spans));
+}
+
+fn span_words(days: i64) -> String {
+    match days {
+        d if d < 14 => format!("{d} days"),
+        d if d < 60 => format!("{} weeks", d / 7),
+        d => format!("{} months", d / 30),
+    }
+}
+
+/// "── 2 nov · 3 days later ─────…"
+fn band(label: &str, w: usize, st: Style) -> Line<'static> {
+    let label = fit(label, w.saturating_sub(6));
+    Line::from(vec![
+        Span::styled("── ", locus_theme::st("surface2")),
+        Span::styled(label.clone(), st),
+        Span::styled(
+            format!(" {}", "─".repeat(w.saturating_sub(label.width() + 5))),
+            locus_theme::st("surface2"),
+        ),
+    ])
+}
+
+/// The person as the thread names them: "you", else their short name.
+fn person(app: &App, a: Option<&Address>) -> String {
+    match a {
+        Some(a) if is_me(app, a) => "you".to_string(),
+        Some(a) => a.short().to_string(),
+        None => "(no sender)".into(),
+    }
+}
+
+/// The header under the subject: the people (in their colours, which the timeline and the
+/// messages use), the count, the span and when you last read it; the timeline; whose turn it
+/// is; what they asked since your last reply.
+fn header_lines(app: &App, open: &Open, w: usize, new: &dyn Fn(usize) -> bool) -> Vec<Line<'static>> {
+    let mut out = Vec::new();
+    let msgs = &open.msgs;
+    let Some(first) = msgs.iter().map(|m| m.date).min() else { return out };
+    let last = msgs.iter().map(|m| m.date).max().unwrap_or(first);
+    // People, you last.
+    let mut people: Vec<(String, ratatui::style::Color)> = Vec::new();
+    let mut me = None;
+    let mut by_date: Vec<&Message> = msgs.iter().collect();
+    by_date.sort_by_key(|m| m.date);
+    for m in &by_date {
+        let n = person(app, m.from.as_ref());
+        let col = voice(app, m.from.as_ref());
+        if n == "you" {
+            me = Some((n, col));
+        } else if !people.iter().any(|(p, _)| *p == n) {
+            people.push((n, col));
         }
     }
-    if i == open.msgs.len() - 1
-        && let Some(why) = app
-            .rows
+    people.extend(me);
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    for (k, (n, col)) in people.iter().enumerate() {
+        if k > 0 {
+            spans.push(Span::styled(", ", locus_theme::dim()));
+        }
+        spans.push(Span::styled(n.clone(), Style::default().fg(*col)));
+    }
+    let n = msgs.len();
+    let mut facts = format!(" · {n} message{}", if n == 1 { "" } else { "s" });
+    if day_of(app, first) != day_of(app, last) {
+        facts.push_str(&format!(" · {} – {}", day_of(app, first), day_of(app, last)));
+    } else {
+        facts.push_str(&format!(" · {}", day_of(app, last)));
+    }
+    if let Some(t) = open.last_read {
+        facts.push_str(&format!(" · last read {}", day_of(app, t)));
+    }
+    spans.push(Span::styled(facts, locus_theme::dim()));
+    out.push(Line::from(spans));
+    if n > 1 {
+        out.push(timeline(app, open, w, first, last, new));
+    }
+    if let Some(l) = turn_line(app, open, w) {
+        out.push(l);
+    }
+    out.extend(question_lines(app, open, w));
+    out
+}
+
+/// One mark per message on a date axis from the first to the last, in each sender's colour,
+/// bright when new to you; ◆ where you last read.
+fn timeline(app: &App, open: &Open, w: usize, first: i64, last: i64, new: &dyn Fn(usize) -> bool) -> Line<'static> {
+    let left = format!("{} ", day_of(app, first));
+    let right = format!(" {}", day_of(app, last));
+    let cells = w.saturating_sub(left.width() + right.width() + 1).clamp(4, 80);
+    let span = (last - first).max(1) as f64;
+    let at = |t: i64| ((((t - first) as f64) / span) * (cells - 1) as f64).round() as usize;
+    let mut row: Vec<Option<Span<'static>>> = vec![None; cells];
+    let mut by_date: Vec<usize> = (0..open.msgs.len()).collect();
+    by_date.sort_by_key(|&i| open.msgs[i].date);
+    for &i in &by_date {
+        let m = &open.msgs[i];
+        let col = voice(app, m.from.as_ref());
+        let col = if new(i) || open.last_read.is_none() { col } else { fade(col, 0.35) };
+        let mut x = at(m.date).min(cells - 1);
+        // A burst of messages spreads to the right rather than hiding under one mark.
+        while x + 1 < cells && row[x].is_some() && at(m.date) + 3 > x {
+            x += 1;
+        }
+        row[x] = Some(Span::styled("●", Style::default().fg(col)));
+    }
+    if let Some(t) = open.last_read.filter(|&t| t >= first && t < last) {
+        let mut x = at(t).min(cells - 1);
+        while x + 1 < cells && row[x].is_some() {
+            x += 1;
+        }
+        if row[x].is_none() {
+            row[x] = Some(Span::styled("◆", Style::default().fg(c("mauve"))));
+        }
+    }
+    let mut spans = vec![Span::styled(left, locus_theme::dim())];
+    for cell in row {
+        spans.push(cell.unwrap_or_else(|| Span::styled("─", locus_theme::st("surface1"))));
+    }
+    spans.push(Span::styled(right, locus_theme::dim()));
+    Line::from(spans)
+}
+
+/// "your turn · Milly wrote last, 9 days ago" or "waiting on them · 4 days", with the needs-reply
+/// reason when there is one.
+fn turn_line(app: &App, open: &Open, w: usize) -> Option<Line<'static>> {
+    let m = open.msgs.iter().max_by_key(|m| m.date)?;
+    let days = (app.now.date_naive() - local(app, m.date).date_naive()).num_days();
+    let ago = match days {
+        0 => "today".to_string(),
+        1 => "yesterday".to_string(),
+        d => format!("{} ago", span_words(d)),
+    };
+    let reason = app
+        .rows
+        .iter()
+        .find(|r| r.account == open.account && r.thread_id == open.thread_id)
+        .and_then(|r| r.needs_reply.as_ref())
+        .filter(|why| !why.trim().is_empty() && *why != "tagged by Alec")
+        .map(|why| format!(" · needs reply: {why}"))
+        .unwrap_or_default();
+    let (text, st) = if mine(app, m) {
+        (format!("waiting on them · you wrote last, {ago}{reason}"), locus_theme::dim())
+    } else {
+        (
+            format!("your turn · {} wrote last, {ago}{reason}", person(app, m.from.as_ref())),
+            Style::default().fg(c("peach")),
+        )
+    };
+    Some(Line::from(Span::styled(fit(&text, w), st)))
+}
+
+/// Their questions since your last message, word for word (deterministic: a quoted sentence can
+/// be checked, and a missing one is better than an invented one). At most three, newest first.
+fn question_lines(app: &App, open: &Open, w: usize) -> Vec<Line<'static>> {
+    let my_last = open.msgs.iter().filter(|m| mine(app, m)).map(|m| m.date).max().unwrap_or(i64::MIN);
+    let mut qs: Vec<(String, ratatui::style::Color, String)> = Vec::new();
+    for &i in &newest_first(open) {
+        let m = &open.msgs[i];
+        if mine(app, m) || m.date <= my_last || !m.list_headers.is_empty() {
+            continue;
+        }
+        for q in questions(&own_text(m)) {
+            if qs.len() < 3 {
+                qs.push((person(app, m.from.as_ref()), voice(app, m.from.as_ref()), q));
+            }
+        }
+    }
+    qs.into_iter()
+        .map(|(who, col, q)| {
+            let head = format!("? {who}: ");
+            Line::from(vec![
+                Span::styled("? ", Style::default().fg(c("mauve")).add_modifier(Modifier::BOLD)),
+                Span::styled(format!("{who}: "), Style::default().fg(col)),
+                Span::styled(fit(&q, w.saturating_sub(head.width())), Style::default().fg(c("text"))),
+            ])
+        })
+        .collect()
+}
+
+/// The sentences of `text` that end in a question mark.
+pub fn questions(text: &str) -> Vec<String> {
+    let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut out = Vec::new();
+    let mut start = 0;
+    for (k, ch) in flat.char_indices() {
+        if matches!(ch, '.' | '!' | '?') {
+            let end = k + ch.len_utf8();
+            // "e.g." and "3.5" are not sentence ends: the next character must be a space or end.
+            if ch != '?' && !flat[end..].starts_with(' ') && end < flat.len() {
+                continue;
+            }
+            let sent = flat[start..end].trim();
+            if ch == '?' && sent.chars().filter(|c| c.is_alphabetic()).count() >= 6 && !sent.contains("://") {
+                out.push(sent.to_string());
+            }
+            start = end;
+        }
+    }
+    out
+}
+
+/// What the message itself says: its text without the history it quoted or its signature.
+fn own_text(m: &Message) -> String {
+    let own = keryx_core::text::compact(&m.body_text);
+    let own = own.strip_suffix("…[truncated]").unwrap_or(&own).trim().to_string();
+    if own.is_empty() { m.body_text.trim().to_string() } else { own }
+}
+
+/// Rejoin lines a mail client wrapped at a fixed width (Gmail's plain text breaks at ~76), so the
+/// pane wraps them once at its own width; wrapped twice they read "touch / for next cycle". A
+/// line joins the one before when that one ran long and this one is not a list item or a quote.
+fn reflow(lines: &[String]) -> String {
+    let mut out: Vec<String> = Vec::new();
+    for l in lines {
+        let t = l.trim_start();
+        let item = t.starts_with(['-', '*', '•', '>'])
+            || t.split_once(['.', ')']).is_some_and(|(n, _)| !n.is_empty() && n.len() <= 2 && n.chars().all(|c| c.is_ascii_digit()));
+        match out.last_mut() {
+            Some(prev) if !t.is_empty() && !item && prev.chars().count() >= 60 && !prev.trim_start().starts_with('>') => {
+                prev.push(' ');
+                prev.push_str(t);
+            }
+            _ => out.push(l.clone()),
+        }
+    }
+    out.join("\n")
+}
+
+/// A folded message's preview: its words run together with the greeting left off ("Hi Milly,"),
+/// so its two lines say something.
+fn preview(own: &str) -> String {
+    let flat = own.split_whitespace().collect::<Vec<_>>().join(" ");
+    let first = flat.split_once(',').map(|(g, _)| g).unwrap_or("");
+    let greeting = first.split_whitespace().count() <= 3
+        && ["hi", "hey", "hello", "dear", "morning", "good", "evening", "afternoon", "thanks"]
             .iter()
-            .find(|r| r.account == open.account && r.thread_id == open.thread_id)
-            .and_then(|r| r.needs_reply.as_ref())
-    {
-        out.push(Line::from(vec![
-            bar(),
-            Span::styled(
-                // Your own mark carries no reason (round 11: it read "tagged by Alec").
-                if why.trim().is_empty() || why == "tagged by Alec" {
-                    "needs reply".to_string()
-                } else {
-                    format!("needs reply: {why}")
-                },
-                Style::default().fg(c("mauve")),
-            ),
-        ]));
+            .any(|g| first.to_lowercase().starts_with(g));
+    match flat.split_once(',') {
+        Some((_, rest)) if greeting => rest.trim().to_string(),
+        _ => flat,
+    }
+}
+
+/// Where the quoted history starts in a message's readable lines (the rules of `text::compact`):
+/// an "On … wrote:" line, an Outlook From:/Sent: block, an "Original Message" rule.
+fn history_start(lines: &[String]) -> Option<usize> {
+    lines.iter().enumerate().position(|(i, l)| {
+        let t = l.trim();
+        // "On Fri, Oct 30, 2026 at 11:30 AM Alec <" + "alec@…> wrote:": Gmail breaks it anywhere.
+        (t.starts_with("On ") && lines[i..].iter().take(3).any(|n| n.trim_end().ends_with("wrote:")))
+            || t == "-----Original Message-----"
+            || (t.chars().all(|c| c == '_') && t.len() >= 10)
+            || (t.starts_with("From:") && lines[i + 1..].iter().take(4).any(|n| n.trim_start().starts_with("Sent:")))
+    })
+}
+
+/// Your drafts for this thread, at the top: Claude's waiting ones and any you kept.
+fn draft_lines(app: &App, open: &Open, w: usize) -> Vec<Line<'static>> {
+    let thread = keryx_core::model::thread_ref(&open.account, &open.thread_id);
+    let mut bodies: Vec<String> = Vec::new();
+    for c in app.pending_sends() {
+        if let Some(o) = c.outgoing()
+            && o.account == open.account
+            && o.thread_id.as_deref() == Some(open.thread_id.as_str())
+        {
+            bodies.push(o.body.clone());
+        }
+    }
+    for k in app.kept_drafts() {
+        if matches!(&k.purpose, crate::send::Purpose::Reply { r#ref, .. } if *r#ref == thread)
+            && let Ok(text) = std::fs::read_to_string(&k.path)
+        {
+            // The editor file: headers, a blank line, then the body.
+            let body = text.split_once("\n\n").map_or(text.as_str(), |(_, b)| b);
+            bodies.push(body.to_string());
+        }
+    }
+    let mut out = Vec::new();
+    for b in bodies {
+        out.push(Line::raw(""));
+        out.push(band("draft, not sent · g d opens it", w, Style::default().fg(c("blue"))));
+        let text_w = (w.saturating_sub(MINE + META)).min(TEXT_MAX);
+        let own = keryx_core::text::compact(&b);
+        let lines: Vec<Line<'static>> = wrap(own.trim(), text_w)
+            .into_iter()
+            .take(2)
+            .map(|l| Line::from(Span::styled(l, locus_theme::st("subtext0"))))
+            .collect();
+        out.extend(lane(vec![Span::styled("you", Style::default().fg(c("blue")))], vec![], lines, MINE));
+    }
+    out
+}
+
+/// The name column, and how far your own messages step in.
+const META: usize = 18;
+const MINE: usize = 6;
+/// Text past this width is hard to read; wide panes keep a margin instead.
+const TEXT_MAX: usize = 96;
+
+/// Lay a message out in its lane: the name column (name, then time, then notes, one per line)
+/// beside the text.
+fn lane(name: Vec<Span<'static>>, notes: Vec<Vec<Span<'static>>>, text: Vec<Line<'static>>, indent: usize) -> Vec<Line<'static>> {
+    let mut meta: Vec<Vec<Span<'static>>> = vec![name];
+    meta.extend(notes);
+    let rows = meta.len().max(text.len());
+    let mut out = Vec::new();
+    let mut text = text.into_iter();
+    for r in 0..rows {
+        let mut spans = vec![Span::raw(" ".repeat(indent + 1))];
+        let m = meta.get(r).cloned().unwrap_or_default();
+        let mw: usize = m.iter().map(|s| s.content.width()).sum();
+        spans.extend(m);
+        spans.push(Span::raw(" ".repeat(META.saturating_sub(mw).max(1))));
+        if let Some(l) = text.next() {
+            spans.extend(l.spans);
+        }
+        out.push(Line::from(spans));
+    }
+    out
+}
+
+#[allow(clippy::too_many_arguments)]
+fn message_block(
+    app: &App,
+    open: &Open,
+    i: usize,
+    m: &Message,
+    w: usize,
+    full: bool,
+    new: bool,
+    joins: bool,
+    adds: &[String],
+) -> Vec<Line<'static>> {
+    let me = mine(app, m);
+    let indent = if me { MINE } else { 0 };
+    let col = voice(app, m.from.as_ref());
+    let text_w = w.saturating_sub(indent + META + 2).clamp(10, TEXT_MAX);
+    let name = Span::styled(
+        fit(&person(app, m.from.as_ref()), META - 2),
+        Style::default().fg(col).add_modifier(Modifier::BOLD),
+    );
+    let mut notes: Vec<Vec<Span<'static>>> = Vec::new();
+    let mut when = vec![Span::styled(local(app, m.date).format("%H:%M").to_string(), locus_theme::dim())];
+    if new {
+        when.push(Span::styled(" new", Style::default().fg(c("mauve"))));
+    }
+    notes.push(when);
+    if joins {
+        notes.push(vec![Span::styled("joins", locus_theme::dim())]);
+    }
+    for a in adds {
+        let first = a.split_whitespace().next().unwrap_or(a);
+        notes.push(vec![Span::styled(fit(&format!("adds {first}"), META - 2), Style::default().fg(c("teal")))]);
+    }
+    let text = message_text(app, open, i, m, text_w, full);
+    lane(vec![name], notes, text, indent)
+}
+
+/// A message's text in its lane: the whole of it (without quoted history) when `full`, else its
+/// first two lines. Recipients when they matter, invites, attachments and links when full.
+fn message_text(app: &App, open: &Open, i: usize, m: &Message, w: usize, full: bool) -> Vec<Line<'static>> {
+    let mut out: Vec<Line<'static>> = Vec::new();
+    let body = Style::default().fg(c("text"));
+    let note = Style::default().fg(c("overlay0")).add_modifier(Modifier::ITALIC);
+    // Who it went to, when that is not just you.
+    let others: Vec<&Address> = m.to.iter().chain(&m.cc).filter(|a| !is_me(app, a)).collect();
+    if full && (!others.is_empty() && mine(app, m) || others.len() > 1) {
+        let to = others.iter().map(|a| a.short().to_string()).collect::<Vec<_>>().join(", ");
+        out.push(Line::from(Span::styled(fit(&format!("to {to}"), w), locus_theme::dim())));
+    }
+    // An invite is its own summary line, folded or not.
+    if let Some(Some(inv)) = open.invites.get(i) {
+        out.extend(invite_lines(app, inv, w));
     }
     if m.hidden_text_removed {
-        out.push(Line::from(vec![
-            bar(),
-            Span::styled("⚠ hidden text was removed", Style::default().fg(c("yellow"))),
-        ]));
+        out.push(Line::from(Span::styled("⚠ hidden text was removed", Style::default().fg(c("yellow")))));
     }
-    out.push(Line::from(vec![bar()]));
     if m.body_text.trim().is_empty() {
         let why = if m.attachments.is_empty() && open.invites.get(i).is_none_or(Option::is_none) {
             "(Mail hasn't downloaded this message yet, or it has no text)"
         } else {
             "(no text)"
         };
-        out.push(Line::from(vec![bar(), Span::styled(why, locus_theme::dim())]));
+        out.push(Line::from(Span::styled(why, locus_theme::dim())));
+    } else if !full {
+        let lines = wrap(&preview(&own_text(m)), w);
+        let more = lines.len().saturating_sub(2);
+        for l in lines.into_iter().take(2) {
+            out.push(Line::from(Span::styled(l, Style::default().fg(c("subtext1")))));
+        }
+        if more > 0 {
+            out.push(Line::from(Span::styled(format!("… {more} more · ⏎ shows all"), note)));
+        }
     } else {
         let automated = !m.list_headers.is_empty();
         let r = keryx_core::text::readable(&m.body_text, automated);
-        let body = Style::default().fg(c("text"));
+        let mut lines = r.lines.clone();
+        // Its own words: the history it quoted is the messages below (z shows it as received).
+        if !open.show_quotes {
+            if let Some(h) = history_start(&lines) {
+                lines.truncate(h);
+            }
+            lines.retain(|l| !l.trim_start().starts_with('>'));
+        }
         let mut shown: Vec<Line<'static>> = Vec::new();
-        if open.show_quotes {
-            for l in wrap(&r.lines.join("\n"), body_w) {
-                let st = if l.trim_start().starts_with('>') {
-                    locus_theme::dim()
-                } else {
-                    body
-                };
-                shown.push(Line::from(Span::styled(l, st)));
-            }
-        } else {
-            for part in fold_quotes(&r.lines.join("\n")) {
-                match part {
-                    Ok(text) => shown.extend(
-                        wrap(&text, body_w)
-                            .into_iter()
-                            .map(|l| Line::from(Span::styled(l, body))),
-                    ),
-                    Err(n) => shown.push(Line::from(Span::styled(
-                        format!("… what it quoted ({n} line{}) · z shows", if n == 1 { "" } else { "s" }),
-                        Style::default().fg(c("overlay0")).add_modifier(Modifier::ITALIC),
-                    ))),
-                }
-            }
+        let text = reflow(&lines);
+        if text.trim().is_empty() {
+            shown.push(Line::from(Span::styled("(nothing of its own: only what it quoted · z shows it)", note)));
+        }
+        for l in wrap(text.trim_end(), w) {
+            let st = if l.trim_start().starts_with('>') { locus_theme::dim() } else { body };
+            shown.push(Line::from(Span::styled(l, st)));
         }
         while shown.last().is_some_and(|l| l.width() == 0) {
             shown.pop();
         }
-        // An earlier message keeps its first lines; z shows it all.
-        let keep = if full { shown.len() } else { 3 };
-        let more = shown.len().saturating_sub(keep);
-        for l in shown.into_iter().take(keep) {
-            let mut spans = vec![bar()];
-            spans.extend(l.spans);
-            out.push(Line::from(spans));
+        out.extend(shown);
+        if r.footer > 0 {
+            out.push(Line::from(Span::styled(
+                format!("… its footer folded ({} lines: unsubscribe, address)", r.footer),
+                note,
+            )));
         }
-        if more > 0 {
-            out.push(Line::from(vec![
-                bar(),
-                Span::styled(
-                    format!("… {more} more line{} · z shows", if more == 1 { "" } else { "s" }),
-                    Style::default().fg(c("overlay0")).add_modifier(Modifier::ITALIC),
-                ),
-            ]));
-        }
-        if full && r.footer > 0 {
-            out.push(Line::from(vec![
-                bar(),
-                Span::styled(
-                    format!("… its footer folded ({} lines: unsubscribe, address)", r.footer),
-                    Style::default().fg(c("overlay0")).add_modifier(Modifier::ITALIC),
-                ),
-            ]));
-        }
-        if full && !r.links.is_empty() {
+        if !r.links.is_empty() {
             let items: Vec<String> = r.links.iter().map(|(n, _, s)| format!("[{n}] {s}")).collect();
-            for l in wrap(&items.join("  "), body_w) {
-                out.push(Line::from(vec![bar(), Span::styled(l, locus_theme::dim())]));
+            for l in wrap(&items.join("  "), w) {
+                out.push(Line::from(Span::styled(l, locus_theme::dim())));
             }
         }
     }
-    if full && !m.attachments.is_empty() {
+    if full {
         for a in &m.attachments {
             out.push(Line::from(vec![
-                bar(),
                 Span::styled(format!("{ICON_ATTACH} "), Style::default().fg(c("overlay2"))),
-                Span::styled(
-                    fit(&a.name, body_w.saturating_sub(14)),
-                    Style::default().fg(c("subtext1")),
-                ),
+                Span::styled(fit(&a.name, w.saturating_sub(14)), Style::default().fg(c("subtext1"))),
                 Span::styled(format!(" · {}", size(a.size)), locus_theme::dim()),
             ]));
         }
+    } else if !m.attachments.is_empty() {
+        out.push(Line::from(Span::styled(
+            format!("{ICON_ATTACH} {}", m.attachments.len()),
+            Style::default().fg(c("overlay2")),
+        )));
     }
+    out
 }
 
 pub fn size(n: u64) -> String {
@@ -921,14 +1296,15 @@ fn footer(f: &mut Frame, app: &App, area: Rect) {
             ]
         }
         // A thread opened from a run's detail: only back works (round 11 audit).
-        Mode::Thread if app.back.is_some() => vec![("z", "everything"), ("esc", "back")],
+        Mode::Thread if app.back.is_some() => vec![("⏎", "all whole"), ("z", "as received"), ("esc", "back")],
         Mode::Thread => {
             let mut v = vec![
                 ("r", "reply"),
                 ("d", "done"),
                 ("a", "archive"),
                 ("m", "for"),
-                ("z", "everything"),
+                ("⏎", "all whole"),
+                ("z", "as received"),
             ];
             if app.open.as_ref().is_some_and(|o| !o.attachments().is_empty()) {
                 v.push(("o", "attachment"));
@@ -1213,6 +1589,42 @@ fn attachments(f: &mut Frame, app: &App, area: Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn questions_are_their_sentences_ending_in_a_question_mark() {
+        let t = "Thanks for the CV! Could you do a call on Thursday? See https://x.com/a?b=1 and e.g. this. Why?";
+        assert_eq!(questions(t), vec!["Could you do a call on Thursday?".to_string()]);
+    }
+
+    #[test]
+    fn reflow_rejoins_a_client_wrapped_paragraph_but_not_a_list() {
+        let l = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let lines = l(&[
+            "I completely understand. While I'm disappointed we haven't had the chance",
+            "to interview you this time around.",
+            "",
+            "1. It's completely up to you, you can apply straight as a graduate or as an",
+            "intern if you prefer",
+            "2. Yes",
+        ]);
+        assert_eq!(
+            reflow(&lines),
+            "I completely understand. While I'm disappointed we haven't had the chance to interview you this time around.\n\n1. It's completely up to you, you can apply straight as a graduate or as an intern if you prefer\n2. Yes"
+        );
+    }
+
+    #[test]
+    fn preview_leaves_the_greeting_off() {
+        assert_eq!(preview("Hi Milly,\n\nThank you so much."), "Thank you so much.");
+        assert_eq!(preview("No, it wouldn't."), "No, it wouldn't.");
+    }
+
+    #[test]
+    fn history_starts_at_an_attribution_gmail_broke_over_two_lines() {
+        let l = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let lines = l(&["Thanks", "", "On Fri, Oct 30, 2026 at 11:30 AM Alec <", "a@b.com> wrote:", "> old"]);
+        assert_eq!(history_start(&lines), Some(2));
+    }
 
     #[test]
     fn quotes_fold_into_one_marker() {

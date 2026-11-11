@@ -4,13 +4,13 @@ expression: "render_to_string(&mut a, 80, 14)"
 ---
 ╭ keryx ───────── all · personal · oxford · oqts · oqts shared ────────────────╮
 │   Society minutes                                                         󰁦 ││
-│   Lecturer                                                              tue ┃│
+│   Lecturer                                             not assigned     tue ┃│
 │   Broken file                                                             󰁦 ││
-│ ▎ Lecturer   ╭──────────── snooze 1 thread until ─────────────╮         tue ││
+│ ▎ Lecturer   ╭──────────── snooze 1 thread until ─────────────╮gned     tue ││
 │ ▎ B4 problem │ 1  Later today           Wed 14 Oct, 18:00     │           󰁦 ││
-│ ▎ Jane Doe   │ 2  Tomorrow morning      Thu 15 Oct, 08:00     │         tue ││
+│ ▎ Jane Doe   │ 2  Tomorrow morning      Thu 15 Oct, 08:00     │gned     tue ││
 │ ▎ Lab partner│ 3  Monday morning        Mon 19 Oct, 08:00     │             ││
-│ ▎ Prof Smith │ 4  Pick…                                       │         tue ││
+│ ▎ Prof Smith │ 4  Pick…                                       │gned     tue ││
 │ ▎ Cancelled: ╰────────────────────────────────────────────────╯             ││
 │                                                                             ││
 │ monday ──────────────────────────────────────────────────────────────────── ││

@@ -104,7 +104,8 @@ fn invite_card() {
     keys(&mut a, &[Key::Enter]);
     let s = render_to_string(&mut a, 100, 30);
     assert!(
-        s.contains("Project meeting · Thu 22 Oct, 14:00–15:00 · Thom Building, Room 2 · from Prof Smith"),
+        // The text column beside the name wraps the card's last words.
+        s.contains("Project meeting · Thu 22 Oct, 14:00–15:00 · Thom Building, Room 2 · from"),
         "{s}"
     );
     assert!(s.contains("Cancelled: Project meeting · Thu 22 Oct, 14:00"), "{s}");

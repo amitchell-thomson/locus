@@ -4,21 +4,21 @@ expression: "render_to_string(&mut a, 80, 20)"
 ---
 ╭ keryx ───────── all · personal · oxford · oqts · oqts shared ────────────────╮
 │ today ───────────────────────────────────────────────────────────────────── ┃│
-│ ▎ Trains                                                              08:30 ┃│
+│ ▎ Trains                                               not assigned   08:30 ┃│
 │ ▎ Your e-tick╭──────────────────── go to ────────────────────╮              ┃│
-│ ▎ Trains     │                                               │        08:30 ┃│
+│ ▎ Trains     │                                               │igned   08:30 ┃│
 │ ▎ Your e-tick│ mail                   │  keys                │              ││
 │              │                        │                      │              ││
 │ yesterday ───│ i  Inbox               │  1  Admin            │───────────── ││
-│   Lecturer   │ r  Needs reply         │  2  Engineering      │          tue ││
+│   Lecturer   │ r  Needs reply         │  2  Engineering      │igned     tue ││
 │   Society min│ d  Drafts              │  3  Careers          │            󰁦 ││
-│   Lecturer   │                        │  4  Travel           │          tue ││
+│   Lecturer   │                        │  4  Travel           │igned     tue ││
 │   Broken file│ s  Sent                │  5  OQTS             │            󰁦 ││
-│ ▎ Lecturer   │ v  Archive             │  6  JCR Treasurer    │          tue ││
+│ ▎ Lecturer   │ v  Archive             │  6  JCR Treasurer    │igned     tue ││
 │ ▎ B4 problem │ a  All mail            │                      │            󰁦 ││
-│ ▎ Jane Doe   │                        │                      │          tue ││
+│ ▎ Jane Doe   │                        │                      │igned     tue ││
 │ ▎ Lab partner│ l  Filed by itself     │                      │              ││
-│ ▎ Prof Smith ╰───────────────────────────────────────────────╯          tue ││
+│ ▎ Prof Smith ╰───────────────────────────────────────────────╯igned     tue ││
 │ ▎ Cancelled: Project meeting                                                ││
 ╰──────────────────────────────────────────────────────────────────────────────╯
  esc close

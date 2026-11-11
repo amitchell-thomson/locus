@@ -125,6 +125,7 @@ pub fn run_at(cfg: Config, thread: Option<(String, String)>) -> Result<(), Strin
     let mut app = App::new(cfg.clone(), db, now(&cfg));
     app.load_seen();
     app.drafts_dir = locus_contract::link::state_dir().map(|d| d.join("keryx-drafts"));
+    app.thread_read_file = locus_contract::link::state_dir().map(|d| d.join("keryx-thread-read"));
     // What mail is filed for (X7): `d` archives plainly when the taxonomy cannot be read.
     app.shared = locus_contract::taxonomy::load(&locus_contract::taxonomy::root()).ok();
     // Changes to mail run on a worker with its own connection to keryxd, in order, so the

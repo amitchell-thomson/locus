@@ -4,20 +4,20 @@ expression: s
 ---
 ╭ keryx ─────────────────── all · personal · oxford · oqts · oqts shared ───────────────── reading ╮
 │ Cancelled: Project meeting  oxford                                                               │
-│ 2 messages · Prof Smith                                                                          │
+│ Prof Smith · 2 messages · 12 oct – 13 oct                                                        │
+│ 12 oct ●──────────────────────────────────────────────────────────────────────────────● 13 oct   │
+│ your turn · Prof Smith wrote last, yesterday                                                     │
 │                                                                                                  │
-│ ▎ Prof Smith <smith@eng.example.ac.uk> · mon 12 oct 2026, 09:00                                  │
-│ ▎ 󰃭 Project meeting · Thu 22 Oct, 14:00–15:00 · Thom Building, Room 2 · from Prof Smith          │
-│ ▎                                                                                                │
-│ ▎ You have been invited to: Project meeting, Thu 22 Oct 15:00 (Vienna time).                     │
+│ ── new to you ─────────────────────────────────────────────────────────────────────────────────  │
 │                                                                                                  │
-│ ▎ Prof Smith <smith@eng.example.ac.uk> · tue 13 oct 2026, 09:00                                  │
-│ ▎ 󰃭 Cancelled: Project meeting · Thu 22 Oct, 14:00                                               │
-│ ▎                                                                                                │
-│ ▎ (no text)                                                                                      │
+│ ── 13 oct ─────────────────────────────────────────────────────────────────────────────────────  │
+│  Prof Smith        󰃭 Cancelled: Project meeting · Thu 22 Oct, 14:00                              │
+│  09:00             (no text)                                                                     │
 │                                                                                                  │
-│                                                                                                  │
-│                                                                                                  │
+│ ── 12 oct ─────────────────────────────────────────────────────────────────────────────────────  │
+│  Prof Smith        󰃭 Project meeting · Thu 22 Oct, 14:00–15:00 · Thom Building, Room 2 · from    │
+│  09:00 new         Prof Smith                                                                    │
+│                    You have been invited to: Project meeting, Thu 22 Oct 15:00 (Vienna time).    │
 │                                                                                                  │
 │                                                                                                  │
 │                                                                                                  │
@@ -31,4 +31,4 @@ expression: s
 │                                                                                                  │
 │                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
- r reply · d done · a archive · m for · z everything · esc back
+ r reply · d done · a archive · m for · ⏎ all whole · z as received · esc back

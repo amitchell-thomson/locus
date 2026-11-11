@@ -175,3 +175,10 @@ def test_remember_and_forget_tools(monkeypatch, tmp_path):
     out = tools["forget"](f"fact:{fid}")
     assert "Restored: jump · stage = no offer" in out
     assert tools["forget"]("fact:999").startswith("Nothing forgotten")
+
+
+def test_one_proposal_waits_per_slot(conn):
+    a = F.propose(conn, "jane-street", "note:summer-social", "invited, 14 Jul", sources=SRC, route="mail", why="x", as_of="2026-07-10")
+    b = F.propose(conn, "jane-street", "note:summer-social", "attended", sources=SRC, route="mail", why="x", as_of="2026-07-15")
+    assert F.get(conn, a.fact.id).status == "withdrawn" and [f.id for f in F.proposed(conn)] == [b.fact.id]
+    assert F.propose(conn, "jane-street", "note:summer-social", "old", sources=SRC, route="mail", why="x", as_of="2026-07-01") is None

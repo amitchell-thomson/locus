@@ -19,7 +19,8 @@ November one. A fact older than the current one is kept as history and does not 
 **States.** current · replaced (history: a newer one took its place) · retired (`forget`: it was
 wrong) · proposed (waits in Approve: a conflict, or not from a sender of authority, D2) ·
 rejected (he said no; the same value is never proposed again for that slot) · approved (a
-proposal he said yes to: kept for the record, its value written as a new current fact).
+proposal he said yes to: kept for the record, its value written as a new current fact) ·
+withdrawn (a proposal a newer one for the same slot replaced before he saw it).
 """
 
 from __future__ import annotations
@@ -318,7 +319,16 @@ def propose(conn: sqlite3.Connection, subject: str, slot: str, value: str, *, so
         if _norm_value(r[0]) == _norm_value(value):
             return None
     now = _now()
+    # One question per slot: a newer proposal withdraws an older one still waiting (the same
+    # social invited three times was three items in Approve); an older one is not asked at all.
+    waiting = conn.execute("SELECT id, as_of FROM facts WHERE subject=? AND slot=? AND status='proposed'",
+                           (subject, slot)).fetchall()
+    if any(w[1] > as_of for w in waiting):
+        return None
     with conn:
+        for wid, _ in waiting:
+            conn.execute("UPDATE facts SET status='withdrawn', changed=? WHERE id=?", (now, wid))
+            _log(conn, "withdraw", wid, route, "a newer proposal for the same slot")
         fid = conn.execute(
             "INSERT INTO facts(subject, slot, value, as_of, sources, quote, route, status, why, created, changed) "
             "VALUES (?,?,?,?,?,?,?,'proposed',?,?,?)",
@@ -451,3 +461,19 @@ def items():
         yield Item(ref=f"fact:{f.id}", kind="fact", at=at, title=f"Fact: {f.subject} · {f.slot} = {f.value}",
                    text=text, thing=thing, area=registry.area_of(thing), parent=f"facts:{f.subject}",
                    meta={"route": f.route, "subject": f.subject, "slot": f.slot})
+
+
+def withdraw_superseded(conn: sqlite3.Connection) -> int:
+    """Apply the one-question-per-slot rule to proposals already waiting: keep the newest."""
+    n = 0
+    now = _now()
+    with conn:
+        for subject, slot in conn.execute("SELECT subject, slot FROM facts WHERE status='proposed' GROUP BY subject, slot "
+                                          "HAVING COUNT(*) > 1").fetchall():
+            ids = [r[0] for r in conn.execute("SELECT id FROM facts WHERE subject=? AND slot=? AND status='proposed' "
+                                              "ORDER BY as_of DESC, id DESC", (subject, slot))]
+            for wid in ids[1:]:
+                conn.execute("UPDATE facts SET status='withdrawn', changed=? WHERE id=?", (now, wid))
+                _log(conn, "withdraw", wid, "home", "a newer proposal for the same slot")
+                n += 1
+    return n

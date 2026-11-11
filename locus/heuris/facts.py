@@ -419,7 +419,10 @@ def import_applications(conn: sqlite3.Connection, path: Path) -> list[Written]:
         if not isinstance(e, dict):
             continue
         as_of = e.get("since")
-        for slot, key in (("stage", "stage"), ("turn", "turn"), ("note:from-file", "note")):
+        # `cv` is a repo kept in the same file: its stage is its `state`.
+        kind = subject_kind(normalise_subject(app))
+        stage = "stage" if "stage" in slot_table()[kind]["single"] else "state"
+        for slot, key in ((stage, "stage"), ("turn", "turn"), ("note:from-file", "note")):
             if e.get(key):
                 out.append(write(conn, app, slot, str(e[key]), sources=[APPLICATIONS_SOURCE], route="import",
                                  as_of=as_of))

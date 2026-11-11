@@ -139,3 +139,10 @@ def test_an_earlier_source_for_the_same_value_moves_its_date_back(conn):
     F.write(conn, "jump", "stage", "applied", sources=SRC, route="mail", as_of="2026-10-01")
     w = F.write(conn, "jump", "stage", "applied", sources=["x"], route="mail", as_of="2026-07-01")
     assert w.fact.as_of == "2026-10-01"
+
+
+def test_import_maps_a_repo_stage_to_its_state(conn, tmp_path):
+    p = tmp_path / "a.toml"
+    p.write_text('[cv]\nstage = "released the G-Research version"\nsince = 2026-10-17\n')
+    F.import_applications(conn, p)
+    assert F.current(conn, "cv", "state")[0].value == "released the G-Research version"

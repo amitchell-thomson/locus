@@ -21,7 +21,7 @@ use unicode_width::UnicodeWidthStr;
 pub const KEYS: &[(&str, &str)] = &[
     ("y n", "approve or refuse; the next one comes up"),
     ("Y", "approve the whole group"),
-    ("c", "a filing: put it somewhere else (type to find the place)"),
+    ("c", "a filing: put it somewhere else (type to find the place); a fact: correct its value, ⏎ approves it"),
     ("a", "a filing: archive it instead"),
     (
         "v",
@@ -796,6 +796,25 @@ fn draw_image(f: &mut Frame, area: Rect, app: &App, path: &std::path::Path) {
     }
 }
 
+/// Approve or refuse a proposed fact in heuris's ledger; with `value`, approved as corrected.
+pub fn decide_fact(app: &mut App, (g, i): (usize, usize), id: u64, yes: bool, value: Option<String>) {
+    let mut args: Vec<String> = vec!["facts".into(), if yes { "approve" } else { "reject" }.into(), "--id".into(), id.to_string()];
+    if let Some(v) = value {
+        args.push("--value".into());
+        args.push(v);
+    }
+    match crate::live::server_locus(&args) {
+        Ok(msg) => {
+            if app.fixtures.approve.groups.get(g).is_some_and(|x| x.items.get(i).is_some_and(|it| it.fact == Some(id))) {
+                app.fixtures.approve.groups[g].items.remove(i);
+                app.fixtures.approve.groups.retain(|x| !x.items.is_empty());
+            }
+            app.note = Some(msg.lines().last().unwrap_or("done").to_string());
+        }
+        Err(e) => app.note = Some(format!("heuris said no: {e}")),
+    }
+}
+
 pub fn key(app: &mut App, k: KeyEvent) -> bool {
     match app.screen() {
         ScreenId::ApproveItem => {
@@ -967,6 +986,12 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 && let Some(at) = selected(app, app.sel(' '))
             {
                 let it = app.fixtures.approve.groups[at.0].items[at.1].clone();
+                // c on a fact: correct its value, as text (heuris H2); ⏎ approves it as written.
+                if let (Some(id), 'c') = (it.fact, c) {
+                    let value = it.text.split_once(" = ").map(|(_, v)| v.to_string()).unwrap_or_default();
+                    app.mode = crate::app::Mode::FactEdit(at, id, value);
+                    return true;
+                }
                 if !matches!(it.mail, Some(locus_contract::MailDecision::Proposal(_))) {
                     app.note = Some("only a mail filing can be put somewhere else here".into());
                     return true;
@@ -1112,17 +1137,10 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
             if let (Some((g, i, id)), KeyCode::Char(c @ ('y' | 'n'))) = (fact, k.code)
                 && app.home_live
             {
-                let verb = if c == 'y' { "approve" } else { "reject" };
-                match crate::live::server_locus(&["facts".into(), verb.into(), "--id".into(), id.to_string()]) {
-                    Ok(msg) => {
-                        app.fixtures.approve.groups[g].items.remove(i);
-                        app.fixtures.approve.groups.retain(|x| !x.items.is_empty());
-                        app.note = Some(msg.lines().last().unwrap_or("done").to_string());
-                    }
-                    Err(e) => app.note = Some(format!("heuris said no: {e}")),
-                }
+                decide_fact(app, (g, i), id, c == 'y', None);
                 return true;
             }
+
             // A calendar change from kairos (round 7c): approved or refused here, the one place.
             let changeset = key
                 .strip_prefix("approve:")

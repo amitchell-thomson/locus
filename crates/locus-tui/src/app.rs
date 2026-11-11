@@ -46,6 +46,9 @@ pub enum Mode {
     Chat(String),
     /// Renaming the chat view's selected conversation.
     ChatName(String),
+    /// `c` on a proposed fact in Approve: its value, being corrected before it is approved
+    /// (heuris H2). The approve item (group, index) and the fact's id.
+    FactEdit((usize, usize), u64, String),
 }
 
 pub struct App {
@@ -504,6 +507,23 @@ impl App {
             }
             (Mode::Chat(q) | Mode::ChatName(q), KeyCode::Char(ch)) => q.push(ch),
             (Mode::ChatName(_), KeyCode::Esc) => self.mode = Mode::Normal,
+            (Mode::FactEdit(_, _, v), KeyCode::Backspace) => {
+                v.pop();
+            }
+            (Mode::FactEdit(_, _, v), KeyCode::Char(ch)) => v.push(ch),
+            (Mode::FactEdit(..), KeyCode::Esc) => {
+                self.mode = Mode::Normal;
+                self.note = Some("not changed: still waiting in Approve".into());
+            }
+            (Mode::FactEdit(at, id, v), KeyCode::Enter) => {
+                let (at, id, value) = (*at, *id, std::mem::take(v));
+                self.mode = Mode::Normal;
+                if value.trim().is_empty() {
+                    self.note = Some("a fact needs a value: n refuses it instead".into());
+                } else {
+                    crate::ui::approve::decide_fact(self, at, id, true, Some(value));
+                }
+            }
             (Mode::ChatName(n), KeyCode::Enter) => {
                 let name = std::mem::take(n);
                 self.mode = Mode::Normal;
@@ -561,7 +581,7 @@ impl App {
     /// Project view if nothing holds it back.
     pub fn tick(&mut self, session: Option<String>, now: Instant) {
         let busy = follow::busy(self.last_key, now, self.stack.len() > 1)
-            || matches!(self.mode, Mode::Ask(_) | Mode::Chat(_) | Mode::ChatName(_));
+            || matches!(self.mode, Mode::Ask(_) | Mode::Chat(_) | Mode::ChatName(_) | Mode::FactEdit(..));
         if let Some(s) = session {
             self.follow.offer(&s, busy);
         }

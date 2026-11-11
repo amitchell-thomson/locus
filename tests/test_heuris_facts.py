@@ -182,3 +182,12 @@ def test_one_proposal_waits_per_slot(conn):
     b = F.propose(conn, "jane-street", "note:summer-social", "attended", sources=SRC, route="mail", why="x", as_of="2026-07-15")
     assert F.get(conn, a.fact.id).status == "withdrawn" and [f.id for f in F.proposed(conn)] == [b.fact.id]
     assert F.propose(conn, "jane-street", "note:summer-social", "old", sources=SRC, route="mail", why="x", as_of="2026-07-01") is None
+
+
+def test_a_proposal_approved_as_corrected(conn):
+    p = F.propose(conn, "me", "goal:long-term-role", "QD alongside a pod", sources=SRC, route="mail", why="his own mail")
+    w = F.approve(conn, p.fact.id, value="QD or QR alongside a systematic pod, then a graduate role")
+    assert w.fact.value == "QD or QR alongside a systematic pod, then a graduate role"
+    assert w.fact.sources[-1].startswith("corrected by him in Approve") and "was: QD alongside a pod" in w.fact.sources[-1]
+    q = F.propose(conn, "me", "location", "Oxford", sources=SRC, route="mail", why="x")
+    assert F.approve(conn, q.fact.id, value="Oxford").fact.sources == SRC

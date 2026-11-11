@@ -560,7 +560,7 @@ def cmd_facts(args) -> None:
                 print(_json.dumps([asdict(f) for f in fs]) if args.json else
                       "\n".join(f"{f.line()}  why: {f.why}" for f in fs) or "Nothing proposed.")
             elif a == "approve":
-                print(F.approve(conn, args.id).describe())
+                print(F.approve(conn, args.id, value=args.value_as).describe())
             elif a == "reject":
                 print(f"Rejected: {F.reject(conn, args.id).line()}")
             elif a == "log":
@@ -2659,6 +2659,7 @@ def main(argv=None) -> None:
     pfa.add_argument("--route", default="home", choices=["chat", "home", "import"], help="who is writing")
     pfa.add_argument("--path", default="~/files/Careers/applications.toml", help="import-applications: the file")
     pfa.add_argument("--history", action="store_true", help="show: every value the slot has held")
+    pfa.add_argument("--value", dest="value_as", help="approve: the value as corrected")
     pfa.add_argument("--days", type=int, default=14, help="log: how far back")
     pfa.add_argument("--json", action="store_true")
     pfa.set_defaults(func=cmd_facts)

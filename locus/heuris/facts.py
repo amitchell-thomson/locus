@@ -337,14 +337,19 @@ def propose(conn: sqlite3.Connection, subject: str, slot: str, value: str, *, so
     return Written(get(conn, fid), "propose", cur)
 
 
-def approve(conn: sqlite3.Connection, fact_id: int) -> Written:
+def approve(conn: sqlite3.Connection, fact_id: int, value: str | None = None) -> Written:
+    """Write a proposal as true; with `value`, as he corrected it in Approve. A corrected fact
+    says so in its sources, so its history shows the wording is his, not the mail's."""
     f = get(conn, fact_id)
     if not f or f.status != "proposed":
         raise FactError(f"fact:{fact_id} is not waiting for approval.")
-    w = write(conn, f.subject, f.slot, f.value, sources=f.sources, route=f.route, as_of=f.as_of, quote=f.quote)
+    edited = value is not None and _norm_value(value) != _norm_value(f.value)
+    sources = f.sources + ([f"corrected by him in Approve, {date.today().isoformat()} (was: {f.value})"] if edited else [])
+    w = write(conn, f.subject, f.slot, value.strip() if edited else f.value, sources=sources, route=f.route,
+              as_of=f.as_of, quote=f.quote)
     with conn:
         conn.execute("UPDATE facts SET status='approved', changed=? WHERE id=?", (_now(), fact_id))
-        _log(conn, "approve", w.fact.id, "home", json.dumps({"proposal": fact_id}))
+        _log(conn, "approve", w.fact.id, "home", json.dumps({"proposal": fact_id, "edited": edited}))
     return w
 
 

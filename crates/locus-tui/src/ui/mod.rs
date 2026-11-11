@@ -286,6 +286,17 @@ fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
         Mode::Strike(_) => hints(&[("i", "irrelevant"), ("k", "knew it"), ("l", "level"), ("t", "too long")]),
         Mode::Chat(_) => hints(&[("⏎", "send"), ("⇧⏎", "new line"), ("esc", "keep it for later")]),
         Mode::ChatName(_) => hints(&[("⏎", "rename"), ("esc", "cancel")]),
+        // The fact's value as you correct it, with how to finish.
+        Mode::FactEdit(_, _, v) => {
+            let mut l = Line::from(vec![
+                Span::styled(" value: ", Style::default().fg(locus_theme::c("yellow"))),
+                Span::raw(v.clone()),
+                Span::styled("▏", Style::default().fg(locus_theme::c("blue"))),
+                Span::raw("   "),
+            ]);
+            l.spans.extend(hints(&[("⏎", "approve as written"), ("esc", "cancel")]).spans);
+            l
+        }
         // Enter's hint says what it does for the focused section, where a screen knows.
         Mode::Normal => {
             let enter = match app.screen() {

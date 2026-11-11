@@ -509,6 +509,9 @@ def cmd_heuris(args) -> None:
 
     conn = hdb.connect()
     try:
+        if args.action == "derive":
+            _heuris_derive(conn, args)
+            return
         if args.action == "index":
             names = [n for n in args.sources if n != "all"] or None
             for o in hrun.run(names, conn=conn):
@@ -575,6 +578,29 @@ def cmd_facts(args) -> None:
         except F.FactError as e:
             print(e, file=sys.stderr)
             sys.exit(2)
+
+
+def _heuris_derive(conn, args) -> None:
+    """H2: facts from mail and the calendar (then records and briefs), batched on the credit."""
+    import time as _time
+
+    from locus.agent import usage
+    from locus.config import load as _load
+    from locus.db.connection import get_connection
+    from locus.heuris import derive
+
+    gate_conn = get_connection(_load().paths.db)
+    try:
+        with usage.job("heuris-facts"):
+            rep = derive.run_facts(conn, since=args.since, limit=args.limit, force=args.force, gate_conn=gate_conn)
+            print(rep.describe())
+            while args.wait and conn.execute("SELECT COUNT(*) FROM batches WHERE applied=0").fetchone()[0]:
+                _time.sleep(30)
+                rep = derive.run_facts(conn, since=args.since, gate_conn=gate_conn, submit_new=False)
+                if rep.collected:
+                    print(rep.describe())
+    finally:
+        gate_conn.close()
 
 
 def cmd_heuris_push(args) -> None:
@@ -2582,7 +2608,11 @@ def main(argv=None) -> None:
     ptp.set_defaults(func=cmd_transcripts_push)
 
     phe = sub.add_parser("heuris", help="heuris (H1): index mail, calendar, chats and repos; or their freshness")
-    phe.add_argument("action", choices=["index", "status"])
+    phe.add_argument("action", choices=["index", "status", "derive"])
+    phe.add_argument("--since", default="2026-06-01", help="derive: read mail from this date (D9)")
+    phe.add_argument("--limit", type=int, default=None, help="derive: at most this many threads per batch")
+    phe.add_argument("--force", action="store_true", help="derive: past the day's credit pace (a backfill)")
+    phe.add_argument("--wait", action="store_true", help="derive: wait for the batches and apply them")
     phe.add_argument("sources", nargs="*", default=[], help="mail calendar chats repos (default: all)")
     phe.add_argument("--json", action="store_true", help="status as JSON")
     phe.set_defaults(func=cmd_heuris)

@@ -596,6 +596,9 @@ class AgentConfig(BaseModel):
             "haiku": "claude-haiku-4-5-20251001",
             "sonnet": "claude-sonnet-5",
             "opus": "claude-opus-5-5",
+            # heuris H2 (D8): facts, records and briefs on the current generation.
+            "sonnet-5.5": "claude-sonnet-5-5",
+            "haiku-5.5": "claude-haiku-5-5",
         },
         description="model alias -> API model id",
     )
@@ -607,6 +610,8 @@ class AgentConfig(BaseModel):
             "claude-haiku-4-5-20251001": [1.0, 5.0],
             "claude-sonnet-5": [3.0, 15.0],
             "claude-opus-5-5": [5.0, 25.0],
+            "claude-sonnet-5-5": [2.0, 10.0],
+            "claude-haiku-5-5": [0.10, 0.50],
         },
         description="API model id -> [input, output] USD per million tokens (estimates)",
     )

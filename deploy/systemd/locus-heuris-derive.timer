@@ -1,0 +1,11 @@
+[Unit]
+Description=heuris derive every hour (facts, records, briefs; H2)
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=1h
+RandomizedDelaySec=2min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

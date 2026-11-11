@@ -595,3 +595,120 @@ class SubscriptionClient:
 
 def subscription_client(*, timeout: float | None = None) -> SubscriptionClient:
     return SubscriptionClient(timeout=timeout)
+
+
+# --- the Batch API (heuris H2, D8) ------------------------------------------------------------------
+#
+# Work nobody is waiting for (facts from mail, records, briefs) goes through Message Batches on the
+# credit: half price, results within the hour. A batch is submitted by one run and collected by a
+# later one, so the caller keeps the batch id (heuris.db `batches`). Never the subscription: a batch
+# is refused, not rerouted, when the credit is closed or the day's pace is spent (`credit_allows`).
+# Each result is counted as one `model_calls` row on the `api` route, at the batch price.
+
+BATCH_DISCOUNT = 0.5
+
+
+@dataclass
+class BatchRequest:
+    custom_id: str
+    model: str                     # an alias in [agent].api_models, or a full model id
+    user: str
+    system: str | None = None      # cached: the same instructions on every request in a job
+    max_tokens: int = 4096
+    schema: dict | None = None     # JSON schema for structured output
+    effort: str = "low"
+
+
+def _model_id(model: str) -> str:
+    cfg = load().agent
+    return cfg.api_models.get(model, model)
+
+
+def credit_allows(estimate_usd: float, *, now: datetime | None = None) -> tuple[bool, str]:
+    """heuris F's guard: each day may spend what is left of the credit divided by the days left in
+    the cycle, and bulk work only 70% of that (30% stays for answers someone is waiting for)."""
+    from calendar import monthrange
+
+    from locus.agent import usage
+    from locus.db.connection import get_connection
+
+    cfg = load().agent
+    if not _api_open():
+        return False, "the API route is closed (backend, or paused after a refusal)"
+    now = now or datetime.now(timezone.utc)
+    cycle = usage.cycle_start(cfg.credit_cycle_day, now)
+    days = monthrange(cycle.year, cycle.month)[1]
+    end = cycle + timedelta(days=days)
+    conn = get_connection(load().paths.db)
+    try:
+        used = usage.credit_used(conn, since=cycle.isoformat())
+        day0, _ = usage.windows(now)
+        today = usage.credit_used(conn, since=day0)
+    finally:
+        conn.close()
+    left_days = max(1.0, (end - now).total_seconds() / 86400)
+    daily = max(0.0, 100.0 - used) / left_days * 0.7
+    if today + estimate_usd > daily:
+        return False, f"today's bulk allowance ${daily:.2f} (spent ${today:.2f}, this needs ~${estimate_usd:.2f})"
+    return True, f"within today's bulk allowance ${daily:.2f} (spent ${today:.2f})"
+
+
+def batch_submit(requests: list[BatchRequest]) -> str:
+    """Submit one Message Batch; returns its id."""
+    from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
+    from anthropic.types.messages.batch_create_params import Request
+
+    reqs = []
+    for r in requests:
+        params: dict = {
+            "model": _model_id(r.model),
+            "max_tokens": r.max_tokens,
+            "messages": [{"role": "user", "content": scrub_prompt(r.user)}],
+            "output_config": {"effort": r.effort},
+        }
+        if r.system:
+            params["system"] = [{"type": "text", "text": scrub_prompt(r.system), "cache_control": {"type": "ephemeral"}}]
+        if r.schema:
+            params["output_config"]["format"] = {"type": "json_schema", "schema": r.schema}
+        reqs.append(Request(custom_id=r.custom_id, params=MessageCreateParamsNonStreaming(**params)))
+    try:
+        return _api_client().messages.batches.create(requests=reqs).id
+    except Exception as exc:  # noqa: BLE001 - every failure is the caller's "not submitted"
+        raise ClaudeError(f"batch not submitted: {exc}") from exc
+
+
+def batch_collect(batch_id: str, model: str) -> dict[str, ClaudeResult | ClaudeError] | None:
+    """The results by custom_id once the batch has ended; None while it is still running. Each
+    result is counted in `model_calls` (route api, batch price)."""
+    from locus.agent import usage
+
+    client = _api_client()
+    b = client.messages.batches.retrieve(batch_id)
+    if b.processing_status != "ended":
+        return None
+    model_id = _model_id(model)
+    out: dict[str, ClaudeResult | ClaudeError] = {}
+    for res in client.messages.batches.results(batch_id):
+        r = res.result
+        if r.type != "succeeded":
+            out[res.custom_id] = ClaudeError(f"batch request {r.type}")
+            usage.record(usage.record_from_usage(model=model, ok=False, duration_ms=0, usage=None, images=0,
+                                                 error=f"batch {r.type}", backend="api"))
+            continue
+        m = r.message
+        u = m.usage
+        used = {
+            "input_tokens": int(getattr(u, "input_tokens", 0) or 0),
+            "cache_creation_input_tokens": int(getattr(u, "cache_creation_input_tokens", 0) or 0),
+            "cache_read_input_tokens": int(getattr(u, "cache_read_input_tokens", 0) or 0),
+            "output_tokens": int(getattr(u, "output_tokens", 0) or 0),
+        }
+        cost = api_price(model_id, used) * BATCH_DISCOUNT
+        text = "".join(getattr(blk, "text", "") for blk in m.content if getattr(blk, "type", "") == "text")
+        if m.stop_reason == "refusal":
+            out[res.custom_id] = ClaudeError("refused")
+        else:
+            out[res.custom_id] = ClaudeResult(text=text, cost_usd=cost, usage=used)
+        usage.record(usage.record_from_usage(model=model, ok=m.stop_reason != "refusal", duration_ms=0,
+                                             usage=used, images=0, cost_usd=cost, backend="api"))
+    return out

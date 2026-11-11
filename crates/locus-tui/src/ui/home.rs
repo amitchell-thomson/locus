@@ -776,10 +776,11 @@ fn draw_careers(f: &mut Frame, area: Rect, app: &App) -> u16 {
     let n_apps = application_count(app);
     let sel = focus.then(|| app.sel('c'));
     let room = usize::from(area.height.saturating_sub(1));
-    let w = window(n_apps, sel.filter(|&s| s < n_apps), SIDE_ROWS.min(room).max(1));
-    // The CV's line and row need two rows beyond the applications; without them the CV is
-    // named in the heading and stays reachable with the arrows.
-    let cv_rows = room >= w.len() + 1 + (ids.len() - n_apps);
+    // The CV's line and row are always drawn (11 Nov: a heading note in their place read as
+    // the section being broken); in a short window the applications scroll in fewer rows.
+    let below = if ids.len() > n_apps { 1 + (ids.len() - n_apps) } else { 0 };
+    let w = window(n_apps, sel.filter(|&s| s < n_apps), SIDE_ROWS.min(room.saturating_sub(below)).max(1));
+    let cv_rows = true;
     let mut extra = match &app.careers_error {
         Some(e) => format!("not read: {e}"),
         None => match window_note(n_apps, &w) {
@@ -945,11 +946,11 @@ fn draw_studies(f: &mut Frame, area: Rect, app: &App) {
     let sel = focus.then(|| app.sel('s'));
     // The learning row below the courses is always drawn; only the courses scroll.
     let room = usize::from(area.height.saturating_sub(1));
-    let cap = SIDE_ROWS.min(room).max(1);
+    // The learning row and its line are always drawn (11 Nov); in a short window the courses
+    // scroll in fewer rows instead.
+    let cap = SIDE_ROWS.min(room.saturating_sub(2)).max(1);
     let w = window(ids.len(), sel.filter(|&s| s < ids.len()), cap);
-    // The learning row and its line need two rows beyond the courses; without them, learning
-    // is named in the heading (L still opens it) so the courses keep their five.
-    let learning_row = room >= w.len() + 2;
+    let learning_row = true;
     let mut extra = match window_note(ids.len(), &w) {
         n if n.is_empty() => "courses and coursework".to_string(),
         n => n,

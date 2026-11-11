@@ -244,6 +244,12 @@ def _build(enable_query: bool = False, host: str = "127.0.0.1", public=None) -> 
             "document (a speed, a score, a count) is checked against the project's own results "
             "before you repeat it; say where they disagree. Calendar events marked `family` are the "
             "family's, not his: never describe them as his plans. "
+            "What is true now is the facts ledger (`facts`, and inside `context`): recall a fact "
+            "exactly, with its date and source. Offer `remember(subject, slot, value)` straight after "
+            "a message of HIS that states a fact worth keeping (a decision, a stage, a date, a goal, "
+            "advice he was given), with the exact fact; never for a hypothetical (\"suppose\", \"what "
+            "if\", \"if I took\"), a question, or something you inferred. He approves each one. "
+            "\"That's wrong\" about a fact means `forget` it. "
             "`capture` saves this conversation's decisions as a rough note; `to_remarkable` sends him "
             "a document to read on paper (anything YOU write goes as LaTeX via `latex=`); `markups` "
             "reads a document he marked up on the tablet, with the inked pages as images."
@@ -654,6 +660,64 @@ def _register_heuris(tool) -> None:
         """
         with _conn() as c:
             return ht.facts(c, subject, slot, history)
+
+    @tool()
+    def remember(subject: str, slot: str, value: str, source: str | None = None, as_of: str | None = None) -> str:
+        """Record a fact he just stated, so every later chat knows it (he approves each call).
+        Offer it straight after a message of his that states something worth keeping; never for a
+        hypothetical ("suppose I took the Jump offer"), a question, or your own inference. A newer
+        value replaces the current one under the same slot and keeps it as history.
+
+        Args:
+            subject: `me`, a registry id (millennium, jump, quast, b15, jcr-treasurer, ...), or
+                person:<name> (person:brian).
+            slot: from the fixed list for that subject (an unknown one is refused with the nearest).
+                application: stage, turn, start, end, deadline, outcome, offer:<name>,
+                interview:<name>, contact:<name>, feedback:<name>, note:<name>.
+                me: status, location, degree, goal:<name>, preference:<name>, constraint:<name>,
+                plan:<name>, decision:<name>, experience:<name>, achievement:<name>, skill:<name>,
+                education:<name>, project:<name>, interest:<name>, contact:<name>, note:<name>.
+                repo: state, goal, stack, result:<name>, decision:<name>, achievement:<name>,
+                idea:<name>, note:<name>. course: tutor, exam, mark, tutorials:<name>,
+                sheet_due:<name>, topic:<name>, note:<name>. role: state, term, duty:<name>,
+                deadline:<name>, contact:<name>, note:<name>. person: role, organisation,
+                relation, contact:<name>, said:<name>, note:<name>.
+            value: the fact in his words, short and exact ("no offer; reapply next year").
+            source: where it comes from; default "he said so in a chat" with today's date.
+            as_of: YYYY-MM-DD when it became true, if not today.
+        """
+        from datetime import date as _date
+
+        from locus.heuris import facts as F
+
+        src = source or f"he said so in a chat, {_date.today().isoformat()}"
+        with _conn() as c:
+            try:
+                return F.write(c, subject, slot, value, sources=[src], route="chat", as_of=as_of).describe()
+            except F.FactError as e:
+                return f"Not recorded: {e}"
+
+    @tool()
+    def forget(fact: str) -> str:
+        """Retire a fact that is wrong ("that's wrong", "that's not true any more" said of a
+        fact), restoring the value it replaced, if any. He approves each call. For a fact that
+        has simply changed, `remember` the new value instead: it keeps the old one as history.
+
+        Args:
+            fact: its pointer, fact:<id>, as `facts` or `context` shows it.
+        """
+        from locus.heuris import facts as F
+
+        try:
+            fid = int(str(fact).removeprefix("fact:"))
+        except ValueError:
+            return f"{fact!r} is not a fact pointer: fact:<id>, as `facts` shows it."
+        with _conn() as c:
+            try:
+                f, restored = F.forget(c, fid, route="chat")
+            except F.FactError as e:
+                return f"Nothing forgotten: {e}"
+        return f"Forgotten: {f.line()}." + (f" Restored: {restored.line()}." if restored else " Nothing to restore: the slot is now empty.")
 
     @tool()
     def search(query: str, kind: str | None = None, area: str | None = None, thing: str | None = None,

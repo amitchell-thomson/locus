@@ -212,8 +212,10 @@ def current(conn: sqlite3.Connection, subject: str | None = None, slot: str | No
 def history(conn: sqlite3.Connection, subject: str, slot: str) -> list[Fact]:
     """Every value the slot has held or been offered, newest as-of first."""
     subject = normalise_subject(subject)
-    subject_kind(subject)  # an unknown subject is named, never answered with "nothing recorded"
+    kind = subject_kind(subject)  # an unknown subject is named, never answered with "nothing recorded"
     s = slot.strip().lower()
+    if s.split(":")[0] not in slot_table()[kind]["single"] + slot_table()[kind]["named"]:
+        check_slot(subject, s)  # raises with the nearest slots
     clause, params = ("slot=?", [s]) if ":" in s else ("(slot=? OR slot LIKE ?)", [s, f"{s}:%"])
     return [Fact.of(r) for r in conn.execute(
         f"SELECT {_COLS} FROM facts WHERE subject=? AND {clause} ORDER BY slot, as_of DESC, id DESC",
@@ -244,11 +246,12 @@ class Written:
     fact: Fact
     action: str            # write (now current), history (older than current), confirm (same value), propose
     replaced: Fact | None = None
+    added_source: bool = False
 
     def describe(self) -> str:
         f = self.fact
         if self.action == "confirm":
-            return f"Already true: {f.line()}. Source added."
+            return f"Already true: {f.line()}." + (" Source added." if self.added_source else "")
         if self.action == "history":
             cur = self.replaced
             return (f"Kept as history: {f.line()}. It is older than the current value"
@@ -286,7 +289,7 @@ def write(conn: sqlite3.Connection, subject: str, slot: str, value: str, *, sour
             conn.execute("UPDATE facts SET sources=?, quote=COALESCE(quote, ?), as_of=?, changed=? WHERE id=?",
                          (json.dumps(merged), quote, new_as_of, now, cur.id))
             _log(conn, "confirm", cur.id, route, json.dumps(sources))
-            return Written(get(conn, cur.id), "confirm")
+            return Written(get(conn, cur.id), "confirm", added_source=len(merged) > len(cur.sources))
         older = cur is not None and as_of < cur.as_of
         fid = conn.execute(
             f"INSERT INTO facts(subject, slot, value, as_of, sources, quote, route, status, replaces, created, changed) "

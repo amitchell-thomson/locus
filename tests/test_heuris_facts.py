@@ -146,3 +146,32 @@ def test_import_maps_a_repo_stage_to_its_state(conn, tmp_path):
     p.write_text('[cv]\nstage = "released the G-Research version"\nsince = 2026-10-17\n')
     F.import_applications(conn, p)
     assert F.current(conn, "cv", "state")[0].value == "released the G-Research version"
+
+
+def test_history_refuses_an_unknown_slot(conn):
+    with pytest.raises(F.FactError, match="Nearest: stage"):
+        F.history(conn, "millennium", "stag")
+
+
+def test_remember_and_forget_tools(monkeypatch, tmp_path):
+    monkeypatch.setenv("LOCUS_HEURIS_DB", str(tmp_path / "h.db"))
+    from locus import mcp_server
+
+    tools = {}
+
+    def tool():
+        def deco(fn):
+            tools[fn.__name__] = fn
+            return fn
+        return deco
+
+    mcp_server._register_heuris(tool)
+    out = tools["remember"]("jump", "stage", "no offer; reapply next year")
+    assert out.startswith("Remembered: jump · stage = no offer; reapply next year") and "he said so in a chat" in out
+    assert tools["remember"]("jump", "stages", "x").startswith("Not recorded: `stages` is not a slot")
+    out = tools["remember"]("jump", "stage", "offer")
+    assert "replaces 'no offer; reapply next year'" in out
+    fid = out.split("[fact:")[1].split("]")[0]
+    out = tools["forget"](f"fact:{fid}")
+    assert "Restored: jump · stage = no offer" in out
+    assert tools["forget"]("fact:999").startswith("Nothing forgotten")

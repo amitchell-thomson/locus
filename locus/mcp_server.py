@@ -725,14 +725,15 @@ def _register_heuris(tool) -> None:
                limit: int = 12) -> str:
         """Search everything he has: mail and the text of its attachments, career files (offers,
         contracts, CVs, forms), calendar events, tasks, Claude chats (his prompts and
-        Claude's answers), repository docs and commits, and the library (papers, lecture notes,
+        Claude's answers), records (what each chat session, repo day and mail thread came to:
+        asked, decided, made, open), current facts, repository docs and commits, and the library (papers, lecture notes,
         his own handwritten notes and margin notes). Words and meaning together, reranked as one
         list. Each hit is dated and ends with a pointer for `open`. Filters apply before ranking.
         If `person` matches two people it lists both and asks which: do not guess.
 
         Args:
             query: What to look for, in plain words.
-            kind: mail, attachment (a mail attachment's text), file (a career file), event, task, chat, commit, doc (repository doc), source (library), note (his own writing in the library).
+            kind: mail, attachment (a mail attachment's text), file (a career file), event, task, chat, commit, doc (repository doc), source (library), note (his own writing in the library), record (what happened in one chat session, one repo's day of commits, or one mail thread, written once from the whole), fact (a current fact from the ledger).
             area: Studies, Careers, Projects, Personal, Family, Errands, Sport, Social.
             thing: a registry id (quast, locus, oqts, millennium, b15, ...); see `context`.
             person: a name or an email address.

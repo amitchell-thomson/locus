@@ -430,3 +430,24 @@ def import_applications(conn: sqlite3.Connection, path: Path) -> list[Written]:
                 out.append(write(conn, app, slot, str(e[key]), sources=[APPLICATIONS_SOURCE], route="import",
                                  as_of=as_of))
     return out
+
+
+def items():
+    """Current facts as index items (kind `fact`), so `search` and `timeline` find them beside
+    the mail and chats they came from (H2.6). Re-indexed every 15 minutes with the rest; a fact
+    replaced since leaves the index on the next run."""
+    from locus.heuris import db as hdb
+    from locus.heuris.index import Item
+
+    conn = hdb.connect()
+    try:
+        fs = current(conn)
+    finally:
+        conn.close()
+    for f in fs:
+        thing = f.subject if f.subject in registry.entries() else None
+        at = datetime.fromisoformat(f.as_of).replace(tzinfo=timezone.utc)
+        text = f.line() + (f'\nIt rests on: "{f.quote}"' if f.quote else "")
+        yield Item(ref=f"fact:{f.id}", kind="fact", at=at, title=f"Fact: {f.subject} · {f.slot} = {f.value}",
+                   text=text, thing=thing, area=registry.area_of(thing), parent=f"facts:{f.subject}",
+                   meta={"route": f.route, "subject": f.subject, "slot": f.slot})

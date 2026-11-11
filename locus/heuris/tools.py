@@ -29,9 +29,17 @@ from pathlib import Path
 from locus.heuris import registry
 from locus.heuris.index import QUERY_PREFIX
 
-KINDS = ("mail", "attachment", "file", "event", "task", "chat", "commit", "doc", "source", "note")
+KINDS = ("mail", "attachment", "file", "event", "task", "chat", "commit", "doc", "source", "note", "record", "fact")
 # Text written by someone else, which arrives inside the untrusted-data envelope.
 UNTRUSTED = ("mail", "attachment", "file")
+
+
+def untrusted(kind: str, meta: dict | None = None) -> bool:
+    """Mail, its attachments, career files; and a record written FROM mail (H2.6): a model's
+    paraphrase of untrusted text can carry what the mail tried to say to the model."""
+    m = meta or {}
+    return (kind in UNTRUSTED or (kind == "record" and m.get("record_of") == "mail")
+            or (kind == "fact" and m.get("route") == "mail"))
 LIBRARY_KINDS = ("source", "note")
 # The library's categories by area, so `area=` narrows the library too.
 AREA_CATEGORY = {"Studies": "coursework", "Careers": "career", "Projects": "project"}
@@ -368,9 +376,9 @@ def _describe(h: Hit, env: Envelope, i: int) -> str:
         head += f" · {h.thing}"
     elif h.kind == "attachment":
         head += f" · attached by {m.get('from_name') or m.get('from') or ''}"
-    title = env.wrap(h.title) if h.kind in UNTRUSTED else h.title
+    title = env.wrap(h.title) if untrusted(h.kind, m) else h.title
     snip = _short(h.text)
-    body = env.wrap(snip) if h.kind in UNTRUSTED else snip
+    body = env.wrap(snip) if untrusted(h.kind, m) else snip
     return f"{head}\n    {title}\n    {body}\n    open: {h.ref}"
 
 
@@ -533,7 +541,7 @@ def open_ref(conn: sqlite3.Connection, ref: str, *, around: int = 3, page: int =
     text, more = pages[p - 1], _more(ref, p, len(pages))
     if kind == "commit":
         return f"{head}\n\n{text}\n\nrepo folder: {m.get('repo') or '(top level)'} · sha {m.get('sha')}"
-    if kind in UNTRUSTED:
+    if untrusted(kind, m):
         where = f"\n(attached to {m.get('message')}; open that for the thread)" if kind == "attachment" else ""
         return env.preamble() + env.wrap(f"{head}\n\n{text}") + where + more
     return f"{head}\n\n{text}{more}"
@@ -631,7 +639,7 @@ def timeline(conn: sqlite3.Connection, about: str, *, since: str | None = None, 
     for ref, k, at, title, meta in rows:
         m = json.loads(meta or "{}")
         extra = ""
-        if k in UNTRUSTED:
+        if untrusted(k, m):
             if k == "mail":
                 extra = f" ({m.get('from_name') or m.get('from')})"
             title = env.wrap(title)

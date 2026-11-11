@@ -589,24 +589,39 @@ def cmd_facts(args) -> None:
 
 
 def _heuris_derive(conn, args) -> None:
-    """H2: facts from mail and the calendar (then records and briefs), batched on the credit."""
+    """H2: facts from mail and the calendar, records, and briefs, batched on the credit."""
     import time as _time
 
     from locus.agent import usage
     from locus.config import load as _load
     from locus.db.connection import get_connection
-    from locus.heuris import derive
+    from locus.heuris import derive, records
 
+    jobs = args.jobs or ["facts", "records"]
     gate_conn = get_connection(_load().paths.db)
     try:
-        with usage.job("heuris-facts"):
-            rep = derive.run_facts(conn, since=args.since, limit=args.limit, force=args.force, gate_conn=gate_conn)
-            print(rep.describe())
-            while args.wait and conn.execute("SELECT COUNT(*) FROM batches WHERE applied=0").fetchone()[0]:
-                _time.sleep(30)
-                rep = derive.run_facts(conn, since=args.since, gate_conn=gate_conn, submit_new=False)
-                if rep.collected:
-                    print(rep.describe())
+        def once(submit_new: bool) -> bool:
+            did = False
+            if "facts" in jobs:
+                with usage.job("heuris-facts"):
+                    r = derive.run_facts(conn, since=args.since, limit=args.limit, force=args.force,
+                                         gate_conn=gate_conn, submit_new=submit_new)
+                if submit_new or r.collected:
+                    print(r.describe())
+                did |= bool(r.collected)
+            if "records" in jobs:
+                with usage.job("heuris-records"):
+                    r = records.run_records(conn, since=args.since, limit=args.limit, force=args.force,
+                                            submit_new=submit_new)
+                if submit_new or r.collected:
+                    print(r.describe())
+                did |= bool(r.collected)
+            return did
+
+        once(True)
+        while args.wait and conn.execute("SELECT COUNT(*) FROM batches WHERE applied=0").fetchone()[0]:
+            _time.sleep(30)
+            once(False)
     finally:
         gate_conn.close()
 
@@ -2621,6 +2636,7 @@ def main(argv=None) -> None:
     phe.add_argument("--limit", type=int, default=None, help="derive: at most this many threads per batch")
     phe.add_argument("--force", action="store_true", help="derive: past the day's credit pace (a backfill)")
     phe.add_argument("--wait", action="store_true", help="derive: wait for the batches and apply them")
+    phe.add_argument("--jobs", nargs="*", choices=["facts", "records", "briefs"], help="derive: which (default all)")
     phe.add_argument("sources", nargs="*", default=[], help="mail calendar chats repos (default: all)")
     phe.add_argument("--json", action="store_true", help="status as JSON")
     phe.set_defaults(func=cmd_heuris)

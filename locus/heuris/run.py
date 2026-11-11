@@ -26,10 +26,12 @@ from pathlib import Path
 from locus.heuris import db as hdb
 from locus.heuris.index import Stats, index, record_run
 
-SOURCES = ("mail", "calendar", "chats", "repos", "files")
+SOURCES = ("mail", "calendar", "chats", "repos", "files", "facts", "records")
 # How old a source's last good run may be before status calls it stale.
 STALE = {"mail": timedelta(hours=1), "calendar": timedelta(hours=1), "chats": timedelta(hours=2),
-         "repos": timedelta(hours=2), "files": timedelta(hours=2)}
+         "repos": timedelta(hours=2), "files": timedelta(hours=2),
+         # H2: the ledger and the records, indexed so search and timeline find them.
+         "facts": timedelta(hours=1), "records": timedelta(hours=2)}
 
 
 def locus_dir() -> Path:
@@ -83,6 +85,14 @@ def run_source(conn: sqlite3.Connection, name: str, *, embed=None) -> Outcome:
             from locus.heuris.sources import calendar
 
             st = _full_scan(conn, name, calendar.items(), embed)
+        elif name == "facts":
+            from locus.heuris import facts
+
+            st = index(conn, name, facts.items(), embed=embed, prune=True)
+        elif name == "records":
+            from locus.heuris import records
+
+            st = index(conn, name, records.items(), embed=embed, prune=True)
         elif name == "chats":
             from locus.heuris.sources import chats
 

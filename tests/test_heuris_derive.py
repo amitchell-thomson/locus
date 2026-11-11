@@ -141,3 +141,11 @@ def test_a_refused_credit_leaves_threads_for_the_next_run(conn, monkeypatch):
     rep = D.run_facts(conn, since="2026-11-01")
     assert rep.submitted == 0 and "pace spent" in rep.note
     assert len(D.threads_to_read(conn, since="2026-11-01")) == 3
+
+
+def test_an_interview_event_is_matched_to_its_application_by_its_title():
+    assert D.app_for_event("Millennium Interview", "2026-10-16T15:00", None) == "millennium"
+    assert D.app_for_event("Call with Millennium QD", "2026-10-29T09:30", None) == "millennium"
+    assert D.app_for_event("G-Research AI/ML interview", "2026-10-29T09:30", None) == "gresearch-ml"
+    assert D.app_for_event("Brevan Howard onsite", "2025-11-03T09:30", None) == "bh-2026"
+    assert D.app_for_event("Quant interview", "2026-10-29T09:30", None) is None

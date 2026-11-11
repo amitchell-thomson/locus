@@ -320,24 +320,51 @@ def apply_facts(conn: sqlite3.Connection, msgs: list[Message], raw: str, *, gate
 # the calendar: interviews, with no model
 
 
-_INTERVIEW = re.compile(r"\b(interview|onsite|on-site|superday|super day|round|assessment centre|final|call with)\b", re.I)
+_INTERVIEW = re.compile(r"\b(interview|onsite|on-site|superday|super day|assessment centre|call with)\b", re.I)
+_NOT_A_BOOKING = re.compile(r"^[✓☐]|\bprep\b|\bpractice\b", re.I)
+
+
+def app_for_event(title: str, at: str, thing: str | None) -> str | None:
+    """The application an interview event is for. Events are mostly filed with no `thing`, so the
+    firm is read from the title; a firm with several applications is narrowed by the other words
+    of an application's name ("AI/ML"), then by the year it is for (an October 2026 interview is
+    for an internship in 2027). Still ambiguous: None, never a guess."""
+    apps = {i: e for i, e in registry.entries().items() if e.get("kind") == "application"}
+    if thing in apps:
+        return thing
+    t = (title or "").lower()
+    cands = [i for i, e in apps.items() if e.get("company") and e["company"].lower() in t]
+    if len(cands) > 1:
+        def extra(i):
+            words = set(re.findall(r"[a-z0-9/]+", apps[i]["name"].lower())) - set(re.findall(r"[a-z0-9/]+", apps[i]["company"].lower()))
+            return {w for w in words if not w.isdigit() and len(w) > 2 and w not in {"internship", "the"}}
+        named = [i for i in cands if extra(i) and any(w in t for w in extra(i))]
+        if len(named) == 1:
+            return named[0]
+        unnamed = [i for i in cands if not (extra(i) & set(re.findall(r"[a-z0-9/]+", t)))]
+        year = int(at[:4]) + (1 if int(at[5:7]) >= 7 else 0)
+        dated = [i for i in (unnamed or cands) if str(year) in apps[i]["name"]]
+        cands = dated or unnamed
+    return cands[0] if len(cands) == 1 else None
 
 
 def calendar_facts(conn: sqlite3.Connection, *, since: str) -> int:
-    """Interview bookings: events filed under an application whose title names one."""
+    """Interview bookings: his events (not the family's) whose title names an interview or a call
+    with a firm he applied to."""
     t0 = int(datetime.fromisoformat(since).replace(tzinfo=timezone.utc).timestamp())
-    apps = {i for i, e in registry.entries().items() if e.get("kind") == "application"}
     n = 0
     for ref, at, title, thing, area in conn.execute(
-            "SELECT ref, at, title, thing, area FROM items WHERE kind='event' AND at_ts >= ? AND thing IS NOT NULL",
-            (t0,)):
-        if thing not in apps or area == "Family" or not _INTERVIEW.search(title or ""):
+            "SELECT ref, at, title, thing, area FROM items WHERE kind='event' AND at_ts >= ?", (t0,)):
+        if area == "Family" or not _INTERVIEW.search(title or "") or _NOT_A_BOOKING.search(title or ""):
+            continue
+        app = app_for_event(title, at, thing)
+        if not app:
             continue
         day = at[:10]
         value = f"{title} ({at[:16].replace('T', ' ')})"
         as_of = min(day, date.today().isoformat())
         try:
-            w = F.write(conn, thing, f"interview:{day}", value, sources=[ref], route="calendar", as_of=as_of)
+            w = F.write(conn, app, f"interview:{day}", value, sources=[ref], route="calendar", as_of=as_of)
             n += w.action == "write"
         except F.FactError:
             continue

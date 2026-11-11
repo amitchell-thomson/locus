@@ -849,6 +849,7 @@ pub fn apply(fx: &mut Fixtures, proposals: &[ReviewItem], previews: &HashMap<Str
             date: None,
             changeset: None,
             mail: Some(MailDecision::Proposal(i.proposal.id.clone())),
+            fact: None,
             detail: Some(ApproveDetail {
                 action: badge_of(&i.proposal.action, &fx.registry),
                 who: i.who.clone(),

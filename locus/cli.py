@@ -571,6 +571,14 @@ def cmd_facts(args) -> None:
             elif a == "undo":
                 f, restored = F.forget(conn, args.id, route="home", action="undo")
                 print(f"Undone: {f.line()}." + (f" Restored: {restored.line()}." if restored else ""))
+            elif a == "queue":
+                # What the window reads once a minute (H2.5), in one call: the current facts
+                # (Home's careers), the proposals (Approve) and the automatic writes (the log).
+                print(_json.dumps({
+                    "current": [asdict(f) for f in F.current(conn)],
+                    "proposed": [asdict(f) for f in F.proposed(conn)],
+                    "log": F.automatic_log(conn, days=args.days),
+                }))
             elif a == "import-applications":
                 ws = F.import_applications(conn, Path(args.path).expanduser())
                 for w in ws:
@@ -2619,7 +2627,7 @@ def main(argv=None) -> None:
 
     pfa = sub.add_parser("facts", help="heuris (H2): the facts ledger: show, remember, forget, approve, the auto log")
     pfa.add_argument("action", choices=["show", "remember", "forget", "proposed", "approve", "reject", "log", "undo",
-                                        "import-applications"])
+                                        "queue", "import-applications"])
     pfa.add_argument("subject", nargs="?", help="show/remember: me, a registry id, person:<name>")
     pfa.add_argument("slot", nargs="?", help="show/remember: stage, offer:pay, note:<name>, ...")
     pfa.add_argument("value", nargs="?", help="remember: the value")

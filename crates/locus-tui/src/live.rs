@@ -8,8 +8,9 @@
 //!   measured on 10 Nov to give nothing usable for half the panes. A file outlives its process,
 //!   so a session counts only while its pane still runs Claude.
 //! - **Last activity** (H3) is the newest commit across a repo's directories.
-//! - **Careers** (H5) is `~/files/Careers/applications.toml`, kept by you and the chat until
-//!   heuris H2 writes it from mail.
+//! - **Careers** (H5) is the facts ledger on the server (heuris H2.5, D3): each application's
+//!   `stage` (dated by its as-of) and `turn`, over ssh. The applications file it replaced was
+//!   imported once and retired, so there is one record, written from mail, chats and `y`.
 //! - **System** (H7) is `locus home-system` on the server, over ssh.
 //!
 //! Each reader is cheap and fails to "nothing found", never to a fixture: once Home is live, a
@@ -434,59 +435,120 @@ pub fn scan_unregistered_repos(reg: &Registry) -> Vec<Repo> {
 
 // --- careers ----------------------------------------------------------------------------------
 
-/// `~/files/Careers/applications.toml` (H5).
-pub fn careers_file() -> PathBuf {
-    home().join("files/Careers/applications.toml")
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CareerEntry {
-    stage: String,
-    /// A bare TOML date (`2026-10-22`) or the same quoted.
-    since: toml::Value,
+/// One fact as `locus facts show/queue --json` prints it.
+#[derive(Debug, Clone, Deserialize)]
+pub struct FactRow {
     #[serde(default)]
-    turn: Option<String>,
-    /// His own note on it (advice, plans; 10 Nov). Read by `context`; Home does not show it.
+    pub id: u64,
+    pub subject: String,
+    pub slot: String,
+    pub value: String,
+    pub as_of: String,
     #[serde(default)]
-    #[allow(dead_code)]
-    note: Option<String>,
+    pub sources: Vec<String>,
+    #[serde(default)]
+    pub quote: Option<String>,
+    #[serde(default)]
+    pub why: Option<String>,
 }
 
-fn date_of(v: &toml::Value) -> Option<NaiveDate> {
-    let s = match v {
-        toml::Value::Datetime(d) => d.to_string(),
-        toml::Value::String(s) => s.clone(),
-        _ => return None,
-    };
-    NaiveDate::parse_from_str(s.get(..10)?, "%Y-%m-%d").ok()
+/// One automatic write, as `locus facts queue` lists it for the log.
+#[derive(Debug, Clone, Deserialize)]
+pub struct FactLogRow {
+    pub at: String,
+    pub fact: u64,
+    pub line: String,
+    #[serde(default)]
+    pub undone: bool,
 }
 
-/// Each application's stage, by registry id. An unreadable file is an error Home shows, never
-/// a quiet fall back to the fixture.
-pub fn read_careers(path: &Path) -> Result<BTreeMap<String, Status>, String> {
-    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let raw: BTreeMap<String, CareerEntry> =
-        toml::from_str(&text).map_err(|e| format!("{}: {}", path.display(), e.message()))?;
-    raw.into_iter()
-        .map(|(id, e)| {
-            let turn = match e.turn.as_deref().unwrap_or("") {
+/// The ledger as the window reads it once a minute: current facts (careers), proposals
+/// (Approve) and automatic writes (the log).
+#[derive(Debug, Clone, Deserialize)]
+pub struct FactsLive {
+    pub current: Vec<FactRow>,
+    pub proposed: Vec<FactRow>,
+    pub log: Vec<FactLogRow>,
+}
+
+/// The ledger, read from the server in one call (H2.5).
+pub fn fetch_facts() -> Result<FactsLive, String> {
+    let said = server_locus(&["facts".into(), "queue".into(), "--json".into()])?;
+    serde_json::from_str(&said).map_err(|e| format!("unreadable facts: {e}"))
+}
+
+/// Proposed facts onto Approve, and the automatic writes as the log (H2.5). The log is the
+/// ledger's alone once live: the fixture's sample rows would look true and not be (§3).
+pub fn apply_facts(fx: &mut Fixtures, facts: &FactsLive) {
+    use locus_contract::{ApproveDetail, ApproveGroup, ApproveItem, ApproveKind, AutoAction};
+    fx.approve.groups.retain(|g| g.kind != ApproveKind::Fact);
+    let items: Vec<ApproveItem> = facts
+        .proposed
+        .iter()
+        .map(|f| ApproveItem {
+            text: format!("{} · {} = {}", f.subject, f.slot, f.value),
+            to: None,
+            from: "heuris · mail".into(),
+            new: true,
+            opens: None,
+            date: None,
+            changeset: None,
+            mail: None,
+            fact: Some(f.id),
+            detail: Some(ApproveDetail {
+                action: "FACT".into(),
+                who: f.sources.join(", "),
+                subject: format!("{} · {}", f.subject, f.slot),
+                meta: format!("as of {}", f.as_of),
+                reason: f.why.clone().unwrap_or_default(),
+                body: format!(
+                    "{} · {} = {}\n\nIt rests on: \"{}\"",
+                    f.subject,
+                    f.slot,
+                    f.value,
+                    f.quote.clone().unwrap_or_default()
+                ),
+            }),
+        })
+        .collect();
+    if !items.is_empty() {
+        fx.approve.groups.push(ApproveGroup { kind: ApproveKind::Fact, label: None, items });
+    }
+    fx.autolog.entries = facts
+        .log
+        .iter()
+        .filter_map(|r| {
+            let at = DateTime::parse_from_rfc3339(&r.at).ok()?;
+            Some(AutoAction {
+                at,
+                text: format!("fact from mail: {}", r.line),
+                undo: !r.undone,
+                automatic_since: None,
+                fact: Some(r.fact),
+            })
+        })
+        .collect();
+}
+
+/// Each application's stage from the facts (heuris H2.5): `stage` dated by its as-of, `turn`
+/// when one is recorded. An entry with no stage fact shows no stage.
+pub fn careers_from_facts(rows: &[FactRow]) -> Result<BTreeMap<String, Status>, String> {
+    let mut out: BTreeMap<String, Status> = BTreeMap::new();
+    for r in rows.iter().filter(|r| r.slot == "stage") {
+        let since = NaiveDate::parse_from_str(r.as_of.get(..10).unwrap_or(""), "%Y-%m-%d")
+            .map_err(|_| format!("{}: as-of {:?} is not a date", r.subject, r.as_of))?;
+        out.insert(r.subject.clone(), Status { stage: r.value.clone(), since, turn: None });
+    }
+    for r in rows.iter().filter(|r| r.slot == "turn") {
+        if let Some(st) = out.get_mut(&r.subject) {
+            st.turn = match r.value.trim() {
                 "you" => Some(Turn::You),
                 "them" => Some(Turn::Them),
-                "" => None,
-                t => return Err(format!("{id}: turn is `you`, `them` or nothing, not `{t}`")),
+                _ => None,
             };
-            let since = date_of(&e.since).ok_or_else(|| format!("{id}: since is a date, 2026-10-22"))?;
-            Ok((
-                id,
-                Status {
-                    stage: e.stage,
-                    since,
-                    turn,
-                },
-            ))
-        })
-        .collect()
+        }
+    }
+    Ok(out)
 }
 
 /// Careers' stages onto their entries; every Careers entry loses its fixture stage first.
@@ -687,14 +749,27 @@ mod tests {
     }
 
     #[test]
-    fn careers_file_reads_and_refuses_a_bad_turn() {
-        let dir = tempfile::tempdir().expect("tmp");
-        let f = dir.path().join("a.toml");
-        std::fs::write(&f, "[jump]\nstage = \"not offered\"\nsince = 2026-10-22\n\n[millennium]\nstage = \"offer accepted\"\nsince = 2026-10-30\nturn = \"you\"\n").expect("write");
-        let c = read_careers(&f).expect("reads");
-        assert_eq!(c["jump"].turn, None);
-        assert_eq!(c["millennium"].turn, Some(Turn::You));
-        std::fs::write(&f, "[jump]\nstage = \"x\"\nsince = 2026-10-22\nturn = \"soon\"\n").expect("write");
-        assert!(read_careers(&f).is_err());
+    fn careers_come_from_the_facts() {
+        let r = |subject: &str, slot: &str, value: &str, as_of: &str| FactRow {
+            id: 1,
+            subject: subject.into(),
+            slot: slot.into(),
+            value: value.into(),
+            as_of: as_of.into(),
+            sources: vec![],
+            quote: None,
+            why: None,
+        };
+        let c = careers_from_facts(&[
+            r("bh-2027", "stage", "contract signed · reneging", "2026-11-10"),
+            r("bh-2027", "turn", "you", "2026-11-10"),
+            r("jump", "stage", "not offered", "2026-10-22"),
+            r("jump", "outcome", "no offer", "2026-10-22"),
+            r("me", "goal:career", "systematic trading", "2026-10-30"),
+        ])
+        .expect("reads");
+        assert_eq!(c.len(), 2);
+        assert_eq!(c["bh-2027"].turn, Some(Turn::You));
+        assert_eq!(c["jump"].since, NaiveDate::from_ymd_opt(2026, 10, 22).unwrap());
     }
 }

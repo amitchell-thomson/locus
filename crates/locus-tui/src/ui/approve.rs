@@ -58,6 +58,7 @@ fn group_name(k: ApproveKind) -> &'static str {
         ApproveKind::Calendar => "calendar changes",
         ApproveKind::MailSend => "mail to send",
         ApproveKind::MailFiling => "mail to file",
+        ApproveKind::Fact => "facts from mail",
     }
 }
 
@@ -76,6 +77,7 @@ fn badge_text(kind: ApproveKind, it: &ApproveItem) -> String {
         ApproveKind::Calendar => "CALENDAR",
         ApproveKind::MailSend => "SEND",
         ApproveKind::MailFiling => "MAIL",
+        ApproveKind::Fact => "FACT",
     }
     .into()
 }
@@ -1094,6 +1096,29 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 }
                 return true;
             }
+            // A fact from mail (heuris H2.5): approved or rejected in the ledger, on the server.
+            let fact = key
+                .strip_prefix("approve:")
+                .and_then(|r| r.split_once(':'))
+                .and_then(|(g, i)| {
+                    let g: usize = g.parse().ok()?;
+                    let i: usize = i.parse().ok()?;
+                    app.fixtures.approve.groups.get(g)?.items.get(i)?.fact.map(|f| (g, i, f))
+                });
+            if let (Some((g, i, id)), KeyCode::Char(c @ ('y' | 'n'))) = (fact, k.code)
+                && app.home_live
+            {
+                let verb = if c == 'y' { "approve" } else { "reject" };
+                match crate::live::server_locus(&["facts".into(), verb.into(), "--id".into(), id.to_string()]) {
+                    Ok(msg) => {
+                        app.fixtures.approve.groups[g].items.remove(i);
+                        app.fixtures.approve.groups.retain(|x| !x.items.is_empty());
+                        app.note = Some(msg.lines().last().unwrap_or("done").to_string());
+                    }
+                    Err(e) => app.note = Some(format!("heuris said no: {e}")),
+                }
+                return true;
+            }
             // A calendar change from kairos (round 7c): approved or refused here, the one place.
             let changeset = key
                 .strip_prefix("approve:")
@@ -1213,7 +1238,17 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
             if k.code == KeyCode::Char('u') {
                 let i = app.sel(' ');
                 if let Some(e) = app.fixtures.autolog.entries.get(i).cloned() {
-                    if e.undo {
+                    if let (Some(id), true) = (e.fact, e.undo) {
+                        // A fact written from mail: retired in the ledger, the value it replaced
+                        // restored (heuris H2.5).
+                        match crate::live::server_locus(&["facts".into(), "undo".into(), "--id".into(), id.to_string()]) {
+                            Ok(msg) => {
+                                app.fixtures.autolog.entries[i].undo = false;
+                                app.mark(format!("log:{i}"), Mark::Undone, msg.lines().last().unwrap_or("undone").to_string());
+                            }
+                            Err(e) => app.note = Some(format!("heuris said no: {e}")),
+                        }
+                    } else if e.undo {
                         app.mark(format!("log:{i}"), Mark::Undone, format!("would undo: {}", e.text));
                     } else {
                         app.note = Some("that one cannot be undone".into());

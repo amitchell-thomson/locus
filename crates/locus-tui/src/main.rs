@@ -137,9 +137,13 @@ fn main() -> Result<()> {
             let mut prompts = locus_tui::live::Prompts::default();
             let sessions = locus_tui::live::scan_sessions(&app.fixtures.registry, &mut prompts);
             let commits = locus_tui::live::scan_commits(&app.fixtures.registry, &sessions);
-            let careers = locus_tui::live::read_careers(&locus_tui::live::careers_file());
+            let facts = locus_tui::live::fetch_facts();
+            let careers = facts.as_ref().map_err(|e| e.clone()).and_then(|f| locus_tui::live::careers_from_facts(&f.current));
             app.home_live = true;
             apply_live(&mut app, Live::Projects(sessions, Some(commits), Some(careers)));
+            if let Ok(f) = facts {
+                apply_live(&mut app, Live::Facts(f));
+            }
             apply_live(&mut app, Live::System(locus_tui::live::fetch_system()));
             let others = locus_tui::live::scan_unregistered_repos(&app.fixtures.registry);
             apply_live(&mut app, Live::Others(others));
@@ -296,6 +300,8 @@ enum Live {
         Option<Result<std::collections::BTreeMap<String, locus_contract::Status>, String>>,
     ),
     System(Result<locus_tui::live::SystemLive, String>),
+    /// The facts ledger's proposals and automatic writes (heuris H2.5).
+    Facts(locus_tui::live::FactsLive),
     Others(Vec<(String, Option<(locus_contract::Time, String)>)>),
 }
 
@@ -310,7 +316,9 @@ fn apply_live(app: &mut App, msg: Live) {
         app.fixtures
             .approve
             .groups
-            .retain(|g| matches!(g.kind, K::Calendar | K::Date | K::MailSend | K::MailFiling));
+            .retain(|g| matches!(g.kind, K::Calendar | K::Date | K::MailSend | K::MailFiling | K::Fact));
+        // The log likewise holds only what the ledger wrote (H2.5); the fixture's rows go.
+        app.fixtures.autolog.entries.retain(|e| e.fact.is_some());
     }
     match msg {
         Live::Projects(sessions, commits, careers) => {
@@ -328,6 +336,7 @@ fn apply_live(app: &mut App, msg: Live) {
             }
         }
         Live::System(s) => app.system_live = Some(s),
+        Live::Facts(f) => locus_tui::live::apply_facts(&mut app.fixtures, &f),
         Live::Others(o) => app.other_repos = o,
     }
 }
@@ -389,7 +398,7 @@ fn run(mut app: App) -> Result<()> {
             }
         });
     }
-    // Home live (home-live.md): sessions every 5 s, commits and the careers file every minute,
+    // Home live (home-live.md): sessions every 5 s, commits and the careers facts every minute,
     // on a thread of their own; the server's system section every 5 minutes on another, since
     // ssh can take seconds.
     app.home_live = true;
@@ -403,8 +412,18 @@ fn run(mut app: App) -> Result<()> {
                 let sessions = locus_tui::live::scan_sessions(&registry, &mut prompts);
                 let slow = tick % 12 == 0;
                 let commits = slow.then(|| locus_tui::live::scan_commits(&registry, &sessions));
-                let careers = slow.then(|| locus_tui::live::read_careers(&locus_tui::live::careers_file()));
+                // The facts, over ssh (H2.5): a second or two, once a minute, for careers, Approve
+                // and the log at once.
+                let facts = slow.then(locus_tui::live::fetch_facts);
+                let careers = facts.as_ref().map(|f| {
+                    f.as_ref().map_err(|e| e.clone()).and_then(|f| locus_tui::live::careers_from_facts(&f.current))
+                });
                 if tx.send(Live::Projects(sessions, commits, careers)).is_err() {
+                    return;
+                }
+                if let Some(Ok(f)) = facts
+                    && tx.send(Live::Facts(f)).is_err()
+                {
                     return;
                 }
                 // Every ten minutes: a git call per folder, for the projects view's last section.

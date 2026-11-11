@@ -130,6 +130,9 @@ pub enum ApproveKind {
     MailSend,
     /// Where Claude would file or archive a thread (a keryx cleanup proposal).
     MailFiling,
+    /// A fact from mail waiting for your yes (heuris H2, D2): a conflict with what you said, or
+    /// not from a sender of authority.
+    Fact,
 }
 
 /// What deciding a mail item acts on in keryx.
@@ -188,6 +191,9 @@ pub struct ApproveItem {
     /// For a mail item: what yes or no acts on in keryx.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mail: Option<MailDecision>,
+    /// For a proposed fact: its id in heuris's ledger, approved or rejected there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fact: Option<u64>,
     /// What the detail pane shows for it (10 Nov: "easier to review the individual actions").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<ApproveDetail>,
@@ -244,6 +250,9 @@ pub struct AutoAction {
     /// For a kind moved to automatic by "stop asking": since when.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub automatic_since: Option<NaiveDate>,
+    /// For a fact written from mail or the calendar: its id, which `u` retires (heuris H2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fact: Option<u64>,
 }
 
 /// A mark the readback could not place: its crop beside the passages it might point at (C.5).

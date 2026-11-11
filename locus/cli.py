@@ -524,6 +524,59 @@ def cmd_heuris(args) -> None:
         conn.close()
 
 
+def cmd_facts(args) -> None:
+    """heuris's facts ledger (H2): read it, or change it from the window (the Home chat's `y`,
+    Approve), from the import of the applications file, or by hand."""
+    import json as _json
+    from contextlib import closing
+    from dataclasses import asdict
+    from pathlib import Path
+
+    from locus.heuris import db as hdb
+    from locus.heuris import facts as F
+    from locus.heuris import tools as ht
+
+    with closing(hdb.connect()) as conn:
+        try:
+            a = args.action
+            if a == "show":
+                if args.json:
+                    fs = F.current(conn, args.subject, args.slot)
+                    print(_json.dumps([asdict(f) for f in fs]))
+                else:
+                    print(ht.facts(conn, args.subject, args.slot, args.history))
+            elif a == "remember":
+                w = F.write(conn, args.subject, args.slot, args.value, route=args.route, as_of=args.as_of,
+                            sources=args.source or [f"you said so in the locus window, {F._as_of(None)}"])
+                print(w.describe())
+            elif a == "forget":
+                f, restored = F.forget(conn, args.id, route=args.route)
+                print(f"Forgotten: {f.line()}." + (f" Restored: {restored.line()}." if restored else ""))
+            elif a == "proposed":
+                fs = F.proposed(conn)
+                print(_json.dumps([asdict(f) for f in fs]) if args.json else
+                      "\n".join(f"{f.line()}  why: {f.why}" for f in fs) or "Nothing proposed.")
+            elif a == "approve":
+                print(F.approve(conn, args.id).describe())
+            elif a == "reject":
+                print(f"Rejected: {F.reject(conn, args.id).line()}")
+            elif a == "log":
+                rows = F.automatic_log(conn, days=args.days)
+                print(_json.dumps(rows) if args.json else "\n".join(
+                    f"{r['at'][:16]}  {r['route']:8} {'UNDONE ' if r['undone'] else ''}{r['line']}" for r in rows)
+                    or "No automatic facts.")
+            elif a == "undo":
+                f, restored = F.forget(conn, args.id, route="home", action="undo")
+                print(f"Undone: {f.line()}." + (f" Restored: {restored.line()}." if restored else ""))
+            elif a == "import-applications":
+                ws = F.import_applications(conn, Path(args.path).expanduser())
+                for w in ws:
+                    print(w.describe())
+        except F.FactError as e:
+            print(e, file=sys.stderr)
+            sys.exit(2)
+
+
 def cmd_heuris_push(args) -> None:
     """Laptop: mail (kept by the H1.2 rule, scrubbed) with its attachments, project docs and
     commits, and career files (H1.12), to the server."""
@@ -2533,6 +2586,22 @@ def main(argv=None) -> None:
     phe.add_argument("sources", nargs="*", default=[], help="mail calendar chats repos (default: all)")
     phe.add_argument("--json", action="store_true", help="status as JSON")
     phe.set_defaults(func=cmd_heuris)
+
+    pfa = sub.add_parser("facts", help="heuris (H2): the facts ledger: show, remember, forget, approve, the auto log")
+    pfa.add_argument("action", choices=["show", "remember", "forget", "proposed", "approve", "reject", "log", "undo",
+                                        "import-applications"])
+    pfa.add_argument("subject", nargs="?", help="show/remember: me, a registry id, person:<name>")
+    pfa.add_argument("slot", nargs="?", help="show/remember: stage, offer:pay, note:<name>, ...")
+    pfa.add_argument("value", nargs="?", help="remember: the value")
+    pfa.add_argument("--id", type=int, help="forget/approve/reject/undo: the fact's id")
+    pfa.add_argument("--source", action="append", help="remember: a pointer or where it was said (repeatable)")
+    pfa.add_argument("--as-of", dest="as_of", help="remember: YYYY-MM-DD (default today)")
+    pfa.add_argument("--route", default="home", choices=["chat", "home", "import"], help="who is writing")
+    pfa.add_argument("--path", default="~/files/Careers/applications.toml", help="import-applications: the file")
+    pfa.add_argument("--history", action="store_true", help="show: every value the slot has held")
+    pfa.add_argument("--days", type=int, default=14, help="log: how far back")
+    pfa.add_argument("--json", action="store_true")
+    pfa.set_defaults(func=cmd_facts)
 
     php = sub.add_parser("heuris-push", help="laptop: kept mail and project docs/commits, scrubbed, to the server")
     php.add_argument("--dry-run", action="store_true", help="build the staging tree; send nothing")

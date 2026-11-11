@@ -22,6 +22,7 @@
       "Edit(/__HOME__/local-projects/locus/taxonomy/registry.toml)",
       "mcp__kairos",
       "mcp__locus__context",
+      "mcp__locus__facts",
       "mcp__locus__search",
       "mcp__locus__open",
       "mcp__locus__timeline",

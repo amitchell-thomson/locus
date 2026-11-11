@@ -1,9 +1,14 @@
 """heuris.db: items, their chunks, full-text and vectors, and each source's freshness (H1.3).
 
-A separate file from `locus.db` (H1 D1): the library's schema is Alembic-managed and frozen, and
-nothing here is a source of truth. Every row is derived from mail, kairos, transcripts or git and
-is rebuilt by deleting the file and re-indexing (invariant 3), so the schema is created in place
-and versioned by `PRAGMA user_version`; a version change rebuilds rather than migrates.
+A separate file from `locus.db` (H1 D1): the library's schema is Alembic-managed and frozen. The
+INDEX (items, chunks, vectors, file_state, sources) is derived from mail, kairos, transcripts or git
+and is rebuilt by re-indexing (invariant 3), so its schema is created in place and versioned by
+`PRAGMA user_version`; a version change rebuilds rather than migrates.
+
+**The ledger is not derived** (H2.1). Facts he approved in a chat exist nowhere else, so the
+ledger's tables (`facts.LEDGER_SCHEMA`) are never dropped by a rebuild: rebuild the index by
+dropping the INDEX tables only (`drop_index`), never by deleting the file. `locus backup` copies
+the ledger.
 
 Search units are CHUNKS, not items: a mail message is usually one chunk, a long chat answer or a
 README several. Filters (kind, thing, area, date) are vec0 metadata columns, so the KNN applies
@@ -114,9 +119,24 @@ def connect(p: Path | str | None = None) -> sqlite3.Connection:
     have = conn.execute("PRAGMA user_version").fetchone()[0]
     if have not in (0, SCHEMA_VERSION):
         raise RuntimeError(
-            f"{p} is schema {have}, this code is {SCHEMA_VERSION}. heuris.db is derived: delete it "
-            "and run `locus heuris index all` to rebuild."
+            f"{p} is schema {have}, this code is {SCHEMA_VERSION}. The index is derived: drop it with "
+            "`heuris.db.drop_index` and run `locus heuris index all`. Do NOT delete the file: it holds "
+            "the facts ledger, which nothing else can rebuild."
         )
+    from locus.heuris.facts import LEDGER_SCHEMA
+
     conn.executescript(_SCHEMA)
+    conn.executescript(LEDGER_SCHEMA)
     conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
     return conn
+
+
+INDEX_TABLES = ("chunk_vec", "chunk_fts", "chunks", "item_people", "items", "file_state", "sources")
+
+
+def drop_index(conn: sqlite3.Connection) -> None:
+    """Drop the derived index (for a schema change), keeping the ledger."""
+    with conn:
+        for t in INDEX_TABLES:
+            conn.execute(f"DROP TABLE IF EXISTS {t}")
+        conn.execute("PRAGMA user_version=0")

@@ -98,6 +98,39 @@ def _backup_db(src_db: Path, dest_db: Path) -> tuple[int, int]:
     return dest_db.stat().st_size, int(pages)
 
 
+LEDGER_TABLES = ("facts", "fact_log", "records", "briefs")
+
+
+def _backup_ledger(heuris_db: Path, dest: Path) -> int:
+    """heuris's ledger (H2.1): the one part of heuris.db that is not derived. Facts he approved in
+    a chat exist nowhere else; the index beside them is rebuilt by re-indexing, so only the
+    ledger's tables are copied (the whole file is ~300 MB of vectors). Returns rows copied."""
+    if not heuris_db.exists():
+        return 0
+    src = sqlite3.connect(f"file:{heuris_db}?mode=ro", uri=True)
+    try:
+        have = {r[0] for r in src.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        tables = [t for t in LEDGER_TABLES if t in have]
+        if not tables:
+            return 0
+        out = sqlite3.connect(str(dest))
+        n = 0
+        try:
+            for t in tables:
+                ddl = src.execute("SELECT sql FROM sqlite_master WHERE name=?", (t,)).fetchone()[0]
+                out.execute(ddl)
+                rows = src.execute(f"SELECT * FROM {t}").fetchall()
+                if rows:
+                    out.executemany(f"INSERT INTO {t} VALUES ({','.join('?' * len(rows[0]))})", rows)
+                n += len(rows)
+            out.commit()
+        finally:
+            out.close()
+        return n
+    finally:
+        src.close()
+
+
 def _tree_stats(root: Path) -> tuple[int, int]:
     """(total_bytes, file_count) for a directory tree; (0, 0) if it does not exist."""
     if not root.exists():
@@ -167,6 +200,8 @@ def create_backup(
 
     log(f"  DB     -> online backup ({db})")
     db_bytes, pages = _backup_db(db, snapshot / "locus.db")
+    ledger_rows = _backup_ledger(db.parent / "heuris.db", snapshot / "heuris-ledger.db")
+    log(f"  ledger -> {ledger_rows} rows (facts, records, briefs) from heuris.db")
 
     link_src = (prior[-1] / "raw") if prior else None
     log(f"  raw    -> {raw_store}" + (f" (hardlink vs {prior[-1].name})" if link_src else ""))

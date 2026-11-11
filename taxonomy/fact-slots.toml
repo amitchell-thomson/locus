@@ -1,0 +1,39 @@
+# The fact slots (heuris H2, D1, approved 11 Nov 2026). A fact is `subject · slot = value`, as of a
+# date, with its sources. The slot is what lets a newer fact find the one it replaces: "Millennium's
+# stage" is always `millennium · stage`, never a second phrasing beside the first.
+#
+# His call (11 Nov): "every fact worth remembering must have a slot". So every kind has named
+# `note:` slots as the catch-all, and `remember` with a slot not on this list is refused with the
+# nearest slots: a new kind of fact gets a slot here, on purpose, rather than drifting.
+#
+# single = one current value; a newer value replaces it.
+# named  = many values, each under a short name (`offer:pay`, `note:brian-advice`); a value is
+#          replaced only by a newer one under the SAME name.
+#
+# Subjects: `me`; a registry id (taxonomy/registry.toml), whose `kind` picks the table below
+# (`repo` for repositories and projects); or `person:<name>` (`person:brian`).
+
+[me]
+single = ["status", "location", "degree"]
+named = ["goal", "preference", "constraint", "plan", "decision", "experience", "achievement", "skill",
+         "education", "project", "interest", "contact", "note"]
+
+[application]
+single = ["stage", "turn", "start", "end", "deadline", "outcome"]
+named = ["offer", "interview", "contact", "feedback", "note"]
+
+[course]
+single = ["tutor", "exam", "mark"]
+named = ["tutorials", "sheet_due", "topic", "note"]
+
+[repo]
+single = ["state", "goal", "stack"]
+named = ["result", "decision", "achievement", "idea", "note"]
+
+[role]
+single = ["state", "term"]
+named = ["duty", "deadline", "contact", "note"]
+
+[person]
+single = ["role", "organisation", "relation"]
+named = ["contact", "said", "note"]

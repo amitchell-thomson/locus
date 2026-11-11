@@ -627,16 +627,33 @@ def _register_heuris(tool) -> None:
     @tool()
     def context(about: str | None = None) -> str:
         """The cheap first call: today and the next seven days (calendar and tasks), his live
-        projects and their latest activity, where each job application stands, and mail tagged
-        as needing a reply. With `about` (a registry id such as "quast", "millennium", "b15"),
-        that thing's registry entry, its last 30 days and what is coming up for it. Call this
-        first whenever a question touches his life, projects, courses or applications.
+        projects and their latest activity, what is true now (the facts ledger: where each
+        application stands, his goals and decisions, each with its date and source), and mail
+        tagged as needing a reply. With `about` (a registry id such as "quast", "millennium",
+        "b15", or "me"), that thing's facts, its last 30 days and what is coming up for it. Call
+        this first whenever a question touches his life, projects, courses or applications.
 
         Args:
-            about: Optional registry id to focus on.
+            about: Optional registry id (or "me") to focus on.
         """
         with _conn() as c:
             return ht.context(c, about)
+
+    @tool()
+    def facts(subject: str | None = None, slot: str | None = None, history: bool = False) -> str:
+        """What is true now, exactly, with its date and source: the ledger of current facts.
+        `facts()` lists every current fact; `facts("millennium")` one subject's; `facts(
+        "millennium", "stage", history=True)` the value and every value it replaced. Facts are the
+        record: where a fact disagrees with an older mail or chat, the fact (newer as-of) wins.
+
+        Args:
+            subject: `me`, a registry id (millennium, quast, b15, jcr-treasurer, ...), or person:<name>.
+            slot: e.g. stage, turn, start, offer:pay, note:brian-advice; a named slot's base
+                (`offer`) lists every name under it.
+            history: with subject and slot, every value it has held, newest first.
+        """
+        with _conn() as c:
+            return ht.facts(c, subject, slot, history)
 
     @tool()
     def search(query: str, kind: str | None = None, area: str | None = None, thing: str | None = None,

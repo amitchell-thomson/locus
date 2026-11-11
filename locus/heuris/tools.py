@@ -642,6 +642,64 @@ def timeline(conn: sqlite3.Connection, about: str, *, since: str | None = None, 
 
 
 # ---------------------------------------------------------------------------------------------
+# facts (H2.1)
+
+PER_SUBJECT = 8
+
+
+def facts_block(conn: sqlite3.Connection, subject: str | None = None) -> str:
+    """Current facts, grouped by subject: what is true now, each with its date and source. These
+    are the record (D3): where a fact and a mail or chat disagree, the newer as-of wins, and the
+    fact's own history says what it replaced."""
+    from locus.heuris import facts as F
+
+    try:
+        fs = F.current(conn, subject)
+    except F.FactError as e:
+        return str(e)
+    head = ("What is true now (facts: each as of its date, with its source; recall them exactly. "
+            "`facts(subject, slot, history=true)` shows what one replaced):")
+    if not fs:
+        return head + "\n  " + (f"no facts recorded about {subject}." if subject else "no facts recorded yet.")
+    by: dict[str, list] = {}
+    for f in fs:
+        by.setdefault(f.subject, []).append(f)
+    rank = {"me": 0, "application": 1}
+    order = sorted(by, key=lambda s: (0 if s == "me" else rank.get(registry.entries().get(s, {}).get("kind"), 2), s))
+    out = [head]
+    for subj in order:
+        rows = by[subj]
+        # Single slots first (stage, turn), then named ones; the newest first within each.
+        rows.sort(key=lambda f: (":" in f.slot, f.slot))
+        name = registry.entries().get(subj, {}).get("name", subj)
+        out.append(f"  {name} [{subj}]:")
+        shown = rows if subject else rows[:PER_SUBJECT]
+        for f in shown:
+            src = "; ".join(f.sources[:2])
+            out.append(f"    {f.slot} = {f.value}  (as of {f.as_of}; {src}) [fact:{f.id}]")
+        if len(rows) > len(shown):
+            out.append(f"    … {len(rows) - len(shown)} more: facts(subject=\"{subj}\")")
+    return "\n".join(out)
+
+
+def facts(conn: sqlite3.Connection, subject: str | None = None, slot: str | None = None,
+          history: bool = False) -> str:
+    from locus.heuris import facts as F
+
+    try:
+        if history:
+            if not (subject and slot):
+                return "history needs both a subject and a slot."
+            return F.render_history(F.history(conn, subject, slot))
+        if subject and not slot:
+            return facts_block(conn, subject)
+        return F.render(F.current(conn, subject, slot),
+                        empty=f"No current fact for {subject or 'anything'}{' · ' + slot if slot else ''}.")
+    except F.FactError as e:
+        return str(e)
+
+
+# ---------------------------------------------------------------------------------------------
 # context
 
 
@@ -650,13 +708,15 @@ def context(conn: sqlite3.Connection, about: str | None = None, *, today: date |
     today = today or date.today()
     env = Envelope()
     t0 = _day(today.isoformat())
-    out = [f"Today is {today.strftime('%A %d %B %Y')}. Facts and briefs arrive in heuris H2; this is "
-           "the calendar, the registry, the applications file and the index."]
+    out = [f"Today is {today.strftime('%A %d %B %Y')}."]
     if about:
+        if about == "me" or about.startswith("person:"):
+            return facts_block(conn, about)
         e = registry.entries().get(about)
         if not e:
-            return f"Unknown thing {about!r}. Registry ids: {', '.join(sorted(registry.entries()))}."
+            return f"Unknown thing {about!r}. Registry ids: {', '.join(sorted(registry.entries()))}, or `me`."
         out.append(f"\n{e.get('name', about)} ({e.get('kind')}, {e.get('area')}, state {e.get('state') or '-'})")
+        out.append(facts_block(conn, about))
         out.append(timeline(conn, about, since=(today - timedelta(days=30)).isoformat(), limit=25))
         up = conn.execute("SELECT at, title FROM items WHERE thing=? AND kind IN ('event','task') AND at_ts >= ? "
                           "ORDER BY at_ts LIMIT 10", (about, t0)).fetchall()
@@ -689,27 +749,7 @@ def context(conn: sqlite3.Connection, about: str | None = None, *, today: date |
                             "(kind='task' AND COALESCE(json_extract(meta,'$.status'),'open') != 'open') "
                             "ORDER BY at_ts DESC LIMIT 1", (pid, int(datetime.now(timezone.utc).timestamp()))).fetchone()
         out.append(f"  {e.get('name', pid)}: " + (f"{last[0][:10]} {last[1]}: {_short(last[2], 90)}" if last else "nothing indexed"))
-    try:
-        import tomllib
-        from pathlib import Path
-
-        from locus.heuris.run import inbox
-
-        src = Path("~/files/Careers/applications.toml").expanduser()
-        if not src.exists():  # on the server: the copy the laptop pushes with the repos
-            src = inbox() / "repos" / "_applications.toml"
-        apps = tomllib.loads(src.read_text())
-        out.append("\nApplications (~/files/Careers/applications.toml):")
-        for k, v in apps.items():
-            if isinstance(v, dict):
-                turn = f", {v['turn']} to move" if v.get("turn") else ""
-                out.append(f"  {k}: {v.get('stage')} since {v.get('since')}{turn}")
-                # His own notes on it (advice, plans): a comment was invisible here, and two
-                # answers searched 4-6 calls for Brian's advice (H1 re-run, 10 Nov).
-                if v.get("note"):
-                    out.append(f"      his note: {v['note']}")
-    except (OSError, ValueError):
-        pass
+    out.append("\n" + facts_block(conn))
     nr = conn.execute("SELECT DISTINCT parent, title FROM items WHERE kind='mail' AND json_extract(meta,'$.needs_reply')=1 "
                       "ORDER BY at_ts DESC LIMIT 15").fetchall()
     out.append("\nMail tagged needs-reply: " + ("; ".join(env.wrap(t) + f" [{p}]" for p, t in nr) if nr else "none tagged"))

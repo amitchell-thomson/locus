@@ -252,7 +252,11 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         let left = here.len().saturating_sub(decided_here);
         out.push(rule(
             &group_label(group),
-            &format!("{left} · Y all"),
+            &if group.kind == ApproveKind::Fact {
+                format!("{left} · y n each")
+            } else {
+                format!("{left} · Y all")
+            },
             None,
             false,
             list_r.width,
@@ -1180,6 +1184,14 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 }
                 KeyCode::Char('Y') => {
                     let group = key.split(':').nth(1).unwrap_or_default().to_string();
+                    // Facts are decided one at a time: each is something you will be told as
+                    // true from then on (heuris H2.5). Y would mark them here and change nothing.
+                    if let Some(g) = group.parse::<usize>().ok().and_then(|g| app.fixtures.approve.groups.get(g))
+                        && g.items.iter().any(|i| i.fact.is_some())
+                    {
+                        app.note = Some("facts are approved one at a time: y or n on each".into());
+                        return true;
+                    }
                     // A mail group (X2) is decided in keryx, every item in it.
                     if let (Some(q), Some(g)) = (&app.mail_queue, group.parse::<usize>().ok())
                         && let Some(grp) = app.fixtures.approve.groups.get(g)

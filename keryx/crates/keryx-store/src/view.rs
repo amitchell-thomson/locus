@@ -453,10 +453,9 @@ fn rows_for(
                 }
             }
         }
-        let replied = latest.from.as_ref().is_some_and(|f| own.contains(&f.key()))
-            && msgs
-                .iter()
-                .any(|m| m.from.as_ref().is_some_and(|f| !own.contains(&f.key())));
+        // He answered last: his latest went to someone who wrote here (a forward elsewhere is
+        // not an answer).
+        let replied = keryx_core::model::answers(latest, &msgs, &own);
         out.push(ThreadRow {
             r#ref: keryx_core::model::thread_ref(&account, &thread_id),
             subject: if latest.subject.is_empty() {

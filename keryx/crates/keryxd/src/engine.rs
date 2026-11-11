@@ -1069,9 +1069,10 @@ impl Engine {
         let mut cleared = 0;
         for t in self.db.tags(NEEDS_REPLY)? {
             let msgs = self.db.thread(&t.account, &t.thread_id)?;
+            // An answer to someone in the thread, not a forward elsewhere.
             let replied = msgs
                 .iter()
-                .any(|m| m.date > t.created_at && m.from.as_ref().is_some_and(|f| own.contains(&f.key())));
+                .any(|m| m.date > t.created_at && keryx_core::model::answers(m, &msgs, &own));
             let gone = msgs.is_empty();
             if replied || gone {
                 self.db.clear_tag(&t.account, &t.thread_id, NEEDS_REPLY)?;

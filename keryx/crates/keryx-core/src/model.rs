@@ -109,6 +109,22 @@ pub struct Message {
 }
 
 /// `account:thread_id`, the reference used by the CLI, HTTP and MCP.
+/// Whether `m` is an answer from him: his, and sent to someone who wrote in the thread. A
+/// forward to a third party is not (11 Nov: the OFS poker email, forwarded to the society's
+/// inbox, read as his reply to the OFS president, who never had one).
+pub fn answers(m: &Message, thread: &[Message], own: &std::collections::HashSet<String>) -> bool {
+    if !m.from.as_ref().is_some_and(|f| own.contains(&f.key())) {
+        return false;
+    }
+    let senders: std::collections::HashSet<String> = thread
+        .iter()
+        .filter_map(|x| x.from.as_ref())
+        .map(Address::key)
+        .filter(|k| !own.contains(k))
+        .collect();
+    m.to.iter().chain(&m.cc).any(|a| senders.contains(&a.key()))
+}
+
 pub fn thread_ref(account: &str, thread_id: &str) -> String {
     format!("{account}:{thread_id}")
 }

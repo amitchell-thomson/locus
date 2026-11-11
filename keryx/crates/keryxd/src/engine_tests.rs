@@ -470,8 +470,18 @@ fn needs_reply_survives_filing_and_clears_on_reply() {
     let mut mine = thread(&e, &t2)[0].clone();
     mine.source_id = "mine1".into();
     mine.message_id = "mine1@x".into();
+    let theirs = mine.from.clone();
     mine.from = Some(Address::new(None, "newc7370@ox.ac.uk"));
     mine.date = NOW + 60;
+    // A forward of it elsewhere is not an answer: the tag stays.
+    let mut fwd = mine.clone();
+    fwd.source_id = "fwd1".into();
+    fwd.message_id = "fwd1@x".into();
+    fwd.to = vec![Address::new(None, "someone.else@example.com")];
+    e.db.upsert(&fwd, Raw::None, keryx_core::text::TEXT_VERSION).unwrap();
+    assert_eq!(e.housekeeping().unwrap(), 0, "a forward to someone else leaves the tag");
+    // An answer to the sender clears it.
+    mine.to = theirs.into_iter().collect();
     e.db.upsert(&mine, Raw::None, keryx_core::text::TEXT_VERSION).unwrap();
     assert_eq!(e.housekeeping().unwrap(), 1);
 }

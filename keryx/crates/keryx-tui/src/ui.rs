@@ -782,7 +782,9 @@ pub fn thread_parts(app: &App, open: &Open, w: usize) -> (Vec<Line<'static>>, Ve
         let selected = k == open.sel.min(order.len().saturating_sub(1));
         starts.push(block_start);
         let selected = selected && matches!(app.mode, Mode::Thread);
-        let notes = Notes { new: new(i), joins: first_of[i], adds: &adds[i], selected };
+        // A forward's line names who it went to; "adds" would say it twice.
+        let adds_here: &[String] = if forward_note(app, open, m).is_some() { &[] } else { &adds[i] };
+        let notes = Notes { new: new(i), joins: first_of[i], adds: adds_here, selected };
         let mut block = if full {
             open_block(app, open, i, m, w, &notes)
         } else {
@@ -1087,7 +1089,14 @@ fn timeline(app: &App, open: &Open, w: usize, first: i64, last: i64, new: &dyn F
 /// "your turn · Milly wrote last, 9 days ago" or "waiting on them · 4 days", with the needs-reply
 /// reason when there is one.
 fn turn_line(app: &App, open: &Open, w: usize) -> Option<Line<'static>> {
-    let m = open.msgs.iter().max_by_key(|m| m.date)?;
+    // The latest message of the exchange: theirs, or his answering them. His forward to a third
+    // party leaves the turn where it was.
+    let own = app.cfg.personal_addresses();
+    let m = open
+        .msgs
+        .iter()
+        .filter(|m| !mine(app, m) || keryx_core::model::answers(m, &open.msgs, &own))
+        .max_by_key(|m| m.date)?;
     let days = (app.now.date_naive() - local(app, m.date).date_naive()).num_days();
     let ago = match days {
         0 => "today".to_string(),
@@ -1116,7 +1125,14 @@ fn turn_line(app: &App, open: &Open, w: usize) -> Option<Line<'static>> {
 /// Their questions since your last message, word for word (deterministic: a quoted sentence can
 /// be checked, and a missing one is better than an invented one). At most three, newest first.
 fn question_lines(app: &App, open: &Open, w: usize) -> Vec<Line<'static>> {
-    let my_last = open.msgs.iter().filter(|m| mine(app, m)).map(|m| m.date).max().unwrap_or(i64::MIN);
+    let own = app.cfg.personal_addresses();
+    let my_last = open
+        .msgs
+        .iter()
+        .filter(|m| keryx_core::model::answers(m, &open.msgs, &own))
+        .map(|m| m.date)
+        .max()
+        .unwrap_or(i64::MIN);
     let mut qs: Vec<(String, ratatui::style::Color, String)> = Vec::new();
     for &i in &newest_first(open) {
         let m = &open.msgs[i];
@@ -1189,6 +1205,49 @@ fn unwrap_quote(body: &str) -> std::borrow::Cow<'_, str> {
             .collect::<Vec<_>>()
             .join("\n"),
     )
+}
+
+/// A forward: where the forwarded email starts in its text, and that email's sender.
+fn forwarded(body: &str) -> Option<(usize, Option<String>)> {
+    let lines: Vec<&str> = body.lines().collect();
+    let at = lines.iter().position(|l| {
+        let t = l.trim();
+        t == "Begin forwarded message:" || t.starts_with("---------- Forwarded message")
+    })?;
+    let from = lines[at + 1..]
+        .iter()
+        .take(6)
+        .find_map(|l| l.trim().strip_prefix("From:"))
+        .and_then(|f| f.rsplit_once('<').map(|(_, a)| a.trim_end_matches('>').trim().to_lowercase()));
+    let offset: usize = lines[..at].iter().map(|l| l.len() + 1).sum();
+    Some((offset, from))
+}
+
+/// For his forward of an email that is itself in this thread: what he added (often nothing but
+/// his name) and who it went to. The forwarded email is the one below it, so it is not printed
+/// twice (11 Nov: the OFS email he forwarded to the society read as written by him).
+fn forward_note(app: &App, open: &Open, m: &Message) -> Option<(String, String)> {
+    if !mine(app, m) {
+        return None;
+    }
+    let (at, from) = forwarded(&m.body_text)?;
+    let from = from?;
+    let has_original = open
+        .msgs
+        .iter()
+        .any(|x| x.date <= m.date && x.from.as_ref().is_some_and(|a| a.key() == from));
+    if !has_original {
+        return None;
+    }
+    let mut added = m.body_text[..at.min(m.body_text.len())].trim().to_string();
+    // His name alone (a signature) is not something he said.
+    if let Some(a) = &m.from
+        && a.name.as_deref().is_some_and(|n| n.trim() == added)
+    {
+        added.clear();
+    }
+    let to: Vec<String> = m.to.iter().chain(&m.cc).map(|a| a.short().to_string()).collect();
+    Some((added, format!("forwarded the email below to {}", to.join(", "))))
 }
 
 /// What the message itself says: its text without the history it quoted or its signature.
@@ -1358,6 +1417,18 @@ fn message_text(app: &App, open: &Open, i: usize, m: &Message, w: usize, full: b
     }
     if m.hidden_text_removed {
         out.push(Line::from(Span::styled("⚠ hidden text was removed", Style::default().fg(c("yellow")))));
+    }
+    if !open.raw.contains(&i)
+        && let Some((added, note)) = forward_note(app, open, m)
+    {
+        out.push(Line::from(Span::styled(fit(&note, w), Style::default().fg(c("teal")))));
+        if !added.is_empty() {
+            out.push(Line::raw(""));
+            for l in wrap_hanging(&added, w) {
+                out.push(Line::from(Span::styled(l, Style::default().fg(c("text")))));
+            }
+        }
+        return out;
     }
     if m.body_text.trim().is_empty() {
         let why = if m.attachments.is_empty() && open.invites.get(i).is_none_or(Option::is_none) {

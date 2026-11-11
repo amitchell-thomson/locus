@@ -151,7 +151,9 @@ def session_items(path: Path, machine: str) -> list[Item]:
 # Held out of the index while the H1 test set is scored (H1.11): this session wrote the answer key
 # and read the answers out of his files (the questionnaire's ticks among them), so a scoring chat
 # that found it would be marking its own homework. Removed from the index too (`purge_held_out`).
-HELD_OUT_SESSIONS = {"81c0a62a-3b15-4f89-ae5c-80227ae38eab", "e42b4acc-43ff-433a-a9d9-db66a6ba6722"}  # this build session, both its ids
+# H2's build session (11 Nov) is held out for the same reason: it reads the answer key to score H2.
+HELD_OUT_SESSIONS = {"81c0a62a-3b15-4f89-ae5c-80227ae38eab", "e42b4acc-43ff-433a-a9d9-db66a6ba6722",  # H1 build, both its ids
+                     "06914c94-6bf1-4d6c-8394-e0a3df692801"}  # H2 build
 
 
 # Evaluation runs are Claude sessions too (`claude -p` from data/evals/<run>/work): indexed, a

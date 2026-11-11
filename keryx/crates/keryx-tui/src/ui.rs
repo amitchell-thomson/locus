@@ -418,23 +418,41 @@ fn list(f: &mut Frame, app: &App, area: Rect) {
 /// colour at the start, not a word competing with the subject; the thread count is a quiet
 /// `· 11`; the label it is filed for sits on this line, short, before the icons; the subject
 /// line below has the whole width to itself.
-/// Line 1 of a thread: who and how many, then three fixed columns on the right: the AREA it is
-/// filed in (blank when it has none, so filed and unfiled read down the list at a glance), the
-/// account as a short coloured word, and the date. Nothing goes between the account and the
-/// date (11 Nov: "never any icons between the two"); the icons live at the end of line 2.
+/// Width of the details block on the right of every row: the area and the date on line 1, the
+/// icons on line 2 (11 Nov: "two sections in the box", sender and subject on the left, details
+/// on the right). The left never runs into it, so the details read as one column down the list.
+const DETAILS: usize = 24;
+/// The longest area label: an item name past this is cut.
+const AREA_MAX: usize = DETAILS - 9;
+
+/// Split one row into its left text and its right details, each padded to its own block.
+fn two_blocks(
+    lead: Vec<Span<'static>>,
+    left: Vec<Span<'static>>,
+    details: Vec<Span<'static>>,
+    width: usize,
+) -> Line<'static> {
+    let lw: usize = lead.iter().chain(&left).map(|s| s.content.width()).sum();
+    let dw: usize = details.iter().map(|s| s.content.width()).sum();
+    let left_room = width.saturating_sub(DETAILS);
+    let gap = left_room.saturating_sub(lw) + DETAILS.saturating_sub(dw);
+    let mut spans = lead;
+    spans.extend(left);
+    spans.push(Span::raw(" ".repeat(gap)));
+    spans.extend(details);
+    Line::from(spans)
+}
+
+/// Line 1: who and how many on the left; the area it is filed under (B14, Millennium…) right
+/// against the date on the right. An unfiled thread has only its date there, so filed and
+/// unfiled read down the details column at a glance.
 fn row_who(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
     let date = date_label(r.date, app.now).to_lowercase();
-    let mut right: Vec<Span<'static>> = Vec::new();
-    let area = mark_tag(app, r).unwrap_or_else(|| Span::raw(""));
-    let aw = area.content.width();
-    right.push(area);
-    right.push(Span::raw(" ".repeat(AREA_COL.saturating_sub(aw))));
-    if show_accounts(app) {
-        let (word, col) = account_word(app, &r.account);
-        right.push(Span::styled(format!("{word:<ACCOUNT_COL$} "), Style::default().fg(col)));
+    let mut details: Vec<Span<'static>> = Vec::new();
+    if let Some(t) = mark_tag(app, r) {
+        details.push(t);
     }
-    right.push(Span::styled(format!("{date:>6} "), locus_theme::dim()));
-    let rw: usize = right.iter().map(|s| s.content.width()).sum();
+    details.push(Span::styled(format!("{date:>6} "), locus_theme::dim()));
     let marked = app.marked.contains(&r.r#ref);
     let mark = if marked {
         Span::styled("▸", locus_theme::st("blue"))
@@ -448,53 +466,23 @@ fn row_who(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
     } else {
         String::new()
     };
-    let room = width.saturating_sub(3 + rw + 1);
+    let room = width.saturating_sub(DETAILS + 3 + 2);
     let who = fit(&r.who, room.saturating_sub(count.width()));
-    let gap = room.saturating_sub(who.width() + count.width());
     let who_style = if app.is_unread(r) {
         Style::default().fg(c("text"))
     } else {
         Style::default().fg(c("subtext0"))
     };
-    let mut spans = vec![
-        reply_bar(r),
-        mark,
-        Span::raw(" "),
-        Span::styled(who, who_style),
-        Span::styled(count, locus_theme::dim()),
-        Span::raw(" ".repeat(gap + 1)),
-    ];
-    spans.extend(right);
-    Line::from(spans)
+    two_blocks(
+        vec![reply_bar(r), mark, Span::raw(" ")],
+        vec![Span::styled(who, who_style), Span::styled(count, locus_theme::dim())],
+        details,
+        width,
+    )
 }
 
-/// Width of the area column: `mark_tag` fits a name to 12 and adds a space.
-const AREA_COL: usize = 14;
-/// Width of the account word.
-const ACCOUNT_COL: usize = 6;
-
-/// Accounts are named on the row only when more than one is in view.
-fn show_accounts(app: &App) -> bool {
-    app.account == 0 || !app.also.is_empty()
-}
-
-/// The account as a short word in its colour: "pers", "ox", "oqts", "shared".
-fn account_word(app: &App, id: &str) -> (String, ratatui::style::Color) {
-    let word = match id {
-        "personal" => "pers".to_string(),
-        "oxford" => "ox".to_string(),
-        "oqts-shared" => "shared".to_string(),
-        _ => {
-            let n = app.cfg.account(id).map_or(id, |a| a.name.as_str()).to_lowercase();
-            n.split_whitespace().last().unwrap_or(&n).chars().take(ACCOUNT_COL).collect()
-        }
-    };
-    let col = app.cfg.account(id).map_or(c("overlay1"), |a| rgb(a.colour));
-    (word, col)
-}
-
-/// Line 2: the subject, and the icons at its end (a suggested task, replied, attachment). The
-/// icons win the room: a long subject is cut, never an icon.
+/// Line 2: the subject on the left, cut before the details block; the icons (a suggested task,
+/// replied, attachment) right-aligned under the date.
 fn row_subject(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
     let mut icons: Vec<Span<'static>> = Vec::new();
     if r.suggested {
@@ -507,20 +495,29 @@ fn row_subject(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
     if r.has_attachment {
         icons.push(Span::styled(format!("{ICON_ATTACH} "), Style::default().fg(c("overlay1"))));
     }
-    let iw: usize = icons.iter().map(|s| s.content.width()).sum();
-    let indent = 3;
-    let room = width.saturating_sub(indent + 1 + iw);
+    let room = width.saturating_sub(DETAILS + 3 + 2);
     let subject = fit(&r.subject, room);
-    let gap = room.saturating_sub(subject.width());
-    let mut spans = vec![
-        reply_bar(r),
-        unread_bar(app, r),
-        Span::raw(" ".repeat(indent - 2)),
-        Span::styled(subject, locus_theme::st("overlay1")),
-        Span::raw(" ".repeat(gap + 1)),
-    ];
-    spans.extend(icons);
-    Line::from(spans)
+    two_blocks(
+        vec![reply_bar(r), unread_bar(app, r), Span::raw(" ")],
+        vec![Span::styled(subject, locus_theme::st("overlay1"))],
+        icons,
+        width,
+    )
+}
+
+/// How an area or item is named in the details: a course code in capitals (B14), anything else
+/// as the registry or taxonomy spells it, first letter up (Millennium, Social).
+fn area_label(target: &str) -> String {
+    let t = target.trim();
+    let code = t.len() <= 5
+        && t.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+        && t.chars().skip(1).all(|c| c.is_ascii_digit())
+        && t.len() > 1;
+    if code {
+        return t.to_uppercase();
+    }
+    let mut cs = t.chars();
+    cs.next().map_or_else(String::new, |f| f.to_uppercase().chain(cs).collect())
 }
 
 fn mark_tag(app: &App, r: &ThreadRow) -> Option<Span<'static>> {
@@ -536,7 +533,7 @@ fn mark_tag(app: &App, r: &ThreadRow) -> Option<Span<'static>> {
     let col = colour_name.map_or(c("text"), c);
     // Short, so a long item name never pushes the date and icons off (11 Nov).
     Some(Span::styled(
-        format!("{} ", fit(&target.to_lowercase(), 12)),
+        format!("{}  ", fit(&area_label(target), AREA_MAX)),
         Style::default().fg(col),
     ))
 }

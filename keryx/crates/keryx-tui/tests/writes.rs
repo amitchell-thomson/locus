@@ -405,7 +405,7 @@ fn m_marks_what_it_is_for_and_it_stays_then_d_files_it_there() {
     a.db.set_for(acc, tid, Some(("item", "b14", "B14")), 0).unwrap();
     a.reload();
     assert!(
-        render_to_string(&mut a, 90, 30).contains("b14"),
+        render_to_string(&mut a, 90, 30).contains("B14"),
         "its tag shows on the row"
     );
     // d now files it for its mark, with no question.

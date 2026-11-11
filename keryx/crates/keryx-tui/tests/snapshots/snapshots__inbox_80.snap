@@ -4,25 +4,25 @@ expression: "render_to_string(&mut app(), 80, 24)"
 ---
 ╭ keryx ───────── all · personal · oxford · oqts · oqts shared ────────────────╮
 │ today ───────────────────────────────────────────────────────────────────── ┃│
-│ ▎ Trains                                                      ox      08:30 ┃│
+│ ▎ Trains                                                              08:30 ┃│
 │ ▎ Your e-ticket: Oxford to London, Fri 23 Oct                               ┃│
-│ ▎ Trains                                                      pers    08:30 ┃│
+│ ▎ Trains                                                              08:30 ┃│
 │ ▎ Your e-ticket: Oxford to London, Fri 23 Oct                               ┃│
 │                                                                             ┃│
 │ yesterday ───────────────────────────────────────────────────────────────── ┃│
-│   Lecturer                                                    ox        tue ││
+│   Lecturer                                                              tue ││
 │   Society minutes                                                         󰁦 ││
-│   Lecturer                                                    ox        tue ││
+│   Lecturer                                                              tue ││
 │   Broken file                                                             󰁦 ││
-│ ▎ Lecturer                                                    ox        tue ││
+│ ▎ Lecturer                                                              tue ││
 │ ▎ B4 problem sheet 3                                                      󰁦 ││
-│ ▎ Jane Doe                                                    ox        tue ││
+│ ▎ Jane Doe                                                              tue ││
 │ ▎ Lab partner for Thursday?                                                 ││
-│ ▎ Prof Smith · 2                                              ox        tue ││
+│ ▎ Prof Smith · 2                                                        tue ││
 │ ▎ Cancelled: Project meeting                                                ││
 │                                                                             ││
 │ monday ──────────────────────────────────────────────────────────────────── ││
-│   Jane Doe · 2                                                ox        mon ││
+│   Jane Doe · 2                                                          mon ││
 │   Re: Group project plan                                                  󰑚 ││
 ╰──────────────────────────────────────────────────────────────────────────────╯
  ⏎ open · r reply · d done · a archive · m for · f needs reply · ? keys

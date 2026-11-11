@@ -4,31 +4,31 @@ expression: "render_to_string(&mut app(), 120, 30)"
 ---
 ╭ keryx ───────────────────────────── all · personal · oxford · oqts · oqts shared ────────────────────────────────────╮
 │ today ─────────────────────────────────── ┃│ Your e-ticket: Oxford to London, Fri 23 Oct  oxford                     │
-│ ▎ Trains                    ox      08:30 ┃│                                                                         │
-│ ▎ Your e-ticket: Oxford to London, Fri 2… ┃│ ▎ Trains <no-reply@trains.example.co.uk> · wed 14 oct 2026, 08:30       │
-│ ▎ Trains                    pers    08:30 ┃│ ▎                                                                       │
-│ ▎ Your e-ticket: Oxford to London, Fri 2… ┃│ ▎ (Mail hasn't downloaded this message yet, or it has no text)          │
+│ ▎ Trains                            08:30 ┃│                                                                         │
+│ ▎ Your e-ticket…                          ┃│ ▎ Trains <no-reply@trains.example.co.uk> · wed 14 oct 2026, 08:30       │
+│ ▎ Trains                            08:30 ┃│ ▎                                                                       │
+│ ▎ Your e-ticket…                          ┃│ ▎ (Mail hasn't downloaded this message yet, or it has no text)          │
 │                                           ┃│                                                                         │
 │ yesterday ─────────────────────────────── ┃│                                                                         │
-│   Lecturer                  ox        tue ┃│                                                                         │
-│   Society minutes                       󰁦 ┃│                                                                         │
-│   Lecturer                  ox        tue ┃│                                                                         │
+│   Lecturer                            tue ┃│                                                                         │
+│   Society minut…                        󰁦 ┃│                                                                         │
+│   Lecturer                            tue ┃│                                                                         │
 │   Broken file                           󰁦 ┃│                                                                         │
-│ ▎ Lecturer                  ox        tue ││                                                                         │
-│ ▎ B4 problem sheet 3                    󰁦 ││                                                                         │
-│ ▎ Jane Doe                  ox        tue ││                                                                         │
-│ ▎ Lab partner for Thursday?               ││                                                                         │
-│ ▎ Prof S… · 2               ox        tue ││                                                                         │
-│ ▎ Cancelled: Project meeting              ││                                                                         │
+│ ▎ Lecturer                            tue ││                                                                         │
+│ ▎ B4 problem sh…                        󰁦 ││                                                                         │
+│ ▎ Jane Doe                            tue ││                                                                         │
+│ ▎ Lab partner f…                          ││                                                                         │
+│ ▎ Prof Smith · 2                      tue ││                                                                         │
+│ ▎ Cancelled: Pr…                          ││                                                                         │
 │                                           ││                                                                         │
 │ monday ────────────────────────────────── ││                                                                         │
-│   Jane D… · 2               ox        mon ││                                                                         │
-│   Re: Group project plan                󰑚 ││                                                                         │
-│   Department…               ox        mon ││                                                                         │
-│   Coursework submission portal            ││                                                                         │
+│   Jane Doe · 2                        mon ││                                                                         │
+│   Re: Group pro…                        󰑚 ││                                                                         │
+│   Department Of…                      mon ││                                                                         │
+│   Coursework su…                          ││                                                                         │
 │                                           ││                                                                         │
 │ sunday ────────────────────────────────── ││                                                                         │
-│   Stranger                  ox        sun ││                                                                         │
+│   Stranger                            sun ││                                                                         │
 │   Urgent request                          ││                                                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
  ⏎ open · r reply · d done · a archive · m for · f needs reply · ? keys

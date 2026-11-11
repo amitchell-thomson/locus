@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS batches (
     created  TEXT NOT NULL,
     items    TEXT NOT NULL,             -- JSON: custom_id -> what it was about
     ended    TEXT,
-    applied  INTEGER NOT NULL DEFAULT 0,
+    applied  INTEGER NOT NULL DEFAULT 0,  -- 0 waiting, 2 being applied, 1 applied
     note     TEXT
 );
 -- How far each thread has been read for facts: re-read only when a newer message arrives.
@@ -400,8 +400,22 @@ def collect(conn: sqlite3.Connection, job: str, apply) -> int:
     ensure(conn)
     n = 0
     for bid, model, items in conn.execute("SELECT id, model, items FROM batches WHERE job=? AND applied=0", (job,)).fetchall():
-        res = claude.batch_collect(bid, model)
+        if not claude.batch_ended(bid):
+            continue
+        # Claimed before its results are read: two runs at once (the timer and a hand run) must
+        # not apply a batch twice, nor count its cost twice in the ledger.
+        with conn:
+            if conn.execute("UPDATE batches SET applied=2 WHERE id=? AND applied=0", (bid,)).rowcount == 0:
+                continue
+        try:
+            res = claude.batch_collect(bid, model)
+        except Exception:
+            with conn:
+                conn.execute("UPDATE batches SET applied=0 WHERE id=?", (bid,))
+            raise
         if res is None:
+            with conn:
+                conn.execute("UPDATE batches SET applied=0 WHERE id=?", (bid,))
             continue
         meta = json.loads(items)
         for cid, r in res.items():

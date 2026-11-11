@@ -677,6 +677,10 @@ def batch_submit(requests: list[BatchRequest]) -> str:
         raise ClaudeError(f"batch not submitted: {exc}") from exc
 
 
+def batch_ended(batch_id: str) -> bool:
+    return _api_client().messages.batches.retrieve(batch_id).processing_status == "ended"
+
+
 def batch_collect(batch_id: str, model: str) -> dict[str, ClaudeResult | ClaudeError] | None:
     """The results by custom_id once the batch has ended; None while it is still running. Each
     result is counted in `model_calls` (route api, batch price)."""

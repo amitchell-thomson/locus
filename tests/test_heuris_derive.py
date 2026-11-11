@@ -122,6 +122,7 @@ def test_a_run_batches_changed_threads_and_applies_them_next_run(conn, monkeypat
 
     monkeypatch.setattr(claude, "batch_submit", submit)
     monkeypatch.setattr(claude, "batch_collect", lambda bid, model: None)
+    monkeypatch.setattr(claude, "batch_ended", lambda bid: False)
     rep = D.run_facts(conn, since="2026-11-01")
     assert rep.submitted == 3 and rep.skipped_threads == 1
     assert "Isobel Voysey" in "".join(r.user for r in sent["reqs"])
@@ -131,6 +132,7 @@ def test_a_run_batches_changed_threads_and_applies_them_next_run(conn, monkeypat
     reply = out(("b18", "sheet_due:sheet-1", "2026-11-18 17:00", "2026-11-09",
                  "The deadline for the B18 examples sheet 1 is Wed 18th 5pm."))
     monkeypatch.setattr(claude, "batch_collect", lambda bid, model: {cid: claude.ClaudeResult(text=reply)})
+    monkeypatch.setattr(claude, "batch_ended", lambda bid: True)
     rep = D.run_facts(conn, since="2026-11-01")
     assert rep.collected == 1 and rep.applied.written == 1
     assert D.run_facts(conn, since="2026-11-01").collected == 0

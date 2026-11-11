@@ -85,6 +85,7 @@ def test_a_run_submits_chats_on_sonnet_and_the_rest_on_haiku(conn, monkeypatch):
     monkeypatch.setattr(claude, "credit_allows", lambda est, **k: (True, "ok"))
     monkeypatch.setattr(claude, "batch_submit", lambda reqs: jobs.append({r.model for r in reqs}) or f"b{len(jobs)}")
     monkeypatch.setattr(claude, "batch_collect", lambda bid, model: None)
+    monkeypatch.setattr(claude, "batch_ended", lambda bid: False)
     rep = R.run_records(conn, since="2026-11-01", now=NOW)
     assert rep.submitted == {"records-chat": 1, "records-small": 1} and jobs == [{"sonnet-5.5"}, {"haiku-5.5"}]
     # Waiting in a batch: not sent again.

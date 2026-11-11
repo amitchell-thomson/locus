@@ -595,9 +595,9 @@ def _heuris_derive(conn, args) -> None:
     from locus.agent import usage
     from locus.config import load as _load
     from locus.db.connection import get_connection
-    from locus.heuris import derive, records
+    from locus.heuris import briefs, derive, records
 
-    jobs = args.jobs or ["facts", "records"]
+    jobs = args.jobs or ["facts", "records", "briefs"]
     gate_conn = get_connection(_load().paths.db)
     try:
         def once(submit_new: bool) -> bool:
@@ -613,6 +613,12 @@ def _heuris_derive(conn, args) -> None:
                 with usage.job("heuris-records"):
                     r = records.run_records(conn, since=args.since, limit=args.limit, force=args.force,
                                             submit_new=submit_new)
+                if submit_new or r.collected:
+                    print(r.describe())
+                did |= bool(r.collected)
+            if "briefs" in jobs:
+                with usage.job("heuris-briefs"):
+                    r = briefs.run_briefs(conn, force=args.force, submit_new=submit_new)
                 if submit_new or r.collected:
                     print(r.describe())
                 did |= bool(r.collected)

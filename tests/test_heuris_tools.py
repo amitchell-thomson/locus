@@ -106,7 +106,9 @@ def test_context_lists_the_week_and_what_needs_a_reply(conn):
     out = ht.context(conn, today=date(2026, 11, 10))
     assert "B15 lecture" in out and "quast paper plan" in out and "Squash" in out
     focused = ht.context(conn, "quast", today=date(2026, 11, 10))
-    assert "barrier sweep" in focused and "Coming up" in focused
+    assert "barrier sweep" in focused and "Brief: quast" in focused
+    nxt = focused.split("Next:")[1]
+    assert "quast paper plan" in nxt.split("\n\n")[0]
 
 
 def test_a_filter_the_library_cannot_apply_keeps_the_library_out(conn, monkeypatch):

@@ -718,18 +718,21 @@ def context(conn: sqlite3.Connection, about: str | None = None, *, today: date |
     t0 = _day(today.isoformat())
     out = [f"Today is {today.strftime('%A %d %B %Y')}."]
     if about:
-        if about == "me" or about.startswith("person:"):
+        from locus.heuris import briefs
+
+        if about.startswith("person:"):
             return facts_block(conn, about)
+        if about == "me":
+            return "\n".join(out + ["", briefs.render(conn, "me", today)])
         e = registry.entries().get(about)
         if not e:
             return f"Unknown thing {about!r}. Registry ids: {', '.join(sorted(registry.entries()))}, or `me`."
         out.append(f"\n{e.get('name', about)} ({e.get('kind')}, {e.get('area')}, state {e.get('state') or '-'})")
-        out.append(facts_block(conn, about))
+        # The brief (H2.7): Now and Next exact and live, Open and Recent as last built, and any
+        # record written since. Then the raw last 30 days, for pointers the brief did not name.
+        out.append(briefs.render(conn, about, today))
+        out.append("")
         out.append(timeline(conn, about, since=(today - timedelta(days=30)).isoformat(), limit=25))
-        up = conn.execute("SELECT at, title FROM items WHERE thing=? AND kind IN ('event','task') AND at_ts >= ? "
-                          "ORDER BY at_ts LIMIT 10", (about, t0)).fetchall()
-        if up:
-            out.append("Coming up:\n" + "\n".join(f"  {a[:16]}  {t}" for a, t in up))
         return env.preamble() + "\n".join(out)
     week = conn.execute("SELECT at, kind, title, area, meta FROM items WHERE kind IN ('event','task') AND at_ts >= ? "
                         "AND at_ts < ? ORDER BY at_ts", (t0, t0 + 8 * 86400)).fetchall()
@@ -758,6 +761,10 @@ def context(conn: sqlite3.Connection, about: str | None = None, *, today: date |
                             "ORDER BY at_ts DESC LIMIT 1", (pid, int(datetime.now(timezone.utc).timestamp()))).fetchone()
         out.append(f"  {e.get('name', pid)}: " + (f"{last[0][:10]} {last[1]}: {_short(last[2], 90)}" if last else "nothing indexed"))
     out.append("\n" + facts_block(conn))
+    from locus.heuris import briefs
+
+    # His own brief's Open and Recent (H2.7); its Now is the facts just above.
+    out.append("\n" + briefs.render(conn, "me", today, with_now=False))
     nr = conn.execute("SELECT DISTINCT parent, title FROM items WHERE kind='mail' AND json_extract(meta,'$.needs_reply')=1 "
                       "ORDER BY at_ts DESC LIMIT 15").fetchall()
     out.append("\nMail tagged needs-reply: " + ("; ".join(env.wrap(t) + f" [{p}]" for p, t in nr) if nr else "none tagged"))

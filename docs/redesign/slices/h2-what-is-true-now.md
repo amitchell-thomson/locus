@@ -1,6 +1,6 @@
 # H2: what is true now
 
-**State:** draft for your approval · **Written:** 2026-11-11 · **Runs in:** `claude` (locus-dev)
+**State:** approved 11 Nov 2026 with your amendments (D1 slots widened, D6 deferred to the Canvas pull, D7 noted) · **Written:** 2026-11-11 · **Runs in:** `claude` (locus-dev)
 **From:** heuris v2 (accepted 10 Nov), sections A, B ("Facts, and how they are kept honest"), D, F, I
 row H2, K ("decided in H2"); ADR-011 decisions 3 and 9.
 **Builds on:** H1 (closed 10 Nov: the index, `context`/`search`/`open`/`timeline`/`waiting`, 36 of 49
@@ -8,7 +8,7 @@ questions passing); Slice 0's API-credit route and call ledger; keryx's schedule
 
 **Done when (from heuris):** "the offers, mail and Jump-feedback questions come back with the right
 current state; a CV description of nabla is accurate." Scored on the H2 questions of the test set
-(Y1, Y7, Y9, 14, 31, 35, 42, 43) and on the 13 H1 partials, each in a fresh chat as in H1, with
+(Y1, Y7, Y9, 14, 35, 42, 43; Q31 waits for the syllabi, D6) and on the 13 H1 partials, each in a fresh chat as in H1, with
 effort (calls, seconds, first useful call) recorded. Target: every H2 question passes, the two
 integrity questions (42, 43) pass exactly, and no H1 pass becomes worse.
 
@@ -38,16 +38,31 @@ thread) that briefs draw their history from.
 
 **D1. How a fact is named, so a newer one finds the one it replaces** (heuris K: "decided in H2").
 A fact is `subject · slot = value`, as of a date, with its sources.
-- *subject* is a registry id (`millennium`, `quast`, `b15`) or `me`.
-- *slot* comes from a short fixed list per kind, so "Millennium's stage" is always the same slot:
-  - application: `stage`, `turn`, `offer`, `start`, `deadline`, `contact`, `note`
-  - course: `tutor`, `tutorials`, `sheet_due`, `exam`, `note`
-  - repo / role: `state`, `goal`, `result`, `decision`, `note`
-  - me: `goal`, `preference`, `constraint`, `status`, `note`
-- `note` slots carry a short name (`note:brian-advice`) so several can coexist.
-A new value in the same subject and slot replaces the old one, which is kept as history.
-**Recommended.** The alternative, free-text facts matched by similarity, is how the Jump mistake
-happens: two phrasings of one fact both look current.
+- *subject* is a registry id (`millennium`, `quast`, `b15`, `jcr-treasurer`), `me`, or a person
+  (`person:brian`).
+- *slot* comes from a fixed list per kind of subject (below), so "Millennium's stage" is always
+  the same slot and a newer value replaces the older.
+- **Single slots** hold one current value (`stage`, `start`). **Named slots** hold many, each
+  under a short name: `experience:millennium-qd-2027`, `achievement:gr-quant-challenge-2026`,
+  `note:brian-advice`. A named slot is replaced only by a new value under the same name.
+
+Your call (11 Nov): **every fact worth remembering must have a slot.** So:
+- the list covers your experience, projects, achievements, skills and education, not only status;
+- every kind has named `note:<name>` slots as the catch-all, so nothing true is ever unrecordable;
+- the list lives in one file (`taxonomy/fact-slots.toml`), and `remember` with a slot not on it is
+  refused with the nearest slots, so new kinds of fact get a deliberate slot rather than drifting.
+
+| Subject | Single slots | Named slots (many) |
+|---|---|---|
+| **me** | `status` (where you are now), `location`, `degree` | `goal:`, `preference:`, `constraint:`, `plan:`, `decision:`, `experience:` (roles, internships, research), `achievement:` (awards, competitions, results), `skill:`, `education:` (courses, grades, qualifications), `project:` (things you built outside the registry), `interest:`, `contact:` (people and how you know them), `note:` |
+| **application** | `stage`, `turn`, `start`, `end`, `deadline`, `outcome` | `offer:` (terms), `interview:` (round, date, who), `contact:`, `feedback:`, `note:` |
+| **course** | `tutor`, `exam`, `mark` | `tutorials:`, `sheet_due:`, `topic:` (covered, with confidence later in L), `note:` |
+| **repo / project** | `state`, `goal`, `stack` | `result:` (numbers, with where they come from), `decision:`, `achievement:`, `idea:`, `note:` |
+| **role** | `state`, `term` | `duty:`, `deadline:`, `contact:`, `note:` |
+| **person** | `role`, `organisation`, `relation` | `contact:`, `said:` (advice, commitments, with date), `note:` |
+
+The alternative, free-text facts matched by similarity, is how the Jump mistake happens: two
+phrasings of one fact both look current.
 
 **D2. Which facts are written from mail and the calendar without asking** (heuris B: "automatically,
 with its source, in the auto log with undo").
@@ -87,14 +102,15 @@ from them. A hypothetical discussed in a chat can appear in that chat's record a
 never in a brief as *true*: briefs take current state only from facts (heuris B). **Recommended.**
 
 **D6. Years 1 and 2: syllabi as "studied" facts** (heuris C, Q31).
-These need the course syllabi. Recommended: I take them from the department's published
-course pages for EngSci Prelims and Part A (one fact per course: what it covered, with a link). If
-you have the handbooks as PDFs, dropping them in `~/files/Studies/` is better and I use those.
+**Deferred, your call (11 Nov): "we can do those once the canvas pull is set up."** The syllabi
+come with the Canvas pull, as `education:` and course `topic:` facts; Q31 is scored then.
 
 **D7. Chats on claude.ai** (heuris K: "whether chats on claude.ai are brought in").
-They live only in Anthropic's export. Recommended: **not in H2**; revisit if you find you use
-claude.ai for things locus should know. Chats in Claude Code (laptop and server) are already
-indexed.
+They live only in Anthropic's export. **Not in H2** (agreed 11 Nov). Your note: this may be a
+shortfall later, since you do use claude.ai sometimes, and you would move more to Claude Code
+chats only once the terminal renders LaTeX and equations well ("there is no real difference
+between the two" otherwise). Recorded as a known gap; equations in the terminal are their own
+piece of work, not H2's.
 
 **D8. Models and cost** (heuris F).
 Facts, records and briefs run on the API credit through the Batch API, never on your subscription:
@@ -210,9 +226,7 @@ Each step ends with its check; the slice ends with the scoring (H2.10).
 - *Check:* the quast brief's "Now" matches `state.md`; your own brief names your goals as you
   stated them, with sources.
 
-**H2.8 Syllabi.**
-- Year 1 and 2 courses as `studied` facts (D6).
-- *Check:* Q31 is answerable from them.
+**H2.8 Syllabi:** deferred to the Canvas pull (D6).
 
 **H2.9 Backfill.**
 - Facts, records and briefs since 1 June (D9), batched; spend logged.
@@ -229,7 +243,9 @@ Each step ends with its check; the slice ends with the scoring (H2.10).
 - **Learning** (goals, tracks, refreshers, marking): slice L.
 - **Facts from chats without approval:** only if `remember` turns out to be friction (ADR-011's
   revisit).
-- **claude.ai chats** (D7).
+- **claude.ai chats** (D7), and equations rendered in the terminal (what would let you do
+  everything in Claude Code).
+- **Year 1 and 2 syllabi** (D6): with the Canvas pull.
 - **The old engine's retirement** (propositions and the rest, heuris G): measured separately, not
   needed for H2.
 

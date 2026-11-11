@@ -257,3 +257,26 @@ Each step ends with its check; the slice ends with the scoring (H2.10).
   at most nightly unless a fact changes.
 - **Records that restate hypotheticals as plans.** Records say "discussed"; briefs never take
   state from records.
+
+---
+
+## Progress (11 Nov, end of the first day): H2.1 to H2.7 built, H2.9's backfill done; H2.10 scoring next
+
+Each step was checked against live data after deploying.
+
+| Step | Built | Check on real data |
+|---|---|---|
+| H2.1 | `facts` ledger in heuris.db, never dropped by an index rebuild and copied by `locus backup` (`heuris-ledger.db`); `taxonomy/fact-slots.toml`; the `facts` tool; `context` shows facts in place of the applications file, which was imported (14 facts) and is retired. | `context(bh-2027)`: contract signed · reneging, turn you, the renege note, each with its source. `facts(millennium, stage, history)`: offer accepted (10 Nov), then the mail's "next round being scheduled" (12 Oct) as history. |
+| H2.2 | `remember`, `forget` (off every allow list); the line in both machines' CLAUDE.md and the server's instructions. | Fresh `claude -p`: "Jump said no offer, reapply next year" offered `remember(jump, outcome, "no offer; reapply next year")`; "Suppose I took the Jump offer…" offered nothing and answered from the facts. `forget` restored the replaced value. |
+| H2.3 | The Home chat: a refused `remember` shows `remember: "…"? y/n` in the bar and under the reply; `y` records it on the server, `n` drops it; each asked once; a server refusal asks again. | In a separate window on the new build: `y` recorded the test fact with the Home chat as its source; `n` left nothing. Test facts removed. |
+| H2.4 | Facts from mail: Sonnet 5.5 in Message Batches, hourly (`locus-heuris-derive.timer`); quote verified in the thread; authority read from the sender's address; mail never overwrites what you said; one proposal per slot. Interviews from the calendar by the firm in the event's title. | Since 1 June: 47 current facts (33 written automatically), 5 history, 107 waiting in Approve. Every application's stage matches the file; none needs changing. B18: tutor Dr Isobel Voysey, tutorials Wed 25 / Thu 26 Nov, sheet due 18 Nov 17:00. |
+| H2.5 | Home's careers read the facts (one ssh call a minute); fact proposals in Approve (y/n each; `Y` refuses); the automatic-actions log is the ledger's, with real undo. | `locus-tui --dump home --live` and `context` show the same stages as the ledger. |
+| H2.6 | Records: chat sessions (Sonnet, once quiet an hour), repo days and mail threads (Haiku); indexed as kind `record`; a record or fact from mail arrives inside the mail envelope. | 512 records. Yesterday's three sessions each have one with a Decided section. "why did regime-ml stop": no record says, since it stopped before 1 June. |
+| H2.7 | Briefs for 23 items and you: Now (facts, and a repo's own `state.md`) and Next rendered live; Open and Recent from a batch, each line's pointer verified; records since the build listed. | quast's Now is its `state.md`, dated. Your brief has no goals yet: they are proposals (`me · goal:long-term-role`, from your 30 Oct mail). |
+| H2.9 | Done by the hourly run within the credit guard. | Today: facts $1.11, records $1.12, briefs $0.14. The cycle is at about $6.4 of $100. |
+
+**Waiting on you.**
+- 107 proposed facts in Approve. Among them are your goals and decisions from your own mail, which your brief and Y1 need.
+- Restart the locus window to run the new build (y/n, careers from facts, the live log).
+
+**[proposal]** A repository's own `state.md` sits under Now beside the facts, as what the repository says, dated. Briefs otherwise take state only from facts. Alternative: write it as `repo · state` facts.

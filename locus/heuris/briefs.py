@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS briefs (
 SYSTEM = """You write two parts of a short brief about one thing in Alec Mitchell-Thomson's life (a project, a course, a job application, a role, or Alec himself), for any Claude that later needs to know where it stands.
 
 You are given its current facts (true now, each dated), records of recent work (each with a pointer), and what is coming up. Write JSON with:
-- "open": up to 5 short lines: what is waiting, on Alec or on someone else, and for what. Only from the facts and records.
+- "open": up to 5 short lines: what is waiting, on Alec or on someone else, and for what, about THIS thing only. Each ends with the pointer of the fact or record it comes from, exactly as given, in square brackets, e.g. [fact:12] or [record:mail:personal/123].
 - "recent": up to 6 short lines, newest first, each saying what happened and ending with the pointer of the record it comes from, exactly as given, in square brackets, e.g. [record:chat:laptop/abc]. A record says what was discussed or decided at the time; report it as that ("decided to...", "discussed..."), never as what is true now.
 Nothing that the inputs do not say. No em dashes. Lines under 25 words."""
 
@@ -96,8 +96,12 @@ def now_lines(conn: sqlite3.Connection, subject: str) -> list[str]:
 
 
 def next_lines(conn: sqlite3.Connection, subject: str, today: date | None = None, days: int = 21) -> list[str]:
-    today = today or date.today()
-    t0 = int(datetime(today.year, today.month, today.day, tzinfo=timezone.utc).timestamp())
+    """What is coming up from NOW (not from midnight), leaving out blocks already marked done."""
+    if today is None or today == date.today():
+        t0 = int(datetime.now(timezone.utc).timestamp())
+        today = date.today()
+    else:
+        t0 = int(datetime(today.year, today.month, today.day, tzinfo=timezone.utc).timestamp())
     where = "thing = ?" if subject != "me" else "COALESCE(area,'') != 'Family'"
     params = [subject] if subject != "me" else []
     rows = conn.execute(f"SELECT at, kind, title, meta FROM items WHERE kind IN ('event','task') AND at_ts >= ? "
@@ -106,7 +110,7 @@ def next_lines(conn: sqlite3.Connection, subject: str, today: date | None = None
     out = []
     for at, kind, title, meta in rows:
         m = json.loads(meta or "{}")
-        if kind == "task" and m.get("status") not in ("open", None):
+        if (kind == "task" and m.get("status") not in ("open", None)) or (title or "").startswith("✓"):
             continue
         out.append(f"{at[:16].replace('T', ' ')} {'due: ' if kind == 'task' else ''}{title}")
     return out
@@ -149,7 +153,9 @@ def user_prompt(conn: sqlite3.Connection, subject: str, today: date) -> str:
 
 
 def apply(conn: sqlite3.Connection, subject: str, raw: str, fp: dict, given: set[str]) -> int:
-    """Store a built brief; a Recent line whose pointer was not given is dropped. Returns drops."""
+    """Store a built brief; an Open or Recent line whose pointer was not given is dropped (an
+    unsourced Open line put "he writes all the LaTeX himself", from a B2 session, in quast's
+    brief, 11 Nov). Returns drops."""
     try:
         out = json.loads(raw)
     except ValueError:
@@ -161,7 +167,13 @@ def apply(conn: sqlite3.Connection, subject: str, raw: str, fp: dict, given: set
             recent.append(line.strip())
         else:
             dropped += 1
-    open_ = [str(x).strip() for x in out.get("open", [])[:5] if str(x).strip()]
+    open_ = []
+    for line in out.get("open", [])[:5]:
+        ptrs = re.findall(r"\[((?:record|fact):[^\]]+)\]", str(line))
+        if ptrs and all(p in given for p in ptrs):
+            open_.append(str(line).strip())
+        else:
+            dropped += 1
     with conn:
         conn.execute("INSERT OR REPLACE INTO briefs(subject, open, recent, built_at, built_from) VALUES (?,?,?,?,?)",
                      (subject, json.dumps(open_), json.dumps(recent), D._now(), json.dumps(fp)))
@@ -202,7 +214,8 @@ def run_briefs(conn: sqlite3.Connection, *, force: bool = False, submit_new: boo
             continue
         cid = f"b{i}"
         meta[cid] = {"subject": s, "fp": fingerprint(conn, s),
-                     "given": [f"record:{r[3]}" for r in _records_for(conn, s)]}
+                     "given": [f"record:{r[3]}" for r in _records_for(conn, s)]
+                     + re.findall(r"\[(fact:\d+)\]", "\n".join(now_lines(conn, s)))}
         reqs.append(BatchRequest(custom_id=cid, model=BRIEF_MODEL, system=SYSTEM, user=user_prompt(conn, s, today),
                                  max_tokens=2000, schema=SCHEMA))
     estimate = sum(len(r.user) for r in reqs) / 4 * 2.0 / 1e6 * 0.5 + len(reqs) * 400 * 10 / 1e6 * 0.5

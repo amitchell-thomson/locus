@@ -45,18 +45,19 @@ def test_a_built_brief_keeps_only_sourced_recent_lines_and_shows_newer_records(c
     monkeypatch.setattr(claude, "batch_ended", lambda bid: False)
     rep = B.run_briefs(conn, only=["quast"])
     assert rep.submitted == 1 and "[record:chat:laptop/s1]" in sent[0].user
-    reply = json.dumps({"open": ["the paper draft, on Alec"],
+    reply = json.dumps({"open": ["the paper draft, on Alec [record:chat:laptop/s1]", "he writes all the LaTeX"],
                         "recent": ["10 Nov: decided to merge the docs [record:chat:laptop/s1]",
                                    "an invented line [record:chat:laptop/zzz]", "no pointer at all"]})
     monkeypatch.setattr(claude, "batch_ended", lambda bid: True)
     monkeypatch.setattr(claude, "batch_collect", lambda bid, model: {"b0": claude.ClaudeResult(text=reply)})
     rep = B.run_briefs(conn, submit_new=False)
-    assert rep.collected == 1 and rep.dropped == 2
+    assert rep.collected == 1 and rep.dropped == 3
     R.store(conn, {"unit": "commits:quast@2026-11-12", "kind": "commits", "thing": "quast",
                    "started": "2099-01-01T00:00:00+00:00", "ended": "2099-01-01T00:00:00+00:00", "upto_ts": 1,
                    "sources": []}, "Pulse shaping started\n- x", "haiku-5.5")
     out = B.render(conn, "quast", date(2026, 11, 11))
     assert "decided to merge the docs" in out and "invented" not in out
+    assert "the paper draft, on Alec" in out and "LaTeX" not in out
     assert "Since this brief was built:" in out and "Pulse shaping started" in out
 
 

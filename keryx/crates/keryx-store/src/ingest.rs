@@ -58,6 +58,24 @@ pub fn mailapp_location(row: &MailRow) -> Option<Location> {
 
 /// Mirror one Mail.app account. `stop_after` interrupts after that many
 /// parsed messages (tests only).
+fn drafts_key(account: &str) -> String {
+    format!("drafts:{account}")
+}
+
+/// The drafts ingest leaves out of an account: (source id, Message-ID, mailbox).
+pub fn known_drafts(db: &Db, account: &str) -> Result<Vec<(String, String, String)>, IngestError> {
+    Ok(db
+        .meta(&drafts_key(account))?
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| {
+            let (ids, mailbox) = l.split_once('\t').unwrap_or((l, ""));
+            let (s, m) = ids.split_once(' ')?;
+            Some((s.to_string(), m.to_string(), mailbox.to_string()))
+        })
+        .collect())
+}
+
 pub fn mailapp_account(
     db: &mut Db,
     store: &MailStore,
@@ -71,16 +89,14 @@ pub fn mailapp_account(
     let inbox = account.inbox_mailbox.clone().unwrap_or_default();
     let rows = store.scan(uuid)?;
     let current = db.fingerprints(&account.id)?;
-    // Drafts seen before, by source id and Message-ID: not read again until they change.
-    let drafts_key = format!("drafts:{}", account.id);
-    let known_drafts: HashSet<(String, String)> = db
-        .meta(&drafts_key)?
-        .unwrap_or_default()
-        .lines()
-        .filter_map(|l| l.split_once(' '))
-        .map(|(s, m)| (s.to_string(), m.to_string()))
+    // Drafts seen before, by source id and Message-ID: not read again until they change. Each
+    // is kept with its mailbox, so `keryx doctor` can count it as accounted for.
+    let drafts_key = drafts_key(&account.id);
+    let known_drafts: HashSet<(String, String)> = known_drafts(db, &account.id)?
+        .into_iter()
+        .map(|(s, m, _)| (s, m))
         .collect();
-    let mut drafts: HashSet<(String, String)> = HashSet::new();
+    let mut drafts: HashSet<(String, String, String)> = HashSet::new();
     let mut report = Report::default();
     let mut seen = HashSet::new();
 
@@ -97,7 +113,7 @@ pub fn mailapp_account(
         seen.insert(sid.clone());
         let draft = (sid.clone(), row.message_id.clone());
         if known_drafts.contains(&draft) && !current.contains_key(&sid) {
-            drafts.insert(draft);
+            drafts.insert((draft.0, draft.1, row.physical.clone()));
             continue;
         }
         match current.get(&sid) {
@@ -179,7 +195,7 @@ pub fn mailapp_account(
                             if was && db.delete(&account.id, &sid)? {
                                 report.removed += 1;
                             }
-                            drafts.insert((sid.clone(), row.message_id.clone()));
+                            drafts.insert((sid.clone(), row.message_id.clone(), row.physical.clone()));
                             continue;
                         }
                         if let Some(path) = path {
@@ -223,7 +239,7 @@ pub fn mailapp_account(
     }
 
     // A pass cut short keeps what it knew; a whole one keeps only drafts still in Mail.
-    let mut list: Vec<String> = drafts.iter().map(|(s, m)| format!("{s} {m}")).collect();
+    let mut list: Vec<String> = drafts.iter().map(|(s, m, b)| format!("{s} {m}\t{b}")).collect();
     list.sort();
     db.set_meta(&drafts_key, &list.join("\n"))?;
 

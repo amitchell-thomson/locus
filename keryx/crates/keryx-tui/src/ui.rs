@@ -697,7 +697,16 @@ pub fn thread_lines(app: &App, open: &Open, w: usize) -> Vec<Line<'static>> {
 /// was gone until the thread was opened again).
 pub fn thread_parts(app: &App, open: &Open, w: usize) -> (Vec<Line<'static>>, Vec<Line<'static>>) {
     let mut out: Vec<Line<'static>> = Vec::new();
-    let subject = open.msgs.last().map(|m| m.subject.clone()).unwrap_or_default();
+    // The subject of this thread's own latest message: a copy brought in from another account
+    // may carry another (12 Nov: a test reply's subject became the Tower thread's title).
+    let subject = open
+        .msgs
+        .iter()
+        .filter(|m| m.account == open.account && m.thread_id == open.thread_id)
+        .max_by_key(|m| m.date)
+        .or(open.msgs.last())
+        .map(|m| m.subject.clone())
+        .unwrap_or_default();
     let (acc, col) = account_tag(app, &open.account);
     let acc = acc.to_lowercase();
     // The subject is magenta while you read the thread, as its row in the list is.

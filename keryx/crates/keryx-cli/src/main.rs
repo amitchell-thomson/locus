@@ -414,12 +414,17 @@ fn doctor(path: &std::path::Path) -> anyhow::Result<()> {
                 let (Ok(theirs), Ok(ours)) = (store.mailbox_totals(uuid), db.counts_by_mailbox(&acc.id)) else {
                     continue;
                 };
+                // Mail's drafts are left out of the mirror on purpose: counted as accounted for.
+                let mut drafts: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+                for (_, _, mailbox) in keryx_store::ingest::known_drafts(db, &acc.id).unwrap_or_default() {
+                    *drafts.entry(mailbox).or_default() += 1;
+                }
                 let mut diffs = Vec::new();
                 for (mailbox, n) in &theirs {
                     if is_hidden_mailbox(mailbox) {
                         continue;
                     }
-                    let mine = ours.get(mailbox).copied().unwrap_or(0);
+                    let mine = ours.get(mailbox).copied().unwrap_or(0) + drafts.get(mailbox).copied().unwrap_or(0);
                     if mine != *n {
                         diffs.push(format!("{mailbox}: Mail {n}, keryx {mine}"));
                     }

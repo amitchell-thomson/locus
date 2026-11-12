@@ -31,6 +31,10 @@ pub struct Parsed {
     pub in_reply_to: Vec<String>,
     pub references: Vec<String>,
     pub list_headers: Vec<(String, String)>,
+    /// A draft Mail saved (`X-Uniform-Type-Identifier: com.apple.mail-draft`, or Mail's
+    /// auto-save mark), not something anyone sent (12 Nov: an auto-saved copy of a reply sat in
+    /// the Milly thread as a second, empty email from him).
+    pub draft: bool,
     /// The first `text/plain` body part, decoded, if any.
     pub text_plain: Option<String>,
     /// The first `text/html` body part, decoded, if any.
@@ -79,6 +83,11 @@ pub fn parse(raw: &[u8]) -> Result<Parsed, ParseError> {
     };
     for (name, value) in msg.headers_raw() {
         let lname = name.to_ascii_lowercase();
+        if (lname == "x-uniform-type-identifier" && value.contains("com.apple.mail-draft"))
+            || lname == "x-apple-auto-saved"
+        {
+            p.draft = true;
+        }
         if LIST_HEADERS.contains(&lname.as_str()) {
             p.list_headers.push((lname, value.trim().to_string()));
         }
@@ -317,6 +326,14 @@ mod tests {
         assert_eq!(p.calendars.len(), 1);
         assert!(p.calendars[0].contains("METHOD:REQUEST"));
         assert!(p.attachments.is_empty());
+    }
+
+    #[test]
+    fn a_draft_mail_saved_is_marked_as_one() {
+        let draft = b"Subject: Re: Tower\r\nX-Apple-Auto-Saved: 1\r\nX-Uniform-Type-Identifier: com.apple.mail-draft\r\nTo: a@b.com\r\n\r\nhalf a reply\r\n";
+        assert!(parse(draft).unwrap().draft);
+        let sent = b"Subject: Re: Tower\r\nTo: a@b.com\r\n\r\nthe reply\r\n";
+        assert!(!parse(sent).unwrap().draft);
     }
 
     #[test]

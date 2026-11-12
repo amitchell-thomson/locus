@@ -21,7 +21,9 @@ use scraper::{ElementRef, Html, Node};
 /// older messages.
 // 5 (26 Oct): no change to the text; partial messages' attachment sizes are re-read from
 // disk, where a wrong path had left most of them at 0.
-pub const TEXT_VERSION: u32 = 5;
+/// 6 (12 Nov): Mail's drafts are dropped from the mirror; re-reading every message once finds
+/// the ones already stored.
+pub const TEXT_VERSION: u32 = 6;
 
 /// The normalised body, and whether hidden text was removed.
 pub fn body_text(p: &Parsed) -> (String, bool) {

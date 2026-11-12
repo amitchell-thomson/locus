@@ -71,6 +71,16 @@ pub fn mailapp_account(
     let inbox = account.inbox_mailbox.clone().unwrap_or_default();
     let rows = store.scan(uuid)?;
     let current = db.fingerprints(&account.id)?;
+    // Drafts seen before, by source id and Message-ID: not read again until they change.
+    let drafts_key = format!("drafts:{}", account.id);
+    let known_drafts: HashSet<(String, String)> = db
+        .meta(&drafts_key)?
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| l.split_once(' '))
+        .map(|(s, m)| (s.to_string(), m.to_string()))
+        .collect();
+    let mut drafts: HashSet<(String, String)> = HashSet::new();
     let mut report = Report::default();
     let mut seen = HashSet::new();
 
@@ -85,6 +95,11 @@ pub fn mailapp_account(
         };
         let sid = row.rowid.to_string();
         seen.insert(sid.clone());
+        let draft = (sid.clone(), row.message_id.clone());
+        if known_drafts.contains(&draft) && !current.contains_key(&sid) {
+            drafts.insert(draft);
+            continue;
+        }
         match current.get(&sid) {
             Some(fp) if same_message(fp, &row.message_id) => {
                 if fp.location != location
@@ -157,11 +172,20 @@ pub fn mailapp_account(
                                 }
                             }
                         };
+                        let was = current.contains_key(&sid);
+                        // A draft is not part of any conversation: never mirrored, and a copy
+                        // stored before it was known to be one is removed.
+                        if p.draft {
+                            if was && db.delete(&account.id, &sid)? {
+                                report.removed += 1;
+                            }
+                            drafts.insert((sid.clone(), row.message_id.clone()));
+                            continue;
+                        }
                         if let Some(path) = path {
                             disk_sizes(path, row.rowid, &mut p.attachments);
                         }
                         let thread_id = mail_thread(row);
-                        let was = current.contains_key(&sid);
                         let m = build::message(
                             &p,
                             SourceFacts {
@@ -197,6 +221,11 @@ pub fn mailapp_account(
             e => IngestError::Db(e),
         })?;
     }
+
+    // A pass cut short keeps what it knew; a whole one keeps only drafts still in Mail.
+    let mut list: Vec<String> = drafts.iter().map(|(s, m)| format!("{s} {m}")).collect();
+    list.sort();
+    db.set_meta(&drafts_key, &list.join("\n"))?;
 
     let gone: Vec<String> = current.keys().filter(|k| !seen.contains(*k)).cloned().collect();
     for chunk in gone.chunks(BATCH) {
@@ -261,6 +290,13 @@ pub fn rederive(db: &mut Db) -> Result<usize, IngestError> {
                     _ => continue,
                 };
                 let Ok(p) = mime::parse(&raw) else { continue };
+                if p.draft {
+                    // Found on re-reading (text version 6): out of the mirror. The next pass
+                    // remembers it as a draft and does not bring it back.
+                    db.delete(account, sid)?;
+                    done += 1;
+                    continue;
+                }
                 let mut m = build::message(
                     &p,
                     SourceFacts {
@@ -597,6 +633,28 @@ mod tests {
         assert_eq!(rederive(&mut db).unwrap(), 0);
         // Header-only rows (version 0) are ingest's business.
         assert!(db.message("oxford", "23").unwrap().unwrap().body_text.is_empty());
+    }
+
+    #[test]
+    fn a_stored_draft_leaves_the_mirror_on_rereading() {
+        let cfg = cfg();
+        let store = MailStore::open(&fixture_root()).unwrap();
+        let mut db = Db::open_in_memory().unwrap();
+        mailapp_account(&mut db, &store, cfg.account("oxford").unwrap(), None).unwrap();
+        // Message 2 as Mail's auto-saved draft, stored by an older keryx.
+        let draft = b"Subject: Re: x\r\nX-Uniform-Type-Identifier: com.apple.mail-draft\r\nTo: a@b.com\r\n\r\nhalf\r\n";
+        db.conn()
+            .execute("UPDATE messages SET text_version = 1 WHERE source_id = '2'", [])
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT OR REPLACE INTO raws (message, raw) \
+                 SELECT id, ?1 FROM messages WHERE account = 'oxford' AND source_id = '2'",
+                [&draft[..]],
+            )
+            .unwrap();
+        rederive(&mut db).unwrap();
+        assert!(db.message("oxford", "2").unwrap().is_none(), "the draft is gone");
     }
 
     #[test]

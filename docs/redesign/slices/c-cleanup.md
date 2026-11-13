@@ -343,12 +343,25 @@ reason.
 - **C8 done** (463c88b, 258a6a5): CLAUDE.md 811 → 450 lines, every path and command it names
   checked by a script (174 of 174); the `state.md` template in `docs/templates/`, and the line in
   the global CLAUDE.md on both machines.
-- **C4 built for Home and kairos, C7 for kairos** (branch, not yet merged or deployed): both read
-  `locus_theme::keys` first, help is generated from it, and each app's tests check its own keys
-  against the table and press every key its help names. The re-exec moved to
-  `locus_theme::rebuilt` for all three apps. kairos's engine has a test for "(every
-  occurrence)". The walk-through with you is still to come before it ships.
-- **Still to do:** C4's walk-through and keryx's part (its own chat), C6 (mail reading; keryx's own chat), keryx/CLAUDE.md still says
-  mail is Alt-4; the stale stdio `locus mcp` registration in
-  the quast project; `scripts/` holds ~32 analysis scripts that import deleted modules (kept as
-  evidence, they no longer run).
+- **C4 done** (merged and deployed 13 Nov, late): Home, kairos and keryx all read
+  `locus_theme::keys` first (esc back, q quits only at the top, u undo, e edit, y/n, +, d, x asks,
+  v, /, ^r, g + a letter, ?); help is generated from the table; each app's tests check its own
+  keys are free in the table and press every key its help names. Moved keys: kairos `v` details
+  -> ⏎, start `n` -> `s`, share `s` -> `F`, `r` -> ^r, capitals -> `g`; keryx filing `d` -> `M`
+  (`d` is done: files for the mark or keryx's guess, saying why), `h` is no longer back, next and
+  previous message `] [`. The walk-through with Alec is still owed.
+- **C6 done** (D4): a thread is one scroll with a bar on the message acted on; it opens on the
+  newest new message; read is stamped on leaving and only for what was seen; `r` answers the
+  message read (`SendReq::in_reply_to`, keryxd threads to it); the confirm screen shows the real
+  quote, the From address, wrapped warnings, and scrolls; after `y` you stay in the thread
+  ("sending · c cancels"); Claude's drafts are labelled so. keryxd's `settle_send` now knows
+  `Sent` and `Cancelled` (the line never said "sent" before). Still owed: Alec reads three real
+  threads and replies to one through the confirm screen.
+- **C7 done for all three** (kairos via `locus_theme::rebuilt`, keryx its own `rebuilt.rs`).
+  Each window needs one manual restart to get onto a build that has it.
+- **Leftovers done:** keryx/CLAUDE.md says Alt-3; the quast project's stale stdio `locus mcp`
+  is removed; `locus status` shows spend against the credit's pace, not "$5.00 cap"; kairosd's
+  "(every occurrence)" has an engine test; two keryxd tests stale since e26b8b6 (Admin and Travel
+  became streams) updated; five keryx files rustfmt'd, so `scripts/ci.sh` exits 0.
+- **Not done, kept:** `scripts/` holds ~32 analysis scripts that import deleted modules (evidence;
+  they no longer run).

@@ -671,14 +671,19 @@ fn keys_do_what_the_hints_say_for_each_kind_of_item() {
     assert_eq!(a.view, View::Week);
     a.key(Key::BackTab);
     assert_eq!(a.view, View::Agenda);
-    // g is "go to" now (cleanup C4): it waits for a place's letter; the agenda is on ⇥.
+    // g is no key here (13 Nov: "go to" went from the calendar); the agenda is on ⇥.
     a.view = View::Week;
     a.key(Key::Char('g'));
     assert_eq!(a.view, View::Week);
-    assert!(a.g_pending);
-    a.key(Key::Char('c'));
-    assert!(!a.g_pending);
-    assert_eq!(a.message.as_ref().map(|m| m.0.as_str()), Some("this is the calendar"));
+    // A T P L ask for Home's screens; outside the window they only say where.
+    for (c, screen) in [('A', "approve"), ('T', "tasks"), ('P', "projects"), ('L', "autolog")] {
+        a.key(Key::Char(c));
+        assert_eq!(
+            a.message.as_ref().map(|m| m.0.clone()),
+            Some(format!("would open {screen} in the home window")),
+            "{c}"
+        );
+    }
 }
 
 #[test]
@@ -1378,13 +1383,8 @@ fn a_run_of_nudges_is_one_write_sent_when_the_keys_stop() {
 
 // ------------------------------------------------------------ the one key table (C4)
 
-/// The presses a key as the help shows it stands for (`⇧↑↓` is two, `g h` is g then h).
+/// The presses a key as the help shows it stands for (`⇧↑↓` is two).
 fn presses(shown: &str) -> Vec<Vec<Key>> {
-    use locus_theme::keys::PLACES;
-    if let Some(c) = shown.strip_prefix("g ") {
-        assert!(PLACES.iter().any(|(p, _, _)| c.starts_with(*p)), "{shown}");
-        return vec![vec![Key::Char('g'), Key::Char(c.chars().next().unwrap())]];
-    }
     let mut out = Vec::new();
     for tok in shown.split_whitespace() {
         let keys: Vec<Key> = match tok {
@@ -1423,7 +1423,6 @@ fn state(a: &App) -> String {
             &a.search,
             &a.filter,
             a.work_week,
-            a.g_pending,
             a.quit,
             a.day_top.get(),
         )
@@ -1526,18 +1525,14 @@ fn table_keys_mean_the_same_on_the_calendar() {
     assert!(matches!(a.mode, Mode::Form(_)));
     a.key(Key::Ctrl('c'));
     assert!(a.quit);
-    // Outside the window, g m only says where it would go.
+    // Outside the window, A only says where it would go; g is no shared key.
     let (mut b, _t) = app("2026-10-21T08:00:00+01:00");
-    b.key(Key::Char('g'));
-    b.key(Key::Char('m'));
-    assert_eq!(
-        b.message.as_ref().map(|m| m.0.as_str()),
-        Some("would show the mail window")
-    );
-    b.key(Key::Char('g'));
-    b.key(Key::Char('a'));
+    b.key(Key::Char('A'));
     assert_eq!(
         b.message.as_ref().map(|m| m.0.as_str()),
         Some("would open approve in the home window")
     );
+    let before = format!("{:?}", (b.view, b.cursor, b.sel, &b.mode));
+    b.key(Key::Char('g'));
+    assert_eq!(format!("{:?}", (b.view, b.cursor, b.sel, &b.mode)), before);
 }

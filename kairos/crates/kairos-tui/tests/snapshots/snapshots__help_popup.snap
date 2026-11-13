@@ -16,19 +16,19 @@ expression: "render_to_string(&a, 100, 30)"
 │ │  v            mark several                      m            move to a time you type         │ │
 │1│  /            search                            a            more time before a ⚑            │ │
 │ │  ^r           refresh                           s            start a task now                │ │
-│1│  g            go to… (then a letter)            W            log work on its task            │ │
-│ │  ?            keys                              C            check in                        │ │
-│1│  g h          home                              S            run the scheduler               │ │
-│ │  g a          approve                           F            share to Family                 │ │
-│ │  g t          tasks                             B            going or not · attending        │┄│
-│1│  g c          calendar                          1–9 p f b i  show or hide calendars          │ │
-│ │  g m          mail                              󰄱 󰡖 󰄵        a block: to do · unanswered · … │ │
-│1│  g l          log                               ┆ ╏ ▌        may move · you placed it · eve… │ │
-│ │                                                 ⚑            a task's due date               │ │
-│2│                                                 ◌            a change waiting in Approve     │ │
-│ │                                                 ⧉            copies of one event             │ │
-│2│                                                                                              │ │
+│1│  ?            keys                              W            log work on its task            │ │
+│ │                                                 C            check in                        │ │
+│1│                                                 S            run the scheduler               │ │
+│ │                                                 A T P L      Home: approve, tasks, projects… │ │
+│ │                                                 F            share to Family                 │┄│
+│1│                                                 B            going or not · attending        │ │
+│ │                                                 1–9 p f b i  show or hide calendars          │ │
+│1│                                                 󰄱 󰡖 󰄵        a block: to do · unanswered · … │ │
+│ │                                                 ┆ ╏ ▌        may move · you placed it · eve… │ │
+│2│                                                 ⚑            a task's due date               │ │
+│ │                                                 ◌            a change waiting in Approve     │ │
+│2│                                                 ⧉            copies of one event             │ │
+│ │                                                                                              │ │
 │ │  filters   3 careers  4 personal  5 family  8 errands  p yours f Family                      │ │
-│ ╰──────────────────────────────────────────────────────────────────────────────────────────────╯ │
-╰ ● 19:00–20:00 · Squash · Errands ────────────────────────── e edit · m move · F share · x delete ╯
- ⏎ details · ⇥ view · [ ] week · g go to · ? keys
+╰ ╰──────────────────────────────────────────────────────────────────────────────────────────────╯ ╯
+ ⏎ details · ⇥ view · [ ] week · ? keys

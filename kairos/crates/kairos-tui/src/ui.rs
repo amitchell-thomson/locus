@@ -1837,13 +1837,7 @@ fn status_bar(f: &mut Frame, app: &App, area: Rect) {
             None,
         ),
         _ => (
-            locus_theme::hints(&[
-                ("⏎", "details"),
-                ("⇥", "view"),
-                ("[ ]", "week"),
-                ("g", "go to"),
-                ("?", "keys"),
-            ]),
+            locus_theme::hints(&[("⏎", "details"), ("⇥", "view"), ("[ ]", "week"), ("?", "keys")]),
             None,
         ),
     };

@@ -14,7 +14,7 @@ use kairos_core::time::resolve_local;
 use kairos_core::view::{Filter, view_with};
 use kairos_store::cache::Index;
 use kairos_store::client::{Daemon, Rejected};
-use locus_theme::keys::{self, Action, Place};
+use locus_theme::keys::{self, Action};
 
 use crate::form::{ForOption, Form, FormAction, FormKind, describe_span, when_prefill};
 
@@ -217,10 +217,8 @@ pub struct App {
     pub daemon: Option<Daemon>,
     pub daemon_error: Option<String>,
     pub quit: bool,
-    /// `g` was pressed: the next letter names a place ([`keys::PLACES`]).
-    pub g_pending: bool,
-    /// Running as the real window: `g` and ⏎ may ask locus to open things and switch tmux
-    /// windows. Off in tests and dumps, which only say what they would do.
+    /// Running as the real window: `A`, `T`, `P`, `L` and ⏎ may ask locus to open things and
+    /// switch tmux windows. Off in tests and dumps, which only say what they would do.
     pub links: bool,
     /// Set after a write so the runner fetches kairosd's index at once.
     pub wants_sync: bool,
@@ -312,7 +310,6 @@ impl App {
             daemon,
             daemon_error: None,
             quit: false,
-            g_pending: false,
             links: false,
             wants_sync: false,
             work_week: false,
@@ -777,20 +774,14 @@ impl App {
     /// Nothing open and nothing half done: no form, prompt, popup, details or unsent move. A
     /// rebuilt binary restarts only then (cleanup C7).
     pub fn idle(&self) -> bool {
-        matches!(self.mode, Mode::Normal)
-            && !self.expanded
-            && !self.g_pending
-            && self.held.is_none()
-            && self.deferred.is_empty()
+        matches!(self.mode, Mode::Normal) && !self.expanded && self.held.is_none() && self.deferred.is_empty()
     }
 
     /// The calendar's keys (cleanup C4, D1): the shared table first ([`keys::action`]), then
     /// kairos's own for what the table does not cover (days and weeks, the grid, filters, the
-    /// scheduler). `g` waits for a letter ([`App::go`]).
+    /// scheduler). `g` is no shared key (13 Nov) and the calendar gives it nothing: ⇥ reaches
+    /// the agenda.
     fn normal(&mut self, k: Key) {
-        if std::mem::take(&mut self.g_pending) {
-            return self.go(k);
-        }
         let k = vim_arrow(k);
         if let Some(a) = shared_action(k) {
             return self.shared(a);
@@ -890,6 +881,12 @@ impl App {
                 );
             }
             Key::Char('S') => self.plan(),
+            // Home's screens have one home each, in the home window (spec E7, round 7c, L7): A,
+            // T, P and L open them there. They were `g a`, `g t`, `g l` for one evening (C4).
+            Key::Char('A') => self.open_locus_page("approve"),
+            Key::Char('T') => self.open_locus_page("tasks"),
+            Key::Char('P') => self.open_locus_page("projects"),
+            Key::Char('L') => self.open_locus_page("autolog"),
             _ => self.contextual(k),
         }
     }
@@ -921,41 +918,10 @@ impl App {
                 self.set_message("refreshing from kairosd…", false);
             }
             Action::Undo => self.undo_now(),
-            Action::GoTo => {
-                self.g_pending = true;
-                let places: Vec<String> = keys::PLACES.iter().map(|(c, _, w)| format!("{c} {w}")).collect();
-                self.set_message(format!("go to: {}", places.join(" · ")), false);
-            }
             Action::Mark => self.set_message("v marks several: nothing in the calendar acts on several yet", false),
             Action::Edit | Action::Yes | Action::No | Action::Done | Action::Remove => self.on_selected(a),
-        }
-    }
-
-    /// `g` then a letter (D1): Home's places switch to the home window, on that screen (through
-    /// locus's `open-locus` file); mail to its window. Outside tmux it only says where.
-    fn go(&mut self, k: Key) {
-        let Key::Char(c) = k else {
-            self.message = None;
-            return;
-        };
-        let Some(p) = keys::place(c) else {
-            let letters: String = keys::PLACES.iter().map(|(c, _, _)| *c).collect();
-            return self.set_message(format!("g {c} goes nowhere: g then one of {letters}"), true);
-        };
-        match p {
-            Place::Calendar => self.set_message("this is the calendar", false),
-            Place::Mail => {
-                if !self.links {
-                    return self.set_message("would show the mail window", false);
-                }
-                if let Err(e) = keys::show_window(p.view()) {
-                    self.set_message(e, true);
-                }
-            }
-            Place::Home => self.open_locus_page("home"),
-            Place::Approve => self.open_locus_page("approve"),
-            Place::Tasks => self.open_locus_page("tasks"),
-            Place::Log => self.open_locus_page("autolog"),
+            // Never returned by keys::action (a shim for keryx until it handles g itself).
+            Action::GoTo => {}
         }
     }
 
@@ -2240,8 +2206,8 @@ impl App {
             .unwrap_or(0);
     }
 
-    /// `g h/a/t/l`: one of Home's screens (`home`, `approve`, `tasks`, `autolog`), asked for in
-    /// locus's `open-locus` file, then the home window shown.
+    /// `A`, `T`, `P`, `L`: one of Home's screens (`approve`, `tasks`, `projects`, `autolog`),
+    /// asked for in locus's `open-locus` file, then the home window shown.
     fn open_locus_page(&mut self, screen: &str) {
         if !self.links {
             return self.set_message(format!("would open {screen} in the home window"), false);
@@ -2249,7 +2215,7 @@ impl App {
         if let Err(e) = locus_contract::link::OpenFile::locus().write(screen) {
             return self.set_message(format!("couldn't ask locus: {e}"), true);
         }
-        if let Err(e) = keys::show_window(Place::Home.view()) {
+        if let Err(e) = keys::show_window("home") {
             self.set_message(e, true);
         }
     }
@@ -2666,6 +2632,7 @@ pub const APP_KEYS: &[(&str, &str)] = &[
     ("W", "log work on its task"),
     ("C", "check in"),
     ("S", "run the scheduler"),
+    ("A T P L", "Home: approve, tasks, projects, log"),
     ("F", "share to Family"),
     ("B", "going or not · attending"),
     ("1–9 p f b i", "show or hide calendars"),

@@ -570,6 +570,33 @@ fn work_block_edges_say_who_controls_them_and_boxes_say_their_state() {
 }
 
 #[test]
+fn a_finished_tasks_flag_stays_ticked_and_takes_more_time() {
+    use kairos_tui::app::{Mode, PromptKind};
+    // 2026-11-13: a ⚑ no longer vanishes when its task is done; `a` on any ⚑ asks for more time.
+    let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
+    let mut t = Task::new("B4 sheet", "Personal", 240, Author::Claude, now("2026-10-12T08:00:00Z"));
+    t.id = "task-b4".into();
+    t.due = Some(Due::At(now("2026-10-23T16:00:00Z")));
+    t.status = kairos_core::task::TaskStatus::Done;
+    a.tasks = vec![];
+    a.done_tasks = vec![t];
+    a.key(Key::Tab);
+    a.key(Key::Right);
+    a.key(Key::Right);
+    let s = render_to_string(&a, 100, 30);
+    assert!(s.contains("✓ 17:00 B4 sheet"), "ticked, not gone:\n{s}");
+    assert!(!s.contains("⚑ 17:00 B4 sheet"), "{s}");
+    a.sel = a
+        .day_clusters(a.cursor)
+        .iter()
+        .position(|c| c.primary.title.contains("B4 sheet"))
+        .expect("the flag");
+    assert_eq!(a.key_hints(), "a more time · m move · x remove ⚑");
+    a.key(Key::Char('a'));
+    assert!(matches!(&a.mode, Mode::Prompt(PromptKind::MoreTime { task_id, .. }, _) if task_id == "task-b4"));
+}
+
+#[test]
 fn keys_do_what_the_hints_say_for_each_kind_of_item() {
     use kairos_tui::app::{Confirm, Mode, PromptKind, View};
     let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
@@ -592,7 +619,10 @@ fn keys_do_what_the_hints_say_for_each_kind_of_item() {
     a.key(Key::Right);
     a.key(Key::Right);
     pick(&mut a, &|i| i.title.contains("B4 sheet"));
-    assert_eq!(a.key_hints(), "d done · e edit · m move · n start · x drop");
+    assert_eq!(
+        a.key_hints(),
+        "d done · a more time · e edit · m move · n start · x drop"
+    );
     a.key(Key::Char('e'));
     let Mode::Form(f) = &a.mode else { panic!("no form") };
     assert_eq!(f.title(), "edit task");
@@ -829,7 +859,7 @@ fn a_tasks_due_date_is_drawn_as_a_flag_on_its_day() {
     t.due = Some(kairos_core::task::Due::At(now("2026-10-23T12:00:00+01:00")));
     a.tasks.push(t.clone());
     let s = render_to_string(&a, 140, 34);
-    assert!(s.contains("⚑ 12:00 B15 shee"), "{s}");
+    assert!(s.contains("▌⚑ 12:00 B15 she"), "{s}");
     let fri = chrono::NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
     let mark = a
         .day_clusters(fri)
@@ -1245,6 +1275,36 @@ fn moving_between_days_keeps_the_time_of_day() {
     a.key(Key::Char(']'));
     a.key(Key::Char('['));
     assert_eq!(on(&a), "mon-14");
+}
+
+#[test]
+fn moving_a_flag_by_hand_unties_it_from_its_event() {
+    // 2026-11-11: a prep task's ⚑ followed its meeting (`before`), so the next plan put a
+    // hand-moved flag straight back. Moving it by hand is the say-so to stop following.
+    let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
+    a.daemon = Some(kairos_store::client::Daemon::new("http://127.0.0.1:9", "t").unwrap());
+    let mut t = Task::new("B4 sheet", "Personal", 240, Author::Claude, now("2026-10-12T08:00:00Z"));
+    t.id = "task-b4".into();
+    t.due = Some(Due::At(now("2026-10-23T16:00:00Z")));
+    t.before = Some("meeting@kairos".into());
+    let due0 = t.due;
+    a.tasks = vec![t];
+    a.key(Key::Tab);
+    a.key(Key::Right);
+    a.key(Key::Right);
+    a.sel = a
+        .day_clusters(a.cursor)
+        .iter()
+        .position(|c| {
+            c.primary.meta.kind == kairos_core::model::EventKind::Deadline
+                && c.primary.meta.task_id.as_deref() == Some("task-b4")
+        })
+        .expect("B4 flag on Fri");
+    a.key(Key::ShiftDown);
+    let t = a.tasks.iter().find(|t| t.id == "task-b4").unwrap();
+    assert_eq!(t.before, None, "untied");
+    assert_ne!(t.due, due0, "moved");
+    assert_eq!(a.deferred.len(), 1, "one write");
 }
 
 #[test]

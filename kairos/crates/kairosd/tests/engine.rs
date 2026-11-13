@@ -639,6 +639,48 @@ fn complete_task_removes_future_blocks() {
 }
 
 #[test]
+fn a_finished_tasks_due_date_still_moves_but_nothing_else_does() {
+    // 2026-11-13: its ⚑ stays on the calendar, ticked, and moves (or goes) like any other.
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let r = e.create_task(Author::Claude, &b4(60, "fri 17:00")).unwrap();
+    e.complete_task(Author::Alec, &r.task.id, Some(60)).unwrap();
+    let moved = e
+        .update_task(
+            Author::Alec,
+            &r.task.id,
+            &kairos_core::api::UpdateTaskReq {
+                due: Some("sat 12:00".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(moved.task.status, TaskStatus::Done, "still done");
+    assert_ne!(moved.task.due, r.task.due);
+    assert_eq!(blocks_of(&mut e, &r.task.id), 0, "no work planned for it");
+    let other = e.update_task(
+        Author::Alec,
+        &r.task.id,
+        &kairos_core::api::UpdateTaskReq {
+            remaining_min: Some(30),
+            ..Default::default()
+        },
+    );
+    assert!(other.is_err(), "anything else needs a reopen");
+    let cleared = e
+        .update_task(
+            Author::Alec,
+            &r.task.id,
+            &kairos_core::api::UpdateTaskReq {
+                due: Some(String::new()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(cleared.task.due, None);
+}
+
+#[test]
 fn dropping_a_task_needs_approval() {
     let env = Env::new(true);
     let mut e = env.engine();

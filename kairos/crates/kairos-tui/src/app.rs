@@ -56,6 +56,11 @@ pub enum PromptKind {
     MoveDeadline {
         task_id: String,
     },
+    /// More time for a task before its ⚑ (reopens a finished one).
+    MoreTime {
+        task_id: String,
+        title: String,
+    },
 }
 
 impl PromptKind {
@@ -66,6 +71,7 @@ impl PromptKind {
             PromptKind::Remaining { .. } => "how much is left? (e.g. 3h, 0 = finished)",
             PromptKind::LogWork { .. } => "log work — how long, ending now? (e.g. 40m)",
             PromptKind::MoveDeadline { .. } => "due (when, e.g. fri 17:00)",
+            PromptKind::MoreTime { .. } => "more time before it's due? (e.g. 2h)",
         }
     }
 }
@@ -318,6 +324,7 @@ impl App {
         // task whose old ⚑ event is still on the calendar shows that one instead.
         let marks = kairos_core::task::due_marks(&self.tasks, from, to, self.tz)
             .into_iter()
+            .chain(kairos_core::task::done_marks(&self.done_tasks, from, to, self.tz))
             .filter(|m| {
                 let legacy = self
                     .tasks
@@ -983,6 +990,13 @@ impl App {
                             self.message = None;
                             self.mode = Mode::Prompt(PromptKind::MoveDeadline { task_id: tid }, String::new());
                         }
+                        // More time before it (2026-11-13): planned like the rest, and a finished
+                        // task is reopened with just that much left.
+                        Key::Char('a') => {
+                            self.message = None;
+                            let title = kairos_core::build::bare_block_title(&title).to_string();
+                            self.mode = Mode::Prompt(PromptKind::MoreTime { task_id: tid, title }, String::new());
+                        }
                         // Removing an open task's deadline removes the task and
                         // all its planned time (Alec, 2026-10-13); a finished
                         // task just loses its ⚑.
@@ -1336,6 +1350,25 @@ impl App {
             }
             return;
         }
+        if let PromptKind::MoreTime { task_id, title } = &kind {
+            let Ok(m) = dates::parse_minutes(&buf).map(|m| m.max(1)) else {
+                self.set_message("how much more: e.g. 2h, 90m", true);
+                self.mode = Mode::Prompt(kind.clone(), buf);
+                return;
+            };
+            let open = self.tasks.iter().find(|t| t.id == *task_id).map(|t| t.remaining_min);
+            let req = api::UpdateTaskReq {
+                reopen: open.is_none().then_some(true),
+                remaining_min: Some(open.unwrap_or(0) + m),
+                ..Default::default()
+            };
+            let more = crate::form::fmt_minutes(i64::from(m));
+            self.update_task_and_report(&task_id.clone(), &req);
+            if let Some((msg, false)) = &self.message {
+                self.message = Some((format!("{msg} · {more} more planned before “{title}”"), false));
+            }
+            return;
+        }
         if let PromptKind::MoveDeadline { task_id } = &kind {
             let due = match self.when_str(&buf) {
                 Ok(s) => s,
@@ -1345,8 +1378,15 @@ impl App {
                     return;
                 }
             };
+            // Untied from its event, as a ⇧-moved flag is (see `nudge`).
+            let tied = self
+                .tasks
+                .iter()
+                .chain(self.done_tasks.iter())
+                .any(|t| t.id == *task_id && t.before.is_some());
             let req = api::UpdateTaskReq {
                 due: Some(due),
+                before: tied.then(String::new),
                 ..Default::default()
             };
             return self.update_task_and_report(&task_id.clone(), &req);
@@ -1355,7 +1395,10 @@ impl App {
             return;
         }
         match kind {
-            PromptKind::Remaining { .. } | PromptKind::LogWork { .. } | PromptKind::MoveDeadline { .. } => {}
+            PromptKind::Remaining { .. }
+            | PromptKind::LogWork { .. }
+            | PromptKind::MoveDeadline { .. }
+            | PromptKind::MoreTime { .. } => {}
             PromptKind::Search => {
                 self.search = if buf.is_empty() { None } else { Some(buf) };
             }
@@ -1412,11 +1455,25 @@ impl App {
             } else {
                 new_start.to_rfc3339()
             };
+            // Prep tied to an event (`before`, spec E4) is untied: its due date followed the
+            // event, so the next plan would put a hand-moved flag straight back (2026-11-11).
+            let tied = self
+                .tasks
+                .iter()
+                .chain(self.done_tasks.iter())
+                .any(|t| t.id == tid && t.before.is_some());
             let req = api::UpdateTaskReq {
                 due: Some(due),
+                before: tied.then(String::new),
                 ..Default::default()
             };
-            if let Some(t) = self.tasks.iter_mut().find(|t| t.id == tid) {
+            if let Some(t) = self
+                .tasks
+                .iter_mut()
+                .chain(self.done_tasks.iter_mut())
+                .find(|t| t.id == tid)
+            {
+                t.before = None;
                 t.due = Some(if i.span.is_all_day() {
                     kairos_core::task::Due::Date(day)
                 } else {
@@ -1976,8 +2033,12 @@ impl App {
             v.push(("⏎", "open in locus"));
         }
         let h: &[(&str, &str)] = match (i.meta.kind, i.overlay) {
+            (EventKind::Deadline, _) if self.is_done_flag(&i) => {
+                &[("a", "more time"), ("m", "move"), ("x", "remove ⚑")]
+            }
             (EventKind::Deadline, _) if i.meta.task_id.is_some() => &[
                 ("d", "done"),
+                ("a", "more time"),
                 ("e", "edit"),
                 ("m", "move"),
                 ("n", "start"),
@@ -2528,6 +2589,17 @@ fn plan_warning(p: &api::PlanResp) -> Option<String> {
         .first()
         .map(|s| format!(" · ! {}", s.message))
         .or_else(|| p.squeezed.first().map(|s| format!(" · ⚠ {}", s.message)))
+}
+
+impl App {
+    /// A ⚑ whose task is finished: drawn ticked, in green.
+    pub fn is_done_flag(&self, i: &Instance) -> bool {
+        i.meta.kind == EventKind::Deadline
+            && i.meta
+                .task_id
+                .as_deref()
+                .is_some_and(|id| !self.tasks.iter().any(|t| t.id == id) && self.done_tasks.iter().any(|t| t.id == id))
+    }
 }
 
 pub fn is_deadline(i: &Instance) -> bool {

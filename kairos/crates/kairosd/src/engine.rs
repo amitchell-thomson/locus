@@ -2109,6 +2109,18 @@ impl Engine {
         Ok(resp)
     }
 
+    /// An update that touches only the due date (and what it follows), allowed on a finished task.
+    fn only_due(req: &api::UpdateTaskReq) -> bool {
+        req.due.is_some()
+            && *req
+                == api::UpdateTaskReq {
+                    due: req.due.clone(),
+                    before: req.before.clone(),
+                    plan: req.plan,
+                    ..Default::default()
+                }
+    }
+
     pub fn update_task(&mut self, author: Author, id: &str, req: &api::UpdateTaskReq) -> Result<api::TaskResp> {
         let before = self.find_task(id)?;
         let now = self.now();
@@ -2123,7 +2135,9 @@ impl Engine {
             t.status = TaskStatus::Open;
             // It wasn't finished after all: don't learn from that run.
             self.db.estimate_unlog(&t.id)?;
-        } else if t.status != TaskStatus::Open {
+        } else if t.status != TaskStatus::Open && !Self::only_due(req) {
+            // A finished task's ⚑ stays on the calendar and can still be moved or removed
+            // (Alec, 2026-11-13); anything else waits for a reopen.
             return Err(EngineError::BadRequest(format!(
                 "{:?} is {} (reopen it first)",
                 t.title,

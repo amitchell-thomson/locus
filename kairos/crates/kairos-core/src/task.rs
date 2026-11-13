@@ -185,10 +185,26 @@ impl Task {
 /// open tasks with a due date in `[from, to)`, as instances of kind deadline that carry the task
 /// id, so every key that acts on a ⚑ acts on the task.
 pub fn due_marks(tasks: &[Task], from: DateTime<Utc>, to: DateTime<Utc>, tz: Tz) -> Vec<crate::model::Instance> {
+    marks(tasks, TaskStatus::Open, from, to, tz)
+}
+
+/// The ⚑ of finished tasks: they stay on the calendar, ticked (Alec, 2026-11-13). The TUI
+/// draws them; nothing else reads them (the index, `next` and the scheduler see open ones only).
+pub fn done_marks(tasks: &[Task], from: DateTime<Utc>, to: DateTime<Utc>, tz: Tz) -> Vec<crate::model::Instance> {
+    marks(tasks, TaskStatus::Done, from, to, tz)
+}
+
+fn marks(
+    tasks: &[Task],
+    status: TaskStatus,
+    from: DateTime<Utc>,
+    to: DateTime<Utc>,
+    tz: Tz,
+) -> Vec<crate::model::Instance> {
     use crate::model::{EventKind, Instance, Meta, Span};
     tasks
         .iter()
-        .filter(|t| t.status == TaskStatus::Open && t.stage.is_none())
+        .filter(|t| t.status == status && t.stage.is_none())
         .filter_map(|t| {
             let due = t.due?;
             let span = match due {

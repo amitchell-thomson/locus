@@ -52,12 +52,17 @@ fn put(buf: &mut Buffer, x: u16, y: u16, w: u16, s: &str, style: Style) {
     buf.set_stringn(x, y, &s, w as usize, style);
 }
 
-/// The keys for what's selected, on the bottom-right edge in locus's hint format — unless the
-/// window is too narrow to keep ~40 columns for the details on the left.
+/// The keys for what's selected, on the bottom-right edge in locus's hint format, keeping ~40
+/// columns for the details on the left: a narrow window drops keys from the end (the first are
+/// the most used) rather than all of them.
 fn with_hints<'a>(block: Block<'a>, app: &App, width: u16) -> Block<'a> {
-    let pairs = app.key_hint_pairs();
+    let mut pairs = app.key_hint_pairs();
     let mut line = locus_theme::hints(&pairs);
-    if pairs.is_empty() || (width as usize) < line.width() + 48 {
+    while !pairs.is_empty() && (width as usize) < line.width() + 48 {
+        pairs.pop();
+        line = locus_theme::hints(&pairs);
+    }
+    if pairs.is_empty() {
         return block;
     }
     line.spans.insert(0, TSpan::raw(" "));
@@ -117,10 +122,28 @@ fn centred(area: Rect, w: u16, h: u16) -> Rect {
     Rect::new(area.x + (area.width - w) / 2, area.y + (area.height - h) / 2, w, h)
 }
 
+/// A ⚑ is red; a finished task's stays, as a green tick (2026-11-13).
+fn flag_col(app: &App, i: &Instance) -> Color {
+    if app.is_done_flag(i) { c("green") } else { c("red") }
+}
+
+/// THE deadline look, everywhere (2026-11-13): a soft fill of its colour behind a solid `▌`,
+/// as an all-day ⚑ in the strip has always been, so a deadline never reads as a task or an
+/// event, timed or not. `past` fades it like everything gone by.
+fn flag_style(app: &App, i: &Instance, past: bool) -> Style {
+    let col = flag_col(app, i);
+    let col = if past { fade(col, PAST_FADE) } else { col };
+    Style::default().fg(col).bg(fade(col, 0.7))
+}
+
+fn flag_glyph(app: &App, i: &Instance) -> &'static str {
+    if app.is_done_flag(i) { "✓" } else { "⚑" }
+}
+
 pub fn label(app: &App, i: &Instance) -> String {
     let t = i.title.trim();
     match i.meta.kind {
-        EventKind::Deadline => format!("⚑ {}", t.trim_start_matches('⚑').trim()),
+        EventKind::Deadline => format!("{} {}", flag_glyph(app, i), t.trim_start_matches('⚑').trim()),
         // Work: a box — 󰄱 to do (also past, until checked in), 󰄵 done.
         EventKind::TaskBlock => kairos_core::build::block_label(t, i.end(app.tz) <= app.now),
         // Project sessions (removed 2026-10-25) stored a diamond in the title; their events are
@@ -652,7 +675,11 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             && cursor_k.is_some_and(|ck| {
                 (b.k0..=b.k1).contains(&ck) && per_day[ck].iter().position(|c| key_of(c) == b.key) == Some(app.sel)
             });
-        let base_col = if is_deadline(i) { c("red") } else { colour_of(app, i) };
+        let base_col = if is_deadline(i) {
+            flag_col(app, i)
+        } else {
+            colour_of(app, i)
+        };
         let past = days[b.k1] < today;
         let col = if past { fade(base_col, PAST_FADE) } else { base_col };
         // A soft tint of the event's colour across every day it covers, with
@@ -1003,27 +1030,23 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
                 }
             }
         }
-        // Timed deadlines: a ⚑ marker line across the column.
+        // Timed deadlines: a filled row across the column, the deadline look (`flag_style`).
         // Bold (with "in 5h") only when due within 24 h; past ones fade.
         for (r0, _, cl) in timed.iter().filter(|t| is_deadline(&t.2.primary)) {
             let i = &cl.primary;
+            let (red, flag) = (flag_col(app, i), flag_glyph(app, i));
             let due = i.start(tz);
             let t = due.with_timezone(&tz).format("%H:%M");
             let left = due - app.now;
-            let urgent = left > Duration::zero() && left <= Duration::hours(24);
+            let urgent = !app.is_done_flag(i) && left > Duration::zero() && left <= Duration::hours(24);
             let when = if urgent {
                 format!(" ({})", in_text(left.num_minutes().max(1)))
             } else {
                 String::new()
             };
-            // `Style::reset()`: the line is drawn over any event block in its
-            // row, and must not inherit that block's background (e.g. the blue
-            // of a selected event) or its bold.
-            let mut st = Style::reset().fg(if due <= app.now {
-                fade(c("red"), PAST_FADE)
-            } else {
-                c("red")
-            });
+            // Patched over `Style::reset()`: the row is drawn over any event block in it and must
+            // not inherit that block's background (e.g. the blue of a selected event) or its bold.
+            let mut st = Style::reset().patch(flag_style(app, i, due <= app.now));
             if urgent {
                 st = st.add_modifier(Modifier::BOLD);
             }
@@ -1033,17 +1056,11 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
             let is_sel = *d == app.cursor && idx == Some(app.sel);
             let selected = is_sel || linked(i);
             let title = i.title.trim_start_matches('⚑').trim();
-            let text = if selected {
-                st = if is_sel {
-                    selected_style(c("red"))
-                } else {
-                    linked_style(c("red"))
-                };
-                let s = format!("⚑ {t} {title}{when}");
-                format!("{s}{}", " ".repeat((w as usize).saturating_sub(s.width())))
-            } else {
-                format!("⚑ {t} {title}{when} ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-            };
+            if selected {
+                st = if is_sel { selected_style(red) } else { linked_style(red) };
+            }
+            let s = format!("▌{flag} {t} {title}{when}");
+            let text = format!("{s}{}", " ".repeat((w as usize).saturating_sub(s.width())));
             put(buf, x0, grid_y + *r0 as u16, w, &text, st);
         }
         // Worked time (spec K6): measured from your Claude sessions after the fact, drawn on the
@@ -1234,18 +1251,29 @@ fn month(f: &mut Frame, app: &App, area: Rect) {
                     _ => String::new(),
                 };
                 let mark = match edge(i, app.now) {
+                    _ if is_deadline(i) => "▌",
                     "▌" => " ",
                     e => e,
                 };
                 let text = format!("{mark}{when}{}", label(app, i));
-                let col = if is_deadline(i) { c("red") } else { colour_of(app, i) };
+                let col = if is_deadline(i) {
+                    flag_col(app, i)
+                } else {
+                    colour_of(app, i)
+                };
                 let col = if d < today || !inside {
                     fade(col, PAST_FADE)
                 } else {
                     col
                 };
                 let st = if selected {
-                    selected_style(if is_deadline(i) { c("red") } else { colour_of(app, i) })
+                    selected_style(if is_deadline(i) {
+                        flag_col(app, i)
+                    } else {
+                        colour_of(app, i)
+                    })
+                } else if is_deadline(i) {
+                    flag_style(app, i, d < today || !inside)
                 } else if is_dimmed(i) {
                     Style::default().fg(col).add_modifier(Modifier::DIM)
                 } else {
@@ -1256,14 +1284,15 @@ fn month(f: &mut Frame, app: &App, area: Rect) {
                 } else {
                     st
                 };
-                put(
-                    buf,
-                    x,
-                    y + 1 + n as u16,
-                    w.saturating_sub(1),
-                    &fit(&text, w.saturating_sub(1) as usize),
-                    st,
-                );
+                let cell = w.saturating_sub(1) as usize;
+                let text = fit(&text, cell);
+                // A deadline fills its line, like a bar.
+                let text = if is_deadline(i) {
+                    format!("{text}{}", " ".repeat(cell.saturating_sub(text.width())))
+                } else {
+                    text
+                };
+                put(buf, x, y + 1 + n as u16, w.saturating_sub(1), &text, st);
             }
             if items.len() > shown {
                 put(
@@ -1353,9 +1382,16 @@ fn event_line(app: &App, cl: &Cluster, selected: bool, width: usize) -> Line<'st
         (None, o) => meta.push(o.as_str().to_string()),
     }
     let meta = format!("  · {}", meta.join(" · "));
-    let col = if is_deadline(i) { c("red") } else { colour_of(app, i) };
+    let col = if is_deadline(i) {
+        flag_col(app, i)
+    } else {
+        colour_of(app, i)
+    };
+    let past = i.end(tz) <= app.now;
     let base = if selected {
         selected_style(col)
+    } else if is_deadline(i) {
+        flag_style(app, i, past)
     } else if is_dimmed(i) {
         Style::default().fg(c("overlay1"))
     } else {
@@ -1376,7 +1412,11 @@ fn event_line(app: &App, cl: &Cluster, selected: bool, width: usize) -> Line<'st
                 Style::default().fg(c("overlay1"))
             },
         ),
-        TSpan::styled(dot(i, app.now), if selected { base } else { Style::default().fg(col) }),
+        if is_deadline(i) {
+            TSpan::styled("▌ ", base)
+        } else {
+            TSpan::styled(dot(i, app.now), if selected { base } else { Style::default().fg(col) })
+        },
         TSpan::styled(fit(&title, room.max(8)), base),
         TSpan::styled(
             meta,

@@ -49,7 +49,7 @@ pub enum Action {
 /// The table: action, the key as shown, and what it does in a help line.
 pub const TABLE: &[(Action, &str, &str)] = &[
     (Action::Back, "esc", "back"),
-    (Action::Quit, "q", "quit (at the top; back elsewhere)"),
+    (Action::Quit, "q", "quit; back when not at the top"),
     (Action::Undo, "u", "undo"),
     (Action::Edit, "e", "edit"),
     (Action::Yes, "y", "yes / approve"),

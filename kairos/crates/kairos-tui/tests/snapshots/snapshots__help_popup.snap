@@ -5,7 +5,7 @@ expression: "render_to_string(&a, 100, 30)"
 ╭ ╭──────────────────────────────────────────── keys ────────────────────────────────────────────╮─╮
 │ │ everywhere                                     calendar                                      │ │
 │ │  esc          back                              ← → h l      a day back, forward             │ │
-│ │  q            quit (at the top; back elsewhe…   [ ]          a week back, forward            │ │
+│ │  q            quit; back when not at the top    [ ]          a week back, forward            │ │
 │ │  u            undo                              ↑ ↓ j k      select; past the ends, scroll … │ │
 │─│  e            edit                              ⇧↑↓ ⇧←→      move it 30 min · a day          │─│
 │1│  y            yes / approve                     ⌥↑↓          shorter · longer by 15 min      │ │

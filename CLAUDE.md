@@ -410,10 +410,15 @@ locus/
 - **A bare `Tool execution failed` is not evidence that Locus is down.** Read `locus mcp-log`
   before touching the network: it says whether the call arrived. No tool can answer a client that
   has stopped listening, so the answer is written where the client does not own it.
-- **Windows restart themselves after a rebuild.** locus-tui watches its own binary and, once the
-  file has settled and nothing is being typed (normal mode, no chat in flight, no key for 10 s),
-  execs the new build in place on the same screen (`crates/locus-tui/src/main.rs`, cleanup C7).
-  If a window seems to run old code, check that the binary was actually rebuilt and installed.
+- **Windows restart themselves after a rebuild.** locus-tui and kairos watch their own binary
+  (`locus_theme::rebuilt`) and, once the file has settled and nothing is being typed (normal
+  mode, no form, popup or chat in flight, no key for 10 s), exec the new build in place on the
+  same screen (kairos: the same view and day) (cleanup C7). If a window seems to run old code,
+  check that the binary was actually rebuilt and installed.
+- **One key table** (`crates/locus-theme/src/keys.rs`, cleanup C4, D1): every app asks
+  `keys::action` first and binds its own keys only where the table says nothing; help is drawn
+  from the table. Each app's tests check its own keys against `app_key_is_free` and press every
+  key its help names. Do not bind a table key to something else.
 - **`locus status`** is present tense: a failure a later run has recovered from moves to a
   recovered list rather than shouting all day. A unit failure is recorded by `locus record`
   (systemd `OnFailure`, `locus-failure@.service`).

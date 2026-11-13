@@ -343,8 +343,12 @@ reason.
 - **C8 done** (463c88b, 258a6a5): CLAUDE.md 811 → 450 lines, every path and command it names
   checked by a script (174 of 174); the `state.md` template in `docs/templates/`, and the line in
   the global CLAUDE.md on both machines.
-- **Still to do:** C4 (one key table: a walk-through with you first; kairos and keryx have their
-  own chats editing them now), C6 (mail reading; keryx's own chat), keryx/CLAUDE.md still says
+- **C4 built for Home and kairos, C7 for kairos** (branch, not yet merged or deployed): both read
+  `locus_theme::keys` first, help is generated from it, and each app's tests check its own keys
+  against the table and press every key its help names. The re-exec moved to
+  `locus_theme::rebuilt` for all three apps. kairos's engine has a test for "(every
+  occurrence)". The walk-through with you is still to come before it ships.
+- **Still to do:** C4's walk-through and keryx's part (its own chat), C6 (mail reading; keryx's own chat), keryx/CLAUDE.md still says
   mail is Alt-4; the stale stdio `locus mcp` registration in
   the quast project; `scripts/` holds ~32 analysis scripts that import deleted modules (kept as
   evidence, they no longer run).

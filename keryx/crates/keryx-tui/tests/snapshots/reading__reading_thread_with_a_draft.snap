@@ -5,8 +5,10 @@ expression: s
 ╭ keryx ────────────── all · personal · oxford · oqts · oqts shared ──────────── reading ╮
 │ Lab partner for Thursday?  oxford                                                      │
 │ Jane Doe · 1 message · 13 oct                                                          │
+│ your turn · Jane Doe wrote last, yesterday                                             │
+│ ? Jane Doe: Hi Alec, Are you free to pair up for the B4 lab on Thursday afternoon?     │
 │                                                                                        │
-│ ── Claude's draft, not sent · r opens it ────────────────────────────────────────────  │
+│ ── Claude's draft, not sent · R opens it ────────────────────────────────────────────  │
 │        Claude            Thursday works for me.                                        │
 │                                                                                        │
 │ ── 13 oct ───────────────────────────────────────────────────────────────────────────  │
@@ -20,7 +22,5 @@ expression: s
 │ ▌▎ Jane                                                                                │
 │                                                                                        │
 │                                                                                        │
-│                                                                                        │
-│                                                                                        │
 ╰────────────────────────────────────────────────────────────────────────────────────────╯
- r reply · space page · ] [ message · ⏎ open · d done          1 of Claude's drafts · g d
+ R reply · space page · ] [ message · ⏎ open · d done          1 of Claude's drafts · g d

@@ -1410,9 +1410,9 @@ fn draft_lines(app: &App, open: &Open, w: usize) -> Vec<Line<'static>> {
     for (claude, b) in bodies {
         out.push(Line::raw(""));
         let (label, who, col) = if claude {
-            ("Claude's draft, not sent · r opens it", "Claude", c("mauve"))
+            ("Claude's draft, not sent · R opens it", "Claude", c("mauve"))
         } else {
-            ("your draft, not sent · r opens it", "you", c("blue"))
+            ("your draft, not sent · R opens it", "you", c("blue"))
         };
         out.push(band(label, w, Style::default().fg(col)));
         let text_w = (w.saturating_sub(MINE + META)).min(TEXT_MAX);
@@ -1468,7 +1468,7 @@ fn outbox_lines(app: &App, open: &Open, w: usize) -> Vec<Line<'static>> {
             SendState::Failed(why) => (
                 format!(
                     "not sent: {why}{}",
-                    if o.kept { " · kept in drafts · r opens it" } else { "" }
+                    if o.kept { " · kept in drafts · R opens it" } else { "" }
                 ),
                 c("red"),
             ),
@@ -1709,7 +1709,13 @@ fn thread(f: &mut Frame, app: &App, area: Rect, open: Option<&Open>) {
     let blocks = open.blocks.borrow().clone();
     // A jump puts its message's lead-in (its day band) at the top; at the end of the thread,
     // where it cannot get there, the bar stays on it (focus).
-    let mut scroll = open.scroll.get();
+    // The view stays on the line you were reading while the lines move under it: new mail above,
+    // a resize rewrapping every message ([`crate::app::Open::anchor`]).
+    let mut scroll = open
+        .anchor
+        .get()
+        .and_then(|a| crate::app::anchor_line(&blocks, a))
+        .map_or(open.scroll.get(), |l| l.min(usize::from(u16::MAX)) as u16);
     let mut jumped = None;
     if let Some(i) = open.jump.take()
         && let Some(b) = blocks.iter().find(|b| b.msg == i)
@@ -1717,24 +1723,44 @@ fn thread(f: &mut Frame, app: &App, area: Rect, open: Option<&Open>) {
         scroll = b.lead as u16;
         jumped = Some(i);
     }
-    // The header shrinks to two lines (subject, people) once you scroll (D4).
-    let head: Vec<Line<'static>> = if scroll > 0 && reading {
-        head.into_iter().take(2).collect()
-    } else {
-        head
-    };
+    // The header shrinks to two lines (subject, people) once you scroll (D4). How far the body
+    // scrolls is reckoned under the header it will be drawn with: reckoned under the full header
+    // and drawn under the short one, a thread a few lines too long was put back to the top on
+    // every frame, so ↓ moved a line and the next frame took it back (13 Nov, Alec: "stuck at the
+    // top"). It scrolls only when it does not fit under the full header, and then at least a line.
+    let short = reading && head.len() > 2;
     // At most two thirds of the pane, so a short pane still shows emails.
-    let hh = (head.len() as u16).min(inner.height * 2 / 3).max(1.min(inner.height));
-    f.render_widget(Paragraph::new(head), Rect::new(inner.x, inner.y, inner.width, hh));
-    let body = Rect::new(inner.x, inner.y + hh, inner.width, inner.height - hh);
-    open.height.set(body.height);
-    let max_scroll = (lines.len() as u16).saturating_sub(body.height);
+    let head_h = |n: usize| (n as u16).min(inner.height * 2 / 3).max(1.min(inner.height));
+    let (full_h, short_h) = (head_h(head.len()), head_h(head.len().min(2)));
+    let total = lines.len().min(usize::from(u16::MAX)) as u16;
+    let max_scroll = if total <= inner.height - full_h {
+        0
+    } else if short {
+        total.saturating_sub(inner.height - short_h).max(1)
+    } else {
+        total - (inner.height - full_h)
+    };
     open.max_scroll.set(max_scroll);
     if let Some(i) = jumped {
         open.focus.set((scroll > max_scroll).then_some(i));
     }
+    // A pane grown taller than what is left below shows the end; the anchor keeps where you were,
+    // so it goes back there when the pane shrinks again.
+    if scroll <= max_scroll || jumped.is_some() || open.anchor.get().is_none() {
+        open.anchor
+            .set(crate::app::anchor_at(&blocks, usize::from(scroll.min(max_scroll))));
+    }
     let scroll = scroll.min(max_scroll);
     open.scroll.set(scroll);
+    let head: Vec<Line<'static>> = if scroll > 0 && short {
+        head.into_iter().take(2).collect()
+    } else {
+        head
+    };
+    let hh = head_h(head.len());
+    f.render_widget(Paragraph::new(head), Rect::new(inner.x, inner.y, inner.width, hh));
+    let body = Rect::new(inner.x, inner.y + hh, inner.width, inner.height - hh);
+    open.height.set(body.height);
     if reading {
         let top = usize::from(scroll);
         let bottom = top + usize::from(body.height);
@@ -1783,7 +1809,7 @@ pub fn hints(app: &App) -> Vec<(&'static str, &'static str)> {
             vec![
                 ("y", "create"),
                 ("n", "dismiss"),
-                ("r", "reply"),
+                ("R", "reply"),
                 ("d", "done"),
                 ("esc", "back"),
             ]
@@ -1805,7 +1831,7 @@ pub fn hints(app: &App) -> Vec<(&'static str, &'static str)> {
         ],
         Mode::Thread => {
             let mut v = vec![
-                ("r", "reply"),
+                ("R", "reply"),
                 ("space", "page"),
                 ("] [", "message"),
                 ("⏎", "open"),
@@ -1826,7 +1852,16 @@ pub fn hints(app: &App) -> Vec<(&'static str, &'static str)> {
         Mode::RunDetail { .. } => vec![("↑ ↓", "move"), ("⏎", "open"), ("u", "undo"), ("esc", "back")],
         Mode::Snooze(_) => vec![("1…4", "choose"), ("esc", "cancel")],
         Mode::KairosForm(_) => vec![("⇥", "next"), ("⏎", "save"), ("esc", "cancel")],
-        Mode::ConfirmSend(_) => vec![("y", "send"), ("e", "edit"), ("n", "not now"), ("j k", "scroll")],
+        Mode::ConfirmSend(d) => {
+            let mut v = vec![("y", "send"), ("e", "edit"), ("n", "not now")];
+            match app.audience(d) {
+                Some(crate::send::Audience::Sender) => v.push(("a", "reply all")),
+                Some(crate::send::Audience::All) => v.push(("a", "sender only")),
+                _ => {}
+            }
+            v.push(("j k", "scroll"));
+            v
+        }
         Mode::ConfirmUnsubscribe { .. } => vec![("y", "unsubscribe"), ("esc", "no")],
         Mode::File(_) => vec![("⏎", "file"), ("↑ ↓", "move"), ("esc", "back")],
         Mode::Attachments => vec![("↑ ↓", "move"), ("⏎", "open"), ("esc", "back")],
@@ -1835,17 +1870,17 @@ pub fn hints(app: &App) -> Vec<(&'static str, &'static str)> {
             ("d", "done"),
             ("a", "archive"),
             ("x", "archive (asks)"),
-            ("m", "for"),
-            ("f", "needs reply"),
+            ("f", "for"),
+            ("r", "needs reply"),
             ("esc", "unmark"),
         ],
         _ => vec![
             ("⏎", "open"),
-            ("r", "reply"),
+            ("R", "reply"),
             ("d", "done"),
             ("a", "archive"),
-            ("m", "for"),
-            ("f", "needs reply"),
+            ("f", "for"),
+            ("r", "needs reply"),
             ("?", "keys"),
         ],
     }
@@ -1893,7 +1928,7 @@ fn footer(f: &mut Frame, app: &App, area: Rect) {
             notes.push(format!("{} of Claude's drafts · g d", app.pending_sends));
         }
         if app.open_proposals > 0 {
-            notes.push(format!("{} to approve · g a", app.open_proposals));
+            notes.push(format!("{} to approve · A", app.open_proposals));
         }
         for (name, mins) in &app.stale {
             let ago = if *mins < 120 {
@@ -1935,7 +1970,7 @@ fn footer(f: &mut Frame, app: &App, area: Rect) {
 /// as many columns as fit; `j` `k` scroll when they still do not.
 fn help(f: &mut Frame, app: &App, area: Rect) {
     let entries = crate::keys::help();
-    let shared = locus_theme::keys::TABLE.len() + locus_theme::keys::PLACES.len();
+    let shared = crate::keys::shared_len();
     let mut items: Vec<Line<'static>> = Vec::new();
     for (n, (k, d)) in entries.iter().enumerate() {
         if n == 0 {
@@ -1983,9 +2018,9 @@ fn help(f: &mut Frame, app: &App, area: Rect) {
     }
 }
 
-/// `g`: where to go, in two columns (round 7): the lists on the left in small groups with
-/// locus's places under them, the areas on the right in their colours, Personal's streams under
-/// their own heading.
+/// `g`: where to go, in two columns (round 7): mail's lists on the left in small groups, the
+/// areas on the right in their colours, Personal's streams under their own heading. Only mail's
+/// own places (13 Nov: locus's other windows are their Alt keys, not `g`).
 fn goto(f: &mut Frame, app: &App, area: Rect) {
     let key = |k: &str| Span::styled(format!(" {k}  "), locus_theme::bold(locus_theme::st("blue")));
     let head = |t: &str| Line::from(Span::styled(format!(" {t}"), locus_theme::dim()));
@@ -2003,21 +2038,12 @@ fn goto(f: &mut Frame, app: &App, area: Rect) {
     let mut left = vec![title("mail")];
     for group in [
         &[("i", "Inbox"), ("r", "Needs reply"), ("d", "Drafts")][..],
-        &[("s", "Sent"), ("v", "Archive"), ("e", "All mail")][..],
-        &[("f", "Filed by itself"), ("w", "Claude's runs")][..],
+        &[("s", "Sent"), ("v", "Archive"), ("a", "All mail")][..],
+        &[("l", "Filed by itself"), ("c", "Claude's runs")][..],
     ] {
         left.push(Line::raw(""));
         left.extend(group.iter().map(|(k, n)| entry(k, n, text)));
     }
-    // locus's places, one line across the bottom: the other windows.
-    let mut places = vec![Span::styled(" locus ", locus_theme::dim())];
-    for (k, place, name) in locus_theme::keys::PLACES {
-        if *place != locus_theme::keys::Place::Mail {
-            places.push(key(&k.to_string()));
-            places.push(Span::styled(format!("{name}  "), Style::default().fg(c("subtext1"))));
-        }
-    }
-
     let folders = app.goto_folders();
     let streams: Vec<String> = app
         .shared
@@ -2053,21 +2079,14 @@ fn goto(f: &mut Frame, app: &App, area: Rect) {
     }
 
     let (lw, rw) = (24u16, 22u16);
-    let places = Line::from(places);
-    let w = (lw + rw + 3).max(places.width() as u16 + 2).min(area.width);
-    let h = (left.len().max(right.len()) as u16 + 5).min(area.height);
+    let w = (lw + rw + 3).min(area.width);
+    let h = (left.len().max(right.len()) as u16 + 3).min(area.height);
     let r = centred(area, w, h);
     f.render_widget(Clear, r);
     let block = popup_block("go to");
     let inner = block.inner(r);
     f.render_widget(block, r);
-    if inner.height > 2 {
-        f.render_widget(
-            Paragraph::new(places),
-            Rect::new(inner.x, inner.y + inner.height - 1, inner.width, 1),
-        );
-    }
-    let inner = Rect::new(inner.x, inner.y + 1, inner.width, inner.height.saturating_sub(3));
+    let inner = Rect::new(inner.x, inner.y + 1, inner.width, inner.height.saturating_sub(1));
     f.render_widget(
         Paragraph::new(left),
         Rect::new(inner.x, inner.y, lw.min(inner.width), inner.height),

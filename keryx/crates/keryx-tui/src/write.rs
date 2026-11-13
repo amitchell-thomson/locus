@@ -319,12 +319,13 @@ impl App {
             Key::Char('a') => self.triage(Intent::Archive, "archiving"),
             // What it is for, staying in the inbox (round 4).
             Key::Char('m') => self.open_for_picker(true),
-            // Filing has its own key now that d is done (C4): choose what it is for, and it
+            // For (13 Nov; `M` before): choose what it is for, keryx's guess chosen, and it
             // leaves the inbox.
-            Key::Char('M') => self.open_for_picker(false),
+            Key::Char('f') => self.open_for_picker(false),
             Key::Char('s') if self.cfg.snooze.enabled => self.mode = Mode::Snooze(None),
-            // Needs reply is the one attention marker (round 4); keryx no longer flags.
-            Key::Char('f') => {
+            // Needs reply is the one attention marker (round 4); keryx no longer flags. `r`
+            // since 13 Nov (`f` before; reply is `R`).
+            Key::Char('r') => {
                 for r in self.targets() {
                     let tagged = self.rows.iter().any(|x| x.r#ref == r && x.needs_reply.is_some());
                     self.deferred.push(if tagged { Job::Untag(r) } else { Job::Tag(r) });
@@ -388,10 +389,25 @@ impl App {
         }
     }
 
-    /// `A` (and `g a`): locus's Approve, in the home window. Through [`App::go_place`], so a test
-    /// (`dry_open`) never writes the real `open-locus` file or moves your tmux client.
+    /// `A`: locus's Approve, in the home window: ask the home window for its screen
+    /// (`open-locus`), then bring the window forward, only inside tmux. Tests never touch tmux or
+    /// the real state directory (`dry_open`). keryx's only way to another window since `g` went
+    /// back to mail's own lists (13 Nov).
     pub fn open_locus_approve(&mut self) {
-        self.go_place(locus_theme::keys::Place::Approve);
+        if self.dry_open {
+            self.opened.push(std::path::PathBuf::from("home:approve"));
+            self.message = Some(("opened approve".into(), false));
+        } else if std::env::var_os("TMUX").is_some() {
+            let _ = locus_contract::link::OpenFile::locus().write("approve");
+            self.message = Some(if locus_contract::link::switch_to("locus") {
+                ("opened approve".into(), false)
+            } else {
+                (
+                    "approve: the locus session isn't running (locus-session.sh ensure)".into(),
+                    true,
+                )
+            });
+        }
         if self.message.as_ref().is_some_and(|(_, err)| *err) || std::env::var_os("TMUX").is_none() {
             self.message = Some((
                 "cleanups wait in locus's Approve (Alt-1, then a) · Claude's drafts are in g d".into(),

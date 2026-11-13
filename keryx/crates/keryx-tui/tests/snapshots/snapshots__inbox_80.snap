@@ -25,4 +25,4 @@ expression: "render_to_string(&mut app(), 80, 24)"
 │   Jane Doe · 2                                         not assigned     mon ││
 │   Re: Group project plan                                                  󰑚 ││
 ╰──────────────────────────────────────────────────────────────────────────────╯
- ⏎ open · r reply · d done · a archive · m for · f needs reply · ? keys
+ ⏎ open · R reply · d done · a archive · f for · r needs reply · ? keys

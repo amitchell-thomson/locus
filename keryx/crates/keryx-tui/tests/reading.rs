@@ -189,7 +189,7 @@ fn enter_z_and_r_act_on_the_message_under_the_bar() {
     keys(&mut a, &[Key::Enter]);
     let _ = render_to_string(&mut a, 90, 30);
     // r answers it, says so, and keryxd is told which message (not the thread's latest).
-    keys(&mut a, &[Key::Char('r')]);
+    keys(&mut a, &[Key::Char('R')]);
     let said = a.message.clone().unwrap().0;
     assert!(said.starts_with("replying to Milly, "), "{said}");
     let req = a.editor_request.take().unwrap();
@@ -219,7 +219,7 @@ fn the_question_in_an_older_message_is_answered_there_and_the_confirm_shows_the_
     keys(&mut a, &[Key::Char(']')]);
     let _ = render_to_string(&mut a, 80, 24);
     assert_eq!(target_id(&a), "thread-a@example.com", "Jane's, the older one");
-    keys(&mut a, &[Key::Char('r')]);
+    keys(&mut a, &[Key::Char('R')]);
     let req = a.editor_request.take().unwrap();
     let typed = req.text.replacen("\n\n\n", "\n\nPart two is mine.\n", 1);
     a.editor_done(req.purpose, Ok(typed));
@@ -251,7 +251,7 @@ fn the_confirm_screen_wraps_its_warnings_and_scrolls() {
     let r = select(&mut a, "Lab partner for Thursday?");
     open(&mut a, &r);
     let _ = render_to_string(&mut a, 60, 12);
-    keys(&mut a, &[Key::Char('r')]);
+    keys(&mut a, &[Key::Char('R')]);
     let req = a.editor_request.take().unwrap();
     let long = (0..30).map(|n| format!("line {n}")).collect::<Vec<_>>().join("\n");
     a.editor_done(
@@ -319,7 +319,7 @@ fn a_merged_thread_shows_both_copies_once_and_r_answers_from_the_account_that_ha
     insta::assert_snapshot!("reading_merged_thread", s);
     assert!(s.contains("is the 20th free?"), "the message only in OQTS shared: {s}");
     // The newest (only in OQTS shared, sent to its address): answered from there.
-    keys(&mut a, &[Key::Char('r')]);
+    keys(&mut a, &[Key::Char('R')]);
     let req = a.editor_request.take().unwrap();
     match &req.purpose {
         Purpose::Reply {
@@ -335,7 +335,7 @@ fn a_merged_thread_shows_both_copies_once_and_r_answers_from_the_account_that_ha
     // The older one is in both: answered from the copy in the account it came to.
     keys(&mut a, &[Key::Char(']')]);
     let _ = render_to_string(&mut a, 90, 20);
-    keys(&mut a, &[Key::Char('r')]);
+    keys(&mut a, &[Key::Char('R')]);
     let req = a.editor_request.take().unwrap();
     match &req.purpose {
         Purpose::Reply {
@@ -371,7 +371,7 @@ fn an_account_without_a_copy_does_not_answer_and_the_line_says_which_does() {
     a.reload();
     open(&mut a, &thread_ref("oqts-shared", "solo"));
     let _ = render_to_string(&mut a, 90, 20);
-    keys(&mut a, &[Key::Char('r')]);
+    keys(&mut a, &[Key::Char('R')]);
     let said = a.message.clone().unwrap().0;
     assert!(said.contains("has no copy") && said.contains("OQTS shared"), "{said}");
     let req = a.editor_request.take().unwrap();
@@ -406,9 +406,9 @@ fn claudes_draft_says_so_and_r_opens_it_rather_than_starting_a_second() {
     open(&mut a, &lab);
     let s = render_to_string(&mut a, 90, 22);
     insta::assert_snapshot!("reading_thread_with_a_draft", s);
-    assert!(s.contains("Claude's draft, not sent · r opens it"), "{s}");
+    assert!(s.contains("Claude's draft, not sent · R opens it"), "{s}");
     assert!(!s.contains("g d opens it"), "the old hint, where d meant file: {s}");
-    keys(&mut a, &[Key::Char('r')]);
+    keys(&mut a, &[Key::Char('R')]);
     let req = a.editor_request.take().unwrap();
     assert!(
         matches!(&req.purpose, Purpose::EditDraft { id, .. } if id == "cs-claude"),
@@ -443,7 +443,7 @@ fn an_image_only_email_reads_and_quotes_as_having_no_text() {
     open(&mut a, &thread_ref("oxford", "img"));
     let s = render_to_string(&mut a, 80, 16);
     assert!(s.contains("(no text)") && s.contains("poster.png"), "{s}");
-    keys(&mut a, &[Key::Char('r')]);
+    keys(&mut a, &[Key::Char('R')]);
     let req = a.editor_request.take().unwrap();
     a.editor_done(req.purpose, Ok(req.text.replacen("\n\n\n", "\n\nLovely poster.\n", 1)));
     let s = render_to_string(&mut a, 80, 20);
@@ -555,6 +555,16 @@ fn reply_all_on_a_mailing_list_warns_that_everyone_on_it_gets_it() {
     keys(&mut a, &[Key::Char('R')]);
     let req = a.editor_request.take().unwrap();
     a.editor_done(req.purpose, Ok(req.text.replacen("\n\n\n", "\n\nMe!\n", 1)));
+    // R answers Milly; a on the confirm screen makes it reply all, and the warning comes with it.
+    let Mode::ConfirmSend(d) = &a.mode else {
+        panic!("{:?}", a.mode)
+    };
+    assert!(
+        d.warnings.iter().all(|w| !w.contains("mailing list")),
+        "{:?}",
+        d.warnings
+    );
+    keys(&mut a, &[Key::Char('a')]);
     let Mode::ConfirmSend(d) = &a.mode else {
         panic!("{:?}", a.mode)
     };
@@ -575,7 +585,7 @@ fn send_reply(a: &mut App, dir: &tempfile::TempDir) -> String {
     let r = select(a, "Lab partner for Thursday?");
     open(a, &r);
     let _ = render_to_string(a, 90, 24);
-    keys(a, &[Key::Char('r')]);
+    keys(a, &[Key::Char('R')]);
     let req = a.editor_request.take().unwrap();
     let text = req.text.replacen("\n\n\n", "\n\nYes, 2pm works.\n", 1);
     // As the editor leaves it: the text kept as a draft until it has gone.
@@ -630,7 +640,7 @@ fn a_send_that_fails_after_its_hold_stays_said_until_you_take_it_up() {
     // r in its thread opens your kept words again, and the failure is dealt with.
     keys(&mut a, &[Key::Enter]);
     let _ = render_to_string(&mut a, 100, 24);
-    keys(&mut a, &[Key::Char('r')]);
+    keys(&mut a, &[Key::Char('R')]);
     let req = a.editor_request.take().unwrap();
     assert!(req.text.contains("Yes, 2pm works."), "{}", req.text);
     assert!(a.failed_send().is_none());
@@ -647,4 +657,135 @@ fn a_send_that_goes_says_sent_in_its_thread() {
     assert_eq!(a.message.as_ref().unwrap().0, "sent");
     let s = render_to_string(&mut a, 90, 24);
     assert!(s.contains("── sent"), "{s}");
+}
+
+fn scroll(a: &App) -> u16 {
+    a.open.as_ref().unwrap().scroll.get()
+}
+
+/// The message under the top line and how far into it (the view's anchor).
+fn place(a: &App) -> (String, usize) {
+    let o = a.open.as_ref().unwrap();
+    let (i, off) = o.anchor.get().unwrap();
+    (o.msgs[i].message_id.clone(), off)
+}
+
+/// Alec, 13 Nov: "the thread scrolling does not work properly, it is stuck at the top and
+/// pressing down arrow goes down one line and then jumps you back up". How far a thread scrolls
+/// was reckoned under the full header and the frame drawn under the two-line one, so a thread a
+/// few lines too long for the pane was clamped back to the top by the next frame. Key presses
+/// alone never showed it: the run loop draws between keys (every half second, and whenever
+/// keryxd writes the mirror), so this drives frames and reloads between them, at every height.
+#[test]
+fn down_holds_through_frames_and_refreshes_at_every_height() {
+    let (mut a, _f) = app();
+    let dir = tempfile::tempdir().unwrap();
+    let r = long_thread(&mut a);
+    read_mark(&mut a, &dir, &r, ts(2026, 10, 9, 12));
+    let mut tried = 0;
+    for h in 8..90u16 {
+        open(&mut a, &r);
+        let _ = render_to_string(&mut a, 90, h);
+        if a.open.as_ref().unwrap().max_scroll.get() == 0 {
+            // It fits under its header: nothing to scroll, and ↓ moves nothing.
+            keys(&mut a, &[Key::Down]);
+            let _ = render_to_string(&mut a, 90, h);
+            assert_eq!(scroll(&a), 0, "h {h}");
+            continue;
+        }
+        tried += 1;
+        let start = scroll(&a);
+        for step in 1..=3u16 {
+            keys(&mut a, &[Key::Down]);
+            for _ in 0..3 {
+                let _ = render_to_string(&mut a, 90, h);
+                a.reload();
+            }
+            let max = a.open.as_ref().unwrap().max_scroll.get();
+            assert_eq!(scroll(&a), (start + step).min(max), "h {h}, ↓ {step}: put back");
+            assert!(scroll(&a) > 0, "h {h}");
+        }
+        keys(&mut a, &[Key::Char('j'), Key::Char(' ')]);
+        let at = scroll(&a);
+        let _ = render_to_string(&mut a, 90, h);
+        a.reload();
+        let _ = render_to_string(&mut a, 90, h);
+        assert_eq!(scroll(&a), at, "h {h}: j and space hold too");
+        keys(&mut a, &[Key::Esc]);
+    }
+    assert!(tried > 30, "{tried}");
+}
+
+#[test]
+fn new_mail_in_the_thread_shows_above_and_the_view_stays_where_you_were_reading() {
+    let (mut a, _f) = app();
+    let dir = tempfile::tempdir().unwrap();
+    let r = long_thread(&mut a);
+    read_mark(&mut a, &dir, &r, ts(2026, 10, 9, 12));
+    open(&mut a, &r);
+    let _ = render_to_string(&mut a, 90, 30);
+    keys(&mut a, &[Key::Char(']')]);
+    let _ = render_to_string(&mut a, 90, 30);
+    keys(&mut a, &[Key::Down, Key::Down, Key::Down]);
+    let _ = render_to_string(&mut a, 90, 30);
+    let before = place(&a);
+    assert_eq!(before.0, "long-6@example.org");
+    let shown = render_to_string(&mut a, 90, 30);
+    // Milly writes again while you read: keryxd puts it in the mirror and the loop reloads.
+    let m = msg(
+        "oxford",
+        "long",
+        "long-8@example.org",
+        milly(),
+        vec![me()],
+        ts(2026, 10, 14, 14),
+        "Message 8. One more thing about Thursday.",
+        false,
+    );
+    put(&a, &m);
+    a.reload();
+    let s = render_to_string(&mut a, 90, 30);
+    assert_eq!(a.open.as_ref().unwrap().msgs.len(), 9, "the thread has it");
+    assert_eq!(place(&a), before, "the same line of the same message at the top");
+    assert_eq!(target_id(&a), "long-6@example.org", "the bar did not move");
+    let body = |s: &str| s.lines().skip(3).take(20).map(str::to_string).collect::<Vec<_>>();
+    assert_eq!(body(&s), body(&shown), "the screen did not move:\n{shown}\n{s}");
+    assert!(s.contains("1 new message in this thread, above"), "{s}");
+    // Frames and reloads with nothing new keep it there.
+    for _ in 0..3 {
+        a.reload();
+        let _ = render_to_string(&mut a, 90, 30);
+    }
+    assert_eq!(place(&a), before);
+    // ⇧↑ goes to it, open.
+    keys(&mut a, &[Key::Top]);
+    let s = render_to_string(&mut a, 90, 30);
+    assert!(s.contains("Message 8. One more thing"), "{s}");
+    assert_eq!(target_id(&a), "long-8@example.org");
+}
+
+#[test]
+fn a_resize_keeps_the_message_you_were_reading_at_the_top() {
+    let (mut a, _f) = app();
+    let dir = tempfile::tempdir().unwrap();
+    let r = long_thread(&mut a);
+    read_mark(&mut a, &dir, &r, ts(2026, 10, 9, 12));
+    open(&mut a, &r);
+    let _ = render_to_string(&mut a, 90, 30);
+    keys(&mut a, &[Key::Char(']')]);
+    let _ = render_to_string(&mut a, 90, 30);
+    keys(&mut a, &[Key::Down, Key::Down]);
+    let _ = render_to_string(&mut a, 90, 30);
+    let before = place(&a);
+    // Wider, then narrower, then shorter and taller: the lines rewrap and the view stays.
+    for (w, h) in [(140, 30), (70, 30), (90, 18), (90, 50), (90, 30)] {
+        let _ = render_to_string(&mut a, w, h);
+        let _ = render_to_string(&mut a, w, h);
+        assert_eq!(place(&a), before, "{w}x{h}");
+        assert_eq!(target_id(&a), "long-6@example.org", "{w}x{h}");
+    }
+    // And scrolling goes on from there.
+    keys(&mut a, &[Key::Down]);
+    let _ = render_to_string(&mut a, 90, 30);
+    assert_eq!(place(&a), (before.0.clone(), before.1 + 1));
 }

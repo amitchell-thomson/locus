@@ -156,10 +156,16 @@ pub fn confirm_send(f: &mut Frame, app: &App, area: Rect, d: &crate::send::SendD
     let lines = message_lines(app, d, w);
     let more = lines.len() as u16 > area.height.saturating_sub(2);
     let hold = app.cfg.send.hold_seconds;
+    // a switches a reply between its sender and everyone on the message (13 Nov).
+    let who = match app.audience(d) {
+        Some(crate::send::Audience::Sender) => " · a reply all",
+        Some(crate::send::Audience::All) => " · a sender only",
+        _ => "",
+    };
     let hints = if more {
-        format!("y send ({hold} s to cancel) · e edit · n don't send · j k scroll")
+        format!("y send ({hold} s to cancel) · e edit · n don't send{who} · j k scroll")
     } else {
-        format!("y send ({hold} s to cancel) · e edit · n don't send")
+        format!("y send ({hold} s to cancel) · e edit · n don't send{who}")
     };
     screen(f, area, "Send?", &hints, lines, d.scroll);
 }

@@ -106,10 +106,10 @@ fn with_taxonomy(a: &mut App) {
 fn done_files_for_what_it_is_for_with_the_guess_chosen() {
     let (mut a, f) = app();
     with_taxonomy(&mut a);
-    // A booking: guessed Travel (your folder, 10 Nov; it was Errands). M's picker has it
+    // A booking: guessed Travel (your folder, 10 Nov; it was Errands). f's picker (for) has it
     // chosen, and d (done, one key: C4) files it there and says why.
     let ticket = select(&mut a, "Your e-ticket: Oxford to London, Fri 23 Oct");
-    keys(&mut a, &[Key::Char('M')]);
+    keys(&mut a, &[Key::Char('f')]);
     insta::assert_snapshot!("file_picker", render_to_string(&mut a, 80, 16));
     keys(&mut a, &[Key::Enter]);
     assert_eq!(
@@ -126,12 +126,12 @@ fn done_files_for_what_it_is_for_with_the_guess_chosen() {
         vec![format!(r#"triage {{"action":"file","key":"Travel"}} ["{ticket}"]"#)]
     );
 
-    // No guess: d archives; in M's picker Enter chooses nothing until you type.
+    // No guess: d archives; in f's picker Enter chooses nothing until you type.
     let lab = select(&mut a, "Lab partner for Thursday?");
     keys(&mut a, &[Key::Char('d')]);
     assert_eq!(f.take(), vec![format!(r#"triage {{"action":"archive"}} ["{lab}"]"#)]);
     let lab = select(&mut a, "Lab partner for Thursday?");
-    keys(&mut a, &[Key::Char('M'), Key::Enter]);
+    keys(&mut a, &[Key::Char('f'), Key::Enter]);
     assert!(f.take().is_empty() && matches!(a.mode, Mode::File(_)));
     for c in "b14".chars() {
         a.key(Key::Char(c));
@@ -150,8 +150,8 @@ fn done_files_for_what_it_is_for_with_the_guess_chosen() {
     assert!(f.take().is_empty() && a.mode == Mode::List);
     keys(&mut a, &[Key::Char('a')]);
     assert_eq!(f.take(), vec![format!(r#"triage {{"action":"archive"}} ["{lab}"]"#)]);
-    // M's picker does not offer "for nothing": that was ambiguous beside e.
-    keys(&mut a, &[Key::Char('M')]);
+    // f's picker does not offer "for nothing": that was ambiguous beside e.
+    keys(&mut a, &[Key::Char('f')]);
     for c in "nothing".chars() {
         a.key(Key::Char(c));
     }
@@ -163,9 +163,9 @@ fn done_files_for_what_it_is_for_with_the_guess_chosen() {
 fn needs_reply_unread_undo() {
     let (mut a, f) = app();
     let r = select(&mut a, "Lab partner for Thursday?");
-    keys(&mut a, &[Key::Char('f'), Key::Char('U'), Key::Char('u')]);
+    keys(&mut a, &[Key::Char('r'), Key::Char('U'), Key::Char('u')]);
     let calls = f.take();
-    // f is needs reply now (round 4); keryx no longer flags.
+    // r is needs reply (13 Nov; f before, round 4); keryx no longer flags.
     assert_eq!(calls[0], format!("tag {r}"));
     assert_eq!(calls[1], format!(r#"triage {{"action":"read","on":false}} ["{r}"]"#));
     assert_eq!(calls[2], "undo");
@@ -239,7 +239,7 @@ fn editor(a: &mut App) -> (String, Purpose) {
 fn reply_flow_confirm_and_send() {
     let (mut a, f) = app();
     let r = select(&mut a, "Lab partner for Thursday?");
-    a.key(Key::Char('r'));
+    a.key(Key::Char('R'));
     let (text, purpose) = editor(&mut a);
     assert!(
         text.starts_with(
@@ -265,24 +265,61 @@ fn reply_flow_confirm_and_send() {
 }
 
 #[test]
-fn reply_all_when_alec_wrote_last() {
+fn reply_all_when_alec_wrote_last_is_a_on_the_confirm_screen() {
     let (mut a, _) = app();
+    let dir = tempfile::tempdir().unwrap();
+    a.drafts_dir = Some(dir.path().to_path_buf());
     select(&mut a, "Re: Group project plan");
     a.key(Key::Char('R'));
-    let (text, _) = editor(&mut a);
+    let (text, purpose) = editor(&mut a);
+    // R: following up your own message, to the same people again, without its Cc.
     assert!(
         text.starts_with(
-            "From: Oxford <newc7370@ox.ac.uk>\nTo: Jane Doe <jane.doe@example.com>,\n    Sam <sam@example.com>\nCc: Team <team@example.com>\n"
+            "From: Oxford <newc7370@ox.ac.uk>\nTo: Jane Doe <jane.doe@example.com>,\n    Sam <sam@example.com>\nCc: \n"
         ),
         "{text}"
     );
+    let typed = type_body(&text, "Sounds good.");
+    std::fs::write(a.draft_path(&purpose).unwrap(), &typed).unwrap();
+    a.editor_done(purpose.clone(), Ok(typed));
+    let s = render_to_string(&mut a, 90, 24);
+    assert!(s.contains("a reply all") && !s.contains("team@example.com"), "{s}");
+    // a: reply all. The recipients shown, the text e reopens and the kept draft follow.
+    a.key(Key::Char('a'));
+    let Mode::ConfirmSend(d) = &a.mode else {
+        panic!("{:?}", a.mode)
+    };
+    assert_eq!(d.req.cc.len(), 1);
+    assert_eq!(d.req.cc[0].email, "team@example.com");
+    assert!(d.text.contains("Cc: Team <team@example.com>\n") && d.text.contains("Sounds good."));
+    let kept = std::fs::read_to_string(a.draft_path(&purpose).unwrap()).unwrap();
+    assert_eq!(kept, d.text);
+    let s = render_to_string(&mut a, 90, 24);
+    assert!(s.contains("team@example.com") && s.contains("a sender only"), "{s}");
+    assert!(s.contains("reply all: to everyone on it"), "{s}");
+    // a again: back to the sender only.
+    a.key(Key::Char('a'));
+    let Mode::ConfirmSend(d) = &a.mode else {
+        panic!("{:?}", a.mode)
+    };
+    assert!(d.req.cc.is_empty());
+    // Recipients you changed in the editor are yours: a leaves them and says so.
+    let mut changed = (**d).clone();
+    changed.req.to.truncate(1);
+    a.mode = Mode::ConfirmSend(Box::new(changed));
+    a.key(Key::Char('a'));
+    let Mode::ConfirmSend(d) = &a.mode else {
+        panic!("{:?}", a.mode)
+    };
+    assert_eq!((d.req.to.len(), d.req.cc.len()), (1, 0));
+    assert!(a.message.as_ref().unwrap().0.contains("you changed who it goes to"));
 }
 
 #[test]
 fn empty_and_bad_input() {
     let (mut a, f) = app();
     select(&mut a, "Lab partner for Thursday?");
-    a.key(Key::Char('r'));
+    a.key(Key::Char('R'));
     let (text, purpose) = editor(&mut a);
     a.editor_done(purpose.clone(), Ok(text.clone()));
     assert_eq!(a.message.as_ref().unwrap().0, "nothing sent: the message is empty");
@@ -468,7 +505,7 @@ fn suggestions_y_opens_the_prefilled_form_n_dismisses() {
         "{s}"
     );
     assert!(s.contains("Claude: Jane needs to know before Thursday"), "{s}");
-    assert!(s.contains("y create · n dismiss · r reply"), "hints: {s}");
+    assert!(s.contains("y create · n dismiss · R reply"), "hints: {s}");
     // y opens the form only: nothing reaches kairos until Enter.
     f.take();
     keys(&mut a, &[Key::Char('y')]);
@@ -660,8 +697,8 @@ fn runs_view_lists_runs_and_what_they_made() {
     a.db.finish_run("run-1", "done", "Jane asked about the lab; tagged.", None, start + 120)
         .unwrap();
     keys(&mut a, &[Key::Char('g')]);
-    // Claude's runs: g w (g c is the calendar now, locus's place: C4).
-    keys(&mut a, &[Key::Char('w')]);
+    // Claude's runs: g c (its letter before C4, and again since 13 Nov).
+    keys(&mut a, &[Key::Char('c')]);
     let s = render_to_string(&mut a, 90, 8);
     assert!(
         s.contains("morning") && s.contains("done") && s.contains("1 cleared · 1 need reply"),
@@ -755,7 +792,7 @@ fn from_switches_the_account_for_new_mail_but_never_for_a_reply() {
 
     let (mut a, _f) = app();
     select(&mut a, "Lab partner for Thursday?");
-    a.key(Key::Char('r'));
+    a.key(Key::Char('R'));
     let (text, purpose) = editor(&mut a);
     a.editor_done(
         purpose.clone(),
@@ -790,7 +827,7 @@ fn quitting_keeps_a_draft_that_r_reopens_and_sending_drops() {
     let dir = tempfile::tempdir().unwrap();
     a.drafts_dir = Some(dir.path().to_path_buf());
     select(&mut a, "Lab partner for Thursday?");
-    a.key(Key::Char('r'));
+    a.key(Key::Char('R'));
     let (text, purpose) = editor(&mut a);
     a.writing_started(purpose.clone());
     assert!(render_to_string(&mut a, 120, 10).contains("writing a reply"));
@@ -798,10 +835,10 @@ fn quitting_keeps_a_draft_that_r_reopens_and_sending_drops() {
     let half = type_body(&text, "Half a thought");
     std::fs::write(a.draft_path(&purpose).unwrap(), &half).unwrap();
     a.writing_finished(Finished::Kept);
-    assert_eq!(a.message.as_ref().unwrap().0, "kept as a draft · r opens it again");
+    assert_eq!(a.message.as_ref().unwrap().0, "kept as a draft · R opens it again");
     assert!(a.writing.is_none());
 
-    a.key(Key::Char('r'));
+    a.key(Key::Char('R'));
     let (text, purpose) = editor(&mut a);
     assert_eq!(text, half, "r opens the kept draft");
     assert!(a.message.as_ref().unwrap().0.contains(":cq throws it away"));
@@ -854,7 +891,7 @@ fn the_editor_draws_in_the_right_pane_with_the_list_beside_it() {
     let (mut a, _f) = app();
     a.width = 120;
     select(&mut a, "Lab partner for Thursday?");
-    a.key(Key::Char('r'));
+    a.key(Key::Char('R'));
     let (_, purpose) = editor(&mut a);
     a.writing_started(purpose);
     let size = ratatui::layout::Rect::new(0, 0, 120, 14);
@@ -890,7 +927,7 @@ fn the_editor_draws_in_the_right_pane_with_the_list_beside_it() {
 #[test]
 fn what_was_filed_by_itself_is_listed_and_u_puts_it_back() {
     let (mut a, f) = app();
-    keys(&mut a, &[Key::Char('g'), Key::Char('f')]);
+    keys(&mut a, &[Key::Char('g'), Key::Char('l')]);
     assert!(render_to_string(&mut a, 90, 6).contains("nothing yet"));
     keys(&mut a, &[Key::Esc]);
     let ticket = a
@@ -923,7 +960,7 @@ fn what_was_filed_by_itself_is_listed_and_u_puts_it_back() {
     a.db.save_changeset(&c).unwrap();
     keys(&mut a, &[Key::Char('g')]);
     assert!(render_to_string(&mut a, 80, 24).contains("Filed by itself"));
-    keys(&mut a, &[Key::Char('f')]);
+    keys(&mut a, &[Key::Char('l')]);
     let s = render_to_string(&mut a, 90, 6);
     assert!(
         s.contains("filed by itself") && s.contains("Errands") && s.contains("Your e-ticket"),
@@ -943,7 +980,7 @@ fn kept_drafts_are_listed_under_g_d_and_enter_reopens_one() {
     assert!(render_to_string(&mut a, 90, 6).contains("no drafts"));
     keys(&mut a, &[Key::Esc]);
     let lab = select(&mut a, "Lab partner for Thursday?");
-    a.key(Key::Char('r'));
+    a.key(Key::Char('R'));
     let (text, purpose) = editor(&mut a);
     let half = type_body(&text, "Half a thought");
     std::fs::write(a.draft_path(&purpose).unwrap(), &half).unwrap();

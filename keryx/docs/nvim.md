@@ -8,7 +8,7 @@ and never edits your dotfiles.
 | You type | What happens |
 |---|---|
 | `:w` (or `:wq`, `:x`, `ZZ`) | send: keryx shows who it goes to and from which account, `y` sends after the 10 s hold (`u` cancels) |
-| `:q` | close; a changed mail is kept as a draft, and `r` on the thread (or `+` for a new mail) opens it again |
+| `:q` | close; a changed mail is kept as a draft, and `R` on the thread (or `+` for a new mail) opens it again |
 | `:cq` | close and throw the draft away |
 | `^a` | keryx's picker over Downloads, Desktop and Documents, newest first; `⏎` adds an `Attach:` line |
 

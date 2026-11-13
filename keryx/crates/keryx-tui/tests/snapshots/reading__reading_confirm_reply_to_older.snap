@@ -24,5 +24,5 @@ expression: s
 │                                                                              │
 │                                                                              │
 │                                                                              │
-╰───────────────────────────── y send (10 s to cancel) · e edit · n don't send ╯
- y send · e edit · n not now · j k scroll        replying to Jane, 12 Oct 09:00
+╰─────────────── y send (10 s to cancel) · e edit · n don't send · a reply all ╯
+ y send · e edit · n not now · a reply all       replying to Jane, 12 Oct 09:00

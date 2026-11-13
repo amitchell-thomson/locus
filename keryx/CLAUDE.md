@@ -10,7 +10,7 @@ Terminal email client (ratatui) with Claude access over MCP, for Alec's four acc
 | `keryx-store` | Mirror DB (SQLite WAL + FTS5; only keryxd writes it, everyone else opens it read-only), `mailapp` reader (Envelope Index `mode=ro`, `.emlx`, `.partial.emlx`), `gmail` client (OAuth refresh, full + history sync, actions), `kairos` client, `client` (blocking keryxd client). |
 | `keryxd` | Single writer, on the Mac. `engine` (intents → changesets → risk → apply / approve / reject / undo; taxonomy folders made on first use; the item a filed thread is for), `engine_send` (send hold, drafts), `engine_kairos` (tasks, events, free time, suggestions), `engine_runs` (run tokens, record_run), `engine_file` (automated mail filed as it arrives), `http` (axum, bearer + run tokens), `mcp` (rmcp, stateless Streamable HTTP, per-run tool allowlist), `jobs` (Gmail history poll, Mail store watch, snooze wake-ups, hold queue, run expiry, filing on arrival), `actuate` (Gmail API, osascript). No phone pages or pushes (removed 2026-10-26, plan B.4). |
 | `keryx-cli` | `keryx` binary: bare = TUI; `inbox`, `search`, `show`, triage commands, `reply`, `changes`, `approve`, `doctor`, `auth gmail`, `--json`. |
-| `keryx-tui` | ratatui front end (`app` = state/keys, testable; `ui` = drawing, locus-theme). `keys` puts keryx on locus's one key table (C4); `send` + `ui_send` are replying, the confirm screen and the outbox (C6); `rebuilt` restarts a rebuilt binary in place (C7); `pane` + `writing` run your Neovim in the right pane (X6); `file_for` is `d` (done) and `M`'s "what is it for" picker, `filed` the log of what keryx filed by itself (X7). |
+| `keryx-tui` | ratatui front end (`app` = state/keys, testable; `ui` = drawing, locus-theme). `keys` puts keryx on locus's one key table (C4); `send` + `ui_send` are replying, the confirm screen and the outbox (C6); `rebuilt` restarts a rebuilt binary in place (C7); `pane` + `writing` run your Neovim in the right pane (X6); `file_for` is `d` (done) and `f`'s "what is it for" picker, `filed` the log of what keryx filed by itself (X7). |
 | `xtask` (package `keryx-xtask`) | `cargo keryx-xtask mailapp-fixture` (synthetic Envelope Index + emlx tree from the real schema). |
 
 Data flow: Gmail API → keryxd → `~/.local/share/keryx/keryx.db`. Mail.app (Oxford, OQTS-Alec, OQTS shared) → `~/Library/Mail/V10` (read-only) → keryxd → DB. TUI/CLI read the DB; all writes go to keryxd HTTP (`<mac tailscale ip>:7421`) → source (Gmail API / AppleScript) → mirror updated from the source's confirmation. kairos at `compute-node:7420` for tasks and free time.
@@ -32,34 +32,48 @@ Data flow: Gmail API → keryxd → `~/.local/share/keryx/keryx.db`. Mail.app (O
 - **Scheduled runs are contained by their tool list**: `claude -p --strict-mcp-config` with keryx tools only (no Bash, web, file or kairos), a run-scoped token, one push per run, and everything logged in the Runs view.
 - Attachment text for Claude is extracted by keryxd (PDF / DOCX / text), capped, and envelope-wrapped. Raw bytes never go to Claude, and nothing is executed.
 - **Mail is filed for what it is for, in keryx; the server only archives** (keryx-joins-locus X7, option C, Alec 27 Oct: "go with C"). Filing for a registry item, area or stream records a `links` row (`app = locus`, `kind = item` with the registry id, or `kind = folder` with the area or stream), which the kairos task mark and lines must never read, and archives the thread on its account (Oxford's Archive; Gmail's inbox label off). keryx makes no folders and moves nothing into one: server folders depended on Mail's label moves, which accepted steps and then did not keep them. The area lists (`g` `1…7`) read the marks. Older config `[[keys]]` still move into the folders they map (CLI and MCP) and stay searchable (`key:Admin`). Your existing server folders are to be migrated into marks later (backfill), then left alone.
-- **Automated mail is filed as it arrives**, as the system: only threads newer than the `autofile.since` mark (set on first run, so the inbox of before is never swept), only automated ones, only when keryx can say what they are for, only `[keryx-test]` mail while `live = false`. Listed under `g` `f`, undone with `u`.
+- **Automated mail is filed as it arrives**, as the system: only threads newer than the `autofile.since` mark (set on first run, so the inbox of before is never swept), only automated ones, only when keryx can say what they are for, only `[keryx-test]` mail while `live = false`. Listed under `g` `l`, undone with `u`.
 - **The guess is deterministic and says why** (`keryx-store::item`): the thread's own item, an item named in the subject or by the sender, the sender's history, receipts to Errands; a tie gives none. Measured on the real inbox before trusting it: a bounce once counted as an errand.
 - No `unwrap()`/`expect()` outside tests (workspace clippy lints deny them). `thiserror` in libs, `anyhow` in bins.
 
-## Keys and windows (cleanup C4 and C6, 13 Nov 2026)
+## Keys and windows (cleanup C4 and C6, 13 Nov 2026; keys changed the same night)
 
 - keryx is the `mail` window of the `locus` tmux session: `Alt-3` (1 home, 2 calendar, 4 fix).
 - Every key outside a text field goes to locus's table first (`locus_theme::keys::action`, read
   through `keys::action`): `esc` back, `q` quit only at the top (the inbox, nothing searched or
   marked) and back elsewhere, `u` undo, `e` edit (the thread's draft), `y` / `n`, `+` new, `d`
-  done, `x` archive after asking once, `v` mark, `/` search, `^r` sync, `g` then a letter, `?`
-  the keys. `h` is not back.
-- `g`: locus's places `g h` home, `g a` approve, `g t` tasks, `g l` log (the home window, asked
-  through `open-locus`) and `g c` the calendar, through tmux and only inside it; `g m` is this
-  window (the inbox). keryx's own lists use free letters: `g i r d s v e f w` and `g 1…9`.
+  done, `x` archive after asking once, `v` mark, `/` search, `^r` sync, `?` the keys. `h` is not
+  back.
+- `g` is keryx's own, not the table's (Alec: "g only makes sense in mail for going to its own
+  lists"): `keys::action` returns nothing for `g`, so keryx never depends on the table having
+  or lacking a "go to". `g` then a letter is one of mail's lists, on their pre-C4 letters:
+  `g i` inbox, `g r` needs reply, `g d` drafts, `g s` sent, `g a` all mail, `g c` Claude's runs,
+  `g l` filed by itself, `g v` archive, `g 1…9` an area (`g z` snoozed, with snoozing on). No `g`
+  letter reaches another window or switches tmux; locus's other windows are their Alt keys.
 - keryx's own keys (`keys::OWN`, the help's second half) are only what the table does not
-  cover: `r R F` reply / reply all / forward, `c` cancel a send in its hold, `a` archive at once,
-  `M` file (choose what for), `m` mark what for, `f U I L`, `t i w`, `z o 1…9`, `] [` the next or
-  previous message, `J K` the next or previous thread, `space` a page, `b`, `A`. `d` (done) files
-  for the mark, else keryx's guess (saying why), else archives. With rows marked, `d a x` act on
-  them even from a thread, and the footer says so.
+  cover: `R` reply, `F` forward, `r` needs reply on or off, `f` for (the "what is it for" picker,
+  keryx's guess chosen; it leaves the inbox), `m` mark what for (it stays in the inbox), `c`
+  cancel a send in its hold, `a` archive at once, `U I L`, `t i w`, `z o 1…9`, `] [` the next or
+  previous message, `J K` the next or previous thread, `space` a page, `b`, `A` (locus's Approve,
+  the one key that opens another window). `d` (done) files for the mark, else keryx's guess
+  (saying why), else archives. With rows marked, `d a x` act on them even from a thread, and the
+  footer says so.
+- Reply all has no key of its own: on the confirm screen `a` switches a reply between its sender
+  and everyone on the message (`App::switch_audience`); the recipients shown, the warnings, the
+  text `e` reopens and the kept draft follow. Recipients changed in the editor are left alone.
 - `tests/keys.rs` proves every own key is free in the table and that every key the help or a
   hint names does something. Add a key there and to `keys::OWN` together.
 - **Reading** (D4): a thread is one scroll with no selection; the message under the top line
-  carries a bar down its left edge and is what `⏎`, `z`, `r` and the link digits act on. It
+  carries a bar down its left edge and is what `⏎`, `z`, `R` and the link digits act on. It
   opens on the newest new message, up to three new ones open, older ones one line each, one
   divider between new and read, the header two lines once scrolled. Read is stamped when you
   leave, only for what was on screen (`App::leave_thread`), never on opening.
+- **The scroll holds** (`Open::anchor`): each frame puts the same line of the same message back
+  at the top, so new mail in the thread (shown above, with a line saying so; `App::refresh_open`
+  on every reload), a draft appearing and a resize never move what you are reading. How far it
+  scrolls is reckoned under the header it is drawn with: reckoned under the full header and
+  drawn under the short one, a thread a few lines too long snapped back to the top every frame
+  (13 Nov). `tests/reading.rs` drives frames and reloads between keys, at every height.
 - **After `y`** you stay in the thread: your message shows "sending · c cancels · 8 s", then
   "sent"; a send that fails after its hold stays in its thread and the footer until its draft is
   opened again (`App::outbox`).
@@ -143,6 +157,7 @@ Copied from kairos so far:
 - 2026-10-14 cleanups (Alec): a **primary use case** is Claude proposing archive/file/snooze/keep for every thread, decided item by item in the TUI, so the inbox holds only new / needs-action / needed-soon mail. **Archive only** (no delete or trash). In a cleanup, everything is reviewed, including automated mail. MCP moved up to Phase 5.
 - 2026-10-14 go-ahead (Alec): build straight through all phases (report per phase, stop only for him); shared crate for natural dates; private GitHub repo `amitchell-thomson/keryx`; all SPEC §13 defaults accepted.
 - 2026-11-13 (cleanup C4, C6, C7; slice `docs/redesign/slices/c-cleanup.md` D1, D4): keys from locus's one table (see Keys and windows); `d` is done in one key and filing moved to `M`; `x` archives after asking; `c` cancels a send; a thread reads as one scroll with a bar on the message acted on; `r` answers the message read (`in_reply_to`), across accounts; the confirm screen shows the real quote; read is stamped on leaving; rebuilt binaries restart in place.
+- 2026-11-13, later (Alec): `r` needs reply, `R` reply, `f` for (the picker that was `M`; `M` gone, `m` kept: it marks and leaves the thread in the inbox, which `f` does not); reply all is `a` on the confirm screen; `g` only goes to mail's own lists, on their pre-C4 letters (`g i r d s a c l v`, `g 1…9`), never to another window. The thread scroll no longer snaps back to the top (`Open::anchor`, the header-aware max scroll) and the open thread refreshes from the mirror.
 - 2026-10-26 (Alec, keryx-joins-locus): keryx is locus's Mail view. Keys are locus's: `d` done (filed for what it is for, the guess chosen; `m` too), `v` marks, `+` writes, `b` hides the list, `Tab` cycles the inboxes named in the header, `A` opens locus's Approve; no phone pages or pushes. Writing is your Neovim in the right pane (`:w` sends, `:q` keeps a draft, `:cq` throws it away, `^a` attaches). Folders are the areas and Personal's streams only; automated mail is filed as it arrives.
 - 2026-10-20 (Alec): **Personal Gmail through Mac Mail** (`backend = "mailapp"`, account `1FD73A3D-…`, Gmail-over-IMAP like OQTS), not the Gmail API: a production OAuth app needs public home/privacy pages and he doesn't want anything public. The Gmail API code stays, unused. First sync: 3,323 messages, 1.7 s.
 - 2026-10-20 (Alec): **no snoozing for now** (`[snooze] enabled = false`): wake-ups only run on the Mac, so snoozed mail could stay hidden on the phone; he doesn't need it. Off hides `s`, the Snoozed view, the CLI command and the MCP snooze tools, and keryxd refuses snoozes; the code and its tests stay (tests turn it on). **Phone approvals off** (`[notify] approvals = false`): drafts don't push; signed pages only show.

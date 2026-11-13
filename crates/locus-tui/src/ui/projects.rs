@@ -14,9 +14,8 @@ use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 
 pub const KEYS: &[(&str, &str)] = &[
-    ("↑ ↓", "walk the projects"),
-    ("⏎", "open it; on one not registered, ask the chat to register it"),
-    ("esc", "back to Home"),
+    ("↑ ↓ j k", "walk the projects"),
+    ("⏎", "open it; unregistered: the chat registers it"),
 ];
 
 /// One selectable row: a registry id, `tmux:<session>`, or `dir:<folder>`.

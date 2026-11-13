@@ -20,15 +20,16 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use unicode_width::UnicodeWidthStr;
 
+/// The chat view's own keys, after the shared table (cleanup C4): there `+` is a new
+/// conversation (it was `n`), `e` renames it (it was `r`), and y n answer a fact it offers to
+/// remember.
 pub const KEYS: &[(&str, &str)] = &[
-    ("↑ ↓ j k", "scroll the conversation (the mouse wheel too)"),
-    ("← →", "to your conversations and back: there ↑ ↓ choose one"),
-    ("⇟ ⇞ ^d ^u", "a page down or up; g G the top or the end"),
+    ("↑ ↓ j k", "scroll (the mouse wheel too)"),
+    ("← →", "your conversations, and back"),
+    ("⇟ ⇞ ^d ^u", "a page down or up"),
+    ("Home End G", "the top; the end"),
     ("␣ ⏎", "type into it"),
-    ("n", "a new conversation"),
-    ("o", "open it in full Claude Code, for anything it may not do here"),
-    ("r", "rename it"),
-    ("y n", "when it offers to remember a fact: record it, or drop it"),
+    ("o", "open it in full Claude Code"),
 ];
 
 /// The fact waiting for your y/n in a conversation, if any (H2.3).
@@ -99,7 +100,7 @@ pub fn send(app: &mut App, text: String, into: Option<String>) {
 /// conversation, with scrolling on PgUp, which a Mac keyboard does not have, and on Shift-↑);
 /// ← moves them to the list of conversations, → back.
 pub fn key(app: &mut App, k: KeyEvent) -> bool {
-    // A fact waiting for an answer takes y and n first (n is otherwise a new conversation).
+    // A fact waiting for an answer takes y and n.
     let open = viewed(app);
     if answer_key(app, open.as_deref(), k) {
         return true;
@@ -127,14 +128,16 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
         KeyCode::Down | KeyCode::Char('j') => scroll(app, -2),
         KeyCode::PageUp | KeyCode::Char('u') if k.code == KeyCode::PageUp || ctrl => scroll(app, page),
         KeyCode::PageDown | KeyCode::Char('d') if k.code == KeyCode::PageDown || ctrl => scroll(app, -page),
-        KeyCode::Char('g') | KeyCode::Home => scroll(app, isize::MAX / 4),
+        // Home is the top (g was too, until g became "go to", C4).
+        KeyCode::Home => scroll(app, isize::MAX / 4),
         KeyCode::Char('G') | KeyCode::End => app.chat.scroll = 0,
         KeyCode::Char(' ') | KeyCode::Enter => {
             let into = viewed(app);
             app.chat.select(into);
             app.mode = Mode::Chat(std::mem::take(&mut app.chat_draft));
         }
-        KeyCode::Char('n') => {
+        // + a new conversation (it was n, which is "no" in the table, C4).
+        KeyCode::Char('+') => {
             app.chat_new = true;
             app.chat.select(None);
             app.mode = Mode::Chat(String::new());
@@ -148,7 +151,8 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
             }
             None => app.note = Some("nothing to open yet: say something first".into()),
         },
-        KeyCode::Char('r') => match viewed(app).and_then(|id| app.chat.get(&id).map(|c| c.name.clone())) {
+        // e renames it (it was r, C4).
+        KeyCode::Char('e') => match viewed(app).and_then(|id| app.chat.get(&id).map(|c| c.name.clone())) {
             Some(name) => app.mode = Mode::ChatName(name),
             None => app.note = Some("nothing to rename yet".into()),
         },
@@ -167,7 +171,7 @@ pub fn draw_bar(f: &mut Frame, area: Rect, app: &App) {
         .unwrap_or_else(|| "new conversation".into());
     let long = app.chat.index.current.as_deref().is_some_and(|id| app.chat.is_long(id));
     let tail = if long {
-        format!("· {name} · long, n in i for a fresh one")
+        format!("· {name} · long, + in i for a fresh one")
     } else {
         format!("· {name}")
     };
@@ -437,7 +441,7 @@ fn draw_input(f: &mut Frame, area: Rect, app: &App) {
     let rule = ask_rule(
         "ask",
         lit,
-        &[("n", "new"), ("o", "Claude Code"), ("r", "rename")],
+        &[("+", "new"), ("o", "Claude Code"), ("e", "rename")],
         "",
         area.width,
     );

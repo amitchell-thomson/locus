@@ -20,15 +20,14 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
 use unicode_width::UnicodeWidthStr;
 
+/// Home's own keys, after the shared table (cleanup C4): the section letters went, Tab and the
+/// arrows move between sections; `+` adds a task in kairos, `/` asks the chat.
 pub const KEYS: &[(&str, &str)] = &[
-    ("⇥ ↑ ↓", "move between sections and through them"),
-    ("␣", "ask the chat: anything that needs your whole life as context"),
-    ("i", "the chat's conversations, from any screen"),
-    ("p", "every project: live, parked, done, and what is not registered"),
-    (
-        "⏎",
-        "go there: a project's tmux session, the approve list; on an application, ask the chat",
-    ),
+    ("⇥ ⇧⇥ ↑ ↓ j k", "sections, and through them"),
+    ("← →", "across sections side by side"),
+    ("⏎", "go there; an application asks the chat"),
+    ("␣", "ask the chat"),
+    ("p", "every project, by where it stands"),
     ("L", "learning"),
 ];
 

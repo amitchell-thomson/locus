@@ -20,7 +20,10 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 
-pub const KEYS: &[(&str, &str)] = &[("⏎", "a failure's cause"), ("u", "the budget")];
+pub const KEYS: &[(&str, &str)] = &[
+    ("⇥ ↑ ↓ j k", "sections, and through them"),
+    ("⏎", "a failure's cause; on usage, the budget"),
+];
 pub const BUDGET_KEYS: &[(&str, &str)] = &[("t", "split each day by job")];
 
 /// Where the label column ends and the bars start.

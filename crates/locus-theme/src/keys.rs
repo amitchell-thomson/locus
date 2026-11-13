@@ -11,6 +11,7 @@
 //! prove an app key never shadows a table key.
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use unicode_width::UnicodeWidthStr;
 
 /// What a shared key means, the same in every app.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -135,6 +136,47 @@ impl Place {
     }
 }
 
+/// Show the `locus` session's window for `view` (home, calendar, mail; [`Place::view`]) on this
+/// client, as its Alt key would. Outside tmux it does nothing and says so: tests and dumps never
+/// touch tmux. A window that is missing is made by `locus-session.sh select`, found through the
+/// `@locus-tmux-dir` option `locus.tmux` sets.
+pub fn show_window(view: &str) -> Result<(), String> {
+    if std::env::var_os("TMUX").is_none() {
+        return Err(format!("not in tmux: the {view} window is Alt-{}", alt_of(view)));
+    }
+    let target = format!("=locus:={view}");
+    if !tmux(&["select-window", "-t", &target]) {
+        let script = format!("#{{@locus-tmux-dir}}/locus-session.sh select {view}");
+        if !tmux(&["run-shell", &script]) {
+            return Err(format!("no {view} window in the locus session"));
+        }
+    }
+    if tmux(&["switch-client", "-t", &target]) {
+        Ok(())
+    } else {
+        Err(format!("tmux did not switch to the {view} window"))
+    }
+}
+
+/// The Alt key that shows a view's window (`locus.tmux`).
+pub fn alt_of(view: &str) -> u8 {
+    match view {
+        "home" => 1,
+        "calendar" => 2,
+        "mail" => 3,
+        _ => 4,
+    }
+}
+
+fn tmux(args: &[&str]) -> bool {
+    std::process::Command::new("tmux")
+        .args(args)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
 /// The help screen's lines: the shared table, the `g` places, then the app's own keys.
 pub fn help(app_keys: &[(&str, &str)]) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = TABLE
@@ -146,6 +188,44 @@ pub fn help(app_keys: &[(&str, &str)]) -> Vec<(String, String)> {
     }
     for (k, w) in app_keys {
         out.push(((*k).to_string(), (*w).to_string()));
+    }
+    out
+}
+
+/// [`help`] drawn for the `?` overlay, in two columns so it fits a window: on the left the
+/// shared keys and the `g` places under "everywhere", on the right the app's own under
+/// `app_title`. `width` is the overlay's inner width; descriptions are cut to fit.
+pub fn help_lines(app_title: &str, app_keys: &[(&str, &str)], width: u16) -> Vec<ratatui::text::Line<'static>> {
+    use ratatui::text::{Line, Span};
+    let all = help(app_keys);
+    let shared = TABLE.len() + PLACES.len();
+    let (left, right) = all.split_at(shared.min(all.len()));
+    let col = usize::from(width) / 2;
+    let kw = all.iter().map(|(k, _)| k.width()).max().unwrap_or(0).clamp(4, 14) + 2;
+    let cell = |k: &str, w: &str| -> Vec<Span<'static>> {
+        let key = crate::fit(k, kw);
+        let text = crate::fit(w, col.saturating_sub(kw + 3));
+        let used = 2 + kw + text.width();
+        vec![
+            Span::styled(
+                format!("  {key}{}", " ".repeat(kw.saturating_sub(key.width()))),
+                crate::keyst(),
+            ),
+            Span::styled(text, crate::st("text")),
+            Span::raw(" ".repeat(col.saturating_sub(used))),
+        ]
+    };
+    let head = |t: &str| Span::styled(format!(" {t:<w$}", w = col.saturating_sub(1)), crate::dim());
+    let mut out = vec![Line::from(vec![head("everywhere"), head(app_title)])];
+    for i in 0..left.len().max(right.len()) {
+        let mut spans = match left.get(i) {
+            Some((k, w)) => cell(k, w),
+            None => vec![Span::raw(" ".repeat(col))],
+        };
+        if let Some((k, w)) = right.get(i) {
+            spans.extend(cell(k, w));
+        }
+        out.push(Line::from(spans));
     }
     out
 }

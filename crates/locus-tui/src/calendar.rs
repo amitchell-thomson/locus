@@ -120,6 +120,29 @@ impl Live {
         }
     }
 
+    /// Undo kairos's last change, yours or Claude's (not the scheduler's replan after it, which
+    /// goes with it), as `u` in the calendar does: at once, saying what (cleanup C4, D1).
+    pub fn undo_last(&self) -> Result<String, String> {
+        let d = Daemon::from_config(&self.cfg)
+            .map_err(|e| e.to_string())?
+            .interactive(true);
+        let last = match d.changesets(Some("applied"), 50) {
+            Ok(Ok(v)) => v
+                .into_iter()
+                .find(|c| c.author != kairos_core::model::Author::Scheduler),
+            Ok(Err(e)) => return Err(e.to_string()),
+            Err(e) => return Err(e.to_string()),
+        };
+        let Some(c) = last else {
+            return Err("nothing to undo in kairos".into());
+        };
+        match d.undo_with_replans(&c.id) {
+            Ok(Ok(_)) => Ok(c.summary.lines().next().unwrap_or("").to_string()),
+            Ok(Err(e)) => Err(e.to_string()),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
     /// Start a task now: a block from now, the rest planned around it.
     pub fn start(&self, id: &str) -> Result<(), String> {
         let d = Daemon::from_config(&self.cfg)
@@ -675,8 +698,8 @@ mod task_tests {
                 && home.contains(&format!("{} B15 sheet 4", locus_theme::glyph::TODO_BOX)),
             "{home}"
         );
-        // t focuses tasks; Enter opens the page on the selected one.
-        app.on_key(KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE));
+        // With tasks focused, Enter opens the page on the selected one.
+        app.focus = Some('t');
         app.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         assert_eq!(app.screen(), ScreenId::Tasks);
         let page = crate::dump::render(&app, 120, 40).unwrap();

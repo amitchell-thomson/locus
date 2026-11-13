@@ -36,7 +36,7 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │                                   │                                                         │
 │                                   │                                                         │
 │                                   │                                                         │
-│                                   ├── ask ─────────────── n new · o Claude Code · r rename ─│
+│                                   ├── ask ─────────────── + new · o Claude Code · e rename ─│
 │                                   │    ␣ to type · o when it needs to do more than it may he│
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯
- ⏎ open · ⇥ sections · l log · / ask · i chat · ? keys
+ ⏎ open · g go to · / ask · ? keys

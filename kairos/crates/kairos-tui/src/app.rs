@@ -14,6 +14,7 @@ use kairos_core::time::resolve_local;
 use kairos_core::view::{Filter, view_with};
 use kairos_store::cache::Index;
 use kairos_store::client::{Daemon, Rejected};
+use locus_theme::keys::{self, Action, Place};
 
 use crate::form::{ForOption, Form, FormAction, FormKind, describe_span, when_prefill};
 
@@ -33,6 +34,12 @@ impl View {
             View::Month => "month",
             View::Agenda => "agenda",
         }
+    }
+
+    pub fn from_name(name: &str) -> Option<View> {
+        [View::Week, View::Day, View::Month, View::Agenda]
+            .into_iter()
+            .find(|v| v.name() == name)
     }
 }
 
@@ -80,9 +87,9 @@ impl PromptKind {
 pub enum Confirm {
     Delete,
     Share,
-    /// Undo a change (and the scheduler's replans after it).
-    Undo(String),
     DropTask(String),
+    /// `x` on a block that has started: it didn't happen.
+    Missed(CheckinTarget),
     /// Skip the selected work block (work planned elsewhere).
     Skip,
     /// Remove a task's deadline (the task stays, with no deadline).
@@ -210,6 +217,11 @@ pub struct App {
     pub daemon: Option<Daemon>,
     pub daemon_error: Option<String>,
     pub quit: bool,
+    /// `g` was pressed: the next letter names a place ([`keys::PLACES`]).
+    pub g_pending: bool,
+    /// Running as the real window: `g` and ⏎ may ask locus to open things and switch tmux
+    /// windows. Off in tests and dumps, which only say what they would do.
+    pub links: bool,
     /// Set after a write so the runner fetches kairosd's index at once.
     pub wants_sync: bool,
     /// Week view shows Mon–Fri only (wider columns).
@@ -300,6 +312,8 @@ impl App {
             daemon,
             daemon_error: None,
             quit: false,
+            g_pending: false,
+            links: false,
             wants_sync: false,
             work_week: false,
             day_top: std::cell::Cell::new(None),
@@ -660,7 +674,7 @@ impl App {
                 let msg = match w.status {
                     Status::Applied => format!("✓ {}", w.summary.lines().next().unwrap_or("")),
                     Status::Pending => format!(
-                        "◌ needs approval: {} (A to review)",
+                        "◌ needs approval: {} (g a to review)",
                         w.summary.lines().next().unwrap_or("")
                     ),
                     s => format!("{} {}", s.as_str(), w.summary),
@@ -702,9 +716,15 @@ impl App {
         }
         let name = match k {
             Key::Char(c) => c.to_string(),
+            Key::Ctrl(c) => format!("ctrl-{c}"),
             other => format!("{other:?}").to_lowercase(),
         };
         self.uselog.record(&format!("calendar:{}", self.view.name()), &name);
+        // ^c leaves from anywhere, a form or a prompt included.
+        if k == Key::Ctrl('c') {
+            self.quit = true;
+            return;
+        }
         let mode = std::mem::replace(&mut self.mode, Mode::Normal);
         match mode {
             Mode::Help => {}
@@ -754,14 +774,29 @@ impl App {
         }
     }
 
+    /// Nothing open and nothing half done: no form, prompt, popup, details or unsent move. A
+    /// rebuilt binary restarts only then (cleanup C7).
+    pub fn idle(&self) -> bool {
+        matches!(self.mode, Mode::Normal)
+            && !self.expanded
+            && !self.g_pending
+            && self.held.is_none()
+            && self.deferred.is_empty()
+    }
+
+    /// The calendar's keys (cleanup C4, D1): the shared table first ([`keys::action`]), then
+    /// kairos's own for what the table does not cover (days and weeks, the grid, filters, the
+    /// scheduler). `g` waits for a letter ([`App::go`]).
     fn normal(&mut self, k: Key) {
+        if std::mem::take(&mut self.g_pending) {
+            return self.go(k);
+        }
         let k = vim_arrow(k);
+        if let Some(a) = shared_action(k) {
+            return self.shared(a);
+        }
         let n = self.list_len();
         match k {
-            Key::Char('q') | Key::Esc if self.expanded => self.expanded = false,
-            Key::Char('q') => self.quit = true,
-            Key::Esc => self.search = None,
-            Key::Char('?') => self.mode = Mode::Help,
             // Arrows and Tab move, as everywhere in locus (spec K6): ←/→ days, [ ] weeks.
             Key::Left => self.shift(-1),
             Key::Right => self.shift(1),
@@ -805,26 +840,21 @@ impl App {
                 self.sel = 0;
                 self.day_top.set(None);
             }
-            Key::Char('g') => {
-                self.view = if self.view == View::Agenda {
-                    View::Week
-                } else {
-                    View::Agenda
-                };
-                self.sel = 0;
-            }
-            // Enter on an item linked to locus opens it there (spec K8); otherwise, and `v`
-            // always, the details.
+            // ⏎ opens the details (they were on `v` until `v` became "mark several", C4); with
+            // them open, ⏎ on an item linked to locus opens it there (spec K8).
             Key::Enter => {
-                let link = (!self.expanded && matches!(self.view, View::Week | View::Day | View::Month | View::Agenda))
+                let link = self
+                    .expanded
                     .then(|| self.selected().and_then(|c| self.locus_link(&c.primary)))
                     .flatten();
                 match link {
-                    Some(id) => self.open_in_locus(&id),
+                    Some(id) => {
+                        self.expanded = false;
+                        self.open_in_locus(&id);
+                    }
                     None => self.expanded = !self.expanded,
                 }
             }
-            Key::Char('v') => self.expanded = !self.expanded,
             Key::Char('p') => self.filter.personal = !self.filter.personal,
             Key::Char('f') => self.filter.family = !self.filter.family,
             Key::Char('b') => self.filter.background = !self.filter.background,
@@ -840,12 +870,6 @@ impl App {
                     self.filter.family = !self.filter.family;
                 }
             }
-            Key::Char('/') => self.mode = Mode::Prompt(PromptKind::Search, self.search.clone().unwrap_or_default()),
-            // Tasks, projects and Approve have one home each, in the locus window (spec E7, round
-            // 7c, L7): T, P and A open them there.
-            Key::Char('T') => self.open_locus_page("tasks"),
-            Key::Char('A') => self.open_locus_page("approve"),
-            Key::Char('P') => self.open_locus_page("home:p"),
             Key::Char('C') => {
                 self.refresh_remote();
                 if self.checkins.iter().any(|c| c.outcome.is_none()) {
@@ -853,16 +877,6 @@ impl App {
                 } else {
                     self.set_message("nothing to check in today", false);
                 }
-            }
-            Key::Char('r') => {
-                self.wants_sync = true;
-                self.refresh_remote();
-                self.set_message("syncing…", false);
-            }
-            // + adds, as everywhere in locus (L4).
-            Key::Char('+') => {
-                self.mode = Mode::AddChoice;
-                self.set_message("add: e event · t task (esc cancels)", false);
             }
             Key::Char('w') => {
                 self.work_week = !self.work_week;
@@ -875,21 +889,230 @@ impl App {
                     false,
                 );
             }
-            Key::Char('u') => {
-                // Your (or Claude's) last change — not the scheduler's replan
-                // that followed it; undoing it undoes that replan too.
-                if let Some(d) = &self.daemon
-                    && let Ok(Ok(v)) = d.changesets(Some("applied"), 50)
-                    && let Some(c) = v.iter().find(|c| c.author != kairos_core::model::Author::Scheduler)
-                {
-                    self.mode = Mode::Confirm(Confirm::Undo(c.id.clone()));
-                    self.set_message(format!("undo “{}”? y/N", c.summary.lines().next().unwrap_or("")), false);
-                    return;
-                }
-                self.set_message("nothing to undo", true);
-            }
+            Key::Char('S') => self.plan(),
             _ => self.contextual(k),
         }
+    }
+
+    /// What a key of the shared table does in the calendar.
+    fn shared(&mut self, a: Action) {
+        match a {
+            // esc: back one level, the details first, then a search.
+            Action::Back => {
+                if self.expanded {
+                    self.expanded = false;
+                } else if self.search.is_some() {
+                    self.search = None;
+                }
+            }
+            // q: back while there is something to go back from; at the top it quits.
+            Action::Quit if self.expanded || self.search.is_some() => self.shared(Action::Back),
+            Action::Quit => self.quit = true,
+            Action::Help => self.mode = Mode::Help,
+            Action::Search => self.mode = Mode::Prompt(PromptKind::Search, self.search.clone().unwrap_or_default()),
+            Action::New => {
+                self.mode = Mode::AddChoice;
+                self.set_message("add: e event · t task (esc cancels)", false);
+            }
+            // ^r (was `r`): kairosd's index and its tasks, now.
+            Action::Refresh => {
+                self.wants_sync = true;
+                self.refresh_remote();
+                self.set_message("refreshing from kairosd…", false);
+            }
+            Action::Undo => self.undo_now(),
+            Action::GoTo => {
+                self.g_pending = true;
+                let places: Vec<String> = keys::PLACES.iter().map(|(c, _, w)| format!("{c} {w}")).collect();
+                self.set_message(format!("go to: {}", places.join(" · ")), false);
+            }
+            Action::Mark => self.set_message("v marks several: nothing in the calendar acts on several yet", false),
+            Action::Edit | Action::Yes | Action::No | Action::Done | Action::Remove => self.on_selected(a),
+        }
+    }
+
+    /// `g` then a letter (D1): Home's places switch to the home window, on that screen (through
+    /// locus's `open-locus` file); mail to its window. Outside tmux it only says where.
+    fn go(&mut self, k: Key) {
+        let Key::Char(c) = k else {
+            self.message = None;
+            return;
+        };
+        let Some(p) = keys::place(c) else {
+            let letters: String = keys::PLACES.iter().map(|(c, _, _)| *c).collect();
+            return self.set_message(format!("g {c} goes nowhere: g then one of {letters}"), true);
+        };
+        match p {
+            Place::Calendar => self.set_message("this is the calendar", false),
+            Place::Mail => {
+                if !self.links {
+                    return self.set_message("would show the mail window", false);
+                }
+                if let Err(e) = keys::show_window(p.view()) {
+                    self.set_message(e, true);
+                }
+            }
+            Place::Home => self.open_locus_page("home"),
+            Place::Approve => self.open_locus_page("approve"),
+            Place::Tasks => self.open_locus_page("tasks"),
+            Place::Log => self.open_locus_page("autolog"),
+        }
+    }
+
+    /// Undo your (or Claude's) last change at once, with a line saying what was undone: not the
+    /// scheduler's replan that followed it; undoing it undoes that replan too. It used to ask
+    /// first; the table's `u` does not (D1).
+    fn undo_now(&mut self) {
+        let last = match &self.daemon {
+            Some(d) => match d.changesets(Some("applied"), 50) {
+                Ok(Ok(v)) => v
+                    .into_iter()
+                    .find(|c| c.author != kairos_core::model::Author::Scheduler),
+                Ok(Err(e)) => return self.set_message(e.to_string(), true),
+                Err(e) => return self.set_message(e.to_string(), true),
+            },
+            None => return self.set_message("kairosd not configured: nothing to undo", true),
+        };
+        let Some(c) = last else {
+            return self.set_message("nothing to undo", false);
+        };
+        let what = c.summary.lines().next().unwrap_or("").to_string();
+        if let Some(r) = self.with_daemon(|d| d.undo_with_replans(&c.id)) {
+            let ok = matches!(&r, Ok(Ok(_)));
+            self.write_result(r);
+            if ok {
+                // The local copies of what was undone (e.g. a moved block shown at its new time)
+                // would hide the undo until they expire: drop them; the reload brings the
+                // calendar as it really is.
+                self.patches.clear();
+                self.blocking_overrides.clear();
+                self.set_message(format!("undone: {what}"), false);
+            }
+        }
+    }
+
+    /// e y n d x on the selected item.
+    fn on_selected(&mut self, a: Action) {
+        let Some(c) = self.selected() else {
+            return self.set_message("nothing selected here", false);
+        };
+        let i = c.primary;
+        let title = kairos_core::build::bare_block_title(i.title.trim_start_matches('⚑').trim()).to_string();
+        match a {
+            Action::Edit => self.edit(&i),
+            // A work block that has started, checked in or not: y it happened as drawn (fix its
+            // start and length first with ⇧ and ⌥), n it didn't, d it did and the task is
+            // finished. Answering a ✓ block again corrects it; u takes any answer back.
+            Action::Yes | Action::No | Action::Done if self.checkable(&i) => {
+                let t = self.checkin_target(&i);
+                let outcome = match a {
+                    Action::Yes => "done",
+                    Action::Done => "finished",
+                    _ => "missed",
+                };
+                self.check_in(t, outcome);
+            }
+            Action::Yes | Action::No => self.set_message(
+                "y and n answer a work block that has started; changes to approve are in Home (g a)",
+                false,
+            ),
+            // d on a task's block or ⚑: the task is done (L4: d is done everywhere a task is).
+            Action::Done => match i.meta.task_id.clone() {
+                Some(tid) if self.tasks.iter().any(|t| t.id == tid) => self.complete_task_now(&tid, &title),
+                _ => self.set_message("d marks a task done: select one of its blocks or its ⚑", false),
+            },
+            Action::Remove => self.remove(&i, &title),
+            _ => {}
+        }
+    }
+
+    /// `e`: the one form for what is selected (D1: `K` and `L` folded in; Tab reaches every
+    /// field, For included). A task's ⚑ or block opens the task's form; your own or Family's
+    /// event its event form; a read-only feed's event only what it is for.
+    fn edit(&mut self, i: &Instance) {
+        if i.meta.kind == EventKind::Worked {
+            return self.set_message("measured time from your Claude sessions: nothing to edit", false);
+        }
+        if matches!(i.meta.kind, EventKind::Deadline | EventKind::TaskBlock)
+            && let Some(tid) = i.meta.task_id.clone()
+        {
+            match self.tasks.iter().find(|t| t.id == tid).cloned() {
+                Some(t) => {
+                    let mut f = self.task_form(&t);
+                    if i.meta.kind == EventKind::Deadline {
+                        f.focus_on("Due");
+                    }
+                    self.message = None;
+                    self.mode = Mode::Form(f);
+                    return;
+                }
+                None if i.meta.kind == EventKind::Deadline => {
+                    let title = i.title.trim_start_matches('⚑').trim().to_string();
+                    return self.set_message(format!("“{title}” is finished: a gives it more time"), false);
+                }
+                None => {}
+            }
+        }
+        if matches!(i.overlay, Overlay::Background | Overlay::Imported) {
+            let current = self.for_label(i.meta.locus.as_deref(), i.key.as_deref());
+            self.message = None;
+            self.mode = Mode::Form(
+                Form::link(i.source.clone(), i.uid.clone(), None, &current).with_fors(self.fors_recent_first()),
+            );
+            return;
+        }
+        let label = self.for_label(i.meta.locus.as_deref(), i.key.as_deref());
+        self.message = None;
+        self.mode =
+            Mode::Form(Form::edit_event(self.key_names(), i, self.tz, &label).with_fors(self.fors_recent_first()));
+    }
+
+    /// `x`: remove what is selected, always asking once.
+    fn remove(&mut self, i: &Instance, title: &str) {
+        if i.meta.kind == EventKind::Worked {
+            return;
+        }
+        // Removing an open task's ⚑ removes the task and all its planned time (Alec,
+        // 2026-10-13); a finished task just loses its ⚑.
+        if i.meta.kind == EventKind::Deadline
+            && let Some(tid) = i.meta.task_id.clone()
+        {
+            if self.tasks.iter().any(|t| t.id == tid) {
+                self.mode = Mode::Confirm(Confirm::DropTask(tid));
+                self.set_message(
+                    format!("drop “{title}”: its due date and all its planned time? y/N"),
+                    false,
+                );
+            } else {
+                self.mode = Mode::Confirm(Confirm::ClearDue(tid));
+                self.set_message(format!("remove the due date of finished “{title}”? y/N"), false);
+            }
+            return;
+        }
+        // One of a series: kairos can only rewrite the whole series, so a delete here would
+        // act on every occurrence (cleanup C1, 13 Nov).
+        if i.recurring {
+            return self.set_message(SERIES_ONLY, false);
+        }
+        // A block that has started: it didn't happen (its time is planned again).
+        if self.checkable(i) {
+            let t = self.checkin_target(i);
+            self.mode = Mode::Confirm(Confirm::Missed(t));
+            return self.set_message(
+                format!("“{title}” didn't happen? (its time is planned again) y/N"),
+                false,
+            );
+        }
+        // A work block ahead: skip it, the work is planned elsewhere.
+        if i.meta.kind == EventKind::TaskBlock {
+            self.mode = Mode::Confirm(Confirm::Skip);
+            return self.set_message(
+                format!("skip this “{}” block? (the work is planned elsewhere) y/N", i.title),
+                false,
+            );
+        }
+        self.mode = Mode::Confirm(Confirm::Delete);
+        self.set_message(format!("delete “{}”? y/N", i.title), false);
     }
 
     /// Scroll the week/day grid an hour (spec K6: every hour the same height, more hours rather
@@ -905,223 +1128,130 @@ impl App {
         }
     }
 
-    /// Keys whose meaning depends on the view / selection.
+    /// kairos's own keys on the selected item: those the table does not cover.
     fn contextual(&mut self, k: Key) {
-        match self.view {
-            View::Week | View::Day | View::Month | View::Agenda => {
-                if k == Key::Char('S') {
-                    self.plan();
-                    return;
-                }
-                let Some(c) = self.selected() else { return };
-                let i = c.primary.clone();
-                // L: say what it is for afterwards (ADR-009), with the same type-ahead.
-                if k == Key::Char('L') && i.meta.kind != EventKind::Worked {
-                    let task = i.meta.task_id.clone();
-                    let current = match task.as_ref().and_then(|t| self.tasks.iter().find(|x| &x.id == t)) {
-                        Some(t) => self.for_label(t.locus.as_deref(), Some(&t.key)),
-                        None => self.for_label(i.meta.locus.as_deref(), i.key.as_deref()),
-                    };
-                    self.message = None;
-                    self.mode = Mode::Form(
-                        Form::link(i.source.clone(), i.uid.clone(), task, &current).with_fors(self.fors_recent_first()),
-                    );
-                    return;
-                }
-                // A work block that has started, checked in or not: y it happened as drawn (fix
-                // its start and length first with ⇧ and ⌥) · x it didn't · d it did and the
-                // task is finished (L4: d is done and x removes, as everywhere in locus).
-                // Answering a ✓ block again corrects it; u takes any answer back.
-                if self.checkable(&i) && matches!(k, Key::Char('y' | 'x' | 'd')) {
-                    let t = self.checkin_target(&i);
-                    let outcome = match k {
-                        Key::Char('y') => "done",
-                        Key::Char('d') => "finished",
-                        _ => "missed",
-                    };
-                    return self.check_in(t, outcome);
-                }
-                // W: log work on this block's (or ⚑'s) task, ending now.
-                if k == Key::Char('W') {
-                    if let Some(id) = i.meta.task_id.clone() {
-                        let title =
-                            kairos_core::build::bare_block_title(i.title.trim_start_matches('⚑').trim()).to_string();
-                        self.message = None;
-                        self.mode = Mode::Prompt(PromptKind::LogWork { task_id: id, title }, String::new());
-                    }
-                    return;
-                }
-                if k == Key::Char('n') {
-                    // Start this block's (or deadline's) task now.
-                    match i.meta.task_id.clone() {
-                        Some(id) => {
-                            let title = i.title.trim_start_matches('⚑').trim().to_string();
-                            self.start_now(id, title);
-                        }
-                        None => self.set_message("n starts a task now: select one of its blocks or its ⚑", true),
-                    }
-                    return;
-                }
-                // d on a task's block or ⚑: the task is done (L4: d is done everywhere a task is).
-                if k == Key::Char('d')
-                    && let Some(tid) = i.meta.task_id.clone()
-                    && self.tasks.iter().any(|t| t.id == tid)
-                {
+        let Some(c) = self.selected() else { return };
+        let i = c.primary;
+        let deadline_task = (i.meta.kind == EventKind::Deadline)
+            .then(|| i.meta.task_id.clone())
+            .flatten();
+        match k {
+            // W: log work on this block's (or ⚑'s) task, ending now.
+            Key::Char('W') => {
+                if let Some(id) = i.meta.task_id.clone() {
                     let title =
                         kairos_core::build::bare_block_title(i.title.trim_start_matches('⚑').trim()).to_string();
-                    return self.complete_task_now(&tid, &title);
-                }
-                // A task's ⚑ edits the task's due date, not just the event.
-                if i.meta.kind == EventKind::Deadline
-                    && let Some(tid) = i.meta.task_id.clone()
-                {
-                    let title = i.title.trim_start_matches('⚑').trim().to_string();
-                    match k {
-                        Key::Char('e') | Key::Char('K') => match self.tasks.iter().find(|t| t.id == tid).cloned() {
-                            Some(t) => {
-                                let mut f = self.task_form(&t);
-                                f.focus_on(if k == Key::Char('K') { "For" } else { "Due" });
-                                self.message = None;
-                                self.mode = Mode::Form(f);
-                            }
-                            None => self.set_message(format!("“{title}” is finished — reopen it in T first"), true),
-                        },
-                        Key::Char('m') => {
-                            self.message = None;
-                            self.mode = Mode::Prompt(PromptKind::MoveDeadline { task_id: tid }, String::new());
-                        }
-                        // More time before it (2026-11-13): planned like the rest, and a finished
-                        // task is reopened with just that much left.
-                        Key::Char('a') => {
-                            self.message = None;
-                            let title = kairos_core::build::bare_block_title(&title).to_string();
-                            self.mode = Mode::Prompt(PromptKind::MoreTime { task_id: tid, title }, String::new());
-                        }
-                        // Removing an open task's deadline removes the task and
-                        // all its planned time (Alec, 2026-10-13); a finished
-                        // task just loses its ⚑.
-                        Key::Char('x') if self.tasks.iter().any(|t| t.id == tid) => {
-                            self.mode = Mode::Confirm(Confirm::DropTask(tid));
-                            self.set_message(
-                                format!("drop “{title}”: its due date and all its planned time? y/N"),
-                                false,
-                            );
-                        }
-                        Key::Char('x') => {
-                            self.mode = Mode::Confirm(Confirm::ClearDue(tid));
-                            self.set_message(format!("remove the due date of finished “{title}”? y/N"), false);
-                        }
-                        _ => {}
-                    }
-                    return;
-                }
-                // `x` on a work block skips it: the work is planned elsewhere.
-                if i.meta.kind == EventKind::TaskBlock && k == Key::Char('x') {
-                    self.mode = Mode::Confirm(Confirm::Skip);
-                    self.set_message(
-                        format!("skip this “{}” block? (the work is planned elsewhere) y/N", i.title),
-                        false,
-                    );
-                    return;
-                }
-                // One of a series: kairos can only rewrite the whole series, so a delete, move or
-                // "not going" here would act on every occurrence (cleanup C1, 13 Nov).
-                if i.recurring && matches!(k, Key::Char('x' | 'm' | 'B')) {
-                    return self.set_message(SERIES_ONLY, false);
-                }
-                match k {
-                    Key::Char('e') | Key::Char('K') => {
-                        let label = self.for_label(i.meta.locus.as_deref(), i.key.as_deref());
-                        let mut f =
-                            Form::edit_event(self.key_names(), &i, self.tz, &label).with_fors(self.fors_recent_first());
-                        if k == Key::Char('K') {
-                            f.focus_on("For");
-                        }
-                        self.message = None;
-                        self.mode = Mode::Form(f);
-                    }
-                    Key::Char('m') => self.mode = Mode::Prompt(PromptKind::Move, String::new()),
-                    Key::Char('x') => {
-                        self.mode = Mode::Confirm(Confirm::Delete);
-                        self.set_message(format!("delete “{}”? y/N", i.title), false);
-                    }
-                    // Not going to one of your own events (spec K6): greyed, and it stops
-                    // blocking the scheduler, as a Family event does until you opt in.
-                    Key::Char('B') if i.overlay == Overlay::Personal && i.meta.kind == EventKind::Event => {
-                        if self.daemon.is_none() {
-                            return self.set_message("kairosd not configured — writes unavailable", true);
-                        }
-                        let off = !i.meta.not_going;
-                        self.set_not_going_local(&i.uid, off);
-                        self.set_message(
-                            if off {
-                                format!("not going to “{}”: your time is free (B again to undo)", i.title)
-                            } else {
-                                format!("going to “{}” again", i.title)
-                            },
-                            false,
-                        );
-                        self.deferred.push(Box::new(move |app: &mut App| {
-                            let req = api::UpdateEventReq {
-                                not_going: Some(off),
-                                ..Default::default()
-                            };
-                            let failed = match app.with_daemon(|d| d.update_event(&i.source, &i.uid, &req)) {
-                                Some(Ok(Ok(_))) => None,
-                                Some(Ok(Err(e))) => Some(e.to_string()),
-                                Some(Err(e)) => Some(e.to_string()),
-                                None => Some("kairosd not configured".into()),
-                            };
-                            match failed {
-                                None => app.wants_sync = true,
-                                Some(e) => {
-                                    app.set_not_going_local(&i.uid, !off);
-                                    app.set_message(e, true);
-                                }
-                            }
-                        }));
-                    }
-                    Key::Char('B') if i.overlay == Overlay::Family => {
-                        if self.daemon.is_none() {
-                            return self.set_message("kairosd not configured — writes unavailable", true);
-                        }
-                        let now_blocking = !i.meta.blocking;
-                        self.set_blocking_local(&i.uid, now_blocking);
-                        self.set_message(
-                            if now_blocking {
-                                format!("“{}” now blocks your time (B again to undo)", i.title)
-                            } else {
-                                format!("“{}” no longer blocks your time", i.title)
-                            },
-                            false,
-                        );
-                        self.deferred.push(Box::new(move |app: &mut App| {
-                            let req = api::UpdateEventReq {
-                                blocking: Some(now_blocking),
-                                ..Default::default()
-                            };
-                            let failed = match app.with_daemon(|d| d.update_event(&i.source, &i.uid, &req)) {
-                                Some(Ok(Ok(_))) => None,
-                                Some(Ok(Err(e))) => Some(e.to_string()),
-                                Some(Err(e)) => Some(e.to_string()),
-                                None => Some("kairosd not configured".into()),
-                            };
-                            match failed {
-                                None => app.wants_sync = true,
-                                Some(e) => {
-                                    app.set_blocking_local(&i.uid, !now_blocking);
-                                    app.set_message(e, true);
-                                }
-                            }
-                        }));
-                    }
-                    Key::Char('s') => {
-                        self.mode = Mode::Confirm(Confirm::Share);
-                        self.set_message(format!("share “{}” to Family (moves it)? y/N", i.title), false);
-                    }
-                    _ => {}
+                    self.message = None;
+                    self.mode = Mode::Prompt(PromptKind::LogWork { task_id: id, title }, String::new());
                 }
             }
+            // s: start this block's (or deadline's) task now (it was `n`, which is "no" in the
+            // table now).
+            Key::Char('s') => match i.meta.task_id.clone() {
+                Some(id) => {
+                    let title = i.title.trim_start_matches('⚑').trim().to_string();
+                    self.start_now(id, title);
+                }
+                None => self.set_message("s starts a task now: select one of its blocks or its ⚑", false),
+            },
+            // More time before a ⚑ (2026-11-13): planned like the rest, and a finished task is
+            // reopened with just that much left.
+            Key::Char('a') => {
+                if let Some(tid) = deadline_task {
+                    let title =
+                        kairos_core::build::bare_block_title(i.title.trim_start_matches('⚑').trim()).to_string();
+                    self.message = None;
+                    self.mode = Mode::Prompt(PromptKind::MoreTime { task_id: tid, title }, String::new());
+                }
+            }
+            // m: move to a time you type; on a ⚑, the task's due date.
+            Key::Char('m') => {
+                if let Some(tid) = deadline_task {
+                    self.message = None;
+                    self.mode = Mode::Prompt(PromptKind::MoveDeadline { task_id: tid }, String::new());
+                } else if i.recurring {
+                    self.set_message(SERIES_ONLY, false);
+                } else if i.meta.kind != EventKind::Worked {
+                    self.mode = Mode::Prompt(PromptKind::Move, String::new());
+                }
+            }
+            Key::Char('B') if i.recurring => self.set_message(SERIES_ONLY, false),
+            // Not going to one of your own events (spec K6): greyed, and it stops blocking the
+            // scheduler, as a Family event does until you opt in.
+            Key::Char('B') if i.overlay == Overlay::Personal && i.meta.kind == EventKind::Event => {
+                if self.daemon.is_none() {
+                    return self.set_message("kairosd not configured: writes unavailable", true);
+                }
+                let off = !i.meta.not_going;
+                self.set_not_going_local(&i.uid, off);
+                self.set_message(
+                    if off {
+                        format!("not going to “{}”: your time is free (B again to undo)", i.title)
+                    } else {
+                        format!("going to “{}” again", i.title)
+                    },
+                    false,
+                );
+                self.deferred.push(Box::new(move |app: &mut App| {
+                    let req = api::UpdateEventReq {
+                        not_going: Some(off),
+                        ..Default::default()
+                    };
+                    let failed = match app.with_daemon(|d| d.update_event(&i.source, &i.uid, &req)) {
+                        Some(Ok(Ok(_))) => None,
+                        Some(Ok(Err(e))) => Some(e.to_string()),
+                        Some(Err(e)) => Some(e.to_string()),
+                        None => Some("kairosd not configured".into()),
+                    };
+                    match failed {
+                        None => app.wants_sync = true,
+                        Some(e) => {
+                            app.set_not_going_local(&i.uid, !off);
+                            app.set_message(e, true);
+                        }
+                    }
+                }));
+            }
+            Key::Char('B') if i.overlay == Overlay::Family => {
+                if self.daemon.is_none() {
+                    return self.set_message("kairosd not configured: writes unavailable", true);
+                }
+                let now_blocking = !i.meta.blocking;
+                self.set_blocking_local(&i.uid, now_blocking);
+                self.set_message(
+                    if now_blocking {
+                        format!("“{}” now blocks your time (B again to undo)", i.title)
+                    } else {
+                        format!("“{}” no longer blocks your time", i.title)
+                    },
+                    false,
+                );
+                self.deferred.push(Box::new(move |app: &mut App| {
+                    let req = api::UpdateEventReq {
+                        blocking: Some(now_blocking),
+                        ..Default::default()
+                    };
+                    let failed = match app.with_daemon(|d| d.update_event(&i.source, &i.uid, &req)) {
+                        Some(Ok(Ok(_))) => None,
+                        Some(Ok(Err(e))) => Some(e.to_string()),
+                        Some(Err(e)) => Some(e.to_string()),
+                        None => Some("kairosd not configured".into()),
+                    };
+                    match failed {
+                        None => app.wants_sync = true,
+                        Some(e) => {
+                            app.set_blocking_local(&i.uid, !now_blocking);
+                            app.set_message(e, true);
+                        }
+                    }
+                }));
+            }
+            // F: share to Family (it was `s`, which starts a task now).
+            Key::Char('F') if i.overlay == Overlay::Personal && i.meta.kind == EventKind::Event => {
+                self.mode = Mode::Confirm(Confirm::Share);
+                self.set_message(format!("share “{}” to Family (moves it)? y/N", i.title), false);
+            }
+            _ => {}
         }
     }
 
@@ -1224,20 +1354,7 @@ impl App {
                     }
                 }
             }
-            Confirm::Undo(id) => {
-                if let Some(r) = self.with_daemon(|d| d.undo_with_replans(&id)) {
-                    let ok = matches!(&r, Ok(Ok(_)));
-                    self.write_result(r);
-                    if ok {
-                        // The local copies of what was undone (e.g. a moved
-                        // block shown at its new time) would hide the undo
-                        // until they expire: drop them; the reload brings
-                        // the calendar as it really is.
-                        self.patches.clear();
-                        self.blocking_overrides.clear();
-                    }
-                }
-            }
+            Confirm::Missed(t) => self.check_in(t, "missed"),
             Confirm::Skip => {
                 if let Some(cl) = self.selected() {
                     let i = cl.primary;
@@ -1913,7 +2030,7 @@ impl App {
                             let warn = t.plan.as_ref().and_then(plan_warning).unwrap_or_default();
                             self.set_message(
                                 if pending {
-                                    format!("{}: waiting for approval (A)", t.task.title)
+                                    format!("{}: waiting for approval (g a)", t.task.title)
                                 } else {
                                     format!("✓ {}{warn}", t.task.title)
                                 },
@@ -2012,10 +2129,9 @@ impl App {
         let Some(item) = open.get(i) else { return };
         let t = CheckinTarget::of(item, true);
         match vim_arrow(k) {
-            // Same keys as on a block in the calendar (p is the Private toggle there).
-            // The same keys as on a past block in the calendar (L4).
+            // The same keys as on a past block in the calendar (the table's y n d, D1).
             Key::Char('y') => self.check_in(t, "done"),
-            Key::Char('x') => self.check_in(t, "missed"),
+            Key::Char('n') => self.check_in(t, "missed"),
             Key::Char('d') => self.check_in(t, "finished"),
             // Not as planned: show the block on its day, to fix with ⇧ and ⌥, then y.
             Key::Enter => {
@@ -2023,7 +2139,7 @@ impl App {
                 let day = item.start.with_timezone(&self.tz).date_naive();
                 self.open_day(day, Some(&item.block_uid));
             }
-            Key::Char('s') | Key::Down => {
+            Key::Down => {
                 self.mode = Mode::Checkin((i + 1).min(open.len().saturating_sub(1)));
             }
             Key::Up => self.mode = Mode::Checkin(i.saturating_sub(1)),
@@ -2039,11 +2155,9 @@ impl App {
         let Some(i) = self.selected().map(|c| c.primary) else {
             return vec![("+", "add")];
         };
-        // A linked item opens in locus (spec K8).
-        if self.locus_link(&i).is_some() {
-            v.push(("⏎", "open in locus"));
-        }
+        // Only keys that work on it (D1): a series takes no move, delete or "not going".
         let h: &[(&str, &str)] = match (i.meta.kind, i.overlay) {
+            (EventKind::Worked, _) => &[],
             (EventKind::Deadline, _) if self.is_done_flag(&i) => {
                 &[("a", "more time"), ("m", "move"), ("x", "remove ⚑")]
             }
@@ -2052,15 +2166,15 @@ impl App {
                 ("a", "more time"),
                 ("e", "edit"),
                 ("m", "move"),
-                ("n", "start"),
+                ("s", "start"),
                 ("x", "drop"),
             ],
             (EventKind::TaskBlock, _) if kairos_core::build::is_checked_in(&i.title) => {
                 &[("⌥↑↓", "length"), ("x", "didn't happen"), ("W", "log more work")]
             }
-            _ if self.awaits_checkin(&i) => &[("y", "done"), ("⌥↑↓", "length"), ("x", "missed"), ("d", "task done")],
+            _ if self.awaits_checkin(&i) => &[("y", "done"), ("⌥↑↓", "length"), ("n", "missed"), ("d", "task done")],
             (EventKind::TaskBlock, _) => &[
-                ("n", "start"),
+                ("s", "start"),
                 ("⌥↑↓", "length"),
                 ("e", "edit"),
                 ("d", "done"),
@@ -2073,8 +2187,11 @@ impl App {
                     &[("B", "attending")]
                 }
             }
-            (_, Overlay::Background | Overlay::Imported) => &[],
-            _ => &[("e", "edit"), ("m", "move"), ("s", "share"), ("x", "delete")],
+            (_, Overlay::Background | Overlay::Imported) => &[("e", "what it is for")],
+            (_, Overlay::Personal) if i.recurring => &[("e", "edit every one"), ("F", "share")],
+            _ if i.recurring => &[("e", "edit every one")],
+            (_, Overlay::Family) => &[("e", "edit"), ("m", "move"), ("x", "delete")],
+            _ => &[("e", "edit"), ("m", "move"), ("F", "share"), ("x", "delete")],
         };
         v.extend_from_slice(h);
         v
@@ -2123,28 +2240,25 @@ impl App {
             .unwrap_or(0);
     }
 
-    /// Open one of locus's pages (`tasks`, `approve`, `home:p`) in the locus window.
-    fn open_locus_page(&mut self, view: &str) {
-        if !self.open_in_locus_view(view) {
-            self.set_message("the locus window isn't running (Alt-1 opens it)", true);
+    /// `g h/a/t/l`: one of Home's screens (`home`, `approve`, `tasks`, `autolog`), asked for in
+    /// locus's `open-locus` file, then the home window shown.
+    fn open_locus_page(&mut self, screen: &str) {
+        if !self.links {
+            return self.set_message(format!("would open {screen} in the home window"), false);
         }
-    }
-
-    fn open_in_locus_view(&mut self, view: &str) -> bool {
-        if locus_contract::link::OpenFile::locus().write(view).is_err() || !locus_contract::link::switch_to("locus") {
-            return false;
+        if let Err(e) = locus_contract::link::OpenFile::locus().write(screen) {
+            return self.set_message(format!("couldn't ask locus: {e}"), true);
         }
-        let what = match view {
-            "tasks" => "tasks",
-            "approve" => "approve",
-            _ => "projects",
-        };
-        self.set_message(format!("opened {what} in locus"), false);
-        true
+        if let Err(e) = keys::show_window(Place::Home.view()) {
+            self.set_message(e, true);
+        }
     }
 
     /// Ask the locus window to open `id`, and bring its tmux session forward.
     fn open_in_locus(&mut self, id: &str) {
+        if !self.links {
+            return self.set_message(format!("would open {id} in locus"), false);
+        }
         match locus_contract::link::OpenFile::locus().write(id) {
             Ok(()) => {
                 let shown = locus_contract::link::switch_to("locus");
@@ -2250,7 +2364,7 @@ impl App {
             .find(|t| t.id == id)
             .cloned()
         else {
-            return self.set_message("that task isn't here yet: r refreshes", true);
+            return self.set_message("that task isn't here yet: ^r refreshes", true);
         };
         self.message = None;
         self.mode = Mode::Form(self.task_form(&t));
@@ -2294,7 +2408,7 @@ impl App {
                 let warn = t.plan.as_ref().and_then(plan_warning).unwrap_or_default();
                 self.set_message(
                     if pending {
-                        format!("{}: waiting for approval (A)", t.task.title)
+                        format!("{}: waiting for approval (g a)", t.task.title)
                     } else {
                         format!("✓ {}{warn}", t.task.title)
                     },
@@ -2518,7 +2632,44 @@ pub enum Key {
     ShiftDown,
     AltUp,
     AltDown,
+    /// A letter with Control: `^r` refreshes, `^c` quits.
+    Ctrl(char),
 }
+
+/// The shared table's action for a key ([`keys::action`]), from kairos's own key type.
+pub fn shared_action(k: Key) -> Option<Action> {
+    use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let ev = match k {
+        Key::Char(c) => KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE),
+        Key::Ctrl(c) => KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL),
+        Key::Esc => KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+        _ => return None,
+    };
+    keys::action(ev)
+}
+
+/// kairos's own keys, for the `?` overlay after the shared table (D1): only what the table does
+/// not cover. Each must pass [`keys::app_key_is_free`] (tested).
+pub const APP_KEYS: &[(&str, &str)] = &[
+    ("← → h l", "a day back, forward"),
+    ("[ ]", "a week back, forward"),
+    ("↑ ↓ j k", "select; past the ends, scroll the hours"),
+    ("⇧↑↓ ⇧←→", "move it 30 min · a day"),
+    ("⌥↑↓", "shorter · longer by 15 min"),
+    ("⇥ ⇧⇥", "week · day · month · agenda"),
+    ("⏎", "details; again: open in locus"),
+    ("t", "today"),
+    ("w", "week Mon–Sun or Mon–Fri"),
+    ("m", "move to a time you type"),
+    ("a", "more time before a ⚑"),
+    ("s", "start a task now"),
+    ("W", "log work on its task"),
+    ("C", "check in"),
+    ("S", "run the scheduler"),
+    ("F", "share to Family"),
+    ("B", "going or not · attending"),
+    ("1–9 p f b i", "show or hide calendars"),
+];
 
 /// Status-bar legend: (toggle key, name, shown?, colour, group).
 pub fn overlay_flags(app: &App) -> Vec<(String, String, bool, kairos_core::colour::Rgb, u8)> {

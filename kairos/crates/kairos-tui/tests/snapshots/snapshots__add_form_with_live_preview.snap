@@ -30,5 +30,5 @@ expression: "render_to_string(&a, 100, 30)"
 │21:00 ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 │      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
 │      ┊            ┊            ┊            ┊            ┊            ┊            ┊             │
-╰ ● 19:00–20:00 · Squash · Errands ────────────────────────── e edit · m move · s share · x delete ╯
+╰ ● 19:00–20:00 · Squash · Errands ────────────────────────── e edit · m move · F share · x delete ╯
  ⇥ next field · ⏎ save · esc cancel

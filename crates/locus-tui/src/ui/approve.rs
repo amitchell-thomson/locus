@@ -15,36 +15,20 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use unicode_width::UnicodeWidthStr;
 
+/// Approve's own keys, after the shared table (cleanup C4): there y n approve and refuse, e
+/// changes a filing's place or a fact's value (it was `c`), v marks a run of lines for y n a e,
+/// / narrows this list, u undoes the last decision.
 pub const KEYS: &[(&str, &str)] = &[
-    ("y n", "approve or refuse; the next one comes up"),
-    ("Y", "approve the whole group"),
-    (
-        "c",
-        "a filing: put it somewhere else (type to find the place); a fact: correct its value, ⏎ approves it",
-    ),
+    ("Y", "approve the group (filtered: all shown)"),
     ("a", "a filing: archive it instead"),
-    (
-        "v",
-        "visual: select lines by moving, then y n a c act on all of them (esc ends it)",
-    ),
-    ("u", "undo the last decision: the mail goes back, the item comes back"),
-    (
-        "/",
-        "search this list only: type words to narrow it, ⏎ keeps it, esc clears it; Y approves all shown",
-    ),
     ("⏎", "the item whole"),
-    ("PgUp PgDn", "a page at a time; Home End the ends"),
-    (
-        "← →",
-        "a date from mail: which application it is for, when the mail did not say",
-    ),
+    ("↑ ↓ j k", "walk the list"),
+    ("PgUp PgDn", "a page at a time"),
+    ("Home End", "the ends"),
+    ("← →", "a date from mail: which application"),
 ];
-pub const ITEM_KEYS: &[(&str, &str)] = &[
-    ("y n", "approve or refuse, then the next"),
-    ("c a", "somewhere else, or archive instead"),
-    ("↑ ↓", "scroll"),
-];
-pub const LOG_KEYS: &[(&str, &str)] = &[("u", "undo")];
+pub const ITEM_KEYS: &[(&str, &str)] = &[("a", "a filing: archive it instead"), ("↑ ↓ j k", "scroll")];
+pub const LOG_KEYS: &[(&str, &str)] = &[("↑ ↓ j k", "walk the entries")];
 
 fn group_name(k: ApproveKind) -> &'static str {
     match k {
@@ -365,7 +349,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     let mut foot_line = hints(&[
         ("y n", "one"),
         ("Y", "the group"),
-        ("c", "change"),
+        ("e", "change"),
         ("a", "archive"),
         ("⏎", "open"),
     ]);
@@ -611,7 +595,7 @@ pub fn draw_item(f: &mut Frame, area: Rect, app: &App) {
             hints(&[
                 ("y", "approve"),
                 ("n", "refuse"),
-                ("c", "change"),
+                ("e", "change"),
                 ("a", "archive"),
                 ("↑ ↓", "scroll"),
                 ("esc", "the list"),
@@ -702,7 +686,7 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 KeyCode::PageDown => app.move_sel(' ', 10_000, 15),
                 KeyCode::PageUp => app.move_sel(' ', 10_000, -15),
                 // Somewhere else: the picker opens over the list.
-                KeyCode::Char('c') => {
+                KeyCode::Char('e') => {
                     app.close_top();
                     key(app, k);
                 }
@@ -791,7 +775,7 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 .collect();
             // Visual mode (10 Nov: "press v to do visual mode to select multiple lines and do
             // that action over those lines"): v marks where it starts, moving extends it, and
-            // y n a c act on every line in it.
+            // y n a e act on every line in it.
             match (k.code, app.approve_visual) {
                 (KeyCode::Char('v'), v) => {
                     app.approve_visual = if v.is_some() { None } else { Some(app.sel(' ')) };
@@ -818,7 +802,7 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                     });
                     return true;
                 }
-                (KeyCode::Char('c'), Some(start)) => {
+                (KeyCode::Char('e'), Some(start)) => {
                     let (lo, hi) = (start.min(app.sel(' ')), start.max(app.sel(' ')));
                     let at: Vec<(usize, usize)> = (lo..=hi)
                         .filter_map(|i| selected(app, i))
@@ -858,12 +842,12 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 return true;
             }
             let page = isize::try_from(app.approve_page()).unwrap_or(10);
-            if let KeyCode::Char(c @ ('c' | 'a')) = k.code
+            if let KeyCode::Char(c @ ('e' | 'a')) = k.code
                 && let Some(at) = selected(app, app.sel(' '))
             {
                 let it = app.fixtures.approve.groups[at.0].items[at.1].clone();
-                // c on a fact: correct its value, as text (heuris H2); ⏎ approves it as written.
-                if let (Some(id), 'c') = (it.fact, c) {
+                // e on a fact (it was c, C4): correct its value, as text (heuris H2); ⏎ approves it as written.
+                if let (Some(id), 'e') = (it.fact, c) {
                     let value = it
                         .text
                         .split_once(" = ")
@@ -956,6 +940,11 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 if let Some(x) = it.date.as_mut() {
                     x.for_id = id;
                 }
+                return true;
+            }
+            if matches!(k.code, KeyCode::Left | KeyCode::Right) {
+                app.note =
+                    Some("← → choose which application a date from mail is for, when it could be several".into());
                 return true;
             }
             // Mail from keryx (keryx-joins-locus X2): a draft to send, or a thread to file.

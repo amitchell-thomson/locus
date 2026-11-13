@@ -37,6 +37,6 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │                                                                                             │
 │                                                                                             │
 │                                                                                             │
-│                      y approve · n refuse · c change · a archive · ↑ ↓ scroll · esc the list│
+│                      y approve · n refuse · e change · a archive · ↑ ↓ scroll · esc the list│
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯
- ⏎ open · ⇥ sections · l log · / ask · i chat · ? keys
+ ⏎ open · g go to · / ask · i chat · ? keys

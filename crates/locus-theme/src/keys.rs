@@ -1,0 +1,187 @@
+//! One set of keys for Home, kairos and keryx (cleanup C4, decision D1, 13 Nov 2026).
+//!
+//! Before this, the three apps had about 370 bindings between them and disagreed on undo, edit,
+//! `v`, `m`, `s`, `i`, `g` and refresh: `q` was "back" on some screens and "quit" on others, `h`
+//! was back in keryx, and help was a hand-written list that was wrong in places. Now every app
+//! asks [`action`] first and only falls back to its own keys when the table has nothing to say,
+//! and help is drawn from the same table ([`help`]), so the two cannot drift.
+//!
+//! An app's own keys are allowed only for what the table does not cover: day and week movement in
+//! kairos, reply in keryx, a section's own verbs. [`app_key_is_free`] is what their tests use to
+//! prove an app key never shadows a table key.
+
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+/// What a shared key means, the same in every app.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Action {
+    /// `esc`: back one level (close a popup, leave a thread, clear a filter).
+    Back,
+    /// `q`: quit, but only at the top level; anywhere deeper it is [`Action::Back`].
+    Quit,
+    /// `u`: undo the last change at once, with a line saying what was undone.
+    Undo,
+    /// `e`: edit the thing under the cursor (opens its form; Tab reaches every field).
+    Edit,
+    /// `y`: approve, accept, yes.
+    Yes,
+    /// `n`: refuse, dismiss, no.
+    No,
+    /// `+`: new.
+    New,
+    /// `d`: done.
+    Done,
+    /// `x`: remove, skip or delete; always asks once.
+    Remove,
+    /// `v`: mark this row, for an action on several.
+    Mark,
+    /// `/`: search or filter.
+    Search,
+    /// `ctrl-r`: refresh from the source now.
+    Refresh,
+    /// `g`, then a letter: go to a place ([`Place`]).
+    GoTo,
+    /// `?`: the keys.
+    Help,
+}
+
+/// The table: action, the key as shown, and what it does in a help line.
+pub const TABLE: &[(Action, &str, &str)] = &[
+    (Action::Back, "esc", "back"),
+    (Action::Quit, "q", "quit (at the top; back elsewhere)"),
+    (Action::Undo, "u", "undo"),
+    (Action::Edit, "e", "edit"),
+    (Action::Yes, "y", "yes / approve"),
+    (Action::No, "n", "no / refuse"),
+    (Action::New, "+", "new"),
+    (Action::Done, "d", "done"),
+    (Action::Remove, "x", "remove (asks)"),
+    (Action::Mark, "v", "mark several"),
+    (Action::Search, "/", "search"),
+    (Action::Refresh, "^r", "refresh"),
+    (Action::GoTo, "g", "go to… (then a letter)"),
+    (Action::Help, "?", "keys"),
+];
+
+/// The shared action a key press means, if any. Text fields must not call this: inside a form
+/// every printable key is text.
+pub fn action(key: KeyEvent) -> Option<Action> {
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    let alt = key.modifiers.contains(KeyModifiers::ALT);
+    if alt {
+        return None;
+    }
+    match key.code {
+        KeyCode::Esc => Some(Action::Back),
+        KeyCode::Char('r') if ctrl => Some(Action::Refresh),
+        _ if ctrl => None,
+        KeyCode::Char('q') => Some(Action::Quit),
+        KeyCode::Char('u') => Some(Action::Undo),
+        KeyCode::Char('e') => Some(Action::Edit),
+        KeyCode::Char('y') => Some(Action::Yes),
+        KeyCode::Char('n') => Some(Action::No),
+        KeyCode::Char('+') => Some(Action::New),
+        KeyCode::Char('d') => Some(Action::Done),
+        KeyCode::Char('x') => Some(Action::Remove),
+        KeyCode::Char('v') => Some(Action::Mark),
+        KeyCode::Char('/') => Some(Action::Search),
+        KeyCode::Char('g') => Some(Action::GoTo),
+        KeyCode::Char('?') => Some(Action::Help),
+        _ => None,
+    }
+}
+
+/// True when an app may bind `key` (as shown in its help, e.g. "r", "^l", "J") to its own
+/// action: the table does not already own it.
+pub fn app_key_is_free(key: &str) -> bool {
+    !TABLE.iter().any(|(_, k, _)| *k == key)
+}
+
+/// A place `g` reaches. Home, Approve, Tasks and Log are screens of the Home window; Calendar and
+/// Mail are their own windows in the `locus` tmux session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Place {
+    Home,
+    Approve,
+    Tasks,
+    Calendar,
+    Mail,
+    Log,
+}
+
+/// `g` then this letter.
+pub const PLACES: &[(char, Place, &str)] = &[
+    ('h', Place::Home, "home"),
+    ('a', Place::Approve, "approve"),
+    ('t', Place::Tasks, "tasks"),
+    ('c', Place::Calendar, "calendar"),
+    ('m', Place::Mail, "mail"),
+    ('l', Place::Log, "log"),
+];
+
+/// The place `g <c>` goes to.
+pub fn place(c: char) -> Option<Place> {
+    PLACES.iter().find(|(k, _, _)| *k == c).map(|(_, p, _)| *p)
+}
+
+impl Place {
+    /// The `locus` session's window that shows this place (`locus-session.sh select <view>`).
+    pub fn view(self) -> &'static str {
+        match self {
+            Place::Home | Place::Approve | Place::Tasks | Place::Log => "home",
+            Place::Calendar => "calendar",
+            Place::Mail => "mail",
+        }
+    }
+}
+
+/// The help screen's lines: the shared table, the `g` places, then the app's own keys.
+pub fn help(app_keys: &[(&str, &str)]) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = TABLE
+        .iter()
+        .map(|(_, k, w)| ((*k).to_string(), (*w).to_string()))
+        .collect();
+    for (c, _, w) in PLACES {
+        out.push((format!("g {c}"), (*w).to_string()));
+    }
+    for (k, w) in app_keys {
+        out.push(((*k).to_string(), (*w).to_string()));
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn k(c: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn every_table_key_parses_to_its_own_action() {
+        for (a, key, _) in TABLE {
+            let ev = match *key {
+                "esc" => KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+                "^r" => KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL),
+                s => k(s.chars().next().unwrap()),
+            };
+            assert_eq!(action(ev), Some(*a), "{key}");
+        }
+    }
+
+    #[test]
+    fn plain_r_and_alt_keys_are_the_apps_own() {
+        assert_eq!(action(k('r')), None);
+        assert_eq!(action(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::ALT)), None);
+        assert!(app_key_is_free("r") && !app_key_is_free("u"));
+    }
+
+    #[test]
+    fn places_are_unique_and_help_lists_them() {
+        let mut seen = std::collections::HashSet::new();
+        assert!(PLACES.iter().all(|(c, _, _)| seen.insert(*c)));
+        let h = help(&[("r", "reply")]);
+        assert!(h.iter().any(|(k, _)| k == "g m") && h.last().unwrap().0 == "r");
+    }
+}

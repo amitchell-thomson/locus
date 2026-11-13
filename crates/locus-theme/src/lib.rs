@@ -7,6 +7,7 @@
 //! folded into the locus repo on 19 Oct 2026 (ADR-004)..
 
 pub mod glyph;
+pub mod keys;
 
 /// Keys that mean the same thing in every app (L4): `d` is done, `x` removes (asking first),
 /// `+` adds, `esc` goes back, `/` searches, `?` shows the keys. Each app's key lists are tested

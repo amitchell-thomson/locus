@@ -97,6 +97,7 @@ def test_a_control_character_cannot_reach_argv():
     documents carried NULs in their chunk text and failed the structure pass on every run, marking
     it degraded and putting an alarm on the daily page each morning.
     """
+    import shutil
     import subprocess
 
     raw = "jx \x00 aj < \x11 and a \x7f — keep\ttabs\nand newlines\r"
@@ -105,10 +106,13 @@ def test_a_control_character_cannot_reach_argv():
     assert "\t" in scrubbed and "\n" in scrubbed and "\r" in scrubbed, "whitespace is content"
 
     # The actual failure mode, not a proxy for it: argv rejects the raw string and takes the
-    # scrubbed one. `/bin/true` ignores its argument, so this spawns nothing meaningful.
+    # scrubbed one. `true` ignores its argument, so this spawns nothing meaningful. Found on PATH:
+    # it is /usr/bin/true on macOS, where /bin/true does not exist.
+    true = shutil.which("true")
+    assert true, "no `true` on PATH"
     with pytest.raises(ValueError):
-        subprocess.run(["/bin/true", raw], capture_output=True, timeout=10)
-    assert subprocess.run(["/bin/true", scrubbed], capture_output=True, timeout=10).returncode == 0
+        subprocess.run([true, raw], capture_output=True, timeout=10)
+    assert subprocess.run([true, scrubbed], capture_output=True, timeout=10).returncode == 0
 
 
 # ---------- journal.py ----------

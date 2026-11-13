@@ -68,79 +68,12 @@ class RetrieveConfig(BaseModel):
     # Figure descriptions are a 4th dense arm (figure_vectors, plan step 11) — sized between
     # sections (5) and propositions (10): figures are sparse but high-signal when they match.
     figure_top_k: int = 8
-    rerank_top_k: int = 8
-    # Diversity cap on rerank survivors: at most this many units per document in the top-k,
-    # relaxed (fallback fill) only when honouring it would leave the top-k underfull. Stops a
-    # single best-matching document from monopolising every slot, which breaks cross-domain
-    # synthesis queries (the 2026-06-04 evaluation, build step 3).
-    per_doc_cap: int = 3
-    context_token_budget: int = 100_000
     # Confidence floor on cross-encoder (ms-marco-MiniLM) scores — raw logits, roughly -11..+11.
     # None disables it (ship default until calibrated against the live corpus + negative-control
     # queries; the 2026-06-05 evaluation). When set: the rerank refill never pads the
     # top-k with below-floor candidates, and a retrieval whose best survivor falls below the
     # floor is flagged low-confidence ("the corpus may not cover this") — flagged, not filtered.
     min_rerank_score: float | None = None
-    # Documents (by exact source_uri) dropped from the candidate pool in production retrieval.
-    # The locus repo self-ingests, so 1000+ chunks of its own RAG/test/README code compete
-    # with and contaminate real queries (a finance query surfacing locus test files —
-    # 2026-06-09 audit). Excluded by default; `locus retrieve --include-excluded` overrides.
-    exclude_source_uris: list[str] = Field(default_factory=list)
-    # Multi-query cross-domain expansion (H2 fix, §13). A query in one domain's vocabulary
-    # doesn't surface another's docs — the cross-encoder demotes the semantically-distant
-    # match below the floor even though the entity bridge fired. When a query is bridge-shaped
-    # OR the first pass is low-confidence, rephrase it into `multi_query_k` other disciplinary
-    # vocabularies (local qwen), retrieve each, and rerank every candidate against the variant
-    # that found it (max) so the cross-domain match clears the floor. Off => single-pass only.
-    multi_query_expansion: bool = Field(True, description="Enable multi-query cross-domain expansion.")
-    multi_query_k: int = Field(2, description="Reformulations beyond the original (0 = off).")
-    # Down-weight for `maturity=rough` capture notes (agent-layer §6.1). Subtracted from the
-    # cross-encoder rerank_score of rough-doc candidates before the final sort. It is a PENALTY
-    # in cross-encoder logit space, NOT the plan's "multiplier on the pre-rerank score": the
-    # arms' pre-rerank scores are explicitly not cross-arm comparable and do not order results
-    # (search.py) — only the rerank_score does — and a multiplier on signed logits is incoherent
-    # (it would PROMOTE a negatively-scored unit). A subtractive penalty is a well-defined,
-    # monotonic demotion that still lets a strongly-matching rough note surface (flag, never
-    # filter — principle 8). Inert until rough notes exist (Phase 1 Loop A); eval-tune then (§18).
-    #
-    # EVAL-TUNED 2026-07-29 (that §18 tune), 1.5 -> 0.0 (OFF) — swept over 14 queries x 4 values
-    # (scripts/analysis/rough_penalty_sweep.py) once Loop A had landed 12 real rough notes:
-    #
-    #   penalty | note queries recovered | non-note queries still correct
-    #      1.5  |          2/6           |            8/8
-    #     0.75  |          2/6           |            8/8
-    #     0.35  |          2/6           |            8/8
-    #      0.0  |          3/6           |            8/8
-    #
-    # Monotonic, and the penalty bought NOTHING: intrusion was 8/8 at every value, so no non-note
-    # target was ever displaced by a rough note. At 1.5 it cost real recall — the EM-rates note was
-    # entirely unreachable, and the internship<->offer query surfaced neither side. The premise was
-    # wrong, not just the magnitude: `rough` measures POLISH, and retrieval must rank on VALUE. A
-    # jotted idea is often the higher-value unit precisely because it is the owner's own thinking
-    # and exists in no other document, whereas a polished paper usually has near-duplicates in the
-    # corpus. Cost of switching off, stated honestly: two coursework queries lose one rank position
-    # each (rank 1 -> 2, a rough note above a still-surfacing target) — an MRR cost, not a recall one.
-    # The knob is KEPT (not deleted) so the demotion is one config edit away if capture volume grows
-    # enough to genuinely crowd results.
-    rough_penalty: float = Field(
-        0.0, description="Cross-encoder-score penalty applied to maturity=rough candidates (0 = off)."
-    )
-    # Per-CATEGORY cross-encoder penalty, same mechanism and same rationale as rough_penalty.
-    # Measured 2026-07-29: engineering coursework is 246/295 documents, 81% of propositions and
-    # 97% of figures, and 87% of cross-document canonical entities are reachable ONLY through it.
-    # That mass crowds the owner's quant material out of results for queries that are not about
-    # coursework. This DOWN-WEIGHTS, never filters (principle 8) — a coursework document that
-    # genuinely answers a coursework question still wins by out-scoring the penalty, which is why
-    # it is preferred over deleting documents: nothing is lost and the knob is reversible.
-    # Empty = no category is penalised (previous behaviour).
-    category_penalty: dict[str, float] = Field(
-        default_factory=dict,
-        description="category -> cross-encoder-score penalty for its candidates (empty = off).",
-    )
-
-
-class GenerationConfig(BaseModel):
-    model: str
 
 
 class MathOCRConfig(BaseModel):
@@ -204,70 +137,6 @@ class FiguresConfig(BaseModel):
         60.0, description="Max vertical gap (pt) between a figure and its caption block."
     )
     max_per_page: int = Field(4, description="Cap on detected figures per page (junk guard).")
-    # Bounds image tokens/cost at generation: top-N figure survivors attach as images.
-    image_cap: int = Field(3, description="Max figure images attached per Claude call / MCP reply.")
-
-
-class AliasConfig(BaseModel):
-    """Cross-document entity-alias resolution (locus/link/aliases.py, plan step 12).
-
-    Deterministic tiers (casefold/punct/acronym/plural) run first; remaining lookalike
-    clusters — blocked by name-embedding cosine AND a token-overlap guard — are adjudicated
-    by the Claude API (the judge.py pattern). Wrong merges corrupt the link substrate, so
-    every threshold here leans conservative: a missed merge is fragmentation, a wrong merge
-    is corruption.
-    """
-
-    # Cosine floor over nomic name embeddings for candidate edges. Below it, names are not
-    # even considered lookalikes.
-    block_threshold: float = Field(0.86, description="Cosine floor for candidate clustering.")
-    # Jaccard overlap over >=4-char lowercase tokens. Backstops the embedder pulling
-    # thematically-adjacent but DISTINCT names together ('Kalman filter' vs 'particle filter').
-    min_token_overlap: float = Field(0.34, description="Token-Jaccard guard on candidate edges.")
-    # Connected components larger than this skip the LLM and stay deterministic-only —
-    # a giant component is almost always a blocking-threshold failure, not one real entity.
-    max_cluster_size: int = Field(8, description="Max members per adjudication prompt (cost guard).")
-    max_cluster_chunks: int = Field(
-        4,
-        description="An oversize cluster is split into at most this many prompts before being "
-                    "skipped instead. 4 x 8 = 32 members, which rescues real concepts like the "
-                    "Fama-French family (9) while still dropping topic blobs such as the 48 "
-                    "'Laplace transform of ...' surfaces.",
-    )
-    # Names shorter than this never merge into a different surface (homonym risk: 'var', 'P2').
-    min_merge_len: int = Field(4, description="Min name length eligible for any merge.")
-    use_llm: bool = Field(True, description="Adjudicate fuzzy clusters via the Claude API.")
-    # Related-documents stop-entity guard (link/related.py): a canonical entity appearing in
-    # more than this FRACTION of the corpus is too ubiquitous to indicate a real pairing
-    # (every coursework doc shares 'ODE', 'Fourier') and is excluded from the related ranking.
-    # Resolved to an absolute doc-frequency at query time (ratio x doc count). Auto-disabled
-    # below a small-corpus floor; 0 disables entirely. Enabled post-pour (CLAUDE.md §9).
-    stop_doc_freq_ratio: float = Field(
-        0.4, description="Exclude related-doc entities appearing in >this fraction of the corpus (0 = off)."
-    )
-    # Minimum spacing between adjudication API calls. A full rebuild is hundreds of small
-    # sequential calls (359 on the 33-doc corpus; more post-pour) — unthrottled, the burst
-    # rides the account's per-minute rate limit and gets 429-throttled by the SDK anyway.
-    # 1.5 s ≈ 40 requests/min, under the lowest tier's ceiling. 0 disables.
-    api_call_interval: float = Field(
-        1.5, description="Seconds between alias-adjudication API calls (0 = unthrottled)."
-    )
-
-
-class RetitleConfig(BaseModel):
-    """Corpus-level document retitling (locus/retitle.py).
-
-    Composes distinctive '[Module — ][Seq: ]Topic' titles after ingest batches, breaking
-    same-title collisions across the corpus. The topic is distilled from the stored synthesis
-    by the Claude API (judgement-quality, §11.B), cached by content hash; use_llm False falls
-    back to a deterministic thesis-clause topic. Manual-only, like [alias] — billed, global
-    view, run after the pour.
-    """
-
-    use_llm: bool = Field(True, description="Distil topics via the Claude API (else thesis-clause).")
-    api_call_interval: float = Field(
-        1.5, description="Seconds between topic-distillation API calls (0 = unthrottled)."
-    )
 
 
 class ReposConfig(BaseModel):
@@ -302,27 +171,6 @@ class ConceptsConfig(BaseModel):
     # Generic terms never written as concepts (they would link everything to everything).
     # Empty list => the built-in ingest/concepts.DEFAULT_STOPLIST.
     stoplist: list[str] = Field(default_factory=list, description="Override the generic-term stoplist (empty = built-in).")
-
-
-class ObsidianConfig(BaseModel):
-    """Read-only Obsidian projection of the corpus (locus/export/obsidian.py, §13).
-
-    One-way, regenerable render of the SQLite corpus as a browsable vault — never read back,
-    never in the retrieval path. Joins-only (no LLM), canonical entities only (joins through
-    entity_aliases). The exporter owns only its docs/ and entities/ subtrees and never touches
-    `.obsidian/` (the user's per-machine layout/plugin config). See the plan in
-    docs/obsidian-projection-plan.md.
-    """
-
-    out_dir: Path = Field(Path("data/obsidian"), description="Exporter-owned vault root.")
-    # 10 (not 5): code projects share rarer concepts with each other than with papers, so the
-    # papers a project is built on land at rank ~6-15 (the generic shared concept, e.g. 'Markov
-    # model', is low-IDF). A top-10 list surfaces them without the cost of Phase-2 fuzzy linking.
-    top_related: int = Field(10, description="doc<->doc related edges per note.")
-    # A canonical entity becomes a note only if it spans >= this many EXPORTED docs. A
-    # single-doc canonical is noise (no cross-doc link to draw), mirroring related.py.
-    min_cluster_docs: int = Field(2, description="Emit a canonical entity note only if it spans >= this many docs.")
-    emit_entity_notes: bool = Field(True, description="Emit canonical entity notes (false = docs-only graph).")
 
 
 class ReadingConfig(BaseModel):
@@ -418,166 +266,6 @@ class ReadingConfig(BaseModel):
         return value
 
 
-class DailyConfig(BaseModel):
-    """The four-page daily reMarkable page (docs/daily-use-refinement-plan.md §2).
-
-    Geometry is inherited from `[reading]` — it is the same device — except for the ruled-line
-    spacing, which is the one place the two differ in kind: a page delivered to be READ wants
-    tight prose, and a page delivered to be WRITTEN ON wants lines far enough apart to write
-    between. At the reading default of 1.5em they sat about 5mm apart, below the height of the
-    owner's handwriting.
-    """
-
-    # MEASURED on the delivered page, not assumed: Typst collapses a block's `above` against the
-    # previous block's `below`, so consecutive rules sit ONE gap apart. At 2.6 that measured
-    # 28.6pt = 10.1mm, wider than college-ruled paper and, in the owner's words, "way too far
-    # apart". 1.8em = 19.8pt = 7.0mm, which is standard ruled-paper spacing and still clears
-    # adult handwriting. Changing this changes how many writing lines fit a page, so
-    # `compose_daily._LINE_BUDGET` is re-derived against it.
-    rule_gap_em: float = Field(
-        1.8, description="Vertical space between ruled writing lines, in em."
-    )
-    # The daily page is styled; a delivered PAPER is not (see `md2pdf.PageGeometry`). One accent,
-    # used on section rules, anchors and tick boxes so the eye finds structure without colour
-    # becoming decoration. The Paper Pro is a colour device, so this actually renders.
-    accent: str = Field("#1B3A5F", description="Single accent colour for the daily page (hex).")
-    sans_font: str = Field(
-        "DejaVu Sans",
-        description="Display face for headings/anchors; prose stays serif. Must be installed.",
-    )
-
-
-class DiscoveryConfig(BaseModel):
-    """Proposed reading and the accept loop (docs/reading-discovery-plan.md, Phase 4).
-
-    `Locus/Reading/{Proposed,In-Progress,Finished}` on the device: moving a file OUT of `Proposed`
-    is the accept signal and triggers ingest; leaving it there is a rejection.
-
-    The caps are on the STOCK sitting in `Proposed`, not on a rate. A weekly quota keeps topping up
-    a folder he has not cleared, which is how a reading list turns into a guilt metric; a stock cap
-    means an untouched folder proposes nothing, and empty stays a valid state.
-    """
-
-    root_folder: str = Field(
-        "Reading", description="Device folder holding the three reading folders."
-    )
-    rmapi_binary: str = Field("rmapi", description="rmapi binary (PATH name or absolute path).")
-    paper_cap: int = Field(
-        10,
-        description="Max papers held in Proposed at once (a stock, not a rate). 3 -> 10 on "
-                    "2026-07-31: a proposal is a menu, not a demand, and rejecting one is the "
-                    "signal the flywheel tunes on — three at a time starved it.",
-    )
-    book_cap: int = Field(
-        1, description="Max books held in Proposed at once — one considered suggestion, not a feed."
-    )
-    ttl_days: int = Field(
-        21,
-        description="Days in Proposed before it reads as a no. A WEAK negative: silence is as "
-                    "likely to mean a busy fortnight as a bad suggestion.",
-    )
-    drop_folder: str = Field(
-        "paper", description="Folder under data/incoming/ that accepted readings are ingested via."
-    )
-
-    # --- the discovery engine (step 2) ---
-    # ONLY these category tokens ever leave the machine. Not concepts, not project names — the
-    # relevance judgement happens locally against his own embeddings (locus/discover/arxiv.py).
-    arxiv_categories: list[str] = Field(
-        default_factory=lambda: [
-            "q-fin.PM", "q-fin.ST", "q-fin.TR", "q-fin.RM", "q-fin.CP",
-            "econ.EM", "stat.ML", "stat.AP", "eess.SY", "cs.RO",
-        ],
-        description="arXiv categories to harvest. Category tokens only — validated on send.",
-    )
-    per_category: int = Field(
-        60,
-        description="Max papers pulled from EACH category. A quota, not a shared pool: q-fin is "
-                    "outpublished ~10x by stat.ML/cs.LG, so one OR-query returned 2 q-fin.PM "
-                    "papers out of 200 (measured 2026-07-31).",
-    )
-    harvest_limit: int = Field(600, description="Overall cap across all categories.")
-    terms_per_source: int = Field(
-        25, description="Search terms taken from each of reading / projects / gaps."
-    )
-    per_term: int = Field(8, description="arXiv results pulled per search term.")
-    harvest_days: int = Field(
-        21,
-        description="Only harvest papers published within this many days. Paging stops at the "
-                    "cutoff, so coverage is a time window rather than an accident of publication "
-                    "volume — a flat count bought 2 days of cs.RO but a month of q-fin.PM.",
-    )
-    familiarity_weight: float = Field(
-        0.25,
-        description="Penalty on a candidate resembling material he already has. SWEPT 2026-07-31, "
-                    "1.0 -> 0.25: at 1.0 it pushed the harvest's two best portfolio papers out of "
-                    "the top 10 in favour of building-energy M&V. A tiebreaker, not a driver, "
-                    "until the corpus is dense enough for 'already have this' to be often true.",
-    )
-    gap_weight: float = Field(
-        0.6, description="Weight of a gap match relative to a project match (projects win)."
-    )
-    # RETIRED 2026-08-01, kept as a knob rather than deleted (the `rough_penalty` precedent).
-    # Browsing recent category listings was the original mechanism and targeted search superseded
-    # it: judged against real output, browse supplied the weak half of every list while capping
-    # the pool at a rolling ~3-week window. Set true to re-enable.
-    browse_categories: bool = Field(
-        False, description="Also browse recent category listings (retired; search superseded it)."
-    )
-    # LIVE PROJECTS ONLY PROPOSE READING. Measured 2026-08-03: all three slots on the Read page
-    # went to dormant work — a Koopman-PDE paper for `python-solutions`, a crypto-futures paper
-    # for `Optiver trading algorithms`, a Phillips-curve paper for `Citadel Analysis`. Every one
-    # was a well-grounded suggestion to develop a project he has finished, and the day's whole
-    # reading budget went to them, because `discovery_profiles` records no notion of recency or
-    # activity and the ranker could only compare cosine fit.
-    #
-    # HIS DISTINCTION, and it is the important half: a dormant project should stop generating
-    # IDEAS TO DEVELOP while still contributing CONCEPTS TO LEARN. So this gates the discovery
-    # path ONLY. Recall enrolment, the coursework bridges and `related_documents` all read
-    # `entities`/`entity_aliases` and are deliberately untouched — what he built with is still
-    # worth revising whether or not he is still building it.
-    #
-    # Empty means "every active project is live", so an unconfigured install behaves as before.
-    # Matched case-insensitively against the project object's title.
-    live_projects: list[str] = Field(
-        default_factory=list,
-        description="Project titles that may propose new reading. Empty = all active projects.",
-    )
-    openalex_enabled: bool = Field(
-        True,
-        description="Search OpenAlex as well as arXiv — journals, books and chapters, plus "
-                    "citation counts. arXiv alone misses most of the finance canon.",
-    )
-    openalex_mailto: str = Field(
-        "", description="Contact email for OpenAlex's polite pool (higher rate limits)."
-    )
-    openalex_per_term: int = Field(10, description="Works pulled per search term from OpenAlex.")
-    citations_enabled: bool = Field(
-        True,
-        description="Mine what the papers you keep CITE (OpenAlex referenced_works). A work "
-                    "cited by two or more of your own sources is consensus among references you "
-                    "have already endorsed.",
-    )
-    citation_weight: float = Field(
-        0.15,
-        description="Weight on log-citations CENTRED on the pool median — a cheap proxy for "
-                    "'the canonical treatment' over 'the newest variant'. Centred, not raw: the "
-                    "median live count is 601 (worth +0.42 raw) while arXiv reports none at all, "
-                    "so a raw prior put every preprint 0.42 behind for its source alone.",
-    )
-    judge_enabled: bool = Field(
-        True,
-        description="Run a local model over the shortlist and DROP clear irrelevance. A filter, "
-                    "not a ranker: measured, it scores 1-3 only, so it has no resolution at the "
-                    "top of its scale but bins junk the cross-encoder ranks 7th.",
-    )
-    judge_drop_at_or_below: int = Field(1, description="Judge score at or below which to drop.")
-
-    @property
-    def caps(self) -> dict[str, int]:
-        return {"paper": self.paper_cap, "book": self.book_cap}
-
-
 class AgentConfig(BaseModel):
     """Agent-layer orchestration. WHERE MODEL CALLS RUN (agent/claude.py, 3 Nov): on the API
     credit that comes with Max ($100 a month, Messages and Batch API, expires each cycle), and
@@ -626,22 +314,6 @@ class AgentConfig(BaseModel):
     # local AND Sonnet on the durable passes at 3x less cost); a CLI alias so it tracks the
     # current Haiku without pinning a dated id. Judgement-heavy passes may override per-call.
     model: str = Field("haiku", description="claude -p model alias/id for agent language tasks.")
-    # The connection-writing pass runs on Sonnet, not the Haiku default. Measured (2026-08-06,
-    # `scripts/analysis/connect_exp1.py`): on a junk pair with a spurious shared concept Haiku
-    # confidently invented a connection twice while Sonnet answered NO_CONNECTION — for this pass
-    # the stronger model is a GROUNDING property, not a fluency upgrade. ~4 calls/night.
-    connect_model: str | None = Field(
-        "sonnet", description="claude -p model for connection prose (None = [agent].model)."
-    )
-    # Which projects take NEW DEVELOPMENT IDEAS from papers/notes (the connect project arm).
-    # Titles of `implements`-linked project objects, matched casefold against ANY of a repo's
-    # links — the OQTS sub-repos each link both their own object (oqts-infra, oxdaq-ops) and the
-    # umbrella 'oqts', so the umbrella name covers them all. Empty = every non-archived project.
-    # Coursework links are never restricted by this: an old project can still teach.
-    connect_idea_projects: list[str] = Field(
-        default_factory=list,
-        description="Project-object titles whose repos take paper/note ideas (empty = all live).",
-    )
     # Soft daily spend ceiling (USD) for agent-layer `claude -p`, summed from agent_runs across
     # the day (agent/budget.spent_today). None disables the cap. The foreground-yield guard is
     # not yet built (needs the live-throttle error shape, Phase-0 finding d); this cost cap is
@@ -652,32 +324,11 @@ class AgentConfig(BaseModel):
 
 
 class StructureConfig(BaseModel):
-    """Object/belief proposal (locus/structure/propose.py, agent-layer plan §6.2-6.3, Phase 2).
+    """Which documents are HIS writing: read by `agent.state.owner_authored_sql`, which heuris
+    search uses to tell his notes from sources. The proposal pass these were written for was
+    deleted in Slice C (C2); the section name stays so the server's config.toml keeps meaning
+    the same thing."""
 
-    Every default here is a PRECISION knob, and precision is the whole game: an agent that
-    proposes six plausible objects per note trains the owner to ignore it (failure mode #7), and
-    a belief trajectory containing one stance he did not actually take is worse than no
-    trajectory. Loosen deliberately, on evidence from a `--dry-run`."""
-
-    # Hard cap on objects proposed per document. The model is asked for its most consequential
-    # first, so the cap truncates the tail rather than sampling.
-    max_objects_per_doc: int = Field(3, description="Max objects proposed per document.")
-    # A concept must already span this many documents to be proposable. >=2 is the substantive
-    # bar: a "concept" appearing in exactly one document is that document's vocabulary, not a
-    # thread through the corpus, and the Link use case (§1.2) is about threads.
-    min_concept_docs: int = Field(2, description="Min documents a canonical concept must span.")
-    # Extra cross-document `relates` links per object, taken only from retrieval citations that
-    # clear [retrieve].min_rerank_score.
-    max_support_links: int = Field(3, description="Max floor-clearing support links per object.")
-    # Entity TYPES that cannot become a Concept object. A Concept is an IDEA the owner engages
-    # with; a language, a platform, a person and a company are none of those, however often they
-    # co-occur with his work. The first live run proposed `Python` (tool) and `Optibook` (tool)
-    # as concepts to track — both cleared every other gate, because the problem is not their
-    # frequency but their kind. Types come from the ingest entity taxonomy (§6).
-    concept_exclude_entity_types: list[str] = Field(
-        default_factory=lambda: ["tool", "author", "organization", "ticker", "other"],
-        description="Entity types that may not become Concept objects (a concept is an idea).",
-    )
     # Categories whose documents may yield BELIEF POSITIONS and IDEAS. A paper's claim is the
     # paper's position; attributing it to him corrupts the headline capability (§3.4).
     #
@@ -701,18 +352,6 @@ class StructureConfig(BaseModel):
         default_factory=lambda: ["markdown", "text", "docx", "notebook"],
         description="Source types that count as his own writing (empty = any).",
     )
-    # A Concept object must touch at least one document in these categories. Measured 2026-07-29:
-    # 87% of cross-document canonical entities are reachable ONLY through engineering coursework,
-    # so without this the concept space is overwhelmingly Ampere's-law-linking-two-lecture-notes
-    # rather than the owner's quant work. The 89 concepts that BRIDGE coursework into papers/
-    # projects/career/notes (LTI system, transfer function, Markov model, regime shift detection)
-    # are kept by construction — they touch a listed category. Empty = no requirement.
-    concept_require_categories: list[str] = Field(
-        default_factory=lambda: ["paper", "project", "career", "note"],
-        description="A concept must appear in >=1 doc of these categories (empty = no requirement).",
-    )
-    # Override the agent model for this pass (None = [agent].model, Haiku).
-    model: str | None = Field(None, description="claude -p model for the proposal pass.")
 
 
 class IngestConfig(BaseModel):
@@ -779,26 +418,6 @@ class CaptureConfig(BaseModel):
     annotate_max_transcribe: int = Field(
         8, description="Max billed vision transcriptions per capture run (rest wait a tick)."
     )
-    # Mark-intent inference (step 4). Below this the guess is recorded but NOT acted on: the mark
-    # becomes a `locus decide` item instead. His answer was "infer, then let me correct", and
-    # acting on a low-confidence guess silently is that answer with the correction removed.
-    intent_confidence_floor: float = Field(
-        0.6, description="Confidence below which a mark's intent goes to `locus decide` instead."
-    )
-    intent_settle_hours: int = Field(
-        12, description="Hours a mark's page must be untouched before its intent is inferred."
-    )
-    # How close an idea must sit to a project profile before the link is WRITTEN. Was a bare 0.6
-    # literal in `capture/intent.py`, and at that value 3 of the first 4 mark-born ideas linked to
-    # a project they were not about — "read next on alt-data?" linked to OxAI, an exam-question
-    # generator. Measured on those four: the one correct link scored 0.756, every wrong or weak
-    # one scored 0.637-0.673, and a runner-up MARGIN test does not separate them (the correct link
-    # beat its runner-up by 0.008, exactly like a wrong one). So the floor is the discriminator,
-    # and it is set above the wrong band: an unlinked idea is honest, a confidently wrong link is
-    # worse than none because retrieval states it to Claude as fact ("part of: OxAI").
-    idea_project_fit_floor: float = Field(
-        0.70, description="Cosine fit below which a mark-born idea gets NO project link."
-    )
 
 
 class MCPConfig(BaseModel):
@@ -808,16 +427,6 @@ class MCPConfig(BaseModel):
     enable_query: bool = Field(
         False, description="Expose the server-side-generating `query` MCP tool (costs API spend)."
     )
-    include_figure_images: bool = Field(
-        True, description="Attach retrieved figure images as MCP image content blocks."
-    )
-    # The ceiling on annotated pages the `annotations` tool may attach, whatever the client asks
-    # for. A page renders to ~50-270KB of PNG and rides in a chat context, so the guard is on
-    # CONTEXT, not on cost: an unbounded request could hand back a whole marked-up book and
-    # crowd out the conversation it was meant to inform.
-    annotation_image_cap: int = Field(
-        4, description="Max annotated pages attached as images per `annotations` MCP reply."
-    )
 
 
 class Config(BaseModel):
@@ -825,7 +434,6 @@ class Config(BaseModel):
     paths: PathsConfig
     embed: EmbedConfig
     retrieve: RetrieveConfig
-    generation: GenerationConfig
     # Optional: absent [mcp] in config.toml falls back to defaults (query disabled).
     mcp: MCPConfig = Field(default_factory=MCPConfig)
     # Optional: absent [mathocr] falls back to defaults (qwen engine via Ollama).
@@ -834,26 +442,17 @@ class Config(BaseModel):
     figures: FiguresConfig = Field(default_factory=FiguresConfig)
     # Optional: absent [repos] means no tracked repos (sync is a no-op).
     repos: ReposConfig = Field(default_factory=ReposConfig)
-    # Optional: absent [alias] falls back to defaults (LLM adjudication on).
-    alias: AliasConfig = Field(default_factory=AliasConfig)
-    # Optional: absent [retitle] falls back to defaults (LLM topic distillation on).
-    retitle: RetitleConfig = Field(default_factory=RetitleConfig)
     # Optional: absent [concepts] falls back to defaults (code concept pass on).
     concepts: ConceptsConfig = Field(default_factory=ConceptsConfig)
-    # Optional: absent [obsidian] falls back to defaults (data/obsidian, entity notes on).
-    obsidian: ObsidianConfig = Field(default_factory=ObsidianConfig)
     # Optional: absent [reading] falls back to defaults (Paper Pro geometry, folder "Locus").
     reading: ReadingConfig = Field(default_factory=ReadingConfig)
-    # Optional: absent [discovery] falls back to defaults (Locus/Reading, 3 papers / 1 book, 21d).
-    discovery: DiscoveryConfig = Field(default_factory=DiscoveryConfig)
-    daily: DailyConfig = Field(default_factory=DailyConfig)
     # Optional: absent [agent] falls back to defaults (claude -p model 'haiku', $5/day cap).
     agent: AgentConfig = Field(default_factory=AgentConfig)
     # Optional: absent [capture] falls back to defaults (staging dir, built-in folder→category).
     capture: CaptureConfig = Field(default_factory=CaptureConfig)
     # Optional: absent [ingest] falls back to defaults (pass_routing empty = every pass local).
     ingest: IngestConfig = Field(default_factory=IngestConfig)
-    # Optional: absent [structure] falls back to the conservative proposal precision bar.
+    # Optional: absent [structure] falls back to the default definition of his writing.
     structure: StructureConfig = Field(default_factory=StructureConfig)
 
     def resolve_paths(self) -> "Config":
@@ -863,7 +462,6 @@ class Config(BaseModel):
         self.paths.raw_store = (base / self.paths.raw_store).resolve()
         self.paths.incoming = (base / self.paths.incoming).resolve()
         self.paths.notes = (base / self.paths.notes).resolve()
-        self.obsidian.out_dir = (base / self.obsidian.out_dir).resolve()
         return self
 
     @staticmethod

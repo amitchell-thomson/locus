@@ -1,13 +1,12 @@
-"""Atomic owned-block writer + generated-note writer (agent-layer plan §10).
-
-Every agent write into the vault goes through here. Two entry points:
+"""Atomic owned-block writer (agent-layer plan §10), used by capture's Related block.
 
   - `upsert_block()` — put/replace an agent-owned block INSIDE a human note. Reads the note,
     replaces (or appends) only the marked span, and writes atomically. If a two-writer conflict is
     detected it diverts to a sidecar (sidecar.py) rather than risk the owner's prose.
-  - `write_generated_note()` — write a WHOLE agent-owned file (a `_generated/` note, the daily
-    page) with provenance frontmatter (`author: agent`, so it is glanceably not the owner's, and
-    so note-ingest can corpus-exclude it — invariant 5).
+  - `_atomic_write()` — the write itself; Loop A and conversation capture use it directly.
+
+`write_generated_note()` (whole agent-owned files: the daily page, `_generated/` notes) was
+deleted with the daily page in Slice C (C2).
 
 Atomicity (the never-corrupt-a-note guarantee): write to a temp file in the SAME directory, fsync,
 then `os.replace` (atomic rename on POSIX). A crash mid-write leaves the original intact — never a
@@ -20,9 +19,7 @@ import hashlib
 import os
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
 
 from locus.vault import markers, sidecar
 
@@ -90,33 +87,4 @@ def upsert_block(
         return WriteResult(path=target, to_sidecar=True, created=not target_existed)
 
     _atomic_write(path, markers.upsert(current, kind, body, run_id))
-    return WriteResult(path=path, to_sidecar=False, created=not existed)
-
-
-def _frontmatter(fields: dict[str, str]) -> str:
-    lines = ["---"]
-    lines += [f"{k}: {v}" for k, v in fields.items()]
-    lines.append("---")
-    return "\n".join(lines)
-
-
-def write_generated_note(
-    path: str | Path,
-    body: str,
-    *,
-    run_id: str,
-    generated_at: Callable[[], str] | None = None,
-    extra: dict[str, str] | None = None,
-) -> WriteResult:
-    """Write a fully agent-owned note with provenance frontmatter (invariant 4/5).
-
-    The frontmatter (`author: agent`, `generated: true`, `source_run`, `generated_at`) marks the
-    file as not the owner's and lets note-ingest corpus-exclude `_generated/`. Overwrites wholesale
-    (these files are regenerable, never read back). `extra` adds fields (e.g. `title`)."""
-    now = (generated_at or (lambda: datetime.now(timezone.utc).isoformat()))()
-    fields = {"author": "agent", "generated": "true", "source_run": str(run_id), "generated_at": now}
-    fields.update(extra or {})
-    path = Path(path)
-    existed = path.exists()
-    _atomic_write(path, f"{_frontmatter(fields)}\n\n{body.strip()}\n")
     return WriteResult(path=path, to_sidecar=False, created=not existed)

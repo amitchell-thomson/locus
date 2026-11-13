@@ -85,35 +85,6 @@ def _eligible_docs(conn, facets: Facets | None) -> set[int] | None:
     return {r["id"] for r in conn.execute(sql, params)}
 
 
-def rough_doc_ids(conn) -> set[int]:
-    """Doc ids tagged `maturity='rough'` (capture notes). The retrieval pipeline penalises
-    their candidates' cross-encoder score so rough capture is down-weighted, not filtered
-    (agent-layer §6.1). One cheap query per retrieval; empty on an all-`tidy` corpus (a no-op
-    until Loop A lands rough notes)."""
-    return {r["id"] for r in conn.execute("SELECT id FROM documents WHERE maturity='rough'")}
-
-
-def penalised_doc_ids(conn, category_penalty: dict[str, float]) -> dict[int, float]:
-    """doc_id -> penalty, for documents whose CATEGORY is down-weighted ([retrieve].category_penalty).
-
-    Same shape and rationale as `rough_doc_ids`: one cheap query per retrieval, empty (a no-op)
-    when nothing is configured. Down-weight, never filter — the mass of engineering coursework
-    should stop crowding out quant material without any document becoming unreachable."""
-    if not category_penalty:
-        return {}
-    cats = {c for c, p in category_penalty.items() if p}
-    if not cats:
-        return {}
-    placeholders = ",".join("?" * len(cats))
-    ordered = sorted(cats)
-    return {
-        r["id"]: float(category_penalty[r["category"]])
-        for r in conn.execute(
-            f"SELECT id, category FROM documents WHERE category IN ({placeholders})", ordered
-        )
-    }
-
-
 def _fts_query(query: str) -> str | None:
     """Build a safe FTS5 MATCH string: OR of the query's word tokens (recall + bm25 ranks)."""
     tokens = re.findall(r"\w+", query.lower())

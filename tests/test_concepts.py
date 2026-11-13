@@ -8,7 +8,6 @@ paper sharing a concept surface link through the deterministic alias tiers (no m
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import pytest
 
 from locus.db.connection import get_connection
 from locus.db.migrate import migrate
@@ -128,18 +127,3 @@ def _seed_link_corpus(db: Path) -> None:
     conn.close()
 
 
-def test_code_concept_links_to_paper_after_deterministic_link(tmp_path):
-    from locus.link.aliases import build_aliases
-    from locus.link.related import related_documents
-
-    db = tmp_path / "locus.db"
-    _seed_link_corpus(db)
-    conn = get_connection(db)
-    try:
-        build_aliases(conn, use_llm=False, use_cache=False, log=lambda _m: None)
-        related = related_documents(conn, 1, top_n=5)  # the alpha-fund repo
-        linked = {r.doc_id for r in related}
-        assert 2 in linked          # links to the Black-Scholes paper via the shared concept
-        assert 3 not in linked      # not to the unrelated heat-transfer paper
-    finally:
-        conn.close()

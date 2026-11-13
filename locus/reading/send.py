@@ -25,7 +25,7 @@ The default (`[reading].send_folder`) is therefore its own top-level folder that
 from which moving a document into `Reading/In-Progress` stays a deliberate act meaning exactly
 what it has always meant.
 
-Filenames are date-prefixed by `deliver.safe_filename`, so two sends of the same title on
+Filenames are date-prefixed by `safe_filename`, so two sends of the same title on
 different days coexist and a same-day resend replaces content rather than failing outright
 (`rmapi put` REFUSES a same-name upload; see `deliver_pdf`). `deliver_pdf(replace=True)` keeps
 the device-side per-page records, which is a real hazard for the daily page and not for these:
@@ -66,13 +66,14 @@ sitting one argument away, and the error message is the guard.
 
 from __future__ import annotations
 
+import re
 import tempfile
 from dataclasses import dataclass
+from datetime import date as _date
 from pathlib import Path
 
 from locus.capture.sent import default_recorder
 from locus.config import load
-from locus.reading.deliver import safe_filename
 from locus.reading.deliver_remarkable import (
     RmapiRunner,
     _ensure_folder,
@@ -82,6 +83,18 @@ from locus.reading.deliver_remarkable import (
 )
 from locus.reading.md2pdf import PageGeometry, render_markdown_to_pdf
 from locus.reading.tex2pdf import render_latex_to_pdf
+
+# rmapi refuses a same-named re-upload, so names are date-prefixed and path-safe.
+_UNSAFE = re.compile(r'[/\\:*?"<>|]+')
+
+
+def safe_filename(title: str, *, on: _date | None = None, max_len: int = 70) -> str:
+    """`YYYY-MM-DD Title.pdf`: date-prefixed so a re-delivery never collides. Moved here from
+    `reading/deliver.py` (the proposal shelf, deleted in Slice C) since this is its only caller."""
+    stamp = (on or _date.today()).isoformat()
+    clean = _UNSAFE.sub(" ", title).strip()
+    clean = " ".join(clean.split())[:max_len].strip() or "Reading"
+    return f"{stamp} {clean}.pdf"
 
 
 @dataclass

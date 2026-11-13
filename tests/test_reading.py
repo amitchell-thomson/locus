@@ -638,3 +638,38 @@ def test_read_markdown_end_to_end_produces_a_real_pdf(tmp_path: Path, monkeypatc
     out_pdf = tmp_path / "probe.pdf"
     assert out_pdf.read_bytes()[:5] == b"%PDF-"
     assert "rendered probe.md" in capsys.readouterr().out
+
+
+def test_filename_is_date_prefixed_and_sanitised():
+    from datetime import date
+
+    from locus.reading.send import safe_filename
+
+    # rmapi REFUSES a same-named re-upload, so a stable name breaks every run after the first.
+    name = safe_filename("Regime: Shifts/Detection?", on=date(2026, 7, 31))
+    assert name.startswith("2026-07-31 ")
+    assert not set(name) & set('/\\:*?"<>|')
+    assert name.endswith(".pdf")
+
+
+def test_rmdoc_fetch_closes_stdin_and_honours_a_short_timeout(monkeypatch, tmp_path):
+    """An hourly job cannot answer a re-auth prompt, and it holds the ingest lock while it waits.
+
+    Measured 2026-08-01: one fetch blocked in `do_poll` for half an hour on the 1800s default,
+    stalling the whole reading pipeline and every other ingest with it.
+    """
+    import subprocess
+
+    from locus.capture import rmdoc
+
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen.update(kw)
+        raise subprocess.TimeoutExpired(cmd, kw.get("timeout", 0))
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    with pytest.raises(subprocess.TimeoutExpired):
+        rmdoc.fetch_rmdoc("/Locus/Reading/In-Progress/X", tmp_path, timeout=5)
+    assert seen["timeout"] == 5, "the caller's timeout must win over the interactive default"
+    assert seen["stdin"] == subprocess.DEVNULL, "a scheduled job must never wait on a prompt"

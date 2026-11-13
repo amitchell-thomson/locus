@@ -322,26 +322,6 @@ def test_marks_on_different_pages_are_distinct(conn, page):
     assert conn.execute("SELECT COUNT(*) c FROM pdf_annotations").fetchone()["c"] == 2
 
 
-# ---------- the idea object type ----------
-
-
-def test_idea_is_a_valid_object_type(conn):
-    from locus.agent import state
-
-    oid, created = state.upsert_object(
-        conn, type_="idea", title="factor crowding applies to the regime project"
-    )
-    assert created and oid
-    assert state.get_object(conn, oid).type == "idea"
-
-
-def test_existing_object_types_survive_the_rebuild(conn):
-    from locus.agent import state
-
-    for t in ("project", "concept", "question", "reading"):
-        assert state.upsert_object(conn, type_=t, title=f"x {t}")[1]
-
-
 # ---------- reading the handwriting beside a mark ----------
 
 

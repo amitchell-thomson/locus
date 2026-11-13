@@ -13,7 +13,7 @@ import pytest
 
 from locus.vault import markers, sidecar
 from locus.vault.writer import (
-    WriteResult, content_hash, upsert_block, write_generated_note,
+    WriteResult, content_hash, upsert_block,
 )
 
 
@@ -111,21 +111,3 @@ def test_matching_expected_hash_writes_in_place(tmp_path: Path):
     note.write_text("stable\n", encoding="utf-8")
     r = upsert_block(note, "related", "x", run_id="1", expected_hash=content_hash("stable\n"))
     assert r.to_sidecar is False
-
-
-# ---------- writer: generated notes ----------
-
-def test_generated_note_carries_provenance_frontmatter(tmp_path: Path):
-    gen = tmp_path / "_generated" / "surfaced.md"
-    r = write_generated_note(
-        gen, "Body here.", run_id="42", generated_at=lambda: "2026-07-28T00:00:00+00:00",
-        extra={"title": "Surfaced connections"},
-    )
-    assert r.created is True
-    text = gen.read_text()
-    assert "author: agent" in text
-    assert "generated: true" in text
-    assert "source_run: 42" in text
-    assert "generated_at: 2026-07-28T00:00:00+00:00" in text
-    assert "title: Surfaced connections" in text
-    assert text.rstrip().endswith("Body here.")

@@ -23,10 +23,13 @@ the note never matches itself. Retrieval + the writer are injectable for offline
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 
 from locus.vault.writer import upsert_block
+
+log = logging.getLogger(__name__)
 
 _BLOCK_KIND = "related"
 # Strip page markers / AI-fill brackets / frontmatter before using the note as a retrieval query.
@@ -69,7 +72,11 @@ def library_related(conn, query: str) -> list[tuple[int, float]]:
     cands = [c for c in search(conn, query) if c.kind in ("chunk", "proposition", "section")]
     if not cands:
         return []
-    scores = score_pairs(query, [c.text for c in cands])
+    try:
+        scores = score_pairs(query, [c.text for c in cands])
+    except RuntimeError as exc:  # no reranker installed: link nothing rather than fail the capture
+        log.warning("related: no cross-encoder, so no Related block: %s", exc)
+        return []
     floor = load().retrieve.min_rerank_score
     return [(c.doc_id, s) for c, s in zip(cands, scores) if floor is None or s >= floor]
 

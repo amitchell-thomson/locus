@@ -1346,16 +1346,24 @@ fn automated_mail_is_filed_as_it_arrives_and_people_mail_never() {
     let ticket = r(&e, "Your e-ticket: Oxford to London, Fri 23 Oct");
     let lab = r(&e, "Lab partner for Thursday?");
     e.file_arrivals().unwrap();
-    // Since 10 Nov a booking goes to your Travel folder and a receipt to Admin, never Errands
-    // (Personal's stream for chores). This e-ticket is on Oxford, where Travel has no folder,
-    // so it stays in the inbox for the morning run or a cleanup, rather than going anywhere wrong.
-    assert!(in_inbox(&e, &ticket), "no Travel folder on Oxford: left where it is");
+    // Since 10 Nov a booking goes to Travel and a receipt to Admin, never Errands (Personal's
+    // stream for chores). Until e26b8b6 (10 Nov) Travel was a config key with a folder on
+    // Personal only, so this Oxford e-ticket had nowhere to go and stayed in the inbox. Travel
+    // is now one of Personal's streams in the taxonomy, a place on every account: filing for it
+    // records the mark and archives the thread (option C, no folder made or moved into), as
+    // filing for Studies does on Oxford. So the ticket is filed for Travel, and nowhere else.
+    assert!(!in_inbox(&e, &ticket), "filed for Travel as it arrived");
     assert!(in_inbox(&e, &lab), "a person's mail is never moved");
     let (ta, tt) = parse_thread_ref(&ticket).unwrap();
-    assert_ne!(
+    assert_eq!(
         e.db.fors().unwrap().get(&(ta.to_string(), tt.to_string())),
-        Some(&("folder".to_string(), "Errands".to_string())),
-        "never Errands"
+        Some(&("folder".to_string(), "Travel".to_string())),
+        "for Travel, never Errands"
+    );
+    assert!(
+        fake.calls.lock().unwrap().iter().all(|(_, s)| !matches!(&s.location,
+            Location::Mailboxes { physical, .. } if physical == "Travel")),
+        "no Travel folder is made or moved into"
     );
     let cs = e.db.changesets(None, 10).unwrap();
     assert!(!cs.iter().any(|c| c.summary.contains("for Errands")));

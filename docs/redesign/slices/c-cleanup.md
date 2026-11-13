@@ -1,6 +1,6 @@
 # C: cleanup (less, simpler, and safe when the day changes)
 
-**State:** draft for your approval · **Written:** 2026-11-13 · **Runs in:** `claude` (locus-dev)
+**State:** approved 13 Nov 2026 with amendments: C5 (the live day) is parked ("I need to think about that some more"), except D3a, which is yes; D3b is paused with it. The System and Budget page stays and becomes live ("it should properly show real data as that real data exists"). D5 goes with the Canvas pull, as recommended · **Written:** 2026-11-13 · **Runs in:** `claude` (locus-dev)
 **From:** your 13 Nov message: "before we implement anything new, I would like to tackle messiness
 and overcomplication, as those are the most pressing problems with the system", including "an
 analysis of edge cases and potential uses that have not been considered, especially ... when I
@@ -14,7 +14,7 @@ goes ("I agree project can go").
 **Done when:**
 - one set of keys means the same thing in Home, the calendar and mail, and every window's help
   is true;
-- the Project window and the old engine's dead code are gone, every remaining test passes, and
+- the Project window and the old engine's dead code are gone, and System and Budget show live data, every remaining test passes, and
   nothing live reads a table nobody writes;
 - a late start, a block done early, an unplanned two hours and a cancelled lecture each take one
   action, and none of them can touch a whole lecture series by accident;
@@ -116,7 +116,7 @@ Home go; you move between sections with Tab or arrows, which Home already does.
 
 **D2. Delete, don't hide.**
 - The Project window and its sub-screens go, along with the screens that only ever showed sample
-  data: Search (`/` becomes the Home chat's search), System and Budget detail, Review, InkConfirm,
+  data: Search (`/` becomes the Home chat's search), Review, InkConfirm,
   Prep, Decisions, Changes, Answered and Explore.
 - Learning stays as a stub for L.
 - The sample data goes from the live binary (`R`, `--fixtures`).
@@ -213,7 +213,7 @@ unchanged.
 - `search`, `open`, `context`, capture and watch each run on the server;
 - the H1 and H2 answers that cite library documents (Y3, Y9, 10, 21) still find them.
 
-**C3. Delete the Project window and the sample-data screens** (D2). Window renumbering, the tmux
+**C3. Delete the Project window and the sample-data screens** (D2); **System and Budget made live** from the server's real data (units, runs, the credit ledger, model calls). Window renumbering, the tmux
 script and the fix chat's brief all change with it. *Check:* the windows open; every Home key
 works; `--dump` of each remaining screen; no sample data reachable from a live binary.
 
@@ -221,7 +221,9 @@ works; `--dump` of each remaining screen; no sample data reachable from a live b
 D4's "how"). Help is generated from it. *Check:* a test that no app binds a table action to
 another key, and that every help line names a key that works. Then a walk-through with you.
 
-**C5. The live day** (D3 1 to 7, and D3a/D3b if you say yes). One occurrence of a series becomes
+**C5. Parked (13 Nov), except D3a.** Claude may make, on your request, a one-off event within 2 hours that clashes with nothing, and same-day moves of your one-off events (`risk.rs`). The rest below waits for your rethink.
+
+~~The live day~~ (D3 1 to 7). One occurrence of a series becomes
 editable through a RECURRENCE-ID override. *Check:* on the test calendar first, then on today:
 - slip 15 minutes;
 - stop a block early and watch the freed time fill;

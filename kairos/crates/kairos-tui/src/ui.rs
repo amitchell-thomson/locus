@@ -1032,7 +1032,19 @@ fn week(f: &mut Frame, app: &App, area: Rect, single: bool) {
         }
         // Timed deadlines: a filled row across the column, the deadline look (`flag_style`).
         // Bold (with "in 5h") only when due within 24 h; past ones fade.
+        // One that lands on an event's first line (prep due as its meeting starts) goes on the
+        // row above instead, so the event's title stays readable (2026-11-13): due BY then.
+        let starts: Vec<usize> = timed
+            .iter()
+            .filter(|t| !is_deadline(&t.2.primary))
+            .map(|t| t.0)
+            .collect();
         for (r0, _, cl) in timed.iter().filter(|t| is_deadline(&t.2.primary)) {
+            let r0 = &if starts.contains(r0) && *r0 > 0 && !starts.contains(&(r0 - 1)) {
+                r0 - 1
+            } else {
+                *r0
+            };
             let i = &cl.primary;
             let (red, flag) = (flag_col(app, i), flag_glyph(app, i));
             let due = i.start(tz);

@@ -597,6 +597,24 @@ fn a_finished_tasks_flag_stays_ticked_and_takes_more_time() {
 }
 
 #[test]
+fn a_flag_due_as_an_event_starts_sits_above_its_title() {
+    // 2026-11-13: prep due when its meeting starts drew over the meeting's first line.
+    let (mut a, _t) = app("2026-10-20T08:00:00+01:00");
+    let mut t = Task::new("Lecture prep", "Studies", 60, Author::Alec, now("2026-10-12T08:00:00Z"));
+    t.id = "task-prep".into();
+    t.due = Some(Due::At(now("2026-10-20T10:00:00+01:00")));
+    a.tasks = vec![t];
+    a.key(Key::Tab); // day view, Tue 20: B4 Lecture 10:00
+    let s = render_to_string(&a, 100, 40);
+    let lines: Vec<&str> = s.lines().collect();
+    let ev = lines.iter().position(|l| l.contains("B4 Lecture")).expect(&s);
+    assert!(
+        lines[ev - 1].contains("⚑ 10:00 Lecture prep"),
+        "the flag on the row above:\n{s}"
+    );
+}
+
+#[test]
 fn keys_do_what_the_hints_say_for_each_kind_of_item() {
     use kairos_tui::app::{Confirm, Mode, PromptKind, View};
     let (mut a, _t) = app("2026-10-21T08:00:00+01:00");

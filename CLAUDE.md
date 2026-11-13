@@ -434,7 +434,9 @@ locus/
   summaries, propositions, entities and figure descriptions, mitigated by validation, grounding
   guards and raw chunks searched alongside. Revisit only on evidence.
 - **Background work runs on the credit in batches** (facts and briefs on Sonnet, most records on
-  Haiku), within about 15% of the week (plan part E); derive keeps the day's pace unless `--force`.
+  Haiku), paced by `agent/claude.credit_allows`: each day may spend what is left of the $100 credit
+  divided by the days left in the cycle, and bulk work 70% of that; derive keeps the pace unless
+  `--force`. System and Budget in Home show it live.
 - **The library is mostly coursework, deliberately.** The maths that bridges into quant work lives
   there and nowhere else.
 - **Concept fragmentation is not a defect.** A heterogeneous corpus is mostly document-specific

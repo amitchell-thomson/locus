@@ -337,7 +337,14 @@ reason.
   cycle's jobs). ⏎ on a project switches to its tmux session; ⏎ on an application starts a Home
   chat question; `/` opens the chat; `R` and `W` are gone. Windows are 1 home, 2 calendar,
   3 mail, 4 fix.
-- **Still to do:** C4 (one key table), C6 (mail reading; keryx's own chat), C7 (rebuilds reach
-  the windows), C8 (CLAUDE.md and the docs layout); the stale stdio `locus mcp` registration in
+- **C7 done for Home** (68e3846): a rebuilt binary re-execs itself in place on the same screen
+  once nothing is typed (checked in a scratch tmux session). kairos and keryx get the same when
+  their chats are free.
+- **C8 done** (463c88b, 258a6a5): CLAUDE.md 811 → 450 lines, every path and command it names
+  checked by a script (174 of 174); the `state.md` template in `docs/templates/`, and the line in
+  the global CLAUDE.md on both machines.
+- **Still to do:** C4 (one key table: a walk-through with you first; kairos and keryx have their
+  own chats editing them now), C6 (mail reading; keryx's own chat), keryx/CLAUDE.md still says
+  mail is Alt-4; the stale stdio `locus mcp` registration in
   the quast project; `scripts/` holds ~32 analysis scripts that import deleted modules (kept as
   evidence, they no longer run).

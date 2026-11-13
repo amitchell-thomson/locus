@@ -2983,3 +2983,51 @@ fn the_replan_waits_while_alec_moves_things_by_hand() {
     .unwrap();
     assert!(e.replan_wait().is_none());
 }
+
+/// A change to a series rewrites every occurrence (kairos edits the master), so its summary says
+/// so: an approval in Approve is never read as one lecture (cleanup C1, 13 Nov 2026). A one-off
+/// event's summary does not.
+#[test]
+fn a_series_change_says_every_occurrence_and_a_one_off_does_not() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    let weekly = CreateEventReq {
+        title: "B15 Lecture".into(),
+        start: "2026-10-15T10:00".into(),
+        duration_min: Some(60),
+        key: Some("Engineering".into()),
+        repeat: Some(kairos_core::api::Repeat {
+            every: Some("week".into()),
+            term_only: false,
+            until: Some("2026-12-03".into()),
+        }),
+        ..Default::default()
+    };
+    e.direct = true;
+    let cs = e.create_event(Author::Alec, &weekly).unwrap();
+    let one = e
+        .create_event(Author::Alec, &ev("Dentist", "2026-10-16 15:00", "Engineering"))
+        .unwrap();
+    e.direct = false;
+    let uid_of = |cs: &kairos_core::changeset::Changeset| match &cs.ops[0] {
+        kairos_core::changeset::Op::CreateEvent { uid, .. } => uid.clone(),
+        _ => unreachable!(),
+    };
+    let (series, single) = (uid_of(&cs), uid_of(&one));
+    let rename = UpdateEventReq {
+        title: Some("B15 Lecture (LR2)".into()),
+        ..Default::default()
+    };
+    let cs = e.update_event(Author::Claude, None, &series, &rename).unwrap().unwrap();
+    assert!(cs.summary.contains("(every occurrence)"), "{}", cs.summary);
+    e.reject(&cs.id).unwrap();
+    let cs = e
+        .delete_events(Author::Claude, &[(None, series.clone())], None)
+        .unwrap();
+    assert!(cs.summary.contains("(every occurrence)"), "{}", cs.summary);
+    e.reject(&cs.id).unwrap();
+    let cs = e.update_event(Author::Claude, None, &single, &rename).unwrap().unwrap();
+    assert!(!cs.summary.contains("every occurrence"), "{}", cs.summary);
+    let cs = e.delete_events(Author::Claude, &[(None, single)], None).unwrap();
+    assert!(!cs.summary.contains("every occurrence"), "{}", cs.summary);
+}

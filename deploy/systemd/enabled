@@ -4,13 +4,9 @@
 # [Install] section and are started by their timer. One unit per line; `#` starts a comment.
 locus-backup.timer
 locus-capture.timer
-# Off since Slice 0.3 (the daily page and its inputs): locus-daily.timer,
-# locus-daily-pull.timer, locus-discover-harvest.timer (the scout replaces it).
-locus-discover-pull.timer
-locus-maintain.timer
 locus-watch.timer
-# Off since Slice 0.12: locus-remarkable-receiver.service, which received renders pushed by an
-# agent on the tablet. That agent stopped about 1 Aug; capture now reads the cloud.
+# Removed with their code in Slice C (C2): discover-pull, maintain, daily, daily-pull,
+# discover-harvest and remarkable-receiver. server-sync.sh deletes their unit files.
 # The calendar daemon (kairos, ADR-008): restarted only when its build ran, not on every deploy.
 locus-kairosd.service
 # The HTTP service (Slice 0.6): MCP for every Claude, one process.

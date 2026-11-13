@@ -26,37 +26,26 @@ moves the code.
 |---|---|---|---|
 | `locus-watch` | every 5 min | `locus watch --once` — ingest anything dropped into `data/incoming/` | free (local models) |
 | `locus-capture` | every 30 min | `locus capture-sync` — pull reMarkable, transcribe changed notebooks, enrich, ingest | **$0 when nothing changed** |
-| `locus-maintain` | 03:30 daily | `locus structure --unstructured --limit 20` (everything else removed in Slice 0.3) | per new doc |
 | `locus-backup` | 02:00 daily | `locus backup` | free |
 
-Off since Slice 0.3, unit files kept until the code goes: `locus-daily` (compose and push the
-daily page), `locus-daily-pull` (read its ink back), `locus-discover-harvest` (weekly paper hunt;
-the scout replaces it).
+heuris (`locus-heuris`, `locus-heuris-derive`), the HTTP service (`locus-http`), the public
+listener (`locus-public`) and kairosd (`locus-kairosd`) are listed in `enabled` with their own
+comments. The old engine's units (`locus-maintain`, `locus-discover-pull`, `locus-daily`,
+`locus-daily-pull`, `locus-discover-harvest`, `locus-remarkable-receiver`) were deleted with its
+code in Slice C (C2).
 
 **Why a 30-minute capture timer is safe.** `capture-sync` keys each document on a hash of its
 rendered raster, so an unchanged notebook is skipped before any model call. The first scheduled run
 on a fully-captured staging dir reported `0 captured, 12 unchanged, $0.0000`. Spend tracks how much
 you actually write, not how often the timer fires.
 
-**Why `--ingested-since` and not `--since`.** `--since` filters on the AUTHORED date. Handwriting is
-dated by the device's `ModifiedClient` — when it was written — so a note authored three weeks ago
-but ingested last night would be skipped by `--since` and never structured. `--ingested-since` asks
-the question a scheduled run actually has: *what has arrived since I last looked?* Without it the
-nightly run either re-bills the whole corpus every night or silently misses new capture. The window
-is two days, not one, so a missed timer does not drop a day's work.
-
 ## Watching them
 
 ```sh
 systemctl --user status locus-capture.service     # last run + tail of its output
-journalctl --user -u locus-maintain.service -n 50 # what the nightly run did
+journalctl --user -u locus-capture.service -n 50  # what the last capture runs did
 systemctl --user list-timers | grep locus         # next/last fire times
 ```
 
 Every run is also journaled in `agent_runs` (crash-safe, with cost), so `locus status` and
 `agent/budget.spent_today` see scheduled spend exactly as they see manual spend.
-
-## Not scheduled, deliberately
-
-`locus retitle` and `locus export-obsidian` stay manual: both rewrite derived state wholesale and
-are better run when you are watching. Phase 3's daily-page composition will add a fourth timer.

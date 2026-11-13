@@ -244,6 +244,13 @@ def _activity_block(r: "StatusReport") -> list[str]:
     try:
         checked = H.check(conn)
         spend = H.spend_by_kind(conn)
+        try:                                            # the credit's pace, as Home's Budget shows it
+            from datetime import datetime, timezone
+
+            from locus import home_system
+            budget = home_system._budget(conn, datetime.now(timezone.utc), load().agent.credit_cycle_day)
+        except Exception:                               # noqa: BLE001 - a missing ledger only drops the pace
+            budget = None
     finally:
         conn.close()
 
@@ -254,8 +261,10 @@ def _activity_block(r: "StatusReport") -> list[str]:
     else:
         lines.append("  ran                  : (nothing)")
 
-    cap = getattr(load().agent, "daily_cost_cap_usd", None)
-    against = f" of ${cap:.2f} cap" if cap else ""
+    # The credit is paced, not capped (CLAUDE.md §11): today's allowance is what is left of the
+    # cycle's $100 over the days left. The old fixed "$5.00 cap" was a config default nothing enforced.
+    against = (f" (today's allowance ${budget['daily']:.2f}; ${budget['used']:.2f} of $100 this cycle)"
+               if budget else "")
     lines.append(f"  spend                : ${checked.cost_usd:.4f}{against}  "
                  f"({checked.calls} model call(s))")
     for kind, cost, calls in spend[:5]:

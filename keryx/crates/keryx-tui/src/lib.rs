@@ -7,8 +7,10 @@ pub mod file_for;
 pub mod filed;
 pub mod form;
 mod kairos;
+pub mod keys;
 pub mod pane;
 pub mod pick;
+pub mod rebuilt;
 mod runs;
 pub mod send;
 pub mod theme;
@@ -114,6 +116,11 @@ pub fn run(cfg: Config) -> Result<(), String> {
 
 /// The TUI, opened on a thread (`keryx open keryx://thread/…`).
 pub fn run_at(cfg: Config, thread: Option<(String, String)>) -> Result<(), String> {
+    // After a rebuild took over the window (C7), the thread that was on screen.
+    let thread = thread.or_else(|| {
+        let r = std::env::var(rebuilt::ENV_THREAD).ok()?;
+        keryx_core::model::parse_thread_ref(&r).map(|(a, t)| (a.to_string(), t.to_string()))
+    });
     let path = cfg.db_path();
     if !path.exists() {
         return Err(format!(
@@ -174,15 +181,24 @@ pub fn run_at(cfg: Config, thread: Option<(String, String)>) -> Result<(), Strin
         .map(|c| Box::new(c.interactive(true)) as Box<dyn keryx_store::client::Daemon>);
     if let Some((a, t)) = thread
         && !app.open_thread(&a, &t)
+        && std::env::var_os(rebuilt::ENV_THREAD).is_none()
     {
         return Err(format!("no thread {a}:{t} in the mirror"));
     }
+    let mut rebuilt = rebuilt::Rebuilt::new();
+    let mut reexec: Option<Option<String>> = None;
+    let mut last_key = Instant::now();
     let mut terminal = ratatui::try_init().map_err(|e| e.to_string())?;
     let _ = crossterm::execute!(std::io::stdout(), crossterm::event::EnableBracketedPaste);
     let result = (|| -> Result<(), String> {
         let mut stamp = db_stamp(&cfg);
         let mut last_check = Instant::now();
         loop {
+            // A rebuilt binary takes over in place, once nothing is being typed or sent (C7).
+            if rebuilt.ready() && rebuilt::idle(&app, session.is_some(), last_key.elapsed()) {
+                reexec = Some(rebuilt::view_of(&app));
+                return Ok(());
+            }
             app.now = now(&cfg);
             let size = terminal.size().map_err(|e| e.to_string())?;
             app.width = size.width;
@@ -250,14 +266,17 @@ pub fn run_at(cfg: Config, thread: Option<(String, String)>) -> Result<(), Strin
                 app.move_applied(&hid, cs);
                 app.background_done(hid, res);
             }
-            // keryxd writes the mirror; pick changes up within ~2 s.
-            if last_check.elapsed() > Duration::from_secs(2) {
+            // keryxd writes the mirror; pick changes up within ~2 s. A send in its hold counts
+            // down every second in its thread.
+            let sending = app.hold.is_some() || app.sending.is_some();
+            let every = Duration::from_secs(if sending { 1 } else { 2 });
+            if last_check.elapsed() > every {
                 let s = db_stamp(&cfg);
                 if s != stamp {
                     stamp = s;
                     app.reload();
                 }
-                if app.hold.is_some() || app.sending.is_some() {
+                if sending {
                     app.refresh_hold();
                 }
                 last_check = Instant::now();
@@ -269,6 +288,7 @@ pub fn run_at(cfg: Config, thread: Option<(String, String)>) -> Result<(), Strin
                 }
                 match event::read().map_err(|e| e.to_string())? {
                     Event::Key(k) if k.kind == KeyEventKind::Press => {
+                        last_key = Instant::now();
                         let picking = app.writing.as_ref().is_some_and(|w| w.picker.is_some());
                         if picking {
                             if let Some(path) = map_key(k).and_then(|key| app.picker_key(key)) {
@@ -295,8 +315,11 @@ pub fn run_at(cfg: Config, thread: Option<(String, String)>) -> Result<(), Strin
                 && let Event::Key(k) = event::read().map_err(|e| e.to_string())?
                 && let Some(key) = map_key(k)
             {
+                last_key = Instant::now();
                 app.key(key);
                 if app.quit {
+                    // What leaving the thread stamped (its read flag) still goes.
+                    app.run_deferred();
                     return Ok(());
                 }
                 if !app.deferred.is_empty() {
@@ -314,6 +337,19 @@ pub fn run_at(cfg: Config, thread: Option<(String, String)>) -> Result<(), Strin
         crossterm::cursor::SetCursorStyle::DefaultUserShape
     );
     ratatui::restore();
+    if let (Some(view), true) = (reexec, result.is_ok()) {
+        use std::os::unix::process::CommandExt;
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let mut cmd = std::process::Command::new(exe);
+        cmd.args(std::env::args_os().skip(1));
+        match view {
+            Some(r) => cmd.env(rebuilt::ENV_THREAD, r),
+            None => cmd.env_remove(rebuilt::ENV_THREAD),
+        };
+        let err = cmd.exec();
+        // exec returns only on failure: say so, and stop as a quit would.
+        return Err(format!("keryx could not restart after the rebuild: {err}"));
+    }
     result
 }
 

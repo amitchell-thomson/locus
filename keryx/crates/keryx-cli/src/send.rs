@@ -95,6 +95,7 @@ pub fn compose(cfg: &Config, kind: Kind, thread: Option<&str>) -> anyhow::Result
         return Ok(());
     }
     let cs = client(cfg)?.send(&SendReq {
+        in_reply_to: None,
         account,
         thread: thread_ref,
         to: c.to,

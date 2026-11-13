@@ -77,14 +77,17 @@ fn thread_with_folded_quotes() {
 }
 
 #[test]
-fn arrows_select_an_email_and_enter_opens_only_that_one() {
+fn the_bar_marks_the_message_enter_opens_and_only_that_one() {
     let mut a = app();
     select(&mut a, "Re: Group project plan");
     keys(&mut a, &[Key::Enter]);
-    // The newest (your reply) is open; Jane's, below it, is folded to its first lines.
+    // The newest (your reply) is open; Jane's, below it, is folded to one line.
     let s = render_to_string(&mut a, 80, 24);
     assert!(!s.contains("to you"), "Jane's is folded: {s}");
-    keys(&mut a, &[Key::Down, Key::Enter]);
+    // ] takes the bar to Jane's; ⏎ opens that one (D4: what you see is what ⏎ acts on).
+    keys(&mut a, &[Key::Char(']')]);
+    let _ = render_to_string(&mut a, 80, 24);
+    keys(&mut a, &[Key::Enter]);
     let s = render_to_string(&mut a, 80, 24);
     assert!(s.contains("▎ Jane Doe"), "Jane's is open: {s}");
     assert!(s.contains("to you"), "its header names who it went to: {s}");
@@ -116,8 +119,8 @@ fn hidden_text_warning() {
 #[test]
 fn invite_card() {
     let mut a = app();
-    // The invite and its cancellation are one thread; the request is unread,
-    // so both messages are expanded.
+    // The invite and its cancellation are one thread; the request is unread, so it opens with
+    // the bar on it, and the cancellation (read) is folded to one line that still says so.
     select(&mut a, "Cancelled: Project meeting");
     keys(&mut a, &[Key::Enter]);
     let s = render_to_string(&mut a, 100, 30);
@@ -127,6 +130,7 @@ fn invite_card() {
         "{s}"
     );
     assert!(s.contains("Cancelled: Project meeting · Thu 22 Oct, 14:00"), "{s}");
+    assert!(s.contains("▌▎ Prof Smith"), "the bar is on the new invite: {s}");
     insta::assert_snapshot!(s);
 }
 
@@ -316,7 +320,10 @@ fn the_unread_bar_runs_down_both_lines_and_goes_once_you_read() {
         lines[at].contains('▎') && lines[at - 1].contains('▎'),
         "both lines: {s}"
     );
-    keys(&mut a, &[Key::Enter, Key::Esc]);
+    // Read is stamped on leaving, for what was on screen (D4): open, look, leave.
+    keys(&mut a, &[Key::Enter]);
+    let _ = render_to_string(&mut a, 80, 30);
+    keys(&mut a, &[Key::Esc]);
     let s = render_to_string(&mut a, 80, 30);
     let lines: Vec<&str> = s.lines().collect();
     let at = lines.iter().position(|l| l.contains(subject.as_str())).unwrap();

@@ -173,7 +173,7 @@ fn run_one(d: &dyn keryx_store::client::Daemon, job: &Job) -> Result<Option<Stri
 
 fn sent_message(c: &keryx_core::changeset::Changeset) -> String {
     match c.status {
-        keryx_core::changeset::Status::Holding => "sending… (u cancels during the hold)".into(),
+        keryx_core::changeset::Status::Holding => "sending… (c cancels during the hold)".into(),
         keryx_core::changeset::Status::Pending => "draft waiting for approval".into(),
         s => s.as_str().into(),
     }
@@ -292,33 +292,36 @@ impl App {
             },
             quiet: false,
         });
-        self.message = Some((format!("{doing} {n} thread{}…", if n == 1 { "" } else { "s" }), false));
+        // Marked rows are what a key acts on, even from a thread: said, so it is never a surprise.
+        let marked = if self.marked.is_empty() { "" } else { " marked" };
+        self.message = Some((
+            format!("{doing} {n}{marked} thread{}…", if n == 1 { "" } else { "s" }),
+            false,
+        ));
         self.marked.clear();
         if leaves && self.mode == Mode::Thread {
-            self.open = None;
+            self.leave_thread();
             self.mode = Mode::List;
         }
     }
 
-    /// Triage keys in the list and thread view. Returns whether `k` was one.
+    /// keryx's own triage keys in the list and thread view (the table's `u d x v ^r` are read
+    /// before these, in `app.rs`). Returns whether `k` was one.
     pub fn write_key(&mut self, k: Key) -> bool {
         if self.compose_key(k) || self.kairos_key(k) {
             return true;
         }
         match k {
             Key::Char('L') => self.unsubscribe_key(),
-            Key::Char('u') if self.hold.as_ref().is_some_and(|(_, t)| *t > self.now.timestamp()) => {
-                if let Some((id, _)) = self.hold.take() {
-                    self.deferred.push(Job::Cancel(id));
-                    self.message = Some(("cancelling the send…".into(), false));
-                }
-            }
-            // Done: filed for what it is for: the mark when there is one, else the picker (X7).
-            Key::Char('d') => self.done(),
+            // A send in its hold has its own key, so u is only undo (D4).
+            Key::Char('c') => self.cancel_send(),
             // Archive straight away, no question (rounds 10, 11: a). Any mark stays.
             Key::Char('a') => self.triage(Intent::Archive, "archiving"),
             // What it is for, staying in the inbox (round 4).
             Key::Char('m') => self.open_for_picker(true),
+            // Filing has its own key now that d is done (C4): choose what it is for, and it
+            // leaves the inbox.
+            Key::Char('M') => self.open_for_picker(false),
             Key::Char('s') if self.cfg.snooze.enabled => self.mode = Mode::Snooze(None),
             // Needs reply is the one attention marker (round 4); keryx no longer flags.
             Key::Char('f') => {
@@ -330,39 +333,26 @@ impl App {
             Key::Char('U') => self.triage(Intent::Read { on: false }, "marking unread"),
             // Back to the inbox, from the archive, a folder or anywhere (round 8: nothing could).
             Key::Char('I') => self.triage(Intent::Unarchive, "moving back to the inbox"),
-            // Undo: a move you just made is put back on screen at once (round 11).
-            Key::Char('u') if self.last_move.is_some() => {
-                if let Some((refs, left, cs)) = self.last_move.take() {
-                    self.deferred.push(Job::UndoMove {
-                        refs,
-                        back_in: left,
-                        cs,
-                    });
-                    self.message = Some(("undoing…".into(), false));
-                }
-            }
-            Key::Char('u') => {
-                self.deferred.push(Job::UndoLast);
-                self.message = Some(("undoing…".into(), false));
-            }
-            // v marks (as in visual mode): x removes elsewhere in locus (keryx-joins-locus X-e).
-            Key::Char('v') if self.mode == Mode::List => {
-                if let Some(r) = self.selected().map(|r| r.r#ref.clone()) {
-                    if !self.marked.remove(&r) {
-                        self.marked.insert(r);
-                    }
-                    self.move_sel_by(1);
-                }
-            }
             // Cleanups wait in locus's Approve (keryx-joins-locus X2); Claude's drafts in g d (10 Nov).
             Key::Char('A') => self.open_locus_approve(),
-            Key::Ctrl('r') => {
-                self.deferred.push(Job::Sync);
-                self.message = Some(("syncing…".into(), false));
-            }
             _ => return false,
         }
         true
+    }
+
+    /// `c`: cancel the send in its hold. Nothing else is cancelled by it.
+    pub fn cancel_send(&mut self) {
+        match self.hold.clone() {
+            Some((id, t)) if t > self.now.timestamp() => {
+                self.hold = None;
+                self.deferred.push(Job::Cancel(id.clone()));
+                for o in self.outbox.iter_mut().filter(|o| o.cs.as_deref() == Some(id.as_str())) {
+                    o.state = crate::send::SendState::Cancelling;
+                }
+                self.message = Some(("cancelling the send…".into(), false));
+            }
+            _ => self.message = Some(("nothing is sending".into(), false)),
+        }
     }
 
     pub fn snooze_key(&mut self, k: Key, input: Option<String>) {
@@ -398,18 +388,16 @@ impl App {
         }
     }
 
-    /// `A`: locus's Approve, in the locus window.
+    /// `A` (and `g a`): locus's Approve, in the home window. Through [`App::go_place`], so a test
+    /// (`dry_open`) never writes the real `open-locus` file or moves your tmux client.
     pub fn open_locus_approve(&mut self) {
-        let shown = locus_contract::link::OpenFile::locus().write("approve").is_ok()
-            && locus_contract::link::switch_to("locus");
-        self.message = Some(if shown {
-            ("opened approve in locus".into(), false)
-        } else {
-            (
+        self.go_place(locus_theme::keys::Place::Approve);
+        if self.message.as_ref().is_some_and(|(_, err)| *err) || std::env::var_os("TMUX").is_none() {
+            self.message = Some((
                 "cleanups wait in locus's Approve (Alt-1, then a) · Claude's drafts are in g d".into(),
                 false,
-            )
-        });
+            ));
+        }
     }
 
     pub fn run_deferred(&mut self) {
@@ -463,6 +451,14 @@ impl App {
                     true,
                 ));
             }
+            // A send that never reached keryxd is not "sending": it failed, and says why.
+            for o in self
+                .outbox
+                .iter_mut()
+                .filter(|o| o.state == crate::send::SendState::Asking)
+            {
+                o.state = crate::send::SendState::Failed("keryx's mail service isn't running".into());
+            }
             return;
         };
         let mut last: Option<(String, bool)> = None;
@@ -470,6 +466,11 @@ impl App {
         let mut free: Option<(String, String)> = None;
         let mut statuses = Vec::new();
         let mut sending: Option<(String, Option<std::path::PathBuf>)> = None;
+        let mut cancelled: Vec<String> = Vec::new();
+        let mut answers: Vec<(
+            keryx_store::api::SendReq,
+            Result<keryx_core::changeset::Changeset, String>,
+        )> = Vec::new();
         for job in jobs {
             let res: Result<Option<String>, String> = match &job {
                 j @ (Job::Triage { .. }
@@ -511,18 +512,36 @@ impl App {
                         if c.status == keryx_core::changeset::Status::Holding {
                             sending = Some((c.id.clone(), draft.clone()));
                         } else if let Some(p) = draft {
-                            let _ = std::fs::remove_file(p);
+                            crate::send::remove_draft(p);
                         }
+                        answers.push((r.clone(), Ok(c.clone())));
                         Some(sent_message(&c))
                     })
-                    .map_err(|e| match draft {
-                        Some(p) if p.exists() => format!("not sent: {e} · your mail is kept in drafts (g d)"),
-                        _ => format!("not sent: {e}"),
+                    .map_err(|e| {
+                        let kept = draft.as_ref().is_some_and(|p| p.exists());
+                        let why = e.to_string();
+                        answers.push((r.clone(), Err(why.clone())));
+                        if kept {
+                            format!("not sent: {why} · your mail is kept in drafts (g d)")
+                        } else {
+                            format!("not sent: {why}")
+                        }
                     }),
+                // Your version of Claude's draft: followed in its thread like any send.
                 Job::Replace(id, r) => d
                     .replace(id, r)
-                    .map(|c| Some(sent_message(&c)))
-                    .map_err(|e| e.to_string()),
+                    .map(|c| {
+                        if c.status == keryx_core::changeset::Status::Holding {
+                            sending = Some((c.id.clone(), None));
+                        }
+                        answers.push((r.clone(), Ok(c.clone())));
+                        Some(sent_message(&c))
+                    })
+                    .map_err(|e| {
+                        let why = e.to_string();
+                        answers.push((r.clone(), Err(why.clone())));
+                        why
+                    }),
                 Job::Approve(id) => d.approve(id).map(|c| Some(sent_message(&c))).map_err(|e| e.to_string()),
                 Job::Reject(id) => d
                     .reject(id)
@@ -530,7 +549,10 @@ impl App {
                     .map_err(|e| e.to_string()),
                 Job::Cancel(id) => d
                     .cancel(id)
-                    .map(|_| Some("send cancelled: nothing sent".into()))
+                    .map(|_| {
+                        cancelled.push(id.clone());
+                        Some("send cancelled: nothing sent".into())
+                    })
                     .map_err(|e| e.to_string()),
                 Job::Unsubscribe(r) => match d.unsubscribe(r) {
                     Ok(UnsubscribeOutcome::Done { .. }) => Ok(Some("unsubscribed and archived".into())),
@@ -584,6 +606,17 @@ impl App {
             }
         }
         self.message = last;
+        for (r, a) in answers {
+            self.outbox_answered(&r, a.as_ref().map_err(String::as_str));
+        }
+        for o in self.outbox.iter_mut() {
+            if o.cs.as_ref().is_some_and(|c| cancelled.contains(c)) {
+                o.state = crate::send::SendState::Cancelled;
+            }
+        }
+        if self.sending.as_ref().is_some_and(|(id, _)| cancelled.contains(id)) {
+            self.sending = None;
+        }
         for s in statuses {
             self.task_status.insert(s.id.clone(), s);
         }
@@ -595,6 +628,7 @@ impl App {
         {
             // Unsubscribing by email: Alec confirms it like any send.
             let req = keryx_store::api::SendReq {
+                in_reply_to: None,
                 account: account.clone(),
                 thread: None,
                 to: addr,
@@ -609,6 +643,7 @@ impl App {
                 text: String::new(),
                 purpose: crate::send::Purpose::Compose { account },
                 req,
+                scroll: 0,
             }));
         }
         if sending.is_some() {

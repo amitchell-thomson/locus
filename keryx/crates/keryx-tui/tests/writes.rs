@@ -2,251 +2,12 @@
 //! Phase 4 keys: each sends exactly the right request to keryxd (a fake
 //! here; the engine's semantics are tested in keryxd).
 
-use chrono::TimeZone;
-use keryx_core::changeset::{Author, Changeset, Risk, Status};
+mod common;
+use common::*;
+use keryx_core::changeset::{Author, Status};
 use keryx_store::api::*;
-use keryx_store::client::{Daemon, Result};
 use keryx_tui::app::{App, Key, Mode};
 use keryx_tui::render_to_string;
-use std::sync::{Arc, Mutex};
-
-#[derive(Clone, Default)]
-struct Fake {
-    calls: Arc<Mutex<Vec<String>>>,
-    hold: Arc<Mutex<Option<Changeset>>>,
-    unsub: Arc<Mutex<Option<UnsubscribeOutcome>>>,
-    /// Refuse sends with this error (keryxd's live guard, say).
-    refuse_send: Arc<Mutex<Option<String>>>,
-}
-
-impl Fake {
-    fn log(&self, s: String) {
-        self.calls.lock().unwrap().push(s);
-    }
-    fn take(&self) -> Vec<String> {
-        std::mem::take(&mut self.calls.lock().unwrap())
-    }
-}
-
-impl Daemon for Fake {
-    fn kairos_task(&self, r: &KairosTaskReq) -> Result<KairosOutcome> {
-        self.log(format!("kairos-task {}", serde_json::to_string(r).unwrap()));
-        Ok(KairosOutcome {
-            link: keryx_store::state::Link {
-                account: "oxford".into(),
-                thread_id: "1".into(),
-                app: "kairos".into(),
-                kind: "task".into(),
-                target: "t-1".into(),
-                title: r.title.clone(),
-                created_at: 0,
-            },
-            summary: format!("kairos task: {}", r.title),
-            notes: vec![],
-        })
-    }
-    fn kairos_event(&self, r: &KairosEventReq) -> Result<KairosOutcome> {
-        self.log(format!("kairos-event {}", serde_json::to_string(r).unwrap()));
-        Ok(KairosOutcome {
-            link: keryx_store::state::Link {
-                account: "oxford".into(),
-                thread_id: "1".into(),
-                app: "kairos".into(),
-                kind: "event".into(),
-                target: "cs-1".into(),
-                title: r.title.clone(),
-                created_at: 0,
-            },
-            summary: format!("kairos event: {}", r.title),
-            notes: vec![],
-        })
-    }
-    fn kairos_free(&self, r: &FreeReq) -> Result<FreeOut> {
-        self.log(format!("kairos-free {}", serde_json::to_string(r).unwrap()));
-        Ok(FreeOut {
-            slots: vec![(0, 3600), (86_400, 90_000)],
-            text: "Tue 20 Oct 14:00–15:00\nWed 21 Oct 10:00–11:00".into(),
-        })
-    }
-    fn task_status(&self, _: &str) -> Result<Option<TaskStatus>> {
-        Ok(None)
-    }
-    fn undo(&self, id: &str) -> Result<Changeset> {
-        let c = self.undo_last();
-        // undo_last logged "undo": say which one instead.
-        self.calls.lock().unwrap().pop();
-        self.log(format!("undo {id}"));
-        c
-    }
-    fn dismiss_suggestion(&self, id: &str) -> Result<()> {
-        self.log(format!("dismiss {id}"));
-        Ok(())
-    }
-    fn triage(&self, req: &TriageReq) -> Result<TriageOutcome> {
-        self.log(format!(
-            "triage {} {:?}",
-            serde_json::to_string(&req.intent).unwrap(),
-            req.refs
-        ));
-        Ok(TriageOutcome {
-            summary: "done".into(),
-            ..Default::default()
-        })
-    }
-    fn undo_last(&self) -> Result<Changeset> {
-        self.log("undo".into());
-        Ok(Changeset {
-            id: "cs".into(),
-            author: Author::Alec,
-            interactive: true,
-            created_at: 0,
-            ops: vec![],
-            risk: Risk::Low,
-            reasons: vec![],
-            status: Status::Applied,
-            summary: "undo: archive".into(),
-            review_id: None,
-            undoes: None,
-            error: None,
-            hold_until: None,
-            warnings: vec![],
-        })
-    }
-    fn reviews(&self, _: Option<&str>) -> Result<Vec<ReviewView>> {
-        Ok(vec![])
-    }
-    fn review(&self, _: &str) -> Result<ReviewView> {
-        unimplemented!()
-    }
-    fn decide(&self, p: &str, d: &Decision) -> Result<Option<Changeset>> {
-        self.log(format!("decide {p} {}", serde_json::to_string(d).unwrap()));
-        Ok(None)
-    }
-    fn accept_group(&self, r: &str, g: &str) -> Result<AcceptGroup> {
-        self.log(format!("accept-group {r} {g}"));
-        Ok(AcceptGroup::default())
-    }
-    fn undo_review(&self, r: &str) -> Result<UndoReview> {
-        self.log(format!("undo-review {r}"));
-        Ok(UndoReview::default())
-    }
-    fn tag(&self, r: &str, _: &str) -> Result<()> {
-        self.log(format!("tag {r}"));
-        Ok(())
-    }
-    fn untag(&self, r: &str) -> Result<()> {
-        self.log(format!("untag {r}"));
-        Ok(())
-    }
-    fn mark_for(&self, r: &str, id: Option<&str>) -> Result<()> {
-        self.log(format!("for {} {r}", id.unwrap_or("-")));
-        Ok(())
-    }
-    fn sync(&self) -> Result<()> {
-        self.log("sync".into());
-        Ok(())
-    }
-    fn send(&self, r: &SendReq) -> Result<Changeset> {
-        if let Some(e) = self.refuse_send.lock().unwrap().clone() {
-            return Err(keryx_store::client::ClientError::Daemon(e));
-        }
-        self.log(format!(
-            "send {} to={:?} cc={:?} thread={:?} body={:?}",
-            r.account,
-            r.to.iter().map(|a| a.email.clone()).collect::<Vec<_>>(),
-            r.cc.iter().map(|a| a.email.clone()).collect::<Vec<_>>(),
-            r.thread,
-            r.body
-        ));
-        Ok(cs(Status::Holding))
-    }
-    fn approve(&self, id: &str) -> Result<Changeset> {
-        self.log(format!("approve {id}"));
-        Ok(cs(Status::Holding))
-    }
-    fn reject(&self, id: &str) -> Result<Changeset> {
-        self.log(format!("reject {id}"));
-        Ok(cs(Status::Rejected))
-    }
-    fn cancel(&self, id: &str) -> Result<Changeset> {
-        self.log(format!("cancel {id}"));
-        Ok(cs(Status::Cancelled))
-    }
-    fn replace(&self, id: &str, r: &SendReq) -> Result<Changeset> {
-        self.log(format!("replace {id} body={:?}", r.body));
-        Ok(cs(Status::Holding))
-    }
-    fn holding(&self) -> Result<Option<Changeset>> {
-        Ok(self.hold.lock().unwrap().clone())
-    }
-    fn unsubscribe(&self, r: &str) -> Result<UnsubscribeOutcome> {
-        self.log(format!("unsubscribe {r}"));
-        Ok(self.unsub.lock().unwrap().clone().unwrap_or(UnsubscribeOutcome::None))
-    }
-}
-
-fn cs(status: Status) -> Changeset {
-    Changeset {
-        id: "cs-1".into(),
-        author: Author::Alec,
-        interactive: true,
-        created_at: 0,
-        ops: vec![],
-        risk: Risk::Low,
-        reasons: vec![],
-        status,
-        summary: "x".into(),
-        review_id: None,
-        undoes: None,
-        error: None,
-        hold_until: None,
-        warnings: vec![],
-    }
-}
-
-fn app() -> (App, Fake) {
-    let (cfg, db) = keryx_store::testkit::fixture_db();
-    let now = chrono_tz::Europe::London
-        .with_ymd_and_hms(2026, 10, 14, 15, 0, 0)
-        .unwrap();
-    for a in &cfg.accounts {
-        let state = db
-            .sync_state(&a.id)
-            .unwrap()
-            .map(|(s, _)| s)
-            .unwrap_or_else(|| "{}".into());
-        db.set_sync_state(&a.id, &state, now.timestamp()).unwrap();
-    }
-    let mut a = App::new(cfg, db, now);
-    a.dry_open = true;
-    let fake = Fake::default();
-    a.daemon = Some(Box::new(fake.clone()));
-    (a, fake)
-}
-
-fn keys(a: &mut App, ks: &[Key]) {
-    for k in ks {
-        a.key(*k);
-    }
-    a.run_deferred();
-}
-
-fn select(a: &mut App, subject: &str) -> String {
-    a.sel = a
-        .rows
-        .iter()
-        .position(|r| r.subject == subject)
-        .unwrap_or_else(|| panic!("{subject}"));
-    a.rows[a.sel].r#ref.clone()
-}
-
-fn ts(y: i32, m: u32, d: u32, h: u32) -> i64 {
-    chrono_tz::Europe::London
-        .with_ymd_and_hms(y, m, d, h, 0, 0)
-        .unwrap()
-        .timestamp()
-}
-
 #[test]
 fn archive_selected_or_marked() {
     let (mut a, f) = app();
@@ -269,19 +30,30 @@ fn archive_selected_or_marked() {
 }
 
 #[test]
-fn opening_marks_read_quietly_and_only_when_unread() {
+fn read_is_stamped_on_leaving_quietly_and_only_for_what_was_on_screen() {
     let (mut a, f) = app();
     let r = select(&mut a, "Lab partner for Thursday?");
     assert!(a.rows[a.sel].unread);
+    // Opening marks nothing (D4: opening one and moving on lost its new messages).
     keys(&mut a, &[Key::Enter]);
+    assert!(f.take().is_empty(), "nothing on opening");
+    // Leaving before it was ever on screen: still unread, and said.
+    keys(&mut a, &[Key::Esc]);
+    assert!(f.take().is_empty(), "never on screen");
+    assert!(a.message.as_ref().unwrap().0.contains("stay unread"), "{:?}", a.message);
+    // On screen, then left: read, quietly.
+    keys(&mut a, &[Key::Enter]);
+    let _ = render_to_string(&mut a, 80, 24);
+    keys(&mut a, &[Key::Esc]);
     assert_eq!(
         f.take(),
         vec![format!(r#"triage {{"action":"read","on":true}} ["{r}"]"#)]
     );
     assert_eq!(a.message, None, "quiet");
-    keys(&mut a, &[Key::Esc]);
     select(&mut a, "Grüße");
     keys(&mut a, &[Key::Enter]);
+    let _ = render_to_string(&mut a, 80, 24);
+    keys(&mut a, &[Key::Esc]);
     assert!(f.take().is_empty(), "already read");
 }
 
@@ -334,19 +106,32 @@ fn with_taxonomy(a: &mut App) {
 fn done_files_for_what_it_is_for_with_the_guess_chosen() {
     let (mut a, f) = app();
     with_taxonomy(&mut a);
-    // A booking: guessed Travel (your folder, 10 Nov; it was Errands), Enter takes it.
+    // A booking: guessed Travel (your folder, 10 Nov; it was Errands). M's picker has it
+    // chosen, and d (done, one key: C4) files it there and says why.
     let ticket = select(&mut a, "Your e-ticket: Oxford to London, Fri 23 Oct");
-    keys(&mut a, &[Key::Char('d')]);
+    keys(&mut a, &[Key::Char('M')]);
     insta::assert_snapshot!("file_picker", render_to_string(&mut a, 80, 16));
     keys(&mut a, &[Key::Enter]);
     assert_eq!(
         f.take(),
         vec![format!(r#"triage {{"action":"file","key":"Travel"}} ["{ticket}"]"#)]
     );
+    let ticket = select(&mut a, "Your e-ticket: Oxford to London, Fri 23 Oct");
+    a.key(Key::Char('d'));
+    let said = a.message.clone().unwrap().0;
+    assert!(said.contains("Travel") && said.contains("u puts it back"), "{said}");
+    a.run_deferred();
+    assert_eq!(
+        f.take(),
+        vec![format!(r#"triage {{"action":"file","key":"Travel"}} ["{ticket}"]"#)]
+    );
 
-    // No guess: Enter chooses nothing until you type.
+    // No guess: d archives; in M's picker Enter chooses nothing until you type.
     let lab = select(&mut a, "Lab partner for Thursday?");
-    keys(&mut a, &[Key::Char('d'), Key::Enter]);
+    keys(&mut a, &[Key::Char('d')]);
+    assert_eq!(f.take(), vec![format!(r#"triage {{"action":"archive"}} ["{lab}"]"#)]);
+    let lab = select(&mut a, "Lab partner for Thursday?");
+    keys(&mut a, &[Key::Char('M'), Key::Enter]);
     assert!(f.take().is_empty() && matches!(a.mode, Mode::File(_)));
     for c in "b14".chars() {
         a.key(Key::Char(c));
@@ -365,8 +150,8 @@ fn done_files_for_what_it_is_for_with_the_guess_chosen() {
     assert!(f.take().is_empty() && a.mode == Mode::List);
     keys(&mut a, &[Key::Char('a')]);
     assert_eq!(f.take(), vec![format!(r#"triage {{"action":"archive"}} ["{lab}"]"#)]);
-    // d's picker no longer offers "for nothing": that was ambiguous beside e.
-    keys(&mut a, &[Key::Char('d')]);
+    // M's picker does not offer "for nothing": that was ambiguous beside e.
+    keys(&mut a, &[Key::Char('M')]);
     for c in "nothing".chars() {
         a.key(Key::Char(c));
     }
@@ -476,7 +261,7 @@ fn reply_flow_confirm_and_send() {
         call.contains("Yes — 2pm works.") && call.contains("> Are you free"),
         "quote kept: {call}"
     );
-    assert!(a.message.as_ref().unwrap().0.contains("u cancels"));
+    assert!(a.message.as_ref().unwrap().0.contains("c cancels"));
 }
 
 #[test]
@@ -541,7 +326,7 @@ fn forward_and_compose() {
 }
 
 #[test]
-fn hold_shows_and_u_cancels() {
+fn hold_shows_and_c_cancels_and_u_is_only_undo() {
     let (mut a, f) = app();
     let mut h = cs(Status::Holding);
     h.id = "cs-hold".into();
@@ -549,9 +334,15 @@ fn hold_shows_and_u_cancels() {
     *f.hold.lock().unwrap() = Some(h);
     a.refresh_hold();
     let s = render_to_string(&mut a, 80, 6);
-    assert!(s.contains("sending in 7 s · u cancel"), "{s}");
+    assert!(s.contains("sending in 7 s · c cancels"), "{s}");
     keys(&mut a, &[Key::Char('u')]);
+    assert_eq!(f.take(), vec!["undo"], "u is undo, never cancel (D4)");
+    keys(&mut a, &[Key::Char('c')]);
     assert_eq!(f.take(), vec!["cancel cs-hold"]);
+    *f.hold.lock().unwrap() = None;
+    a.refresh_hold();
+    keys(&mut a, &[Key::Char('c')]);
+    assert_eq!(a.message.as_ref().unwrap().0, "nothing is sending");
 }
 
 #[test]
@@ -869,8 +660,8 @@ fn runs_view_lists_runs_and_what_they_made() {
     a.db.finish_run("run-1", "done", "Jane asked about the lab; tagged.", None, start + 120)
         .unwrap();
     keys(&mut a, &[Key::Char('g')]);
-    // Unlisted in go-to until the locus job replaces it (X8), still reachable with g c.
-    keys(&mut a, &[Key::Char('c')]);
+    // Claude's runs: g w (g c is the calendar now, locus's place: C4).
+    keys(&mut a, &[Key::Char('w')]);
     let s = render_to_string(&mut a, 90, 8);
     assert!(
         s.contains("morning") && s.contains("done") && s.contains("1 cleared · 1 need reply"),
@@ -1099,7 +890,7 @@ fn the_editor_draws_in_the_right_pane_with_the_list_beside_it() {
 #[test]
 fn what_was_filed_by_itself_is_listed_and_u_puts_it_back() {
     let (mut a, f) = app();
-    keys(&mut a, &[Key::Char('g'), Key::Char('l')]);
+    keys(&mut a, &[Key::Char('g'), Key::Char('f')]);
     assert!(render_to_string(&mut a, 90, 6).contains("nothing yet"));
     keys(&mut a, &[Key::Esc]);
     let ticket = a
@@ -1132,7 +923,7 @@ fn what_was_filed_by_itself_is_listed_and_u_puts_it_back() {
     a.db.save_changeset(&c).unwrap();
     keys(&mut a, &[Key::Char('g')]);
     assert!(render_to_string(&mut a, 80, 24).contains("Filed by itself"));
-    keys(&mut a, &[Key::Char('l')]);
+    keys(&mut a, &[Key::Char('f')]);
     let s = render_to_string(&mut a, 90, 6);
     assert!(
         s.contains("filed by itself") && s.contains("Errands") && s.contains("Your e-ticket"),
@@ -1169,7 +960,8 @@ fn kept_drafts_are_listed_under_g_d_and_enter_reopens_one() {
         p,
         Purpose::Reply {
             r#ref: lab,
-            account: "oxford".into()
+            account: "oxford".into(),
+            to: None,
         }
     );
 }
@@ -1346,28 +1138,28 @@ fn shift_up_and_down_go_to_the_top_and_the_bottom() {
     assert_eq!(a.sel, a.rows.len() - 1);
     keys(&mut a, &[Key::Top]);
     assert_eq!(a.sel, 0);
-    // In a thread: ⇧↓ to its end and its oldest email, and no further; ↓↑ move between
-    // emails (11 Nov), ⇧↑ back to the top and the newest.
+    // In a thread (D4): ⇧↓ to its end, and no further; the bar on the last message there;
+    // ⇧↑ back to the top and the newest.
     keys(&mut a, &[Key::Enter]);
     let _ = render_to_string(&mut a, 40, 6);
     let open = a.open.as_ref().unwrap();
     let end = open.max_scroll.get();
-    let last = open.msgs.len() - 1;
+    let oldest = *open.order().last().unwrap();
+    let newest = open.order()[0];
     assert!(end > 0, "a thread longer than the screen");
     keys(&mut a, &[Key::Bottom]);
-    assert_eq!(a.open.as_ref().unwrap().scroll, end);
-    assert_eq!(a.open.as_ref().unwrap().sel, last);
+    let _ = render_to_string(&mut a, 40, 6);
+    assert_eq!(a.open.as_ref().unwrap().scroll.get(), end);
     keys(&mut a, &[Key::Down, Key::Down]);
     let _ = render_to_string(&mut a, 40, 6);
-    assert_eq!(a.open.as_ref().unwrap().scroll, end);
-    assert_eq!(a.open.as_ref().unwrap().sel, last, "no further than the oldest");
-    if last > 0 {
-        keys(&mut a, &[Key::Up]);
-        assert_eq!(a.open.as_ref().unwrap().sel, last - 1);
-    }
+    assert_eq!(a.open.as_ref().unwrap().scroll.get(), end, "no further than the end");
+    keys(&mut a, &[Key::Char(']'), Key::Char(']'), Key::Char(']')]);
+    let _ = render_to_string(&mut a, 40, 6);
+    assert_eq!(a.open.as_ref().unwrap().target(), Some(oldest), "] reaches the oldest");
     keys(&mut a, &[Key::Top]);
-    assert_eq!(a.open.as_ref().unwrap().scroll, 0);
-    assert_eq!(a.open.as_ref().unwrap().sel, 0);
+    let _ = render_to_string(&mut a, 40, 6);
+    assert_eq!(a.open.as_ref().unwrap().scroll.get(), 0);
+    assert_eq!(a.open.as_ref().unwrap().target(), Some(newest));
 }
 
 #[test]

@@ -58,6 +58,7 @@ fn purpose_of(name: &str) -> Option<Purpose> {
         return Some(Purpose::Reply {
             r#ref: keryx_core::model::thread_ref(account, thread),
             account: account.to_string(),
+            to: None,
         });
     }
     if let Some(account) = stem.strip_prefix("new-") {
@@ -87,7 +88,11 @@ impl App {
             .flatten()
             .filter_map(|e| {
                 let name = e.file_name().to_string_lossy().into_owned();
-                let purpose = purpose_of(&name)?;
+                let mut purpose = purpose_of(&name)?;
+                // What a reply answers is kept beside it (`<draft>.to`).
+                if let Purpose::Reply { to, .. } = &mut purpose {
+                    *to = crate::send::read_reply_to(&e.path());
+                }
                 let text = std::fs::read_to_string(e.path()).ok()?;
                 Some(Kept {
                     to: header(&text, "To:"),
@@ -117,7 +122,7 @@ impl App {
     }
 
     /// The editor text for one of Claude's drafts: From, To, Cc, Subject and its body.
-    fn claude_draft_text(&self, c: &keryx_core::changeset::Changeset) -> Option<(String, Purpose)> {
+    pub(crate) fn claude_draft_text(&self, c: &keryx_core::changeset::Changeset) -> Option<(String, Purpose)> {
         let o = c.outgoing()?;
         let text = keryx_core::compose::file_with_body(&o.to, &o.cc, &o.subject, o.body.trim_end(), None, "");
         let text = keryx_core::compose::with_from(&text, &self.from_line(&o.account));
@@ -165,7 +170,10 @@ impl App {
                             }
                             Entry::Kept(d) => {
                                 self.message = Some(match std::fs::remove_file(&d.path) {
-                                    Ok(()) => (format!("threw away “{what}”"), false),
+                                    Ok(()) => {
+                                        let _ = std::fs::remove_file(crate::send::reply_to_path(&d.path));
+                                        (format!("threw away “{what}”"), false)
+                                    }
                                     Err(e) => (format!("couldn't throw it away: {e}"), true),
                                 });
                             }
@@ -179,7 +187,7 @@ impl App {
                     sel: sel.min(list.len().saturating_sub(1)),
                 }
             }
-            Key::Enter => match list.get(sel) {
+            Key::Enter | Key::Char('e') => match list.get(sel) {
                 Some(Entry::Claude(c)) => match self.claude_draft_text(c) {
                     Some((text, purpose)) => {
                         self.editor_request = Some(EditorRequest { text, purpose });
@@ -317,7 +325,8 @@ mod tests {
             purpose_of("reply-oxford_12345.eml"),
             Some(Purpose::Reply {
                 r#ref: keryx_core::model::thread_ref("oxford", "12345"),
-                account: "oxford".into()
+                account: "oxford".into(),
+                to: None,
             })
         );
         assert_eq!(

@@ -1,0 +1,24 @@
+---
+source: keryx/crates/keryx-tui/tests/reading.rs
+expression: s
+---
+╭ keryx ────────────── all · personal · oxford · oqts · oqts shared ──────────── reading ╮
+│ Summer project  oxford                                                                 │
+│ Milly Borthwick · 2 messages · 12 oct – 13 oct                                         │
+│ 12 oct ●─────────────────────────────────────────────────────────────────────● 13 oct  │
+│ your turn · Milly Borthwick wrote last, yesterday                                      │
+│ ? Milly Borthwick: Also: is the 20th free?                                             │
+│ ? Milly Borthwick: Can the society host the talk?                                      │
+│                                                                                        │
+│ ── 13 oct ───────────────────────────────────────────────────────────────────────────  │
+│ ▌▎ Milly Borthwick <milly@example.org>                         tue 13 oct · 10:00 new  │
+│ ▌▎ to OQTS                                                                             │
+│ ▌▎                                                                                     │
+│ ▌▎ Also: is the 20th free?                                                             │
+│                                                                                        │
+│ ── read before ──────────────────────────────────────────────────────────────────────  │
+│                                                                                        │
+│ ── 12 oct ───────────────────────────────────────────────────────────────────────────  │
+│  Milly Borthwick  10:00  Can the society host the talk?                                │
+╰────────────────────────────────────────────────────────────────────────────────────────╯
+ r reply · space page · ] [ message · ⏎ open · d done · x archive · z as received

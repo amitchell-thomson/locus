@@ -9,13 +9,13 @@ expression: "render_to_string(&mut a, 80, 24)"
 │ waiting on them · you wrote last, 2 days ago                                 │
 │                                                                              │
 │ ── 12 oct ─────────────────────────────────────────────────────────────────  │
-│        ▎ you                                             mon 12 oct · 11:00  │
-│        ▎ to Jane Doe, Sam · cc Team, you                                     │
-│        ▎                                                                     │
-│        ▎ I'll take part two.                                                 │
+│ ▌      ▎ you                                             mon 12 oct · 11:00  │
+│ ▌      ▎ to Jane Doe, Sam · cc Team, you                                     │
+│ ▌      ▎                                                                     │
+│ ▌      ▎ I'll take part two.                                                 │
 │                                                                              │
-│  Jane Doe          Let's split the report into three parts.                  │
-│  09:00                                                                       │
+│  Jane Doe         09:00  Let's split the report into three parts.            │
+│                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │
@@ -25,4 +25,4 @@ expression: "render_to_string(&mut a, 80, 24)"
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- r reply · d done · a archive · m for · ↑↓ email · ⏎ open · z as received
+ r reply · space page · ] [ message · ⏎ open · d done · x archive

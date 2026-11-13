@@ -13,6 +13,7 @@ use keryx_store::client::Daemon;
 use keryx_store::db::Db;
 use keryx_store::mailapp;
 use keryx_store::view::{self, Filter, ThreadRow, View};
+use locus_theme::keys::Action;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
@@ -82,7 +83,14 @@ pub enum Mode {
     },
 }
 
-/// A thread opened for reading.
+/// A thread opened for reading, read like a document (cleanup C6, decision D4, 13 Nov 2026).
+///
+/// There is ONE scroll and no separate selection. Before this, ↑↓ moved a selection (a tint on
+/// one header line) while space scrolled, so the tint scrolled out of sight and `⏎`, `z` and `r`
+/// acted on a message you could not see. Now the message under the top line of the view is the
+/// one they act on ([`Open::target`]), and the screen marks it with a bar down its whole left
+/// edge. `]` `[` jump between messages; near the end of a thread, where the last messages can
+/// never reach the top line, the jump keeps the bar on the message it went to (`focus`).
 #[derive(Debug, Clone)]
 pub struct Open {
     pub account: String,
@@ -90,47 +98,105 @@ pub struct Open {
     pub msgs: Vec<Message>,
     /// Parsed invites, per message (same order as `msgs`).
     pub invites: Vec<Option<Invite>>,
-    /// The selected message, as a position newest first (0 = the newest): ↑↓ move it.
-    pub sel: usize,
-    /// Messages (indices into `msgs`) whose fold ⏎ flipped: the newest and the new ones start
-    /// open, the rest folded.
+    /// Messages (indices into `msgs`) open when the thread opened: the newest new one and up to
+    /// two more new ones, or the newest when nothing is new. Everything else folds to one line.
+    pub first_open: std::collections::HashSet<usize>,
+    /// Messages whose fold ⏎ flipped from how they started.
     pub toggled: std::collections::HashSet<usize>,
     /// Messages shown exactly as received (`z`), quoted history and all.
     pub raw: std::collections::HashSet<usize>,
-    /// The line each message's block starts on, newest first, and the pane's height, as last
-    /// drawn: moving the selection scrolls to it.
-    pub starts: std::cell::RefCell<Vec<usize>>,
-    pub height: std::cell::Cell<u16>,
-    /// When you last opened this thread here, before this time (spec keryx-thread-view T3).
+    /// When you last read this thread here (the "new since" mark, spec keryx-thread-view T3).
     pub last_read: Option<i64>,
-    pub scroll: u16,
-    /// How far the thread can scroll, as last drawn: `⇧↓` goes there, and `j` stops there.
+    /// The first body line shown (the header stays above it).
+    pub scroll: std::cell::Cell<u16>,
+    /// Put this message (index into `msgs`) at the top on the next draw: on opening, `]` `[`,
+    /// `⏎` and `z`, so the message you act on stays where you are looking.
+    pub jump: std::cell::Cell<Option<usize>>,
+    /// The message a jump went to when it could not reach the top line (the end of the thread):
+    /// the bar stays on it until you scroll.
+    pub focus: std::cell::Cell<Option<usize>>,
+    /// As last drawn: each message's block, in the order shown, as (index into `msgs`, the line
+    /// its lead-in starts on (day band or blank), its first line, the line after its last).
+    pub blocks: std::cell::RefCell<Vec<Block>>,
+    /// The body pane's height and how far it can scroll, as last drawn.
+    pub height: std::cell::Cell<u16>,
     pub max_scroll: std::cell::Cell<u16>,
+    /// Messages that were on screen while you read the thread: "read" is stamped for these, and
+    /// only these, when you leave it (D4: it was stamped on opening, so opening a thread and
+    /// moving on lost its new messages).
+    pub seen: std::cell::RefCell<BTreeSet<usize>>,
+}
+
+/// Where one message sits in the drawn thread.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Block {
+    pub msg: usize,
+    pub lead: usize,
+    pub start: usize,
+    pub end: usize,
 }
 
 impl Open {
-    /// The selected message's index into `msgs`.
-    pub fn selected(&self) -> Option<usize> {
+    /// Message indices in the order shown: newest first (11 Nov: "most recent should always be
+    /// at the top").
+    pub fn order(&self) -> Vec<usize> {
         let mut v: Vec<usize> = (0..self.msgs.len()).collect();
         v.sort_by_key(|&i| std::cmp::Reverse(self.msgs[i].date));
-        v.get(self.sel).copied()
+        v
     }
 
-    /// Scroll the selected message's start to the top of the pane.
-    pub fn to_top(&mut self) {
-        if let Some(&s) = self.starts.borrow().get(self.sel) {
-            self.scroll = s.saturating_sub(1) as u16;
+    /// The message `⏎`, `z`, `r` and the link digits act on: the one under the top line of the
+    /// view (the first whose block ends below it), or the one a jump went to.
+    pub fn target(&self) -> Option<usize> {
+        if let Some(i) = self.jump.get().or(self.focus.get()) {
+            return Some(i);
         }
+        let top = usize::from(self.scroll.get());
+        let blocks = self.blocks.borrow();
+        if blocks.is_empty() {
+            // Not drawn yet: the message the thread opens on.
+            return self.first_target();
+        }
+        blocks.iter().find(|b| b.end > top).or(blocks.last()).map(|b| b.msg)
     }
 
-    /// Scroll so the selected message is in view, its start near the top, when it is not.
-    pub fn follow(&mut self) {
-        let Some(&s) = self.starts.borrow().get(self.sel) else { return };
-        let h = usize::from(self.height.get()).max(6);
-        let top = usize::from(self.scroll);
-        if s < top || s + 5 > top + h {
-            self.scroll = (s.saturating_sub(1) as u16).min(self.max_scroll.get());
-        }
+    /// The message the thread opens on: the newest of those open at first, else the newest.
+    pub fn first_target(&self) -> Option<usize> {
+        let order = self.order();
+        order
+            .iter()
+            .copied()
+            .find(|i| self.first_open.contains(i))
+            .or(order.first().copied())
+    }
+
+    /// Whether message `i` is shown whole (else folded to one line).
+    pub fn is_open(&self, i: usize) -> bool {
+        self.first_open.contains(&i) != self.toggled.contains(&i) || self.raw.contains(&i)
+    }
+
+    /// Scroll by `d` lines; the bar goes back to following the top line.
+    pub fn scroll_by(&mut self, d: i32) {
+        self.jump.set(None);
+        self.focus.set(None);
+        let to = (i32::from(self.scroll.get()) + d).clamp(0, i32::from(self.max_scroll.get()));
+        self.scroll.set(to as u16);
+    }
+
+    /// A page: the pane's height less two lines of overlap.
+    pub fn page(&self) -> i32 {
+        i32::from(self.height.get()).saturating_sub(2).max(1)
+    }
+
+    /// `]` / `[`: the next (older) or previous (newer) message to the top.
+    pub fn step(&mut self, d: isize) {
+        let order = self.order();
+        let Some(at) = self.target().and_then(|t| order.iter().position(|&i| i == t)) else {
+            return;
+        };
+        let to = (at as isize + d).clamp(0, order.len() as isize - 1) as usize;
+        self.focus.set(None);
+        self.jump.set(Some(order[to]));
     }
 
     /// Every attachment in the thread: (message index, attachment index).
@@ -238,6 +304,13 @@ pub struct App {
     pub status_worker: Option<std::sync::mpsc::Sender<Vec<String>>>,
     /// Tasks already asked about, so reopening a thread does not ask again while it waits.
     pub status_asked: BTreeSet<String>,
+    /// How far the keys overlay is scrolled.
+    pub help_scroll: u16,
+    /// `x` asked about these threads: the next `x` archives them.
+    pub remove_asked: Option<Vec<String>>,
+    /// Your sends from this session, shown in their thread until the mirror has them (D4): in
+    /// the hold, sent, cancelled, or not sent and why (kept until you deal with it).
+    pub outbox: Vec<crate::send::Outbox>,
 }
 
 pub const LIST_LIMIT: u32 = 500;
@@ -291,6 +364,9 @@ impl App {
             task_status: std::collections::HashMap::new(),
             status_worker: None,
             status_asked: BTreeSet::new(),
+            remove_asked: None,
+            help_scroll: 0,
+            outbox: Vec::new(),
             list_hidden: false,
             seen_since: None,
             last_key: 0,
@@ -349,6 +425,7 @@ impl App {
     }
 
     fn open_help(&mut self) {
+        self.help_scroll = 0;
         self.help_back = Some(self.mode.clone());
         self.mode = Mode::Help;
     }
@@ -362,9 +439,13 @@ impl App {
         }
     }
 
-    /// Digit `n` in a thread: open link n of the message shown in full (its latest).
+    /// Digit `n` in a thread: open link n of the message under the bar.
     pub fn open_link(&mut self, n: usize) {
-        let Some(m) = self.open.as_ref().and_then(|o| o.msgs.last()) else {
+        let Some(m) = self
+            .open
+            .as_ref()
+            .and_then(|o| o.target().and_then(|i| o.msgs.get(i)).or(o.msgs.last()))
+        else {
             return;
         };
         let r = keryx_core::text::readable(&m.body_text, false);
@@ -393,22 +474,87 @@ impl App {
         }
     }
 
-    /// When you last opened a thread here, and record that you opened it now. Kept as one small
-    /// file in locus's state directory (`keryx-thread-read`, "<ref> <unix time>" a line): local,
-    /// and losing it only loses the "new since" band until you next open each thread.
-    fn thread_read(&mut self, r#ref: &str) -> Option<i64> {
-        let path = self.thread_read_file.clone()?;
-        let text = std::fs::read_to_string(&path).unwrap_or_default();
-        let mut map: std::collections::BTreeMap<String, i64> = text
+    /// The "<ref> <unix time>" lines of `keryx-thread-read`, in locus's state directory: when you
+    /// last read each thread here. Local, and losing it only loses the "new since" mark.
+    fn thread_reads(&self) -> std::collections::BTreeMap<String, i64> {
+        let Some(path) = &self.thread_read_file else {
+            return Default::default();
+        };
+        std::fs::read_to_string(path)
+            .unwrap_or_default()
             .lines()
             .filter_map(|l| l.rsplit_once(' '))
             .filter_map(|(k, v)| Some((k.to_string(), v.trim().parse().ok()?)))
-            .collect();
-        let before = map.get(r#ref).copied();
-        map.insert(r#ref.to_string(), self.now.timestamp());
+            .collect()
+    }
+
+    /// When you last read this thread here.
+    pub fn thread_read_at(&self, r#ref: &str) -> Option<i64> {
+        self.thread_reads().get(r#ref).copied()
+    }
+
+    /// Record that you read this thread up to `t` (never moves the mark back).
+    fn stamp_thread_read(&mut self, r#ref: &str, t: i64) {
+        let Some(path) = self.thread_read_file.clone() else {
+            return;
+        };
+        let mut map = self.thread_reads();
+        if map.get(r#ref).is_some_and(|&was| was >= t) {
+            return;
+        }
+        map.insert(r#ref.to_string(), t);
         let body: String = map.iter().map(|(k, v)| format!("{k} {v}\n")).collect();
         let _ = std::fs::write(&path, body);
-        before
+    }
+
+    /// Leave the open thread, stamping "read" for what was on screen (D4). Its new messages that
+    /// never reached the screen stay new: the local mark moves only up to just before the
+    /// oldest of them, and the mailbox's read flag is set only when none is left. Returns how many
+    /// new messages you did not see.
+    pub fn leave_thread(&mut self) -> usize {
+        let Some(o) = self.open.take() else { return 0 };
+        let r = keryx_core::model::thread_ref(&o.account, &o.thread_id);
+        let seen = o.seen.borrow().clone();
+        let unseen: Vec<i64> = (0..o.msgs.len())
+            .filter(|&i| self.is_new(&o, i) && !seen.contains(&i))
+            .map(|i| o.msgs[i].date)
+            .collect();
+        let up_to = unseen.iter().min().map_or(self.now.timestamp(), |t| t - 1);
+        self.stamp_thread_read(&r, up_to);
+        if unseen.is_empty() {
+            self.read_here.insert(r.clone());
+            let unread = o
+                .msgs
+                .iter()
+                .any(|m| m.account == o.account && m.thread_id == o.thread_id && !m.read);
+            if unread {
+                self.deferred.push(Job::Triage {
+                    req: keryx_store::api::TriageReq {
+                        intent: keryx_store::api::Intent::Read { on: true },
+                        refs: vec![r],
+                        summary: None,
+                        review_id: None,
+                    },
+                    quiet: true,
+                });
+            }
+        }
+        unseen.len()
+    }
+
+    /// Back out of a thread to where it was opened from.
+    pub fn close_thread(&mut self) {
+        let unseen = self.leave_thread();
+        if unseen > 0 {
+            self.message = Some((
+                format!(
+                    "{unseen} new message{} you did not reach stay unread",
+                    if unseen == 1 { "" } else { "s" }
+                ),
+                false,
+            ));
+        }
+        self.mode = self.back.take().unwrap_or(Mode::List);
     }
 
     /// Where the time you last looked is kept (locus's state directory).
@@ -620,7 +766,11 @@ impl App {
         // out from this thread's ids, each copy once.
         let ids: Vec<String> = own
             .iter()
-            .flat_map(|m| std::iter::once(m.message_id.clone()).chain(m.in_reply_to.clone()).chain(m.references.clone()))
+            .flat_map(|m| {
+                std::iter::once(m.message_id.clone())
+                    .chain(m.in_reply_to.clone())
+                    .chain(m.references.clone())
+            })
             .collect();
         let mut all = own.clone();
         for (a, t) in self.db.threads_with_ids(&ids).unwrap_or_default() {
@@ -633,20 +783,58 @@ impl App {
         all.sort_by_key(|m| (m.date, m.account != account));
         let msgs = view::distinct(all);
         let invites = msgs.iter().map(|m| self.invite_of(m)).collect();
-        Some(Open {
+        let mut o = Open {
             account: account.to_string(),
             thread_id: thread_id.to_string(),
             msgs,
             invites,
-            sel: 0,
+            first_open: Default::default(),
             toggled: Default::default(),
             raw: Default::default(),
-            starts: Default::default(),
-            height: std::cell::Cell::new(0),
             last_read: None,
-            scroll: 0,
+            scroll: std::cell::Cell::new(0),
+            jump: std::cell::Cell::new(None),
+            focus: std::cell::Cell::new(None),
+            blocks: Default::default(),
+            height: std::cell::Cell::new(0),
             max_scroll: std::cell::Cell::new(u16::MAX),
-        })
+            seen: Default::default(),
+        };
+        o.last_read = self.thread_read_at(&keryx_core::model::thread_ref(account, thread_id));
+        self.settle_open(&mut o);
+        Some(o)
+    }
+
+    /// One of your addresses wrote it.
+    pub fn is_mine(&self, m: &Message) -> bool {
+        m.from
+            .as_ref()
+            .is_some_and(|a| self.cfg.personal_addresses().contains(&a.key()))
+    }
+
+    /// New to you: theirs, and after the last time you read this thread here; with no record of
+    /// that yet, unread in the mirror.
+    pub fn is_new(&self, open: &Open, i: usize) -> bool {
+        let m = &open.msgs[i];
+        !self.is_mine(m)
+            && match open.last_read {
+                Some(t) => m.date > t,
+                None => !m.read,
+            }
+    }
+
+    /// How a thread opens (D4): the newest new message at the top, open; up to two more new ones
+    /// open; everything older folded to one line. With nothing new, the newest is open.
+    pub fn settle_open(&self, o: &mut Open) {
+        let order = o.order();
+        let new: Vec<usize> = order.iter().copied().filter(|&i| self.is_new(o, i)).take(3).collect();
+        o.first_open = if new.is_empty() {
+            order.first().copied().into_iter().collect()
+        } else {
+            new.into_iter().collect()
+        };
+        o.toggled.clear();
+        o.jump.set(o.first_target());
     }
 
     /// Calendar parts aren't in the mirror's text: parse the raw message.
@@ -696,14 +884,24 @@ impl App {
         self.note_key();
         // ^C quits from anywhere (it used to type a "q" into searches and forms).
         if k == Key::Ctrl('c') {
+            self.leave_thread();
             self.quit = true;
             return;
         }
         if self.message.is_some() && !matches!(self.mode, Mode::Search(_)) {
             self.message = None;
         }
+        // x asks once; any other key forgets the question.
+        if k != Key::Char('x') {
+            self.remove_asked = None;
+        }
         match self.mode.clone() {
-            Mode::Help => self.mode = self.help_back.take().unwrap_or(Mode::List),
+            // The keys: j k scroll them, any other key closes them.
+            Mode::Help => match k {
+                Key::Char('j') | Key::Down | Key::Char(' ') | Key::PageDown => self.help_scroll += 3,
+                Key::Char('k') | Key::Up | Key::PageUp => self.help_scroll = self.help_scroll.saturating_sub(3),
+                _ => self.mode = self.help_back.take().unwrap_or(Mode::List),
+            },
             Mode::GoTo => self.goto_key(k),
             Mode::Search(q) => self.search_key(k, q),
             Mode::Attachments => self.attachment_key(k),
@@ -722,11 +920,29 @@ impl App {
     }
 
     fn list_key(&mut self, k: Key) {
+        if let Some(a) = crate::keys::action(k) {
+            match a {
+                Action::Back => self.list_back(),
+                // q quits only at the top (D1); in a search, another list or with rows marked it
+                // is back, as esc.
+                Action::Quit if self.at_top() => self.quit = true,
+                Action::Quit => self.list_back(),
+                Action::Mark => {
+                    if let Some(r) = self.selected().map(|r| r.r#ref.clone()) {
+                        if !self.marked.remove(&r) {
+                            self.marked.insert(r);
+                        }
+                        self.move_sel_by(1);
+                    }
+                }
+                a => self.common_action(a),
+            }
+            return;
+        }
         if self.write_key(k) {
             return;
         }
         match k {
-            Key::Char('q') => self.quit = true,
             Key::Char('j') | Key::Down => self.move_sel(1),
             Key::Char('k') | Key::Up => self.move_sel(-1),
             Key::PageDown | Key::Ctrl('d') => self.move_sel(10),
@@ -737,22 +953,115 @@ impl App {
             Key::Tab => self.cycle_account(1),
             Key::AltTab => self.extend_account(),
             Key::BackTab => self.cycle_account(-1),
-            Key::Char('g') => self.mode = Mode::GoTo,
-            Key::Char('/') => self.mode = Mode::Search(self.search.clone().unwrap_or_default()),
-            Key::Char('?') => self.open_help(),
             Key::Char('b') => self.toggle_list(),
-            Key::Esc if !self.marked.is_empty() => self.marked.clear(),
-            Key::Esc if self.search.is_some() => {
-                self.search = None;
-                self.reload();
-            }
-            // From another list (sent, the archive, an area), esc is the inbox (round 11 audit).
-            Key::Esc if self.view != View::Inbox => {
-                self.view = View::Inbox;
-                self.sel = 0;
-                self.reload();
-            }
             _ => {}
+        }
+    }
+
+    /// The inbox, with no search and nothing marked: where q quits.
+    pub fn at_top(&self) -> bool {
+        self.view == View::Inbox && self.search.is_none() && self.marked.is_empty()
+    }
+
+    /// esc in the list: unmark, then clear the search, then back to the inbox.
+    fn list_back(&mut self) {
+        if !self.marked.is_empty() {
+            self.marked.clear();
+        } else if self.search.is_some() {
+            self.search = None;
+            self.reload();
+        } else if self.view != View::Inbox {
+            // From another list (sent, the archive, an area), esc is the inbox (round 11 audit).
+            self.view = View::Inbox;
+            self.sel = 0;
+            self.reload();
+        } else {
+            self.message = Some(("this is the inbox · q quits".into(), false));
+        }
+    }
+
+    /// A table action that means the same in the list and in a thread (D1).
+    fn common_action(&mut self, a: Action) {
+        match a {
+            Action::Undo => self.undo(),
+            Action::Edit => self.edit(),
+            Action::Yes | Action::No => {
+                let k = Key::Char(if a == Action::Yes { 'y' } else { 'n' });
+                if !self.kairos_key(k) {
+                    self.message = Some(("nothing here to say yes or no to".into(), false));
+                }
+            }
+            Action::New => {
+                self.compose_key(Key::Char('+'));
+            }
+            Action::Done => self.done(),
+            Action::Remove => self.remove(),
+            Action::Search => self.mode = Mode::Search(self.search.clone().unwrap_or_default()),
+            Action::Refresh => {
+                self.deferred.push(Job::Sync);
+                self.message = Some(("syncing…".into(), false));
+            }
+            Action::GoTo => self.mode = Mode::GoTo,
+            Action::Help => self.open_help(),
+            Action::Mark => {
+                self.message = Some(("v marks threads in the list, for one change to several".into(), false))
+            }
+            Action::Back | Action::Quit => {}
+        }
+    }
+
+    /// `u`: undo the last change at once; the line then says what was undone. A move you just
+    /// made is put back on screen at once (round 11). A send in its hold is cancelled with `c`,
+    /// never `u` (D4).
+    pub fn undo(&mut self) {
+        if let Some((refs, left, cs)) = self.last_move.take() {
+            self.deferred.push(Job::UndoMove {
+                refs,
+                back_in: left,
+                cs,
+            });
+        } else {
+            self.deferred.push(Job::UndoLast);
+        }
+        self.message = Some(("undoing…".into(), false));
+    }
+
+    /// `x`: archive, asking once (D1: remove always asks). Nothing is ever deleted.
+    pub fn remove(&mut self) {
+        let refs = self.targets();
+        if refs.is_empty() {
+            return;
+        }
+        if self.remove_asked.as_ref() == Some(&refs) {
+            self.remove_asked = None;
+            self.triage_intent(keryx_store::api::Intent::Archive, "archiving");
+            return;
+        }
+        let what = match refs.as_slice() {
+            [one] => {
+                let subject = self
+                    .rows
+                    .iter()
+                    .find(|r| &r.r#ref == one)
+                    .map(|r| r.subject.clone())
+                    .or_else(|| {
+                        self.open
+                            .as_ref()
+                            .and_then(|o| o.msgs.last().map(|m| m.subject.clone()))
+                    })
+                    .unwrap_or_default();
+                format!("“{}”", locus_theme::fit(&subject, 40))
+            }
+            v => format!("the {} marked threads", v.len()),
+        };
+        self.message = Some((format!("archive {what}? x again archives · nothing is deleted"), false));
+        self.remove_asked = Some(refs);
+    }
+
+    /// `e`: the draft of this thread, Claude's or yours, else say how to write one.
+    fn edit(&mut self) {
+        if !self.open_thread_draft() {
+            self.message = Some(("nothing to edit here · r writes a reply, + a new mail".into(), false));
         }
     }
 
@@ -765,6 +1074,7 @@ impl App {
         {
             self.sel = i;
         }
+        self.leave_thread();
         self.open = self.load_thread(account, thread_id);
         if self.open.is_some() {
             self.mode = Mode::Thread;
@@ -773,30 +1083,15 @@ impl App {
         self.open.is_some()
     }
 
+    /// Read the selected thread. Read is stamped when you leave it, for what was on screen
+    /// ([`App::leave_thread`]); opening it marks nothing.
     fn open_selected(&mut self) {
         let Some(r) = self.selected().cloned() else { return };
+        self.leave_thread();
         self.open = self.load_thread(&r.account, &r.thread_id);
         if self.open.is_some() {
-            let last = self.thread_read(&r.r#ref);
-            if let Some(o) = self.open.as_mut() {
-                o.last_read = last;
-            }
             self.mode = Mode::Thread;
             self.queue_task_status();
-            // Opening a thread marks it read (Alec, 2026-10-14). The row stops showing unread at
-            // once (round 6), whether or not the change reaches the mailbox (live = false).
-            self.read_here.insert(r.r#ref.clone());
-            if r.unread {
-                self.deferred.push(Job::Triage {
-                    req: keryx_store::api::TriageReq {
-                        intent: keryx_store::api::Intent::Read { on: true },
-                        refs: vec![r.r#ref.clone()],
-                        summary: None,
-                        review_id: None,
-                    },
-                    quiet: true,
-                });
-            }
         }
     }
 
@@ -831,67 +1126,65 @@ impl App {
         self.reload();
     }
 
+    /// Reading a thread (D4): one scroll, and the message under the top line (the bar) is what
+    /// `⏎`, `z`, `r` and the link digits act on.
     fn thread_key(&mut self, k: Key) {
+        if self.open.is_none() {
+            self.mode = Mode::List;
+            return;
+        }
+        if let Some(a) = crate::keys::action(k) {
+            match a {
+                Action::Back | Action::Quit => self.close_thread(),
+                Action::Help => self.open_help(),
+                // A thread opened from a run's detail reads only (round 11 audit).
+                _ if self.back.is_some() => {}
+                a => self.common_action(a),
+            }
+            return;
+        }
         if self.back.is_none() && self.write_key(k) {
             return;
         }
-        let Some(open) = self.open.as_mut() else {
-            self.mode = Mode::List;
-            return;
-        };
+        let Some(open) = self.open.as_mut() else { return };
         match k {
-            Key::Esc | Key::Char('q') | Key::Char('h') => {
-                self.open = None;
-                self.mode = self.back.take().unwrap_or(Mode::List);
-            }
-            // ↑↓ move between the emails, the view following (11 Nov); space and ^d still page
-            // through a long one.
-            Key::Char('j') | Key::Down => {
-                let to = (open.sel + 1).min(open.msgs.len().saturating_sub(1));
-                if to != open.sel {
-                    open.sel = to;
-                    open.follow();
-                }
-            }
-            Key::Char('k') | Key::Up => {
-                if open.sel > 0 {
-                    open.sel -= 1;
-                    open.follow();
-                }
-            }
+            Key::Char('j') | Key::Down => open.scroll_by(1),
+            Key::Char('k') | Key::Up => open.scroll_by(-1),
+            // A page; it runs on into the next message, as a document does.
             Key::PageDown | Key::Char(' ') | Key::Ctrl('d') => {
-                open.scroll = open.scroll.saturating_add(15).min(open.max_scroll.get())
+                let p = open.page();
+                open.scroll_by(p);
             }
-            Key::PageUp | Key::Ctrl('u') => open.scroll = open.scroll.saturating_sub(15),
-            Key::Char('g') | Key::Top => {
-                open.sel = 0;
-                open.scroll = 0;
+            Key::PageUp | Key::Ctrl('u') => {
+                let p = open.page();
+                open.scroll_by(-p);
             }
-            Key::Bottom => {
-                open.sel = open.msgs.len().saturating_sub(1);
-                open.scroll = open.max_scroll.get();
-            }
+            Key::Top => open.scroll_by(-i32::from(u16::MAX)),
+            Key::Bottom => open.scroll_by(i32::from(u16::MAX)),
+            Key::Char(']') => open.step(1),
+            Key::Char('[') => open.step(-1),
             Key::Char('b') => self.toggle_list(),
-            // The selected email open or folded.
+            // The message under the bar opened or folded, and kept at the top.
             Key::Enter => {
-                if let Some(i) = open.selected() {
+                if let Some(i) = open.target() {
                     if !open.toggled.remove(&i) {
                         open.toggled.insert(i);
                     }
                     open.raw.remove(&i);
+                    open.focus.set(None);
+                    open.jump.set(Some(i));
                 }
-                // Its start to the top, so what it says is what you see.
-                open.to_top();
             }
-            // The selected email exactly as received (11 Nov: z on the whole thread was
-            // unreadable); again goes back to its own words.
+            // That message exactly as received (11 Nov: z on the whole thread was unreadable);
+            // again goes back to its own words.
             Key::Char('z') => {
-                if let Some(i) = open.selected()
-                    && !open.raw.remove(&i)
-                {
-                    open.raw.insert(i);
+                if let Some(i) = open.target() {
+                    if !open.raw.remove(&i) {
+                        open.raw.insert(i);
+                    }
+                    open.focus.set(None);
+                    open.jump.set(Some(i));
                 }
-                open.follow();
             }
             Key::Char('o') => match open.attachments().len() {
                 0 => self.message = Some(("no attachments in this thread".into(), false)),
@@ -903,15 +1196,16 @@ impl App {
             },
             // Next / previous thread without going back to the list.
             Key::Char('J') => {
+                self.leave_thread();
                 self.move_sel(1);
                 self.open_selected();
             }
             Key::Char('K') => {
+                self.leave_thread();
                 self.move_sel(-1);
                 self.open_selected();
             }
             Key::Char(c) if c.is_ascii_digit() && c != '0' => self.open_link(c as usize - '0' as usize),
-            Key::Char('?') => self.open_help(),
             _ => {}
         }
     }
@@ -1006,39 +1300,90 @@ impl App {
         }
     }
 
+    /// `g` then a letter (D1). The places in locus's table: `g m` is this window (the inbox);
+    /// `g h`, `g a`, `g t`, `g l` are the home window's screens and `g c` the calendar, reached
+    /// through tmux. keryx's own lists use letters the table leaves free.
     fn goto_key(&mut self, k: Key) {
         self.mode = Mode::List;
-        if k == Key::Char('c') {
-            self.mode = Mode::Runs { sel: 0 };
+        let Key::Char(c) = k else { return };
+        if let Some(place) = locus_theme::keys::place(c) {
+            self.go_place(place);
             return;
         }
-        if k == Key::Char('d') {
-            self.mode = Mode::Drafts { sel: 0 };
-            return;
-        }
-        if k == Key::Char('l') {
-            self.mode = Mode::Filed { sel: 0 };
-            return;
-        }
-        let v = match k {
-            Key::Char('i') => View::Inbox,
-            Key::Char('s') => View::Sent,
-            Key::Char('r') => View::NeedsReply,
-            Key::Char('z') if self.cfg.snooze.enabled => View::Snoozed,
-            Key::Char('v') => View::Archive,
-            Key::Char('a') => View::All,
-            Key::Char(c) if c.is_ascii_digit() && c != '0' => {
-                match self.goto_folders().get(c as usize - '1' as usize) {
-                    Some((name, _)) => View::Key(name.clone()),
-                    None => return,
-                }
+        let v = match c {
+            'd' => {
+                self.mode = Mode::Drafts { sel: 0 };
+                return;
             }
+            'f' => {
+                self.mode = Mode::Filed { sel: 0 };
+                return;
+            }
+            'w' => {
+                self.mode = Mode::Runs { sel: 0 };
+                return;
+            }
+            'i' => View::Inbox,
+            's' => View::Sent,
+            'r' => View::NeedsReply,
+            'z' if self.cfg.snooze.enabled => View::Snoozed,
+            'v' => View::Archive,
+            'e' => View::All,
+            c if c.is_ascii_digit() && c != '0' => match self.goto_folders().get(c as usize - '1' as usize) {
+                Some((name, _)) => View::Key(name.clone()),
+                None => return,
+            },
             _ => return,
         };
+        self.leave_thread();
         self.view = v;
         self.search = None;
         self.sel = 0;
         self.reload();
+    }
+
+    /// A place in another window of the `locus` session: ask the home window for its screen
+    /// (`open-locus`), then bring the window forward, only inside tmux. Tests never touch tmux
+    /// or the real state directory (`dry_open`).
+    pub(crate) fn go_place(&mut self, place: locus_theme::keys::Place) {
+        use locus_theme::keys::Place;
+        if place == Place::Mail {
+            self.leave_thread();
+            self.view = View::Inbox;
+            self.search = None;
+            self.sel = 0;
+            self.reload();
+            return;
+        }
+        let (request, name) = match place {
+            Place::Home => (Some("home"), "home"),
+            Place::Approve => (Some("approve"), "approve"),
+            Place::Tasks => (Some("tasks"), "tasks"),
+            Place::Log => (Some("log"), "the log"),
+            _ => (None, "the calendar"),
+        };
+        let app = if place == Place::Calendar { "kairos" } else { "locus" };
+        if self.dry_open {
+            self.opened
+                .push(PathBuf::from(format!("{}:{}", place.view(), request.unwrap_or(""))));
+            self.message = Some((format!("opened {name}"), false));
+            return;
+        }
+        if std::env::var_os("TMUX").is_none() {
+            self.message = Some((format!("{name} is in the locus window: not in tmux here"), false));
+            return;
+        }
+        if let Some(r) = request {
+            let _ = locus_contract::link::OpenFile::locus().write(r);
+        }
+        self.message = Some(if locus_contract::link::switch_to(app) {
+            (format!("opened {name}"), false)
+        } else {
+            (
+                format!("{name}: the locus session isn't running (locus-session.sh ensure)"),
+                true,
+            )
+        });
     }
 
     fn search_key(&mut self, k: Key, mut q: String) {

@@ -7,13 +7,13 @@ expression: "render_to_string(&mut app(), 200, 30)"
 │ ▎ Trains                      not assigned   08:30 ┃ Trains · 1 message · 14 oct                                                                                                                     │
 │ ▎ Your e-ticket: Oxford …                          ┃ your turn · Trains wrote last, today                                                                                                            │
 │ ▎ Trains                      not assigned   08:30 ┃                                                                                                                                                 │
-│ ▎ Your e-ticket: Oxford …                          ┃ ── new to you ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  │
-│                                                    ┃                                                                                                                                                 │
-│ yesterday ──────────────────────────────────────── ┃ ── 14 oct ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  │
-│   Lecturer                    not assigned     tue ┃  ▎ Trains <no-reply@trains.example.co.uk>                                                      wed 14 oct · 08:30 new                           │
-│   Society minutes                                󰁦 ┃  ▎ to you                                                                                                                                       │
+│ ▎ Your e-ticket: Oxford …                          ┃ ── 14 oct ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  │
+│                                                    ┃  ▎ Trains <no-reply@trains.example.co.uk>                                                      wed 14 oct · 08:30 new                           │
+│ yesterday ──────────────────────────────────────── ┃  ▎ to you                                                                                                                                       │
 │   Lecturer                    not assigned     tue ┃  ▎                                                                                                                                              │
-│   Broken file                                    󰁦 ┃  ▎ (Mail hasn't downloaded this message yet, or it has no text)                                                                                 │
+│   Society minutes                                󰁦 ┃  ▎ (Mail hasn't downloaded this message yet, or it has no text)                                                                                 │
+│   Lecturer                    not assigned     tue ┃                                                                                                                                                 │
+│   Broken file                                    󰁦 ┃                                                                                                                                                 │
 │ ▎ Lecturer                    not assigned     tue │                                                                                                                                                 │
 │ ▎ B4 problem sheet 3                             󰁦 │                                                                                                                                                 │
 │ ▎ Jane Doe                    not assigned     tue │                                                                                                                                                 │

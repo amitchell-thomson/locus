@@ -58,7 +58,7 @@ fn draw_screen(f: &mut Frame, app: &App, editor: Option<&crate::pane::Pane>) {
     let main = Rect::new(area.x, area.y, area.width, area.height - 1);
     let foot = Rect::new(area.x, area.y + area.height - 1, area.width, 1);
     if let Mode::ConfirmSend(d) = &app.mode {
-        crate::ui_send::confirm_send(f, app, main, &d.req, &d.warnings);
+        crate::ui_send::confirm_send(f, app, main, d);
     } else if matches!(app.mode, Mode::Runs { .. }) {
         crate::ui_runs::runs(f, app, main);
     } else if matches!(app.mode, Mode::RunDetail { .. }) {
@@ -75,7 +75,7 @@ fn draw_screen(f: &mut Frame, app: &App, editor: Option<&crate::pane::Pane>) {
         crate::ui_send::picker(f, area, p);
     }
     match &app.mode {
-        Mode::Help => help(f, area),
+        Mode::Help => help(f, app, area),
         Mode::GoTo => goto(f, app, area),
         Mode::Attachments => attachments(f, app, area),
         Mode::Snooze(input) => crate::ui_write::snooze(f, app, area, input.as_deref()),
@@ -468,9 +468,8 @@ fn row_who(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
     let mut details: Vec<Span<'static>> = Vec::new();
     // Unfiled says so (11 Nov: a blank there was too much empty space), dim beside a filed
     // thread's coloured area, so the two still read apart down the column.
-    details.push(
-        mark_tag(app, r).unwrap_or_else(|| Span::styled("not assigned  ", Style::default().fg(c("surface2")))),
-    );
+    details
+        .push(mark_tag(app, r).unwrap_or_else(|| Span::styled("not assigned  ", Style::default().fg(c("surface2")))));
     details.push(Span::styled(format!("{date:>6} "), locus_theme::dim()));
     let marked = app.marked.contains(&r.r#ref);
     let mark = if marked {
@@ -512,7 +511,10 @@ fn row_subject(app: &App, r: &ThreadRow, width: usize) -> Line<'static> {
         icons.push(Span::styled(format!("{ICON_REPLIED} "), Style::default().fg(c("blue"))));
     }
     if r.has_attachment {
-        icons.push(Span::styled(format!("{ICON_ATTACH} "), Style::default().fg(c("overlay1"))));
+        icons.push(Span::styled(
+            format!("{ICON_ATTACH} "),
+            Style::default().fg(c("overlay1")),
+        ));
     }
     let room = width.saturating_sub(DETAILS + 3 + 2);
     let subject = fit(&r.subject, room);
@@ -536,7 +538,8 @@ fn area_label(target: &str) -> String {
         return t.to_uppercase();
     }
     let mut cs = t.chars();
-    cs.next().map_or_else(String::new, |f| f.to_uppercase().chain(cs).collect())
+    cs.next()
+        .map_or_else(String::new, |f| f.to_uppercase().chain(cs).collect())
 }
 
 fn mark_tag(app: &App, r: &ThreadRow) -> Option<Span<'static>> {
@@ -726,15 +729,11 @@ pub fn thread_parts(app: &App, open: &Open, w: usize) -> (Vec<Line<'static>>, Ve
     out.extend(header_lines(app, open, w, &new));
     out.extend(crate::ui_kairos::thread_lines(app, open, w));
     let head = std::mem::take(&mut out);
+    // Your sends from here, then the drafts, above the newest message (D4).
+    out.extend(outbox_lines(app, open, w));
     out.extend(draft_lines(app, open, w));
-    let any_new = (0..open.msgs.len()).any(&new);
-    if any_new {
-        let since = open.last_read.map_or("new to you".to_string(), |t| {
-            format!("new since you last read · {}", day_of(app, t))
-        });
-        out.push(Line::raw(""));
-        out.push(band(&since, w, Style::default().fg(c("mauve"))));
-    }
+    let new_total = (0..open.msgs.len()).filter(|&i| new(i)).count();
+    let mut new_left = new_total;
     let mut seen_people: std::collections::HashSet<String> = std::collections::HashSet::new();
     // Who each message brought in: an address on its To or Cc that no earlier message had.
     let mut adds: Vec<Vec<String>> = vec![Vec::new(); open.msgs.len()];
@@ -759,19 +758,32 @@ pub fn thread_parts(app: &App, open: &Open, w: usize) -> (Vec<Line<'static>>, Ve
         }
         v
     };
-    let newest = order.first().copied();
     let mut last_day: Option<chrono::NaiveDate> = None;
-    let mut starts: Vec<usize> = Vec::with_capacity(order.len());
+    let mut blocks: Vec<crate::app::Block> = Vec::with_capacity(order.len());
     for (k, &i) in order.iter().enumerate() {
         let m = &open.msgs[i];
         let d = local(app, m.date).date_naive();
-        let block_start = out.len() + 1;
+        let lead = out.len();
+        // One divider between what is new to you and what you had read (D4), once the last new
+        // message is above it.
+        if new_total > 0 && new_left == 0 && !new(i) {
+            new_left = usize::MAX;
+            let label = open.last_read.map_or("read before".to_string(), |t| {
+                format!("read before · you last read it {}", day_of(app, t))
+            });
+            out.push(Line::raw(""));
+            out.push(band(&label, w, Style::default().fg(c("mauve"))));
+        }
         if last_day != Some(d) {
             // The silence before this day: back to the next older message.
             let older = order.get(k..).and_then(|rest| {
-                rest.iter().map(|&j| &open.msgs[j]).find(|o| local(app, o.date).date_naive() != d)
+                rest.iter()
+                    .map(|&j| &open.msgs[j])
+                    .find(|o| local(app, o.date).date_naive() != d)
             });
-            let gap = older.map(|o| (d - local(app, o.date).date_naive()).num_days()).unwrap_or(0);
+            let gap = older
+                .map(|o| (d - local(app, o.date).date_naive()).num_days())
+                .unwrap_or(0);
             let mut label = day_of(app, m.date);
             let mut style = locus_theme::dim();
             if gap >= 2 {
@@ -783,30 +795,39 @@ pub fn thread_parts(app: &App, open: &Open, w: usize) -> (Vec<Line<'static>>, Ve
             out.push(Line::raw(""));
             out.push(band(&label, w, style));
             last_day = Some(d);
-        } else {
+        } else if open.is_open(i) || order.get(k.wrapping_sub(1)).is_some_and(|&p| open.is_open(p)) {
+            // Folded messages sit one to a line; an open one keeps a blank line around it.
             out.push(Line::raw(""));
         }
-        let open_by_default = Some(i) == newest || (new(i) && !mine(app, m));
-        let full = open_by_default != open.toggled.contains(&i) || open.raw.contains(&i);
-        let selected = k == open.sel.min(order.len().saturating_sub(1));
-        starts.push(block_start);
-        let selected = selected && matches!(app.mode, Mode::Thread);
-        // A forward's line names who it went to; "adds" would say it twice.
-        let adds_here: &[String] = if forward_note(app, open, m).is_some() { &[] } else { &adds[i] };
-        let notes = Notes { new: new(i), joins: first_of[i], adds: adds_here, selected };
-        let mut block = if full {
-            open_block(app, open, i, m, w, &notes)
-        } else {
-            message_block(app, open, i, m, w, &notes)
-        };
-        // The selected email: its first line on a soft band (11 Nov: a second bar beside the
-        // sender's was busy).
-        if selected && let Some(first) = block.first_mut() {
-            *first = tint(std::mem::take(first), w);
+        if new(i) && new_left != usize::MAX {
+            new_left -= 1;
         }
-        out.extend(block);
+        let start = out.len();
+        // A forward's line names who it went to; "adds" would say it twice.
+        let adds_here: &[String] = if forward_note(app, open, m).is_some() {
+            &[]
+        } else {
+            &adds[i]
+        };
+        let notes = Notes {
+            new: new(i),
+            joins: first_of[i],
+            adds: adds_here,
+        };
+        if open.is_open(i) {
+            out.extend(open_block(app, open, i, m, w, &notes));
+        } else {
+            out.extend(message_block(app, open, i, m, w, &notes));
+        }
+        blocks.push(crate::app::Block {
+            msg: i,
+            lead,
+            start,
+            end: out.len(),
+        });
     }
-    *open.starts.borrow_mut() = starts;
+    // Block lines are counted in the body, which starts after the header.
+    *open.blocks.borrow_mut() = blocks;
     (head, out)
 }
 
@@ -815,15 +836,21 @@ struct Notes<'a> {
     new: bool,
     joins: bool,
     adds: &'a [String],
-    selected: bool,
 }
 
-/// A line on the selection band, filled to the pane's width.
-fn tint(line: Line<'static>, w: usize) -> Line<'static> {
-    let bg = c("surface0");
-    let used = line.width();
-    let mut spans: Vec<Span<'static>> = line.spans.into_iter().map(|s| { let st = s.style.bg(bg); Span::styled(s.content, st) }).collect();
-    spans.push(Span::styled(" ".repeat(w.saturating_sub(used)), Style::default().bg(bg)));
+/// The bar down the left edge of the message `⏎`, `z` and `r` act on (D4): the first column of
+/// each of its lines, which every message line leaves blank.
+fn with_bar(line: Line<'static>) -> Line<'static> {
+    let mut spans = line.spans;
+    let bar = Span::styled("▌", Style::default().fg(c("mauve")));
+    match spans.first_mut() {
+        Some(first) if first.content.starts_with(' ') => {
+            let rest: String = first.content.chars().skip(1).collect();
+            first.content = rest.into();
+            spans.insert(0, bar);
+        }
+        _ => spans.insert(0, bar),
+    }
     Line::from(spans)
 }
 
@@ -846,7 +873,10 @@ fn open_block(app: &App, open: &Open, i: usize, m: &Message, w: usize, n: &Notes
         Some(a) => a.display(),
         None => "(no sender)".into(),
     };
-    let when = local(app, m.date).format("%a %-d %b · %H:%M").to_string().to_lowercase();
+    let when = local(app, m.date)
+        .format("%a %-d %b · %H:%M")
+        .to_string()
+        .to_lowercase();
     let tag = if n.new { " new" } else { "" };
     let who = fit(&who, text_w.saturating_sub(when.width() + tag.width() + 2));
     let gap = text_w.saturating_sub(who.width() + when.width() + tag.width());
@@ -860,7 +890,13 @@ fn open_block(app: &App, open: &Open, i: usize, m: &Message, w: usize, n: &Notes
     // Who it went to, and who joined or was brought in.
     let names = |v: &[Address]| {
         v.iter()
-            .map(|a| if is_me(app, a) { "you".to_string() } else { a.short().to_string() })
+            .map(|a| {
+                if is_me(app, a) {
+                    "you".to_string()
+                } else {
+                    a.short().to_string()
+                }
+            })
             .collect::<Vec<_>>()
             .join(", ")
     };
@@ -873,7 +909,10 @@ fn open_block(app: &App, open: &Open, i: usize, m: &Message, w: usize, n: &Notes
     }
     let mut l = Vec::new();
     pre(&mut l);
-    l.push(Span::styled(fit(to.trim_start_matches(" · "), text_w), locus_theme::dim()));
+    l.push(Span::styled(
+        fit(to.trim_start_matches(" · "), text_w),
+        locus_theme::dim(),
+    ));
     if n.joins {
         l.push(Span::styled(" · joins", Style::default().fg(c("teal"))));
     }
@@ -908,16 +947,13 @@ fn wrap_hanging(text: &str, w: usize) -> Vec<String> {
         }
         let lead = para.len() - para.trim_start().len();
         let t = para.trim_start();
-        let marker = t
-            .split_once(' ')
-            .map(|(m, _)| m)
-            .filter(|m| {
-                matches!(*m, "-" | "*" | "•")
-                    || (m.len() <= 3
-                        && m.ends_with(['.', ')'])
-                        && m[..m.len() - 1].chars().all(|c| c.is_ascii_digit())
-                        && m.len() > 1)
-            });
+        let marker = t.split_once(' ').map(|(m, _)| m).filter(|m| {
+            matches!(*m, "-" | "*" | "•")
+                || (m.len() <= 3
+                    && m.ends_with(['.', ')'])
+                    && m[..m.len() - 1].chars().all(|c| c.is_ascii_digit())
+                    && m.len() > 1)
+        });
         let hang = lead + marker.map_or(0, |m| m.chars().count() + 1);
         let first = wrap(para, w);
         let mut lines = first.into_iter();
@@ -938,24 +974,16 @@ fn wrap_hanging(text: &str, w: usize) -> Vec<String> {
 
 /// Message indices, newest first.
 fn newest_first(open: &Open) -> Vec<usize> {
-    let mut v: Vec<usize> = (0..open.msgs.len()).collect();
-    v.sort_by_key(|&i| std::cmp::Reverse(open.msgs[i].date));
-    v
+    open.order()
 }
 
 fn mine(app: &App, m: &Message) -> bool {
-    m.from.as_ref().is_some_and(|a| is_me(app, a))
+    app.is_mine(m)
 }
 
-/// New to you: theirs, and after the last time you opened this thread here; with no record of
-/// that yet, unread in the mirror when the thread was opened.
+/// New to you ([`App::is_new`]).
 fn is_new(app: &App, open: &Open, i: usize) -> bool {
-    let m = &open.msgs[i];
-    !mine(app, m)
-        && match open.last_read {
-            Some(t) => m.date > t,
-            None => !m.read,
-        }
+    app.is_new(open, i)
 }
 
 fn local(app: &App, t: i64) -> chrono::DateTime<chrono_tz::Tz> {
@@ -1010,7 +1038,9 @@ fn person(app: &App, a: Option<&Address>) -> String {
 fn header_lines(app: &App, open: &Open, w: usize, new: &dyn Fn(usize) -> bool) -> Vec<Line<'static>> {
     let mut out = Vec::new();
     let msgs = &open.msgs;
-    let Some(first) = msgs.iter().map(|m| m.date).min() else { return out };
+    let Some(first) = msgs.iter().map(|m| m.date).min() else {
+        return out;
+    };
     let last = msgs.iter().map(|m| m.date).max().unwrap_or(first);
     // People, you last.
     let mut people: Vec<(String, ratatui::style::Color)> = Vec::new();
@@ -1070,7 +1100,11 @@ fn timeline(app: &App, open: &Open, w: usize, first: i64, last: i64, new: &dyn F
     for &i in &by_date {
         let m = &open.msgs[i];
         let col = voice(app, m.from.as_ref());
-        let col = if new(i) || open.last_read.is_none() { col } else { fade(col, 0.35) };
+        let col = if new(i) || open.last_read.is_none() {
+            col
+        } else {
+            fade(col, 0.35)
+        };
         let mut x = at(m.date).min(cells - 1);
         // A burst of messages spreads to the right rather than hiding under one mark.
         while x + 1 < cells && row[x].is_some() && at(m.date) + 3 > x {
@@ -1121,7 +1155,10 @@ fn turn_line(app: &App, open: &Open, w: usize) -> Option<Line<'static>> {
         .map(|why| format!(" · needs reply: {why}"))
         .unwrap_or_default();
     let (text, st) = if mine(app, m) {
-        (format!("waiting on them · you wrote last, {ago}{reason}"), locus_theme::dim())
+        (
+            format!("waiting on them · you wrote last, {ago}{reason}"),
+            locus_theme::dim(),
+        )
     } else {
         (
             format!("your turn · {} wrote last, {ago}{reason}", person(app, m.from.as_ref())),
@@ -1227,7 +1264,10 @@ fn forwarded(body: &str) -> Option<(usize, Option<String>)> {
         .iter()
         .take(6)
         .find_map(|l| l.trim().strip_prefix("From:"))
-        .and_then(|f| f.rsplit_once('<').map(|(_, a)| a.trim_end_matches('>').trim().to_lowercase()));
+        .and_then(|f| {
+            f.rsplit_once('<')
+                .map(|(_, a)| a.trim_end_matches('>').trim().to_lowercase())
+        });
     let offset: usize = lines[..at].iter().map(|l| l.len() + 1).sum();
     Some((offset, from))
 }
@@ -1275,9 +1315,12 @@ fn reflow(lines: &[String]) -> String {
     for l in lines {
         let t = l.trim_start();
         let item = t.starts_with(['-', '*', '•', '>'])
-            || t.split_once(['.', ')']).is_some_and(|(n, _)| !n.is_empty() && n.len() <= 2 && n.chars().all(|c| c.is_ascii_digit()));
+            || t.split_once(['.', ')'])
+                .is_some_and(|(n, _)| !n.is_empty() && n.len() <= 2 && n.chars().all(|c| c.is_ascii_digit()));
         match out.last_mut() {
-            Some(prev) if !t.is_empty() && !item && prev.chars().count() >= 60 && !prev.trim_start().starts_with('>') => {
+            Some(prev)
+                if !t.is_empty() && !item && prev.chars().count() >= 60 && !prev.trim_start().starts_with('>') =>
+            {
                 prev.push(' ');
                 prev.push_str(t);
             }
@@ -1293,9 +1336,19 @@ fn preview(own: &str) -> String {
     let flat = own.split_whitespace().collect::<Vec<_>>().join(" ");
     let first = flat.split_once(',').map(|(g, _)| g).unwrap_or("");
     let greeting = first.split_whitespace().count() <= 3
-        && ["hi", "hey", "hello", "dear", "morning", "good", "evening", "afternoon", "thanks"]
-            .iter()
-            .any(|g| first.to_lowercase().starts_with(g));
+        && [
+            "hi",
+            "hey",
+            "hello",
+            "dear",
+            "morning",
+            "good",
+            "evening",
+            "afternoon",
+            "thanks",
+        ]
+        .iter()
+        .any(|g| first.to_lowercase().starts_with(g));
     match flat.split_once(',') {
         Some((_, rest)) if greeting => rest.trim().to_string(),
         _ => flat,
@@ -1311,43 +1364,136 @@ fn history_start(lines: &[String]) -> Option<usize> {
         (t.starts_with("On ") && lines[i..].iter().take(3).any(|n| n.trim_end().ends_with("wrote:")))
             || t == "-----Original Message-----"
             || (t.chars().all(|c| c == '_') && t.len() >= 10)
-            || (t.starts_with("From:") && lines[i + 1..].iter().take(4).any(|n| n.trim_start().starts_with("Sent:")))
+            || (t.starts_with("From:")
+                && lines[i + 1..]
+                    .iter()
+                    .take(4)
+                    .any(|n| n.trim_start().starts_with("Sent:")))
     })
 }
 
-/// Your drafts for this thread, at the top: Claude's waiting ones and any you kept.
+/// Your drafts for this conversation, at the top: Claude's waiting ones and any you kept. Claude's
+/// say so (D4: they read "you"), and `r` opens either rather than starting a second.
 fn draft_lines(app: &App, open: &Open, w: usize) -> Vec<Line<'static>> {
-    let thread = keryx_core::model::thread_ref(&open.account, &open.thread_id);
-    let mut bodies: Vec<String> = Vec::new();
+    let mut bodies: Vec<(bool, String)> = Vec::new();
+    let threads: Vec<String> = std::iter::once(keryx_core::model::thread_ref(&open.account, &open.thread_id))
+        .chain(
+            open.msgs
+                .iter()
+                .map(|m| keryx_core::model::thread_ref(&m.account, &m.thread_id)),
+        )
+        .collect();
     for c in app.pending_sends() {
         if let Some(o) = c.outgoing()
-            && o.account == open.account
-            && o.thread_id.as_deref() == Some(open.thread_id.as_str())
+            && o.thread_id
+                .as_deref()
+                .is_some_and(|t| threads.contains(&keryx_core::model::thread_ref(&o.account, t)))
         {
-            bodies.push(o.body.clone());
+            bodies.push((true, o.body.clone()));
         }
     }
-    for k in app.kept_drafts() {
-        if matches!(&k.purpose, crate::send::Purpose::Reply { r#ref, .. } if *r#ref == thread)
+    // A send that failed shows your words with why, above: its kept draft is not shown twice.
+    let failed_here = app
+        .outbox_for(&open.account, &open.thread_id)
+        .iter()
+        .any(|o| o.kept && matches!(o.state, crate::send::SendState::Failed(_)));
+    for k in app.kept_drafts().into_iter().filter(|_| !failed_here) {
+        if matches!(&k.purpose, crate::send::Purpose::Reply { r#ref, .. } if threads.contains(r#ref))
             && let Ok(text) = std::fs::read_to_string(&k.path)
         {
             // The editor file: headers, a blank line, then the body.
             let body = text.split_once("\n\n").map_or(text.as_str(), |(_, b)| b);
-            bodies.push(body.to_string());
+            bodies.push((false, body.to_string()));
         }
     }
     let mut out = Vec::new();
-    for b in bodies {
+    for (claude, b) in bodies {
         out.push(Line::raw(""));
-        out.push(band("draft, not sent · g d opens it", w, Style::default().fg(c("blue"))));
+        let (label, who, col) = if claude {
+            ("Claude's draft, not sent · r opens it", "Claude", c("mauve"))
+        } else {
+            ("your draft, not sent · r opens it", "you", c("blue"))
+        };
+        out.push(band(label, w, Style::default().fg(col)));
         let text_w = (w.saturating_sub(MINE + META)).min(TEXT_MAX);
-        let own = keryx_core::text::compact(&b);
+        let own = keryx_core::text::compact(keryx_core::reply::without_plain_quote(&b));
+        let own = own
+            .split(keryx_core::compose::MARKER)
+            .next()
+            .unwrap_or_default()
+            .to_string();
         let lines: Vec<Line<'static>> = wrap(own.trim(), text_w)
             .into_iter()
             .take(2)
             .map(|l| Line::from(Span::styled(l, locus_theme::st("subtext0"))))
             .collect();
-        out.extend(lane(vec![Span::styled("you", Style::default().fg(c("blue")))], vec![], lines, MINE, false));
+        out.extend(lane(
+            vec![Span::styled(who, Style::default().fg(col))],
+            vec![],
+            lines,
+            MINE,
+            false,
+        ));
+    }
+    out
+}
+
+/// Your sends from this session in this thread (D4): "sending · c cancels · 8 s" until it says
+/// "sent"; a failure stays, with why and where your words are.
+fn outbox_lines(app: &App, open: &Open, w: usize) -> Vec<Line<'static>> {
+    use crate::send::SendState;
+    let mut out = Vec::new();
+    for o in app.outbox_for(&open.account, &open.thread_id) {
+        // Once the mirror has your message it shows as itself.
+        let arrived = o.state == SendState::Sent && open.msgs.iter().any(|m| mine(app, m) && m.date >= o.at - 60);
+        if arrived {
+            continue;
+        }
+        let (label, col) = match &o.state {
+            SendState::Asking => ("sending…".to_string(), c("peach")),
+            SendState::Holding => {
+                let left = app
+                    .hold
+                    .as_ref()
+                    .filter(|(id, _)| o.cs.as_deref() == Some(id.as_str()))
+                    .map(|(_, t)| (t - app.now.timestamp()).max(0));
+                match left {
+                    Some(s) => (format!("sending · c cancels · {s} s"), c("peach")),
+                    None => ("sending…".to_string(), c("peach")),
+                }
+            }
+            SendState::Cancelling => ("cancelling…".to_string(), c("peach")),
+            SendState::Sent => ("sent".to_string(), c("green")),
+            SendState::Cancelled => ("cancelled: nothing sent".to_string(), c("overlay1")),
+            SendState::Failed(why) => (
+                format!(
+                    "not sent: {why}{}",
+                    if o.kept { " · kept in drafts · r opens it" } else { "" }
+                ),
+                c("red"),
+            ),
+        };
+        out.push(Line::raw(""));
+        let text_w = (w.saturating_sub(MINE + META)).min(TEXT_MAX);
+        for (n, l) in wrap(&label, w.saturating_sub(6)).into_iter().enumerate() {
+            out.push(if n == 0 {
+                band(&l, w, Style::default().fg(col).add_modifier(Modifier::BOLD))
+            } else {
+                Line::from(Span::styled(format!("   {l}"), Style::default().fg(col)))
+            });
+        }
+        let lines: Vec<Line<'static>> = wrap(o.body.trim(), text_w)
+            .into_iter()
+            .take(4)
+            .map(|l| Line::from(Span::styled(l, Style::default().fg(c("text")))))
+            .collect();
+        out.extend(lane(
+            vec![Span::styled("you", Style::default().fg(c("blue")))],
+            vec![],
+            lines,
+            MINE,
+            false,
+        ));
     }
     out
 }
@@ -1387,31 +1533,48 @@ fn lane(
     out
 }
 
-/// A folded message in its lane: the name column (name, time, notes) beside its first lines.
+/// A folded message: one line, who, when and its first words (D4).
 fn message_block(app: &App, open: &Open, i: usize, m: &Message, w: usize, n: &Notes) -> Vec<Line<'static>> {
     let me = mine(app, m);
     let indent = if me { MINE } else { 0 };
     let col = voice(app, m.from.as_ref());
-    let text_w = w.saturating_sub(indent + META + 2).clamp(10, TEXT_MAX);
-    let name = Span::styled(
-        fit(&person(app, m.from.as_ref()), META - 2),
-        Style::default().fg(col).add_modifier(Modifier::BOLD),
-    );
-    let mut notes: Vec<Vec<Span<'static>>> = Vec::new();
-    let mut when = vec![Span::styled(local(app, m.date).format("%H:%M").to_string(), locus_theme::dim())];
+    let name = fit(&person(app, m.from.as_ref()), META - 2);
+    let when = local(app, m.date).format("%H:%M").to_string();
+    let mut spans = vec![
+        Span::raw(" ".repeat(indent + 1)),
+        Span::styled(name.clone(), Style::default().fg(col).add_modifier(Modifier::BOLD)),
+        Span::raw(" ".repeat((META - 1).saturating_sub(name.width()).max(1))),
+        Span::styled(when, locus_theme::dim()),
+    ];
     if n.new {
-        when.push(Span::styled(" new", Style::default().fg(c("mauve"))));
+        spans.push(Span::styled(" new", Style::default().fg(c("mauve"))));
     }
-    notes.push(when);
-    if n.joins {
-        notes.push(vec![Span::styled("joins", Style::default().fg(c("teal")))]);
+    spans.push(Span::raw("  "));
+    let used: usize = spans.iter().map(|s| s.content.width()).sum();
+    let mut words = match open.invites.get(i) {
+        Some(Some(inv)) => {
+            let tz = app.cfg.tz();
+            let when = match &inv.start {
+                When::Timed(t) => t.with_timezone(&tz).format("%a %-d %b, %H:%M").to_string(),
+                When::AllDay(d) => d.format("%a %-d %b").to_string(),
+            };
+            let cancelled = if inv.cancelled { "Cancelled: " } else { "" };
+            format!("{ICON_INVITE} {cancelled}{} · {when}", inv.summary)
+        }
+        _ => match forward_note(app, open, m) {
+            Some((_, note)) => note,
+            None if m.body_text.trim().is_empty() => "(no text)".to_string(),
+            None => preview(&own_text(m)),
+        },
+    };
+    if !m.attachments.is_empty() {
+        words = format!("{ICON_ATTACH} {} · {words}", m.attachments.len());
     }
-    for a in n.adds {
-        let first = a.split_whitespace().next().unwrap_or(a);
-        notes.push(vec![Span::styled(fit(&format!("adds {first}"), META - 2), Style::default().fg(c("teal")))]);
-    }
-    let text = message_text(app, open, i, m, text_w, false);
-    lane(vec![name], notes, text, indent, n.selected)
+    spans.push(Span::styled(
+        fit(&words, w.saturating_sub(used + 1)),
+        Style::default().fg(c("subtext1")),
+    ));
+    vec![Line::from(spans)]
 }
 
 /// A message's text in its lane: the whole of it (without quoted history) when `full`, else its
@@ -1425,7 +1588,10 @@ fn message_text(app: &App, open: &Open, i: usize, m: &Message, w: usize, full: b
         out.extend(invite_lines(app, inv, w));
     }
     if m.hidden_text_removed {
-        out.push(Line::from(Span::styled("⚠ hidden text was removed", Style::default().fg(c("yellow")))));
+        out.push(Line::from(Span::styled(
+            "⚠ hidden text was removed",
+            Style::default().fg(c("yellow")),
+        )));
     }
     if !open.raw.contains(&i)
         && let Some((added, note)) = forward_note(app, open, m)
@@ -1472,10 +1638,17 @@ fn message_text(app: &App, open: &Open, i: usize, m: &Message, w: usize, full: b
         let lines: Vec<String> = lines.iter().map(|l| l.replace('\u{fffc}', "")).collect();
         let text = reflow(&lines);
         if text.trim().is_empty() {
-            shown.push(Line::from(Span::styled("(nothing of its own: only what it quoted · z shows it)", note)));
+            shown.push(Line::from(Span::styled(
+                "(nothing of its own: only what it quoted · z shows it)",
+                note,
+            )));
         }
         for l in wrap_hanging(text.trim_end(), w) {
-            let st = if l.trim_start().starts_with('>') { locus_theme::dim() } else { body };
+            let st = if l.trim_start().starts_with('>') {
+                locus_theme::dim()
+            } else {
+                body
+            };
             shown.push(Line::from(Span::styled(l, st)));
         }
         while shown.last().is_some_and(|l| l.width() == 0) {
@@ -1529,21 +1702,61 @@ fn thread(f: &mut Frame, app: &App, area: Rect, open: Option<&Open>) {
     };
     let inner = Rect::new(area.x + 1, area.y, area.width.saturating_sub(2), area.height);
     let w = inner.width as usize;
-    let (head, lines) = thread_parts(app, open, w);
-    // The header stays; at most two thirds of the pane, so a short pane still shows emails.
+    let (head, mut lines) = thread_parts(app, open, w);
+    // Reading (not the list's preview): the bar, the jumps, and what has been on screen.
+    let reading = matches!(app.mode, Mode::Thread | Mode::Attachments)
+        && app.open.as_ref().is_some_and(|o| std::ptr::eq(o, open));
+    let blocks = open.blocks.borrow().clone();
+    // A jump puts its message's lead-in (its day band) at the top; at the end of the thread,
+    // where it cannot get there, the bar stays on it (focus).
+    let mut scroll = open.scroll.get();
+    let mut jumped = None;
+    if let Some(i) = open.jump.take()
+        && let Some(b) = blocks.iter().find(|b| b.msg == i)
+    {
+        scroll = b.lead as u16;
+        jumped = Some(i);
+    }
+    // The header shrinks to two lines (subject, people) once you scroll (D4).
+    let head: Vec<Line<'static>> = if scroll > 0 && reading {
+        head.into_iter().take(2).collect()
+    } else {
+        head
+    };
+    // At most two thirds of the pane, so a short pane still shows emails.
     let hh = (head.len() as u16).min(inner.height * 2 / 3).max(1.min(inner.height));
     f.render_widget(Paragraph::new(head), Rect::new(inner.x, inner.y, inner.width, hh));
     let body = Rect::new(inner.x, inner.y + hh, inner.width, inner.height - hh);
     open.height.set(body.height);
     let max_scroll = (lines.len() as u16).saturating_sub(body.height);
     open.max_scroll.set(max_scroll);
-    f.render_widget(Paragraph::new(lines).scroll((open.scroll.min(max_scroll), 0)), body);
+    if let Some(i) = jumped {
+        open.focus.set((scroll > max_scroll).then_some(i));
+    }
+    let scroll = scroll.min(max_scroll);
+    open.scroll.set(scroll);
+    if reading {
+        let top = usize::from(scroll);
+        let bottom = top + usize::from(body.height);
+        let mut seen = open.seen.borrow_mut();
+        for b in blocks.iter().filter(|b| b.start < bottom && b.end > top) {
+            seen.insert(b.msg);
+        }
+        if let Some(t) = open.target()
+            && let Some(b) = blocks.iter().find(|b| b.msg == t)
+        {
+            for l in lines.iter_mut().take(b.end).skip(b.start) {
+                *l = with_bar(std::mem::take(l));
+            }
+        }
+    }
+    f.render_widget(Paragraph::new(lines).scroll((scroll, 0)), body);
 }
 
-/// locus's footer: the keys that work here on the left; on the right the note, a send in its
-/// hold, what waits in Approve, a stale sync.
-fn footer(f: &mut Frame, app: &App, area: Rect) {
-    let pairs: Vec<(&str, &str)> = match &app.mode {
+/// The keys the footer offers on this screen. Every one is a table key or one of keryx's own
+/// (`tests/keys.rs` checks), so a hint cannot name a key that does nothing.
+pub fn hints(app: &App) -> Vec<(&'static str, &'static str)> {
+    match &app.mode {
         _ if app.writing.as_ref().is_some_and(|w| w.picker.is_some()) => {
             vec![
                 ("⏎", "attach"),
@@ -1575,16 +1788,29 @@ fn footer(f: &mut Frame, app: &App, area: Rect) {
                 ("esc", "back"),
             ]
         }
-        // A thread opened from a run's detail: only back works (round 11 audit).
-        Mode::Thread if app.back.is_some() => vec![("↑↓", "email"), ("⏎", "open"), ("z", "as received"), ("esc", "back")],
+        // A thread opened from a run's detail: it reads, and only back works (round 11 audit).
+        Mode::Thread if app.back.is_some() => vec![
+            ("space", "page"),
+            ("] [", "message"),
+            ("⏎", "open"),
+            ("z", "as received"),
+            ("esc", "back"),
+        ],
+        // With rows marked, d a x act on them even from a thread: the hints say so.
+        Mode::Thread if !app.marked.is_empty() => vec![
+            ("d", "done, marked"),
+            ("a", "archive marked"),
+            ("x", "archive marked (asks)"),
+            ("esc", "back"),
+        ],
         Mode::Thread => {
             let mut v = vec![
                 ("r", "reply"),
-                ("d", "done"),
-                ("a", "archive"),
-                ("m", "for"),
-                ("↑↓", "email"),
+                ("space", "page"),
+                ("] [", "message"),
                 ("⏎", "open"),
+                ("d", "done"),
+                ("x", "archive"),
                 ("z", "as received"),
             ];
             if app.open.as_ref().is_some_and(|o| !o.attachments().is_empty()) {
@@ -1593,13 +1819,14 @@ fn footer(f: &mut Frame, app: &App, area: Rect) {
             v.push(("esc", "back"));
             v
         }
-        Mode::Help | Mode::GoTo => vec![("esc", "close")],
+        Mode::Help => vec![("j k", "scroll"), ("esc", "close")],
+        Mode::GoTo => vec![("esc", "close")],
         Mode::Filed { .. } => vec![("↑ ↓", "move"), ("u", "put back in the inbox"), ("esc", "back")],
         Mode::Runs { .. } => vec![("↑ ↓", "move"), ("⏎", "details"), ("esc", "back")],
         Mode::RunDetail { .. } => vec![("↑ ↓", "move"), ("⏎", "open"), ("u", "undo"), ("esc", "back")],
         Mode::Snooze(_) => vec![("1…4", "choose"), ("esc", "cancel")],
         Mode::KairosForm(_) => vec![("⇥", "next"), ("⏎", "save"), ("esc", "cancel")],
-        Mode::ConfirmSend(_) => vec![("y", "send"), ("e", "edit"), ("n", "not now")],
+        Mode::ConfirmSend(_) => vec![("y", "send"), ("e", "edit"), ("n", "not now"), ("j k", "scroll")],
         Mode::ConfirmUnsubscribe { .. } => vec![("y", "unsubscribe"), ("esc", "no")],
         Mode::File(_) => vec![("⏎", "file"), ("↑ ↓", "move"), ("esc", "back")],
         Mode::Attachments => vec![("↑ ↓", "move"), ("⏎", "open"), ("esc", "back")],
@@ -1607,6 +1834,7 @@ fn footer(f: &mut Frame, app: &App, area: Rect) {
         _ if !app.marked.is_empty() => vec![
             ("d", "done"),
             ("a", "archive"),
+            ("x", "archive (asks)"),
             ("m", "for"),
             ("f", "needs reply"),
             ("esc", "unmark"),
@@ -1620,7 +1848,13 @@ fn footer(f: &mut Frame, app: &App, area: Rect) {
             ("f", "needs reply"),
             ("?", "keys"),
         ],
-    };
+    }
+}
+
+/// locus's footer: the keys that work here on the left; on the right the note, a send in its
+/// hold, a send that failed, what waits in Approve, a stale sync.
+fn footer(f: &mut Frame, app: &App, area: Rect) {
+    let pairs = hints(app);
     let mut left = vec![Span::raw(" ")];
     if let Mode::Search(q) = &app.mode {
         left.push(Span::styled("search: ", locus_theme::dim()));
@@ -1644,15 +1878,22 @@ fn footer(f: &mut Frame, app: &App, area: Rect) {
     if let Some((_, t)) = &app.hold {
         let left = t - app.now.timestamp();
         if left > 0 {
-            notes.push(format!("sending in {left} s · u cancels"));
+            notes.push(format!("sending in {left} s · c cancels"));
         }
+    }
+    // A failed send stays said until you take its draft up again (D4: it said "not sent" once).
+    if let Some(o) = app
+        .failed_send()
+        .filter(|_| !app.message.as_ref().is_some_and(|(m, _)| m.contains("not sent:")))
+    {
+        notes.push(format!("✗ not sent: “{}” · see its thread", fit(&o.subject, 30)));
     }
     if app.message.is_none() {
         if app.pending_sends > 0 {
             notes.push(format!("{} of Claude's drafts · g d", app.pending_sends));
         }
         if app.open_proposals > 0 {
-            notes.push(format!("{} to approve · A", app.open_proposals));
+            notes.push(format!("{} to approve · g a", app.open_proposals));
         }
         for (name, mins) in &app.stale {
             let ago = if *mins < 120 {
@@ -1689,60 +1930,62 @@ fn footer(f: &mut Frame, app: &App, area: Rect) {
     }
 }
 
-/// The keys overlay, as locus's: this screen, everywhere.
-fn help(f: &mut Frame, area: Rect) {
-    let screen: &[(&str, &str)] = &[
-        ("↑ ↓  ⏎ esc", "move · read a thread · back"),
-        ("⇧↑ ⇧↓", "the top or bottom of the list, or of the thread"),
-        ("J K", "the next or previous thread, while reading"),
-        ("⇥ ⇧⇥", "the next or previous inbox (all, then each account)"),
-        ("⌥⇥", "add the next inbox to the ones shown (⇥ goes back to one)"),
-        ("b", "hide or show the list"),
-        (
-            "g",
-            "go to: inbox, needs reply, sent, archive, drafts, filed by itself, an area",
-        ),
-        ("r R F +", "reply · reply all · forward · write a new mail"),
-        ("d", "done: filed for its mark, else for what you choose"),
-        ("a I", "archive straight away · back to the inbox"),
-        ("u", "undo (a move comes back at once)"),
-        ("m", "mark what it is for; it stays in your inbox"),
-        ("f U L", "needs reply on or off · unread · unsubscribe"),
-        ("t i w", "a task · an invite to the calendar · reply with free times"),
-        ("v", "select several for one change"),
-        ("z o 1…9", "the whole conversation · an attachment · open link n"),
-        ("A ^R", "approve, in locus · sync now"),
-    ];
-    let everywhere: &[(&str, &str)] = &[
-        ("/", "search"),
-        ("?", "keys"),
-        ("q ^C", "quit"),
-        ("alt-1…4", "home · project · calendar · mail"),
-    ];
-    let mut lines = vec![Line::from(Span::styled(" this screen", locus_theme::dim()))];
-    for (k, d) in screen {
-        lines.push(Line::from(vec![
-            Span::styled(format!("  {k:<12}"), locus_theme::keyst()),
-            Span::styled(*d, Style::default().fg(c("text"))),
+/// The keys overlay, generated from locus's table and keryx's own lists ([`crate::keys::help`]),
+/// so it says what the keys do (C4: the hand-written one was wrong in places). Entries flow into
+/// as many columns as fit; `j` `k` scroll when they still do not.
+fn help(f: &mut Frame, app: &App, area: Rect) {
+    let entries = crate::keys::help();
+    let shared = locus_theme::keys::TABLE.len() + locus_theme::keys::PLACES.len();
+    let mut items: Vec<Line<'static>> = Vec::new();
+    for (n, (k, d)) in entries.iter().enumerate() {
+        if n == 0 {
+            items.push(Line::from(Span::styled(" everywhere in locus", locus_theme::dim())));
+        }
+        if n == shared {
+            items.push(Line::raw(""));
+            items.push(Line::from(Span::styled(" mail's own", locus_theme::dim())));
+        }
+        items.push(Line::from(vec![
+            Span::styled(format!("  {k:<9}"), locus_theme::keyst()),
+            Span::styled(d.clone(), Style::default().fg(c("text"))),
         ]));
     }
-    lines.push(Line::raw(""));
-    lines.push(Line::from(Span::styled(" everywhere", locus_theme::dim())));
-    for (k, d) in everywhere {
-        lines.push(Line::from(vec![
-            Span::styled(format!("  {k:<12}"), locus_theme::keyst()),
-            Span::styled(*d, Style::default().fg(c("text"))),
-        ]));
-    }
-    let w = 80.min(area.width);
-    let h = (lines.len() as u16 + 2).min(area.height);
+    let w = area.width.min(124);
+    let col_w: u16 = 60;
+    let cols = (w.saturating_sub(2) / col_w).max(1);
+    let rows_room = area.height.saturating_sub(2).max(1);
+    let per_col = (items.len() as u16).div_ceil(cols).max(1);
+    let rows = per_col.min(rows_room);
+    let h = rows + 2;
     let r = centred(area, w, h);
     f.render_widget(Clear, r);
-    f.render_widget(Paragraph::new(lines).block(popup_block("keys")), r);
+    let more = per_col > rows_room;
+    let block = popup_block(if more { "keys · j k scroll" } else { "keys" });
+    let inner = block.inner(r);
+    f.render_widget(block, r);
+    let scroll = if more {
+        app.help_scroll.min(per_col - rows_room)
+    } else {
+        0
+    };
+    for c_i in 0..cols {
+        let from = usize::from(c_i * per_col);
+        let to = (from + usize::from(per_col)).min(items.len());
+        if from >= to {
+            break;
+        }
+        let x = inner.x + c_i * col_w;
+        let width = col_w.min(inner.width.saturating_sub(c_i * col_w));
+        f.render_widget(
+            Paragraph::new(items[from..to].to_vec()).scroll((scroll, 0)),
+            Rect::new(x, inner.y, width, inner.height),
+        );
+    }
 }
 
-/// `g`: where to go, in two columns (round 7): your lists on the left in small groups, the
-/// areas on the right in their colours, Personal's streams under their own heading.
+/// `g`: where to go, in two columns (round 7): the lists on the left in small groups with
+/// locus's places under them, the areas on the right in their colours, Personal's streams under
+/// their own heading.
 fn goto(f: &mut Frame, app: &App, area: Rect) {
     let key = |k: &str| Span::styled(format!(" {k}  "), locus_theme::bold(locus_theme::st("blue")));
     let head = |t: &str| Line::from(Span::styled(format!(" {t}"), locus_theme::dim()));
@@ -1760,12 +2003,19 @@ fn goto(f: &mut Frame, app: &App, area: Rect) {
     let mut left = vec![title("mail")];
     for group in [
         &[("i", "Inbox"), ("r", "Needs reply"), ("d", "Drafts")][..],
-        &[("s", "Sent"), ("v", "Archive"), ("a", "All mail")][..],
-        // Claude runs (g c) stays reachable but unlisted until the locus job replaces it (X8).
-        &[("l", "Filed by itself")][..],
+        &[("s", "Sent"), ("v", "Archive"), ("e", "All mail")][..],
+        &[("f", "Filed by itself"), ("w", "Claude's runs")][..],
     ] {
         left.push(Line::raw(""));
         left.extend(group.iter().map(|(k, n)| entry(k, n, text)));
+    }
+    // locus's places, one line across the bottom: the other windows.
+    let mut places = vec![Span::styled(" locus ", locus_theme::dim())];
+    for (k, place, name) in locus_theme::keys::PLACES {
+        if *place != locus_theme::keys::Place::Mail {
+            places.push(key(&k.to_string()));
+            places.push(Span::styled(format!("{name}  "), Style::default().fg(c("subtext1"))));
+        }
     }
 
     let folders = app.goto_folders();
@@ -1803,14 +2053,21 @@ fn goto(f: &mut Frame, app: &App, area: Rect) {
     }
 
     let (lw, rw) = (24u16, 22u16);
-    let w = (lw + rw + 3).min(area.width);
-    let h = (left.len().max(right.len()) as u16 + 3).min(area.height);
+    let places = Line::from(places);
+    let w = (lw + rw + 3).max(places.width() as u16 + 2).min(area.width);
+    let h = (left.len().max(right.len()) as u16 + 5).min(area.height);
     let r = centred(area, w, h);
     f.render_widget(Clear, r);
     let block = popup_block("go to");
     let inner = block.inner(r);
     f.render_widget(block, r);
-    let inner = Rect::new(inner.x, inner.y + 1, inner.width, inner.height.saturating_sub(1));
+    if inner.height > 2 {
+        f.render_widget(
+            Paragraph::new(places),
+            Rect::new(inner.x, inner.y + inner.height - 1, inner.width, 1),
+        );
+    }
+    let inner = Rect::new(inner.x, inner.y + 1, inner.width, inner.height.saturating_sub(3));
     f.render_widget(
         Paragraph::new(left),
         Rect::new(inner.x, inner.y, lw.min(inner.width), inner.height),
@@ -1903,7 +2160,13 @@ mod tests {
     #[test]
     fn history_starts_at_an_attribution_gmail_broke_over_two_lines() {
         let l = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        let lines = l(&["Thanks", "", "On Fri, Oct 30, 2026 at 11:30 AM Alec <", "a@b.com> wrote:", "> old"]);
+        let lines = l(&[
+            "Thanks",
+            "",
+            "On Fri, Oct 30, 2026 at 11:30 AM Alec <",
+            "a@b.com> wrote:",
+            "> old",
+        ]);
         assert_eq!(history_start(&lines), Some(2));
     }
 

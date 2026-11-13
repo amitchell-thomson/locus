@@ -145,7 +145,15 @@ impl Engine {
                     // Replying from another account: thread it anyway.
                 }
                 let msgs = self.db.thread(a, tid)?;
-                let last = msgs.last().ok_or_else(|| EngineError::NotFound(t.clone()))?;
+                // The message it answers: the one named (what you were reading, cleanup C6),
+                // else the thread's latest. A named one that is not in the thread is refused
+                // rather than threaded to something else.
+                let last = match r.in_reply_to.as_deref() {
+                    Some(mid) => msgs.iter().find(|m| same_id(&m.message_id, mid)).ok_or_else(|| {
+                        EngineError::BadRequest(format!("{t}: the message it replies to ({mid}) is not in this thread"))
+                    })?,
+                    None => msgs.last().ok_or_else(|| EngineError::NotFound(t.clone()))?,
+                };
                 let mut refs = last.references.clone();
                 if !last.message_id.is_empty() && !refs.contains(&last.message_id) {
                     refs.push(last.message_id.clone());
@@ -218,6 +226,7 @@ impl Engine {
         }
         body.push_str(&format!("\n\n{}", d.quote.trim_end()));
         let req = SendReq {
+            in_reply_to: None,
             account: d.account.clone(),
             thread: Some(r.r#ref.clone()),
             to: d.to,
@@ -240,6 +249,7 @@ impl Engine {
             body.push_str(&format!("\n\n{}", s.trim_end()));
         }
         let req = SendReq {
+            in_reply_to: None,
             account: r.account.clone(),
             thread: None,
             to: r.to.clone(),
@@ -356,7 +366,9 @@ impl Engine {
             Some((None, Some(p))) if !p.is_empty() => keryx_store::mailapp::read_emlx(std::path::Path::new(&p)).ok(),
             _ => None,
         };
-        let html = raw.and_then(|r| keryx_core::mime::parse(&r).ok()).and_then(|p| p.text_html);
+        let html = raw
+            .and_then(|r| keryx_core::mime::parse(&r).ok())
+            .and_then(|p| p.text_html);
         Some(keryx_core::reply::reply_html(&self.cfg, &o.body, to, html.as_deref()))
     }
 
@@ -508,4 +520,10 @@ pub fn recipients_line(o: &Outgoing) -> String {
         1..=3 => all.join(", "),
         n => format!("{}, {} and {} more", all[0], all[1], n - 2),
     }
+}
+
+/// Two Message-IDs are the same with or without their angle brackets.
+fn same_id(a: &str, b: &str) -> bool {
+    let t = |s: &str| s.trim().trim_matches(|c| c == '<' || c == '>').to_string();
+    !a.trim().is_empty() && t(a) == t(b)
 }

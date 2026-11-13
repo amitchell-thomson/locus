@@ -173,6 +173,11 @@ pub struct SendReq {
     /// Replying in this thread (`account:thread`): threading headers come from it.
     #[serde(default)]
     pub thread: Option<String>,
+    /// The message in that thread it answers (its Message-ID), when not the latest: the one you
+    /// were reading (cleanup C6, D4: `r` answered the latest of the thread, not what you read).
+    /// None answers the thread's latest message, as before.
+    #[serde(default)]
+    pub in_reply_to: Option<String>,
     pub to: Vec<keryx_core::model::Address>,
     #[serde(default)]
     pub cc: Vec<keryx_core::model::Address>,

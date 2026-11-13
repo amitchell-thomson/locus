@@ -218,7 +218,7 @@ Cleanup reviews have their own screen (§8.1, *Reviewing a cleanup*).
 
 ### 6.4 Sending
 
-- Alec's sends: `$EDITOR` closes, then a confirm screen (as §6.3, without the author line), then `y`, then **holding** for 10 s (`send.hold_seconds`). The TUI shows "Sending in 7 s · u cancel". The hold lives in **keryxd**, so quitting the TUI doesn't cancel it, and `keryx cancel <id>` works too. Approved Claude drafts get the same hold.
+- Alec's sends: `$EDITOR` closes, then a confirm screen (as §6.3, without the author line), then `y`, then **holding** for 10 s (`send.hold_seconds`). The TUI shows "sending · c cancels · 7 s" in the thread you sent from (you stay there) and in the footer, then "sent"; `u` is only undo (cleanup C6). The hold lives in **keryxd**, so quitting the TUI doesn't cancel it, and `keryx cancel <id>` works too. Approved Claude drafts get the same hold.
 - Preconditions at send time: the account is writable, `live` permits it, and the recipients equal those approved. Anything else → `failed`; nothing is sent.
 - After the hold a send can't be undone: `undo` explains this and does nothing.
 - Gmail: we build the RFC 5322 message (`mail-builder`): `In-Reply-To` and `References` from the thread, `Re:` not doubled (`Re:`, `RE:`, `AW:`, `Fwd:` normalised), plain text UTF-8, our own `Message-ID`. Mail.app: AppleScript `reply` on the original message (keeps Mail's threading headers), then set content; a new message is `make new outgoing message`. Confirmed when the copy appears in the account's Sent mailbox (matched by Message-ID for Gmail; by recipients + subject + time for Mail).
@@ -274,30 +274,51 @@ date: your reply mark (you wrote last), an attachment, a linked kairos task (�
 suggestion (󰄱?). A thread's mark (`b14`, `errands`) sits on its subject line in its area's
 colour; the account tag shows whenever more than one inbox is shown.
 
-**The reading pane** is the conversation in the order it was written, top to bottom. Each
-writer has their own colour bar (you in blue) and a `who · date` line; earlier messages are
-cut to three lines until `z`; quotes and automated footers are folded; links read as
-`[n] site`, listed under the message; attachments are listed (`o` opens one). Invite cards,
-the needs-reply reason, suggestions and linked tasks sit above the messages.
+**The reading pane** reads like a document (cleanup C6, decision D4, 13 Nov 2026): one scroll,
+no selection. The conversation runs newest first; each writer has their own colour bar (you in
+blue) and a `who · date` line. The message under the top line of the view carries a bar down
+its whole left edge, and `⏎` (open or fold), `z` (as received), `r` (reply) and the link digits
+act on it. A thread opens on its newest new message, at the top and open, with up to two more
+new ones open; older messages fold to one line each (who, when, first words); one divider
+separates new from read. The header (subject, people, timeline, whose turn, their questions)
+shrinks to two lines once you scroll. Quotes and automated footers are folded; links read as
+`[n] site`; attachments are listed (`o` opens one). Invite cards, the needs-reply reason,
+suggestions, linked tasks, your sends in their hold and drafts (Claude's labelled "Claude's
+draft") sit above the messages. Read is stamped when you leave the thread, and only for what was
+on screen.
 
-**Keys** (locus's shared keys; keryx-joins-locus X2, X-e):
+**Replying** answers the message under the bar, from the account it came to (or, when that
+account has no copy, the one that has it, said on the status line), and says "replying to
+Milly, 2 Nov 13:35". keryxd threads the reply to that message (`SendReq.in_reply_to`). `r` on
+a thread with a draft (Claude's or yours) opens it rather than starting a second. The confirm
+screen shows exactly what is sent: what it answers, the address it is shown from, the
+recipients, the warnings wrapped, your words and the quote keryxd sends (Mail's own for a reply
+in its account's thread); it scrolls with `j` `k`. After `y` you stay in the thread with your
+message in its hold; `c` cancels. A send that fails after its hold stays in its thread and the
+footer until you open its draft again.
+
+**Keys** (locus's one table, `locus_theme::keys`, cleanup C4 / D1; keryx's own only where the
+table has nothing; `?` is generated from both):
 
 | Key | Action |
 |---|---|
-| `↑` `↓` / `j` `k` · `⏎` · `esc` | move · read a thread · back |
+| `esc` · `q` | back · quit at the top (the inbox, nothing searched or marked), back elsewhere. `h` is not back |
+| `↑` `↓` / `j` `k` · `⏎` | move in the list, scroll a thread · read a thread; in it, open or fold the message under the bar |
+| `space` · `]` `[` · `J` `K` | a page (runs on into the next message) · the next or previous message · the next or previous thread |
 | `⇥` `⇧⇥` · `⌥⇥` | the next or previous inbox · add the next inbox to the ones shown (personal and oxford together; `⇥` goes back to one) |
 | `b` | hide or show the list |
-| `d` | done: filed for what it is for (X7): its mark when it has one, with no question; else a picker over the registry items, Personal's streams and the plain areas, keryx's guess first with its reason. Never deletes |
-| `a` · `u` | archive straight away, no question (rounds 10, 11); a mark stays · undo: the move is put back on screen at once |
-| `m` | mark what it is for, and it stays in the inbox (round 4): a tag on the row, and on its item's page at once. keryx's own record; the mail does not move |
-| `v` | select for a batch (`d` `m` `f` then act on every selected thread) |
-| `f` `U` `L` | needs reply on or off (the one attention marker: a peach bar, the inbox's first section; keryx no longer flags) · unread · unsubscribe |
-| `r` `R` `F` `+` | reply · reply all · forward · write a new mail, in your Neovim (below) |
+| `d` | done, in one key: filed for its mark; else for keryx's guess, saying why (`u` puts it back); else archived. Never deletes |
+| `M` · `m` | file: a picker over the registry items, Personal's streams and the plain areas, keryx's guess first · mark what it is for, and it stays in the inbox (round 4) |
+| `a` · `x` | archive straight away · archive after asking once |
+| `u` | undo the last change, at once, the line saying what was undone (a move is put back on screen at once) |
+| `e` | edit: the thread's draft, Claude's or yours |
+| `v` | mark threads; `d` `a` `x` `m` `f` then act on every marked one, even from a thread (the footer says so) |
+| `f` `U` `I` `L` | needs reply on or off · unread · back to the inbox · unsubscribe |
+| `r` `R` `F` `+` · `c` | reply · reply all · forward · write a new mail, in your Neovim (below) · cancel a send in its hold |
 | `t` `i` `w` · `y` `n` | a kairos task · an invite to the calendar · reply with free times · on a suggestion: create · dismiss |
-| `u` | undo the last change; during a send's hold, cancel it |
-| `A` | locus's Approve (drafts and cleanup proposals wait there; keryx has no approve screen) |
-| `g` | go to, in two columns: `i` inbox · `r` needs reply · `d` drafts · `s` sent · `v` archive · `a` all · `l` filed by itself; and `1…7` the areas and Personal's streams (`c`, Claude runs, unlisted until X8) |
-| `/` · `^R` · `?` · `q` | search (§7) · sync now · keys · quit |
+| `A` | locus's Approve (cleanup proposals wait there; Claude's drafts are in `g d`) |
+| `g` | locus's places: `h` home · `a` approve · `t` tasks · `l` log (the home window) · `c` the calendar (through tmux) · `m` this window. keryx's lists: `i` inbox · `r` needs reply · `d` drafts · `s` sent · `v` archive · `e` all · `f` filed by itself · `w` Claude's runs · `1…9` the areas and Personal's streams |
+| `/` · `^r` · `?` | search (§7) · sync now · keys |
 
 **Writing** (X6) is your Neovim, run on a terminal inside the right pane with the list beside
 it, and a Lua file keryx loads for that buffer only (your config is never edited). The file:
@@ -309,9 +330,12 @@ reopens, `:cq` throws it away, `^a` opens a picker over Downloads, Desktop and D
 Addresses complete from `keryx addresses` (blink.cmp as you type, else `<C-x><C-u>`). Another
 editor runs full screen as before. `docs/nvim.md` has the details.
 
-**Filed by itself** (`g` `l`): what keryx filed as it arrived (§6.2, X-d), newest first, each
-undoable with `u`. **Claude runs** (`g` `c`) is the log of keryx's own scheduled runs, which
+**Filed by itself** (`g` `f`): what keryx filed as it arrived (§6.2, X-d), newest first, each
+undoable with `u`. **Claude runs** (`g` `w`) is the log of keryx's own scheduled runs, which
 the locus job replaces (X8).
+
+**A rebuilt binary** execs itself in place once nothing is typed or sending for 10 s, back on
+the thread that was open (cleanup C7).
 
 Works at 80 columns and scales up. Snapshot tests with `insta`; the `frame` example renders
 one frame of the real mirror as text.

@@ -490,7 +490,6 @@ pub fn apply_facts(fx: &mut Fixtures, facts: &FactsLive) {
             to: None,
             from: "heuris · mail".into(),
             new: true,
-            opens: None,
             date: None,
             changeset: None,
             mail: None,
@@ -512,7 +511,11 @@ pub fn apply_facts(fx: &mut Fixtures, facts: &FactsLive) {
         })
         .collect();
     if !items.is_empty() {
-        fx.approve.groups.push(ApproveGroup { kind: ApproveKind::Fact, label: None, items });
+        fx.approve.groups.push(ApproveGroup {
+            kind: ApproveKind::Fact,
+            label: None,
+            items,
+        });
     }
     fx.autolog.entries = facts
         .log
@@ -523,7 +526,6 @@ pub fn apply_facts(fx: &mut Fixtures, facts: &FactsLive) {
                 at,
                 text: format!("fact from mail: {}", r.line),
                 undo: !r.undone,
-                automatic_since: None,
                 fact: Some(r.fact),
             })
         })
@@ -537,7 +539,14 @@ pub fn careers_from_facts(rows: &[FactRow]) -> Result<BTreeMap<String, Status>, 
     for r in rows.iter().filter(|r| r.slot == "stage") {
         let since = NaiveDate::parse_from_str(r.as_of.get(..10).unwrap_or(""), "%Y-%m-%d")
             .map_err(|_| format!("{}: as-of {:?} is not a date", r.subject, r.as_of))?;
-        out.insert(r.subject.clone(), Status { stage: r.value.clone(), since, turn: None });
+        out.insert(
+            r.subject.clone(),
+            Status {
+                stage: r.value.clone(),
+                since,
+                turn: None,
+            },
+        );
     }
     for r in rows.iter().filter(|r| r.slot == "turn") {
         if let Some(st) = out.get_mut(&r.subject) {
@@ -583,6 +592,62 @@ pub struct SystemLive {
     pub credit_since: String,
     pub calls_today: u32,
     pub backend: String,
+    /// Every locus timer, its last and next run (cleanup C3).
+    #[serde(default)]
+    pub timers: Vec<TimerLive>,
+    #[serde(default)]
+    pub budget: Option<BudgetLive>,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct TimerLive {
+    pub name: String,
+    #[serde(default)]
+    pub next: Option<String>,
+    #[serde(default)]
+    pub last: Option<String>,
+    #[serde(default)]
+    pub result: String,
+}
+
+/// The credit this cycle and how it was spent (locus/home_system._budget): estimates from the
+/// price table, the console is exact.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct BudgetLive {
+    pub cap: f64,
+    pub used: f64,
+    pub since: String,
+    pub until: String,
+    pub today: f64,
+    pub daily: f64,
+    pub bulk_daily: f64,
+    #[serde(default)]
+    pub days: Vec<BudgetDay>,
+    #[serde(default)]
+    pub jobs: Vec<BudgetJob>,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct BudgetDay {
+    pub date: String,
+    #[serde(default)]
+    pub by_job: Vec<JobCost>,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct JobCost {
+    pub job: String,
+    pub usd: f64,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct BudgetJob {
+    pub job: String,
+    pub backend: String,
+    pub calls: u32,
+    #[serde(default)]
+    pub failed: u32,
+    pub usd: f64,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]

@@ -204,7 +204,11 @@ impl Builder {
                     }
                 }
                 Event::Text(s) => {
-                    let style = if *in_head { text().add_modifier(Modifier::BOLD) } else { text() };
+                    let style = if *in_head {
+                        text().add_modifier(Modifier::BOLD)
+                    } else {
+                        text()
+                    };
                     if let Some(c) = rows.last_mut().and_then(|r| r.last_mut()) {
                         c.push(Span::styled(s.to_string(), style));
                     }
@@ -375,8 +379,13 @@ impl Builder {
 
 /// A quote whose first line is `[!NOTE] title` is a callout: its icon and title, bold.
 fn callout(mut rows: Vec<Spans>) -> Vec<Spans> {
-    let first: String = rows.first().map(|r| r.iter().map(|s| s.content.as_ref()).collect()).unwrap_or_default();
-    let Some(rest) = first.strip_prefix("[!") else { return rows };
+    let first: String = rows
+        .first()
+        .map(|r| r.iter().map(|s| s.content.as_ref()).collect())
+        .unwrap_or_default();
+    let Some(rest) = first.strip_prefix("[!") else {
+        return rows;
+    };
     let Some(end) = rest.find(']') else { return rows };
     let kind = rest[..end].to_lowercase();
     let title = rest[end + 1..].trim_start_matches(['+', '-']).trim();
@@ -395,11 +404,16 @@ fn callout(mut rows: Vec<Spans>) -> Vec<Spans> {
     };
     let title = if title.is_empty() {
         let mut c = kind.chars();
-        c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default()
+        c.next()
+            .map(|f| f.to_uppercase().chain(c).collect())
+            .unwrap_or_default()
     } else {
         title.to_string()
     };
-    rows[0] = vec![Span::styled(format!("{icon} {title}"), text().add_modifier(Modifier::BOLD))];
+    rows[0] = vec![Span::styled(
+        format!("{icon} {title}"),
+        text().add_modifier(Modifier::BOLD),
+    )];
     rows
 }
 
@@ -449,7 +463,10 @@ pub fn render(md: &str, width: usize) -> Vec<Line<'static>> {
         out.extend((0..gap).map(|_| Line::default()));
         out.extend(match block {
             Block::Heading(level, spans) => heading(level, spans, w),
-            Block::Para(lines) => lines.into_iter().flat_map(|l| wrap_spans(l, w, vec![], vec![])).collect(),
+            Block::Para(lines) => lines
+                .into_iter()
+                .flat_map(|l| wrap_spans(l, w, vec![], vec![]))
+                .collect(),
             Block::Code(lang, body) => code(&lang, &body, w),
             Block::Rule => {
                 let mark = "•   •   •";
@@ -539,7 +556,9 @@ fn list(items: Vec<(usize, Item, Vec<Spans>)>, w: usize) -> Vec<Line<'static>> {
         }
         for (i, p) in paras.into_iter().enumerate() {
             let p: Spans = if done {
-                p.into_iter().map(|s| Span::styled(s.content, s.style.patch(dimc()))).collect()
+                p.into_iter()
+                    .map(|s| Span::styled(s.content, s.style.patch(dimc())))
+                    .collect()
             } else {
                 p
             };
@@ -600,7 +619,11 @@ fn fit(natural: &[usize], longest: &[usize], budget: usize) -> (Vec<usize>, bool
         return (natural.to_vec(), false);
     }
     let cap = (budget / (2 * natural.len())).max(8);
-    let floor: Vec<usize> = natural.iter().zip(longest).map(|(n, l)| (*n).min(*l).min(cap)).collect();
+    let floor: Vec<usize> = natural
+        .iter()
+        .zip(longest)
+        .map(|(n, l)| (*n).min(*l).min(cap))
+        .collect();
     let used: usize = floor.iter().sum();
     if used > budget {
         return (waterfill(natural, budget), true);
@@ -616,7 +639,9 @@ fn table(align: &[Alignment], rows: Vec<Vec<Spans>>, w: usize) -> Vec<Line<'stat
         return Vec::new();
     }
     let word_widths = |c: &Spans| -> Vec<usize> {
-        c.iter().flat_map(|s| s.content.split_whitespace().map(|x| x.width()).collect::<Vec<_>>()).collect()
+        c.iter()
+            .flat_map(|s| s.content.split_whitespace().map(|x| x.width()).collect::<Vec<_>>())
+            .collect()
     };
     let mut natural = vec![1; ncol];
     let mut longest = vec![1; ncol];
@@ -630,7 +655,10 @@ fn table(align: &[Alignment], rows: Vec<Vec<Spans>>, w: usize) -> Vec<Line<'stat
     let budget = w.saturating_sub(3 * ncol + 1);
     if budget < 3 * ncol {
         // Too narrow to draw a table: its cells as plain rows.
-        return rows.into_iter().map(|r| Line::from(r.into_iter().flatten().collect::<Vec<_>>())).collect();
+        return rows
+            .into_iter()
+            .map(|r| Line::from(r.into_iter().flatten().collect::<Vec<_>>()))
+            .collect();
     }
     let (widths, wrapped) = fit(&natural, &longest, budget);
     let rule = |l: &str, m: &str, r: &str| {
@@ -641,7 +669,14 @@ fn table(align: &[Alignment], rows: Vec<Vec<Spans>>, w: usize) -> Vec<Line<'stat
     let nrows = rows.len();
     for (ri, row) in rows.into_iter().enumerate() {
         let cells: Vec<Vec<Line<'static>>> = (0..ncol)
-            .map(|k| wrap_spans(row.get(k).cloned().unwrap_or_default(), widths[k].max(1), vec![], vec![]))
+            .map(|k| {
+                wrap_spans(
+                    row.get(k).cloned().unwrap_or_default(),
+                    widths[k].max(1),
+                    vec![],
+                    vec![],
+                )
+            })
             .collect();
         let height = cells.iter().map(Vec::len).max().unwrap_or(1);
         for n in 0..height {
@@ -760,8 +795,16 @@ mod tests {
     fn inline_marks_are_styles_and_code_is_grey() {
         let l = render("Only **locus** had commits, on `files`.", 60);
         assert_eq!(plain(&l), ["Only locus had commits, on files."]);
-        assert!(l[0].spans.iter().any(|s| s.content == "locus" && s.style.add_modifier.contains(Modifier::BOLD)));
-        assert!(l[0].spans.iter().any(|s| s.content == "files" && s.style.fg == grey().fg));
+        assert!(
+            l[0].spans
+                .iter()
+                .any(|s| s.content == "locus" && s.style.add_modifier.contains(Modifier::BOLD))
+        );
+        assert!(
+            l[0].spans
+                .iter()
+                .any(|s| s.content == "files" && s.style.fg == grey().fg)
+        );
     }
 
     #[test]
@@ -776,7 +819,10 @@ mod tests {
 
     #[test]
     fn bullets_go_by_depth_and_wrapped_lines_hang() {
-        let l = plain(&render("- one item that is long enough to wrap onto a second line\n  - nested\n- two", 24));
+        let l = plain(&render(
+            "- one item that is long enough to wrap onto a second line\n  - nested\n- two",
+            24,
+        ));
         assert!(l[0].starts_with("• one"), "{l:?}");
         assert!(l[1].starts_with("  "), "{l:?}");
         assert!(l.iter().any(|x| x.starts_with("  ◦ nested")), "{l:?}");
@@ -787,10 +833,17 @@ mod tests {
 
     #[test]
     fn tables_are_rounded_and_wrap() {
-        let md = "| repo | note |\n|---|---|\n| locus | a long note that has to wrap in a narrow table |\n| quast | short |";
+        let md =
+            "| repo | note |\n|---|---|\n| locus | a long note that has to wrap in a narrow table |\n| quast | short |";
         let l = plain(&render(md, 34));
-        assert!(l[0].starts_with('╭') && l.last().is_some_and(|x| x.starts_with('╰')), "{l:?}");
-        assert!(l.iter().any(|x| x.contains('┈')), "a dotted line once a row wraps: {l:?}");
+        assert!(
+            l[0].starts_with('╭') && l.last().is_some_and(|x| x.starts_with('╰')),
+            "{l:?}"
+        );
+        assert!(
+            l.iter().any(|x| x.contains('┈')),
+            "a dotted line once a row wraps: {l:?}"
+        );
         assert!(l.iter().all(|x| x.width() <= 34), "{l:?}");
     }
 

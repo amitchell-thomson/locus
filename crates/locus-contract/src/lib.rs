@@ -9,25 +9,23 @@
 //! Every struct refuses unknown fields: a backend that renames a field fails loudly at the
 //! boundary rather than leaving a section silently empty (CLAUDE.md §3).
 
+pub mod approve;
 pub mod common;
-pub mod explore;
 pub mod fors;
 pub mod home;
 pub mod learning;
 pub mod link;
 pub mod project;
-pub mod review;
 pub mod system;
 pub mod tasks;
 pub mod taxonomy;
 pub mod uselog;
 
+pub use approve::*;
 pub use common::*;
-pub use explore::*;
 pub use home::*;
 pub use learning::*;
 pub use project::*;
-pub use review::*;
 pub use system::*;
 pub use tasks::*;
 
@@ -43,27 +41,3 @@ pub struct Manifest {
     pub now: Time,
     pub description: String,
 }
-
-/// Which contract types each screen shows, for CONTRACTS.md and the freeze test (step 1.6).
-/// Screen names are the TUI's (`locus-tui --dump <name>`).
-pub const SCREENS: &[(&str, &[&str])] = &[
-    (
-        "home",
-        &["Home", "Work", "ProjectView", "Explore", "Approve", "System", "Usage"],
-    ),
-    ("project", &["ProjectView", "BranchGraph"]),
-    ("system", &["System", "Usage"]),
-    ("budget", &["Usage"]),
-    ("explore", &["Explore"]),
-    ("approve", &["Approve"]),
-    ("autolog", &["AutoLog"]),
-    ("ink", &["InkConfirm"]),
-    ("decisions", &["Decisions"]),
-    ("answered", &["Answered"]),
-    ("changes", &["Changes"]),
-    ("search", &["Search"]),
-    ("work", &["Work"]),
-    ("prep", &["Prep", "Learning"]),
-    ("learning", &["Learning"]),
-    ("review", &["Review"]),
-];

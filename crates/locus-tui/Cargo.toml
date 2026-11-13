@@ -1,6 +1,6 @@
 [package]
 name = "locus-tui"
-description = "The locus window: Home, Project and their detail screens (ratatui)"
+description = "The locus window: Home and its detail screens (ratatui)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -20,8 +20,6 @@ clap.workspace = true
 crossterm.workspace = true
 ratatui.workspace = true
 pulldown-cmark.workspace = true
-ratatui-image.workspace = true
-image.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true

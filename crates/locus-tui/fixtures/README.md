@@ -10,40 +10,18 @@ other.
 
 ## default: Saturday 24 Oct 2026, 21:40
 
-**Real, extracted once on 20 Oct and frozen:**
-- Branch graphs: quast, nabla, OQTS, CV from their git histories (`tools/branch_graph.py`;
-  quast's branches merged by fast-forward were read from their reflogs). locus's August merges
-  came from branches whose names did not survive, so those lanes carry the merge subject.
-- The applications (8): stages, dates and events from your mail (Gmail and Oxford, read through
-  keryx's local mirror, 23 Oct), your calendar and the CV repo's tags; condensed, with no
-  addresses, links, IDs or other people's names. Jump's "not offered", Millennium's "went very
-  well" and its final-round label are your words; where-you-are lines are written by hand from
-  the findings.
-- locus's Changes: its real git history from 19 Oct to the snapshot, each commit's subject as the
-  line and its message as the detail, with the six answers joined in (`tools/project_changes.py`).
-  nabla's nightly observation commits are marked routine, so they fold.
-- locus's Answered: six questions you asked about locus in the Slice 1 design chat (20-21 Oct),
-  in your words, with the answers condensed from what was said; four are linked to the taxonomy
-  decision they were about.
-- Decision titles and dates: quast `docs/decisions/` (§8 entries), nabla and locus ADRs.
-  The `chose` / `over` / `evidence` lines are condensed from them by hand; no quotes of yours.
-- The Jump Trading prep: the four-round format, the topics and their minutes a day, the seven
-  daily sheets, from the tablet (`/Notes/jump_trading`). Practice-session scores are
-  approximate: a problem counts as right when the error log (v6) has no line for it.
-- The ink-confirm crop: page 5 of the QUAST dossier of 15 Oct with your ink on it, rendered at
-  300 dpi from the tablet bundle (`composite_pages_with_margins`), cropped to the right column.
-  The candidate passages are that page's text.
-- The 8-week area chart: commits per repository per day, at half an hour a commit
-  (`tools/make_work.py`).
+The fallback a live window replaces: tests and `--dump` draw it, and a live Home shows none of
+it as current (cleanup C3, 13 Nov: the Project, Application, Decisions, Changes, Answered, Prep,
+Explore, Review, Search and ink screens went, with their fixtures and the tools that made them).
 
-**Written by hand:** stage labels, "where you are", sessions, chores, scout finds, answers,
-usage, the approve list, the auto log, the weekly review, this week's work spans. Courses and the
-CV have no decision log, so no `decisions.json`.
+**Real, extracted once on 20 Oct and frozen:** the 8-week area chart, commits per repository per
+day at half an hour a commit (`tools/make_work.py`); application stages, from your mail.
 
-**The awkward cases** (spec 1.3): an empty section (OQTS's sessions and chores, locus's chores);
-a long title (nabla's hazard-model find, quast's decision titles); a project with nothing new
-(OQTS); eight sessions (nabla); a failed job (the tablet push, HTTP 429) and a failed session;
-a full scout queue (7 of 7); a day with no work (Friday); an inactive project with a tmux
+**Written by hand:** stage labels, sessions, chores, usage, the approve list (in the kinds kairos,
+keryx and the facts ledger send), the auto log, this week's work spans.
+
+**The awkward cases** (spec 1.3): an empty section (OQTS's sessions); eight sessions (nabla); a
+failed job and a failed session; a day with no work (Friday); an inactive project with a tmux
 session (keryx); a calendar item across the clocks going back (Futsal, Sunday 25 Oct).
 
 ## empty

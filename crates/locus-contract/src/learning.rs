@@ -1,9 +1,6 @@
-//! The learning system (C.11) and interview prep, its first mode (C.10).
-//!
-//! Topic tracks are general and outlive any one application; a company plan draws on them,
-//! weighted by that interview's format.
+//! The learning system (C.11): goals, topic tracks and practice sheets. Not live yet; slice L
+//! builds it.
 
-use crate::common::Time;
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
@@ -115,73 +112,4 @@ pub enum SheetState {
     /// Answered in ink, waiting for the readback.
     Answered,
     Marked,
-}
-
-/// An opportunity's prep plan (C.10).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Prep {
-    /// The opportunity's project id.
-    pub opportunity: String,
-    pub role: String,
-    /// The round being prepared for: `final round`.
-    pub round: String,
-    pub date: NaiveDate,
-    /// The time you said you would spend, and by when.
-    pub budget_hours: f32,
-    pub used_hours: f32,
-    /// Each part of the interview: what it covers and how it is run.
-    #[serde(default)]
-    pub format: Vec<RoundPart>,
-    /// The tracks this plan draws on, weakest first, with the time given to each.
-    #[serde(default)]
-    pub topics: Vec<PrepTopic>,
-    /// Practice sessions for this plan, newest first.
-    #[serde(default)]
-    pub log: Vec<PrepSession>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub next: Option<PlannedSession>,
-    /// How it ended, once it has.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub outcome: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RoundPart {
-    pub name: String,
-    pub covers: String,
-    pub how: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PrepTopic {
-    pub track: String,
-    /// Minutes a day this plan gives it.
-    pub minutes_a_day: u32,
-    /// Where its material comes from: `Green Book ch. 4-5`, `your B1 ML notes`.
-    pub from: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PrepSession {
-    pub date: NaiveDate,
-    pub track: String,
-    pub problems: u32,
-    pub right: u32,
-    pub minutes: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PlannedSession {
-    pub at: Time,
-    pub track: String,
-    pub minutes: u32,
-    /// Already a kairos block.
-    pub in_kairos: bool,
 }

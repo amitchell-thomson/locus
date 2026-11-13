@@ -2,19 +2,12 @@
 //! borders, blue focus. Each screen is a module with `draw`, `key` (its own keys, tried before
 //! the global ones) and `KEYS` (what the `?` overlay lists); the footer is shared.
 
-pub mod application;
 pub mod approve;
-pub mod changes;
 pub mod chat;
-pub mod decisions;
-pub mod explore;
 pub mod home;
 mod keys;
 pub mod learning;
-pub mod project;
-pub mod projectdetail;
 pub mod projects;
-pub mod review;
 pub mod system;
 pub mod tasks;
 pub mod widgets;
@@ -35,23 +28,13 @@ pub fn draw(f: &mut Frame, app: &App) {
     let [body, footer] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(f.area());
     match app.screen() {
         ScreenId::Home => home::draw(f, body, app),
-        ScreenId::Project => project::draw(f, body, app),
         ScreenId::System => system::draw(f, body, app),
         ScreenId::Budget => system::draw_budget(f, body, app),
-        ScreenId::Explore => explore::draw(f, body, app),
         ScreenId::Approve => approve::draw(f, body, app),
         ScreenId::AutoLog => approve::draw_log(f, body, app),
-        ScreenId::InkConfirm => approve::draw_ink(f, body, app),
         ScreenId::ApproveItem => approve::draw_item(f, body, app),
-        ScreenId::Decisions => decisions::draw(f, body, app),
-        ScreenId::Answered => projectdetail::draw_answered(f, body, app),
-        ScreenId::Changes => changes::draw(f, body, app),
-        ScreenId::Search => review::draw_search(f, body, app),
         ScreenId::WorkChart => work::draw_chart(f, body, app),
-        ScreenId::Prep => learning::draw_prep(f, body, app),
-        ScreenId::Application => application::draw(f, body, app),
         ScreenId::Learning => learning::draw(f, body, app),
-        ScreenId::Review => review::draw(f, body, app),
         ScreenId::Tasks => tasks::draw(f, body, app),
         ScreenId::Projects => projects::draw(f, body, app),
         ScreenId::Chat => chat::draw(f, body, app),
@@ -70,69 +53,31 @@ pub fn screen_key(app: &mut App, k: KeyEvent) -> bool {
     }
     match app.screen() {
         ScreenId::Home => home::key(app, k),
-        ScreenId::Project => project::key(app, k),
         ScreenId::System | ScreenId::Budget => system::key(app, k),
-        ScreenId::Explore => explore::key(app, k),
-        ScreenId::Approve | ScreenId::AutoLog | ScreenId::InkConfirm | ScreenId::ApproveItem => approve::key(app, k),
-        ScreenId::Decisions => decisions::key(app, k),
-        ScreenId::Answered => projectdetail::key(app, k),
-        ScreenId::Changes => changes::key(app, k),
-        ScreenId::Search | ScreenId::Review => review::key(app, k),
+        ScreenId::Approve | ScreenId::AutoLog | ScreenId::ApproveItem => approve::key(app, k),
         ScreenId::WorkChart => false,
-        ScreenId::Prep | ScreenId::Learning => learning::key(app, k),
-        ScreenId::Application => application::key(app, k),
+        ScreenId::Learning => learning::key(app, k),
         ScreenId::Tasks => tasks::key(app, k),
         ScreenId::Projects => projects::key(app, k),
         ScreenId::Chat => chat::key(app, k),
     }
 }
 
-/// Screens whose sections are lists that ↑ and ↓ walk through, section to section. Explore's
-/// sections are tabs, so the arrows stay inside the open one there.
+/// Screens whose sections are lists that ↑ and ↓ walk through, section to section.
 pub fn flows(s: ScreenId) -> bool {
-    matches!(
-        s,
-        ScreenId::Home
-            | ScreenId::Project
-            | ScreenId::Decisions
-            | ScreenId::System
-            | ScreenId::Learning
-            | ScreenId::Prep
-            | ScreenId::Application
-    )
-}
-
-/// A section the arrows do not flow out of at its ends: the decision entry, which you scroll
-/// to read (round 2u: "when up or down reaches the top/ bottom in the detail view, make it stay
-/// there, dont jump back to the list"); ← leaves it.
-pub fn holds(s: ScreenId, sec: char) -> bool {
-    s == ScreenId::Decisions && sec == 'e'
+    matches!(s, ScreenId::Home | ScreenId::System | ScreenId::Learning)
 }
 
 /// How many rows a section has, for walking through it with the arrows.
 pub fn section_len(app: &App, sec: char) -> usize {
     match app.screen() {
         ScreenId::Home => home::section_len(app, sec),
-        ScreenId::Project => project::section_len(app, sec),
-        ScreenId::Application => application::section_len(app, sec),
-        ScreenId::Decisions => decisions::section_len(app, sec),
-        ScreenId::System => match sec {
-            'r' => app.fixtures.system.running.len(),
-            'e' => app.fixtures.system.recent.len().min(6),
-            _ => 1,
-        },
+        ScreenId::System => system::section_len(app, sec),
         ScreenId::Learning => match sec {
             'g' => app.fixtures.learning.goals.len(),
             't' => app.fixtures.learning.tracks.len(),
             _ => app.fixtures.learning.sheets.len().min(4),
         },
-        ScreenId::Prep => {
-            let p = app.project_id().and_then(|id| app.fixtures.prep.get(&id));
-            match sec {
-                't' => p.map_or(0, |p| p.topics.len()),
-                _ => p.map_or(0, |p| p.log.len()),
-            }
-        }
         _ => 1,
     }
 }
@@ -141,23 +86,13 @@ pub fn section_len(app: &App, sec: char) -> usize {
 pub fn screen_keys(s: ScreenId) -> &'static [(&'static str, &'static str)] {
     match s {
         ScreenId::Home => home::KEYS,
-        ScreenId::Project => project::KEYS,
         ScreenId::System => system::KEYS,
         ScreenId::Budget => system::BUDGET_KEYS,
-        ScreenId::Explore => explore::KEYS,
         ScreenId::Approve => approve::KEYS,
         ScreenId::AutoLog => approve::LOG_KEYS,
-        ScreenId::InkConfirm => approve::INK_KEYS,
         ScreenId::ApproveItem => approve::ITEM_KEYS,
-        ScreenId::Decisions => decisions::KEYS,
-        ScreenId::Answered => projectdetail::ANSWER_KEYS,
-        ScreenId::Changes => changes::KEYS,
-        ScreenId::Search => review::SEARCH_KEYS,
         ScreenId::WorkChart => &[],
-        ScreenId::Prep => learning::PREP_KEYS,
-        ScreenId::Application => application::KEYS,
         ScreenId::Learning => learning::KEYS,
-        ScreenId::Review => review::KEYS,
         ScreenId::Tasks => tasks::KEYS,
         ScreenId::Projects => projects::KEYS,
         ScreenId::Chat => chat::KEYS,
@@ -180,8 +115,7 @@ pub fn esc_back() -> Line<'static> {
     Line::from(vec![Span::styled(" esc", keyst()), Span::styled(" back ", dim())])
 }
 
-/// An ask line's rule: its title on the left, the page's keys at the right end, as the Project
-/// view's ask line carries "answered" (round 3b: "the other hints should be the same format as
+/// An ask line's rule: its title on the left, the page's keys at the right end (round 3b: "the other hints should be the same format as
 /// in the ask window"). Keys that do not fit are dropped from the end; `tail` (a letter, a
 /// count) always stays.
 pub fn ask_rule(title: &str, lit: bool, keys: &[(&str, &str)], tail: &str, width: u16) -> Line<'static> {
@@ -225,39 +159,6 @@ pub fn ask_rule(title: &str, lit: bool, keys: &[(&str, &str)], tail: &str, width
     Line::from(left)
 }
 
-/// The Project view's title: the project the view is on, by the registry; a session the
-/// registry does not know is named as such rather than guessed at.
-pub fn project_title(app: &App) -> String {
-    if app.stack.first() != Some(&ScreenId::Project) {
-        return match app.viewing.as_deref().and_then(|id| app.fixtures.registry.get(id)) {
-            Some(p) => format!("{} {}", locus_theme::glyph::PROJECT, p.name),
-            None => "project".into(),
-        };
-    }
-    // A project Home handed over is named, not the session the window follows (round 2: Jump
-    // opened as "a blank looking page with nabla at the top").
-    if let Some(p) = app.peek.as_deref().and_then(|id| app.fixtures.registry.get(id)) {
-        return format!("{} {}", locus_theme::glyph::PROJECT, p.name);
-    }
-    match app.follow.session.as_deref() {
-        None => "project · no project window seen yet".into(),
-        Some(s) => match app.fixtures.registry.by_session(s) {
-            Some(p) => format!("{} {}", locus_theme::glyph::PROJECT, p.name),
-            None => format!("{s} · not a registered project"),
-        },
-    }
-}
-
-/// Following or pinned, in the Project view's top-right corner.
-pub fn follow_badge(app: &App) -> Line<'static> {
-    let (text, col) = if app.follow.pinned {
-        (format!(" {} pinned ", locus_theme::glyph::HOLDING), c("peach"))
-    } else {
-        (format!(" {} following ", locus_theme::glyph::ATTENDED), c("overlay1"))
-    };
-    Line::from(Span::styled(text, Style::default().fg(col)))
-}
-
 /// A section's block: title on the left, its letter in the right corner (plan D), blue when
 /// focused.
 pub fn section_block(title: &str, letter: Option<char>, focus: bool) -> Block<'static> {
@@ -278,12 +179,10 @@ pub fn section_block(title: &str, letter: Option<char>, focus: bool) -> Block<'s
     b
 }
 
-/// The footer: open · log · search · keys on the left (plan D: Home's key strip keeps only
+/// The footer: open · log · ask · keys on the left (plan D: Home's key strip keeps only
 /// these), the note on the right. While typing, it says how to finish.
 fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
     let left = match &app.mode {
-        Mode::Ask(_) => hints(&[("⏎", "answer here"), ("⇥", "send to tablet"), ("esc", "cancel")]),
-        Mode::Strike(_) => hints(&[("i", "irrelevant"), ("k", "knew it"), ("l", "level"), ("t", "too long")]),
         Mode::Chat(_) => hints(&[("⏎", "send"), ("⇧⏎", "new line"), ("esc", "keep it for later")]),
         Mode::ChatName(_) => hints(&[("⏎", "rename"), ("esc", "cancel")]),
         // The fact's value as you correct it, with how to finish.
@@ -294,7 +193,8 @@ fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
                 Span::styled("▏", Style::default().fg(locus_theme::c("blue"))),
                 Span::raw("   "),
             ]);
-            l.spans.extend(hints(&[("⏎", "approve as written"), ("esc", "cancel")]).spans);
+            l.spans
+                .extend(hints(&[("⏎", "approve as written"), ("esc", "cancel")]).spans);
             l
         }
         // Enter's hint says what it does for the focused section, where a screen knows.
@@ -308,7 +208,7 @@ fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
                 ("⏎", enter),
                 ("⇥", "sections"),
                 ("l", "log"),
-                ("/", "search"),
+                ("/", "ask"),
                 ("i", "chat"),
                 ("?", "keys"),
             ])

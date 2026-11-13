@@ -156,14 +156,14 @@ pub enum ProjectState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProjectKind {
-    /// A repository you work in: tmux sessions, Claude chats, change records, a branch graph.
-    /// The only kind the Project window shows and follows, in any area: quast (Projects), 3YP
-    /// (Studies), the CV (Careers).
+    /// A repository you work in: tmux sessions, Claude chats, commits. In any area: quast
+    /// (Projects), 3YP (Studies), the CV (Careers). Enter on its row goes to its tmux session.
     Repo,
     /// A course: notes, lectures, Canvas deadlines, topic tracks; no repository of its own.
     Course,
     /// A pursuit with stages owned by a company: an internship or job application. No
-    /// repository or sessions; it has a stage and whose move it is, dates, mail, a prep plan.
+    /// repository or sessions; it has a stage and whose move it is. Enter on its row asks the
+    /// Home chat where things stand.
     Application,
     /// A role you hold: JCR Treasurer (10 Nov, your call: "a registry item", so its mail, dates
     /// and invoices have one place and a page, as OQTS has). No repository, no sessions, no stages.
@@ -228,85 +228,6 @@ pub enum SessionState {
     Failed,
     Done,
     Idle,
-}
-
-/// What kind of thing an item in New, Changes or Search is; each has its D.2 glyph.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ItemKind {
-    Recheck,
-    Redecided,
-    Decision,
-    Answer,
-    ScoutFind,
-    Reading,
-    Idea,
-    Commits,
-    Chat,
-    Dossier,
-    Ink,
-    Mail,
-    Calendar,
-    AutoAction,
-}
-
-/// One unread thing in a Project view's New list, or one line of Changes.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Item {
-    pub kind: ItemKind,
-    pub text: String,
-    pub at: Time,
-    #[serde(default)]
-    pub unread: bool,
-    /// More about it, a paragraph per entry: a commit's message, what a chat decided. Changes
-    /// shows it beside the timeline (round 4).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub detail: Vec<String>,
-    /// Set on mechanical work that recurs (a nightly job's commit): items with the same name fold
-    /// into one row on Changes, so they do not crowd out your own work (round 4: "they would
-    /// crowd out actual interesting work by me").
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub routine: Option<String>,
-}
-
-/// A scout find or one of your ideas, as a card with its reasoning (C.7).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Find {
-    pub id: String,
-    pub kind: FindKind,
-    /// The project it bears on; none for general reading.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub project: Option<String>,
-    pub title: String,
-    /// The card's body: what was found.
-    pub summary: String,
-    /// Why it matters to you.
-    pub why: String,
-    /// How it differs from what you have.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub differs: Option<String>,
-    /// What it touches: a decision, a section.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub touches: Option<String>,
-    /// What it costs to read, in minutes.
-    pub minutes: u32,
-    pub at: Time,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum FindKind {
-    /// A method or idea that bears on a project (scout job 1).
-    Method,
-    /// What a course offers a project (job 2).
-    Course,
-    Reading,
-    /// Patterns across your own repositories (job 4).
-    Pattern,
-    /// A new project idea (job 5): held back unless clearly the best.
-    NewProject,
 }
 
 /// A background job, running or finished (plan E; locus core owns them).

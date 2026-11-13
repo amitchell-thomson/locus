@@ -1,18 +1,20 @@
 //! Opening one app at an item of the other (ADR-008, spec K8): kairos and the locus window ask
-//! each other through a small file in locus's state directory, the way the Project window learns
-//! what to show (`follow.rs`'s peek file), and bring the other's tmux session forward. Each app
-//! polls its own file; a request written before the app started is ignored as stale.
+//! each other through a small file in locus's state directory, and bring the other's tmux
+//! session forward. Each app polls its own file; a request written before the app started is
+//! ignored as stale.
 //!
-//! `open-locus` holds a registry id (`millennium`): the locus window opens it, an application on
-//! its own page, a repo in the Project window. `open-kairos` holds a day and optionally an event
-//! uid (`2026-10-16 abc@kairos`): kairos opens its day view there, the event selected.
+//! `open-locus` holds a registry id (`millennium`), `tasks`, `approve` or `home:<letter>`: the
+//! locus window opens it as Enter on its row would (an application asks the Home chat, anything
+//! else goes to its own tmux session); anything it does not know opens Home. `open-kairos` holds
+//! a day and optionally an event uid (`2026-10-16 abc@kairos`): kairos opens its day view there,
+//! the event selected.
 
 use chrono::NaiveDate;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
 /// locus's state directory: `$LOCUS_STATE_DIR`, else `$XDG_STATE_HOME/locus`, else
-/// `~/.local/state/locus` (the same rule as the locus window's focus and peek files).
+/// `~/.local/state/locus` (the chat's conversations and the open files live there).
 pub fn state_dir() -> Option<PathBuf> {
     if let Some(p) = std::env::var_os("LOCUS_STATE_DIR") {
         return Some(PathBuf::from(p));

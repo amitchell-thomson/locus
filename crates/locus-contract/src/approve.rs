@@ -1,93 +1,7 @@
-//! Explore (C.7), the approve list and the auto log (plan D), and ink confirm (C.5).
+//! The approve list and the auto log (plan D).
 
-use crate::common::{Find, Time};
-use chrono::NaiveDate;
+use crate::common::Time;
 use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Explore {
-    /// The scout's finds waiting for a grade; at most `queue_cap`, and when full the scout waits.
-    #[serde(default)]
-    pub queue: Vec<Find>,
-    pub queue_cap: u32,
-    #[serde(default)]
-    pub ideas: Vec<Idea>,
-    /// What is on the tablet in `/Reading`.
-    #[serde(default)]
-    pub reading: Vec<Reading>,
-    pub reading_cap: u32,
-    /// Strike reasons so far, for the weekly review and for tuning.
-    #[serde(default)]
-    pub strikes: Vec<Strike>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Idea {
-    pub title: String,
-    pub from: IdeaFrom,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub project: Option<String>,
-    pub state: IdeaState,
-    pub at: Time,
-    /// A new project idea that is the fortnight's best (C.7, job 5).
-    #[serde(default)]
-    pub best_of_fortnight: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum IdeaFrom {
-    You,
-    Jot,
-    Scout,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum IdeaState {
-    Open,
-    /// Handed to the scout; it comes back as a find.
-    Handed,
-    Parked,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Reading {
-    pub title: String,
-    pub state: ReadingState,
-    /// When it went to the tablet.
-    pub since: NaiveDate,
-    /// Pages read, when the tablet says.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub progress: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ReadingState {
-    Untouched,
-    InProgress,
-    Done,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Strike {
-    pub reason: StrikeReason,
-    pub count: u32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum StrikeReason {
-    Irrelevant,
-    KnewIt,
-    WrongLevel,
-    TooLong,
-}
 
 /// The one approve list, grouped by kind.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -112,14 +26,6 @@ pub struct ApproveGroup {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ApproveKind {
-    /// A jot page item and where it would be filed (C.8).
-    Filing,
-    Mail,
-    Deadline,
-    /// Marks the readback could not place; Enter opens ink confirm.
-    Ink,
-    /// "You approved this kind N times: do it automatically?"
-    StopAsking,
     /// A date found in your mail (an interview booked or moved), to put on the calendar linked
     /// to its application (spec E6).
     Date,
@@ -174,14 +80,11 @@ pub struct ApproveItem {
     /// Where it would go: `careers/g-research`, `archive`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to: Option<String>,
-    /// Which app proposed it: `keryx`, `jot`, `ink readback`.
+    /// Which app proposed it: `keryx`, `kairos`, `heuris`.
     pub from: String,
     /// Arrived since you last opened the approve list (round 1d: Home shows "2 new").
     #[serde(default)]
     pub new: bool,
-    /// For an ink item: the ink-confirm fixture it opens.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub opens: Option<String>,
     /// For a date from mail: the date and what accepting it does.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub date: Option<MailDate>,
@@ -247,37 +150,7 @@ pub struct AutoAction {
     pub at: Time,
     pub text: String,
     pub undo: bool,
-    /// For a kind moved to automatic by "stop asking": since when.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub automatic_since: Option<NaiveDate>,
     /// For a fact written from mail or the calendar: its id, which `u` retires (heuris H2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fact: Option<u64>,
-}
-
-/// A mark the readback could not place: its crop beside the passages it might point at (C.5).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct InkConfirm {
-    pub document: String,
-    pub page: u32,
-    /// The crop of the mark and its surroundings, a PNG beside the fixture.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub image: Option<String>,
-    /// What the readback made of the note, short.
-    pub note: String,
-    /// Two or three candidates; you press the number, or `x` for "a general note".
-    #[serde(default)]
-    pub candidates: Vec<Passage>,
-    /// Further marks waiting after this one.
-    #[serde(default)]
-    pub remaining: u32,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Passage {
-    /// `§2 ¶3`, `D9`.
-    pub at: String,
-    pub text: String,
 }

@@ -1,47 +1,34 @@
 //! App state and keys.
 //!
 //! The order a key is tried in: the keys overlay (any key closes it), a mode that owns the
-//! keyboard (typing a question, choosing a strike reason), the screen's own keys, then the global
-//! keys (plan D: Enter opens, Esc goes back, `/` searches, `?` shows keys) and section letters.
+//! keyboard (typing to the chat, correcting a fact), the screen's own keys, then the global keys
+//! (plan D: Enter opens, Esc goes back, `/` asks the chat, `?` shows keys) and section letters.
 //! A screen may claim a letter for an action that way; which ones should is for the rounds.
 //!
 //! Nothing leaves the process (spec 1.4 rules): an action marks its item (read, done, struck,
 //! approved) and the footer says what it would have done.
 
 use crate::fixtures::Fixtures;
-use crate::follow::{self, Follow};
 use crate::screen::{ScreenId, Section};
 use crate::uselog::UseLog;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatui_image::picker::Picker;
-use ratatui_image::protocol::StatefulProtocol;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::time::Instant;
 
-/// What an action did to an item, drawn on it until `R` resets.
+/// What an action did to an item, drawn on it for the rest of the run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Mark {
-    Read,
-    Done,
     Ticked,
-    Struck(&'static str),
     Approved,
     Rejected,
     Undone,
-    Parked,
-    /// A decision reopened for review (round 2q).
-    Reopened,
 }
 
 /// A mode that takes every key until it ends.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Mode {
     Normal,
-    /// Typing on the Project view's ask line.
-    Ask(String),
-    /// A find was struck; the next key is the reason (C.7).
-    Strike(String),
     /// Typing to the chat (files-and-chat M2), from Home's bar or the chat view.
     Chat(String),
     /// Renaming the chat view's selected conversation.
@@ -53,52 +40,35 @@ pub enum Mode {
 
 pub struct App {
     pub fixtures: Fixtures,
-    /// The root (Home or Project) at the bottom, detail screens on top.
+    /// Home at the bottom, detail screens on top.
     pub stack: Vec<ScreenId>,
     /// The focused section's letter, on the top screen.
     pub focus: Option<char>,
     /// The focus each screen under the top one had when it opened the next, so Esc comes back
-    /// to where you were (round 2o: Esc from Answered landed on a Project view with nothing
-    /// focused). Selections are kept per screen already; only the focus was lost.
+    /// to where you were (round 2o). Selections are kept per screen already; only the focus was
+    /// lost.
     pub focus_below: Vec<Option<char>>,
     /// The footer's message: what an action would have done, or why a key did nothing.
     pub note: Option<String>,
     pub keys_open: bool,
     pub quit: bool,
     pub uselog: UseLog,
-    /// Which project the Project view shows, following the project window (plan B.4).
-    pub follow: Follow,
     pub last_key: Option<Instant>,
     /// The selected row, per screen and section (`' '` for a screen's one list).
     pub sel: HashMap<(ScreenId, char), usize>,
     /// Item key → what an action did to it.
     pub marks: HashMap<String, Mark>,
     pub mode: Mode,
-    /// The project a Project view opened from Home shows (the root one follows tmux instead).
-    pub viewing: Option<String>,
-    /// Questions asked this session about a decision, keyed `project:id`, oldest first: the
-    /// prototype's stand-in for an answer that has not come back yet (round 2v).
-    pub asked: Vec<(String, String)>,
-    /// A question you were typing when you pressed Esc: Space brings it back (round 2zd: "Esc
-    /// while typing keeps the draft").
-    pub draft: String,
-    /// The ink fixture Ink confirm shows.
-    pub ink: Option<String>,
-    pub query: String,
-    pub scope_all: bool,
-    pub review_step: usize,
     /// Budget: each day's bar split by job type (`t`).
     pub split: bool,
-    /// The terminal's image protocol, found at startup; none means half blocks (and `--dump`).
-    pub picker: Option<Picker>,
-    pub image: RefCell<Option<(String, StatefulProtocol)>>,
     /// The approve list's first shown line, kept between frames so it scrolls only when the
     /// cursor nears an edge.
     pub approve_scroll: std::cell::Cell<usize>,
     /// Draw count, for the pulse on things running right now.
     pub frame: u64,
-    /// Running as a window of the locus session (set by locus-session.sh), so Home can hand a
-    /// project to the Project window instead of opening it in place.
+    /// Running as a window of the locus session (set by locus-session.sh): only then does a key
+    /// switch tmux (a project's session, kairos's window). Tests and dumps only say what they
+    /// would do.
     pub in_session: bool,
     /// A key that asks first (drop a task): the item it was pressed on; the same key again on
     /// the same item does it, any other key forgets it.
@@ -119,17 +89,10 @@ pub struct App {
     pub approve_filter: String,
     /// Typing the filter now (Enter keeps it, Esc clears it).
     pub approve_filtering: bool,
-    /// The project Home asked the Project window to show, until Esc.
-    pub peek: Option<String>,
     /// For a section that draws only some of its items, the ones drawn, in order: the arrows
-    /// walk these and Enter opens them, never an item off screen (round 2g: Explore's selection
-    /// moved over finds that were not shown). Written by the draw.
+    /// walk these and Enter opens them, never an item off screen (round 2g). Written by the
+    /// draw.
     pub shown: RefCell<HashMap<(ScreenId, char), Vec<usize>>>,
-    /// The Project view's selected branch is open, its change records listed under the graph;
-    /// `records_at` is how far they are scrolled (round 2h).
-    pub lane_open: bool,
-    pub records_at: usize,
-    pub peek_file: Option<crate::follow::PeekFile>,
     /// The Home chat (files-and-chat M2). Runs nothing until it is given a state dir.
     pub chat: crate::chat::Chat,
     /// A chat message you were typing when you pressed Esc: Space brings it back.
@@ -158,8 +121,6 @@ pub struct App {
 
 impl App {
     pub fn new(fixtures: Fixtures, root: ScreenId, uselog: UseLog) -> App {
-        let query = fixtures.search.query.clone();
-        let scope_all = fixtures.search.scope == "everything";
         let mut app = App {
             fixtures,
             stack: vec![root],
@@ -169,21 +130,11 @@ impl App {
             keys_open: false,
             quit: false,
             uselog,
-            follow: Follow::new(None),
             last_key: None,
             sel: HashMap::new(),
             marks: HashMap::new(),
             mode: Mode::Normal,
-            viewing: None,
-            asked: Vec::new(),
-            draft: String::new(),
-            ink: None,
-            query,
-            scope_all,
-            review_step: 1,
             split: false,
-            picker: None,
-            image: RefCell::new(None),
             approve_scroll: std::cell::Cell::new(0),
             frame: 0,
             in_session: false,
@@ -195,11 +146,7 @@ impl App {
             approve_visual: None,
             approve_filter: String::new(),
             approve_filtering: false,
-            peek: None,
             shown: RefCell::new(HashMap::new()),
-            lane_open: false,
-            records_at: 0,
-            peek_file: None,
             chat: crate::chat::Chat::new(None),
             chat_draft: String::new(),
             chat_new: false,
@@ -224,35 +171,57 @@ impl App {
         self.screen().sections().iter().find(|s| s.letter == f)
     }
 
-    /// Show a project: in the Project window when running in the locus session, else here.
-    pub fn open_project(&mut self, id: String) {
-        // Only projects go to the Project window, which follows tmux; an application opens here
-        // (ADR-006: the Project window never shows anything but a project).
-        let project = self
-            .fixtures
-            .registry
-            .get(&id)
-            .is_some_and(|p| p.kind == locus_contract::ProjectKind::Repo);
-        if project
-            && self.in_session
-            && let Some(f) = &self.peek_file
-            && f.write(Some(&id)).is_ok()
-            && crate::follow::select_window("project")
-        {
+    /// Enter on a registry entry, wherever it is listed (Home, the projects view, a request from
+    /// kairos): an application asks the Home chat where things stand, prefilled and not sent;
+    /// anything else switches this client to its own tmux session. An id the registry does not
+    /// know leaves you on Home.
+    pub fn open_item(&mut self, id: &str) {
+        let Some(p) = self.fixtures.registry.get(id).cloned() else {
+            self.home();
+            return;
+        };
+        if p.kind == locus_contract::ProjectKind::Application {
+            self.ask_home(format!("Where do things stand with {}?", p.name));
             return;
         }
-        // An application has a page of its own (round 5), never the Project view's.
-        let application = self
-            .fixtures
-            .registry
-            .get(&id)
-            .is_some_and(|p| p.kind == locus_contract::ProjectKind::Application);
-        self.viewing = Some(id);
-        self.open(if application {
-            ScreenId::Application
-        } else {
-            ScreenId::Project
-        });
+        let Some(session) = p.sessions.first() else {
+            self.note = Some(format!("no tmux session for {}", p.name));
+            return;
+        };
+        if !self.in_session || std::env::var_os("TMUX").is_none() {
+            self.note = Some(format!("not in tmux: {}'s session is {session}", p.name));
+            return;
+        }
+        let target = format!("={session}");
+        if !tmux(&["has-session", "-t", &target]) {
+            self.note = Some(format!("no tmux session for {} ({session} is not running)", p.name));
+        } else if !tmux(&["switch-client", "-t", &target]) {
+            self.note = Some(format!("tmux did not switch to {session}"));
+        }
+    }
+
+    /// The window is reading live data: what only the fixtures know goes, so Home never shows a
+    /// sample as current (cleanup C3). The attended project marks and reorders nothing, and the
+    /// mail count waits for keryx.
+    pub fn go_live(&mut self) {
+        self.home_live = true;
+        self.fixtures.home.attended = None;
+        self.fixtures.home.mail.need_reply = None;
+    }
+
+    /// Back to Home with nothing open on it.
+    pub fn home(&mut self) {
+        self.stack.truncate(1);
+        self.focus_below.clear();
+        self.focus = None;
+    }
+
+    /// The Home chat bar, open for typing with `text` in it (not sent).
+    pub fn ask_home(&mut self, text: String) {
+        if self.screen() != ScreenId::Home {
+            self.home();
+        }
+        self.mode = Mode::Chat(text);
     }
 
     pub fn open(&mut self, screen: ScreenId) {
@@ -270,32 +239,11 @@ impl App {
     }
 
     fn back(&mut self) {
-        if self.stack.len() == 1 && self.peek.is_some() && self.focus.is_none() {
-            // A project Home handed over: give the window back to following, and go home.
-            self.peek = None;
-            if let Some(f) = &self.peek_file {
-                let _ = f.write(None);
-            }
-            crate::follow::select_window("home");
-        } else if self.focus.is_some() {
+        if self.focus.is_some() {
             self.focus = None;
         } else if self.stack.len() > 1 {
             self.stack.pop();
             self.focus = self.focus_below.pop().flatten();
-        }
-    }
-
-    /// The project the project screens are about: the followed one when the Project view is
-    /// this window's root, otherwise the one opened from Home.
-    pub fn project_id(&self) -> Option<String> {
-        if self.stack.first() == Some(&ScreenId::Project) {
-            if let Some(p) = &self.peek {
-                return Some(p.clone());
-            }
-            let s = self.follow.session.as_deref()?;
-            Some(self.fixtures.registry.by_session(s)?.id.clone())
-        } else {
-            self.viewing.clone()
         }
     }
 
@@ -319,11 +267,6 @@ impl App {
         let cur = self.sel(sec) as isize;
         let next = (cur + d).clamp(0, len.saturating_sub(1) as isize) as usize;
         self.sel.insert((self.screen(), sec), next);
-    }
-
-    /// Open the ask line, with any draft you left.
-    pub fn start_ask(&mut self) {
-        self.mode = Mode::Ask(std::mem::take(&mut self.draft));
     }
 
     pub fn mark(&mut self, key: String, m: Mark, note: impl Into<String>) {
@@ -368,11 +311,8 @@ impl App {
                 None => self.note = Some("nothing more to open here yet".into()),
             },
             KeyCode::Char('?') => self.keys_open = true,
-            KeyCode::Char('/') => {
-                if self.screen() != ScreenId::Search {
-                    self.open(ScreenId::Search);
-                }
-            }
+            // The search screen held sample data (cleanup C3): `/` asks the chat instead.
+            KeyCode::Char('/') => self.ask_home(String::new()),
             KeyCode::Char('l') if self.screen() != ScreenId::AutoLog => self.open(ScreenId::AutoLog),
             // The chat's conversations, from anywhere (files-and-chat M2: its own key, never Tab).
             KeyCode::Char('i') if self.screen() != ScreenId::Chat => {
@@ -387,7 +327,6 @@ impl App {
                 self.sel.insert((ScreenId::Chat, ' '), at.unwrap_or(0));
             }
             KeyCode::Char('q') if self.screen().is_root() => self.quit = true,
-            KeyCode::Char('R') => self.reset(),
             KeyCode::Char(ch) if self.screen().sections().iter().any(|s| s.letter == ch) => self.focus = Some(ch),
             _ => self.note = Some(format!("{name} does nothing here · ? for keys")),
         }
@@ -402,10 +341,6 @@ impl App {
         let screen = self.screen();
         let secs = screen.sections();
         if secs.is_empty() {
-            return false;
-        }
-        // An open branch takes ↑ and ↓ to scroll its change records.
-        if self.lane_open && self.focus == Some('g') && nav(&key).is_some() {
             return false;
         }
         let at = self.focus.and_then(|f| secs.iter().position(|s| s.letter == f));
@@ -444,8 +379,6 @@ impl App {
                     self.sel.insert((screen, sec), cur + 1);
                 } else if d < 0 && cur > 0 {
                     self.sel.insert((screen, sec), cur - 1);
-                } else if crate::ui::holds(screen, sec) {
-                    // A pane you read stays put at its ends rather than flowing on.
                 } else if d > 0
                     && let Some(j) = (i + 1..n).find(|&j| crate::ui::section_len(self, secs[j].letter) > 0)
                 {
@@ -467,17 +400,6 @@ impl App {
 
     fn on_mode_key(&mut self, key: KeyEvent) {
         match (&mut self.mode, key.code) {
-            // Esc keeps what you typed; Esc on an empty line forgets it.
-            (Mode::Ask(q), KeyCode::Esc) => {
-                if q.trim().is_empty() {
-                    self.draft.clear();
-                } else {
-                    self.draft = std::mem::take(q);
-                    self.note = Some("draft kept · ␣ brings it back".into());
-                }
-                self.mode = Mode::Normal;
-            }
-            (Mode::Strike(_), KeyCode::Esc) => self.mode = Mode::Normal,
             // Esc keeps a half-typed message; Space brings it back.
             (Mode::Chat(q), KeyCode::Esc) => {
                 if !q.trim().is_empty() {
@@ -531,76 +453,19 @@ impl App {
                     self.chat.rename(&id, &name);
                 }
             }
-            (Mode::Ask(q), KeyCode::Enter) => {
-                let q = q.trim().to_string();
-                self.mode = Mode::Normal;
-                if q.is_empty() {
-                } else if self.screen() == crate::screen::ScreenId::Decisions {
-                    crate::ui::decisions::ask(self, q);
-                } else if self.screen() == crate::screen::ScreenId::Answered {
-                    crate::ui::projectdetail::follow_up(self, q);
-                } else {
-                    self.note = Some(format!("would ask heuris: \"{q}\" · the answer lands in Answered"));
-                }
-            }
-            (Mode::Ask(q), KeyCode::Tab) => {
-                let q = q.trim().to_string();
-                self.mode = Mode::Normal;
-                self.note = Some(format!("would send to the writer agent for the tablet: \"{q}\""));
-            }
-            (Mode::Ask(q), KeyCode::Backspace) => {
-                q.pop();
-            }
-            (Mode::Ask(q), KeyCode::Char(ch)) => q.push(ch),
-            (Mode::Strike(id), KeyCode::Char(ch)) => {
-                let reason = match ch {
-                    'i' => Some("irrelevant"),
-                    'k' => Some("knew it"),
-                    'l' => Some("wrong level"),
-                    't' => Some("too long"),
-                    _ => None,
-                };
-                match reason {
-                    Some(r) => {
-                        let id = format!("find:{id}");
-                        self.mode = Mode::Normal;
-                        self.mark(
-                            id,
-                            Mark::Struck(r),
-                            format!("struck: {r} · the scout would learn from it"),
-                        );
-                    }
-                    None => self.note = Some("reason: i irrelevant · k knew it · l level · t too long".into()),
-                }
-            }
             _ => {}
         }
     }
+}
 
-    /// The project window moved to `session` (from the focus file), or time passed: switch the
-    /// Project view if nothing holds it back.
-    pub fn tick(&mut self, session: Option<String>, now: Instant) {
-        let busy = follow::busy(self.last_key, now, self.stack.len() > 1)
-            || matches!(self.mode, Mode::Ask(_) | Mode::Chat(_) | Mode::ChatName(_) | Mode::FactEdit(..));
-        if let Some(s) = session {
-            self.follow.offer(&s, busy);
-        }
-        self.follow.settle(busy);
-    }
-
-    /// Back to the fixture snapshot as it is on disk (spec: state resets on restart, or `R`).
-    fn reset(&mut self) {
-        match Fixtures::load(&self.fixtures.dir.clone()) {
-            Ok(f) => {
-                self.fixtures = f;
-                self.marks.clear();
-                self.query = self.fixtures.search.query.clone();
-                self.image.replace(None);
-                self.note = Some("prototype reset: ticks and strikes cleared (fixture data only)".into());
-            }
-            Err(e) => self.note = Some(format!("fixtures did not reload: {e:#}")),
-        }
-    }
+/// Run tmux quietly; true when it succeeded.
+fn tmux(args: &[&str]) -> bool {
+    std::process::Command::new("tmux")
+        .args(args)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
 }
 
 /// A key as the use log and the footer name it: `p`, `R`, `enter`, `esc`, `ctrl-c`, `alt-1`.
@@ -684,24 +549,6 @@ mod tests {
     }
 
     #[test]
-    fn the_application_page_reaches_the_calendar_only_when_live() {
-        // Spec K8: `o` opens an event's day in kairos, `c` puts the next date on the calendar.
-        // Outside the live window (this test) neither touches tmux, a file or kairosd.
-        let mut a = app();
-        a.open_project("millennium".into());
-        assert_eq!(a.screen(), ScreenId::Application);
-        press(&mut a, KeyCode::Char('o'));
-        assert!(
-            a.note.as_deref().is_some_and(|n| n.starts_with("would open kairos at")),
-            "{:?}",
-            a.note
-        );
-        press(&mut a, KeyCode::Char('c'));
-        let n = a.note.clone().unwrap_or_default();
-        assert!(n.starts_with("would put") || n.starts_with("no next date"), "{n}");
-    }
-
-    #[test]
     fn letter_focuses_enter_opens_esc_backs_out() {
         let mut a = app();
         press(&mut a, KeyCode::Char('y'));
@@ -723,14 +570,18 @@ mod tests {
     }
 
     #[test]
-    fn slash_opens_search_and_question_mark_toggles_keys() {
+    fn slash_asks_the_home_chat_and_question_mark_toggles_keys() {
         let mut a = app();
         press(&mut a, KeyCode::Char('?'));
         assert!(a.keys_open);
         press(&mut a, KeyCode::Char('x'));
         assert!(!a.keys_open);
+        a.open(ScreenId::System);
         press(&mut a, KeyCode::Char('/'));
-        assert_eq!(a.screen(), ScreenId::Search);
+        assert_eq!(
+            (a.screen(), a.mode.clone()),
+            (ScreenId::Home, Mode::Chat(String::new()))
+        );
     }
 
     #[test]
@@ -744,15 +595,49 @@ mod tests {
         assert!(a.quit);
     }
 
+    /// Enter on a project row goes to its own tmux session; outside the locus session (a
+    /// test) it only says which, and touches no tmux (cleanup C3).
     #[test]
-    fn a_project_opened_from_home_is_the_selected_row() {
+    fn a_project_row_names_its_tmux_session_outside_tmux() {
         let mut a = app();
-        press(&mut a, KeyCode::Char('p'));
-        press(&mut a, KeyCode::Char('j'));
+        a.focus = Some('p');
+        let rows = crate::ui::home::project_rows(&a);
+        let i = rows
+            .iter()
+            .position(|id| a.fixtures.registry.get(id).is_some_and(|p| !p.sessions.is_empty()))
+            .expect("a live project with a session");
+        a.sel.insert((ScreenId::Home, 'p'), i);
         press(&mut a, KeyCode::Enter);
-        assert_eq!(a.screen(), ScreenId::Project);
-        let second = crate::ui::home::project_rows(&a)[1].clone();
-        assert_eq!(a.project_id(), Some(second));
+        let p = a.fixtures.registry.get(&rows[i]).cloned().unwrap();
+        assert_eq!(a.screen(), ScreenId::Home);
+        assert_eq!(
+            a.note.as_deref(),
+            Some(format!("not in tmux: {}'s session is {}", p.name, p.sessions[0]).as_str())
+        );
+    }
+
+    /// Enter on an application asks the Home chat about it, prefilled and not sent.
+    #[test]
+    fn a_careers_row_prefills_the_chat() {
+        let mut a = app();
+        a.focus = Some('c');
+        press(&mut a, KeyCode::Enter);
+        let id = crate::ui::home::career_rows(&a)[0].clone();
+        let name = a.fixtures.registry.get(&id).unwrap().name.clone();
+        assert_eq!(a.mode, Mode::Chat(format!("Where do things stand with {name}?")));
+        assert!(a.chat.busy.is_none(), "not sent");
+    }
+
+    /// A name kairos or keryx sends that is no registry entry (an old screen's name) opens
+    /// Home, never a panic.
+    #[test]
+    fn an_unknown_item_opens_home() {
+        let mut a = app();
+        a.open(ScreenId::Tasks);
+        for name in ["project", "application", "search", "review", ""] {
+            a.open_item(name);
+            assert_eq!(a.screen(), ScreenId::Home, "{name}");
+        }
     }
 
     #[test]
@@ -792,22 +677,11 @@ mod tests {
     #[test]
     fn esc_returns_to_the_section_you_left() {
         let mut a = app();
-        press(&mut a, KeyCode::Char('e'));
-        a.open(ScreenId::Explore);
+        press(&mut a, KeyCode::Char('t'));
+        a.open(ScreenId::Tasks);
         assert_eq!(a.focus, None);
         press(&mut a, KeyCode::Esc);
         assert_eq!(a.screen(), ScreenId::Home);
-        assert_eq!(a.focus, Some('e'));
-    }
-
-    #[test]
-    fn striking_a_find_asks_for_a_reason() {
-        let mut a = app();
-        a.open(ScreenId::Explore);
-        press(&mut a, KeyCode::Char('n'));
-        assert!(matches!(a.mode, Mode::Strike(_)));
-        press(&mut a, KeyCode::Char('l'));
-        assert_eq!(a.mode, Mode::Normal);
-        assert!(a.marks.values().any(|m| *m == Mark::Struck("wrong level")));
+        assert_eq!(a.focus, Some('t'));
     }
 }

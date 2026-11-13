@@ -5,9 +5,7 @@
     "area": "Personal"
   },
   "mail": {
-    "need_reply": 2,
-    "deadlines_proposed": 1
+    "need_reply": 2
   },
-  "attended": "quast",
-  "review_ready": true
+  "attended": "quast"
 }

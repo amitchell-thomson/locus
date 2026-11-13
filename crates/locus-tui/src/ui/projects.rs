@@ -63,7 +63,11 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     let mut i = 0usize;
     let mut sel_line = 0usize;
     for (title, ids) in rows(app) {
-        let extra = if ids.is_empty() { "none".to_string() } else { ids.len().to_string() };
+        let extra = if ids.is_empty() {
+            "none".to_string()
+        } else {
+            ids.len().to_string()
+        };
         out.push(rule(title, &extra, None, false, inner.width));
         for id in &ids {
             if i == sel {
@@ -86,7 +90,10 @@ fn row_for(app: &App, id: &str, i: usize, sel: usize, now: locus_contract::Time,
     let mut right = vec![];
     if let Some(name) = id.strip_prefix("dir:") {
         left.push(Span::styled(format!(" {} ", glyph::UNATTENDED), st("overlay1")));
-        left.push(Span::styled(format!("{:<26}", crate::ui::truncate(name, 25)), st("overlay2")));
+        left.push(Span::styled(
+            format!("{:<26}", crate::ui::truncate(name, 25)),
+            st("overlay2"),
+        ));
         if let Some((_, Some((t, what)))) = app.other_repos.iter().find(|(n, _)| n == name) {
             left.push(Span::styled(format!("last {}  ", date(t.date_naive())), dim()));
             left.push(Span::styled(what.clone(), st("subtext0")));
@@ -96,26 +103,42 @@ fn row_for(app: &App, id: &str, i: usize, sel: usize, now: locus_contract::Time,
     let (name, sessions, area_col) = match id.strip_prefix("tmux:") {
         Some(n) => (
             n.to_string(),
-            app.unregistered.iter().find(|(t, _)| t == n).map(|(_, s)| s.clone()).unwrap_or_default(),
+            app.unregistered
+                .iter()
+                .find(|(t, _)| t == n)
+                .map(|(_, s)| s.clone())
+                .unwrap_or_default(),
             "overlay2".to_string(),
         ),
         None => {
-            let Some(p) = fx.registry.get(id) else { return Line::raw("") };
+            let Some(p) = fx.registry.get(id) else {
+                return Line::raw("");
+            };
             (
                 p.name.clone(),
-                fx.projects.get(id).map(|pf| pf.view.sessions.clone()).unwrap_or_default(),
+                fx.projects
+                    .get(id)
+                    .map(|pf| pf.view.sessions.clone())
+                    .unwrap_or_default(),
                 crate::ui::home::area_colour(app, &p.area).to_string(),
             )
         }
     };
     left.push(Span::styled(format!(" {} ", glyph::PROJECT), st(&area_col)));
-    left.push(Span::styled(format!("{:<26}", crate::ui::truncate(&name, 25)), bold(st(&area_col))));
+    left.push(Span::styled(
+        format!("{:<26}", crate::ui::truncate(&name, 25)),
+        bold(st(&area_col)),
+    ));
     let mut ss = sessions.clone();
     ss.sort_by_key(|s| s.state);
     match ss.first() {
         Some(s) => {
             let (g, c, word) = session_glyph(s.state);
-            let g = if s.state == SessionState::Working { spin(app.frame) } else { g };
+            let g = if s.state == SessionState::Working {
+                spin(app.frame)
+            } else {
+                g
+            };
             left.push(Span::styled(format!("{g} {word:<9}"), st(c)));
             left.push(Span::styled(format!("{:>4}  ", ago(now, s.since)), dim()));
             left.push(Span::styled(s.summary.clone().unwrap_or_default(), text()));
@@ -153,7 +176,7 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                         "`{name}` is not in the registry. Look at what it is and help me register it: "
                     ));
                 }
-                Some(id) => app.open_project(id),
+                Some(id) => app.open_item(&id),
                 None => {}
             }
             true

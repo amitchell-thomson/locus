@@ -1,43 +1,5 @@
 {
   "project": "oqts",
   "stage": "quiet since August",
-  "where_you_are": {
-    "state": "The platform, the website and oxdaq's agent guidance were all finished on 28 Aug; nothing has moved since.",
-    "next": "decide whether oxdaq's plan v2.0 starts this term or waits"
-  },
-  "new": [],
-  "sessions": [],
-  "graph": {
-    "trunk": "main",
-    "from": "2026-08-08",
-    "milestones": [],
-    "lanes": [
-      {
-        "branch": "alec/repo-agent-guidance",
-        "stage": "agent guidance",
-        "forked": "2026-08-28",
-        "merged": "2026-08-28",
-        "commits": 1,
-        "summary": "Gave each OQTS repository a CLAUDE.md so working chats start with the right context. Merged.",
-        "records": [
-          {
-            "date": "2026-08-28",
-            "text": "Add agent guidance"
-          }
-        ]
-      },
-      {
-        "branch": "alec/agent-guidance",
-        "stage": "oxdaq: guidance for plan v2.0",
-        "forked": "2026-08-28",
-        "tip": "2026-08-28",
-        "commits": 1,
-        "summary": "Updated oxdaq's agent guidance for its plan v2.0. Never merged.",
-        "records": []
-      }
-    ]
-  },
-  "questions": [
-    "Does oxdaq's plan v2.0 start this term, or wait until after exams?"
-  ]
+  "sessions": []
 }

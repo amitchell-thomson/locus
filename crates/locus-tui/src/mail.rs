@@ -10,9 +10,7 @@ use keryx_core::config::Config;
 use keryx_store::api::{DecideOne, Decision, ReviewItem};
 use keryx_store::client::{Client, Daemon};
 use keryx_store::state::{Action, ProposalStatus};
-use locus_contract::{
-    AppEvent, AppEventKind, ApproveDetail, ApproveGroup, ApproveItem, ApproveKind, Item, ItemKind, MailDecision,
-};
+use locus_contract::{ApproveDetail, ApproveGroup, ApproveItem, ApproveKind, MailDecision};
 use std::collections::{BTreeMap, HashMap};
 
 /// A connection to keryxd, from keryx's own config, as you (your keypresses in Approve).
@@ -561,45 +559,6 @@ impl Mirror {
         Some(Mirror { cfg, db })
     }
 
-    /// Mail filed for each registry item (keryx-joins-locus X7), newest first, at most `per`
-    /// threads an item: what its page shows.
-    pub fn filed(&self, ids: &[String], per: usize) -> BTreeMap<String, Vec<Filed>> {
-        let own = self.cfg.own_addresses();
-        let mut out = BTreeMap::new();
-        for id in ids {
-            let mut v: Vec<Filed> = self
-                .db
-                .threads_for_item(id)
-                .unwrap_or_default()
-                .into_iter()
-                .filter_map(|(a, t, _)| {
-                    let msgs = self.db.thread(&a, &t).ok()?;
-                    let first = msgs.first()?;
-                    let last = msgs.last()?;
-                    let other = msgs
-                        .iter()
-                        .rev()
-                        .find(|m| m.from.as_ref().is_some_and(|f| !own.contains(&f.key())))
-                        .or(msgs.last())?;
-                    Some(Filed {
-                        subject: first.subject.clone(),
-                        who: other.from.as_ref().map(|f| f.short().to_string()).unwrap_or_default(),
-                        at: last.date,
-                        unread: msgs.iter().any(|m| !m.read),
-                        in_inbox: msgs.iter().any(|m| m.in_inbox),
-                        needs_reply: self.db.tag(&a, &t, "needs_reply").ok().flatten().is_some(),
-                    })
-                })
-                .collect();
-            v.sort_by_key(|f| std::cmp::Reverse(f.at));
-            v.truncate(per);
-            if !v.is_empty() {
-                out.insert(id.clone(), v);
-            }
-        }
-        out
-    }
-
     /// Item → the key its threads are filed under in your mailboxes now (the most common), from
     /// what keryx linked and where those threads sit: B15's mail is in Engineering.
     pub fn item_keys(&self) -> HashMap<String, String> {
@@ -694,76 +653,7 @@ fn badge_of(a: &Action, reg: &locus_contract::Registry) -> String {
 
 /// Home's mail line: how many threads wait on your reply.
 pub fn apply_counts(fx: &mut Fixtures, need_reply: u32) {
-    fx.home.mail.need_reply = need_reply;
-}
-
-/// One thread filed for an item.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Filed {
-    pub subject: String,
-    pub who: String,
-    pub at: i64,
-    pub unread: bool,
-    /// Still in your inbox: marked for this item (`m`) but not done.
-    pub in_inbox: bool,
-    pub needs_reply: bool,
-}
-
-/// An item's mail onto its page (X7, round 4): what is still in your inbox joins New, first and
-/// said so ("needs reply" or "in your inbox"), as does anything unread; an application's
-/// timeline gets every thread as a mail event, each once. A course's own page is a later
-/// design session; until then its mail shows in New like any item's.
-pub fn apply_filed(fx: &mut Fixtures, filed: &BTreeMap<String, Vec<Filed>>) {
-    for (id, threads) in filed {
-        let Some(p) = fx.projects.get_mut(id) else { continue };
-        for f in threads {
-            let Some(at) = chrono::DateTime::from_timestamp(f.at, 0).map(|t| t.fixed_offset()) else {
-                continue;
-            };
-            let text = format!("{}: {}", f.who, f.subject);
-            let shown = match (f.needs_reply, f.in_inbox) {
-                (true, _) => format!("needs reply · {text}"),
-                (false, true) => format!("in your inbox · {text}"),
-                _ => text.clone(),
-            };
-            // A mark changes as you act (marked, replied, done): the page keeps one line.
-            p.view
-                .new
-                .retain(|i| !(i.kind == ItemKind::Mail && i.text.ends_with(&text)));
-            if f.unread || f.in_inbox {
-                p.view.new.push(Item {
-                    kind: ItemKind::Mail,
-                    text: shown,
-                    at,
-                    unread: true,
-                    detail: vec![],
-                    routine: None,
-                });
-            }
-            if let Some(app) = &mut p.view.application
-                && !app
-                    .events
-                    .iter()
-                    .any(|e| e.kind == AppEventKind::Mail && e.text == text)
-            {
-                app.events.push(AppEvent {
-                    at,
-                    kind: AppEventKind::Mail,
-                    text,
-                    detail: vec![],
-                    calendar: None,
-                });
-            }
-        }
-        // Your inbox's threads first, then newest first.
-        let waiting = |i: &Item| {
-            i.kind == ItemKind::Mail && (i.text.starts_with("needs reply · ") || i.text.starts_with("in your inbox · "))
-        };
-        p.view.new.sort_by_key(|i| (!waiting(i), std::cmp::Reverse(i.at)));
-        if let Some(app) = &mut p.view.application {
-            app.events.sort_by_key(|e| e.at);
-        }
-    }
+    fx.home.mail.need_reply = Some(need_reply);
 }
 
 /// keryx's drafts and proposals onto Approve, replacing what an earlier pass put there.
@@ -845,7 +735,6 @@ pub fn apply(fx: &mut Fixtures, proposals: &[ReviewItem], previews: &HashMap<Str
             to: Some(action.clone()),
             from: "keryx · claude".into(),
             new: true,
-            opens: None,
             date: None,
             changeset: None,
             mail: Some(MailDecision::Proposal(i.proposal.id.clone())),
@@ -1048,56 +937,5 @@ mod tests {
             dests: d,
         };
         assert!(p.matches().is_empty());
-    }
-
-    #[test]
-    fn filed_mail_reaches_its_items_page_once() {
-        let mut fx = Fixtures::load(&resolve("default")).unwrap();
-        let before = fx.projects["millennium"]
-            .view
-            .application
-            .as_ref()
-            .unwrap()
-            .events
-            .len();
-        let new_before = fx.projects["millennium"].view.new.len();
-        let filed: BTreeMap<String, Vec<Filed>> = [(
-            "millennium".to_string(),
-            vec![
-                Filed {
-                    subject: "Your interview slot".into(),
-                    who: "Recruiting".into(),
-                    at: 1_793_000_000,
-                    unread: true,
-                    in_inbox: false,
-                    needs_reply: false,
-                },
-                Filed {
-                    subject: "Application received".into(),
-                    who: "Recruiting".into(),
-                    at: 1_790_000_000,
-                    unread: false,
-                    in_inbox: true,
-                    needs_reply: true,
-                },
-            ],
-        )]
-        .into();
-        apply_filed(&mut fx, &filed);
-        apply_filed(&mut fx, &filed);
-        let p = &fx.projects["millennium"];
-        let app = p.view.application.as_ref().unwrap();
-        assert_eq!(app.events.len(), before + 2, "each thread once on the timeline");
-        assert!(app.events.windows(2).all(|w| w[0].at <= w[1].at), "oldest first");
-        assert_eq!(
-            p.view.new.len(),
-            new_before + 2,
-            "the unread one and the one in your inbox"
-        );
-        assert_eq!(
-            p.view.new[0].text, "needs reply · Recruiting: Application received",
-            "what waits in your inbox comes first"
-        );
-        assert!(p.view.new.iter().any(|i| i.text == "Recruiting: Your interview slot"));
     }
 }

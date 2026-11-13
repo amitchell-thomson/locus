@@ -1,136 +1,205 @@
-//! System (`s` from Home): running jobs live, recent results with failures kept visible, and
-//! usage. Budget (`u` there): the week against the cap, the 5-hour window, each day by job type,
-//! the most expensive jobs, cost by project (plan E). Text on the left, thin bars on the right,
-//! every row aligned (screens v2, 18 Oct).
+//! System (⏎ on Home's system section): what runs now, every timer with its last result and next
+//! run, recent results with failures kept visible, and the credit. Budget (`u` there): the credit
+//! this cycle, today's allowance, each of the last seven days by job, and this cycle's jobs.
+//!
+//! Both read `locus home-system` from the server, the same answer Home's section draws (cleanup
+//! C3, 13 Nov 2026: "it should properly show real data as that real data exists"). They were
+//! sample data before, laid out for a weekly subscription cap that no longer applies: model
+//! calls run on the $100 API credit, paced per day (agent/claude.credit_allows). Times are shown
+//! against the moment the server answered, so nothing old is drawn as current.
 
 use crate::app::{App, nav};
+use crate::live::{BudgetLive, SystemLive};
 use crate::screen::ScreenId;
 use crate::ui::widgets::*;
 use crate::ui::{esc_back, frame, hints, lines, title};
-use locus_contract::{Cost, JobOutcome, Usage};
+use chrono::{DateTime, Local, NaiveDate};
 use locus_theme::{SEP, c, glyph};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
-use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 
-pub const KEYS: &[(&str, &str)] = &[("⏎", "a failure's details")];
-pub const BUDGET_KEYS: &[(&str, &str)] = &[("t", "split each day by job type")];
+pub const KEYS: &[(&str, &str)] = &[("⏎", "a failure's cause"), ("u", "the budget")];
+pub const BUDGET_KEYS: &[(&str, &str)] = &[("t", "split each day by job")];
 
 /// Where the label column ends and the bars start.
 const LABEL: usize = 44;
 
-pub fn draw(f: &mut Frame, area: Rect, app: &App) {
-    let fx = &app.fixtures;
-    let now = fx.now();
-    let inner = frame(f, area, title("system", ""), Some(esc_back()));
-    let run_h = fx.system.running.len().max(1) as u16 + 1;
-    let rec_h = fx.system.recent.len().clamp(1, 6) as u16 + 1;
-    let [run_r, rec_r, use_r] = Layout::vertical([
-        Constraint::Length(run_h),
-        Constraint::Length(rec_h + 1),
-        Constraint::Min(0),
-    ])
-    .areas(inner);
-    let w = inner.width;
+fn local(s: &str) -> Option<DateTime<Local>> {
+    DateTime::parse_from_rfc3339(s).ok().map(|d| d.with_timezone(&Local))
+}
 
-    let mut out = vec![rule("running", "live", Some('r'), app.focus == Some('r'), w)];
-    for j in &fx.system.running {
+/// `14:05` today, `thu 14:05` within the week, else `12 nov`.
+fn when(s: Option<&str>, now: DateTime<Local>) -> String {
+    let Some(t) = s.and_then(local) else {
+        return "never".into();
+    };
+    if t.date_naive() == now.date_naive() {
+        t.format("%H:%M").to_string()
+    } else if (t - now).num_days().abs() < 6 {
+        t.format("%a %H:%M").to_string().to_lowercase()
+    } else {
+        t.format("%-d %b").to_string().to_lowercase()
+    }
+}
+
+/// What the server said, or the line saying why there is nothing to show.
+fn live(app: &App) -> Result<&SystemLive, String> {
+    match &app.system_live {
+        None => Err("asking the server…".into()),
+        Some(Err(e)) => Err(format!("server not reached: {e}")),
+        Some(Ok(s)) => Ok(s),
+    }
+}
+
+fn at(sys: &SystemLive) -> DateTime<Local> {
+    local(&sys.at).unwrap_or_else(Local::now)
+}
+
+pub fn draw(f: &mut Frame, area: Rect, app: &App) {
+    let sys = match live(app) {
+        Ok(s) => s,
+        Err(e) => {
+            let inner = frame(f, area, title("system", ""), Some(esc_back()));
+            return lines(f, inner, vec![Line::from(Span::styled(format!("  {e}"), dim()))]);
+        }
+    };
+    let now = at(sys);
+    let inner = frame(
+        f,
+        area,
+        title("system", &format!("as of {}", now.format("%H:%M"))),
+        Some(esc_back()),
+    );
+    let w = inner.width;
+    let mut out = vec![rule("running", "now", Some('r'), app.focus == Some('r'), w)];
+    for (i, j) in sys.running.iter().enumerate() {
+        let since = j
+            .started
+            .as_deref()
+            .map(|s| format!("since {}", when(Some(s), now)))
+            .unwrap_or_default();
         out.push(row(
             vec![
-                Span::styled(format!(" {} ", glyph::WORKING), st("blue")),
-                Span::styled(format!("{:<26}", format!("{}{SEP}{}", j.kind, j.subject)), text()),
-                Span::styled(format!("{:<8}", j.model.as_deref().unwrap_or("")), dim()),
-                Span::styled(j.detail.clone(), st("subtext0")),
+                Span::styled(format!(" {} ", spin(app.frame + i as u64)), st("blue")),
+                Span::styled(j.kind.clone(), text()),
             ],
-            vec![Span::styled(format!("{} ", elapsed(now, j.started)), text())],
+            vec![Span::styled(format!("{since} "), dim())],
             w,
         ));
     }
-    if fx.system.running.is_empty() {
+    if sys.running.is_empty() {
         out.push(Line::from(Span::styled("  nothing running", dim())));
     }
-    lines(f, run_r, out);
 
+    out.push(Line::from(""));
+    out.push(rule("timers", "last run · next", Some('t'), app.focus == Some('t'), w));
+    for t in &sys.timers {
+        let (g, col) = match t.result.as_str() {
+            "success" => (glyph::DONE, "green"),
+            "" => ("·", "overlay1"),
+            _ => (glyph::FAILED, "red"),
+        };
+        let res = if t.result.is_empty() || t.result == "success" {
+            String::new()
+        } else {
+            format!("  {}", t.result)
+        };
+        out.push(row(
+            vec![
+                Span::styled(format!(" {g} "), st(col)),
+                Span::styled(format!("{:<18}", t.name), text()),
+                Span::styled(format!("last {}", when(t.last.as_deref(), now)), dim()),
+                Span::styled(res, st("red")),
+            ],
+            vec![Span::styled(format!("next {} ", when(t.next.as_deref(), now)), dim())],
+            w,
+        ));
+    }
+    if sys.timers.is_empty() {
+        out.push(Line::from(Span::styled("  no timers reported", dim())));
+    }
+
+    out.push(Line::from(""));
     let focus = app.focus == Some('e');
     let sel = focus.then(|| app.sel('e'));
-    let mut out = vec![rule("recent", "", Some('e'), focus, w)];
-    for (i, j) in fx.system.recent.iter().enumerate().take(6) {
-        let (g, gc) = job_glyph(&j.outcome);
-        let detail = match &j.outcome {
-            JobOutcome::Failed { cause, next } => format!("{cause}{SEP}{next}"),
-            _ => j.detail.clone(),
+    out.push(rule(
+        "recent",
+        &format!("{} done · {} failed today", sys.done_today, sys.failed_today),
+        Some('e'),
+        focus,
+        w,
+    ));
+    for (i, j) in sys.recent.iter().enumerate() {
+        let (g, gc) = if j.ok {
+            (glyph::DONE, "green")
+        } else {
+            (glyph::FAILED, "red")
         };
-        let at = j.ended.unwrap_or(j.started);
         out.push(row(
             vec![
                 pointer(i, sel),
                 Span::styled(format!("{g} "), st(gc)),
-                Span::styled(
-                    format!(
-                        "{:<34}",
-                        crate::ui::truncate(&format!("{}{SEP}{}", j.kind, j.subject), 33)
-                    ),
-                    text(),
-                ),
-                Span::styled(
-                    detail,
-                    if matches!(j.outcome, JobOutcome::Failed { .. }) {
-                        st("red")
-                    } else {
-                        dim()
-                    },
-                ),
+                Span::styled(format!("{:<20}", crate::ui::truncate(&j.kind, 19)), text()),
+                Span::styled(j.cause.clone(), if j.ok { dim() } else { st("red") }),
             ],
-            vec![Span::styled(format!("{} ", hm(at)), dim())],
+            vec![Span::styled(
+                format!("{} ", when(j.ended.as_deref().or(Some(&j.started)), now)),
+                dim(),
+            )],
             w,
         ));
     }
-    if fx.system.recent.is_empty() {
-        out.push(Line::from(Span::styled("  nothing has run yet", dim())));
+    if sys.recent.is_empty() {
+        out.push(Line::from(Span::styled("  nothing has run in two days", dim())));
     }
-    lines(f, rec_r, out);
 
-    let mut out = vec![rule("usage", "u for the budget", Some('u'), app.focus == Some('u'), w)];
-    out.extend(summary(&fx.usage, w));
-    lines(f, use_r, out);
+    out.push(Line::from(""));
+    out.push(rule("credit", "u for the budget", Some('u'), app.focus == Some('u'), w));
+    match &sys.budget {
+        Some(b) => out.extend(summary(b, w)),
+        None => out.push(Line::from(Span::styled(
+            format!("  ${:.2} of $100 since {}", sys.credit_used, sys.credit_since),
+            text(),
+        ))),
+    }
+    out.push(Line::from(Span::styled(
+        format!("  {} model calls today{SEP}route {}", sys.calls_today, sys.backend),
+        dim(),
+    )));
+    lines(f, inner, out);
 }
 
-/// The two lines System and Home share: the week, and the window.
-fn summary(u: &Usage, w: u16) -> Vec<Line<'static>> {
+/// The credit and today's allowance, shared by System and Budget.
+fn summary(b: &BudgetLive, w: u16) -> Vec<Line<'static>> {
     let bw = usize::from(w).saturating_sub(LABEL + 2);
-    let scale = u.cap_pct * 1.3;
     vec![
         aligned(
-            format!("this week     {:>5.1}%   of {:.0}% cap", u.week_pct, u.cap_pct),
-            bar(u.week_pct / scale, bw, Some(u.cap_pct / scale), c("mauve")),
+            format!(
+                "this cycle   ${:>6.2} of ${:.0}  since {}",
+                b.used,
+                b.cap,
+                short(&b.since)
+            ),
+            bar((b.used / b.cap) as f32, bw, None, c("mauve")),
         ),
         aligned(
-            format!("by sunday     {:>5.1}%   projected", u.projected_pct),
-            bar(u.projected_pct / scale, bw, Some(u.cap_pct / scale), c("surface2")),
-        ),
-        aligned(
-            format!("window · you  {:>5.0}%", u.window.you_pct),
+            format!("today        ${:>6.2} of ${:.2} a day", b.today, b.daily),
             bar(
-                u.window.you_pct / 100.0,
+                (b.today / b.daily.max(0.01)) as f32,
                 bw,
-                Some(u.window.stop_at_pct / 100.0),
+                Some((b.bulk_daily / b.daily.max(0.01)) as f32),
                 c("blue"),
             ),
         ),
-        aligned(
-            format!(
-                "window · locus{:>5.0}%   stops at {:.0}%",
-                u.window.locus_pct, u.window.stop_at_pct
-            ),
-            bar(
-                u.window.locus_pct / 100.0,
-                bw,
-                Some(u.window.stop_at_pct / 100.0),
-                c("mauve"),
-            ),
-        ),
     ]
+}
+
+fn short(iso: &str) -> String {
+    NaiveDate::parse_from_str(iso, "%Y-%m-%d")
+        .map(|d| d.format("%-d %b").to_string().to_lowercase())
+        .unwrap_or_else(|_| iso.to_string())
 }
 
 fn aligned(label: String, bar: Vec<Span<'static>>) -> Line<'static> {
@@ -143,110 +212,142 @@ fn aligned(label: String, bar: Vec<Span<'static>>) -> Line<'static> {
 }
 
 pub fn draw_budget(f: &mut Frame, area: Rect, app: &App) {
-    let u = &app.fixtures.usage;
+    let b = match live(app).and_then(|s| s.budget.as_ref().ok_or_else(|| "the server sent no budget".into())) {
+        Ok(b) => b,
+        Err(e) => {
+            let inner = frame(f, area, title("budget", ""), Some(esc_back()));
+            return lines(f, inner, vec![Line::from(Span::styled(format!("  {e}"), dim()))]);
+        }
+    };
     let inner = frame(
         f,
         area,
-        title("budget", &format!("{:.1}% of {:.0}% this week", u.week_pct, u.cap_pct)),
+        title(
+            "budget",
+            &format!(
+                "${:.2} of ${:.0} until {} · estimated: the console is exact",
+                b.used,
+                b.cap,
+                short(&b.until)
+            ),
+        ),
         Some(esc_back()),
     );
     let w = inner.width;
     let bw = usize::from(w).saturating_sub(LABEL + 2);
-    let mut out = vec![rule("the week and the window", "", None, false, w)];
-    out.extend(summary(u, w));
-    if !u.window.held.is_empty() {
-        out.push(Line::from(Span::styled(
-            format!(" held by the window: {}", u.window.held.join(", ")),
-            st("peach"),
-        )));
-    }
-    out.push(Line::from(Span::styled(
-        format!(" the window resets at {}", hm(u.window.resets)),
-        dim(),
-    )));
+    let mut out = vec![rule(
+        "the credit",
+        "background work keeps to 70% of the day's share",
+        None,
+        false,
+        w,
+    )];
+    out.extend(summary(b, w));
 
+    out.push(Line::from(""));
     out.push(rule(
         "each day",
-        if app.split {
-            "by job type"
-        } else {
-            "t splits by job type"
-        },
+        if app.split { "by job" } else { "t splits by job" },
         None,
         false,
         w,
     ));
-    let day_max = u.days.iter().map(|d| d.total()).fold(0.0_f32, f32::max).max(0.5);
-    let kinds: Vec<String> = {
-        let mut k: Vec<String> = u
+    let total = |d: &crate::live::BudgetDay| d.by_job.iter().map(|j| j.usd).sum::<f64>();
+    let day_max = b.days.iter().map(total).fold(0.0_f64, f64::max).max(0.5);
+    let jobs: Vec<String> = {
+        let mut k: Vec<String> = b
             .days
             .iter()
-            .flat_map(|d| d.by_kind.iter().map(|c| c.label.clone()))
+            .flat_map(|d| d.by_job.iter().map(|j| j.job.clone()))
             .collect();
         k.sort();
         k.dedup();
         k
     };
-    let kind_col =
-        |label: &str| c(PROJECT_COLOURS[kinds.iter().position(|k| k == label).unwrap_or(0) % PROJECT_COLOURS.len()]);
-    for d in &u.days {
-        let names: Vec<_> = d.by_kind.iter().map(|c| c.label.as_str()).collect();
-        let label = format!("{:<7}{:>5.1}%   {}", day(d.date), d.total(), names.join(", "));
+    let col = |job: &str| c(PROJECT_COLOURS[jobs.iter().position(|k| k == job).unwrap_or(0) % PROJECT_COLOURS.len()]);
+    for d in &b.days {
+        let names: Vec<_> = d.by_job.iter().take(3).map(|j| j.job.as_str()).collect();
+        let label = format!("{:<7}${:>5.2}   {}", short_day(&d.date), total(d), names.join(", "));
         let mut spans = vec![Span::styled(
             format!(" {:<w$}│ ", crate::ui::truncate(&label, LABEL - 2), w = LABEL - 2),
             text(),
         )];
         if app.split {
-            for c in &d.by_kind {
-                let n = ((c.pct / day_max) * bw as f32).round() as usize;
+            for j in &d.by_job {
+                let n = ((j.usd / day_max) * bw as f64).round() as usize;
                 spans.push(Span::styled(
                     "━".repeat(n),
-                    ratatui::style::Style::default().fg(kind_col(&c.label)),
+                    ratatui::style::Style::default().fg(col(&j.job)),
                 ));
             }
         } else {
-            spans.extend(bar(d.total() / day_max, bw, None, c("mauve")));
+            spans.extend(bar(
+                (total(d) / day_max) as f32,
+                bw,
+                Some((b.daily / day_max) as f32),
+                c("mauve"),
+            ));
         }
         out.push(Line::from(spans));
     }
-    if u.days.is_empty() {
-        out.push(Line::from(Span::styled("  nothing spent this week", dim())));
-    }
-    if app.split && !kinds.is_empty() {
+    if app.split && !jobs.is_empty() {
         let mut legend = vec![Span::raw(" ")];
-        for k in &kinds {
+        for k in &jobs {
             legend.push(Span::styled(
                 format!("━ {k}   "),
-                ratatui::style::Style::default().fg(kind_col(k)),
+                ratatui::style::Style::default().fg(col(k)),
             ));
         }
         out.push(Line::from(legend));
     }
-    let costs = |title: &str, rows: &[Cost], out: &mut Vec<Line<'static>>| {
-        out.push(rule(title, "", None, false, w));
-        let max = rows.iter().map(|c| c.pct).fold(0.0_f32, f32::max).max(0.5);
-        for c in rows {
-            let model = c.model.as_deref().map(|m| format!("{SEP}{m}")).unwrap_or_default();
-            let label = format!(
-                "{:<33}{:>5.1}%",
-                crate::ui::truncate(&format!("{}{model}", c.label), 32),
-                c.pct
-            );
-            out.push(aligned(label, bar(c.pct / max, bw, None, locus_theme::c("lavender"))));
-        }
-        if rows.is_empty() {
-            out.push(Line::from(Span::styled("  none", dim())));
-        }
-    };
-    costs("most expensive jobs", &u.top_jobs, &mut out);
-    costs("by project", &u.by_project, &mut out);
+
+    out.push(Line::from(""));
+    out.push(rule("this cycle's jobs", "", None, false, w));
+    let max = b.jobs.iter().map(|j| j.usd).fold(0.0_f64, f64::max).max(0.01);
+    for j in &b.jobs {
+        let failed = if j.failed > 0 {
+            format!(" · {} failed", j.failed)
+        } else {
+            String::new()
+        };
+        let label = format!(
+            "{:<22}{:>5} calls  ${:>6.2}{failed}",
+            crate::ui::truncate(
+                &format!("{}{}", j.job, if j.backend == "api" { "" } else { " (plan)" }),
+                21
+            ),
+            j.calls,
+            j.usd
+        );
+        out.push(aligned(label, bar((j.usd / max) as f32, bw, None, c("lavender"))));
+    }
+    if b.jobs.is_empty() {
+        out.push(Line::from(Span::styled("  nothing this cycle", dim())));
+    }
     lines(f, inner, out);
     let foot = Rect {
         y: inner.y + inner.height.saturating_sub(1),
         height: 1,
         ..inner
     };
-    lines(f, foot, vec![hints(&[("t", "split by job type")]).right_aligned()]);
+    lines(f, foot, vec![hints(&[("t", "split by job")]).right_aligned()]);
+}
+
+fn short_day(iso: &str) -> String {
+    NaiveDate::parse_from_str(iso, "%Y-%m-%d")
+        .map(day)
+        .unwrap_or_else(|_| iso.to_string())
+}
+
+/// Rows in a section, for the arrows.
+pub fn section_len(app: &App, sec: char) -> usize {
+    let Ok(sys) = live(app) else { return 1 };
+    match sec {
+        'r' => sys.running.len(),
+        't' => sys.timers.len(),
+        'e' => sys.recent.len(),
+        _ => 1,
+    }
 }
 
 pub fn key(app: &mut App, k: KeyEvent) -> bool {
@@ -259,15 +360,17 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
     }
     if app.focus == Some('e') {
         if let Some(d) = nav(&k) {
-            let n = app.fixtures.system.recent.len().min(6);
+            let n = section_len(app, 'e');
             app.move_sel('e', n, d);
             return true;
         }
         if k.code == KeyCode::Enter {
-            if let Some(j) = app.fixtures.system.recent.get(app.sel('e')) {
-                app.note = Some(match &j.outcome {
-                    JobOutcome::Failed { cause, next } => format!("{}: {cause} · {next}", j.kind),
-                    _ => format!("{}{SEP}{}{SEP}{}", j.kind, j.subject, j.detail),
+            let pick = live(app).ok().and_then(|s| s.recent.get(app.sel('e')).cloned());
+            if let Some(j) = pick {
+                app.note = Some(if j.cause.is_empty() {
+                    format!("{}: {}", j.kind, if j.ok { "ok" } else { "failed, no cause recorded" })
+                } else {
+                    format!("{}: {}", j.kind, j.cause)
                 });
             }
             return true;

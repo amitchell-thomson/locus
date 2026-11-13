@@ -1,49 +1,7 @@
 {
   "project": "cv",
   "stage": "G-Research release, 17 Oct",
-  "where_you_are": {
-    "state": "Three releases kept: Jump (7 Sep), October general and Millennium (15 Oct), G-Research (17 Oct).",
-    "next": "nothing due; the next release goes with the next application"
-  },
-  "new": [
-    {
-      "kind": "commits",
-      "text": "release: G-Research CV (Oct 2026) from the gresearch branch",
-      "at": "2026-10-17T19:40:00+01:00",
-      "unread": false
-    }
-  ],
   "sessions": [],
-  "graph": {
-    "trunk": "master",
-    "from": "2026-09-07",
-    "milestones": [],
-    "lanes": [
-      {
-        "branch": "jump-2027-app",
-        "stage": "the Jump Trading copy",
-        "forked": "2026-09-07",
-        "merged": "2026-09-07",
-        "commits": 1,
-        "summary": "The CV as sent to Jump Trading in September, kept as its own branch.",
-        "records": []
-      },
-      {
-        "branch": "gresearch",
-        "stage": "the G-Research variant",
-        "forked": "2026-10-17",
-        "tip": "2026-10-17",
-        "commits": 1,
-        "summary": "The G-Research variant: quantitative projects moved above experience, and Tanker Flow leads with its null result.",
-        "records": [
-          {
-            "date": "2026-10-17",
-            "text": "G-Research variant: Quantitative Projects above Experience; Tanker Flow leads with the null result and the look-ahead leaks. Release Oct2026_GResearch"
-          }
-        ]
-      }
-    ]
-  },
   "status": {
     "stage": "released the G-Research version",
     "since": "2026-10-17"

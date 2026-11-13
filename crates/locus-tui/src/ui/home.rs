@@ -4,7 +4,7 @@
 //!
 //! Top to bottom: the moment and what is next; what is waiting for your approval; the week's
 //! work; projects (things you build in deep blocks); careers (applications and the CV) beside
-//! learning (your goals); Explore's finds by kind; the system's live state. Careers and
+//! studies and learning; the system's live state. Careers and
 //! learning are kept out of projects on purpose: "they are internship applications and my CV,
 //! they do not feel like projects".
 
@@ -12,7 +12,7 @@ use crate::app::App;
 use crate::screen::ScreenId;
 use crate::ui::widgets::*;
 use crate::ui::{lines, work};
-use locus_contract::{FindKind, GoalState, ProjectKind, SessionState};
+use locus_contract::{GoalState, ProjectKind, SessionState};
 use locus_theme::{SEP, c, glyph};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
@@ -25,8 +25,10 @@ pub const KEYS: &[(&str, &str)] = &[
     ("␣", "ask the chat: anything that needs your whole life as context"),
     ("i", "the chat's conversations, from any screen"),
     ("p", "every project: live, parked, done, and what is not registered"),
-    ("⏎", "go there: the project, the approve list, the find"),
-    ("W", "the weekly review, when it is ready"),
+    (
+        "⏎",
+        "go there: a project's tmux session, the approve list; on an application, ask the chat",
+    ),
     ("L", "learning"),
 ];
 
@@ -122,7 +124,10 @@ pub fn career_rows(app: &App) -> Vec<String> {
 }
 
 fn is_repo(app: &App, id: &str) -> bool {
-    app.fixtures.registry.get(id).is_some_and(|p| p.kind == ProjectKind::Repo)
+    app.fixtures
+        .registry
+        .get(id)
+        .is_some_and(|p| p.kind == ProjectKind::Repo)
 }
 
 /// How many of careers' rows are applications (the rest, the CV, come after them).
@@ -167,41 +172,15 @@ fn goal_rows(app: &App) -> Vec<&locus_contract::Goal> {
         .collect()
 }
 
-/// The approve list flattened: (item key, text, destination, ink fixture it opens).
-pub fn approve_rows(app: &App) -> Vec<(String, String, Option<String>, Option<String>)> {
+/// The approve list flattened: (item key, text, destination).
+pub fn approve_rows(app: &App) -> Vec<(String, String, Option<String>)> {
     let mut out = Vec::new();
     for (g, group) in app.fixtures.approve.groups.iter().enumerate() {
         for (i, it) in group.items.iter().enumerate() {
-            out.push((
-                format!("approve:{g}:{i}"),
-                it.text.clone(),
-                it.to.clone(),
-                it.opens.clone(),
-            ));
+            out.push((format!("approve:{g}:{i}"), it.text.clone(), it.to.clone()));
         }
     }
     out
-}
-
-pub fn find_key(f: &locus_contract::Find) -> String {
-    format!("find:{}", f.id)
-}
-
-/// Explore's queue by kind, each group in queue order: (heading, indexes into the queue).
-fn find_groups(app: &App) -> Vec<(&'static str, Vec<usize>)> {
-    let q = &app.fixtures.explore.queue;
-    let pick = |f: fn(FindKind) -> bool| -> Vec<usize> { (0..q.len()).filter(|&i| f(q[i].kind)).collect() };
-    [
-        (
-            "for projects",
-            pick(|k| matches!(k, FindKind::Method | FindKind::Course | FindKind::Pattern)),
-        ),
-        ("to read", pick(|k| k == FindKind::Reading)),
-        ("new ideas", pick(|k| k == FindKind::NewProject)),
-    ]
-    .into_iter()
-    .filter(|(_, v)| !v.is_empty())
-    .collect()
 }
 
 /// What Enter does for the focused section, for the footer.
@@ -209,10 +188,9 @@ pub fn enter_hint(app: &App) -> Option<&'static str> {
     Some(match app.focus? {
         'a' => "go through the approvals",
         'w' => "the 8-week chart",
-        'p' => "open the project",
-        'c' => "open it",
-        's' => "open it · the last row opens learning",
-        'e' => "the find, in Explore",
+        'p' => "its tmux session",
+        'c' => "ask the chat about it",
+        's' => "its tmux session · the last row opens learning",
         'y' => "the system page",
         _ => return None,
     })
@@ -229,12 +207,6 @@ pub fn section_len(app: &App, sec: char) -> usize {
             .get(&(ScreenId::Home, 't'))
             .map_or(task_rows(app).len().max(1), Vec::len),
         's' => study_rows(app).len() + 1,
-        // Only the finds drawn; the draw records which they are.
-        'e' => app
-            .shown
-            .borrow()
-            .get(&(ScreenId::Home, 'e'))
-            .map_or(app.fixtures.explore.queue.len(), Vec::len),
         _ => 1,
     }
 }
@@ -250,10 +222,14 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     let gap = Constraint::Length(1);
     // Height in priority order (home-live H8: "I always want all open projects to be
     // visible"): projects whole; careers and studies up to their 5 rows; approve and tasks up
-    // to 6; then studies' learning row; Explore takes the rest, down to its heading.
-    let fixed = 9 + 6 + (n_proj + 1) + 3 + 2 + 1;
+    // to 6; then studies' learning row. What is left stays empty above approve and tasks.
+    let fixed = 9 + 5 + (n_proj + 1) + 3 + 2;
     let avail = inner.height.saturating_sub(fixed);
-    let core = (application_count(app).min(SIDE_ROWS).max(study_rows(app).len().min(SIDE_ROWS)).max(1) + 1) as u16;
+    let core = (application_count(app)
+        .min(SIDE_ROWS)
+        .max(study_rows(app).len().min(SIDE_ROWS))
+        .max(1)
+        + 1) as u16;
     let side_core = core.min(avail.saturating_sub(3)).max(2);
     let pair_h = avail.saturating_sub(side_core).clamp(3, 6);
     let side_h = (side_core + avail.saturating_sub(side_core + pair_h)).min(n_side + 1);
@@ -265,9 +241,8 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         Constraint::Length(n_proj + 1),
         gap,
         Constraint::Length(side_h),
-        gap,
-        // Explore takes what is left: at the smallest window its heading, never a project's row.
-        Constraint::Min(1),
+        // Room left over (Explore's, until 13 Nov) sits here, so the foot stays at the foot.
+        Constraint::Min(0),
         gap,
         // Approve and tasks side by side (round 7a), as careers and studies are: a title and
         // two rows at the smallest window, a row more for each row of height, up to five.
@@ -275,12 +250,12 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         gap,
         Constraint::Length(3),
         gap,
-        // The chat bar (files-and-chat M2), pinned to the foot as the Project view's ask line was.
+        // The chat bar (files-and-chat M2), pinned to the foot.
         Constraint::Length(2),
     ])
     .split(inner);
-    crate::ui::chat::draw_bar(f, rects[12], app);
-    let (work_r, proj_r, side_r, exp_r, pair_r, sys_r) = (rects[0], rects[2], rects[4], rects[6], rects[8], rects[10]);
+    crate::ui::chat::draw_bar(f, rects[11], app);
+    let (work_r, proj_r, side_r, pair_r, sys_r) = (rects[0], rects[2], rects[4], rects[7], rects[9]);
     let [wait_r, pair_bar, task_r] = Layout::horizontal([
         Constraint::Percentage(50),
         Constraint::Length(3),
@@ -333,7 +308,6 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         div.push(Line::from(Span::styled(side, col)));
     }
     lines(f, bar_r, div);
-    draw_explore(f, exp_r, app);
     draw_system(f, sys_r, app);
 
     // The focused section gets a thick blue bar on the frame's edge beside it: clearer than a
@@ -343,7 +317,6 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         Some('w') => Some(work_r),
         Some('p') => Some(proj_r),
         Some('c') => Some(side_r),
-        Some('e') => Some(exp_r),
         Some('y') => Some(sys_r),
         _ => None,
     };
@@ -359,13 +332,21 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
 
 /// The frame, with the moment centred in its top border and next and mail, short, at its right
 /// (round 1b: "centered in the top bar, on the same line as locus . home"; next and mail "on the
-/// top of the border ... in a shorter format"). The chores count and the proposed deadline
-/// left: the deadline is an item in Approve, chores are on the Project view.
+/// top of the border ... in a shorter format"). Live, the jobs count is the server's and the
+/// mail count keryx's; neither is drawn until they answer.
 fn draw_border(f: &mut Frame, area: Rect, app: &App) -> Rect {
     let fx = &app.fixtures;
     let now = fx.now();
     let w = usize::from(area.width);
-    let running = fx.system.running.len();
+    // Live, the server's count (nothing until it answers); the fixture's only in tests and dumps.
+    let running = if app.home_live {
+        match &app.system_live {
+            Some(Ok(sys)) => sys.running.len(),
+            _ => 0,
+        }
+    } else {
+        fx.system.running.len()
+    };
     // Three lengths of each part: 2 full words, 1 shorter, 0 shortest.
     let make_mid = |n: u8| -> Vec<Span<'static>> {
         let fmt = if n == 2 {
@@ -383,10 +364,6 @@ fn draw_border(f: &mut Frame, area: Rect, app: &App) -> Rect {
                 format!("  {} {running}{word} ", spin(app.frame)),
                 st("blue"),
             ));
-        }
-        if fx.home.review_ready {
-            let t = ["  review · W ", "  review ready · W ", "  weekly review ready · W "][usize::from(n)];
-            v.push(Span::styled(t, bold(st("peach"))));
         }
         v
     };
@@ -412,8 +389,8 @@ fn draw_border(f: &mut Frame, area: Rect, app: &App) -> Rect {
             };
             v.push(Span::styled(format!(" {} {t} ", glyph::CALENDAR), st("peach")));
         }
-        let m = fx.home.mail.need_reply;
-        if m > 0 {
+        // Nothing until keryx has answered: never the fixture's count on a live window.
+        if let Some(m) = fx.home.mail.need_reply.filter(|&m| m > 0) {
             v.push(Span::styled(format!(" {} {m} ", glyph::MAIL), st("sapphire")));
         }
         v
@@ -434,7 +411,7 @@ fn draw_border(f: &mut Frame, area: Rect, app: &App) -> Rect {
         }
     }
     // A chore that fits the gap you are in (spec K9) takes only the room left once the moment,
-    // the jobs, the review, the next event and mail have theirs: it never pushes one out.
+    // the jobs, the next event and mail have theirs: it never pushes one out.
     if let Some(c) = &fx.home.chore_now {
         for text in [
             format!("  {} {} · {}m fits now ", glyph::CHORES, c.title, c.minutes),
@@ -487,7 +464,10 @@ fn draw_tasks(f: &mut Frame, area: Rect, app: &App) {
     let mut out = vec![rule("tasks", "+ adds one", Some('t'), focus, area.width)];
     let room = usize::from(area.height.saturating_sub(1));
     if rows.is_empty() {
-        out.push(Line::from(Span::styled(format!("   {} nothing to do", glyph::TODO_BOX), dim())));
+        out.push(Line::from(Span::styled(
+            format!("   {} nothing to do", glyph::TODO_BOX),
+            dim(),
+        )));
         return lines(f, area, out);
     }
     let shown = if rows.len() > room {
@@ -562,11 +542,6 @@ fn draw_approve(f: &mut Frame, area: Rect, app: &App) {
         .filter(|g| !g.items.is_empty())
         .map(|g| {
             let name = match g.kind {
-                locus_contract::ApproveKind::Filing => "to file",
-                locus_contract::ApproveKind::Mail => "mail",
-                locus_contract::ApproveKind::Deadline => "deadline",
-                locus_contract::ApproveKind::Ink => "ink",
-                locus_contract::ApproveKind::StopAsking => "stop asking?",
                 locus_contract::ApproveKind::Date => "to the calendar",
                 locus_contract::ApproveKind::Calendar => "calendar change",
                 locus_contract::ApproveKind::MailSend => "mail to send",
@@ -655,19 +630,9 @@ fn draw_projects(f: &mut Frame, area: Rect, app: &App) {
             None => {
                 left.push(Span::styled(format!("{} ", glyph::IDLE), dim()));
                 left.push(Span::styled(format!("{:<15}", "no sessions"), dim()));
-                // What it last did, so a stalled project shows where it stopped (round 1d):
-                // live, its newest commit (home-live H3); on fixtures, the newest item.
-                let last: Option<(chrono::NaiveDate, String)> = if app.home_live {
-                    app.last_commit.get(id).map(|(t, s)| (t.date_naive(), s.clone()))
-                } else {
-                    pf.and_then(|pf| {
-                        let mut items: Vec<_> = pf.view.new.iter().collect();
-                        if let Some(c) = &pf.changes {
-                            items.extend(c.entries.iter());
-                        }
-                        items.into_iter().max_by_key(|i| i.at).map(|i| (i.at.date_naive(), i.text.clone()))
-                    })
-                };
+                // What it last did, so a stalled project shows where it stopped (round 1d): its
+                // newest commit (home-live H3); on fixtures, its stage.
+                let last = app.last_commit.get(id).map(|(t, s)| (t.date_naive(), s.clone()));
                 match last {
                     Some((d, what)) => {
                         left.push(Span::styled(format!("last {}  ", date(d)), dim()));
@@ -719,7 +684,12 @@ fn session_spans(app: &App, s: &locus_contract::Session, now: locus_contract::Ti
 /// Enter asks the chat to register it.
 fn unregistered_row(app: &App, i: usize, sel: Option<usize>, name: &str, width: u16) -> Line<'static> {
     let now = app.fixtures.now();
-    let sessions = app.unregistered.iter().find(|(n, _)| n == name).map(|(_, s)| s.as_slice()).unwrap_or(&[]);
+    let sessions = app
+        .unregistered
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, s)| s.as_slice())
+        .unwrap_or(&[]);
     let mut left = vec![
         pointer(i, sel),
         Span::styled(format!(" {} ", glyph::UNATTENDED), st("overlay1")),
@@ -747,7 +717,7 @@ fn counts(sessions: usize) -> Vec<Span<'static>> {
 
 /// An application's glyph in kairos's family (home-live H9): a green tick when it ended well,
 /// red when it did not, an open box when it is your move, the waiting box when it is theirs.
-fn career_glyph(p: &locus_contract::Project, status: Option<&locus_contract::Status>, closed: bool) -> (&'static str, &'static str) {
+fn career_glyph(p: &locus_contract::Project, status: Option<&locus_contract::Status>) -> (&'static str, &'static str) {
     if p.kind == ProjectKind::Repo {
         return (glyph::DOSSIER, "peach");
     }
@@ -758,8 +728,9 @@ fn career_glyph(p: &locus_contract::Project, status: Option<&locus_contract::Sta
     match status.and_then(|s| s.turn) {
         Some(locus_contract::Turn::You) => (glyph::TODO_BOX, "peach"),
         Some(locus_contract::Turn::Them) => (glyph::WAITING_BOX, "yellow"),
-        None if closed
-            || ["accepted", "complete", "signed", "competed"].iter().any(|w| stage.contains(w)) =>
+        None if ["accepted", "complete", "signed", "competed"]
+            .iter()
+            .any(|w| stage.contains(w)) =>
         {
             (glyph::DONE, "green")
         }
@@ -779,8 +750,16 @@ fn draw_careers(f: &mut Frame, area: Rect, app: &App) -> u16 {
     let room = usize::from(area.height.saturating_sub(1));
     // The CV's line and row are always drawn (11 Nov: a heading note in their place read as
     // the section being broken); in a short window the applications scroll in fewer rows.
-    let below = if ids.len() > n_apps { 1 + (ids.len() - n_apps) } else { 0 };
-    let w = window(n_apps, sel.filter(|&s| s < n_apps), SIDE_ROWS.min(room.saturating_sub(below)).max(1));
+    let below = if ids.len() > n_apps {
+        1 + (ids.len() - n_apps)
+    } else {
+        0
+    };
+    let w = window(
+        n_apps,
+        sel.filter(|&s| s < n_apps),
+        SIDE_ROWS.min(room.saturating_sub(below)).max(1),
+    );
     let cv_rows = true;
     let mut extra = match &app.careers_error {
         Some(e) => format!("not read: {e}"),
@@ -835,17 +814,9 @@ fn draw_careers(f: &mut Frame, area: Rect, app: &App) -> u16 {
         // An application shows its stage's icon; a closed one is dim, so what is still open
         // stands out (round 5).
         let status = pf.and_then(|pf| pf.view.status.as_ref());
-        // Closed: nothing left to come, no stage current or upcoming.
-        let closed = p.kind == ProjectKind::Application
-            && pf.and_then(|pf| pf.view.application.as_ref()).is_some_and(|a| {
-                a.stages.iter().all(|s| {
-                    !matches!(
-                        s.state,
-                        locus_contract::StageState::Current | locus_contract::StageState::Upcoming
-                    )
-                })
-            });
-        let (g, gc) = career_glyph(p, status, closed);
+        // Closed: its stage says it ended, either way (the glyph's words, one definition).
+        let (g, gc) = career_glyph(p, status);
+        let closed = p.kind == ProjectKind::Application && (g == glyph::DONE || g == glyph::FAILED);
         let nw = ids
             .iter()
             .filter_map(|id| fx.registry.get(id).map(|p| p.name.width()))
@@ -863,8 +834,16 @@ fn draw_careers(f: &mut Frame, area: Rect, app: &App) -> u16 {
         ];
         let mut left = left;
         // The project doing this application's work, named as studies names 3YP on B3.
-        if let Some(r) = fx.registry.projects.iter().find(|r| r.application.as_deref() == Some(id.as_str())) {
-            left.push(Span::styled(format!("{} {}  ", glyph::PROJECT, r.name), bold(st("blue"))));
+        if let Some(r) = fx
+            .registry
+            .projects
+            .iter()
+            .find(|r| r.application.as_deref() == Some(id.as_str()))
+        {
+            left.push(Span::styled(
+                format!("{} {}  ", glyph::PROJECT, r.name),
+                bold(st("blue")),
+            ));
         }
         left.extend(stage);
         out.push(row(left, counts(0), area.width));
@@ -918,24 +897,6 @@ fn careers_summary(app: &App) -> Vec<Line<'static>> {
     out
 }
 
-/// Explore in two lines: what the finds are, and that the scout waits on you.
-fn explore_summary(app: &App) -> Vec<Line<'static>> {
-    let ex = &app.fixtures.explore;
-    let groups = find_groups(app);
-    let kinds: Vec<String> = groups.iter().map(|(h, v)| format!("{} {h}", v.len())).collect();
-    let mut out = vec![Line::from(vec![
-        Span::styled(format!(" {} finds  ", ex.queue.len()), text()),
-        Span::styled(kinds.join(SEP), dim()),
-    ])];
-    if ex.queue.len() as u32 >= ex.queue_cap {
-        out.push(Line::from(Span::styled(
-            " the scout pauses at 7: grading them in Explore lets it look again",
-            dim(),
-        )));
-    }
-    out
-}
-
 /// Studies: each course and the coursework repos, with what is due next; the last row opens
 /// Learning, which serves studies and careers alike (round 2d: learning as "just a button
 /// somewhere that makes sense in context").
@@ -957,7 +918,11 @@ fn draw_studies(f: &mut Frame, area: Rect, app: &App) {
         n => n,
     };
     if !learning_row {
-        extra.push_str(if app.home_live { " · L learning, not live" } else { " · L learning" });
+        extra.push_str(if app.home_live {
+            " · L learning, not live"
+        } else {
+            " · L learning"
+        });
     }
     let mut out = vec![rule("studies", &extra, Some('s'), focus, area.width)];
     for (i, id) in ids.iter().enumerate().skip(w.start).take(w.len()) {
@@ -1036,139 +1001,20 @@ fn draw_studies(f: &mut Frame, area: Rect, app: &App) {
             pointer(ids.len(), sel),
             Span::styled(format!(" {} ", glyph::IDEA), st("yellow")),
             Span::styled(format!("{:<35}", "learning"), bold(st("yellow"))),
-            Span::styled(state, if to_agree > 0 && !app.home_live { st("peach") } else { dim() }),
+            Span::styled(
+                state,
+                if to_agree > 0 && !app.home_live {
+                    st("peach")
+                } else {
+                    dim()
+                },
+            ),
         ],
         vec![Span::styled("L ", bold(keyst()))],
         area.width,
     ));
     lines(f, area, out);
     scroll_marks(f, area, ids.len(), &w);
-}
-
-/// Explore's finds by kind, titles only, with room between groups so they do not run into a
-/// wall (round 1). Grading happens on the Explore page; Enter takes you to the find there.
-fn draw_explore(f: &mut Frame, area: Rect, app: &App) {
-    let ex = &app.fixtures.explore;
-    let focus = app.focus == Some('e');
-    let full = if ex.queue.len() as u32 >= ex.queue_cap {
-        " · full, so the scout is waiting for you"
-    } else {
-        ""
-    };
-    let extra = if app.home_live {
-        // Explore is set aside (9 Nov): kept on Home, saying it is not live (home-live H6).
-        "not live · sample finds".to_string()
-    } else {
-        format!("{} finds{full}", ex.queue.len())
-    };
-    let mut out = vec![rule("explore", &extra, Some('e'), focus, area.width)];
-    let sel = focus.then(|| app.sel('e'));
-    let room = usize::from(area.height.saturating_sub(1));
-    let groups = find_groups(app);
-    // Room for one row only (the smallest window): a summary of the kinds, not one find cut
-    // short (round 7b). Enter still opens Explore.
-    if room <= 1 && !ex.queue.is_empty() {
-        let kinds: Vec<String> = groups
-            .iter()
-            .filter(|(_, v)| !v.is_empty())
-            .map(|(h, v)| format!("{} {h}", v.len()))
-            .collect();
-        app.shown.borrow_mut().insert(
-            (ScreenId::Home, 'e'),
-            groups.iter().flat_map(|(_, v)| v.first().copied()).take(1).collect(),
-        );
-        out.push(row(
-            vec![pointer(0, sel), Span::raw(" "), Span::styled(kinds.join(SEP), text())],
-            vec![Span::styled("⏎ open ", dim())],
-            area.width,
-        ));
-        return lines(f, area, out);
-    }
-    // Compact, each kind named in a column on its first find (round 2f: "the explore section
-    // labels should probably be shorter and on the same line as the idea"). It grows with the
-    // room it is given, the rule for every section: first gaps between kinds, then a second
-    // line per find saying why it matters. Too little room: the longest kind gives up rows
-    // first, and its label counts the rest.
-    let mut shown: Vec<usize> = groups.iter().map(|(_, v)| v.len()).collect();
-    while shown.iter().sum::<usize>() > room {
-        match shown
-            .iter()
-            .enumerate()
-            .filter(|(_, n)| **n > 1)
-            .max_by_key(|(_, n)| **n)
-        {
-            Some((i, _)) => shown[i] -= 1,
-            None => break,
-        }
-    }
-    let items: usize = shown.iter().sum();
-    let gaps = groups.len().saturating_sub(1);
-    let spaced = items + gaps <= room;
-    let why = items * 2 + gaps <= room;
-    let width = usize::from(area.width);
-    let mut pos = 0;
-    let mut drawn = Vec::new();
-    for (gi, (heading, idx)) in groups.iter().enumerate() {
-        if gi > 0 && spaced {
-            out.push(Line::from(""));
-        }
-        for (k, &qi) in idx.iter().take(shown[gi]).enumerate() {
-            let find = &ex.queue[qi];
-            drawn.push(qi);
-            let (g, gc, _) = find_glyph(find.kind);
-            let label = match k {
-                0 if shown[gi] < idx.len() => format!("{heading} +{}", idx.len() - shown[gi]),
-                0 => heading.to_string(),
-                _ => String::new(),
-            };
-            let who = find.project.clone().unwrap_or_default();
-            let left = vec![
-                pointer(pos, sel),
-                Span::styled(format!(" {label:<17}"), bold(st("subtext1"))),
-                Span::styled(format!("{g} "), st(gc)),
-                Span::styled(format!("{who:<7}"), dim()),
-                Span::styled(find.title.clone(), text()),
-            ];
-            out.push(row(
-                left,
-                vec![Span::styled(format!("{} min ", find.minutes), dim())],
-                area.width,
-            ));
-            if why {
-                out.push(Line::from(Span::styled(
-                    format!(
-                        "{:30}{}",
-                        "",
-                        crate::ui::truncate(&format!("why: {}", find.why), width.saturating_sub(33))
-                    ),
-                    dim(),
-                )));
-            }
-            pos += 1;
-        }
-    }
-    if ex.queue.is_empty() {
-        out.push(Line::from(Span::styled(
-            "  nothing waiting; about one find a day",
-            dim(),
-        )));
-    }
-    app.shown.borrow_mut().insert((ScreenId::Home, 'e'), drawn);
-    let used = out.len() as u16;
-    if used < area.height {
-        lines(f, area, std::mem::take(&mut out));
-        crate::ui::summary_box(
-            f,
-            Rect {
-                y: area.y + used,
-                height: area.height - used,
-                ..area
-            },
-            explore_summary(app),
-        );
-        return;
-    }
-    lines(f, area, out);
 }
 
 /// The Mocha colour of an area or one of Personal's streams, from the taxonomy (L3: the one
@@ -1230,9 +1076,16 @@ fn draw_system_live(f: &mut Frame, area: Rect, app: &App) {
             let mut b = vec![Span::styled("   credit   ", dim())];
             match newest_failure {
                 Some(r) => {
-                    b.push(Span::styled(format!("{} {} failed: ", glyph::FAILED, r.kind), st("red")));
                     b.push(Span::styled(
-                        if r.cause.is_empty() { "no cause recorded".to_string() } else { r.cause.clone() },
+                        format!("{} {} failed: ", glyph::FAILED, r.kind),
+                        st("red"),
+                    ));
+                    b.push(Span::styled(
+                        if r.cause.is_empty() {
+                            "no cause recorded".to_string()
+                        } else {
+                            r.cause.clone()
+                        },
                         dim(),
                     ));
                     b[0] = Span::styled("   last     ", dim());
@@ -1370,14 +1223,16 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                         "The tmux session `{name}` is not in the registry. Look at what it works on and help me register it: "
                     ));
                 }
-                Some(id) => app.open_project(id),
+                Some(id) => app.open_item(&id),
                 None => {}
             }
             true
         }
+        // An application asks the chat where things stand (prefilled, not sent); the CV goes
+        // to its tmux session.
         (Some('c'), KeyCode::Enter) => {
             if let Some(id) = career_rows(app).get(app.sel('c')).cloned() {
-                app.open_project(id);
+                app.open_item(&id);
             }
             true
         }
@@ -1386,31 +1241,9 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 // A course with a repo doing its work opens the repo (3YP for B3).
                 Some(id) => {
                     let target = repo_for(app, &id).map(|r| r.id.clone()).unwrap_or(id);
-                    app.open_project(target)
+                    app.open_item(&target)
                 }
                 None => app.open(ScreenId::Learning),
-            }
-            true
-        }
-        (Some('e'), KeyCode::Enter) => {
-            // Open Explore on the find that was selected here.
-            let order: Vec<usize> = app
-                .shown
-                .borrow()
-                .get(&(ScreenId::Home, 'e'))
-                .cloned()
-                .unwrap_or_default();
-            let qi = order.get(app.sel('e')).copied().unwrap_or(0);
-            app.open(ScreenId::Explore);
-            app.sel.insert((ScreenId::Explore, 'q'), qi);
-            app.focus = Some('q');
-            true
-        }
-        (_, KeyCode::Char('W')) => {
-            if app.fixtures.home.review_ready {
-                app.open(ScreenId::Review);
-            } else {
-                app.note = Some("the weekly review opens in its weekend slot".into());
             }
             true
         }
@@ -1420,14 +1253,6 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
         }
         _ => false,
     }
-}
-
-pub fn tick(app: &mut App, find: &locus_contract::Find) {
-    let note = match find.kind {
-        FindKind::Reading => format!("ticked: would push \"{}\" to /Reading on the tablet", find.title),
-        _ => format!("ticked: \"{}\" would go on the board", find.title),
-    };
-    app.mark(find_key(find), crate::app::Mark::Ticked, note);
 }
 
 pub fn approve_one(app: &mut App, key: String, text: &str, to: Option<&str>, yes: bool) {

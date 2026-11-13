@@ -1,10 +1,9 @@
-//! `locus-tui [home|project]` runs the window; `--dump` prints a screen as text.
+//! `locus-tui [home]` runs the window; `--dump` prints a screen as text.
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use locus_tui::app::App;
 use locus_tui::fixtures::{self, Fixtures};
-use locus_tui::follow::{self, FocusFile};
 use locus_tui::screen::ScreenId;
 use locus_tui::uselog::{self, UseLog};
 use locus_tui::{dump, ui};
@@ -14,7 +13,7 @@ use std::time::{Duration, Instant};
 #[derive(Parser)]
 #[command(about = "The locus window, on fixture data (Slice 1)")]
 struct Cli {
-    /// Which root to run: home or project.
+    /// Which root to run: home (the only one since the Project window went, 13 Nov).
     #[arg(default_value = "home")]
     view: String,
     /// Fixture set: a name under crates/locus-tui/fixtures/ or a path.
@@ -29,15 +28,9 @@ struct Cli {
     /// With --dump: draw the keys overlay on top.
     #[arg(long)]
     keys: bool,
-    /// With --dump: the tmux session the project window is on.
-    #[arg(long, value_name = "SESSION")]
-    focus: Option<String>,
     /// With --dump: keys to press first, by name, space-separated: `tab left enter`, `p down`.
     #[arg(long, value_name = "KEYS")]
     press: Option<String>,
-    /// With --dump: open this project as Home's project list does (for one with no tmux session).
-    #[arg(long, value_name = "ID")]
-    project: Option<String>,
     /// With --dump: lay the live calendar over the fixtures first, as the window does (spec K8).
     #[arg(long)]
     live: bool,
@@ -103,11 +96,6 @@ fn main() -> Result<()> {
                 .unwrap_or_default();
             locus_tui::mail::apply(&mut fx, &proposals, &previews);
         }
-        if let Some(m) = locus_tui::mail::Mirror::open() {
-            locus_tui::mail::apply_counts(&mut fx, m.need_reply());
-            let ids: Vec<String> = fx.registry.projects.iter().map(|p| p.id.clone()).collect();
-            locus_tui::mail::apply_filed(&mut fx, &m.filed(&ids, 20));
-        }
     }
     if let Some(name) = cli.dump {
         let Some(screen) = ScreenId::from_name(&name) else {
@@ -115,53 +103,33 @@ fn main() -> Result<()> {
             bail!("no screen {name:?}; screens: {}", all.join(", "));
         };
         let (w, h) = dump::parse_size(&cli.size).context("--size is WIDTHxHEIGHT, e.g. 95x38")?;
-        // The project screens sit on the Project view: the root one following --focus, or one
-        // opened from Home with --project.
-        let project_screen = matches!(
-            screen,
-            ScreenId::Project
-                | ScreenId::Application
-                | ScreenId::Decisions
-                | ScreenId::Answered
-                | ScreenId::Changes
-                | ScreenId::Prep
-        );
-        let root = if project_screen && cli.project.is_none() {
-            ScreenId::Project
-        } else {
-            ScreenId::Home
-        };
-        let mut app = App::new(fx, root, UseLog::off());
+        let mut app = App::new(fx, ScreenId::Home, UseLog::off());
         if cli.live {
             // Home live, read once, as the window reads it on its threads.
             let mut prompts = locus_tui::live::Prompts::default();
             let sessions = locus_tui::live::scan_sessions(&app.fixtures.registry, &mut prompts);
             let commits = locus_tui::live::scan_commits(&app.fixtures.registry, &sessions);
             let facts = locus_tui::live::fetch_facts();
-            let careers = facts.as_ref().map_err(|e| e.clone()).and_then(|f| locus_tui::live::careers_from_facts(&f.current));
-            app.home_live = true;
+            let careers = facts
+                .as_ref()
+                .map_err(|e| e.clone())
+                .and_then(|f| locus_tui::live::careers_from_facts(&f.current));
+            app.go_live();
+            if let Some(m) = locus_tui::mail::Mirror::open() {
+                locus_tui::mail::apply_counts(&mut app.fixtures, m.need_reply());
+            }
             apply_live(&mut app, Live::Projects(sessions, Some(commits), Some(careers)));
             if let Ok(f) = facts {
                 apply_live(&mut app, Live::Facts(f));
             }
-            apply_live(&mut app, Live::System(locus_tui::live::fetch_system()));
+            apply_live(&mut app, Live::System(Box::new(locus_tui::live::fetch_system())));
             let others = locus_tui::live::scan_unregistered_repos(&app.fixtures.registry);
             apply_live(&mut app, Live::Others(others));
-        }
-        if let Some(id) = cli.project {
-            if app.fixtures.registry.get(&id).is_none() {
-                bail!("no project {id:?} in the registry");
-            }
-            app.viewing = Some(id);
-            if project_screen {
-                app.open(ScreenId::Project);
-            }
         }
         if screen != app.screen() {
             app.open(screen);
         }
         app.keys_open = cli.keys;
-        app.follow.session = cli.focus;
         // A first draw, so sections that record what they drew know it before keys arrive.
         dump::render(&app, w, h)?;
         for name in cli.press.as_deref().unwrap_or("").split_whitespace() {
@@ -188,12 +156,13 @@ fn main() -> Result<()> {
         print!("{}", dump::render(&app, w, h)?);
         return Ok(());
     }
-    let root = match cli.view.as_str() {
-        "home" => ScreenId::Home,
-        "project" => ScreenId::Project,
-        other => bail!("view is home or project, not {other:?}"),
-    };
-    run(App::new(fx, root, UseLog::new(uselog::default_path())))
+    if cli.view != "home" {
+        bail!(
+            "the only view is home, not {:?} (the Project window went 13 Nov)",
+            cli.view
+        );
+    }
+    run(App::new(fx, ScreenId::Home, UseLog::new(uselog::default_path())))
 }
 
 /// Every set under fixtures/: a file that fails to parse is named by the loader's error; the
@@ -260,8 +229,6 @@ fn timing(set: &str, size: &str) -> Result<()> {
     let mut first = Duration::ZERO;
     for screen in ScreenId::ALL {
         let mut app = App::new(fx.clone(), ScreenId::Home, UseLog::off());
-        app.follow.session = Some("quast".into());
-        app.viewing = Some("jump".into());
         if screen != ScreenId::Home {
             app.open(screen);
         }
@@ -299,7 +266,7 @@ enum Live {
         Option<std::collections::BTreeMap<String, (locus_contract::Time, String)>>,
         Option<Result<std::collections::BTreeMap<String, locus_contract::Status>, String>>,
     ),
-    System(Result<locus_tui::live::SystemLive, String>),
+    System(Box<Result<locus_tui::live::SystemLive, String>>),
     /// The facts ledger's proposals and automatic writes (heuris H2.5).
     Facts(locus_tui::live::FactsLive),
     Others(Vec<(String, Option<(locus_contract::Time, String)>)>),
@@ -309,17 +276,14 @@ fn apply_live(app: &mut App, msg: Live) {
     // Live, the screen's clock is the real one: the fixtures' fixed moment made every session
     // "now" and every due date relative to 24 October.
     app.fixtures.manifest.now = chrono::Local::now().fixed_offset();
-    // Approve kinds nothing live writes yet (jot filing, mail counts, deadlines, ink, stop
-    // asking) are the fixtures' and go: live, Approve holds only what kairos and keryx sent.
-    {
-        use locus_contract::ApproveKind as K;
-        app.fixtures
-            .approve
-            .groups
-            .retain(|g| matches!(g.kind, K::Calendar | K::Date | K::MailSend | K::MailFiling | K::Fact));
-        // The log likewise holds only what the ledger wrote (H2.5); the fixture's rows go.
-        app.fixtures.autolog.entries.retain(|e| e.fact.is_some());
+    // Live, Approve holds only what kairos, keryx and the ledger sent: an item with nothing to
+    // act on is the fixtures' and goes. The log likewise holds only what the ledger wrote (H2.5).
+    for g in &mut app.fixtures.approve.groups {
+        g.items
+            .retain(|i| i.date.is_some() || i.changeset.is_some() || i.mail.is_some() || i.fact.is_some());
     }
+    app.fixtures.approve.groups.retain(|g| !g.items.is_empty());
+    app.fixtures.autolog.entries.retain(|e| e.fact.is_some());
     match msg {
         Live::Projects(sessions, commits, careers) => {
             app.unregistered = locus_tui::live::apply_sessions(&mut app.fixtures, &sessions);
@@ -335,7 +299,7 @@ fn apply_live(app: &mut App, msg: Live) {
                 None => {}
             }
         }
-        Live::System(s) => app.system_live = Some(s),
+        Live::System(s) => app.system_live = Some(*s),
         Live::Facts(f) => locus_tui::live::apply_facts(&mut app.fixtures, &f),
         Live::Others(o) => app.other_repos = o,
     }
@@ -345,14 +309,9 @@ fn run(mut app: App) -> Result<()> {
     let started = Instant::now();
     let mut first_frame = None;
     let mut slowest = Duration::ZERO;
-    let mut asked = false;
     app.in_session = std::env::var_os("LOCUS_IN_SESSION").is_some();
-    app.peek_file = Some(follow::PeekFile::new(follow::state_dir()));
     // The chat runs only in the real window, never in dumps or tests.
-    app.chat = locus_tui::chat::Chat::new(follow::state_dir());
-    let mut peek = follow::PeekFile::new(follow::state_dir());
-    let mut focus = FocusFile::new(follow::state_dir());
-    app.tick(focus.poll(), Instant::now());
+    app.chat = locus_tui::chat::Chat::new(locus_contract::link::state_dir());
     // The calendar, live (spec K8): fetched from kairosd every minute on a thread of its own and
     // laid over the fixtures; the fixtures stand when kairosd does not answer.
     let (cal_tx, cal_rx) = std::sync::mpsc::channel();
@@ -382,16 +341,14 @@ fn run(mut app: App) -> Result<()> {
     if let Some(m) = locus_tui::mail::Live::connect().map(std::sync::Arc::new) {
         app.mail = Some(m.clone());
         app.mail_queue = Some(locus_tui::mail::Queue::start(m.clone()));
-        let ids: Vec<String> = app.fixtures.registry.projects.iter().map(|p| p.id.clone()).collect();
         std::thread::spawn(move || {
             loop {
                 let mirror = locus_tui::mail::Mirror::open();
-                let need = mirror.as_ref().map_or(0, |x| x.need_reply());
-                // What was filed for each item, for its page (keryx-joins-locus X7).
-                let filed = mirror.as_ref().map(|x| x.filed(&ids, 20)).unwrap_or_default();
+                // Unknown (no mirror) stays unknown: Home shows no count rather than 0.
+                let need = mirror.as_ref().map(|x| x.need_reply());
                 let proposals = m.proposals();
                 let previews = mirror.as_ref().map(|x| x.previews(&proposals)).unwrap_or_default();
-                if mail_tx.send((proposals, previews, need, filed)).is_err() {
+                if mail_tx.send((proposals, previews, need)).is_err() {
                     return;
                 }
                 std::thread::sleep(Duration::from_secs(60));
@@ -401,7 +358,7 @@ fn run(mut app: App) -> Result<()> {
     // Home live (home-live.md): sessions every 5 s, commits and the careers facts every minute,
     // on a thread of their own; the server's system section every 5 minutes on another, since
     // ssh can take seconds.
-    app.home_live = true;
+    app.go_live();
     let (live_tx, live_rx) = std::sync::mpsc::channel::<Live>();
     {
         let registry = app.fixtures.registry.clone();
@@ -416,7 +373,9 @@ fn run(mut app: App) -> Result<()> {
                 // and the log at once.
                 let facts = slow.then(locus_tui::live::fetch_facts);
                 let careers = facts.as_ref().map(|f| {
-                    f.as_ref().map_err(|e| e.clone()).and_then(|f| locus_tui::live::careers_from_facts(&f.current))
+                    f.as_ref()
+                        .map_err(|e| e.clone())
+                        .and_then(|f| locus_tui::live::careers_from_facts(&f.current))
                 });
                 if tx.send(Live::Projects(sessions, commits, careers)).is_err() {
                     return;
@@ -439,21 +398,23 @@ fn run(mut app: App) -> Result<()> {
         });
         std::thread::spawn(move || {
             loop {
-                if live_tx.send(Live::System(locus_tui::live::fetch_system())).is_err() {
+                if live_tx
+                    .send(Live::System(Box::new(locus_tui::live::fetch_system())))
+                    .is_err()
+                {
                     return;
                 }
                 std::thread::sleep(Duration::from_secs(300));
             }
         });
     }
-    // Items kairos asks to open (spec K8). Only Home's window answers: an application opens on
-    // its own page there, a repo in the Project window.
+    // Items kairos asks to open (spec K8): a registry entry as Enter on its row opens it, the
+    // Tasks or Approve page, or a section of Home. Anything else (an old screen's name) is Home.
     let mut inbox = locus_contract::link::OpenFile::locus();
     let mut terminal = ratatui::try_init()?;
     let mut mouse = false;
     let result = (|| -> Result<()> {
         while !app.quit {
-            app.tick(focus.poll(), Instant::now());
             app.chat.pump();
             if let Some(n) = app.chat.fact_note.take() {
                 app.note = Some(n);
@@ -474,55 +435,33 @@ fn run(mut app: App) -> Result<()> {
             while let Ok(msg) = live_rx.try_recv() {
                 apply_live(&mut app, msg);
             }
-            if let Ok((mut proposals, previews, need, filed)) = mail_rx.try_recv() {
+            if let Ok((mut proposals, previews, need)) = mail_rx.try_recv() {
                 // Decided here but not yet reached by keryxd: not shown again.
                 if let Some(q) = &app.mail_queue {
                     proposals.retain(|p| !q.was_sent(&p.proposal.id));
                 }
                 locus_tui::mail::apply(&mut app.fixtures, &proposals, &previews);
-                locus_tui::mail::apply_counts(&mut app.fixtures, need);
-                locus_tui::mail::apply_filed(&mut app.fixtures, &filed);
+                if let Some(n) = need {
+                    locus_tui::mail::apply_counts(&mut app.fixtures, n);
+                }
             }
-            if app.stack.first() == Some(&ScreenId::Home)
-                && let Some(req) = inbox.poll()
-            {
-                // An item (a registry id), the Tasks page, or a section of Home (`home:p`).
-                app.stack.truncate(1);
-                app.focus = None;
+            if let Some(req) = inbox.poll() {
+                app.home();
                 if req == "tasks" {
                     app.open(ScreenId::Tasks);
                 } else if req == "approve" {
                     app.open(ScreenId::Approve);
-                } else if let Some(sec) = req.strip_prefix("home:").and_then(|s| s.chars().next()) {
+                } else if let Some(sec) = req
+                    .strip_prefix("home:")
+                    .and_then(|s| s.chars().next())
+                    .filter(|&c| ScreenId::Home.sections().iter().any(|s| s.letter == c))
+                {
                     app.focus = Some(sec);
-                } else if app.fixtures.registry.get(&req).is_some() {
-                    app.open_project(req);
+                } else {
+                    app.open_item(&req);
                 }
-            }
-            if let Some(change) = peek.poll()
-                && app.stack.first() == Some(&ScreenId::Project)
-            {
-                app.peek = change;
-                app.stack.truncate(1);
-                app.focus_below.clear();
-                app.focus = None;
             }
             app.frame = app.frame.wrapping_add(1);
-            // Ask the terminal which image protocol it speaks (D6: kitty in Ghostty, passed
-            // through tmux) only when a screen first needs it: a terminal that never answers
-            // costs the whole timeout, and at startup that was 2 s before the first frame
-            // (measured on a tmux server with no terminal behind it).
-            if app.screen() == ScreenId::InkConfirm && !asked {
-                asked = true;
-                let options = ratatui_image::picker::cap_parser::QueryStdioOptions {
-                    timeout: Duration::from_millis(500),
-                    ..Default::default()
-                };
-                match ratatui_image::picker::Picker::from_query_stdio_with_options(options) {
-                    Ok(p) => app.picker = Some(p),
-                    Err(e) => app.note = Some(format!("no image protocol ({e}); the crop is in half blocks")),
-                }
-            }
             let t = Instant::now();
             terminal.draw(|f| ui::draw(f, &app))?;
             slowest = slowest.max(t.elapsed());

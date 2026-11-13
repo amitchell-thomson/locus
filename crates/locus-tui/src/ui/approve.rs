@@ -1,6 +1,5 @@
-//! The approve list (grouped by kind; `Y` approves a group), the live log of automatic actions
-//! (`l`, with undo), and ink confirm (C.5): the crop of a mark beside the passages it might point
-//! at; a number places it, `0` makes it a general note (none of these passages).
+//! The approve list (grouped by kind; `Y` approves a group) and the live log of automatic
+//! actions (`l`, with undo).
 
 use crate::app::{App, Mark, nav};
 use crate::screen::ScreenId;
@@ -8,20 +7,21 @@ use crate::ui::home::{approve_one, approve_rows};
 use crate::ui::widgets::*;
 use crate::ui::{esc_back, frame, hints, lines, title};
 use locus_contract::{ApproveDetail, ApproveGroup, ApproveItem, ApproveKind};
-use locus_theme::{SEP, c, glyph};
+use locus_theme::{c, glyph};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui_image::picker::Picker;
-use ratatui_image::{FilterType, Resize, StatefulImage};
 use unicode_width::UnicodeWidthStr;
 
 pub const KEYS: &[(&str, &str)] = &[
     ("y n", "approve or refuse; the next one comes up"),
     ("Y", "approve the whole group"),
-    ("c", "a filing: put it somewhere else (type to find the place); a fact: correct its value, ⏎ approves it"),
+    (
+        "c",
+        "a filing: put it somewhere else (type to find the place); a fact: correct its value, ⏎ approves it",
+    ),
     ("a", "a filing: archive it instead"),
     (
         "v",
@@ -32,7 +32,7 @@ pub const KEYS: &[(&str, &str)] = &[
         "/",
         "search this list only: type words to narrow it, ⏎ keeps it, esc clears it; Y approves all shown",
     ),
-    ("⏎", "the item whole (an ink item: where does it point?)"),
+    ("⏎", "the item whole"),
     ("PgUp PgDn", "a page at a time; Home End the ends"),
     (
         "← →",
@@ -45,15 +45,9 @@ pub const ITEM_KEYS: &[(&str, &str)] = &[
     ("↑ ↓", "scroll"),
 ];
 pub const LOG_KEYS: &[(&str, &str)] = &[("u", "undo")];
-pub const INK_KEYS: &[(&str, &str)] = &[("1 2 3", "it points here"), ("0", "a general note: none of these")];
 
 fn group_name(k: ApproveKind) -> &'static str {
     match k {
-        ApproveKind::Filing => "filing",
-        ApproveKind::Mail => "mail",
-        ApproveKind::Deadline => "deadlines",
-        ApproveKind::Ink => "ink",
-        ApproveKind::StopAsking => "stop asking?",
         ApproveKind::Date => "dates from mail",
         ApproveKind::Calendar => "calendar changes",
         ApproveKind::MailSend => "mail to send",
@@ -68,11 +62,6 @@ fn badge_text(kind: ApproveKind, it: &ApproveItem) -> String {
         return d.action.clone();
     }
     match kind {
-        ApproveKind::Filing => "FILE",
-        ApproveKind::Mail => "MAIL",
-        ApproveKind::Deadline => "DEADLINE",
-        ApproveKind::Ink => "INK",
-        ApproveKind::StopAsking => "STOP ASKING?",
         ApproveKind::Date => "DATE",
         ApproveKind::Calendar => "CALENDAR",
         ApproveKind::MailSend => "SEND",
@@ -83,7 +72,7 @@ fn badge_text(kind: ApproveKind, it: &ApproveItem) -> String {
 }
 
 /// A colour per kind of action, so a page of them reads at a glance: archive quiet, filing blue,
-/// the calendar peach, ink flamingo, anything else mauve.
+/// the calendar peach, anything else mauve.
 fn badge_colour(badge: &str) -> &'static str {
     let b = badge.to_uppercase();
     if b.starts_with("ARCHIVE") {
@@ -94,8 +83,6 @@ fn badge_colour(badge: &str) -> &'static str {
         "yellow"
     } else if b.contains("EVENT") || b.starts_with("CALENDAR") || b.starts_with("DATE") || b.starts_with("DEADLINE") {
         "peach"
-    } else if b.starts_with("INK") {
-        "flamingo"
     } else {
         "mauve"
     }
@@ -653,15 +640,12 @@ pub fn draw_log(f: &mut Frame, area: Rect, app: &App) {
         }
         last = Some(d);
         let undone = app.marked(&format!("log:{i}")) == Some(&Mark::Undone);
-        let mut left = vec![
+        let left = vec![
             pointer(i, Some(sel)),
             Span::styled(format!("{} ", hm(e.at)), dim()),
             Span::styled(format!("{} ", glyph::AUTO_ACTION), st("overlay2")),
             Span::styled(e.text.clone(), if undone { struck(text()) } else { text() }),
         ];
-        if let Some(since) = e.automatic_since {
-            left.push(Span::styled(format!("  (automatic since {})", date(since)), dim()));
-        }
         let right = if undone {
             vec![Span::styled("undone ", st("peach"))]
         } else if e.undo {
@@ -677,135 +661,27 @@ pub fn draw_log(f: &mut Frame, area: Rect, app: &App) {
     lines(f, inner, out);
 }
 
-/// The ink fixture on screen: the one an approve item opened, else the first.
-fn ink_name(app: &App) -> Option<String> {
-    app.ink.clone().or_else(|| app.fixtures.ink.keys().next().cloned())
-}
-
-pub fn draw_ink(f: &mut Frame, area: Rect, app: &App) {
-    let Some(name) = ink_name(app) else {
-        let inner = frame(f, area, title("where does this mark point?", ""), Some(esc_back()));
-        lines(f, inner, vec![Line::from(Span::styled("  no marks waiting", dim()))]);
-        return;
-    };
-    let Some(ink) = app.fixtures.ink.get(&name) else { return };
-    let more = if ink.remaining > 0 {
-        format!("{SEP}{} more after this", ink.remaining)
-    } else {
-        String::new()
-    };
-    let inner = frame(
-        f,
-        area,
-        title(
-            "where does this mark point?",
-            &format!("{} p.{}{more}", ink.document, ink.page),
-        ),
-        Some(esc_back()),
-    );
-    let n = ink.candidates.len() as u16;
-    let [img_r, note_r, cand_r, foot] = Layout::vertical([
-        Constraint::Min(8),
-        Constraint::Length(2),
-        Constraint::Length(n * 3 + 1),
-        Constraint::Length(1),
-    ])
-    .areas(inner);
-    match &ink.image {
-        Some(file) => draw_image(f, img_r, app, &app.fixtures.dir.join("ink").join(file)),
-        None => lines(
-            f,
-            img_r,
-            vec![Line::from(Span::styled("  (no crop for this mark)", dim()))],
-        ),
-    }
-    lines(
-        f,
-        note_r,
-        vec![Line::from(vec![
-            Span::styled(format!(" {} the mark ", glyph::INK), st("flamingo")),
-            Span::styled(ink.note.clone(), text()),
-        ])],
-    );
-    let chosen = app.marked(&format!("ink:{name}"));
-    let mut out = vec![rule("it might point at", "", None, false, cand_r.width)];
-    let w = usize::from(cand_r.width).saturating_sub(16);
-    for (i, p) in ink.candidates.iter().enumerate() {
-        let picked = chosen == Some(&Mark::Ticked) && app.sel(' ') == i;
-        for (j, l) in wrap(&p.text, w).into_iter().take(2).enumerate() {
-            let lead = if j == 0 {
-                vec![
-                    Span::styled(format!(" {} ", i + 1), bold(keyst())),
-                    Span::styled(format!("{:<10}", p.at), st("subtext1")),
-                ]
-            } else {
-                vec![Span::raw(format!("{:13}", ""))]
-            };
-            let mut spans = lead;
-            spans.push(Span::styled(l, if picked { st("green") } else { text() }));
-            out.push(Line::from(spans));
-        }
-        out.push(Line::from(""));
-    }
-    lines(f, cand_r, out);
-    let n = format!("1-{}", ink.candidates.len().max(1));
-    let pairs = [(n.as_str(), "it points here"), ("0", "a general note")];
-    lines(f, foot, vec![hints(&pairs).right_aligned()]);
-}
-
-/// The crop, through the terminal's image protocol (kitty in Ghostty, passed through tmux), or
-/// half blocks when the terminal has none and in `--dump` (spec D6).
-fn draw_image(f: &mut Frame, area: Rect, app: &App, path: &std::path::Path) {
-    let key = path.display().to_string();
-    let mut slot = app.image.borrow_mut();
-    if slot.as_ref().map(|(k, _)| k) != Some(&key) {
-        match image::ImageReader::open(path)
-            .map_err(|e| e.to_string())
-            .and_then(|r| r.decode().map_err(|e| e.to_string()))
-        {
-            Ok(img) => {
-                let picker = app.picker.clone().unwrap_or_else(Picker::halfblocks);
-                *slot = Some((key.clone(), picker.new_resize_protocol(img)));
-            }
-            Err(e) => {
-                drop(slot);
-                lines(
-                    f,
-                    area,
-                    vec![Line::from(Span::styled(
-                        format!("  the crop did not load: {e}"),
-                        st("red"),
-                    ))],
-                );
-                return;
-            }
-        }
-    }
-    if let Some((_, proto)) = slot.as_mut() {
-        // As large as the section allows, centred in it (round 0, 20 Oct: "could be larger and
-        // centered to fill that section").
-        let resize = Resize::Scale(Some(FilterType::CatmullRom));
-        let size = proto.size_for(resize.clone(), area.as_size());
-        let at = Rect {
-            x: area.x + area.width.saturating_sub(size.width) / 2,
-            y: area.y + area.height.saturating_sub(size.height) / 2,
-            width: size.width.min(area.width),
-            height: size.height.min(area.height),
-        };
-        f.render_stateful_widget(StatefulImage::default().resize(resize), at, proto);
-    }
-}
-
 /// Approve or refuse a proposed fact in heuris's ledger; with `value`, approved as corrected.
 pub fn decide_fact(app: &mut App, (g, i): (usize, usize), id: u64, yes: bool, value: Option<String>) {
-    let mut args: Vec<String> = vec!["facts".into(), if yes { "approve" } else { "reject" }.into(), "--id".into(), id.to_string()];
+    let mut args: Vec<String> = vec![
+        "facts".into(),
+        if yes { "approve" } else { "reject" }.into(),
+        "--id".into(),
+        id.to_string(),
+    ];
     if let Some(v) = value {
         args.push("--value".into());
         args.push(v);
     }
     match crate::live::server_locus(&args) {
         Ok(msg) => {
-            if app.fixtures.approve.groups.get(g).is_some_and(|x| x.items.get(i).is_some_and(|it| it.fact == Some(id))) {
+            if app
+                .fixtures
+                .approve
+                .groups
+                .get(g)
+                .is_some_and(|x| x.items.get(i).is_some_and(|it| it.fact == Some(id)))
+            {
                 app.fixtures.approve.groups[g].items.remove(i);
                 app.fixtures.approve.groups.retain(|x| !x.items.is_empty());
             }
@@ -988,7 +864,11 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 let it = app.fixtures.approve.groups[at.0].items[at.1].clone();
                 // c on a fact: correct its value, as text (heuris H2); ⏎ approves it as written.
                 if let (Some(id), 'c') = (it.fact, c) {
-                    let value = it.text.split_once(" = ").map(|(_, v)| v.to_string()).unwrap_or_default();
+                    let value = it
+                        .text
+                        .split_once(" = ")
+                        .map(|(_, v)| v.to_string())
+                        .unwrap_or_default();
                     app.mode = crate::app::Mode::FactEdit(at, id, value);
                     return true;
                 }
@@ -1032,7 +912,7 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 }
                 _ => {}
             }
-            let Some((key, text, to, opens)) = rows.get(app.sel(' ')).cloned() else {
+            let Some((key, text, to)) = rows.get(app.sel(' ')).cloned() else {
                 return false;
             };
             // A date from mail (spec E6): y puts it on the calendar (or moves its event) through
@@ -1132,7 +1012,14 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                 .and_then(|(g, i)| {
                     let g: usize = g.parse().ok()?;
                     let i: usize = i.parse().ok()?;
-                    app.fixtures.approve.groups.get(g)?.items.get(i)?.fact.map(|f| (g, i, f))
+                    app.fixtures
+                        .approve
+                        .groups
+                        .get(g)?
+                        .items
+                        .get(i)?
+                        .fact
+                        .map(|f| (g, i, f))
                 });
             if let (Some((g, i, id)), KeyCode::Char(c @ ('y' | 'n'))) = (fact, k.code)
                 && app.home_live
@@ -1204,7 +1091,10 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                     let group = key.split(':').nth(1).unwrap_or_default().to_string();
                     // Facts are decided one at a time: each is something you will be told as
                     // true from then on (heuris H2.5). Y would mark them here and change nothing.
-                    if let Some(g) = group.parse::<usize>().ok().and_then(|g| app.fixtures.approve.groups.get(g))
+                    if let Some(g) = group
+                        .parse::<usize>()
+                        .ok()
+                        .and_then(|g| app.fixtures.approve.groups.get(g))
                         && g.items.iter().any(|i| i.fact.is_some())
                     {
                         app.note = Some("facts are approved one at a time: y or n on each".into());
@@ -1238,23 +1128,16 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                         return true;
                     }
                     let mut n = 0;
-                    for (k2, t2, to2, _) in rows.iter().filter(|r| r.0.split(':').nth(1) == Some(group.as_str())) {
+                    for (k2, t2, to2) in rows.iter().filter(|r| r.0.split(':').nth(1) == Some(group.as_str())) {
                         approve_one(app, k2.clone(), t2, to2.as_deref(), true);
                         n += 1;
                     }
                     app.note = Some(format!("approved the group: {n} items"));
                 }
-                KeyCode::Enter => match opens {
-                    Some(name) => {
-                        app.ink = Some(name);
-                        app.sel.insert((ScreenId::InkConfirm, ' '), 0);
-                        app.open(ScreenId::InkConfirm);
-                    }
-                    None => {
-                        app.sel.insert((ScreenId::ApproveItem, ' '), 0);
-                        app.open(ScreenId::ApproveItem);
-                    }
-                },
+                KeyCode::Enter => {
+                    app.sel.insert((ScreenId::ApproveItem, ' '), 0);
+                    app.open(ScreenId::ApproveItem);
+                }
                 _ => return false,
             }
             true
@@ -1271,10 +1154,15 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                     if let (Some(id), true) = (e.fact, e.undo) {
                         // A fact written from mail: retired in the ledger, the value it replaced
                         // restored (heuris H2.5).
-                        match crate::live::server_locus(&["facts".into(), "undo".into(), "--id".into(), id.to_string()]) {
+                        match crate::live::server_locus(&["facts".into(), "undo".into(), "--id".into(), id.to_string()])
+                        {
                             Ok(msg) => {
                                 app.fixtures.autolog.entries[i].undo = false;
-                                app.mark(format!("log:{i}"), Mark::Undone, msg.lines().last().unwrap_or("undone").to_string());
+                                app.mark(
+                                    format!("log:{i}"),
+                                    Mark::Undone,
+                                    msg.lines().last().unwrap_or("undone").to_string(),
+                                );
                             }
                             Err(e) => app.note = Some(format!("heuris said no: {e}")),
                         }
@@ -1288,35 +1176,6 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
             }
             false
         }
-        _ => {
-            let Some(name) = ink_name(app) else { return false };
-            let Some(ink) = app.fixtures.ink.get(&name).cloned() else {
-                return false;
-            };
-            match k.code {
-                KeyCode::Char(c @ '1'..='9') => {
-                    let i = (c as usize) - ('1' as usize);
-                    if let Some(p) = ink.candidates.get(i) {
-                        app.sel.insert((ScreenId::InkConfirm, ' '), i);
-                        app.mark(
-                            format!("ink:{name}"),
-                            Mark::Ticked,
-                            format!("placed on {}: would file the mark there", p.at),
-                        );
-                    }
-                    true
-                }
-                // 0, none of the passages (x removes everywhere else: L4, 26 Oct).
-                KeyCode::Char('0') => {
-                    app.mark(
-                        format!("ink:{name}"),
-                        Mark::Read,
-                        "a general note: would file it with the document, not a passage",
-                    );
-                    true
-                }
-                _ => false,
-            }
-        }
+        _ => false,
     }
 }

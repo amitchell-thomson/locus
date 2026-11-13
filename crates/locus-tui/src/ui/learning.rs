@@ -1,9 +1,7 @@
 //! The learning system (C.11): goals with their syllabus shown before they start, topic tracks
-//! with a confidence bar and its history, practice sheets. Interview prep (C.10) is its first
-//! mode: an opportunity's plan drawing on the same tracks.
+//! with a confidence bar and its history, practice sheets. Not live yet: slice L builds it.
 
 use crate::app::{App, Mark, nav};
-use crate::screen::ScreenId;
 use crate::ui::widgets::*;
 use crate::ui::{esc_back, frame, hints, lines, title};
 use locus_contract::{GoalState, Learning, SheetState, Track};
@@ -19,7 +17,6 @@ pub const KEYS: &[(&str, &str)] = &[
     ("n", "a new goal"),
     ("m", "make a practice sheet for the selected track"),
 ];
-pub const PREP_KEYS: &[(&str, &str)] = &[("+", "add a session you did"), ("e", "change the details or the time")];
 
 const SPARK: [&str; 8] = ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
 
@@ -203,177 +200,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     );
 }
 
-pub fn draw_prep(f: &mut Frame, area: Rect, app: &App) {
-    let fx = &app.fixtures;
-    let id = app.project_id().unwrap_or_default();
-    let name = fx.registry.get(&id).map_or(id.clone(), |p| p.name.clone());
-    let Some(p) = fx.prep.get(&id) else {
-        let inner = frame(
-            f,
-            area,
-            title(&format!("{name} · interview prep"), ""),
-            Some(esc_back()),
-        );
-        let mut out = vec![Line::from("")];
-        for l in wrap(
-            "No prep plan yet. Give the interview's details and the time you want to spend, and the plan is drawn up from your topic tracks, weakest first, with the sessions as kairos blocks.",
-            usize::from(inner.width).saturating_sub(4),
-        ) {
-            out.push(Line::from(Span::styled(format!("  {l}"), dim())));
-        }
-        out.push(Line::from(""));
-        out.push(Line::from(vec![
-            Span::styled("  e", keyst()),
-            Span::styled(" would open the details form", dim()),
-        ]));
-        lines(f, inner, out);
-        return;
-    };
-    let head = format!("{}{SEP}{} {}", p.role, p.round, date(p.date));
-    let inner = frame(f, area, title(&name, &head), Some(esc_back()));
-    let w = inner.width;
-    let fmt_h = p.format.len() as u16 + 1;
-    let topics_h = p.topics.len() as u16 + 2;
-    let [budget_r, fmt_r, topics_r, log_r, foot] = Layout::vertical([
-        Constraint::Length(2),
-        Constraint::Length(fmt_h),
-        Constraint::Length(topics_h),
-        Constraint::Min(3),
-        Constraint::Length(1),
-    ])
-    .areas(inner);
-
-    let mut b = vec![Span::styled(
-        format!(
-            " budget {:.0} h by {}{SEP}{:.1} h used ",
-            p.budget_hours,
-            date(p.date),
-            p.used_hours
-        ),
-        text(),
-    )];
-    b.extend(bar(p.used_hours / p.budget_hours.max(0.1), 36, None, c("mauve")));
-    let mut out = vec![Line::from(b)];
-    if let Some(o) = &p.outcome {
-        out.push(Line::from(vec![
-            Span::styled(" outcome ", dim()),
-            Span::styled(o.clone(), bold(st("green"))),
-        ]));
-    } else if let Some(n) = &p.next {
-        out.push(Line::from(Span::styled(
-            format!(
-                " next {}{SEP}{}, {} min{}",
-                n.at.format("%a %-d %H:%M").to_string().to_lowercase(),
-                n.track,
-                n.minutes,
-                if n.in_kairos { " (kairos block)" } else { "" }
-            ),
-            st("peach"),
-        )));
-    }
-    lines(f, budget_r, out);
-
-    let mut out = vec![rule("the round", "", None, false, w)];
-    for r in &p.format {
-        out.push(Line::from(vec![
-            Span::styled(format!(" {:<14}", r.name), bold(st("subtext1"))),
-            Span::styled(format!("{:<46}", crate::ui::truncate(&r.covers, 45)), text()),
-            Span::styled(crate::ui::truncate(&r.how, usize::from(w).saturating_sub(62)), dim()),
-        ]));
-    }
-    lines(f, fmt_r, out);
-
-    let fo = app.focus == Some('t');
-    let mut out = vec![rule("topics", "weakest first, from your tracks", Some('t'), fo, w)];
-    out.push(Line::from(Span::styled(
-        format!("   {:<22}{:<18}{:<10}{}", "", "confidence", "a day", "from"),
-        dim(),
-    )));
-    let mut topics: Vec<_> = p.topics.iter().collect();
-    topics.sort_by(|a, b| {
-        let ca = track(&fx.learning, &a.track).map_or(0.0, |t| t.confidence);
-        let cb = track(&fx.learning, &b.track).map_or(0.0, |t| t.confidence);
-        ca.total_cmp(&cb)
-    });
-    for (i, t) in topics.iter().enumerate() {
-        let tr = track(&fx.learning, &t.track);
-        let mut spans = vec![
-            pointer(i, fo.then(|| app.sel('t'))),
-            Span::styled(
-                format!("{:<22}", tr.map_or(t.track.as_str(), |t| t.name.as_str())),
-                text(),
-            ),
-        ];
-        spans.extend(confidence(tr.map_or(0.0, |t| t.confidence), 14));
-        spans.push(Span::styled(format!("    {:>3} min  ", t.minutes_a_day), text()));
-        spans.push(Span::styled(
-            crate::ui::truncate(&t.from, usize::from(w).saturating_sub(58)),
-            dim(),
-        ));
-        out.push(Line::from(spans));
-    }
-    lines(f, topics_r, out);
-
-    let fo = app.focus == Some('p');
-    let mut out = vec![rule(
-        "practice log",
-        &format!("{} sessions", p.log.len()),
-        Some('p'),
-        fo,
-        w,
-    )];
-    let room = usize::from(log_r.height.saturating_sub(1));
-    for (i, s) in p.log.iter().enumerate().take(room) {
-        let name = track(&fx.learning, &s.track).map_or(s.track.clone(), |t| t.name.clone());
-        out.push(row(
-            vec![
-                pointer(i, fo.then(|| app.sel('p'))),
-                Span::styled(format!("{:<8}", day(s.date)), dim()),
-                Span::styled(format!("{:<20}", crate::ui::truncate(&name, 19)), text()),
-                Span::styled(
-                    format!("{:>2} problems{SEP}{:>2} right   ", s.problems, s.right),
-                    text(),
-                ),
-                Span::styled(s.note.clone().unwrap_or_default(), dim()),
-            ],
-            vec![Span::styled(format!("{} min ", s.minutes), dim())],
-            w,
-        ));
-    }
-    lines(f, log_r, out);
-    lines(
-        f,
-        foot,
-        vec![hints(&[("+", "add a session you did"), ("e", "details and time")]).right_aligned()],
-    );
-}
-
 pub fn key(app: &mut App, k: KeyEvent) -> bool {
-    if app.screen() == ScreenId::Prep {
-        let id = app.project_id().unwrap_or_default();
-        let Some(p) = app.fixtures.prep.get(&id).cloned() else {
-            if k.code == KeyCode::Char('e') {
-                app.note = Some("would open the form: the round, its date, its format, your hours".into());
-                return true;
-            }
-            return false;
-        };
-        if let (Some(sec), Some(d)) = (app.focus, nav(&k)) {
-            let n = if sec == 't' { p.topics.len() } else { p.log.len() };
-            app.move_sel(sec, n, d);
-            return true;
-        }
-        match k.code {
-            KeyCode::Char('+') => {
-                app.note = Some("would ask for one line: the track, how many, how many right, a note".into())
-            }
-            KeyCode::Char('e') => {
-                app.note = Some("would open the form: the round, its date, its format, your hours".into())
-            }
-            _ => return false,
-        }
-        return true;
-    }
     let l = app.fixtures.learning.clone();
     if let Some(d) = nav(&k) {
         let sec = app.focus.unwrap_or('g');

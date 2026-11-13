@@ -1,5 +1,5 @@
-//! The calendar, live (ADR-008, spec K8): locus reads kairos for Home's next event, the rhythm
-//! grid (time measured from your Claude sessions) and the events of each application, through
+//! The calendar, live (ADR-008, spec K8): locus reads kairos for Home's next event and the rhythm
+//! grid (time measured from your Claude sessions), through
 //! kairosd's API until the HTTP service exists; what locus puts on the calendar goes through
 //! kairosd too, never around it (kairos's single-writer rule).
 //!
@@ -11,7 +11,7 @@ use chrono::{DateTime, Datelike, Duration, FixedOffset, Utc};
 use kairos_core::config::Config;
 use kairos_core::model::{EventKind, Instance, Span};
 use kairos_store::client::Daemon;
-use locus_contract::{AppEvent, AppEventKind, Next, ProjectKind, WorkDay, WorkSpan};
+use locus_contract::{Next, ProjectKind, WorkDay, WorkSpan};
 
 /// A connection to kairosd, from kairos's own config (`$KAIROS_CONFIG` or the default path).
 pub struct Live {
@@ -26,7 +26,7 @@ impl Live {
         Some(Live { cfg, daemon })
     }
 
-    /// The calendar from 90 days back to 60 ahead: past interviews stay on their application.
+    /// The calendar from 90 days back (the 8-week chart) to 60 ahead.
     pub fn fetch(&self, now: DateTime<Utc>) -> Option<Vec<Instance>> {
         let (idx, _) = self
             .daemon
@@ -166,20 +166,6 @@ impl Live {
     }
 }
 
-/// What an event on an application's timeline is, from its title.
-fn kind_of(title: &str) -> AppEventKind {
-    let t = title.to_lowercase();
-    if t.contains("interview") || t.contains("final round") || t.contains("superday") {
-        AppEventKind::Interview
-    } else if t.contains("test") || t.contains("assessment") || t.contains("hirevue") {
-        AppEventKind::Assessment
-    } else if t.contains("deadline") || t.contains("submit") || t.contains("closes") {
-        AppEventKind::Submission
-    } else {
-        AppEventKind::Call
-    }
-}
-
 /// kairos's tasks onto the Tasks page (spec E7), and each course's next due onto Studies, so
 /// what is due shows on Home where it belongs. kairosd sends them as the page's own type (L6).
 pub fn apply_tasks(fx: &mut Fixtures, items: &[locus_contract::TaskItem]) {
@@ -277,7 +263,6 @@ pub fn apply_dates(fx: &mut Fixtures, bookings: &[crate::maildates::Booking], ca
             to: Some("calendar".into()),
             from: "keryx".into(),
             new: true,
-            opens: None,
             date: Some(locus_contract::MailDate {
                 for_id: b.for_id.clone(),
                 title: title.clone(),
@@ -328,7 +313,6 @@ pub fn apply_pending(fx: &mut Fixtures, pending: &[kairos_core::changeset::Chang
             to: None,
             from: format!("kairos · {}", c.author.as_str()),
             new: true,
-            opens: None,
             date: None,
             changeset: Some(c.id.clone()),
             mail: None,
@@ -499,31 +483,6 @@ pub fn apply(fx: &mut Fixtures, cal: &[Instance], area_of: impl Fn(&str) -> Opti
         series.sort_by(|a, b| b.hours.iter().sum::<f32>().total_cmp(&a.hours.iter().sum::<f32>()));
         fx.work.chart = locus_contract::WorkChart { from, series };
     }
-    // Each application's events: the calendar's, replacing what an earlier pass added.
-    let apps: Vec<String> = fx
-        .registry
-        .projects
-        .iter()
-        .filter(|p| p.kind == ProjectKind::Application)
-        .map(|p| p.id.clone())
-        .collect();
-    for id in apps {
-        let Some(app) = fx.projects.get_mut(&id).and_then(|p| p.view.application.as_mut()) else {
-            continue;
-        };
-        app.events.retain(|e| e.calendar.is_none());
-        for i in cal.iter().filter(|i| i.meta.locus.as_deref() == Some(id.as_str())) {
-            let (start, _) = i.span.bounds(chrono_tz::Europe::London);
-            app.events.push(AppEvent {
-                at: at(start),
-                kind: kind_of(&i.title),
-                text: i.title.clone(),
-                detail: vec!["on your calendar (kairos)".into()],
-                calendar: Some(i.uid.clone()),
-            });
-        }
-        app.events.sort_by(|a, b| b.at.cmp(&a.at));
-    }
 }
 
 #[cfg(test)]
@@ -556,7 +515,7 @@ mod tests {
     }
 
     #[test]
-    fn the_calendar_fills_next_the_rhythm_grid_and_an_applications_events() {
+    fn the_calendar_fills_next_and_the_rhythm_grid() {
         let mut fx = Fixtures::load(&crate::fixtures::resolve("default")).unwrap();
         let now: DateTime<Utc> = "2026-10-24T10:00:00Z".parse().unwrap();
         let linked = Meta {
@@ -588,13 +547,6 @@ mod tests {
         let locus = fx.work.chart.series.iter().find(|s| s.project == "locus").unwrap();
         assert_eq!(locus.hours.len(), 56);
         assert!(*locus.hours.last().unwrap() > 0.0, "today, the last day of the chart");
-        let events = &fx.projects["millennium"].view.application.as_ref().unwrap().events;
-        let e = events.iter().find(|e| e.calendar.as_deref() == Some("intv")).unwrap();
-        assert_eq!(e.kind, AppEventKind::Interview);
-        // A second pass replaces, never duplicates.
-        apply(&mut fx, &cal, |_| None, now);
-        let events = &fx.projects["millennium"].view.application.as_ref().unwrap().events;
-        assert_eq!(events.iter().filter(|e| e.calendar.is_some()).count(), 1);
     }
 }
 

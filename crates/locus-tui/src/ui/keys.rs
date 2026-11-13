@@ -31,12 +31,11 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     for (k, what) in [
         ("⏎", "open"),
         ("esc", "back"),
-        ("/", "search"),
+        ("/", "ask the chat (Home's chat bar, empty)"),
         ("l", "the automatic-actions log"),
         ("j k ↑ ↓", "move in a list"),
         ("?", "keys"),
-        ("R", "clear the prototype's ticks and strikes (fixture data only)"),
-        ("alt-1…4", "home · project · calendar · mail"),
+        ("alt-1…4", "home · calendar · mail · fix"),
     ] {
         lines.push(Line::from(vec![
             Span::styled(format!("  {k:<8}"), key),

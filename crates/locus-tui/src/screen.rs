@@ -9,24 +9,14 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ScreenId {
     Home,
-    Project,
-    Application,
     System,
     Budget,
-    Explore,
     Approve,
     AutoLog,
-    InkConfirm,
     /// One approve item, whole: `⏎` on Approve (10 Nov).
     ApproveItem,
-    Decisions,
-    Answered,
-    Changes,
-    Search,
     WorkChart,
-    Prep,
     Learning,
-    Review,
     Tasks,
     /// Every project you build, by where it stands (`p` on Home, 10 Nov).
     Projects,
@@ -47,25 +37,15 @@ const fn s(letter: char, title: &'static str, detail: Option<ScreenId>) -> Secti
 }
 
 impl ScreenId {
-    pub const ALL: [ScreenId; 21] = [
+    pub const ALL: [ScreenId; 11] = [
         ScreenId::Home,
-        ScreenId::Project,
-        ScreenId::Application,
         ScreenId::System,
         ScreenId::Budget,
-        ScreenId::Explore,
         ScreenId::Approve,
         ScreenId::AutoLog,
-        ScreenId::InkConfirm,
         ScreenId::ApproveItem,
-        ScreenId::Decisions,
-        ScreenId::Answered,
-        ScreenId::Changes,
-        ScreenId::Search,
         ScreenId::WorkChart,
-        ScreenId::Prep,
         ScreenId::Learning,
-        ScreenId::Review,
         ScreenId::Tasks,
         ScreenId::Projects,
         ScreenId::Chat,
@@ -75,23 +55,13 @@ impl ScreenId {
     pub fn name(self) -> &'static str {
         match self {
             ScreenId::Home => "home",
-            ScreenId::Project => "project",
             ScreenId::System => "system",
             ScreenId::Budget => "budget",
-            ScreenId::Explore => "explore",
             ScreenId::Approve => "approve",
             ScreenId::AutoLog => "autolog",
-            ScreenId::InkConfirm => "ink",
             ScreenId::ApproveItem => "approve-item",
-            ScreenId::Decisions => "decisions",
-            ScreenId::Answered => "answered",
-            ScreenId::Changes => "changes",
-            ScreenId::Search => "search",
             ScreenId::WorkChart => "work",
-            ScreenId::Prep => "prep",
-            ScreenId::Application => "application",
             ScreenId::Learning => "learning",
-            ScreenId::Review => "review",
             ScreenId::Tasks => "tasks",
             ScreenId::Projects => "projects",
             ScreenId::Chat => "chat",
@@ -106,44 +76,29 @@ impl ScreenId {
     pub fn title(self) -> &'static str {
         match self {
             ScreenId::Home => "locus",
-            ScreenId::Project => "project",
             ScreenId::System => "system",
             ScreenId::Budget => "budget",
-            ScreenId::Explore => "explore",
             ScreenId::Approve => "approve",
             ScreenId::AutoLog => "automatic actions",
-            ScreenId::InkConfirm => "where does this mark point?",
             ScreenId::ApproveItem => "approve",
-            ScreenId::Decisions => "decisions",
-            ScreenId::Answered => "answered",
-            ScreenId::Changes => "changes",
-            ScreenId::Search => "search",
             ScreenId::WorkChart => "work · 8 weeks",
-            ScreenId::Prep => "interview prep",
-            ScreenId::Application => "application",
             ScreenId::Learning => "learning",
-            ScreenId::Review => "weekly review",
             ScreenId::Tasks => "tasks",
             ScreenId::Projects => "projects",
             ScreenId::Chat => "chat",
         }
     }
 
-    /// Home and Project are roots: each has its own tmux window, and Esc stops there.
+    /// Home is the root: Esc stops there.
     pub fn is_root(self) -> bool {
-        matches!(self, ScreenId::Home | ScreenId::Project)
+        self == ScreenId::Home
     }
 
     pub fn sections(self) -> &'static [Section] {
         match self {
             ScreenId::Home => HOME,
-            ScreenId::Project => PROJECT,
-            ScreenId::Decisions => DECISIONS,
             ScreenId::System => SYSTEM,
-            ScreenId::Explore => EXPLORE,
             ScreenId::Learning => LEARNING,
-            ScreenId::Prep => PREP,
-            ScreenId::Application => APPLICATION,
             _ => &[],
         }
     }
@@ -153,54 +108,20 @@ use ScreenId as S;
 // In the order Tab and the arrows visit them, top to bottom.
 const HOME: &[Section] = &[
     s('w', "work", Some(S::WorkChart)),
-    s('p', "projects", Some(S::Project)),
+    s('p', "projects", Some(S::Projects)),
     s('c', "careers", None),
     s('s', "studies", None),
-    s('e', "explore", Some(S::Explore)),
     s('a', "approve", Some(S::Approve)),
     s('t', "tasks", Some(S::Tasks)),
     s('y', "system", Some(S::System)),
 ];
-// Decisions (d), Answered (a) and prep (p) open from the Project view by their own keys: they
-// are screens, not panes on it.
-// In layout order, so ↑ and ↓ walk them as drawn (round 2: "going up from sessions jumps
-// you straight to branches").
-const PROJECT: &[Section] = &[
-    s('y', "where you are", None),
-    s('q', "open questions", None),
-    s('g', "branches", None),
-    s('d', "decisions", Some(S::Decisions)),
-    s('s', "sessions", None),
-    s('a', "ask", None),
-];
-// The log's states down the left, then the entry on the right (round 2q). A state with no
-// decisions is not drawn, and Tab and the arrows pass over it.
-const DECISIONS: &[Section] = &[
-    s('h', "holding", None),
-    s('n', "new", None),
-    s('r', "to re-check", None),
-    s('v', "under review", None),
-    s('x', "replaced", None),
-    s('e', "the entry", None),
-    s('a', "ask about this decision", None),
-];
-// An application's page (round 5): where you are, the timeline, prep, the questions you were
-// asked, the ask line.
-const APPLICATION: &[Section] = &[
-    s('y', "where you are", None),
-    s('t', "timeline", None),
-    s('p', "prep", Some(S::Prep)),
-    s('q', "questions you were asked", None),
-    s('a', "ask", None),
-];
 const SYSTEM: &[Section] = &[
     s('r', "running", None),
+    s('t', "timers", None),
     s('e', "recent", None),
     s('u', "usage", Some(S::Budget)),
 ];
-const EXPLORE: &[Section] = &[s('q', "queue", None), s('i', "ideas", None), s('r', "reading", None)];
 const LEARNING: &[Section] = &[s('g', "goals", None), s('t', "tracks", None), s('s', "sheets", None)];
-const PREP: &[Section] = &[s('t', "topics", None), s('p', "practice log", None)];
 
 impl fmt::Display for ScreenId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

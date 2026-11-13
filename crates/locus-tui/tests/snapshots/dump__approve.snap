@@ -2,22 +2,19 @@
 source: crates/locus-tui/tests/dump.rs
 expression: "dump::render(&a, 95, 38).unwrap()"
 ---
-╭ approve · 6 ────────────────────────────────────────────────────────────────────── esc back ╮
-│─ filing · 2 · Y all ─────────────────────────────────────────────────────────────────────── │
-│▌ FILE     jot p3 "G-Research sponsor talk"                                                  │
-│  FILE     jot p3 "Kalman filters for…"                                                      │
+╭ approve · 5 ────────────────────────────────────────────────────────────────────── esc back ╮
+│─ file · 2 · Y all ───────────────────────────────────────────────────────────────────────── │
+│▌ MAIL     "G-Research sponsor talk" from careers@gresearch                                  │
+│  MAIL     "Kalman filters reading group" from the department                                │
 │                                                                                             │
-│─ mail · 1 · Y all ───────────────────────────────────────────────────────────────────────── │
+│─ archive · 1 · Y all ────────────────────────────────────────────────────────────────────── │
 │  MAIL     14 mails                                                                          │
 │                                                                                             │
-│─ deadlines · 1 · Y all ──────────────────────────────────────────────────────────────────── │
-│  DEADLINE  G-Research applications close 31 Oct                                             │
+│─ calendar changes · 1 · Y all ───────────────────────────────────────────────────────────── │
+│  CALENDAR  G-Research applications close 31 Oct                                             │
 │                                                                                             │
-│─ ink · 1 · Y all ────────────────────────────────────────────────────────────────────────── │
-│  INK      QUAST dossier 15 Oct · 3 marks I am unsure where they point                       │
-│                                                                                             │
-│─ stop asking? · 1 · Y all ───────────────────────────────────────────────────────────────── │
-│  STOP ASKING?  spam archives: you approved 23 of 23. Do them automatically?                 │
+│─ mail to send · 1 · Y all ───────────────────────────────────────────────────────────────── │
+│  SEND     reply to G-Research: thanks for the talk                                          │
 │                                                                                             │
 │                                                                                             │
 │                                                                                             │
@@ -37,6 +34,9 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │                                                                                             │
 │                                                                                             │
 │                                                                                             │
-│                             1/6 · 16%  y n one · Y the group · c change · a archive · ⏎ open│
+│                                                                                             │
+│                                                                                             │
+│                                                                                             │
+│                             1/5 · 20%  y n one · Y the group · c change · a archive · ⏎ open│
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯
- ⏎ open · ⇥ sections · l log · / search · i chat · ? keys
+ ⏎ open · ⇥ sections · l log · / ask · i chat · ? keys

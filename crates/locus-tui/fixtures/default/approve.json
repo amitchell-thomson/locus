@@ -1,23 +1,25 @@
 {
   "groups": [
     {
-      "kind": "filing",
+      "kind": "mail_filing",
+      "label": "file",
       "items": [
         {
-          "text": "jot p3 \"G-Research sponsor talk\"",
+          "text": "\"G-Research sponsor talk\" from careers@gresearch",
           "to": "careers/g-research",
-          "from": "jot",
+          "from": "keryx",
           "new": true
         },
         {
-          "text": "jot p3 \"Kalman filters for…\"",
-          "to": "explore",
-          "from": "jot"
+          "text": "\"Kalman filters reading group\" from the department",
+          "to": "Studies",
+          "from": "keryx"
         }
       ]
     },
     {
-      "kind": "mail",
+      "kind": "mail_filing",
+      "label": "archive",
       "items": [
         {
           "text": "14 mails",
@@ -27,32 +29,23 @@
       ]
     },
     {
-      "kind": "deadline",
+      "kind": "calendar",
       "items": [
         {
           "text": "G-Research applications close 31 Oct",
           "to": "kairos deadline",
-          "from": "keryx"
+          "from": "kairos"
         }
       ]
     },
     {
-      "kind": "ink",
+      "kind": "mail_send",
       "items": [
         {
-          "text": "QUAST dossier 15 Oct · 3 marks I am unsure where they point",
-          "from": "ink readback",
-          "opens": "quast-dossier-p5",
+          "text": "reply to G-Research: thanks for the talk",
+          "to": "send",
+          "from": "keryx",
           "new": true
-        }
-      ]
-    },
-    {
-      "kind": "stop_asking",
-      "items": [
-        {
-          "text": "spam archives: you approved 23 of 23. Do them automatically?",
-          "from": "locus"
         }
       ]
     }

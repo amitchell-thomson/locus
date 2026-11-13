@@ -1,8 +1,8 @@
 //! Home's own lines, and the work section (Home's rhythm grid and the area chart behind `w`).
 //!
 //! Home shows only what no other view shows (plan D). Its other sections are other screens'
-//! contracts, summarised: projects come from each Project view, Explore from `Explore`, approve
-//! from `Approve`, system from `System`.
+//! contracts, summarised: projects from each `ProjectView`, approve from `Approve`, system from
+//! `System`.
 
 use crate::common::Time;
 use chrono::{NaiveDate, NaiveTime};
@@ -18,9 +18,6 @@ pub struct Home {
     /// The attended project: the current kairos work block's, or the one marked with `m`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attended: Option<String>,
-    /// The weekly review is in its slot and has not been done.
-    #[serde(default)]
-    pub review_ready: bool,
     /// A chore that fits the gap you are in now (spec K9): named on the top line only when there
     /// is room left after everything else there.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -66,8 +63,10 @@ pub struct Next {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MailLine {
-    pub need_reply: u32,
-    pub deadlines_proposed: u32,
+    /// Threads waiting on your reply, from keryx's mirror; none until keryx has answered, so a
+    /// live window never shows a number it has not read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub need_reply: Option<u32>,
 }
 
 /// When you worked: from transcripts, commits and kairos logs (backfilled since August).

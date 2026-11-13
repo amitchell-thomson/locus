@@ -1,6 +1,6 @@
 //! Pieces every screen draws with: times, bars, glyphs by kind, section rules, list rows.
 
-use locus_contract::{DecisionStatus, FindKind, ItemKind, JobOutcome, SessionState, Time};
+use locus_contract::{JobOutcome, SessionState, Time};
 use locus_theme::{SEP, c, glyph};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -83,25 +83,6 @@ pub fn spin(frame: u64) -> &'static str {
     }
 }
 
-pub fn item_glyph(k: ItemKind) -> (&'static str, &'static str) {
-    match k {
-        ItemKind::Recheck => (glyph::RECHECK, "yellow"),
-        ItemKind::Redecided => (glyph::REDECIDED, "mauve"),
-        ItemKind::Decision => (glyph::HOLDING, "green"),
-        ItemKind::Answer => (glyph::ANSWER, "sky"),
-        ItemKind::ScoutFind => (glyph::SCOUT_FIND, "mauve"),
-        ItemKind::Reading => (glyph::READING, "teal"),
-        ItemKind::Idea => (glyph::IDEA, "yellow"),
-        ItemKind::Commits => (glyph::COMMITS, "green"),
-        ItemKind::Chat => (glyph::CHAT, "lavender"),
-        ItemKind::Dossier => (glyph::DOSSIER, "blue"),
-        ItemKind::Ink => (glyph::INK, "flamingo"),
-        ItemKind::Mail => (glyph::MAIL, "sapphire"),
-        ItemKind::Calendar => (glyph::CALENDAR, "peach"),
-        ItemKind::AutoAction => (glyph::AUTO_ACTION, "overlay2"),
-    }
-}
-
 pub fn session_glyph(s: SessionState) -> (&'static str, &'static str, &'static str) {
     match s {
         SessionState::NeedsYou => (glyph::NEEDS_YOU, "peach", "needs you"),
@@ -117,26 +98,6 @@ pub fn job_glyph(o: &JobOutcome) -> (&'static str, &'static str) {
         JobOutcome::Running => (glyph::WORKING, "blue"),
         JobOutcome::Done => (glyph::DONE, "green"),
         JobOutcome::Failed { .. } => (glyph::FAILED, "red"),
-    }
-}
-
-pub fn decision_glyph(s: &DecisionStatus) -> (&'static str, &'static str, String) {
-    match s {
-        DecisionStatus::Holding => (glyph::HOLDING, "green", "holding".into()),
-        DecisionStatus::Recheck => (glyph::RECHECK, "yellow", "re-check".into()),
-        DecisionStatus::Review => (glyph::REVIEW, "sky", "under review".into()),
-        // Never the replacing decision's number (round 2): the screens name it by title.
-        DecisionStatus::Redecided { .. } => (glyph::REDECIDED, "mauve", "replaced".into()),
-    }
-}
-
-pub fn find_glyph(k: FindKind) -> (&'static str, &'static str, &'static str) {
-    match k {
-        FindKind::Method => (glyph::SCOUT_FIND, "mauve", "method"),
-        FindKind::Course => (glyph::SCOUT_FIND, "blue", "course"),
-        FindKind::Reading => (glyph::READING, "teal", "read"),
-        FindKind::Pattern => (glyph::SCOUT_FIND, "green", "pattern"),
-        FindKind::NewProject => (glyph::IDEA, "yellow", "new project"),
     }
 }
 

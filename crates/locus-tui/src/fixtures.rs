@@ -4,19 +4,18 @@
 //!
 //! ```text
 //! manifest.json
-//! home.json work.json system.json usage.json explore.json approve.json autolog.json
-//! search.json learning.json review.json tasks.json
-//! ink/<name>.json                      one per mark waiting in the approve list
-//! prep/<opportunity>.json              one per opportunity with a plan
+//! home.json work.json system.json usage.json approve.json autolog.json learning.json tasks.json
 //! projects/<id>/view.json              every active project
-//! projects/<id>/{decisions,answered,changes}.json   where the project has them
 //! ```
+//!
+//! A live window lays what it reads over these and drops what it cannot read live; the fixtures
+//! are the fallback that tests and `--dump` draw.
 //!
 //! The taxonomy and the registry are not part of a set: every set reads the one copy in
 //! `taxonomy/` at the repository root (ADR-008, spec K3), the same files kairos reads.
 //!
 //! Loading is strict: every contract refuses unknown fields, and `check` then cross-references
-//! the files (a project id, a track, an ink fixture named in one file must exist in another), so
+//! the files (a project id or a track named in one file must exist in another), so
 //! a fixture cannot leave a section silently empty.
 
 use anyhow::{Context, Result};
@@ -34,24 +33,16 @@ pub struct Fixtures {
     pub work: Work,
     pub system: System,
     pub usage: Usage,
-    pub explore: Explore,
     pub approve: Approve,
     pub autolog: AutoLog,
-    pub search: Search,
     pub learning: Learning,
-    pub review: Review,
     pub tasks: Tasks,
-    pub ink: BTreeMap<String, InkConfirm>,
-    pub prep: BTreeMap<String, Prep>,
     pub projects: BTreeMap<String, ProjectFixture>,
 }
 
 #[derive(Debug, Clone)]
 pub struct ProjectFixture {
     pub view: ProjectView,
-    pub decisions: Option<Decisions>,
-    pub answered: Option<Answered>,
-    pub changes: Option<Changes>,
 }
 
 /// Where the repo's fixture sets live, found from the crate so it works from any directory.
@@ -84,13 +75,10 @@ impl Fixtures {
                     view: match read_opt(dir, &format!("{base}/view.json"))? {
                         Some(v) => v,
                         None => serde_json::from_value(serde_json::json!({
-                            "project": p.id, "new": [], "sessions": []
+                            "project": p.id, "sessions": []
                         }))
                         .map_err(|e| anyhow::anyhow!("an empty view for {}: {e}", p.id))?,
                     },
-                    decisions: read_opt(dir, &format!("{base}/decisions.json"))?,
-                    answered: read_opt(dir, &format!("{base}/answered.json"))?,
-                    changes: read_opt(dir, &format!("{base}/changes.json"))?,
                 },
             );
         }
@@ -103,15 +91,10 @@ impl Fixtures {
             work: read(dir, "work.json")?,
             system: read(dir, "system.json")?,
             usage: read(dir, "usage.json")?,
-            explore: read(dir, "explore.json")?,
             approve: read(dir, "approve.json")?,
             autolog: read(dir, "autolog.json")?,
-            search: read(dir, "search.json")?,
             learning: read(dir, "learning.json")?,
-            review: read(dir, "review.json")?,
             tasks: read(dir, "tasks.json")?,
-            ink: read_dir(dir, "ink")?,
-            prep: read_dir(dir, "prep")?,
             projects,
         })
     }
@@ -132,26 +115,13 @@ impl Fixtures {
     /// reported as unread rather than passing as OK.
     pub fn read_files(&self) -> BTreeSet<String> {
         let mut out: BTreeSet<String> = [
-            "manifest", "home", "work", "system", "usage", "explore", "approve", "autolog", "search", "learning",
-            "review", "tasks",
+            "manifest", "home", "work", "system", "usage", "approve", "autolog", "learning", "tasks",
         ]
         .iter()
         .map(|f| format!("{f}.json"))
         .collect();
-        out.extend(self.ink.keys().map(|k| format!("ink/{k}.json")));
-        out.extend(self.prep.keys().map(|k| format!("prep/{k}.json")));
-        for (id, p) in &self.projects {
+        for id in self.projects.keys() {
             out.insert(format!("projects/{id}/view.json"));
-            let optional = [
-                ("decisions", p.decisions.is_some()),
-                ("answered", p.answered.is_some()),
-                ("changes", p.changes.is_some()),
-            ];
-            for (f, present) in optional {
-                if present {
-                    out.insert(format!("projects/{id}/{f}.json"));
-                }
-            }
         }
         out
     }
@@ -247,48 +217,6 @@ impl Fixtures {
             ));
         }
 
-        if self.explore.queue.len() > self.explore.queue_cap as usize {
-            bad.push(format!(
-                "explore.json: {} finds in a queue that holds {}",
-                self.explore.queue.len(),
-                self.explore.queue_cap
-            ));
-        }
-        for f in &self.explore.queue {
-            if let Some(p) = &f.project {
-                project(&format!("explore.json find {}", f.id), p, &mut bad);
-            }
-        }
-        for i in &self.explore.ideas {
-            if let Some(p) = &i.project {
-                project("explore.json idea", p, &mut bad);
-            }
-        }
-        for g in &self.approve.groups {
-            for i in &g.items {
-                if let Some(o) = &i.opens
-                    && !self.ink.contains_key(o)
-                {
-                    bad.push(format!(
-                        "approve.json: `{}` opens ink/{o}.json, which does not exist",
-                        i.text
-                    ));
-                }
-            }
-        }
-        for (name, ink) in &self.ink {
-            if let Some(img) = &ink.image
-                && !self.dir.join("ink").join(img).is_file()
-            {
-                bad.push(format!("ink/{name}.json: image {img} is not beside it"));
-            }
-        }
-        for h in &self.search.hits {
-            if let Some(p) = &h.project {
-                project("search.json", p, &mut bad);
-            }
-        }
-
         for t in &self.learning.tracks {
             if !(0.0..=1.0).contains(&t.confidence) || t.history.iter().any(|p| !(0.0..=1.0).contains(&p.confidence)) {
                 bad.push(format!("learning.json: track {} has a confidence outside 0 to 1", t.id));
@@ -309,26 +237,6 @@ impl Fixtures {
                 track(&format!("learning.json sheet {}", s.id), t, &mut bad);
             }
         }
-        for (name, p) in &self.prep {
-            if p.opportunity != *name {
-                bad.push(format!("prep/{name}.json: says opportunity `{}`", p.opportunity));
-            }
-            match self.registry.get(&p.opportunity) {
-                Some(r) if r.kind == ProjectKind::Application => {}
-                Some(_) => bad.push(format!("prep/{name}.json: {} is not an application", p.opportunity)),
-                None => bad.push(format!(
-                    "prep/{name}.json: no project `{}` in taxonomy/registry.toml",
-                    p.opportunity
-                )),
-            }
-            for t in &p.topics {
-                track(&format!("prep/{name}.json"), &t.track, &mut bad);
-            }
-            for s in &p.log {
-                track(&format!("prep/{name}.json log"), &s.track, &mut bad);
-            }
-        }
-
         // Every application names its company: the tablet's Careers folders are per company,
         // and capture matches a folder to it (Slice 0, 0.12).
         for p in &self.registry.projects {
@@ -337,58 +245,9 @@ impl Fixtures {
             }
         }
         for (id, pf) in &self.projects {
-            let named = [
-                Some(("view", pf.view.project.as_str())),
-                pf.decisions.as_ref().map(|d| ("decisions", d.project.as_str())),
-                pf.answered.as_ref().map(|d| ("answered", d.project.as_str())),
-                pf.changes.as_ref().map(|d| ("changes", d.project.as_str())),
-            ];
-            for (file, p) in named.into_iter().flatten() {
-                if p != id {
-                    bad.push(format!("projects/{id}/{file}.json: says project `{p}`"));
-                }
+            if pf.view.project != *id {
+                bad.push(format!("projects/{id}/view.json: says project `{}`", pf.view.project));
             }
-            // An answer asked about a decision names one that is in the log (round 2v).
-            if let Some(a) = &pf.answered {
-                for x in &a.items {
-                    if let Some(id_) = &x.decision
-                        && !pf
-                            .decisions
-                            .as_ref()
-                            .is_some_and(|d| d.items.iter().any(|i| &i.id == id_))
-                    {
-                        bad.push(format!(
-                            "projects/{id}/answered.json: \"{}\" asks about {id_}, not in decisions.json",
-                            x.title
-                        ));
-                    }
-                }
-            }
-            // One decision, one surface (round 2l): the log marks a new one, New never lists it.
-            for it in &pf.view.new {
-                if matches!(it.kind, ItemKind::Decision | ItemKind::Recheck | ItemKind::Redecided) {
-                    bad.push(format!(
-                        "projects/{id}/view.json: new lists a decision ({}); mark it new in decisions.json",
-                        it.text
-                    ));
-                }
-            }
-            if let Some(g) = &pf.view.graph {
-                for l in &g.lanes {
-                    if l.merged.is_some() == l.tip.is_some() {
-                        bad.push(format!(
-                            "projects/{id}/view.json: lane {} needs exactly one of merged, tip",
-                            l.branch
-                        ));
-                    }
-                }
-            }
-        }
-        for r in &self.review.rechecks {
-            project("review.json recheck", &r.project, &mut bad);
-        }
-        for b in &self.review.next_week {
-            project("review.json next week", &b.project, &mut bad);
         }
         bad
     }
@@ -406,23 +265,6 @@ fn read_opt<T: serde::de::DeserializeOwned>(dir: &Path, file: &str) -> Result<Op
     } else {
         Ok(None)
     }
-}
-
-/// Every `<sub>/<name>.json`, keyed by name. A missing directory is an empty map.
-fn read_dir<T: serde::de::DeserializeOwned>(dir: &Path, sub: &str) -> Result<BTreeMap<String, T>> {
-    let mut out = BTreeMap::new();
-    let Ok(entries) = std::fs::read_dir(dir.join(sub)) else {
-        return Ok(out);
-    };
-    for e in entries {
-        let path = e?.path();
-        if path.extension().is_some_and(|x| x == "json")
-            && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
-        {
-            out.insert(stem.to_string(), read(dir, &format!("{sub}/{stem}.json"))?);
-        }
-    }
-    Ok(out)
 }
 
 fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) {
@@ -476,13 +318,6 @@ mod tests {
     }
 
     #[test]
-    fn an_overfull_queue_is_caught() {
-        let mut fx = default_set();
-        fx.explore.queue_cap = 3;
-        assert!(fx.check().iter().any(|b| b.contains("in a queue that holds 3")));
-    }
-
-    #[test]
     fn usage_that_does_not_add_up_is_caught() {
         let mut fx = default_set();
         fx.usage.week_pct = 12.0;
@@ -490,16 +325,8 @@ mod tests {
     }
 
     #[test]
-    fn an_ink_item_with_no_fixture_is_caught() {
-        let mut fx = default_set();
-        fx.ink.clear();
-        assert!(fx.check().iter().any(|b| b.contains("does not exist")));
-    }
-
-    #[test]
     fn an_unknown_field_fails_the_load() {
-        let r: Result<Home, _> =
-            serde_json::from_str(r#"{"mail":{"need_reply":0,"deadlines_proposed":0},"atended":"quast"}"#);
+        let r: Result<Home, _> = serde_json::from_str(r#"{"mail":{"need_reply":0},"atended":"quast"}"#);
         assert!(r.unwrap_err().to_string().contains("unknown field `atended`"));
     }
 }

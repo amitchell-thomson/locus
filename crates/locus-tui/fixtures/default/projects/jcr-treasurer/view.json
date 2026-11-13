@@ -1,9 +1,4 @@
 {
   "project": "jcr-treasurer",
-  "where_you_are": {
-    "state": "Its mail, invoices and dates collect here as they are filed for it.",
-    "next": "nothing recorded yet"
-  },
-  "new": [],
   "sessions": []
 }

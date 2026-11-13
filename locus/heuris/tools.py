@@ -653,6 +653,12 @@ def timeline(conn: sqlite3.Connection, about: str, *, since: str | None = None, 
 # facts (H2.1)
 
 PER_SUBJECT = 8
+SLOT_FIRST = ("goal", "decision", "plan", "preference", "stage", "turn", "offer")
+
+
+def _slot_rank(slot: str) -> int:
+    family = slot.split(":", 1)[0]
+    return SLOT_FIRST.index(family) if family in SLOT_FIRST else len(SLOT_FIRST)
 
 
 def facts_block(conn: sqlite3.Connection, subject: str | None = None) -> str:
@@ -677,11 +683,14 @@ def facts_block(conn: sqlite3.Connection, subject: str | None = None) -> str:
     out = [head]
     for subj in order:
         rows = by[subj]
-        # Single slots first (stage, turn), then named ones; the newest first within each.
-        rows.sort(key=lambda f: (":" in f.slot, f.slot))
+        # What steers an answer first (his goals, decisions and plans, then stage and turn), then
+        # the rest by slot. Alphabetical alone put `achievement:` and `contact:` first and cut his
+        # goal off the no-argument context, so an offer question never saw it (H2.10, Y1).
+        rows.sort(key=lambda f: (_slot_rank(f.slot), ":" in f.slot, f.slot))
         name = registry.entries().get(subj, {}).get("name", subj)
         out.append(f"  {name} [{subj}]:")
-        shown = rows if subject else rows[:PER_SUBJECT]
+        # His own facts are shown whole: they are few and are what every question about him needs.
+        shown = rows if subject or subj == "me" else rows[:PER_SUBJECT]
         for f in shown:
             src = "; ".join(f.sources[:2])
             out.append(f"    {f.slot} = {f.value}  (as of {f.as_of}; {src}) [fact:{f.id}]")

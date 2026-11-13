@@ -191,3 +191,13 @@ def test_a_proposal_approved_as_corrected(conn):
     assert w.fact.sources[-1].startswith("corrected by him in Approve") and "was: QD alongside a pod" in w.fact.sources[-1]
     q = F.propose(conn, "me", "location", "Oxford", sources=SRC, route="mail", why="x")
     assert F.approve(conn, q.fact.id, value="Oxford").fact.sources == SRC
+
+
+def test_his_goal_leads_the_unfiltered_context_and_his_facts_are_whole(conn):
+    for i in range(10):
+        F.write(conn, "me", f"achievement:a{i}", f"prize {i}", sources=["mail:x/1/1"], route="mail", as_of="2026-10-01")
+    F.write(conn, "me", "goal:long-term-role", "QT or QR beside a systematic pod", sources=["chat"], route="chat",
+            as_of="2026-10-30")
+    out = ht.facts_block(conn)
+    me = out.split("[me]:")[1]
+    assert me.index("goal:long-term-role") < me.index("achievement:a0") and "more: facts(subject=\"me\")" not in out

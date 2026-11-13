@@ -314,3 +314,30 @@ reason.
   own chat.
 - **The key change is a habit change.** One walk-through with you before it ships. The help is
   generated, so it cannot drift.
+
+---
+
+## Progress (13 Nov, evening)
+
+- **C1 done.** The kairos window refuses to move, stretch, delete or mark "not going" one lecture
+  of a series (`SERIES_ONLY`, test `kairos-tui/tests/series.rs`), and a series change proposed by
+  Claude says "(every occurrence)". **D3a done:** `risk::is_live_event_op` (policy table updated,
+  MCP instructions and SPEC say so).
+- **C2 done.** 33,701 lines deleted (Python under `locus/` 45,241 → 23,590); 29 CLI commands
+  left; 0 modules unreachable from the live roots; the suite is 770 passed, 0 failed. The
+  discover-pull, maintain, daily, daily-pull, discover-harvest and receiver units are removed from
+  the server; five timers remain (backup, capture, watch, heuris, heuris-derive). The library's
+  entity arm is gone: `search` now finds the GPTQ reading notes Q10 missed. Kept on purpose:
+  `observe/gates` (heuris records to it), `vault`'s writer (capture's Related block),
+  `enrich/related` (now on library search + rerank), `eval/metrics` (audit, inspect).
+- **C3 done.** locus-tui lost the Project window and every sample-data screen (Project,
+  Decisions, Changes, Answered, Application, Prep, Explore, Review, Search, InkConfirm): about
+  13,900 lines from the two crates. System and Budget are live from `locus home-system` (timers
+  with last result and next run, the credit this cycle, today's allowance, each day by job, this
+  cycle's jobs). ⏎ on a project switches to its tmux session; ⏎ on an application starts a Home
+  chat question; `/` opens the chat; `R` and `W` are gone. Windows are 1 home, 2 calendar,
+  3 mail, 4 fix.
+- **Still to do:** C4 (one key table), C6 (mail reading; keryx's own chat), C7 (rebuilds reach
+  the windows), C8 (CLAUDE.md and the docs layout); the stale stdio `locus mcp` registration in
+  the quast project; `scripts/` holds ~32 analysis scripts that import deleted modules (kept as
+  evidence, they no longer run).

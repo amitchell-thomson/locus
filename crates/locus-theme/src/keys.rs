@@ -9,6 +9,13 @@
 //! An app's own keys are allowed only for what the table does not cover: day and week movement in
 //! kairos, reply in keryx, a section's own verbs. [`app_key_is_free`] is what their tests use to
 //! prove an app key never shadows a table key.
+//!
+//! `g` is not in the table. For one evening it was "go to" (`g h` home, `g a` approve, `g c` the
+//! calendar...) in every app; Alec, after trying it (13 Nov): "the g - something keys feel weird,
+//! across the board, it only really made sense in mail to take you to inboxes, drafts etc..., but
+//! in home and calendar it is just odd." So `g` is an app's own key again: keryx's lists, nothing
+//! in Home or the calendar. Home's section letters and screen keys came back, and the calendar's
+//! capitals (`A` approve, `T` tasks, `P` projects) open Home's screens.
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use unicode_width::UnicodeWidthStr;
@@ -40,7 +47,9 @@ pub enum Action {
     Search,
     /// `ctrl-r`: refresh from the source now.
     Refresh,
-    /// `g`, then a letter: go to a place ([`Place`]).
+    /// Deprecated: never returned by [`action`] and not in [`TABLE`] (`g` is an app's own key
+    /// again, 13 Nov). Kept only so keryx, which still names it, compiles until it handles `g`
+    /// itself; then remove it.
     GoTo,
     /// `?`: the keys.
     Help,
@@ -60,7 +69,6 @@ pub const TABLE: &[(Action, &str, &str)] = &[
     (Action::Mark, "v", "mark several"),
     (Action::Search, "/", "search"),
     (Action::Refresh, "^r", "refresh"),
-    (Action::GoTo, "g", "go to… (then a letter)"),
     (Action::Help, "?", "keys"),
 ];
 
@@ -86,7 +94,6 @@ pub fn action(key: KeyEvent) -> Option<Action> {
         KeyCode::Char('x') => Some(Action::Remove),
         KeyCode::Char('v') => Some(Action::Mark),
         KeyCode::Char('/') => Some(Action::Search),
-        KeyCode::Char('g') => Some(Action::GoTo),
         KeyCode::Char('?') => Some(Action::Help),
         _ => None,
     }
@@ -98,8 +105,9 @@ pub fn app_key_is_free(key: &str) -> bool {
     !TABLE.iter().any(|(_, k, _)| *k == key)
 }
 
-/// A place `g` reaches. Home, Approve, Tasks and Log are screens of the Home window; Calendar and
-/// Mail are their own windows in the `locus` tmux session.
+/// Deprecated shim: the places `g` reached while it was a shared key (13 Nov, one evening).
+/// Nothing in Home or the calendar uses it; keryx still names it for its own `g` until it
+/// handles `g` itself. Not listed by [`help`]. Remove with [`Action::GoTo`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Place {
     Home,
@@ -110,7 +118,7 @@ pub enum Place {
     Log,
 }
 
-/// `g` then this letter.
+/// Deprecated shim, see [`Place`].
 pub const PLACES: &[(char, Place, &str)] = &[
     ('h', Place::Home, "home"),
     ('a', Place::Approve, "approve"),
@@ -120,13 +128,13 @@ pub const PLACES: &[(char, Place, &str)] = &[
     ('l', Place::Log, "log"),
 ];
 
-/// The place `g <c>` goes to.
+/// Deprecated shim, see [`Place`].
 pub fn place(c: char) -> Option<Place> {
     PLACES.iter().find(|(k, _, _)| *k == c).map(|(_, p, _)| *p)
 }
 
 impl Place {
-    /// The `locus` session's window that shows this place (`locus-session.sh select <view>`).
+    /// The `locus` session's window that shows this place.
     pub fn view(self) -> &'static str {
         match self {
             Place::Home | Place::Approve | Place::Tasks | Place::Log => "home",
@@ -136,8 +144,7 @@ impl Place {
     }
 }
 
-/// Show the `locus` session's window for `view` (home, calendar, mail; [`Place::view`]) on this
-/// client, as its Alt key would. Outside tmux it does nothing and says so: tests and dumps never
+/// Show the `locus` session's window for `view` (home, calendar, mail) on this client, as its Alt key would. Outside tmux it does nothing and says so: tests and dumps never
 /// touch tmux. A window that is missing is made by `locus-session.sh select`, found through the
 /// `@locus-tmux-dir` option `locus.tmux` sets.
 pub fn show_window(view: &str) -> Result<(), String> {
@@ -177,15 +184,12 @@ fn tmux(args: &[&str]) -> bool {
         .is_ok_and(|s| s.success())
 }
 
-/// The help screen's lines: the shared table, the `g` places, then the app's own keys.
+/// The help screen's lines: the shared table, then the app's own keys.
 pub fn help(app_keys: &[(&str, &str)]) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = TABLE
         .iter()
         .map(|(_, k, w)| ((*k).to_string(), (*w).to_string()))
         .collect();
-    for (c, _, w) in PLACES {
-        out.push((format!("g {c}"), (*w).to_string()));
-    }
     for (k, w) in app_keys {
         out.push(((*k).to_string(), (*w).to_string()));
     }
@@ -193,13 +197,12 @@ pub fn help(app_keys: &[(&str, &str)]) -> Vec<(String, String)> {
 }
 
 /// [`help`] drawn for the `?` overlay, in two columns so it fits a window: on the left the
-/// shared keys and the `g` places under "everywhere", on the right the app's own under
+/// shared keys under "everywhere", on the right the app's own under
 /// `app_title`. `width` is the overlay's inner width; descriptions are cut to fit.
 pub fn help_lines(app_title: &str, app_keys: &[(&str, &str)], width: u16) -> Vec<ratatui::text::Line<'static>> {
     use ratatui::text::{Line, Span};
     let all = help(app_keys);
-    let shared = TABLE.len() + PLACES.len();
-    let (left, right) = all.split_at(shared.min(all.len()));
+    let (left, right) = all.split_at(TABLE.len().min(all.len()));
     let col = usize::from(width) / 2;
     let kw = all.iter().map(|(k, _)| k.width()).max().unwrap_or(0).clamp(4, 14) + 2;
     let cell = |k: &str, w: &str| -> Vec<Span<'static>> {
@@ -258,10 +261,12 @@ mod tests {
     }
 
     #[test]
-    fn places_are_unique_and_help_lists_them() {
-        let mut seen = std::collections::HashSet::new();
-        assert!(PLACES.iter().all(|(c, _, _)| seen.insert(*c)));
+    fn g_is_an_apps_own_key_and_help_lists_no_places() {
+        assert_eq!(action(k('g')), None);
+        assert!(app_key_is_free("g"));
+        assert!(!TABLE.iter().any(|(a, _, _)| *a == Action::GoTo));
         let h = help(&[("r", "reply")]);
-        assert!(h.iter().any(|(k, _)| k == "g m") && h.last().unwrap().0 == "r");
+        assert_eq!(h.len(), TABLE.len() + 1);
+        assert!(!h.iter().any(|(k, _)| k.starts_with("g ")) && h.last().unwrap().0 == "r");
     }
 }

@@ -309,7 +309,7 @@ def library_candidates(query: str, *, kind=None, area=None, since=None, until=No
     from locus.agent.state import owner_authored_sql
     from locus.config import load
     from locus.db.connection import get_connection
-    from locus.retrieve import Facets
+    from locus.retrieve.search import Facets
     from locus.retrieve.search import search as lib_search
 
     facets = Facets(since=since, until=until, category=AREA_CATEGORY.get(area) if area else None)

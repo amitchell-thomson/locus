@@ -1,8 +1,14 @@
-"""Candidate generation: dense KNN (propositions/chunks/sections) + lexical FTS5 + entities.
+"""Candidate generation: dense KNN (propositions/chunks/sections) + lexical FTS5 + file paths.
 
 Hybrid retrieval (§7 + §15.2): the dense arms match on meaning; the lexical (BM25) arm catches
-exact symbols/terms/names that a general embedder blurs; the entity arm boosts sections naming
-a query entity. Candidates are merged and de-duplicated by (kind, id); scores are NOT comparable
+exact symbols/terms/names that a general embedder blurs; the path arm surfaces a code file the
+query names.
+
+The entity-anchored arm was REMOVED in Slice C (C2, 13 Nov 2026). It matched the query against
+`entity_aliases`, which only `locus link` builds, and that last ran on 19 Oct: the 8,787 entities
+of the 121 documents ingested since were never matched, silently, while the arm kept answering
+for the older ones. An arm that covers a shrinking, invisible fraction of the library is worse
+than none. Candidates are merged and de-duplicated by (kind, id); scores are NOT comparable
 across arms — the cross-encoder rerank (rerank.py) is what actually orders them.
 """
 
@@ -14,11 +20,6 @@ from dataclasses import dataclass, field
 
 from locus.config import load
 from locus.ingest.embed import embed_text
-from locus.link.related import aliases_built
-
-# Entity-arm bounds: ignore very short names, and cap how many entity candidates we add.
-_MIN_ENTITY_LEN = 4
-_MAX_ENTITY_CANDIDATES = 10
 
 # Path-arm bounds (round-3 evaluation: source files under-retrieve against the prose about
 # them — "the evaluation module" must surface regimes/evaluation.py). File stems too generic
@@ -38,7 +39,7 @@ class Candidate:
     section_id: int | None
     text: str
     score: float  # arm-specific (vec distance or bm25); not cross-arm comparable
-    sources: set[str] = field(default_factory=set)  # 'dense' | 'lexical' | 'entity' | 'path'
+    sources: set[str] = field(default_factory=set)  # 'dense' | 'lexical' | 'path'
     rerank_score: float | None = None
     file_path: str | None = None  # code provenance; lets selection prefer source units
 
@@ -216,48 +217,5 @@ def search(conn, query: str, facets: Facets | None = None) -> list[Candidate]:
             add("section", r["id"], r["doc_id"], r["id"], r["summary"], 0.0, "path",
                 file_path=r["file_path"])
             path_added += 1
-
-    # --- entity-anchored: sections naming an entity that appears in the query ---
-    # With the alias substrate built (`locus link`, step 12), matching is canonical-group
-    # aware: a query naming ANY variant ("KL divergence") surfaces sections naming any
-    # sibling variant ("Kullback-Leibler (KL) divergence"). Before the first link run the
-    # table is empty and matching falls back to raw entity names (pre-step-12 behaviour).
-    added = 0
-    if aliases_built(conn):
-        matched: set[tuple[str, str]] = set()
-        for r in conn.execute(
-            "SELECT variant_name, canonical_name, canonical_type FROM entity_aliases"
-        ):
-            name = r["variant_name"] or ""
-            if len(name) >= _MIN_ENTITY_LEN and name.lower() in q_lower:
-                matched.add((r["canonical_name"], r["canonical_type"]))
-        for canon_name, canon_type in sorted(matched):  # deterministic under the cap
-            if added >= _MAX_ENTITY_CANDIDATES:
-                break
-            for r in conn.execute(
-                "SELECT DISTINCT e.section_id, e.doc_id, s.summary, s.file_path "
-                "FROM entity_aliases a "
-                "JOIN entities e ON e.name = a.variant_name AND e.type = a.variant_type "
-                "JOIN sections s ON s.id = e.section_id "
-                "WHERE a.canonical_name = ? AND a.canonical_type = ?",
-                (canon_name, canon_type),
-            ):
-                if added >= _MAX_ENTITY_CANDIDATES:
-                    break
-                add("section", r["section_id"], r["doc_id"], r["section_id"], r["summary"],
-                    0.0, "entity", file_path=r["file_path"])
-                added += 1
-    else:
-        for r in conn.execute(
-            "SELECT DISTINCT e.name, e.section_id, e.doc_id, s.summary, s.file_path "
-            "FROM entities e JOIN sections s ON s.id = e.section_id"
-        ):
-            if added >= _MAX_ENTITY_CANDIDATES:
-                break
-            name = r["name"] or ""
-            if len(name) >= _MIN_ENTITY_LEN and name.lower() in q_lower:
-                add("section", r["section_id"], r["doc_id"], r["section_id"], r["summary"], 0.0,
-                    "entity", file_path=r["file_path"])
-                added += 1
 
     return list(out.values())

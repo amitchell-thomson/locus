@@ -51,7 +51,7 @@ def _facets(args):
     """
     from datetime import date
 
-    from locus.retrieve import Facets
+    from locus.retrieve.search import Facets
 
     for field in ("since", "until"):
         value = getattr(args, field, None)

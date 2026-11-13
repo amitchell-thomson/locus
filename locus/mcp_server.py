@@ -4,20 +4,14 @@ WHAT THIS IS
 ------------
 A Model Context Protocol server that makes the Locus corpus callable as *tools* from any MCP
 client — Claude Code, the Claude desktop app, or the API. It is the daily-utility surface over
-the corpus: instead of shelling into `locus query`, the model calls a tool and pulls the owner's
+the corpus: the model calls a tool and pulls the owner's
 knowledge into its own context on demand.
 
-ARCHITECTURE (local Claude <-> server-side corpus)
---------------------------------------------------
-The MCP *server* runs **where the corpus lives** (it needs the SQLite DB + sqlite-vec, Ollama
-for query embedding, and the cross-encoder reranker). The MCP *client* is the local Claude. The
-recommended transport is **stdio over SSH**: the client spawns
-
-    ssh locus-server "cd /…/locus && uv run locus mcp"
-
-so the server process runs remotely and its stdio is tunnelled over the SSH connection the owner
-already uses — no open ports, no extra auth. The process stays alive for the session, so the
-embedder + reranker load once and stay warm (they are process-level caches).
+TRANSPORT
+---------
+One HTTP service on the server (`locus serve`, Slice 0.6) behind a bearer token, and the public
+listener (`locus serve-public`, H1.10) behind OAuth. The stdio `locus mcp` (one process per chat
+over SSH) was removed in Slice C (C2). One process, so the embedder and reranker load once.
 
 TOOLS (since H1, 10 Nov 2026)
 -----
@@ -30,7 +24,7 @@ TOOLS (since H1, 10 Nov 2026)
 - markups        : find a marked-up document on the device and return its inked pages. FREE.
 
 Retired in H1 (D6): retrieve, query, list_documents, inspect_document, critique, synthesise,
-objects, evolution. Their engines stay until heuris G's drop list is decided.
+objects, evolution. Their engines were deleted in Slice C (C2).
 
 COST NOTE: no advertised tool spends against the API key. search, open, timeline and context
 are local (Ollama embedding, CPU reranker); the billable `query` tool is retired.
@@ -38,22 +32,15 @@ are local (Ollama embedding, CPU reranker); the billable `query` tool is retired
 
 from __future__ import annotations
 
-import json
 import time
 import traceback
-from datetime import date
 from pathlib import Path
 
 from locus.config import load
 from locus.db.connection import get_connection
 from locus.observe import mcp_log
-from locus.retrieve import Facets
 
-# Bound the size of read-only listings/inspections returned to the client.
-_MAX_INSPECT_PROPS = 40
-_MAX_INSPECT_ENTITIES = 40
-
-# The build this PROCESS started with, and its pid. Set by `run()`; a server built directly
+# The build this PROCESS started with, and its pid. Set by `serve()`/`serve_public()`; a server built directly
 # (tests) reports "unstarted". Both travel into the call log and into the message a failing
 # tool returns, because "which server was I even talking to" is the first question every time.
 _SERVER_BUILD = "unstarted"
@@ -97,7 +84,7 @@ def _stale_note() -> str:
     # it.
     if _commit_of(current) not in ("unknown", _commit_of(_SERVER_BUILD)):
         note = (
-            f"[locus mcp is STALE — this server process started at build {_SERVER_BUILD} and "
+            f"[locus server is STALE — this process started at build {_SERVER_BUILD} and "
             f"the checkout is now at {current}. It is still running the OLD code. Restart the "
             "MCP server (a new session, or reconnect it) before trusting this result or "
             "reporting a bug against it.]"
@@ -270,9 +257,8 @@ def _build(enable_query: bool = False, host: str = "127.0.0.1", public=None) -> 
         return deco
 
     # Retired in H1 (D6, 10 Nov): retrieve and query (search replaces them), list_documents and
-    # inspect_document (open), critique, synthesise, objects and evolution (heuris G's drop list).
-    # The code behind them stays until the drop list is decided; only the tools went, so every
-    # chat sees one way to find things.
+    # inspect_document (open), critique, synthesise, objects and evolution. Their engines were
+    # deleted in Slice C (C2).
     _register_heuris(tool)
     if public is not None:
         _login_routes(mcp, public[0])
@@ -814,186 +800,6 @@ def _login_routes(mcp, provider) -> None:
         return RedirectResponse(url, status_code=302)
 
 
-# --- shared helpers ----------------------------------------------------------------------
-
-
-def _confidence_banner(result) -> str:
-    """The coverage warning the 2026-06-05 evaluation found missing: weak matches must not
-    arrive looking like strong ones. Empty when retrieval is confident. Wording is shared
-    (retrieve.confidence_banner) and band-aware, so cross-domain queries aren't mislabelled
-    as absent topics."""
-    from locus.retrieve.pipeline import confidence_banner
-
-    text = confidence_banner(getattr(result, "confidence_band", None))
-    return f"{text}\n\n" if text else ""
-
-
-def _figure_images(result) -> list:
-    """Retrieved figures as MCP content: a text label + an Image block per figure.
-
-    The actual image rides along with the assembled text (tier 3, §15.1) so the client
-    model can interpret the figure directly. FastMCP flattens a mixed [str | Image] return
-    into TextContent/ImageContent blocks. Gated by [mcp].include_figure_images; a missing
-    or unreadable PNG silently degrades to text-only (the figure's caption+description are
-    already in the context).
-    """
-    figures = getattr(result, "figures", None)
-    if not figures or not load().mcp.include_figure_images:
-        return []
-    from mcp.server.fastmcp import Image  # lazy, like the FastMCP import in _build
-
-    from locus.retrieve.figure_images import load_figure_png
-
-    out: list = []
-    attached = 0
-    for fig in figures:  # already best-first and capped at [figures].image_cap
-        png = load_figure_png(fig.raw_path)
-        if png is None:
-            continue
-        unit = "slide " if fig.kind == "slide" else "figure on p."
-        out.append(f"[{unit}{fig.page} of \"{fig.doc_title}\"]")
-        out.append(Image(data=png, format="png"))
-        attached += 1
-    cited = getattr(result, "figures_cited", 0)
-    if attached and cited > attached:
-        # Say the truncation out loud: a "[figure on p.N]" citation without an attached
-        # image otherwise reads as drift (2026-06-06 audit finding).
-        out.append(
-            f"({cited} figures cited above; the {attached} most relevant attached as images)"
-        )
-    return out
-
-
-def _sources(result) -> str:
-    """Format citations annotated with document category + best rerank score.
-
-    Falls back to the plain citation strings when details are absent (e.g. a stubbed result).
-    """
-    details = getattr(result, "citation_details", None)
-    if not details:
-        return "\n".join(f"- {c}" for c in result.citations) or "- (none)"
-    doc_ids = sorted({d.doc_id for d in details})
-    categories: dict[int, str | None] = {}
-    conn = get_connection(load().paths.db)
-    try:
-        placeholders = ",".join("?" * len(doc_ids))
-        for row in conn.execute(
-            f"SELECT id, category FROM documents WHERE id IN ({placeholders})", doc_ids
-        ):
-            categories[row["id"]] = row["category"]
-    finally:
-        conn.close()
-    lines = []
-    for d in details:
-        tags = [t for t in (categories.get(d.doc_id),) if t]
-        tags.append(f"rerank {d.rerank_score:+.2f}" if d.rerank_score is not None else "rerank n/a")
-        lines.append(f"- {d.text} [{', '.join(tags)}]")
-    return "\n".join(lines)
-
-
-def _validate_dates(since: str | None, until: str | None) -> None:
-    for label, value in (("since", since), ("until", until)):
-        if value is not None:
-            try:
-                date.fromisoformat(value)
-            except ValueError as exc:
-                raise ValueError(f"{label} must be an ISO date (YYYY-MM-DD); got {value!r}") from exc
-
-
-def _facets(since: str | None, until: str | None, category: str | None) -> Facets | None:
-    """Build a validated Facets, or None when no facet is set (unrestricted retrieval)."""
-    _validate_dates(since, until)
-    facets = Facets(since=since, until=until, category=category)
-    return facets if facets.active() else None
-
-
-def _resolve_doc(conn, ident: str):
-    """Resolve a document row by numeric id, or by a unique substring of title/source path."""
-    if ident.isdigit():
-        return conn.execute("SELECT * FROM documents WHERE id=?", (int(ident),)).fetchone()
-    rows = conn.execute(
-        "SELECT * FROM documents WHERE title LIKE ? OR source_uri LIKE ? ORDER BY id",
-        (f"%{ident}%", f"%{ident}%"),
-    ).fetchall()
-    if len(rows) == 1:
-        return rows[0]
-    return None  # zero or ambiguous -> caller reports
-
-
-def _inspect(conn, ident: str, section: int | None) -> str:
-    doc = _resolve_doc(conn, ident)
-    if doc is None:
-        return f"No unique document matches {ident!r}. Use `list_documents` to find its id."
-
-    doc_id = doc["id"]
-    out: list[str] = [
-        f"[{doc_id}] {doc['title']}",
-        f"  source   : {doc['source_uri']}",
-        f"  type     : {doc['source_type']} | date {doc['source_date'] or '—'} | "
-        f"category {doc['category'] or '—'}",
-        f"  ingested : {doc['ingested_at']} (model {doc['ingest_model']})",
-        "",
-        "SYNTHESIS",
-    ]
-    for field in ("thesis", "method", "result", "limitations"):
-        out.append(f"  {field:<12}: {doc[field]}")
-    # Knowledge gaps only — pipeline audit-trail lines (OCR fallbacks, CUDA tracebacks)
-    # leaked into the client-facing surface (round-4/5 audits); they live in `locus audit`.
-    from locus.eval.metrics import semantic_gaps
-
-    gaps = semantic_gaps(json.loads(doc["gap_flags"] or "[]"))
-    out.append(f"  gaps ({len(gaps)}):")
-    out.extend(f"    - {g}" for g in gaps)
-
-    from locus.link.related import format_related
-
-    out.append("")
-    out.extend(format_related(conn, doc_id))
-
-    section_map = {m["position"]: m for m in json.loads(doc["section_map"] or "[]")}
-    rows = conn.execute(
-        "SELECT * FROM sections WHERE doc_id=? ORDER BY position", (doc_id,)
-    ).fetchall()
-    by_pos = {s["position"]: s for s in rows}
-    positions = [section] if section is not None else sorted(by_pos)
-
-    for pos in positions:
-        s = by_pos.get(pos)
-        if s is None:
-            continue
-        pm = section_map.get(pos, {})
-        out.append(
-            f"\n### Section {pos}: {s['title']!r} "
-            f"(pp {pm.get('page_start', '?')}-{pm.get('page_end', '?')})"
-        )
-        out.append(f"  SUMMARY: {s['summary']}")
-        props = conn.execute(
-            "SELECT text FROM propositions WHERE section_id=? ORDER BY position LIMIT ?",
-            (s["id"], _MAX_INSPECT_PROPS),
-        ).fetchall()
-        out.append(f"  PROPOSITIONS ({len(props)}):")
-        out.extend(f"    - {p['text']}" for p in props)
-        ents = conn.execute(
-            "SELECT name, type FROM entities WHERE section_id=? ORDER BY type, name LIMIT ?",
-            (s["id"], _MAX_INSPECT_ENTITIES),
-        ).fetchall()
-        out.append(f"  ENTITIES ({len(ents)}):")
-        out.extend(f"    - {e['name']} ({e['type']})" for e in ents)
-        figs = conn.execute(
-            "SELECT page, kind, caption, description FROM figures "
-            "WHERE section_id=? ORDER BY position",
-            (s["id"],),
-        ).fetchall()
-        if figs:
-            out.append(f"  FIGURES ({len(figs)}):")
-            for f in figs:
-                label = f"p.{f['page']} {f['kind']}"
-                body = f["caption"] or f["description"] or "(no caption/description)"
-                out.append(f"    - [{label}] {body}")
-
-    return "\n".join(out)
-
-
 def _build_stamp() -> str:
     """A one-line build identifier (git commit + date + dirty flag) for the startup log.
 
@@ -1020,38 +826,6 @@ def _build_stamp() -> str:
         return f"{commit}{dirty} ({when})" if when else f"{commit}{dirty}"
     except Exception:
         return "unknown"
-
-
-def run(enable_query: bool = False) -> None:
-    """Run the MCP server over stdio (the transport used for stdio-over-SSH).
-
-    `enable_query` opts into the billable server-side `query` tool (default off).
-    """
-    import os
-    import sys
-
-    global _SERVER_BUILD, _SERVER_PID
-    _SERVER_BUILD = _build_stamp()
-    _SERVER_PID = os.getpid()
-
-    # stderr ONLY — stdout carries the JSON-RPC protocol on the stdio transport. This is the
-    # version-at-connect-time stamp; a stale server is otherwise invisible (see _build_stamp).
-    print(
-        f"locus mcp starting — build {_SERVER_BUILD} | pid {_SERVER_PID}"
-        + (" | query ENABLED (billable)" if enable_query else ""),
-        file=sys.stderr,
-        flush=True,
-    )
-    # The same fact, written where it OUTLIVES the process. stderr goes to the client and is
-    # gone when the client is; the question "which build was that session actually running"
-    # is always asked afterwards, about a session that has already ended.
-    mcp_log.record("server_start", build=_SERVER_BUILD, query_enabled=enable_query)
-    # No matching "stop" event, deliberately. An `atexit` hook does not run on SIGKILL or on the
-    # SIGTERM a client sends when it drops the server — which are exactly the exits worth
-    # knowing about — so it would record the ordinary case and miss every interesting one.
-    # `live_servers` decides liveness by signalling the pid instead, which needs no cooperation
-    # from a process that has already died.
-    _build(enable_query=enable_query).run()
 
 
 class _Arrivals:

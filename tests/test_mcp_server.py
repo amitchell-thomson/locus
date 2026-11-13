@@ -81,48 +81,11 @@ def _text(call_result) -> str:
     return blocks[0].text
 
 
-
-def test_facets_validation_and_active():
-    assert mcp_server._facets(None, None, None) is None  # nothing set -> unrestricted
-    f = mcp_server._facets("2023-01-01", None, "paper")
-    assert f is not None and f.since == "2023-01-01" and f.category == "paper"
-    with pytest.raises(ValueError):
-        mcp_server._facets("not-a-date", None, None)
-
-
-
-
-
-
-
-
-def test_sources_fall_back_to_plain_citations():
-    # A result without citation_details (e.g. older callers) renders the plain strings.
-    result = types.SimpleNamespace(citations=["plain cite"], citation_details=[])
-    assert mcp_server._sources(result) == "- plain cite"
-
-
-
 def test_build_stamp_is_nonempty_and_never_raises():
     # In this repo it resolves to a real commit; off-git it degrades to 'unknown' — but it
     # is always a non-empty string and never raises (best-effort startup log).
     stamp = mcp_server._build_stamp()
     assert isinstance(stamp, str) and stamp
-
-
-def test_run_logs_build_stamp_to_stderr_not_stdout(monkeypatch, capsys):
-    # The stamp MUST go to stderr: stdout is the JSON-RPC channel on the stdio transport,
-    # so anything printed there would corrupt the protocol. Stub _build so run() doesn't block.
-    started = {}
-    monkeypatch.setattr(
-        mcp_server, "_build",
-        lambda enable_query=False: types.SimpleNamespace(run=lambda: started.update(ran=True)),
-    )
-    mcp_server.run(enable_query=False)
-    captured = capsys.readouterr()
-    assert started.get("ran")  # the server was actually handed off to .run()
-    assert "locus mcp starting" in captured.err and "build" in captured.err
-    assert captured.out == ""  # nothing leaked onto the protocol channel
 
 
 def test_to_remarkable_passes_content_through_and_reports_the_device_path(monkeypatch):

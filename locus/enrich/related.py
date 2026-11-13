@@ -7,7 +7,11 @@ relates to, automatically.
 
 Design guarantees:
   - **Grounded or silent (invariant 3).** Each line is a document that retrieval actually surfaced
-    for this note; if retrieval is low-confidence or empty, NO block is written (no invented links).
+    for this note AND that the cross-encoder scored at or above `[retrieve].min_rerank_score`; if
+    nothing clears the floor, NO block is written (no invented links).
+  - **The same library search heuris uses** (`retrieve.search` + `retrieve.rerank`), since Slice
+    C (C2). It used the old full pipeline (expand, assemble, the facet-aware banner), which
+    dragged the daily-page engine in behind every capture.
   - **Joins-only, no inference.** The block is a deterministic join over retrieved citations — no
     LLM in this pass, so it can't hallucinate a connection. (LLM phrasing is a later option, §10.)
   - **Owned-block write.** Goes through `vault.writer.upsert_block`, so it is atomic, provenance-
@@ -54,6 +58,22 @@ def _doc_titles(conn, doc_ids: list[int]) -> dict[int, str]:
     }
 
 
+def library_related(conn, query: str) -> list[tuple[int, float]]:
+    """(doc_id, cross-encoder score) for each library unit the note's text finds that clears the
+    floor. No floor configured keeps every scored unit, as the old pipeline's "flag, never
+    filter" did when it had none."""
+    from locus.config import load
+    from locus.retrieve.rerank import score_pairs
+    from locus.retrieve.search import search
+
+    cands = [c for c in search(conn, query) if c.kind in ("chunk", "proposition", "section")]
+    if not cands:
+        return []
+    scores = score_pairs(query, [c.text for c in cands])
+    floor = load().retrieve.min_rerank_score
+    return [(c.doc_id, s) for c, s in zip(cands, scores) if floor is None or s >= floor]
+
+
 def enrich_note(
     note_path,
     note_text: str,
@@ -66,28 +86,23 @@ def enrich_note(
 ) -> EnrichResult:
     """Retrieve related documents for the note and write a grounded `> [!ai] Related` block.
 
-    `retrieve_fn(query)` defaults to the live pipeline; tests inject a fake. Returns EnrichResult;
-    `wrote_block=False` when retrieval was low-confidence/empty (grounded-or-silent)."""
+    `retrieve_fn(query) -> [(doc_id, score)]` defaults to `library_related`; tests inject a fake.
+    `wrote_block=False` when nothing cleared the floor (grounded-or-silent)."""
     if retrieve_fn is None:
-        from locus.retrieve import retrieve as _retrieve
+        retrieve_fn = lambda q: library_related(conn, q)  # noqa: E731
 
-        retrieve_fn = lambda q: _retrieve(q, conn=conn)  # noqa: E731
-
-    result = retrieve_fn(_query_from_note(note_text))
-    if getattr(result, "low_confidence", False) or not result.citation_details:
+    hits = retrieve_fn(_query_from_note(note_text))
+    if not hits:
         return EnrichResult(related=0, wrote_block=False)
 
     # Distinct documents, best cross-encoder score first.
     best: dict[int, float] = {}
-    for c in result.citation_details:
-        score = c.rerank_score if c.rerank_score is not None else float("-inf")
-        if c.doc_id not in best or score > best[c.doc_id]:
-            best[c.doc_id] = score
+    for doc_id, score in hits:
+        if doc_id not in best or score > best[doc_id]:
+            best[doc_id] = score
     ranked = sorted(best, key=lambda d: best[d], reverse=True)[:top_k]
     titles = _doc_titles(conn, ranked)
     lines = [f"> - [[{titles.get(d) or f'doc {d}'}]]" for d in ranked]
-    if not lines:
-        return EnrichResult(related=0, wrote_block=False)
 
     block = "> [!ai] Related\n" + "\n".join(lines)
     res = writer(note_path, _BLOCK_KIND, block, run_id=run_id)

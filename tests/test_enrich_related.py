@@ -11,7 +11,6 @@ import pytest
 from locus.db.connection import get_connection
 from locus.db.migrate import migrate
 from locus.enrich.related import enrich_note
-from locus.retrieve.assemble import Citation
 
 
 @pytest.fixture()
@@ -30,8 +29,9 @@ def conn(tmp_path: Path):
     c.close()
 
 
-def _result(citations, low_conf=False):
-    return types.SimpleNamespace(low_confidence=low_conf, citation_details=citations)
+def _result(hits):
+    """What `library_related` returns: (doc_id, score) for units that cleared the floor."""
+    return list(hits)
 
 
 def _writer():
@@ -47,11 +47,7 @@ def _writer():
 
 def test_writes_grounded_related_block_by_title(conn):
     # Retrieval surfaces docs 2 (best), 1, and 2 again -> distinct, best-first.
-    cites = [
-        Citation(text="a", doc_id=1, rerank_score=3.0),
-        Citation(text="b", doc_id=2, rerank_score=7.0),
-        Citation(text="c", doc_id=2, rerank_score=1.0),
-    ]
+    cites = [(1, 3.0), (2, 7.0), (2, 1.0)]
     w = _writer()
     r = enrich_note("note.md", "swaps momentum notes", conn=conn, run_id="9",
                     retrieve_fn=lambda q: _result(cites), writer=w)
@@ -64,11 +60,19 @@ def test_writes_grounded_related_block_by_title(conn):
     assert "[[Swaps notes]]" not in body  # doc 3 wasn't retrieved -> not linked (grounded only)
 
 
-def test_low_confidence_writes_no_block(conn):
-    cites = [Citation(text="a", doc_id=1, rerank_score=0.0)]
+def test_nothing_above_the_floor_writes_no_block(conn, monkeypatch):
+    from locus.enrich import related
+    from locus.retrieve import rerank, search
+
+    monkeypatch.setattr(search, "search", lambda conn, q, facets=None: [
+        types.SimpleNamespace(kind="chunk", doc_id=1, text="a")])
+    monkeypatch.setattr(rerank, "score_pairs", lambda q, texts: [-9.0 for _ in texts])
+    monkeypatch.setattr("locus.config.load", lambda: types.SimpleNamespace(
+        retrieve=types.SimpleNamespace(min_rerank_score=0.0)))
+    assert related.library_related(conn, "x") == []
     w = _writer()
     r = enrich_note("note.md", "x", conn=conn, run_id="1",
-                    retrieve_fn=lambda q: _result(cites, low_conf=True), writer=w)
+                    retrieve_fn=lambda q: related.library_related(conn, q), writer=w)
     assert r.wrote_block is False and r.related == 0
     assert w.calls == []  # grounded-or-silent: nothing written
 
@@ -86,7 +90,7 @@ def test_query_strips_page_markers_and_fill_brackets(conn):
 
     def fake_retrieve(q):
         seen["q"] = q
-        return _result([Citation(text="a", doc_id=1, rerank_score=5.0)])
+        return _result([(1, 5.0)])
 
     enrich_note("note.md", "<!-- page 1 -->\nThe ⟦leg⟧ resets on SOFR.", conn=conn, run_id="1",
                 retrieve_fn=fake_retrieve, writer=_writer())

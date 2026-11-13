@@ -51,11 +51,10 @@ def test_counts_and_categories(conn_and_paths):
     assert r.last_ingest == "2026-01-01 00:00:00"
 
 
-def test_warns_when_no_backup_and_no_aliases(conn_and_paths):
+def test_warns_when_no_backup(conn_and_paths):
     r = _collect(conn_and_paths)
     joined = " ".join(r.warnings)
     assert "no backup snapshot found" in joined
-    assert "alias substrate not built" in joined
     # format_status renders without error and echoes the warnings.
     out = format_status(r)
     assert "WARNINGS" in out and "documents" in out

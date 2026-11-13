@@ -1,18 +1,15 @@
 """`locus status` — a one-screen operational health summary.
 
-Production-hardening turned several recurring manual checks into things the owner has to
-remember to run (is the alias substrate stale after an ingest? is a backup recent? does the
-running MCP server predate the last deploy?). This collects them into one command so the
-state of the system is legible at a glance, with explicit WARN lines for the conditions that
-have actually bitten before:
+Recurring manual checks collected into one command, with explicit WARN lines for the conditions
+that have actually bitten before:
 
-  - **alias staleness** — `locus link` builds a TOTAL (name,type)->canonical mapping, so any
-    entity surface absent from entity_aliases means docs were ingested since the last link
-    and the substrate no longer covers the corpus (related-docs/entity-arm silently degrade).
   - **backup age** — the corpus is one SQLite file; "when did I last snapshot it" should not
     require remembering the backup path.
-  - **MCP build drift** — a long-lived stdio-over-SSH server runs its start-time code; the
-    stamp here is the one to compare against the server's startup log (§2 / round-7).
+  - **build drift** — a long-lived server runs its start-time code; the stamp here is the one to
+    compare against the server's startup log.
+
+The alias-substrate block and the reading-discovery counters went with the old engine (Slice C,
+C2): `locus link` no longer runs, so the block only reported a stale table.
 
 Pure collection (collect_status) is separated from rendering (format_status) so the metrics
 are unit-testable without a live process.
@@ -36,18 +33,12 @@ class StatusReport:
     last_ingest: str | None
     unit_counts: dict[str, int]  # chunks/propositions/entities/figures/sections
     vector_total: int            # sum across the four vec0 tables (KNN scale signal)
-    aliases_built: bool
-    alias_cross_doc_canonicals: int
-    alias_uncovered_surfaces: int  # entity (name,type) not yet in entity_aliases -> link stale
     quarantine_count: int      # real ingest FAILURES — a bug to triage (§14)
     db_bytes: int
     last_backup: str | None       # snapshot dir name
     last_backup_age_days: float | None
     build_stamp: str
     warnings: list[str] = field(default_factory=list)
-    # Reading discovery (Phase 4). Optional: a database predating migration 0017 has none of
-    # these tables, and `locus status` must stay useful on one rather than raising.
-    reading: dict[str, int] | None = None
     # Not documents (images, lockfiles, empty files): set aside so they are not retried, and
     # deliberately NOT a warning — only `quarantine_count` means "a bug to triage".
     unsupported_count: int = 0
@@ -69,23 +60,6 @@ def _build_stamp(project_root: Path) -> str:
         return f"{commit}{dirty} ({when})" if when else f"{commit}{dirty}"
     except Exception:
         return "unknown"
-
-
-def _reading_health(conn) -> "dict[str, int] | None":
-    """Reading-discovery counters, or None on a database predating migration 0017."""
-    try:
-        one = lambda sql: conn.execute(sql).fetchone()[0]
-        return {
-            "proposed": one("SELECT COUNT(*) FROM reading_proposals WHERE status='proposed'"),
-            "queued": one("SELECT COUNT(*) FROM reading_proposals WHERE status='candidate'"),
-            "pool": one("SELECT COUNT(*) FROM discovery_candidates"),
-            "accepted": one(
-                "SELECT COUNT(*) FROM reading_proposals WHERE status IN ('accepted','ingested')"),
-            "rejected": one("SELECT COUNT(*) FROM reading_proposals WHERE status='rejected'"),
-            "marks": one("SELECT COALESCE(SUM(marks), 0) FROM reading_targets"),
-        }
-    except Exception:
-        return None
 
 
 def _count(conn, table: str) -> int:
@@ -126,29 +100,6 @@ def collect_status(
         for t in ("chunk_vectors", "section_vectors", "proposition_vectors", "figure_vectors")
     )
 
-    from locus.link.related import aliases_built
-
-    built = aliases_built(conn)
-    cross_doc = 0
-    uncovered = 0
-    if built:
-        from locus.eval.metrics import alias_qc
-
-        qc = alias_qc(conn)
-        cross_doc = qc.cross_doc_canonicals if qc else 0
-        # Total mapping => every entity surface should appear as a variant. Any that don't
-        # were ingested after the last `locus link` and aren't covered by the substrate.
-        uncovered = conn.execute(
-            """
-            SELECT COUNT(*) FROM (
-              SELECT DISTINCT e.name, e.type FROM entities e
-              LEFT JOIN entity_aliases a
-                ON a.variant_name = e.name AND a.variant_type = e.type
-              WHERE a.variant_name IS NULL
-            )
-            """
-        ).fetchone()[0]
-
     def _set_aside(dirname: str) -> int:
         d = incoming / dirname
         if not d.exists():
@@ -183,24 +134,9 @@ def collect_status(
                 pass
 
     warnings: list[str] = []
-    # Uncovered surfaces are no longer a warning: `locus link` left the nightly unit in Slice 0.3
-    # (the linking job of Slice 5 replaces it), so the count only grows and a warning nothing will
-    # clear trains him to ignore the block. The count stays on the `alias substrate` line.
-    if not built:
-        warnings.append("entity-alias substrate not built — run `locus link`")
     if quarantine_count:
         warnings.append(
             f"{quarantine_count} quarantined file(s) under {qdir} — triage them (§14)"
-        )
-    # A question he asked that the corpus has repeatedly failed to answer is PARKED, not dropped.
-    # Saying so is the whole point: silence here is indistinguishable from never having asked.
-    from locus.learn.answers import parked_questions
-
-    parked = parked_questions(conn)
-    if parked:
-        warnings.append(
-            f"{len(parked)} margin question(s) parked after repeated ungrounded attempts "
-            f"(e.g. \"{parked[0][1][:60]}\") — `locus review --retry-parked` after new ingests"
         )
     # A tablet folder the registry does not know still captures under its area, but nothing
     # links it to a course, repo or application. Named here, from the last capture run, so a typo
@@ -230,16 +166,12 @@ def collect_status(
         )
 
     return StatusReport(
-        reading=_reading_health(conn),
         doc_total=doc_total,
         by_category=by_category,
         by_source_type=by_source_type,
         last_ingest=last_ingest,
         unit_counts=unit_counts,
         vector_total=vector_total,
-        aliases_built=built,
-        alias_cross_doc_canonicals=cross_doc,
-        alias_uncovered_surfaces=uncovered,
         quarantine_count=quarantine_count,
         unsupported_count=unsupported_count,
         db_bytes=db_bytes,
@@ -261,7 +193,7 @@ def _fmt_bytes(n: float) -> str:
 def format_status(r: StatusReport) -> str:
     lines = ["LOCUS STATUS", "=" * 60]
     lines.append(f"build (this checkout)  : {r.build_stamp}")
-    lines.append("   compare with the running `locus mcp` startup log; restart it if they differ")
+    lines.append("   compare with the running `locus serve` startup log; restart it if they differ")
     lines.append("")
     lines.append(f"documents              : {r.doc_total}")
     cats = "  ".join(f"{k}:{v}" for k, v in r.by_category.items())
@@ -274,23 +206,6 @@ def format_status(r: StatusReport) -> str:
     lines.append(f"units                  : {units}")
     lines.append(f"vectors (vec0 total)   : {r.vector_total}  [brute-force KNN]")
     lines.append("")
-    if r.aliases_built:
-        lines.append(
-            f"alias substrate        : built  | cross-doc canonicals {r.alias_cross_doc_canonicals}"
-            f"  | uncovered surfaces {r.alias_uncovered_surfaces}"
-        )
-    else:
-        lines.append("alias substrate        : NOT BUILT")
-    if r.reading is not None:
-        d = r.reading
-        lines.append(
-            f"reading proposed       : {d['proposed']} on the tablet | {d['queued']} queued "
-            f"| pool {d['pool']}"
-        )
-        lines.append(
-            f"reading judged         : {d['accepted']} accepted / {d['rejected']} rejected "
-            f"| {d['marks']} mark(s) read back"
-        )
     aside = f"  ({r.unsupported_count} unsupported, not documents)" if r.unsupported_count else ""
     lines.append(f"quarantine             : {r.quarantine_count} file(s){aside}")
     lines.append(f"database               : {_fmt_bytes(r.db_bytes)}")

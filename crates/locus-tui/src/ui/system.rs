@@ -23,6 +23,7 @@ use ratatui::text::{Line, Span};
 pub const KEYS: &[(&str, &str)] = &[
     ("⇥ ↑ ↓ j k", "sections, and through them"),
     ("⏎", "a failure's cause; on usage, the budget"),
+    ("b", "the budget"),
 ];
 pub const BUDGET_KEYS: &[(&str, &str)] = &[("t", "split each day by job")];
 
@@ -125,12 +126,12 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     }
 
     out.push(Line::from(""));
-    let focus = app.focus == Some('e');
-    let sel = focus.then(|| app.sel('e'));
+    let focus = app.focus == Some('h');
+    let sel = focus.then(|| app.sel('h'));
     out.push(rule(
         "recent",
         &format!("{} done · {} failed today", sys.done_today, sys.failed_today),
-        Some('e'),
+        Some('h'),
         focus,
         w,
     ));
@@ -159,7 +160,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
     }
 
     out.push(Line::from(""));
-    out.push(rule("credit", "u for the budget", Some('u'), app.focus == Some('u'), w));
+    out.push(rule("credit", "b for the budget", Some('b'), app.focus == Some('b'), w));
     match &sys.budget {
         Some(b) => out.extend(summary(b, w)),
         None => out.push(Line::from(Span::styled(
@@ -348,7 +349,7 @@ pub fn section_len(app: &App, sec: char) -> usize {
     match sec {
         'r' => sys.running.len(),
         't' => sys.timers.len(),
-        'e' => sys.recent.len(),
+        'h' => sys.recent.len(),
         _ => 1,
     }
 }
@@ -361,14 +362,19 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
         }
         return false;
     }
-    if app.focus == Some('e') {
+    // b: the budget, straight from System (it was u, before u became undo; 13 Nov).
+    if k.code == KeyCode::Char('b') {
+        app.open(ScreenId::Budget);
+        return true;
+    }
+    if app.focus == Some('h') {
         if let Some(d) = nav(&k) {
-            let n = section_len(app, 'e');
-            app.move_sel('e', n, d);
+            let n = section_len(app, 'h');
+            app.move_sel('h', n, d);
             return true;
         }
         if k.code == KeyCode::Enter {
-            let pick = live(app).ok().and_then(|s| s.recent.get(app.sel('e')).cloned());
+            let pick = live(app).ok().and_then(|s| s.recent.get(app.sel('h')).cloned());
             if let Some(j) = pick {
                 app.note = Some(if j.cause.is_empty() {
                     format!("{}: {}", j.kind, if j.ok { "ok" } else { "failed, no cause recorded" })

@@ -501,7 +501,7 @@ fn run(mut app: App) -> Result<()> {
             }
             if let Some(req) = inbox.poll() {
                 app.home();
-                // A screen by name: kairos's `g a`, `g t`, `g l` and `g h` (cleanup C4).
+                // A screen by name: the calendar's `A`, `T`, `P` and `L`, keryx's `A` (cleanup C4).
                 if let Some(s) = ScreenId::from_name(&req) {
                     if s != ScreenId::Home {
                         app.open(s);

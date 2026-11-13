@@ -101,13 +101,11 @@ pub fn job_glyph(o: &JobOutcome) -> (&'static str, &'static str) {
     }
 }
 
-/// A section's rule: `─ title · extra ──────────`, blue when focused. The section's letter is no
-/// longer drawn in its corner: letters stopped focusing sections when the keys became one table
-/// (cleanup C4, D1); Tab and the arrows move between them. `_letter` stays so the callers name
-/// which section a rule belongs to.
-pub fn rule(title: &str, extra: &str, _letter: Option<char>, focus: bool, width: u16) -> Line<'static> {
+/// A section's rule: `─ title · extra ──────── [l] ─`, blue when focused. The letter focuses the
+/// section (it was gone for one evening in C4, leaving only Tab and the arrows).
+pub fn rule(title: &str, extra: &str, letter: Option<char>, focus: bool, width: u16) -> Line<'static> {
     let col = if focus { c("blue") } else { c("surface2") };
-    if title.is_empty() && extra.is_empty() {
+    if title.is_empty() && extra.is_empty() && letter.is_none() {
         return Line::from(Span::styled("─".repeat(usize::from(width)), Style::default().fg(col)));
     }
     // Titles bright and bold, the line itself quiet, so sections stand apart even unfocused
@@ -127,7 +125,7 @@ pub fn rule(title: &str, extra: &str, _letter: Option<char>, focus: bool, width:
         used += e.width();
         spans.push(Span::styled(e, dim()));
     }
-    let tail = "──".to_string();
+    let tail = letter.map(|l| format!(" [{l}] ─")).unwrap_or_else(|| "──".into());
     let fill = usize::from(width).saturating_sub(used + 1 + tail.width());
     spans.push(Span::styled(format!(" {}", "─".repeat(fill)), Style::default().fg(col)));
     spans.push(Span::styled(tail, Style::default().fg(col)));

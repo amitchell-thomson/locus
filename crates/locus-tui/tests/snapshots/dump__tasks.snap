@@ -39,4 +39,4 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │                                                                                             │
 │                                                                                             │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯
- ⏎ open · g go to · / ask · i chat · ? keys
+ ⏎ open · l log · / ask · i chat · ? keys

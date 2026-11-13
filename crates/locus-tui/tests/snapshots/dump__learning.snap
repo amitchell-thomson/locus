@@ -3,13 +3,13 @@ source: crates/locus-tui/tests/dump.rs
 expression: "dump::render(&a, 95, 38).unwrap()"
 ---
 ╭ learning · 1 goals · 9 tracks ──────────────────────────────────────────────────── esc back ╮
-│─ goals ─────────────────────────────────────────────────────────────────────────────────────│
+│─ goals ─────────────────────────────────────────────────────────────────────────────── [g] ─│
 │▌ 󰌵 personal learning                                                           2 h · active │
 │  󰌵 Jump Trading application                                                     25 h · done │
 │─ syllabus ──────────────────────────────────────────────────────────────────────────────────│
 │ 1. linear algebra        ━━━━────    2 h  both sides of the SVD without a separate eigen-…  │
 │                                                                                             │
-│─ tracks · confidence · history · misses open ───────────────────────────────────────────────│
+│─ tracks · confidence · history · misses open ───────────────────────────────────────── [t] ─│
 │  market microstructure   ━━──────────────  15%           no sessions                        │
 │  PyTorch                 ━━━━━───────────  30%           no sessions                        │
 │  backprop                ━━━━━━──────────  35%  ▃        no sessions                        │
@@ -32,11 +32,11 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │                                                                                             │
 │                                                                                             │
 │                                                                                             │
-│─ practice sheets ───────────────────────────────────────────────────────────────────────────│
+│─ practice sheets ───────────────────────────────────────────────────────────────────── [s] ─│
 │  󰴓 Jump sheet 7 · final light set              30 Sep · answered · waiting for the readback │
 │  󰴓 Jump sheet 6 · mixed, unlabelled                                  29 Sep · 6 of 23 right │
 │  󰴓 Jump sheet 5 · Markov chains, trees, SVD                          28 Sep · 3 of 12 right │
 │  󰴓 Jump sheet 4 · distributions, binary search, Lagrange             27 Sep · 6 of 15 right │
 │                                             y agree · e change · + new goal · m make a sheet│
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯
- ⏎ open · ⇥ sections · g go to · / ask · i chat · ? keys
+ ⏎ open · ⇥ sections · l log · / ask · i chat · ? keys

@@ -83,17 +83,34 @@ pub fn section_len(app: &App, sec: char) -> usize {
 }
 
 /// Home's own keys on every screen, after the shared table (cleanup C4).
-pub const GLOBAL_KEYS: &[(&str, &str)] = &[("i", "the chat's conversations")];
+pub const GLOBAL_KEYS: &[(&str, &str)] = &[("i", "the chat's conversations"), ("l", "the automatic-actions log")];
 
-/// What the `?` overlay lists after the shared table on screen `s`: Home's own keys on every
-/// screen, then the screen's. Every one must pass `keys::app_key_is_free` (tested).
+/// A letter as a static string, for the help: section letters are plain ASCII.
+fn letter_str(c: char) -> &'static str {
+    const ABC: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    ABC.find(c).map_or("?", |i| &ABC[i..i + 1])
+}
+
+/// What the `?` overlay lists after the shared table on screen `s`: Home's own keys where they
+/// do something (no `i` in the chat, no `l` on the log), the section letters (each focuses its
+/// section), then the screen's.
+/// Every one must pass `keys::app_key_is_free` (tested).
 pub fn help_keys(s: ScreenId) -> Vec<(&'static str, &'static str)> {
-    let mut v: Vec<_> = if s == ScreenId::Chat {
-        Vec::new()
-    } else {
-        GLOBAL_KEYS.to_vec()
-    };
-    v.extend_from_slice(screen_keys(s));
+    let mut v: Vec<_> = GLOBAL_KEYS
+        .iter()
+        .filter(|(k, _)| !(*k == "i" && s == ScreenId::Chat || *k == "l" && s == ScreenId::AutoLog))
+        .copied()
+        .collect();
+    // A letter the screen also binds (Home's p opens every project, System's b the budget) is
+    // listed once, as what it does.
+    let own = screen_keys(s);
+    v.extend(
+        s.sections()
+            .iter()
+            .map(|sec| (letter_str(sec.letter), sec.title))
+            .filter(|(l, _)| !own.iter().any(|(k, _)| k == l)),
+    );
+    v.extend_from_slice(own);
     v
 }
 
@@ -174,20 +191,24 @@ pub fn ask_rule(title: &str, lit: bool, keys: &[(&str, &str)], tail: &str, width
     Line::from(left)
 }
 
-/// A section's block: title on the left, blue when focused. No letter in the corner: letters no
-/// longer focus sections (cleanup C4).
-pub fn section_block(title: &str, focus: bool) -> Block<'static> {
+/// A section's block: title on the left, its letter in the right corner (plan D), blue when
+/// focused. The letter focuses the section (its corner was empty for one evening, C4).
+pub fn section_block(title: &str, letter: Option<char>, focus: bool) -> Block<'static> {
     let border = if focus { c("blue") } else { c("overlay0") };
     let title_style = if focus {
         Style::default().fg(c("blue")).add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(c("subtext0"))
     };
-    Block::default()
+    let mut b = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(border))
-        .title(Line::from(Span::styled(format!(" {title} "), title_style)).left_aligned())
+        .title(Line::from(Span::styled(format!(" {title} "), title_style)).left_aligned());
+    if let Some(l) = letter {
+        b = b.title(Line::from(Span::styled(format!("[{l}]"), Style::default().fg(border))).right_aligned());
+    }
+    b
 }
 
 /// The footer: open · log · ask · keys on the left (plan D: Home's key strip keeps only
@@ -215,12 +236,15 @@ fn draw_footer(f: &mut Frame, area: Rect, app: &App) {
                 _ => None,
             }
             .unwrap_or("open");
-            // Only keys that work here (C4): ⇥ where there are sections; the log is `g l` now.
+            // Only keys that work here (C4): ⇥ where there are sections, l where it is not the
+            // log already.
             let mut keys = vec![("⏎", enter)];
             if !app.screen().sections().is_empty() {
                 keys.push(("⇥", "sections"));
             }
-            keys.push(("g", "go to"));
+            if app.screen() != ScreenId::AutoLog {
+                keys.push(("l", "log"));
+            }
             keys.push((
                 "/",
                 if app.screen() == ScreenId::Approve {

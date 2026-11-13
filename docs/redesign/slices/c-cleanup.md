@@ -350,6 +350,13 @@ reason.
   -> ⏎, start `n` -> `s`, share `s` -> `F`, `r` -> ^r, capitals -> `g`; keryx filing `d` -> `M`
   (`d` is done: files for the mark or keryx's guess, saying why), `h` is no longer back, next and
   previous message `] [`. The walk-through with Alec is still owed.
+- **C4 adjusted after Alec tried it** (13 Nov, night): "the g - something keys feel weird,
+  across the board, it only really made sense in mail" and "now navigating around home only
+  works with tab and arrows". `g` left the shared table. Home's section letters and corner
+  letters are back, on letters the table leaves free (system `y` -> `m`; on System recent
+  `e` -> `h`, usage `u` -> `b`, and `b` opens the budget); `l` is the log again. The calendar's
+  `g` places went; `A` `T` `P` (and `L` for the log) open Home's screens. keryx keeps `g` for its
+  lists; `Action::GoTo` and `keys::PLACES` stay as a shim until keryx stops naming them.
 - **C6 done** (D4): a thread is one scroll with a bar on the message acted on; it opens on the
   newest new message; read is stamped on leaving and only for what was seen; `r` answers the
   message read (`SendReq::in_reply_to`, keryxd threads to it); the confirm screen shows the real

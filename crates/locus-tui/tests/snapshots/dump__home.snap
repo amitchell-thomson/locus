@@ -3,7 +3,7 @@ source: crates/locus-tui/tests/dump.rs
 expression: "dump::render(&a, 95, 38).unwrap()"
 ---
 ╭ locus · home ─────────────── sat 24 oct · 21:40   󰓦 3 running ──────── 󰃭 futsal in 21h  󰇮 2 ╮
-│─ work · this week ──────────────────────────────────────────────────────────────────────────│
+│─ work · this week ──────────────────────────────────────────────────────────────────── [w] ─│
 │      06    09    12    15    18    21    24      this week                        36.2 h    │
 │ mon   · · ▓▓▓█████· ·▒▒▒▒ · · · ·▓▓▓▓▓· ·        ───────────────────────────────────────    │
 │ tue   · · ·██████░· · · · · ▒▒▒ · ·█████·        quast    12.5 h   35%  ━━━━━━━━━━━━━━━     │
@@ -13,30 +13,30 @@ expression: "dump::render(&a, 95, 38).unwrap()"
 │ sat   · · · ████████· · ·▒▒▒▒ · · ▓▓┃            ───────────────────────────────────────    │
 │ sun                                              8 of 9 blocks kept · 4-day streak          │
 │                                                                                             │
-│─ personal projects ─────────────────────────────────────────────────────────────────────────│
+│─ personal projects ─────────────────────────────────────────────────────────────────── [p] ─│
 │   󰆤 quast    󰹇 needs you 35m  allow: python -m quast.battery --full ? · wants t… 2 sessions │
 │   󰆣 locus    󰹇 needs you 20m  allow: ssh compute-node 'systemctl --user restart… 3 sessions │
 │   󰆣 OQTS     󰤄 no sessions    quiet since August                                            │
 │   󰆣 3YP      󰤄 no sessions    not started                                                   │
 │   󰆣 GR AI/ML 󰤄 no sessions    nothing yet                                                   │
 │                                                                                             │
-│─ careers · 1–3 of 9 ────────────────────────┬── studies · 1–3 of 8 ─────────────────────────│
+│─ careers · 1–3 of 9 ───────────────── [c] ──┬── studies · 1–3 of 8 ─────────────────── [s] ─│
 │   󰡖 Millennium QD Interns… final round d…   │    󱀄 B1   Engineering Computation       not…  │
 │   󰡖 G-Research Spring 2027 applied · wai…   │    󱀄 B2   Engineering in Society        not…  │
 │   󰡖 G-Research AI/ML Chal… 󱓟 GR AI/ML  a… ▼ │    󱀄 B3   Group Design Project          󱓟 3… ▼│
 │   ───────────────────────────────────────   │    ─────────────────────────────────────────  │
 │   󰈙 CV                     released the …   │    󰌵 learning                           1 … L │
 │                                                                                             │
-│─ approve ───────────────────────────────────┬── tasks · + adds one ─────────────────────────│
+│─ approve ──────────────────────────── [a] ──┬── tasks · + adds one ─────────────────── [t] ─│
 │   󰴹 5  2 mail to file · 1 mail to… 󰅸 2 new  │    󰄱 send HR signed employee form             │
 │     "G-Research sponsor talk" from care… 󰅸  │                                               │
 │     +4 more · ⏎ the approve page            │                                               │
 │                                                                                             │
-│─ system ────────────────────────────────────────────────────────────────────────────────────│
+│─ system ────────────────────────────────────────────────────────────────────────────── [m] ─│
 │   running  󰓦 dossier quast   │   󰓦 scout reading   │   󰁪 chan… 󰄵 14 done today   󰅘 1 failed │
 │   budget   ━━━━━━━━━━━───────┊─────  9.1% of the 15… 5-hour window: you 34% · background 4% │
 │                                                                                             │
 │─ chat ───────────────────────────────────────── ␣ ask · i conversations · new conversation ─│
 │   ␣ to ask anything that needs your whole life as context · i for your conversations        │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────╯
- ⏎ open · ⇥ sections · g go to · / ask · i chat · ? keys
+ ⏎ open · ⇥ sections · l log · / ask · i chat · ? keys

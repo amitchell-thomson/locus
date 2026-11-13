@@ -2,7 +2,8 @@
 //!
 //! The list is Slice 1 spec step 1.4's table. A section's letter is shown in its corner, which
 //! is why Home's footer no longer lists them (plan D, 19 Oct: "do not need letter it says it in
-//! each pane").
+//! each pane"). No letter may be a key of the shared table (`locus_theme::keys`, tested): Home's
+//! system is `m` (it was `y`), System's recent `h` (was `e`) and usage `b` (was `u`), 13 Nov.
 
 use std::fmt;
 
@@ -113,13 +114,13 @@ const HOME: &[Section] = &[
     s('s', "studies", None),
     s('a', "approve", Some(S::Approve)),
     s('t', "tasks", Some(S::Tasks)),
-    s('y', "system", Some(S::System)),
+    s('m', "system", Some(S::System)),
 ];
 const SYSTEM: &[Section] = &[
     s('r', "running", None),
     s('t', "timers", None),
-    s('e', "recent", None),
-    s('u', "usage", Some(S::Budget)),
+    s('h', "recent", None),
+    s('b', "usage", Some(S::Budget)),
 ];
 const LEARNING: &[Section] = &[s('g', "goals", None), s('t', "tracks", None), s('s', "sheets", None)];
 

@@ -190,7 +190,7 @@ pub fn enter_hint(app: &App) -> Option<&'static str> {
         'p' => "its tmux session",
         'c' => "ask the chat about it",
         's' => "its tmux session · the last row opens learning",
-        'y' => "the system page",
+        'm' => "the system page",
         _ => return None,
     })
 }
@@ -316,7 +316,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
         Some('w') => Some(work_r),
         Some('p') => Some(proj_r),
         Some('c') => Some(side_r),
-        Some('y') => Some(sys_r),
+        Some('m') => Some(sys_r),
         _ => None,
     };
     if let Some(r) = focused {
@@ -1032,8 +1032,8 @@ pub(crate) fn area_colour(app: &App, area: &str) -> &'static str {
 /// with the newest failure's cause, and the credit. Unreachable says so; old numbers are
 /// never shown as current.
 fn draw_system_live(f: &mut Frame, area: Rect, app: &App) {
-    let focus = app.focus == Some('y');
-    let mut out = vec![rule("system", "the server", Some('y'), focus, area.width)];
+    let focus = app.focus == Some('m');
+    let mut out = vec![rule("system", "the server", Some('m'), focus, area.width)];
     match &app.system_live {
         None => out.push(Line::from(Span::styled("   asking the server…", dim()))),
         Some(Err(e)) => {
@@ -1115,8 +1115,8 @@ fn draw_system(f: &mut Frame, area: Rect, app: &App) {
         return draw_system_live(f, area, app);
     }
     let fx = &app.fixtures;
-    let focus = app.focus == Some('y');
-    let mut out = vec![rule("system", "", Some('y'), focus, area.width)];
+    let focus = app.focus == Some('m');
+    let mut out = vec![rule("system", "", Some('m'), focus, area.width)];
     let mut jobs: Vec<Span> = vec![Span::styled("   running  ", dim())];
     for (i, j) in fx.system.running.iter().enumerate() {
         if i > 0 {

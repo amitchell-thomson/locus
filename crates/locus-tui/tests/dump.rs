@@ -104,7 +104,7 @@ fn every_screen_survives_other_sizes() {
                 let mut a = app(set, screen);
                 let text = dump::render(&a, w, h).unwrap();
                 assert_eq!(text.lines().count(), usize::from(h), "{set}/{screen} at {w}x{h}");
-                for sec in ['y', 'g', 'd', 's', 'c', 'a', 'p', 'r', 'e', 'u', 't'] {
+                for sec in ['m', 'g', 'd', 's', 'c', 'a', 'p', 'r', 'h', 'b', 't'] {
                     a.focus = Some(sec);
                     dump::render(&a, w, h).unwrap();
                 }
@@ -121,7 +121,7 @@ fn home_arrows_follow_what_is_drawn() {
     let order: Vec<char> = ScreenId::Home.sections().iter().map(|s| s.letter).collect();
     assert_eq!(
         order,
-        vec!['w', 'p', 'c', 's', 'a', 't', 'y'],
+        vec!['w', 'p', 'c', 's', 'a', 't', 'm'],
         "the drawn order, top to bottom"
     );
     dump::render(&a, 95, 38).unwrap();
@@ -134,7 +134,7 @@ fn home_arrows_follow_what_is_drawn() {
     a.sel
         .insert((ScreenId::Home, 't'), locus_tui::ui::section_len(&a, 't') - 1);
     a.on_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
-    assert_eq!(a.focus, Some('y'));
+    assert_eq!(a.focus, Some('m'));
 }
 
 /// The Tasks page is the one task list (L7): e asks kairos for its edit form, x asks before it

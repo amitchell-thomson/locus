@@ -418,7 +418,14 @@ locus/
 - **One key table** (`crates/locus-theme/src/keys.rs`, cleanup C4, D1): every app asks
   `keys::action` first and binds its own keys only where the table says nothing; help is drawn
   from the table. Each app's tests check its own keys against `app_key_is_free` and press every
-  key its help names. Do not bind a table key to something else.
+  key its help names. Do not bind a table key to something else. `g` is NOT in the table (it was
+  "go to" for one evening, 13 Nov, and felt odd outside mail): Home moves by section letters,
+  drawn in each section's corner (system is `m`; on System, recent `h` and usage `b`, since `y`,
+  `e` and `u` are the table's), and one-key screens (`l` log, `p` projects, `L` learning, `i`
+  chat, `b` the budget on System); the calendar opens Home's screens with `A` `T` `P` `L`
+  (approve, tasks, projects, log) through `open-locus`; keryx keeps `g` for its own lists.
+  `Action::GoTo` and `keys::PLACES` survive only as a shim for keryx; remove them once it no
+  longer names them.
 - **`locus status`** is present tense: a failure a later run has recovered from moves to a
   recovered list rather than shouting all day. A unit failure is recorded by `locus record`
   (systemd `OnFailure`, `locus-failure@.service`).

@@ -1,11 +1,17 @@
 //! App state and keys.
 //!
 //! The order a key is tried in: the keys overlay (any key closes it), a mode that owns the
-//! keyboard (typing to the chat, correcting a fact), a pending `g`, then the shared key table
+//! keyboard (typing to the chat, correcting a fact), then the shared key table
 //! (`locus_theme::keys`, cleanup C4): the screen gives a table key its own meaning where it has
 //! one (y on Approve), else it means what it means in every app. Then Tab and the arrows between
-//! sections, the screen's own keys, and Home's (Enter opens, `i` the chat). Section letters went
-//! with C4: they shadowed the table (y was System, a Approve, t Tasks).
+//! sections, the screen's own keys, and Home's (Enter opens, `i` the chat, `l` the log), and last
+//! a section's letter, which focuses it (drawn in its corner).
+//!
+//! Section letters went with C4 for one evening, which left Tab and the arrows as the only way
+//! round Home; Alec (13 Nov): "now navigating around home only works with tab and arrows". They
+//! are back, on letters the table leaves free: system is `m` on Home (it was `y`, now yes), and
+//! on the System screen recent is `h` (was `e`, now edit) and usage `b` (was `u`, now undo; `b`
+//! opens the budget). A letter the table owns is refused by a test.
 //!
 //! Nothing leaves the process (spec 1.4 rules): an action marks its item (read, done, struck,
 //! approved) and the footer says what it would have done.
@@ -13,7 +19,7 @@
 use crate::fixtures::Fixtures;
 use crate::screen::{ScreenId, Section};
 use crate::uselog::UseLog;
-use locus_theme::keys::{self, Action, Place};
+use locus_theme::keys::{self, Action};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -120,8 +126,6 @@ pub struct App {
     pub home_live: bool,
     /// Repositories in `~/local-projects` the registry does not name, for the projects view.
     pub other_repos: Vec<(String, Option<(locus_contract::Time, String)>)>,
-    /// `g` was pressed: the next letter names a place ([`keys::PLACES`]).
-    pub g_pending: bool,
     /// `^r` asked for the live data now; the window's loop wakes its fetching threads.
     pub refresh_requested: bool,
 }
@@ -164,7 +168,6 @@ impl App {
             system_live: None,
             home_live: false,
             other_repos: Vec::new(),
-            g_pending: false,
             refresh_requested: false,
         };
         app.uselog.record(root.name(), "open");
@@ -304,10 +307,6 @@ impl App {
             self.on_mode_key(key);
             return;
         }
-        if std::mem::take(&mut self.g_pending) {
-            self.go(key);
-            return;
-        }
         // A list's own text input (Approve's filter, its place picker): every key is text.
         if self.typing() {
             crate::ui::screen_key(self, key);
@@ -332,10 +331,14 @@ impl App {
             KeyCode::Enter => match self.focused().and_then(|s| s.detail) {
                 Some(detail) => self.open(detail),
                 None if self.focus.is_none() && !self.screen().sections().is_empty() => {
-                    self.note = Some("choose a section first: ⇥ or the arrows".into())
+                    self.note = Some("choose a section first: its letter is in its corner, or ⇥".into())
                 }
                 None => self.note = Some("nothing more to open here yet".into()),
             },
+            // The automatic-actions log, from anywhere (it was `g l` for one evening, C4).
+            KeyCode::Char('l') if self.screen() != ScreenId::AutoLog => self.open(ScreenId::AutoLog),
+            // A section's letter focuses it, as its corner says (back after C4).
+            KeyCode::Char(ch) if self.screen().sections().iter().any(|s| s.letter == ch) => self.focus = Some(ch),
             // The chat's conversations, from anywhere (files-and-chat M2: its own key, never Tab).
             KeyCode::Char('i') if self.screen() != ScreenId::Chat => {
                 self.chat_new = false;
@@ -372,48 +375,11 @@ impl App {
                 self.refresh_requested = true;
                 self.note = Some("refreshing: asking kairos, keryx and the server now".into());
             }
-            Action::GoTo => {
-                self.g_pending = true;
-                let places: Vec<String> = keys::PLACES.iter().map(|(c, _, w)| format!("{c} {w}")).collect();
-                self.note = Some(format!("go to: {}", places.join(" · ")));
-            }
             Action::Undo => self.note = Some("nothing to undo here".into()),
             _ => {
                 let what = keys::TABLE.iter().find(|(x, _, _)| *x == a).map_or("", |(_, _, w)| *w);
                 self.note = Some(format!("{name} ({what}) does nothing here · ? for keys"));
             }
-        }
-    }
-
-    /// `g` then a letter (D1): Home, Approve, Tasks and the log are screens here; the calendar
-    /// and mail are windows of the locus session, switched to only when this runs in it.
-    fn go(&mut self, key: KeyEvent) {
-        let KeyCode::Char(c) = key.code else { return };
-        let Some(p) = keys::place(c) else {
-            let letters: String = keys::PLACES.iter().map(|(c, _, _)| *c).collect();
-            self.note = Some(format!("g {c} goes nowhere: g then one of {letters}"));
-            return;
-        };
-        match p {
-            Place::Home => self.home(),
-            Place::Approve => self.go_screen(ScreenId::Approve),
-            Place::Tasks => self.go_screen(ScreenId::Tasks),
-            Place::Log => self.go_screen(ScreenId::AutoLog),
-            Place::Calendar | Place::Mail => {
-                if !self.in_session {
-                    self.note = Some(format!("would show the {} window", p.view()));
-                } else if let Err(e) = keys::show_window(p.view()) {
-                    self.note = Some(e);
-                }
-            }
-        }
-    }
-
-    /// One of Home's screens, opened straight from Home (so Esc comes back to Home).
-    pub fn go_screen(&mut self, s: ScreenId) {
-        if self.screen() != s {
-            self.home();
-            self.open(s);
         }
     }
 
@@ -636,9 +602,9 @@ mod tests {
     #[test]
     fn tab_focuses_enter_opens_esc_backs_out() {
         let mut a = app();
-        // Shift-Tab from nothing focused: the last section, system (letters went with C4).
+        // Shift-Tab from nothing focused: the last section, system.
         a.on_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
-        assert_eq!(a.focus, Some('y'));
+        assert_eq!(a.focus, Some('m'));
         press(&mut a, KeyCode::Enter);
         assert_eq!(a.screen(), ScreenId::System);
         assert_eq!(a.focus, None);
@@ -773,14 +739,9 @@ mod tests {
 
     // ------------------------------------------------------------ the one key table (C4)
 
-    /// The presses a key as the help shows it stands for: `↑ ↓` is two keys, `g h` one
-    /// sequence of two.
+    /// The presses a key as the help shows it stands for: `↑ ↓` is two keys.
     fn presses(shown: &str) -> Vec<Vec<KeyEvent>> {
         let plain = |c| KeyEvent::new(c, KeyModifiers::NONE);
-        if let Some(c) = shown.strip_prefix("g ") {
-            let c = c.chars().next().unwrap();
-            return vec![vec![plain(KeyCode::Char('g')), plain(KeyCode::Char(c))]];
-        }
         shown
             .split_whitespace()
             .map(|tok| match tok {
@@ -876,22 +837,10 @@ mod tests {
     #[test]
     fn table_keys_mean_the_same_on_home() {
         let mut a = app();
-        // g then a letter goes to a place; outside the session the windows only say so.
-        for (c, want) in [
-            ('a', ScreenId::Approve),
-            ('t', ScreenId::Tasks),
-            ('l', ScreenId::AutoLog),
-        ] {
-            press(&mut a, KeyCode::Char('g'));
-            press(&mut a, KeyCode::Char(c));
-            assert_eq!(a.screen(), want, "g {c}");
-        }
+        // g is no shared key any more (13 Nov): on Home it does nothing.
         press(&mut a, KeyCode::Char('g'));
-        press(&mut a, KeyCode::Char('h'));
         assert_eq!(a.screen(), ScreenId::Home);
-        press(&mut a, KeyCode::Char('g'));
-        press(&mut a, KeyCode::Char('m'));
-        assert_eq!(a.note.as_deref(), Some("would show the mail window"));
+        assert!(a.note.as_deref().is_some_and(|n| n.contains("does nothing here")));
         // q is back below the top.
         a.open(ScreenId::Tasks);
         press(&mut a, KeyCode::Char('q'));
@@ -902,9 +851,72 @@ mod tests {
         // u where there is nothing to undo says so.
         press(&mut a, KeyCode::Char('u'));
         assert_eq!(a.note.as_deref(), Some("nothing to undo here"));
-        // Section letters no longer focus sections (they shadowed y, a, t).
-        press(&mut a, KeyCode::Esc);
-        press(&mut a, KeyCode::Char('w'));
-        assert_eq!(a.focus, None);
+    }
+
+    /// Direct navigation is back (13 Nov: "now navigating around home only works with tab and
+    /// arrows"): every section letter focuses its section, and from there Enter reaches its
+    /// screen; the screen keys reach theirs in one press.
+    #[test]
+    fn home_letters_reach_each_section_and_screen() {
+        for screen in [ScreenId::Home, ScreenId::System, ScreenId::Learning] {
+            let own = crate::ui::screen_keys(screen);
+            for sec in screen.sections() {
+                // A letter the screen binds itself (Home's p, System's b) opens its screen.
+                if own.iter().any(|(k, _)| k.chars().eq([sec.letter])) {
+                    continue;
+                }
+                assert!(
+                    keys::app_key_is_free(&sec.letter.to_string()),
+                    "{screen}: {}",
+                    sec.letter
+                );
+                let mut a = app();
+                if screen != ScreenId::Home {
+                    a.open(screen);
+                }
+                press(&mut a, KeyCode::Char(sec.letter));
+                assert_eq!(
+                    (a.screen(), a.focus),
+                    (screen, Some(sec.letter)),
+                    "{screen}: {}",
+                    sec.letter
+                );
+                if let Some(detail) = sec.detail {
+                    press(&mut a, KeyCode::Enter);
+                    assert_eq!(a.screen(), detail, "{screen}: {} then Enter", sec.letter);
+                }
+            }
+        }
+        // Home: a approve, t tasks, w work, m system, each then Enter; p, L, l and i at once.
+        for (letter, want) in [
+            ('a', ScreenId::Approve),
+            ('t', ScreenId::Tasks),
+            ('w', ScreenId::WorkChart),
+            ('m', ScreenId::System),
+        ] {
+            let mut a = app();
+            press(&mut a, KeyCode::Char(letter));
+            press(&mut a, KeyCode::Enter);
+            assert_eq!(a.screen(), want, "{letter} then Enter");
+        }
+        for (letter, want) in [
+            ('p', ScreenId::Projects),
+            ('L', ScreenId::Learning),
+            ('l', ScreenId::AutoLog),
+            ('i', ScreenId::Chat),
+        ] {
+            let mut a = app();
+            press(&mut a, KeyCode::Char(letter));
+            assert_eq!(a.screen(), want, "{letter}");
+        }
+        // The log from a screen below Home too, and the budget from System in one key.
+        let mut a = app();
+        a.open(ScreenId::Tasks);
+        press(&mut a, KeyCode::Char('l'));
+        assert_eq!(a.screen(), ScreenId::AutoLog);
+        let mut a = app();
+        a.open(ScreenId::System);
+        press(&mut a, KeyCode::Char('b'));
+        assert_eq!(a.screen(), ScreenId::Budget);
     }
 }

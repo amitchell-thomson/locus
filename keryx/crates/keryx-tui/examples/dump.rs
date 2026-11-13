@@ -19,7 +19,11 @@ fn main() -> Result<(), String> {
         // Draw once so the selection knows where each email starts.
         let _ = keryx_tui::render_to_string(&mut app, w, h);
         for ch in args.get(4).map(String::as_str).unwrap_or("").chars() {
-            let k = if ch == 'e' { keryx_tui::app::Key::Enter } else { keryx_tui::app::Key::Char(ch) };
+            let k = if ch == 'e' {
+                keryx_tui::app::Key::Enter
+            } else {
+                keryx_tui::app::Key::Char(ch)
+            };
             app.key(k);
             let _ = keryx_tui::render_to_string(&mut app, w, h);
         }

@@ -603,7 +603,10 @@ mod tests {
         let ids: Vec<String> = c.references.clone();
         assert_eq!(
             db.threads_with_ids(&ids).unwrap(),
-            vec![("oqts-shared".to_string(), "s1".to_string()), ("oxford".to_string(), "o1".to_string())]
+            vec![
+                ("oqts-shared".to_string(), "s1".to_string()),
+                ("oxford".to_string(), "o1".to_string())
+            ]
         );
         // From the shared thread: the Oxford copy answers it.
         let found = db.threads_with_ids(&["s2@x".to_string()]).unwrap();

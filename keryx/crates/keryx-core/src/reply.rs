@@ -224,7 +224,9 @@ pub fn without_plain_quote(body: &str) -> &str {
         let t = l.trim();
         if t.starts_with("On ")
             && t.ends_with("wrote:")
-            && lines[i + 1..].iter().all(|n| n.trim().is_empty() || n.trim_start().starts_with('>'))
+            && lines[i + 1..]
+                .iter()
+                .all(|n| n.trim().is_empty() || n.trim_start().starts_with('>'))
         {
             cut = Some(i);
             break;
@@ -240,7 +242,10 @@ pub fn without_plain_quote(body: &str) -> &str {
 }
 
 fn escape(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 /// Plain text as Mail writes it in HTML: a `<div>` a line, `<div><br></div>` for a blank one.
@@ -274,12 +279,7 @@ fn body_of(html: &str) -> &str {
 /// your text, then "On 8 Nov 2026, at 22:30, Matilda Borthwick <…> wrote:" and their message, as
 /// they sent it, in `<blockquote type="cite">`. Their history is inside their message, so it nests
 /// the way every client folds it. `original_html` is their HTML part; without one their text.
-pub fn reply_html(
-    cfg: &Config,
-    own: &str,
-    to: &Message,
-    original_html: Option<&str>,
-) -> String {
+pub fn reply_html(cfg: &Config, own: &str, to: &Message, original_html: Option<&str>) -> String {
     let when = cfg
         .tz()
         .timestamp_opt(to.date, 0)
@@ -463,14 +463,28 @@ mod tests {
     fn a_reply_is_written_in_mails_own_format() {
         let mut m = msg("oxford", "Jane Doe <jane.doe@example.com>", &["newc7370@ox.ac.uk"], &[]);
         m.body_text = "Plain & simple".into();
-        let h = reply_html(&cfg(), "Yes, part two.\n\nAlec\n\nOn Mon 12 Oct 2026 at 09:00, Jane Doe wrote:\n> old\n", &m, Some("<html><head><style>x</style></head><body class=\"b\"><p>Her <b>HTML</b></p></body></html>"));
-        assert!(h.contains("<div>Yes, part two.</div><div><br></div><div>Alec</div><div><br><blockquote type=\"cite\">"), "{h}");
-        assert!(h.contains("<div>On 12 Oct 2026, at 09:00, Jane Doe &lt;jane.doe@example.com&gt; wrote:</div>"), "{h}");
+        let h = reply_html(
+            &cfg(),
+            "Yes, part two.\n\nAlec\n\nOn Mon 12 Oct 2026 at 09:00, Jane Doe wrote:\n> old\n",
+            &m,
+            Some("<html><head><style>x</style></head><body class=\"b\"><p>Her <b>HTML</b></p></body></html>"),
+        );
+        assert!(
+            h.contains("<div>Yes, part two.</div><div><br></div><div>Alec</div><div><br><blockquote type=\"cite\">"),
+            "{h}"
+        );
+        assert!(
+            h.contains("<div>On 12 Oct 2026, at 09:00, Jane Doe &lt;jane.doe@example.com&gt; wrote:</div>"),
+            "{h}"
+        );
         assert!(h.contains("<div><p>Her <b>HTML</b></p></div></blockquote>"), "{h}");
         assert!(!h.contains("&gt; old") && !h.contains("<style>"), "{h}");
         // No HTML part: her text, escaped, a div a line.
         let h = reply_html(&cfg(), "Ok", &m, None);
-        assert!(h.contains("<div><div>Plain &amp; simple</div></div></blockquote>"), "{h}");
+        assert!(
+            h.contains("<div><div>Plain &amp; simple</div></div></blockquote>"),
+            "{h}"
+        );
     }
 
     #[test]

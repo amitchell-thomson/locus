@@ -677,7 +677,12 @@ impl Actuator for Real {
         }
     }
 
-    fn send(&mut self, account: &Account, o: &keryx_core::changeset::Outgoing, html: Option<&str>) -> Result<(), String> {
+    fn send(
+        &mut self,
+        account: &Account,
+        o: &keryx_core::changeset::Outgoing,
+        html: Option<&str>,
+    ) -> Result<(), String> {
         match account.backend {
             Backend::Gmail => {
                 let mut files = Vec::new();
@@ -715,7 +720,10 @@ impl Actuator for Real {
                 // `ps` and has no length limit. Removed whatever the outcome.
                 let file = match html {
                     Some(h) => {
-                        let p = std::env::temp_dir().join(format!("keryx-reply-{}.html", o.message_id.replace(['<', '>', '@', '/'], "_")));
+                        let p = std::env::temp_dir().join(format!(
+                            "keryx-reply-{}.html",
+                            o.message_id.replace(['<', '>', '@', '/'], "_")
+                        ));
                         std::fs::write(&p, h).map_err(|e| format!("reply html: {e}"))?;
                         Some(p)
                     }

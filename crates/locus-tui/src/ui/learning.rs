@@ -11,11 +11,11 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
 
+/// Learning's own keys, after the shared table (cleanup C4): there y agrees a proposed syllabus,
+/// e changes it and + is a new goal (it was n).
 pub const KEYS: &[(&str, &str)] = &[
-    ("y", "agree a proposed syllabus (its sessions go to kairos)"),
-    ("e", "change it"),
-    ("n", "a new goal"),
-    ("m", "make a practice sheet for the selected track"),
+    ("⇥ ↑ ↓ j k", "sections, and through them"),
+    ("m", "a practice sheet for the track"),
 ];
 
 const SPARK: [&str; 8] = ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
@@ -192,7 +192,7 @@ pub fn draw(f: &mut Frame, area: Rect, app: &App) {
             hints(&[
                 ("y", "agree"),
                 ("e", "change"),
-                ("n", "new goal"),
+                ("+", "new goal"),
                 ("m", "make a sheet"),
             ])
             .right_aligned(),
@@ -226,7 +226,7 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
             _ => app.note = Some("only a proposed syllabus needs agreeing".into()),
         },
         KeyCode::Char('e') => app.note = Some("would open the syllabus to change in a chat".into()),
-        KeyCode::Char('n') => app.note = Some("would ask: what do you want to learn, and by when?".into()),
+        KeyCode::Char('+') => app.note = Some("would ask: what do you want to learn, and by when?".into()),
         KeyCode::Char('m') => {
             let mut ts: Vec<&Track> = l.tracks.iter().collect();
             ts.sort_by(|a, b| a.confidence.total_cmp(&b.confidence));

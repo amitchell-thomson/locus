@@ -8,7 +8,26 @@ use locus_tui::screen::ScreenId;
 use locus_tui::uselog::{self, UseLog};
 use locus_tui::{dump, ui};
 use ratatui::crossterm::event::{self, Event, KeyEventKind};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
+
+/// Sleep `d`, or less when `^r` moved `wake` since this thread last looked (`seen`); true when
+/// woken early, so the thread fetches its slow sources too (cleanup C4).
+fn nap(wake: &AtomicU64, seen: &mut u64, d: Duration) -> bool {
+    let until = Instant::now() + d;
+    loop {
+        let now = wake.load(Ordering::Relaxed);
+        if now != *seen {
+            *seen = now;
+            return true;
+        }
+        let left = until.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return false;
+        }
+        std::thread::sleep(left.min(Duration::from_millis(200)));
+    }
+}
 
 #[derive(Parser)]
 #[command(about = "The locus window, on fixture data (Slice 1)")]
@@ -323,15 +342,20 @@ fn run(mut app: App) -> Result<()> {
     app.chat = locus_tui::chat::Chat::new(locus_contract::link::state_dir());
     // The calendar, live (spec K8): fetched from kairosd every minute on a thread of its own and
     // laid over the fixtures; the fixtures stand when kairosd does not answer.
+    // ^r (cleanup C4): every fetching thread naps in short steps and wakes when this moves.
+    let wake = std::sync::Arc::new(AtomicU64::new(0));
     let (cal_tx, cal_rx) = std::sync::mpsc::channel();
     if let Some(live) = locus_tui::calendar::Live::connect().map(std::sync::Arc::new) {
         app.calendar = Some(live.clone());
         let registry = app.fixtures.registry.clone();
+        let wake = wake.clone();
         std::thread::spawn(move || {
             let mut bookings = Vec::new();
+            let mut seen = 0;
+            let mut woken = false;
             for minute in 0u64.. {
                 // Dates from mail (spec E6): keryx's local copy, read every ten minutes.
-                if minute % 10 == 0 {
+                if minute % 10 == 0 || woken {
                     bookings = locus_tui::maildates::scan(&registry, chrono::Utc::now(), 45, false);
                 }
                 if let Some(cal) = live.fetch(chrono::Utc::now())
@@ -341,7 +365,7 @@ fn run(mut app: App) -> Result<()> {
                 {
                     return;
                 }
-                std::thread::sleep(Duration::from_secs(60));
+                woken = nap(&wake, &mut seen, Duration::from_secs(60));
             }
         });
     }
@@ -350,7 +374,9 @@ fn run(mut app: App) -> Result<()> {
     if let Some(m) = locus_tui::mail::Live::connect().map(std::sync::Arc::new) {
         app.mail = Some(m.clone());
         app.mail_queue = Some(locus_tui::mail::Queue::start(m.clone()));
+        let wake = wake.clone();
         std::thread::spawn(move || {
+            let mut seen = 0;
             loop {
                 let mirror = locus_tui::mail::Mirror::open();
                 // Unknown (no mirror) stays unknown: Home shows no count rather than 0.
@@ -360,7 +386,7 @@ fn run(mut app: App) -> Result<()> {
                 if mail_tx.send((proposals, previews, need)).is_err() {
                     return;
                 }
-                std::thread::sleep(Duration::from_secs(60));
+                nap(&wake, &mut seen, Duration::from_secs(60));
             }
         });
     }
@@ -372,11 +398,14 @@ fn run(mut app: App) -> Result<()> {
     {
         let registry = app.fixtures.registry.clone();
         let tx = live_tx.clone();
+        let wake1 = wake.clone();
         std::thread::spawn(move || {
             let mut prompts = locus_tui::live::Prompts::default();
+            let mut seen = 0;
+            let mut woken = false;
             for tick in 0u64.. {
                 let sessions = locus_tui::live::scan_sessions(&registry, &mut prompts);
-                let slow = tick % 12 == 0;
+                let slow = tick % 12 == 0 || woken;
                 let commits = slow.then(|| locus_tui::live::scan_commits(&registry, &sessions));
                 // The facts, over ssh (H2.5): a second or two, once a minute, for careers, Approve
                 // and the log at once.
@@ -402,10 +431,12 @@ fn run(mut app: App) -> Result<()> {
                 {
                     return;
                 }
-                std::thread::sleep(Duration::from_secs(5));
+                woken = nap(&wake1, &mut seen, Duration::from_secs(5));
             }
         });
+        let wake2 = wake.clone();
         std::thread::spawn(move || {
+            let mut seen = 0;
             loop {
                 if live_tx
                     .send(Live::System(Box::new(locus_tui::live::fetch_system())))
@@ -413,7 +444,7 @@ fn run(mut app: App) -> Result<()> {
                 {
                     return;
                 }
-                std::thread::sleep(Duration::from_secs(300));
+                nap(&wake2, &mut seen, Duration::from_secs(300));
             }
         });
     }
@@ -434,6 +465,9 @@ fn run(mut app: App) -> Result<()> {
             {
                 reexec = true;
                 break;
+            }
+            if std::mem::take(&mut app.refresh_requested) {
+                wake.fetch_add(1, Ordering::Relaxed);
             }
             app.chat.pump();
             if let Some(n) = app.chat.fact_note.take() {
@@ -467,10 +501,11 @@ fn run(mut app: App) -> Result<()> {
             }
             if let Some(req) = inbox.poll() {
                 app.home();
-                if req == "tasks" {
-                    app.open(ScreenId::Tasks);
-                } else if req == "approve" {
-                    app.open(ScreenId::Approve);
+                // A screen by name: kairos's `g a`, `g t`, `g l` and `g h` (cleanup C4).
+                if let Some(s) = ScreenId::from_name(&req) {
+                    if s != ScreenId::Home {
+                        app.open(s);
+                    }
                 } else if let Some(sec) = req
                     .strip_prefix("home:")
                     .and_then(|s| s.chars().next())

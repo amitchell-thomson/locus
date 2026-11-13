@@ -14,17 +14,13 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 
+/// The Tasks page's own keys, after the shared table (cleanup C4): there d is done through
+/// kairos, e its form, x drops (x again), + adds one for the same thing, u undoes kairos's last
+/// change.
 pub const KEYS: &[(&str, &str)] = &[
-    ("↑ ↓", "walk the open tasks"),
-    ("⏎", "open its next block (or its due day) in kairos"),
-    ("d", "done (through kairos)"),
-    ("e", "edit it in kairos's form: title, what it is for, time left, due"),
-    ("n", "start it now: a block from now, the rest planned around it"),
-    ("x", "drop it (asks first: x again)"),
-    (
-        "+",
-        "add a task in kairos's form, for the same thing as the selected one",
-    ),
+    ("↑ ↓ j k", "walk the open tasks"),
+    ("⏎", "its next block (or due day) in kairos"),
+    ("s", "start it now (it was n)"),
 ];
 
 /// Ask kairos's window for one of its forms (`add-task [for]`, `edit-task <id>`) and bring it
@@ -220,12 +216,27 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
         app.move_sel(' ', tasks.len(), d);
         return true;
     }
+    // u: kairos's last change (yours or Claude's, not the scheduler's replan), undone at once.
+    if k.code == KeyCode::Char('u') {
+        app.note = Some(match app.calendar.clone() {
+            Some(live) => match live.undo_last() {
+                Ok(what) => format!("undone in kairos: {what}"),
+                Err(e) => e,
+            },
+            None => "would undo kairos's last change".into(),
+        });
+        return true;
+    }
     let Some(t) = tasks.get(app.sel(' ').min(tasks.len().saturating_sub(1))).cloned() else {
         if k.code == KeyCode::Char('+') {
             add_in_kairos(app, None);
             return true;
         }
-        return matches!(k.code, KeyCode::Enter | KeyCode::Char('d' | 'e' | 'n' | 'x'));
+        if matches!(k.code, KeyCode::Enter | KeyCode::Char('d' | 'e' | 's' | 'x')) {
+            app.note = Some("no open tasks".into());
+            return true;
+        }
+        return false;
     };
     match k.code {
         // Its next block, else its due day, in kairos (spec K8's link).
@@ -250,7 +261,8 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
             &format!("edit-task {}", t.id),
             format!("editing “{}” in kairos", t.title),
         ),
-        KeyCode::Char('n') => {
+        // s: start it now (it was n, which is "no" in the table: C4; s as in kairos).
+        KeyCode::Char('s') => {
             app.note = Some(match app.calendar.clone() {
                 Some(live) => match live.start(&t.id) {
                     Ok(()) => format!("started “{}”: a block from now", t.title),

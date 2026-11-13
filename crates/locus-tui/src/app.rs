@@ -1,9 +1,11 @@
 //! App state and keys.
 //!
 //! The order a key is tried in: the keys overlay (any key closes it), a mode that owns the
-//! keyboard (typing to the chat, correcting a fact), the screen's own keys, then the global keys
-//! (plan D: Enter opens, Esc goes back, `/` asks the chat, `?` shows keys) and section letters.
-//! A screen may claim a letter for an action that way; which ones should is for the rounds.
+//! keyboard (typing to the chat, correcting a fact), a pending `g`, then the shared key table
+//! (`locus_theme::keys`, cleanup C4): the screen gives a table key its own meaning where it has
+//! one (y on Approve), else it means what it means in every app. Then Tab and the arrows between
+//! sections, the screen's own keys, and Home's (Enter opens, `i` the chat). Section letters went
+//! with C4: they shadowed the table (y was System, a Approve, t Tasks).
 //!
 //! Nothing leaves the process (spec 1.4 rules): an action marks its item (read, done, struck,
 //! approved) and the footer says what it would have done.
@@ -11,6 +13,7 @@
 use crate::fixtures::Fixtures;
 use crate::screen::{ScreenId, Section};
 use crate::uselog::UseLog;
+use locus_theme::keys::{self, Action, Place};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -33,7 +36,7 @@ pub enum Mode {
     Chat(String),
     /// Renaming the chat view's selected conversation.
     ChatName(String),
-    /// `c` on a proposed fact in Approve: its value, being corrected before it is approved
+    /// `e` on a proposed fact in Approve: its value, being corrected before it is approved
     /// (heuris H2). The approve item (group, index) and the fact's id.
     FactEdit((usize, usize), u64, String),
 }
@@ -80,7 +83,7 @@ pub struct App {
     pub mail: Option<std::sync::Arc<crate::mail::Live>>,
     /// Mail decisions on their way to keryxd (the window; `--dump` decides in place).
     pub mail_queue: Option<crate::mail::Queue>,
-    /// `c` on Approve: where else the selected filing could go.
+    /// `e` on Approve: where else the selected filing could go.
     pub approve_pick: Option<crate::mail::Picker>,
     /// `v` on Approve: where the visual selection started (it runs to the cursor).
     pub approve_visual: Option<usize>,
@@ -117,6 +120,10 @@ pub struct App {
     pub home_live: bool,
     /// Repositories in `~/local-projects` the registry does not name, for the projects view.
     pub other_repos: Vec<(String, Option<(locus_contract::Time, String)>)>,
+    /// `g` was pressed: the next letter names a place ([`keys::PLACES`]).
+    pub g_pending: bool,
+    /// `^r` asked for the live data now; the window's loop wakes its fetching threads.
+    pub refresh_requested: bool,
 }
 
 impl App {
@@ -157,6 +164,8 @@ impl App {
             system_live: None,
             home_live: false,
             other_repos: Vec::new(),
+            g_pending: false,
+            refresh_requested: false,
         };
         app.uselog.record(root.name(), "open");
         app
@@ -295,6 +304,24 @@ impl App {
             self.on_mode_key(key);
             return;
         }
+        if std::mem::take(&mut self.g_pending) {
+            self.go(key);
+            return;
+        }
+        // A list's own text input (Approve's filter, its place picker): every key is text.
+        if self.typing() {
+            crate::ui::screen_key(self, key);
+            return;
+        }
+        // The shared table first (cleanup C4, D1). A screen with a meaning of its own for one
+        // of its keys (y on Approve, d on Tasks) takes it; otherwise it means the same here as
+        // in every app.
+        if let Some(a) = keys::action(key) {
+            if !crate::ui::screen_key(self, key) {
+                self.shared(a, &name);
+            }
+            return;
+        }
         if self.section_key(key) {
             return;
         }
@@ -302,18 +329,13 @@ impl App {
             return;
         }
         match key.code {
-            KeyCode::Esc => self.back(),
             KeyCode::Enter => match self.focused().and_then(|s| s.detail) {
                 Some(detail) => self.open(detail),
                 None if self.focus.is_none() && !self.screen().sections().is_empty() => {
-                    self.note = Some("focus a section first: its letter is in its corner".into())
+                    self.note = Some("choose a section first: ⇥ or the arrows".into())
                 }
                 None => self.note = Some("nothing more to open here yet".into()),
             },
-            KeyCode::Char('?') => self.keys_open = true,
-            // The search screen held sample data (cleanup C3): `/` asks the chat instead.
-            KeyCode::Char('/') => self.ask_home(String::new()),
-            KeyCode::Char('l') if self.screen() != ScreenId::AutoLog => self.open(ScreenId::AutoLog),
             // The chat's conversations, from anywhere (files-and-chat M2: its own key, never Tab).
             KeyCode::Char('i') if self.screen() != ScreenId::Chat => {
                 self.chat_new = false;
@@ -326,9 +348,72 @@ impl App {
                 self.open(ScreenId::Chat);
                 self.sel.insert((ScreenId::Chat, ' '), at.unwrap_or(0));
             }
-            KeyCode::Char('q') if self.screen().is_root() => self.quit = true,
-            KeyCode::Char(ch) if self.screen().sections().iter().any(|s| s.letter == ch) => self.focus = Some(ch),
             _ => self.note = Some(format!("{name} does nothing here · ? for keys")),
+        }
+    }
+
+    /// Typing into a list's own field, where no key is a command.
+    fn typing(&self) -> bool {
+        self.screen() == ScreenId::Approve && (self.approve_filtering || self.approve_pick.is_some())
+    }
+
+    /// What a key of the shared table does when the screen gave it no meaning of its own.
+    fn shared(&mut self, a: Action, name: &str) {
+        match a {
+            Action::Back => self.back(),
+            // q quits only at the top (Home); anywhere deeper it is back.
+            Action::Quit if self.screen().is_root() => self.quit = true,
+            Action::Quit => self.back(),
+            Action::Help => self.keys_open = true,
+            // The search screen held sample data (cleanup C3): `/` asks the chat instead.
+            Action::Search => self.ask_home(String::new()),
+            // ^r: the live data now, not at the next tick (main.rs wakes its threads).
+            Action::Refresh => {
+                self.refresh_requested = true;
+                self.note = Some("refreshing: asking kairos, keryx and the server now".into());
+            }
+            Action::GoTo => {
+                self.g_pending = true;
+                let places: Vec<String> = keys::PLACES.iter().map(|(c, _, w)| format!("{c} {w}")).collect();
+                self.note = Some(format!("go to: {}", places.join(" · ")));
+            }
+            Action::Undo => self.note = Some("nothing to undo here".into()),
+            _ => {
+                let what = keys::TABLE.iter().find(|(x, _, _)| *x == a).map_or("", |(_, _, w)| *w);
+                self.note = Some(format!("{name} ({what}) does nothing here · ? for keys"));
+            }
+        }
+    }
+
+    /// `g` then a letter (D1): Home, Approve, Tasks and the log are screens here; the calendar
+    /// and mail are windows of the locus session, switched to only when this runs in it.
+    fn go(&mut self, key: KeyEvent) {
+        let KeyCode::Char(c) = key.code else { return };
+        let Some(p) = keys::place(c) else {
+            let letters: String = keys::PLACES.iter().map(|(c, _, _)| *c).collect();
+            self.note = Some(format!("g {c} goes nowhere: g then one of {letters}"));
+            return;
+        };
+        match p {
+            Place::Home => self.home(),
+            Place::Approve => self.go_screen(ScreenId::Approve),
+            Place::Tasks => self.go_screen(ScreenId::Tasks),
+            Place::Log => self.go_screen(ScreenId::AutoLog),
+            Place::Calendar | Place::Mail => {
+                if !self.in_session {
+                    self.note = Some(format!("would show the {} window", p.view()));
+                } else if let Err(e) = keys::show_window(p.view()) {
+                    self.note = Some(e);
+                }
+            }
+        }
+    }
+
+    /// One of Home's screens, opened straight from Home (so Esc comes back to Home).
+    pub fn go_screen(&mut self, s: ScreenId) {
+        if self.screen() != s {
+            self.home();
+            self.open(s);
         }
     }
 
@@ -549,9 +634,10 @@ mod tests {
     }
 
     #[test]
-    fn letter_focuses_enter_opens_esc_backs_out() {
+    fn tab_focuses_enter_opens_esc_backs_out() {
         let mut a = app();
-        press(&mut a, KeyCode::Char('y'));
+        // Shift-Tab from nothing focused: the last section, system (letters went with C4).
+        a.on_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
         assert_eq!(a.focus, Some('y'));
         press(&mut a, KeyCode::Enter);
         assert_eq!(a.screen(), ScreenId::System);
@@ -566,7 +652,7 @@ mod tests {
     fn enter_without_focus_says_why() {
         let mut a = app();
         press(&mut a, KeyCode::Enter);
-        assert!(a.note.as_deref().is_some_and(|n| n.contains("focus a section")));
+        assert!(a.note.as_deref().is_some_and(|n| n.contains("choose a section")));
     }
 
     #[test]
@@ -677,11 +763,148 @@ mod tests {
     #[test]
     fn esc_returns_to_the_section_you_left() {
         let mut a = app();
-        press(&mut a, KeyCode::Char('t'));
+        a.focus = Some('t');
         a.open(ScreenId::Tasks);
         assert_eq!(a.focus, None);
         press(&mut a, KeyCode::Esc);
         assert_eq!(a.screen(), ScreenId::Home);
         assert_eq!(a.focus, Some('t'));
+    }
+
+    // ------------------------------------------------------------ the one key table (C4)
+
+    /// The presses a key as the help shows it stands for: `↑ ↓` is two keys, `g h` one
+    /// sequence of two.
+    fn presses(shown: &str) -> Vec<Vec<KeyEvent>> {
+        let plain = |c| KeyEvent::new(c, KeyModifiers::NONE);
+        if let Some(c) = shown.strip_prefix("g ") {
+            let c = c.chars().next().unwrap();
+            return vec![vec![plain(KeyCode::Char('g')), plain(KeyCode::Char(c))]];
+        }
+        shown
+            .split_whitespace()
+            .map(|tok| match tok {
+                "esc" => plain(KeyCode::Esc),
+                "^r" => KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL),
+                "^d" => KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL),
+                "^u" => KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
+                "⇥" => plain(KeyCode::Tab),
+                "⇧⇥" => KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT),
+                "⏎" => plain(KeyCode::Enter),
+                "␣" => plain(KeyCode::Char(' ')),
+                "←" => plain(KeyCode::Left),
+                "→" => plain(KeyCode::Right),
+                "↑" => plain(KeyCode::Up),
+                "↓" => plain(KeyCode::Down),
+                "PgUp" | "⇞" => plain(KeyCode::PageUp),
+                "PgDn" | "⇟" => plain(KeyCode::PageDown),
+                "Home" => plain(KeyCode::Home),
+                "End" => plain(KeyCode::End),
+                t if t.chars().count() == 1 => plain(KeyCode::Char(t.chars().next().unwrap())),
+                t => panic!("help names a key the test cannot press: {t:?}"),
+            })
+            .map(|e| vec![e])
+            .collect()
+    }
+
+    /// The places a key may need: nothing focused or each section focused, on each of the first
+    /// rows. Built one at a time, as a key is tried in each until one handles it.
+    fn contexts(fx: &Fixtures, screen: ScreenId) -> impl Iterator<Item = App> + '_ {
+        let focuses: Vec<Option<char>> = std::iter::once(None)
+            .chain(screen.sections().iter().map(|s| Some(s.letter)))
+            .collect();
+        (0..8).flat_map(move |row| {
+            focuses.clone().into_iter().map(move |focus| {
+                let mut a = App::new(fx.clone(), ScreenId::Home, UseLog::off());
+                if screen != ScreenId::Home {
+                    a.open(screen);
+                }
+                a.focus = focus;
+                a.sel.insert((screen, focus.unwrap_or(' ')), row);
+                // A first draw, so sections that record what they drew know it.
+                crate::dump::render(&a, 95, 38).unwrap();
+                a
+            })
+        })
+    }
+
+    #[test]
+    fn no_screen_binds_a_table_key_to_something_else() {
+        for screen in ScreenId::ALL {
+            for (shown, what) in crate::ui::help_keys(screen) {
+                for tok in shown.split_whitespace() {
+                    assert!(
+                        keys::app_key_is_free(tok),
+                        "{screen}: {tok:?} ({what}) is the table's key"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Every key the help names on a screen is handled there: the screen's own keys never end in
+    /// "does nothing here" (in some selection), and no table key panics anywhere.
+    #[test]
+    fn every_key_the_help_names_works_on_its_screen() {
+        let fx = app().fixtures;
+        for screen in ScreenId::ALL {
+            let own: Vec<String> = crate::ui::help_keys(screen)
+                .iter()
+                .map(|(k, _)| k.to_string())
+                .collect();
+            for (shown, what) in keys::help(&crate::ui::help_keys(screen)) {
+                for k in presses(&shown) {
+                    let mut handled = false;
+                    for mut a in contexts(&fx, screen) {
+                        for e in &k {
+                            a.on_key(*e);
+                        }
+                        crate::dump::render(&a, 95, 38).unwrap();
+                        if !a.note.as_deref().is_some_and(|n| n.contains("does nothing here")) {
+                            handled = true;
+                            break;
+                        }
+                    }
+                    if own.contains(&shown) {
+                        assert!(handled, "{screen}: {shown} ({what}): {k:?} does nothing anywhere");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn table_keys_mean_the_same_on_home() {
+        let mut a = app();
+        // g then a letter goes to a place; outside the session the windows only say so.
+        for (c, want) in [
+            ('a', ScreenId::Approve),
+            ('t', ScreenId::Tasks),
+            ('l', ScreenId::AutoLog),
+        ] {
+            press(&mut a, KeyCode::Char('g'));
+            press(&mut a, KeyCode::Char(c));
+            assert_eq!(a.screen(), want, "g {c}");
+        }
+        press(&mut a, KeyCode::Char('g'));
+        press(&mut a, KeyCode::Char('h'));
+        assert_eq!(a.screen(), ScreenId::Home);
+        press(&mut a, KeyCode::Char('g'));
+        press(&mut a, KeyCode::Char('m'));
+        assert_eq!(a.note.as_deref(), Some("would show the mail window"));
+        // q is back below the top.
+        a.open(ScreenId::Tasks);
+        press(&mut a, KeyCode::Char('q'));
+        assert_eq!((a.screen(), a.quit), (ScreenId::Home, false));
+        // ^r asks the window for its live data now.
+        a.on_key(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL));
+        assert!(a.refresh_requested);
+        // u where there is nothing to undo says so.
+        press(&mut a, KeyCode::Char('u'));
+        assert_eq!(a.note.as_deref(), Some("nothing to undo here"));
+        // Section letters no longer focus sections (they shadowed y, a, t).
+        press(&mut a, KeyCode::Esc);
+        press(&mut a, KeyCode::Char('w'));
+        assert_eq!(a.focus, None);
     }
 }

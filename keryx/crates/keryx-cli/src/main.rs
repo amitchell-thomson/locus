@@ -554,7 +554,7 @@ fn doctor(path: &std::path::Path) -> anyhow::Result<()> {
                         last.kind.as_str(),
                         last.error.unwrap_or_default()
                     ),
-                    "see ~/Library/Logs/keryx-runs.log and the Runs view (g c)",
+                    "see ~/Library/Logs/keryx-runs.log and the Runs view (g w)",
                 ),
                 s => r.ok(format!("last run: {} {when}, {s}", last.kind.as_str())),
             }

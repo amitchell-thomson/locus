@@ -1531,12 +1531,12 @@ fn details(f: &mut Frame, app: &App, area: Rect, cl: &Cluster) {
             None if matches!(i.overlay, Overlay::Personal) && !app.for_label(None, key).is_empty() => vec![
                 text(app.for_label(None, key)),
                 dimmed("  ".into()),
-                TSpan::styled("L", locus_theme::keyst()),
+                TSpan::styled("e", locus_theme::keyst()),
                 dimmed(" links it to something specific".into()),
             ],
             None => vec![
                 dimmed("not linked to anything yet  ".into()),
-                TSpan::styled("L", locus_theme::keyst()),
+                TSpan::styled("e", locus_theme::keyst()),
                 dimmed(" says what it is for".into()),
             ],
         },
@@ -1613,65 +1613,15 @@ fn details(f: &mut Frame, app: &App, area: Rect, cl: &Cluster) {
 
 // ---------------------------------------------------------------- popups
 
-/// The keys overlay, as locus's (L2): this screen, everywhere, symbols. The digit filters are
-/// here with each area in its colour, since the footer no longer carries a legend.
+/// The keys overlay, as locus's (L2): generated from the one key table (cleanup C4, D1), the
+/// shared keys and `g` places on the left and kairos's own on the right, so help and keys cannot
+/// drift. The symbols follow kairos's keys in the right column, and the digit filters close it,
+/// each area in its colour (the footer carries no legend): all of it fits a 30-row window.
 fn help(f: &mut Frame, app: &App, area: Rect) {
     let key = locus_theme::keyst();
-    let text = Style::default().fg(c("text"));
     let dim = locus_theme::dim();
-    let pair = |k: &str, what: &str| {
-        Line::from(vec![
-            TSpan::styled(format!("  {k:<10}"), key),
-            TSpan::styled(what.to_string(), text),
-        ])
-    };
-    let mut lines = vec![Line::from(TSpan::styled(" this screen", dim))];
-    for (k, what) in [
-        ("←→ hl [ ]", "day · week back, forward"),
-        ("⇧↑↓ ⇧←→", "move the selected item 30 min · a day"),
-        ("⌥↑↓", "shorter · longer by 15 min (a block: its task's time)"),
-        ("↑↓ jk", "select; past the first or last, scroll the hours"),
-        ("⇥ ⇧⇥", "week → day → month → agenda"),
-        ("t w", "today · week Mon–Sun or Mon–Fri"),
-        ("+", "add an event or a task (it asks what it is for)"),
-        ("e m L", "edit · move · say what it is for"),
-        ("d x", "done (a task) · remove (asks first)"),
-        ("y x d", "a past block (✓ too): done · didn't happen · task done"),
-        ("n W S", "start a task now · log work · run the scheduler"),
-        ("s B", "share to Family · going or not"),
-        ("C u r", "check in · undo · sync"),
-        ("T P A", "tasks · projects · approve, in locus"),
-    ] {
-        lines.push(pair(k, what));
-    }
-    // The filters: each digit with its area or stream, in its colour.
-    let mut legend = vec![TSpan::styled(format!("  {:<10}", "1–8 p f"), key)];
-    for (k, name, _, col, _) in overlay_flags(app) {
-        legend.push(TSpan::styled(format!("{k} "), dim));
-        legend.push(TSpan::styled(
-            format!("{}  ", name.to_lowercase()),
-            Style::default().fg(rgb(col)),
-        ));
-    }
-    lines.push(Line::from(legend));
-    lines.push(Line::from(vec![
-        TSpan::raw(format!("  {:<10}", "")),
-        TSpan::styled("show or hide each; p all yours, f Family", dim),
-    ]));
-    lines.push(Line::raw(""));
-    lines.push(Line::from(TSpan::styled(" everywhere", dim)));
-    for (k, what) in [
-        ("⏎", "open in locus, else the details"),
-        ("esc", "back"),
-        ("/", "search"),
-        ("?", "keys"),
-        ("alt-1…4", "home · project · calendar · mail"),
-    ] {
-        lines.push(pair(k, what));
-    }
-    lines.push(Line::raw(""));
-    lines.push(Line::from(TSpan::styled(" symbols", dim)));
-    for (sym, what) in [
+    let w = area.width.min(96);
+    let symbols = [
         (
             format!(
                 "{} {} {}",
@@ -1679,20 +1629,30 @@ fn help(f: &mut Frame, app: &App, area: Rect) {
                 locus_theme::glyph::WAITING_BOX,
                 locus_theme::glyph::DONE
             ),
-            "a work block: to do · over, not checked in · done",
+            "a block: to do · unanswered · done",
         ),
-        ("┆ ╏ ▌".to_string(), "kairos may move it · you placed it · an event"),
+        ("┆ ╏ ▌".to_string(), "may move · you placed it · event"),
         ("⚑".to_string(), "a task's due date"),
         ("◌".to_string(), "a change waiting in Approve"),
-        ("⧉".to_string(), "copies of one event (only the winner is drawn)"),
-    ] {
-        lines.push(Line::from(vec![
-            TSpan::styled(format!("  {sym:<10}"), key),
-            TSpan::styled(what, text),
-        ]));
+        ("⧉".to_string(), "copies of one event"),
+    ];
+    let mut right: Vec<(&str, &str)> = crate::app::APP_KEYS.to_vec();
+    right.extend(symbols.iter().map(|(s, w)| (s.as_str(), *w)));
+    let mut lines = locus_theme::keys::help_lines("calendar", &right, w.saturating_sub(2));
+    lines.push(Line::raw(""));
+    // The filters: each digit with its area or stream, in its colour.
+    let mut legend = vec![TSpan::styled(format!("  {:<10}", "filters"), dim)];
+    for (k, name, _, col, _) in overlay_flags(app) {
+        legend.push(TSpan::styled(format!("{k} "), key));
+        legend.push(TSpan::styled(
+            format!("{}  ", name.to_lowercase()),
+            Style::default().fg(rgb(col)),
+        ));
     }
+    legend.push(TSpan::styled("p yours f Family", dim));
+    lines.push(Line::from(legend));
     let h = (lines.len() as u16 + 2).min(area.height);
-    let r = centred(area, 80, h);
+    let r = centred(area, w, h);
     f.render_widget(Clear, r);
     f.render_widget(Paragraph::new(lines).block(popup_block("keys")), r);
 }
@@ -1729,7 +1689,7 @@ fn checkin(f: &mut Frame, app: &App, area: Rect, i: usize) {
     lines.push(Line::raw(""));
     lines.push(locus_theme::hints(&[
         ("y", "done"),
-        ("x", "missed"),
+        ("n", "missed"),
         ("d", "task done"),
         ("⏎", "fix its time"),
         ("↓", "next"),
@@ -1871,13 +1831,19 @@ fn status_bar(f: &mut Frame, app: &App, area: Rect) {
             locus_theme::hints(&[("⇥", "next field"), ("⏎", "save"), ("esc", "cancel")]),
             None,
         ),
-        Mode::Confirm(_) => (locus_theme::hints(&[("y", "yes"), ("any other key", "no")]), None),
+        Mode::Confirm(_) => (locus_theme::hints(&[("y", "yes"), ("n esc", "no")]), None),
         Mode::AddChoice => (
             locus_theme::hints(&[("e", "event"), ("t", "task"), ("esc", "cancel")]),
             None,
         ),
         _ => (
-            locus_theme::hints(&[("⏎", "open"), ("⇥", "view"), ("[ ]", "week"), ("?", "keys")]),
+            locus_theme::hints(&[
+                ("⏎", "details"),
+                ("⇥", "view"),
+                ("[ ]", "week"),
+                ("g", "go to"),
+                ("?", "keys"),
+            ]),
             None,
         ),
     };
@@ -1906,7 +1872,7 @@ fn status_bar(f: &mut Frame, app: &App, area: Rect) {
                 parts.push(format!("{n} to check in · C"));
             }
             if !app.pending.is_empty() {
-                parts.push(format!("{} to approve · A", app.pending.len()));
+                parts.push(format!("{} to approve · g a", app.pending.len()));
             }
             if app.daemon_error.is_some() {
                 parts.push("kairosd offline".into());

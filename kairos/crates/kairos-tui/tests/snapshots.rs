@@ -143,7 +143,7 @@ fn hjkl_move_like_the_arrows() {
 #[test]
 fn agenda_view() {
     let (mut a, _t) = app("2026-10-15T08:00:00+01:00");
-    a.key(Key::Char('g'));
+    a.key(Key::BackTab); // week → agenda
     insta::assert_snapshot!(render_to_string(&a, 100, 40));
 }
 
@@ -628,7 +628,7 @@ fn keys_do_what_the_hints_say_for_each_kind_of_item() {
     };
     // Work block (Wed 21): hints, and x = skip (L4: x removes, d is done).
     pick(&mut a, &|i| i.meta.kind == kairos_core::model::EventKind::TaskBlock);
-    assert_eq!(a.key_hints(), "n start · ⌥↑↓ length · e edit · d done · x skip");
+    assert_eq!(a.key_hints(), "s start · ⌥↑↓ length · e edit · d done · x skip");
     a.key(Key::Char('x'));
     assert!(matches!(a.mode, Mode::Confirm(Confirm::Skip)));
     a.key(Key::Char('n')); // cancel
@@ -639,7 +639,7 @@ fn keys_do_what_the_hints_say_for_each_kind_of_item() {
     pick(&mut a, &|i| i.title.contains("B4 sheet"));
     assert_eq!(
         a.key_hints(),
-        "d done · a more time · e edit · m move · n start · x drop"
+        "d done · a more time · e edit · m move · s start · x drop"
     );
     a.key(Key::Char('e'));
     let Mode::Form(f) = &a.mode else { panic!("no form") };
@@ -671,9 +671,14 @@ fn keys_do_what_the_hints_say_for_each_kind_of_item() {
     assert_eq!(a.view, View::Week);
     a.key(Key::BackTab);
     assert_eq!(a.view, View::Agenda);
+    // g is "go to" now (cleanup C4): it waits for a place's letter; the agenda is on ⇥.
     a.view = View::Week;
     a.key(Key::Char('g'));
-    assert_eq!(a.view, View::Agenda);
+    assert_eq!(a.view, View::Week);
+    assert!(a.g_pending);
+    a.key(Key::Char('c'));
+    assert!(!a.g_pending);
+    assert_eq!(a.message.as_ref().map(|m| m.0.as_str()), Some("this is the calendar"));
 }
 
 #[test]
@@ -792,7 +797,7 @@ fn past_blocks_wait_for_a_check_in_right_on_the_calendar() {
         s.contains(&format!("▌{} B4 sheet", kairos_core::build::WAITING_ICON)),
         "{s}"
     );
-    assert_eq!(a.key_hints(), "y done · ⌥↑↓ length · x missed · d task done");
+    assert_eq!(a.key_hints(), "y done · ⌥↑↓ length · n missed · d task done");
     // No more c (partly) or l (took longer; l is → now): ⌥↑↓ makes the block what happened, then y.
     a.key(Key::Char('c'));
     assert!(matches!(a.mode, Mode::Normal));
@@ -929,7 +934,7 @@ fn worked_time_is_a_faint_bar_not_an_event() {
 
 #[test]
 fn a_linked_item_says_where_it_opens_and_locus_can_open_a_day() {
-    // Spec K8. Enter itself is not pressed here: it would bring the locus session forward.
+    // Spec K8. A test app has no links (`App::links`), so ⏎ only says where it would open.
     let (mut a, _t) = app("2026-10-19T08:00:00+01:00");
     let mut idx = a.index.clone();
     let monday = now("2026-10-19T00:00:00+01:00");
@@ -945,12 +950,18 @@ fn a_linked_item_says_where_it_opens_and_locus_can_open_a_day() {
     a.open_day(day, Some(&uid));
     assert_eq!(a.view, kairos_tui::app::View::Day);
     assert_eq!(a.selected().unwrap().primary.uid, uid);
-    assert!(a.key_hints().starts_with("⏎ open in locus"), "{}", a.key_hints());
     let s = render_to_string(&a, 120, 30);
     assert!(s.contains("→ millennium"), "{s}");
-    // v still shows the details.
-    a.key(Key::Char('v'));
+    // ⏎ shows the details (they were on v, which marks several now: C4); ⏎ again opens it in
+    // locus.
+    a.key(Key::Enter);
     assert!(a.expanded);
+    a.key(Key::Enter);
+    assert!(!a.expanded);
+    assert_eq!(
+        a.message.as_ref().map(|m| m.0.as_str()),
+        Some("would open millennium in locus")
+    );
 }
 
 #[test]
@@ -996,24 +1007,33 @@ fn adding_asks_what_it_is_for_and_l_links_afterwards() {
         a.form_preview(f)
     );
     a.key(Key::Esc);
-    // L on an event: the same For, for linking afterwards.
+    // e on an event: its form, whose For links it afterwards (L folded into e, cleanup C4: Tab
+    // reaches every field).
     a.key(Key::Esc);
-    let n = a.day_clusters(a.cursor).len();
-    assert!(n > 0);
-    a.key(Key::Char('L'));
+    a.sel = a
+        .day_clusters(a.cursor)
+        .iter()
+        .position(|c| {
+            c.primary.overlay == kairos_core::config::Overlay::Personal
+                && c.primary.meta.kind == kairos_core::model::EventKind::Event
+                && !c.primary.recurring
+        })
+        .expect("one of your own events");
+    a.key(Key::Char('e'));
     let Mode::Form(f) = &a.mode else {
-        panic!("L opens the link form")
+        panic!("e opens the form")
     };
-    assert_eq!(f.title(), "what is it for");
-    // Typing and Enter submit it (a check for a title, which the link form has none of, made
-    // Enter do nothing: 25 Oct, a B14 lecture).
+    assert_eq!(f.title(), "edit event");
+    while matches!(&a.mode, Mode::Form(f) if f.fields[f.focus].label != "For") {
+        a.key(Key::Tab);
+    }
     for c in "b15".chars() {
         a.key(Key::Char(c));
     }
     a.key(Key::Enter);
     assert!(
         !matches!(a.mode, Mode::Form(_)),
-        "Enter closes the link form: {:?}",
+        "Enter closes the form: {:?}",
         a.message
     );
     assert!(
@@ -1107,11 +1127,11 @@ fn an_items_detail_lays_out_its_area_what_it_is_for_its_task_and_who_made_it() {
         .iter()
         .position(|c| c.primary.meta.task_id.as_deref() == Some("task-b4"))
         .unwrap();
-    a.key(Key::Char('v'));
+    a.key(Key::Enter);
     let s = render_to_string(&a, 120, 34);
     for want in [
         "area     ●",
-        "for      Errands  L links it to something specific",
+        "for      Errands  e links it to something specific",
         "task     B4 sheet",
         "made by  the scheduler (kairos)",
     ] {
@@ -1354,4 +1374,170 @@ fn a_run_of_nudges_is_one_write_sent_when_the_keys_stop() {
     a.key(Key::Down);
     assert!(a.held.is_none());
     assert_eq!(a.deferred.len(), 1, "one write for the run");
+}
+
+// ------------------------------------------------------------ the one key table (C4)
+
+/// The presses a key as the help shows it stands for (`⇧↑↓` is two, `g h` is g then h).
+fn presses(shown: &str) -> Vec<Vec<Key>> {
+    use locus_theme::keys::PLACES;
+    if let Some(c) = shown.strip_prefix("g ") {
+        assert!(PLACES.iter().any(|(p, _, _)| c.starts_with(*p)), "{shown}");
+        return vec![vec![Key::Char('g'), Key::Char(c.chars().next().unwrap())]];
+    }
+    let mut out = Vec::new();
+    for tok in shown.split_whitespace() {
+        let keys: Vec<Key> = match tok {
+            "esc" => vec![Key::Esc],
+            "^r" => vec![Key::Ctrl('r')],
+            "⇧↑↓" => vec![Key::ShiftUp, Key::ShiftDown],
+            "⇧←→" => vec![Key::ShiftLeft, Key::ShiftRight],
+            "⌥↑↓" => vec![Key::AltUp, Key::AltDown],
+            "⇥" => vec![Key::Tab],
+            "⇧⇥" => vec![Key::BackTab],
+            "⏎" => vec![Key::Enter],
+            "←" => vec![Key::Left],
+            "→" => vec![Key::Right],
+            "↑" => vec![Key::Up],
+            "↓" => vec![Key::Down],
+            "1–9" => vec![Key::Char('3')],
+            t if t.chars().count() == 1 => vec![Key::Char(t.chars().next().unwrap())],
+            t => panic!("help names a key the test cannot press: {t:?}"),
+        };
+        out.extend(keys.into_iter().map(|k| vec![k]));
+    }
+    out
+}
+
+/// Everything a key can visibly change.
+fn state(a: &App) -> String {
+    format!(
+        "{:?}",
+        (
+            a.view,
+            a.cursor,
+            a.sel,
+            a.expanded,
+            &a.mode,
+            &a.message,
+            &a.search,
+            &a.filter,
+            a.work_week,
+            a.g_pending,
+            a.quit,
+            a.day_top.get(),
+        )
+    )
+}
+
+/// The places a key may need to be pressed on: a task's ⚑ (with its task open), one of your
+/// own events, a Family event, and an item with its details open.
+fn contexts() -> Vec<(App, tempfile::TempDir)> {
+    let mk = || {
+        let (mut a, t) = app("2026-10-21T08:00:00+01:00");
+        let mut task = Task::new("B4 sheet", "Personal", 240, Author::Claude, now("2026-10-12T08:00:00Z"));
+        task.id = "task-b4".into();
+        task.due = Some(Due::At(now("2026-10-23T16:00:00Z")));
+        a.tasks = vec![task];
+        (a, t)
+    };
+    let pick = |a: &mut App, pred: &dyn Fn(&kairos_core::model::Instance) -> bool| {
+        a.sel = a.day_clusters(a.cursor).iter().position(|c| pred(&c.primary)).unwrap();
+    };
+    let (mut flag, t1) = mk();
+    flag.key(Key::Right);
+    flag.key(Key::Right);
+    pick(&mut flag, &|i| i.title.contains("B4 sheet"));
+    let (mut own, t2) = mk();
+    own.cursor = chrono::NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
+    pick(&mut own, &|i| i.title == "Squash");
+    let (mut family, t3) = mk();
+    family.cursor = chrono::NaiveDate::from_ymd_opt(2026, 10, 15).unwrap();
+    pick(&mut family, &|i| i.overlay == kairos_core::config::Overlay::Family);
+    let (mut details, t4) = mk();
+    details.key(Key::Enter);
+    assert!(details.expanded);
+    vec![(flag, t1), (own, t2), (family, t3), (details, t4)]
+}
+
+#[test]
+fn kairos_own_keys_never_shadow_the_table() {
+    for (shown, what) in kairos_tui::app::APP_KEYS {
+        for tok in shown.split_whitespace() {
+            assert!(
+                locus_theme::keys::app_key_is_free(tok),
+                "{tok:?} ({what}) is the table's key"
+            );
+        }
+    }
+}
+
+#[test]
+fn every_key_the_help_names_does_something_on_the_calendar() {
+    for (shown, what) in locus_theme::keys::help(kairos_tui::app::APP_KEYS) {
+        for keys in presses(&shown) {
+            let handled = contexts().into_iter().any(|(mut a, _t)| {
+                let before = state(&a);
+                for k in &keys {
+                    a.key(*k);
+                }
+                state(&a) != before
+            });
+            assert!(handled, "{shown} ({what}): {keys:?} changed nothing anywhere");
+        }
+    }
+}
+
+#[test]
+fn table_keys_mean_the_same_on_the_calendar() {
+    use kairos_tui::app::{Confirm, Mode};
+    let (mut a, _t) = app("2026-10-21T08:00:00+01:00");
+    // q quits only at the top; with the details open it is back.
+    a.key(Key::Enter);
+    a.key(Key::Char('q'));
+    assert!(!a.expanded && !a.quit);
+    // v marks several (it showed details before C4): not the details any more.
+    a.key(Key::Char('v'));
+    assert!(!a.expanded);
+    // x always asks; n refuses.
+    a.sel = 0;
+    a.cursor = chrono::NaiveDate::from_ymd_opt(2026, 10, 19).unwrap();
+    a.sel = a
+        .day_clusters(a.cursor)
+        .iter()
+        .position(|c| c.primary.title == "Squash")
+        .unwrap();
+    a.key(Key::Char('x'));
+    assert!(matches!(a.mode, Mode::Confirm(Confirm::Delete)));
+    a.key(Key::Char('n'));
+    assert!(matches!(a.mode, Mode::Normal));
+    // u undoes at once (no question), and says so; without kairosd it says why not.
+    a.key(Key::Char('u'));
+    assert!(matches!(a.mode, Mode::Normal));
+    assert!(
+        a.message.as_ref().is_some_and(|m| m.0.contains("nothing to undo")),
+        "{:?}",
+        a.message
+    );
+    // ^r refreshes (r is free now); ^c quits from inside a form.
+    a.key(Key::Ctrl('r'));
+    assert!(a.message.as_ref().is_some_and(|m| m.0.contains("refreshing")));
+    a.key(Key::Char('e'));
+    assert!(matches!(a.mode, Mode::Form(_)));
+    a.key(Key::Ctrl('c'));
+    assert!(a.quit);
+    // Outside the window, g m only says where it would go.
+    let (mut b, _t) = app("2026-10-21T08:00:00+01:00");
+    b.key(Key::Char('g'));
+    b.key(Key::Char('m'));
+    assert_eq!(
+        b.message.as_ref().map(|m| m.0.as_str()),
+        Some("would show the mail window")
+    );
+    b.key(Key::Char('g'));
+    b.key(Key::Char('a'));
+    assert_eq!(
+        b.message.as_ref().map(|m| m.0.as_str()),
+        Some("would open approve in the home window")
+    );
 }

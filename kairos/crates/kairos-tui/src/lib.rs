@@ -55,8 +55,12 @@ fn map_key(k: event::KeyEvent) -> Option<Key> {
     if k.kind != KeyEventKind::Press {
         return None;
     }
-    if k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('c') {
-        return Some(Key::Char('q'));
+    // ^r refreshes and ^c quits (the shared table, D1); other control keys mean nothing here.
+    if k.modifiers.contains(KeyModifiers::CONTROL) {
+        return match k.code {
+            KeyCode::Char(c) => Some(Key::Ctrl(c)),
+            _ => None,
+        };
     }
     Some(match k.code {
         KeyCode::Char(c) => Key::Char(c),
@@ -104,11 +108,27 @@ pub fn run(cfg: Config, path: PathBuf) -> Result<(), String> {
     app.uselog = locus_contract::uselog::UseLog::new(locus_contract::uselog::default_path());
     app.uselog.record(&format!("calendar:{}", app.view.name()), "open");
     app.daemon = Daemon::from_config(&cfg).ok().map(|d| d.interactive(true));
+    app.links = true;
     let (tx, rx) = mpsc::channel::<()>();
     // kairosd's index, fetched in the background: (requested at, result).
     type Fetched = (chrono::DateTime<Utc>, Result<Option<(cache::Index, String)>, String>);
     let poller = Daemon::from_config(&cfg).ok().map(std::sync::Arc::new);
     let (itx, irx) = mpsc::channel::<Fetched>();
+    // Back on the view and day it showed before a rebuild restarted it (cleanup C7).
+    if let Some(v) = std::env::var("KAIROS_REEXEC_VIEW")
+        .ok()
+        .and_then(|n| app::View::from_name(&n))
+    {
+        app.view = v;
+    }
+    if let Some(d) = std::env::var("KAIROS_REEXEC_DATE")
+        .ok()
+        .and_then(|d| chrono::NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok())
+    {
+        app.cursor = d;
+    }
+    let mut rebuilt = locus_theme::rebuilt::Rebuilt::new();
+    let mut reexec = false;
     let mut terminal = ratatui::try_init().map_err(|e| e.to_string())?;
     let result = (|| -> Result<(), String> {
         let long_ago = Instant::now() - Duration::from_secs(3600);
@@ -125,7 +145,13 @@ pub fn run(cfg: Config, path: PathBuf) -> Result<(), String> {
         let mut write_done = chrono::DateTime::<Utc>::MIN_UTC;
         // Days locus asks to open (spec K8).
         let mut inbox = locus_contract::link::OpenFile::kairos();
+        let mut last_key: Option<Instant> = None;
         loop {
+            // A rebuilt binary takes over in place, once nothing is being typed or open (C7).
+            if rebuilt.ready() && app.idle() && last_key.is_none_or(|t| t.elapsed() > locus_theme::rebuilt::IDLE) {
+                reexec = true;
+                return Ok(());
+            }
             if let Some(req) = inbox.poll() {
                 // "add-task [for]": the add-task form, For filled (round 7a: one add form).
                 if let Some(rest) = req.strip_prefix("add-task") {
@@ -223,6 +249,7 @@ pub fn run(cfg: Config, path: PathBuf) -> Result<(), String> {
                     if let Event::Key(k) = event::read().map_err(|e| e.to_string())?
                         && let Some(key) = map_key(k)
                     {
+                        last_key = Some(Instant::now());
                         if app.message.is_some() && matches!(app.mode, Mode::Normal) {
                             app.message = None;
                         }
@@ -249,6 +276,14 @@ pub fn run(cfg: Config, path: PathBuf) -> Result<(), String> {
         }
     })();
     ratatui::restore();
+    if reexec && result.is_ok() {
+        let err = locus_theme::rebuilt::reexec(&[
+            ("KAIROS_REEXEC_VIEW", app.view.name().to_string()),
+            ("KAIROS_REEXEC_DATE", app.cursor.format("%Y-%m-%d").to_string()),
+        ]);
+        // exec returns only on failure: say so, and stop as a quit would.
+        return Err(format!("could not restart after the rebuild: {err}"));
+    }
     result
 }
 

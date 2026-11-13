@@ -230,7 +230,7 @@ fn g_reaches_locus_places_through_the_session_and_g_m_is_this_window() {
         ('h', "home:home"),
         ('a', "home:approve"),
         ('t', "home:tasks"),
-        ('l', "home:log"),
+        ('l', "home:autolog"),
         ('c', "calendar:"),
     ] {
         keys(&mut a, &[Key::Char('g'), Key::Char(c)]);

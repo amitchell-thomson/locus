@@ -1359,7 +1359,7 @@ impl App {
             Place::Home => (Some("home"), "home"),
             Place::Approve => (Some("approve"), "approve"),
             Place::Tasks => (Some("tasks"), "tasks"),
-            Place::Log => (Some("log"), "the log"),
+            Place::Log => (Some("autolog"), "the log"),
             _ => (None, "the calendar"),
         };
         let app = if place == Place::Calendar { "kairos" } else { "locus" };

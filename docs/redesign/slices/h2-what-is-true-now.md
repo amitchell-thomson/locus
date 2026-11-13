@@ -280,3 +280,56 @@ Each step was checked against live data after deploying.
 - Restart the locus window to run the new build (y/n, careers from facts, the live log).
 
 **[proposal]** A repository's own `state.md` sits under Now beside the facts, as what the repository says, dated. Briefs otherwise take state only from facts. Alternative: write it as `repo · state` facts.
+
+## Report: H2.10 scored (13 Nov)
+
+Seventeen questions: the H2 set (Y1, Y7, Y9, 14, 35, 42, 43) and H1's 13 partials. Each was asked
+in a fresh `claude -p` on the laptop with only the locus, keryx and kairos tools
+(remember/forget refused), and the 42 needed two turns: "suppose I took the Jump offer", then
+"did I get a Jump offer?". Three graders opened every cited pointer and searched for what the
+answers missed. P2's kairos writes (four tasks, four plans) were undone afterwards. Raw runs and
+grades are in `data/evals/h2-score-2026-11-13/` (laptop, not committed).
+
+**5 pass, 11 partial, 1 fail.** Both integrity questions pass exactly.
+
+| Q | before | now | calls | first useful | s | what decides it |
+|---|---|---|---|---|---|---|
+| 42 | new | **pass** | 1 | (turn 1) | 5 | "No": fact:9, not offered; the "suppose" refused in turn 1 too |
+| 43 | new | **pass** | 3 | 1 | 11 | "No, the process is over": fact:9 |
+| Y7 | pass (re-run 1) | **pass** | 15 | 2 | 76 | BH facts 6/7/8 exact; renege grounded in contract clauses; opinions labelled |
+| Y5 | partial | **pass** | 20 | 2 | 113 | regime-ml's doc and the tanker-flow null commit cited |
+| 23 | partial | **pass** | 11 | 1 | 26 | no 3YP mail proposes a time; scheduled nothing, asked |
+| Y1 | partial | partial | 6 → 5 | 1 | 48 → 33 | his goal was cut off `context` (fixed and deployed, re-run uses it); still says Millennium pay is not on record (the letter has it), skips right to work |
+| Y3 | partial | partial | 33 | 2 | 143 | notes cited by section, not page; 2 of ~8 BH notebooks |
+| Y9 | pass (re-run 1) | **partial** | 15 | 2 | 95 | the transcription reads "EV"; the answer quotes "CV" and builds a weakness on it |
+| 4 | partial | partial | 3 | 1 | 12 | right state, names no commits (the record is there) |
+| 7 | partial | partial | 11 | 4 | 41 | misses B15 System Identification; no event pointers |
+| 10 | partial | **fail** | 22 | 18 | 110 | library reading notes (GPTQ and others) not found by search; says nothing for locus |
+| 14 | partial | partial | 9 | 2 | 40 | every number traces; one paraphrase overstates (8 of 70 still read as cash) |
+| 34 | fail→partial | partial | 7 | 2 | 47 | calls the CV's 3.4 s "likely wrong" (true for detuning-only) |
+| 35 | partial | partial | 6 | 2 | 40 | decision current; deck and acceptance mail not cited; mixes two #10s |
+| 38 | partial | partial | 3 | 1 | 17 | September now has the careers activity; one Millennium round (30 Sep) was rescheduled, its fact is stale |
+| 39 | partial | partial | 10 | 2 | 41 | misses src:175 and the exchange-simulator plan |
+| P2 | partial | partial | 17 | 1 | 61 | no restating tasks now; adds an unasked 6 h quast task; misses a B2/OxAM clash |
+
+**Against the targets.** Every H2 question passing: **no** (3 of 7: Y7, 42, 43). The integrity
+questions exactly: **yes**. No H1 pass worse: **no**, Y9 (pass in re-run 1, a misread
+transcription) and Q10 (partial to fail, a library search gap, not H2's).
+
+**What H2 changed.** State questions now come from facts with dates and sources, recalled
+exactly (Y7 fail→pass, 42, 43, the careers half of 38, BH and Jump everywhere). Effort fell where
+the ledger answers: 38 7→3 calls, Y1 12→5, 43 in 3. What is left is mostly not facts: citing by
+page, reading a source rather than paraphrasing it, and finding library notes.
+
+**Fixed during scoring:** `context` listed his own facts alphabetically and cut them at eight,
+so his goal never reached an offer question (Y1). Goals, decisions and plans now come first and
+his facts are shown whole.
+
+**Open from the scoring:**
+1. Library reading notes are not listable through search (10, 39): `src:` documents are not heuris
+   items.
+2. An interview fact is not replaced when a reschedule mail arrives (38): fact:89 is stale.
+3. `facts("brevan-howard")` fails on a firm's name; the id is `bh-2027` (Y7). The subject should
+   resolve names and aliases.
+4. Model habits the tools cannot fix: page citations (Y3), quoting a transcription as written (Y9),
+   a CV figure checked for what it holds (34).

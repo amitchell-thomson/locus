@@ -85,10 +85,12 @@ Decided by kairos on every changeset, never by the caller. MCP has no approve to
 
 **Low, applied at once and undoable:** the scheduler's own work blocks (any number, at any time,
 so work moves out of the way of a new event at once); new tasks and changes to them; new one-off
-events that do not clash with a fixed event; re-keying events kairos made; recording a check-in.
+events that do not clash with a fixed event, even within 2 hours; moving one of your one-off events
+(not an invitation, not recurring) within the same day when it clashes with nothing (cleanup D3a,
+13 Nov 2026); re-keying events kairos made; recording a check-in.
 
-**High, waiting for you:** changing, moving or deleting an event you made yourself; anything
-recurring; anything starting within 2 hours (except the scheduler's blocks); an event clashing
+**High, waiting for you:** moving an event you made yourself to another day, or deleting it;
+invitations; anything recurring (a series is changed as a whole); anything else starting within 2 hours (except the scheduler's blocks); an event clashing
 with a fixed one; sharing to Family; dropping a task or a due date; more than 8 operations at once
 (the scheduler's own block changes do not count).
 

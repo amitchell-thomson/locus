@@ -31,6 +31,8 @@ pub struct EventFacts {
     pub recurring: bool,
     pub start: DateTime<Utc>,
     pub end: DateTime<Utc>,
+    /// Has an organizer or attendees: an invitation, someone else's as much as his.
+    pub invited: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -164,9 +166,26 @@ pub fn is_checkin_record_op(op: &OpFacts, now: DateTime<Utc>) -> bool {
         })
 }
 
+/// What he asks Claude for as his day changes (cleanup D3a, Alec 13 Nov 2026: "I agree we can let
+/// claude make those events"): a one-off event that clashes with nothing, even within 2 h, and
+/// moving one of his own one-off events within the same day. Lectures and anything recurring,
+/// invitations (someone else's event), Family and anything overlapping a fixed event keep the
+/// normal rules.
+pub fn is_live_event_op(op: &OpFacts) -> bool {
+    let one_off = |e: &EventFacts| e.kind == EventKind::Event && !e.recurring && !e.invited;
+    if op.overlaps_fixed || op.target.as_ref().is_none_or(|t| t.overlay != Overlay::Personal) {
+        return false;
+    }
+    match (op.action, &op.before, &op.after) {
+        (Action::Create, None, Some(a)) => one_off(a),
+        (Action::Update, Some(b), Some(a)) => one_off(b) && one_off(a) && b.start.date_naive() == a.start.date_naive(),
+        _ => false,
+    }
+}
+
 fn high_reasons(op: &OpFacts, now: DateTime<Utc>, finishing: bool) -> Vec<String> {
     let mut r = Vec::new();
-    if is_scheduler_block_op(op) || is_checkin_record_op(op, now) {
+    if is_scheduler_block_op(op) || is_checkin_record_op(op, now) || is_live_event_op(op) {
         return r;
     }
     let imgs: Vec<&EventFacts> = [&op.before, &op.after].into_iter().flatten().collect();
@@ -299,7 +318,11 @@ mod tests {
             recurring,
             start,
             end: start + Duration::hours(1),
+            invited: false,
         })
+    }
+    fn invited(e: Option<EventFacts>) -> Option<EventFacts> {
+        e.map(|e| EventFacts { invited: true, ..e })
     }
     fn op(
         action: Action,
@@ -547,16 +570,51 @@ mod tests {
             ),
             // ---- high
             (
-                "update Alec's phone event",
+                "move Alec's phone event to another day",
                 op(
                     Update,
                     personal(),
                     None,
                     ev(Event, EXTERNAL, false, false, 24),
-                    ev(Event, EXTERNAL, false, false, 25),
+                    ev(Event, EXTERNAL, false, false, 48),
                     false,
                 ),
                 Want::High("not created by kairos"),
+            ),
+            (
+                // D3a (13 Nov): same-day moves of his one-off events, even within 2 h.
+                "move Alec's phone event later the same day",
+                op(
+                    Update,
+                    personal(),
+                    None,
+                    ev(Event, EXTERNAL, false, false, 1),
+                    ev(Event, EXTERNAL, false, false, 3),
+                    false,
+                ),
+                Want::Low,
+            ),
+            (
+                "move an invitation the same day",
+                op(
+                    Update,
+                    personal(),
+                    None,
+                    invited(ev(Event, EXTERNAL, false, false, 3)),
+                    invited(ev(Event, EXTERNAL, false, false, 4)),
+                    false,
+                ),
+                Want::High("not created by kairos"),
+            ),
+            (
+                "create a recurring event within 2 h",
+                op(Create, personal(), None, None, ev(Event, CLAUDE, false, true, 1), false),
+                Want::High("2 h"),
+            ),
+            (
+                "create an event within 2 h over a lecture",
+                op(Create, personal(), None, None, ev(Event, CLAUDE, false, false, 1), true),
+                Want::High("overlaps"),
             ),
             (
                 "delete Alec's phone event",
@@ -628,7 +686,7 @@ mod tests {
                     ev(Event, CLAUDE, false, false, 1),
                     false,
                 ),
-                Want::High("2 h"),
+                Want::Low,
             ),
             (
                 "move event that is ongoing",
@@ -640,7 +698,7 @@ mod tests {
                     ev(Event, CLAUDE, false, false, 5),
                     false,
                 ),
-                Want::High("2 h"),
+                Want::Low,
             ),
             (
                 "move event INTO next 2h",
@@ -652,7 +710,7 @@ mod tests {
                     ev(Event, CLAUDE, false, false, 1),
                     false,
                 ),
-                Want::High("2 h"),
+                Want::Low,
             ),
             (
                 "create overlapping fixed",

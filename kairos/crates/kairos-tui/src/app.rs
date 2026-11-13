@@ -1024,6 +1024,11 @@ impl App {
                     );
                     return;
                 }
+                // One of a series: kairos can only rewrite the whole series, so a delete, move or
+                // "not going" here would act on every occurrence (cleanup C1, 13 Nov).
+                if i.recurring && matches!(k, Key::Char('x' | 'm' | 'B')) {
+                    return self.set_message(SERIES_ONLY, false);
+                }
                 match k {
                     Key::Char('e') | Key::Char('K') => {
                         let label = self.for_label(i.meta.locus.as_deref(), i.key.as_deref());
@@ -1558,6 +1563,9 @@ impl App {
         if i.span.is_all_day() {
             return self.set_message("an all-day item has no length to change: e to edit its days", false);
         }
+        if i.recurring {
+            return self.set_message(SERIES_ONLY, false);
+        }
         if self.daemon.is_none() {
             return self.set_message("kairosd not configured — writes unavailable", true);
         }
@@ -1594,6 +1602,9 @@ impl App {
         };
         if i.meta.kind == EventKind::Worked {
             return Ok(None);
+        }
+        if i.recurring {
+            return Err(SERIES_ONLY.into());
         }
         // A work block on a whole day (from before kairos refused them) becomes a timed one at
         // 09:00 that day, then moves (round 7b).
@@ -2617,6 +2628,12 @@ fn vim_arrow(k: Key) -> Key {
         other => other,
     }
 }
+
+/// kairos edits a series only as a whole (`update_op` writes the master), so moving, stretching,
+/// deleting or "not going" on one occurrence would change every lecture in it. Refused until one
+/// occurrence can be edited on its own (cleanup C1, 13 Nov 2026).
+pub const SERIES_ONLY: &str =
+    "one of a series: kairos would change every occurrence. Change just this one in Calendar on the phone or Mac";
 
 #[cfg(test)]
 mod tests {

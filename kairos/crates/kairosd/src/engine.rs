@@ -475,6 +475,7 @@ impl Engine {
             recurring: series.is_recurring(),
             start: m.start.instant(tz),
             end: m.end.instant(tz),
+            invited: m.invited,
         })
     }
 
@@ -1280,9 +1281,14 @@ impl Engine {
     ) -> Result<Option<Changeset>> {
         let world = self.world(60)?;
         let mut tasks = TaskEdits::new();
-        let Some((mut ops, summary)) = self.update_op(&world, source, uid, req, &mut tasks)? else {
+        let Some((mut ops, mut summary)) = self.update_op(&world, source, uid, req, &mut tasks)? else {
             return Ok(None);
         };
+        // kairos rewrites a series as a whole: say so, so an approval is never read as one
+        // lecture (cleanup C1, 13 Nov 2026).
+        if self.locate(&world, source, uid)?.series.is_recurring() {
+            summary.push_str(" (every occurrence)");
+        }
         ops.extend(task_ops(tasks));
         self.propose(&world, author, ops, summary).map(Some)
     }
@@ -1589,7 +1595,12 @@ impl Engine {
                     .as_ref()
                     .map(|m| m.summary.clone())
                     .unwrap_or_default();
-                first = format!("Delete {title:?} from {}", loc.source.id);
+                let every = if loc.series.is_recurring() {
+                    " (every occurrence)"
+                } else {
+                    ""
+                };
+                first = format!("Delete {title:?} from {}{every}", loc.source.id);
             }
             ops.push(Op::DeleteEvent {
                 item: Item {

@@ -103,6 +103,7 @@ pub fn event_data(c: &Component, source: &str, warnings: &mut Vec<Warning>) -> O
         sequence: c.value("SEQUENCE").and_then(|s| s.trim().parse().ok()).unwrap_or(0),
         meta: Meta::from_component(c),
         alarms,
+        invited: c.prop("ORGANIZER").is_some() || c.prop("ATTENDEE").is_some(),
     })
 }
 

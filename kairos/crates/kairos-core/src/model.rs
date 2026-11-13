@@ -346,6 +346,9 @@ pub struct EventData {
     pub sequence: i64,
     pub meta: Meta,
     pub alarms: Vec<i64>,
+    /// Has an ORGANIZER or ATTENDEE: someone else's invitation, or one he sent. Claude never
+    /// moves these without approval (cleanup C5/D3a, 13 Nov 2026).
+    pub invited: bool,
 }
 
 /// A UID's master and overrides within one source.

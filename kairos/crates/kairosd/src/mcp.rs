@@ -17,9 +17,10 @@ use serde::{Deserialize, Serialize};
 
 pub const INSTRUCTIONS: &str = "kairos manages Alec's calendar (iCloud is the source of truth) and his tasks.\n\
 RISK POLICY (decided by the server, never by you): low-risk changes are applied immediately and can be undone \
-(task blocks, tasks, due dates, new one-off events that don't clash, re-keying events kairos created). High-risk \
-changes are QUEUED FOR ALEC'S APPROVAL (status=pending): editing/moving/deleting events Alec created himself, \
-anything recurring, anything starting within 2 hours (except the scheduler's own work blocks), events that clash with fixed events, sharing to Family, \
+(task blocks, tasks, due dates, new one-off events that don't clash even if they start within 2 hours, moving one of Alec's one-off events \
+within the same day when it clashes with nothing, re-keying events kairos created). High-risk \
+changes are QUEUED FOR ALEC'S APPROVAL (status=pending): moving an event Alec created to another day, editing or deleting it, invitations (events with attendees), \
+anything recurring (a lecture series is changed as a whole: say so), anything else starting within 2 hours (except the scheduler's own work blocks), events that clash with fixed events, sharing to Family, \
 removing due dates, dropping tasks, or more than 8 operations at once (the scheduler's own blocks don't count). Writes to Family (except share_to_family) and \
 to read-only imports (Google feeds, holidays) are refused. You cannot approve changes: tell Alec what is pending and \
 let him approve it in locus's Approve. Every write returns {changeset_id, risk, status, summary}.\n\

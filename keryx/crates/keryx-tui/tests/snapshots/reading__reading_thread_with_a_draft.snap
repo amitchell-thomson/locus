@@ -1,0 +1,26 @@
+---
+source: keryx/crates/keryx-tui/tests/reading.rs
+expression: s
+---
+╭ keryx ────────────── all · personal · oxford · oqts · oqts shared ──────────── reading ╮
+│ Lab partner for Thursday?  oxford                                                      │
+│ Jane Doe · 1 message · 13 oct                                                          │
+│                                                                                        │
+│ ── Claude's draft, not sent · r opens it ────────────────────────────────────────────  │
+│        Claude            Thursday works for me.                                        │
+│                                                                                        │
+│ ── 13 oct ───────────────────────────────────────────────────────────────────────────  │
+│ ▌▎ Jane Doe <jane.doe@example.com>                             tue 13 oct · 09:12 new  │
+│ ▌▎ to you                                                                              │
+│ ▌▎                                                                                     │
+│ ▌▎ Hi Alec,                                                                            │
+│ ▌▎                                                                                     │
+│ ▌▎ Are you free to pair up for the B4 lab on Thursday afternoon?                       │
+│ ▌▎                                                                                     │
+│ ▌▎ Jane                                                                                │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+╰────────────────────────────────────────────────────────────────────────────────────────╯
+ r reply · space page · ] [ message · ⏎ open · d done          1 of Claude's drafts · g d

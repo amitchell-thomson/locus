@@ -5,7 +5,6 @@
 use crate::app::App;
 use crate::theme::{c, centred, fit, panel, popup_block, wrap};
 use keryx_core::model::Address;
-use keryx_store::api::SendReq;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
@@ -28,65 +27,92 @@ fn recipients(out: &mut Vec<Line<'static>>, name: &str, v: &[Address]) {
     }
 }
 
-/// The lines both screens share.
-#[allow(clippy::too_many_arguments)]
-fn message_lines(
-    app: &App,
-    account: &str,
-    to: &[Address],
-    cc: &[Address],
-    bcc: &[Address],
-    attachments: &[(String, u64)],
-    subject: &str,
-    body: &str,
-    warnings: &[String],
-    w: usize,
-) -> Vec<Line<'static>> {
+/// The confirm screen's lines: exactly what is sent (D4). What it answers, the address it is
+/// shown from, the recipients, the warnings (wrapped, never cut), the subject, then your words
+/// and the quote keryxd sends with them, not a quote that stays behind.
+fn message_lines(app: &App, d: &crate::send::SendDraft, w: usize) -> Vec<Line<'static>> {
+    let r = &d.req;
     let mut out = Vec::new();
+    if let crate::send::Purpose::Reply { to: Some(t), .. } = &d.purpose {
+        out.push(Line::from(Span::styled(
+            t.label.clone(),
+            Style::default().fg(c("mauve")).add_modifier(Modifier::BOLD),
+        )));
+    }
+    if let crate::send::Purpose::EditDraft { .. } = &d.purpose {
+        out.push(Line::from(Span::styled(
+            "your version of Claude's draft: it replaces Claude's",
+            Style::default().fg(c("mauve")),
+        )));
+    }
+    // The address people see: the account's shown one (Oxford: the college address).
     let from = app
         .cfg
-        .account(account)
-        .map(|a| format!("{} · {}", a.name, a.address))
-        .unwrap_or_else(|| account.to_string());
+        .account(&r.account)
+        .map(|a| format!("{} · {}", a.name, a.shown_address.as_deref().unwrap_or(&a.address)))
+        .unwrap_or_else(|| r.account.clone());
     out.push(Line::from(vec![
         label("From"),
         Span::styled(from, Style::default().fg(c("blue"))),
     ]));
-    recipients(&mut out, "To", to);
-    recipients(&mut out, "Cc", cc);
-    recipients(&mut out, "Bcc", bcc);
-    for (i, (name, size)) in attachments.iter().enumerate() {
+    recipients(&mut out, "To", &r.to);
+    recipients(&mut out, "Cc", &r.cc);
+    recipients(&mut out, "Bcc", &r.bcc);
+    for (i, p) in r.attachments.iter().enumerate() {
+        let path = std::path::Path::new(p);
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
         out.push(Line::from(vec![
             if i == 0 { label("Attach") } else { label("") },
             Span::styled(
-                format!("{name} · {}", crate::ui::size(*size)),
+                format!("{name} · {}", crate::ui::size(size)),
                 Style::default().fg(c("subtext1")),
             ),
         ]));
     }
-    for wn in warnings {
-        out.push(Line::from(Span::styled(
-            wn.clone(),
-            Style::default().fg(c("yellow")).add_modifier(Modifier::BOLD),
-        )));
+    for wn in &d.warnings {
+        for l in wrap(wn, w) {
+            out.push(Line::from(Span::styled(
+                l,
+                Style::default().fg(c("yellow")).add_modifier(Modifier::BOLD),
+            )));
+        }
     }
     out.push(Line::from(vec![
         label("Subject"),
-        Span::styled(subject.to_string(), Style::default().fg(c("text"))),
+        Span::styled(r.subject.clone(), Style::default().fg(c("text"))),
     ]));
     out.push(Line::from(Span::styled(
         "─".repeat(w.min(60)),
         Style::default().fg(c("surface2")),
     )));
-    for l in wrap(body, w) {
-        let st = if l.trim_start().starts_with('>') {
+    let p = app.sent_preview(r);
+    for l in wrap(&p.own, w) {
+        let st = if p.quote.is_none() && l.trim_start().starts_with('>') {
             c("overlay1")
         } else {
             c("text")
         };
         out.push(Line::from(Span::styled(l, Style::default().fg(st))));
     }
-    let urls = keryx_core::outgoing::urls(body);
+    if let Some((head, theirs)) = &p.quote {
+        out.push(Line::raw(""));
+        out.push(Line::from(Span::styled(
+            fit(head, w),
+            Style::default().fg(c("overlay2")).add_modifier(Modifier::ITALIC),
+        )));
+        let quoted = Style::default().fg(c("overlay1"));
+        for l in wrap(theirs, w.saturating_sub(2)) {
+            out.push(Line::from(vec![
+                Span::styled("│ ", Style::default().fg(c("surface2"))),
+                Span::styled(l, quoted),
+            ]));
+        }
+    }
+    let urls = keryx_core::outgoing::urls(&p.own);
     if !urls.is_empty() {
         out.push(Line::raw(""));
         out.push(Line::from(Span::styled(
@@ -103,7 +129,7 @@ fn message_lines(
     out
 }
 
-fn screen(f: &mut Frame, area: Rect, title: &str, hints: &str, lines: Vec<Line<'static>>) {
+fn screen(f: &mut Frame, area: Rect, title: &str, hints: &str, lines: Vec<Line<'static>>, scroll: u16) {
     let block = panel(title, true).title_bottom(
         Line::from(vec![
             Span::raw(" "),
@@ -118,38 +144,24 @@ fn screen(f: &mut Frame, area: Rect, title: &str, hints: &str, lines: Vec<Line<'
     let inner = block.inner(area);
     f.render_widget(Clear, area);
     f.render_widget(block, area);
+    let max = (lines.len() as u16).saturating_sub(inner.height);
     f.render_widget(
-        Paragraph::new(lines),
+        Paragraph::new(lines).scroll((scroll.min(max), 0)),
         Rect::new(inner.x + 1, inner.y, inner.width.saturating_sub(2), inner.height),
     );
 }
 
-pub fn confirm_send(f: &mut Frame, app: &App, area: Rect, r: &SendReq, warnings: &[String]) {
+pub fn confirm_send(f: &mut Frame, app: &App, area: Rect, d: &crate::send::SendDraft) {
     let w = area.width.saturating_sub(4) as usize;
-    let atts: Vec<(String, u64)> = r
-        .attachments
-        .iter()
-        .map(|p| {
-            let path = std::path::Path::new(p);
-            (
-                path.file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
-                std::fs::metadata(path).map(|m| m.len()).unwrap_or(0),
-            )
-        })
-        .collect();
-    let lines = message_lines(
-        app, &r.account, &r.to, &r.cc, &r.bcc, &atts, &r.subject, &r.body, warnings, w,
-    );
+    let lines = message_lines(app, d, w);
+    let more = lines.len() as u16 > area.height.saturating_sub(2);
     let hold = app.cfg.send.hold_seconds;
-    screen(
-        f,
-        area,
-        "Send?",
-        &format!("y send ({hold} s to cancel) · e edit · n don't send"),
-        lines,
-    );
+    let hints = if more {
+        format!("y send ({hold} s to cancel) · e edit · n don't send · j k scroll")
+    } else {
+        format!("y send ({hold} s to cancel) · e edit · n don't send")
+    };
+    screen(f, area, "Send?", &hints, lines, d.scroll);
 }
 
 pub fn confirm_unsubscribe(f: &mut Frame, area: Rect, how: &str) {

@@ -683,6 +683,7 @@ use keryx_store::api::{DraftEmailReq, DraftReplyReq, SendReq, UnsubscribeOutcome
 
 fn send_req(to: &str) -> SendReq {
     SendReq {
+        in_reply_to: None,
         account: "oxford".into(),
         thread: None,
         to: vec![Address::new(None, to)],
@@ -711,11 +712,46 @@ fn a_reply_goes_in_mails_own_format_and_a_new_message_as_text() {
     let reply = sent.iter().position(|o| o.thread_id.is_some()).unwrap();
     let h = html[reply].as_deref().expect("a reply carries its HTML");
     assert!(h.contains("<div>Yes, Thursday works.</div>"), "{h}");
-    assert!(h.contains("<blockquote type=\"cite\">") && h.contains("wrote:</div>"), "{h}");
+    assert!(
+        h.contains("<blockquote type=\"cite\">") && h.contains("wrote:</div>"),
+        "{h}"
+    );
     assert!(!h.contains("&gt; old"), "keryx's plain quote is not sent: {h}");
-    let first_words: String = theirs.body_text.split_whitespace().take(2).collect::<Vec<_>>().join(" ");
-    assert!(h.contains(&first_words) || theirs.body_text.trim().is_empty(), "their message is quoted: {h}");
+    let first_words: String = theirs
+        .body_text
+        .split_whitespace()
+        .take(2)
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        h.contains(&first_words) || theirs.body_text.trim().is_empty(),
+        "their message is quoted: {h}"
+    );
     assert_eq!(html[1 - reply], None, "a new message goes as text");
+}
+
+#[test]
+fn a_reply_answers_the_message_you_were_reading_not_the_latest() {
+    // Cleanup C6 (D4): `r` answers the message you read; the thread's latest was answered.
+    let (mut e, _) = engine();
+    let t = r(&e, "Re: Group project plan");
+    let msgs = thread(&e, &t);
+    assert!(msgs.len() >= 2, "{msgs:?}");
+    let older = msgs.first().unwrap().message_id.clone();
+    let mut req = send_req("jane.doe@example.com");
+    req.thread = Some(t.clone());
+    req.in_reply_to = Some(older.trim_matches(|c| c == '<' || c == '>').to_string());
+    let cs = e.send(&req, Who::ALEC).unwrap();
+    let o = cs.outgoing().unwrap();
+    assert_eq!(o.in_reply_to.as_deref(), Some(older.as_str()));
+    assert_eq!(o.references.last(), Some(&older));
+    // Without one, the latest, as before.
+    req.in_reply_to = None;
+    let o = e.send(&req, Who::ALEC).unwrap().outgoing().cloned().unwrap();
+    assert_eq!(o.in_reply_to.as_deref(), Some(msgs.last().unwrap().message_id.as_str()));
+    // One that is not in the thread is refused, never threaded to something else.
+    req.in_reply_to = Some("nowhere@example.com".into());
+    assert!(matches!(e.send(&req, Who::ALEC), Err(EngineError::BadRequest(m)) if m.contains("not in this thread")));
 }
 
 #[test]

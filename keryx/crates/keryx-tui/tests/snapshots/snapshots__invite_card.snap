@@ -5,24 +5,24 @@ expression: s
 ╭ keryx ─────────────────── all · personal · oxford · oqts · oqts shared ───────────────── reading ╮
 │ Cancelled: Project meeting  oxford                                                               │
 │ Prof Smith · 2 messages · 12 oct – 13 oct                                                        │
-│ 12 oct ●──────────────────────────────────────────────────────────────────────────────● 13 oct   │
-│ your turn · Prof Smith wrote last, yesterday                                                     │
-│                                                                                                  │
-│ ── new to you ─────────────────────────────────────────────────────────────────────────────────  │
 │                                                                                                  │
 │ ── 13 oct ─────────────────────────────────────────────────────────────────────────────────────  │
-│  ▎ Prof Smith <smith@eng.example.ac.uk>                                      tue 13 oct · 09:00  │
-│  ▎ to you                                                                                        │
-│  ▎                                                                                               │
-│  ▎ 󰃭 Cancelled: Project meeting · Thu 22 Oct, 14:00                                              │
-│  ▎ (no text)                                                                                     │
+│  Prof Smith       09:00  󰃭 Cancelled: Project meeting · Thu 22 Oct, 14:00                        │
 │                                                                                                  │
 │ ── 12 oct ─────────────────────────────────────────────────────────────────────────────────────  │
-│  ▎ Prof Smith <smith@eng.example.ac.uk>                                  mon 12 oct · 09:00 new  │
-│  ▎ to you                                                                                        │
-│  ▎                                                                                               │
-│  ▎ 󰃭 Project meeting · Thu 22 Oct, 14:00–15:00 · Thom Building, Room 2 · from Prof Smith         │
-│  ▎ You have been invited to: Project meeting, Thu 22 Oct 15:00 (Vienna time).                    │
+│ ▌▎ Prof Smith <smith@eng.example.ac.uk>                                  mon 12 oct · 09:00 new  │
+│ ▌▎ to you                                                                                        │
+│ ▌▎                                                                                               │
+│ ▌▎ 󰃭 Project meeting · Thu 22 Oct, 14:00–15:00 · Thom Building, Room 2 · from Prof Smith         │
+│ ▌▎ You have been invited to: Project meeting, Thu 22 Oct 15:00 (Vienna time).                    │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
 │                                                                                                  │
 │                                                                                                  │
 │                                                                                                  │
@@ -31,4 +31,4 @@ expression: s
 │                                                                                                  │
 │                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
- r reply · d done · a archive · m for · ↑↓ email · ⏎ open · z as received · esc back
+ r reply · space page · ] [ message · ⏎ open · d done · x archive · z as received · esc back

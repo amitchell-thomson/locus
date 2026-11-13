@@ -170,6 +170,7 @@ impl App {
                     crate::send::Purpose::Reply {
                         r#ref: r.to_string(),
                         account: d.account,
+                        to: None,
                     },
                 );
             }

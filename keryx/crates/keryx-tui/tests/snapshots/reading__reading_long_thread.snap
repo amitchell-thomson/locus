@@ -1,0 +1,88 @@
+---
+source: keryx/crates/keryx-tui/tests/reading.rs
+expression: s
+---
+╭ keryx ────────────── all · personal · oxford · oqts · oqts shared ──────────── reading ╮
+│ Summer project  oxford                                                                 │
+│ Milly Borthwick, you · 8 messages · 7 oct – 14 oct · last read 9 oct                   │
+│ 7 oct ●─────────●─────────●─◆───────●──────────●─────────●─────────●─────────● 14 oct  │
+│ your turn · Milly Borthwick wrote last, today                                          │
+│ ? Milly Borthwick: Does Thursday at 7 work for you?                                    │
+│ ? Milly Borthwick: Does Thursday at 6 work for you?                                    │
+│ ? Milly Borthwick: Does Thursday at 5 work for you?                                    │
+│                                                                                        │
+│ ── 14 oct ───────────────────────────────────────────────────────────────────────────  │
+│ ▌▎ Milly Borthwick <milly@example.org>                         wed 14 oct · 09:00 new  │
+│ ▌▎ to you                                                                              │
+│ ▌▎                                                                                     │
+│ ▌▎ Message 7. Thanks for sending the plan over. I have read it twice now and I think   │
+│ ▌▎ the second half works well, but the first part needs a clearer statement of what    │
+│ ▌▎ we measure and when.                                                                │
+│ ▌▎                                                                                     │
+│ ▌▎ Thanks for sending the plan over. I have read it twice now and I think the second   │
+│ ▌▎ half works well, but the first part needs a clearer statement of what we measure    │
+│ ▌▎ and when.                                                                           │
+│ ▌▎                                                                                     │
+│ ▌▎ Does Thursday at 7 work for you?                                                    │
+│                                                                                        │
+│ ── 13 oct ───────────────────────────────────────────────────────────────────────────  │
+│  ▎ Milly Borthwick <milly@example.org>                         tue 13 oct · 09:00 new  │
+│  ▎ to you                                                                              │
+│  ▎                                                                                     │
+│  ▎ Message 6. Thanks for sending the plan over. I have read it twice now and I think   │
+│  ▎ the second half works well, but the first part needs a clearer statement of what    │
+│  ▎ we measure and when.                                                                │
+│  ▎                                                                                     │
+│  ▎ Thanks for sending the plan over. I have read it twice now and I think the second   │
+│  ▎ half works well, but the first part needs a clearer statement of what we measure    │
+│  ▎ and when.                                                                           │
+│  ▎                                                                                     │
+│  ▎ Does Thursday at 6 work for you?                                                    │
+│                                                                                        │
+│ ── 12 oct ───────────────────────────────────────────────────────────────────────────  │
+│  ▎ Milly Borthwick <milly@example.org>                         mon 12 oct · 09:00 new  │
+│  ▎ to you                                                                              │
+│  ▎                                                                                     │
+│  ▎ Message 5. Thanks for sending the plan over. I have read it twice now and I think   │
+│  ▎ the second half works well, but the first part needs a clearer statement of what    │
+│  ▎ we measure and when.                                                                │
+│  ▎                                                                                     │
+│  ▎ Thanks for sending the plan over. I have read it twice now and I think the second   │
+│  ▎ half works well, but the first part needs a clearer statement of what we measure    │
+│  ▎ and when.                                                                           │
+│  ▎                                                                                     │
+│  ▎ Does Thursday at 5 work for you?                                                    │
+│                                                                                        │
+│ ── 11 oct ───────────────────────────────────────────────────────────────────────────  │
+│  Milly Borthwick  09:00 new  Message 4. Thanks for sending the plan over. I have rea…  │
+│                                                                                        │
+│ ── read before · you last read it 9 oct ─────────────────────────────────────────────  │
+│                                                                                        │
+│ ── 10 oct ───────────────────────────────────────────────────────────────────────────  │
+│        you              09:00  Message 3. Thanks for sending the plan over. I have r…  │
+│                                                                                        │
+│ ── 9 oct ────────────────────────────────────────────────────────────────────────────  │
+│  Milly Borthwick  09:00  Message 2. Thanks for sending the plan over. I have read it…  │
+│                                                                                        │
+│ ── 8 oct ────────────────────────────────────────────────────────────────────────────  │
+│        you              09:00  Message 1. Thanks for sending the plan over. I have r…  │
+│                                                                                        │
+│ ── 7 oct ────────────────────────────────────────────────────────────────────────────  │
+│  Milly Borthwick  09:00  Message 0. Thanks for sending the plan over. I have read it…  │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+│                                                                                        │
+╰────────────────────────────────────────────────────────────────────────────────────────╯
+ r reply · space page · ] [ message · ⏎ open · d done · x archive · z as received

@@ -1,0 +1,28 @@
+---
+source: keryx/crates/keryx-tui/tests/reading.rs
+expression: s
+---
+╭ Send? ───────────────────────────────────────────────────────────────────────╮
+│ replying to Jane, 12 Oct 09:00                                               │
+│ From     Oxford · newc7370@ox.ac.uk                                          │
+│ To       Jane Personal <jane@personal.example.com>                           │
+│ ⚠ new: Jane Personal <jane@personal.example.com> — you've never written to   │
+│ this address                                                                 │
+│ test mode: jane@personal.example.com isn't one of your addresses, so this    │
+│ will not be sent                                                             │
+│ Subject  Re: Group project plan                                              │
+│ ────────────────────────────────────────────────────────────                 │
+│ Part two is mine.                                                            │
+│                                                                              │
+│ On 12 Oct 2026, at 09:00, Jane Doe <jane.doe@example.com> wrote:             │
+│ │ Let's split the report into three parts.                                   │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰───────────────────────────── y send (10 s to cancel) · e edit · n don't send ╯
+ y send · e edit · n not now · j k scroll        replying to Jane, 12 Oct 09:00

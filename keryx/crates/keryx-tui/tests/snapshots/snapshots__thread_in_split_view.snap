@@ -7,15 +7,15 @@ expression: "render_to_string(&mut a, 140, 26)"
 │ ▎ Trains                     not assigned   08:30 ┃ Lecturer · 1 message · 13 oct                                                        │
 │ ▎ Your e-ticket: Oxford…                          ┃ your turn · Lecturer wrote last, yesterday                                           │
 │ ▎ Trains                     not assigned   08:30 ┃                                                                                      │
-│ ▎ Your e-ticket: Oxford…                          ┃ ── new to you ─────────────────────────────────────────────────────────────────────  │
-│                                                   ┃                                                                                      │
-│ yesterday ─────────────────────────────────────── ┃ ── 13 oct ─────────────────────────────────────────────────────────────────────────  │
-│   Lecturer                   not assigned     tue ┃  ▎ Lecturer <lecturer@eng.example.ac.uk>                     tue 13 oct · 12:00 new  │
-│   Society minutes                               󰁦 │  ▎ to you                                                                            │
-│   Lecturer                   not assigned     tue │  ▎                                                                                   │
-│   Broken file                                   󰁦 │  ▎ Please see the attached file.                                                     │
-│   Lecturer                   not assigned     tue │  ▎ 󰁦 sheet3.pdf · 625 B                                                              │
-│   B4 problem sheet 3                            󰁦 │                                                                                      │
+│ ▎ Your e-ticket: Oxford…                          ┃ ── 13 oct ─────────────────────────────────────────────────────────────────────────  │
+│                                                   ┃ ▌▎ Lecturer <lecturer@eng.example.ac.uk>                     tue 13 oct · 12:00 new  │
+│ yesterday ─────────────────────────────────────── ┃ ▌▎ to you                                                                            │
+│   Lecturer                   not assigned     tue ┃ ▌▎                                                                                   │
+│   Society minutes                               󰁦 │ ▌▎ Please see the attached file.                                                     │
+│   Lecturer                   not assigned     tue │ ▌▎ 󰁦 sheet3.pdf · 625 B                                                              │
+│   Broken file                                   󰁦 │                                                                                      │
+│ ▎ Lecturer                   not assigned     tue │                                                                                      │
+│ ▎ B4 problem sheet 3                            󰁦 │                                                                                      │
 │ ▎ Jane Doe                   not assigned     tue │                                                                                      │
 │ ▎ Lab partner for Thurs…                          │                                                                                      │
 │ ▎ Prof Smith · 2             not assigned     tue │                                                                                      │
@@ -27,4 +27,4 @@ expression: "render_to_string(&mut a, 140, 26)"
 │   Department Office          not assigned     mon │                                                                                      │
 │   Coursework submission…                          │                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- r reply · d done · a archive · m for · ↑↓ email · ⏎ open · z as received · o attachment · esc back
+ r reply · space page · ] [ message · ⏎ open · d done · x archive · z as received · o attachment · esc back

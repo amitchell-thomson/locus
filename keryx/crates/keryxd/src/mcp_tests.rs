@@ -341,6 +341,10 @@ async fn style_samples_are_alecs_own() {
 #[tokio::test(flavor = "multi_thread")]
 async fn restart_mid_session_needs_no_new_handshake() {
     let st = state();
+    // Since e26b8b6 (10 Nov) every config key is retired into the taxonomy (`files_as`) and
+    // list_keys offers only taxonomy places, so with no taxonomy loaded it lists nothing. keryxd
+    // loads it at start; here too, and "Admin" is Personal's Admin stream.
+    st.engine.lock().unwrap().shared = Some(locus_contract::taxonomy::load(&locus_contract::taxonomy::root()).unwrap());
     let (base, h, addr) = start(st.clone()).await;
     initialize(&base).await;
     let (t, _) = call(&base, "list_keys", json!({})).await;

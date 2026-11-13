@@ -6,7 +6,7 @@ mod common;
 use common::*;
 use keryx_tui::app::{App, Key, Mode};
 use keryx_tui::render_to_string;
-use locus_theme::keys::{TABLE, app_key_is_free, place};
+use locus_theme::keys::{TABLE, app_key_is_free};
 
 /// Each key a help line names: "j k ↑ ↓" is four keys.
 fn tokens(shown: &str) -> Vec<&str> {
@@ -20,10 +20,11 @@ fn keryxs_own_keys_are_all_ones_the_table_leaves_free() {
             assert!(app_key_is_free(t), "{t} ({what}) is a table key");
         }
     }
-    for (k, what) in keryx_tui::keys::GO {
-        let letter = k.trim_start_matches("g ").chars().next().unwrap();
-        assert!(place(letter).is_none(), "g {letter} ({what}) is one of locus's places");
-    }
+    // g is mail's own (its lists), caught before the table: whether or not the table still has
+    // a "go to" action, keryx never asks it about g.
+    assert_eq!(keryx_tui::keys::action(Key::Char('g')), None);
+    let mut seen = std::collections::HashSet::new();
+    assert!(keryx_tui::keys::GO.iter().all(|(k, _)| seen.insert(*k)));
     // h is no longer back, and n/p are not message keys (n is No).
     assert!(keryx_tui::keys::OWN.iter().all(|(k, _)| !tokens(k).contains(&"h")));
 }
@@ -140,7 +141,7 @@ fn every_hint_names_a_key_the_help_has() {
     let (mut a, _f) = app();
     let mut screens: Vec<App> = places();
     // The confirm screen, the drafts, and rows marked in a thread.
-    a.key(Key::Char('r'));
+    a.key(Key::Char('R'));
     let req = a.editor_request.take().unwrap();
     a.editor_done(req.purpose, Ok(req.text.replacen("\n\n\n", "\n\nhi\n", 1)));
     screens.push(a);
@@ -223,22 +224,51 @@ fn with_rows_marked_d_in_a_thread_acts_on_them_and_says_so() {
     assert!(call.contains(&lab) && call.contains(&other), "{call}");
 }
 
+/// Alec, 13 Nov: "g only makes sense in mail for going to its own lists". Its letters are the
+/// ones they had before C4, and none of them leaves this window; A is still locus's Approve.
 #[test]
-fn g_reaches_locus_places_through_the_session_and_g_m_is_this_window() {
-    let (mut a, _f) = app();
-    for (c, want) in [
-        ('h', "home:home"),
-        ('a', "home:approve"),
-        ('t', "home:tasks"),
-        ('l', "home:autolog"),
-        ('c', "calendar:"),
+fn g_goes_to_mails_own_lists_on_their_old_letters_and_never_to_another_window() {
+    use keryx_store::view::View;
+    for (c, view) in [
+        ('i', View::Inbox),
+        ('r', View::NeedsReply),
+        ('s', View::Sent),
+        ('a', View::All),
+        ('v', View::Archive),
     ] {
+        let (mut a, _f) = app();
+        a.view = View::Sent;
+        if c == 's' {
+            a.view = View::Archive;
+        }
         keys(&mut a, &[Key::Char('g'), Key::Char(c)]);
-        assert_eq!(a.opened.last().unwrap().to_string_lossy(), want);
+        assert_eq!(a.view, view, "g {c}");
     }
-    a.view = keryx_store::view::View::Sent;
-    keys(&mut a, &[Key::Char('g'), Key::Char('m')]);
-    assert_eq!(a.view, keryx_store::view::View::Inbox);
+    for (c, mode) in [
+        ('d', Mode::Drafts { sel: 0 }),
+        ('c', Mode::Runs { sel: 0 }),
+        ('l', Mode::Filed { sel: 0 }),
+    ] {
+        let (mut a, _f) = app();
+        keys(&mut a, &[Key::Char('g'), Key::Char(c)]);
+        assert_eq!(a.mode, mode, "g {c}");
+    }
+    // The places locus's table had (h a t c l m) are mail's lists or nothing: no window moves.
+    for c in ['h', 't', 'm', 'a', 'c', 'l'] {
+        let (mut a, _f) = app();
+        keys(&mut a, &[Key::Char('g'), Key::Char(c)]);
+        assert!(a.opened.is_empty(), "g {c} asked for another window: {:?}", a.opened);
+    }
+    // From a thread too.
+    let (mut a, _f) = app();
+    let r = select(&mut a, "Lab partner for Thursday?");
+    let (acc, t) = keryx_core::model::parse_thread_ref(&r).unwrap();
+    a.open_thread(acc, t);
+    keys(&mut a, &[Key::Char('g'), Key::Char('s')]);
+    assert_eq!((a.mode.clone(), a.view.clone()), (Mode::List, View::Sent));
+    // A: locus's Approve, the one way to another window.
+    keys(&mut a, &[Key::Char('A')]);
+    assert_eq!(a.opened.last().unwrap().to_string_lossy(), "home:approve");
 }
 
 #[test]
@@ -249,7 +279,7 @@ fn e_opens_the_threads_draft_or_says_how_to_write_one() {
     assert!(a.message.as_ref().unwrap().0.contains("nothing to edit"));
     let dir = tempfile::tempdir().unwrap();
     a.drafts_dir = Some(dir.path().to_path_buf());
-    a.key(Key::Char('r'));
+    a.key(Key::Char('R'));
     let req = a.editor_request.take().unwrap();
     std::fs::write(a.draft_path(&req.purpose).unwrap(), "To: x@example.com\n\nkept words\n").unwrap();
     a.key(Key::Char('e'));

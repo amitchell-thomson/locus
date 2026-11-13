@@ -3,22 +3,22 @@ source: keryx/crates/keryx-tui/tests/snapshots.rs
 expression: "render_to_string(&mut a, 80, 20)"
 ---
 ╭ keryx ───────── all · personal · oxford · oqts · oqts shared ────────────────╮
-│ today╭──────────────────────────── go to ─────────────────────────────╮──── ┃│
-│ ▎ Tra│                                                                │8:30 ┃│
-│ ▎ You│ mail                   │  keys                                 │     ┃│
-│ ▎ Tra│                        │                                       │8:30 ┃│
-│ ▎ You│ i  Inbox               │  1  Admin                             │     ││
-│      │ r  Needs reply         │  2  Engineering                       │     ││
-│ yeste│ d  Drafts              │  3  Careers                           │──── ││
-│   Lec│                        │  4  Travel                            │ tue ││
-│   Soc│ s  Sent                │  5  OQTS                              │   󰁦 ││
-│   Lec│ v  Archive             │  6  JCR Treasurer                     │ tue ││
-│   Bro│ e  All mail            │                                       │   󰁦 ││
-│ ▎ Lec│                        │                                       │ tue ││
-│ ▎ B4 │ f  Filed by itself     │                                       │   󰁦 ││
-│ ▎ Jan│ w  Claude's runs       │                                       │ tue ││
-│ ▎ Lab│                                                                │     ││
-│ ▎ Pro│ locus  h  home   a  approve   t  tasks   c  calendar   l  log  │ tue ││
-│ ▎ Can╰────────────────────────────────────────────────────────────────╯     ││
+│ today ───────────────────────────────────────────────────────────────────── ┃│
+│ ▎ Trains     ╭──────────────────── go to ────────────────────╮igned   08:30 ┃│
+│ ▎ Your e-tick│                                               │              ┃│
+│ ▎ Trains     │ mail                   │  keys                │igned   08:30 ┃│
+│ ▎ Your e-tick│                        │                      │              ││
+│              │ i  Inbox               │  1  Admin            │              ││
+│ yesterday ───│ r  Needs reply         │  2  Engineering      │───────────── ││
+│   Lecturer   │ d  Drafts              │  3  Careers          │igned     tue ││
+│   Society min│                        │  4  Travel           │            󰁦 ││
+│   Lecturer   │ s  Sent                │  5  OQTS             │igned     tue ││
+│   Broken file│ v  Archive             │  6  JCR Treasurer    │            󰁦 ││
+│ ▎ Lecturer   │ a  All mail            │                      │igned     tue ││
+│ ▎ B4 problem │                        │                      │            󰁦 ││
+│ ▎ Jane Doe   │ l  Filed by itself     │                      │igned     tue ││
+│ ▎ Lab partner│ c  Claude's runs       │                      │              ││
+│ ▎ Prof Smith ╰───────────────────────────────────────────────╯igned     tue ││
+│ ▎ Cancelled: Project meeting                                                ││
 ╰──────────────────────────────────────────────────────────────────────────────╯
  esc close

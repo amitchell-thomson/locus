@@ -1410,9 +1410,9 @@ fn draft_lines(app: &App, open: &Open, w: usize) -> Vec<Line<'static>> {
     for (claude, b) in bodies {
         out.push(Line::raw(""));
         let (label, who, col) = if claude {
-            ("Claude's draft, not sent · r opens it", "Claude", c("mauve"))
+            ("Claude's draft, not sent · R opens it", "Claude", c("mauve"))
         } else {
-            ("your draft, not sent · r opens it", "you", c("blue"))
+            ("your draft, not sent · R opens it", "you", c("blue"))
         };
         out.push(band(label, w, Style::default().fg(col)));
         let text_w = (w.saturating_sub(MINE + META)).min(TEXT_MAX);
@@ -1468,7 +1468,7 @@ fn outbox_lines(app: &App, open: &Open, w: usize) -> Vec<Line<'static>> {
             SendState::Failed(why) => (
                 format!(
                     "not sent: {why}{}",
-                    if o.kept { " · kept in drafts · r opens it" } else { "" }
+                    if o.kept { " · kept in drafts · R opens it" } else { "" }
                 ),
                 c("red"),
             ),
@@ -1809,7 +1809,7 @@ pub fn hints(app: &App) -> Vec<(&'static str, &'static str)> {
             vec![
                 ("y", "create"),
                 ("n", "dismiss"),
-                ("r", "reply"),
+                ("R", "reply"),
                 ("d", "done"),
                 ("esc", "back"),
             ]
@@ -1831,7 +1831,7 @@ pub fn hints(app: &App) -> Vec<(&'static str, &'static str)> {
         ],
         Mode::Thread => {
             let mut v = vec![
-                ("r", "reply"),
+                ("R", "reply"),
                 ("space", "page"),
                 ("] [", "message"),
                 ("⏎", "open"),
@@ -1852,7 +1852,16 @@ pub fn hints(app: &App) -> Vec<(&'static str, &'static str)> {
         Mode::RunDetail { .. } => vec![("↑ ↓", "move"), ("⏎", "open"), ("u", "undo"), ("esc", "back")],
         Mode::Snooze(_) => vec![("1…4", "choose"), ("esc", "cancel")],
         Mode::KairosForm(_) => vec![("⇥", "next"), ("⏎", "save"), ("esc", "cancel")],
-        Mode::ConfirmSend(_) => vec![("y", "send"), ("e", "edit"), ("n", "not now"), ("j k", "scroll")],
+        Mode::ConfirmSend(d) => {
+            let mut v = vec![("y", "send"), ("e", "edit"), ("n", "not now")];
+            match app.audience(d) {
+                Some(crate::send::Audience::Sender) => v.push(("a", "reply all")),
+                Some(crate::send::Audience::All) => v.push(("a", "sender only")),
+                _ => {}
+            }
+            v.push(("j k", "scroll"));
+            v
+        }
         Mode::ConfirmUnsubscribe { .. } => vec![("y", "unsubscribe"), ("esc", "no")],
         Mode::File(_) => vec![("⏎", "file"), ("↑ ↓", "move"), ("esc", "back")],
         Mode::Attachments => vec![("↑ ↓", "move"), ("⏎", "open"), ("esc", "back")],
@@ -1861,17 +1870,17 @@ pub fn hints(app: &App) -> Vec<(&'static str, &'static str)> {
             ("d", "done"),
             ("a", "archive"),
             ("x", "archive (asks)"),
-            ("m", "for"),
-            ("f", "needs reply"),
+            ("f", "for"),
+            ("r", "needs reply"),
             ("esc", "unmark"),
         ],
         _ => vec![
             ("⏎", "open"),
-            ("r", "reply"),
+            ("R", "reply"),
             ("d", "done"),
             ("a", "archive"),
-            ("m", "for"),
-            ("f", "needs reply"),
+            ("f", "for"),
+            ("r", "needs reply"),
             ("?", "keys"),
         ],
     }
@@ -1919,7 +1928,7 @@ fn footer(f: &mut Frame, app: &App, area: Rect) {
             notes.push(format!("{} of Claude's drafts · g d", app.pending_sends));
         }
         if app.open_proposals > 0 {
-            notes.push(format!("{} to approve · g a", app.open_proposals));
+            notes.push(format!("{} to approve · A", app.open_proposals));
         }
         for (name, mins) in &app.stale {
             let ago = if *mins < 120 {
@@ -1961,7 +1970,7 @@ fn footer(f: &mut Frame, app: &App, area: Rect) {
 /// as many columns as fit; `j` `k` scroll when they still do not.
 fn help(f: &mut Frame, app: &App, area: Rect) {
     let entries = crate::keys::help();
-    let shared = locus_theme::keys::TABLE.len() + locus_theme::keys::PLACES.len();
+    let shared = crate::keys::shared_len();
     let mut items: Vec<Line<'static>> = Vec::new();
     for (n, (k, d)) in entries.iter().enumerate() {
         if n == 0 {
@@ -2009,9 +2018,9 @@ fn help(f: &mut Frame, app: &App, area: Rect) {
     }
 }
 
-/// `g`: where to go, in two columns (round 7): the lists on the left in small groups with
-/// locus's places under them, the areas on the right in their colours, Personal's streams under
-/// their own heading.
+/// `g`: where to go, in two columns (round 7): mail's lists on the left in small groups, the
+/// areas on the right in their colours, Personal's streams under their own heading. Only mail's
+/// own places (13 Nov: locus's other windows are their Alt keys, not `g`).
 fn goto(f: &mut Frame, app: &App, area: Rect) {
     let key = |k: &str| Span::styled(format!(" {k}  "), locus_theme::bold(locus_theme::st("blue")));
     let head = |t: &str| Line::from(Span::styled(format!(" {t}"), locus_theme::dim()));
@@ -2029,21 +2038,12 @@ fn goto(f: &mut Frame, app: &App, area: Rect) {
     let mut left = vec![title("mail")];
     for group in [
         &[("i", "Inbox"), ("r", "Needs reply"), ("d", "Drafts")][..],
-        &[("s", "Sent"), ("v", "Archive"), ("e", "All mail")][..],
-        &[("f", "Filed by itself"), ("w", "Claude's runs")][..],
+        &[("s", "Sent"), ("v", "Archive"), ("a", "All mail")][..],
+        &[("l", "Filed by itself"), ("c", "Claude's runs")][..],
     ] {
         left.push(Line::raw(""));
         left.extend(group.iter().map(|(k, n)| entry(k, n, text)));
     }
-    // locus's places, one line across the bottom: the other windows.
-    let mut places = vec![Span::styled(" locus ", locus_theme::dim())];
-    for (k, place, name) in locus_theme::keys::PLACES {
-        if *place != locus_theme::keys::Place::Mail {
-            places.push(key(&k.to_string()));
-            places.push(Span::styled(format!("{name}  "), Style::default().fg(c("subtext1"))));
-        }
-    }
-
     let folders = app.goto_folders();
     let streams: Vec<String> = app
         .shared
@@ -2079,21 +2079,14 @@ fn goto(f: &mut Frame, app: &App, area: Rect) {
     }
 
     let (lw, rw) = (24u16, 22u16);
-    let places = Line::from(places);
-    let w = (lw + rw + 3).max(places.width() as u16 + 2).min(area.width);
-    let h = (left.len().max(right.len()) as u16 + 5).min(area.height);
+    let w = (lw + rw + 3).min(area.width);
+    let h = (left.len().max(right.len()) as u16 + 3).min(area.height);
     let r = centred(area, w, h);
     f.render_widget(Clear, r);
     let block = popup_block("go to");
     let inner = block.inner(r);
     f.render_widget(block, r);
-    if inner.height > 2 {
-        f.render_widget(
-            Paragraph::new(places),
-            Rect::new(inner.x, inner.y + inner.height - 1, inner.width, 1),
-        );
-    }
-    let inner = Rect::new(inner.x, inner.y + 1, inner.width, inner.height.saturating_sub(3));
+    let inner = Rect::new(inner.x, inner.y + 1, inner.width, inner.height.saturating_sub(1));
     f.render_widget(
         Paragraph::new(left),
         Rect::new(inner.x, inner.y, lw.min(inner.width), inner.height),

@@ -189,7 +189,7 @@ fn enter_z_and_r_act_on_the_message_under_the_bar() {
     keys(&mut a, &[Key::Enter]);
     let _ = render_to_string(&mut a, 90, 30);
     // r answers it, says so, and keryxd is told which message (not the thread's latest).
-    keys(&mut a, &[Key::Char('r')]);
+    keys(&mut a, &[Key::Char('R')]);
     let said = a.message.clone().unwrap().0;
     assert!(said.starts_with("replying to Milly, "), "{said}");
     let req = a.editor_request.take().unwrap();
@@ -219,7 +219,7 @@ fn the_question_in_an_older_message_is_answered_there_and_the_confirm_shows_the_
     keys(&mut a, &[Key::Char(']')]);
     let _ = render_to_string(&mut a, 80, 24);
     assert_eq!(target_id(&a), "thread-a@example.com", "Jane's, the older one");
-    keys(&mut a, &[Key::Char('r')]);
+    keys(&mut a, &[Key::Char('R')]);
     let req = a.editor_request.take().unwrap();
     let typed = req.text.replacen("\n\n\n", "\n\nPart two is mine.\n", 1);
     a.editor_done(req.purpose, Ok(typed));
@@ -251,7 +251,7 @@ fn the_confirm_screen_wraps_its_warnings_and_scrolls() {
     let r = select(&mut a, "Lab partner for Thursday?");
     open(&mut a, &r);
     let _ = render_to_string(&mut a, 60, 12);
-    keys(&mut a, &[Key::Char('r')]);
+    keys(&mut a, &[Key::Char('R')]);
     let req = a.editor_request.take().unwrap();
     let long = (0..30).map(|n| format!("line {n}")).collect::<Vec<_>>().join("\n");
     a.editor_done(
@@ -319,7 +319,7 @@ fn a_merged_thread_shows_both_copies_once_and_r_answers_from_the_account_that_ha
     insta::assert_snapshot!("reading_merged_thread", s);
     assert!(s.contains("is the 20th free?"), "the message only in OQTS shared: {s}");
     // The newest (only in OQTS shared, sent to its address): answered from there.
-    keys(&mut a, &[Key::Char('r')]);
+    keys(&mut a, &[Key::Char('R')]);
     let req = a.editor_request.take().unwrap();
     match &req.purpose {
         Purpose::Reply {
@@ -335,7 +335,7 @@ fn a_merged_thread_shows_both_copies_once_and_r_answers_from_the_account_that_ha
     // The older one is in both: answered from the copy in the account it came to.
     keys(&mut a, &[Key::Char(']')]);
     let _ = render_to_string(&mut a, 90, 20);
-    keys(&mut a, &[Key::Char('r')]);
+    keys(&mut a, &[Key::Char('R')]);
     let req = a.editor_request.take().unwrap();
     match &req.purpose {
         Purpose::Reply {
@@ -371,7 +371,7 @@ fn an_account_without_a_copy_does_not_answer_and_the_line_says_which_does() {
     a.reload();
     open(&mut a, &thread_ref("oqts-shared", "solo"));
     let _ = render_to_string(&mut a, 90, 20);
-    keys(&mut a, &[Key::Char('r')]);
+    keys(&mut a, &[Key::Char('R')]);
     let said = a.message.clone().unwrap().0;
     assert!(said.contains("has no copy") && said.contains("OQTS shared"), "{said}");
     let req = a.editor_request.take().unwrap();
@@ -406,9 +406,9 @@ fn claudes_draft_says_so_and_r_opens_it_rather_than_starting_a_second() {
     open(&mut a, &lab);
     let s = render_to_string(&mut a, 90, 22);
     insta::assert_snapshot!("reading_thread_with_a_draft", s);
-    assert!(s.contains("Claude's draft, not sent · r opens it"), "{s}");
+    assert!(s.contains("Claude's draft, not sent · R opens it"), "{s}");
     assert!(!s.contains("g d opens it"), "the old hint, where d meant file: {s}");
-    keys(&mut a, &[Key::Char('r')]);
+    keys(&mut a, &[Key::Char('R')]);
     let req = a.editor_request.take().unwrap();
     assert!(
         matches!(&req.purpose, Purpose::EditDraft { id, .. } if id == "cs-claude"),
@@ -443,7 +443,7 @@ fn an_image_only_email_reads_and_quotes_as_having_no_text() {
     open(&mut a, &thread_ref("oxford", "img"));
     let s = render_to_string(&mut a, 80, 16);
     assert!(s.contains("(no text)") && s.contains("poster.png"), "{s}");
-    keys(&mut a, &[Key::Char('r')]);
+    keys(&mut a, &[Key::Char('R')]);
     let req = a.editor_request.take().unwrap();
     a.editor_done(req.purpose, Ok(req.text.replacen("\n\n\n", "\n\nLovely poster.\n", 1)));
     let s = render_to_string(&mut a, 80, 20);
@@ -555,6 +555,16 @@ fn reply_all_on_a_mailing_list_warns_that_everyone_on_it_gets_it() {
     keys(&mut a, &[Key::Char('R')]);
     let req = a.editor_request.take().unwrap();
     a.editor_done(req.purpose, Ok(req.text.replacen("\n\n\n", "\n\nMe!\n", 1)));
+    // R answers Milly; a on the confirm screen makes it reply all, and the warning comes with it.
+    let Mode::ConfirmSend(d) = &a.mode else {
+        panic!("{:?}", a.mode)
+    };
+    assert!(
+        d.warnings.iter().all(|w| !w.contains("mailing list")),
+        "{:?}",
+        d.warnings
+    );
+    keys(&mut a, &[Key::Char('a')]);
     let Mode::ConfirmSend(d) = &a.mode else {
         panic!("{:?}", a.mode)
     };
@@ -575,7 +585,7 @@ fn send_reply(a: &mut App, dir: &tempfile::TempDir) -> String {
     let r = select(a, "Lab partner for Thursday?");
     open(a, &r);
     let _ = render_to_string(a, 90, 24);
-    keys(a, &[Key::Char('r')]);
+    keys(a, &[Key::Char('R')]);
     let req = a.editor_request.take().unwrap();
     let text = req.text.replacen("\n\n\n", "\n\nYes, 2pm works.\n", 1);
     // As the editor leaves it: the text kept as a draft until it has gone.
@@ -630,7 +640,7 @@ fn a_send_that_fails_after_its_hold_stays_said_until_you_take_it_up() {
     // r in its thread opens your kept words again, and the failure is dealt with.
     keys(&mut a, &[Key::Enter]);
     let _ = render_to_string(&mut a, 100, 24);
-    keys(&mut a, &[Key::Char('r')]);
+    keys(&mut a, &[Key::Char('R')]);
     let req = a.editor_request.take().unwrap();
     assert!(req.text.contains("Yes, 2pm works."), "{}", req.text);
     assert!(a.failed_send().is_none());

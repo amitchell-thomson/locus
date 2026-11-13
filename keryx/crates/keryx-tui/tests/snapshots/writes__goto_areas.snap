@@ -4,23 +4,23 @@ expression: "render_to_string(&mut a, 80, 22)"
 ---
 ╭ keryx ───────── all · personal · oxford · oqts · oqts shared ────────────────╮
 │ today ───────────────────────────────────────────────────────────────────── ┃│
-│ ▎ Tra╭──────────────────────────── go to ─────────────────────────────╮8:30 ┃│
-│ ▎ You│                                                                │     ┃│
-│ ▎ Tra│ mail                   │  areas                                │8:30 ┃│
-│ ▎ You│                        │                                       │     ┃│
-│      │ i  Inbox               │  1  Studies                           │     ││
-│ yeste│ r  Needs reply         │  2  Projects                          │──── ││
-│   Lec│ d  Drafts              │  3  Careers                           │ tue ││
-│   Soc│                        │                                       │   󰁦 ││
-│   Lec│ s  Sent                │  personal                             │ tue ││
-│   Bro│ v  Archive             │  4  Family                            │   󰁦 ││
-│ ▎ Lec│ e  All mail            │  5  Sport                             │ tue ││
-│ ▎ B4 │                        │  6  Social                            │   󰁦 ││
-│ ▎ Jan│ f  Filed by itself     │  7  Errands                           │ tue ││
-│ ▎ Lab│ w  Claude's runs       │  8  Admin                             │     ││
-│ ▎ Pro│                        │  9  Travel                            │ tue ││
-│ ▎ Can│                                                                │     ││
-│      │ locus  h  home   a  approve   t  tasks   c  calendar   l  log  │     ││
-│ monda╰────────────────────────────────────────────────────────────────╯──── ││
+│ ▎ Trains                                               not assigned   08:30 ┃│
+│ ▎ Your e-tick╭──────────────────── go to ────────────────────╮              ┃│
+│ ▎ Trains     │                                               │igned   08:30 ┃│
+│ ▎ Your e-tick│ mail                   │  areas               │              ┃│
+│              │                        │                      │              ││
+│ yesterday ───│ i  Inbox               │  1  Studies          │───────────── ││
+│   Lecturer   │ r  Needs reply         │  2  Projects         │igned     tue ││
+│   Society min│ d  Drafts              │  3  Careers          │            󰁦 ││
+│   Lecturer   │                        │                      │igned     tue ││
+│   Broken file│ s  Sent                │  personal            │            󰁦 ││
+│ ▎ Lecturer   │ v  Archive             │  4  Family           │igned     tue ││
+│ ▎ B4 problem │ a  All mail            │  5  Sport            │            󰁦 ││
+│ ▎ Jane Doe   │                        │  6  Social           │igned     tue ││
+│ ▎ Lab partner│ l  Filed by itself     │  7  Errands          │              ││
+│ ▎ Prof Smith │ c  Claude's runs       │  8  Admin            │igned     tue ││
+│ ▎ Cancelled: │                        │  9  Travel           │              ││
+│              ╰───────────────────────────────────────────────╯              ││
+│ monday ──────────────────────────────────────────────────────────────────── ││
 ╰──────────────────────────────────────────────────────────────────────────────╯
  esc close

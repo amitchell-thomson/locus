@@ -21,6 +21,10 @@
 //! - A send that failed after its hold said "not sent" once. Now the failure stays in its thread
 //!   and in the footer until you open the draft again.
 //! - `r` on a thread with a draft (Claude's or yours) opens it rather than starting a second.
+//!
+//! Keys of 13 Nov (Alec): reply is `R` (`r` is needs reply), and reply all is no longer a key
+//! of its own: on the confirm screen `a` switches the reply between its sender and everyone on
+//! the message, and the recipients shown change with it ([`App::switch_audience`]).
 
 use crate::app::{App, Key, Mode};
 use crate::write::Job;
@@ -38,6 +42,19 @@ pub struct ReplyTo {
     pub message_id: String,
     /// "replying to Milly, 2 Nov 13:35".
     pub label: String,
+}
+
+/// Whom a reply on the confirm screen goes to (`a` switches the first two).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Audience {
+    /// The sender (Reply-To) only.
+    Sender,
+    /// Everyone on the message.
+    All,
+    /// Both are the same people.
+    Same,
+    /// Neither: you changed the recipients in the editor.
+    Changed,
 }
 
 /// What the editor is for.
@@ -294,7 +311,7 @@ impl App {
         format!("replying to {}, {when}", first_name(m.from.as_ref()))
     }
 
-    /// What `r` / `R` / `F` act on. Reading a thread: the message under the bar, from its copy
+    /// What `R` / `F` act on. Reading a thread: the message under the bar, from its copy
     /// in the account that answers it (`reply::sending_account`: the one it came to). That
     /// account must hold a copy, or Mail cannot find the message to answer (it looks only in
     /// the sending account), so without one the reply goes from the account that has it, and
@@ -422,10 +439,11 @@ impl App {
         false
     }
 
-    /// `r` / `R` / `F` / `+`. Returns whether `k` was one of them.
+    /// `R` / `F` / `+`. Returns whether `k` was one of them.
     pub fn compose_key(&mut self, k: Key) -> bool {
         let req = match k {
-            Key::Char('r') | Key::Char('R') => {
+            // R replies (13 Nov: r is needs reply). Reply all is `a` on the confirm screen.
+            Key::Char('R') => {
                 // A draft for this thread already: open it rather than start a second (D4).
                 if self.open_thread_draft() {
                     return true;
@@ -433,7 +451,7 @@ impl App {
                 let Some(b) = self.reply_basis() else {
                     return true;
                 };
-                match keryx_core::reply::reply(&self.cfg, &b.msgs, k == Key::Char('R')) {
+                match keryx_core::reply::reply(&self.cfg, &b.msgs, false) {
                     Ok(mut d) => {
                         if let Some((a, _)) = parse_thread_ref(&b.r#ref)
                             && b.note.is_some()
@@ -563,7 +581,7 @@ impl App {
             }
             Finished::Kept => {
                 let again = if matches!(w.purpose, Purpose::Reply { .. }) {
-                    "r"
+                    "R"
                 } else {
                     "+"
                 };
@@ -840,6 +858,10 @@ impl App {
                     false,
                 ));
             }
+            _ if k == Key::Char('a') => {
+                self.switch_audience(&mut d);
+                self.mode = Mode::ConfirmSend(Box::new(d));
+            }
             _ => {
                 let by: i32 = match k {
                     Key::Char('j') | Key::Down => 1,
@@ -854,6 +876,81 @@ impl App {
                 self.mode = Mode::ConfirmSend(Box::new(d));
             }
         }
+    }
+
+    /// The recipients of a reply to what `purpose` answers: to its sender (to, cc), and to
+    /// everyone on it. None for anything but a reply.
+    #[allow(clippy::type_complexity)]
+    fn reply_audiences(
+        &self,
+        purpose: &Purpose,
+    ) -> Option<((Vec<Address>, Vec<Address>), (Vec<Address>, Vec<Address>))> {
+        let Purpose::Reply { r#ref, to, .. } = purpose else {
+            return None;
+        };
+        let (a, t) = parse_thread_ref(r#ref)?;
+        let mut msgs = self.db.thread(a, t).ok()?;
+        // The message it answers, as `R` built it (`reply_basis`): the thread up to that one.
+        if let Some(id) = to.as_ref().map(|t| t.message_id.as_str()).filter(|s| !s.is_empty())
+            && let Some(at) = msgs.iter().position(|m| same_id(&m.message_id, id))
+        {
+            msgs.truncate(at + 1);
+        }
+        let one = keryx_core::reply::reply(&self.cfg, &msgs, false).ok()?;
+        let all = keryx_core::reply::reply(&self.cfg, &msgs, true).ok()?;
+        Some(((one.to, one.cc), (all.to, all.cc)))
+    }
+
+    /// Whom a reply on the confirm screen goes to, as `a` sees it. None: not a reply.
+    pub fn audience(&self, d: &SendDraft) -> Option<Audience> {
+        let (one, all) = self.reply_audiences(&d.purpose)?;
+        let keys = |v: &[Address]| v.iter().map(Address::key).collect::<std::collections::BTreeSet<_>>();
+        let pair = |to: &[Address], cc: &[Address]| (keys(to), keys(cc));
+        let now = pair(&d.req.to, &d.req.cc);
+        let (one, all) = (pair(&one.0, &one.1), pair(&all.0, &all.1));
+        Some(if one == all {
+            Audience::Same
+        } else if now == one {
+            Audience::Sender
+        } else if now == all {
+            Audience::All
+        } else {
+            Audience::Changed
+        })
+    }
+
+    /// `a` on the confirm screen: a reply to its sender becomes a reply to everyone on the
+    /// message, and back. The recipients shown, the warnings, the text `e` reopens and the kept
+    /// draft all follow. Recipients you changed in the editor are yours: `a` leaves them.
+    pub fn switch_audience(&mut self, d: &mut SendDraft) {
+        let Some(now) = self.audience(d) else {
+            self.message = Some(("a switches between reply and reply all on a reply".into(), false));
+            return;
+        };
+        let Some((one, all)) = self.reply_audiences(&d.purpose) else {
+            return;
+        };
+        let ((to, cc), said) = match now {
+            Audience::Sender => (all, "reply all: to everyone on it · a for the sender only"),
+            Audience::All => (one, "reply: to the sender only · a for everyone"),
+            Audience::Same => {
+                self.message = Some(("reply all goes to the same people here".into(), false));
+                return;
+            }
+            Audience::Changed => {
+                self.message = Some(("you changed who it goes to · e edits it".into(), false));
+                return;
+            }
+        };
+        d.text = compose::with_recipients(&d.text, &to, &cc);
+        d.req.to = to;
+        d.req.cc = cc;
+        d.warnings = self.local_warnings(&d.req);
+        d.scroll = 0;
+        if let Some(p) = self.draft_path(&d.purpose).filter(|p| p.exists()) {
+            let _ = std::fs::write(p, &d.text);
+        }
+        self.message = Some((said.into(), false));
     }
 
     /// `y` on the confirm screen: to keryxd, and you stay where you wrote it from, a thread

@@ -1,6 +1,6 @@
 //! `d` (done) files the thread for what it is for (keryx-joins-locus X7) in one key: its mark,
 //! else keryx's guess, else a plain archive (C4: d is the table's done, so it no longer opens a
-//! picker). `M` files it choosing what for, and `m` marks what it is for and leaves it in the
+//! picker). `f` (for; `M` until 13 Nov) files it choosing what for, and `m` marks what it is for and leaves it in the
 //! inbox (round 4: an application's mail shows on its page while it still waits for you). Both
 //! pickers open on the mark, else keryx's guess. `⏎` takes the guess, typing picks another (the same type-ahead as
 //! kairos's For), and "for nothing" only archives. The folder follows from the answer.
@@ -44,7 +44,7 @@ impl Choice {
 
 impl App {
     /// `d`: done, in one key (C4). Filed for what the threads were marked for (`m`) when they
-    /// all agree; else for keryx's guess, saying why (`u` puts it back); else archived. `M` is
+    /// all agree; else for keryx's guess, saying why (`u` puts it back); else archived. `f` is
     /// the picker. No taxonomy: a plain archive.
     pub fn done(&mut self) {
         let refs = self.targets();
@@ -69,13 +69,13 @@ impl App {
         if let Some((o, why)) = guessed {
             self.file_as(o);
             if let Some((m, _)) = &mut self.message {
-                m.push_str(&format!(" ({why}) · u puts it back, M chooses"));
+                m.push_str(&format!(" ({why}) · u puts it back, f chooses"));
             }
             return;
         }
         self.triage_intent(Intent::Archive, "done: archiving");
         if let Some((m, _)) = &mut self.message {
-            m.push_str(" · M files it for something");
+            m.push_str(" · f files it for something");
         }
     }
 

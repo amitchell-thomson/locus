@@ -1052,6 +1052,8 @@ impl App {
             Key::AltTab => self.extend_account(),
             Key::BackTab => self.cycle_account(-1),
             Key::Char('b') => self.toggle_list(),
+            // g then a letter: one of mail's lists (keryx's own, 13 Nov).
+            Key::Char('g') => self.mode = Mode::GoTo,
             _ => {}
         }
     }
@@ -1099,12 +1101,14 @@ impl App {
                 self.deferred.push(Job::Sync);
                 self.message = Some(("syncing…".into(), false));
             }
-            Action::GoTo => self.mode = Mode::GoTo,
             Action::Help => self.open_help(),
             Action::Mark => {
                 self.message = Some(("v marks threads in the list, for one change to several".into(), false))
             }
-            Action::Back | Action::Quit => {}
+            // Back and quit are the caller's. Any other table action (the table's "go to", while
+            // it has one: keryx catches g first, `keys::action`) does nothing here. Named by a
+            // wildcard so keryx builds whether or not the table still has it.
+            _ => {}
         }
     }
 
@@ -1159,7 +1163,7 @@ impl App {
     /// `e`: the draft of this thread, Claude's or yours, else say how to write one.
     fn edit(&mut self) {
         if !self.open_thread_draft() {
-            self.message = Some(("nothing to edit here · r writes a reply, + a new mail".into(), false));
+            self.message = Some(("nothing to edit here · R writes a reply, + a new mail".into(), false));
         }
     }
 
@@ -1242,6 +1246,10 @@ impl App {
             return;
         }
         if self.back.is_none() && self.write_key(k) {
+            return;
+        }
+        if k == Key::Char('g') && self.back.is_none() {
+            self.mode = Mode::GoTo;
             return;
         }
         let Some(open) = self.open.as_mut() else { return };
@@ -1398,26 +1406,22 @@ impl App {
         }
     }
 
-    /// `g` then a letter (D1). The places in locus's table: `g m` is this window (the inbox);
-    /// `g h`, `g a`, `g t`, `g l` are the home window's screens and `g c` the calendar, reached
-    /// through tmux. keryx's own lists use letters the table leaves free.
+    /// `g` then a letter: one of mail's own lists, on the letters they had before C4 (13 Nov,
+    /// Alec: "g only makes sense in mail for going to its own lists"). It no longer reaches
+    /// locus's other windows; `A` is still locus's Approve.
     fn goto_key(&mut self, k: Key) {
         self.mode = Mode::List;
         let Key::Char(c) = k else { return };
-        if let Some(place) = locus_theme::keys::place(c) {
-            self.go_place(place);
-            return;
-        }
         let v = match c {
             'd' => {
                 self.mode = Mode::Drafts { sel: 0 };
                 return;
             }
-            'f' => {
+            'l' => {
                 self.mode = Mode::Filed { sel: 0 };
                 return;
             }
-            'w' => {
+            'c' => {
                 self.mode = Mode::Runs { sel: 0 };
                 return;
             }
@@ -1426,7 +1430,7 @@ impl App {
             'r' => View::NeedsReply,
             'z' if self.cfg.snooze.enabled => View::Snoozed,
             'v' => View::Archive,
-            'e' => View::All,
+            'a' => View::All,
             c if c.is_ascii_digit() && c != '0' => match self.goto_folders().get(c as usize - '1' as usize) {
                 Some((name, _)) => View::Key(name.clone()),
                 None => return,
@@ -1438,50 +1442,6 @@ impl App {
         self.search = None;
         self.sel = 0;
         self.reload();
-    }
-
-    /// A place in another window of the `locus` session: ask the home window for its screen
-    /// (`open-locus`), then bring the window forward, only inside tmux. Tests never touch tmux
-    /// or the real state directory (`dry_open`).
-    pub(crate) fn go_place(&mut self, place: locus_theme::keys::Place) {
-        use locus_theme::keys::Place;
-        if place == Place::Mail {
-            self.leave_thread();
-            self.view = View::Inbox;
-            self.search = None;
-            self.sel = 0;
-            self.reload();
-            return;
-        }
-        let (request, name) = match place {
-            Place::Home => (Some("home"), "home"),
-            Place::Approve => (Some("approve"), "approve"),
-            Place::Tasks => (Some("tasks"), "tasks"),
-            Place::Log => (Some("autolog"), "the log"),
-            _ => (None, "the calendar"),
-        };
-        let app = if place == Place::Calendar { "kairos" } else { "locus" };
-        if self.dry_open {
-            self.opened
-                .push(PathBuf::from(format!("{}:{}", place.view(), request.unwrap_or(""))));
-            self.message = Some((format!("opened {name}"), false));
-            return;
-        }
-        if std::env::var_os("TMUX").is_none() {
-            self.message = Some((format!("{name} is in the locus window: not in tmux here"), false));
-            return;
-        }
-        if let Some(r) = request {
-            let _ = locus_contract::link::OpenFile::locus().write(r);
-        }
-        self.message = Some(if locus_contract::link::switch_to(app) {
-            (format!("opened {name}"), false)
-        } else {
-            (
-                format!("{name}: the locus session isn't running (locus-session.sh ensure)"),
-                true,
-            )
-        });
     }
 
     fn search_key(&mut self, k: Key, mut q: String) {

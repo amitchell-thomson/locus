@@ -308,16 +308,16 @@ table has nothing; `?` is generated from both):
 | `⇥` `⇧⇥` · `⌥⇥` | the next or previous inbox · add the next inbox to the ones shown (personal and oxford together; `⇥` goes back to one) |
 | `b` | hide or show the list |
 | `d` | done, in one key: filed for its mark; else for keryx's guess, saying why (`u` puts it back); else archived. Never deletes |
-| `M` · `m` | file: a picker over the registry items, Personal's streams and the plain areas, keryx's guess first · mark what it is for, and it stays in the inbox (round 4) |
+| `f` · `m` | for: a picker over the registry items, Personal's streams and the plain areas, keryx's guess first · mark what it is for, and it stays in the inbox (round 4) |
 | `a` · `x` | archive straight away · archive after asking once |
 | `u` | undo the last change, at once, the line saying what was undone (a move is put back on screen at once) |
 | `e` | edit: the thread's draft, Claude's or yours |
-| `v` | mark threads; `d` `a` `x` `m` `f` then act on every marked one, even from a thread (the footer says so) |
-| `f` `U` `I` `L` | needs reply on or off · unread · back to the inbox · unsubscribe |
-| `r` `R` `F` `+` · `c` | reply · reply all · forward · write a new mail, in your Neovim (below) · cancel a send in its hold |
+| `v` | mark threads; `d` `a` `x` `f` `m` `r` then act on every marked one, even from a thread (the footer says so) |
+| `r` `U` `I` `L` | needs reply on or off · unread · back to the inbox · unsubscribe |
+| `R` `F` `+` · `c` | reply · forward · write a new mail, in your Neovim (below) · cancel a send in its hold. Reply all: `a` on the confirm screen switches a reply between its sender and everyone on it |
 | `t` `i` `w` · `y` `n` | a kairos task · an invite to the calendar · reply with free times · on a suggestion: create · dismiss |
-| `A` | locus's Approve (cleanup proposals wait there; Claude's drafts are in `g d`) |
-| `g` | locus's places: `h` home · `a` approve · `t` tasks · `l` log (the home window) · `c` the calendar (through tmux) · `m` this window. keryx's lists: `i` inbox · `r` needs reply · `d` drafts · `s` sent · `v` archive · `e` all · `f` filed by itself · `w` Claude's runs · `1…9` the areas and Personal's streams |
+| `A` | locus's Approve (cleanup proposals wait there; Claude's drafts are in `g d`); the one key that opens another window |
+| `g` | mail's own lists only (13 Nov): `i` inbox · `r` needs reply · `d` drafts · `s` sent · `a` all · `c` Claude's runs · `l` filed by itself · `v` archive · `1…9` the areas and Personal's streams |
 | `/` · `^r` · `?` | search (§7) · sync now · keys |
 
 **Writing** (X6) is your Neovim, run on a terminal inside the right pane with the list beside
@@ -325,13 +325,13 @@ it, and a Lua file keryx loads for that buffer only (your config is never edited
 `From:` (the account; changeable for a new mail or a forward), `To:`, `Cc:`, `Bcc:`,
 `Subject:`, any number of `Attach:` lines (each shows its size), a blank line, the body and
 signature, then the quote below a marker drawn as "the quote below is kept". `:w` sends (the
-confirm screen, then the 10 s hold), `:q` on a changed mail keeps a draft that `r` (or `+`)
-reopens, `:cq` throws it away, `^a` opens a picker over Downloads, Desktop and Documents.
+confirm screen, then the 10 s hold), `:q` on a changed mail keeps a draft that
+reopens (`R`, or `+`), `:cq` throws it away, `^a` opens a picker over Downloads, Desktop and Documents.
 Addresses complete from `keryx addresses` (blink.cmp as you type, else `<C-x><C-u>`). Another
 editor runs full screen as before. `docs/nvim.md` has the details.
 
-**Filed by itself** (`g` `f`): what keryx filed as it arrived (§6.2, X-d), newest first, each
-undoable with `u`. **Claude runs** (`g` `w`) is the log of keryx's own scheduled runs, which
+**Filed by itself** (`g` `l`): what keryx filed as it arrived (§6.2, X-d), newest first, each
+undoable with `u`. **Claude runs** (`g` `c`) is the log of keryx's own scheduled runs, which
 the locus job replaces (X8).
 
 **A rebuilt binary** execs itself in place once nothing is typed or sending for 10 s, back on

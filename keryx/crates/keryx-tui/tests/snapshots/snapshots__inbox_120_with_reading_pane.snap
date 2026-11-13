@@ -31,4 +31,4 @@ expression: "render_to_string(&mut app(), 120, 30)"
 │   Stranger            not assigned     sun │                                                                         │
 │   Urgent request                           │                                                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- ⏎ open · r reply · d done · a archive · m for · f needs reply · ? keys
+ ⏎ open · R reply · d done · a archive · f for · r needs reply · ? keys

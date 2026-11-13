@@ -101,6 +101,51 @@ pub fn with_from(text: &str, account: &str) -> String {
     format!("From: {account}\n{text}")
 }
 
+/// The file with its `To:` and `Cc:` headers (and their folded lines) replaced, everything else
+/// as it was; a missing `Cc:` goes in after `To:`. The confirm screen's reply / reply all switch
+/// keeps the text `e` reopens in step with what is sent.
+pub fn with_recipients(text: &str, to: &[Address], cc: &[Address]) -> String {
+    let mut out: Vec<String> = Vec::new();
+    let mut lines = text.lines();
+    let (mut put_to, mut put_cc, mut skipping) = (false, false, false);
+    for line in lines.by_ref() {
+        if line.is_empty() {
+            if !put_cc && put_to {
+                // Cc goes right after To.
+                if let Some(i) = out.iter().position(|l| l.to_ascii_lowercase().starts_with("to:")) {
+                    let mut at = i + 1;
+                    while out.get(at).is_some_and(|l| l.starts_with([' ', '\t'])) {
+                        at += 1;
+                    }
+                    out.insert(at, format!("Cc: {}", folded(cc)));
+                }
+            }
+            out.push(String::new());
+            break;
+        }
+        if skipping && line.starts_with([' ', '\t']) {
+            continue;
+        }
+        skipping = false;
+        let low = line.to_ascii_lowercase();
+        if low.starts_with("to:") {
+            out.push(format!("To: {}", folded(to)));
+            (put_to, skipping) = (true, true);
+        } else if low.starts_with("cc:") {
+            out.push(format!("Cc: {}", folded(cc)));
+            (put_cc, skipping) = (true, true);
+        } else {
+            out.push(line.to_string());
+        }
+    }
+    out.extend(lines.map(str::to_string));
+    let mut s = out.join("\n");
+    if text.ends_with('\n') {
+        s.push('\n');
+    }
+    s
+}
+
 /// The file again, with the error explained at the top (and any earlier
 /// error line removed).
 pub fn with_error(text: &str, err: &ComposeError) -> String {
@@ -284,6 +329,38 @@ mod tests {
         assert_eq!(c.cc[0].email, "sam@example.com");
         assert_eq!(c.subject, "Re: Lab");
         assert_eq!(c.body, "Yes, Thursday works.\n\nAlec\n\nOn Tue, Jane wrote:\n> hi");
+    }
+
+    #[test]
+    fn recipients_are_replaced_and_nothing_else() {
+        let f = with_from(
+            &file(&[a("Jane <jane@example.com>")], &[], "Re: Lab", None, "> hi"),
+            "Oxford <me@ox.ac.uk>",
+        )
+        .replacen("\n\n\n", "\n\nYes.\nTo: not a header\n", 1);
+        let all = with_recipients(
+            &f,
+            &[a("Jane <jane@example.com>")],
+            &[a("sam@example.com"), a("Bob <bob@example.org>")],
+        );
+        let c = parse(&all, None, 25).unwrap();
+        assert_eq!(c.cc.len(), 2);
+        assert_eq!(c.from.as_deref(), Some("Oxford <me@ox.ac.uk>"));
+        assert!(c.body.contains("To: not a header"), "{}", c.body);
+        // And back: the folded Cc lines go with it.
+        let one = with_recipients(&all, &[a("Jane <jane@example.com>")], &[]);
+        let c = parse(&one, None, 25).unwrap();
+        assert!(c.cc.is_empty() && c.to.len() == 1);
+        assert_eq!(one, f, "back where it started");
+        // No Cc: header at all: one goes in after To.
+        let bare = "To: jane@example.com\nSubject: x\n\nbody\n";
+        let c = parse(
+            &with_recipients(bare, &[a("jane@example.com")], &[a("sam@example.com")]),
+            None,
+            25,
+        )
+        .unwrap();
+        assert_eq!(c.cc[0].email, "sam@example.com");
     }
 
     #[test]

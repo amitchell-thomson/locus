@@ -648,3 +648,134 @@ fn a_send_that_goes_says_sent_in_its_thread() {
     let s = render_to_string(&mut a, 90, 24);
     assert!(s.contains("── sent"), "{s}");
 }
+
+fn scroll(a: &App) -> u16 {
+    a.open.as_ref().unwrap().scroll.get()
+}
+
+/// The message under the top line and how far into it (the view's anchor).
+fn place(a: &App) -> (String, usize) {
+    let o = a.open.as_ref().unwrap();
+    let (i, off) = o.anchor.get().unwrap();
+    (o.msgs[i].message_id.clone(), off)
+}
+
+/// Alec, 13 Nov: "the thread scrolling does not work properly, it is stuck at the top and
+/// pressing down arrow goes down one line and then jumps you back up". How far a thread scrolls
+/// was reckoned under the full header and the frame drawn under the two-line one, so a thread a
+/// few lines too long for the pane was clamped back to the top by the next frame. Key presses
+/// alone never showed it: the run loop draws between keys (every half second, and whenever
+/// keryxd writes the mirror), so this drives frames and reloads between them, at every height.
+#[test]
+fn down_holds_through_frames_and_refreshes_at_every_height() {
+    let (mut a, _f) = app();
+    let dir = tempfile::tempdir().unwrap();
+    let r = long_thread(&mut a);
+    read_mark(&mut a, &dir, &r, ts(2026, 10, 9, 12));
+    let mut tried = 0;
+    for h in 8..90u16 {
+        open(&mut a, &r);
+        let _ = render_to_string(&mut a, 90, h);
+        if a.open.as_ref().unwrap().max_scroll.get() == 0 {
+            // It fits under its header: nothing to scroll, and ↓ moves nothing.
+            keys(&mut a, &[Key::Down]);
+            let _ = render_to_string(&mut a, 90, h);
+            assert_eq!(scroll(&a), 0, "h {h}");
+            continue;
+        }
+        tried += 1;
+        let start = scroll(&a);
+        for step in 1..=3u16 {
+            keys(&mut a, &[Key::Down]);
+            for _ in 0..3 {
+                let _ = render_to_string(&mut a, 90, h);
+                a.reload();
+            }
+            let max = a.open.as_ref().unwrap().max_scroll.get();
+            assert_eq!(scroll(&a), (start + step).min(max), "h {h}, ↓ {step}: put back");
+            assert!(scroll(&a) > 0, "h {h}");
+        }
+        keys(&mut a, &[Key::Char('j'), Key::Char(' ')]);
+        let at = scroll(&a);
+        let _ = render_to_string(&mut a, 90, h);
+        a.reload();
+        let _ = render_to_string(&mut a, 90, h);
+        assert_eq!(scroll(&a), at, "h {h}: j and space hold too");
+        keys(&mut a, &[Key::Esc]);
+    }
+    assert!(tried > 30, "{tried}");
+}
+
+#[test]
+fn new_mail_in_the_thread_shows_above_and_the_view_stays_where_you_were_reading() {
+    let (mut a, _f) = app();
+    let dir = tempfile::tempdir().unwrap();
+    let r = long_thread(&mut a);
+    read_mark(&mut a, &dir, &r, ts(2026, 10, 9, 12));
+    open(&mut a, &r);
+    let _ = render_to_string(&mut a, 90, 30);
+    keys(&mut a, &[Key::Char(']')]);
+    let _ = render_to_string(&mut a, 90, 30);
+    keys(&mut a, &[Key::Down, Key::Down, Key::Down]);
+    let _ = render_to_string(&mut a, 90, 30);
+    let before = place(&a);
+    assert_eq!(before.0, "long-6@example.org");
+    let shown = render_to_string(&mut a, 90, 30);
+    // Milly writes again while you read: keryxd puts it in the mirror and the loop reloads.
+    let m = msg(
+        "oxford",
+        "long",
+        "long-8@example.org",
+        milly(),
+        vec![me()],
+        ts(2026, 10, 14, 14),
+        "Message 8. One more thing about Thursday.",
+        false,
+    );
+    put(&a, &m);
+    a.reload();
+    let s = render_to_string(&mut a, 90, 30);
+    assert_eq!(a.open.as_ref().unwrap().msgs.len(), 9, "the thread has it");
+    assert_eq!(place(&a), before, "the same line of the same message at the top");
+    assert_eq!(target_id(&a), "long-6@example.org", "the bar did not move");
+    let body = |s: &str| s.lines().skip(3).take(20).map(str::to_string).collect::<Vec<_>>();
+    assert_eq!(body(&s), body(&shown), "the screen did not move:\n{shown}\n{s}");
+    assert!(s.contains("1 new message in this thread, above"), "{s}");
+    // Frames and reloads with nothing new keep it there.
+    for _ in 0..3 {
+        a.reload();
+        let _ = render_to_string(&mut a, 90, 30);
+    }
+    assert_eq!(place(&a), before);
+    // ⇧↑ goes to it, open.
+    keys(&mut a, &[Key::Top]);
+    let s = render_to_string(&mut a, 90, 30);
+    assert!(s.contains("Message 8. One more thing"), "{s}");
+    assert_eq!(target_id(&a), "long-8@example.org");
+}
+
+#[test]
+fn a_resize_keeps_the_message_you_were_reading_at_the_top() {
+    let (mut a, _f) = app();
+    let dir = tempfile::tempdir().unwrap();
+    let r = long_thread(&mut a);
+    read_mark(&mut a, &dir, &r, ts(2026, 10, 9, 12));
+    open(&mut a, &r);
+    let _ = render_to_string(&mut a, 90, 30);
+    keys(&mut a, &[Key::Char(']')]);
+    let _ = render_to_string(&mut a, 90, 30);
+    keys(&mut a, &[Key::Down, Key::Down]);
+    let _ = render_to_string(&mut a, 90, 30);
+    let before = place(&a);
+    // Wider, then narrower, then shorter and taller: the lines rewrap and the view stays.
+    for (w, h) in [(140, 30), (70, 30), (90, 18), (90, 50), (90, 30)] {
+        let _ = render_to_string(&mut a, w, h);
+        let _ = render_to_string(&mut a, w, h);
+        assert_eq!(place(&a), before, "{w}x{h}");
+        assert_eq!(target_id(&a), "long-6@example.org", "{w}x{h}");
+    }
+    // And scrolling goes on from there.
+    keys(&mut a, &[Key::Down]);
+    let _ = render_to_string(&mut a, 90, 30);
+    assert_eq!(place(&a), (before.0.clone(), before.1 + 1));
+}

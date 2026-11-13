@@ -109,6 +109,11 @@ pub struct Open {
     pub last_read: Option<i64>,
     /// The first body line shown (the header stays above it).
     pub scroll: std::cell::Cell<u16>,
+    /// Where the view is, as last drawn or scrolled: (a message, lines below its lead-in). Each
+    /// draw puts that line back at the top, so the view holds while the thread's lines move
+    /// under it (new mail above, a draft added, a resize rewrapping every message). None above
+    /// the first message (your sends and drafts).
+    pub anchor: std::cell::Cell<Option<(usize, usize)>>,
     /// Put this message (index into `msgs`) at the top on the next draw: on opening, `]` `[`,
     /// `⏎` and `z`, so the message you act on stays where you are looking.
     pub jump: std::cell::Cell<Option<usize>>,
@@ -125,6 +130,22 @@ pub struct Open {
     /// only these, when you leave it (D4: it was stamped on opening, so opening a thread and
     /// moving on lost its new messages).
     pub seen: std::cell::RefCell<BTreeSet<usize>>,
+}
+
+/// The anchor for a view whose top line is `top`: the last message whose lead-in starts at or
+/// above it, and how far below. None above the first message.
+pub fn anchor_at(blocks: &[Block], top: usize) -> Option<(usize, usize)> {
+    blocks
+        .iter()
+        .rev()
+        .find(|b| b.lead <= top)
+        .map(|b| (b.msg, top - b.lead))
+}
+
+/// The top line an anchor stands for in freshly drawn `blocks`, kept inside its message.
+pub fn anchor_line(blocks: &[Block], (msg, off): (usize, usize)) -> Option<usize> {
+    let b = blocks.iter().find(|b| b.msg == msg)?;
+    Some(b.lead + off.min(b.end.saturating_sub(b.lead + 1)))
 }
 
 /// Where one message sits in the drawn thread.
@@ -181,6 +202,7 @@ impl Open {
         self.focus.set(None);
         let to = (i32::from(self.scroll.get()) + d).clamp(0, i32::from(self.max_scroll.get()));
         self.scroll.set(to as u16);
+        self.anchor.set(anchor_at(&self.blocks.borrow(), to as usize));
     }
 
     /// A page: the pane's height less two lines of overlap.
@@ -701,6 +723,7 @@ impl App {
         self.marked.retain(|r| refs.contains(r));
         self.marks = self.db.fors().unwrap_or_default();
         self.preview = None;
+        self.refresh_open();
     }
 
     /// A thread archived here that is back in the inbox with nothing newer in it: Mail accepted
@@ -756,7 +779,8 @@ impl App {
         self.rows.get(self.sel)
     }
 
-    pub fn load_thread(&self, account: &str, thread_id: &str) -> Option<Open> {
+    /// A thread's messages, oldest first, with its copies in your other accounts.
+    fn thread_messages(&self, account: &str, thread_id: &str) -> Option<Vec<Message>> {
         let own = self.db.thread(account, thread_id).ok()?;
         if own.is_empty() {
             return None;
@@ -781,7 +805,11 @@ impl App {
         }
         // A copy in the thread's own account wins, so read state and refs are this thread's.
         all.sort_by_key(|m| (m.date, m.account != account));
-        let msgs = view::distinct(all);
+        Some(view::distinct(all))
+    }
+
+    pub fn load_thread(&self, account: &str, thread_id: &str) -> Option<Open> {
+        let msgs = self.thread_messages(account, thread_id)?;
         let invites = msgs.iter().map(|m| self.invite_of(m)).collect();
         let mut o = Open {
             account: account.to_string(),
@@ -793,6 +821,7 @@ impl App {
             raw: Default::default(),
             last_read: None,
             scroll: std::cell::Cell::new(0),
+            anchor: std::cell::Cell::new(None),
             jump: std::cell::Cell::new(None),
             focus: std::cell::Cell::new(None),
             blocks: Default::default(),
@@ -835,6 +864,75 @@ impl App {
         };
         o.toggled.clear();
         o.jump.set(o.first_target());
+    }
+
+    /// The open thread again from the mirror, when keryxd has changed it (a new message, a copy
+    /// from another account, a body Mail finished downloading), keeping your place: what is open,
+    /// folded, raw or seen follows each message, and the view stays on the line you were reading
+    /// ([`Open::anchor`]). A new message that is new to you opens, above the view, and the line
+    /// above the footer says so. Nothing changes when the messages are the same.
+    pub fn refresh_open(&mut self) {
+        let Some(o) = self.open.as_ref() else { return };
+        let Some(msgs) = self.thread_messages(&o.account, &o.thread_id) else {
+            return;
+        };
+        let key = |m: &Message| {
+            (
+                m.account.clone(),
+                m.source_id.clone(),
+                m.body_text.len(),
+                m.attachments.len(),
+            )
+        };
+        if msgs.iter().map(key).eq(o.msgs.iter().map(key)) {
+            return;
+        }
+        let id = |m: &Message| (m.account.clone(), m.source_id.clone());
+        let old_ids: Vec<(String, String)> = o.msgs.iter().map(id).collect();
+        let at: Vec<Option<usize>> = old_ids.iter().map(|k| msgs.iter().position(|m| &id(m) == k)).collect();
+        let map = |i: usize| at.get(i).copied().flatten();
+        let set = |s: &std::collections::HashSet<usize>| s.iter().filter_map(|&i| map(i)).collect();
+        let invites = msgs.iter().map(|m| self.invite_of(m)).collect();
+        let arrived: Vec<usize> = (0..msgs.len()).filter(|&i| !old_ids.contains(&id(&msgs[i]))).collect();
+        let Some(o) = self.open.as_mut() else { return };
+        o.first_open = set(&o.first_open);
+        o.toggled = set(&o.toggled);
+        o.raw = set(&o.raw);
+        let seen: BTreeSet<usize> = o.seen.borrow().iter().filter_map(|&i| map(i)).collect();
+        *o.seen.borrow_mut() = seen;
+        o.jump.set(o.jump.get().and_then(map));
+        o.focus.set(o.focus.get().and_then(map));
+        o.anchor.set(o.anchor.get().and_then(|(i, off)| Some((map(i)?, off))));
+        let blocks: Vec<Block> = o
+            .blocks
+            .borrow()
+            .iter()
+            .filter_map(|b| Some(Block { msg: map(b.msg)?, ..*b }))
+            .collect();
+        *o.blocks.borrow_mut() = blocks;
+        o.msgs = msgs;
+        o.invites = invites;
+        let new: Vec<usize> = arrived.into_iter().filter(|&i| self.is_new_in(i)).collect();
+        if let Some(o) = self.open.as_mut() {
+            o.first_open.extend(new.iter().copied());
+        }
+        if !new.is_empty() && self.mode == Mode::Thread {
+            let n = new.len();
+            self.message = Some((
+                format!(
+                    "{n} new message{} in this thread, above · ⇧↑ goes to the top",
+                    if n == 1 { "" } else { "s" }
+                ),
+                false,
+            ));
+        }
+    }
+
+    /// [`App::is_new`] for message `i` of the open thread.
+    fn is_new_in(&self, i: usize) -> bool {
+        self.open
+            .as_ref()
+            .is_some_and(|o| i < o.msgs.len() && self.is_new(o, i))
     }
 
     /// Calendar parts aren't in the mirror's text: parse the raw message.

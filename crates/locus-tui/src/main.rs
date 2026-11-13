@@ -162,7 +162,16 @@ fn main() -> Result<()> {
             cli.view
         );
     }
-    run(App::new(fx, ScreenId::Home, UseLog::new(uselog::default_path())))
+    let mut app = App::new(fx, ScreenId::Home, UseLog::new(uselog::default_path()));
+    // Back on the screen it was on before a rebuild restarted it (C7).
+    if let Some(s) = std::env::var("LOCUS_REEXEC_SCREEN")
+        .ok()
+        .and_then(|n| ScreenId::from_name(&n))
+        && s != ScreenId::Home
+    {
+        app.open(s);
+    }
+    run(app)
 }
 
 /// Every set under fixtures/: a file that fails to parse is named by the loader's error; the
@@ -413,8 +422,19 @@ fn run(mut app: App) -> Result<()> {
     let mut inbox = locus_contract::link::OpenFile::locus();
     let mut terminal = ratatui::try_init()?;
     let mut mouse = false;
+    let mut rebuilt = Rebuilt::new();
+    let mut reexec = false;
     let result = (|| -> Result<()> {
         while !app.quit {
+            // A rebuilt binary takes over in place, once nothing is being typed (cleanup C7).
+            if rebuilt.ready()
+                && matches!(app.mode, locus_tui::app::Mode::Normal)
+                && app.chat.busy.is_none()
+                && app.last_key.is_none_or(|t| t.elapsed() > Duration::from_secs(10))
+            {
+                reexec = true;
+                break;
+            }
             app.chat.pump();
             if let Some(n) = app.chat.fact_note.take() {
                 app.note = Some(n);
@@ -498,6 +518,16 @@ fn run(mut app: App) -> Result<()> {
         let _ = ratatui::crossterm::execute!(std::io::stdout(), event::DisableMouseCapture);
     }
     ratatui::restore();
+    if reexec && result.is_ok() {
+        use std::os::unix::process::CommandExt;
+        let exe = std::env::current_exe()?;
+        let err = std::process::Command::new(exe)
+            .args(std::env::args_os().skip(1))
+            .env("LOCUS_REEXEC_SCREEN", app.screen().name())
+            .exec();
+        // exec returns only on failure: say so, and stop as a quit would.
+        eprintln!("locus-tui: could not restart after the rebuild: {err}");
+    }
     if let Some(ff) = first_frame {
         eprintln!(
             "locus-tui: first frame {:.1} ms · slowest frame {:.1} ms",
@@ -506,4 +536,51 @@ fn run(mut app: App) -> Result<()> {
         );
     }
     result
+}
+
+/// Notices that this binary was rebuilt (cleanup C7, 13 Nov 2026): every window ran the build it
+/// started with until restarted by hand, which is how Approve once showed only mail after a
+/// release that added facts. The file must have changed and then stayed unchanged for two
+/// seconds, so a build still being written is never exec'd half-done.
+struct Rebuilt {
+    path: Option<std::path::PathBuf>,
+    started: Option<std::time::SystemTime>,
+    seen: Option<(std::time::SystemTime, Instant)>,
+    checked: Instant,
+}
+
+impl Rebuilt {
+    fn new() -> Self {
+        let path = std::env::current_exe().ok();
+        let started = path.as_ref().and_then(|p| std::fs::metadata(p).ok()?.modified().ok());
+        Rebuilt {
+            path,
+            started,
+            seen: None,
+            checked: Instant::now(),
+        }
+    }
+
+    fn ready(&mut self) -> bool {
+        if self.checked.elapsed() < Duration::from_secs(1) {
+            return false;
+        }
+        self.checked = Instant::now();
+        let (Some(p), Some(start)) = (&self.path, self.started) else {
+            return false;
+        };
+        let Some(m) = std::fs::metadata(p).ok().and_then(|m| m.modified().ok()) else {
+            return false;
+        };
+        if m == start {
+            return false;
+        }
+        match self.seen {
+            Some((prev, since)) if prev == m => since.elapsed() >= Duration::from_secs(2),
+            _ => {
+                self.seen = Some((m, Instant::now()));
+                false
+            }
+        }
+    }
 }

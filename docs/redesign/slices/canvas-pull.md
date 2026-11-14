@@ -1,6 +1,6 @@
 # P: the Canvas pull, and `~/files` and the tablet in step
 
-**State:** draft for approval · **Written:** 2026-11-14 · **Runs in:** `claude` (locus-dev)
+**State:** approved 14 Nov 2026 with two amendments: syllabi are structured, per submodule (P-D9); no ink or notebook snapshots in `~/files`, and a clear split of what lives where (P-D0, P-D5). Waiting on the Canvas token (you, 15 Nov) · **Written:** 2026-11-14 · **Runs in:** `claude` (locus-dev)
 
 **From:** your order of 13 Nov (cleanup, then this, then L), and your words: "I will want sheets/
 notes/ lectures etc to appear automatically in files and on my remarkable if the type is
@@ -14,12 +14,12 @@ arrive by mail.
   hand step.
 - **What is on the tablet is in `~/files`:**
   - the course PDFs you put there by hand (B14, B15 and B18 today);
-  - a snapshot of each of your notebooks, as a PDF.
 - A PDF you drop into `~/files/Studies/...` reaches the tablet if its type is right.
 - Canvas's assessed deadlines arrive in Approve as kairos tasks.
 - The library has every course PDF, and heuris search finds it directly (Q10's kind of miss
   cannot happen again).
-- Your Year 1 and 2 syllabi are facts, and Q31 is scored.
+- Every course's submodules have their syllabus as structured topics, each linked to the lectures,
+  notes and sheets that cover it; the Year 1 and 2 ones too, and Q31 is scored.
 
 **Builds on:**
 - `locus files sync` (files-and-chat M1): it keeps folders in step, but not their contents.
@@ -56,6 +56,21 @@ arrive by mail.
 
 ## Decisions for you (my recommendation first)
 
+**P-D0. What lives where** (your amendment, 14 Nov: "a clear division of what exists where between
+remarkable, locus and the files tree").
+
+| | reMarkable | `~/files` | locus |
+|---|---|---|---|
+| **Is for** | reading and writing by hand | opening and editing on the laptop | remembering and finding |
+| **Holds** | course PDFs to read, sheets you work (with pasted plots), notebooks, Claude's documents | Canvas originals (clean), answers, code, data, LaTeX, reports, syllabi, `course.md` | an index over both, the library, facts, records; your ink read back (`markups`, transcriptions) |
+| **Your ink** | lives here, viewed here | never | read and searchable, pointing back to the tablet |
+| **Clean PDFs** | the ones you read | all of them | ingested into the library |
+
+One rule follows: **files cross between the tablet and `~/files` only as clean PDFs.** Ink and
+notebooks stay on the tablet; locus reads them so they are searchable and quotable, and you view
+them in the reMarkable app. Nothing locus makes for itself (records, renders, caches) appears in
+`~/files`.
+
 **P-D1. How locus reads Canvas.**
 - *Recommended:* a Canvas **access token** that you make once:
   - Canvas → Account → Settings → "+ New access token", named "locus", with an expiry at the end
@@ -79,7 +94,8 @@ arrive by mail.
 | Code, data, zip, notebooks | yes | no | no | |
 | Videos, Panopto links | a link list, `lectures.md` | no | no | |
 | Assessed deadlines (assignments) | | | a fact | a task, in Approve |
-| Course page, syllabus, reading list | `course.md` | no | yes, and facts | |
+| Course page, reading list | `course.md` | no | yes | |
+| Each submodule's syllabus | `syllabus.md` | no | topics, linked (P-D9) | |
 | Announcements | no (mail has them) | | | |
 
 **P-D3. Answers stay off the tablet.**
@@ -103,10 +119,11 @@ arrive by mail.
 **P-D5. Content in both directions, by type** (this replaces files-and-chat's F3, "folders only").
 - **Tablet → `~/files`:**
   - A PDF that isn't Locus's own lands in the matching folder.
-  - A notebook is rendered to `<name>.notebook.pdf` (capture already renders them), refreshed
-    when its ink changes.
-  - Your marked-up copies are not copied down; `markups` reads them. *Alternatively*, a
-    `<name>.marked.pdf` snapshot, if you want ink visible on the laptop.
+  - Only the clean original bytes (the PDF as uploaded), never your ink.
+  - Notebooks are not copied or rendered (P-D0): they stay on the tablet, and locus transcribes
+    them so they are searchable. Your marked-up copies are read by `markups`, not copied.
+    *Your call, 14 Nov:* "what would the handwritten documents actually do sat in my files";
+    revisit only if a real use appears.
 - **`~/files` → tablet:**
   - A PDF in `Studies/`, `Projects/` or `Careers/` that P-D2 sends to the tablet, and that
     isn't there, is pushed.
@@ -140,10 +157,26 @@ arrive by mail.
 - `library_candidates` and the old retrieval path are then removed.
 - The library's ingest (extract, LLM passes, figures) stays frozen as it is.
 
-**P-D9. The syllabi** (H2 D6). Canvas keeps your Year 1 and 2 courses (A-papers, P-papers).
-- Their course pages become `education:` and course `topic:` facts, proposed in Approve,
-  because they're about you.
-- Q31 is scored once they're in.
+**P-D9. Syllabi are structure, not facts** (your amendment, 14 Nov: each submodule "has its own
+very specific syllabus... the fundamental guidelines for what we should be learning/ focussing on
+come revision").
+- **Kept verbatim:** each submodule's syllabus, as Canvas states it, is saved as
+  `~/files/Studies/<course>/<sub>/syllabus.md`, with its source link. That is the authority.
+- **Read into topics:** a `syllabus` table in heuris holds one row per topic: course,
+  submodule, order, the topic as written, and its source pointer. The topics are extracted from
+  the page, and every topic must quote a line of the page or it is dropped (grounded or silent).
+- **Linked to the material:** each topic points at the lectures, notes, sheets and your ink that
+  cover it, matched by search and reranked. A link must clear the rerank floor, so a topic with
+  nothing behind it shows as uncovered, not as a weak match.
+- **What it is for:**
+  - L builds on it: what to learn, what is covered, and what is thin before revision.
+  - Revision planning reads coverage per topic, not per course.
+- **Facts are only the summary:** `education:` facts say which courses and submodules you took
+  and when (proposed in Approve, since they are about you). The topics themselves are not
+  facts: they are the course's, and change only when Canvas does.
+- **Year 1 and 2:** the same structure, from their Canvas pages. Q31 is scored against it.
+- **On a change:** a syllabus page Canvas updates is re-read. The changed topics are shown to
+  you, and their old rows are kept as history.
 
 **P-D10. What comes later.** Panopto recordings themselves, transcripts of lectures, and
 "what's new on Canvas" in Home. Lectures arrive as a link list only. Say if you want more.
@@ -186,11 +219,11 @@ Each step ends with its check on real data, and is committed and deployed before
   - then one real course with something new.
 
 **P5. Tablet → `~/files`, and `~/files` → tablet** (P-D5).
-- **From the tablet:** non-Locus PDFs copied down; notebooks rendered as `.notebook.pdf`.
+- **From the tablet:** non-Locus PDFs copied down as their clean bytes; no notebooks, no ink.
 - **To the tablet:** new PDFs from `~/files` pushed, by the same type rule.
 - Questions for anything gone.
 - *Check:*
-  - B18's notebook sheet appears in `~/files` as a PDF;
+  - B18's hand-uploaded lectures appear in `~/files`, clean, and its notebook sheet does not;
   - a scratch PDF dropped in `~/files/Studies/b18-.../` reaches the tablet in one tick;
   - a scratch file in `report/` does not.
 
@@ -205,8 +238,15 @@ Each step ends with its check on real data, and is committed and deployed before
   - `library_candidates` is gone;
   - search latency stays within its budget.
 
-**P8. Syllabi and Q31** (P-D9).
-- *Check:* the proposed facts, then Q31 re-run and scored.
+**P8. Syllabi as structure, then Q31** (P-D9).
+- `syllabus.md` saved per submodule.
+- The topics extracted, each with its quoted line, and linked to the material.
+- The `education:` facts proposed.
+- *Check:*
+  - B14, B15 and B18's submodules each list their topics, with the lectures behind each and the
+    uncovered ones marked;
+  - you read one submodule's list against its Canvas page;
+  - Q31 is re-run and scored.
 
 ---
 

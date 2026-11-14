@@ -1,0 +1,10 @@
+[Unit]
+Description=Pull Canvas into the mirror every 30 minutes (spec P, P-D6)
+
+[Timer]
+OnActiveSec=2min
+OnBootSec=5min
+OnUnitInactiveSec=30min
+
+[Install]
+WantedBy=timers.target

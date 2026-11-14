@@ -15,5 +15,7 @@ locus-http.service
 locus-heuris.timer
 # heuris (H2): facts from mail and the calendar, records and briefs, hourly on the API credit.
 locus-heuris-derive.timer
+# The Canvas pull (spec P, P2): every mapped course's files into data/canvas/, every 30 minutes.
+locus-canvas.timer
 # The public listener (H1.10): claude.ai and the phone, OAuth with a passphrase, via Funnel.
 locus-public.service

@@ -189,6 +189,17 @@ def pull(client: Client, courses: dict[str, dict], *, root: Path = MIRROR, only:
             try:
                 meta = client.get(f"courses/{c['canvas']}/files/{p.file_id}")
             except CanvasError as e:
+                # A Page can link to a file Canvas has since deleted, or one in a course he is
+                # not on (P5's Computing Lab pages, 14 Nov: 9 such links, all 404 or 403). That
+                # is the page's dead link, not a failure of the pull; a module's own file is.
+                if p.via != "module" and re.search(r"HTTP 40[34]", str(e)):
+                    status = "skipped: dead link"
+                    if not old or old["status"] != status:
+                        rep.skipped.append(f"{rid} {p.module}: file {p.file_id} ({p.via}): dead link")
+                    if not dry_run:
+                        files[key] = asdict(Entry(p.file_id, rid, p.module, p.subheader, p.via,
+                                                  f"file {p.file_id}", "", status=status))
+                    continue
                 rep.errors.append(f"{rid} {p.module}: file {p.file_id}: {e}")
                 continue
             display = meta.get("display_name") or meta.get("filename") or str(p.file_id)

@@ -1,0 +1,17 @@
+[Unit]
+Description=Locus Canvas pull: mirror every mapped course's module files into data/canvas/ (spec P, P2)
+Documentation=file:///home/alec/server-projects/locus/docs/redesign/slices/canvas-pull.md
+After=network-online.target
+Wants=network-online.target
+OnFailure=locus-failure@%n.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/alec/server-projects/locus
+Environment=PATH=/home/alec/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# GET only (locus/canvas.py); the token is in ~/.config/locus/canvas.env. A run with nothing new
+# asks Canvas about this year's files and downloads nothing.
+ExecStart=/home/alec/.local/bin/uv run locus canvas pull
+TimeoutStartSec=3600
+Nice=10
+IOSchedulingClass=idle

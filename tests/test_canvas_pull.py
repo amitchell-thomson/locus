@@ -117,6 +117,19 @@ def test_a_dry_run_writes_nothing(tmp_path, fetched):
     assert len(rep.new) == 3 and not fetched and not (tmp_path / "manifest.json").exists()
 
 
+def test_a_dead_link_on_a_page_is_skipped_not_an_error(tmp_path, fetched):
+    class Dead(FakeCanvas):
+        def get(self, path, params=None):
+            if path.endswith("/files/4"):
+                raise CanvasError("GET x: HTTP 404")
+            return super().get(path, params)
+
+    rep = canvas_pull.pull(Dead(), COURSES, root=tmp_path)
+    assert not rep.errors and any("dead link" in s for s in rep.skipped)
+    rep2 = canvas_pull.pull(Dead(), COURSES, root=tmp_path)
+    assert (rep2.errors, rep2.skipped) == ([], [])
+
+
 def test_a_course_that_fails_is_an_error_and_the_rest_continue(tmp_path, fetched):
     class Broken(FakeCanvas):
         def get(self, path, params=None):

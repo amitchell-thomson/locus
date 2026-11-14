@@ -88,11 +88,13 @@ class Report:
     errors: list[str] = field(default_factory=list)
 
 
-def placements(client: Client, course_id: int) -> tuple[list[Placement], list[dict]]:
-    """Every file a course's modules reach, in Canvas's order, and its links."""
+def placements(client: Client, course_id: int) -> tuple[list[Placement], list[dict], int]:
+    """Every file a course's modules reach, in Canvas's order, its links, and how many modules
+    it has."""
     out: list[Placement] = []
     links: list[dict] = []
-    for m in modules(client, course_id, items=True):
+    ms = modules(client, course_id, items=True)
+    for m in ms:
         mod = name(m.get("name") or "")
         sub = ""
         for it in m.get("items") or []:
@@ -111,7 +113,7 @@ def placements(client: Client, course_id: int) -> tuple[list[Placement], list[di
                 body = (page or {}).get("body") or "" if isinstance(page, dict) else ""
                 for fid in dict.fromkeys(re.findall(r"/files/(\d+)", body)):
                     out.append(Placement(int(fid), mod, sub, f"page: {name(it.get('title') or '')}"))
-    return out, links
+    return out, links, len(ms)
 
 
 def _download(client: Client, url: str, dest: Path) -> str:
@@ -166,12 +168,14 @@ def pull(client: Client, courses: dict[str, dict], *, root: Path = MIRROR, only:
             continue
         live = c.get("active", True) is not False
         try:
-            places, links = placements(client, int(c["canvas"]))
+            places, links, n_modules = placements(client, int(c["canvas"]))
         except CanvasError as e:
             rep.errors.append(f"{rid}: {e}")
             continue
         man["links"][rid] = links
-        single = len({p.module for p in places}) == 1
+        # One module on Canvas, not one module with files so far: B18 has four, only the first
+        # with files on 14 Nov, and its files belong in cellular-physiology/ like its syllabus.
+        single = n_modules == 1
         taken: dict[str, int] = {}      # path -> file id, within this run
         for e in files.values():
             if e["course"] == rid:

@@ -117,6 +117,18 @@ def test_a_dry_run_writes_nothing(tmp_path, fetched):
     assert len(rep.new) == 3 and not fetched and not (tmp_path / "manifest.json").exists()
 
 
+def test_a_course_whose_other_modules_are_still_empty_keeps_module_folders(tmp_path, fetched):
+    class OneWithFiles(FakeCanvas):
+        def get(self, path, params=None):
+            out = super().get(path, params)
+            if path.endswith("/modules"):
+                out = [out[0], {"name": "Wearable Technology", "items": []}]
+            return out
+
+    rep = canvas_pull.pull(OneWithFiles(), COURSES, root=tmp_path)
+    assert "b18/cellular-physiology/b18-lecture-1.pdf" in rep.new
+
+
 def test_a_dead_link_on_a_page_is_skipped_not_an_error(tmp_path, fetched):
     class Dead(FakeCanvas):
         def get(self, path, params=None):

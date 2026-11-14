@@ -99,3 +99,18 @@ def test_files_arrive_once_and_never_over_his_work(tmp_path):
     (studies / "b18-bio/cellular-physiology/notes.pdf").unlink()
     p = run_files(tmp_path, root3, studies, state)
     assert not p.copies and p.gone == ["b18-bio/cellular-physiology/notes.pdf"]
+
+
+def test_a_module_he_is_not_taking_goes_nowhere(tmp_path):
+    root = mirror(tmp_path, {"b18-bio/mine/a.pdf": ("b18", b"a"), "b18-bio/other-project/b.pdf": ("b18", b"b")})
+    skip = {"b18": {"other-project"}}
+    q = canvas_files.queue_library(COURSES, set(), incoming=tmp_path / "inc", root=root, skip=skip)
+    assert q.queued == ["b18-bio/mine/a.pdf"]
+    man = json.loads((root / "manifest.json").read_text())
+    p = canvas_files.plan_files(man, COURSES, {}, tmp_path / "Studies", skip=skip)
+    assert [c.src for c in p.copies] == ["b18-bio/mine/a.pdf"]
+
+
+def test_the_skip_list_names_real_folders():
+    for rid, folders in canvas_files.skipped_modules().items():
+        assert all(f == f.lower() and " " not in f for f in folders), rid

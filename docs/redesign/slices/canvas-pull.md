@@ -353,3 +353,16 @@ keeps their folders off the tablet; the ten the sync had made there, empty, were
 year's 31 syllabi went to the tablet as PDFs, one in each submodule's folder, through
 `send_markdown` (recorded in `device_sent`, so capture never reads them as sources); P4 does this
 by type from then on. The cloud returned 429 after six sends in a row: 10 s apart, with a backoff.
+
+**P2 done (14 Nov 2026).** `locus canvas pull` (`locus/canvas_pull.py`), every 30 minutes on
+`locus-canvas.timer`. First run: 817 files, 2.0 GB, 18 courses, 0 errors; 5 videos and 10 dead
+links on old lab pages skipped. Second run: nothing fetched (47 s of asking). Every lecture he had
+put on the tablet by hand (24 of B14, B15, B18) is byte-identical to its Canvas file. One fix on
+the way: a course goes flat only if it has one module on Canvas, not one with files so far (B18).
+
+**P3 done (14 Nov 2026).** `locus/canvas_files.py`. The library half runs after each pull: 68 of
+this year's files queued, 29 already in the library. The `~/files` half runs in the laptop's
+`locus files sync`: 113 files, then 0 on a second run. Canvas enrols every third-year on every 3YP
+option; the five he is not on are listed in `taxonomy/canvas-skip.toml` and go nowhere but the
+mirror (their copies, made once before the list existed, were taken out of `~/files` and the
+ingest queue).

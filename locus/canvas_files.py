@@ -36,6 +36,21 @@ from pathlib import Path
 from locus.canvas_pull import MIRROR, load_manifest
 
 LIBRARY_TYPES = (".pdf", ".pptx", ".docx")
+SKIP_PATH = Path(__file__).resolve().parents[1] / "taxonomy" / "canvas-skip.toml"
+
+
+def skipped_modules(path: Path = SKIP_PATH) -> dict[str, set[str]]:
+    """Registry id -> module folders he is not taking (`taxonomy/canvas-skip.toml`)."""
+    import tomllib
+
+    if not path.exists():
+        return {}
+    return {k: set(v) for k, v in tomllib.loads(path.read_text()).get("skip", {}).items()}
+
+
+def _skipped(e: dict, skip: dict[str, set[str]]) -> bool:
+    parts = e["path"].split("/")
+    return len(parts) > 2 and parts[1] in skip.get(e["course"], set())
 
 
 def active_folders(courses: dict[str, dict]) -> dict[str, str]:
@@ -66,12 +81,14 @@ def _held(incoming: Path, rel: str) -> bool:
 
 
 def queue_library(courses: dict[str, dict], library_hashes: set[str], *, incoming: Path,
-                  root: Path = MIRROR, dry_run: bool = False) -> Queued:
+                  root: Path = MIRROR, dry_run: bool = False, skip: dict[str, set[str]] | None = None) -> Queued:
     man = load_manifest(root)
     live = active_folders(courses)
+    skip = skipped_modules() if skip is None else skip
     out = Queued()
     for e in man["files"].values():
-        if e["course"] not in live or e["status"] != "ok" or not e["path"].lower().endswith(LIBRARY_TYPES):
+        if e["course"] not in live or e["status"] != "ok" or not e["path"].lower().endswith(LIBRARY_TYPES) \
+                or _skipped(e, skip):
             continue
         if e.get("library") == e["sha256"]:
             continue
@@ -151,11 +168,13 @@ def _beside(dest: Path, sha: str) -> Path | None:
         n += 1
 
 
-def plan_files(manifest: dict, courses: dict[str, dict], state: dict[str, str], studies: Path) -> FilesPlan:
+def plan_files(manifest: dict, courses: dict[str, dict], state: dict[str, str], studies: Path,
+               skip: dict[str, set[str]] | None = None) -> FilesPlan:
     live = active_folders(courses)
+    skip = skipped_modules() if skip is None else skip
     p = FilesPlan()
     for e in manifest["files"].values():
-        if e["course"] not in live or e["status"] != "ok":
+        if e["course"] not in live or e["status"] != "ok" or _skipped(e, skip):
             continue
         rel, sha = e["path"], e["sha256"]
         dest = studies / rel

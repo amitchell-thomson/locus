@@ -1121,6 +1121,11 @@ def cmd_files(args) -> None:
         return _subprocess_runner(cfg.capture.rmapi_binary), cfg.capture.rmapi_tree_cache
 
     if args.files_cmd == "sync":
+        # Canvas first (P3), so a module folder it makes reaches the tablet in this same tick.
+        try:
+            _canvas_files(args)
+        except Exception as e:  # the folder sync still runs: Canvas is one source among several
+            print(f"canvas -> ~/files failed: {e}")
         p = fs.sync(dry_run=args.dry_run)
         verb = "would make" if args.dry_run else "made"
         for rel in p.to_laptop:

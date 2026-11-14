@@ -1,0 +1,12 @@
+# Canvas modules he is not taking (spec P, P3). Canvas enrols every third-year on every B3 project
+# option; he is on one ("Harnessing the value of data...", the 3YP pitch, Oct 2026). A module listed
+# here stays in the server's mirror but goes to neither ~/files, the library nor the tablet.
+# Keyed by registry id; each entry is the module's folder (its Canvas name in F1 form).
+[skip]
+b3 = [
+  "cultured-meat-production-a-food-supply-chain-for-the-future",
+  "design-of-a-cubesat-re-entry-experiment-for-satellite-demise",
+  "design-of-a-floating-wind-turbine",
+  "designing-intelligent-musical-technology",
+  "system-and-software-design-of-a-multi-agent-aerial-robotic-system",
+]

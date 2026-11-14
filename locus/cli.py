@@ -1188,6 +1188,9 @@ def cmd_canvas(args) -> None:
     if args.canvas_cmd == "syllabus":
         _canvas_syllabus(args)
         return
+    if args.canvas_cmd == "pull":
+        _canvas_pull(args)
+        return
     cs = canvas.fetch_courses()
     if args.json:
         print(_json.dumps([dataclasses.asdict(c) for c in cs]))
@@ -1209,6 +1212,27 @@ def cmd_canvas(args) -> None:
         print()
         print("".join(difflib.unified_diff(before.splitlines(True), after.splitlines(True),
                                            "taxonomy/registry.toml", "taxonomy/registry.toml (proposed)")))
+
+
+def _canvas_pull(args) -> None:
+    """P2: bring the server's mirror (`data/canvas/`) up to date with Canvas."""
+    from locus import canvas, canvas_pull
+    from locus.heuris import registry
+
+    rep = canvas_pull.pull(canvas.Client(), registry.entries(), only=set(args.course or []) or None,
+                           dry_run=args.dry_run, pause=args.pause)
+    verb = "would fetch" if args.dry_run else "fetched"
+    for label, xs in (("new", rep.new), ("changed", rep.changed)):
+        for x in xs:
+            print(f"{verb} ({label}): {x}")
+    for x in rep.skipped:
+        print(f"skipped: {x}")
+    for x in rep.errors:
+        print(f"error: {x}")
+    print(f"{len(rep.new)} new, {len(rep.changed)} changed, {rep.unchanged} unchanged, "
+          f"{len(rep.skipped)} skipped, {len(rep.errors)} errors")
+    if rep.errors:
+        raise SystemExit(1)
 
 
 def _canvas_syllabus(args) -> None:
@@ -1316,6 +1340,10 @@ def main(argv=None) -> None:
     cvc.add_argument("--apply", action="store_true", help="write the mapping into taxonomy/registry.toml")
     cvm = cvs.add_parser("modules", help="each mapped course's Canvas module names")
     cvm.add_argument("--json", action="store_true")
+    cvp = cvs.add_parser("pull", help="mirror every mapped course's module files into data/canvas/ (P2)")
+    cvp.add_argument("--course", action="append", help="a registry id (repeatable); default all mapped")
+    cvp.add_argument("--dry-run", action="store_true", help="list what would be fetched; fetch nothing")
+    cvp.add_argument("--pause", type=float, default=0.2, help="seconds between downloads")
     cvy = cvs.add_parser("syllabus", help="a year's syllabus PDF as syllabus.md per submodule (P8)")
     cvy.add_argument("pdf")
     cvy.add_argument("--edition", required=True, help='e.g. "1st Year Syllabus 2024-25"')

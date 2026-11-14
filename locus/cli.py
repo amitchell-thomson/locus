@@ -1199,6 +1199,9 @@ def cmd_canvas(args) -> None:
     if args.canvas_cmd == "files":
         _canvas_files(args)
         return
+    if args.canvas_cmd == "tablet":
+        _canvas_tablet(args)
+        return
     cs = canvas.fetch_courses()
     if args.json:
         print(_json.dumps([dataclasses.asdict(c) for c in cs]))
@@ -1227,6 +1230,11 @@ def _canvas_pull(args) -> None:
     from locus import canvas, canvas_pull
     from locus.heuris import registry
 
+    with canvas_pull.locked():
+        _canvas_pull_locked(args, canvas, canvas_pull, registry)
+
+
+def _canvas_pull_locked(args, canvas, canvas_pull, registry) -> None:
     rep = canvas_pull.pull(canvas.Client(), registry.entries(), only=set(args.course or []) or None,
                            dry_run=args.dry_run, pause=args.pause)
     verb = "would fetch" if args.dry_run else "fetched"
@@ -1252,6 +1260,29 @@ def _canvas_pull(args) -> None:
         print(f"held back (set aside by locus-watch before): {x}")
     print(f"library: {len(q.queued)} queued, {q.in_library} already in it, {q.waiting} waiting to be ingested")
     if rep.errors:
+        raise SystemExit(1)
+
+
+def _canvas_tablet(args) -> None:
+    """P4, on the server: this year's documents to the tablet, only what is not there already."""
+    from locus import canvas_pull, canvas_tablet
+    from locus.heuris import registry
+
+    with canvas_pull.locked():
+        p = canvas_tablet.plan(canvas_pull.load_manifest(), registry.entries(), canvas_tablet.tablet_hashes())
+        for s in p.sends:
+            print(f"{'would send' if args.dry_run else 'to send'}: {s.folder}/{s.title}")
+        for x in p.solutions:
+            print(f"kept off (solutions): {x}")
+        print(f"tablet: {len(p.sends)} to send, {len(p.on_tablet)} already there, "
+              f"{p.sent_before} sent before, {len(p.solutions)} solutions kept off")
+        if args.dry_run or not p.sends:
+            return
+        sent, errors = canvas_tablet.send(p, deliver=canvas_tablet.live_deliver(), pause=args.pause)
+    for e in errors:
+        print(f"error: {e}")
+    print(f"sent {sent} of {len(p.sends)}")
+    if errors:
         raise SystemExit(1)
 
 
@@ -1382,6 +1413,9 @@ def main(argv=None) -> None:
     cvp.add_argument("--pause", type=float, default=0.2, help="seconds between downloads")
     cvf = cvs.add_parser("files", help="this year's mirror files into ~/files/Studies (P3, the laptop)")
     cvf.add_argument("--dry-run", action="store_true")
+    cvt = cvs.add_parser("tablet", help="this year's documents to the tablet, never a duplicate (P4, the server)")
+    cvt.add_argument("--dry-run", action="store_true")
+    cvt.add_argument("--pause", type=float, default=10.0, help="seconds between sends (the cloud rate-limits)")
     cvy = cvs.add_parser("syllabus", help="a year's syllabus PDF as syllabus.md per submodule (P8)")
     cvy.add_argument("pdf")
     cvy.add_argument("--edition", required=True, help='e.g. "1st Year Syllabus 2024-25"')

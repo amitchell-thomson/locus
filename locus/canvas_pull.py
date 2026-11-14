@@ -25,6 +25,7 @@ skipped, as is anything over `MAX_BYTES`.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -142,6 +143,21 @@ def _download(client: Client, url: str, dest: Path) -> str:
             f.write(chunk)
     os.replace(tmp, dest)
     return h.hexdigest()
+
+
+@contextlib.contextmanager
+def locked(root: Path = MIRROR):
+    """One writer of the manifest at a time: the pull (every 30 minutes) and a send to the tablet
+    both record into it, and either would overwrite the other's entries."""
+    import fcntl
+
+    root.mkdir(parents=True, exist_ok=True)
+    with (root / ".lock").open("w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
 
 
 def load_manifest(root: Path = MIRROR) -> dict:

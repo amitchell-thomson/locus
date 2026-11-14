@@ -1703,69 +1703,30 @@ fn thread(f: &mut Frame, app: &App, area: Rect, open: Option<&Open>) {
     let inner = Rect::new(area.x + 1, area.y, area.width.saturating_sub(2), area.height);
     let w = inner.width as usize;
     let (head, mut lines) = thread_parts(app, open, w);
-    // Reading (not the list's preview): the bar, the jumps, and what has been on screen.
+    // Reading (not the list's preview): the bar, and what has been on screen.
     let reading = matches!(app.mode, Mode::Thread | Mode::Attachments)
         && app.open.as_ref().is_some_and(|o| std::ptr::eq(o, open));
     let blocks = open.blocks.borrow().clone();
-    // A jump puts its message's lead-in (its day band) at the top; at the end of the thread,
-    // where it cannot get there, the bar stays on it (focus).
-    // The view stays on the line you were reading while the lines move under it: new mail above,
-    // a resize rewrapping every message ([`crate::app::Open::anchor`]).
-    let mut scroll = open
-        .anchor
-        .get()
-        .and_then(|a| crate::app::anchor_line(&blocks, a))
-        .map_or(open.scroll.get(), |l| l.min(usize::from(u16::MAX)) as u16);
-    let mut jumped = None;
-    if let Some(i) = open.jump.take()
-        && let Some(b) = blocks.iter().find(|b| b.msg == i)
-    {
-        scroll = b.lead as u16;
-        jumped = Some(i);
-    }
-    // The header shrinks to two lines (subject, people) once you scroll (D4). How far the body
-    // scrolls is reckoned under the header it will be drawn with: reckoned under the full header
-    // and drawn under the short one, a thread a few lines too long was put back to the top on
-    // every frame, so ↓ moved a line and the next frame took it back (13 Nov, Alec: "stuck at the
-    // top"). It scrolls only when it does not fit under the full header, and then at least a line.
-    let short = reading && head.len() > 2;
-    // At most two thirds of the pane, so a short pane still shows emails.
-    let head_h = |n: usize| (n as u16).min(inner.height * 2 / 3).max(1.min(inner.height));
-    let (full_h, short_h) = (head_h(head.len()), head_h(head.len().min(2)));
-    let total = lines.len().min(usize::from(u16::MAX)) as u16;
-    let max_scroll = if total <= inner.height - full_h {
-        0
-    } else if short {
-        total.saturating_sub(inner.height - short_h).max(1)
-    } else {
-        total - (inner.height - full_h)
-    };
-    open.max_scroll.set(max_scroll);
-    if let Some(i) = jumped {
-        open.focus.set((scroll > max_scroll).then_some(i));
-    }
-    // A pane grown taller than what is left below shows the end; the anchor keeps where you were,
-    // so it goes back there when the pane shrinks again.
-    if scroll <= max_scroll || jumped.is_some() || open.anchor.get().is_none() {
-        open.anchor
-            .set(crate::app::anchor_at(&blocks, usize::from(scroll.min(max_scroll))));
-    }
-    let scroll = scroll.min(max_scroll);
-    open.scroll.set(scroll);
-    let head: Vec<Line<'static>> = if scroll > 0 && short {
-        head.into_iter().take(2).collect()
-    } else {
-        head
-    };
-    let hh = head_h(head.len());
-    f.render_widget(Paragraph::new(head), Rect::new(inner.x, inner.y, inner.width, hh));
+    // The header stays full height (at most two thirds of the pane, so a short pane still shows
+    // emails). It shrank to two lines once scrolled, and how far to scroll reckoned under one
+    // header and drawn under the other snapped the view back to the top (13 Nov).
+    let hh = (head.len() as u16).min(inner.height * 2 / 3).max(1.min(inner.height));
     let body = Rect::new(inner.x, inner.y + hh, inner.width, inner.height - hh);
+    let total = lines.len().min(usize::from(u16::MAX)) as u16;
+    let max_top = total.saturating_sub(body.height);
+    // The view follows the bar: worked out here from the selected email and how far it was paged
+    // ([`crate::app::Open`]), never kept from the last frame, so nothing can put it back.
+    let scroll = open.top_in(&blocks, max_top);
+    open.max_top.set(max_top);
     open.height.set(body.height);
+    f.render_widget(Paragraph::new(head), Rect::new(inner.x, inner.y, inner.width, hh));
     if reading {
+        // Read: the email under the bar and any wholly on screen.
         let top = usize::from(scroll);
         let bottom = top + usize::from(body.height);
         let mut seen = open.seen.borrow_mut();
-        for b in blocks.iter().filter(|b| b.start < bottom && b.end > top) {
+        seen.extend(open.target());
+        for b in blocks.iter().filter(|b| b.start >= top && b.end <= bottom) {
             seen.insert(b.msg);
         }
         if let Some(t) = open.target()
@@ -1817,7 +1778,7 @@ pub fn hints(app: &App) -> Vec<(&'static str, &'static str)> {
         // A thread opened from a run's detail: it reads, and only back works (round 11 audit).
         Mode::Thread if app.back.is_some() => vec![
             ("space", "page"),
-            ("] [", "message"),
+            ("↑ ↓", "email"),
             ("⏎", "open"),
             ("z", "as received"),
             ("esc", "back"),
@@ -1833,7 +1794,7 @@ pub fn hints(app: &App) -> Vec<(&'static str, &'static str)> {
             let mut v = vec![
                 ("R", "reply"),
                 ("space", "page"),
-                ("] [", "message"),
+                ("↑ ↓", "email"),
                 ("⏎", "open"),
                 ("d", "done"),
                 ("x", "archive"),

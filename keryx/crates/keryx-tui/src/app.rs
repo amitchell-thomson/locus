@@ -83,14 +83,21 @@ pub enum Mode {
     },
 }
 
-/// A thread opened for reading, read like a document (cleanup C6, decision D4, 13 Nov 2026).
+/// A thread opened for reading (cleanup C6, decision D4; the bar model, 13 Nov 2026).
 ///
-/// There is ONE scroll and no separate selection. Before this, ↑↓ moved a selection (a tint on
-/// one header line) while space scrolled, so the tint scrolled out of sight and `⏎`, `z` and `r`
-/// acted on a message you could not see. Now the message under the top line of the view is the
-/// one they act on ([`Open::target`]), and the screen marks it with a bar down its whole left
-/// edge. `]` `[` jump between messages; near the end of a thread, where the last messages can
-/// never reach the top line, the jump keeps the bar on the message it went to (`focus`).
+/// The bar is a SELECTION: one email of the thread ([`Open::sel`]), marked by a bar down its
+/// left edge, and what `⏎`, `z`, `R`, `F` and the link digits act on. `↓` `↑` move it one email
+/// at a time, never by lines, and the view follows it: the selected email starts at the top of
+/// the view, or as near as the end of the thread allows. The view is worked out afresh on every
+/// frame from the bar and how far you have paged into its email ([`Open::off`]); drawing never
+/// writes either, so no frame, reload or resize can put the view anywhere else.
+///
+/// Built, measured and rejected the same night: the thread as one scroll, the message under the
+/// top line being the one acted on, with a line anchor kept across frames and a header that
+/// shrank to two lines once scrolled. Twice in one evening the real window snapped back to the
+/// top while every test passed (how far it scrolled was reckoned under one header and drawn
+/// under the other), and Alec: "just make the purple bar move between thread emails, this
+/// scrolling thing really does not work". The header now stays full height.
 #[derive(Debug, Clone)]
 pub struct Open {
     pub account: String,
@@ -107,45 +114,23 @@ pub struct Open {
     pub raw: std::collections::HashSet<usize>,
     /// When you last read this thread here (the "new since" mark, spec keryx-thread-view T3).
     pub last_read: Option<i64>,
-    /// The first body line shown (the header stays above it).
-    pub scroll: std::cell::Cell<u16>,
-    /// Where the view is, as last drawn or scrolled: (a message, lines below its lead-in). Each
-    /// draw puts that line back at the top, so the view holds while the thread's lines move
-    /// under it (new mail above, a draft added, a resize rewrapping every message). None above
-    /// the first message (your sends and drafts).
-    pub anchor: std::cell::Cell<Option<(usize, usize)>>,
-    /// Put this message (index into `msgs`) at the top on the next draw: on opening, `]` `[`,
-    /// `⏎` and `z`, so the message you act on stays where you are looking.
-    pub jump: std::cell::Cell<Option<usize>>,
-    /// The message a jump went to when it could not reach the top line (the end of the thread):
-    /// the bar stays on it until you scroll.
-    pub focus: std::cell::Cell<Option<usize>>,
+    /// The selected email (index into `msgs`): the bar.
+    pub sel: Option<usize>,
+    /// How many lines the view's top is below where the selected email puts it ([`Open::home`]):
+    /// 0 until you page inside a long email. Set only by keys (and carried through a reload),
+    /// never by drawing.
+    pub off: i32,
     /// As last drawn: each message's block, in the order shown, as (index into `msgs`, the line
     /// its lead-in starts on (day band or blank), its first line, the line after its last).
+    /// Only paging reads it, to know where the selected email ends.
     pub blocks: std::cell::RefCell<Vec<Block>>,
-    /// The body pane's height and how far it can scroll, as last drawn.
+    /// The body pane's height and the furthest down the view can go, as last drawn.
     pub height: std::cell::Cell<u16>,
-    pub max_scroll: std::cell::Cell<u16>,
-    /// Messages that were on screen while you read the thread: "read" is stamped for these, and
-    /// only these, when you leave it (D4: it was stamped on opening, so opening a thread and
-    /// moving on lost its new messages).
+    pub max_top: std::cell::Cell<u16>,
+    /// Messages you read while in the thread: the bar was on them, or they were wholly on
+    /// screen. "Read" is stamped for these, and only these, when you leave it (D4: it was
+    /// stamped on opening, so opening a thread and moving on lost its new messages).
     pub seen: std::cell::RefCell<BTreeSet<usize>>,
-}
-
-/// The anchor for a view whose top line is `top`: the last message whose lead-in starts at or
-/// above it, and how far below. None above the first message.
-pub fn anchor_at(blocks: &[Block], top: usize) -> Option<(usize, usize)> {
-    blocks
-        .iter()
-        .rev()
-        .find(|b| b.lead <= top)
-        .map(|b| (b.msg, top - b.lead))
-}
-
-/// The top line an anchor stands for in freshly drawn `blocks`, kept inside its message.
-pub fn anchor_line(blocks: &[Block], (msg, off): (usize, usize)) -> Option<usize> {
-    let b = blocks.iter().find(|b| b.msg == msg)?;
-    Some(b.lead + off.min(b.end.saturating_sub(b.lead + 1)))
 }
 
 /// Where one message sits in the drawn thread.
@@ -166,22 +151,15 @@ impl Open {
         v
     }
 
-    /// The message `⏎`, `z`, `r` and the link digits act on: the one under the top line of the
-    /// view (the first whose block ends below it), or the one a jump went to.
+    /// The message `⏎`, `z`, `R`, `F` and the link digits act on: the selected one.
     pub fn target(&self) -> Option<usize> {
-        if let Some(i) = self.jump.get().or(self.focus.get()) {
-            return Some(i);
-        }
-        let top = usize::from(self.scroll.get());
-        let blocks = self.blocks.borrow();
-        if blocks.is_empty() {
-            // Not drawn yet: the message the thread opens on.
-            return self.first_target();
-        }
-        blocks.iter().find(|b| b.end > top).or(blocks.last()).map(|b| b.msg)
+        self.sel
+            .filter(|&i| i < self.msgs.len())
+            .or_else(|| self.first_target())
     }
 
-    /// The message the thread opens on: the newest of those open at first, else the newest.
+    /// The message the thread opens on: the newest of those open at first (the newest new
+    /// one), else the newest.
     pub fn first_target(&self) -> Option<usize> {
         let order = self.order();
         order
@@ -196,13 +174,48 @@ impl Open {
         self.first_open.contains(&i) != self.toggled.contains(&i) || self.raw.contains(&i)
     }
 
-    /// Scroll by `d` lines; the bar goes back to following the top line.
-    pub fn scroll_by(&mut self, d: i32) {
-        self.jump.set(None);
-        self.focus.set(None);
-        let to = (i32::from(self.scroll.get()) + d).clamp(0, i32::from(self.max_scroll.get()));
-        self.scroll.set(to as u16);
-        self.anchor.set(anchor_at(&self.blocks.borrow(), to as usize));
+    /// Put the bar on message `i`, its first line at the top of the view. Once a frame has drawn
+    /// it there, it counts as read.
+    pub fn select(&mut self, i: usize) {
+        self.sel = Some(i);
+        self.off = 0;
+    }
+
+    /// Where the selected email puts the view's top, in `blocks`: its first line; for the
+    /// newest email, the top of the thread, so your sends and drafts above it show.
+    pub fn home(&self, blocks: &[Block]) -> i32 {
+        let Some(t) = self.target() else { return 0 };
+        match blocks.iter().position(|b| b.msg == t) {
+            Some(0) | None => 0,
+            Some(k) => blocks[k].start as i32,
+        }
+    }
+
+    /// The view's top line in `blocks`, for a pane that can go no further than `max_top`.
+    pub fn top_in(&self, blocks: &[Block], max_top: u16) -> u16 {
+        (self.home(blocks) + self.off).clamp(0, i32::from(max_top)) as u16
+    }
+
+    /// `↓` `↑`: the bar to the next (older, below) or previous (newer, above) email. At either
+    /// end it stays.
+    pub fn step(&mut self, d: isize) {
+        let order = self.order();
+        let Some(at) = self.target().and_then(|t| order.iter().position(|&i| i == t)) else {
+            return;
+        };
+        let to = (at as isize + d).clamp(0, order.len() as isize - 1) as usize;
+        if to != at || self.off != 0 {
+            self.select(order[to]);
+        }
+    }
+
+    /// `⇧↑` `⇧↓`: the bar to the newest or the oldest email.
+    pub fn select_end(&mut self, oldest: bool) {
+        let order = self.order();
+        let i = if oldest { order.last() } else { order.first() };
+        if let Some(&i) = i {
+            self.select(i);
+        }
     }
 
     /// A page: the pane's height less two lines of overlap.
@@ -210,15 +223,59 @@ impl Open {
         i32::from(self.height.get()).saturating_sub(2).max(1)
     }
 
-    /// `]` / `[`: the next (older) or previous (newer) message to the top.
-    pub fn step(&mut self, d: isize) {
+    /// The selected email's block as last drawn, the view's top then, and the pane's height.
+    fn drawn(&self) -> Option<(Block, i32, i32)> {
+        let blocks = self.blocks.borrow();
+        let t = self.target()?;
+        let b = *blocks.iter().find(|b| b.msg == t)?;
+        let top = i32::from(self.top_in(&blocks, self.max_top.get()));
+        Some((b, top, i32::from(self.height.get())))
+    }
+
+    /// `space` / `PgDn`: a page further into the selected email, never past its end; once its
+    /// end is on screen (or the thread can go no further), the bar moves to the next email. The
+    /// view only ever goes down, and the bar only ever forward.
+    pub fn page_down(&mut self) {
+        let Some((b, top, h)) = self.drawn() else {
+            return self.step(1);
+        };
+        let end = b.end as i32;
+        let max = i32::from(self.max_top.get());
+        if end <= top + h || top >= max {
+            if self.order().last().copied() != self.target() {
+                self.step(1);
+            }
+            return;
+        }
+        let to = (top + self.page()).min(end - h).min(max);
+        self.off = to - self.home(&self.blocks.borrow());
+    }
+
+    /// `PgUp` / `⇧space`: a page back up the selected email; at its first line, the bar moves to
+    /// the previous email, showing its last page.
+    pub fn page_up(&mut self) {
+        let Some((_, top, _)) = self.drawn() else {
+            return self.step(-1);
+        };
+        let home = self.home(&self.blocks.borrow());
+        let floor = home.clamp(0, i32::from(self.max_top.get()));
+        if top > floor {
+            self.off = (top - self.page()).max(floor) - home;
+            return;
+        }
         let order = self.order();
         let Some(at) = self.target().and_then(|t| order.iter().position(|&i| i == t)) else {
             return;
         };
-        let to = (at as isize + d).clamp(0, order.len() as isize - 1) as usize;
-        self.focus.set(None);
-        self.jump.set(Some(order[to]));
+        if at == 0 {
+            return;
+        }
+        self.select(order[at - 1]);
+        // Its last page: where its end meets the bottom of the pane, when that is below its start.
+        if let Some((b, _, h)) = self.drawn() {
+            let home = self.home(&self.blocks.borrow());
+            self.off = (b.end as i32 - h - home).max(0);
+        }
     }
 
     /// Every attachment in the thread: (message index, attachment index).
@@ -820,13 +877,11 @@ impl App {
             toggled: Default::default(),
             raw: Default::default(),
             last_read: None,
-            scroll: std::cell::Cell::new(0),
-            anchor: std::cell::Cell::new(None),
-            jump: std::cell::Cell::new(None),
-            focus: std::cell::Cell::new(None),
+            sel: None,
+            off: 0,
             blocks: Default::default(),
             height: std::cell::Cell::new(0),
-            max_scroll: std::cell::Cell::new(u16::MAX),
+            max_top: std::cell::Cell::new(0),
             seen: Default::default(),
         };
         o.last_read = self.thread_read_at(&keryx_core::model::thread_ref(account, thread_id));
@@ -852,8 +907,8 @@ impl App {
             }
     }
 
-    /// How a thread opens (D4): the newest new message at the top, open; up to two more new ones
-    /// open; everything older folded to one line. With nothing new, the newest is open.
+    /// How a thread opens (D4): the bar on the newest new message, open; up to two more new ones
+    /// open; everything older folded to one line. With nothing new, the bar on the newest, open.
     pub fn settle_open(&self, o: &mut Open) {
         let order = o.order();
         let new: Vec<usize> = order.iter().copied().filter(|&i| self.is_new(o, i)).take(3).collect();
@@ -863,13 +918,15 @@ impl App {
             new.into_iter().collect()
         };
         o.toggled.clear();
-        o.jump.set(o.first_target());
+        if let Some(i) = o.first_target() {
+            o.select(i);
+        }
     }
 
     /// The open thread again from the mirror, when keryxd has changed it (a new message, a copy
     /// from another account, a body Mail finished downloading), keeping your place: what is open,
-    /// folded, raw or seen follows each message, and the view stays on the line you were reading
-    /// ([`Open::anchor`]). A new message that is new to you opens, above the view, and the line
+    /// folded, raw or seen follows each message, and the bar stays on its email, the view on the
+    /// same line ([`Open::sel`]). A new message that is new to you opens, above the view, and the line
     /// above the footer says so. Nothing changes when the messages are the same.
     pub fn refresh_open(&mut self) {
         let Some(o) = self.open.as_ref() else { return };
@@ -900,9 +957,15 @@ impl App {
         o.raw = set(&o.raw);
         let seen: BTreeSet<usize> = o.seen.borrow().iter().filter_map(|&i| map(i)).collect();
         *o.seen.borrow_mut() = seen;
-        o.jump.set(o.jump.get().and_then(map));
-        o.focus.set(o.focus.get().and_then(map));
-        o.anchor.set(o.anchor.get().and_then(|(i, off)| Some((map(i)?, off))));
+        // The bar stays on its email. On the newest, the view's top was the top of the thread;
+        // with mail come in above it, the top is reckoned from its first line instead, the same
+        // line as before, so neither the bar nor the view moves.
+        let old_first = o.blocks.borrow().first().map(|b| b.msg);
+        let old_start = o
+            .sel
+            .and_then(|s| o.blocks.borrow().iter().find(|b| b.msg == s).map(|b| b.start as i32));
+        let was_first = old_first.is_some() && old_first == o.sel;
+        o.sel = o.sel.and_then(map);
         let blocks: Vec<Block> = o
             .blocks
             .borrow()
@@ -912,6 +975,17 @@ impl App {
         *o.blocks.borrow_mut() = blocks;
         o.msgs = msgs;
         o.invites = invites;
+        if o.sel.is_none() {
+            // The email under the bar went (Mail moved it to another thread): the bar to the newest.
+            if let Some(&i) = o.order().first() {
+                o.select(i);
+            }
+        } else if was_first
+            && let Some(start) = old_start
+            && o.order().first().copied() != o.sel
+        {
+            o.off -= start;
+        }
         let new: Vec<usize> = arrived.into_iter().filter(|&i| self.is_new_in(i)).collect();
         if let Some(o) = self.open.as_mut() {
             o.first_open.extend(new.iter().copied());
@@ -1228,8 +1302,8 @@ impl App {
         self.reload();
     }
 
-    /// Reading a thread (D4): one scroll, and the message under the top line (the bar) is what
-    /// `⏎`, `z`, `r` and the link digits act on.
+    /// Reading a thread (D4, the bar model): the bar is on one email, `↓` `↑` move it, and it is
+    /// what `⏎`, `z`, `R`, `F` and the link digits act on ([`Open`]).
     fn thread_key(&mut self, k: Key) {
         if self.open.is_none() {
             self.mode = Mode::List;
@@ -1254,42 +1328,34 @@ impl App {
         }
         let Some(open) = self.open.as_mut() else { return };
         match k {
-            Key::Char('j') | Key::Down => open.scroll_by(1),
-            Key::Char('k') | Key::Up => open.scroll_by(-1),
-            // A page; it runs on into the next message, as a document does.
-            Key::PageDown | Key::Char(' ') | Key::Ctrl('d') => {
-                let p = open.page();
-                open.scroll_by(p);
-            }
-            Key::PageUp | Key::Ctrl('u') => {
-                let p = open.page();
-                open.scroll_by(-p);
-            }
-            Key::Top => open.scroll_by(-i32::from(u16::MAX)),
-            Key::Bottom => open.scroll_by(i32::from(u16::MAX)),
-            Key::Char(']') => open.step(1),
-            Key::Char('[') => open.step(-1),
+            // One key, one email: the bar to the next or previous one, the view after it.
+            // `] [` are the same keys, kept for the hands that learnt them.
+            Key::Char('j') | Key::Down | Key::Char(']') => open.step(1),
+            Key::Char('k') | Key::Up | Key::Char('[') => open.step(-1),
+            // A page inside the selected email; at its end, the next email.
+            Key::PageDown | Key::Char(' ') | Key::Ctrl('d') => open.page_down(),
+            Key::PageUp | Key::Ctrl('u') => open.page_up(),
+            Key::Top => open.select_end(false),
+            Key::Bottom => open.select_end(true),
             Key::Char('b') => self.toggle_list(),
-            // The message under the bar opened or folded, and kept at the top.
+            // The selected email opened or folded, and kept at the top.
             Key::Enter => {
                 if let Some(i) = open.target() {
                     if !open.toggled.remove(&i) {
                         open.toggled.insert(i);
                     }
                     open.raw.remove(&i);
-                    open.focus.set(None);
-                    open.jump.set(Some(i));
+                    open.select(i);
                 }
             }
-            // That message exactly as received (11 Nov: z on the whole thread was unreadable);
+            // That email exactly as received (11 Nov: z on the whole thread was unreadable);
             // again goes back to its own words.
             Key::Char('z') => {
                 if let Some(i) = open.target() {
                     if !open.raw.remove(&i) {
                         open.raw.insert(i);
                     }
-                    open.focus.set(None);
-                    open.jump.set(Some(i));
+                    open.select(i);
                 }
             }
             Key::Char('o') => match open.attachments().len() {

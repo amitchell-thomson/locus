@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-//! Reading and sending mail (cleanup C6, decision D4): a thread reads like a document, and what
+//! Reading and sending mail (cleanup C6, decision D4): the bar moves email by email, and what
 //! is sent is what the confirm screen shows. Each edge case of the slice has a test here. The
 //! daemon is the fake in `common`: nothing is ever sent.
 
@@ -118,8 +118,42 @@ fn target_id(a: &App) -> String {
     o.msgs[o.target().unwrap()].message_id.clone()
 }
 
+/// The frame row the body starts on in `long_thread` at these heights: the border, then the
+/// seven lines of its header (subject, people, timeline, whose turn, three questions).
+const BODY_TOP: usize = 8;
+
+/// The first row of the drawn frame that carries the bar: the selected email's first line.
+fn bar_row(s: &str) -> Option<usize> {
+    s.lines().position(|l| l.contains('▌'))
+}
+
+/// The view's top line, as the last frame drew it.
+fn top(a: &App) -> i32 {
+    let o = a.open.as_ref().unwrap();
+    i32::from(o.top_in(&o.blocks.borrow(), o.max_top.get()))
+}
+
+/// The selected email's block as last drawn.
+fn sel_block(a: &App) -> keryx_tui::app::Block {
+    let o = a.open.as_ref().unwrap();
+    let t = o.target().unwrap();
+    *o.blocks.borrow().iter().find(|b| b.msg == t).unwrap()
+}
+
+/// A frame, then a reload from the mirror and two more frames, as the run loop does between
+/// keys; every frame must be the same. Returns it.
+fn settled(a: &mut App, w: u16, h: u16) -> String {
+    let s = render_to_string(a, w, h);
+    a.reload();
+    let s2 = render_to_string(a, w, h);
+    let s3 = render_to_string(a, w, h);
+    assert_eq!(s, s2, "a reload moved the view at {w}x{h}");
+    assert_eq!(s2, s3, "a frame moved the view at {w}x{h}");
+    s
+}
+
 #[test]
-fn a_long_thread_opens_on_its_newest_new_message_and_reads_as_one_scroll() {
+fn a_long_thread_opens_with_the_bar_on_its_newest_new_message() {
     let (mut a, _f) = app();
     let dir = tempfile::tempdir().unwrap();
     let r = long_thread(&mut a);
@@ -150,21 +184,13 @@ fn a_long_thread_opens_on_its_newest_new_message_and_reads_as_one_scroll() {
         .filter(|l| l.contains("Message 1.") || l.contains("Message 2."))
         .count();
     assert_eq!(folded, 2, "{s}");
-    // A page: the header shrinks to two lines (no timeline) and the bar follows the top line.
+    // ↓: the bar to the next email, the header (timeline and all) staying put.
     let _ = render_to_string(&mut a, 90, 24);
-    keys(&mut a, &[Key::Char(' ')]);
+    keys(&mut a, &[Key::Down]);
     let s = render_to_string(&mut a, 90, 24);
-    assert!(!s.contains('●'), "the timeline goes while you scroll: {s}");
-    assert!(s.contains('▌'), "the bar marks the message at the top: {s}");
-    // Space runs on into the next message: one scroll, no jumping back.
-    let before = a.open.as_ref().unwrap().scroll.get();
-    let first = target_id(&a);
-    for _ in 0..3 {
-        keys(&mut a, &[Key::Char(' ')]);
-        let _ = render_to_string(&mut a, 90, 24);
-    }
-    assert!(a.open.as_ref().unwrap().scroll.get() > before);
-    assert_ne!(target_id(&a), first, "the bar moved on with the text");
+    assert!(s.contains('●'), "the header stays full height: {s}");
+    assert_eq!(target_id(&a), "long-6@example.org");
+    assert_eq!(bar_row(&s), Some(BODY_TOP), "its first line at the top: {s}");
 }
 
 #[test]
@@ -478,7 +504,7 @@ fn a_long_newsletter_pages_with_space_and_is_read_only_for_what_was_seen() {
     let page = a.open.as_ref().unwrap().page();
     keys(&mut a, &[Key::Char(' ')]);
     let _ = render_to_string(&mut a, 80, 20);
-    assert_eq!(i32::from(a.open.as_ref().unwrap().scroll.get()), page);
+    assert_eq!(top(&a), page);
     // Opened by mistake and left: it was on screen, so it is read (one message, seen).
     keys(&mut a, &[Key::Esc]);
     assert_eq!(
@@ -659,133 +685,255 @@ fn a_send_that_goes_says_sent_in_its_thread() {
     assert!(s.contains("── sent"), "{s}");
 }
 
-fn scroll(a: &App) -> u16 {
-    a.open.as_ref().unwrap().scroll.get()
-}
-
-/// The message under the top line and how far into it (the view's anchor).
-fn place(a: &App) -> (String, usize) {
+/// Where the bar is and where the frame shows it, for one email: the bar on `id`, its block's
+/// first line at the view's top (or as near as the end of the thread allows), and that line
+/// drawn on the frame's row for it.
+fn assert_bar_on(a: &App, s: &str, id: &str, h: u16) {
+    assert_eq!(target_id(a), id, "h {h}");
+    let b = sel_block(a);
     let o = a.open.as_ref().unwrap();
-    let (i, off) = o.anchor.get().unwrap();
-    (o.msgs[i].message_id.clone(), off)
+    let max = i32::from(o.max_top.get());
+    let first = o.order().first().copied() == o.target();
+    let home = if first { 0 } else { b.start as i32 };
+    assert_eq!(top(a), home.min(max), "h {h}: the view follows the bar\n{s}");
+    // On the frame: the email's first line is the first row with the bar.
+    let want = BODY_TOP + b.start - top(a) as usize;
+    assert_eq!(bar_row(s), Some(want), "h {h}: its first line\n{s}");
+    if !first && i32::try_from(b.start).unwrap() <= max {
+        assert_eq!(want, BODY_TOP, "h {h}: at the top of the view\n{s}");
+    }
 }
 
-/// Alec, 13 Nov: "the thread scrolling does not work properly, it is stuck at the top and
-/// pressing down arrow goes down one line and then jumps you back up". How far a thread scrolls
-/// was reckoned under the full header and the frame drawn under the two-line one, so a thread a
-/// few lines too long for the pane was clamped back to the top by the next frame. Key presses
-/// alone never showed it: the run loop draws between keys (every half second, and whenever
-/// keryxd writes the mirror), so this drives frames and reloads between them, at every height.
+/// Alec, 13 Nov, after the thread as one scroll snapped back twice: "just make the purple bar
+/// move between thread emails". ↓ ↓ ↑ move the bar one email each, the view follows, and the
+/// run loop's frames and reloads in between move nothing, at every height tried.
 #[test]
-fn down_holds_through_frames_and_refreshes_at_every_height() {
+fn down_and_up_move_the_bar_one_email_and_the_view_follows_at_every_height() {
     let (mut a, _f) = app();
     let dir = tempfile::tempdir().unwrap();
     let r = long_thread(&mut a);
     read_mark(&mut a, &dir, &r, ts(2026, 10, 9, 12));
-    let mut tried = 0;
-    for h in 8..90u16 {
+    for h in [20u16, 24, 30, 45, 60] {
         open(&mut a, &r);
-        let _ = render_to_string(&mut a, 90, h);
-        if a.open.as_ref().unwrap().max_scroll.get() == 0 {
-            // It fits under its header: nothing to scroll, and ↓ moves nothing.
-            keys(&mut a, &[Key::Down]);
-            let _ = render_to_string(&mut a, 90, h);
-            assert_eq!(scroll(&a), 0, "h {h}");
-            continue;
+        let s = settled(&mut a, 90, h);
+        assert_bar_on(&a, &s, "long-7@example.org", h);
+        assert_eq!(top(&a), 0, "h {h}: opened at the top of the thread");
+        for (k, id) in [
+            (Key::Down, "long-6@example.org"),
+            (Key::Down, "long-5@example.org"),
+            (Key::Up, "long-6@example.org"),
+            (Key::Char('j'), "long-5@example.org"),
+            (Key::Char('j'), "long-4@example.org"),
+            (Key::Char('k'), "long-5@example.org"),
+            (Key::Char(']'), "long-4@example.org"),
+            (Key::Char('['), "long-5@example.org"),
+        ] {
+            keys(&mut a, &[k]);
+            let s = settled(&mut a, 90, h);
+            assert_bar_on(&a, &s, id, h);
         }
-        tried += 1;
-        let start = scroll(&a);
-        for step in 1..=3u16 {
+        // ↓ to the oldest, then once more: it stays.
+        for _ in 0..10 {
             keys(&mut a, &[Key::Down]);
-            for _ in 0..3 {
-                let _ = render_to_string(&mut a, 90, h);
-                a.reload();
-            }
-            let max = a.open.as_ref().unwrap().max_scroll.get();
-            assert_eq!(scroll(&a), (start + step).min(max), "h {h}, ↓ {step}: put back");
-            assert!(scroll(&a) > 0, "h {h}");
         }
-        keys(&mut a, &[Key::Char('j'), Key::Char(' ')]);
-        let at = scroll(&a);
-        let _ = render_to_string(&mut a, 90, h);
-        a.reload();
-        let _ = render_to_string(&mut a, 90, h);
-        assert_eq!(scroll(&a), at, "h {h}: j and space hold too");
+        let s = settled(&mut a, 90, h);
+        assert_bar_on(&a, &s, "long-0@example.org", h);
+        // ⇧↑ back to the newest.
+        keys(&mut a, &[Key::Top]);
+        let s = settled(&mut a, 90, h);
+        assert_bar_on(&a, &s, "long-7@example.org", h);
         keys(&mut a, &[Key::Esc]);
     }
-    assert!(tried > 30, "{tried}");
 }
 
-#[test]
-fn new_mail_in_the_thread_shows_above_and_the_view_stays_where_you_were_reading() {
-    let (mut a, _f) = app();
-    let dir = tempfile::tempdir().unwrap();
-    let r = long_thread(&mut a);
-    read_mark(&mut a, &dir, &r, ts(2026, 10, 9, 12));
-    open(&mut a, &r);
-    let _ = render_to_string(&mut a, 90, 30);
-    keys(&mut a, &[Key::Char(']')]);
-    let _ = render_to_string(&mut a, 90, 30);
-    keys(&mut a, &[Key::Down, Key::Down, Key::Down]);
-    let _ = render_to_string(&mut a, 90, 30);
-    let before = place(&a);
-    assert_eq!(before.0, "long-6@example.org");
-    let shown = render_to_string(&mut a, 90, 30);
-    // Milly writes again while you read: keryxd puts it in the mirror and the loop reloads.
-    let m = msg(
-        "oxford",
-        "long",
-        "long-8@example.org",
-        milly(),
-        vec![me()],
-        ts(2026, 10, 14, 14),
-        "Message 8. One more thing about Thursday.",
-        false,
+/// A long newest email over a short older one.
+fn long_email(a: &mut App) -> String {
+    let body = (0..60)
+        .map(|n| format!("Line {n} of the long one."))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    put(
+        a,
+        &msg(
+            "oxford",
+            "pg",
+            "pg-old@example.org",
+            milly(),
+            vec![me()],
+            ts(2026, 10, 12, 9),
+            "The short older one.",
+            true,
+        ),
     );
-    put(&a, &m);
+    put(
+        a,
+        &msg(
+            "oxford",
+            "pg",
+            "pg-new@example.org",
+            milly(),
+            vec![me()],
+            ts(2026, 10, 13, 9),
+            &body,
+            false,
+        ),
+    );
     a.reload();
-    let s = render_to_string(&mut a, 90, 30);
-    assert_eq!(a.open.as_ref().unwrap().msgs.len(), 9, "the thread has it");
-    assert_eq!(place(&a), before, "the same line of the same message at the top");
-    assert_eq!(target_id(&a), "long-6@example.org", "the bar did not move");
-    let body = |s: &str| s.lines().skip(3).take(20).map(str::to_string).collect::<Vec<_>>();
-    assert_eq!(body(&s), body(&shown), "the screen did not move:\n{shown}\n{s}");
-    assert!(s.contains("1 new message in this thread, above"), "{s}");
-    // Frames and reloads with nothing new keep it there.
-    for _ in 0..3 {
-        a.reload();
-        let _ = render_to_string(&mut a, 90, 30);
+    thread_ref("oxford", "pg")
+}
+
+/// space pages inside the selected email and never back; once its end is on screen, the next
+/// space moves the bar on. PgUp pages back up it.
+#[test]
+fn space_pages_a_long_email_then_moves_the_bar_on_and_never_back() {
+    let (mut a, _f) = app();
+    let r = long_email(&mut a);
+    for h in [20u16, 30, 45] {
+        open(&mut a, &r);
+        let _ = settled(&mut a, 90, h);
+        assert_eq!(target_id(&a), "pg-new@example.org");
+        let page = a.open.as_ref().unwrap().page();
+        let mut last_top = top(&a);
+        let mut moved_on = false;
+        for n in 0..40 {
+            keys(&mut a, &[Key::Char(' ')]);
+            let s = settled(&mut a, 90, h);
+            let t = top(&a);
+            assert!(t >= last_top, "h {h}, space {n}: the view went back up\n{s}");
+            assert!(t - last_top <= page, "h {h}, space {n}: more than a page");
+            if target_id(&a) == "pg-old@example.org" {
+                moved_on = true;
+                // The end of the long one was on screen before the bar moved.
+                break;
+            }
+            let b = sel_block(&a);
+            assert!(t <= b.end as i32, "h {h}: paged past the end of the email");
+            last_top = t;
+        }
+        assert!(moved_on, "h {h}: space reached the next email");
+        // And on: at the last email, space does nothing more.
+        keys(&mut a, &[Key::Char(' '), Key::Char(' ')]);
+        let _ = settled(&mut a, 90, h);
+        assert_eq!(target_id(&a), "pg-old@example.org");
+        // PgUp: back to the long one, at its last page, then up it a page at a time to its top.
+        keys(&mut a, &[Key::PageUp]);
+        let _ = settled(&mut a, 90, h);
+        assert_eq!(target_id(&a), "pg-new@example.org");
+        let mut prev = top(&a);
+        assert!(prev > 0, "h {h}: its last page");
+        for _ in 0..40 {
+            keys(&mut a, &[Key::PageUp]);
+            let _ = settled(&mut a, 90, h);
+            assert!(top(&a) <= prev);
+            prev = top(&a);
+            if prev == 0 {
+                break;
+            }
+        }
+        assert_eq!((prev, target_id(&a).as_str()), (0, "pg-new@example.org"));
+        keys(&mut a, &[Key::Esc]);
     }
-    assert_eq!(place(&a), before);
-    // ⇧↑ goes to it, open.
-    keys(&mut a, &[Key::Top]);
-    let s = render_to_string(&mut a, 90, 30);
-    assert!(s.contains("Message 8. One more thing"), "{s}");
-    assert_eq!(target_id(&a), "long-8@example.org");
 }
 
 #[test]
-fn a_resize_keeps_the_message_you_were_reading_at_the_top() {
+fn new_mail_in_the_thread_shows_above_without_moving_the_bar_or_the_view() {
+    let (mut a, _f) = app();
+    let dir = tempfile::tempdir().unwrap();
+    let r = long_thread(&mut a);
+    read_mark(&mut a, &dir, &r, ts(2026, 10, 9, 12));
+    // The bar on the newest (the top of the thread) and on an older one.
+    for downs in [0usize, 1] {
+        open(&mut a, &r);
+        let _ = settled(&mut a, 90, 30);
+        for _ in 0..downs {
+            keys(&mut a, &[Key::Down]);
+        }
+        let shown = settled(&mut a, 90, 30);
+        let at = target_id(&a);
+        let n = format!("long-8-{downs}@example.org");
+        let m = msg(
+            "oxford",
+            "long",
+            &n,
+            milly(),
+            vec![me()],
+            ts(2026, 10, 14, 14 + downs as u32),
+            "Message 8. One more thing about Thursday.",
+            false,
+        );
+        put(&a, &m);
+        a.reload();
+        let s = settled(&mut a, 90, 30);
+        assert_eq!(target_id(&a), at, "the bar did not move");
+        // The email under the bar is on the same row, and everything below it the same. (The
+        // day band above the newest goes when the new one came the same day.)
+        let row = bar_row(&shown).unwrap();
+        assert_eq!(bar_row(&s), Some(row), "the view did not move:\n{shown}\n{s}");
+        let body = |s: &str| {
+            s.lines()
+                .skip(row)
+                .take(26 - row)
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(body(&s), body(&shown), "the view did not move:\n{shown}\n{s}");
+        assert!(s.contains("1 new message in this thread, above"), "{s}");
+        // ⇧↑ goes to it, open.
+        keys(&mut a, &[Key::Top]);
+        let s = settled(&mut a, 90, 30);
+        assert!(s.contains("Message 8. One more thing"), "{s}");
+        assert_eq!(target_id(&a), n);
+        keys(&mut a, &[Key::Esc]);
+    }
+}
+
+#[test]
+fn a_resize_keeps_the_bar_and_its_email_at_the_top() {
     let (mut a, _f) = app();
     let dir = tempfile::tempdir().unwrap();
     let r = long_thread(&mut a);
     read_mark(&mut a, &dir, &r, ts(2026, 10, 9, 12));
     open(&mut a, &r);
     let _ = render_to_string(&mut a, 90, 30);
-    keys(&mut a, &[Key::Char(']')]);
-    let _ = render_to_string(&mut a, 90, 30);
-    keys(&mut a, &[Key::Down, Key::Down]);
-    let _ = render_to_string(&mut a, 90, 30);
-    let before = place(&a);
-    // Wider, then narrower, then shorter and taller: the lines rewrap and the view stays.
-    for (w, h) in [(140, 30), (70, 30), (90, 18), (90, 50), (90, 30)] {
-        let _ = render_to_string(&mut a, w, h);
-        let _ = render_to_string(&mut a, w, h);
-        assert_eq!(place(&a), before, "{w}x{h}");
-        assert_eq!(target_id(&a), "long-6@example.org", "{w}x{h}");
-    }
-    // And scrolling goes on from there.
     keys(&mut a, &[Key::Down]);
-    let _ = render_to_string(&mut a, 90, 30);
-    assert_eq!(place(&a), (before.0.clone(), before.1 + 1));
+    for (w, h) in [(140, 30), (70, 30), (90, 20), (90, 45), (90, 30)] {
+        let s = settled(&mut a, w, h);
+        assert_eq!(target_id(&a), "long-6@example.org", "{w}x{h}");
+        assert_eq!(bar_row(&s), Some(BODY_TOP), "{w}x{h}: its first line at the top\n{s}");
+    }
+    keys(&mut a, &[Key::Down]);
+    let s = settled(&mut a, 90, 30);
+    assert_bar_on(&a, &s, "long-5@example.org", 30);
+}
+
+/// Seen, for read on leaving: the emails the bar was on, and those wholly on screen; not one
+/// that was only partly in view.
+#[test]
+fn read_is_stamped_for_what_the_bar_was_on() {
+    let (mut a, f) = app();
+    let dir = tempfile::tempdir().unwrap();
+    let r = long_thread(&mut a);
+    let mark = ts(2026, 10, 9, 12);
+    read_mark(&mut a, &dir, &r, mark);
+    // New: 7, 6, 5 (open) and 4 (folded). The bar on 7 and 6; 5 only partly on screen.
+    open(&mut a, &r);
+    let _ = settled(&mut a, 90, 20);
+    keys(&mut a, &[Key::Down]);
+    let _ = settled(&mut a, 90, 20);
+    keys(&mut a, &[Key::Esc]);
+    assert!(f.take().is_empty(), "two new ones not seen: not read in the mailbox");
+    let unseen = a.message.clone().unwrap().0;
+    assert!(unseen.starts_with("2 new messages"), "{unseen}");
+    // The bar on every new one: read, in the mailbox too.
+    open(&mut a, &r);
+    let _ = settled(&mut a, 90, 20);
+    for _ in 0..3 {
+        keys(&mut a, &[Key::Down]);
+        let _ = settled(&mut a, 90, 20);
+    }
+    keys(&mut a, &[Key::Esc]);
+    assert_eq!(
+        f.take(),
+        vec![format!(r#"triage {{"action":"read","on":true}} ["{r}"]"#)]
+    );
 }

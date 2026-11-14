@@ -37,19 +37,25 @@ pub fn action(k: Key) -> Option<Action> {
 
 /// keryx's own keys, as the help shows them: (keys, separated by spaces; what they do).
 pub const OWN: &[(&str, &str)] = &[
-    ("⏎", "read the thread; in it, open or fold the message under the bar"),
-    ("j k ↑ ↓", "move in the list; scroll a thread"),
-    ("space", "a page down, running on into the next message"),
-    ("] [", "the next or previous message of the thread"),
+    ("⏎", "read the thread; in it, open or fold the email under the bar"),
+    (
+        "j k ↑ ↓",
+        "move in the list; in a thread, the bar to the next or previous email",
+    ),
+    (
+        "space PgDn",
+        "a page down a long email; at its end, the bar to the next email",
+    ),
+    ("PgUp", "a page up a long email; at its top, the previous email"),
     ("J K", "the next or previous thread, while reading"),
-    ("⇧↑ ⇧↓", "the top or bottom"),
+    ("⇧↑ ⇧↓", "the top or bottom; in a thread, the newest or oldest email"),
     ("⇥ ⇧⇥", "the next or previous inbox"),
     ("⌥⇥", "add the next inbox to the ones shown"),
     (
         "R",
-        "reply to the message under the bar (Claude's draft, if there is one)",
+        "reply to the email under the bar (Claude's draft, if there is one)",
     ),
-    ("F", "forward the message under the bar"),
+    ("F", "forward the email under the bar"),
     ("c", "cancel a send in its hold"),
     ("a", "archive at once; sending a reply, reply or reply all"),
     ("f", "for: choose what it is for; it leaves the inbox"),
@@ -63,7 +69,7 @@ pub const OWN: &[(&str, &str)] = &[
     ("w", "reply with free times"),
     ("z", "the message as received"),
     ("o", "attachments"),
-    ("1…9", "open link n of the message under the bar"),
+    ("1…9", "open link n of the email under the bar"),
     ("b", "hide or show the list"),
     ("A", "approve, in locus"),
 ];
@@ -112,6 +118,8 @@ pub fn parse(shown: &str) -> Option<Key> {
         "⌥⇥" => Key::AltTab,
         "⇧↑" => Key::Top,
         "⇧↓" => Key::Bottom,
+        "PgUp" => Key::PageUp,
+        "PgDn" => Key::PageDown,
         "↑" => Key::Up,
         "↓" => Key::Down,
         "1…9" | "1…4" => Key::Char('1'),

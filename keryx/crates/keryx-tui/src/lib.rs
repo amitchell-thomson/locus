@@ -69,6 +69,9 @@ fn map_key(k: event::KeyEvent) -> Option<Key> {
         return Some(Key::Ctrl(c));
     }
     Some(match k.code {
+        // ⇧space pages up a thread, where the terminal tells it from space (most send a plain
+        // space, so PgUp is the key the help names).
+        KeyCode::Char(' ') if k.modifiers.contains(KeyModifiers::SHIFT) => Key::PageUp,
         KeyCode::Char(c) => Key::Char(c),
         KeyCode::Enter => Key::Enter,
         KeyCode::Esc => Key::Esc,

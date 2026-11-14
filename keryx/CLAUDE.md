@@ -53,8 +53,8 @@ Data flow: Gmail API → keryxd → `~/.local/share/keryx/keryx.db`. Mail.app (O
 - keryx's own keys (`keys::OWN`, the help's second half) are only what the table does not
   cover: `R` reply, `F` forward, `r` needs reply on or off, `f` for (the "what is it for" picker,
   keryx's guess chosen; it leaves the inbox), `m` mark what for (it stays in the inbox), `c`
-  cancel a send in its hold, `a` archive at once, `U I L`, `t i w`, `z o 1…9`, `] [` the next or
-  previous message, `J K` the next or previous thread, `space` a page, `b`, `A` (locus's Approve,
+  cancel a send in its hold, `a` archive at once, `U I L`, `t i w`, `z o 1…9`, `J K` the next or
+  previous thread, `space` / `PgDn` and `PgUp` a page of a long email, `b`, `A` (locus's Approve,
   the one key that opens another window). `d` (done) files for the mark, else keryx's guess
   (saying why), else archives. With rows marked, `d a x` act on them even from a thread, and the
   footer says so.
@@ -63,17 +63,26 @@ Data flow: Gmail API → keryxd → `~/.local/share/keryx/keryx.db`. Mail.app (O
   text `e` reopens and the kept draft follow. Recipients changed in the editor are left alone.
 - `tests/keys.rs` proves every own key is free in the table and that every key the help or a
   hint names does something. Add a key there and to `keys::OWN` together.
-- **Reading** (D4): a thread is one scroll with no selection; the message under the top line
-  carries a bar down its left edge and is what `⏎`, `z`, `R` and the link digits act on. It
-  opens on the newest new message, up to three new ones open, older ones one line each, one
-  divider between new and read, the header two lines once scrolled. Read is stamped when you
-  leave, only for what was on screen (`App::leave_thread`), never on opening.
-- **The scroll holds** (`Open::anchor`): each frame puts the same line of the same message back
-  at the top, so new mail in the thread (shown above, with a line saying so; `App::refresh_open`
-  on every reload), a draft appearing and a resize never move what you are reading. How far it
-  scrolls is reckoned under the header it is drawn with: reckoned under the full header and
-  drawn under the short one, a thread a few lines too long snapped back to the top every frame
-  (13 Nov). `tests/reading.rs` drives frames and reloads between keys, at every height.
+- **Reading: the bar is a selection** (13 Nov, late; Alec: "just make the purple bar move
+  between thread emails, this scrolling thing really does not work"). The bar (`Open::sel`) is
+  on one email: `↓` `j` the next (older, below), `↑` `k` the previous, one key one email, never
+  by lines (`]` `[` are the same keys, not in the help); `⇧↑` `⇧↓` the newest and the oldest.
+  `⏎`, `z`, `R`, `F` and the link digits act on it. The view follows the bar: the selected
+  email's first line at the top of the view (the newest at the top of the thread, so sends and
+  drafts above it show), or as near as the end of the thread allows. Nothing else moves the
+  view but `space` / `PgDn` (a page down a long email; once its end is on screen, the bar to the
+  next email; never back) and `PgUp` / `⇧space` (a page up; at its top, the previous email's
+  last page). The view is computed on every frame from `sel` and `off` (`Open::top_in`); drawing
+  never writes them, so there is no state that can snap back. The header stays full height.
+- It opens with the bar on the newest new email (else the newest), up to three new ones open,
+  older ones one line each, one divider between new and read. Read is stamped when you leave
+  (`App::leave_thread`), only for what was seen: a frame drew the bar on it, or it was wholly on
+  screen. New mail in the thread (`App::refresh_open` on every reload) shows above with a footer
+  note and moves neither the bar nor the email under it. `tests/reading.rs` drives keys, frames
+  and reloads between them at several heights and checks the bar's row in the drawn frame.
+- Rejected the same night, measured: the thread as one scroll with the message under the top
+  line acted on, a line anchor (`Open::anchor`) and a header shrinking to two lines once
+  scrolled. The real window snapped back to the top twice while every test passed.
 - **After `y`** you stay in the thread: your message shows "sending · c cancels · 8 s", then
   "sent"; a send that fails after its hold stays in its thread and the footer until its draft is
   opened again (`App::outbox`).
@@ -158,6 +167,7 @@ Copied from kairos so far:
 - 2026-10-14 go-ahead (Alec): build straight through all phases (report per phase, stop only for him); shared crate for natural dates; private GitHub repo `amitchell-thomson/keryx`; all SPEC §13 defaults accepted.
 - 2026-11-13 (cleanup C4, C6, C7; slice `docs/redesign/slices/c-cleanup.md` D1, D4): keys from locus's one table (see Keys and windows); `d` is done in one key and filing moved to `M`; `x` archives after asking; `c` cancels a send; a thread reads as one scroll with a bar on the message acted on; `r` answers the message read (`in_reply_to`), across accounts; the confirm screen shows the real quote; read is stamped on leaving; rebuilt binaries restart in place.
 - 2026-11-13, later (Alec): `r` needs reply, `R` reply, `f` for (the picker that was `M`; `M` gone, `m` kept: it marks and leaves the thread in the inbox, which `f` does not); reply all is `a` on the confirm screen; `g` only goes to mail's own lists, on their pre-C4 letters (`g i r d s a c l v`, `g 1…9`), never to another window. The thread scroll no longer snaps back to the top (`Open::anchor`, the header-aware max scroll) and the open thread refreshes from the mirror.
+- 2026-11-13, later still (Alec, after trying the scroll twice): the scroll model goes. The bar is a selection that `↓` `↑` move one email at a time and the view follows; `space` pages a long email then moves the bar on; the header stays full height; `] [` are aliases of `↓ ↑`.
 - 2026-10-26 (Alec, keryx-joins-locus): keryx is locus's Mail view. Keys are locus's: `d` done (filed for what it is for, the guess chosen; `m` too), `v` marks, `+` writes, `b` hides the list, `Tab` cycles the inboxes named in the header, `A` opens locus's Approve; no phone pages or pushes. Writing is your Neovim in the right pane (`:w` sends, `:q` keeps a draft, `:cq` throws it away, `^a` attaches). Folders are the areas and Personal's streams only; automated mail is filed as it arrives.
 - 2026-10-20 (Alec): **Personal Gmail through Mac Mail** (`backend = "mailapp"`, account `1FD73A3D-…`, Gmail-over-IMAP like OQTS), not the Gmail API: a production OAuth app needs public home/privacy pages and he doesn't want anything public. The Gmail API code stays, unused. First sync: 3,323 messages, 1.7 s.
 - 2026-10-20 (Alec): **no snoozing for now** (`[snooze] enabled = false`): wake-ups only run on the Mac, so snoozed mail could stay hidden on the phone; he doesn't need it. Off hides `s`, the Snoozed view, the CLI command and the MCP snooze tools, and keryxd refuses snoozes; the code and its tests stay (tests turn it on). **Phone approvals off** (`[notify] approvals = false`): drafts don't push; signed pages only show.

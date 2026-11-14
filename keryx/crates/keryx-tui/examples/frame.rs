@@ -11,8 +11,11 @@ fn main() {
     let db = keryx_store::db::Db::open_readonly(&cfg.db_path()).unwrap();
     let mut app = keryx_tui::app::App::new(cfg, db, now);
     app.dry_open = true;
+    let (w, h) = (a[3].parse().unwrap(), a[4].parse().unwrap());
     for k in a.get(5).map(String::as_str).unwrap_or("").chars() {
         use keryx_tui::app::Key;
+        // A frame before each key, as the run loop draws between keys (paging reads it).
+        let _ = keryx_tui::render_to_string(&mut app, w, h);
         app.key(match k {
             '\n' => Key::Enter,
             '\t' => Key::Tab,
@@ -20,8 +23,5 @@ fn main() {
             c => Key::Char(c),
         });
     }
-    print!(
-        "{}",
-        keryx_tui::render_to_string(&mut app, a[3].parse().unwrap(), a[4].parse().unwrap())
-    );
+    print!("{}", keryx_tui::render_to_string(&mut app, w, h));
 }

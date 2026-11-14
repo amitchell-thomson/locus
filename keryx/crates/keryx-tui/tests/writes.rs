@@ -1175,27 +1175,34 @@ fn shift_up_and_down_go_to_the_top_and_the_bottom() {
     assert_eq!(a.sel, a.rows.len() - 1);
     keys(&mut a, &[Key::Top]);
     assert_eq!(a.sel, 0);
-    // In a thread (D4): ⇧↓ to its end, and no further; the bar on the last message there;
-    // ⇧↑ back to the top and the newest.
+    // In a thread (the bar model): ⇧↓ puts the bar on the oldest email, and ↓ goes no further;
+    // ⇧↑ back to the newest, at the top of the thread.
+    select(&mut a, "Re: Group project plan");
     keys(&mut a, &[Key::Enter]);
-    let _ = render_to_string(&mut a, 40, 6);
+    let _ = render_to_string(&mut a, 40, 14);
     let open = a.open.as_ref().unwrap();
-    let end = open.max_scroll.get();
     let oldest = *open.order().last().unwrap();
     let newest = open.order()[0];
-    assert!(end > 0, "a thread longer than the screen");
+    let top = |a: &App| {
+        let o = a.open.as_ref().unwrap();
+        o.top_in(&o.blocks.borrow(), o.max_top.get())
+    };
     keys(&mut a, &[Key::Bottom]);
-    let _ = render_to_string(&mut a, 40, 6);
-    assert_eq!(a.open.as_ref().unwrap().scroll.get(), end);
+    let s = render_to_string(&mut a, 40, 14);
+    assert_eq!(a.open.as_ref().unwrap().target(), Some(oldest));
+    assert!(top(&a) > 0, "the view followed it\n{s}");
+    let at = top(&a);
     keys(&mut a, &[Key::Down, Key::Down]);
-    let _ = render_to_string(&mut a, 40, 6);
-    assert_eq!(a.open.as_ref().unwrap().scroll.get(), end, "no further than the end");
-    keys(&mut a, &[Key::Char(']'), Key::Char(']'), Key::Char(']')]);
-    let _ = render_to_string(&mut a, 40, 6);
-    assert_eq!(a.open.as_ref().unwrap().target(), Some(oldest), "] reaches the oldest");
+    let _ = render_to_string(&mut a, 40, 14);
+    assert_eq!(
+        a.open.as_ref().unwrap().target(),
+        Some(oldest),
+        "no further than the oldest"
+    );
+    assert_eq!(top(&a), at);
     keys(&mut a, &[Key::Top]);
-    let _ = render_to_string(&mut a, 40, 6);
-    assert_eq!(a.open.as_ref().unwrap().scroll.get(), 0);
+    let _ = render_to_string(&mut a, 40, 14);
+    assert_eq!(top(&a), 0);
     assert_eq!(a.open.as_ref().unwrap().target(), Some(newest));
 }
 

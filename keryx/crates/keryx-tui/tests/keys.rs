@@ -31,17 +31,10 @@ fn keryxs_own_keys_are_all_ones_the_table_leaves_free() {
 
 /// What a key can change, seen from outside.
 fn state(a: &App) -> String {
-    let o = a.open.as_ref().map(|o| {
-        format!(
-            "{}:{}:{:?}:{:?}:{:?}:{:?}",
-            o.thread_id,
-            o.scroll.get(),
-            o.jump.get(),
-            o.focus.get(),
-            o.toggled,
-            o.raw
-        )
-    });
+    let o = a
+        .open
+        .as_ref()
+        .map(|o| format!("{}:{:?}:{}:{:?}:{:?}", o.thread_id, o.sel, o.off, o.toggled, o.raw));
     format!(
         "{:?}|{:?}|{}|{}|{:?}|{}|{}|{:?}|{}|{}|{}|{}|{:?}|{}",
         a.mode,

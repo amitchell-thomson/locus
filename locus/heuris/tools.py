@@ -264,7 +264,11 @@ def doc_thing(title: str, uri: str) -> str | None:
     header = note_header(uri)
     if header.get("thing") in registry.entries():
         return header["thing"]
-    hay = f"{title or ''} {uri or ''} {header.get('remarkable_folder', '')}".lower().replace("_", "-")
+    # Only the part of the path below the data folder: the checkout itself lives in
+    # `server-projects/locus/`, so the whole path named `locus` beside every course and
+    # no document under incoming/ or notes/ got a thing (found 14 Nov, P3).
+    where = re.sub(r"^.*?/data/", "", uri or "")
+    hay = f"{title or ''} {where} {header.get('remarkable_folder', '')}".lower().replace("_", "-")
     hits = set()
     for pid, e in registry.entries().items():
         names = {pid, e.get("name", ""), e.get("folder", "")} | set(e.get("sessions", []))

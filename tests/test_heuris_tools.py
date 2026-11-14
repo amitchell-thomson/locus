@@ -155,6 +155,10 @@ def test_a_library_document_names_its_project():
     assert ht.doc_thing("Reading notes: quast barrier law", "data/notes/reading/quast.md") == "quast"
     assert ht.doc_thing("Advanced Portfolio Management", "incoming/paper/apm.pdf") is None
     assert ht.doc_thing("quast and locus", "") is None, "two named: none"
+    # The checkout's own path is not a mention of locus (14 Nov: every incoming document lost its course).
+    assert ht.doc_thing("B1 Numerical Algorithms: Computational Class Questions",
+                        "/home/alec/server-projects/locus/data/incoming/studies/b1-engineering-computation/"
+                        "numerical-algorithms/b1-questions.pdf") == "b1"
     assert ht.doc_thing("Update your CV", "") is None, "short ids never fire on prose"
     assert ht.doc_thing("B14 Image Processing", "data/notes/b14-image-processing-1a2b3c4d.md") == "b14", "a course code"
 

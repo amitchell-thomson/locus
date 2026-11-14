@@ -1121,6 +1121,11 @@ def cmd_files(args) -> None:
         return _subprocess_runner(cfg.capture.rmapi_binary), cfg.capture.rmapi_tree_cache
 
     if args.files_cmd == "sync":
+        # Canvas first (P3), so a module folder it makes reaches the tablet in this same tick.
+        try:
+            _canvas_files(args)
+        except Exception as e:  # the folder sync still runs: Canvas is one source among several
+            print(f"canvas -> ~/files failed: {e}")
         p = fs.sync(dry_run=args.dry_run)
         verb = "would make" if args.dry_run else "made"
         for rel in p.to_laptop:
@@ -1191,6 +1196,9 @@ def cmd_canvas(args) -> None:
     if args.canvas_cmd == "pull":
         _canvas_pull(args)
         return
+    if args.canvas_cmd == "files":
+        _canvas_files(args)
+        return
     cs = canvas.fetch_courses()
     if args.json:
         print(_json.dumps([dataclasses.asdict(c) for c in cs]))
@@ -1231,8 +1239,36 @@ def _canvas_pull(args) -> None:
         print(f"error: {x}")
     print(f"{len(rep.new)} new, {len(rep.changed)} changed, {rep.unchanged} unchanged, "
           f"{len(rep.skipped)} skipped, {len(rep.errors)} errors")
+    # P3: this year's PDFs, slides and Word files go from the mirror to the library.
+    from locus import canvas_files
+    from locus.config import load
+
+    cfg = load()
+    q = canvas_files.queue_library(registry.entries(), canvas_files.library_hashes(cfg.paths.db),
+                                   incoming=Path(cfg.paths.incoming), dry_run=args.dry_run)
+    for x in q.queued:
+        print(f"{'would queue' if args.dry_run else 'queued'} for the library: {x}")
+    for x in q.held:
+        print(f"held back (set aside by locus-watch before): {x}")
+    print(f"library: {len(q.queued)} queued, {q.in_library} already in it, {q.waiting} waiting to be ingested")
     if rep.errors:
         raise SystemExit(1)
+
+
+def _canvas_files(args) -> None:
+    """P3, on the laptop: this year's mirror files into ~/files/Studies/."""
+    from locus import canvas_files
+    from locus.files_sync import FILES_ROOT
+    from locus.heuris import registry
+
+    p = canvas_files.to_files(registry.entries(), studies=FILES_ROOT.expanduser() / "Studies",
+                              dry_run=args.dry_run)
+    verb = "would copy" if args.dry_run else "copied"
+    for c in p.copies:
+        print(f"{verb} ({c.why}): {c.dest}")
+    for g in p.gone:
+        print(f"deleted on the laptop, not brought back: {g}")
+    print(f"canvas -> ~/files: {len(p.copies)} {verb.split()[-1]}, {p.same} already there, {len(p.gone)} you deleted")
 
 
 def _canvas_syllabus(args) -> None:
@@ -1344,6 +1380,8 @@ def main(argv=None) -> None:
     cvp.add_argument("--course", action="append", help="a registry id (repeatable); default all mapped")
     cvp.add_argument("--dry-run", action="store_true", help="list what would be fetched; fetch nothing")
     cvp.add_argument("--pause", type=float, default=0.2, help="seconds between downloads")
+    cvf = cvs.add_parser("files", help="this year's mirror files into ~/files/Studies (P3, the laptop)")
+    cvf.add_argument("--dry-run", action="store_true")
     cvy = cvs.add_parser("syllabus", help="a year's syllabus PDF as syllabus.md per submodule (P8)")
     cvy.add_argument("pdf")
     cvy.add_argument("--edition", required=True, help='e.g. "1st Year Syllabus 2024-25"')

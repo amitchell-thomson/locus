@@ -96,7 +96,7 @@ them in the reMarkable app. Nothing locus makes for itself (records, renders, ca
 | Assessed deadlines (assignments) | | | a fact | a task, in Approve |
 | Course page, reading list | `course.md` | no | yes | |
 | Each submodule's syllabus | `syllabus.md` | **yes, as a PDF** (his change, 14 Nov) | topics, linked (P-D9) | |
-| Anything of a past year (Prelims, Part A) | yes | **no** (14 Nov: "past year folders can stay off the tablet") | the server's copy only, until he asks | |
+| Anything of a past year (Prelims, Part A) | `syllabus.md` only | **no** (14 Nov: "past year folders can stay off the tablet") | the server's copy only, until he asks | |
 | Announcements | no (mail has them) | | | |
 
 **P-D3. Answers stay off the tablet.**
@@ -205,15 +205,26 @@ Each step ends with its check on real data, and is committed and deployed before
   - their sha256s match the hand-uploaded tablet copies;
   - a second run fetches nothing.
 
-**P3. Mirror → `~/files`** (P-D6).
-- The laptop job rsyncs the mirror into `~/files/Studies/` (copy-only, `--ignore-existing`
-  for anything you edited), with F1 names.
-- *Check:* B18's lectures, notes and sheet are in `~/files`, and folder sync reports nothing new.
+**P3. Mirror → `~/files`, and mirror → library** (P-D6; the library half added 14 Nov, his
+go-ahead: "fix the solutions gap in P3").
+- The laptop job copies this year's mirror files into `~/files/Studies/` (copy-only), with F1
+  names. A file he deleted is not brought back; a file Canvas changed replaces his copy only if
+  he never edited it, else it lands beside it as `<name>-v2`.
+- **The library is fed from the mirror, not through the tablet.** Every PDF, PowerPoint and Word
+  file of an active course is queued into `data/incoming/studies/<course>/<module>/` after each
+  pull; bytes the library already has are a no-op. Two reasons the tablet route could not do it:
+  solutions never go to the tablet (P-D3), and a PDF locus pushes is in `device_sent`, which
+  capture treats as Claude's document and never ingests.
+- *Check:* B18's lectures, notes and sheet are in `~/files`, and folder sync reports nothing new;
+  B14, B15 and B18's files are already in the library (nothing queued for them); another course's
+  files are queued and ingested as coursework with their course as their thing.
 
 **P4. To the tablet** (P-D2, P-D3, P-D5).
 - New mirror files whose type goes to the tablet are pushed through `deliver_pdf`, recorded in
   `device_sent` before upload, paced against 429s.
 - A file already on the tablet by sha256 is skipped.
+- A Canvas file locus pushes is a source, not Claude's document: its `device_sent` row must say
+  so, so that his marks on it key to the library copy (by content hash) like a hand upload's.
 - *Check:*
   - a dry run lists exactly what would go (nothing for B14, B15 or B18, which are already
     there by hand);

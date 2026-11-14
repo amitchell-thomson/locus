@@ -12,6 +12,8 @@ Environment=PATH=/home/alec/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:
 # GET only (locus/canvas.py); the token is in ~/.config/locus/canvas.env. A run with nothing new
 # asks Canvas about this year's files and downloads nothing.
 ExecStart=/home/alec/.local/bin/uv run locus canvas pull
+# P4: then anything new to the tablet, only bytes and names not already there, never solutions.
+ExecStart=/home/alec/.local/bin/uv run locus canvas tablet
 TimeoutStartSec=3600
 Nice=10
 IOSchedulingClass=idle

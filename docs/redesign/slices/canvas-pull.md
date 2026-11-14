@@ -366,3 +366,13 @@ this year's files queued, 29 already in the library. The `~/files` half runs in 
 option; the five he is not on are listed in `taxonomy/canvas-skip.toml` and go nowhere but the
 mirror (their copies, made once before the list existed, were taken out of `~/files` and the
 ingest queue).
+
+**P4 done (14 Nov 2026).** `locus canvas tablet` (`locus/canvas_tablet.py`), after each pull on the
+timer. His rule: "make sure only what is not already there is sent, I do not want duplicates". A
+file goes only if its bytes are nowhere on the tablet, no document of its name is in its folder,
+and locus never sent it before (recorded in the manifest, so a deleted one is not sent back).
+Solutions stay off. Pushed with `authored=False`: a source, not Claude's document. First run: 43
+sent, 27 already there by bytes, 3 kept off as solutions, and 3 not sent because his copies are an
+earlier version (B14 Image Processing L3, L4 and the example sheet; Canvas revised them after he
+uploaded; L4 has 60 pages on Canvas against 58 on the tablet). Afterwards: 113 documents in
+`Studies/`, no name twice in a folder, no bytes twice, all 43 on the device byte for byte.

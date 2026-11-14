@@ -126,6 +126,9 @@ pub struct Project {
     /// Howard 2026 and 2027), or a repo and the course it does the work of (3YP and B3).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub folder: Option<String>,
+    /// A course's id on Canvas (spec P, P1): what the Canvas pull reads for this course.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canvas: Option<u64>,
 }
 
 /// A folder name as F1 allows it: lowercase letters and digits, words joined by single hyphens.

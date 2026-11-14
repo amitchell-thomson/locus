@@ -1171,6 +1171,39 @@ def cmd_files(args) -> None:
                   else "every registered tablet folder already has its folder name")
 
 
+def cmd_canvas(args) -> None:
+    """Canvas, read only (spec P). `courses` lists every course and proposes the registry
+    mapping as a diff; `--apply` writes it (only after he approves the diff)."""
+    import dataclasses
+    import difflib
+    import json as _json
+
+    from locus import canvas
+    from locus.heuris import registry
+
+    cs = canvas.fetch_courses()
+    if args.json:
+        print(_json.dumps([dataclasses.asdict(c) for c in cs]))
+        return
+    m = canvas.plan(registry.entries(), cs)
+    mapped = {c.id: rid for rid, c in m.mapped}
+    new = {c.id for c in m.new}
+    for c in cs:
+        tag = mapped.get(c.id) or ("new: " + (c.code or "").lower() if c.id in new else "-")
+        print(f"{c.id:>7}  {c.term[:7]:<8} {tag:<10} {c.name}")
+    for rid, old, c in m.renamed:
+        print(f"note: {rid} is {old!r} in the registry, {c.name!r} on Canvas (folder kept)")
+    before = registry.PATH.read_text()
+    after = canvas.apply_to_registry(before, m)
+    if args.apply:
+        registry.PATH.write_text(after)
+        print(f"wrote {registry.PATH}")
+    elif after != before:
+        print()
+        print("".join(difflib.unified_diff(before.splitlines(True), after.splitlines(True),
+                                           "taxonomy/registry.toml", "taxonomy/registry.toml (proposed)")))
+
+
 def main(argv=None) -> None:
     parser = argparse.ArgumentParser(prog="locus", description="Locus — query-driven personal library")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -1236,6 +1269,13 @@ def main(argv=None) -> None:
                      help="rename the folders INSIDE a thing's folder to the same rule (spaces, capitals)")
     fsr.add_argument("--pace", type=float, default=2.0, help="seconds between cloud calls (429s)")
     pfs.set_defaults(func=cmd_files)
+
+    pcv = sub.add_parser("canvas", help="Canvas, read only (spec P)")
+    cvs = pcv.add_subparsers(dest="canvas_cmd", required=True)
+    cvc = cvs.add_parser("courses", help="every course, and the registry mapping as a diff")
+    cvc.add_argument("--json", action="store_true", help="the course list as JSON (what the laptop asks the server for)")
+    cvc.add_argument("--apply", action="store_true", help="write the mapping into taxonomy/registry.toml")
+    pcv.set_defaults(func=cmd_canvas)
 
     pst = sub.add_parser("status", help="one-screen operational health summary (no API)")
     pst.set_defaults(func=cmd_status)

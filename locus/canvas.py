@@ -102,7 +102,7 @@ class Course:
 def courses(client: Client) -> list[Course]:
     """Every course he is or was enrolled on, newest year first."""
     raw = client.get("courses", [("include[]", "term"), ("state[]", "available"), ("state[]", "completed")])
-    out = [Course(int(c["id"]), c.get("name") or "", (c.get("term") or {}).get("name") or "") for c in raw]
+    out = [Course(int(c["id"]), name(c.get("name") or ""), (c.get("term") or {}).get("name") or "") for c in raw]
     return sorted(out, key=lambda c: (c.term, -(int(c.code[1:]) if c.code else 99)), reverse=True)
 
 
@@ -115,6 +115,11 @@ def _code_of(name: str) -> str | None:
 
 def _folder(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+
+
+def name(raw: str) -> str:
+    """A Canvas title as the system uses it: Canvas pads some with spaces ("Signal Analysis ")."""
+    return " ".join(raw.split())
 
 
 @dataclass
@@ -151,10 +156,13 @@ def plan(entries: dict[str, dict], cs: list[Course]) -> Mapping:
 
 
 def apply_to_registry(text: str, m: Mapping) -> str:
-    """The registry's text with `canvas = <id>` on each mapped course and the new entries
+    """The registry's text with `canvas = <id>` and Canvas's own name on each mapped course
+    ("the canvas titles and naming of courses/submodules in my system should all be identical",
+    14 Nov; the id and folder are the shorthand), and the new entries
     appended after the last course. Idempotent: an entry that already has the line keeps it."""
     lines = text.splitlines(keepends=True)
     ids = {rid: c.id for rid, c in m.mapped}
+    names = {rid: c.name for rid, c in m.mapped}
     out: list[str] = []
     current: str | None = None
     for line in lines:
@@ -165,6 +173,8 @@ def apply_to_registry(text: str, m: Mapping) -> str:
             current = mm.group(1)
         if current in ids and re.match(r"canvas\s*=", s):
             continue
+        if current in names and re.match(r"name\s*=", s):
+            line = f"name = {json.dumps(names[current])}\n"   # his rule (14 Nov): names exactly as on Canvas
         out.append(line)
         if current in ids and re.match(r'kind\s*=\s*"course"', s):
             out.append(f"canvas = {ids[current]}\n")

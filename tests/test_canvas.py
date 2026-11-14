@@ -88,6 +88,7 @@ def test_applying_writes_canvas_ids_and_new_entries_and_is_idempotent():
     once = canvas.apply_to_registry(REG, m)
     e = _entries(once)
     assert e["b18"]["canvas"] == 298821 and e["b16"]["canvas"] == 298819
+    assert e["b16"]["name"] == "B16 Software Engineering"
     assert e["a1"] == {"id": "a1", "name": "A1. Mathematics", "folder": "a1-mathematics", "area": "Studies",
                        "kind": "course", "canvas": 294649, "active": False}
     assert once.index('id = "a1"') < once.index("# ── application")

@@ -292,3 +292,27 @@ Each step ends with its check on real data, and is committed and deployed before
 - **A path that looks wired and isn't** (CLAUDE.md §3). Each step's check is on real courses.
   `locus status` shows when the last pull ran and what it fetched, so a dead token can't pass
   for a quiet week.
+
+---
+
+## Progress
+
+**P1 done (14 Nov 2026).**
+- The token is on the server (`~/.config/locus/canvas.env`, 600). `locus/canvas.py` is GET-only by
+  construction. `locus canvas courses` lists all 33 courses; on the laptop it asks the server.
+- **Finding:** a course's Files tab is 403 for students; Modules are 200, and a file reached
+  through a module item downloads. P2 walks modules.
+- **His rule (14 Nov):** "the canvas titles and naming of courses/submodules in my system should
+  all be identical (except of course for our shorthand names)". So every course's registry
+  `name` is Canvas's title (B16 became "B16 Software Engineering"), its folder is that title in F1
+  form, and a submodule's folder is its Canvas module name in F1 form. Renamed on both sides:
+  `b16-software-engineering-systems` to `b16-software-engineering`;
+  in B1, `b1-numerical-algorithms` to `numerical-algorithms` and `b1-coding-practical-mt24` to
+  `coding-practical-1`. B1's `report/` is his coding practical report, not a module, and stays.
+- Prelims (p1-p5) and Part A (a1-a5) are registered, inactive, with folders: a home for their
+  syllabi (P8) and the few Year 1-2 items he keeps. He judged the rest of his GoodNotes years
+  not worth bringing in (14 Nov): it would dilute locus.
+- Order that matters: the contract's `canvas` field reached kairosd and every Mac binary before
+  the registry used it (the readers refuse unknown keys).
+- `rmapi mv <path> <bare-name>` moves to the tablet ROOT, not a rename in place: always give the
+  full destination path.

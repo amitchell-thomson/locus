@@ -135,6 +135,7 @@ name = "B1 Engineering Computation"
 folder = "b1-engineering-computation"
 area = "Studies"
 kind = "course"
+canvas = 298804
 active = true
 
 [[projects]]
@@ -143,6 +144,7 @@ name = "B2 Engineering in Society"
 folder = "b2-engineering-in-society"
 area = "Studies"
 kind = "course"
+canvas = 298580
 active = true
 
 [[projects]]
@@ -151,6 +153,7 @@ name = "B3 Group Design Project"
 folder = "b3-group-design-project"
 area = "Studies"
 kind = "course"
+canvas = 298807
 active = true
 
 [[projects]]
@@ -159,6 +162,7 @@ name = "B14 Information Engineering Systems"
 folder = "b14-information-engineering-systems"
 area = "Studies"
 kind = "course"
+canvas = 298817
 active = true
 
 [[projects]]
@@ -167,14 +171,16 @@ name = "B15 Control Systems"
 folder = "b15-control-systems"
 area = "Studies"
 kind = "course"
+canvas = 298818
 active = true
 
 [[projects]]
 id = "b16"
-name = "B16 Software Engineering Systems"
-folder = "b16-software-engineering-systems"
+name = "B16 Software Engineering"
+folder = "b16-software-engineering"
 area = "Studies"
 kind = "course"
+canvas = 298819
 active = true
 
 [[projects]]
@@ -183,6 +189,7 @@ name = "B18 Biomedical Modelling and Monitoring"
 folder = "b18-biomedical-modelling-and-monitoring"
 area = "Studies"
 kind = "course"
+canvas = 298821
 active = true
 
 [[projects]]
@@ -191,7 +198,100 @@ name = "B20 Machine Learning"
 folder = "b20-machine-learning"
 area = "Studies"
 kind = "course"
+canvas = 298823
 active = true
+
+# Past years' papers (Prelims 2024-25, Part A 2025-26): inactive, kept for their syllabi (P-D9).
+
+[[projects]]
+id = "p1"
+name = "P1 Mathematics"
+folder = "p1-mathematics"
+area = "Studies"
+kind = "course"
+canvas = 273338
+active = false
+
+[[projects]]
+id = "p2"
+name = "P2 Electronic and Information Engineering"
+folder = "p2-electronic-and-information-engineering"
+area = "Studies"
+kind = "course"
+canvas = 273341
+active = false
+
+[[projects]]
+id = "p3"
+name = "P3 Structures and Mechanics"
+folder = "p3-structures-and-mechanics"
+area = "Studies"
+kind = "course"
+canvas = 273340
+active = false
+
+[[projects]]
+id = "p4"
+name = "P4 Energy"
+folder = "p4-energy"
+area = "Studies"
+kind = "course"
+canvas = 273342
+active = false
+
+[[projects]]
+id = "p5"
+name = "P5 Engineering Coursework (Labs)"
+folder = "p5-engineering-coursework-labs"
+area = "Studies"
+kind = "course"
+canvas = 273484
+active = false
+
+[[projects]]
+id = "a1"
+name = "A1. Mathematics"
+folder = "a1-mathematics"
+area = "Studies"
+kind = "course"
+canvas = 294649
+active = false
+
+[[projects]]
+id = "a2"
+name = "A2. Electronic and Information Engineering"
+folder = "a2-electronic-and-information-engineering"
+area = "Studies"
+kind = "course"
+canvas = 294650
+active = false
+
+[[projects]]
+id = "a3"
+name = "A3. Structures, Materials and Dynamics"
+folder = "a3-structures-materials-and-dynamics"
+area = "Studies"
+kind = "course"
+canvas = 294651
+active = false
+
+[[projects]]
+id = "a4"
+name = "A4. Energy Systems"
+folder = "a4-energy-systems"
+area = "Studies"
+kind = "course"
+canvas = 294648
+active = false
+
+[[projects]]
+id = "a5"
+name = "A5. Engineering Practical Work"
+folder = "a5-engineering-practical-work"
+area = "Studies"
+kind = "course"
+canvas = 294652
+active = false
 
 # ── application ─────────────────────────────────────────────────────────────────────────────────
 # Applications, each with its company: the tablet's Careers folders are per company.

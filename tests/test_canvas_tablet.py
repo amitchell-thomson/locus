@@ -80,3 +80,11 @@ def test_a_name_taken_by_other_bytes_lands_beside_it_and_429s_back_off(tmp_path)
 def test_titles_are_canvas_names_without_the_extension():
     assert canvas_tablet.title_of("B18 Lecture 1.pdf") == "B18 Lecture 1"
     assert canvas_tablet.title_of("Notes (docx version)") == "Notes (docx version)"
+
+
+def test_his_copy_of_an_earlier_version_by_name_is_not_duplicated(tmp_path):
+    root, man = mirror(tmp_path, FILES)
+    names = {canvas_tablet.name_key("Studies/b14-ies/image-processing", "B14 IP MT26 L3.pdf")}
+    p = canvas_tablet.plan(man, COURSES, {sha(b"L2")}, skip={}, tablet_names=names)
+    assert p.other_version == ["b14-ies/image-processing/b14-ip-mt26-l3.pdf"]
+    assert "b14-ies/image-processing/b14-ip-mt26-l3.pdf" not in [s.src for s in p.sends]

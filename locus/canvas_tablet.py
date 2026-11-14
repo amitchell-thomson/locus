@@ -58,6 +58,14 @@ class TabletPlan:
     on_tablet: list[str] = field(default_factory=list)     # same bytes already there (his or ours)
     solutions: list[str] = field(default_factory=list)
     sent_before: int = 0
+    other_version: list[str] = field(default_factory=list)  # his copy by name, older bytes
+
+
+def name_key(folder: str, title: str) -> str:
+    """A document's place on the tablet, matched loosely: `B14_IP_MT26_L3.pdf` and
+    `B14 IP MT26 L3` are one name."""
+    t = re.sub(r"\.pdf$", "", title.strip(), flags=re.I)
+    return folder.strip("/").lower() + "/" + re.sub(r"[^a-z0-9]+", "", t.lower())
 
 
 def title_of(display: str) -> str:
@@ -66,7 +74,11 @@ def title_of(display: str) -> str:
 
 
 def plan(manifest: dict, courses: dict[str, dict], tablet_hashes: set[str],
-         skip: dict[str, set[str]] | None = None) -> TabletPlan:
+         skip: dict[str, set[str]] | None = None, tablet_names: set[str] = frozenset()) -> TabletPlan:
+    """`tablet_names` are `name_key`s of everything on the tablet. A document of the same name in
+    the same folder is his copy of an earlier version (B14 Image Processing L3 and L4 and its
+    example sheet, 14 Nov: Canvas revised them after he uploaded, 94 to 98% the same text). It is
+    not sent: no duplicates, his choice."""
     live = active_folders(courses)
     skip = skipped_modules() if skip is None else skip
     p = TabletPlan()
@@ -85,8 +97,11 @@ def plan(manifest: dict, courses: dict[str, dict], tablet_hashes: set[str],
         if e["sha256"] in tablet_hashes or e["sha256"] in seen:
             p.on_tablet.append(e["path"])
             continue
-        seen.add(e["sha256"])
         folder = "Studies/" + e["path"].rsplit("/", 1)[0]
+        if name_key(folder, title_of(e["name"])) in tablet_names:
+            p.other_version.append(e["path"])
+            continue
+        seen.add(e["sha256"])
         p.sends.append(Send(key, e["path"], folder, title_of(e["name"])))
     return p
 
@@ -157,15 +172,17 @@ def send(p: TabletPlan, *, deliver, root: Path = MIRROR, pause: float = 10.0, lo
     return sent, errors
 
 
-def tablet_hashes() -> set[str]:
-    """sha256 of every PDF on the tablet, after one `rmapi ls /` brings the tree up to date."""
+def tablet_now() -> tuple[set[str], set[str]]:
+    """The sha256 of every PDF on the tablet, and every document's `name_key`, after one
+    `rmapi ls /` brings the tree up to date."""
     from locus.capture.device import read_device
     from locus.capture.remarkable import _subprocess_runner
     from locus.config import load
 
     cfg = load()
     docs = read_device(_subprocess_runner(cfg.capture.rmapi_binary), tree_cache=cfg.capture.rmapi_tree_cache)
-    return {d.pdf_hash for d in docs if d.pdf_hash}
+    return ({d.pdf_hash for d in docs if d.pdf_hash},
+            {name_key("/".join(d.folders), d.name) for d in docs})
 
 
 def live_deliver():

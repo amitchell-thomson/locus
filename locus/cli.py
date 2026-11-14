@@ -1269,12 +1269,16 @@ def _canvas_tablet(args) -> None:
     from locus.heuris import registry
 
     with canvas_pull.locked():
-        p = canvas_tablet.plan(canvas_pull.load_manifest(), registry.entries(), canvas_tablet.tablet_hashes())
+        hashes, names = canvas_tablet.tablet_now()
+        p = canvas_tablet.plan(canvas_pull.load_manifest(), registry.entries(), hashes, tablet_names=names)
         for s in p.sends:
             print(f"{'would send' if args.dry_run else 'to send'}: {s.folder}/{s.title}")
         for x in p.solutions:
             print(f"kept off (solutions): {x}")
+        for x in p.other_version:
+            print(f"not sent (an earlier version of it is on the tablet): {x}")
         print(f"tablet: {len(p.sends)} to send, {len(p.on_tablet)} already there, "
+              f"{len(p.other_version)} there in an earlier version, "
               f"{p.sent_before} sent before, {len(p.solutions)} solutions kept off")
         if args.dry_run or not p.sends:
             return

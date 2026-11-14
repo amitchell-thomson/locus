@@ -135,3 +135,16 @@ def test_a_finished_project_gets_no_new_folders():
     # One that exists on one side is still mirrored: its notes are kept.
     p = plan(areas | {"Projects/quast", "Projects/aulos"}, areas | {"Projects/quast"}, reg, done={"Projects/aulos"})
     assert "Projects/aulos" in p.to_tablet
+
+
+def test_past_courses_stay_off_the_tablet():
+    """14 Nov 2026: "past year folders can stay off the tablet"."""
+    from locus import files_sync as fs
+
+    laptop = {"Studies", "Studies/p1-mathematics", "Studies/p1-mathematics/statics", "Studies/b15-control-systems",
+              "Studies/b15-control-systems/optimal-control"}
+    reg = {"Studies": {"p1-mathematics", "b15-control-systems"}, "Projects": set(), "Careers": set(), "Personal": set()}
+    p = fs.plan(laptop, {"Studies"}, reg, laptop_only={"Studies/p1-mathematics"})
+    assert "Studies/b15-control-systems/optimal-control" in p.to_tablet
+    assert not any(x.startswith("Studies/p1-mathematics") for x in p.to_tablet)
+    assert not p.questions

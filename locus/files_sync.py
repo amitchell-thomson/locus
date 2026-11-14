@@ -79,6 +79,17 @@ def done_folders(path: Path | str = REGISTRY_PATH) -> set[str]:
             if e.get("state") == "done" and e.get("area") and e.get("folder")}
 
 
+def laptop_only(path: Path | str = REGISTRY_PATH) -> set[str]:
+    """`Area/folder` of every past course (`kind = "course"`, `active = false`: Prelims and Part
+    A). His rule (14 Nov 2026): "past year folders can stay off the tablet". The tablet is for
+    reading and writing by hand now; a past year's folder holds its syllabus and a few kept notes,
+    for the laptop and locus. Never made on the tablet, nothing under it mirrored there, and its
+    absence there is never a question."""
+    data = tomllib.loads(Path(path).read_text())
+    return {f"{e['area']}/{e['folder']}" for e in data.get("projects", [])
+            if e.get("kind") == "course" and e.get("active") is False and e.get("area") and e.get("folder")}
+
+
 # --- the two trees, as sets of "Area/a/b" paths ---------------------------------------------------
 
 def laptop_folders(root: Path | str = FILES_ROOT) -> set[str]:
@@ -147,7 +158,8 @@ class Plan:
 
 
 def plan(laptop: set[str], tablet: set[str], registry: dict[str, set[str]],
-         renames: list[tuple[str, str]] = (), done: set[str] = frozenset()) -> Plan:
+         renames: list[tuple[str, str]] = (), done: set[str] = frozenset(),
+         laptop_only: set[str] = frozenset()) -> Plan:
     """What to make where, and what to ask. `renames` are the tablet's level-2 folders still
     under their old names (`rename_plan`): until `locus files tablet-rename` has run, the new
     name is NOT made beside the old one, which would leave two folders for one thing, and the
@@ -181,6 +193,9 @@ def plan(laptop: set[str], tablet: set[str], registry: dict[str, set[str]],
     twins = {renamed_twin(p, laptop) for p in tablet - laptop} | {renamed_twin(p, tablet) for p in laptop - tablet}
     twins.discard(None)
 
+    def off_tablet(p: str) -> bool:
+        return any(p == lo or p.startswith(lo + "/") for lo in laptop_only)
+
     # the four areas, and the registry's own folders, exist on both sides
     for area in registry:
         if area not in laptop:
@@ -194,7 +209,7 @@ def plan(laptop: set[str], tablet: set[str], registry: dict[str, set[str]],
                 continue
             if p not in laptop:
                 out.to_laptop.append(p)
-            if p not in tablet and p not in pending_new:
+            if p not in tablet and p not in pending_new and not off_tablet(p):
                 out.to_tablet.append(p)
 
     for here, there, side, dest in ((laptop, tablet, "laptop", out.to_tablet),
@@ -209,6 +224,8 @@ def plan(laptop: set[str], tablet: set[str], registry: dict[str, set[str]],
             if (len(parts) == 2 and parts[0] != "Personal" and parts[1] != GENERAL
                     and parts[1] not in registry.get(parts[0], set())):
                 ask(p, side, "unregistered")
+                continue
+            if dest is out.to_tablet and off_tablet(p):
                 continue
             if p not in dest:
                 dest.append(p)
@@ -261,7 +278,8 @@ def sync(*, dry_run: bool = False, root: Path | str = FILES_ROOT) -> Plan:
     are true either way; a failure to reach the tablet raises and writes nothing."""
     root = Path(root).expanduser()
     tablet = fetch_tablet()
-    p = plan(laptop_folders(root), tablet, registry_folders(), rename_plan(tablet), done=done_folders())
+    p = plan(laptop_folders(root), tablet, registry_folders(), rename_plan(tablet), done=done_folders(),
+             laptop_only=laptop_only())
     if not dry_run:
         for rel in p.to_laptop:
             (root / rel).mkdir(parents=True, exist_ok=True)

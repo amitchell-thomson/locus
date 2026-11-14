@@ -95,7 +95,8 @@ them in the reMarkable app. Nothing locus makes for itself (records, renders, ca
 | Videos, Panopto links | a link list, `lectures.md` | no | no | |
 | Assessed deadlines (assignments) | | | a fact | a task, in Approve |
 | Course page, reading list | `course.md` | no | yes | |
-| Each submodule's syllabus | `syllabus.md` | no | topics, linked (P-D9) | |
+| Each submodule's syllabus | `syllabus.md` | **yes, as a PDF** (his change, 14 Nov) | topics, linked (P-D9) | |
+| Anything of a past year (Prelims, Part A) | yes | **no** (14 Nov: "past year folders can stay off the tablet") | the server's copy only, until he asks | |
 | Announcements | no (mail has them) | | | |
 
 **P-D3. Answers stay off the tablet.**
@@ -335,3 +336,9 @@ that syllabus can be treated as known material" (Years 1 and 2, fact:341).
 **GoodNotes years (14 Nov 2026).** Only his 29 summary notes from Prelims and Part A come in
 (448 pages), transcribed by capture's vision transcription into `data/notes/goodnotes-*.md` as his
 writing. The GoodNotes text layer was useless for maths. Everything else stays on Google Drive.
+
+**14 Nov, later.** Past courses (`active = false`) are laptop-only: `files_sync.laptop_only`
+keeps their folders off the tablet; the ten the sync had made there, empty, were removed. This
+year's 31 syllabi went to the tablet as PDFs, one in each submodule's folder, through
+`send_markdown` (recorded in `device_sent`, so capture never reads them as sources); P4 does this
+by type from then on. The cloud returned 429 after six sends in a row: 10 s apart, with a backoff.

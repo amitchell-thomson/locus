@@ -316,3 +316,22 @@ Each step ends with its check on real data, and is committed and deployed before
   the registry used it (the readers refuse unknown keys).
 - `rmapi mv <path> <bare-name>` moves to the tablet ROOT, not a rename in place: always give the
   full destination path.
+
+**P8, first half, done for all three years (14 Nov 2026).** He asked for it before P2: "all of
+that syllabus can be treated as known material" (Years 1 and 2, fact:341).
+- `locus canvas syllabus <pdf>` (`locus/syllabus.py`) cuts a year's syllabus into its submodule
+  sections, verbatim, and writes each as `syllabus.md` in `~/files/Studies/<course>/<module>/`.
+  The module folder is the Canvas module name in F1 form, minus a bracketed exam code ("(1P1A)",
+  his choice). 79 files: Year 1 from the 2024-25 edition (src:218), Year 2 from 2025-26
+  (src:162), the B papers he takes from 2026-27 (Canvas).
+- Each file names its edition and source, and links his GoodNotes notes for that code
+  (`his_notes:`, 29 links).
+- Matching a section to its Canvas module is word overlap (Jaccard 0.4, measured: true matches
+  0.5 to 1.0, the wrong neighbours 0.33), and a hand override where names cannot tell (A4's
+  a402 and a403, checked against the modules' files).
+- Not searchable yet: heuris does not index `~/files`. The second half of P8 (the topic table,
+  links to material, uncovered flags) loads them, after P7.
+
+**GoodNotes years (14 Nov 2026).** Only his 29 summary notes from Prelims and Part A come in
+(448 pages), transcribed by capture's vision transcription into `data/notes/goodnotes-*.md` as his
+writing. The GoodNotes text layer was useless for maths. Everything else stays on Google Drive.

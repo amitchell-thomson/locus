@@ -1181,6 +1181,13 @@ def cmd_canvas(args) -> None:
     from locus import canvas
     from locus.heuris import registry
 
+    if args.canvas_cmd == "modules":
+        print(_json.dumps(canvas.module_names()) if args.json else
+              "\n".join(f"{k}: {', '.join(v)}" for k, v in canvas.module_names().items()))
+        return
+    if args.canvas_cmd == "syllabus":
+        _canvas_syllabus(args)
+        return
     cs = canvas.fetch_courses()
     if args.json:
         print(_json.dumps([dataclasses.asdict(c) for c in cs]))
@@ -1202,6 +1209,38 @@ def cmd_canvas(args) -> None:
         print()
         print("".join(difflib.unified_diff(before.splitlines(True), after.splitlines(True),
                                            "taxonomy/registry.toml", "taxonomy/registry.toml (proposed)")))
+
+
+def _canvas_syllabus(args) -> None:
+    """P8, first half: a year's syllabus, verbatim, as one syllabus.md per submodule folder."""
+    from pathlib import Path
+
+    import pymupdf
+
+    from locus import canvas, syllabus
+    from locus.files_sync import FILES_ROOT
+    from locus.heuris import registry
+
+    text = "\n".join(p.get_text() for p in pymupdf.open(args.pdf))
+    secs = syllabus.sections(text)
+    notes: list[tuple[str, str]] = []
+    specs = list(args.note or [])
+    if args.notes_file:
+        specs += [ln.strip() for ln in Path(args.notes_file).read_text().splitlines() if ln.strip()]
+    for spec in specs:
+        key, _, ptr = spec.partition("=")
+        notes.append((key, ptr))
+    pl = syllabus.plan(secs, courses=registry.entries(), modules=canvas.module_names(),
+                       edition=args.edition, source=args.source, root=Path(FILES_ROOT).expanduser(),
+                       notes=notes)
+    for code, title, module, folder in pl.rows:
+        print(f"{code:<7} {title[:52]:<52}  {module[:44]:<44}  {folder}")
+    print(f"{len(pl.rows)} sections into {len(pl.files)} files")
+    for path, body in pl.files.items():
+        if args.apply:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body)
+    print("written" if args.apply else "(dry run: --apply writes them)")
 
 
 def main(argv=None) -> None:
@@ -1275,6 +1314,15 @@ def main(argv=None) -> None:
     cvc = cvs.add_parser("courses", help="every course, and the registry mapping as a diff")
     cvc.add_argument("--json", action="store_true", help="the course list as JSON (what the laptop asks the server for)")
     cvc.add_argument("--apply", action="store_true", help="write the mapping into taxonomy/registry.toml")
+    cvm = cvs.add_parser("modules", help="each mapped course's Canvas module names")
+    cvm.add_argument("--json", action="store_true")
+    cvy = cvs.add_parser("syllabus", help="a year's syllabus PDF as syllabus.md per submodule (P8)")
+    cvy.add_argument("pdf")
+    cvy.add_argument("--edition", required=True, help='e.g. "1st Year Syllabus 2024-25"')
+    cvy.add_argument("--source", required=True, help="where the PDF came from (a pointer)")
+    cvy.add_argument("--note", action="append", help="code=pointer to his note for that submodule")
+    cvy.add_argument("--notes-file", help="a file of code=pointer lines (code|title where a code repeats)")
+    cvy.add_argument("--apply", action="store_true", help="write the files; without it, print the plan")
     pcv.set_defaults(func=cmd_canvas)
 
     pst = sub.add_parser("status", help="one-screen operational health summary (no API)")

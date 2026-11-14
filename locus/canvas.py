@@ -211,3 +211,34 @@ def fetch_courses() -> list[Course]:
     if r.returncode != 0:
         raise CanvasError(f"the server could not list Canvas courses: {(r.stderr or r.stdout).strip()[:300]}")
     return [Course(**c) for c in json.loads(r.stdout)]
+
+
+def modules(client: Client, course_id: int, *, items: bool = False) -> list[dict]:
+    """A course's modules in order (Modules are readable to students; the Files tab is not)."""
+    params = [("include[]", "items")] if items else []
+    return client.get(f"courses/{course_id}/modules", params)
+
+
+def module_names() -> dict[str, list[str]]:
+    """Registry id -> its Canvas module names, for every course with a `canvas` id. On the
+    server directly; elsewhere from the server over ssh (the token lives there only)."""
+    try:
+        client = Client()
+    except CanvasError as e:
+        if "no Canvas token" not in str(e):
+            raise
+        import subprocess
+
+        host = os.environ.get("LOCUS_HOST", "compute-node")
+        d = os.environ.get("LOCUS_DIR", "/home/alec/server-projects/locus")
+        uv = os.environ.get("LOCUS_SERVER_UV", "~/.local/bin/uv")
+        r = subprocess.run(["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", host,
+                            f"cd {d} && {uv} run --quiet locus canvas modules --json"],
+                           capture_output=True, text=True, timeout=300)
+        if r.returncode != 0:
+            raise CanvasError(f"the server could not list Canvas modules: {(r.stderr or r.stdout).strip()[:300]}")
+        return json.loads(r.stdout)
+    from locus.heuris import registry
+
+    return {rid: [name(m["name"]) for m in modules(client, int(e["canvas"]))]
+            for rid, e in registry.entries().items() if e.get("canvas")}

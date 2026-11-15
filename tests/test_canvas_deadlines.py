@@ -40,3 +40,9 @@ def test_one_kairos_already_has_or_one_proposed_before_is_not_proposed_again():
     assert not p.propose and len(p.in_kairos) == 2
     p = cd.plan(ASSIGN, [], {"2": {}, "4": {}}, now=NOW, skip=SKIP)
     assert not p.propose and p.proposed_before == 2
+
+
+def test_a_task_naming_the_course_that_day_counts_whatever_it_is_filed_under():
+    tasks = [{"title": "B1 Coding Task", "locus": "b2", "due": {"type": "date", "value": "2026-11-19"}}]
+    p = cd.plan(ASSIGN, tasks, {}, now=NOW, skip=SKIP)
+    assert [x.assignment for x in p.propose] == [4] and p.in_kairos == ["b1: Optimisation Practical - Submission"]

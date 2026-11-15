@@ -88,6 +88,9 @@ def plan(assignments: dict[str, list[dict]], tasks: list[dict], state: dict, *, 
     skip = skipped_modules() if skip is None else skip
     p = DeadlinePlan()
     have = {(t["locus"], d) for t in tasks if t.get("locus") and (d := _due_day(t.get("due")))}
+    # By title too: a task naming the course due that day is the same deadline, whatever it is
+    # filed under ("B1 Coding Task" was filed under b2, 15 Nov).
+    titled = [(t.get("title") or "", d) for t in tasks if (d := _due_day(t.get("due")))]
     for rid, items in sorted(assignments.items()):
         for a in items:
             label = f"{rid}: {a.get('name', '').strip()}"
@@ -110,7 +113,9 @@ def plan(assignments: dict[str, list[dict]], tasks: list[dict], state: dict, *, 
             if due <= now:
                 p.past.append(label)
                 continue
-            if (rid, _day(a["due_at"])) in have:
+            day = _day(a["due_at"])
+            if (rid, day) in have or any(d == day and re.search(rf"\b{re.escape(rid)}\b", ttl, re.I)
+                                         for ttl, d in titled):
                 p.in_kairos.append(label)
                 continue
             p.propose.append(Proposal(int(a["id"]), rid, a["name"].strip(), a["due_at"]))

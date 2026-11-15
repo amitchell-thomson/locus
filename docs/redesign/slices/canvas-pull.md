@@ -414,3 +414,21 @@ is gone; a timeline shows each document once. Check, same eight real queries bef
 GPTQ notes and the Jump feedback notebook (Q10, Y9) still found; `thing=b15` "PID controller root
 locus" went from 1 library hit to 12 (the old path filtered after its KNN); B14, B18 and Studies
 as good or better; 2.3 to 3.7 s a search after, 1.4 to 4.6 s before.
+
+**P8 done (15 Nov 2026).** `locus/heuris/syllabus.py`. The laptop's `locus heuris-push` sends the 79
+`syllabus.md` files (`syllabi_push.py`); heuris indexes each as kind `syllabus`
+(`syllabus:<course>/<module>`, dated by its edition); `locus heuris syllabus`, hourly after derive,
+reads topics from a syllabus whose text changed (Sonnet, one call a file), links them, and proposes
+the `education:` facts. Every topic quotes its page or is dropped (`heuris.syllabus_quote`: 3 of
+1,745 dropped). 1,742 topics, kept as history when a page changes. Links: the course's library
+sections, best per document, cross-encoder over the 30 nearest, kept above 0.22; a topic with none
+is UNCOVERED, one not yet linked says so. The best-score distribution (every topic's, kept in
+`syllabus.best`) has no gap to put a floor in (p25 -8.9, median -0.5, p75 4.1), so the library's
+calibrated floor stands; just above it the links are right with a few weak ones, just below it
+mostly topics whose lectures are not in the library yet. First linking took about 45 minutes (by
+hand, holding `data/.syllabus.lock`, which the hourly run then skips); later runs relink a course
+only when its library changes. 817 of 1,742 topics covered: B14 Signal Analysis and Image
+Processing, B15 Linear Dynamic Systems and Optimal Control all covered; B14 Estimation 1 of 19 (its
+lectures are not out); labs, B16, B20 and B18's later modules nothing yet. 17 education facts
+waiting in Approve. Q31 re-run in a fresh chat (`data/evals/p8-q31-2026-11-15`): pass, every
+syllabus claim checked against the text.

@@ -1,10 +1,11 @@
 """The four tools any Claude calls (H1.9): context, search, open, timeline.
 
-Plain functions returning text; `mcp_server` registers them. Two stores are searched together
-(H1 D1): heuris.db (mail, events, tasks, chats, repo docs and commits) and the library in
-locus.db (sources, and his notes and margin writing, which the library already holds). Candidates
-from both are reranked by the library's cross-encoder as ONE list, so a mail and a lecture note
-compete on relevance, not on which store they came from.
+Plain functions returning text; `mcp_server` registers them. One index is searched: heuris.db
+(mail, events, tasks, chats, repo docs and commits, and since P7 every section of the library:
+sources, and his notes and margin writing). Until P7 the library was a second engine glued on
+(`library_candidates`, removed 15 Nov), whose filters ran after its KNN and starved a course
+filter. Candidates are reranked by the library's cross-encoder as ONE list, so a mail and a
+lecture note compete on relevance. `open` of a `src:` pointer still reads locus.db, the source.
 
 **Mail is untrusted.** Every piece of mail text a tool returns sits inside an `<email_data>`
 envelope carrying a per-reply nonce, the way keryx returns it; the tool descriptions say that
@@ -40,9 +41,6 @@ def untrusted(kind: str, meta: dict | None = None) -> bool:
     m = meta or {}
     return (kind in UNTRUSTED or (kind == "record" and m.get("record_of") == "mail")
             or (kind == "fact" and m.get("route") == "mail"))
-LIBRARY_KINDS = ("source", "note")
-# The library's categories by area, so `area=` narrows the library too.
-AREA_CATEGORY = {"Studies": "coursework", "Careers": "career", "Projects": "project"}
 SNIPPET = 360
 
 
@@ -281,77 +279,15 @@ def doc_thing(title: str, uri: str) -> str | None:
     return hits.pop() if len(hits) == 1 else None
 
 
-def notes_for_thing(thing: str, limit: int = 8) -> list[Hit]:
-    """His transcribed notebook notes whose header says they are for `thing`."""
-    from locus.config import load
-    from locus.db.connection import get_connection
-
-    conn = get_connection(load().paths.db)
-    try:
-        rows = conn.execute("SELECT id, title, source_uri, source_date FROM documents WHERE source_uri LIKE '%.md' "
-                            "AND source_uri LIKE '%/notes/%' ORDER BY id DESC").fetchall()
-        out = []
-        for r in rows:
-            h = note_header(r["source_uri"])
-            if h.get("thing") != thing:
-                continue
-            first = conn.execute("SELECT raw_text FROM chunks WHERE doc_id=? ORDER BY id LIMIT 1", (r["id"],)).fetchone()
-            folder = h.get("remarkable_folder", "").strip("/")
-            out.append(Hit(ref=f"src:{r['id']}", kind="note", at=r["source_date"] or "",
-                           title=f"{r['title']} (tablet: {folder})" if folder else r["title"],
-                           text=(first[0] if first else "")[:800], thing=thing,
-                           meta={"category": "note", "unit": "notebook"}))
-            if len(out) >= limit:
-                break
-        return out
-    finally:
-        conn.close()
-
-
-def library_candidates(query: str, *, kind=None, area=None, since=None, until=None, thing=None) -> list[Hit]:
-    """Sources and his notes from the library (locus.db), as hits with `src:` pointers."""
-    from locus.agent.state import owner_authored_sql
-    from locus.config import load
-    from locus.db.connection import get_connection
-    from locus.retrieve.search import Facets
-    from locus.retrieve.search import search as lib_search
-
-    facets = Facets(since=since, until=until, category=AREA_CATEGORY.get(area) if area else None)
-    conn = get_connection(load().paths.db)
-    try:
-        cands = [c for c in lib_search(conn, query, facets if facets.active() else None)
-                 if c.kind in ("chunk", "proposition", "section")]
-        if not cands:
-            return []
-        clause, params = owner_authored_sql("d")
-        doc_ids = sorted({c.doc_id for c in cands})
-        docs = {r["id"]: r for r in conn.execute(
-            f"SELECT d.id, d.title, d.source_uri, d.source_date, d.category, d.ingested_at, ({clause}) AS his FROM documents d "
-            f"WHERE d.id IN ({','.join('?' * len(doc_ids))})", [*params, *doc_ids])}
-        sec_ids = sorted({c.section_id for c in cands if c.section_id})
-        secs = {r["id"]: r["position"] for r in conn.execute(
-            f"SELECT id, position FROM sections WHERE id IN ({','.join('?' * len(sec_ids))})", sec_ids)} if sec_ids else {}
-    finally:
-        conn.close()
-    out = []
-    for c in cands:
-        d = docs.get(c.doc_id)
-        if not d:
-            continue
-        k = "note" if d["his"] else "source"
-        if kind and kind != k:
-            continue
-        about = doc_thing(d["title"] or "", d["source_uri"] or "")
-        if thing and about != thing:
-            continue
-        folder = note_header(d["source_uri"] or "").get("remarkable_folder")
-        pos = secs.get(c.section_id)
-        ref = f"src:{c.doc_id}" + (f"#s{pos}" if pos is not None else "")
-        out.append(Hit(ref=ref, kind=k, at=d["source_date"] or (d["ingested_at"] or "")[:10],
-                       title=(d["title"] or f"document {c.doc_id}") + (f" (tablet: {folder.strip('/')})" if folder else ""),
-                       text=c.text, thing=about,
-                       meta={"category": d["category"], "unit": c.kind}))
-    return out
+def notes_for_thing(conn: sqlite3.Connection, thing: str, limit: int = 8) -> list[Hit]:
+    """His notes about `thing` (a notebook's header names it), one hit per note: for a query that
+    names an item whose notes may never say its name ("Jump feedback notes" reached the
+    "Feedback" notebook only at call 10, H1 re-run). From heuris's own items since P7."""
+    rows = conn.execute(
+        "SELECT ref, at, title, text, meta FROM items WHERE source='library' AND kind='note' AND thing=? "
+        "AND json_extract(meta,'$.lead')=1 ORDER BY at_ts DESC LIMIT ?", (thing, limit)).fetchall()
+    return [Hit(ref=r[0], kind="note", at=r[1], title=r[2], text=(r[3] or "")[:800], thing=thing,
+                meta=json.loads(r[4] or "{}")) for r in rows]
 
 
 def _rerank(query: str, hits: list[Hit]) -> list[Hit]:
@@ -388,7 +324,7 @@ def _describe(h: Hit, env: Envelope, i: int) -> str:
 
 def search(conn: sqlite3.Connection, query: str, *, kind: str | None = None, area: str | None = None,
            thing: str | None = None, person: str | None = None, since: str | None = None,
-           until: str | None = None, limit: int = 12, embed=None, library: bool = True) -> str:
+           until: str | None = None, limit: int = 12, embed=None) -> str:
     if kind and kind not in KINDS:
         return f"Unknown kind {kind!r}; one of {', '.join(KINDS)}."
     if thing and thing not in registry.entries():
@@ -405,35 +341,23 @@ def search(conn: sqlite3.Connection, query: str, *, kind: str | None = None, are
     if embed is None:
         from locus.ingest.embed import embed_texts as embed
     qvec = embed([QUERY_PREFIX + query])[0]
-    hits: list[Hit] = []
-    if kind not in LIBRARY_KINDS:
-        hits += heuris_candidates(conn, query, qvec, kind=kind, area=area, thing=thing, since=since,
-                                  until=until, people_ids=people_ids)
-    # The library has no thing, person or most areas: a filter it cannot apply excludes it, rather
-    # than letting unfiltered papers into a filtered answer (area=Family returned papers, 10 Nov).
-    # A thing filter keeps the library documents that name that item (H1 fix 3).
-    lib_ok = not person and (area is None or area in AREA_CATEGORY)
-    if library and (kind is None or kind in LIBRARY_KINDS) and lib_ok:
-        try:
-            hits += library_candidates(query, kind=kind, area=area, since=since, until=until, thing=thing)
-            # A query that names an item ("Jump feedback notes") also offers that item's own
-            # notebook notes, whose text may never say the name (H1 re-run: Y9 reached the
-            # "Feedback" notebook only at call 10).
-            named = thing or doc_thing(query, "")
-            if named and kind in (None, "note"):
-                hits += notes_for_thing(named)
-        except Exception as exc:  # the library being down must not take mail search with it
-            hits.append(Hit(ref="", kind="error", at="", title="library unavailable", text=str(exc)))
+    # One index since P7: library sections are heuris items, filtered in the KNN like the rest.
+    hits = heuris_candidates(conn, query, qvec, kind=kind, area=area, thing=thing, since=since,
+                             until=until, people_ids=people_ids)
+    # A query that names an item ("Jump feedback notes") also offers that item's own notebook
+    # notes, whose text may never say the name (H1 re-run: Y9).
+    named = thing or doc_thing(query, "")
+    if named and kind in (None, "note") and not person:
+        hits += notes_for_thing(conn, named)
     if not hits:
         return "Nothing found" + (" with those filters." if any([kind, area, thing, person, since, until]) else ".")
     best: dict[str, Hit] = {}
-    for h in _rerank(query, [h for h in hits if h.kind != "error"]):
+    for h in _rerank(query, hits):
         best.setdefault(h.ref, h)
     top = list(best.values())[:limit]
     env = Envelope()
     body = "\n\n".join(_describe(h, env, i) for i, h in enumerate(top, 1))
-    note = "".join(f"\n\n(note: {h.title}: {h.text})" for h in hits if h.kind == "error")
-    return env.preamble() + body + note
+    return env.preamble() + body
 
 
 # ---------------------------------------------------------------------------------------------
@@ -634,6 +558,8 @@ def timeline(conn: sqlite3.Connection, about: str, *, since: str | None = None, 
                     f"{', '.join(sorted(registry.entries()))}.")
         where, params = _filters(kind, None, None, since, until, ids)
         label = about
+    # A library document is one line, not one per section (P7): its lead section stands for it.
+    where += " AND (i.source != 'library' OR json_extract(i.meta,'$.lead') = 1)"
     n = conn.execute(f"SELECT COUNT(*) FROM items i WHERE {where}", params).fetchone()[0]
     rows = conn.execute(f"SELECT i.ref, i.kind, i.at, i.title, i.meta FROM items i WHERE {where} "
                         f"ORDER BY i.at_ts DESC LIMIT ?", [*params, limit]).fetchall()[::-1]
@@ -649,6 +575,8 @@ def timeline(conn: sqlite3.Connection, about: str, *, since: str | None = None, 
             title = env.wrap(title)
         elif k == "chat":
             extra = " (you)" if m.get("role") == "you" else " (Claude)"
+        if m.get("unit") == "section" and m.get("doc"):
+            ref, title = f"src:{m['doc']}", m.get("doc_title") or title
         out.append(f"{at[:10]}  {k:6} {_short(title, 110)}{extra}  [{ref}]")
     return env.preamble() + "\n".join(out)
 

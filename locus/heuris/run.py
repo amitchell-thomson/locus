@@ -26,12 +26,14 @@ from pathlib import Path
 from locus.heuris import db as hdb
 from locus.heuris.index import Stats, index, record_run
 
-SOURCES = ("mail", "calendar", "chats", "repos", "files", "facts", "records")
+SOURCES = ("mail", "calendar", "chats", "repos", "files", "facts", "records", "library")
 # How old a source's last good run may be before status calls it stale.
 STALE = {"mail": timedelta(hours=1), "calendar": timedelta(hours=1), "chats": timedelta(hours=2),
          "repos": timedelta(hours=2), "files": timedelta(hours=2),
          # H2: the ledger and the records, indexed so search and timeline find them.
-         "facts": timedelta(hours=1), "records": timedelta(hours=2)}
+         "facts": timedelta(hours=1), "records": timedelta(hours=2),
+         # P7: the library's sections, so one search ranks lectures with everything else.
+         "library": timedelta(hours=2)}
 
 
 def locus_dir() -> Path:
@@ -56,6 +58,26 @@ def _full_scan(conn: sqlite3.Connection, source: str, items, embed=None) -> Stat
     if not items and have:
         raise RuntimeError(f"read nothing while the index holds {have} items; not pruning")
     return index(conn, source, items, embed=embed, prune=True)
+
+
+def _library(conn: sqlite3.Connection, embed=None) -> tuple[Stats | None, str | None]:
+    """The library's sections (P7), read only while no ingest holds the lock: the library is
+    mid-write then, and two Ollama users at once make spurious quarantines (invariant 6). A held
+    lock skips this tick, said in the note; the last good run stands."""
+    from locus.config import load
+    from locus.db.connection import get_connection
+    from locus.heuris.sources import library
+    from locus.ingest_lock import IngestLockHeld, ingest_lock
+
+    try:
+        with ingest_lock():
+            lib = get_connection(load().paths.db)
+            try:
+                return _full_scan(conn, "library", library.items(lib), embed), ""
+            finally:
+                lib.close()
+    except IngestLockHeld:
+        return None, "skipped: an ingest was running"
 
 
 def run_source(conn: sqlite3.Connection, name: str, *, embed=None) -> Outcome:
@@ -93,6 +115,8 @@ def run_source(conn: sqlite3.Connection, name: str, *, embed=None) -> Outcome:
             from locus.heuris import records
 
             st = index(conn, name, records.items(), embed=embed, prune=True)
+        elif name == "library":
+            st, note = _library(conn, embed)
         elif name == "chats":
             from locus.heuris.sources import chats
 
@@ -104,7 +128,7 @@ def run_source(conn: sqlite3.Connection, name: str, *, embed=None) -> Outcome:
             raise ValueError(f"unknown source {name!r}; one of {', '.join(SOURCES)}")
     except Exception as exc:  # one source failing never stops the rest; it is recorded
         err = f"{type(exc).__name__}: {exc}"[:300]
-    record_run(conn, name, st, err, note)
+    record_run(conn, name, st, err, note, ok=not (name == "library" and st is None and not err))
     return Outcome(name, st, err, time.monotonic() - t0)
 
 

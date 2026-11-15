@@ -99,3 +99,24 @@ def test_one_source_failing_does_not_stop_the_others(tmp_path, monkeypatch):
     test_repo_docs_and_commits(tmp_path / "in" / "repos")
     out = hrun.run(["calendar", "repos"], conn=conn, embed=fake_embed)
     assert "kairosd down" in out[0].error and out[1].error is None and out[1].stats.added == 2
+
+
+def test_the_library_waits_while_an_ingest_holds_the_lock(tmp_path, monkeypatch):
+    """P7: never read the library mid-write, nor embed beside an ingest (invariant 6). A skipped
+    tick is neither an error nor a new last good run."""
+    import contextlib
+
+    from locus import ingest_lock
+
+    @contextlib.contextmanager
+    def held():
+        raise ingest_lock.IngestLockHeld("watch is ingesting")
+        yield
+
+    monkeypatch.setattr(ingest_lock, "ingest_lock", held)
+    conn = hdb.connect(tmp_path / "h.db")
+    o = hrun.run_source(conn, "library", embed=fake_embed)
+    assert o.error is None and o.stats is None
+    row = next(r for r in hrun.status(conn) if r["source"] == "library")
+    assert row["last_ok"] is None and row["state"] == "stale"
+    assert conn.execute("SELECT note FROM sources WHERE name='library'").fetchone()[0].startswith("skipped")

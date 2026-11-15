@@ -56,7 +56,7 @@ def conn(tmp_path, monkeypatch):
 
 
 def S(conn, q, **kw):
-    return ht.search(conn, q, embed=fake_embed, library=False, **kw)
+    return ht.search(conn, q, embed=fake_embed, **kw)
 
 
 def test_two_sams_are_named_and_asked_about_never_merged(conn):  # test question 46
@@ -111,16 +111,58 @@ def test_context_lists_the_week_and_what_needs_a_reply(conn):
     assert "quast paper plan" in nxt.split("\n\n")[0]
 
 
-def test_a_filter_the_library_cannot_apply_keeps_the_library_out(conn, monkeypatch):
-    called = []
-    monkeypatch.setattr(ht, "library_candidates", lambda *a, **k: called.append(k) or [])
-    ht.search(conn, "christmas", area="Family", embed=fake_embed)
-    assert called == []
-    # A thing filter the library CAN apply since H1 fix 3: it keeps documents naming the item.
-    ht.search(conn, "barrier", thing="quast", embed=fake_embed)
-    assert called and called[-1]["thing"] == "quast"
-    ht.search(conn, "lecture", area="Studies", embed=fake_embed)
-    assert called[-1]["area"] == "Studies"
+def _library(tmp_path):
+    """A small locus.db: a B14 lecture in two sections, a paper about nothing in the registry,
+    and one of his notebook notes for B14."""
+    import sqlite3
+
+    lib = sqlite3.connect(tmp_path / "locus.db")
+    lib.executescript("""
+        CREATE TABLE documents (id INTEGER PRIMARY KEY, title TEXT, source_uri TEXT, source_date TEXT,
+                                ingested_at TEXT, category TEXT);
+        CREATE TABLE sections (id INTEGER PRIMARY KEY, doc_id INTEGER, position INTEGER, title TEXT);
+        CREATE TABLE chunks (id INTEGER PRIMARY KEY, section_id INTEGER, doc_id INTEGER, position INTEGER,
+                             raw_text TEXT);
+        INSERT INTO documents VALUES (1, 'B14 Lecture 3', '/s/data/incoming/Studies/b14-l3.pdf', '2026-11-02',
+                                      '2026-11-03T10:00:00', 'coursework');
+        INSERT INTO documents VALUES (2, 'Attention is all you need', '/s/data/raw/p.pdf', NULL,
+                                      '2026-10-01T10:00:00', 'paper');
+        INSERT INTO documents VALUES (3, 'B14 sheet thoughts', '/s/data/notes/b14.md', '2026-11-05', NULL, 'note');
+        INSERT INTO sections VALUES (10, 1, 0, 'The Fourier transform'), (11, 1, 1, 'Sampling'),
+                                    (20, 2, 0, 'Abstract'), (30, 3, 0, NULL), (31, 3, 1, 'empty');
+        INSERT INTO chunks VALUES (1, 10, 1, 0, 'The Fourier transform of a rectangle is a sinc.'),
+                                  (2, 11, 1, 0, 'Sampling below Nyquist aliases.'),
+                                  (3, 20, 2, 0, 'Fourier features and attention.'),
+                                  (4, 30, 3, 0, 'My question on the Fourier sheet: why sinc?'),
+                                  (5, 31, 3, 0, '');
+    """)
+    return lib
+
+
+def test_the_library_is_searched_through_the_one_index(conn, tmp_path):
+    from locus.heuris.sources import library
+
+    lib = _library(tmp_path)
+    got = list(library.items(lib, his_sql=("d.source_uri LIKE ?", ["%/data/notes/%"])))
+    # one item per section with text; his note is a note; the course is its thing
+    assert [(i.ref, i.kind, i.thing, i.area) for i in got] == [
+        ("src:1#s0", "source", "b14", "Studies"), ("src:1#s1", "source", "b14", "Studies"),
+        ("src:2#s0", "source", None, None), ("src:3#s0", "note", "b14", "Studies")]
+    assert got[0].title == "B14 Lecture 3 · The Fourier transform" and got[0].meta.get("lead") == 1
+    assert "lead" not in got[1].meta
+    index(conn, "library", got, embed=fake_embed)
+    # the course filter runs in the KNN: B14's lecture and his note, never the paper
+    out = S(conn, "fourier", thing="b14")
+    assert "src:1#s0" in out and "src:3#s0" in out and "src:2" not in out
+    assert "src:2#s0" in S(conn, "fourier attention", kind="source")
+    # a filter the library cannot meet keeps it out
+    assert "src:" not in S(conn, "fourier", area="Family")
+    assert "src:" not in S(conn, "fourier", person="sam.smith@ox.ac.uk")
+    # a query naming the course offers his notes for it
+    assert "src:3#s0" in S(conn, "b14 sinc")
+    # a timeline shows each document once, by its own pointer
+    tl = ht.timeline(conn, "b14")
+    assert tl.count("[src:1]") == 1 and "src:1#s1" not in tl and "B14 Lecture 3  [src:1]" in tl
 
 
 def test_a_firm_is_its_applications_and_its_mail_not_a_person(conn):

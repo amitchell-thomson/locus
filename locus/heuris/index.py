@@ -179,8 +179,10 @@ def index(conn: sqlite3.Connection, source: str, items: Iterable[Item], *,
 
 
 def record_run(conn: sqlite3.Connection, source: str, st: Stats | None, error: str | None = None,
-               note: str | None = None) -> None:
-    """One row per source: when it last ran, last succeeded, and what it did."""
+               note: str | None = None, ok: bool = True) -> None:
+    """One row per source: when it last ran, last succeeded, and what it did. `ok=False` is a
+    run that skipped its work without failing (the library while an ingest runs): no error, and
+    no new last good run either, so a skip that goes on for hours shows as stale."""
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     total = conn.execute("SELECT COUNT(*) FROM items WHERE source=?", (source,)).fetchone()[0]
     st = st or Stats()
@@ -191,5 +193,5 @@ def record_run(conn: sqlite3.Connection, source: str, st: Stats | None, error: s
             "last_ok=COALESCE(excluded.last_ok, sources.last_ok), items=excluded.items, "
             "added=excluded.added, unchanged=excluded.unchanged, removed=excluded.removed, "
             "error=excluded.error, note=COALESCE(excluded.note, sources.note)",
-            (source, now, None if error else now, total, st.added, st.unchanged, st.removed, error, note),
+            (source, now, None if error or not ok else now, total, st.added, st.unchanged, st.removed, error, note),
         )

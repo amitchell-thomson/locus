@@ -129,10 +129,17 @@ pub async fn with_engine_as<T: Send + 'static>(
     f: impl FnOnce(&mut Engine) -> Result<T, EngineError> + Send + 'static,
 ) -> Result<T, HttpError> {
     let d = direct(h);
+    let review = h
+        .get("x-kairos-review")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty());
     with_engine(st, move |e| {
         e.direct = d;
+        e.review = review;
         let r = f(e);
         e.direct = false;
+        e.review = None;
         r
     })
     .await

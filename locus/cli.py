@@ -1255,6 +1255,9 @@ def cmd_canvas(args) -> None:
     if args.canvas_cmd == "tablet":
         _canvas_tablet(args)
         return
+    if args.canvas_cmd == "deadlines":
+        _canvas_deadlines(args)
+        return
     cs = canvas.fetch_courses()
     if args.json:
         print(_json.dumps([dataclasses.asdict(c) for c in cs]))
@@ -1314,6 +1317,23 @@ def _canvas_pull_locked(args, canvas, canvas_pull, registry) -> None:
     print(f"library: {len(q.queued)} queued, {q.in_library} already in it, {q.waiting} waiting to be ingested")
     if rep.errors:
         raise SystemExit(1)
+
+
+def _canvas_deadlines(args) -> None:
+    """P6, on the server: Canvas deadlines as kairos tasks waiting in Approve."""
+    from locus import canvas, canvas_deadlines as cd
+    from locus.heuris import registry
+
+    p = cd.run(canvas.Client(), registry.entries(), dry_run=args.dry_run)
+    if args.dry_run:
+        for pr in p.propose:
+            print(f"would propose  {pr.course}: {pr.title}, due {pr.due}")
+    for label, xs in (("submitted", p.submitted), ("already in kairos", p.in_kairos),
+                      ("not his project", p.not_his), ("no due date", p.no_date)):
+        for x in xs:
+            print(f"not proposed ({label}): {x}")
+    print(f"deadlines: {len(p.propose)} {'to propose' if args.dry_run else 'proposed'}, "
+          f"{p.proposed_before} proposed before, {len(p.past)} past")
 
 
 def _canvas_tablet(args) -> None:
@@ -1480,6 +1500,8 @@ def main(argv=None) -> None:
     cvt = cvs.add_parser("tablet", help="this year's documents to the tablet, never a duplicate (P4, the server)")
     cvt.add_argument("--dry-run", action="store_true")
     cvt.add_argument("--pause", type=float, default=10.0, help="seconds between sends (the cloud rate-limits)")
+    cvd = cvs.add_parser("deadlines", help="Canvas deadlines as kairos tasks waiting in Approve (P6, the server)")
+    cvd.add_argument("--dry-run", action="store_true")
     cvy = cvs.add_parser("syllabus", help="a year's syllabus PDF as syllabus.md per submodule (P8)")
     cvy.add_argument("pdf")
     cvy.add_argument("--edition", required=True, help='e.g. "1st Year Syllabus 2024-25"')

@@ -14,6 +14,8 @@ Environment=PATH=/home/alec/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:
 ExecStart=/home/alec/.local/bin/uv run locus canvas pull
 # P4: then anything new to the tablet, only bytes and names not already there, never solutions.
 ExecStart=/home/alec/.local/bin/uv run locus canvas tablet
+# P6: deadlines still ahead, not handed in, as kairos tasks waiting in Approve; each once.
+ExecStart=/home/alec/.local/bin/uv run locus canvas deadlines
 TimeoutStartSec=3600
 Nice=10
 IOSchedulingClass=idle

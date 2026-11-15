@@ -119,6 +119,7 @@ async fn main() -> Result<()> {
         db,
         clock: Arc::new(chrono::Utc::now),
         direct: false,
+        review: None,
         replan_soon: true,
         replan_hold: None,
         // The locus registry (spec K7): kairos's projects are its repos.

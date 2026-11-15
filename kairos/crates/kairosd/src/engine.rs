@@ -133,6 +133,11 @@ pub struct Engine {
     /// The current request comes from Alec at a keyboard (set per request by
     /// the HTTP layer; never by MCP). His own edits then skip approval.
     pub direct: bool,
+    /// The current request asks to wait for Alec whatever its risk (`x-kairos-review`, set per
+    /// request by the HTTP layer), with why: a proposal from a feed, such as a Canvas deadline
+    /// (spec P6). It can only RAISE a change to approval, never lower one, so the rule that risk
+    /// is computed and never supplied still holds for the direction that matters.
+    pub review: Option<String>,
     /// An event changed under the plan: replan as soon as the current
     /// request is done (see [`Engine::replan_if_needed`]).
     pub replan_soon: bool,
@@ -640,10 +645,14 @@ impl Engine {
         } else {
             risk::assess(&facts, now)
         };
-        let (risk, reasons) = match assessed {
+        let (mut risk, mut reasons) = match assessed {
             Assessment::Forbidden { reasons } => return Err(EngineError::Forbidden(reasons)),
             Assessment::Allowed { risk, reasons } => (risk, reasons),
         };
+        if let Some(why) = self.review.as_deref().map(str::trim).filter(|w| !w.is_empty()) {
+            risk = Risk::High;
+            reasons.push(format!("proposed for your approval: {why}"));
+        }
         self.live_guard(&ops)?;
         let mut cs = Changeset {
             id: changeset::new_id(),

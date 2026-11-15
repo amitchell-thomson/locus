@@ -483,6 +483,27 @@ fn b4(estimate: u32, due: &str) -> CreateTaskReq {
     }
 }
 
+/// A deadline from Canvas (spec P6) is a task that waits in Approve, though a task alone would be
+/// low risk: `review` (the `x-kairos-review` header) only ever raises. Nothing is planned until
+/// he approves it; refused, it never exists.
+#[test]
+fn a_task_proposed_for_review_waits_for_approval() {
+    let env = Env::new(true);
+    let mut e = env.engine();
+    e.review = Some("Canvas deadline, B1".into());
+    let r = e.create_task(Author::Claude, &b4(300, "fri 17:00")).unwrap();
+    e.review = None;
+    let cs = &r.changesets[0];
+    assert_eq!((cs.status, cs.risk), (Status::Pending, Risk::High));
+    assert!(r.plan.is_none());
+    assert!(e.db.tasks(None).unwrap().is_empty());
+    e.approve(&cs.changeset_id).unwrap();
+    assert_eq!(e.db.tasks(None).unwrap().len(), 1);
+    // and without it, the same task applies at once
+    let r = e.create_task(Author::Claude, &b4(300, "fri 17:00")).unwrap();
+    assert_eq!(r.changesets[0].status, Status::Applied);
+}
+
 #[test]
 fn b4_sheet_due_friday_gets_a_due_date_and_blocks() {
     let env = Env::new(true);

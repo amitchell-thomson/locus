@@ -153,6 +153,7 @@ overlay = "imported"
             clock: Arc::new(move || *now.lock().unwrap()),
             syncer: Box::new(self.rec.clone()),
             direct: false,
+            review: None,
             replan_soon: false,
             replan_hold: None,
             registry: None,

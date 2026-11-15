@@ -1139,12 +1139,44 @@ def cmd_files(args) -> None:
                 print(f"question           {fs.describe(q)}")
         if not (p.to_laptop or p.to_tablet or p.questions or p.renames):
             print("in step: the laptop and the tablet have the same folders")
+        # P5: then the PDFs in them, both ways (locus/files_content.py).
+        try:
+            _files_content(args, p)
+        except Exception as e:  # folders are in step either way; the PDFs try again next tick
+            print(f"PDFs between the tablet and ~/files failed: {e}")
+    elif args.files_cmd == "settle":
+        from locus import files_content as fc
+
+        st = fc.load_state()
+        done = fc.settle(args.paths, st)
+        fc.save_state(st)
+        print("\n".join(f"settled  {d}" for d in done) or "no question names that path")
+    elif args.files_cmd == "tablet-docs":
+        from locus import files_content as fc
+
+        print(_json.dumps(fc.tablet_docs()))
+    elif args.files_cmd == "tablet-stage":
+        from locus import files_content as fc
+
+        print(_json.dumps(fc.stage(args.uuids)))
+    elif args.files_cmd == "tablet-push":
+        import sys as _sys
+
+        from locus import files_content as fc
+
+        items = _json.loads(_sys.stdin.read() or "[]")
+        print(_json.dumps(fc.push(items, pause=args.pace)))
     elif args.files_cmd == "questions":
+        from locus import files_content as fc
+
         qs = fs.questions()
         for q in qs:
             print(fs.describe(q))
-        if not qs:
-            print("no folder questions")
+        cq = fc.load_state().get("questions", [])
+        for q in cq:
+            print(fc.describe(q))
+        if not (qs or cq):
+            print("no questions")
     elif args.files_cmd == "tablet":
         run, cache = runner()
         print(_json.dumps(sorted(fs.tablet_now(run, tree_cache=cache))))
@@ -1174,6 +1206,27 @@ def cmd_files(args) -> None:
         if not renames:
             print("every tablet folder already has a folder name" if args.deep
                   else "every registered tablet folder already has its folder name")
+
+
+def _files_content(args, folder_plan) -> None:
+    """P5, on the laptop: PDFs between the tablet and ~/files (locus/files_content.py)."""
+    from locus import canvas_files, files_content as fc, files_sync as fs
+
+    root = fs.FILES_ROOT.expanduser()
+    blocked = {q["path"] for q in folder_plan.questions} | {o for o, _ in folder_plan.renames}
+    p = fc.sync(root, laptop_dirs=fs.laptop_folders(root), blocked=blocked, laptop_only=fs.laptop_only(),
+                manifest=canvas_files.fetch_manifest(), dry_run=args.dry_run)
+    if args.dry_run:
+        for d in p.down:
+            print(f"would copy from the tablet  {d.tablet} -> ~/files/{d.dest}")
+        for u in p.up:
+            print(f"would send to the tablet    ~/files/{u.rel} -> {u.folder}/{u.title}")
+    for q in p.questions:
+        print(f"question           {fc.describe(q)}")
+    print(f"PDFs: {len(p.down)} from the tablet, {len(p.up)} to it; {len(p.other_version)} with an earlier "
+          f"version by name on the other side, {len(p.solutions)} solutions kept off, "
+          f"{len(p.waiting_folder)} waiting on a folder question"
+          + (f", {p.held_over} more next run" if p.held_over else ""))
 
 
 def cmd_canvas(args) -> None:
@@ -1392,7 +1445,14 @@ def main(argv=None) -> None:
     fsub = pfs.add_subparsers(dest="files_cmd", required=True)
     fss = fsub.add_parser("sync", help="laptop: compare both trees, make what is missing, list questions")
     fss.add_argument("--dry-run", action="store_true", help="make nothing; print what would be made")
-    fsub.add_parser("questions", help="laptop: the folder questions from the last sync")
+    fsub.add_parser("questions", help="laptop: the folder and file questions from the last sync")
+    fst = fsub.add_parser("settle", help="laptop: keep a file deleted on one side on the other only; stop asking")
+    fst.add_argument("paths", nargs="+")
+    fsub.add_parser("tablet-docs", help="server: every tablet document as JSON (one rmapi call)")
+    fsg = fsub.add_parser("tablet-stage", help="server: stage tablet PDFs' clean bytes for the laptop")
+    fsg.add_argument("uuids", nargs="+")
+    fsp = fsub.add_parser("tablet-push", help="server: send staged PDFs (JSON items on stdin)")
+    fsp.add_argument("--pace", type=float, default=10.0, help="seconds between sends (429s)")
     fsub.add_parser("tablet", help="server: the tablet's folders as JSON (one rmapi call)")
     fsm = fsub.add_parser("tablet-mkdir", help="server: make tablet folders (Area/... paths)")
     fsm.add_argument("paths", nargs="+")

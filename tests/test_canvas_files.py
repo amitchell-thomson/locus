@@ -114,3 +114,14 @@ def test_a_module_he_is_not_taking_goes_nowhere(tmp_path):
 def test_the_skip_list_names_real_folders():
     for rid, folders in canvas_files.skipped_modules().items():
         assert all(f == f.lower() and " " not in f for f in folders), rid
+
+
+def test_a_file_he_already_has_under_his_own_name_is_not_copied_beside_it(tmp_path):
+    root = mirror(tmp_path, {"b18-bio/cellular-physiology/b18-lecture-1.pdf": ("b18", b"L1")})
+    man = json.loads((root / "manifest.json").read_text())
+    man["files"]["0"]["size"] = 2
+    studies = tmp_path / "Studies"
+    (studies / "b18-bio/elsewhere").mkdir(parents=True)
+    (studies / "b18-bio/elsewhere/Lecture 1 (mine).pdf").write_bytes(b"L1")
+    p = canvas_files.plan_files(man, COURSES, {}, studies, skip={})
+    assert not p.copies and p.same == 1

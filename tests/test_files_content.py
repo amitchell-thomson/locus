@@ -43,14 +43,14 @@ def test_new_laptop_pdfs_go_up_and_reports_figures_solutions_and_past_years_do_n
 
 
 def test_the_walk_skips_report_figures_and_repos(tmp_path):
-    for rel in ("Studies/b1/report/r.pdf", "Studies/b1/figures/f.pdf", "Projects/repo/x.pdf",
-                "Studies/b1/notes.pdf"):
+    for rel in ("Studies/b1/report/r.pdf", "Studies/b1/figures/f.pdf", "Projects/repo/sub/x.pdf",
+                "Projects/repo/top.pdf", "Studies/b1/notes.pdf"):
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / rel).write_bytes(rel.encode())
     (tmp_path / "Projects/repo/.git").mkdir()
     cache: dict = {}
     got = fc.laptop_pdfs(tmp_path, cache)
-    assert list(got) == ["Studies/b1/notes.pdf"]
+    assert sorted(got) == ["Projects/repo/top.pdf", "Studies/b1/notes.pdf"]
     assert got["Studies/b1/notes.pdf"] == hashlib.sha256(b"Studies/b1/notes.pdf").hexdigest()
     assert fc.laptop_pdfs(tmp_path, cache) == got        # cached: same answer
 

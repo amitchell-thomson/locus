@@ -168,11 +168,39 @@ def _beside(dest: Path, sha: str) -> Path | None:
         n += 1
 
 
+class _CourseFiles:
+    """Every file already under a course folder on the laptop, by size, hashed only when a
+    Canvas file of that size asks: his own copy under his own name (`Lecture 1_Technology
+    Strategy KSC 2026.pdf`, `matlab_reference/B1_L2_overfitting.m`) is the same file, and a
+    second copy beside it is a duplicate (14 Nov: P3 made 20 such before this check)."""
+
+    def __init__(self, studies: Path):
+        self.studies = studies
+        self.by_size: dict[str, dict[int, list[Path]]] = {}
+
+    def has(self, course_folder: str, size: int, sha: str) -> bool:
+        if course_folder not in self.by_size:
+            idx: dict[int, list[Path]] = {}
+            base = self.studies / course_folder
+            if base.is_dir():
+                for dirpath, dirnames, filenames in os.walk(base):
+                    dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+                    for fn in filenames:
+                        f = Path(dirpath) / fn
+                        try:
+                            idx.setdefault(f.stat().st_size, []).append(f)
+                        except OSError:
+                            pass
+            self.by_size[course_folder] = idx
+        return any(_sha(f) == sha for f in self.by_size[course_folder].get(size, []))
+
+
 def plan_files(manifest: dict, courses: dict[str, dict], state: dict[str, str], studies: Path,
                skip: dict[str, set[str]] | None = None) -> FilesPlan:
     live = active_folders(courses)
     skip = skipped_modules() if skip is None else skip
     p = FilesPlan()
+    have = _CourseFiles(studies)
     for e in manifest["files"].values():
         if e["course"] not in live or e["status"] != "ok" or _skipped(e, skip):
             continue
@@ -182,6 +210,8 @@ def plan_files(manifest: dict, courses: dict[str, dict], state: dict[str, str], 
         if not dest.exists():
             if delivered:
                 p.gone.append(rel)              # he deleted it: not brought back
+            elif have.has(rel.split("/", 1)[0], int(e.get("size") or -1), sha):
+                p.same += 1                     # his own copy, under his own name
             else:
                 p.copies.append(Copy(rel, dest, "new"))
             continue

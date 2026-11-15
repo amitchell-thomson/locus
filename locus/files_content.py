@@ -79,8 +79,9 @@ def laptop_pdfs(root: Path, cache: dict[str, list]) -> dict[str, str]:
         for dirpath, dirnames, filenames in os.walk(base):
             here = Path(dirpath)
             if here != base and any((here / m).exists() for m in _OPAQUE_MARKERS):
+                # A repository's own level is a folder the tablet has (B18's cellular-physiology
+                # is his code for it, with the lectures beside it); its insides are not.
                 dirnames[:] = []
-                continue
             dirnames[:] = sorted(d for d in dirnames
                                  if not d.startswith(".") and d not in _SKIP and d not in NOT_SENT_DIRS)
             for fn in filenames:
@@ -311,7 +312,7 @@ def sync(root: Path, *, laptop_dirs: set[str], blocked: set[str], laptop_only: s
         with tempfile.TemporaryDirectory() as td:
             for u in p.up:
                 os.symlink(root / u.rel, Path(td) / f"{u.sha}.pdf")
-            subprocess.run(["rsync", "-tL", f"{td}/", _remote("up")], check=True, timeout=3600)
+            subprocess.run(["rsync", "-rtL", f"{td}/", _remote("up")], check=True, timeout=3600)
         items = [{"sha": u.sha, "folder": u.folder, "title": u.title} for u in p.up]
         got = _ssh_json(["tablet-push"], stdin=json.dumps(items), timeout=3600)
         for u in p.up:

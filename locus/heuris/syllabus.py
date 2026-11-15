@@ -52,7 +52,8 @@ CREATE TABLE IF NOT EXISTS syllabus (
     file_hash TEXT NOT NULL,
     status    TEXT NOT NULL,          -- current | old
     extracted TEXT NOT NULL,
-    linked    TEXT                    -- the course library's state when last linked
+    linked    TEXT,                   -- the course library's state when last linked
+    best      REAL                    -- its best link score, kept or not: the floor's evidence
 );
 CREATE INDEX IF NOT EXISTS syllabus_mod ON syllabus(course, module, status);
 CREATE TABLE IF NOT EXISTS syllabus_links (
@@ -234,11 +235,18 @@ class Report:
     scores: list[float] = field(default_factory=list)   # every topic's best score, for the floor
 
 
+def ensure(conn: sqlite3.Connection) -> None:
+    conn.executescript(SCHEMA)
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(syllabus)")}
+    if "best" not in cols:      # the table as first deployed, 15 Nov
+        conn.execute("ALTER TABLE syllabus ADD COLUMN best REAL")
+
+
 def extract_changed(conn: sqlite3.Connection, sylls: list[Syllabus], *, extract: Extract = _extract,
                     gate_conn=None, rep: Report | None = None) -> Report:
     """Read topics from each syllabus whose text changed since it was last read."""
     rep = rep or Report()
-    conn.executescript(SCHEMA)
+    ensure(conn)
     for s in sylls:
         rep.read += 1
         have = conn.execute("SELECT file_hash FROM syllabus WHERE course=? AND module=? AND status='current' "
@@ -288,7 +296,7 @@ def link(conn: sqlite3.Connection, *, embed=None, score: Score = _score, everyth
     rep = rep or Report()
     if embed is None:
         from locus.ingest.embed import embed_texts as embed
-    conn.executescript(SCHEMA)
+    ensure(conn)
     rows = conn.execute("SELECT id, course, topic, quote, linked FROM syllabus WHERE status='current' "
                         "ORDER BY course, module, ord").fetchall()
     changed: dict[str, str] = {}
@@ -317,7 +325,8 @@ def link(conn: sqlite3.Connection, *, embed=None, score: Score = _score, everyth
             conn.execute("DELETE FROM syllabus_links WHERE topic_id=?", (tid,))
             conn.executemany("INSERT OR REPLACE INTO syllabus_links(topic_id, ref, doc, title, score) VALUES (?,?,?,?,?)",
                              [(tid, h.ref, h.meta.get("doc"), h.title, float(sc)) for sc, h in keep])
-            conn.execute("UPDATE syllabus SET linked=? WHERE id=?", (changed[course], tid))
+            conn.execute("UPDATE syllabus SET linked=?, best=? WHERE id=?",
+                         (changed[course], top[0][0] if top else None, tid))
         rep.linked += 1
         rep.covered += bool(keep)
     return rep
@@ -352,8 +361,8 @@ def propose_education(conn: sqlite3.Connection, sylls: list[Syllabus], rep: Repo
 # ── reading it back ────────────────────────────────────────────────────────────────────────────
 
 def render(conn: sqlite3.Connection, course: str, module: str | None = None) -> str:
-    conn.executescript(SCHEMA)
-    q = "SELECT id, module, ord, topic, quote FROM syllabus WHERE status='current' AND course=?"
+    ensure(conn)
+    q = "SELECT id, module, ord, topic, quote, linked FROM syllabus WHERE status='current' AND course=?"
     args: list = [course]
     if module:
         q += " AND module=?"
@@ -362,29 +371,60 @@ def render(conn: sqlite3.Connection, course: str, module: str | None = None) -> 
     if not rows:
         return f"No syllabus topics for {course}{'/' + module if module else ''}."
     out, cur = [], None
-    for tid, mod, _, topic, quote in rows:
+    for tid, mod, _, topic, quote, linked in rows:
         if mod != cur:
             cur = mod
             out.append(f"\n{course} · {mod}  [syllabus:{course}/{mod}]")
         links = conn.execute("SELECT ref, title, score FROM syllabus_links WHERE topic_id=? ORDER BY score DESC",
                              (tid,)).fetchall()
-        out.append(f"  {'·' if links else '✗'} {topic}" + ("" if links else "   UNCOVERED"))
-        out.append(f"      \"{quote}\"")
+        mark = "·" if links else ("✗" if linked else "?")
+        out.append(f"  {mark} {topic}" + ("" if links else "   UNCOVERED" if linked else "   not linked yet"))
+        out.append(f"      \"{' '.join(quote.split())}\"")
         for ref, title, sc in links:
             out.append(f"      {sc:5.1f}  {title[:90]}  [{ref}]")
     return "\n".join(out).lstrip("\n")
 
 
 def summary(conn: sqlite3.Connection) -> list[dict]:
-    """Per submodule: topics, covered, uncovered."""
-    conn.executescript(SCHEMA)
-    return [{"course": c, "module": m, "topics": n, "covered": k} for c, m, n, k in conn.execute(
-        "SELECT s.course, s.module, COUNT(*), SUM(EXISTS(SELECT 1 FROM syllabus_links l WHERE l.topic_id=s.id)) "
+    """Per submodule: topics, linked so far, covered."""
+    ensure(conn)
+    return [{"course": c, "module": m, "topics": n, "linked": li, "covered": k} for c, m, n, li, k in conn.execute(
+        "SELECT s.course, s.module, COUNT(*), SUM(s.linked IS NOT NULL), "
+        "SUM(EXISTS(SELECT 1 FROM syllabus_links l WHERE l.topic_id=s.id)) "
         "FROM syllabus s WHERE s.status='current' GROUP BY 1, 2 ORDER BY 1, 2")]
 
 
+class Busy(RuntimeError):
+    pass
+
+
+def _lock(path: Path):
+    """One syllabus run at a time: the hourly unit and a long first linking by hand would
+    otherwise both link the same topics. Non-blocking: a second run says so and stops."""
+    import fcntl
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    f = open(path, "w")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        f.close()
+        raise Busy("another syllabus run holds the lock")
+    return f
+
+
 def run(conn: sqlite3.Connection, root: Path, *, extract: Extract = _extract, embed=None, score: Score = _score,
-        relink: bool = False, propose: bool = True, gate_conn=None) -> Report:
+        relink: bool = False, propose: bool = True, gate_conn=None, lock: Path | None = None) -> Report:
+    held = _lock(lock) if lock else None
+    try:
+        return _run(conn, root, extract=extract, embed=embed, score=score, relink=relink, propose=propose,
+                    gate_conn=gate_conn)
+    finally:
+        if held:
+            held.close()
+
+
+def _run(conn, root, *, extract, embed, score, relink, propose, gate_conn) -> Report:
     sylls = read_all(root)
     rep = extract_changed(conn, sylls, extract=extract, gate_conn=gate_conn)
     link(conn, embed=embed, score=score, everything=relink, rep=rep)

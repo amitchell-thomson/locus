@@ -113,3 +113,17 @@ def test_education_is_proposed_once_per_course_never_written(conn, tmp_path):
     assert row[:2] == ("me", "education:b14") and row[3] == "proposed"
     assert "Year 3 (Part B), 2026-27" in row[2] and "Signal Analysis" in row[2]
     assert syl.propose_education(conn, syl.read_all(tmp_path)).proposed == []
+
+
+def test_not_yet_linked_is_not_uncovered_and_one_run_at_a_time(conn, tmp_path):
+    write(tmp_path)
+    syl.extract_changed(conn, syl.read_all(tmp_path), extract=GOOD)
+    assert "not linked yet" in syl.render(conn, "b14") and "UNCOVERED" not in syl.render(conn, "b14")
+    lock = tmp_path / ".syllabus.lock"
+    held = syl._lock(lock)
+    with pytest.raises(syl.Busy):
+        syl.run(conn, tmp_path, extract=GOOD, embed=fake_embed, score=lambda q, t: [], lock=lock)
+    held.close()
+    rep = syl.run(conn, tmp_path, extract=GOOD, embed=fake_embed, score=lambda q, t: [-1.0] * len(t), lock=lock,
+                  propose=False)
+    assert rep.linked == 2 and "UNCOVERED" in syl.render(conn, "b14")

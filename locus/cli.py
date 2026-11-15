@@ -301,14 +301,19 @@ def _heuris_syllabus(conn, args) -> None:
         return
     if args.covered:
         for r in syl.summary(conn):
-            print(f"{r['course']:5} {r['module']:60} {r['covered']:3}/{r['topics']:<3} covered")
+            left = f"  ({r['topics'] - r['linked']} not linked yet)" if r["linked"] < r["topics"] else ""
+            print(f"{r['course']:5} {r['module']:60} {r['covered']:3}/{r['topics']:<3} covered{left}")
         return
     from locus.config import load
     from locus.db.connection import get_connection
 
     gate_conn = get_connection(load().paths.db)
     try:
-        rep = syl.run(conn, hrun.inbox() / "syllabi", relink=args.relink, gate_conn=gate_conn)
+        rep = syl.run(conn, hrun.inbox() / "syllabi", relink=args.relink, gate_conn=gate_conn,
+                      lock=hrun.locus_dir() / "data" / ".syllabus.lock")
+    except syl.Busy as e:
+        print(f"skipped: {e}")
+        return
     finally:
         gate_conn.close()
     print(syl.describe(rep))

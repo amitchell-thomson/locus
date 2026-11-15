@@ -12,5 +12,8 @@ Environment=PATH=/home/alec/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:
 # Collects the batches earlier runs submitted, then submits what changed. Paced by the credit
 # guard (agent/claude.credit_allows): a run over the day's allowance submits nothing and says so.
 ExecStart=/home/alec/.local/bin/uv run locus heuris derive
+# P8: topics from a syllabus whose text changed (a model call each), links for courses whose
+# library changed, and the education facts proposed. Quiet and free when nothing moved.
+ExecStart=/home/alec/.local/bin/uv run locus heuris syllabus
 TimeoutStartSec=1800
 Nice=10

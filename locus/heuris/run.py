@@ -26,14 +26,16 @@ from pathlib import Path
 from locus.heuris import db as hdb
 from locus.heuris.index import Stats, index, record_run
 
-SOURCES = ("mail", "calendar", "chats", "repos", "files", "facts", "records", "library")
+SOURCES = ("mail", "calendar", "chats", "repos", "files", "facts", "records", "library", "syllabi")
 # How old a source's last good run may be before status calls it stale.
 STALE = {"mail": timedelta(hours=1), "calendar": timedelta(hours=1), "chats": timedelta(hours=2),
          "repos": timedelta(hours=2), "files": timedelta(hours=2),
          # H2: the ledger and the records, indexed so search and timeline find them.
          "facts": timedelta(hours=1), "records": timedelta(hours=2),
          # P7: the library's sections, so one search ranks lectures with everything else.
-         "library": timedelta(hours=2)}
+         "library": timedelta(hours=2),
+         # P8: each submodule's syllabus, pushed from ~/files on the laptop.
+         "syllabi": timedelta(hours=2)}
 
 
 def locus_dir() -> Path:
@@ -115,6 +117,10 @@ def run_source(conn: sqlite3.Connection, name: str, *, embed=None) -> Outcome:
             from locus.heuris import records
 
             st = index(conn, name, records.items(), embed=embed, prune=True)
+        elif name == "syllabi":
+            from locus.heuris import syllabus
+
+            st = _full_scan(conn, name, syllabus.items(inbox() / "syllabi"), embed)
         elif name == "library":
             st, note = _library(conn, embed)
         elif name == "chats":

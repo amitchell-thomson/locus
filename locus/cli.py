@@ -271,6 +271,9 @@ def cmd_heuris(args) -> None:
         if args.action == "derive":
             _heuris_derive(conn, args)
             return
+        if args.action == "syllabus":
+            _heuris_syllabus(conn, args)
+            return
         if args.action == "index":
             names = [n for n in args.sources if n != "all"] or None
             for o in hrun.run(names, conn=conn):
@@ -284,6 +287,38 @@ def cmd_heuris(args) -> None:
             sys.exit(1)
     finally:
         conn.close()
+
+
+def _heuris_syllabus(conn, args) -> None:
+    """P8: `locus heuris syllabus` reads topics from changed syllabi, links them to the library and
+    proposes the education facts; `locus heuris syllabus b14 [module]` shows a course's topics with
+    the lectures behind each and the uncovered ones marked; `--covered` counts them."""
+    from locus.heuris import run as hrun
+    from locus.heuris import syllabus as syl
+
+    if args.sources:
+        print(syl.render(conn, args.sources[0], args.sources[1] if len(args.sources) > 1 else None))
+        return
+    if args.covered:
+        for r in syl.summary(conn):
+            print(f"{r['course']:5} {r['module']:60} {r['covered']:3}/{r['topics']:<3} covered")
+        return
+    from locus.config import load
+    from locus.db.connection import get_connection
+
+    gate_conn = get_connection(load().paths.db)
+    try:
+        rep = syl.run(conn, hrun.inbox() / "syllabi", relink=args.relink, gate_conn=gate_conn)
+    finally:
+        gate_conn.close()
+    print(syl.describe(rep))
+    if rep.scores:
+        xs = sorted(rep.scores)
+        q = lambda f: xs[min(len(xs) - 1, int(f * len(xs)))]  # noqa: E731
+        print(f"best link score per topic: min {xs[0]:.2f}  p10 {q(.1):.2f}  p25 {q(.25):.2f}  median {q(.5):.2f}  "
+              f"p75 {q(.75):.2f}  max {xs[-1]:.2f}  (floor {syl.LINK_FLOOR})")
+    if rep.failed:
+        sys.exit(1)
 
 
 def cmd_facts(args) -> None:
@@ -393,11 +428,11 @@ def _heuris_derive(conn, args) -> None:
 
 def cmd_heuris_push(args) -> None:
     """Laptop: mail (kept by the H1.2 rule, scrubbed) with its attachments, project docs and
-    commits, and career files (H1.12), to the server."""
-    from locus.heuris import files_push, mail_push, repos_push
+    commits, career files (H1.12) and the course syllabi (P8), to the server."""
+    from locus.heuris import files_push, mail_push, repos_push, syllabi_push
 
     failed = False
-    for name, mod in (("mail", mail_push), ("repos", repos_push), ("files", files_push)):
+    for name, mod in (("mail", mail_push), ("repos", repos_push), ("files", files_push), ("syllabi", syllabi_push)):
         try:
             r = mod.push(send=not args.dry_run)
             print(f"{name}: {mod.describe(r)}")
@@ -1529,7 +1564,7 @@ def main(argv=None) -> None:
     ptp.set_defaults(func=cmd_transcripts_push)
 
     phe = sub.add_parser("heuris", help="heuris (H1): index mail, calendar, chats and repos; or their freshness")
-    phe.add_argument("action", choices=["index", "status", "derive"])
+    phe.add_argument("action", choices=["index", "status", "derive", "syllabus"])
     phe.add_argument("--since", default="2026-06-01", help="derive: read mail from this date (D9)")
     phe.add_argument("--limit", type=int, default=None, help="derive: at most this many threads per batch")
     phe.add_argument("--force", action="store_true", help="derive: past the day's credit pace (a backfill)")
@@ -1537,6 +1572,8 @@ def main(argv=None) -> None:
     phe.add_argument("--jobs", nargs="*", choices=["facts", "records", "briefs"], help="derive: which (default all)")
     phe.add_argument("sources", nargs="*", default=[], help="mail calendar chats repos (default: all)")
     phe.add_argument("--json", action="store_true", help="status as JSON")
+    phe.add_argument("--relink", action="store_true", help="syllabus: link every topic again, not only changed ones")
+    phe.add_argument("--covered", action="store_true", help="syllabus: topics and how many are covered, per submodule")
     phe.set_defaults(func=cmd_heuris)
 
     pfa = sub.add_parser("facts", help="heuris (H2): the facts ledger: show, remember, forget, approve, the auto log")

@@ -30,7 +30,8 @@ from pathlib import Path
 from locus.heuris import registry
 from locus.heuris.index import QUERY_PREFIX
 
-KINDS = ("mail", "attachment", "file", "event", "task", "chat", "commit", "doc", "source", "note", "record", "fact")
+KINDS = ("mail", "attachment", "file", "event", "task", "chat", "commit", "doc", "source", "note", "record", "fact",
+         "syllabus")
 # Text written by someone else, which arrives inside the untrusted-data envelope.
 UNTRUSTED = ("mail", "attachment", "file")
 

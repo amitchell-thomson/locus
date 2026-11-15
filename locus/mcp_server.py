@@ -719,7 +719,7 @@ def _register_heuris(tool) -> None:
 
         Args:
             query: What to look for, in plain words.
-            kind: mail, attachment (a mail attachment's text), file (a career file), event, task, chat, commit, doc (repository doc), source (library), note (his own writing in the library), record (what happened in one chat session, one repo's day of commits, or one mail thread, written once from the whole), fact (a current fact from the ledger).
+            kind: mail, attachment (a mail attachment's text), file (a career file), event, task, chat, commit, doc (repository doc), source (library), note (his own writing in the library), record (what happened in one chat session, one repo's day of commits, or one mail thread, written once from the whole), fact (a current fact from the ledger), syllabus (a course submodule's syllabus, word for word from the department: what the course covers, for every year he has studied).
             area: Studies, Careers, Projects, Personal, Family, Errands, Sport, Social.
             thing: a registry id (quast, locus, oqts, millennium, b15, ...); see `context`.
             person: a name or an email address.

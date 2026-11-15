@@ -1866,7 +1866,7 @@ fn status_bar(f: &mut Frame, app: &App, area: Rect) {
                 parts.push(format!("{n} to check in · C"));
             }
             if !app.pending.is_empty() {
-                parts.push(format!("{} to approve · g a", app.pending.len()));
+                parts.push(format!("{} to approve · A", app.pending.len()));
             }
             if app.daemon_error.is_some() {
                 parts.push("kairosd offline".into());

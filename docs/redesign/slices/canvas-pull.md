@@ -400,3 +400,17 @@ Algorithms), past, no date (B15's lab), another B3 project's (the cultured-meat 
 kairos already has (same course, or the course code in the title, due that day: "B1 Coding Task"
 for the Optimisation practical). Each assignment is proposed once (`data/canvas/deadlines.json`).
 First run: 1 proposed, the 3YP logbook (Canvas: due 19 May 13:00, though its title says 20 May).
+He approved it 15 Nov (it went in once `Y` on a calendar group was fixed to reach kairosd), and
+confirmed his 3YP project is the patient-data one (fact:365), so the skip list stands.
+
+**P7 done (15 Nov 2026).** `locus/heuris/sources/library.py`, a heuris source run with the rest
+every 15 minutes: one item per library section (`src:<doc>#s<n>`, the pointer `open` follows),
+`note` for his writing and `source` otherwise, the course as its thing. Re-embedded rather than
+copied (amending P-D8): the library's vectors had no nomic task prefix and no title, so they would
+have scored on a different scale from everything they are ranked against; the first run took 106 s
+(5,020 sections, 12,453 chunks) and later runs embed only what changed. Read only when no ingest
+holds the lock (a skipped tick is not a good run, so a long skip goes stale). `library_candidates`
+is gone; a timeline shows each document once. Check, same eight real queries before and after:
+GPTQ notes and the Jump feedback notebook (Q10, Y9) still found; `thing=b15` "PID controller root
+locus" went from 1 library hit to 12 (the old path filtered after its KNN); B14, B18 and Studies
+as good or better; 2.3 to 3.7 s a search after, 1.4 to 4.6 s before.

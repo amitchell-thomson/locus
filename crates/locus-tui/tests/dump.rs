@@ -180,3 +180,35 @@ fn shared_keys_keep_their_meaning_on_every_screen() {
         }
     }
 }
+
+/// A calendar change is decided in kairosd or not at all (15 Nov: Y turned it green and kairos
+/// never heard). With no kairosd in the window, y and Y say so and the change stays.
+#[test]
+fn a_calendar_change_is_never_marked_decided_without_kairosd() {
+    let mut a = app("default", ScreenId::Home);
+    let cs = kairos_core::changeset::Changeset {
+        id: "cs-1".into(),
+        author: kairos_core::model::Author::Claude,
+        created_at: "2026-11-15T01:00:00Z".parse().unwrap(),
+        ops: Vec::new(),
+        risk: kairos_core::changeset::Risk::High,
+        reasons: Vec::new(),
+        status: kairos_core::changeset::Status::Pending,
+        summary: "Task \"3YP Logbook\"".into(),
+        error: None,
+        decided_at: None,
+    };
+    locus_tui::calendar::apply_pending(&mut a.fixtures, &[cs]);
+    a.open(ScreenId::Approve);
+    for c in ['Y', 'y'] {
+        a.on_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+        assert!(
+            a.note.as_deref().unwrap_or("").contains("kairosd isn't connected"),
+            "{c}: {:?}",
+            a.note
+        );
+        let g = &a.fixtures.approve.groups[0];
+        assert_eq!(g.items[0].changeset.as_deref(), Some("cs-1"), "{c}");
+    }
+    assert!(!dump::render(&a, 95, 38).unwrap().is_empty());
+}

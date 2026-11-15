@@ -1034,7 +1034,7 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                         .clone()
                         .map(|c| (g, i, c))
                 });
-            if let (Some((g, i, id)), KeyCode::Char(c @ ('y' | 'n'))) = (changeset, k.code)
+            if let (Some((g, i, id)), KeyCode::Char(c @ ('y' | 'n'))) = (changeset.clone(), k.code)
                 && let Some(live) = app.calendar.clone()
             {
                 match live.decide(&id, c == 'y') {
@@ -1045,6 +1045,11 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                     }
                     Err(e) => app.note = Some(format!("kairos said no: {e}")),
                 }
+                return true;
+            }
+            // A real changeset with no kairosd to send it to: say so, never mark it green.
+            if changeset.is_some() && matches!(k.code, KeyCode::Char('y' | 'n')) && app.calendar.is_none() {
+                app.note = Some("kairosd isn't connected in this window: nothing decided".into());
                 return true;
             }
             if let (Some((g, i, d)), KeyCode::Char(c @ ('y' | 'n'))) = (date, k.code)
@@ -1114,6 +1119,34 @@ pub fn key(app: &mut App, k: KeyEvent) -> bool {
                         let ok = all.iter().filter(|m| live.decide(m, true).is_ok()).count();
                         app.fixtures.approve.groups.remove(g);
                         app.note = Some(format!("approved the group: {ok} of {}", all.len()));
+                        return true;
+                    }
+                    // A calendar group is decided in kairosd, every changeset in it. Without this
+                    // Y fell through to the fixtures' marking: the items went green and kairos
+                    // never heard (15 Nov).
+                    if let Some(g) = group.parse::<usize>().ok()
+                        && let Some(grp) = app.fixtures.approve.groups.get(g)
+                        && grp.items.iter().any(|i| i.changeset.is_some())
+                    {
+                        let Some(live) = app.calendar.clone() else {
+                            app.note = Some("kairosd isn't connected in this window: nothing approved".into());
+                            return true;
+                        };
+                        let ids: Vec<String> = grp.items.iter().filter_map(|i| i.changeset.clone()).collect();
+                        let mut failed = Vec::new();
+                        for id in &ids {
+                            if let Err(e) = live.decide(id, true) {
+                                failed.push(e);
+                            }
+                        }
+                        let ok = ids.len() - failed.len();
+                        if failed.is_empty() {
+                            app.fixtures.approve.groups.remove(g);
+                        }
+                        app.note = Some(match failed.first() {
+                            None => format!("approved the group: {ok} calendar change(s)"),
+                            Some(e) => format!("approved {ok} of {}; kairos said no: {e}", ids.len()),
+                        });
                         return true;
                     }
                     let mut n = 0;

@@ -376,3 +376,27 @@ sent, 27 already there by bytes, 3 kept off as solutions, and 3 not sent because
 earlier version (B14 Image Processing L3, L4 and the example sheet; Canvas revised them after he
 uploaded; L4 has 60 pages on Canvas against 58 on the tablet). Afterwards: 113 documents in
 `Studies/`, no name twice in a folder, no bytes twice, all 43 on the device byte for byte.
+
+**P5 done (15 Nov 2026).** `locus/files_content.py`, in the laptop's `locus files sync` (every 30
+minutes) after the folder sync. PDFs only, clean bytes only (the library's raw copy by content
+hash, else the bundle's PDF; never ink). A PDF crosses when its bytes are nowhere on the other side
+and no document of its name is in that folder; Canvas files are left to P3 and P4; solutions,
+`report/`, `figures/`, past years and the insides of a repository stay put (a repository's own
+level crosses: B18's `cellular-physiology` is his code repo with the lectures beside it). What
+crossed is kept by sha256 in `data/state/files-content.json`; a file deleted on one side is a
+question (`locus files questions`), answered by deleting the other copy or `locus files settle`.
+At most 30 each way per run. First run: 4 down (two QuAST lecture PDFs, OXDAQ, a B15 README), 1 up
+(his B2 House of Quality). Check: a scratch PDF in B18 reached the tablet in one run, one in B1's
+`report/` did not; deleted on the tablet, it became a question, not a re-send.
+On the way, P3 was found to have put 19 Canvas copies beside files he already had under his own
+names (B1's `matlab_reference/`, B2 Technology Strategy). P3 now looks for the same bytes anywhere
+in the course folder first; the 19 copies were removed, his originals kept.
+
+**P6 done (15 Nov 2026).** `locus canvas deadlines` (`locus/canvas_deadlines.py`), after each pull.
+An assignment with a due date ahead and nothing submitted becomes a kairos task posted with
+`x-kairos-review`, which only raises a write to approval (kairosd `Engine::review`), so it waits in
+Approve; 5 h, the course as its locus. Not proposed: submitted (B1 Scientific Coding, Numerical
+Algorithms), past, no date (B15's lab), another B3 project's (the cultured-meat logbooks), or one
+kairos already has (same course, or the course code in the title, due that day: "B1 Coding Task"
+for the Optimisation practical). Each assignment is proposed once (`data/canvas/deadlines.json`).
+First run: 1 proposed, the 3YP logbook (Canvas: due 19 May 13:00, though its title says 20 May).

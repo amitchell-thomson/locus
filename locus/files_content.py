@@ -49,8 +49,8 @@ from pathlib import Path
 from locus.canvas_pull import file_name
 from locus.canvas_tablet import SOLUTION, name_key
 
-CONTENT_AREAS = ("Studies", "Projects", "Careers")
-NOT_SENT_DIRS = {"report", "figures"}
+CONTENT_AREAS = ("Studies", "Projects", "Careers", "Learning")   # Learning: spec L, L-D12
+NOT_SENT_DIRS = {"report", "figures", "code"}
 MAX_PER_RUN = 30
 STATE = Path(__file__).resolve().parents[1] / "data" / "state" / "files-content.json"
 STAGE = Path(__file__).resolve().parents[1] / "data" / "files-stage"

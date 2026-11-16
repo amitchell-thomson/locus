@@ -49,6 +49,10 @@ class Report:
 
 
 def folder_of(entry: dict) -> Path | None:
+    # A repo kept outside ~/local-projects names its own place (spec L: ~/files/Learning).
+    if entry.get("path"):
+        p = Path(entry["path"]).expanduser()
+        return p if p.is_dir() else None
     for name in [entry.get("folder"), *entry.get("sessions", [])]:
         if name and (PROJECTS / name).is_dir():
             return PROJECTS / name

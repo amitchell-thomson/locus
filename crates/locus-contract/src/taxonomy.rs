@@ -87,6 +87,8 @@ impl Shared {
                 bad.push(format!("application `{}` has no company", p.id));
             }
             match &p.folder {
+                // A repo at its own path (spec L: ~/files/Learning) has no area folder.
+                None if p.path.is_some() && p.kind == crate::ProjectKind::Repo => {}
                 None => bad.push(format!("`{}` has no folder", p.id)),
                 Some(f) if !crate::common::is_folder_name(f) => bad.push(format!(
                     "`{}` has folder `{f}`: lowercase words joined by hyphens, no spaces",

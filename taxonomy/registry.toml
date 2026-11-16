@@ -22,6 +22,17 @@ active = true
 depth = "field"
 sessions = ["quast"]
 
+# The learning system's one place (spec L, L-D12): documents and exercises, synced with the
+# tablet's Learning/ folder. No `folder`: it is not under an area; `path` says where it is.
+[[projects]]
+id = "learning"
+name = "Learning"
+path = "~/files/Learning"
+area = "Projects"
+kind = "repo"
+state = "live"
+active = true
+
 [[projects]]
 id = "nabla"
 name = "nabla"

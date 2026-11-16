@@ -330,4 +330,18 @@ milestones, and G3 from QUAST's repo; both approved, one marked round each. Chec
 
 ## Progress
 
-Nothing built yet.
+**L1 done (16 Nov 2026).**
+- Learning state in `heuris.db` beside the ledger (`locus/heuris/learning.py`): `goals`, `topics`,
+  `topic_evidence`, `pace`. A pace is hours a week from a date, optionally until one, so a ramp
+  ends by itself; every change is a row, so its history is kept.
+- `locus learn list | show | add | pace | state`; `locus restore-ledger <snapshot>` puts a
+  snapshot's facts and learning state back, adding only rows that are missing (the ledger had a
+  backup and no way back until now).
+- `locus backup` copies the learning tables with the ledger.
+- `~/files/Learning/` is a git repo with `CLAUDE.md` (Claude never writes solution code there),
+  `.gitignore` (PDFs and build output), and a folder per goal (`interview-prep`, `cpp-oxdaq`,
+  `quast`), each with `sheets/`, `explainers/`, `marked/`, `code/`.
+- The registry has `learning` (kind repo, `path = "~/files/Learning"`, no area folder); the
+  registry check, the locus window, kairos's time measurement and `repos_push` find it by path.
+- The sync knows `Learning/`: its goal folders need no registry entry, its PDFs move like
+  `Studies/`, and `code/` never leaves the laptop (`tests/test_learning.py`).

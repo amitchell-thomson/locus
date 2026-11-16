@@ -39,7 +39,11 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-AREAS = ("Studies", "Projects", "Careers", "Personal")
+AREAS = ("Studies", "Projects", "Careers", "Personal", "Learning")
+# The learning system's folder (spec L, L-D12): one folder per goal, named by its id, not a
+# registry entry; a git repo at its top, whose `code/` folders stay on the laptop.
+LEARNING = "Learning"
+LEARNING_LAPTOP_ONLY = {"code"}
 FILES_ROOT = Path("~/files")
 REGISTRY_PATH = Path(__file__).resolve().parents[1] / "taxonomy" / "registry.toml"
 _NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
@@ -107,7 +111,8 @@ def laptop_folders(root: Path | str = FILES_ROOT) -> set[str]:
             if here != base and any((here / m).exists() for m in _OPAQUE_MARKERS):
                 dirnames[:] = []
                 continue
-            dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d not in _SKIP)
+            dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d not in _SKIP
+                                 and not (area == LEARNING and d in LEARNING_LAPTOP_ONLY))
     return out
 
 
@@ -221,7 +226,7 @@ def plan(laptop: set[str], tablet: set[str], registry: dict[str, set[str]],
             if not is_folder_name(parts[-1]):
                 ask(p, side, "name")
                 continue
-            if (len(parts) == 2 and parts[0] != "Personal" and parts[1] != GENERAL
+            if (len(parts) == 2 and parts[0] not in ("Personal", LEARNING) and parts[1] != GENERAL
                     and parts[1] not in registry.get(parts[0], set())):
                 ask(p, side, "unregistered")
                 continue
@@ -341,8 +346,8 @@ def rename_plan(tablet: set[str], registry_path: Path | str = REGISTRY_PATH) -> 
     data = tomllib.loads(Path(registry_path).read_text())
     old_to_new: dict[tuple[str, str], str] = {}
     for e in data.get("projects", []):
-        if e.get("kind") == "repo" and e.get("course"):
-            continue
+        if (e.get("kind") == "repo" and e.get("course")) or not e.get("folder"):
+            continue                    # a repo at its own path (spec L) has no area folder
         for old in {e.get("name"), e.get("company")} - {None}:
             old_to_new[(e["area"], old.casefold())] = e["folder"]
     out: list[tuple[str, str]] = []

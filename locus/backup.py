@@ -99,7 +99,39 @@ def _backup_db(src_db: Path, dest_db: Path) -> tuple[int, int]:
     return dest_db.stat().st_size, int(pages)
 
 
-LEDGER_TABLES = ("facts", "fact_log", "records", "briefs")
+# Learning state is not derived either (spec L, L-D8): goals, topics, their evidence, the pace.
+LEDGER_TABLES = ("facts", "fact_log", "records", "briefs", "goals", "topics", "topic_evidence", "pace")
+
+
+def restore_ledger(snapshot: Path, heuris_db: Path) -> dict[str, int]:
+    """Put a snapshot's ledger back into heuris.db, adding only rows that are not there (by
+    primary key): nothing newer is overwritten, and a table the snapshot lacks is left alone.
+    The one way back for facts and learning state, which nothing can rebuild. Returns rows added
+    per table."""
+    src = snapshot / "heuris-ledger.db"
+    if not src.exists():
+        raise FileNotFoundError(f"{snapshot.name} has no heuris-ledger.db")
+    from locus.heuris import briefs, learning, records
+    from locus.heuris import db as hdb
+
+    conn = hdb.connect(heuris_db)
+    for mod in (learning, records, briefs):
+        mod.ensure(conn)
+    added: dict[str, int] = {}
+    try:
+        conn.execute("ATTACH DATABASE ? AS snap", (str(src),))   # only read from
+        have = {r[0] for r in conn.execute("SELECT name FROM snap.sqlite_master WHERE type='table'")}
+        with conn:
+            for t in LEDGER_TABLES:
+                if t not in have:
+                    continue
+                before = conn.execute(f"SELECT COUNT(*) FROM main.{t}").fetchone()[0]
+                conn.execute(f"INSERT OR IGNORE INTO main.{t} SELECT * FROM snap.{t}")
+                added[t] = conn.execute(f"SELECT COUNT(*) FROM main.{t}").fetchone()[0] - before
+        conn.execute("DETACH DATABASE snap")
+    finally:
+        conn.close()
+    return added
 
 
 def _backup_ledger(heuris_db: Path, dest: Path) -> int:

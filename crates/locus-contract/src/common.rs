@@ -126,6 +126,10 @@ pub struct Project {
     /// Howard 2026 and 2027), or a repo and the course it does the work of (3YP and B3).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub folder: Option<String>,
+    /// Where a repo lives when it is not `~/local-projects/<folder>` (spec L, L-D12: the
+    /// learning repo is `~/files/Learning`). `~` is the home directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
     /// A course's id on Canvas (spec P, P1): what the Canvas pull reads for this course.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub canvas: Option<u64>,

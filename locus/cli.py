@@ -326,6 +326,54 @@ def _heuris_syllabus(conn, args) -> None:
         sys.exit(1)
 
 
+def cmd_learn(args) -> None:
+    """The learning system (spec L): goals and their pace. `list`, `show <goal>`, `add <id>
+    <title>`, `pace <goal> <hours>` (with --since/--until for a ramp), `state <goal> <state>`."""
+    import json as _json
+    from contextlib import closing
+    from dataclasses import asdict
+
+    from locus.heuris import db as hdb
+    from locus.heuris import learning as L
+
+    with closing(hdb.connect()) as conn:
+        try:
+            a = args.action
+            if a == "list":
+                gs = L.goals(conn, include_archived=args.all)
+                print(_json.dumps([asdict(g) for g in gs]) if args.json else
+                      "\n".join(L.describe(g) for g in gs) or "No goals yet.")
+            elif a == "show":
+                g = L.get_goal(conn, args.goal)
+                print(L.describe(g))
+                for h, since, until, at, note in L.pace_history(conn, g.id):
+                    print(f"  pace {h:g} h a week from {since}" + (f" until {until}" if until else "")
+                          + (f"  ({note})" if note else "") + f"  [set {at[:16]}]")
+            elif a == "add":
+                g = L.add_goal(conn, args.goal, args.title or args.goal, master_by=args.by,
+                               priority=args.priority, thing=args.thing, notes=args.note)
+                print(f"Added: {L.describe(g)}")
+            elif a == "pace":
+                g = L.set_pace(conn, args.goal, float(args.value), since=args.since, until=args.until, note=args.note)
+                print(f"Pace: {L.describe(g)}")
+            elif a == "state":
+                print(f"Now: {L.describe(L.set_state(conn, args.goal, args.value))}")
+        except L.LearningError as e:
+            raise SystemExit(str(e))
+
+
+def cmd_restore_ledger(args) -> None:
+    """Add a snapshot's facts and learning state back into heuris.db (rows not there only)."""
+    from locus import backup as bk
+    from locus.heuris import db as hdb
+
+    snapshot = Path(args.snapshot)
+    if not snapshot.is_absolute() and not snapshot.exists():
+        snapshot = _backup_root(args) / snapshot
+    added = bk.restore_ledger(snapshot, hdb.path())
+    print("Restored: " + ", ".join(f"{t} +{n}" for t, n in added.items()))
+
+
 def cmd_facts(args) -> None:
     """heuris's facts ledger (H2): read it, or change it from the window (the Home chat's `y`,
     Approve), from the import of the applications file, or by hand."""
@@ -1596,6 +1644,26 @@ def main(argv=None) -> None:
     phe.add_argument("--relink", action="store_true", help="syllabus: link every topic again, not only changed ones")
     phe.add_argument("--covered", action="store_true", help="syllabus: topics and how many are covered, per submodule")
     phe.set_defaults(func=cmd_heuris)
+
+    ple = sub.add_parser("learn", help="spec L: learning goals and their pace (hours a week)")
+    ple.add_argument("action", choices=["list", "show", "add", "pace", "state"])
+    ple.add_argument("goal", nargs="?", help="a goal id: interview-prep, cpp-oxdaq, quast")
+    ple.add_argument("value", nargs="?", help="pace: hours a week; state: proposed, active, paused, done, archived")
+    ple.add_argument("--title", help="add: the goal in words")
+    ple.add_argument("--by", help="add: master-by date YYYY-MM-DD")
+    ple.add_argument("--priority", type=int, default=2, help="add: 1 highest")
+    ple.add_argument("--thing", help="add: the registry id it serves")
+    ple.add_argument("--since", help="pace: from YYYY-MM-DD (default today)")
+    ple.add_argument("--until", help="pace: until YYYY-MM-DD inclusive (a ramp that ends by itself)")
+    ple.add_argument("--note", help="a note kept with it")
+    ple.add_argument("--all", action="store_true", help="list: archived goals too")
+    ple.add_argument("--json", action="store_true")
+    ple.set_defaults(func=cmd_learn)
+
+    prl = sub.add_parser("restore-ledger", help="add a snapshot's facts and learning state back into heuris.db")
+    prl.add_argument("snapshot", help="a snapshot directory or its name")
+    prl.add_argument("--dest", help="where snapshots live (default: data/backups)")
+    prl.set_defaults(func=cmd_restore_ledger)
 
     pfa = sub.add_parser("facts", help="heuris (H2): the facts ledger: show, remember, forget, approve, the auto log")
     pfa.add_argument("action", choices=["show", "remember", "forget", "proposed", "approve", "reject", "reopen", "log", "undo",

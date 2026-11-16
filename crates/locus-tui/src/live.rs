@@ -129,6 +129,14 @@ pub fn match_entry<'a>(reg: &'a Registry, tmux: &str, cwd: &Path, home: &Path) -
     if let Some(p) = reg.projects.iter().find(|p| p.sessions.iter().any(|s| s == tmux)) {
         return Some(p);
     }
+    // A repo kept at its own `path` (spec L: the learning repo is ~/files/Learning).
+    if let Some(p) = reg
+        .projects
+        .iter()
+        .find(|p| p.path.as_deref().is_some_and(|x| cwd.starts_with(expand(x, home))))
+    {
+        return Some(p);
+    }
     if let Ok(rest) = cwd.strip_prefix(home.join("local-projects")) {
         let dir = rest.components().next()?.as_os_str().to_str()?;
         return reg.projects.iter().find(|p| {
@@ -351,12 +359,21 @@ pub fn apply_sessions(fx: &mut Fixtures, live: &[Live]) -> Vec<(String, Vec<Sess
     loose.into_iter().collect()
 }
 
+/// `~/x` against `home`; anything else as written.
+fn expand(path: &str, home: &Path) -> PathBuf {
+    path.strip_prefix("~/")
+        .map_or_else(|| PathBuf::from(path), |rest| home.join(rest))
+}
+
 // --- last activity ----------------------------------------------------------------------------
 
 /// The directories a repo entry lives in on the laptop.
 pub fn repo_dirs(p: &Project, live: &[Live], home: &Path) -> Vec<PathBuf> {
     let lp = home.join("local-projects");
     let mut dirs: Vec<PathBuf> = vec![lp.join(&p.id)];
+    if let Some(x) = &p.path {
+        dirs.push(expand(x, home));
+    }
     if let Some(f) = &p.folder {
         dirs.push(lp.join(f));
     }
@@ -778,6 +795,11 @@ mod tests {
         let id = |t: &str, c: &str| match_entry(&r, t, Path::new(c), h).map(|p| p.id.clone());
         assert_eq!(id("locus-dev", "/elsewhere").as_deref(), Some("locus"));
         assert_eq!(id("x", "/Users/a/local-projects/quast/src").as_deref(), Some("quast"));
+        // a repo at its own path (spec L)
+        assert_eq!(
+            id("x", "/Users/a/files/Learning/cpp-oxdaq/code").as_deref(),
+            Some("learning")
+        );
         assert_eq!(
             id("x", "/Users/a/local-projects/oqts/oxdaq-core").as_deref(),
             Some("oqts")

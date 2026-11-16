@@ -1,6 +1,7 @@
 # L: learning, from a goal to a curriculum you work through
 
-**State:** first draft for your reading · **Written:** 2026-11-16 · **Runs in:** `claude` (locus-dev)
+**State:** second draft, with your answers of 16 Nov (dates, priorities, the C++ and OXDAQ cycle,
+the repo, the feedback note) · **Written:** 2026-11-16 · **Runs in:** `claude` (locus-dev)
 
 **From:** the plan (C.10 interview prep, C.11 the learning system; heuris.tex §E "one shape",
 revision and the module cycle), the order of 13 Nov (C, P, then L), and your words of 16 Nov:
@@ -37,8 +38,11 @@ These are what the spec is for. Every decision below is checked against them.
 
 **G1. Quant interview mastery** for the firms after Millennium: Jump, HRT, Tower, G-Research and
 the like (your goal, fact:196: "work as a QT or QR alongside a systematic pod at an HFT firm").
-Master by: when their 2028 cycles open (my guess: July to September 2027, so the bulk before the
-Millennium summer; you set the date).
+**Master by: the start of the Millennium internship** (your words, 16 Nov: the gap before it is
+"a blank period, and after millennium I will want to jump into the interview processes";
+fact:423). The start date is not in locus yet (the offer letter will have it); until then the
+goal uses the end of the gap after Trinity exams (weeks 8 and 9) as its date. The work falls in the
+Christmas and Easter vacations, a few hours a week in term, and the post-exam gap as the peak.
 - *What the evidence says to target.* The Jump feedback call (src:614, 23 Oct): "v strong
   quantitatively", "areas for growth: programming", "do data structures and algorithms". The
   second feedback note (src:623): "a lot of claude usage, do the extra step of digging into things,
@@ -54,9 +58,17 @@ Millennium summer; you set the date).
   regression derivations on the tablet; DSA problems written by hand (G2's rule), timed; one
   data-science case per few weeks on a real dataset in `interview-practice`.
 
-**G2. C++ from the ground up, alongside OXDAQ, with Python mastery.** Master by: you set it (the
-exchange plan, fact:186, says "over the next year"). The aim is writing your own code, since
-agentic coding "was a big point of weakness in the jump interview process".
+**G2. C++ from the ground up, alongside OXDAQ, with Python mastery.** Master by: no hard date; the
+aim is OXDAQ usable this academic year, so **roughly before Trinity term** (fact:423). The aim is
+writing your own code, since agentic coding "was a big point of weakness in the jump interview
+process".
+- *The cycle* (your words, 16 Nov): "learn c++ concepts, then build a part of oxdaq using them and
+  repeat". So G2's curriculum is a list of **rounds**, each a few C++ concepts (taught, practised,
+  marked) then one OXDAQ part built with them. A round ends when its part works and you can explain
+  it, not when time runs out.
+- *First, OXDAQ is replanned* (your answer 2): the scope of the C++ engine, what stays Python, and
+  where the C++ to Python boundary sits (pybind11 or a socket) decide which concepts the rounds
+  need. That is a planning session with you, in chat, before G2's curriculum is proposed (step L8).
 - *Shape.* The curriculum follows the build: each C++ topic lands just before the OXDAQ step that
   needs it (value semantics and RAII before the order type; containers and allocation before the
   book; templates and move semantics before the matching core; concurrency and memory ordering
@@ -70,8 +82,9 @@ agentic coding "was a big point of weakness in the jump interview process".
   it. Claude sets the exercise, reviews and marks what you wrote, and explains; it does not
   produce the solution until you have submitted yours.
 
-**G3. QUAST, start to finish: the physics and the ML.** Master by: you set it (before the paper
-draft is final would make sense, since the paper needs you to defend every line).
+**G3. QUAST, start to finish: the physics and the ML.** **Lowest priority, little and often**
+(fact:423): a fixed small weekly slot (my suggestion: two 30-minute sessions), no hard date, and it
+gives way first when the week is full. Before the paper draft is final would be a natural target.
 - *Syllabus from the repo itself:* `state.md`, the decision and finding files
   (`references/findings/9.1` to `9.11`), the simulator README and the code, plus the papers in the
   library they cite. Topics: double quantum dots and the charge stability diagram; exchange and the
@@ -81,6 +94,9 @@ draft is final would make sense, since the paper needs you to defend every line)
 - *Practice:* explain-back questions on the tablet ("why does the barrier gate give 200 times
   better gates than detuning?"), derivations, and "defend every claim" questions taken from the
   paper draft, marked against the repo's own findings.
+
+**Priority** (fact:423): G1 and G2 on one level, G3 below. When a week cannot hold everything,
+`plan` shortens G3 first and says so.
 
 What they share is the point of shared tracks: linear algebra and statistics serve G1 and G3;
 DSA and C++ serve G1 and G2; probability serves G1 and your B courses.
@@ -108,8 +124,9 @@ rare and matters) over the evidence the goal points at, then checked:
 
 **L-D3. Where a goal's evidence comes from.** You name the goal; locus gathers, and the proposal
 shows what it used so you can add what it missed:
-- feedback and prep notes about you (search over your notes and career files: the Jump call and
-  feedback notes, the June prep plans, any other firm's feedback);
+- feedback and prep notes about you: for G1 and G2 the main source is the **Feedback** notebook
+  in Careers/Jump Trading on the tablet (src:623, transcribed; your answer 4), with the Jump call
+  note (src:614) and the June prep plans; other firms' feedback when there is some;
 - facts about you (goals, education: fact:341 says Years 1 and 2 can be treated as known well);
 - for a project goal, the repo's `state.md`, docs and code;
 - for a course, its syllabus topics (P8) and past papers;
@@ -160,8 +177,18 @@ copies it. Tables: `goals`, `topics` (the tree, per goal, with tracks shared by 
 
 **L-D10. What a sheet is.** One LaTeX page or two in the device format (the reMarkable skill's
 contract), 4 to 8 questions mixing topics by weight and due review, space to write under each, a
-footer with its id so the readback finds it. Coding exercises are not sheets: they are a file in a
-practice folder with tests (G2's `practice/` in a new `learning` repo, or under each project).
+footer with its id so the readback finds it. Coding exercises are not sheets.
+
+**L-D11. Where code practice lives: a `learning` repo** (your lean, and I agree). Exercises (a
+stub, its tests, your solution) and the code half of each sheet go there, one folder per track.
+Why it is right:
+- the repo's own `CLAUDE.md` can say "Claude never writes solution code here", which is the G2 rule
+  made enforceable;
+- exercises with tests stay out of project repos, whose history stays the project's;
+- as a registry repo, kairos measures the time you spend in it, which is honest practice time.
+
+One correction: **the "build" half of each G2 round belongs in OXDAQ's own repo**, not the learning
+repo. That code is the product. It is reviewed and marked the same way, but it lives where it runs.
 
 ---
 
@@ -193,8 +220,9 @@ screen shows G1 as it stands, and `s` sends its next sheet.
 **L7. Code practice** (L-D6, G2). Exercise files with tests, submission, deterministic run, review.
 Check: one G2 exercise written by you, run, reviewed, marked.
 
-**L8. G2 and G3 through it.** Both proposed from their evidence (OXDAQ milestones, QUAST's repo),
-approved, one marked round each. Check: three goals live, shared tracks counting across them
+**L8. G2 and G3 through it.** First the OXDAQ replanning session with you (scope of the C++
+engine, the Python boundary, milestones rejigged); then G2 proposed as rounds against those
+milestones, and G3 from QUAST's repo; both approved, one marked round each. Check: three goals live, shared tracks counting across them
 (probability marked for G1 shows in a B-course goal later; linear algebra for G1 and G3).
 
 **L9. Report** and the test questions 27 to 32 and P3 to P5 re-run.
@@ -233,15 +261,19 @@ approved, one marked round each. Check: three goals live, shared tracks counting
 - **Cost.** One Opus call per curriculum and per re-weighting; sheet writing and marking on
   Sonnet, batched where nobody waits; prompts cached. A few dollars a month at the pace above.
 
-## Questions for you
+## Answered 16 Nov (fact:423)
 
-1. The master-by dates for G1, G2 and G3, and the weekly hours you want each to take in term and
-   in the vacation.
-2. G2: is the C++ OXDAQ engine the plan (fact:186 says so), and should the curriculum follow its
-   milestones, or should C++ be learned first and OXDAQ built after?
-3. Code practice: a new `learning` repo for exercises, or a `practice/` folder in each project?
-4. Any other feedback notes beyond the two Jump ones (other firms, Millennium's)? Point me at them,
-   or I search.
+1. G1 by the start of Millennium; G2 roughly before Trinity term, no hard date; G3 little and
+   often, lowest priority. G1 and G2 share the top priority.
+2. G2 follows a reopened OXDAQ plan, in rounds of concepts then a part built (step L8).
+3. A `learning` repo for exercises; OXDAQ's build code stays in OXDAQ (L-D11).
+4. The Feedback notebook in Careers/Jump Trading is the main feedback source.
+
+## Still open
+
+- The weekly hours each goal takes in term and in the vacation: the proposal in L2 will suggest
+  them from the dates and the curriculum's size, for you to adjust.
+- Millennium's start date, from the offer letter, to pin G1's date.
 
 ## Progress
 

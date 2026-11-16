@@ -333,13 +333,26 @@ def cmd_learn(args) -> None:
     from contextlib import closing
     from dataclasses import asdict
 
+    from locus.heuris import curriculum as C
     from locus.heuris import db as hdb
     from locus.heuris import learning as L
 
     with closing(hdb.connect()) as conn:
         try:
             a = args.action
-            if a == "list":
+            if a == "propose":
+                from locus.agent import usage
+                from locus.config import load as _load
+                from locus.db.connection import get_connection
+
+                with usage.job("learning-curriculum"), closing(get_connection(_load().paths.db)) as gc:
+                    p = C.propose(conn, args.goal, refs=args.evidence or [], queries=args.query or [], gate_conn=gc)
+                print(f"Proposed: {p.kept} topics from {len(p.evidence)} pieces of evidence; "
+                      f"{len(p.dropped)} quotes or topics dropped by the check.\n")
+                print(C.render(conn, args.goal))
+            elif a == "curriculum":
+                print(C.render(conn, args.goal, state=args.value or "proposed"))
+            elif a == "list":
                 gs = L.goals(conn, include_archived=args.all)
                 print(_json.dumps([asdict(g) for g in gs]) if args.json else
                       "\n".join(L.describe(g) for g in gs) or "No goals yet.")
@@ -1646,7 +1659,9 @@ def main(argv=None) -> None:
     phe.set_defaults(func=cmd_heuris)
 
     ple = sub.add_parser("learn", help="spec L: learning goals and their pace (hours a week)")
-    ple.add_argument("action", choices=["list", "show", "add", "pace", "state"])
+    ple.add_argument("action", choices=["list", "show", "add", "pace", "state", "propose", "curriculum"])
+    ple.add_argument("--evidence", nargs="*", help="propose: pointers it must use (src:623, fact:196)")
+    ple.add_argument("--query", action="append", help="propose: what to search for, instead of the default")
     ple.add_argument("goal", nargs="?", help="a goal id: interview-prep, cpp-oxdaq, quast")
     ple.add_argument("value", nargs="?", help="pace: hours a week; state: proposed, active, paused, done, archived")
     ple.add_argument("--title", help="add: the goal in words")

@@ -73,3 +73,68 @@ def test_learning_folder_syncs_its_pdfs_but_never_its_code(tmp_path):
     # a goal's folder is not a registry entry, and is never asked about
     plan = files_sync.plan(folders, {"Learning"}, {a: set() for a in files_sync.AREAS})
     assert "Learning/interview-prep" in plan.to_tablet and not plan.questions
+
+
+# --- L2: a goal becomes a proposed curriculum ----------------------------------------------------
+
+def _seed(conn):
+    from locus.heuris.index import Item, index
+    from tests.test_heuris_index import fake_embed
+    from datetime import datetime, timezone
+
+    at = datetime(2026, 10, 23, tzinfo=timezone.utc)
+    index(conn, "library", [
+        Item(ref="src:623#s0", kind="note", at=at, title="Feedback", thing="jump", parent="src:623",
+             text="Manual coding in projects - digging deeper. Maths/stats - just way more practice. "
+                  "chessboard question; probability/stats/regression stuff",
+             meta={"unit": "section", "doc": 623, "lead": 1}),
+        Item(ref="src:614#s0", kind="note", at=at, title="Jump call", thing="jump", parent="src:614",
+             text="Areas for growth - programming. Do data structures and algorithms. trader interview - "
+                  "brainteaser/probability", meta={"unit": "section", "doc": 614, "lead": 1}),
+    ], embed=fake_embed)
+    return fake_embed
+
+
+def test_a_curriculum_keeps_only_what_its_evidence_holds(conn):
+    from locus.heuris import curriculum as C
+
+    embed = _seed(conn)
+    L.add_goal(conn, "interview-prep", "Quant interview mastery", priority=1)
+    L.set_pace(conn, "interview-prep", 5, since="2026-11-16")
+    reply = {
+        "summary": "Programming and probability first, from the Jump feedback.",
+        "topics": [
+            {"key": "dsa", "track": "data-structures", "title": "Data structures and algorithms", "hours": 30,
+             "weight": 3, "why": "named as the area for growth",
+             "evidence": [{"ref": "src:614#s0", "quote": "Do data   structures and algorithms"}]},
+            {"key": "dsa-trees", "parent": "dsa", "track": "data-structures", "title": "Trees", "hours": 10,
+             "weight": 2, "why": "part of DSA",
+             "evidence": [{"ref": "src:614#s0", "quote": "Areas for growth - programming"}]},
+            {"key": "prob", "track": "probability", "title": "Probability puzzles", "hours": 20, "weight": 2.5,
+             "why": "more practice", "evidence": [{"ref": "src:623#s0", "quote": "just way more practice"}]},
+            # invented: the quote is not in the note, so the topic goes
+            {"key": "ml", "track": "ml", "title": "Deep learning", "hours": 40, "weight": 1,
+             "why": "made up", "evidence": [{"ref": "src:623#s0", "quote": "you must master transformers"}]},
+            # a pointer it was never given
+            {"key": "x", "track": "x", "title": "Elsewhere", "hours": 5, "weight": 1,
+             "why": "made up", "evidence": [{"ref": "src:999#s0", "quote": "anything"}]},
+        ],
+    }
+    seen = {}
+
+    def ask(system, user):
+        seen["user"] = user
+        return "Here you go:\n" + __import__("json").dumps(reply)
+
+    p = C.propose(conn, "interview-prep", refs=["src:623", "src:614"], queries=["feedback"], ask=ask, embed=embed,
+                  rerank=lambda q, hits: hits, today=date(2026, 11, 16))
+    assert "src:623#s0" in seen["user"] and "src:614#s0" in seen["user"]
+    assert p.kept == 3 and {d["topic"] for d in p.dropped} >= {"Deep learning", "Elsewhere"}
+    out = C.render(conn, "interview-prep")
+    assert "Data structures and algorithms" in out and "Deep learning" not in out
+    assert "  - Trees" in out                                  # a subtopic under its parent
+    assert "30 h in all" in out and "6 weeks" in out           # leaf hours (trees 10 + prob 20) at 5 h a week
+    # a second proposal replaces the first proposed topics, never approved ones
+    C.propose(conn, "interview-prep", refs=["src:614"], queries=["feedback"], ask=ask, embed=embed,
+              rerank=lambda q, hits: hits, today=date(2026, 11, 16))
+    assert conn.execute("SELECT COUNT(*) FROM topics WHERE goal='interview-prep'").fetchone()[0] == 3

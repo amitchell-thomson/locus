@@ -56,3 +56,9 @@ old="\$(git rev-parse HEAD)"
 git pull --ff-only origin main
 exec deploy/server-sync.sh "\$old"
 EOF
+
+# The locus window runs on this laptop from target/release, and restarts itself into a new binary
+# (CLAUDE.md §10). Deploying only the server shipped L3 while the window kept the old code, so `y`
+# on a curriculum still said "comes with step L3" (16 Nov). Incremental: seconds when nothing moved.
+echo "deploy: building the locus window"
+cargo build -q --release -p locus-tui && echo "deploy: locus window built"

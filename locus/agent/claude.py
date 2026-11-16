@@ -286,7 +286,12 @@ def _api_runner(content: list, model: str | None, system: str | None, *, timeout
         "timeout": timeout,
     }
     if system:
-        kwargs["system"] = scrub_prompt(system)
+        # A cache breakpoint on the system prompt (16 Nov): every direct API call sent it as a
+        # bare string with no marker, so a job's identical instructions were billed in full on
+        # each of thousands of calls (Anthropic flagged the low hit rate). Callers keep what is
+        # the same on every call in `system` and what varies in the content. Prompts under the
+        # model's minimum (512 tokens on the 5.5 models) simply do not cache, at no cost.
+        kwargs["system"] = [{"type": "text", "text": scrub_prompt(system), "cache_control": {"type": "ephemeral"}}]
     if thinking:
         kwargs["thinking"] = {"type": "adaptive"}
     client = _api_client()

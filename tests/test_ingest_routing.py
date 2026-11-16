@@ -18,7 +18,7 @@ def test_route_for_resolves_aliases_and_defaults_local(monkeypatch):
     cfg = load()
     monkeypatch.setattr(cfg.ingest, "pass_routing",
                         {"summarize": "haiku", "propositions": "sonnet", "gaps": "local"})
-    assert route_for("summarize") == "claude-haiku-4-5-20251001"
+    assert route_for("summarize") == "claude-haiku-5-5"
     assert route_for("propositions") == "claude-sonnet-5"
     assert route_for("gaps") == "local"
     assert route_for("entities") == "local"  # not in the map -> local
@@ -43,23 +43,23 @@ class _FakeSDK:
 
 def test_generate_structured_routes_to_claude_sdk(monkeypatch):
     monkeypatch.setattr(llm, "route_for",
-                        lambda p: "claude-haiku-4-5-20251001" if p == "summarize" else "local")
+                        lambda p: "claude-haiku-5-5" if p == "summarize" else "local")
     fake = _FakeSDK('Here you go: {"summary": "a faithful summary", "title": "Kalman"}')
     out = generate_structured(SectionSummary, "text", pass_name="summarize", sdk_client=fake)
     assert out.summary == "a faithful summary" and out.title == "Kalman"
-    assert fake.model == "claude-haiku-4-5-20251001"  # routed to the resolved Claude model
+    assert fake.model == "claude-haiku-5-5"  # routed to the resolved Claude model
     assert fake.calls == 1
 
 
 def test_claude_path_repairs_then_succeeds(monkeypatch):
-    monkeypatch.setattr(llm, "route_for", lambda p: "claude-haiku-4-5-20251001")
+    monkeypatch.setattr(llm, "route_for", lambda p: "claude-haiku-5-5")
     fake = _FakeSDK("not json at all", '{"summary": "ok", "title": null}')
     out = generate_structured(SectionSummary, "t", pass_name="summarize", sdk_client=fake)
     assert out.summary == "ok" and fake.calls == 2  # retried on the invalid first reply
 
 
 def test_claude_path_raises_after_exhausting_retries(monkeypatch):
-    monkeypatch.setattr(llm, "route_for", lambda p: "claude-haiku-4-5-20251001")
+    monkeypatch.setattr(llm, "route_for", lambda p: "claude-haiku-5-5")
     fake = _FakeSDK("nope", "still nope", "nope again")
     with pytest.raises(IngestExtractionError):
         generate_structured(SectionSummary, "t", pass_name="summarize", sdk_client=fake, retries=2)

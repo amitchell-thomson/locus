@@ -280,7 +280,7 @@ def _sanitize_latex_escapes(raw: str) -> str:
 
 
 # Claude model aliases accepted in [ingest].pass_routing (kept swappable via config).
-_CLAUDE_ALIASES = {"haiku": "claude-haiku-4-5-20251001", "sonnet": "claude-sonnet-5"}
+_CLAUDE_ALIASES = {"haiku": "claude-haiku-5-5", "sonnet": "claude-sonnet-5"}  # Haiku 5.5 since 16 Nov (caching)
 
 
 def route_for(pass_name: str | None) -> str:
@@ -339,10 +339,14 @@ def _generate_structured_claude(
     if sdk_client is None:
         sdk_client = _sdk_client()
 
-    base = (
-        f"{user}\n\nRespond with ONLY a JSON object conforming to this JSON Schema "
+    # The schema is the same on every call of a pass, so it goes with the instructions in the
+    # system prompt, which the runner caches; the document alone varies (16 Nov: appended to each
+    # user prompt, nothing a pass repeated could be cached).
+    system = (
+        f"{system}\n\nRespond with ONLY a JSON object conforming to this JSON Schema "
         f"(no prose, no code fences):\n{json.dumps(schema.model_json_schema())}"
     )
+    base = user
     prompt, last = base, None
     for _ in range(retries + 1):
         try:
@@ -358,7 +362,7 @@ def _generate_structured_claude(
             return schema.model_validate_json(_sanitize_latex_escapes(_extract_json(text)))
         except (ValidationError, ValueError, IngestExtractionError) as exc:
             last = exc
-            prompt = f"{base}\n\nYour previous reply was invalid ({exc}). Return ONLY corrected JSON."
+            prompt = f"{base}\n\nYour previous reply was invalid ({exc}). Return ONLY corrected JSON matching the schema."
     raise IngestExtractionError(f"{schema.__name__}: no schema-valid output from {model}: {last}")
 
 

@@ -281,7 +281,9 @@ class AgentConfig(BaseModel):
     # which has no aliases. These are the ids the code already used on the API before Slice 0.13.
     api_models: dict[str, str] = Field(
         default_factory=lambda: {
-            "haiku": "claude-haiku-4-5-20251001",
+            # Haiku 5.5 since 16 Nov: Haiku 4.5 caches nothing under 4,096 tokens, so the library's
+            # ~1,000-token passes never hit the cache; 5.5 caches from 512 and costs a tenth.
+            "haiku": "claude-haiku-5-5",
             "sonnet": "claude-sonnet-5",
             "opus": "claude-opus-5-5",
             # heuris H2 (D8): facts, records and briefs on the current generation.

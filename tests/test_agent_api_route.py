@@ -72,11 +72,13 @@ def test_calls_go_to_the_api_credit_first(monkeypatch, api_route):
     r = claude.content_runner([{"type": "text", "text": "hello"}], "haiku", "be brief")
     assert r.text == "api says hi" and spawned == []
     call = client.calls[0]
-    assert call["model"] == "claude-haiku-4-5-20251001"       # the alias pinned to an API id
-    assert call["system"] == "be brief" and "thinking" not in call
+    assert call["model"] == "claude-haiku-5-5"                # the alias pinned to an API id
+    # the system prompt carries a cache breakpoint (16 Nov: none did, and nothing cached)
+    assert call["system"] == [{"type": "text", "text": "be brief", "cache_control": {"type": "ephemeral"}}]
+    assert "thinking" not in call
     (rec,) = api_route
     assert rec.backend == "api" and rec.ok
-    assert rec.cost_usd == pytest.approx((1000 * 1.0 + 100 * 5.0) / 1e6)
+    assert rec.cost_usd == pytest.approx((1000 * 0.10 + 100 * 0.50) / 1e6)
 
 
 def test_a_spent_credit_falls_back_to_the_subscription_and_pauses_the_api(monkeypatch, api_route,
